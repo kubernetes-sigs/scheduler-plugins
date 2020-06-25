@@ -29,6 +29,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/api/v1/pod"
+	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 )
 
@@ -55,10 +56,12 @@ var _ framework.UnreservePlugin = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
-	Name                 = "coscheduling"
-	PodGroupName         = "pod-group.scheduling.sigs.k8s.io/name"
+	Name = "coscheduling"
+	// PodGroupName is the group name specified as a pod label
+	PodGroupName = "pod-group.scheduling.sigs.k8s.io/name"
+	// PodGroupMinAvailable is the minimum of pods to be scheduled as a group
 	PodGroupMinAvailable = "pod-group.scheduling.sigs.k8s.io/min-available"
-	// TODO make this configurable
+	// PermitWaitingTime (TODO): make this configurable
 	PermitWaitingTime = 1 * time.Second
 )
 
@@ -75,22 +78,26 @@ func New(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin
 	}, nil
 }
 
-// Less are used to sort pods in the scheduling queue.
-// 1. compare the priority of pod
-// 2. compare the timestamp of the initialization time of PodGroup
-// 3. compare the key of PodGroup
+// Less sorts two pods in the scheduling queue.
+// 1. Compare the priorities of pods.
+// 2. Compare the timestamps of the initialization time of PodGroups.
+// 3. Compare QoS classes of pods if the pods do not belong to any PodGroup or the minAvailable is 1.
+// 4. Compare the keys of PodGroups.
 func (cs *Coscheduling) Less(podInfo1 *framework.PodInfo, podInfo2 *framework.PodInfo) bool {
 	pod1 := podInfo1.Pod
 	pod2 := podInfo2.Pod
 	priority1 := pod.GetPodPriority(pod1)
 	priority2 := pod.GetPodPriority(pod2)
 
+	// Compare pods by prioriy
 	if priority1 != priority2 {
 		return priority1 > priority2
 	}
 
-	pgInfo1 := cs.getPodGroupInfo(podInfo1)
-	pgInfo2 := cs.getPodGroupInfo(podInfo2)
+	pgInfo1, min1 := cs.getPodGroupInfo(podInfo1)
+	pgInfo2, min2 := cs.getPodGroupInfo(podInfo2)
+	pgName1 := pgInfo1.name
+	pgName2 := pgInfo2.name
 	time1 := pgInfo1.timestamp
 	time2 := pgInfo2.timestamp
 
@@ -98,12 +105,30 @@ func (cs *Coscheduling) Less(podInfo1 *framework.PodInfo, podInfo2 *framework.Po
 		return time1.Before(time2)
 	}
 
+	// Compare pods by QoS class if two pods do not belong to any podgroup or minAvailable equals to 1
+	// Guaranteed > Burstable > BestEffort
+	if (pgName1 == "" || min1 <= 1) && (pgName2 == "" || min2 <= 1) {
+		qos1 := v1qos.GetPodQOS(pod1)
+		qos2 := v1qos.GetPodQOS(pod2)
+
+		if qos1 != qos2 {
+			if qos1 == v1.PodQOSGuaranteed {
+				return true
+			} else if qos1 == v1.PodQOSBurstable {
+				return qos2 != v1.PodQOSGuaranteed
+			} else {
+				return qos2 == v1.PodQOSBestEffort
+			}
+		}
+	}
+
+	// Compare pod by PodGroup key
 	key1 := fmt.Sprintf("%v/%v", podInfo1.Pod.Namespace, pgInfo1.name)
 	key2 := fmt.Sprintf("%v/%v", podInfo2.Pod.Namespace, pgInfo2.name)
 	return key1 < key2
 }
 
-func (cs *Coscheduling) getPodGroupInfo(p *framework.PodInfo) *PodGroupInfo {
+func (cs *Coscheduling) getPodGroupInfo(p *framework.PodInfo) (*PodGroupInfo, int) {
 	podGroupName, min, err := GetPodGroupLabels(p.Pod)
 	if err == nil && podGroupName != "" && min > 1 {
 		key := fmt.Sprintf("%v/%v", p.Pod.Namespace, podGroupName)
@@ -115,12 +140,12 @@ func (cs *Coscheduling) getPodGroupInfo(p *framework.PodInfo) *PodGroupInfo {
 			}
 			cs.podGroupInfos.Store(key, pgInfo)
 		}
-		return pgInfo.(*PodGroupInfo)
+		return pgInfo.(*PodGroupInfo), min
 	}
 
 	// If the pod is regular pod, return object of PodGroupInfo but not store in PodGroupInfos.
 	// The purpose is to facilitate unified comparison.
-	return &PodGroupInfo{name: "", timestamp: p.InitialAttemptTimestamp}
+	return &PodGroupInfo{name: "", timestamp: p.InitialAttemptTimestamp}, 1
 }
 
 // PreFilter validates that if the total number of pods belonging to the same `PodGroup` is less than `minAvailable`.
@@ -145,6 +170,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	return framework.NewStatus(framework.Success, "")
 }
 
+// PreFilterExtensions returns nil
 func (cs *Coscheduling) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
 }
