@@ -8,8 +8,8 @@ sorting](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/20
 <!-- Check one of the values: Sample, Alpha, Beta, GA -->
 
 - [ ] 💡 Sample (for demonstrating and inspiring purpose)
-- [x] 👶 Alpha (used in companies for pilot projects)
-- [ ] 👦 Beta (used in companies and developed actively)
+- [ ] 👶 Alpha (used in companies for pilot projects)
+- [x] 👦 Beta (used in companies and developed actively)
 - [ ] 👨 Stable (used in companies for production workloads)
 
 ## Tutorial
