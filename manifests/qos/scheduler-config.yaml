@@ -9,6 +9,6 @@ profiles:
   plugins:
     queueSort:
       enabled:
-      - name: QoSSort
+      - name: QOSSort
       disabled:
       - name: "*"
