@@ -505,6 +505,7 @@ func TestPreFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			coscheduling.setPodGroupInfo(tt.pod, time.Now())
 			if got := coscheduling.PreFilter(nil, nil, tt.pod); got.Code() != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, got)
 			}
@@ -549,7 +550,11 @@ func TestPermit(t *testing.T) {
 			cfgPls := &config.Plugins{Permit: &config.PluginSet{}}
 			if err := registry.Register(Name,
 				func(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin, error) {
-					return &Coscheduling{frameworkHandle: handle, podLister: &fakeLister{}}, nil
+					coscheduling := &Coscheduling{frameworkHandle: handle, podLister: &fakeLister{}}
+					for _, pod := range tt.pods {
+						coscheduling.setPodGroupInfo(pod, time.Now())
+					}
+					return coscheduling, nil
 				}); err != nil {
 				t.Fatalf("fail to register filter plugin (%s)", Name)
 			}
