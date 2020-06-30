@@ -55,10 +55,13 @@ var _ framework.UnreservePlugin = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
-	Name                 = "coscheduling"
-	PodGroupName         = "pod-group.scheduling.sigs.k8s.io/name"
+	Name = "Coscheduling"
+	// PodGroupName is the name of a pod group that defines a coscheduling pod group.
+	PodGroupName = "pod-group.scheduling.sigs.k8s.io/name"
+	// PodGroupMinAvailable specifies the minimum number of pods to be scheduled together in a pod group.
 	PodGroupMinAvailable = "pod-group.scheduling.sigs.k8s.io/min-available"
-	// TODO make this configurable
+	// PermitWaitingTime is the wait timeout returned by Permit plugin
+	// TODO make it configurable
 	PermitWaitingTime = 1 * time.Second
 )
 
@@ -76,9 +79,9 @@ func New(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin
 }
 
 // Less are used to sort pods in the scheduling queue.
-// 1. compare the priority of pod
-// 2. compare the timestamp of the initialization time of PodGroup
-// 3. compare the key of PodGroup
+// 1. Compare the priorities of pods.
+// 2. Compare the timestamps of the initialization time of PodGroups.
+// 3. Compare the keys of PodGroups.
 func (cs *Coscheduling) Less(podInfo1 *framework.PodInfo, podInfo2 *framework.PodInfo) bool {
 	pod1 := podInfo1.Pod
 	pod2 := podInfo2.Pod
@@ -145,6 +148,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	return framework.NewStatus(framework.Success, "")
 }
 
+// PreFilterExtensions returns nil
 func (cs *Coscheduling) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
 }
@@ -168,7 +172,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 	if current < minAvailable {
 		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: running(%d), waiting(%d)",
 			p.Namespace, podGroupName, p.Name, minAvailable, running, waiting)
-		// TODO Change the timeout to dynamic value depends on the size of the `PodGroup`
+		// TODO Change the timeout to a dynamic value depending on the size of the `PodGroup`
 		return framework.NewStatus(framework.Wait, ""), 10 * PermitWaitingTime
 	}
 

@@ -44,18 +44,18 @@ profiles:
   plugins:
     queueSort:
       enabled:
-        - name: coscheduling
+        - name: Coscheduling
       disabled:
         - name: "*"
     preFilter:
       enabled:
-        - name: coscheduling
+        - name: Coscheduling
     permit:
       enabled:
-        - name: coscheduling
+        - name: Coscheduling
     unreserve:
       enabled:
-        - name: coscheduling
+        - name: Coscheduling
 ```
 
 ### Demo
