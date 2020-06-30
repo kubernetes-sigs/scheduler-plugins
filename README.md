@@ -1,6 +1,6 @@
 # Scheduler Plugins
 
-Repository for out-of-tree scheduler plugins based on scheduler framework.
+Repository for out-of-tree scheduler plugins based on [the scheduling framework](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/).
 
 ## Community, discussion, contribution, and support
 
