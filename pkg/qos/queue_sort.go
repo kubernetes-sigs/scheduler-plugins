@@ -25,9 +25,9 @@ import (
 )
 
 // Name is the name of the plugin used in the plugin registry and configurations.
-const Name = "QoSSort"
+const Name = "QOSSort"
 
-// QoSSort is a plugin that implements QoS class based sorting.
+// Sort is a plugin that implements QoS class based sorting.
 type Sort struct{}
 
 var _ framework.QueueSortPlugin = &Sort{}
@@ -38,8 +38,8 @@ func (pl *Sort) Name() string {
 }
 
 // Less is the function used by the activeQ heap algorithm to sort pods.
-// It sorts pods based on their priority. When priorities are equal, it uses
-// PodInfo.timestamp.
+// It sorts pods based on their priorities. When the priorities are equal, it uses
+// the Pod QoS classes to break the tie.
 func (*Sort) Less(pInfo1, pInfo2 *framework.PodInfo) bool {
 	p1 := pod.GetPodPriority(pInfo1.Pod)
 	p2 := pod.GetPodPriority(pInfo2.Pod)
