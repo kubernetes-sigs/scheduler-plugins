@@ -211,8 +211,9 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 	if current < minAvailable {
 		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: bound(%d), waiting(%d)",
 			pod.Namespace, podGroupName, pod.Name, minAvailable, bound, waiting)
+
 		// TODO Change the timeout to a dynamic value depending on the size of the `PodGroup`
-		return framework.NewStatus(framework.Wait, ""), 10 * PermitWaitingTime
+		return framework.NewStatus(framework.Wait, ""), time.Duration(minAvailable) * PermitWaitingTime
 	}
 
 	klog.V(3).Infof("The count of PodGroup %v/%v/%v is up to minAvailable(%d) in Permit: bound(%d), waiting(%d)",
