@@ -472,10 +472,30 @@ func TestPreFilter(t *testing.T) {
 		PodGroupName:         "pg1",
 		PodGroupMinAvailable: "3",
 	}
+
 	labels2 := map[string]string{
+		PodGroupName:         "pg1",
+		PodGroupMinAvailable: "2",
+	}
+
+	labels3 := map[string]string{
 		PodGroupName:         "pg2",
 		PodGroupMinAvailable: "3",
 	}
+
+	lowPriority := int32(10)
+	highPriority := int32(100)
+
+	podInfo1 := &framework.PodInfo{
+		Pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "namespace1", Labels: labels1}, Spec: corev1.PodSpec{Priority: &lowPriority}}}
+	coscheduling.getPodGroupInfo(podInfo1)
+
+	podInfo2 := &framework.PodInfo{
+		Pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "namespace1", Labels: labels3}, Spec: corev1.PodSpec{Priority: &lowPriority}}}
+	coscheduling.getPodGroupInfo(podInfo2)
+
 	tests := []struct {
 		name     string
 		pod      *corev1.Pod
@@ -489,23 +509,36 @@ func TestPreFilter(t *testing.T) {
 			expected: framework.Success,
 		},
 		{
-			name: "pod belongs podGroup1, but total pods count not match min",
+			name: "pod belongs to podGroup1, PodGroupMinAvailable do not match",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
+				ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace1", Labels: labels2}, Spec: corev1.PodSpec{Priority: &lowPriority},
 			},
 			expected: framework.Unschedulable,
 		},
 		{
-			name: "pod belongs podGroup1, and total pods count match min",
+			name: "pod belongs to podGroup1, but total pods count does not match min",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels2},
+				ObjectMeta: metav1.ObjectMeta{Name: "pod3", Namespace: "namespace1", Labels: labels1}, Spec: corev1.PodSpec{Priority: &lowPriority},
+			},
+			expected: framework.Unschedulable,
+		},
+		{
+			name: "pod belongs to podGroup2, and priorities do not match",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod4", Namespace: "namespace1", Labels: labels3}, Spec: corev1.PodSpec{Priority: &highPriority},
+			},
+			expected: framework.Unschedulable,
+		},
+		{
+			name: "pod belongs to podGroup2, and everything matches",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod5", Namespace: "namespace1", Labels: labels3}, Spec: corev1.PodSpec{Priority: &lowPriority},
 			},
 			expected: framework.Success,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			coscheduling.setPodGroupInfo(tt.pod, time.Now())
 			if got := coscheduling.PreFilter(nil, nil, tt.pod); got.Code() != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, got)
 			}
@@ -525,7 +558,7 @@ func TestPermit(t *testing.T) {
 		expected []framework.Code
 	}{
 		{
-			name: "common pod not belongs any podGroup",
+			name: "common pods not belonging to podGroup",
 			pods: []*corev1.Pod{
 				{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}},
 				{ObjectMeta: metav1.ObjectMeta{Name: "pod2"}},
@@ -534,7 +567,7 @@ func TestPermit(t *testing.T) {
 			expected: []framework.Code{framework.Success, framework.Success, framework.Success},
 		},
 		{
-			name: "pods belongs podGroup",
+			name: "pods belong to podGroup",
 			pods: []*corev1.Pod{
 				{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: permitLabel, UID: types.UID("pod1")}},
 				{ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: permitLabel, UID: types.UID("pod2")}},
@@ -550,11 +583,7 @@ func TestPermit(t *testing.T) {
 			cfgPls := &config.Plugins{Permit: &config.PluginSet{}}
 			if err := registry.Register(Name,
 				func(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin, error) {
-					coscheduling := &Coscheduling{frameworkHandle: handle, podLister: &fakeLister{}}
-					for _, pod := range tt.pods {
-						coscheduling.setPodGroupInfo(pod, time.Now())
-					}
-					return coscheduling, nil
+					return &Coscheduling{frameworkHandle: handle, podLister: &fakeLister{}}, nil
 				}); err != nil {
 				t.Fatalf("fail to register filter plugin (%s)", Name)
 			}
