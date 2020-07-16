@@ -353,21 +353,37 @@ func TestPreFilter(t *testing.T) {
 			expected: framework.Success,
 		},
 		{
-			name: "pod belongs to podGroup1, but number of total pods less than minAvailable",
-			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "3").Obj(),
+			name: "pod belongs to podGroup1 and its PodGroupMinAvailable does not match the group's",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "2").Obj(),
 			pods: []*v1.Pod{
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Obj(),
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(PodGroupName, "pg2").Obj(),
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "3").Obj(),
 			},
 			expected: framework.Unschedulable,
 		},
 		{
-			name: "pod belongs to podGroup2, and number of total pods not less than minAvailable",
+			name: "pod belongs to podGroup1 and its priority does not match the group's",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Priority(20).Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "2").Obj(),
+			pods: []*v1.Pod{
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Priority(10).Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "2").Obj(),
+			},
+			expected: framework.Unschedulable,
+		},
+		{
+			name: "pod belongs to podGroup1, the number of total pods is less than minAvailable",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "3").Obj(),
+			pods: []*v1.Pod{
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "3").Obj(),
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(PodGroupName, "pg2").Label(PodGroupMinAvailable, "1").Obj(),
+			},
+			expected: framework.Unschedulable,
+		},
+		{
+			name: "pod belongs to podGroup2, the number of total pods is not less than minAvailable",
 			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(PodGroupName, "pg2").Label(PodGroupMinAvailable, "3").Obj(),
 			pods: []*v1.Pod{
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(PodGroupName, "pg2").Obj(),
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Obj(),
-				st.MakePod().Name("pg2-2").UID("pg2-2").Namespace("ns1").Label(PodGroupName, "pg2").Obj(),
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(PodGroupName, "pg2").Label(PodGroupMinAvailable, "3").Obj(),
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "1").Obj(),
+				st.MakePod().Name("pg2-2").UID("pg2-2").Namespace("ns1").Label(PodGroupName, "pg2").Label(PodGroupMinAvailable, "3").Obj(),
 			},
 			expected: framework.Success,
 		},
@@ -377,12 +393,13 @@ func TestPreFilter(t *testing.T) {
 			cs := clientsetfake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
+			coscheduling := &Coscheduling{podLister: podInformer.Lister()}
 			for _, p := range tt.pods {
+				coscheduling.getOrCreatePodGroupInfo(p, time.Now())
 				podInformer.Informer().GetStore().Add(p)
 			}
-			podInformer.Informer().GetStore().Add(tt.pod)
 
-			coscheduling := &Coscheduling{podLister: podInformer.Lister()}
+			podInformer.Informer().GetStore().Add(tt.pod)
 			if got := coscheduling.PreFilter(nil, nil, tt.pod); got.Code() != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, got.Code())
 			}
@@ -397,7 +414,7 @@ func TestPermit(t *testing.T) {
 		expected []framework.Code
 	}{
 		{
-			name: "common pod does not belong to any podGroup",
+			name: "pods do not belong to any podGroup",
 			pods: []*v1.Pod{
 				st.MakePod().Name("pod1").UID("pod1").Obj(),
 				st.MakePod().Name("pod2").UID("pod2").Obj(),
