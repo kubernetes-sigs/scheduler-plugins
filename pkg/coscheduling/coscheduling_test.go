@@ -21,146 +21,16 @@ import (
 	"testing"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	v1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/kubernetes/pkg/scheduler/apis/config"
+	"k8s.io/client-go/informers"
+	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	"k8s.io/kubernetes/pkg/scheduler/listers"
+	st "k8s.io/kubernetes/pkg/scheduler/testing"
 )
-
-const (
-	queueSortPlugin = "no-op-queue-sort-plugin"
-	bindPlugin      = "bind-plugin"
-)
-
-var emptyArgs = make([]config.PluginConfig, 0)
-
-var _ framework.QueueSortPlugin = &TestQueueSortPlugin{}
-
-// TestQueueSortPlugin is a no-op implementation for QueueSort extension point.
-type TestQueueSortPlugin struct{}
-
-func newQueueSortPlugin(_ *runtime.Unknown, _ framework.FrameworkHandle) (framework.Plugin, error) {
-	return &TestQueueSortPlugin{}, nil
-}
-
-func (pl *TestQueueSortPlugin) Name() string {
-	return queueSortPlugin
-}
-
-func (pl *TestQueueSortPlugin) Less(_, _ *framework.PodInfo) bool {
-	return false
-}
-
-var _ framework.BindPlugin = &TestBindPlugin{}
-
-// TestBindPlugin is a no-op implementation for Bind extension point.
-type TestBindPlugin struct{}
-
-func newBindPlugin(_ *runtime.Unknown, _ framework.FrameworkHandle) (framework.Plugin, error) {
-	return &TestBindPlugin{}, nil
-}
-
-func (t TestBindPlugin) Name() string {
-	return bindPlugin
-}
-
-func (t TestBindPlugin) Bind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
-	return nil
-}
-
-type fakeLister struct {
-	called int
-}
-
-// List lists all Pods in the indexer.
-func (*fakeLister) List(selector labels.Selector) (ret []*corev1.Pod, err error) {
-	if selector.Matches(labels.Set{PodGroupName: "pg1"}) {
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg1-1", Namespace: "namespace1"}})
-		return ret, nil
-	}
-
-	if selector.Matches(labels.Set{PodGroupName: "pg2"}) {
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg2-1", Namespace: "namespace2"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}})
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg2-2", Namespace: "namespace2"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}})
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg2-3", Namespace: "namespace2"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}})
-		return ret, nil
-	}
-
-	return ret, nil
-}
-
-// Pods returns an object that can list and get Pods.
-func (*fakeLister) Pods(namespace string) v1.PodNamespaceLister {
-	return &fakePodNamespaceLister{}
-}
-
-func (*fakeLister) FilteredList(podFilter listers.PodFilter, selector labels.Selector) ([]*corev1.Pod, error) {
-	return nil, nil
-}
-
-type fakePodNamespaceLister struct {
-}
-
-func (*fakePodNamespaceLister) Get(name string) (*corev1.Pod, error) {
-	return nil, nil
-}
-
-func (*fakePodNamespaceLister) List(selector labels.Selector) (ret []*corev1.Pod, err error) {
-	if selector.Matches(labels.Set{PodGroupName: "pg1"}) {
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg1-1", Namespace: "namespace1"}})
-		return ret, nil
-	}
-
-	if selector.Matches(labels.Set{PodGroupName: "pg2"}) {
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg2-1", Namespace: "namespace2"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}})
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg2-2", Namespace: "namespace2"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}})
-		ret = append(ret, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pg2-3", Namespace: "namespace2"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}})
-		return ret, nil
-	}
-
-	return ret, nil
-}
-
-type fakeSharedLister struct {
-}
-
-func (*fakeSharedLister) Pods() listers.PodLister {
-	return &fakeLister{}
-}
-func (*fakeSharedLister) NodeInfos() listers.NodeInfoLister {
-	return nil
-}
-
-func newFrameworkWithQueueSortAndBind(r framework.Registry, pl *config.Plugins, plc []config.PluginConfig, opts ...framework.Option) (framework.Framework, error) {
-	if _, ok := r[queueSortPlugin]; !ok {
-		r[queueSortPlugin] = newQueueSortPlugin
-	}
-	if _, ok := r[bindPlugin]; !ok {
-		r[bindPlugin] = newBindPlugin
-	}
-	plugins := &config.Plugins{}
-	plugins.Append(pl)
-	if plugins.QueueSort == nil || len(plugins.QueueSort.Enabled) == 0 {
-		plugins.Append(&config.Plugins{
-			QueueSort: &config.PluginSet{
-				Enabled: []config.Plugin{{Name: queueSortPlugin}},
-			},
-		})
-	}
-	if plugins.Bind == nil || len(plugins.Bind.Enabled) == 0 {
-		plugins.Append(&config.Plugins{
-			Bind: &config.PluginSet{
-				Enabled: []config.Plugin{{Name: bindPlugin}},
-			},
-		})
-	}
-	return framework.NewFramework(r, plugins, plc, opts...)
-}
 
 func TestLess(t *testing.T) {
 	labels1 := map[string]string{
@@ -184,17 +54,17 @@ func TestLess(t *testing.T) {
 		{
 			name: "p1.priority less than p2.priority",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &lowPriority,
 					},
 				},
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -204,17 +74,17 @@ func TestLess(t *testing.T) {
 		{
 			name: "p1.priority greater than p2.priority",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &lowPriority,
 					},
 				},
@@ -224,18 +94,18 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p1 is added to schedulingQ earlier than p2",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 				InitialAttemptTimestamp: t1,
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -246,18 +116,18 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p2 is added to schedulingQ earlier than p1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 				InitialAttemptTimestamp: t2,
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -268,17 +138,17 @@ func TestLess(t *testing.T) {
 		{
 			name: "p1.priority less than p2.priority, p1 belongs to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &lowPriority,
 					},
 				},
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -288,17 +158,17 @@ func TestLess(t *testing.T) {
 		{
 			name: "p1.priority greater than p2.priority, p1 belongs to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &lowPriority,
 					},
 				},
@@ -308,18 +178,18 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p1 is added to schedulingQ earlier than p2, p1 belongs to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 				InitialAttemptTimestamp: t1,
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -330,18 +200,18 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p2 is added to schedulingQ earlier than p1, p1 belongs to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 				InitialAttemptTimestamp: t2,
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2"},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -353,17 +223,17 @@ func TestLess(t *testing.T) {
 		{
 			name: "p1.priority less than p2.priority, p1 and p2 belong to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &lowPriority,
 					},
 				},
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2", Labels: labels2},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -373,17 +243,17 @@ func TestLess(t *testing.T) {
 		{
 			name: "p1.priority greater than p2.priority, p1 and p2 belong to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2", Labels: labels2},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &lowPriority,
 					},
 				},
@@ -393,18 +263,18 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p1 is added to schedulingQ earlier than p2, p1 belongs to podGroup1 and p2 belongs to podGroup2",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 				InitialAttemptTimestamp: t1,
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2", Labels: labels2},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -415,18 +285,18 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. p2 is added to schedulingQ earlier than p1, p1 and p2 belong to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 				InitialAttemptTimestamp: t2,
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2", Labels: labels2},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -437,18 +307,18 @@ func TestLess(t *testing.T) {
 		{
 			name: "equal priority. equal create time, p1 and p2 belong to podGroup1",
 			p1: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
 				InitialAttemptTimestamp: t1,
 			},
 			p2: &framework.PodInfo{
-				Pod: &corev1.Pod{
+				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2", Labels: labels2},
-					Spec: corev1.PodSpec{
+					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
 				},
@@ -467,77 +337,80 @@ func TestLess(t *testing.T) {
 }
 
 func TestPreFilter(t *testing.T) {
-	coscheduling := &Coscheduling{podLister: &fakeLister{}}
-	labels1 := map[string]string{
-		PodGroupName:         "pg1",
-		PodGroupMinAvailable: "3",
-	}
-	labels2 := map[string]string{
-		PodGroupName:         "pg2",
-		PodGroupMinAvailable: "3",
-	}
 	tests := []struct {
 		name     string
-		pod      *corev1.Pod
+		pod      *v1.Pod
+		pods     []*v1.Pod
 		expected framework.Code
 	}{
 		{
-			name: "pod not belongs any podGroup",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1"},
+			name: "pod does not belong to any podGroup",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Obj(),
+			pods: []*v1.Pod{
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Obj(),
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(PodGroupName, "pg2").Obj(),
 			},
 			expected: framework.Success,
 		},
 		{
-			name: "pod belongs podGroup1, but total pods count not match min",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
+			name: "pod belongs to podGroup1, but number of total pods less than minAvailable",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(PodGroupName, "pg1").Label(PodGroupMinAvailable, "3").Obj(),
+			pods: []*v1.Pod{
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Obj(),
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(PodGroupName, "pg2").Obj(),
 			},
 			expected: framework.Unschedulable,
 		},
 		{
-			name: "pod belongs podGroup1, and total pods count match min",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels2},
+			name: "pod belongs to podGroup2, and number of total pods not less than minAvailable",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(PodGroupName, "pg2").Label(PodGroupMinAvailable, "3").Obj(),
+			pods: []*v1.Pod{
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(PodGroupName, "pg2").Obj(),
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(PodGroupName, "pg1").Obj(),
+				st.MakePod().Name("pg2-2").UID("pg2-2").Namespace("ns1").Label(PodGroupName, "pg2").Obj(),
 			},
 			expected: framework.Success,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			cs := clientsetfake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			podInformer := informerFactory.Core().V1().Pods()
+			for _, p := range tt.pods {
+				podInformer.Informer().GetStore().Add(p)
+			}
+			podInformer.Informer().GetStore().Add(tt.pod)
+
+			coscheduling := &Coscheduling{podLister: podInformer.Lister()}
 			if got := coscheduling.PreFilter(nil, nil, tt.pod); got.Code() != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, got)
+				t.Errorf("expected %v, got %v", tt.expected, got.Code())
 			}
 		})
 	}
 }
 
 func TestPermit(t *testing.T) {
-	permitLabel := map[string]string{
-		PodGroupName:         "permit",
-		PodGroupMinAvailable: "3",
-	}
-
 	tests := []struct {
 		name     string
-		pods     []*corev1.Pod
+		pods     []*v1.Pod
 		expected []framework.Code
 	}{
 		{
-			name: "common pod not belongs any podGroup",
-			pods: []*corev1.Pod{
-				{ObjectMeta: metav1.ObjectMeta{Name: "pod1"}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "pod2"}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "pod3"}},
+			name: "common pod does not belong to any podGroup",
+			pods: []*v1.Pod{
+				st.MakePod().Name("pod1").UID("pod1").Obj(),
+				st.MakePod().Name("pod2").UID("pod2").Obj(),
+				st.MakePod().Name("pod3").UID("pod3").Obj(),
 			},
 			expected: []framework.Code{framework.Success, framework.Success, framework.Success},
 		},
 		{
-			name: "pods belongs podGroup",
-			pods: []*corev1.Pod{
-				{ObjectMeta: metav1.ObjectMeta{Name: "pod1", Labels: permitLabel, UID: types.UID("pod1")}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "pod2", Labels: permitLabel, UID: types.UID("pod2")}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "pod3", Labels: permitLabel, UID: types.UID("pod3")}},
+			name: "pods belong to a podGroup",
+			pods: []*v1.Pod{
+				st.MakePod().Name("pod1").UID("pod1").Label(PodGroupName, "permit").Label(PodGroupMinAvailable, "3").Obj(),
+				st.MakePod().Name("pod2").UID("pod2").Label(PodGroupName, "permit").Label(PodGroupMinAvailable, "3").Obj(),
+				st.MakePod().Name("pod3").UID("pod3").Label(PodGroupName, "permit").Label(PodGroupMinAvailable, "3").Obj(),
 			},
 			expected: []framework.Code{framework.Wait, framework.Wait, framework.Success},
 		},
@@ -545,34 +418,54 @@ func TestPermit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := framework.Registry{}
-			cfgPls := &config.Plugins{Permit: &config.PluginSet{}}
-			if err := registry.Register(Name,
-				func(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin, error) {
-					return &Coscheduling{frameworkHandle: handle, podLister: &fakeLister{}}, nil
-				}); err != nil {
-				t.Fatalf("fail to register filter plugin (%s)", Name)
+			cs := clientsetfake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			podInformer := informerFactory.Core().V1().Pods().Informer()
+			for _, p := range tt.pods {
+				podInformer.GetStore().Add(p)
 			}
 
-			// append plugins to permit pluginset
-			cfgPls.Permit.Enabled = append(
-				cfgPls.Permit.Enabled,
-				config.Plugin{Name: Name})
-
-			f, err := newFrameworkWithQueueSortAndBind(registry, cfgPls, emptyArgs, framework.WithSnapshotSharedLister(&fakeSharedLister{}))
+			registeredPlugins := []st.RegisterPluginFunc{
+				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				st.RegisterPluginAsExtensions(Name, New, "QueueSort", "Permit"),
+			}
+			f, err := st.NewFramework(
+				registeredPlugins,
+				framework.WithClientSet(cs),
+				framework.WithInformerFactory(informerFactory),
+				framework.WithSnapshotSharedLister(&fakeSharedLister{pods: tt.pods}),
+			)
 			if err != nil {
 				t.Fatalf("fail to create framework: %s", err)
 			}
 
-			if got := f.RunPermitPlugins(context.TODO(), nil, tt.pods[0], ""); got.Code() != tt.expected[0] {
-				t.Errorf("expected %v, got %v", tt.expected[0], got.Code())
-			}
-			if got := f.RunPermitPlugins(context.TODO(), nil, tt.pods[1], ""); got.Code() != tt.expected[1] {
-				t.Errorf("expected %v, got %v", tt.expected[1], got.Code())
-			}
-			if got := f.RunPermitPlugins(context.TODO(), nil, tt.pods[2], ""); got.Code() != tt.expected[2] {
-				t.Errorf("expected %v, got %v", tt.expected[2], got.Code())
+			for i := range tt.pods {
+				if got := f.RunPermitPlugins(context.TODO(), nil, tt.pods[i], ""); got.Code() != tt.expected[i] {
+					t.Errorf("[%v] want %v, but got %v", i, tt.expected[i], got.Code())
+				}
 			}
 		})
 	}
+}
+
+var _ listers.SharedLister = &fakeSharedLister{}
+
+type fakeSharedLister struct {
+	pods []*v1.Pod
+}
+
+func (f *fakeSharedLister) Pods() listers.PodLister {
+	return f
+}
+
+func (f *fakeSharedLister) List(_ labels.Selector) ([]*v1.Pod, error) {
+	return f.pods, nil
+}
+
+func (f *fakeSharedLister) FilteredList(_ listers.PodFilter, _ labels.Selector) ([]*v1.Pod, error) {
+	return nil, nil
+}
+
+func (f *fakeSharedLister) NodeInfos() listers.NodeInfoLister {
+	return nil
 }
