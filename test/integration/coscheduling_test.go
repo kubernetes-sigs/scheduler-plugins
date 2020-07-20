@@ -77,12 +77,12 @@ func TestCoschedulingPlugin(t *testing.T) {
 
 	serviceEvent := &v1.Event{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test7",
+			Name:      "test",
 			Namespace: metav1.NamespaceDefault,
 		},
 		InvolvedObject: v1.ObjectReference{
-			APIVersion: "batch/v1",
-			Kind:       "Job",
+			APIVersion: "v1",
+			Kind:       "Service",
 			Namespace:  metav1.NamespaceDefault,
 		},
 	}
