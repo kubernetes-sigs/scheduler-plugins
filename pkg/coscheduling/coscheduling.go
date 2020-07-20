@@ -164,20 +164,19 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 	}
 
 	namespace := p.Namespace
-	// TODO get actually scheduled(bind successfully) account from the SharedLister
-	running := cs.calculateRunningPods(podGroupName, namespace)
+	bound := cs.calculateBoundPods(podGroupName, namespace)
 	waiting := cs.calculateWaitingPods(podGroupName, namespace)
-	current := running + waiting + 1
+	current := bound + waiting + 1
 
 	if current < minAvailable {
-		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: running(%d), waiting(%d)",
-			p.Namespace, podGroupName, p.Name, minAvailable, running, waiting)
+		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: bound(%d), waiting(%d)",
+			p.Namespace, podGroupName, p.Name, minAvailable, bound, waiting)
 		// TODO Change the timeout to a dynamic value depending on the size of the `PodGroup`
 		return framework.NewStatus(framework.Wait, ""), 10 * PermitWaitingTime
 	}
 
-	klog.V(3).Infof("The count of podGroup %v/%v/%v is up to minAvailable(%d) in Permit: running(%d), waiting(%d)",
-		p.Namespace, podGroupName, p.Name, minAvailable, running, waiting)
+	klog.V(3).Infof("The count of podGroup %v/%v/%v is up to minAvailable(%d) in Permit: bound(%d), waiting(%d)",
+		p.Namespace, podGroupName, p.Name, minAvailable, bound, waiting)
 	cs.frameworkHandle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == namespace && waitingPod.GetPod().Labels[PodGroupName] == podGroupName {
 			klog.V(3).Infof("Permit allows the pod: %v/%v", podGroupName, waitingPod.GetPod().Name)
@@ -233,9 +232,9 @@ func (cs *Coscheduling) calculateTotalPods(podGroupName, namespace string) int {
 	return len(pods)
 }
 
-func (cs *Coscheduling) calculateRunningPods(podGroupName, namespace string) int {
+func (cs *Coscheduling) calculateBoundPods(podGroupName, namespace string) int {
 	pods, err := cs.frameworkHandle.SnapshotSharedLister().Pods().FilteredList(func(pod *v1.Pod) bool {
-		if pod.Labels[PodGroupName] == podGroupName && pod.Namespace == namespace && pod.Status.Phase == v1.PodRunning {
+		if pod.Labels[PodGroupName] == podGroupName && pod.Namespace == namespace && pod.Spec.NodeName != "" {
 			return true
 		}
 		return false
