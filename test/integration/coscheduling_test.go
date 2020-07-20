@@ -42,9 +42,9 @@ var lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)
 func TestCoschedulingPlugin(t *testing.T) {
 	// Temporary disable this test until https://github.com/kubernetes-sigs/scheduler-plugins/issues/19
 	// gets fixed.
-	if testing.Short() || true {
-		t.Skip("skipping test in short mode.")
-	}
+	//if testing.Short() || true {
+	//	t.Skip("skipping test in short mode.")
+	//}
 	registry := framework.Registry{coscheduling.Name: coscheduling.New}
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
@@ -72,6 +72,18 @@ func TestCoschedulingPlugin(t *testing.T) {
 					{Name: coscheduling.Name},
 				},
 			},
+		},
+	}
+
+	serviceEvent := &v1.Event{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test7",
+			Namespace: metav1.NamespaceDefault,
+		},
+		InvolvedObject: v1.ObjectReference{
+			APIVersion: "batch/v1",
+			Kind:       "Job",
+			Namespace:  metav1.NamespaceDefault,
 		},
 	}
 
@@ -230,6 +242,26 @@ func TestCoschedulingPlugin(t *testing.T) {
 					t.Fatalf("Failed to create Pod %q: %v", pods[i].Name, err)
 				}
 			}
+
+			// Wait for all Pods are in the scheduling queue.
+			err = wait.Poll(time.Millisecond*200, wait.ForeverTestTimeout, func() (bool, error) {
+				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods()+
+					len(testCtx.Scheduler.SchedulingQueue.PendingPods()) == 0 {
+					return true, nil
+				}
+				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods() == len(pods) {
+					_, err := cs.CoreV1().Events("default").Create(context.TODO(), serviceEvent, metav1.CreateOptions{})
+					if err != nil {
+						t.Fatal(err)
+					}
+					return true, nil
+				}
+				return false, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			err = wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {
 					if !podScheduled(cs, ns, v) {
