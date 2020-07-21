@@ -245,8 +245,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 
 			// Wait for all Pods are in the scheduling queue.
 			err = wait.Poll(time.Millisecond*200, wait.ForeverTestTimeout, func() (bool, error) {
-				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods()+
-					len(testCtx.Scheduler.SchedulingQueue.PendingPods()) == (len(tt.pods) - len(tt.expectedPods)) {
+				if len(testCtx.Scheduler.SchedulingQueue.PendingPods()) == (len(tt.pods) - len(tt.expectedPods)) {
 					return true, nil
 				}
 				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods() == len(tt.pods) {
@@ -262,7 +261,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err = wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
+			err = wait.Poll(1*time.Second, 10*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {
 					if !podScheduled(cs, ns, v) {
 						t.Logf("waiting pod failed %v", v)
