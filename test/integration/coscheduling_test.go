@@ -246,10 +246,10 @@ func TestCoschedulingPlugin(t *testing.T) {
 			// Wait for all Pods are in the scheduling queue.
 			err = wait.Poll(time.Millisecond*200, wait.ForeverTestTimeout, func() (bool, error) {
 				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods()+
-					len(testCtx.Scheduler.SchedulingQueue.PendingPods()) == 0 {
+					len(testCtx.Scheduler.SchedulingQueue.PendingPods()) == (len(tt.pods) - len(tt.expectedPods)) {
 					return true, nil
 				}
-				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods() == len(pods) {
+				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods() == len(tt.pods) {
 					_, err := cs.CoreV1().Events("default").Update(context.TODO(), serviceEvent, metav1.UpdateOptions{})
 					if err != nil {
 						t.Fatal(err)
