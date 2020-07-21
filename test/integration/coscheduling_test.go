@@ -250,7 +250,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 					return true, nil
 				}
 				if testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods() == len(pods) {
-					_, err := cs.CoreV1().Events("default").Create(context.TODO(), serviceEvent, metav1.CreateOptions{})
+					_, err := cs.CoreV1().Events("default").Update(context.TODO(), serviceEvent, metav1.UpdateOptions{})
 					if err != nil {
 						t.Fatal(err)
 					}
