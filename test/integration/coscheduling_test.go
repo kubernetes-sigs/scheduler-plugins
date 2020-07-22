@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
@@ -40,11 +41,6 @@ import (
 var lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)
 
 func TestCoschedulingPlugin(t *testing.T) {
-	// Temporary disable this test until https://github.com/kubernetes-sigs/scheduler-plugins/issues/19
-	// gets fixed.
-	if testing.Short() || true {
-		t.Skip("skipping test in short mode.")
-	}
 	registry := framework.Registry{coscheduling.Name: coscheduling.New}
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
@@ -82,7 +78,6 @@ func TestCoschedulingPlugin(t *testing.T) {
 		scheduler.WithProfiles(profile),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),
 	)
-	go testCtx.Scheduler.Run(testCtx.Ctx)
 
 	defer testutils.CleanupTest(t, testCtx)
 
@@ -90,6 +85,10 @@ func TestCoschedulingPlugin(t *testing.T) {
 	// Create a Node.
 	nodeName := "fake-node"
 	node := st.MakeNode().Name("fake-node").Label("node", nodeName).Obj()
+	node.Status.Allocatable = v1.ResourceList{
+		v1.ResourcePods:   *resource.NewQuantity(32, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
+	}
 	node.Status.Capacity = v1.ResourceList{
 		v1.ResourcePods:   *resource.NewQuantity(32, resource.DecimalSI),
 		v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
@@ -108,6 +107,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 		podGroupName string
 		minAvailable string
 		priority     int32
+		memReq       int64
 	}
 
 	for _, tt := range []struct {
@@ -118,89 +118,91 @@ func TestCoschedulingPlugin(t *testing.T) {
 		{
 			name: "equal priority, sequentially pg1 meet min and pg2 not meet min",
 			pods: []podInfo{
-				{podName: "t1-p1-1", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t1-p1-2", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t1-p1-3", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t1-p2-1", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t1-p2-2", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t1-p2-3", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t1-p2-4", podGroupName: "pg2", minAvailable: "4", priority: midPriority}},
+				{podName: "t1-p1-1", podGroupName: "pg1-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t1-p1-2", podGroupName: "pg1-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t1-p1-3", podGroupName: "pg1-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t1-p2-1", podGroupName: "pg1-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t1-p2-2", podGroupName: "pg1-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t1-p2-3", podGroupName: "pg1-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t1-p2-4", podGroupName: "pg1-2", minAvailable: "4", priority: midPriority, memReq: 100},
+			},
 			expectedPods: []string{"t1-p1-1", "t1-p1-2", "t1-p1-3"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 meet min and pg2 not meet min",
 			pods: []podInfo{
-				{podName: "t2-p1-1", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t2-p2-1", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t2-p1-2", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t2-p2-2", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t2-p1-3", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t2-p2-3", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t2-p2-4", podGroupName: "pg2", minAvailable: "4", priority: midPriority}},
+				{podName: "t2-p1-1", podGroupName: "pg2-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t2-p2-1", podGroupName: "pg2-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t2-p1-2", podGroupName: "pg2-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t2-p2-2", podGroupName: "pg2-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t2-p1-3", podGroupName: "pg2-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t2-p2-3", podGroupName: "pg2-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t2-p2-4", podGroupName: "pg2-2", minAvailable: "4", priority: midPriority, memReq: 100},
+			},
 			expectedPods: []string{"t2-p1-1", "t2-p1-2", "t2-p1-3"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 not meet min and 3 regular pods",
 			pods: []podInfo{
-				{podName: "t3-p1-1", podGroupName: "pg1", minAvailable: "4", priority: midPriority},
-				{podName: "t3-p2", podGroupName: "", minAvailable: "", priority: midPriority},
-				{podName: "t3-p1-2", podGroupName: "pg1", minAvailable: "4", priority: midPriority},
-				{podName: "t3-p3", podGroupName: "", minAvailable: "", priority: midPriority},
-				{podName: "t3-p1-3", podGroupName: "pg1", minAvailable: "4", priority: midPriority},
+				{podName: "t3-p1-1", podGroupName: "pg3-1", minAvailable: "4", priority: midPriority, memReq: 50},
+				{podName: "t3-p2", podGroupName: "", minAvailable: "", priority: midPriority, memReq: 100},
+				{podName: "t3-p1-2", podGroupName: "pg3-1", minAvailable: "4", priority: midPriority, memReq: 50},
+				{podName: "t3-p3", podGroupName: "", minAvailable: "", priority: midPriority, memReq: 100},
+				{podName: "t3-p1-3", podGroupName: "pg3-1", minAvailable: "4", priority: midPriority, memReq: 50},
 			},
 			expectedPods: []string{"t3-p2", "t3-p3"},
 		},
 		{
 			name: "different priority, sequentially pg1 meet min and pg2 meet min",
 			pods: []podInfo{
-				{podName: "t4-p1-1", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t4-p1-2", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t4-p1-3", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t4-p2-1", podGroupName: "pg2", minAvailable: "3", priority: highPriority},
-				{podName: "t4-p2-2", podGroupName: "pg2", minAvailable: "3", priority: highPriority},
-				{podName: "t4-p2-3", podGroupName: "pg2", minAvailable: "3", priority: highPriority},
+				{podName: "t4-p1-1", podGroupName: "pg4-1", minAvailable: "3", priority: midPriority, memReq: 100},
+				{podName: "t4-p1-2", podGroupName: "pg4-1", minAvailable: "3", priority: midPriority, memReq: 100},
+				{podName: "t4-p1-3", podGroupName: "pg4-1", minAvailable: "3", priority: midPriority, memReq: 100},
+				{podName: "t4-p2-1", podGroupName: "pg4-2", minAvailable: "3", priority: highPriority, memReq: 50},
+				{podName: "t4-p2-2", podGroupName: "pg4-2", minAvailable: "3", priority: highPriority, memReq: 50},
+				{podName: "t4-p2-3", podGroupName: "pg4-2", minAvailable: "3", priority: highPriority, memReq: 50},
 			},
 			expectedPods: []string{"t4-p2-1", "t4-p2-2", "t4-p2-3"},
 		},
 		{
 			name: "different priority, not sequentially pg1 meet min and pg2 meet min",
 			pods: []podInfo{
-				{podName: "t5-p1-1", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t5-p2-1", podGroupName: "pg2", minAvailable: "3", priority: highPriority},
-				{podName: "t5-p1-2", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t5-p2-2", podGroupName: "pg2", minAvailable: "3", priority: highPriority},
-				{podName: "t5-p1-3", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t5-p2-3", podGroupName: "pg2", minAvailable: "3", priority: highPriority},
+				{podName: "t5-p1-1", podGroupName: "pg5-1", minAvailable: "3", priority: midPriority, memReq: 100},
+				{podName: "t5-p2-1", podGroupName: "pg5-2", minAvailable: "3", priority: highPriority, memReq: 50},
+				{podName: "t5-p1-2", podGroupName: "pg5-1", minAvailable: "3", priority: midPriority, memReq: 100},
+				{podName: "t5-p2-2", podGroupName: "pg5-2", minAvailable: "3", priority: highPriority, memReq: 50},
+				{podName: "t5-p1-3", podGroupName: "pg5-1", minAvailable: "3", priority: midPriority, memReq: 100},
+				{podName: "t5-p2-3", podGroupName: "pg5-2", minAvailable: "3", priority: highPriority, memReq: 50},
 			},
 			expectedPods: []string{"t5-p2-1", "t5-p2-2", "t5-p2-3"},
 		},
 		{
 			name: "different priority, not sequentially pg1 meet min and 3 regular pods",
 			pods: []podInfo{
-				{podName: "t6-p1-1", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t6-p2", podGroupName: "", minAvailable: "", priority: highPriority},
-				{podName: "t6-p1-2", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t6-p3", podGroupName: "", minAvailable: "", priority: highPriority},
-				{podName: "t6-p1-3", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t6-p4", podGroupName: "", minAvailable: "", priority: highPriority},
+				{podName: "t6-p1-1", podGroupName: "pg6-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t6-p2", podGroupName: "", minAvailable: "", priority: highPriority, memReq: 100},
+				{podName: "t6-p1-2", podGroupName: "pg6-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t6-p3", podGroupName: "", minAvailable: "", priority: highPriority, memReq: 100},
+				{podName: "t6-p1-3", podGroupName: "pg6-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t6-p4", podGroupName: "", minAvailable: "", priority: highPriority, memReq: 100},
 			},
 			expectedPods: []string{"t6-p2", "t6-p3", "t6-p4"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 meet min and p2 p3 not meet min",
 			pods: []podInfo{
-				{podName: "t7-p1-1", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t7-p2-1", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t7-p3-1", podGroupName: "pg3", minAvailable: "4", priority: midPriority},
-				{podName: "t7-p1-2", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t7-p2-2", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t7-p3-2", podGroupName: "pg3", minAvailable: "4", priority: midPriority},
-				{podName: "t7-p1-3", podGroupName: "pg1", minAvailable: "3", priority: midPriority},
-				{podName: "t7-p2-3", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t7-p3-3", podGroupName: "pg3", minAvailable: "4", priority: midPriority},
-				{podName: "t7-p2-4", podGroupName: "pg2", minAvailable: "4", priority: midPriority},
-				{podName: "t7-p3-4", podGroupName: "pg3", minAvailable: "4", priority: midPriority}},
-
+				{podName: "t7-p1-1", podGroupName: "pg7-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t7-p2-1", podGroupName: "pg7-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t7-p3-1", podGroupName: "pg7-3", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t7-p1-2", podGroupName: "pg7-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t7-p2-2", podGroupName: "pg7-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t7-p3-2", podGroupName: "pg7-3", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t7-p1-3", podGroupName: "pg7-1", minAvailable: "3", priority: midPriority, memReq: 50},
+				{podName: "t7-p2-3", podGroupName: "pg7-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t7-p3-3", podGroupName: "pg7-3", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t7-p2-4", podGroupName: "pg7-2", minAvailable: "4", priority: midPriority, memReq: 100},
+				{podName: "t7-p3-4", podGroupName: "pg7-3", minAvailable: "4", priority: midPriority, memReq: 100},
+			},
 			expectedPods: []string{"t7-p1-1", "t7-p1-2", "t7-p1-3"},
 		},
 	} {
@@ -208,28 +210,41 @@ func TestCoschedulingPlugin(t *testing.T) {
 			t.Logf("Start-coscheduling-test %v", tt.name)
 			testutils.CleanupPods(cs, t, pods)
 			pods = make([]*v1.Pod, 0)
-			for i := 0; i < len(tt.pods); i++ {
-				pod := st.MakePod().Namespace(ns).Name(tt.pods[i].podName).Container(pause).Obj()
+			for _, podInfo := range tt.pods {
+				pod := st.MakePod().Namespace(ns).Name(podInfo.podName).Container(pause).
+					Priority(podInfo.priority).ZeroTerminationGracePeriod().Obj()
 				pod.Spec.Containers[0].Resources = v1.ResourceRequirements{
 					Requests: v1.ResourceList{
-						v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(podInfo.memReq, resource.DecimalSI),
 					},
 				}
-				pod.Spec.Priority = &tt.pods[i].priority
 				pod.Labels = map[string]string{
-					coscheduling.PodGroupName:         tt.pods[i].podGroupName,
-					coscheduling.PodGroupMinAvailable: tt.pods[i].minAvailable,
+					coscheduling.PodGroupName:         podInfo.podGroupName,
+					coscheduling.PodGroupMinAvailable: podInfo.minAvailable,
 				}
 				pods = append(pods, pod)
 			}
 
 			// Create Pods, We will expect them to be scheduled in a reversed order.
 			for i := range pods {
-				_, err := cs.CoreV1().Pods(pods[i].Namespace).Create(context.TODO(), pods[i], metav1.CreateOptions{})
+				_, err := cs.CoreV1().Pods(pods[i].Namespace).Create(testCtx.Ctx, pods[i], metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("Failed to create Pod %q: %v", pods[i].Name, err)
 				}
 			}
+
+			// A workaround to speed up the test by moving unschedulable Pods back to activeQ.
+			wait.PollUntil(time.Millisecond*200, func() (bool, error) {
+				numUnschedulablePods := testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods()
+				return numUnschedulablePods > 0, nil
+			}, testCtx.Ctx.Done())
+			klog.Infof("Start to move unschedulable Pods back to activeQ.")
+			// DEBUG
+			for _, p := range testCtx.Scheduler.SchedulingQueue.PendingPods() {
+				klog.Infof("[DEBUG] pod %v is pending", p.Name)
+			}
+			testCtx.Scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue("fake event")
+
 			err = wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {
 					if !podScheduled(cs, ns, v) {
