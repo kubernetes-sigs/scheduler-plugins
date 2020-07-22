@@ -50,11 +50,11 @@ func compQOS(p1, p2 *v1.Pod) bool {
 	p1QOS, p2QOS := v1qos.GetPodQOS(p1), v1qos.GetPodQOS(p2)
 	if p1QOS == v1.PodQOSGuaranteed {
 		return true
-	} else if p1QOS == v1.PodQOSBurstable {
+	} 
+	if p1QOS == v1.PodQOSBurstable {
 		return p2QOS != v1.PodQOSGuaranteed
-	} else {
-		return p2QOS == v1.PodQOSBestEffort
 	}
+	return p2QOS == v1.PodQOSBestEffort
 }
 
 // New initializes a new plugin and returns it.
