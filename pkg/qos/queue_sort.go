@@ -48,13 +48,16 @@ func (*Sort) Less(pInfo1, pInfo2 *framework.PodInfo) bool {
 
 func compQOS(p1, p2 *v1.Pod) bool {
 	p1QOS, p2QOS := v1qos.GetPodQOS(p1), v1qos.GetPodQOS(p2)
-	if p1QOS == v1.PodQOSGuaranteed {
+	switch p1QOS {
+	case v1.PodQOSGuaranteed:
 		return true
-	}
-	if p1QOS == v1.PodQOSBurstable {
+	case v1.PodQOSBurstable:
 		return p2QOS != v1.PodQOSGuaranteed
+	case v1.PodQOSBestEffort:
+		return p2QOS == v1.PodQOSBestEffort
+	default:
+		panic("Unsupported QOS type")
 	}
-	return p2QOS == v1.PodQOSBestEffort
 }
 
 // New initializes a new plugin and returns it.
