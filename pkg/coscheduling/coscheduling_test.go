@@ -446,11 +446,12 @@ func TestPermit(t *testing.T) {
 				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				st.RegisterPluginAsExtensions(Name, New, "QueueSort", "Permit"),
 			}
+			fakeSharedLister := &fakeSharedLister{pods: tt.pods}
 			f, err := st.NewFramework(
 				registeredPlugins,
 				framework.WithClientSet(cs),
 				framework.WithInformerFactory(informerFactory),
-				framework.WithSnapshotSharedLister(&fakeSharedLister{pods: tt.pods}),
+				framework.WithSnapshotSharedLister(fakeSharedLister),
 			)
 			if err != nil {
 				t.Fatalf("fail to create framework: %s", err)
@@ -460,6 +461,10 @@ func TestPermit(t *testing.T) {
 				if got := f.RunPermitPlugins(context.TODO(), nil, tt.pods[i], ""); got.Code() != tt.expected[i] {
 					t.Errorf("[%v] want %v, but got %v", i, tt.expected[i], got.Code())
 				}
+
+				// This operation simulates the operation of AssumePod in scheduling cycle.
+				// The current pod does not exist in the snapshot during this scheduling cycle.
+				tt.pods[i].Spec.NodeName = "Node"
 			}
 		})
 	}
@@ -479,8 +484,14 @@ func (f *fakeSharedLister) List(_ labels.Selector) ([]*v1.Pod, error) {
 	return f.pods, nil
 }
 
-func (f *fakeSharedLister) FilteredList(_ listers.PodFilter, _ labels.Selector) ([]*v1.Pod, error) {
-	return nil, nil
+func (f *fakeSharedLister) FilteredList(podFilter listers.PodFilter, selector labels.Selector) ([]*v1.Pod, error) {
+	pods := make([]*v1.Pod, 0, len(f.pods))
+	for _, pod := range f.pods {
+		if podFilter(pod) && selector.Matches(labels.Set(pod.Labels)) {
+			pods = append(pods, pod)
+		}
+	}
+	return pods, nil
 }
 
 func (f *fakeSharedLister) NodeInfos() listers.NodeInfoLister {
