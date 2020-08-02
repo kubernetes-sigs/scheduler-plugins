@@ -204,19 +204,20 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 	namespace := pod.Namespace
 	podGroupName := pgInfo.name
 	minAvailable := pgInfo.minAvailable
+	// bound includes both assigned and assumed Pods.
 	bound := cs.calculateBoundPods(podGroupName, namespace)
-	waiting := cs.calculateWaitingPods(podGroupName, namespace)
-	current := bound + waiting + 1
+	// The bound is calculated from the snapshot. The current pod does not exist in the snapshot during this scheduling cycle.
+	current := bound + 1
 
 	if current < minAvailable {
-		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: bound(%d), waiting(%d)",
-			pod.Namespace, podGroupName, pod.Name, minAvailable, bound, waiting)
+		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: current(%d)",
+			pod.Namespace, podGroupName, pod.Name, minAvailable, current)
 		// TODO Change the timeout to a dynamic value depending on the size of the `PodGroup`
 		return framework.NewStatus(framework.Wait, ""), 10 * PermitWaitingTime
 	}
 
-	klog.V(3).Infof("The count of PodGroup %v/%v/%v is up to minAvailable(%d) in Permit: bound(%d), waiting(%d)",
-		pod.Namespace, podGroupName, pod.Name, minAvailable, bound, waiting)
+	klog.V(3).Infof("The count of PodGroup %v/%v/%v is up to minAvailable(%d) in Permit: current(%d)",
+		pod.Namespace, podGroupName, pod.Name, minAvailable, current)
 	cs.frameworkHandle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == namespace && waitingPod.GetPod().Labels[PodGroupName] == podGroupName {
 			klog.V(3).Infof("Permit allows the pod: %v/%v", podGroupName, waitingPod.GetPod().Name)
@@ -290,17 +291,4 @@ func (cs *Coscheduling) calculateBoundPods(podGroupName, namespace string) int {
 	}
 
 	return len(pods)
-}
-
-func (cs *Coscheduling) calculateWaitingPods(podGroupName, namespace string) int {
-	waiting := 0
-	// Calculate the waiting pods.
-	// TODO keep a cache of PodGroup size.
-	cs.frameworkHandle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-		if waitingPod.GetPod().Labels[PodGroupName] == podGroupName && waitingPod.GetPod().Namespace == namespace {
-			waiting++
-		}
-	})
-
-	return waiting
 }
