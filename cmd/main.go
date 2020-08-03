@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
-
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
+	"sigs.k8s.io/scheduler-plugins/pkg/fixednode"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 )
 
@@ -35,6 +35,7 @@ func main() {
 	command := app.NewSchedulerCommand(
 		app.WithPlugin(coscheduling.Name, coscheduling.New),
 		app.WithPlugin(qos.Name, qos.New),
+		app.WithPlugin(fixednode.Name, fixednode.New),
 	)
 	if err := command.Execute(); err != nil {
 		os.Exit(1)
