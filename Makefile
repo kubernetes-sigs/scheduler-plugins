@@ -14,6 +14,7 @@
 
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z) GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m)))
 BUILDENVVAR=CGO_ENABLED=0
+REG_PORT=5000
 
 .PHONY: all
 all: build
@@ -21,6 +22,13 @@ all: build
 .PHONY: build
 build: autogen
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/main.go
+
+.PHONY: local_image
+local_image: autogen
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '-w' -o ./build/kube-scheduler cmd/main.go
+	chmod +x ./build/kube-scheduler
+	docker build -t localhost:$(REG_PORT)/scheduler-plugins:latest ./build
+	rm ./build/kube-scheduler
 
 .PHONY: update-vendor
 update-vendor:
