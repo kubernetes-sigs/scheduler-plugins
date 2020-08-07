@@ -18,19 +18,32 @@ package coscheduling
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	"k8s.io/kubernetes/pkg/scheduler/listers"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/kubernetes/pkg/scheduler/util"
 )
+
+// FakeNew is used for test.
+func FakeNew(clock util.Clock, stop chan struct{}) (*Coscheduling, error) {
+	cs := &Coscheduling{
+		clock: clock,
+	}
+	go wait.Until(cs.podGroupInfoGC, PodGroupGCInterval, stop)
+	return cs, nil
+}
 
 func TestLess(t *testing.T) {
 	labels1 := map[string]string{
@@ -465,6 +478,56 @@ func TestPermit(t *testing.T) {
 				// This operation simulates the operation of AssumePod in scheduling cycle.
 				// The current pod does not exist in the snapshot during this scheduling cycle.
 				tt.pods[i].Spec.NodeName = "Node"
+			}
+		})
+	}
+}
+
+func TestPodGroupClean(t *testing.T) {
+	tests := []struct {
+		name         string
+		pod          *v1.Pod
+		podGroupName string
+	}{
+		{
+			name:         "pod belongs to a podGroup",
+			pod:          st.MakePod().Name("pod1").UID("pod1").Label(PodGroupName, "gc").Label(PodGroupMinAvailable, "3").Obj(),
+			podGroupName: "gc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stop := make(chan struct{})
+			defer close(stop)
+
+			c := clock.NewFakeClock(time.Now())
+			cs, err := FakeNew(c, stop)
+			if err != nil {
+				t.Fatalf("fail to init coscheduling: %s", err)
+			}
+
+			cs.getOrCreatePodGroupInfo(tt.pod, time.Now())
+			_, ok := cs.podGroupInfos.Load(fmt.Sprintf("%v/%v", tt.pod.Namespace, tt.podGroupName))
+			if !ok {
+				t.Fatalf("fail to create PodGroup in coscheduling: %s", tt.pod.Name)
+			}
+
+			cs.markPodGroupAsExpired(tt.pod)
+			pg, ok := cs.podGroupInfos.Load(fmt.Sprintf("%v/%v", tt.pod.Namespace, tt.podGroupName))
+			if ok && pg.(*PodGroupInfo).deletionTimestamp == nil {
+				t.Fatalf("fail to clean up PodGroup : %s", tt.pod.Name)
+			}
+
+			c.Step(PodGroupExpirationTime + time.Second)
+			// Wait for asynchronous deletion.
+			err = wait.Poll(time.Millisecond*200, 1*time.Second, func() (bool, error) {
+				_, ok = cs.podGroupInfos.Load(fmt.Sprintf("%v/%v", tt.pod.Namespace, tt.podGroupName))
+				return !ok, nil
+			})
+
+			if err != nil {
+				t.Fatalf("fail to gc PodGroup in coscheduling: %s", tt.pod.Name)
 			}
 		})
 	}
