@@ -221,7 +221,7 @@ func TestLess(t *testing.T) {
 		},
 
 		{
-			name: "p1.priority less than p2.priority, p1 and p2 belong to podGroup1",
+			name: "p1.priority less than p2.priority, p1 belongs to podGroup1 and p2 belongs to podGroup2",
 			p1: &framework.PodInfo{
 				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
@@ -241,7 +241,7 @@ func TestLess(t *testing.T) {
 			expected: false, // p2 should be ahead of p1 in the queue
 		},
 		{
-			name: "p1.priority greater than p2.priority, p1 and p2 belong to podGroup1",
+			name: "p1.priority greater than p2.priority, p1 belongs to podGroup1 and p2 belongs to podGroup2",
 			p1: &framework.PodInfo{
 				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
@@ -283,7 +283,7 @@ func TestLess(t *testing.T) {
 			expected: true, // p1 should be ahead of p2 in the queue
 		},
 		{
-			name: "equal priority. p2 is added to schedulingQ earlier than p1, p1 and p2 belong to podGroup1",
+			name: "equal priority. p2 is added to schedulingQ earlier than p1, p1 belongs to podGroup1 and p2 belongs to podGroup2",
 			p1: &framework.PodInfo{
 				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
@@ -305,10 +305,32 @@ func TestLess(t *testing.T) {
 			expected: false, // p2 should be ahead of p1 in the queue
 		},
 		{
-			name: "equal priority. equal create time, p1 and p2 belong to podGroup1",
+			name: "equal priority and creation time, p1 belongs to podGroup1 and p2 belongs to podGroup2",
 			p1: &framework.PodInfo{
 				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1", Labels: labels1},
+					Spec: v1.PodSpec{
+						Priority: &highPriority,
+					},
+				},
+				InitialAttemptTimestamp: t1,
+			},
+			p2: &framework.PodInfo{
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "namespace2", Labels: labels2},
+					Spec: v1.PodSpec{
+						Priority: &highPriority,
+					},
+				},
+				InitialAttemptTimestamp: t1,
+			},
+			expected: true, // p1 should be ahead of p2 in the queue
+		},
+		{
+			name: "equal priority and creation time, p2 belong to podGroup2",
+			p1: &framework.PodInfo{
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "namespace1"},
 					Spec: v1.PodSpec{
 						Priority: &highPriority,
 					},
