@@ -1,23 +1,3 @@
----
-title: Lightweight coscheduling based on back-to-back queue sorting
-authors:
-  - "@denkensk"
-owning-sig: sig-scheduling
-reviewers:
-  - "@Huang-Wei"
-  - "@ahg-g"
-  - "@alculquicondor"
-  - "k82cn"
-  - "@resouer"
-  - "@hex108"
-  - "@everpeace"
-approvers:
-  - "@Huang-Wei"
-creation-date: 2020-01-16
-last-updated: 2020-01-16
-status: provisional
----
-
 # Lightweight coscheduling based on back-to-back queue sorting
 
 ## Table of Contents
@@ -69,7 +49,7 @@ When running a Tensorflow/MPI job, all tasks must start before they can do any w
 
 In order to implement coscheduling, we developed plugins in different extension points. In `QueueSort`  we ensure that the Pods belonging to the same PodGroup are queued back-to-back. For example, suppose PodGroup A owns Pod-A1, Pod-A2, Pod-A3, while PodGroup B owns Pod-B1, Pod-B2. The pods of the two PodGroups should not interleave - it should be always <PodGroup-A, PodGroup-B> or the other way around; but never <Pod-A1, Pod-B1, Pod-A2, ...>. In `Permit` phase we put the pod that doesn't meet `minAvailable` into the WaitingMap and reserve resources until `minAvailable` are met or timeout is triggered. In `Unreserve` phase，clean up the pods that timed-out.
 
-![image](./20200116-lightweight-coscheduling-based-on-back-to-back-queue-sorting.png)
+![design](./design.png)
 
 
 ## Design Details
