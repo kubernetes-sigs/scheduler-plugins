@@ -129,7 +129,7 @@ func New(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin
 // Less is used to sort pods in the scheduling queue.
 // 1. Compare the priorities of Pods.
 // 2. Compare the initialization timestamps of PodGroups/Pods.
-// 3. Compare the keys of PodGroups/Pods.
+// 3. Compare the keys of PodGroups/Pods, i.e., if two pods are tied at priority and creation time, the one without podGroup will go ahead of the one with podGroup.
 func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.PodInfo) bool {
 	pgInfo1, _ := cs.getOrCreatePodGroupInfo(podInfo1.Pod, podInfo1.InitialAttemptTimestamp)
 	pgInfo2, _ := cs.getOrCreatePodGroupInfo(podInfo2.Pod, podInfo2.InitialAttemptTimestamp)
