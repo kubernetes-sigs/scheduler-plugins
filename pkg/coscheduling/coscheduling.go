@@ -46,7 +46,7 @@ type Coscheduling struct {
 }
 
 // PodGroupInfo is a wrapper to a PodGroup with additional information.
-// A PodGroup's priority, temstamp and minAvailable are set according to
+// A PodGroup's priority, timestamp and minAvailable are set according to
 // the values of the PodGroup's first pod that is added to the scheduling queue.
 type PodGroupInfo struct {
 	// key is a unique PodGroup ID and currently implemented as <namespace>/<PodGroup name>.
