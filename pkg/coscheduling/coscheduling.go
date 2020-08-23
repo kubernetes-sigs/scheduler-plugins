@@ -18,12 +18,13 @@ package coscheduling
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -35,6 +36,17 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/util"
 )
 
+// Args defines the scheduling parameters for Coscheduling plugin.
+type Args struct {
+	// PermitWaitingTime is the wait timeout in seconds.
+	PermitWaitingTime time.Duration
+	// PodGroupGCInterval is the period to run gc of PodGroup in seconds.
+	PodGroupGCInterval time.Duration
+	// If the deleted PodGroup stays longer than the PodGroupExpirationTime,
+	// the PodGroup will be deleted from PodGroupInfos.
+	PodGroupExpirationTime time.Duration
+}
+
 // Coscheduling is a plugin that implements the mechanism of gang scheduling.
 type Coscheduling struct {
 	frameworkHandle framework.FrameworkHandle
@@ -43,6 +55,8 @@ type Coscheduling struct {
 	podGroupInfos sync.Map
 	// clock is used to get the current time.
 	clock util.Clock
+	// args is coscheduling parameters
+	args Args
 }
 
 // PodGroupInfo is a wrapper to a PodGroup with additional information.
@@ -78,14 +92,6 @@ const (
 	PodGroupName = "pod-group.scheduling.sigs.k8s.io/name"
 	// PodGroupMinAvailable specifies the minimum number of pods to be scheduled together in a pod group.
 	PodGroupMinAvailable = "pod-group.scheduling.sigs.k8s.io/min-available"
-	// PermitWaitingTime is the wait timeout returned by Permit plugin.
-	// TODO make it configurable
-	PermitWaitingTime = 1 * time.Second
-	// PodGroupGCInterval is the period to run gc of PodGroup.
-	PodGroupGCInterval = 30 * time.Second
-	// If the deleted PodGroup stays longer than the PodGroupExpirationTime,
-	// The deleted PodGroup will be deleted from PodGroupInfos.
-	PodGroupExpirationTime = 10 * time.Minute
 )
 
 // Name returns name of the plugin. It is used in logs, etc.
@@ -94,11 +100,22 @@ func (cs *Coscheduling) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin, error) {
+func New(arg *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin, error) {
+	var args Args
+
+	var params []byte
+	if arg != nil {
+		params = arg.Raw
+	}
+	if err := parsePluginArgs(params, &args); err != nil {
+		return nil, fmt.Errorf("cannot parse plugin arguments: %v", args)
+	}
+
 	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
 	cs := &Coscheduling{frameworkHandle: handle,
 		podLister: podLister,
 		clock:     util.RealClock{},
+		args:      args,
 	}
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(
@@ -121,7 +138,7 @@ func New(_ *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin
 			},
 		},
 	)
-	go wait.Until(cs.podGroupInfoGC, PodGroupGCInterval, nil)
+	go wait.Until(cs.podGroupInfoGC, cs.args.PodGroupGCInterval, nil)
 
 	return cs, nil
 }
@@ -256,7 +273,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: current(%d)",
 			pod.Namespace, podGroupName, pod.Name, minAvailable, current)
 		// TODO Change the timeout to a dynamic value depending on the size of the `PodGroup`
-		return framework.NewStatus(framework.Wait, ""), 10 * PermitWaitingTime
+		return framework.NewStatus(framework.Wait, ""), cs.args.PermitWaitingTime
 	}
 
 	klog.V(3).Infof("The count of PodGroup %v/%v/%v is up to minAvailable(%d) in Permit: current(%d)",
@@ -370,10 +387,42 @@ func responsibleForPod(pod *v1.Pod) bool {
 func (cs *Coscheduling) podGroupInfoGC() {
 	cs.podGroupInfos.Range(func(key, value interface{}) bool {
 		pgInfo := value.(*PodGroupInfo)
-		if pgInfo.deletionTimestamp != nil && pgInfo.deletionTimestamp.Add(PodGroupExpirationTime).Before(cs.clock.Now()) {
+		if pgInfo.deletionTimestamp != nil && pgInfo.deletionTimestamp.Add(cs.args.PodGroupExpirationTime).Before(cs.clock.Now()) {
 			klog.V(3).Infof("%v is out of date and has been deleted in PodGroup GC", key)
 			cs.podGroupInfos.Delete(key)
 		}
 		return true
 	})
+}
+
+// parsePluginArgs parses optional parameters for Coscheduling plugin.
+func parsePluginArgs(params []byte, args *Args) error {
+	var config struct {
+		PermitWaitingTime      string `json: permitWaitingTime`
+		PodGroupGCInterval     string `json: podGroupGCInterval`
+		PodGroupExpirationTime string `json: podGroupExpirationTime`
+	}
+
+	config.PermitWaitingTime = "10s"
+	config.PodGroupGCInterval = "30s"
+	config.PodGroupExpirationTime = "10m"
+
+	if params != nil {
+		if err := json.Unmarshal(params, &config); err != nil {
+			return fmt.Errorf("%v, could not parse args", err)
+		}
+	}
+
+	var err error
+	if args.PermitWaitingTime, err = time.ParseDuration(config.PermitWaitingTime); err != nil {
+		return fmt.Errorf("cannot parse duration %s", config.PermitWaitingTime)
+	}
+	if args.PodGroupGCInterval, err = time.ParseDuration(config.PodGroupGCInterval); err != nil {
+		return fmt.Errorf("cannot parse duration %s", config.PodGroupGCInterval)
+	}
+	if args.PodGroupExpirationTime, err = time.ParseDuration(config.PodGroupExpirationTime); err != nil {
+		return fmt.Errorf("cannot parse duration %s", config.PodGroupExpirationTime)
+	}
+
+	return nil
 }

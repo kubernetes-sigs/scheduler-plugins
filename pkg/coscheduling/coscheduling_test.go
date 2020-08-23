@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/clock"
@@ -41,7 +41,7 @@ func FakeNew(clock util.Clock, stop chan struct{}) (*Coscheduling, error) {
 	cs := &Coscheduling{
 		clock: clock,
 	}
-	go wait.Until(cs.podGroupInfoGC, PodGroupGCInterval, stop)
+	go wait.Until(cs.podGroupInfoGC, cs.args.PodGroupGCInterval, stop)
 	return cs, nil
 }
 
@@ -541,7 +541,7 @@ func TestPodGroupClean(t *testing.T) {
 				t.Fatalf("fail to clean up PodGroup : %s", tt.pod.Name)
 			}
 
-			c.Step(PodGroupExpirationTime + time.Second)
+			c.Step(cs.args.PodGroupExpirationTime + time.Second)
 			// Wait for asynchronous deletion.
 			err = wait.Poll(time.Millisecond*200, 1*time.Second, func() (bool, error) {
 				_, ok = cs.podGroupInfos.Load(fmt.Sprintf("%v/%v", tt.pod.Namespace, tt.podGroupName))
@@ -550,6 +550,49 @@ func TestPodGroupClean(t *testing.T) {
 
 			if err != nil {
 				t.Fatalf("fail to gc PodGroup in coscheduling: %s", tt.pod.Name)
+			}
+		})
+	}
+}
+
+func TestParsePluginArgs(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		arg      []byte
+		args     Args
+		expected Args
+	}{
+		{
+			name: "Empty arguments",
+			arg:  nil,
+			expected: Args{
+				PermitWaitingTime:      10 * time.Second,
+				PodGroupGCInterval:     30 * time.Second,
+				PodGroupExpirationTime: 10 * time.Minute,
+			},
+		},
+		{
+			name: "Set all three parameters",
+			arg:  []byte(`{"permitWaitingTime": "5s", "podGroupGCInterval": "10s", "podGroupExpirationTime": "10m"}`),
+			expected: Args{
+				PermitWaitingTime:      5 * time.Second,
+				PodGroupGCInterval:     10 * time.Second,
+				PodGroupExpirationTime: 10 * time.Minute,
+			},
+		},
+		{
+			name: "Set some parameters",
+			arg:  []byte(`{"permitWaitingTime": "5s", "podGroupExpirationTime": "10m"}`),
+			expected: Args{
+				PermitWaitingTime:      5 * time.Second,
+				PodGroupGCInterval:     30 * time.Second,
+				PodGroupExpirationTime: 10 * time.Minute,
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := parsePluginArgs(tt.arg, &tt.args); tt.args != tt.expected || err != nil {
+				t.Errorf("expected %v, got %v, error = %v", tt.expected, tt.args, err)
 			}
 		})
 	}
