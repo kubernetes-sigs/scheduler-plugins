@@ -1,7 +1,7 @@
 # Overview
 
 This folder holds the coscheduling plugin implementations based on [Lightweight coscheduling based on back-to-back queue 
-sorting](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/20200116-lightweight-coscheduling-based-on-back-to-back-queue-sorting.md).
+sorting](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/kep/2-lightweight-coscheduling).
 
 ## Maturity Level
 
