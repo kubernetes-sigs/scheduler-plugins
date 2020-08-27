@@ -25,6 +25,6 @@ profiles:
   pluginConfig: 
   - name: Coscheduling
     args:
-      permitWaitingTime: 1s
-      podGroupGCInterval: 10s
-      podGroupExpirationTime: 30s
+      permitWaitingTimeSeconds: 1
+      podGroupGCIntervalSeconds: 10
+      podGroupExpirationTimeSeconds: 30
