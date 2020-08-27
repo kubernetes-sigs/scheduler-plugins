@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/clock"
@@ -41,7 +41,7 @@ func FakeNew(clock util.Clock, stop chan struct{}) (*Coscheduling, error) {
 	cs := &Coscheduling{
 		clock: clock,
 	}
-	go wait.Until(cs.podGroupInfoGC, PodGroupGCInterval, stop)
+	go wait.Until(cs.podGroupInfoGC, time.Duration(cs.args.PodGroupGCIntervalSeconds)*time.Second, stop)
 	return cs, nil
 }
 
@@ -541,7 +541,7 @@ func TestPodGroupClean(t *testing.T) {
 				t.Fatalf("fail to clean up PodGroup : %s", tt.pod.Name)
 			}
 
-			c.Step(PodGroupExpirationTime + time.Second)
+			c.Step(time.Duration(cs.args.PodGroupExpirationTimeSeconds)*time.Second + time.Second)
 			// Wait for asynchronous deletion.
 			err = wait.Poll(time.Millisecond*200, 1*time.Second, func() (bool, error) {
 				_, ok = cs.podGroupInfos.Load(fmt.Sprintf("%v/%v", tt.pod.Namespace, tt.podGroupName))

@@ -21,3 +21,10 @@ profiles:
     unreserve:
       enabled:
         - name: Coscheduling
+# optional plugin configs
+  pluginConfig: 
+  - name: Coscheduling
+    args:
+      permitWaitingTimeSeconds: 1
+      podGroupGCIntervalSeconds: 10
+      podGroupExpirationTimeSeconds: 30
