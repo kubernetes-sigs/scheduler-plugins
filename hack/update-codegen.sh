@@ -26,6 +26,5 @@ bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
   sigs.k8s.io/scheduler-plugins/pkg/generated \
   sigs.k8s.io/scheduler-plugins/pkg/apis \
   sigs.k8s.io/scheduler-plugins/pkg/apis \
-  config:v1beta1 \
-  --output-base "$(dirname "${BASH_SOURCE[0]}")/../../.." \
+  "config:v1beta1" \
   --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
