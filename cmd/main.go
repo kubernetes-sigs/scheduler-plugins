@@ -25,6 +25,8 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
+	// Ensure scheme package is initialized.
+	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
 )
 
 func main() {

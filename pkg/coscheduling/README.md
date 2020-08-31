@@ -33,7 +33,7 @@ Pods in the same PodGroup with different priorities might lead to unintended beh
 1. queueSort, permit and unreserve must be enabled in coscheduling.
 2. preFilter is enhanced feature to reduce the overall scheduling time for the whole group. It will check the total number of pods belonging to the same `PodGroup`. If the total number is less than minAvailable, the pod will reject in preFilter, then the scheduling cycle will interrupt. And the preFilter is user selectable according to the actual situation of users. If the minAvailable of PodGroup is relatively small, for example less than 5, you can disable this plugin. But if the minAvailable of PodGroup is relatively large, please enable this plugin to reduce the overall scheduling time.
 ```
-apiVersion: kubescheduler.config.k8s.io/v1alpha2
+apiVersion: kubescheduler.config.k8s.io/v1beta1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -53,7 +53,7 @@ profiles:
     permit:
       enabled:
         - name: Coscheduling
-    unreserve:
+    reserve:
       enabled:
         - name: Coscheduling
 ```

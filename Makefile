@@ -23,8 +23,8 @@ all: build
 build: autogen
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/main.go
 
-.PHONY: local_image
-local_image: autogen
+.PHONY: local-image
+local-image: autogen
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '-w' -o ./build/kube-scheduler cmd/main.go
 	chmod +x ./build/kube-scheduler
 	docker build -t localhost:$(REG_PORT)/scheduler-plugins:latest ./build
