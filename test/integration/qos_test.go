@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutils "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
@@ -37,7 +37,7 @@ import (
 )
 
 func TestQOSPlugin(t *testing.T) {
-	registry := framework.Registry{qos.Name: qos.New}
+	registry := fwkruntime.Registry{qos.Name: qos.New}
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
 		Plugins: &schedapi.Plugins{

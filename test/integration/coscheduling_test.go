@@ -26,22 +26,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutils "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/test/util"
+	// Ensure scheme package is initialized.
+	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
 )
 
 var lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)
 
 func TestCoschedulingPlugin(t *testing.T) {
-	registry := framework.Registry{coscheduling.Name: coscheduling.New}
+	registry := fwkruntime.Registry{coscheduling.Name: coscheduling.New}
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
 		Plugins: &schedapi.Plugins{
@@ -63,7 +65,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 					{Name: coscheduling.Name},
 				},
 			},
-			Unreserve: &schedapi.PluginSet{
+			Reserve: &schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: coscheduling.Name},
 				},

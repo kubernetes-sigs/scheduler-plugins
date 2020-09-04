@@ -21,8 +21,6 @@ set -o pipefail
 # TODO: make this script run faster.
 
 SCRIPT_ROOT=$(dirname ${BASH_SOURCE})/..
-export GOPATH="$(cd ${SCRIPT_ROOT} && pwd)/_output/local/go"
-mkdir -p $GOPATH
 
 go install k8s.io/kube-openapi/cmd/openapi-gen
 
@@ -45,7 +43,7 @@ KUBE_INPUT_DIRS=$(IFS=,; echo "${KUBE_INPUT_DIRS[*]}")
 
 function join { local IFS="$1"; shift; echo "$*"; }
 
-echo "Generating Kubernetes openapi"
+echo "Generating Kubernetes OpenAPI"
 
 $GOPATH/bin/openapi-gen \
   --output-file-base zz_generated.openapi \

@@ -40,7 +40,7 @@ func (pl *Sort) Name() string {
 // Less is the function used by the activeQ heap algorithm to sort pods.
 // It sorts pods based on their priorities. When the priorities are equal, it uses
 // the Pod QoS classes to break the tie.
-func (*Sort) Less(pInfo1, pInfo2 *framework.PodInfo) bool {
+func (*Sort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	p1 := pod.GetPodPriority(pInfo1.Pod)
 	p2 := pod.GetPodPriority(pInfo2.Pod)
 	return (p1 > p2) || (p1 == p2 && compQOS(pInfo1.Pod, pInfo2.Pod))
@@ -58,6 +58,6 @@ func compQOS(p1, p2 *v1.Pod) bool {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ *runtime.Unknown, _ framework.FrameworkHandle) (framework.Plugin, error) {
+func New(_ runtime.Object, _ framework.FrameworkHandle) (framework.Plugin, error) {
 	return &Sort{}, nil
 }
