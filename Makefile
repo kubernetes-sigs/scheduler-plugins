@@ -14,7 +14,16 @@
 
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z) GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m)))
 BUILDENVVAR=CGO_ENABLED=0
-REG_PORT=5000
+
+LOCAL_REGISTRY=localhost:5000/scheduler-plugins
+LOCAL_IMAGE=kube-scheduler:latest
+
+# RELEASE_REGISTRY is the container registry to push
+# into. The default is to push to the staging
+# registry, not production(k8s.gcr.io).
+RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
+RELEASE_VERSION?=$(shell git describe --tags --match "v*")
+RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 
 .PHONY: all
 all: build
@@ -24,11 +33,17 @@ build: autogen
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/main.go
 
 .PHONY: local-image
-local-image: autogen
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '-w' -o ./build/kube-scheduler cmd/main.go
-	chmod +x ./build/kube-scheduler
-	docker build -t localhost:$(REG_PORT)/scheduler-plugins:latest ./build
-	rm ./build/kube-scheduler
+local-image: clean
+	docker build -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
+
+.PHONY: release-image
+release-image: clean
+	docker build -t $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) .
+
+.PHONY: push-release-image
+push-release-image: release-image
+	gcloud auth configure-docker
+	docker push $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)
 
 .PHONY: update-vendor
 update-vendor:
@@ -53,3 +68,7 @@ integration-test: install-etcd autogen
 .PHONY: verify-gofmt
 verify-gofmt:
 	hack/verify-gofmt.sh
+
+.PHONY: clean
+clean:
+	rm -rf ./bin

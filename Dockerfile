@@ -11,8 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+FROM golang:1.15.0
+
+WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
+COPY . .
+RUN make
 
 FROM alpine:3.12
 
-COPY kube-scheduler /bin/kube-scheduler
-CMD ["kube-scheduler"]
+COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/kube-scheduler /bin/kube-scheduler
+
+CMD ["/bin/kube-scheduler"]
