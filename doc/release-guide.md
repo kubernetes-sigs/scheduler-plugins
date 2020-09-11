@@ -2,7 +2,14 @@
 
 ## Semi-automatic
 
-TODO - update after container image build prow job is created.
+1. Make sure your repo is clean by git's standards
+2. Create a release branch `git checkout -b release-1.19` (not required for patch releases)
+3. Push the release branch to the scheduler-plugins repo and ensure branch protection is enabled (not required for patch releases)
+4. Tag the repository from the `master` branch (from the `release-1.19` branch for a patch release) and push the tag `VERSION=v0.19.0 git tag -m $VERSION $VERSION; git push origin $VERSION`
+5. Publish a draft release using the tag you just created
+6. Perform the [image promotion process](https://github.com/kubernetes/k8s.io/tree/master/k8s.gcr.io#image-promoter)
+7. Publish release
+8. Email `kubernetes-sig-scheduling@googlegroups.com` to announce the release
 
 ## Manual
 
