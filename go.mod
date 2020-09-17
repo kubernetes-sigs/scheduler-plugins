@@ -3,6 +3,7 @@ module sigs.k8s.io/scheduler-plugins
 go 1.15
 
 require (
+	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/google/go-cmp v0.4.0
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.19.0
@@ -35,6 +36,7 @@ replace (
 	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.19.0
 	k8s.io/kubectl => k8s.io/kubectl v0.19.0
 	k8s.io/kubelet => k8s.io/kubelet v0.19.0
+	k8s.io/kubernetes => k8s.io/kubernetes v1.19.0
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.19.0
 	k8s.io/metrics => k8s.io/metrics v0.19.0
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.19.0

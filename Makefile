@@ -17,6 +17,7 @@ BUILDENVVAR=CGO_ENABLED=0
 
 LOCAL_REGISTRY=localhost:5000/scheduler-plugins
 LOCAL_IMAGE=kube-scheduler:latest
+LOCAL_CONTROLLER_IMAGE=controller:latest
 
 # RELEASE_REGISTRY is the container registry to push
 # into. The default is to push to the staging
@@ -24,26 +25,31 @@ LOCAL_IMAGE=kube-scheduler:latest
 RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
+RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 
 .PHONY: all
 all: build
 
 .PHONY: build
 build: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/main.go
+	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/scheduler/main.go
+	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: local-image
 local-image: clean
-	docker build -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
+	docker build -f ./build/scheduler/Dockerfile -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
+	docker build -f ./build/controller/Dockerfile -t $(LOCAL_REGISTRY)/$(LOCAL_CONTROLLER_IMAGE) .
 
 .PHONY: release-image
 release-image: clean
-	docker build -t $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) .
+	docker build -f ./build/scheduler/Dockerfile -t $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) .
+	docker build -f ./build/controller/Dockerfile -t $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) .
 
 .PHONY: push-release-image
 push-release-image: release-image
 	gcloud auth configure-docker
 	docker push $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)
+	docker push $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)
 
 .PHONY: update-vendor
 update-vendor:
