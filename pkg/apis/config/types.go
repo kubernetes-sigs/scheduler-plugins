@@ -18,6 +18,7 @@ package config
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -32,4 +33,29 @@ type CoschedulingArgs struct {
 	// If the deleted PodGroup stays longer than the PodGroupExpirationTime,
 	// the PodGroup will be deleted from PodGroupInfos.
 	PodGroupExpirationTimeSeconds *int64
+}
+
+// modes type.
+type ModeType string
+
+const (
+	Least ModeType = "Least"
+	Most  ModeType = "Most"
+)
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourcesAllocatableArgs holds arguments used to configure NodeResourcesAllocatable plugin.
+type NodeResourcesAllocatableArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Resources to be considered when scoring.
+	// Allowed weights start from 1.
+	// An example resource set might includes "cpu" (millicores) and "memory" (bytes)
+	// with weights of 1<<20 and 1 respectfully. That would mean 1 MiB has equivalent
+	// weight as 1 millicore.
+	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
+
+	// Whether to prioritize nodes with least or most allocatable resources.
+	Mode *ModeType `json:"mode,omitempty"`
 }

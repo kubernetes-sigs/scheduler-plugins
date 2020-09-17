@@ -16,10 +16,25 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+)
+
 var (
 	defaultPermitWaitingTimeSeconds      int64 = 10
 	defaultPodGroupGCIntervalSeconds     int64 = 30
 	defaultPodGroupExpirationTimeSeconds int64 = 600
+
+	defaultNodeResourcesAllocatableMode ModeType = Least
+
+	// defaultResourcesToWeightMap is used to set the default resourceToWeight map for CPU and memory
+	// used by the NodeResourcesAllocatable scoring plugin.
+	// The base unit for CPU is millicore, while the base using for memory is a byte.
+	// The default CPU weight is 1<<20 and default memory weight is 1. That means a millicore
+	// has a weighted score equivalent to 1 MiB.
+	defaultNodeResourcesAllocatableResourcesToWeightMap = []schedulerconfig.ResourceSpec{
+		{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
+	}
 )
 
 func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
@@ -31,5 +46,15 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.PodGroupExpirationTimeSeconds == nil {
 		obj.PodGroupExpirationTimeSeconds = &defaultPodGroupExpirationTimeSeconds
+	}
+}
+
+func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) {
+	if obj.Resources == nil {
+		obj.Resources = defaultNodeResourcesAllocatableResourcesToWeightMap
+	}
+
+	if obj.Mode == nil {
+		obj.Mode = &defaultNodeResourcesAllocatableMode
 	}
 }
