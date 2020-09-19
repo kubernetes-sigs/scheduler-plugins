@@ -45,14 +45,10 @@ func newInt64(i int64) *int64 {
 }
 
 // FakeNew is used for test.
-func FakeNew(clock util.Clock, stop chan struct{}) (*Coscheduling, error) {
+func FakeNew(clock util.Clock, args config.CoschedulingArgs, stop chan struct{}) (*Coscheduling, error) {
 	cs := &Coscheduling{
 		clock: clock,
-		args: config.CoschedulingArgs{
-			PermitWaitingTimeSeconds:      newInt64(10),
-			PodGroupGCIntervalSeconds:     newInt64(30),
-			PodGroupExpirationTimeSeconds: newInt64(600),
-		},
+		args:  args,
 	}
 	go wait.Until(cs.podGroupInfoGC, time.Duration(*cs.args.PodGroupGCIntervalSeconds)*time.Second, stop)
 	return cs, nil
@@ -539,7 +535,12 @@ func TestPodGroupClean(t *testing.T) {
 			defer close(stop)
 
 			c := clock.NewFakeClock(time.Now())
-			cs, err := FakeNew(c, stop)
+			cs, err := FakeNew(c, config.CoschedulingArgs{
+				PermitWaitingTimeSeconds:      newInt64(1),
+				PodGroupGCIntervalSeconds:     newInt64(3),
+				PodGroupExpirationTimeSeconds: newInt64(10),
+			}, stop)
+
 			if err != nil {
 				t.Fatalf("fail to init coscheduling: %s", err)
 			}
@@ -558,7 +559,7 @@ func TestPodGroupClean(t *testing.T) {
 
 			c.Step(time.Duration(*cs.args.PodGroupExpirationTimeSeconds)*time.Second + time.Second)
 			// Wait for asynchronous deletion.
-			err = wait.Poll(time.Millisecond*200, 1*time.Second, func() (bool, error) {
+			err = wait.Poll(time.Millisecond*200, time.Duration(*cs.args.PodGroupGCIntervalSeconds+1)*time.Second, func() (bool, error) {
 				_, ok = cs.podGroupInfos.Load(fmt.Sprintf("%v/%v", tt.pod.Namespace, tt.podGroupName))
 				return !ok, nil
 			})
