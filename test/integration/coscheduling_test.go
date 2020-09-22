@@ -264,8 +264,8 @@ func TestCoschedulingPlugin(t *testing.T) {
 }
 
 // podScheduled returns true if a node is assigned to the given pod.
-func podScheduled(c clientset.Interface, podNamespace, podName string) bool {
-	pod, err := c.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+func podScheduled(cs clientset.Interface, podNamespace, podName string) bool {
+	pod, err := cs.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
 		// This could be a connection error so we want to retry.
 		return false

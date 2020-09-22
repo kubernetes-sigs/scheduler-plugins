@@ -33,7 +33,8 @@ import (
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	"k8s.io/kubernetes/pkg/scheduler/util"
-	config "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
 
 // Coscheduling is a plugin that implements the mechanism of gang scheduling.
