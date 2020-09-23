@@ -162,7 +162,7 @@ func makePods(podNames []string, pgName string, phase v1.PodPhase) []*v1.Pod {
 	return pds
 }
 
-func makePG(pgName string, minMember uint32, previousPhase v1alpha1.PodGroupPhase, createTime *metav1.Time) *v1alpha1.PodGroup {
+func makePG(pgName string, minMember int32, previousPhase v1alpha1.PodGroupPhase, createTime *metav1.Time) *v1alpha1.PodGroup {
 	pg := &v1alpha1.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              pgName,

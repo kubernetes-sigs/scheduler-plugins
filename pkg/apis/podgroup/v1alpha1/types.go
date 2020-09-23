@@ -80,15 +80,15 @@ type PodGroupSpec struct {
 	// MinMember defines the minimal number of members/tasks to run the pod group;
 	// if there's not enough resources to start all tasks, the scheduler
 	// will not start anyone.
-	MinMember uint32 `json:"minMember,omitempty"`
+	MinMember int32 `json:"minMember,omitempty"`
 
 	// MinResources defines the minimal resource of members/tasks to run the pod group;
 	// if there's not enough resources to start all tasks, the scheduler
 	// will not start anyone.
 	MinResources *v1.ResourceList `json:"minResources,omitempty"`
 
-	// MaxScheduleTime defines the maximal time of members/tasks to wait before run the pod group;
-	MaxScheduleTime *metav1.Duration `json:"maxScheduleTime,omitempty"`
+	// ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
+	ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
 }
 
 // PodGroupStatus represents the current state of a pod group.
@@ -102,19 +102,19 @@ type PodGroupStatus struct {
 
 	// The number of actively running pods.
 	// +optional
-	Scheduled uint32 `json:"scheduled,omitempty"`
+	Scheduled int32 `json:"scheduled,omitempty"`
 
 	// The number of actively running pods.
 	// +optional
-	Running uint32 `json:"running,omitempty"`
+	Running int32 `json:"running,omitempty"`
 
 	// The number of pods which reached phase Succeeded.
 	// +optional
-	Succeeded uint32 `json:"succeeded,omitempty"`
+	Succeeded int32 `json:"succeeded,omitempty"`
 
 	// The number of pods which reached phase Failed.
 	// +optional
-	Failed uint32 `json:"failed,omitempty"`
+	Failed int32 `json:"failed,omitempty"`
 
 	// ScheduleStartTime of the group
 	ScheduleStartTime metav1.Time `json:"scheduleStartTime,omitempty"`

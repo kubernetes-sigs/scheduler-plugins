@@ -50,8 +50,8 @@ type PodGroupSpec struct {
 	// will not start anyone.
 	MinResources *v1.ResourceList `json:"minResources,omitempty"`
 
-	// MaxScheduleTime defines the maximal time of members/tasks to wait before run the pod group;
-	MaxScheduleTime *metav1.Duration `json:"maxScheduleTime,omitempty"`
+	// ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
+	ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
 }
 
 // PodGroupStatus represents the current state of a pod group.
@@ -116,7 +116,7 @@ For any pod that gets rejected, their pod group would be added to a backoff list
 
 #### Permit
 
-1. When the number of waiting pods in a PodGroup is less than `minMember` (defined in the PodGroup), the status `Wait` is returned. They will be added to cache with TLL (equal to MaxScheduleTime).
+1. When the number of waiting pods in a PodGroup is less than `minMember` (defined in the PodGroup), the status `Wait` is returned. They will be added to cache with TLL (equal to ScheduleTimeoutSeconds).
 2. When the number is equal or greater than `minMember`, send a signal to permit the waiting pods.
 
 We can define `MaxScheduleTime` for a PodGroup. If any pod times out, the whole group would be rejected.
