@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/podgroup/v1alpha1"
 )
 
-// DefaultWaitTime is 60s if MaxScheduleTime is not specified.
+// DefaultWaitTime is 60s if ScheduleTimeoutSeconds is not specified.
 const DefaultWaitTime = 60 * time.Second
 
 // CreateMergePatch return patch generated from original and new interfaces
@@ -73,8 +73,8 @@ func GetWaitTimeDuration(pg *v1alpha1.PodGroup, defaultMaxScheTime *time.Duratio
 	if defaultMaxScheTime != nil || *defaultMaxScheTime != 0 {
 		waitTime = *defaultMaxScheTime
 	}
-	if pg != nil && pg.Spec.MaxScheduleTime != nil {
-		return pg.Spec.MaxScheduleTime.Duration
+	if pg != nil && pg.Spec.ScheduleTimeoutSeconds != nil {
+		return time.Duration(*pg.Spec.ScheduleTimeoutSeconds) * time.Second
 	}
 	return waitTime
 }

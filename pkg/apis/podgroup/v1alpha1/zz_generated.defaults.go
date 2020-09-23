@@ -28,5 +28,6 @@ import (
 // Public to allow building arbitrary schemes.
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
+	// TODO: add default value for some fields.
 	return nil
 }

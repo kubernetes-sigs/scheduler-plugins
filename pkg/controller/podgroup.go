@@ -209,9 +209,9 @@ func (ctrl *PodGroupController) syncHandler(ctx context.Context, pg *pgv1.PodGro
 		return
 	}
 	var (
-		running   uint32 = 0
-		succeeded uint32 = 0
-		failed    uint32 = 0
+		running   int32 = 0
+		succeeded int32 = 0
+		failed    int32 = 0
 	)
 	if len(pods) != 0 {
 		for _, pod := range pods {
