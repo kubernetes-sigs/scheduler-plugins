@@ -21,10 +21,12 @@ profiles:
     reserve:
       enabled:
         - name: Coscheduling
+    postBind:
+      enabled:
+        - name: Coscheduling
 # optional plugin configs
-  pluginConfig: 
+  pluginConfig:
   - name: Coscheduling
     args:
       permitWaitingTimeSeconds: 10
-      podGroupGCIntervalSeconds: 30
-      podGroupExpirationTimeSeconds: 600
+      kubeConfigPath: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"

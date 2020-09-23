@@ -47,8 +47,9 @@ func TestSetup(t *testing.T) {
 
 	// https server
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
-		w.Write([]byte(`ok`))
+		w.Write([]byte(`{"metadata": {"name": "test"}}`))
 	}))
 	defer server.Close()
 
@@ -139,7 +140,15 @@ profiles:
     reserve:
       enabled:
       - name: Coscheduling
-`, configKubeconfig)), os.FileMode(0600)); err != nil {
+    postBind:
+      enabled:
+      - name: Coscheduling
+  pluginConfig:
+  - name: Coscheduling
+    args:
+      permitWaitingTimeSeconds: 10
+      kubeConfigPath: "%s"
+`, configKubeconfig, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -177,11 +186,15 @@ profiles:
     reserve:
       enabled:
       - name: Coscheduling
+    postBind:
+      enabled:
+      - name: Coscheduling
   pluginConfig:
   - name: Coscheduling
     args:
-      permitWaitingTimeSeconds: 15
-`, configKubeconfig)), os.FileMode(0600)); err != nil {
+      permitWaitingTimeSeconds: 10
+      kubeConfigPath: "%s"
+`, configKubeconfig, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -350,6 +363,7 @@ profiles:
 				"default-scheduler": {
 					"BindPlugin":       {{Name: "DefaultBinder"}},
 					"PreFilterPlugin":  {{Name: "Coscheduling"}},
+					"PostBindPlugin":   {{Name: "Coscheduling"}},
 					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
 					"QueueSortPlugin":  {{Name: "Coscheduling"}},
 					"ReservePlugin":    {{Name: "VolumeBinding"}, {Name: "Coscheduling"}},
@@ -366,6 +380,7 @@ profiles:
 				"default-scheduler": {
 					"BindPlugin":       {{Name: "DefaultBinder"}},
 					"PreFilterPlugin":  {{Name: "Coscheduling"}},
+					"PostBindPlugin":   {{Name: "Coscheduling"}},
 					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
 					"QueueSortPlugin":  {{Name: "Coscheduling"}},
 					"ReservePlugin":    {{Name: "VolumeBinding"}, {Name: "Coscheduling"}},

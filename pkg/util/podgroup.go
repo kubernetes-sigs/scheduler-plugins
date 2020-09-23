@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"time"
 
-	jsonpatch "github.com/evanphx/json-patch"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
@@ -40,41 +40,37 @@ func CreateMergePatch(original, new interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	patch, err := jsonpatch.CreateMergePatch(pvByte, cloneByte)
+	patch, err := strategicpatch.CreateTwoWayMergePatch(pvByte, cloneByte, original)
 	if err != nil {
 		return nil, err
 	}
 	return patch, nil
 }
 
-// VerifyPodLabelSatisfied verifies if pod ann satisfies coscheduling
-func VerifyPodLabelSatisfied(pod *v1.Pod) (string, bool) {
-	if pod.Labels == nil {
-		return "", false
-	}
-	if pod.Labels[PodGroupLabel] == "" {
-		return "", false
-	}
-	return pod.Labels[PodGroupLabel], true
+// GetPodGroupLabel get pod group from pod annotations
+func GetPodGroupLabel(pod *v1.Pod) string {
+	return pod.Labels[PodGroupLabel]
 }
 
-// GetPodGroupFullName verify if pod ann satisfies coscheduling
-func GetPodGroupFullName(pg *v1alpha1.PodGroup) string {
-	if pg == nil {
+// GetPodGroupFullName get namespaced group name from pod annotations
+func GetPodGroupFullName(pod *v1.Pod) string {
+	pgName := GetPodGroupLabel(pod)
+	if len(pgName) == 0 {
 		return ""
 	}
-
-	return fmt.Sprintf("%v/%v", pg.Namespace, pg.Name)
+	return fmt.Sprintf("%v/%v", pod.Namespace, pgName)
 }
 
-// GetWaitTimeDuration verify if pod ann satisfies coscheduling
-func GetWaitTimeDuration(pg *v1alpha1.PodGroup, defaultMaxScheTime *time.Duration) time.Duration {
-	waitTime := DefaultWaitTime
-	if defaultMaxScheTime != nil || *defaultMaxScheTime != 0 {
-		waitTime = *defaultMaxScheTime
-	}
+// GetWaitTimeDuration returns a wait timeout based on the following precedences:
+// 1. spec.scheduleTimeoutSeconds of the given pg, if specified
+// 2. given scheduleTimeout, if not nil
+// 3. fall back to DefaultWaitTime
+func GetWaitTimeDuration(pg *v1alpha1.PodGroup, scheduleTimeout *time.Duration) time.Duration {
 	if pg != nil && pg.Spec.ScheduleTimeoutSeconds != nil {
 		return time.Duration(*pg.Spec.ScheduleTimeoutSeconds) * time.Second
 	}
-	return waitTime
+	if scheduleTimeout != nil || *scheduleTimeout != 0 {
+		return *scheduleTimeout
+	}
+	return DefaultWaitTime
 }

@@ -104,6 +104,8 @@ func autoConvert_v1beta1_CoschedulingArgs_To_config_CoschedulingArgs(in *Cosched
 	if err := v1.Convert_Pointer_int64_To_int64(&in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds, s); err != nil {
 		return err
 	}
+	out.KubeMaster = in.KubeMaster
+	out.KubeConfigPath = in.KubeConfigPath
 	return nil
 }
 
@@ -122,6 +124,8 @@ func autoConvert_config_CoschedulingArgs_To_v1beta1_CoschedulingArgs(in *config.
 	if err := v1.Convert_int64_To_Pointer_int64(&in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds, s); err != nil {
 		return err
 	}
+	out.KubeMaster = in.KubeMaster
+	out.KubeConfigPath = in.KubeConfigPath
 	return nil
 }
 

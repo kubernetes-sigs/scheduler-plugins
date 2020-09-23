@@ -133,8 +133,8 @@ func (ctrl *PodGroupController) pgUpdated(old, new interface{}) {
 // podAdded reacts to a PG creation
 func (ctrl *PodGroupController) podAdded(obj interface{}) {
 	pod := obj.(*v1.Pod)
-	pgName, ok := util.VerifyPodLabelSatisfied(pod)
-	if !ok || len(pgName) == 0 {
+	pgName := util.GetPodGroupLabel(pod)
+	if len(pgName) == 0 {
 		return
 	}
 	pg, err := ctrl.pgLister.PodGroups(pod.Namespace).Get(pgName)
