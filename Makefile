@@ -56,7 +56,7 @@ update-vendor:
 	hack/update-vendor.sh
 
 .PHONY: unit-test
-unit-test: update-vendor
+unit-test: autogen
 	hack/unit-test.sh
 
 .PHONY: install-etcd

@@ -33,8 +33,8 @@ import (
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/kubernetes/pkg/scheduler/util"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	// Ensure scheme package is initialized.
 	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
 )
