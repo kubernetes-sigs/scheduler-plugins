@@ -23,7 +23,7 @@ LOCAL_CONTROLLER_IMAGE=controller:latest
 # into. The default is to push to the staging
 # registry, not production(k8s.gcr.io).
 RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
-RELEASE_VERSION?=$(shell git describe --tags --match "v*")
+RELEASE_VERSION?=$(shell git describe --tags --match "v*" || date +%Y-%m-%d-%H-%M-%S)
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 
