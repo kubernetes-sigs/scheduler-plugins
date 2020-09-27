@@ -15,7 +15,7 @@ FROM golang:1.15.0
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
-RUN make
+RUN make build-controller
 
 FROM alpine:3.12
 
