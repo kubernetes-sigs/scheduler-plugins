@@ -31,9 +31,15 @@ RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 all: build
 
 .PHONY: build
-build: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/scheduler/main.go
+build: build-controller build-scheduler
+
+.PHONY: build-controller
+build-controller: autogen
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+
+.PHONY: build-scheduler
+build-scheduler: autogen
+	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
 local-image: clean
