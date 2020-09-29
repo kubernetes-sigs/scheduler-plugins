@@ -38,10 +38,10 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
-	pgv1 "sigs.k8s.io/scheduler-plugins/pkg/apis/podgroup/v1alpha1"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pginformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/podgroup/v1alpha1"
-	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/podgroup/v1alpha1"
+	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
+	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
+	schedlister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -49,18 +49,18 @@ import (
 type PodGroupController struct {
 	eventRecorder   record.EventRecorder
 	pgQueue         workqueue.RateLimitingInterface
-	pgLister        pglister.PodGroupLister
+	pgLister        schedlister.PodGroupLister
 	podLister       corelister.PodLister
 	pgListerSynced  cache.InformerSynced
 	podListerSynced cache.InformerSynced
-	pgClient        pgclientset.Interface
+	pgClient        schedclientset.Interface
 }
 
 // NewPodGroupController returns a new *PodGroupController
 func NewPodGroupController(client kubernetes.Interface,
-	pgInformer pginformer.PodGroupInformer,
+	pgInformer schedinformer.PodGroupInformer,
 	podInformer coreinformer.PodInformer,
-	pgClient pgclientset.Interface) *PodGroupController {
+	pgClient schedclientset.Interface) *PodGroupController {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: client.CoreV1().Events(v1.NamespaceAll)})
 
@@ -112,8 +112,8 @@ func (ctrl *PodGroupController) pgAdded(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	}
-	pg := obj.(*pgv1.PodGroup)
-	if pg.Status.Phase == pgv1.PodGroupFinished || pg.Status.Phase == pgv1.PodGroupFailed {
+	pg := obj.(*schedv1alpha1.PodGroup)
+	if pg.Status.Phase == schedv1alpha1.PodGroupFinished || pg.Status.Phase == schedv1alpha1.PodGroupFailed {
 		return
 	}
 	// If startScheduleTime - createTime > 2days, do not enqueue again because pod may have been GCed
@@ -183,7 +183,7 @@ func (ctrl *PodGroupController) sync() {
 }
 
 // syncHandle syncs pod group and convert status
-func (ctrl *PodGroupController) syncHandler(ctx context.Context, pg *pgv1.PodGroup) {
+func (ctrl *PodGroupController) syncHandler(ctx context.Context, pg *schedv1alpha1.PodGroup) {
 	key, err := cache.MetaNamespaceKeyFunc(pg)
 	if err != nil {
 		runtime.HandleError(err)
@@ -199,7 +199,7 @@ func (ctrl *PodGroupController) syncHandler(ctx context.Context, pg *pgv1.PodGro
 
 	pgCopy := pg.DeepCopy()
 	if string(pgCopy.Status.Phase) == "" {
-		pgCopy.Status.Phase = pgv1.PodGroupPending
+		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
 	}
 
 	selector := labels.Set(map[string]string{util.PodGroupLabel: pgCopy.Name}).AsSelector()
@@ -229,20 +229,20 @@ func (ctrl *PodGroupController) syncHandler(ctx context.Context, pg *pgv1.PodGro
 	pgCopy.Status.Succeeded = succeeded
 	pgCopy.Status.Running = running
 
-	if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember && pgCopy.Status.Phase == pgv1.PodGroupScheduling {
-		pgCopy.Status.Phase = pgv1.PodGroupScheduled
+	if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduling {
+		pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
 	}
 
-	if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember && pgCopy.Status.Phase == pgv1.PodGroupScheduled {
-		pgCopy.Status.Phase = pgv1.PodGroupRunning
+	if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduled {
+		pgCopy.Status.Phase = schedv1alpha1.PodGroupRunning
 	}
 	// Final state of pod group
 	if pgCopy.Status.Failed != 0 && pgCopy.Status.Failed+pgCopy.Status.Running+pgCopy.Status.Succeeded >= pg.Spec.
 		MinMember {
-		pgCopy.Status.Phase = pgv1.PodGroupFailed
+		pgCopy.Status.Phase = schedv1alpha1.PodGroupFailed
 	}
 	if pgCopy.Status.Succeeded >= pg.Spec.MinMember {
-		pgCopy.Status.Phase = pgv1.PodGroupFinished
+		pgCopy.Status.Phase = schedv1alpha1.PodGroupFinished
 	}
 
 	err = ctrl.patchPodGroup(pg, pgCopy)
@@ -251,7 +251,7 @@ func (ctrl *PodGroupController) syncHandler(ctx context.Context, pg *pgv1.PodGro
 	}
 }
 
-func (ctrl *PodGroupController) patchPodGroup(old, new *pgv1.PodGroup) error {
+func (ctrl *PodGroupController) patchPodGroup(old, new *schedv1alpha1.PodGroup) error {
 	if !reflect.DeepEqual(old, new) {
 		patch, err := util.CreateMergePatch(old, new)
 		if err != nil {

@@ -3,20 +3,20 @@ package controller
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/controller"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/podgroup/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
+	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -118,7 +118,7 @@ func Test_Run(t *testing.T) {
 			pgClient := pgfake.NewSimpleClientset(pg)
 
 			informerFactory := informers.NewSharedInformerFactory(kubeClient, controller.NoResyncPeriodFunc())
-			pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, controller.NoResyncPeriodFunc())
+			pgInformerFactory := schedinformer.NewSharedInformerFactory(pgClient, controller.NoResyncPeriodFunc())
 			podInformer := informerFactory.Core().V1().Pods()
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			ctrl := NewPodGroupController(kubeClient, pgInformer, podInformer, pgClient)

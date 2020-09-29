@@ -35,6 +35,8 @@ var (
 	defaultNodeResourcesAllocatableResourcesToWeightMap = []schedulerconfig.ResourceSpec{
 		{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
 	}
+
+	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
 
 func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
@@ -56,5 +58,11 @@ func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs)
 
 	if obj.Mode == nil {
 		obj.Mode = &defaultNodeResourcesAllocatableMode
+	}
+}
+
+func SetDefaults_CapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
+	if obj.KubeConfigPath == nil {
+		obj.KubeConfigPath = &defaultKubeConfigPath
 	}
 }
