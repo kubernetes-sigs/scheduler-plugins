@@ -174,6 +174,7 @@ func (cs *Coscheduling) getOrCreatePodGroupInfo(pod *v1.Pod, ts time.Time) (*Pod
 			// If the deleteTimestamp isn't nil, it means that the PodGroup is marked as expired before.
 			// So we need to set the deleteTimestamp as nil again to mark the PodGroup active.
 			if pgInfo.deletionTimestamp != nil {
+				pgInfo.minAvailable = podMinAvailable
 				pgInfo.deletionTimestamp = nil
 				cs.podGroupInfos.Store(pgKey, pgInfo)
 			}
