@@ -28,11 +28,16 @@ import (
 // Public to allow building arbitrary schemes.
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
+	scheme.AddTypeDefaultingFunc(&CapacitySchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CapacitySchedulingArgs(obj.(*CapacitySchedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&CoschedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CoschedulingArgs(obj.(*CoschedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeResourcesAllocatableArgs{}, func(obj interface{}) {
 		SetObjectDefaults_NodeResourcesAllocatableArgs(obj.(*NodeResourcesAllocatableArgs))
 	})
 	return nil
+}
+
+func SetObjectDefaults_CapacitySchedulingArgs(in *CapacitySchedulingArgs) {
+	SetDefaults_CapacitySchedulingArgs(in)
 }
 
 func SetObjectDefaults_CoschedulingArgs(in *CoschedulingArgs) {

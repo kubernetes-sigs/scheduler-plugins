@@ -29,7 +29,7 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 	versioned "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	internalinterfaces "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/internalinterfaces"
-	podgroup "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/podgroup"
+	scheduling "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling"
 )
 
 // SharedInformerOption defines the functional option type for SharedInformerFactory.
@@ -172,9 +172,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Scheduling() podgroup.Interface
+	Scheduling() scheduling.Interface
 }
 
-func (f *sharedInformerFactory) Scheduling() podgroup.Interface {
-	return podgroup.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Scheduling() scheduling.Interface {
+	return scheduling.New(f, f.namespace, f.tweakListOptions)
 }

@@ -24,7 +24,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	v1 "k8s.io/api/core/v1"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/podgroup/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
 // DefaultWaitTime is 60s if ScheduleTimeoutSeconds is not specified.

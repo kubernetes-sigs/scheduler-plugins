@@ -26,65 +26,65 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
-	podgroupv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/podgroup/v1alpha1"
+	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	versioned "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	internalinterfaces "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/internalinterfaces"
-	v1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/podgroup/v1alpha1"
+	v1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 )
 
-// PodGroupInformer provides access to a shared informer and lister for
-// PodGroups.
-type PodGroupInformer interface {
+// ElasticQuotaInformer provides access to a shared informer and lister for
+// ElasticQuotas.
+type ElasticQuotaInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.PodGroupLister
+	Lister() v1alpha1.ElasticQuotaLister
 }
 
-type podGroupInformer struct {
+type elasticQuotaInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 	namespace        string
 }
 
-// NewPodGroupInformer constructs a new informer for PodGroup type.
+// NewElasticQuotaInformer constructs a new informer for ElasticQuota type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewPodGroupInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredPodGroupInformer(client, namespace, resyncPeriod, indexers, nil)
+func NewElasticQuotaInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredElasticQuotaInformer(client, namespace, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredPodGroupInformer constructs a new informer for PodGroup type.
+// NewFilteredElasticQuotaInformer constructs a new informer for ElasticQuota type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredPodGroupInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredElasticQuotaInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().PodGroups(namespace).List(context.TODO(), options)
+				return client.SchedulingV1alpha1().ElasticQuotas(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().PodGroups(namespace).Watch(context.TODO(), options)
+				return client.SchedulingV1alpha1().ElasticQuotas(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&podgroupv1alpha1.PodGroup{},
+		&schedulingv1alpha1.ElasticQuota{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *podGroupInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredPodGroupInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *elasticQuotaInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredElasticQuotaInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *podGroupInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&podgroupv1alpha1.PodGroup{}, f.defaultInformer)
+func (f *elasticQuotaInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&schedulingv1alpha1.ElasticQuota{}, f.defaultInformer)
 }
 
-func (f *podGroupInformer) Lister() v1alpha1.PodGroupLister {
-	return v1alpha1.NewPodGroupLister(f.Informer().GetIndexer())
+func (f *elasticQuotaInformer) Lister() v1alpha1.ElasticQuotaLister {
+	return v1alpha1.NewElasticQuotaLister(f.Informer().GetIndexer())
 }

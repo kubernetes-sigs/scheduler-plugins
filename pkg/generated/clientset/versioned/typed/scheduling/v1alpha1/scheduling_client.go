@@ -20,18 +20,23 @@ package v1alpha1
 
 import (
 	rest "k8s.io/client-go/rest"
-	v1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/podgroup/v1alpha1"
+	v1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/scheme"
 )
 
 type SchedulingV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	ElasticQuotasGetter
 	PodGroupsGetter
 }
 
 // SchedulingV1alpha1Client is used to interact with features provided by the scheduling.sigs.k8s.io group.
 type SchedulingV1alpha1Client struct {
 	restClient rest.Interface
+}
+
+func (c *SchedulingV1alpha1Client) ElasticQuotas(namespace string) ElasticQuotaInterface {
+	return newElasticQuotas(c, namespace)
 }
 
 func (c *SchedulingV1alpha1Client) PodGroups(namespace string) PodGroupInterface {
