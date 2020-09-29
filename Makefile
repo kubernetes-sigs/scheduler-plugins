@@ -83,4 +83,5 @@ verify-gofmt:
 
 .PHONY: clean
 clean:
-	rm -rf ./bin
+	rm -f ./bin/controller
+	rm -f ./bin/kube-scheduler
