@@ -39,18 +39,13 @@ import (
 	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
 )
 
-func newInt64(i int64) *int64 {
-	val := i
-	return &val
-}
-
 // FakeNew is used for test.
 func FakeNew(clock util.Clock, args config.CoschedulingArgs, stop chan struct{}) (*Coscheduling, error) {
 	cs := &Coscheduling{
 		clock: clock,
 		args:  args,
 	}
-	go wait.Until(cs.podGroupInfoGC, time.Duration(*cs.args.PodGroupGCIntervalSeconds)*time.Second, stop)
+	go wait.Until(cs.podGroupInfoGC, time.Duration(cs.args.PodGroupGCIntervalSeconds)*time.Second, stop)
 	return cs, nil
 }
 
@@ -536,9 +531,9 @@ func TestPodGroupClean(t *testing.T) {
 
 			c := clock.NewFakeClock(time.Now())
 			cs, err := FakeNew(c, config.CoschedulingArgs{
-				PermitWaitingTimeSeconds:      newInt64(1),
-				PodGroupGCIntervalSeconds:     newInt64(3),
-				PodGroupExpirationTimeSeconds: newInt64(10),
+				PermitWaitingTimeSeconds:      1,
+				PodGroupGCIntervalSeconds:     3,
+				PodGroupExpirationTimeSeconds: 10,
 			}, stop)
 
 			if err != nil {
@@ -557,9 +552,9 @@ func TestPodGroupClean(t *testing.T) {
 				t.Fatalf("fail to clean up PodGroup : %s", tt.pod.Name)
 			}
 
-			c.Step(time.Duration(*cs.args.PodGroupExpirationTimeSeconds)*time.Second + time.Second)
+			c.Step(time.Duration(cs.args.PodGroupExpirationTimeSeconds)*time.Second + time.Second)
 			// Wait for asynchronous deletion.
-			err = wait.Poll(time.Millisecond*200, time.Duration(*cs.args.PodGroupGCIntervalSeconds+1)*time.Second, func() (bool, error) {
+			err = wait.Poll(time.Millisecond*200, time.Duration(cs.args.PodGroupGCIntervalSeconds+1)*time.Second, func() (bool, error) {
 				_, ok = cs.podGroupInfos.Load(fmt.Sprintf("%v/%v", tt.pod.Namespace, tt.podGroupName))
 				return !ok, nil
 			})

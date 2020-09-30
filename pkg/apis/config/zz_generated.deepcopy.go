@@ -54,21 +54,6 @@ func (in *CapacitySchedulingArgs) DeepCopyObject() runtime.Object {
 func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.PermitWaitingTimeSeconds != nil {
-		in, out := &in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds
-		*out = new(int64)
-		**out = **in
-	}
-	if in.PodGroupGCIntervalSeconds != nil {
-		in, out := &in.PodGroupGCIntervalSeconds, &out.PodGroupGCIntervalSeconds
-		*out = new(int64)
-		**out = **in
-	}
-	if in.PodGroupExpirationTimeSeconds != nil {
-		in, out := &in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds
-		*out = new(int64)
-		**out = **in
-	}
 	return
 }
 
@@ -98,11 +83,6 @@ func (in *NodeResourcesAllocatableArgs) DeepCopyInto(out *NodeResourcesAllocatab
 		in, out := &in.Resources, &out.Resources
 		*out = make([]v1.ResourceSpec, len(*in))
 		copy(*out, *in)
-	}
-	if in.Mode != nil {
-		in, out := &in.Mode, &out.Mode
-		*out = new(ModeType)
-		**out = **in
 	}
 	return
 }
