@@ -11,7 +11,7 @@ steps:
     entrypoint: make
     env:
     - DOCKER_CLI_EXPERIMENTAL=enabled
-    - VERSION=$_GIT_TAG
+    - RELEASE_VERSION=$_GIT_TAG
     - BASE_REF=$_PULL_BASE_REF
     args:
     - push-release-image
