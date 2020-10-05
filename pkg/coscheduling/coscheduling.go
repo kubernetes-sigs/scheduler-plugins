@@ -123,7 +123,7 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 			},
 		},
 	)
-	go wait.Until(cs.podGroupInfoGC, time.Duration(*cs.args.PodGroupGCIntervalSeconds)*time.Second, nil)
+	go wait.Until(cs.podGroupInfoGC, time.Duration(cs.args.PodGroupGCIntervalSeconds)*time.Second, nil)
 
 	return cs, nil
 }
@@ -259,7 +259,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		klog.V(3).Infof("The count of podGroup %v/%v/%v is not up to minAvailable(%d) in Permit: current(%d)",
 			pod.Namespace, podGroupName, pod.Name, minAvailable, current)
 		// TODO Change the timeout to a dynamic value depending on the size of the `PodGroup`
-		return framework.NewStatus(framework.Wait, ""), time.Duration(*cs.args.PermitWaitingTimeSeconds) * time.Second
+		return framework.NewStatus(framework.Wait, ""), time.Duration(cs.args.PermitWaitingTimeSeconds) * time.Second
 	}
 
 	klog.V(3).Infof("The count of PodGroup %v/%v/%v is up to minAvailable(%d) in Permit: current(%d)",
@@ -380,7 +380,7 @@ func responsibleForPod(pod *v1.Pod) bool {
 func (cs *Coscheduling) podGroupInfoGC() {
 	cs.podGroupInfos.Range(func(key, value interface{}) bool {
 		pgInfo := value.(*PodGroupInfo)
-		if pgInfo.deletionTimestamp != nil && pgInfo.deletionTimestamp.Add(time.Duration(*cs.args.PodGroupExpirationTimeSeconds)*time.Second).Before(cs.clock.Now()) {
+		if pgInfo.deletionTimestamp != nil && pgInfo.deletionTimestamp.Add(time.Duration(cs.args.PodGroupExpirationTimeSeconds)*time.Second).Before(cs.clock.Now()) {
 			klog.V(3).Infof("%v is out of date and has been deleted in PodGroup GC", key)
 			cs.podGroupInfos.Delete(key)
 		}

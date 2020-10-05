@@ -27,12 +27,12 @@ type CoschedulingArgs struct {
 	metav1.TypeMeta
 
 	// PermitWaitingTime is the wait timeout in seconds.
-	PermitWaitingTimeSeconds *int64
+	PermitWaitingTimeSeconds int64
 	// PodGroupGCInterval is the period to run gc of PodGroup in seconds.
-	PodGroupGCIntervalSeconds *int64
+	PodGroupGCIntervalSeconds int64
 	// If the deleted PodGroup stays longer than the PodGroupExpirationTime,
 	// the PodGroup will be deleted from PodGroupInfos.
-	PodGroupExpirationTimeSeconds *int64
+	PodGroupExpirationTimeSeconds int64
 }
 
 // modes type.
@@ -57,7 +57,7 @@ type NodeResourcesAllocatableArgs struct {
 	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
 
 	// Whether to prioritize nodes with least or most allocatable resources.
-	Mode *ModeType `json:"mode,omitempty"`
+	Mode ModeType `json:"mode,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

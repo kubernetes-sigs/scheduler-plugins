@@ -25,7 +25,7 @@ var (
 	defaultPodGroupGCIntervalSeconds     int64 = 30
 	defaultPodGroupExpirationTimeSeconds int64 = 600
 
-	defaultNodeResourcesAllocatableMode ModeType = Least
+	defaultNodeResourcesAllocatableMode = Least
 
 	// defaultResourcesToWeightMap is used to set the default resourceToWeight map for CPU and memory
 	// used by the NodeResourcesAllocatable scoring plugin.
@@ -52,12 +52,12 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 }
 
 func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) {
-	if obj.Resources == nil {
+	if len(obj.Resources) == 0 {
 		obj.Resources = defaultNodeResourcesAllocatableResourcesToWeightMap
 	}
 
-	if obj.Mode == nil {
-		obj.Mode = &defaultNodeResourcesAllocatableMode
+	if obj.Mode == "" {
+		obj.Mode = defaultNodeResourcesAllocatableMode
 	}
 }
 

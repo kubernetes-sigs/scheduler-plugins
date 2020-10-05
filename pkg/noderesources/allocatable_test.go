@@ -112,28 +112,28 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 		{
 			pod:          &v1.Pod{Spec: noResources},
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 4000, 10000), makeNodeInfo("machine2", 4000, 10000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeLeast},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MinNodeScore}, {Name: "machine2", Score: framework.MinNodeScore}},
 			name:         "nothing scheduled, nothing requested",
 		},
 		{
 			pod:          cpuAndMemory,
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 4000, 10000), makeNodeInfo("machine2", 6000, 10000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeLeast},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MaxNodeScore}, {Name: "machine2", Score: framework.MinNodeScore}},
 			name:         "nothing scheduled, resources requested, differently sized machines, least mode",
 		},
 		{
 			pod:          cpuAndMemory,
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 4000, 10000), makeNodeInfo("machine2", 6000, 10000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeMost},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeMost},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MinNodeScore}, {Name: "machine2", Score: framework.MaxNodeScore}},
 			name:         "nothing scheduled, resources requested, differently sized machines, most mode",
 		},
 		{
 			pod:          &v1.Pod{Spec: noResources},
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 4000, 10000), makeNodeInfo("machine2", 4000, 10000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeLeast},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MinNodeScore}, {Name: "machine2", Score: framework.MinNodeScore}},
 			name:         "no resources requested, pods scheduled",
 			pods: []*v1.Pod{
@@ -146,7 +146,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 		{
 			pod:          &v1.Pod{Spec: noResources},
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 10000, 20000), makeNodeInfo("machine2", 10000, 20000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeLeast},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MinNodeScore}, {Name: "machine2", Score: framework.MinNodeScore}},
 			name:         "no resources requested, pods scheduled with resources",
 			pods: []*v1.Pod{
@@ -156,7 +156,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 		{
 			pod:          cpuAndMemory,
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 10000, 20000), makeNodeInfo("machine2", 10000, 20000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeLeast},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MinNodeScore}, {Name: "machine2", Score: framework.MinNodeScore}},
 			name:         "resources requested, pods scheduled with resources",
 			pods: []*v1.Pod{
@@ -166,28 +166,28 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 		{
 			pod:          bigCpu,
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 4000, 1000), makeNodeInfo("machine2", 5000, 1000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeLeast},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MaxNodeScore}, {Name: "machine2", Score: framework.MinNodeScore}},
 			name:         "resources requested with more than the node, differently sized machines, least mode",
 		},
 		{
 			pod:          bigCpu,
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 4000, 1000), makeNodeInfo("machine2", 5000, 1000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeMost},
+			args:         config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeMost},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MinNodeScore}, {Name: "machine2", Score: framework.MaxNodeScore}},
 			name:         "resources requested with more than the node, differently sized machines, most mode",
 		},
 		{
 			pod:          cpuAndMemory,
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 1000, 2000), makeNodeInfo("machine2", 1005, 1000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: cpuResourceAllocatableSet, Mode: &modeLeast},
+			args:         config.NodeResourcesAllocatableArgs{Resources: cpuResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MaxNodeScore}, {Name: "machine2", Score: framework.MinNodeScore}},
 			name:         "nothing scheduled, resources requested, differently sized machines, cpu weighted, most mode",
 		},
 		{
 			pod:          cpuAndMemory,
 			nodeInfos:    []*framework.NodeInfo{makeNodeInfo("machine1", 1000, 2000), makeNodeInfo("machine2", 1005, 1000)},
-			args:         config.NodeResourcesAllocatableArgs{Resources: cpuResourceAllocatableSet, Mode: &modeMost},
+			args:         config.NodeResourcesAllocatableArgs{Resources: cpuResourceAllocatableSet, Mode: modeMost},
 			expectedList: []framework.NodeScore{{Name: "machine1", Score: framework.MinNodeScore}, {Name: "machine2", Score: framework.MaxNodeScore}},
 			name:         "nothing scheduled, resources requested, differently sized machines, cpu weighted, least mode",
 		},
@@ -197,7 +197,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 				makeNodeInfo("machine1", 1000, 1000*1<<20),
 				makeNodeInfo("machine2", 2000, 2000*1<<20),
 				makeNodeInfo("machine3", 3000, 3000*1<<20)},
-			args: config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeLeast},
+			args: config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeLeast},
 			expectedList: []framework.NodeScore{
 				{Name: "machine1", Score: framework.MaxNodeScore},
 				{Name: "machine2", Score: (framework.MinNodeScore + framework.MaxNodeScore) / 2},
@@ -210,7 +210,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 				makeNodeInfo("machine1", 1000, 1000*1<<20),
 				makeNodeInfo("machine2", 2000, 2000*1<<20),
 				makeNodeInfo("machine3", 3000, 3000*1<<20)},
-			args: config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: &modeMost},
+			args: config.NodeResourcesAllocatableArgs{Resources: defaultResourceAllocatableSet, Mode: modeMost},
 			expectedList: []framework.NodeScore{
 				{Name: "machine1", Score: framework.MinNodeScore},
 				{Name: "machine2", Score: (framework.MinNodeScore + framework.MaxNodeScore) / 2},

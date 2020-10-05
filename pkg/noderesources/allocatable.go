@@ -88,8 +88,8 @@ func NewAllocatable(allocArgs runtime.Object, h framework.FrameworkHandle) (fram
 		if !ok {
 			return nil, fmt.Errorf("want args to be of type NodeResourcesAllocatableArgs, got %T", allocArgs)
 		}
-		if args.Mode != nil {
-			mode = *args.Mode
+		if args.Mode != "" {
+			mode = args.Mode
 			if mode != config.Least && mode != config.Most {
 				return nil, fmt.Errorf("invalid mode, got %s", mode)
 			}

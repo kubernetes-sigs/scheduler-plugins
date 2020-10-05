@@ -95,9 +95,15 @@ func Convert_config_CapacitySchedulingArgs_To_v1beta1_CapacitySchedulingArgs(in 
 }
 
 func autoConvert_v1beta1_CoschedulingArgs_To_config_CoschedulingArgs(in *CoschedulingArgs, out *config.CoschedulingArgs, s conversion.Scope) error {
-	out.PermitWaitingTimeSeconds = (*int64)(unsafe.Pointer(in.PermitWaitingTimeSeconds))
-	out.PodGroupGCIntervalSeconds = (*int64)(unsafe.Pointer(in.PodGroupGCIntervalSeconds))
-	out.PodGroupExpirationTimeSeconds = (*int64)(unsafe.Pointer(in.PodGroupExpirationTimeSeconds))
+	if err := v1.Convert_Pointer_int64_To_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_int64_To_int64(&in.PodGroupGCIntervalSeconds, &out.PodGroupGCIntervalSeconds, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_int64_To_int64(&in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -107,9 +113,15 @@ func Convert_v1beta1_CoschedulingArgs_To_config_CoschedulingArgs(in *Coschedulin
 }
 
 func autoConvert_config_CoschedulingArgs_To_v1beta1_CoschedulingArgs(in *config.CoschedulingArgs, out *CoschedulingArgs, s conversion.Scope) error {
-	out.PermitWaitingTimeSeconds = (*int64)(unsafe.Pointer(in.PermitWaitingTimeSeconds))
-	out.PodGroupGCIntervalSeconds = (*int64)(unsafe.Pointer(in.PodGroupGCIntervalSeconds))
-	out.PodGroupExpirationTimeSeconds = (*int64)(unsafe.Pointer(in.PodGroupExpirationTimeSeconds))
+	if err := v1.Convert_int64_To_Pointer_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_int64_To_Pointer_int64(&in.PodGroupGCIntervalSeconds, &out.PodGroupGCIntervalSeconds, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_int64_To_Pointer_int64(&in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -120,7 +132,7 @@ func Convert_config_CoschedulingArgs_To_v1beta1_CoschedulingArgs(in *config.Cosc
 
 func autoConvert_v1beta1_NodeResourcesAllocatableArgs_To_config_NodeResourcesAllocatableArgs(in *NodeResourcesAllocatableArgs, out *config.NodeResourcesAllocatableArgs, s conversion.Scope) error {
 	out.Resources = *(*[]configv1.ResourceSpec)(unsafe.Pointer(&in.Resources))
-	out.Mode = (*config.ModeType)(unsafe.Pointer(in.Mode))
+	out.Mode = config.ModeType(in.Mode)
 	return nil
 }
 
@@ -131,7 +143,7 @@ func Convert_v1beta1_NodeResourcesAllocatableArgs_To_config_NodeResourcesAllocat
 
 func autoConvert_config_NodeResourcesAllocatableArgs_To_v1beta1_NodeResourcesAllocatableArgs(in *config.NodeResourcesAllocatableArgs, out *NodeResourcesAllocatableArgs, s conversion.Scope) error {
 	out.Resources = *(*[]configv1.ResourceSpec)(unsafe.Pointer(&in.Resources))
-	out.Mode = (*ModeType)(unsafe.Pointer(in.Mode))
+	out.Mode = ModeType(in.Mode)
 	return nil
 }
 

@@ -104,11 +104,6 @@ func (in *NodeResourcesAllocatableArgs) DeepCopyInto(out *NodeResourcesAllocatab
 		*out = make([]v1.ResourceSpec, len(*in))
 		copy(*out, *in)
 	}
-	if in.Mode != nil {
-		in, out := &in.Mode, &out.Mode
-		*out = new(ModeType)
-		**out = **in
-	}
 	return
 }
 

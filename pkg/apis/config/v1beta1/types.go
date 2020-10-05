@@ -58,7 +58,7 @@ type NodeResourcesAllocatableArgs struct {
 	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
 
 	// Whether to prioritize nodes with least or most allocatable resources.
-	Mode *ModeType `json:"mode,omitempty"`
+	Mode ModeType `json:"mode,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
