@@ -5,6 +5,7 @@ Repository for out-of-tree scheduler plugins based on scheduler framework.
 Official container images are coming soon. They will eventually be available at the below location.
 ```shell
 docker pull k8s.gcr.io/scheduler-plugins/kube-scheduler:$TAG
+docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG
 ```
 
 ## Community, discussion, contribution, and support
