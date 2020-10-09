@@ -27,6 +27,9 @@ RELEASE_VERSION?=$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 
+# VERSION is the scheduler's version
+VERSION=$(shell git describe --tags --match 'v[0-9]*' --always)
+
 .PHONY: all
 all: build
 
@@ -39,7 +42,7 @@ build-controller: autogen
 
 .PHONY: build-scheduler
 build-scheduler: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/kube-scheduler cmd/scheduler/main.go
+	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
 local-image: clean
