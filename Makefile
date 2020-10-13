@@ -23,12 +23,16 @@ LOCAL_CONTROLLER_IMAGE=controller:latest
 # into. The default is to push to the staging
 # registry, not production(k8s.gcr.io).
 RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
-RELEASE_VERSION?=$(shell git describe --tags --match "v*")
+RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 
 # VERSION is the scheduler's version
-VERSION=$(shell git describe --tags --match 'v[0-9]*' --always)
+#
+# The RELEASE_VERSION variable can have one of two formats:
+# v20201009-v0.18.800-46-g939c1c0 - automated build for a commit(not a tag) and also a local build
+# v20200521-v0.18.800             - automated build for a tag
+VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
 
 .PHONY: all
 all: build
@@ -46,12 +50,12 @@ build-scheduler: autogen
 
 .PHONY: local-image
 local-image: clean
-	docker build -f ./build/scheduler/Dockerfile -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
+	docker build -f ./build/scheduler/Dockerfile --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
 	docker build -f ./build/controller/Dockerfile -t $(LOCAL_REGISTRY)/$(LOCAL_CONTROLLER_IMAGE) .
 
 .PHONY: release-image
 release-image: clean
-	docker build -f ./build/scheduler/Dockerfile -t $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) .
+	docker build -f ./build/scheduler/Dockerfile --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) .
 	docker build -f ./build/controller/Dockerfile -t $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) .
 
 .PHONY: push-release-image
