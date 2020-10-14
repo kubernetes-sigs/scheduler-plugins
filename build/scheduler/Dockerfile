@@ -15,7 +15,8 @@ FROM golang:1.15.0
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
-RUN make build-scheduler
+ARG RELEASE_VERSION
+RUN RELEASE_VERSION=${RELEASE_VERSION} make build-scheduler
 
 FROM alpine:3.12
 
