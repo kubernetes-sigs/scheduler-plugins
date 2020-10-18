@@ -23,10 +23,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/core"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
-	"k8s.io/kubernetes/pkg/scheduler/util"
 )
 
 const (
@@ -37,6 +37,7 @@ const (
 // CrossNodePreemption is a PostFilter plugin implements the preemption logic.
 type CrossNodePreemption struct {
 	fh framework.FrameworkHandle
+	podLister corelisters.PodLister
 }
 
 var _ framework.PostFilterPlugin = &CrossNodePreemption{}
@@ -50,6 +51,7 @@ func (pl *CrossNodePreemption) Name() string {
 func New(_ runtime.Object, fh framework.FrameworkHandle) (framework.Plugin, error) {
 	pl := CrossNodePreemption{
 		fh: fh,
+		podLister: fh.SharedInformerFactory().Core().V1().Pods().Lister(),
 	}
 	return &pl, nil
 }
@@ -72,8 +74,7 @@ func (pl *CrossNodePreemption) preempt(ctx context.Context, state *framework.Cyc
 	nodeLister := pl.fh.SnapshotSharedLister().NodeInfos()
 
 	// 0) Fetch the latest version of <pod>.
-	// TODO(Huang-Wei): get pod from informer cache instead of API server.
-	pod, err := util.GetUpdatedPod(cs, pod)
+	pod, err := pl.podLister.Pods(pod.Namespace).Get(pod.Name)
 	if err != nil {
 		klog.Errorf("Error getting the updated preemptor pod object: %v", err)
 		return "", err
