@@ -38,7 +38,7 @@ func NewServerRunOptions() *ServerRunOptions {
 
 func (s *ServerRunOptions) addAllFlags() {
 	pflag.BoolVar(&s.InCluster, "incluster", s.InCluster, "If controller run incluster.")
-	pflag.StringVar(&s.MasterUrl, "kubeConfig", s.MasterUrl, "Kube Config path if not run in cluster.")
+	pflag.StringVar(&s.KubeConfig, "kubeConfig", s.KubeConfig, "Kube Config path if not run in cluster.")
 	pflag.StringVar(&s.MasterUrl, "masterUrl", s.MasterUrl, "Master Url if not run in cluster.")
 	pflag.IntVar(&s.ApiServerQPS, "qps", 5, "qps of query apiserver.")
 	pflag.IntVar(&s.ApiServerBurst, "burst", 10, "burst of query apiserver.")
