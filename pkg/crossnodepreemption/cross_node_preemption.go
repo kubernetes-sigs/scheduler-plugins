@@ -21,9 +21,9 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+        corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
-	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/core"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
@@ -36,7 +36,7 @@ const (
 
 // CrossNodePreemption is a PostFilter plugin implements the preemption logic.
 type CrossNodePreemption struct {
-	fh framework.FrameworkHandle
+	fh        framework.FrameworkHandle
 	podLister corelisters.PodLister
 }
 
@@ -50,7 +50,7 @@ func (pl *CrossNodePreemption) Name() string {
 // New initializes a new plugin and returns it.
 func New(_ runtime.Object, fh framework.FrameworkHandle) (framework.Plugin, error) {
 	pl := CrossNodePreemption{
-		fh: fh,
+		fh:        fh,
 		podLister: fh.SharedInformerFactory().Core().V1().Pods().Lister(),
 	}
 	return &pl, nil
