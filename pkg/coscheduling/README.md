@@ -1,7 +1,7 @@
 # Overview
 
-This folder holds the coscheduling plugin implementations based on [Lightweight coscheduling based on back-to-back queue 
-sorting](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/kep/2-lightweight-coscheduling).
+This folder holds the coscheduling plugin implementations based on [Coscheduling based on PodGroup CRD](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/kep/42-podgroup-coscheduling). The old version coscheduling is based on [Lightweight coscheduling based on back-to-back queue
+ sorting](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/kep/2-lightweight-coscheduling).
 
 ## Maturity Level
 
@@ -14,11 +14,20 @@ sorting](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/kep/2-
 
 ## Tutorial
 ### PodGroup
-We use a special label named pod-group.scheduling.sigs.k8s.io/name to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. 
+We use a special label named `pod-group.scheduling.sigs.k8s.io` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup.
 ```
+# PodGroup CRD spec
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: PodGroup
+metadata:
+  name: nginx
+spec:
+  scheduleTimeoutSeconds: 10
+  minMember: 3
+---
+# Add a label `pod-group.scheduling.sigs.k8s.io` to mark the pod belongs to a group
 labels:
-     pod-group.scheduling.sigs.k8s.io/name: nginx
-     pod-group.scheduling.sigs.k8s.io/min-available: "2"
+  pod-group.scheduling.sigs.k8s.io: nginx
 ```
 We will calculate the sum of the Running pods and the Waiting pods (assumed but not bind) in scheduler, if the sum is greater than or equal to the minAvailable, the Waiting pods
 will be created.
@@ -56,11 +65,22 @@ profiles:
     reserve:
       enabled:
         - name: Coscheduling
+    postBind:
+      enabled:
+        - name: Coscheduling
 ```
 
 ### Demo
 Suppose we have a cluster which can only afford 3 nginx pods. We create a ReplicaSet with replicas=6, and set the value of minAvailable to 3.
 ```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: PodGroup
+metadata:
+  name: nginx
+spec:
+  scheduleTimeoutSeconds: 10
+  minMember: 3
+---
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
@@ -77,8 +97,7 @@ spec:
       name: nginx
       labels:
         app: nginx
-        pod-group.scheduling.sigs.k8s.io/name: nginx
-        pod-group.scheduling.sigs.k8s.io/min-available: "3"
+        pod-group.scheduling.sigs.k8s.io: nginx
     spec:
       containers:
       - name: nginx

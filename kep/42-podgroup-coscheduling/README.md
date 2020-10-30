@@ -59,8 +59,8 @@ type PodGroupStatus struct {
 	// Current phase of PodGroup.
 	Phase PodGroupPhase `json:"phase"`
 
-    // OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
-    // It is empty if not initialized.
+	// OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
+	// It is empty if not initialized.
 	OccupiedBy string `json:"occupiedBy,omitempty"`
 
 	// The number of actively running pods.

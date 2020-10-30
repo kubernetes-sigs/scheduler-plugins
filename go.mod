@@ -3,15 +3,18 @@ module sigs.k8s.io/scheduler-plugins
 go 1.15
 
 require (
-	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/google/go-cmp v0.4.0
+	github.com/google/uuid v1.1.1
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.19.0
+	k8s.io/apiextensions-apiserver v0.0.0
 	k8s.io/apimachinery v0.19.0
 	k8s.io/apiserver v0.19.0
 	k8s.io/client-go v0.19.0
 	k8s.io/code-generator v0.19.0
 	k8s.io/klog/v2 v2.2.0
+	k8s.io/kube-aggregator v0.0.0
 	k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6
 	k8s.io/kube-scheduler v0.19.0
 	k8s.io/kubernetes v1.19.0

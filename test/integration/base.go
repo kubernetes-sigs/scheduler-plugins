@@ -14,23 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package integration
 
 import (
 	"context"
-	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 )
 
-func PrintPods(t *testing.T, cs clientset.Interface, ns string) {
-	podList, err := cs.CoreV1().Pods(ns).List(context.TODO(), metav1.ListOptions{})
+var lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)
+
+// podScheduled returns true if a node is assigned to the given pod.
+func podScheduled(c clientset.Interface, podNamespace, podName string) bool {
+	pod, err := c.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
-		t.Errorf("Failed to list Pods: %v", err)
-		return
+		// This could be a connection error so we want to retry.
+		klog.Errorf("klog error %v", err)
+		return false
 	}
-	for _, pod := range podList.Items {
-		t.Logf("Pod %q scheduled to %q", pod.Name, pod.Spec.NodeName)
+	if pod.Spec.NodeName == "" {
+		return false
 	}
+	return true
 }

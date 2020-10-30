@@ -33,6 +33,10 @@ type CoschedulingArgs struct {
 	// If the deleted PodGroup stays longer than the PodGroupExpirationTime,
 	// the PodGroup will be deleted from PodGroupInfos.
 	PodGroupExpirationTimeSeconds int64
+	// KubeMaster is the url of api-server
+	KubeMaster string
+	// KubeConfigPath for scheduler
+	KubeConfigPath string
 }
 
 // modes type.
