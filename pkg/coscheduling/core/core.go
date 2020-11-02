@@ -216,6 +216,7 @@ func (pgMgr *PodGroupManager) GetPodGroup(pod *corev1.Pod) (string, *v1alpha1.Po
 	return fmt.Sprintf("%v/%v", pod.Namespace, pgName), pg
 }
 
+// calculateBoundPods returns the count of pods that have occupied resources (including assumed and bound)
 func (pgMgr *PodGroupManager) calculateBoundPods(podGroupName, namespace string) int {
 	nodeInfos, err := pgMgr.snapshotSharedLister.NodeInfos().List()
 	if err != nil {
