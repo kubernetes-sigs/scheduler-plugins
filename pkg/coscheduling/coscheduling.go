@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
+// Coscheduling is a plugin that schedules pods in a group.
 type Coscheduling struct {
 	frameworkHandler framework.FrameworkHandle
 	pgMgr            core.Manager
@@ -109,18 +110,18 @@ func (cs *Coscheduling) Name() string {
 	return Name
 }
 
-// Less is used to sort pods in the scheduling queue.
+// Less is used to sort pods in the scheduling queue in the following order.
 // 1. Compare the priorities of Pods.
-// 2. Compare the initialization timestamps of PodGroups/Pods.
-// 3. Compare the keys of PodGroups/Pods, i.e., if two pods are tied at priority and creation time, the one without podGroup will go ahead of the one with podGroup.
+// 2. Compare the initialization timestamps of PodGroups or Pods.
+// 3. Compare the keys of PodGroups/Pods: <namespace>/<podname>.
 func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	prio1 := podutil.GetPodPriority(podInfo1.Pod)
 	prio2 := podutil.GetPodPriority(podInfo2.Pod)
 	if prio1 != prio2 {
 		return prio1 > prio2
 	}
-	creationTime1 := cs.pgMgr.GetCreationTime(podInfo1.Pod, podInfo1.InitialAttemptTimestamp)
-	creationTime2 := cs.pgMgr.GetCreationTime(podInfo2.Pod, podInfo2.InitialAttemptTimestamp)
+	creationTime1 := cs.pgMgr.GetCreationTimestamp(podInfo1.Pod, podInfo1.InitialAttemptTimestamp)
+	creationTime2 := cs.pgMgr.GetCreationTimestamp(podInfo2.Pod, podInfo2.InitialAttemptTimestamp)
 	if creationTime1.Equal(creationTime2) {
 		return core.GetNamespacedName(podInfo1.Pod) < core.GetNamespacedName(podInfo2.Pod)
 	}
@@ -128,11 +129,8 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 }
 
 // PreFilter performs the following validations.
-// 1. Validate if minMember and priorities of all the pods in a PodGroup are the same.
-// 2. Validate if the total number of pods belonging to the same `PodGroup` is less than `minMember`.
-//    If so, the scheduling process will be interrupted directly to avoid the partial Pods and hold the system resources
-//    until a timeout. It will reduce the overall scheduling time for the whole group.
-// 3. Validate if resource is enough, if not enough, pod would not pass this check, and the the group would be ad to a denyList
+// 1. Whether the PodGroup that the Pod belongs to is on the deny list.
+// 2. Whether the total number of pods in a PodGroup is less than its `minMember`.
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) *framework.Status {
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
 		klog.Error(err)
@@ -185,6 +183,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 	return framework.NewStatus(framework.Success, ""), 0
 }
 
+// Reserve is the functions invoked by the framework at "reserve" extension point.
 func (cs *Coscheduling) Reserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
 	return nil
 }
@@ -201,7 +200,7 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 			waitingPod.Reject(cs.Name())
 		}
 	})
-	cs.pgMgr.AddToDenyCache(pgName)
+	cs.pgMgr.AddDeniedPodGroup(pgName)
 }
 
 // PostBind is called after a pod is successfully bound. These plugins are used update PodGroup when pod is bound.
