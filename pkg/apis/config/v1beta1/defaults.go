@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// +k8s:defaulter-gen=true
+
 package v1beta1
 
 import (
@@ -21,9 +23,8 @@ import (
 )
 
 var (
-	defaultPermitWaitingTimeSeconds      int64 = 10
-	defaultPodGroupGCIntervalSeconds     int64 = 30
-	defaultPodGroupExpirationTimeSeconds int64 = 600
+	defaultPermitWaitingTimeSeconds      int64 = 60
+	defaultDeniedPGExpirationTimeSeconds int64 = 20
 
 	defaultNodeResourcesAllocatableMode = Least
 
@@ -39,19 +40,20 @@ var (
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
 
-func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
+// SetDefaultsCoschedulingArgs sets the default parameters for Coscheduling plugin.
+func SetDefaultsCoschedulingArgs(obj *CoschedulingArgs) {
 	if obj.PermitWaitingTimeSeconds == nil {
 		obj.PermitWaitingTimeSeconds = &defaultPermitWaitingTimeSeconds
 	}
-	if obj.PodGroupGCIntervalSeconds == nil {
-		obj.PodGroupGCIntervalSeconds = &defaultPodGroupGCIntervalSeconds
+	if obj.DeniedPGExpirationTimeSeconds == nil {
+		obj.DeniedPGExpirationTimeSeconds = &defaultDeniedPGExpirationTimeSeconds
 	}
-	if obj.PodGroupExpirationTimeSeconds == nil {
-		obj.PodGroupExpirationTimeSeconds = &defaultPodGroupExpirationTimeSeconds
-	}
+
+	// TODO(k/k#96427): get KubeConfigPath and KubeMaster from configuration or command args.
 }
 
-func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) {
+// SetDefaultsNodeResourcesAllocatableArgs sets the defaults parameters for NodeResourceAllocatable.
+func SetDefaultsNodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) {
 	if len(obj.Resources) == 0 {
 		obj.Resources = defaultNodeResourcesAllocatableResourcesToWeightMap
 	}
@@ -61,7 +63,8 @@ func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs)
 	}
 }
 
-func SetDefaults_CapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
+// SetDefaultsCapacitySchedulingArgs sets the default parameters for CapacityScheduling plugin.
+func SetDefaultsCapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
 	if obj.KubeConfigPath == nil {
 		obj.KubeConfigPath = &defaultKubeConfigPath
 	}

@@ -28,22 +28,22 @@ import (
 // Public to allow building arbitrary schemes.
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
-	scheme.AddTypeDefaultingFunc(&CapacitySchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CapacitySchedulingArgs(obj.(*CapacitySchedulingArgs)) })
-	scheme.AddTypeDefaultingFunc(&CoschedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CoschedulingArgs(obj.(*CoschedulingArgs)) })
+	scheme.AddTypeDefaultingFunc(&CapacitySchedulingArgs{}, func(obj interface{}) { SetObjectDefaultsCapacitySchedulingArgs(obj.(*CapacitySchedulingArgs)) })
+	scheme.AddTypeDefaultingFunc(&CoschedulingArgs{}, func(obj interface{}) { SetObjectDefaultsCoschedulingArgs(obj.(*CoschedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeResourcesAllocatableArgs{}, func(obj interface{}) {
-		SetObjectDefaults_NodeResourcesAllocatableArgs(obj.(*NodeResourcesAllocatableArgs))
+		SetObjectDefaultsNodeResourcesAllocatableArgs(obj.(*NodeResourcesAllocatableArgs))
 	})
 	return nil
 }
 
-func SetObjectDefaults_CapacitySchedulingArgs(in *CapacitySchedulingArgs) {
-	SetDefaults_CapacitySchedulingArgs(in)
+func SetObjectDefaultsCapacitySchedulingArgs(in *CapacitySchedulingArgs) {
+	SetDefaultsCapacitySchedulingArgs(in)
 }
 
-func SetObjectDefaults_CoschedulingArgs(in *CoschedulingArgs) {
-	SetDefaults_CoschedulingArgs(in)
+func SetObjectDefaultsCoschedulingArgs(in *CoschedulingArgs) {
+	SetDefaultsCoschedulingArgs(in)
 }
 
-func SetObjectDefaults_NodeResourcesAllocatableArgs(in *NodeResourcesAllocatableArgs) {
-	SetDefaults_NodeResourcesAllocatableArgs(in)
+func SetObjectDefaultsNodeResourcesAllocatableArgs(in *NodeResourcesAllocatableArgs) {
+	SetDefaultsNodeResourcesAllocatableArgs(in)
 }
