@@ -18,7 +18,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -198,51 +201,58 @@ func (ctrl *PodGroupController) syncHandler(ctx context.Context, pg *schedv1alph
 	}()
 
 	pgCopy := pg.DeepCopy()
-	if string(pgCopy.Status.Phase) == "" {
-		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
-	}
-
 	selector := labels.Set(map[string]string{util.PodGroupLabel: pgCopy.Name}).AsSelector()
 	pods, err := ctrl.podLister.List(selector)
 	if err != nil {
 		klog.Errorf("List pods for group %v failed: %v", pgCopy.Name, err)
 		return
 	}
-	var (
-		running   int32 = 0
-		succeeded int32 = 0
-		failed    int32 = 0
-	)
-	if len(pods) != 0 {
-		for _, pod := range pods {
-			switch pod.Status.Phase {
-			case v1.PodRunning:
-				running++
-			case v1.PodSucceeded:
-				succeeded++
-			case v1.PodFailed:
-				failed++
+
+	switch pgCopy.Status.Phase {
+	case "":
+		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
+	case schedv1alpha1.PodGroupPending:
+		if len(pods) >= int(pg.Spec.MinMember) {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupPreScheduling
+			fillOccupiedObj(pg, pods[0])
+		}
+	default:
+		var (
+			running   int32 = 0
+			succeeded int32 = 0
+			failed    int32 = 0
+		)
+		if len(pods) != 0 {
+			for _, pod := range pods {
+				switch pod.Status.Phase {
+				case v1.PodRunning:
+					running++
+				case v1.PodSucceeded:
+					succeeded++
+				case v1.PodFailed:
+					failed++
+				}
 			}
 		}
-	}
-	pgCopy.Status.Failed = failed
-	pgCopy.Status.Succeeded = succeeded
-	pgCopy.Status.Running = running
+		pgCopy.Status.Failed = failed
+		pgCopy.Status.Succeeded = succeeded
+		pgCopy.Status.Running = running
 
-	if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduling {
-		pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
-	}
+		if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduling {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
+		}
 
-	if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduled {
-		pgCopy.Status.Phase = schedv1alpha1.PodGroupRunning
-	}
-	// Final state of pod group
-	if pgCopy.Status.Failed != 0 && pgCopy.Status.Failed+pgCopy.Status.Running+pgCopy.Status.Succeeded >= pg.Spec.
-		MinMember {
-		pgCopy.Status.Phase = schedv1alpha1.PodGroupFailed
-	}
-	if pgCopy.Status.Succeeded >= pg.Spec.MinMember {
-		pgCopy.Status.Phase = schedv1alpha1.PodGroupFinished
+		if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduled {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupRunning
+		}
+		// Final state of pod group
+		if pgCopy.Status.Failed != 0 && pgCopy.Status.Failed+pgCopy.Status.Running+pgCopy.Status.Succeeded >= pg.Spec.
+			MinMember {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupFailed
+		}
+		if pgCopy.Status.Succeeded >= pg.Spec.MinMember {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupFinished
+		}
 	}
 
 	err = ctrl.patchPodGroup(pg, pgCopy)
@@ -265,4 +275,18 @@ func (ctrl *PodGroupController) patchPodGroup(old, new *schedv1alpha1.PodGroup) 
 		}
 	}
 	return nil
+}
+
+func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *v1.Pod) {
+	var refs []string
+	for _, ownerRef := range pod.OwnerReferences {
+		refs = append(refs, fmt.Sprintf("%s/%s", pod.Namespace, ownerRef.Name))
+	}
+	if len(pg.Status.OccupiedBy) == 0 {
+		return
+	}
+	if len(refs) != 0 {
+		sort.Strings(refs)
+		pg.Status.OccupiedBy = strings.Join(refs, ",")
+	}
 }
