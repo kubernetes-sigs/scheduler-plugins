@@ -369,18 +369,6 @@ func TestCoschedulingPlugin(t *testing.T) {
 				}
 
 			}
-			// A workaround to speed up the test by moving unschedulable Pods back to activeQ.
-			wait.PollUntil(time.Millisecond*200, func() (bool, error) {
-				numUnschedulablePods := testCtx.Scheduler.SchedulingQueue.NumUnschedulablePods()
-				return numUnschedulablePods > 0, nil
-			}, testCtx.Ctx.Done())
-			klog.Infof("Start to move unschedulable Pods back to activeQ.")
-			// DEBUG
-			for _, p := range testCtx.Scheduler.SchedulingQueue.PendingPods() {
-				klog.Infof("[DEBUG] pod %v is pending", p.Name)
-			}
-			testCtx.Scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue("fake event")
-
 			err = wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {
 					if !podScheduled(cs, ns.Name, v) {
