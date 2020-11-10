@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
+
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -35,6 +36,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 )
 
 func TestSetup(t *testing.T) {
@@ -305,6 +307,32 @@ profiles:
 		t.Fatal(err)
 	}
 
+	// TargetLoadPacking plugin config with arguments
+	targetLoadPackingConfigWithArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-args.yaml")
+	if err := ioutil.WriteFile(targetLoadPackingConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    score:
+      enabled:
+      - name: TargetLoadPacking
+      disabled:
+      - name: "*"
+  pluginConfig:
+  - name: TargetLoadPacking
+    args:
+      targetUtilization: 60 
+      defaultRequests:
+        cpu: "1000m"
+      defaultRequestsMultiplier: "1.8"
+      watcherAddress: http://deadbeef:2020
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
 	if err := ioutil.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
@@ -484,6 +512,24 @@ profiles:
 					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
 					"ReservePlugin":    {{Name: "VolumeBinding"}},
 					"ScorePlugin":      {{Name: "NodeResourcesAllocatable", Weight: 1}},
+				},
+			},
+		},
+		{
+			name:            "single profile config - TargetLoadPacking with args",
+			flags:           []string{"--config", targetLoadPackingConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(targetloadpacking.Name, targetloadpacking.New)},
+			wantPlugins: map[string]map[string][]kubeschedulerconfig.Plugin{
+				"default-scheduler": {
+					"BindPlugin":       {{Name: "DefaultBinder"}},
+					"FilterPlugin":     defaultPlugins["FilterPlugin"],
+					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
+					"PreBindPlugin":    {{Name: "VolumeBinding"}},
+					"PreFilterPlugin":  defaultPlugins["PreFilterPlugin"],
+					"PreScorePlugin":   defaultPlugins["PreScorePlugin"],
+					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
+					"ReservePlugin":    {{Name: "VolumeBinding"}},
+					"ScorePlugin":      {{Name: targetloadpacking.Name, Weight: 1}},
 				},
 			},
 		},

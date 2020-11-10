@@ -33,6 +33,9 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&NodeResourcesAllocatableArgs{}, func(obj interface{}) {
 		SetObjectDefaultsNodeResourcesAllocatableArgs(obj.(*NodeResourcesAllocatableArgs))
 	})
+	scheme.AddTypeDefaultingFunc(&TargetLoadPackingArgs{}, func(obj interface{}) {
+		SetObjectDefaultsTargetLoadPackingArgs(obj.(*TargetLoadPackingArgs))
+	})
 	return nil
 }
 
@@ -46,4 +49,8 @@ func SetObjectDefaultsCoschedulingArgs(in *CoschedulingArgs) {
 
 func SetObjectDefaultsNodeResourcesAllocatableArgs(in *NodeResourcesAllocatableArgs) {
 	SetDefaultsNodeResourcesAllocatableArgs(in)
+}
+
+func SetObjectDefaultsTargetLoadPackingArgs(in *TargetLoadPackingArgs) {
+	SetDefaultTargetLoadPackingArgs(in)
 }
