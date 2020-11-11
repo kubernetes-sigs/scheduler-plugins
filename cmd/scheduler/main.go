@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/crossnodepreemption"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
+	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 
 	// Ensure scheme package is initialized.
@@ -44,6 +45,7 @@ func main() {
 		app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable),
 		// Sample plugins below.
 		app.WithPlugin(crossnodepreemption.Name, crossnodepreemption.New),
+		app.WithPlugin(podstate.Name, podstate.New),
 		app.WithPlugin(qos.Name, qos.New),
 	)
 

@@ -76,6 +76,36 @@ users:
 		t.Fatal(err)
 	}
 
+	// PodState plugin config
+	podStateConfigFile := filepath.Join(tmpDir, "podState.yaml")
+	if err := ioutil.WriteFile(podStateConfigFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    queueSort:
+      disabled:
+      - name: "*"
+    preFilter:
+      disabled:
+      - name: "*"
+    filter:
+      disabled:
+      - name: "*"
+    preScore:
+      disabled:
+      - name: "*"
+    score:
+      enabled:
+      - name: PodState
+      disabled:
+      - name: "*"
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
 	// QOSSort plugin config
 	qosSortConfigFile := filepath.Join(tmpDir, "qosSort.yaml")
 	if err := ioutil.WriteFile(qosSortConfigFile, []byte(fmt.Sprintf(`
