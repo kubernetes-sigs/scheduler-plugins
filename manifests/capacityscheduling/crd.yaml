@@ -2,13 +2,10 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: elasticquotas.scheduling.sigs.k8s.io
+  annotations:
+    "api-approved.kubernetes.io": "https://github.com/kubernetes-sigs/scheduler-plugins/pull/52"
 spec:
   group: scheduling.sigs.k8s.io
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-  scope: Namespaced
   names:
     plural: elasticquotas
     singular: elasticquota
@@ -16,19 +13,24 @@ spec:
     shortNames:
     - eq
     - eqs
-  validation:
-    openAPIV3Schema:
-      type: object
-      properties:
-        spec:
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
           type: object
           properties:
-            min:
+            spec:
               type: object
-            max:
+              properties:
+                min:
+                  type: object
+                max:
+                  type: object
+            status:
               type: object
-        status:
-          type: object
-          properties:
-            used:
-              type: object
+              properties:
+                used:
+                  type: object
