@@ -3,7 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   name: podgroups.scheduling.sigs.k8s.io
   annotations:
-    "api-approved.kubernetes.io": "https://github.com/kubernetes-sigs/scheduler-plugins/pull/52"
+    "api-approved.kubernetes.io": "https://github.com/kubernetes-sigs/scheduler-plugins/pull/50"
 spec:
   group: scheduling.sigs.k8s.io
   names:
@@ -18,13 +18,13 @@ spec:
   - name: "v1alpha1"
     served: true
     storage: true
-  validation:
-    openAPIV3Schema:
-      type: object
-      properties:
-        spec:
-          type: object
-          properties:
-            minMember:
-              type: integer
-              minimum: 1
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              minMember:
+                type: integer
+                minimum: 1
