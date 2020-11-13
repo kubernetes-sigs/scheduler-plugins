@@ -61,6 +61,8 @@ type PodGroupManager struct {
 	// lastDeniedPG store the pg name if a pod can not pass pre-filer,
 	// or anyone of the pod timeout
 	lastDeniedPG *gochache.Cache
+	// deniedCacheExpirationTime is the expiration time that a podGroup remains in lastDeniedPG store.
+	lastDeniedPGExpirationTime *time.Duration
 	// pgLister is podgroup lister
 	pgLister pglister.PodGroupLister
 	// podLister is pod lister
@@ -71,15 +73,16 @@ type PodGroupManager struct {
 }
 
 // NewPodGroupManager create a new operation object
-func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister framework.SharedLister, scheduleTimeout *time.Duration,
+func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister framework.SharedLister, scheduleTimeout, deniedPGExpirationTime *time.Duration,
 	pgInformer pginformer.PodGroupInformer, podInformer informerv1.PodInformer) *PodGroupManager {
 	pgMgr := &PodGroupManager{
-		pgClient:             pgClient,
-		snapshotSharedLister: snapshotSharedLister,
-		scheduleTimeout:      scheduleTimeout,
-		pgLister:             pgInformer.Lister(),
-		podLister:            podInformer.Lister(),
-		lastDeniedPG:         gochache.New(3*time.Second, 3*time.Second),
+		pgClient:                   pgClient,
+		snapshotSharedLister:       snapshotSharedLister,
+		scheduleTimeout:            scheduleTimeout,
+		lastDeniedPGExpirationTime: deniedPGExpirationTime,
+		pgLister:                   pgInformer.Lister(),
+		podLister:                  podInformer.Lister(),
+		lastDeniedPG:               gochache.New(3*time.Second, 3*time.Second),
 	}
 	return pgMgr
 }
@@ -189,7 +192,7 @@ func (pgMgr *PodGroupManager) GetCreationTimestamp(pod *corev1.Pod, ts time.Time
 
 // AddDeniedPodGroup adds a podGroup that fails to be scheduled to a PodGroup cache with expriration.
 func (pgMgr *PodGroupManager) AddDeniedPodGroup(pgFullName string) {
-	pgMgr.lastDeniedPG.Add(pgFullName, "", 3*time.Second)
+	pgMgr.lastDeniedPG.Add(pgFullName, "", *pgMgr.lastDeniedPGExpirationTime)
 }
 
 // PatchPodGroup patches a podGroup.

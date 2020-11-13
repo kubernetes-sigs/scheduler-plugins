@@ -88,6 +88,7 @@ func TestLess(t *testing.T) {
 	existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
 	snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
 	scheudleDuration := 10 * time.Second
+	deniedPGExpirationTime := 3 * time.Second
 	var lowPriority, highPriority = int32(10), int32(100)
 	ns1, ns2 := "namespace1", "namespace2"
 	for _, tt := range []struct {
@@ -255,7 +256,7 @@ func TestLess(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, pgInformer, podInformer)
+			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, &deniedPGExpirationTime, pgInformer, podInformer)
 			coscheduling := &Coscheduling{pgMgr: pgMgr}
 			if got := coscheduling.Less(tt.p1, tt.p2); got != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, got)
@@ -303,9 +304,10 @@ func TestPermit(t *testing.T) {
 	existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
 	snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
 	scheudleDuration := 10 * time.Second
+	deniedPGExpirationTime := 3 * time.Second
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, pgInformer, podInformer)
+			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, &deniedPGExpirationTime, pgInformer, podInformer)
 			coscheduling := &Coscheduling{pgMgr: pgMgr, frameworkHandler: fakeHandler{}, scheduleTimeout: &scheudleDuration}
 			code, _ := coscheduling.Permit(context.Background(), framework.NewCycleState(), tt.pod, "test")
 			if code.Code() != tt.expected {

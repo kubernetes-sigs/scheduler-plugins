@@ -29,23 +29,22 @@ type CoschedulingArgs struct {
 
 	// PermitWaitingTime is the wait timeout in seconds.
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
-	// PodGroupGCInterval is the period to run gc of PodGroup in seconds.
-	PodGroupGCIntervalSeconds *int64 `json:"podGroupGCIntervalSeconds,omitempty"`
-	// If the deleted PodGroup stays longer than the PodGroupExpirationTime,
-	// the PodGroup will be deleted from PodGroupInfos.
-	PodGroupExpirationTimeSeconds *int64 `json:"podGroupExpirationTimeSeconds,omitempty"`
+	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
+	DeniedPGExpirationTimeSeconds *int64 `json:"deniedPGExpirationTimeSeconds,omitempty"`
 	// KubeMaster is the url of api-server
-	KubeMaster string `json:"kubeMaster,omitempty"`
+	KubeMaster *string `json:"kubeMaster,omitempty"`
 	// KubeConfigPath for scheduler
-	KubeConfigPath string `json:"kubeConfigPath,omitempty"`
+	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }
 
-// modes type.
+// ModeType is a type "string".
 type ModeType string
 
 const (
+	// Least is the string "Least".
 	Least ModeType = "Least"
-	Most  ModeType = "Most"
+	// Most is the string "Most".
+	Most ModeType = "Most"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

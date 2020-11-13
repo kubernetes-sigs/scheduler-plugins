@@ -64,13 +64,8 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 		*out = new(int64)
 		**out = **in
 	}
-	if in.PodGroupGCIntervalSeconds != nil {
-		in, out := &in.PodGroupGCIntervalSeconds, &out.PodGroupGCIntervalSeconds
-		*out = new(int64)
-		**out = **in
-	}
-	if in.PodGroupExpirationTimeSeconds != nil {
-		in, out := &in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds
+	if in.DeniedPGExpirationTimeSeconds != nil {
+		in, out := &in.DeniedPGExpirationTimeSeconds, &out.DeniedPGExpirationTimeSeconds
 		*out = new(int64)
 		**out = **in
 	}

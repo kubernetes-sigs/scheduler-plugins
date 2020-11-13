@@ -58,12 +58,13 @@ const (
 	Name = "Coscheduling"
 )
 
-// New initializes a new plugin and returns it.
+// New initializes and returns a new Coscheduling plugin.
 func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
 	args, ok := obj.(*config.CoschedulingArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type CoschedulingArgs, got %T", obj)
 	}
+
 	conf, err := clientcmd.BuildConfigFromFlags(args.KubeMaster, args.KubeConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init rest.Config: %v", err)
@@ -82,15 +83,12 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 	}))
 	podInformer := informerFactory.Core().V1().Pods()
 
-	var (
-		scheduleTimeDuration = util.DefaultWaitTime
-	)
-	if args.PermitWaitingTimeSeconds != 0 {
-		scheduleTimeDuration = time.Duration(args.PermitWaitingTimeSeconds) * time.Second
-	}
+	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
+	deniedPGExpirationTime := time.Duration(args.DeniedPGExpirationTimeSeconds) * time.Second
+
 	ctx := context.TODO()
 
-	pgMgr := core.NewPodGroupManager(pgClient, handle.SnapshotSharedLister(), &scheduleTimeDuration, pgInformer, podInformer)
+	pgMgr := core.NewPodGroupManager(pgClient, handle.SnapshotSharedLister(), &scheduleTimeDuration, &deniedPGExpirationTime, pgInformer, podInformer)
 	plugin := &Coscheduling{
 		frameworkHandler: handle,
 		pgMgr:            pgMgr,

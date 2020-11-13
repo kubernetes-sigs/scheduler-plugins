@@ -23,28 +23,28 @@ import (
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// CoschedulingArgs defines the parameters for Coscheduling plugin.
 type CoschedulingArgs struct {
 	metav1.TypeMeta
 
 	// PermitWaitingTime is the wait timeout in seconds.
 	PermitWaitingTimeSeconds int64
-	// PodGroupGCInterval is the period to run gc of PodGroup in seconds.
-	PodGroupGCIntervalSeconds int64
-	// If the deleted PodGroup stays longer than the PodGroupExpirationTime,
-	// the PodGroup will be deleted from PodGroupInfos.
-	PodGroupExpirationTimeSeconds int64
+	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
+	DeniedPGExpirationTimeSeconds int64
 	// KubeMaster is the url of api-server
 	KubeMaster string
 	// KubeConfigPath for scheduler
 	KubeConfigPath string
 }
 
-// modes type.
+// ModeType is a "string" type.
 type ModeType string
 
 const (
+	// Least is the string "Least".
 	Least ModeType = "Least"
-	Most  ModeType = "Most"
+	// Most is the string "Most".
+	Most ModeType = "Most"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -66,6 +66,7 @@ type NodeResourcesAllocatableArgs struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// CapacitySchedulingArgs defines the scheduling parameters for CapacityScheduling plugin.
 type CapacitySchedulingArgs struct {
 	metav1.TypeMeta
 

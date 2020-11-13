@@ -98,14 +98,15 @@ func autoConvert_v1beta1_CoschedulingArgs_To_config_CoschedulingArgs(in *Cosched
 	if err := v1.Convert_Pointer_int64_To_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
 		return err
 	}
-	if err := v1.Convert_Pointer_int64_To_int64(&in.PodGroupGCIntervalSeconds, &out.PodGroupGCIntervalSeconds, s); err != nil {
+	if err := v1.Convert_Pointer_int64_To_int64(&in.DeniedPGExpirationTimeSeconds, &out.DeniedPGExpirationTimeSeconds, s); err != nil {
 		return err
 	}
-	if err := v1.Convert_Pointer_int64_To_int64(&in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds, s); err != nil {
+	if err := v1.Convert_Pointer_string_To_string(&in.KubeMaster, &out.KubeMaster, s); err != nil {
 		return err
 	}
-	out.KubeMaster = in.KubeMaster
-	out.KubeConfigPath = in.KubeConfigPath
+	if err := v1.Convert_Pointer_string_To_string(&in.KubeConfigPath, &out.KubeConfigPath, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -118,14 +119,15 @@ func autoConvert_config_CoschedulingArgs_To_v1beta1_CoschedulingArgs(in *config.
 	if err := v1.Convert_int64_To_Pointer_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
 		return err
 	}
-	if err := v1.Convert_int64_To_Pointer_int64(&in.PodGroupGCIntervalSeconds, &out.PodGroupGCIntervalSeconds, s); err != nil {
+	if err := v1.Convert_int64_To_Pointer_int64(&in.DeniedPGExpirationTimeSeconds, &out.DeniedPGExpirationTimeSeconds, s); err != nil {
 		return err
 	}
-	if err := v1.Convert_int64_To_Pointer_int64(&in.PodGroupExpirationTimeSeconds, &out.PodGroupExpirationTimeSeconds, s); err != nil {
+	if err := v1.Convert_string_To_Pointer_string(&in.KubeMaster, &out.KubeMaster, s); err != nil {
 		return err
 	}
-	out.KubeMaster = in.KubeMaster
-	out.KubeConfigPath = in.KubeConfigPath
+	if err := v1.Convert_string_To_Pointer_string(&in.KubeConfigPath, &out.KubeConfigPath, s); err != nil {
+		return err
+	}
 	return nil
 }
 
