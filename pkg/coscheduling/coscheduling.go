@@ -52,6 +52,7 @@ var _ framework.PreFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
 var _ framework.ReservePlugin = &Coscheduling{}
 var _ framework.PostBindPlugin = &Coscheduling{}
+var _ framework.PreFilterExtensions = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
@@ -137,9 +138,25 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	return framework.NewStatus(framework.Success, "")
 }
 
+// AddPod always return nil.
+func (cs *Coscheduling) AddPod(ctx context.Context, state *framework.CycleState, podToSchedule *v1.Pod, podToAdd *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	return nil
+}
+
+// RemovePod checks if pod to remove and to schedule have the same pod group label.
+func (cs *Coscheduling) RemovePod(ctx context.Context, state *framework.CycleState, podToSchedule *v1.Pod, podToRemove *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	fullNameToRemove := util.GetPodGroupFullName(podToRemove)
+	fullNameToSchedule := util.GetPodGroupFullName(podToSchedule)
+	if len(fullNameToSchedule) != 0 &&
+		fullNameToRemove == fullNameToSchedule {
+		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Pod to schedule and remote have the same pod group label"))
+	}
+	return framework.NewStatus(framework.Success, "")
+}
+
 // PreFilterExtensions returns a PreFilterExtensions interface if the plugin implements one.
 func (cs *Coscheduling) PreFilterExtensions() framework.PreFilterExtensions {
-	return nil
+	return cs
 }
 
 // Permit is the functions invoked by the framework at "Permit" extension point.
