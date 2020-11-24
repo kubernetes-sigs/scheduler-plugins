@@ -125,10 +125,10 @@ Therefore the overall score of a node is calculated by:
 When filter a node the memory and memory bandwidth requirement are estimated accroding to the classification of the pod to be scheduled. we check the free memory and free memory bandwidth of each node. In order to avoid unnecessary oversubscription, an OVERPROVISIONING factor is ued when calculate the memory and memory bandwidth to be reserved. This factor is got from the config file of this plugin, by default set to 2.
 
 #### PreScore
-In kubernetes scheduler v2 framework nodes are scored in parallel, to improve efficiency, and associate with the feature of our algorithm, we calculate the score of the nodes that have passed the filtering phase at the prescore extension point.
+At this extension point the name of the nodes to be scored are kept. At the Score extension point we will need rank these nodes to calculate the score.
 
 #### Score
-As have calculated the score at the PreScore extension point. just simply return the score directly at this point.
+Calculate the score of a node according to the algorithm describe above.
 
 ## Known Limitations
 
