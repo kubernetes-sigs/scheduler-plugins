@@ -1,0 +1,13 @@
+title: Memory bandwidth and LLC aware filtering and scoring
+authors:
+  - "@caiwenzh"
+owning-sig: sig-scheduling
+reviewers:
+  - "@seanmalloy"
+  - "@denkensk"
+  - "@Huang-Wei"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2020-11-16
+last-updated: 2020-11-27
+status: implementable

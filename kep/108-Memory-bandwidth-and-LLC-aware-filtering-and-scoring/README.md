@@ -136,6 +136,7 @@ When filter a node the memory and memory bandwidth requirement are estimated acc
 At this extension point the name of the nodes to be scored are kept. At the Score extension point we will need rank these nodes to calculate the score.
 
 #### Score
+
 Calculate the score of a node according to the algorithm describe above. e.g. A workload is labeled as "incept-no-leak" (it has "app: incept-no-leak" label), according to the plugin configuration the affinity (that is to say the metric weights) of incept-no-leak type workload is: 
       memorybandwidth: 60
       memorylatency: 60
