@@ -5,6 +5,7 @@
 <!-- toc -->
 - [RDT aware filtering and scoring](#RDT-aware-filtering-and-scoring)
   - [Table of Contents](#table-of-contents)
+  - [Summary](#summary)
   - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
@@ -24,27 +25,34 @@
   - [References](#references)
 <!-- /toc -->
 
+## Summary
+
+Besides CPU and memory other resources such as memory bandwidth and LLC (last level cache) may greatly impact workload performance. The ideal way is take all these resource into consideration and ensure the balance of resources on all nodes to avoid performance drop due to lack of one kind of resource.
+
 ## Motivation
 
-Memory bandwidth and LLC (last level cache) are very important resources in a system. Kuberenetes scheduler hasn't taken them into consideration yet. But memory bandwidth and LLC contention may impact system performance very much. Furtherly, it causes bad SLA. Intel Resource Director Technology (RDT) is one example of the technology that can be leveraged to mitigate the impact of memory bandwidth and LLC contention. It is very helpful to ensure system performance stability and improve SLA. 
+Memory bandwidth and LLC (last level cache) are very important resources in a system. Kuberenetes scheduler hasn't taken them into consideration yet. But memory bandwidth and LLC contention may greatly impact system performance. Moveover, it may cause poor SLA. For instance, in a CI/CD usage scenario, run 1 pipeline the totoal build time is 7min, run 16 pipelines the build time increases to 21min. Each pipeline (pod) is assigned the same CPU and memory, but the performance is quite different. We find once memory bandwidth is used out the performance will drop significantly, the more pipelines the worse performance. Intel® Resource Director Technology (Intel® RDT https://www.intel.com/content/www/us/en/architecture-and-technology/resource-director-technology.html) is one example of the technology that can be leveraged to mitigate the impact of memory bandwidth and LLC contention. It is very helpful to ensure system performance stability and improve SLA. 
 
 ## Goals
 1. Use scheduler plugin, which is the most Kubernetes native way, to implement memory bandwidth and LLC aware filtering and scoring.
 2. Leverage memory bandwidth and LLC relative metrics for filtering and scoring.
-3. Provide configurable weigths for prioritizing the metrics used in the scoring calculations.
+3. Provide configurable weights for prioritizing the metrics used in the scoring calculations.
 
 ## Non-Goals
 
 ## Use Cases
+1. If a workload is memory bandwidth bond, e.g. rpmbuild, it uses much memory bandwidth. If too much such kind of workloads are scheduled to a node, the memory bandwith of the node will be used out quickly. The performance of the workloads will drop significantly. If the scheduler uses this filter plugin it can be avoid. 
+
+2. If there are many workloads run on a node, the LLC contention may become very intense. The performance of all workloads will drop. If the scheduler uses this score plugin, it can ensure new workload is scheduled to LLC freer node. Furtherly, mitigate performance drop.
 
 ## Terms
-LLC: last level cache.
-RDT: Intel Resource Director Technology.
-SLA: Service Level Agreement.
-MPKI: Misses Per Kilo Instructions.
+- LLC: last level cache.
+- RDT: Intel® Resource Director Technology.
+- SLA: Service Level Agreement.
+- MPKI: Misses Per Kilo Instructions.
 
 ## Proposal
-We introduce some metrics such as memory bandwidth utilization, LLC occupation etc. At schedule stage, we can leverage these metrics to assist filting and scoring. It is hard to determine how important a resource is and how much resource is required. We did off-line analysis to different scenario and get a series of coefficient of correlation and generic usage value. The coefficient is called affinity and the generic usage value is called profile. The affinities and profiles are provided by a yaml configuration file. Detail about how the affinity and profile are used is described in the following design details section. The average value of a period of time is more meaningful than immediate value for some metrics, for instance, LLC occupancy and CPU usage. Metrics data aren't obtained from agents (such as cAdvisor) directly, instead they are stored in Prometheus first and then are retrieved on demand.
+We introduce some metrics such as memory bandwidth utilization, LLC occupation etc. At schedule stage, we can leverage these metrics to assist filtering and scoring. It is hard to determine how important a resource is and how much resource is required. We did off-line analysis to different scenario and get a series of coefficient of correlation and generic usage value. The coefficient is called affinity and the generic usage value is called profile. The affinities and profiles are provided by a yaml configuration file. Detail about how the affinity and profile are used is described in the following design details section. The average value of a period of time is more meaningful than immediate value for some metrics, for instance, LLC occupancy and CPU usage. Metrics data aren't obtained from agents (such as cAdvisor) directly, instead they are stored in Prometheus first and then are retrieved on demand.
 
 ## Design Details
 The filtering and scoring plugin leverages the metrics retrieved from Prometheus to determine the node candidates for running a pod. The metrics considered by the plugin at the moment are:
@@ -95,8 +103,8 @@ For every pod each node will be assigned a list of scores based on:
 * ranking strategy when giving point to the sorted nodes
     * We allow flexible point awarding for our scheduler plugin. For example, our default strategy is to award 10 points to the node ranking first in a certain resource, 5 points to the second place, 1 point to the 3rd place and 0 points to anyone else.
 
-* the pod affinity to the respective resource
-    * The pod affinity is also obtained via a top-down analysis. It can have values between 0 (no impact) and 100 (very heavy impact) of a resource upon the pod execution time. The affinity of a pod acts a multiplier for the points awared in the ranking algorithm.
+* the affinity to the respective resource
+    * The affinity is also obtained via a top-down analysis. It can have values between 0 (no impact) and 100 (very heavy impact) of a resource upon the pod execution time. The affinity of a resource acts a multiplier for the points awared in the ranking algorithm.
        Therefore, a node with a lot of available memory bandwith (ranking first) might not get a pod that needs less LLC thrashing in fact.
 
 For pod that are not profiled yet, we allocate a default profile.
@@ -128,7 +136,13 @@ When filter a node the memory and memory bandwidth requirement are estimated acc
 At this extension point the name of the nodes to be scored are kept. At the Score extension point we will need rank these nodes to calculate the score.
 
 #### Score
-Calculate the score of a node according to the algorithm describe above.
+Calculate the score of a node according to the algorithm describe above. e.g. A workload is labeled as "incept-no-leak" (it has "app: incept-no-leak" label), according to the plugin configuration the affinity (that is to say the metric weights) of incept-no-leak type workload is: 
+      memorybandwidth: 60
+      memorylatency: 60
+      llc_occupancy: 0
+      llc_mpki: 0
+      cpu: 50
+Individual score is gived according to the postion. According to the plugin configuration the score gives to the top three nodes are 10, 5, 1, the score gives to other nodes are 0. Assume the postion of a node ordered by memory bandwidth, memory latency, LLC occupancy, LLC MPKI and CPU is 3， 2， 1， 4 and 2. The individual score of the node is 1, 5, 10, 0 and 5. The final score of the node is 1 * 60 + 5 * 60 + 10 * 0 + 0 * 0 + 5 * 50 = 610.
 
 ## Known Limitations
 
