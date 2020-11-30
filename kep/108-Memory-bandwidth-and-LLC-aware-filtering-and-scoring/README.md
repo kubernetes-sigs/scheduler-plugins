@@ -27,11 +27,11 @@
 
 ## Summary
 
-Besides CPU and memory other resources such as memory bandwidth and LLC (last level cache) may greatly impact workload performance. The ideal way is take all these resource into consideration and ensure the balance of resources on all nodes to avoid performance drop due to lack of one kind of resource.
+This document describes filtering and scoring base on memory bandwidth and LLC (last level cache).
 
 ## Motivation
 
-Memory bandwidth and LLC (last level cache) are very important resources in a system. Kuberenetes scheduler hasn't taken them into consideration yet. But memory bandwidth and LLC contention may greatly impact system performance. Moveover, it may cause poor SLA. For instance, in a CI/CD usage scenario, run 1 pipeline the totoal build time is 7min, run 16 pipelines the build time increases to 21min. Each pipeline (pod) is assigned the same CPU and memory, but the performance is quite different. We find once memory bandwidth is used out the performance will drop significantly, the more pipelines the worse performance. Intel® Resource Director Technology (Intel® RDT https://www.intel.com/content/www/us/en/architecture-and-technology/resource-director-technology.html) is one example of the technology that can be leveraged to mitigate the impact of memory bandwidth and LLC contention. It is very helpful to ensure system performance stability and improve SLA. 
+Memory bandwidth and LLC are very important resources in a system. Kuberenetes scheduler hasn't taken them into consideration yet. But memory bandwidth and LLC contention may greatly impact system performance. Moveover, it may cause poor SLA. For instance, in a CI/CD usage scenario, run 1 pipeline the totoal build time is 7min, run 16 pipelines the build time increases to 21min. Each pipeline (pod) is assigned the same CPU and memory, but the performance is quite different. We find once memory bandwidth is used out the performance will drop significantly, the more pipelines the worse performance. Intel® Resource Director Technology (Intel® RDT https://www.intel.com/content/www/us/en/architecture-and-technology/resource-director-technology.html) is one example of the technology that can be leveraged to mitigate the impact of memory bandwidth and LLC contention. It is very helpful to ensure system performance stability and improve SLA. 
 
 ## Goals
 1. Use scheduler plugin, which is the most Kubernetes native way, to implement memory bandwidth and LLC aware filtering and scoring.
