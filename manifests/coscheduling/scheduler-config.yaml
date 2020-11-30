@@ -31,4 +31,4 @@ profiles:
       permitWaitingTimeSeconds: 10
       deniedPGExpirationTimeSeconds: 3
       kubeConfigPath: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
-      kubeMaster: "REPLACE_ME_WIHT_KUBE_MASTER"
+      kubeMaster: "REPLACE_ME_WITH_KUBE_MASTER"
