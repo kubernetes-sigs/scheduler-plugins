@@ -1,6 +1,8 @@
 title: Memory bandwidth and LLC aware filtering and scoring
 authors:
   - "@caiwenzh"
+  - "@andrzej-k"
+  - "@Dodan"
 owning-sig: sig-scheduling
 reviewers:
   - "@seanmalloy"
