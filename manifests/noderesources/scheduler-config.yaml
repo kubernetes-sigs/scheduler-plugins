@@ -7,7 +7,7 @@ clientConnection:
 profiles:
 - schedulerName: default-scheduler
   plugins:
-    Score:
+    score:
       enabled:
       - name: NodeResourcesAllocatable
       disabled:
