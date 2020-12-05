@@ -351,6 +351,63 @@ func TestCoschedulingPlugin(t *testing.T) {
 			},
 			expectedPods: []string{"t7-p1-1", "t7-p1-2", "t7-p1-3"},
 		},
+		{
+			name: "equal priority, not sequentially pg1 meet min and p2 p3 not meet min, pgs have min resources",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			podGroups: []*v1alpha1.PodGroup{
+				util.MakePG("pg8-1", ns.Name, 3, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("150")}),
+				util.MakePG("pg8-2", ns.Name, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
+				util.MakePG("pg8-3", ns.Name, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
+			},
+			expectedPods: []string{"t8-p1-1", "t8-p1-2", "t8-p1-3"},
+		},
+		{
+			name: "equal priority, not sequentially pg1 meet min and pg2 not meet min, pgs have min resources",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg9-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg9-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg9-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+					midPriority).Label(coschedulingutil.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			podGroups: []*v1alpha1.PodGroup{
+				util.MakePG("pg9-1", ns.Name, 3, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("150")}),
+				util.MakePG("pg9-2", ns.Name, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
+			},
+			expectedPods: []string{"t9-p1-1", "t9-p1-2", "t9-p1-3"},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start-coscheduling-test %v", tt.name)
@@ -407,6 +464,14 @@ func makeCRD() *apiextensionsv1.CustomResourceDefinition {
 									"minMember": {
 										Type:    "integer",
 										Minimum: &min,
+									},
+									"minResources": {
+										Type: "object",
+										AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{
+											Schema: &apiextensionsv1.JSONSchemaProps{
+												Type: "string",
+											},
+										},
 									},
 								},
 							},
