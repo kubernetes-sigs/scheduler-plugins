@@ -33,7 +33,7 @@ type fakeSharedLister struct {
 	havePodsWithAffinityNodeInfoList []*framework.NodeInfo
 }
 
-func NewFakeSharedLister(pods []*v1.Pod, nodes []*v1.Node) *fakeSharedLister {
+func NewFakeSharedLister(pods []*v1.Pod, nodes []*v1.Node) framework.SharedLister {
 	nodeInfoMap := createNodeInfoMap(pods, nodes)
 	nodeInfos := make([]*framework.NodeInfo, 0, len(nodeInfoMap))
 	havePodsWithAffinityNodeInfoList := make([]*framework.NodeInfo, 0, len(nodeInfoMap))

@@ -48,6 +48,8 @@ type Manager interface {
 	GetPodGroup(*corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
 	AddDeniedPodGroup(string)
+	DeletePermittedPodGroup(string)
+	CalculateAssignedPods(string, string) int
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -157,7 +159,7 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod, nodeN
 		return false, fmt.Errorf("PodGroup not found")
 	}
 
-	assigned := pgMgr.calculateAssignedPods(pg.Name, pg.Namespace)
+	assigned := pgMgr.CalculateAssignedPods(pg.Name, pg.Namespace)
 	// The number of pods that have been assigned nodes is calculated from the snapshot.
 	// The current pod in not included in the snapshot during the current scheduling cycle.
 	ready := int32(assigned)+1 >= pg.Spec.MinMember
@@ -226,6 +228,11 @@ func (pgMgr *PodGroupManager) AddDeniedPodGroup(pgFullName string) {
 	pgMgr.lastDeniedPG.Add(pgFullName, "", *pgMgr.lastDeniedPGExpirationTime)
 }
 
+// DeletePodGroup delete a podGroup that pass Pre-Filter but reach PostFilter.
+func (pgMgr *PodGroupManager) DeletePermittedPodGroup(pgFullName string) {
+	pgMgr.permittedPG.Delete(pgFullName)
+}
+
 // PatchPodGroup patches a podGroup.
 func (pgMgr *PodGroupManager) PatchPodGroup(pgName string, namespace string, patch []byte) error {
 	if len(patch) == 0 {
@@ -249,8 +256,8 @@ func (pgMgr *PodGroupManager) GetPodGroup(pod *corev1.Pod) (string, *v1alpha1.Po
 	return fmt.Sprintf("%v/%v", pod.Namespace, pgName), pg
 }
 
-// calculateAssignedPods returns the number of pods that has been assigned a node: assumed or bound.
-func (pgMgr *PodGroupManager) calculateAssignedPods(podGroupName, namespace string) int {
+// CalculateAssignedPods returns the number of pods that has been assigned a node: assumed or bound.
+func (pgMgr *PodGroupManager) CalculateAssignedPods(podGroupName, namespace string) int {
 	nodeInfos, err := pgMgr.snapshotSharedLister.NodeInfos().List()
 	if err != nil {
 		klog.Errorf("Cannot get nodeInfos from frameworkHandle: %v", err)

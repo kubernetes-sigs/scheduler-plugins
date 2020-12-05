@@ -317,6 +317,89 @@ func TestPermit(t *testing.T) {
 	}
 }
 
+func TestPostFilter(t *testing.T) {
+	nodeStatusMap := framework.NodeToStatusMap{"node1": framework.NewStatus(framework.Success, "")}
+	ctx := context.Background()
+	cs := fakepgclientset.NewSimpleClientset()
+	pgInformerFactory := pgformers.NewSharedInformerFactory(cs, 0)
+	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
+	pgInformerFactory.Start(ctx.Done())
+	pg := testutil.MakePG("pg", "ns1", 2, nil, nil)
+	pgInformer.Informer().GetStore().Add(pg)
+	fakeClient := clientsetfake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	podInformer := informerFactory.Core().V1().Pods()
+	informerFactory.Start(ctx.Done())
+
+	existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
+	snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
+
+	existingPods, allNodes = testutil.MakeNodesAndPods(map[string]string{pgutil.PodGroupLabel: "pg"}, 10, 30)
+	for _, pod := range existingPods {
+		pod.Namespace = "ns1"
+	}
+	groupPodSnapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
+	scheduleDuration := 10 * time.Second
+	deniedPGExpirationTime := 3 * time.Second
+	tests := []struct {
+		name                 string
+		pod                  *v1.Pod
+		expectedEmptyMsg     bool
+		preFilterSuccess     bool
+		snapshotSharedLister framework.SharedLister
+	}{
+		{
+			name:             "pod failed at pre-filter phase",
+			pod:              st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Obj(),
+			expectedEmptyMsg: true,
+			preFilterSuccess: false,
+		},
+		{
+			name:             "pod does not belong to any pod group",
+			pod:              st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Obj(),
+			expectedEmptyMsg: false,
+
+			preFilterSuccess: true,
+		},
+		{
+			name:                 "enough pods assigned, do not reject all",
+			pod:                  st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Label(pgutil.PodGroupLabel, "pg").Obj(),
+			expectedEmptyMsg:     true,
+			snapshotSharedLister: groupPodSnapshot,
+			preFilterSuccess:     true,
+		},
+		{
+			name:             "pod failed at filter phase, reject all pods",
+			pod:              st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Label(pgutil.PodGroupLabel, "pg").Obj(),
+			expectedEmptyMsg: false,
+			preFilterSuccess: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cycleState := framework.NewCycleState()
+			mgrSnapShot := snapshot
+			if tt.snapshotSharedLister != nil {
+				mgrSnapShot = tt.snapshotSharedLister
+			}
+
+			pgMgr := core.NewPodGroupManager(cs, mgrSnapShot, &scheduleDuration, &deniedPGExpirationTime, pgInformer, podInformer)
+			coscheduling := &Coscheduling{pgMgr: pgMgr, frameworkHandler: fakeHandler{}, scheduleTimeout: &scheduleDuration}
+			if !tt.preFilterSuccess {
+				cycleState.Write(coscheduling.getStateKey(), NewNoopStateData())
+			}
+			_, code := coscheduling.PostFilter(context.Background(), cycleState, tt.pod, nodeStatusMap)
+			if code.Message() == "" != tt.expectedEmptyMsg {
+				t.Errorf("expectedEmptyMsg %v, got %v", tt.expectedEmptyMsg, code.Message() == "")
+			}
+			if _, err := cycleState.Read(coscheduling.getStateKey()); err == nil {
+				t.Errorf("stateData leaking")
+			}
+		})
+	}
+}
+
 type fakeHandler struct {
 }
 

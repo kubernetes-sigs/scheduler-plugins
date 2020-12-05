@@ -235,12 +235,12 @@ func TestCheckClusterResource(t *testing.T) {
 	nodeRes := map[corev1.ResourceName]string{corev1.ResourceMemory: "300"}
 	node := st.MakeNode().Name("fake-node").Capacity(nodeRes).Obj()
 	snapshot := testutil.NewFakeSharedLister(nil, []*corev1.Node{node})
-	nodeInfo, _ := snapshot.List()
+	nodeInfo, _ := snapshot.NodeInfos().List()
 
 	pod := st.MakePod().Name("t1-p1-3").Req(map[corev1.ResourceName]string{corev1.ResourceMemory: "100"}).Label(util.PodGroupLabel,
 		"pg1-1").ZeroTerminationGracePeriod().Obj()
 	snapshotWithAssumedPod := testutil.NewFakeSharedLister([]*corev1.Pod{pod}, []*corev1.Node{node})
-	scheduledNodeInfo, _ := snapshotWithAssumedPod.List()
+	scheduledNodeInfo, _ := snapshotWithAssumedPod.NodeInfos().List()
 	tests := []struct {
 		name                  string
 		resourceRequest       corev1.ResourceList
