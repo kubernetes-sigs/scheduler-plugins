@@ -56,7 +56,11 @@ func MakeNodesAndPods(labels map[string]string, existingPodsNum, allNodesNum int
 	}
 	// build nodes
 	for i := 0; i < allNodesNum; i++ {
-		node := st.MakeNode().Name(fmt.Sprintf("node%d", i))
+		res := map[corev1.ResourceName]string{
+			corev1.ResourceCPU:  "1",
+			corev1.ResourcePods: "20",
+		}
+		node := st.MakeNode().Name(fmt.Sprintf("node%d", i)).Capacity(res)
 		allNodes = append(allNodes, &node.Node)
 	}
 	// build pods
@@ -71,7 +75,7 @@ func MakeNodesAndPods(labels map[string]string, existingPodsNum, allNodesNum int
 	return
 }
 
-func MakePG(name, namespace string, min int32, creationTime *time.Time) *v1alpha1.PodGroup {
+func MakePG(name, namespace string, min int32, creationTime *time.Time, minResource *corev1.ResourceList) *v1alpha1.PodGroup {
 	var ti int32 = 10
 	pg := &v1alpha1.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
@@ -79,6 +83,9 @@ func MakePG(name, namespace string, min int32, creationTime *time.Time) *v1alpha
 	}
 	if creationTime != nil {
 		pg.CreationTimestamp = metav1.Time{Time: *creationTime}
+	}
+	if minResource != nil {
+		pg.Spec.MinResources = minResource
 	}
 	return pg
 }

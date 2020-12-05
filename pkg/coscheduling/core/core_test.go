@@ -23,6 +23,7 @@ import (
 
 	gochache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clicache "k8s.io/client-go/tools/cache"
@@ -42,11 +43,15 @@ func TestPreFilter(t *testing.T) {
 	pgInformerFactory := pgformers.NewSharedInformerFactory(cs, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pgInformerFactory.Start(ctx.Done())
-
-	pg := testutil.MakePG("pg", "ns1", 2, nil)
-	pg1 := testutil.MakePG("pg1", "ns1", 2, nil)
+	scheduleTimeout := 10 * time.Second
+	pg := testutil.MakePG("pg", "ns1", 2, nil, nil)
+	pg1 := testutil.MakePG("pg1", "ns1", 2, nil, nil)
+	pg2 := testutil.MakePG("pg2", "ns1", 2, nil, &corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")})
+	pg3 := testutil.MakePG("pg3", "ns1", 2, nil, &corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("40")})
 	pgInformer.Informer().GetStore().Add(pg)
 	pgInformer.Informer().GetStore().Add(pg1)
+	pgInformer.Informer().GetStore().Add(pg2)
+	pgInformer.Informer().GetStore().Add(pg3)
 	pgLister := pgInformer.Lister()
 	denyCache := newCache()
 	denyCache.SetDefault("ns1/pg1", "ns1/pg1")
@@ -110,6 +115,38 @@ func TestPreFilter(t *testing.T) {
 			lastDeniedPG:    newCache(),
 			expectedSuccess: true,
 		},
+		{
+			name: "cluster resource enough, min Resource",
+			pod: st.MakePod().Name("p2-1").UID("p2-1").Namespace("ns1").Label(util.PodGroupLabel, "pg2").
+				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1"}).Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(util.PodGroupLabel, "pg2").Obj(),
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(util.PodGroupLabel, "pg2").Obj(),
+			},
+			lastDeniedPG:    newCache(),
+			expectedSuccess: true,
+		},
+		{
+			name: "cluster resource not enough, min Resource",
+			pod: st.MakePod().Name("p2-1").UID("p2-1").Namespace("ns1").Label(util.PodGroupLabel, "pg3").
+				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "20"}).Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(util.PodGroupLabel, "pg3").Obj(),
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(util.PodGroupLabel, "pg3").Obj(),
+			},
+			lastDeniedPG:    newCache(),
+			expectedSuccess: false,
+		},
+		{
+			name: "cluster resource enough not required",
+			pod:  st.MakePod().Name("p2-1").UID("p2-1").Namespace("ns1").Label(util.PodGroupLabel, "pg1").Obj(),
+			pods: []*corev1.Pod{
+				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(util.PodGroupLabel, "pg1").Obj(),
+				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(util.PodGroupLabel, "pg1").Obj(),
+			},
+			lastDeniedPG:    newCache(),
+			expectedSuccess: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -118,7 +155,8 @@ func TestPreFilter(t *testing.T) {
 			podInformer := informerFactory.Core().V1().Pods()
 			existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
 			snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
-			pgMgr := &PodGroupManager{pgLister: pgLister, lastDeniedPG: tt.lastDeniedPG, snapshotSharedLister: snapshot, podLister: podInformer.Lister()}
+			pgMgr := &PodGroupManager{pgLister: pgLister, lastDeniedPG: tt.lastDeniedPG, permittedPG: newCache(),
+				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout, lastDeniedPGExpirationTime: &scheduleTimeout}
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
@@ -136,8 +174,8 @@ func TestPreFilter(t *testing.T) {
 
 func TestPermit(t *testing.T) {
 	ctx := context.Background()
-	pg := testutil.MakePG("pg", "ns1", 2, nil)
-	pg1 := testutil.MakePG("pg1", "ns1", 2, nil)
+	pg := testutil.MakePG("pg", "ns1", 2, nil, nil)
+	pg1 := testutil.MakePG("pg1", "ns1", 2, nil, nil)
 	fakeClient := fakepgclientset.NewSimpleClientset(pg, pg1)
 
 	pgInformerFactory := pgformers.NewSharedInformerFactory(fakeClient, 0)

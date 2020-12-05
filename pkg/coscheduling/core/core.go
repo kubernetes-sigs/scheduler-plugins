@@ -24,6 +24,7 @@ import (
 
 	gochache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -58,9 +59,11 @@ type PodGroupManager struct {
 	// scheduleTimeout is the default time when group scheduling.
 	// If podgroup's ScheduleTimeoutSeconds set, that would be used.
 	scheduleTimeout *time.Duration
-	// lastDeniedPG store the pg name if a pod can not pass pre-filer,
+	// lastDeniedPG stores the pg name if a pod can not pass pre-filer,
 	// or anyone of the pod timeout
 	lastDeniedPG *gochache.Cache
+	// permittedPG stores the pg name which has passed the pre resource check.
+	permittedPG *gochache.Cache
 	// deniedCacheExpirationTime is the expiration time that a podGroup remains in lastDeniedPG store.
 	lastDeniedPGExpirationTime *time.Duration
 	// pgLister is podgroup lister
@@ -83,6 +86,7 @@ func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister fra
 		pgLister:                   pgInformer.Lister(),
 		podLister:                  podInformer.Lister(),
 		lastDeniedPG:               gochache.New(3*time.Second, 3*time.Second),
+		permittedPG:                gochache.New(3*time.Second, 3*time.Second),
 	}
 	return pgMgr
 }
@@ -112,6 +116,33 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return fmt.Errorf("cannot found engough pods, "+
 			"current pods number: %v, minMember of group: %v", len(pods), pg.Spec.MinMember)
 	}
+
+	if pg.Spec.MinResources == nil {
+		return nil
+	}
+
+	// TODO(cwdsuzhou): This resource check may not always pre-catch unschedulable pod group.
+	// It only tries to PreFilter resource constraints so even if a PodGroup passed here,
+	// it may not necessarily pass Filter due to other constraints such as affinity/taints.
+	if _, ok := pgMgr.permittedPG.Get(pgFullName); ok {
+		return nil
+	}
+
+	nodes, err := pgMgr.snapshotSharedLister.NodeInfos().List()
+	if err != nil {
+		return err
+	}
+
+	minResources := *pg.Spec.MinResources
+	podQuantity := resource.NewQuantity(int64(pg.Spec.MinMember), resource.DecimalSI)
+	minResources[corev1.ResourcePods] = *podQuantity
+	err = pgMgr.CheckClusterResource(nodes, minResources)
+	if err != nil {
+		klog.Errorf("PreFilter pod group %v error: %v", pgFullName, err)
+		pgMgr.AddDeniedPodGroup(pgFullName)
+		return err
+	}
+	pgMgr.permittedPG.Add(pgFullName, pgFullName, *pgMgr.scheduleTimeout)
 	return nil
 }
 
@@ -238,7 +269,53 @@ func (pgMgr *PodGroupManager) calculateAssignedPods(podGroupName, namespace stri
 	return count
 }
 
+func (pgMgr *PodGroupManager) CheckClusterResource(nodeList []*framework.NodeInfo, resourceRequest corev1.ResourceList) error {
+	for _, info := range nodeList {
+		if info == nil || info.Node() == nil {
+			continue
+		}
+
+		nodeResource := getNodeResource(info).ResourceList()
+		for name, quant := range resourceRequest {
+			quant.Sub(nodeResource[name])
+			if quant.Sign() <= 0 {
+				delete(resourceRequest, name)
+				continue
+			}
+			resourceRequest[name] = quant
+		}
+		if len(resourceRequest) == 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("resource gap: %v", resourceRequest)
+}
+
 // GetNamespacedName returns the namespaced name
 func GetNamespacedName(obj metav1.Object) string {
 	return fmt.Sprintf("%v/%v", obj.GetNamespace(), obj.GetName())
+}
+
+func getNodeResource(info *framework.NodeInfo) *framework.Resource {
+	leftResource := framework.Resource{
+		ScalarResources: make(map[corev1.ResourceName]int64),
+	}
+	allocatable := info.Allocatable
+	requested := info.Requested
+
+	leftResource.AllowedPodNumber = allocatable.AllowedPodNumber - len(info.Pods)
+	leftResource.MilliCPU = allocatable.MilliCPU - requested.MilliCPU
+	leftResource.Memory = allocatable.Memory - requested.Memory
+	leftResource.EphemeralStorage = allocatable.EphemeralStorage - requested.EphemeralStorage
+
+	for k, allocatableEx := range allocatable.ScalarResources {
+		requestEx, ok := requested.ScalarResources[k]
+		if !ok {
+			leftResource.ScalarResources[k] = allocatableEx
+		} else {
+			leftResource.ScalarResources[k] = allocatableEx - requestEx
+		}
+	}
+	klog.V(4).Infof("Node %v left resource %+v", info.Node().Name, leftResource)
+	return &leftResource
 }

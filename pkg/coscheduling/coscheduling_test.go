@@ -76,7 +76,7 @@ func TestLess(t *testing.T) {
 			ns:         "namespace2",
 		},
 	} {
-		pg := testutil.MakePG(pgInfo.pgNme, pgInfo.ns, 5, &pgInfo.createTime)
+		pg := testutil.MakePG(pgInfo.pgNme, pgInfo.ns, 5, &pgInfo.createTime, nil)
 		pgInformer.Informer().GetStore().Add(pg)
 	}
 
@@ -292,8 +292,8 @@ func TestPermit(t *testing.T) {
 	pgInformerFactory := pgformers.NewSharedInformerFactory(cs, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pgInformerFactory.Start(ctx.Done())
-	pg1 := testutil.MakePG("pg1", "ns1", 2, nil)
-	pg2 := testutil.MakePG("pg2", "ns1", 1, nil)
+	pg1 := testutil.MakePG("pg1", "ns1", 2, nil, nil)
+	pg2 := testutil.MakePG("pg2", "ns1", 1, nil, nil)
 	pgInformer.Informer().GetStore().Add(pg1)
 	pgInformer.Informer().GetStore().Add(pg2)
 
