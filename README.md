@@ -41,6 +41,8 @@ You can reach the maintainers of this project at:
 - [Slack](https://kubernetes.slack.com/messages/sig-scheduling)
 - [Mailing List](https://groups.google.com/forum/#!forum/kubernetes-sig-scheduling)
 
+You can find an [instruction how to build and run out-of-tree plugin here](doc/develop.md) .
+
 ### Code of conduct
 
 Participation in the Kubernetes community is governed by the [Kubernetes Code of Conduct](code-of-conduct.md).
