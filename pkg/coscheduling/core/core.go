@@ -94,7 +94,7 @@ func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister fra
 // PreFilter filters out a pod if it
 // 1. belongs to a podgroup that was recently denied or
 // 2. the total number of pods in the podgroup is less than the minimum number of pods
-// that is required to be sheduled.
+// that is required to be scheduled.
 func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) error {
 	klog.V(5).Infof("Pre-filter %v", pod.Name)
 	pgFullName, pg := pgMgr.GetPodGroup(pod)
@@ -113,8 +113,8 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return fmt.Errorf("podLister list pods failed: %v", err)
 	}
 	if len(pods) < int(pg.Spec.MinMember) {
-		return fmt.Errorf("cannot found engough pods, "+
-			"current pods number: %v, minMember of group: %v", len(pods), pg.Spec.MinMember)
+		return fmt.Errorf("pre-filter pod %v cannot find enough sibling pods, "+
+			"current pods number: %v, minMember of group: %v", pod.Name, len(pods), pg.Spec.MinMember)
 	}
 
 	if pg.Spec.MinResources == nil {
@@ -133,7 +133,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return err
 	}
 
-	minResources := *pg.Spec.MinResources
+	minResources := pg.Spec.MinResources.DeepCopy()
 	podQuantity := resource.NewQuantity(int64(pg.Spec.MinMember), resource.DecimalSI)
 	minResources[corev1.ResourcePods] = *podQuantity
 	err = pgMgr.CheckClusterResource(nodes, minResources)
