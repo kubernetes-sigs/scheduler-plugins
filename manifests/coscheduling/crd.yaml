@@ -28,3 +28,9 @@ spec:
               minMember:
                 type: integer
                 minimum: 1
+              scheduleTimeoutSeconds:
+                type: integer
+              minResources:
+                type: object
+                additionalProperties:
+                  type: string
