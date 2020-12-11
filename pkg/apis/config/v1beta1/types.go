@@ -129,3 +129,14 @@ type LoadVariationRiskBalancingArgs struct {
 	// Root power of standard deviation in risk value
 	SafeVarianceSensitivity *float64 `json:"safeVarianceSensitivity,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
+type NodeResourceTopologyMatchArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	KubeConfigPath *string  `json:"kubeconfigpath,omitempty"`
+	MasterOverride *string  `json:"masteroverride,omitempty"`
+	Namespaces     []string `json:"namespaces,omitempty"`
+}
