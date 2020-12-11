@@ -273,6 +273,35 @@ profiles:
 		t.Fatal(err)
 	}
 
+	// CapacityScheduling plugin config with arguments
+	capacitySchedulingConfigWithArgsFile := filepath.Join(tmpDir, "capacityScheduling-with-args.yaml")
+	if err := ioutil.WriteFile(capacitySchedulingConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- schedulerName: default-scheduler
+  plugins:
+    preFilter:
+      enabled:
+      - name: CapacityScheduling
+    postFilter:
+      enabled:
+      - name: CapacityScheduling
+      disabled:
+      - name: "*"
+    reserve:
+      enabled:
+      - name: CapacityScheduling
+  pluginConfig:
+  - name: CapacityScheduling
+    args:
+      kubeConfigPath: "%s"
+`, configKubeconfig, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
 	if err := ioutil.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
