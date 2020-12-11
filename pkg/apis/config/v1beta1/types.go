@@ -71,5 +71,5 @@ type CapacitySchedulingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// KubeConfigPath is the path of kubeconfig.
-	KubeConfigPath *string `json:"kubeconfigpath,omitempty"`
+	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }

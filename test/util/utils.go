@@ -25,12 +25,15 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	imageutils "k8s.io/kubernetes/test/utils/image"
+
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
@@ -130,4 +133,17 @@ func BuildKubeConfigFile(config *restclient.Config) string {
 		return kubeConfigPath
 	}
 	return ""
+}
+
+func MakePod(podName string, namespace string, memReq int64, cpuReq int64, priority int32, uid string, nodeName string) *corev1.Pod {
+	pause := imageutils.GetPauseImageName()
+	pod := st.MakePod().Namespace(namespace).Name(podName).Container(pause).
+		Priority(priority).Node(nodeName).UID(uid).ZeroTerminationGracePeriod().Obj()
+	pod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: *resource.NewQuantity(memReq, resource.DecimalSI),
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(cpuReq, resource.DecimalSI),
+		},
+	}
+	return pod
 }
