@@ -136,7 +136,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	minResources := pg.Spec.MinResources.DeepCopy()
 	podQuantity := resource.NewQuantity(int64(pg.Spec.MinMember), resource.DecimalSI)
 	minResources[corev1.ResourcePods] = *podQuantity
-	err = pgMgr.CheckClusterResource(nodes, minResources)
+	err = CheckClusterResource(nodes, minResources, pgFullName)
 	if err != nil {
 		klog.Errorf("PreFilter pod group %v error: %v", pgFullName, err)
 		pgMgr.AddDeniedPodGroup(pgFullName)
@@ -269,13 +269,15 @@ func (pgMgr *PodGroupManager) calculateAssignedPods(podGroupName, namespace stri
 	return count
 }
 
-func (pgMgr *PodGroupManager) CheckClusterResource(nodeList []*framework.NodeInfo, resourceRequest corev1.ResourceList) error {
+// CheckClusterResource checks if resource capacity of the cluster can satisfy <resourceRequest>.
+// It returns an error detailing the resource gap if not satisfied; otherwise returns nil.
+func CheckClusterResource(nodeList []*framework.NodeInfo, resourceRequest corev1.ResourceList, desiredPodGroupName string) error {
 	for _, info := range nodeList {
 		if info == nil || info.Node() == nil {
 			continue
 		}
 
-		nodeResource := getNodeResource(info).ResourceList()
+		nodeResource := getNodeResource(info, desiredPodGroupName).ResourceList()
 		for name, quant := range resourceRequest {
 			quant.Sub(nodeResource[name])
 			if quant.Sign() <= 0 {
@@ -296,14 +298,25 @@ func GetNamespacedName(obj metav1.Object) string {
 	return fmt.Sprintf("%v/%v", obj.GetNamespace(), obj.GetName())
 }
 
-func getNodeResource(info *framework.NodeInfo) *framework.Resource {
+func getNodeResource(info *framework.NodeInfo, desiredPodGroupName string) *framework.Resource {
+	nodeClone := info.Clone()
+	for _, podInfo := range info.Pods {
+		if podInfo == nil || podInfo.Pod == nil {
+			continue
+		}
+		if util.GetPodGroupFullName(podInfo.Pod) != desiredPodGroupName {
+			continue
+		}
+		nodeClone.RemovePod(podInfo.Pod)
+	}
+
 	leftResource := framework.Resource{
 		ScalarResources: make(map[corev1.ResourceName]int64),
 	}
-	allocatable := info.Allocatable
-	requested := info.Requested
+	allocatable := nodeClone.Allocatable
+	requested := nodeClone.Requested
 
-	leftResource.AllowedPodNumber = allocatable.AllowedPodNumber - len(info.Pods)
+	leftResource.AllowedPodNumber = allocatable.AllowedPodNumber - len(nodeClone.Pods)
 	leftResource.MilliCPU = allocatable.MilliCPU - requested.MilliCPU
 	leftResource.Memory = allocatable.Memory - requested.Memory
 	leftResource.EphemeralStorage = allocatable.EphemeralStorage - requested.EphemeralStorage
