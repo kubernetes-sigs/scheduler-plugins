@@ -130,7 +130,7 @@ spec:
 EOF
 ```
 
-After the usage of quota1 reaches `min(4)`, there are still 6 cpus available in the cluster. So the rest of the pods are still being scheduled until it reaches the `max(6)`. Finally, there is one pending pod.
+After the usage of quota1 reaches `min(4)`, there are still 4 cpus available in the cluster. So the rest of the pods are still being scheduled until it reaches the `max(6)`. Finally, there is one pending pod.
 
 ```script
 $ kubectl get pods -n quota1
