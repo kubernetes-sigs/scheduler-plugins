@@ -231,6 +231,60 @@ func TestPermit(t *testing.T) {
 	}
 }
 
+func TestCheckClusterResource(t *testing.T) {
+	nodeRes := map[corev1.ResourceName]string{corev1.ResourceMemory: "300"}
+	node := st.MakeNode().Name("fake-node").Capacity(nodeRes).Obj()
+	snapshot := testutil.NewFakeSharedLister(nil, []*corev1.Node{node})
+	nodeInfo, _ := snapshot.List()
+
+	pod := st.MakePod().Name("t1-p1-3").Req(map[corev1.ResourceName]string{corev1.ResourceMemory: "100"}).Label(util.PodGroupLabel,
+		"pg1-1").ZeroTerminationGracePeriod().Obj()
+	snapshotWithAssumedPod := testutil.NewFakeSharedLister([]*corev1.Pod{pod}, []*corev1.Node{node})
+	scheduledNodeInfo, _ := snapshotWithAssumedPod.List()
+	tests := []struct {
+		name                  string
+		resourceRequest       corev1.ResourceList
+		desiredPGName         string
+		nodeList              []*framework.NodeInfo
+		desiredResourceEnough bool
+	}{
+		{
+			name: "Cluster resource enough",
+			resourceRequest: corev1.ResourceList{
+				corev1.ResourceMemory: *resource.NewQuantity(10, resource.DecimalSI),
+			},
+			nodeList:              nodeInfo,
+			desiredResourceEnough: true,
+		},
+		{
+			name: "Cluster resource not enough",
+			resourceRequest: corev1.ResourceList{
+				corev1.ResourceMemory: *resource.NewQuantity(1000, resource.DecimalSI),
+			},
+			nodeList:              nodeInfo,
+			desiredResourceEnough: false,
+		},
+		{
+			name: "Cluster resource enough, some resources of the pods belonging to the group have been included",
+			resourceRequest: corev1.ResourceList{
+				corev1.ResourceMemory: *resource.NewQuantity(250, resource.DecimalSI),
+			},
+			nodeList:              scheduledNodeInfo,
+			desiredResourceEnough: true,
+			desiredPGName:         "pg1-1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckClusterResource(tt.nodeList, tt.resourceRequest, tt.desiredPGName)
+			if (err == nil) != tt.desiredResourceEnough {
+				t.Errorf("want resource enough %v, but got %v", tt.desiredResourceEnough, err != nil)
+			}
+		})
+	}
+
+}
+
 func newCache() *gochache.Cache {
 	return gochache.New(10*time.Second, 10*time.Second)
 }
