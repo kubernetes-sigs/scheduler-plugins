@@ -136,7 +136,7 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 					if _, ok := t.Obj.(*v1alpha1.ElasticQuota); ok {
 						return true
 					}
-					utilruntime.HandleError(fmt.Errorf("cannot convert to *v1.Pod: %v", obj))
+					utilruntime.HandleError(fmt.Errorf("cannot convert to *v1alpha1.ElasticQuota: %v", obj))
 					return false
 				default:
 					utilruntime.HandleError(fmt.Errorf("unable to handle object in %T", obj))
