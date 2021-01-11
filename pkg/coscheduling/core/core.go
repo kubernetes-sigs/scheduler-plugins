@@ -188,7 +188,6 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 			pgCopy.Status.ScheduleStartTime = metav1.Time{Time: time.Now()}
 		}
 	}
-	pg.Status = pgCopy.Status
 	if pgCopy.Status.Phase != pg.Status.Phase {
 		pg, err := pgMgr.pgLister.PodGroups(pgCopy.Namespace).Get(pgCopy.Name)
 		if err != nil {
