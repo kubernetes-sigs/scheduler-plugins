@@ -118,6 +118,11 @@ func TestCoschedulingPlugin(t *testing.T) {
 					{Name: coscheduling.Name},
 				},
 			},
+			PostFilter: &schedapi.PluginSet{
+				Enabled: []schedapi.Plugin{
+					{Name: coscheduling.Name},
+				},
+			},
 			Permit: &schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: coscheduling.Name},

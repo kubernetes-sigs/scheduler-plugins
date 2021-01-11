@@ -204,6 +204,9 @@ profiles:
     filter:
       disabled:
       - name: "*"
+    postFilter:
+      enabled:
+      - name: Coscheduling
     preScore:
       disabled:
       - name: "*"
@@ -440,7 +443,7 @@ profiles:
 					"BindPlugin":       {{Name: "DefaultBinder"}},
 					"PreFilterPlugin":  {{Name: "Coscheduling"}},
 					"PostBindPlugin":   {{Name: "Coscheduling"}},
-					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
+					"PostFilterPlugin": {{Name: "DefaultPreemption"}, {Name: "Coscheduling"}},
 					"QueueSortPlugin":  {{Name: "Coscheduling"}},
 					"ReservePlugin":    {{Name: "VolumeBinding"}, {Name: "Coscheduling"}},
 					"PermitPlugin":     {{Name: "Coscheduling"}},
