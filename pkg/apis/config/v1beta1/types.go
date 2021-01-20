@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 )
@@ -72,4 +73,21 @@ type CapacitySchedulingArgs struct {
 
 	// KubeConfigPath is the path of kubeconfig.
 	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
+type TargetLoadPackingArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Default requests to use for best effort QoS
+	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
+	// Default requests multiplier for busrtable QoS
+	DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
+	// Node target CPU Utilization for bin packing
+	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
+	// Address of load watcher service
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }
