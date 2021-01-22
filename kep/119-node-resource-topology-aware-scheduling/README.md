@@ -66,7 +66,7 @@ Available resources with topology of the node should be stored in CRD. Format of
 
 ## CRD API
 
-[Code][3] responsible for working with NodeResourceTopology CRD API will be placed in the kubernetes-sigs/scheduler-plugins in pkg/apis/noderesourcetopology-api directory.
+[Code][3] responsible for working with NodeResourceTopology CRD API will imported in the scheduler-plugins repo.
 
 ## Plugin implementation details
 
@@ -79,32 +79,57 @@ NodeTopologyMap. This state will be used every time when scheduler needs to make
 
 ```go
 
-type NodeTopologyMap map[string]topologyv1alpha1.NodeResourceTopology
 
-// NodeResourceTopology is a specification for a Foo resource
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourceTopologyList is a list of NodeResourceTopology resources
+type NodeResourceTopologyList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []NodeResourceTopology `json:"items"`
+}
+
+// NodeResourceTopology is a specification for a NodeResourceTopology resource
 type NodeResourceTopology struct {
-    metav1.TypeMeta           `json:",inline"`
-    metav1.ObjectMeta         `json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    TopologyPolicies []string `json:"topologyPolicies"`
-    Zones map[string]Zone     `json:"zones"`
+	TopologyPolicies []string `json:"topologyPolicies"`
+	Zones            ZoneList `json:"zones"`
 }
 
 // Zone is the spec for a NodeResourceTopology resource
 type Zone struct {
-    Type       string
-    Parent     string
-    Costs      map[string]int
-    Attributes map[string]int
-    Resources  ResourceInfoMap
+	Name       string           `json:"name"`
+	Type       string           `json:"type"`
+	Parent     string           `json:"parent,omitempty"`
+	Costs      CostList         `json:"costs,omitempty"`
+	Attributes AttributeList    `json:"attributes,omitempty"`
+	Resources  ResourceInfoList `json:"resources,omitempty"`
 }
+
+type ZoneList []Zone
 
 type ResourceInfo struct {
-    Allocatable int
-    Capacity    int
+	Name        string             `json:"name"`
+	Allocatable intstr.IntOrString `json:"allocatable"`
+	Capacity    intstr.IntOrString `json:"capacity"`
 }
+type ResourceInfoList []ResourceInfo
 
-type ResourceInfoMap map[string]ResourceInfo
+type CostInfo struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
+}
+type CostList []CostInfo
+
+type AttributeInfo struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+type AttributeList []AttributeInfo
+
 ```
 Where TopologyPolicies may have following values: None, BestEffort, Restricted, SingleNumaNode.
 The current policies of TopologyManager can't coexist together at the same time, but in future such kind of policies could appear.
@@ -165,14 +190,26 @@ The algorithm which implements SingleNumaNode policy is following:
 In order to allow the scheduler (deployed as a pod) to access NodeResourceTopology CRD instances, ClusterRole and ClusterRoleBinding would have to be configured as below:
 
 ``` yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: topo-aware-scheduler
+  namespace: kube-system
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: noderesourcetopology-handler
+  name: noderesourcetoplogy-handler
 rules:
 - apiGroups: ["topology.node.k8s.io"]
   resources: ["noderesourcetopologies"]
   verbs: ["*"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "patch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get","list","watch","update"]
 - apiGroups: ["rbac.authorization.k8s.io"]
   resources: ["*"]
   verbs: ["*"]
@@ -180,23 +217,60 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: handle-noderesourcetopology
+  name: topo-aware-scheduler-as-kube-scheduler
 subjects:
-- kind: ServiceAccount
-  name: noderesourcetopology-account
-  namespace: default
+  - kind: ServiceAccount
+    name: topo-aware-scheduler
+    namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: noderesourcetopology-handler
+  name: noderesourcetoplogy-handler
   apiGroup: rbac.authorization.k8s.io
 ---
-apiVersion: v1
-kind: ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
-  name: noderesourcetopology-account
+  name: my-scheduler-as-volume-scheduler
+subjects:
+- kind: ServiceAccount
+  name: my-scheduler
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: system:volume-scheduler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: topo-aware-scheduler-as-kube-scheduler
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: topo-aware-scheduler
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: extension-apiserver-authentication-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: noderesourcetoplogy
+  namespace: kube-system
+subjects:
+- kind: User
+  name: system:kube-scheduler
+  namespace: kube-system
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: noderesourcetoplogy-handler
+  apiGroup: rbac.authorization.k8s.io
 ```
 
-`serviceAccountName: noderesourcetopology-account` would have to be added to the manifest file of the scheduler deployment file.
+`serviceAccountName: topo-aware-scheduler` would have to be added to the manifest file of the scheduler deployment file.
 
 # Use cases
 
@@ -248,7 +322,7 @@ Following changes are required:
 
 ## Feature enablement and rollback
 * **How can this feature be enabled / disabled in a live cluster?**
-    - This plugin doesn't require special feature gate, but it expects: TopologyManager and CPUManager feature gate enabled on the worker node\
+    - This plugin doesn't require special feature gate, but it expects: TopologyManager and CPUManager feature gate enabled on the worker node.
 
 # Implementation history
 
@@ -256,6 +330,6 @@ Following changes are required:
 
 [1]: https://docs.google.com/document/d/12kj3fK8boNuPNqob6F_pPU9ZTaNEnPGaXEooW1Cilwg/edit
 [2]: https://github.com/kubernetes-sigs/node-feature-discovery
-[3]: https://github.com/kubernetes/noderesourcetopology-api
-[4]: https://github.com/kubernetes/enhancements/pull/1870 
+[3]: https://github.com/k8stopologyawareschedwg/noderesourcetopology-api
+[4]: https://github.com/kubernetes/enhancements/pull/1870
 [5]: https://github.com/kubernetes-sigs/node-feature-discovery/issues/333
