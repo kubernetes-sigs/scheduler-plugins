@@ -13,7 +13,8 @@ docker pull k8s.gcr.io/scheduler-plugins/kube-scheduler:$TAG
 ```
 
 In a future release an official container image will be provided for the scheduler-plugins controller. For
-example `docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG`.
+example `docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG`. 
+You can find [how to install release image](doc/install.md) here.
 
 ## Compatibility Matrix
 The below compatibility matrix shows the k8s client package(client-go, apimachinery, etc) versions that the
