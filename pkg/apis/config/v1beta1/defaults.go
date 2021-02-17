@@ -42,12 +42,18 @@ var (
 	}
 
 	// Defaults for TargetLoadPacking plugin
-	// Default 1 core CPU usage for containers without requests and limits i.e. Best Effort QoS.
+
+	// DefaultRequestsMilliCores 1 core CPU usage for containers without requests and limits i.e. Best Effort QoS.
 	DefaultRequestsMilliCores int64 = 1000
-	// Default requests multiplier for containers without limits predicted as 1.5*requests i.e. Burstable QoS class
+	// DefaultRequestsMultiplier for containers without limits predicted as 1.5*requests i.e. Burstable QoS class
 	DefaultRequestsMultiplier = "1.5"
-	// Default CPU Util target. Recommended to keep -10 than desired limit.
+	// DefaultTargetUtilizationPercent Recommended to keep -10 than desired limit.
 	DefaultTargetUtilizationPercent int64 = 40
+
+	// Defaults for LoadVariationRiskBalancing plugin
+
+	// DefaultSafeVarianceMargin is one
+	DefaultSafeVarianceMargin = "1"
 
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
@@ -93,5 +99,12 @@ func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 	}
 	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
 		args.TargetUtilization = &DefaultTargetUtilizationPercent
+	}
+}
+
+// SetDefaultLoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
+func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
+	if args.SafeVarianceMargin == nil {
+		args.SafeVarianceMargin = &DefaultSafeVarianceMargin
 	}
 }
