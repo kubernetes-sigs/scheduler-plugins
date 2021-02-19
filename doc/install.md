@@ -38,7 +38,7 @@ In this section, we will walk you through how to replace the default scheduler w
 3. Create `/etc/kubernetes/coscheduling-config.yaml`
 
    ```yaml
-   apiVersion: kubescheduler.config.k8s.io/v1alpha2
+   apiVersion: kubescheduler.config.k8s.io/v1beta1
    kind: KubeSchedulerConfiguration
    leaderElection:
      # (Optional) Change true to false if you are not running a HA control-plane.
