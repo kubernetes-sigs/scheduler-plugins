@@ -36,10 +36,13 @@ const (
 	httpClientTimeout                    = 55 * time.Second
 	metricsUpdateIntervalSeconds         = 30
 
-	watcherBaseURL = "/watcher"
-
 	defaultWatcherAddress     = "http://127.0.0.1:2020"
 	defaultSafeVarianceMargin = "1"
+)
+
+var (
+	// WatcherBaseURL : base URL to load watcher (exported for testing)
+	WatcherBaseURL = "/watcher"
 )
 
 // collector : get data from load watcher, encapsulating the load watcher and its operations
@@ -79,7 +82,7 @@ func newCollector(obj runtime.Object) (*collector, error) {
 			}
 		}
 	}()
-	return collector, err
+	return collector, nil
 }
 
 // getAllMetrics : get all metrics from watcher
@@ -141,7 +144,7 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 // updateMetrics : request to load watcher to update all metrics
 func (collector *collector) updateMetrics() error {
 	watcherAddress := collector.args.WatcherAddress
-	req, err := http.NewRequest(http.MethodGet, watcherAddress+watcherBaseURL, nil)
+	req, err := http.NewRequest(http.MethodGet, watcherAddress+WatcherBaseURL, nil)
 	if err != nil {
 		klog.Errorf("new watcher request failed: %v", err)
 		return err

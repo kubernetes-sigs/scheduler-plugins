@@ -47,6 +47,7 @@ func (rs *resourceStats) computeScore(margin float64) int64 {
 		klog.Errorf("invalid resource capacity %f!", rs.capacity)
 		return 0
 	}
+	rs.withinBounds()
 	mu := (rs.usedAvg + rs.demand) / rs.capacity
 	mu = math.Max(math.Min(mu, 1), 0)
 	sigma := rs.usedStdev / rs.capacity
@@ -57,6 +58,14 @@ func (rs *resourceStats) computeScore(margin float64) int64 {
 	objScaled := (1. - obj) * float64(framework.MaxNodeScore)
 	score := int64(objScaled + 0.5)
 	return score
+}
+
+// withinBounds : make sure values are within bounds
+func (rs *resourceStats) withinBounds() {
+	rs.capacity = math.Max(rs.capacity, 0)
+	rs.demand = math.Max(rs.demand, 0)
+	rs.usedAvg = math.Max(math.Min(rs.usedAvg, rs.capacity), 0)
+	rs.usedStdev = math.Max(math.Min(rs.usedStdev, rs.capacity), 0)
 }
 
 // getCPUStats : get CPU statistics data from measurements for a node

@@ -55,13 +55,7 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 	}
 
 	podAssignEventHandler := trimaran.New()
-	pl := &LoadVariationRiskBalancing{
-		handle:       handle,
-		eventHandler: podAssignEventHandler,
-		collector:    collector,
-	}
-
-	pl.handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
+	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
@@ -71,16 +65,22 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 					if pod, ok := t.Obj.(*v1.Pod); ok {
 						return isAssigned(pod)
 					}
-					utilruntime.HandleError(fmt.Errorf("unable to convert object %T to *v1.Pod in %T", obj, pl))
+					utilruntime.HandleError(fmt.Errorf("unable to convert object %T to *v1.Pod", obj))
 					return false
 				default:
-					utilruntime.HandleError(fmt.Errorf("unable to handle object in %T: %T", pl, obj))
+					utilruntime.HandleError(fmt.Errorf("unable to handle object: %T", obj))
 					return false
 				}
 			},
 			Handler: podAssignEventHandler,
 		},
 	)
+
+	pl := &LoadVariationRiskBalancing{
+		handle:       handle,
+		eventHandler: podAssignEventHandler,
+		collector:    collector,
+	}
 
 	return pl, nil
 }
