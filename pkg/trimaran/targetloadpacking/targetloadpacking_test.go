@@ -67,6 +67,10 @@ func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, er
 	return nil, nil
 }
 
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+	return nil, nil
+}
+
 func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }

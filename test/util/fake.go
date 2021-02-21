@@ -28,25 +28,31 @@ import (
 var _ framework.SharedLister = &fakeSharedLister{}
 
 type fakeSharedLister struct {
-	nodeInfos                        []*framework.NodeInfo
-	nodeInfoMap                      map[string]*framework.NodeInfo
-	havePodsWithAffinityNodeInfoList []*framework.NodeInfo
+	nodeInfos                                    []*framework.NodeInfo
+	nodeInfoMap                                  map[string]*framework.NodeInfo
+	havePodsWithAffinityNodeInfoList             []*framework.NodeInfo
+	havePodsWithRequiredAntiAffinityNodeInfoList []*framework.NodeInfo
 }
 
 func NewFakeSharedLister(pods []*v1.Pod, nodes []*v1.Node) framework.SharedLister {
 	nodeInfoMap := createNodeInfoMap(pods, nodes)
 	nodeInfos := make([]*framework.NodeInfo, 0, len(nodeInfoMap))
 	havePodsWithAffinityNodeInfoList := make([]*framework.NodeInfo, 0, len(nodeInfoMap))
+	havePodsWithRequiredAntiAffinityNodeInfoList := make([]*framework.NodeInfo, 0, len(nodeInfoMap))
 	for _, v := range nodeInfoMap {
 		nodeInfos = append(nodeInfos, v)
 		if len(v.PodsWithAffinity) > 0 {
 			havePodsWithAffinityNodeInfoList = append(havePodsWithAffinityNodeInfoList, v)
+		}
+		if len(v.PodsWithRequiredAntiAffinity) > 0 {
+			havePodsWithRequiredAntiAffinityNodeInfoList = append(havePodsWithRequiredAntiAffinityNodeInfoList, v)
 		}
 	}
 	return &fakeSharedLister{
 		nodeInfos:                        nodeInfos,
 		nodeInfoMap:                      nodeInfoMap,
 		havePodsWithAffinityNodeInfoList: havePodsWithAffinityNodeInfoList,
+		havePodsWithRequiredAntiAffinityNodeInfoList: havePodsWithRequiredAntiAffinityNodeInfoList,
 	}
 }
 
@@ -80,6 +86,10 @@ func (f *fakeSharedLister) List() ([]*framework.NodeInfo, error) {
 
 func (f *fakeSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
 	return f.havePodsWithAffinityNodeInfoList, nil
+}
+
+func (f *fakeSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+	return f.havePodsWithRequiredAntiAffinityNodeInfoList, nil
 }
 
 func (f *fakeSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
