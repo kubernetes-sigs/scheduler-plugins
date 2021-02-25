@@ -34,3 +34,22 @@ spec:
                 type: object
                 additionalProperties:
                   type: string
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              occupiedBy:
+                type: string
+              scheduled:
+                type: integer
+              running:
+                type: integer
+              succeeded:
+                type: integer
+              failed:
+                type: integer
+              scheduleStartTime:
+                type: string
+                format: date-time
+
