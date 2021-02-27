@@ -61,13 +61,25 @@ func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, er
 	return nil, nil
 }
 
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+	return nil, nil
+}
+
 func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
 func TestNew(t *testing.T) {
+	watcherResponse := watcher.WatcherMetrics{}
+	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		bytes, err := json.Marshal(watcherResponse)
+		assert.Nil(t, err)
+		resp.Write(bytes)
+	}))
+	defer server.Close()
+
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     "http://deadbeef:2020",
+		WatcherAddress:     server.URL,
 		SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
 	}
 	loadVariationRiskBalancingConfig := config.PluginConfig{
@@ -92,22 +104,15 @@ func TestNew(t *testing.T) {
 
 	// bad arguments will be substituted by default values
 	badArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     "",
+		WatcherAddress:     server.URL,
 		SafeVarianceMargin: "x",
 	}
 	badp, err := New(&badArgs, fh)
 	assert.NotNil(t, badp)
 	assert.Nil(t, err)
 
-	badArgs = pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     "http://deadbeef:2020",
-		SafeVarianceMargin: "-5",
-	}
+	badArgs.SafeVarianceMargin = "-5"
 	badp, err = New(&badArgs, fh)
-	assert.NotNil(t, badp)
-	assert.Nil(t, err)
-
-	badp, err = New(nil, fh)
 	assert.NotNil(t, badp)
 	assert.Nil(t, err)
 }
@@ -319,9 +324,6 @@ func TestScore(t *testing.T) {
 				assert.Nil(t, err)
 				resp.Write(bytes)
 			}))
-			// point watcher to test server
-			WatcherBaseURL = ""
-
 			defer server.Close()
 
 			nodes := append([]*v1.Node{}, tt.nodes...)

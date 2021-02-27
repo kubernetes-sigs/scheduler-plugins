@@ -158,6 +158,15 @@ func Convert_config_CoschedulingArgs_To_v1beta1_CoschedulingArgs(in *config.Cosc
 }
 
 func autoConvert_v1beta1_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs(in *LoadVariationRiskBalancingArgs, out *config.LoadVariationRiskBalancingArgs, s conversion.Scope) error {
+	if err := v1.Convert_Pointer_string_To_string(&in.MetricProviderType, &out.MetricProviderType, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_string_To_string(&in.MetricProviderAddress, &out.MetricProviderAddress, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_string_To_string(&in.MetricProviderToken, &out.MetricProviderToken, s); err != nil {
+		return err
+	}
 	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}
@@ -173,6 +182,15 @@ func Convert_v1beta1_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskB
 }
 
 func autoConvert_config_LoadVariationRiskBalancingArgs_To_v1beta1_LoadVariationRiskBalancingArgs(in *config.LoadVariationRiskBalancingArgs, out *LoadVariationRiskBalancingArgs, s conversion.Scope) error {
+	if err := v1.Convert_string_To_Pointer_string(&in.MetricProviderType, &out.MetricProviderType, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.MetricProviderAddress, &out.MetricProviderAddress, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.MetricProviderToken, &out.MetricProviderToken, s); err != nil {
+		return err
+	}
 	if err := v1.Convert_string_To_Pointer_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}

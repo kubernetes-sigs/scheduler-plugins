@@ -99,6 +99,12 @@ type TargetLoadPackingArgs struct {
 type LoadVariationRiskBalancingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
+	// Types of client to be used: k8s, prometheus, load-watcher
+	MetricProviderType *string `json:"metricProviderType,omitempty"`
+	// Address of metric endpoint
+	MetricProviderAddress *string `json:"metricProviderAddress,omitempty"`
+	// Authentication token for metric client
+	MetricProviderToken *string `json:"metricProviderToken,omitempty"`
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
 	// Confidence in usage given Gaussian distribution

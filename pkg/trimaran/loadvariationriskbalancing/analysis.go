@@ -53,6 +53,7 @@ func (rs *resourceStats) computeScore(margin float64) int64 {
 	sigma := rs.usedStdev / rs.capacity
 	sigma *= margin
 	sigma = math.Max(math.Min(sigma, 1), 0)
+	// magnify variation by taking squared root
 	obj := (mu + math.Sqrt(sigma)) / 2
 	klog.V(6).Infof("mu=%f; sigma=%f; margin=%f; obj=%f", mu, sigma, margin, obj)
 	objScaled := (1. - obj) * float64(framework.MaxNodeScore)
@@ -74,7 +75,7 @@ func getCPUStats(metrics []watcher.Metric, node *v1.Node,
 	// get CPU usage statistics
 	nodeCPUUtil, nodeCPUStd, cpuMetricFound := getResourceData(metrics, node, watcher.CPU)
 	if !cpuMetricFound {
-		klog.V(4).Infof("CPU usage statistics for node %s: no valid data", node.GetName())
+		klog.V(6).Infof("CPU usage statistics for node %s: no valid data", node.GetName())
 		return nil, false
 	}
 	// get CPU capacity
@@ -87,7 +88,7 @@ func getCPUStats(metrics []watcher.Metric, node *v1.Node,
 	rs.usedAvg = nodeCPUUtil * rs.capacity / 100
 	rs.usedStdev = nodeCPUStd * rs.capacity / 100
 	rs.demand = float64(podRequest.MilliCPU)
-	klog.V(4).Infof("CPU usage statistics for node %s: capacity=%f; demand=%f; usedAvg=%f; usedStdev=%f",
+	klog.V(6).Infof("CPU usage statistics for node %s: capacity=%f; demand=%f; usedAvg=%f; usedStdev=%f",
 		node.GetName(), rs.capacity, rs.demand, rs.usedAvg, rs.usedStdev)
 	return rs, true
 }
@@ -98,7 +99,7 @@ func getMemoryStats(metrics []watcher.Metric, node *v1.Node,
 	// get memory usage statistics
 	nodeMemoryUtil, nodeMemoryStd, memoryMetricFound := getResourceData(metrics, node, watcher.Memory)
 	if !memoryMetricFound {
-		klog.V(4).Infof("Memory usage statistics for node %s: no valid data", node.GetName())
+		klog.V(6).Infof("Memory usage statistics for node %s: no valid data", node.GetName())
 		return nil, false
 	}
 	// get memory capacity
@@ -113,7 +114,7 @@ func getMemoryStats(metrics []watcher.Metric, node *v1.Node,
 	rs.usedAvg = nodeMemoryUtil * rs.capacity / 100
 	rs.usedStdev = nodeMemoryStd * rs.capacity / 100
 	rs.demand = float64(podRequest.Memory) * megaFactor
-	klog.V(4).Infof("Memory usage statistics for node %s: capacity=%f MB; demand=%f MB; usedAvg=%f MB; usedStdev=%f MB",
+	klog.V(6).Infof("Memory usage statistics for node %s: capacity=%f MB; demand=%f MB; usedAvg=%f MB; usedStdev=%f MB",
 		node.GetName(), rs.capacity, rs.demand, rs.usedAvg, rs.usedStdev)
 	return rs, true
 }

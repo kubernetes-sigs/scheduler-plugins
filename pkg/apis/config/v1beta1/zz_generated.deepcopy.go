@@ -105,6 +105,21 @@ func (in *CoschedulingArgs) DeepCopyObject() runtime.Object {
 func (in *LoadVariationRiskBalancingArgs) DeepCopyInto(out *LoadVariationRiskBalancingArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
+	if in.MetricProviderType != nil {
+		in, out := &in.MetricProviderType, &out.MetricProviderType
+		*out = new(string)
+		**out = **in
+	}
+	if in.MetricProviderAddress != nil {
+		in, out := &in.MetricProviderAddress, &out.MetricProviderAddress
+		*out = new(string)
+		**out = **in
+	}
+	if in.MetricProviderToken != nil {
+		in, out := &in.MetricProviderToken, &out.MetricProviderToken
+		*out = new(string)
+		**out = **in
+	}
 	if in.WatcherAddress != nil {
 		in, out := &in.WatcherAddress, &out.WatcherAddress
 		*out = new(string)

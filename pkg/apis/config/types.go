@@ -97,6 +97,12 @@ type TargetLoadPackingArgs struct {
 type LoadVariationRiskBalancingArgs struct {
 	metav1.TypeMeta
 
+	// Types of metric provider to be used: KubernetesMetricsServer, Prometheus, SignalFx
+	MetricProviderType string
+	// Address of metric provider
+	MetricProviderAddress string
+	// Authentication token for metric provider
+	MetricProviderToken string
 	// Address of load watcher service
 	WatcherAddress string
 	// Confidence in usage given Gaussian distribution

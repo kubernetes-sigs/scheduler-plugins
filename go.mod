@@ -7,7 +7,7 @@ require (
 	github.com/google/go-cmp v0.5.2
 	github.com/google/uuid v1.1.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/paypal/load-watcher v0.0.0-20210216150612-2b8ea21dab11
+	github.com/paypal/load-watcher v0.1.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.5.1
 	k8s.io/api v0.19.8

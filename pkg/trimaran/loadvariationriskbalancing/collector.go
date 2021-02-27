@@ -17,56 +17,60 @@ limitations under the License.
 package loadvariationriskbalancing
 
 import (
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/francoispqt/gojay"
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 
+	loadwatcherapi "github.com/paypal/load-watcher/pkg/watcher/api"
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
 
 const (
-	// Time interval in seconds for each metrics agent ingestion.
-	metricsAgentReportingIntervalSeconds = 60
-	httpClientTimeout                    = 55 * time.Second
-	metricsUpdateIntervalSeconds         = 30
+	loadWatcherServiceClientName = "load-watcher"
+	defaultMetricProviderType    = watcher.K8sClientName
+	defaultSafeVarianceMargin    = "1"
 
-	defaultWatcherAddress     = "http://127.0.0.1:2020"
-	defaultSafeVarianceMargin = "1"
+	metricsUpdateIntervalSeconds = 30
 )
 
-var (
-	// WatcherBaseURL : base URL to load watcher (exported for testing)
-	WatcherBaseURL = "/watcher"
-)
-
-// collector : get data from load watcher, encapsulating the load watcher and its operations
-type collector struct {
-	// client to load watcher
-	client http.Client
+// Collector : get data from load watcher, encapsulating the load watcher and its operations
+type Collector struct {
+	// load watcher client
+	client loadwatcherapi.Client
 	// data collected by load watcher
 	metrics watcher.WatcherMetrics
 	// plugin arguments
 	args *pluginConfig.LoadVariationRiskBalancingArgs
-	// ror safe access to metrics
+	// for safe access to metrics
 	mu sync.RWMutex
 }
 
 // newCollector : create an instance of a data collector
-func newCollector(obj runtime.Object) (*collector, error) {
+func newCollector(obj runtime.Object) (*Collector, error) {
 	// get the plugin arguments
 	args := getArgs(obj)
-	collector := &collector{
-		client: http.Client{
-			Timeout: httpClientTimeout,
-		},
-		args: args,
+
+	var metricclient loadwatcherapi.Client
+	if args.MetricProviderType == loadWatcherServiceClientName {
+		metricclient, _ = loadwatcherapi.NewServiceClient(args.WatcherAddress)
+	} else {
+		metricproviderops := watcher.MetricsProviderOpts{
+			Name:      args.MetricProviderType,
+			Address:   args.MetricProviderAddress,
+			AuthToken: args.MetricProviderToken,
+		}
+		metricclient, _ = loadwatcherapi.NewLibraryClient(metricproviderops)
 	}
+
+	collector := &Collector{
+		client: metricclient,
+		args:   args,
+	}
+
 	// populate metrics before returning
 	err := collector.updateMetrics()
 	if err != nil {
@@ -86,8 +90,7 @@ func newCollector(obj runtime.Object) (*collector, error) {
 }
 
 // getAllMetrics : get all metrics from watcher
-func (collector *collector) getAllMetrics() *watcher.WatcherMetrics {
-	// copy reference lest updateMetrics() updates the value and to avoid locking for rest of the function
+func (collector *Collector) getAllMetrics() *watcher.WatcherMetrics {
 	collector.mu.RLock()
 	metrics := collector.metrics
 	collector.mu.RUnlock()
@@ -95,7 +98,7 @@ func (collector *collector) getAllMetrics() *watcher.WatcherMetrics {
 }
 
 // getNodeMetrics : get metrics for a node from watcher
-func (collector *collector) getNodeMetrics(nodeName string) []watcher.Metric {
+func (collector *Collector) getNodeMetrics(nodeName string) []watcher.Metric {
 	allMetrics := collector.getAllMetrics()
 	// Check if node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := allMetrics.Data.NodeMetricsMap[nodeName]; !ok {
@@ -106,7 +109,7 @@ func (collector *collector) getNodeMetrics(nodeName string) []watcher.Metric {
 }
 
 // getSafeVarianceMargin : get the safe variance margin argument
-func (collector *collector) getSafeVarianceMargin() (float64, error) {
+func (collector *Collector) getSafeVarianceMargin() (float64, error) {
 	return strconv.ParseFloat(collector.args.SafeVarianceMargin, 64)
 }
 
@@ -116,15 +119,20 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 	args, ok := obj.(*pluginConfig.LoadVariationRiskBalancingArgs)
 	if !ok {
 		klog.Errorf("want args to be of type LoadVariationRiskBalancingArgs, got %T, using defaults", obj)
-		args = &pluginConfig.LoadVariationRiskBalancingArgs{}
-		args.WatcherAddress = defaultWatcherAddress
-		args.SafeVarianceMargin = defaultSafeVarianceMargin
+		args = &pluginConfig.LoadVariationRiskBalancingArgs{
+			MetricProviderType: defaultMetricProviderType,
+			SafeVarianceMargin: defaultSafeVarianceMargin,
+		}
 		return args
 	}
-	// check validity of watcher address
-	if args.WatcherAddress == "" {
-		klog.Errorf("no watcher address configured, using default")
-		args.WatcherAddress = defaultWatcherAddress
+	// check option to use load watcher service
+	if args.WatcherAddress != "" {
+		args.MetricProviderType = loadWatcherServiceClientName
+		args.MetricProviderAddress = args.WatcherAddress
+	}
+	//check validity of provider type
+	if args.MetricProviderType == "" {
+		args.MetricProviderType = defaultMetricProviderType
 	}
 	// check validity of safe variance margin
 	defaultMargin, _ := strconv.ParseFloat(defaultSafeVarianceMargin, 64)
@@ -142,41 +150,14 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 }
 
 // updateMetrics : request to load watcher to update all metrics
-func (collector *collector) updateMetrics() error {
-	watcherAddress := collector.args.WatcherAddress
-	req, err := http.NewRequest(http.MethodGet, watcherAddress+WatcherBaseURL, nil)
+func (collector *Collector) updateMetrics() error {
+	metrics, err := collector.client.GetLatestWatcherMetrics()
 	if err != nil {
-		klog.Errorf("new watcher request failed: %v", err)
+		klog.Errorf("load watcher client failed: %v", err)
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	//TODO(aqadeer): Add a couple of retries for transient errors
-	resp, err := collector.client.Do(req)
-	if err != nil {
-		klog.Errorf("request to watcher failed: %v", err)
-		// Reset the metrics to avoid stale metrics. Probably use a timestamp for better control
-		collector.mu.Lock()
-		collector.metrics = watcher.WatcherMetrics{}
-		collector.mu.Unlock()
-		return err
-	}
-	defer resp.Body.Close()
-	klog.V(6).Infof("received status code %v from watcher", resp.StatusCode)
-	if resp.StatusCode == http.StatusOK {
-		data := watcher.Data{NodeMetricsMap: make(map[string]watcher.NodeMetrics)}
-		var metrics = watcher.WatcherMetrics{Data: data}
-		dec := gojay.BorrowDecoder(resp.Body)
-		defer dec.Release()
-		err = dec.Decode(&metrics)
-		if err != nil {
-			klog.Errorf("unable to decode watcher metrics: %v", err)
-		}
-		collector.mu.Lock()
-		collector.metrics = metrics
-		collector.mu.Unlock()
-	} else {
-		klog.Errorf("received status code %v from watcher", resp.StatusCode)
-	}
+	collector.mu.Lock()
+	collector.metrics = *metrics
+	collector.mu.Unlock()
 	return nil
 }

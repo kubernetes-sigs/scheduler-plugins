@@ -79,7 +79,6 @@ func TestGetAllMetrics(t *testing.T) {
 		assert.Nil(t, err)
 		resp.Write(bytes)
 	}))
-	WatcherBaseURL = ""
 	defer server.Close()
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
@@ -102,7 +101,6 @@ func TestUpdateMetrics(t *testing.T) {
 		assert.Nil(t, err)
 		resp.Write(bytes)
 	}))
-	WatcherBaseURL = ""
 	defer server.Close()
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
@@ -115,10 +113,6 @@ func TestUpdateMetrics(t *testing.T) {
 
 	err = collector.updateMetrics()
 	assert.Nil(t, err)
-
-	loadVariationRiskBalancingArgs.WatcherAddress = "http://localhost/watcher"
-	err = collector.updateMetrics()
-	assert.NotNil(t, err)
 }
 
 func TestGetNodeMetrics(t *testing.T) {
@@ -127,7 +121,6 @@ func TestGetNodeMetrics(t *testing.T) {
 		assert.Nil(t, err)
 		resp.Write(bytes)
 	}))
-	WatcherBaseURL = ""
 	defer server.Close()
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{

@@ -42,7 +42,7 @@ const (
 type LoadVariationRiskBalancing struct {
 	handle       framework.FrameworkHandle
 	eventHandler *trimaran.PodAssignEventHandler
-	collector    *collector
+	collector    *Collector
 }
 
 // New : create an instance of a LoadVariationRiskBalancing plugin
@@ -81,14 +81,13 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 		eventHandler: podAssignEventHandler,
 		collector:    collector,
 	}
-
 	return pl, nil
 }
 
 // Score : evaluate score for a node
 func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 
-	klog.V(4).Infof("Calculating score for pod %q on node %q", pod.GetName(), nodeName)
+	klog.V(6).Infof("Calculating score for pod %q on node %q", pod.GetName(), nodeName)
 	score := framework.MinNodeScore
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
@@ -109,14 +108,14 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 	if cpuOK {
 		cpuScore = cpuStats.computeScore(margin)
 	}
-	klog.V(4).Infof("pod:%s; node:%s; CPUScore=%d", pod.GetName(), nodeName, cpuScore)
+	klog.V(6).Infof("pod:%s; node:%s; CPUScore=%d", pod.GetName(), nodeName, cpuScore)
 	// calculate Memory score
 	var memoryScore int64 = 0
 	memoryStats, memoryOK := getMemoryStats(metrics, node, podRequest)
 	if memoryOK {
 		memoryScore = memoryStats.computeScore(margin)
 	}
-	klog.V(4).Infof("pod:%s; node:%s; MemopryScore=%d", pod.GetName(), nodeName, memoryScore)
+	klog.V(6).Infof("pod:%s; node:%s; MemoryScore=%d", pod.GetName(), nodeName, memoryScore)
 	// calculate total score
 	if memoryOK {
 		score = memoryScore
@@ -128,7 +127,7 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 			score = cpuScore
 		}
 	}
-	klog.V(4).Infof("pod:%s; node:%s; TotalScore=%d", pod.GetName(), nodeName, score)
+	klog.V(6).Infof("pod:%s; node:%s; TotalScore=%d", pod.GetName(), nodeName, score)
 	return score, framework.NewStatus(framework.Success, "")
 }
 
