@@ -23,17 +23,17 @@ watcherAddress: http://xxxx.svc.cluster.local:2020
 
 Instructions on how to build and deploy the `load-watcher` can be found [here](https://github.com/paypal/load-watcher/blob/master/README.md). The `load-watcher` service may also be deployed in the same scheduler pod, following the tutorial [here](https://medium.com/paypal-engineering/real-load-aware-scheduling-in-kubernetes-with-trimaran-a8efe14d51e2).
 
-![load-watcher as a service](docs/load-watcher-service.pdf)
+![load-watcher as a service](docs/load-watcher-service.png)
 
 ## load-watcher as a library
 
 In this mode, the trimaran plugin embeds the  `load-watcher` as a library, which in turn accesses the configured metrics provider. In this case, we have three configuration parameters: `metricProviderType`, `metricProviderAddress` and `metricProviderToken`.
 
-![load-watcher as a library](docs/load-watcher-library.pdf)
+![load-watcher as a library](docs/load-watcher-library.png)
 
 The configuration parameters should be set as follows.
 
--  `metricProviderType`: the type of the metrics provider
+- `metricProviderType`: the type of the metrics provider
   - `KubernetesMetricsServer` (default)
   - `Prometheus`
   - `SignalFx`
