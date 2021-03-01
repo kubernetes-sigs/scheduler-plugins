@@ -23,6 +23,7 @@ profiles:
   - name: LoadVariationRiskBalancing
     args:
       safeVarianceMargin: "1"
-      metricProviderType: Prometheus
-      metricProviderAddress: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+      metricProvider:
+      	type: Prometheus
+      	address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
 ```
