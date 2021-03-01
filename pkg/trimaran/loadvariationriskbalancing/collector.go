@@ -27,13 +27,10 @@ import (
 
 	loadwatcherapi "github.com/paypal/load-watcher/pkg/watcher/api"
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	v1beta1 "sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
 )
 
 const (
-	loadWatcherServiceClientName = "load-watcher"
-	defaultMetricProviderType    = watcher.K8sClientName
-	defaultSafeVarianceMargin    = "1"
-
 	metricsUpdateIntervalSeconds = 30
 )
 
@@ -54,20 +51,20 @@ func newCollector(obj runtime.Object) (*Collector, error) {
 	// get the plugin arguments
 	args := getArgs(obj)
 
-	var metricclient loadwatcherapi.Client
-	if args.MetricProviderType == loadWatcherServiceClientName {
-		metricclient, _ = loadwatcherapi.NewServiceClient(args.WatcherAddress)
+	var client loadwatcherapi.Client
+	if args.WatcherAddress != "" {
+		client, _ = loadwatcherapi.NewServiceClient(args.WatcherAddress)
 	} else {
-		metricproviderops := watcher.MetricsProviderOpts{
-			Name:      args.MetricProviderType,
-			Address:   args.MetricProviderAddress,
-			AuthToken: args.MetricProviderToken,
+		opts := watcher.MetricsProviderOpts{
+			Name:      string(args.MetricProvider.Type),
+			Address:   args.MetricProvider.Address,
+			AuthToken: args.MetricProvider.Token,
 		}
-		metricclient, _ = loadwatcherapi.NewLibraryClient(metricproviderops)
+		client, _ = loadwatcherapi.NewLibraryClient(opts)
 	}
 
 	collector := &Collector{
-		client: metricclient,
+		client: client,
 		args:   args,
 	}
 
@@ -120,31 +117,35 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 	if !ok {
 		klog.Errorf("want args to be of type LoadVariationRiskBalancingArgs, got %T, using defaults", obj)
 		args = &pluginConfig.LoadVariationRiskBalancingArgs{
-			MetricProviderType: defaultMetricProviderType,
-			SafeVarianceMargin: defaultSafeVarianceMargin,
+			MetricProvider: pluginConfig.MetricProviderSpec{
+				Type: pluginConfig.KubernetesMetricsServer,
+			},
+			SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
 		}
 		return args
 	}
-	// check option to use load watcher service
-	if args.WatcherAddress != "" {
-		args.MetricProviderType = loadWatcherServiceClientName
-		args.MetricProviderAddress = args.WatcherAddress
+
+	// check metric provider type
+	validType := args.MetricProvider.Type == pluginConfig.KubernetesMetricsServer ||
+		args.MetricProvider.Type == pluginConfig.Prometheus ||
+		args.MetricProvider.Type == pluginConfig.SignalFx
+	if args.WatcherAddress == "" && !validType {
+		klog.Warningf("invalid metric provider type %v, using default", args.MetricProvider.Type)
+		args.MetricProvider.Type = pluginConfig.KubernetesMetricsServer
 	}
-	//check validity of provider type
-	if args.MetricProviderType == "" {
-		args.MetricProviderType = defaultMetricProviderType
-	}
+
 	// check validity of safe variance margin
-	defaultMargin, _ := strconv.ParseFloat(defaultSafeVarianceMargin, 64)
+	defaultMargin, _ := strconv.ParseFloat(v1beta1.DefaultSafeVarianceMargin, 64)
 	margin, err := strconv.ParseFloat(args.SafeVarianceMargin, 64)
 	if err != nil {
-		klog.Errorf("unable to parse SafeVarianceMargin %s, using default %s", args.SafeVarianceMargin, defaultSafeVarianceMargin)
-		args.SafeVarianceMargin = defaultSafeVarianceMargin
+		klog.Errorf("unable to parse SafeVarianceMargin %s, using default %s",
+			args.SafeVarianceMargin, v1beta1.DefaultSafeVarianceMargin)
+		args.SafeVarianceMargin = v1beta1.DefaultSafeVarianceMargin
 		margin = defaultMargin
 	}
 	if margin < 0 {
 		klog.Errorf("bad value for safe variance margin %f, using default %f", margin, defaultMargin)
-		args.SafeVarianceMargin = defaultSafeVarianceMargin
+		args.SafeVarianceMargin = v1beta1.DefaultSafeVarianceMargin
 	}
 	return args
 }

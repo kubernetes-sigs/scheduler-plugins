@@ -75,6 +75,26 @@ type CapacitySchedulingArgs struct {
 	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }
 
+// MetricProviderType is a "string" type.
+type MetricProviderType string
+
+// Default metric provider parameters
+const (
+	KubernetesMetricsServer MetricProviderType = "KubernetesMetricsServer"
+	Prometheus              MetricProviderType = "Prometheus"
+	SignalFx                MetricProviderType = "SignalFx"
+)
+
+// MetricProviderSpec denotes the spec of the metric provider
+type MetricProviderSpec struct {
+	// Types of the metric provider
+	Type MetricProviderType `json:"type,omitempty"`
+	// The address of the metric provider
+	Address *string `json:"address,omitempty"`
+	// The authentication token of the metric provider
+	Token *string `json:"token,omitempty"`
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +k8s:defaulter-gen=true
 
@@ -99,12 +119,8 @@ type TargetLoadPackingArgs struct {
 type LoadVariationRiskBalancingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// Types of client to be used: k8s, prometheus, load-watcher
-	MetricProviderType *string `json:"metricProviderType,omitempty"`
-	// Address of metric endpoint
-	MetricProviderAddress *string `json:"metricProviderAddress,omitempty"`
-	// Authentication token for metric client
-	MetricProviderToken *string `json:"metricProviderToken,omitempty"`
+	// Metric Provider specification when using load watcher as library
+	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
 	// Confidence in usage given Gaussian distribution
