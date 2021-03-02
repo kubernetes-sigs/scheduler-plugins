@@ -1,14 +1,14 @@
 
-# Overview
+# Trimaran: Load-aware scheduling plugins
 
-Trimaran is a collection of load-aware scheduler plugins described in [Trimaran: Real Load Aware Scheduling](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling). 
+Trimaran is a collection of load-aware scheduler plugins described in [Trimaran: Real Load Aware Scheduling](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling).
 
 Currently, the collection consists of the following plugins.
 
 - `TargetLoadPacking`: Implements a packing policy up to a configured CPU utilization, then switches to a spreading policy among the hot nodes. (Supports CPU resource.)
 - `LoadVariationRiskBalancing`: Equalizes the risk, defined as a combined measure of average utilization and variation in utilization, among nodes. (Supports CPU and memory resources.)
 
-The trimaran plugins utilize a [load-watcher](https://github.com/paypal/load-watcher) to access resource utilization data via metrics providers. Currently, the `load-watcher` supports three metrics providers: [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server), [Prometheus Server](https://prometheus.io/), and [SignalFx](https://docs.signalfx.com/en/latest/integrations/agent/index.html). 
+The trimaran plugins utilize a [load-watcher](https://github.com/paypal/load-watcher) to access resource utilization data via metrics providers. Currently, the `load-watcher` supports three metrics providers: [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server), [Prometheus Server](https://prometheus.io/), and [SignalFx](https://docs.signalfx.com/en/latest/integrations/agent/index.html).
 
 There are two modes for a trimaran pluging to use the `load-watcher`: as a service or as a library.
 
@@ -16,7 +16,7 @@ There are two modes for a trimaran pluging to use the `load-watcher`: as a servi
 
 In this mode, the trimaran plugin uses a deployed `load-watcher` service in the cluster as depicted in the figure below. A `watcherAddress` configuration parameter is required to define the `load-watcher` service endpoint. For example,
 
-```
+```yaml
 watcherAddress: http://xxxx.svc.cluster.local:2020
 ```
 
@@ -63,5 +63,6 @@ profiles:
       metricProvider:
         type: Prometheus
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
-      safeVarianceMargin: 1
+      safeVarianceMargin: "1"
+      safeVarianceSensitivity: "2"
 ```

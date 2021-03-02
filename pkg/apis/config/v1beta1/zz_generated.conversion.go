@@ -177,6 +177,9 @@ func autoConvert_v1beta1_LoadVariationRiskBalancingArgs_To_config_LoadVariationR
 	if err := v1.Convert_Pointer_string_To_string(&in.SafeVarianceMargin, &out.SafeVarianceMargin, s); err != nil {
 		return err
 	}
+	if err := v1.Convert_Pointer_string_To_string(&in.SafeVarianceSensitivity, &out.SafeVarianceSensitivity, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -193,6 +196,9 @@ func autoConvert_config_LoadVariationRiskBalancingArgs_To_v1beta1_LoadVariationR
 		return err
 	}
 	if err := v1.Convert_string_To_Pointer_string(&in.SafeVarianceMargin, &out.SafeVarianceMargin, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.SafeVarianceSensitivity, &out.SafeVarianceSensitivity, s); err != nil {
 		return err
 	}
 	return nil

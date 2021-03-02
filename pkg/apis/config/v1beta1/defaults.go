@@ -54,6 +54,8 @@ var (
 
 	// DefaultSafeVarianceMargin is one
 	DefaultSafeVarianceMargin = "1"
+	// DefaultSafeVarianceSensitivity is one
+	DefaultSafeVarianceSensitivity = "1"
 
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
@@ -106,5 +108,8 @@ func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
 	if args.SafeVarianceMargin == nil {
 		args.SafeVarianceMargin = &DefaultSafeVarianceMargin
+	}
+	if args.SafeVarianceSensitivity == nil {
+		args.SafeVarianceSensitivity = &DefaultSafeVarianceSensitivity
 	}
 }

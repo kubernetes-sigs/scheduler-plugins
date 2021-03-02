@@ -27,7 +27,7 @@ import (
 
 	loadwatcherapi "github.com/paypal/load-watcher/pkg/watcher/api"
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
-	v1beta1 "sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
 )
 
 const (
@@ -110,6 +110,11 @@ func (collector *Collector) getSafeVarianceMargin() (float64, error) {
 	return strconv.ParseFloat(collector.args.SafeVarianceMargin, 64)
 }
 
+// getSafeVarianceSensitivity : get the safe variance sensitivity argument
+func (collector *Collector) getSafeVarianceSensitivity() (float64, error) {
+	return strconv.ParseFloat(collector.args.SafeVarianceSensitivity, 64)
+}
+
 // getArgs : get configured args
 func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 	// cast object into plugin arguments object
@@ -120,7 +125,8 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 			MetricProvider: pluginConfig.MetricProviderSpec{
 				Type: pluginConfig.KubernetesMetricsServer,
 			},
-			SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
+			SafeVarianceMargin:      v1beta1.DefaultSafeVarianceMargin,
+			SafeVarianceSensitivity: v1beta1.DefaultSafeVarianceSensitivity,
 		}
 		return args
 	}
@@ -146,6 +152,20 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 	if margin < 0 {
 		klog.Errorf("bad value for safe variance margin %f, using default %f", margin, defaultMargin)
 		args.SafeVarianceMargin = v1beta1.DefaultSafeVarianceMargin
+	}
+
+	// check validity of safe variance sensitivity
+	defaultSensitivity, _ := strconv.ParseFloat(v1beta1.DefaultSafeVarianceSensitivity, 64)
+	sensitivity, err := strconv.ParseFloat(args.SafeVarianceSensitivity, 64)
+	if err != nil {
+		klog.Errorf("unable to parse SafeVarianceSensitivity %s, using default %s",
+			args.SafeVarianceSensitivity, v1beta1.DefaultSafeVarianceSensitivity)
+		args.SafeVarianceSensitivity = v1beta1.DefaultSafeVarianceSensitivity
+		sensitivity = defaultSensitivity
+	}
+	if sensitivity < 0 {
+		klog.Errorf("bad value for safe variance sensitivity %f, using default %f", sensitivity, defaultSensitivity)
+		args.SafeVarianceSensitivity = v1beta1.DefaultSafeVarianceSensitivity
 	}
 	return args
 }

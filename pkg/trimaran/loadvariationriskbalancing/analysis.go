@@ -42,20 +42,31 @@ type resourceStats struct {
 }
 
 // computeScore : compute score given usage statistics
-func (rs *resourceStats) computeScore(margin float64) int64 {
+func (rs *resourceStats) computeScore(margin float64, sensitivity float64) int64 {
 	if rs.capacity <= 0 {
 		klog.Errorf("invalid resource capacity %f!", rs.capacity)
 		return 0
 	}
 	rs.withinBounds()
+
+	// calculate average factor
 	mu := (rs.usedAvg + rs.demand) / rs.capacity
 	mu = math.Max(math.Min(mu, 1), 0)
+
+	// calculate deviation factor
 	sigma := rs.usedStdev / rs.capacity
+	sigma = math.Max(math.Min(sigma, 1), 0)
+	// apply root power
+	if sensitivity >= 0 {
+		sigma = math.Pow(sigma, 1/sensitivity)
+	}
+	// apply multiplier
 	sigma *= margin
 	sigma = math.Max(math.Min(sigma, 1), 0)
-	// magnify variation by taking squared root
-	obj := (mu + math.Sqrt(sigma)) / 2
-	klog.V(6).Infof("mu=%f; sigma=%f; margin=%f; obj=%f", mu, sigma, margin, obj)
+
+	// evaluate overall risk factor
+	obj := (mu + sigma) / 2
+	klog.V(6).Infof("mu=%f; sigma=%f; margin=%f; sensitivity=%f; obj=%f", mu, sigma, margin, sensitivity, obj)
 	objScaled := (1. - obj) * float64(framework.MaxNodeScore)
 	score := int64(objScaled + 0.5)
 	return score
@@ -134,7 +145,7 @@ func getResourceData(metrics []watcher.Metric, node *v1.Node, resourceType strin
 				avgFound = true
 			} else if metric.Operator == watcher.Std {
 				stDev = metric.Value
-			} else if metric.Operator == "" && !avgFound {
+			} else if (metric.Operator == "" || metric.Operator == watcher.Latest) && !avgFound {
 				avg = metric.Value
 			}
 			isValid = true

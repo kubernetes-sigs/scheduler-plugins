@@ -102,18 +102,19 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 	podRequest := getResourceRequested(pod)
 	node := nodeInfo.Node()
 	margin, _ := pl.collector.getSafeVarianceMargin()
+	sensitivity, _ := pl.collector.getSafeVarianceSensitivity()
 	// calculate CPU score
 	var cpuScore int64 = 0
 	cpuStats, cpuOK := getCPUStats(metrics, node, podRequest)
 	if cpuOK {
-		cpuScore = cpuStats.computeScore(margin)
+		cpuScore = cpuStats.computeScore(margin, sensitivity)
 	}
 	klog.V(6).Infof("pod:%s; node:%s; CPUScore=%d", pod.GetName(), nodeName, cpuScore)
 	// calculate Memory score
 	var memoryScore int64 = 0
 	memoryStats, memoryOK := getMemoryStats(metrics, node, podRequest)
 	if memoryOK {
-		memoryScore = memoryStats.computeScore(margin)
+		memoryScore = memoryStats.computeScore(margin, sensitivity)
 	}
 	klog.V(6).Infof("pod:%s; node:%s; MemoryScore=%d", pod.GetName(), nodeName, memoryScore)
 	// calculate total score

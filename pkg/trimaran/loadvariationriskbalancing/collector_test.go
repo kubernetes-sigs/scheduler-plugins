@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
@@ -139,7 +140,47 @@ func TestGetNodeMetrics(t *testing.T) {
 func TestGetSafeVarianceMargin(t *testing.T) {
 	col, _ := newCollector(&args)
 	margin, err := col.getSafeVarianceMargin()
-	var expectedMargin float64 = 1
+	expectedMargin, _ := strconv.ParseFloat(v1beta1.DefaultSafeVarianceMargin, 64)
 	assert.Nil(t, err)
 	assert.Equal(t, expectedMargin, margin)
+
+	goodArgs := args
+	goodArgs.SafeVarianceMargin = "2"
+	col, _ = newCollector(&goodArgs)
+	margin, err = col.getSafeVarianceMargin()
+	expectedMargin = 2
+	assert.Nil(t, err)
+	assert.Equal(t, expectedMargin, margin)
+
+	badArgs := args
+	badArgs.SafeVarianceMargin = "-1"
+	col, _ = newCollector(&badArgs)
+	margin, err = col.getSafeVarianceMargin()
+	expectedMargin, _ = strconv.ParseFloat(v1beta1.DefaultSafeVarianceMargin, 64)
+	assert.Nil(t, err)
+	assert.Equal(t, expectedMargin, margin)
+}
+
+func TestGetSafeVarianceSensitivity(t *testing.T) {
+	col, _ := newCollector(&args)
+	sensitivity, err := col.getSafeVarianceSensitivity()
+	expectedSensitivity, _ := strconv.ParseFloat(v1beta1.DefaultSafeVarianceSensitivity, 64)
+	assert.Nil(t, err)
+	assert.Equal(t, expectedSensitivity, sensitivity)
+
+	goodArgs := args
+	goodArgs.SafeVarianceSensitivity = "2"
+	col, _ = newCollector(&goodArgs)
+	sensitivity, err = col.getSafeVarianceSensitivity()
+	expectedSensitivity = 2
+	assert.Nil(t, err)
+	assert.Equal(t, expectedSensitivity, sensitivity)
+
+	badArgs := args
+	badArgs.SafeVarianceSensitivity = "-5"
+	col, _ = newCollector(&badArgs)
+	sensitivity, err = col.getSafeVarianceSensitivity()
+	expectedSensitivity, _ = strconv.ParseFloat(v1beta1.DefaultSafeVarianceSensitivity, 64)
+	assert.Nil(t, err)
+	assert.Equal(t, expectedSensitivity, sensitivity)
 }

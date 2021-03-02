@@ -79,8 +79,9 @@ func TestNew(t *testing.T) {
 	defer server.Close()
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     server.URL,
-		SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
+		WatcherAddress:          server.URL,
+		SafeVarianceMargin:      v1beta1.DefaultSafeVarianceMargin,
+		SafeVarianceSensitivity: v1beta1.DefaultSafeVarianceSensitivity,
 	}
 	loadVariationRiskBalancingConfig := config.PluginConfig{
 		Name: Name,
@@ -112,6 +113,11 @@ func TestNew(t *testing.T) {
 	assert.Nil(t, err)
 
 	badArgs.SafeVarianceMargin = "-5"
+	badp, err = New(&badArgs, fh)
+	assert.NotNil(t, badp)
+	assert.Nil(t, err)
+
+	badArgs.SafeVarianceSensitivity = "-1"
 	badp, err = New(&badArgs, fh)
 	assert.NotNil(t, badp)
 	assert.Nil(t, err)
@@ -214,7 +220,7 @@ func TestScore(t *testing.T) {
 				},
 			},
 			expected: []framework.NodeScore{
-				{Name: "node-1", Score: 55},
+				{Name: "node-1", Score: 67},
 			},
 		},
 		{
@@ -247,7 +253,7 @@ func TestScore(t *testing.T) {
 								{
 									Type:     watcher.Memory,
 									Operator: watcher.Std,
-									Value:    9,
+									Value:    10,
 								},
 							},
 						},
@@ -255,7 +261,7 @@ func TestScore(t *testing.T) {
 				},
 			},
 			expected: []framework.NodeScore{
-				{Name: "node-1", Score: 35},
+				{Name: "node-1", Score: 45},
 			},
 		},
 		{
@@ -278,7 +284,7 @@ func TestScore(t *testing.T) {
 								{
 									Type:     watcher.CPU,
 									Operator: watcher.Std,
-									Value:    16,
+									Value:    20,
 								},
 								{
 									Type:     watcher.Memory,
@@ -288,7 +294,7 @@ func TestScore(t *testing.T) {
 								{
 									Type:     watcher.Memory,
 									Operator: watcher.Std,
-									Value:    6.25,
+									Value:    15,
 								},
 							},
 						},
@@ -296,7 +302,7 @@ func TestScore(t *testing.T) {
 				},
 			},
 			expected: []framework.NodeScore{
-				{Name: "node-1", Score: 35},
+				{Name: "node-1", Score: 45},
 			},
 		},
 		{
@@ -330,8 +336,9 @@ func TestScore(t *testing.T) {
 			state := framework.NewCycleState()
 
 			loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-				WatcherAddress:     server.URL,
-				SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
+				WatcherAddress:          server.URL,
+				SafeVarianceMargin:      v1beta1.DefaultSafeVarianceMargin,
+				SafeVarianceSensitivity: v1beta1.DefaultSafeVarianceSensitivity,
 			}
 			loadVariationRiskBalancingConfig := config.PluginConfig{
 				Name: Name,

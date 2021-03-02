@@ -121,6 +121,8 @@ type LoadVariationRiskBalancingArgs struct {
 	MetricProvider MetricProviderSpec
 	// Address of load watcher service
 	WatcherAddress string
-	// Confidence in usage given Gaussian distribution
+	// Multiplier of standard deviation in risk value
 	SafeVarianceMargin string
+	// Root power of standard deviation in risk value
+	SafeVarianceSensitivity string
 }

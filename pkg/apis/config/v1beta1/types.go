@@ -123,6 +123,8 @@ type LoadVariationRiskBalancingArgs struct {
 	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
-	// Confidence in usage given Gaussian distribution
+	// Multiplier of standard deviation in risk value
 	SafeVarianceMargin *string `json:"safeVarianceMargin,omitempty"`
+	// Root power of standard deviation in risk value
+	SafeVarianceSensitivity *string `json:"safeVarianceSensitivity,omitempty"`
 }

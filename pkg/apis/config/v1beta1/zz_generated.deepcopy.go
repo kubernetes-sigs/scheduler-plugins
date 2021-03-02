@@ -116,6 +116,11 @@ func (in *LoadVariationRiskBalancingArgs) DeepCopyInto(out *LoadVariationRiskBal
 		*out = new(string)
 		**out = **in
 	}
+	if in.SafeVarianceSensitivity != nil {
+		in, out := &in.SafeVarianceSensitivity, &out.SafeVarianceSensitivity
+		*out = new(string)
+		**out = **in
+	}
 	return
 }
 

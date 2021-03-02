@@ -71,26 +71,29 @@ var (
 
 func TestComputeScore(t *testing.T) {
 	tests := []struct {
-		name     string
-		margin   float64
-		rs       *resourceStats
-		expected int64
-		response int64
+		name        string
+		margin      float64
+		sensitivity float64
+		rs          *resourceStats
+		expected    int64
+		response    int64
 	}{
 		{
-			name:   "valid data",
-			margin: 1,
+			name:        "valid data",
+			margin:      1,
+			sensitivity: 1,
 			rs: &resourceStats{
 				capacity:  100,
 				demand:    10,
 				usedAvg:   40,
 				usedStdev: 36,
 			},
-			expected: 45,
+			expected: 57,
 		},
 		{
-			name:   "zero capacity",
-			margin: 1,
+			name:        "zero capacity",
+			margin:      1,
+			sensitivity: 2,
 			rs: &resourceStats{
 				capacity:  0,
 				demand:    10,
@@ -100,8 +103,9 @@ func TestComputeScore(t *testing.T) {
 			expected: 0,
 		},
 		{
-			name:   "negative usedAvg",
-			margin: 1,
+			name:        "negative usedAvg",
+			margin:      1,
+			sensitivity: 2,
 			rs: &resourceStats{
 				capacity:  100,
 				demand:    10,
@@ -111,8 +115,9 @@ func TestComputeScore(t *testing.T) {
 			expected: 65,
 		},
 		{
-			name:   "large usedAvg",
-			margin: 1,
+			name:        "large usedAvg",
+			margin:      1,
+			sensitivity: 2,
 			rs: &resourceStats{
 				capacity:  100,
 				demand:    10,
@@ -122,8 +127,9 @@ func TestComputeScore(t *testing.T) {
 			expected: 20,
 		},
 		{
-			name:   "negative usedStdev",
-			margin: 1,
+			name:        "negative usedStdev",
+			margin:      1,
+			sensitivity: 2,
 			rs: &resourceStats{
 				capacity:  100,
 				demand:    10,
@@ -133,8 +139,9 @@ func TestComputeScore(t *testing.T) {
 			expected: 75,
 		},
 		{
-			name:   "large usedStdev",
-			margin: 1,
+			name:        "large usedStdev",
+			margin:      1,
+			sensitivity: 2,
 			rs: &resourceStats{
 				capacity:  100,
 				demand:    10,
@@ -144,8 +151,9 @@ func TestComputeScore(t *testing.T) {
 			expected: 25,
 		},
 		{
-			name:   "large usedAvg",
-			margin: 1,
+			name:        "large usedAvg",
+			margin:      1,
+			sensitivity: 2,
 			rs: &resourceStats{
 				capacity:  100,
 				demand:    10,
@@ -155,8 +163,33 @@ func TestComputeScore(t *testing.T) {
 			expected: 20,
 		},
 		{
-			name:   "negative margin",
-			margin: -1,
+			name:        "negative margin",
+			margin:      -1,
+			sensitivity: 1,
+			rs: &resourceStats{
+				capacity:  100,
+				demand:    10,
+				usedAvg:   40,
+				usedStdev: 36,
+			},
+			expected: 75,
+		},
+		{
+			name:        "negative sensitivity",
+			margin:      1,
+			sensitivity: -1,
+			rs: &resourceStats{
+				capacity:  100,
+				demand:    10,
+				usedAvg:   40,
+				usedStdev: 36,
+			},
+			expected: 57,
+		},
+		{
+			name:        "zero sensitivity",
+			margin:      1,
+			sensitivity: 0,
 			rs: &resourceStats{
 				capacity:  100,
 				demand:    10,
@@ -169,7 +202,7 @@ func TestComputeScore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			response := tt.rs.computeScore(tt.margin)
+			response := tt.rs.computeScore(tt.margin, tt.sensitivity)
 			assert.Equal(t, tt.expected, response)
 		})
 	}
