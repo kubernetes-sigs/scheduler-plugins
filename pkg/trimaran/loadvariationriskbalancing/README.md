@@ -12,7 +12,7 @@ where *average*​ and *stDev*​ are the fractional (between 0 and 1) measured 
 
 (Since the additional load due to the pod, that is the subject of scheduling, is not known in advance, we assume that its average and standard deviation load are the requested amount and zero, respectively.)  
 
-Risk is calcucated independently for the CPU and memory resources on the node. Let *worstRisk* be the maximum of the two calculated risks. The *score* of the node, assuming that *minScore* is 0, is then computed as
+Risk is calculated independently for the CPU and memory resources on the node. Let *worstRisk* be the maximum of the two calculated risks. The *score* of the node, assuming that *minScore* is 0, is then computed as
 
 ```latex
 score = maxScore * (1 - worstRisk)
