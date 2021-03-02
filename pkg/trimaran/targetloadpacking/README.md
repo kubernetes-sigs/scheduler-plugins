@@ -20,7 +20,7 @@ It uses `load-watcher` in two modes.
    In this way, you just need to configure `watcherAddress: http://xxxx.svc.cluster.local:2020` to your `load-watcher` service. You can 
    also deploy `load-watcher` as a service in the same scheduler pod, 
    following the tutorial [here](https://medium.com/paypal-engineering/real-load-aware-scheduling-in-kubernetes-with-trimaran-a8efe14d51e2).
-
+   
 2. Using `load-watcher` as a library to fetch metrics from other providers, such as Prometheus, SignalFx and Kubernetes metric server.
    In this mode, you need to configure three parameters: `metricProviderType`, `metricProviderAddress` and `metricProviderToken` if authentication is needed.
 
