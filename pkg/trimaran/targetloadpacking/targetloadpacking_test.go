@@ -145,8 +145,9 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 						"node-1": {
 							Metrics: []watcher.Metric{
 								{
-									Type:  watcher.CPU,
-									Value: 0,
+									Type:     watcher.CPU,
+									Value:    0,
+									Operator: watcher.Latest,
 								},
 							},
 						},
@@ -171,8 +172,9 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 						"node-1": {
 							Metrics: []watcher.Metric{
 								{
-									Type:  watcher.CPU,
-									Value: float64(v1beta1.DefaultTargetUtilizationPercent + 10),
+									Type:     watcher.CPU,
+									Value:    float64(v1beta1.DefaultTargetUtilizationPercent + 10),
+									Operator: watcher.Latest,
 								},
 							},
 						},
@@ -196,8 +198,9 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 						"node-1": {
 							Metrics: []watcher.Metric{
 								{
-									Type:  watcher.CPU,
-									Value: 30,
+									Type:     watcher.CPU,
+									Value:    30,
+									Operator: watcher.Latest,
 								},
 							},
 						},
@@ -228,8 +231,6 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				assert.Nil(t, err)
 				resp.Write(bytes)
 			}))
-			// point watcher to test server
-			WatcherBaseUrl = ""
 
 			defer server.Close()
 
@@ -306,8 +307,9 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			nodeMetrics := watcher.NodeMetrics{
 				Metrics: []watcher.Metric{
 					{
-						Type:  watcher.CPU,
-						Value: 0,
+						Type:     watcher.CPU,
+						Value:    0,
+						Operator: watcher.Latest,
 					},
 				},
 			}
@@ -328,8 +330,7 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 				}
 				resp.Write(bytes)
 			}))
-			// point watcher to test server
-			WatcherBaseUrl = ""
+
 			bfbpArgs.WatcherAddress = server.URL
 			defer server.Close()
 

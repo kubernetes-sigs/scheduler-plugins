@@ -271,6 +271,9 @@ func autoConvert_v1beta1_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(i
 	if err := v1.Convert_Pointer_int64_To_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
 		return err
 	}
+	if err := Convert_v1beta1_MetricProviderSpec_To_config_MetricProviderSpec(&in.MetricProvider, &out.MetricProvider, s); err != nil {
+		return err
+	}
 	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}
@@ -288,6 +291,9 @@ func autoConvert_config_TargetLoadPackingArgs_To_v1beta1_TargetLoadPackingArgs(i
 		return err
 	}
 	if err := v1.Convert_int64_To_Pointer_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
+		return err
+	}
+	if err := Convert_config_MetricProviderSpec_To_v1beta1_MetricProviderSpec(&in.MetricProvider, &out.MetricProvider, s); err != nil {
 		return err
 	}
 	if err := v1.Convert_string_To_Pointer_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {

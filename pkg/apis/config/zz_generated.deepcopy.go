@@ -159,6 +159,7 @@ func (in *TargetLoadPackingArgs) DeepCopyInto(out *TargetLoadPackingArgs) {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
+	out.MetricProvider = in.MetricProvider
 	return
 }
 

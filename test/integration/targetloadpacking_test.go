@@ -37,24 +37,27 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 				"node-1": {
 					Metrics: []watcher.Metric{
 						{
-							Type:  watcher.CPU,
-							Value: 10,
+							Type:     watcher.CPU,
+							Value:    10,
+							Operator: watcher.Latest,
 						},
 					},
 				},
 				"node-2": {
 					Metrics: []watcher.Metric{
 						{
-							Type:  watcher.CPU,
-							Value: 60,
+							Type:     watcher.CPU,
+							Value:    60,
+							Operator: watcher.Latest,
 						},
 					},
 				},
 				"node-3": {
 					Metrics: []watcher.Metric{
 						{
-							Type:  watcher.CPU,
-							Value: 0,
+							Type:     watcher.CPU,
+							Value:    0,
+							Operator: watcher.Latest,
 						},
 					},
 				},
@@ -66,8 +69,6 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 		assert.Nil(t, err)
 		resp.Write(bytes)
 	}))
-	// point watcher to test server
-	targetloadpacking.WatcherBaseUrl = ""
 
 	defer server.Close()
 	profile := schedapi.KubeSchedulerProfile{

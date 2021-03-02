@@ -219,6 +219,7 @@ func (in *TargetLoadPackingArgs) DeepCopyInto(out *TargetLoadPackingArgs) {
 		*out = new(int64)
 		**out = **in
 	}
+	in.MetricProvider.DeepCopyInto(&out.MetricProvider)
 	if in.WatcherAddress != nil {
 		in, out := &in.WatcherAddress, &out.WatcherAddress
 		*out = new(string)

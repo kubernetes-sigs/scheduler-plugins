@@ -78,14 +78,13 @@ type CapacitySchedulingArgs struct {
 // MetricProviderType is a "string" type.
 type MetricProviderType string
 
-// Default metric provider parameters
 const (
 	KubernetesMetricsServer MetricProviderType = "KubernetesMetricsServer"
 	Prometheus              MetricProviderType = "Prometheus"
 	SignalFx                MetricProviderType = "SignalFx"
 )
 
-// MetricProviderSpec denotes the spec of the metric provider
+// Denote the spec of the metric provider
 type MetricProviderSpec struct {
 	// Types of the metric provider
 	Type MetricProviderType
@@ -107,6 +106,8 @@ type TargetLoadPackingArgs struct {
 	DefaultRequestsMultiplier string
 	// Node target CPU Utilization for bin packing
 	TargetUtilization int64
+	// Metric Provider to use when using load watcher as a library
+	MetricProvider MetricProviderSpec
 	// Address of load watcher service
 	WatcherAddress string
 }
