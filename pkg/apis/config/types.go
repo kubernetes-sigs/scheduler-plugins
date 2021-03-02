@@ -75,6 +75,25 @@ type CapacitySchedulingArgs struct {
 	KubeConfigPath string
 }
 
+// MetricProviderType is a "string" type.
+type MetricProviderType string
+
+const (
+	KubernetesMetricsServer MetricProviderType = "KubernetesMetricsServer"
+	Prometheus              MetricProviderType = "Prometheus"
+	SignalFx                MetricProviderType = "SignalFx"
+)
+
+// Denote the spec of the metric provider
+type MetricProviderSpec struct {
+	// Types of the metric provider
+	Type MetricProviderType
+	// The address of the metric provider
+	Address string
+	// The authentication token of the metric provider
+	Token string
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
@@ -87,6 +106,8 @@ type TargetLoadPackingArgs struct {
 	DefaultRequestsMultiplier string
 	// Node target CPU Utilization for bin packing
 	TargetUtilization int64
+	// Metric Provider to use when using load watcher as a library
+	MetricProvider MetricProviderSpec
 	// Address of load watcher service
 	WatcherAddress string
 }

@@ -26,13 +26,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/francoispqt/gojay"
 	"github.com/paypal/load-watcher/pkg/watcher"
+	loadwatcherapi "github.com/paypal/load-watcher/pkg/watcher/api"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -49,23 +48,20 @@ import (
 const (
 	// Time interval in seconds for each metrics agent ingestion.
 	metricsAgentReportingIntervalSeconds = 60
-	httpClientTimeoutSeconds             = 55 * time.Second
 	metricsUpdateIntervalSeconds         = 30
+	LoadWatcherServiceClientName         = "load-watcher"
 	Name                                 = "TargetLoadPacking"
 )
 
 var (
 	requestsMilliCores           = v1beta1.DefaultRequestsMilliCores
 	hostTargetUtilizationPercent = v1beta1.DefaultTargetUtilizationPercent
-	watcherAddress               = "http://127.0.0.1:2020"
 	requestsMultiplier           float64
-	// Exported for testing
-	WatcherBaseUrl = "/watcher"
 )
 
 type TargetLoadPacking struct {
 	handle       framework.FrameworkHandle
-	client       http.Client
+	client       loadwatcherapi.Client
 	metrics      watcher.WatcherMetrics
 	eventHandler *trimaran.PodAssignEventHandler
 	// For safe access to metrics
@@ -79,15 +75,21 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 	}
 	hostTargetUtilizationPercent = args.TargetUtilization
 	requestsMilliCores = args.DefaultRequests.Cpu().MilliValue()
-	watcherAddress = args.WatcherAddress
 	requestsMultiplier, _ = strconv.ParseFloat(args.DefaultRequestsMultiplier, 64)
 
 	podAssignEventHandler := trimaran.New()
+
+	var client loadwatcherapi.Client
+	if args.WatcherAddress != "" {
+		client, err = loadwatcherapi.NewServiceClient(args.WatcherAddress)
+	} else {
+		opts := watcher.MetricsProviderOpts{string(args.MetricProvider.Type), args.MetricProvider.Address, args.MetricProvider.Token}
+		client, err = loadwatcherapi.NewLibraryClient(opts)
+	}
+
 	pl := &TargetLoadPacking{
-		handle: handle,
-		client: http.Client{
-			Timeout: httpClientTimeoutSeconds,
-		},
+		handle:       handle,
+		client:       client,
 		eventHandler: podAssignEventHandler,
 	}
 
@@ -131,40 +133,15 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 }
 
 func (pl *TargetLoadPacking) updateMetrics() error {
-	req, err := http.NewRequest(http.MethodGet, watcherAddress+WatcherBaseUrl, nil)
+	metrics, err := pl.client.GetLatestWatcherMetrics()
 	if err != nil {
-		klog.Errorf("new watcher request failed: %v", err)
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	//TODO(aqadeer): Add a couple of retries for transient errors
-	resp, err := pl.client.Do(req)
-	if err != nil {
-		klog.Errorf("request to watcher failed: %v", err)
-		// Reset the metrics to avoid stale metrics. Probably use a timestamp for better control
-		pl.mu.Lock()
-		pl.metrics = watcher.WatcherMetrics{}
-		pl.mu.Unlock()
-		return err
-	}
-	defer resp.Body.Close()
-	klog.V(6).Infof("received status code %v from watcher", resp.StatusCode)
-	if resp.StatusCode == http.StatusOK {
-		data := watcher.Data{NodeMetricsMap: make(map[string]watcher.NodeMetrics)}
-		metrics := watcher.WatcherMetrics{Data: data}
-		dec := gojay.BorrowDecoder(resp.Body)
-		defer dec.Release()
-		err = dec.Decode(&metrics)
-		if err != nil {
-			klog.Errorf("unable to decode watcher metrics: %v", err)
-		}
-		pl.mu.Lock()
-		pl.metrics = metrics
-		pl.mu.Unlock()
-	} else {
-		klog.Errorf("received status code %v from watcher", resp.StatusCode)
-	}
+	pl.mu.Lock()
+	pl.metrics = *metrics
+	pl.mu.Unlock()
+
 	return nil
 }
 
@@ -178,8 +155,15 @@ func getArgs(obj runtime.Object) (*pluginConfig.TargetLoadPackingArgs, error) {
 		return nil, fmt.Errorf("want args to be of type TargetLoadPackingArgs, got %T", obj)
 	}
 	if targetLoadPackingArgs.WatcherAddress == "" {
-		return nil, errors.New("no watcher address configured")
+		if targetLoadPackingArgs.MetricProvider.Type == "" {
+			targetLoadPackingArgs.MetricProvider.Type = pluginConfig.KubernetesMetricsServer
+		} else {
+			if targetLoadPackingArgs.MetricProvider.Type != pluginConfig.KubernetesMetricsServer && targetLoadPackingArgs.MetricProvider.Type != pluginConfig.Prometheus && targetLoadPackingArgs.MetricProvider.Type != pluginConfig.SignalFx {
+				return nil, fmt.Errorf("invalid MetricProvider.Type, got %T", targetLoadPackingArgs.MetricProvider.Type)
+			}
+		}
 	}
+
 	_, err := strconv.ParseFloat(targetLoadPackingArgs.DefaultRequestsMultiplier, 64)
 	if err != nil {
 		return nil, errors.New("unable to parse DefaultRequestsMultiplier: " + err.Error())
@@ -218,8 +202,10 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	var cpuMetricFound bool
 	for _, metric := range metrics.Data.NodeMetricsMap[nodeName].Metrics {
 		if metric.Type == watcher.CPU {
-			nodeCPUUtilPercent = metric.Value
-			cpuMetricFound = true
+			if metric.Operator == watcher.Average || metric.Operator == watcher.Latest {
+				nodeCPUUtilPercent = metric.Value
+				cpuMetricFound = true
+			}
 		}
 	}
 

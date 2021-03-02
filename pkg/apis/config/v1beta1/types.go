@@ -75,6 +75,25 @@ type CapacitySchedulingArgs struct {
 	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }
 
+// MetricProviderType is a "string" type.
+type MetricProviderType string
+
+const (
+	KubernetesMetricsServer MetricProviderType = "KubernetesMetricsServer"
+	Prometheus              MetricProviderType = "Prometheus"
+	SignalFx                MetricProviderType = "SignalFx"
+)
+
+// Denote the spec of the metric provider
+type MetricProviderSpec struct {
+	// Types of the metric provider
+	Type MetricProviderType `json:"type,omitempty"`
+	// The address of the metric provider
+	Address *string `json:"address,omitempty"`
+	// The authentication token of the metric provider
+	Token *string `json:"token,omitempty"`
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +k8s:defaulter-gen=true
 
@@ -88,6 +107,8 @@ type TargetLoadPackingArgs struct {
 	DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
 	// Node target CPU Utilization for bin packing
 	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
+	// Specify the metric provider type, address and token using MetricProviderSpec
+	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }
