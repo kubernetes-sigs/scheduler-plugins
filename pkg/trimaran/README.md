@@ -1,3 +1,4 @@
+
 # Overview
 
 Trimaran is a collection of load-aware scheduler plugins described in [Trimaran: Real Load Aware Scheduling](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/kep/61-Trimaran-real-load-aware-scheduling). 
@@ -8,8 +9,6 @@ Currently, the collection consists of the following plugins.
 - `LoadVariationRiskBalancing`: Equalizes the risk, defined as a combined measure of average utilization and variation in utilization, among nodes. (Supports CPU and memory resources.)
 
 The trimaran plugins utilize a [load-watcher](https://github.com/paypal/load-watcher) to access resource utilization data via metrics providers. Currently, the `load-watcher` supports three metrics providers: [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server), [Prometheus Server](https://prometheus.io/), and [SignalFx](https://docs.signalfx.com/en/latest/integrations/agent/index.html). 
-
-
 
 There are two modes for a trimaran pluging to use the `load-watcher`: as a service or as a library.
 
@@ -27,21 +26,19 @@ Instructions on how to build and deploy the `load-watcher` can be found [here](h
 
 ## load-watcher as a library
 
-In this mode, the trimaran plugin embeds the  `load-watcher` as a library, which in turn accesses the configured metrics provider. In this case, we have three configuration parameters: `metricProviderType`, `metricProviderAddress` and `metricProviderToken`.
+In this mode, the trimaran plugin embeds the  `load-watcher` as a library, which in turn accesses the configured metrics provider. In this case, we have three configuration parameters: `metricProvider.type`, `metricProvider.address` and `metricProvider.token`.
 
 ![load-watcher as a library](docs/load-watcher-library.png)
 
 The configuration parameters should be set as follows.
 
-- `metricProviderType`: the type of the metrics provider
+- `metricProvider.type`: the type of the metrics provider
   - `KubernetesMetricsServer` (default)
   - `Prometheus`
   - `SignalFx`
-- `metricProviderAddress`: the address of the metrics provider endpoint, if needed. For the Kubernetes Metrics Server, this parameter may be ignored. For the Prometheus Server, an example setting is
+- `metricProvider.address`: the address of the metrics provider endpoint, if needed. For the Kubernetes Metrics Server, this parameter may be ignored. For the Prometheus Server, an example setting is
   - `http://prometheus-k8s.monitoring.svc.cluster.local:9090`
-- `metricProviderToken`: set only if an authentication token is needed to access the metrics provider.
-
-
+- `metricProvider.token`: set only if an authentication token is needed to access the metrics provider.
 
 The selection of the `load-watcher` mode is based on the existence of a `watcherAddress` parameter. If it is set, then the `load-watcher` is in the 'as a service' mode, otherwise it is in the 'as a library' mode.
 
@@ -68,4 +65,3 @@ profiles:
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
       safeVarianceMargin: 1
 ```
-
