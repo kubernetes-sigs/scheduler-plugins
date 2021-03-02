@@ -12,13 +12,11 @@ where *average*​ and *stDev*​ are the fractional (between 0 and 1) measured 
 
 (Since the additional load due to the pod, that is the subject of scheduling, is not known in advance, we assume that its average and standard deviation load are the requested amount and zero, respectively.)  
 
-Risk is calucated independently for the CPU and memory resources on the node. Let *worstRisk*​ be the maximum of the two calculated risks. The *score*​ of the node is then computed as
+Risk is calcucated independently for the CPU and memory resources on the node. Let *worstRisk* be the maximum of the two calculated risks. The *score* of the node, assuming that *minScore* is 0, is then computed as
 
 ```latex
 score = maxScore * (1 - worstRisk)
 ```
-
-assuming that *minScore*​ is 0.
 
 Thus, the `LoadVariationRiskBalancing` plugin has the following configuration parameters:
 
@@ -27,7 +25,7 @@ Thus, the `LoadVariationRiskBalancing` plugin has the following configuration pa
 
 In addition, we have the  `watcherAddress` or `metricProvider`configuration parameters, depending on whether the `load-watcher` is in service or library mode, respectively.
 
-Following is an example scheduler configuration with the `LoadVariationRiskBalancing` plugin enabled, and using the `load-watcher` in library mode, collecting measurements from the Prometheus server in the cluster as a metric provider.
+Following is an example scheduler configuration with the `LoadVariationRiskBalancing` plugin enabled, and using the `load-watcher` in library mode, collecting measurements from the Prometheus server.
 
 ```yaml
 apiVersion: kubescheduler.config.k8s.io/v1beta1
