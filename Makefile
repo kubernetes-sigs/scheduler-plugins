@@ -13,7 +13,8 @@
 # limitations under the License.
 
 ARCHS = amd64 arm64
-COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
+GOOS?=$(shell uname -s | tr A-Z a-z)
+GOARCH?=amd64
 BUILDENVVAR=CGO_ENABLED=0
 
 LOCAL_REGISTRY=localhost:5000/scheduler-plugins
@@ -41,35 +42,13 @@ all: build
 .PHONY: build
 build: build-controller build-scheduler
 
-.PHONY: build.amd64
-build.amd64: build-controller.amd64 build-scheduler.amd64
-
-.PHONY: build.arm64v8
-build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
-
 .PHONY: build-controller
 build-controller: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
-
-.PHONY: build-controller.amd64
-build-controller.amd64: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
-
-.PHONY: build-controller.arm64v8
-build-controller.arm64v8: autogen
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
-
-.PHONY: build-scheduler.amd64
-build-scheduler.amd64: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
-
-.PHONY: build-scheduler.arm64v8
-build-scheduler.arm64v8: autogen
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
 local-image: clean
