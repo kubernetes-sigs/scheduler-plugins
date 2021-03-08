@@ -11,13 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+ARG ARCH
 FROM golang:1.15.8
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
-RUN make build-controller
+ARG ARCH
+RUN make build-controller.$ARCH
 
-FROM alpine:3.12
+FROM $ARCH/alpine:3.12
 
 COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/controller /bin/controller
 
