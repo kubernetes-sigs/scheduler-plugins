@@ -48,7 +48,7 @@ We implement a score plugin based on the scheduler framework. Implementation fol
 
 Consider the following scenario:
 * 2 nodes with allocated/allocatable of 0/10, 0/200.
-* 3 pods are scheduled in the following order with the following requests: 5, 5, 100, 100
+* 4 pods are scheduled in the following order with the following requests: 5, 5, 100, 100
 
 With score plugin ```NodeResourcesLeastAllocatable```, all pods are scheduled.
 The final nodes have allocated/allocatable of 10/10, 200/200.
