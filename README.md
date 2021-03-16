@@ -4,16 +4,15 @@ Repository for out-of-tree scheduler plugins based on scheduler framework.
 
 ## Install
 
-Starting with release v0.18.9 container images are available in the official k8s container registry
-`k8s.gcr.io/scheduler-plugins/kube-scheduler`. See the [Compatibility Matrix section](#compatibility-matrix)
-for the list of images.
+Container images are available in the official scheduler-plugins k8s container registry. There are two images one
+for the kube-scheduler and one for the controller. See the [Compatibility Matrix section](#compatibility-matrix)
+for the complete list of images.
 
 ```shell
 docker pull k8s.gcr.io/scheduler-plugins/kube-scheduler:$TAG
+docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG
 ```
 
-In a future release an official container image will be provided for the scheduler-plugins controller. For
-example `docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG`. 
 You can find [how to install release image](doc/install.md) here.
 
 ## Compatibility Matrix
@@ -29,9 +28,14 @@ patch versions(i.e. v0.18.9) exactly align with the the k8s client package versi
 with. The three digit patch versions(i.e. v0.18.800) are used to indicated that the k8s client package versions have not
 changed since the previous release, and that only scheduler plugins code(features or bug fixes) was changed.
 
-Scheduler Plugins  | Compiled With k8s Version | Container Image                                     |
--------------------|---------------------------|-----------------------------------------------------|
-v0.18.9            | v1.18.9                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.18.9 |
+Scheduler Plugins  | Compiled With k8s Version | Container Image                                     | Arch           |
+-------------------|---------------------------|-----------------------------------------------------|----------------|
+v0.19.8            | v1.19.8                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8 | AMD64<br>ARM64 |
+v0.18.9            | v1.18.9                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.18.9 | AMD64          |
+
+Controller | Compiled With k8s Version | Container Image                                 | Arch           |
+-----------|---------------------------|-------------------------------------------------|----------------|
+v0.19.8    | v1.19.8                   | k8s.gcr.io/scheduler-plugins/controller:v0.19.8 | AMD64<br>ARM64 |
 
 ## Community, discussion, contribution, and support
 
