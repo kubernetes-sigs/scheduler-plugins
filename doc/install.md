@@ -3,15 +3,16 @@
 ## Table of Contents
 
 - [Create a Kubernetes Cluster](#create-a-kubernetes-cluster)
-- [Install release v0.18.9 and use Coscheduling](#install-release-v0189-and-use-coscheduling)
+- [Install release v0.19.8 and use Coscheduling](#install-release-v0198-and-use-coscheduling)
   - [Test Coscheduling](#test-coscheduling)
+- [Instal old-version releases](#install-old-version-releases)
 - [Uninstall Scheduler-plugins](#uninstall-scheduler-plugins)
 
 ## Create a Kubernetes Cluster
 
 Firstly you need to have a Kubernetes cluster, and a `kubectl` command-line tool must be configured to communicate with the cluster.
 
-The Kubernetes version must equal to or greater than **v1.18.0**. To check the version, use `kubectl version --short`.
+The Kubernetes version must equal to or greater than **v1.19.0**. To check the version, use `kubectl version --short`.
 
 If you do not have a cluster yet, create one by using one of the following provision tools:
 
@@ -19,184 +20,270 @@ If you do not have a cluster yet, create one by using one of the following provi
 * [kubeadm](https://kubernetes.io/docs/admin/kubeadm/)
 * [minikube](https://minikube.sigs.k8s.io/)
 
-## Install release v0.18.9 and use Coscheduling
+## Install release v0.19.8 and use Coscheduling
 
-In this section, we will walk you through how to replace the default scheduler with the scheduler-plugins image. As the new image is built on top of the default scheduler, you won't lose any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box functionalities (implemented by the plugins in this repo) can be obtained, such as coscheduling.
+In this section, we will walk you through how to replace the default scheduler with the
+scheduler-plugins image. As the new image is built on top of the default scheduler, you won't lose
+any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box functionalities
+(implemented by the plugins in this repo) can be obtained, such as coscheduling.
 
-1. Log on Master node 
-   * If your cluster is created by `kind`
-     ```bash
-     sudo docker exec -it $(sudo docker ps | grep control-plane | awk '{print $1}') bash
-     ```
+> The following steps are based on a Kubernetes cluster created by Kind.
+
+1. Log into the control plane node 
+   
+    ```bash
+    sudo docker exec -it $(sudo docker ps | grep control-plane | awk '{print $1}') bash
+    ```
   
-2. Backup `kube-scheduler.yaml`
+1. Backup `kube-scheduler.yaml`
 
    ```bash
    cp /etc/kubernetes/manifests/kube-scheduler.yaml /etc/kubernetes/kube-scheduler.yaml
    ```
 
-3. Create `/etc/kubernetes/coscheduling-config.yaml`
+1. Create `/etc/kubernetes/sched-cc.yaml`
 
-   ```yaml
-   apiVersion: kubescheduler.config.k8s.io/v1alpha2
-   kind: KubeSchedulerConfiguration
-   leaderElection:
-     # (Optional) Change true to false if you are not running a HA control-plane.
-     leaderElect: true
-   clientConnection:
-     kubeconfig: /etc/kubernetes/scheduler.conf
-   profiles:
-   - schedulerName: default-scheduler
-     plugins:
-       queueSort:
-         enabled:
-         - name: Coscheduling
-         disabled:
+    ```yaml
+    apiVersion: kubescheduler.config.k8s.io/v1beta1
+    kind: KubeSchedulerConfiguration
+    leaderElection:
+      # (Optional) Change true to false if you are not running a HA control-plane.
+      leaderElect: true
+    clientConnection:
+      kubeconfig: /etc/kubernetes/scheduler.conf
+    profiles:
+    - schedulerName: default-scheduler
+      plugins:
+        queueSort:
+          enabled:
+          - name: Coscheduling
+          disabled:
           - name: "*"
-       preFilter:
-         enabled:
-         - name: Coscheduling
-       permit:
-         enabled:
-         - name: Coscheduling
-       unreserve:
-         enabled:
-         - name: Coscheduling
-   ```
+        preFilter:
+          enabled:
+          - name: Coscheduling
+        permit:
+          enabled:
+          - name: Coscheduling
+        unreserve:
+          enabled:
+          - name: Coscheduling
+      # pluginConfig is needed for coscheduling plugin to manipulate PodGroup CR objects.
+      pluginConfig:
+      - name: Coscheduling
+        args:
+          kubeConfigPath: /etc/kubernetes/scheduler.conf
+    ```
 
-  4. Modify `/etc/kubernetes/manifests/kube-scheduler.yaml` to run Scheduler-plugins with Coscheduling
+1. **❗IMPORTANT**❗ Starting with release v0.19, several plugins (e.g., coscheduling) introduced CRD
+   to optimize their design and implementation. And hence we need an extra step to:
 
-     Generally, we need to make a couple of changes:
-     - pass in the composed scheduler-config file via argument `--config`
-     - (optional) remove duplicated CLI parameters (e.g., `--leader-elect`), as they may have been defined in the config file
-     - replace vanilla Kubernetes scheduler image with scheduler-plugin image
-     - mount the scheduler-config file to be readable when scheduler starting
+    - apply extra RBAC privileges to user `system:kube-scheduler` so that the scheduler binary is
+      able to manipulate the custom resource objects
+    - install a controller binary managing the custom resource objects
 
-     ```diff
-     --- /etc/kubernetes/kube-scheduler.yaml 2021-02-04 01:27:42.392508733 +0000
-     +++ /etc/kubernetes/manifests/kube-scheduler.yaml       2021-02-04 04:26:04.459171135 +0000
-     @@ -13,11 +13,12 @@
-          - kube-scheduler
-          - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
-          - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
-     +    - --config=/etc/kubernetes/coscheduling-config.yaml
-          - --bind-address=127.0.0.1
-          - --kubeconfig=/etc/kubernetes/scheduler.conf
-          - --leader-elect=true
-          - --port=0
-     -    image: k8s.gcr.io/kube-scheduler:v1.19.1
-     +    image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.18.9
-          imagePullPolicy: IfNotPresent
-          livenessProbe:
-            failureThreshold: 8
-     @@ -47,6 +48,9 @@
-          - mountPath: /etc/kubernetes/scheduler.conf
-            name: kubeconfig
-            readOnly: true
-     +    - mountPath: /etc/kubernetes/coscheduling-config.yaml
-     +      name: coscheduling-config
-     +      readOnly: true
-        hostNetwork: true
-        priorityClassName: system-node-critical
-        volumes:
-     @@ -54,4 +58,8 @@
-            path: /etc/kubernetes/scheduler.conf
-            type: FileOrCreate
-          name: kubeconfig
-     +  - hostPath:
-     +      path: /etc/kubernetes/coscheduling-config.yaml
-     +      type: File
-     +    name: coscheduling-config
-      status: {}
-     ```
+    Next, we apply the compiled yaml located at [manifests/install/all-in-one.yaml](../manifests/install/all-in-one.yaml).
+
+    ```bash
+    $ kubectl apply -f all-in-one.yaml
+    ```
+
+    After this step, a deployment called `scheduler-plugins-controller` is expected to run in
+    namespace `scheduler-plugins`:
+
+    ```bash
+    $ kubectl get deploy -n scheduler-plugins
+    NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+    scheduler-plugins-controller   1/1     1            1           19h
+    ```
+
+1. **❗IMPORTANT**❗ Install the CRDs your workloads depend on.
+
+    You can refer to each folder under [manifests](../manifests) to obtain the CRD yaml for each
+    plugin. Here we install coscheduling CRD:
+
+    ```bash
+    $ kubectl apply -f manifests/coscheduling/crd.yaml
+    ```
+
+1. Modify `/etc/kubernetes/manifests/kube-scheduler.yaml` to run scheduler-plugins with coscheduling
+    
+    Generally, we need to make a couple of changes:
+    
+    - pass in the composed scheduler-config file via argument `--config`
+    - (optional) remove duplicated CLI parameters (e.g., `--leader-elect`), as they may have been defined in the config file
+    - replace vanilla Kubernetes scheduler image with scheduler-plugin image
+    - mount the scheduler-config file to be readable when scheduler starting
+    
+    Here is a diff:
+    
+    ```diff
+    16d15
+    <     - --config=/etc/kubernetes/sched-cc.yaml
+    17a17,18
+    >     - --kubeconfig=/etc/kubernetes/scheduler.conf
+    >     - --leader-elect=true
+    19,20c20
+    <     image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8
+    ---
+    >     image: k8s.gcr.io/kube-scheduler:v1.19.8
+    50,52d49
+    <     - mountPath: /etc/kubernetes/sched-cc.yaml
+    <       name: sched-cc
+    <       readOnly: true
+    60,63d56
+    <   - hostPath:
+    <       path: /etc/kubernetes/sched-cc.yaml
+    <       type: FileOrCreate
+    <     name: sched-cc
+    ```
    
-4. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.18.9`
+1. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8`
 
-   ```bash
-   $ kubectl get pod -n kube-system | grep kube-scheduler
-   kube-scheduler-xqcluster-control-plane            1/1     Running   0          3m27s
+    ```bash
+    $ kubectl get pod -n kube-system | grep kube-scheduler
+    kube-scheduler-kind-control-plane            1/1     Running   0          3m27s
+ 
+    $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}"
+    k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8
+    ```
 
-   $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}"
-   k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.18.9
-   ```
 ### Test Coscheduling
 
-Assume there is 1500m free cpu resource in the cluster.
+Now, we're able to verify how the coscheduling plugin works.
 
-1. Create a replicaset with `pod-group.scheduling.sigs.k8s.io/name: nginx` and `pod-group.scheduling.sigs.k8s.io/min-available: "4"`. Each pod acquires 500m cpu.
+1. Create a PodGroup custom object called `pg1`:
 
-   ```yaml
-   apiVersion: apps/v1
-   kind: ReplicaSet
-   metadata:
-     name: nginx
-     namespace: default
-     labels:
-       app: nginx
-   spec:
-     replicas: 4
-     selector:
-       matchLabels:
-         app: nginx
-     template:
-       metadata:
-         name: nginx
-         labels:
-           app: nginx
-           pod-group.scheduling.sigs.k8s.io/name: nginx
-           pod-group.scheduling.sigs.k8s.io/min-available: "4"
-       spec:
-         containers:
-         - name: nginx
-           image: nginx
-           imagePullPolicy: IfNotPresent
-           resources:
-             limits:
-               cpu: 500m
-             requests:
-               cpu: 500m
+    ```yaml
+    # podgroup.yaml
+    apiVersion: scheduling.sigs.k8s.io/v1alpha1
+    kind: PodGroup
+    metadata:
+      name: pg1
+    spec:
+      scheduleTimeoutSeconds: 10
+      minMember: 3
+    ```
+
+    ```bash
+    $ kubectl apply -f podgroup.yaml
+    ```
+
+1. Create a deploy labelled `pod-group.scheduling.sigs.k8s.io: pg1` to associated with PodGroup
+   `pg1` created in the previous step.
+
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: pause
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: pause
+      template:
+        metadata:
+          labels:
+            app: pause
+            pod-group.scheduling.sigs.k8s.io: pg1
+        spec:
+          containers:
+          - name: pause
+            image: k8s.gcr.io/pause:3.2
+    ```
+
+1. As PodGroup `pg1` requires at least 3 pods to be scheduled all-together, and there are only 2 Pods
+   so far, so it's expected to observer they are pending:
+
+    All nginx pods are expected to be `Pending` as they cannot be co-scheduled altogether.
+
+    ```bash
+    $ kubectl get pod
+    NAME                     READY   STATUS    RESTARTS   AGE
+    pause-58f7d7db67-7sqgp   0/1     Pending   0          9s
+    pause-58f7d7db67-jbmfv   0/1     Pending   0          9s
    ```
 
-2. Check pods
+1. Now let's scale the deployment to let it qualify for `minMember` (i.e., 3) of the associated PodGroup:
 
-   All nginx pods are expected to be `Pending` as they cannot be co-scheduled altogether.
+    ```bash
+    $ kubectl scale deploy pause --replicas 3
+    deployment.apps/pause scaled
+    ```
 
-   ```bash
-   $ kubectl get pod -n default
-   NAME          READY   STATUS    RESTARTS   AGE
-   nginx-25797   0/1     Pending   0          2m
-   nginx-6fdcm   0/1     Pending   0          2m
-   nginx-stcxq   0/1     Pending   0          2m
-   nginx-xn25q   0/1     Pending   0          2m
-   ```
+    And wait for a couple of seconds, it's expected to see all Pods get into running state:
 
-## Uninstall Scheduler-plugins
+    ```bash
+    $ kubectl get pod
+    NAME                     READY   STATUS    RESTARTS   AGE
+    pause-58f7d7db67-7sqgp   1/1     Running   0          19h
+    pause-58f7d7db67-jbmfv   1/1     Running   0          19h
+    pause-58f7d7db67-ssc8l   1/1     Running   0          19h
+    ```
 
-1. Delete ReplicaSet
-   ```bash
-   kubectl delete replicaset -n default nginx
-   ```
+1. You can also get the PodGroup's spec via:
 
-2. Recover `kube-scheduler.yaml` and delete `coscheduling-config.yaml`
+    ```bash
+    $ kubectl get podgroup pg1 -o yaml
+    apiVersion: scheduling.sigs.k8s.io/v1alpha1
+    kind: PodGroup
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/last-applied-configuration: |
+          {"apiVersion":"scheduling.sigs.k8s.io/v1alpha1","kind":"PodGroup","metadata":{"annotations":{},"name":"pg1","namespace":"default"}, "spec":{"minMember":3,"scheduleTimeoutSeconds":10}}
+      creationTimestamp: "2021-03-16T00:22:34Z"
+      generation: 1
+      managedFields:
+      ...
+      name: pg1
+      namespace: default
+      resourceVersion: "135603"
+      selfLink: /apis/scheduling.sigs.k8s.io/v1alpha1/namespaces/default/podgroups/pg1
+      uid: b4ac3562-54ab-4c1e-89bb-541a81c6acce
+    spec:
+      minMember: 3
+      scheduleTimeoutSeconds: 10
+    status:
+      phase: pending
+    ```
+    
+> ⚠ NOTE: There are some UX issues need to be addressed in controller side -
+> [#166](https://github.com/kubernetes-sigs/scheduler-plugins/issues/166).
 
-   * If the cluster is created by `kubeadm` or `minikube`, log into Master node:
-       ```bash
-       mv /etc/kubernetes/kube-scheduler.yaml /etc/kubernetes/manifests/
-       rm /etc/kubernetes/coscheduling-config.yaml
-       ```
+## Install old-version releases
 
-   * If the cluster is created by `kind`, enter the Master's container:
-       ```bash
-       sudo docker exec -it $(sudo docker ps | grep control-plane | awk '{print $1}') bash
-       mv /etc/kubernetes/kube-scheduler.yaml /etc/kubernetes/manifests/
-       rm /etc/kubernetes/coscheduling-config.yaml
-       exit
-       ```
+If you're running at v0.18.9, which doesn't depend on PodGroup CRD, you should refer to the
+[install doc](https://github.com/kubernetes-sigs/scheduler-plugins/blob/release-1.18/doc/install.md) in
+branch `release-1.18` for detailed installation instructions.
 
-4. Check default scheduler state
+## Uninstall scheduler-plugins
 
-   ```bash
-   $ kubectl get pod -n kube-system | grep kube-scheduler
-   kube-scheduler-xqcluster-control-plane            1/1     Running   0          91s
-   ```
+1. Delete the deployment
+   
+    ```bash
+    $ kubectl delete deploy pause -n default
+    ```
 
+2. Recover `kube-scheduler.yaml` and delete `sched-cc.yaml`
+
+    - If the cluster is created by `kubeadm` or `minikube`, log into Master node:
+        ```bash
+        $ mv /etc/kubernetes/kube-scheduler.yaml /etc/kubernetes/manifests/
+        $ rm /etc/kubernetes/sched-cc.yaml
+        ```
+
+    - If the cluster is created by `kind`, enter the Master's container:
+        ```bash
+        $ sudo docker exec -it $(sudo docker ps | grep control-plane | awk '{print $1}') bash
+        $ mv /etc/kubernetes/kube-scheduler.yaml /etc/kubernetes/manifests/
+        $ rm /etc/kubernetes/sched-cc.yaml
+        exit
+        ```
+
+4. Check state of default scheduler
+
+    ```bash
+    $ kubectl get pod -n kube-system | grep kube-scheduler
+    kube-scheduler-kind-control-plane            1/1     Running   0          91s
+    ```
