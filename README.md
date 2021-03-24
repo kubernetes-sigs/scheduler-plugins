@@ -16,17 +16,20 @@ docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG
 You can find [how to install release image](doc/install.md) here.
 
 ## Compatibility Matrix
-The below compatibility matrix shows the k8s client package(client-go, apimachinery, etc) versions that the
-scheduler-plugins are compiled with.
 
-The minor version of the scheduler-plugins matches the minor version of the k8s client
-packages that it is compiled with. For example scheduler-plugins v0.18.x releases are built with k8s v1.18.x
+The below compatibility matrix shows the k8s client package (client-go, apimachinery, etc) versions
+that the scheduler-plugins are compiled with.
+
+The minor version of the scheduler-plugins matches the minor version of the k8s client packages that
+it is compiled with. For example scheduler-plugins `v0.18.x` releases are built with k8s `v1.18.x`
 dependencies.
 
-The scheduler-plugins patch versions come in two different varieties(single digit or three digits). The single digit
-patch versions(i.e. v0.18.9) exactly align with the the k8s client package versions that the scheduler plugins are built
-with. The three digit patch versions(i.e. v0.18.800) are used to indicated that the k8s client package versions have not
-changed since the previous release, and that only scheduler plugins code(features or bug fixes) was changed.
+The scheduler-plugins patch versions come in two different varieties (single digit or three digits).
+The single digit patch versions (e.g., `v0.18.9`) exactly align with the the k8s client package
+versions that the scheduler plugins are built with. The three digit patch versions, which are built
+on demand, (e.g., `v0.18.800`) are used to indicated that the k8s client package versions have not
+changed since the previous release, and that only scheduler plugins code (features or bug fixes) was
+changed.
 
 Scheduler Plugins  | Compiled With k8s Version | Container Image                                     | Arch           |
 -------------------|---------------------------|-----------------------------------------------------|----------------|
