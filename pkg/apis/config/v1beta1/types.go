@@ -112,3 +112,20 @@ type TargetLoadPackingArgs struct {
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
+type LoadVariationRiskBalancingArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Metric Provider specification when using load watcher as library
+	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
+	// Address of load watcher service
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
+	// Multiplier of standard deviation in risk value
+	SafeVarianceMargin *float64 `json:"safeVarianceMargin,omitempty"`
+	// Root power of standard deviation in risk value
+	SafeVarianceSensitivity *float64 `json:"safeVarianceSensitivity,omitempty"`
+}
