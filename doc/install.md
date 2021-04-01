@@ -65,7 +65,10 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
         permit:
           enabled:
           - name: Coscheduling
-        unreserve:
+        reserve:
+          enabled:
+          - name: Coscheduling
+        postBind:
           enabled:
           - name: Coscheduling
       # pluginConfig is needed for coscheduling plugin to manipulate PodGroup CR objects.
@@ -169,10 +172,11 @@ Now, we're able to verify how the coscheduling plugin works.
     $ kubectl apply -f podgroup.yaml
     ```
 
-1. Create a deploy labelled `pod-group.scheduling.sigs.k8s.io: pg1` to associated with PodGroup
+1. Create a deployment labelled `pod-group.scheduling.sigs.k8s.io: pg1` to associated with PodGroup
    `pg1` created in the previous step.
 
     ```yaml
+    # deploy.yaml
     apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -205,11 +209,13 @@ Now, we're able to verify how the coscheduling plugin works.
     pause-58f7d7db67-jbmfv   0/1     Pending   0          9s
    ```
 
-1. Now let's scale the deployment to let it qualify for `minMember` (i.e., 3) of the associated PodGroup:
+1. Now let's delete the deployment to re-create it with replicas=3, so as to qualify for `minMember`
+   (i.e., 3) of the associated PodGroup:
 
     ```bash
-    $ kubectl scale deploy pause --replicas 3
-    deployment.apps/pause scaled
+    $ kubectl delete -f deploy.yaml && sed 's/replicas: 2/replicas: 3/' deploy.yaml | kubectl apply -f -
+    deployment.apps "pause" deleted
+    deployment.apps/pause created
     ```
 
     And wait for a couple of seconds, it's expected to see all Pods get into running state:
@@ -217,9 +223,9 @@ Now, we're able to verify how the coscheduling plugin works.
     ```bash
     $ kubectl get pod
     NAME                     READY   STATUS    RESTARTS   AGE
-    pause-58f7d7db67-7sqgp   1/1     Running   0          19h
-    pause-58f7d7db67-jbmfv   1/1     Running   0          19h
-    pause-58f7d7db67-ssc8l   1/1     Running   0          19h
+    pause-64f5c9ccf4-kprg7   1/1     Running   0          8s
+    pause-64f5c9ccf4-tc8lx   1/1     Running   0          8s
+    pause-64f5c9ccf4-xrgkw   1/1     Running   0          8s
     ```
 
 1. You can also get the PodGroup's spec via:
