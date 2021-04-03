@@ -29,12 +29,12 @@ import (
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 

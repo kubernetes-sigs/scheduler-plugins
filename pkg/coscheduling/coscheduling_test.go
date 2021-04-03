@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
@@ -403,7 +403,7 @@ func TestPostFilter(t *testing.T) {
 type fakeHandler struct {
 }
 
-var _ framework.FrameworkHandle = &fakeHandler{}
+var _ framework.Handle = &fakeHandler{}
 
 func (f fakeHandler) SnapshotSharedLister() framework.SharedLister {
 	return nil

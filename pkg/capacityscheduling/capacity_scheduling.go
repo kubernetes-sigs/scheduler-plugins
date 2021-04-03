@@ -31,16 +31,17 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	policylisters "k8s.io/client-go/listers/policy/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	kubefeatures "k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/core"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	"k8s.io/kubernetes/pkg/scheduler/util"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -54,7 +55,8 @@ import (
 // CapacityScheduling is a plugin that implements the mechanism of capacity scheduling.
 type CapacityScheduling struct {
 	sync.RWMutex
-	frameworkHandle    framework.FrameworkHandle
+	frameworkHandle    framework.Handle
+	podLister          corelisters.PodLister
 	pdbLister          policylisters.PodDisruptionBudgetLister
 	elasticQuotaLister externalv1alpha1.ElasticQuotaLister
 	elasticQuotaInfos  ElasticQuotaInfos
@@ -101,7 +103,7 @@ func (c *CapacityScheduling) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
+func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	args, ok := obj.(*config.CapacitySchedulingArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type CapacitySchedulingArgs, got %T", obj)
@@ -111,6 +113,7 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 	c := &CapacityScheduling{
 		frameworkHandle:   handle,
 		elasticQuotaInfos: NewElasticQuotaInfos(),
+		podLister:         handle.SharedInformerFactory().Core().V1().Pods().Lister(),
 		pdbLister:         getPDBLister(handle.SharedInformerFactory()),
 	}
 
@@ -297,9 +300,11 @@ func (c *CapacityScheduling) preempt(ctx context.Context, state *framework.Cycle
 	ph := c.frameworkHandle.PreemptHandle()
 	nodeLister := c.frameworkHandle.SnapshotSharedLister().NodeInfos()
 
-	// 0) Fetch the latest version of <pod>.
-	// TODO(Huang-Wei): get pod from informer cache instead of API server.
-	pod, err := util.GetUpdatedPod(client, pod)
+	// Fetch the latest version of <pod>.
+	// It's safe to directly fetch pod here. Because the informer cache has already been
+	// initialized when creating the Scheduler obj, i.e., factory.go#MakeDefaultErrorFunc().
+	// However, tests may need to manually initialize the shared pod informer.
+	pod, err := c.podLister.Pods(pod.Namespace).Get(pod.Name)
 	if err != nil {
 		klog.Errorf("Error getting the updated preemptor pod object: %v", err)
 		return "", err
@@ -460,7 +465,7 @@ func selectVictimsOnNode(
 	}
 
 	elasticQuotaInfos := elasticQuotaSnapshotState.elasticQuotaInfos
-	podPriority := podutil.GetPodPriority(pod)
+	podPriority := corev1helpers.PodPriority(pod)
 	preemptorElasticQuotaInfo, preemptorWithElasticQuota := elasticQuotaInfos[pod.Namespace]
 
 	var moreThanMinWithPreemptor bool
@@ -486,7 +491,7 @@ func selectVictimsOnNode(
 				// quotas. So that we will select the pods which subject to the
 				// same quota(namespace) with the lower priority than the
 				// preemptor's priority as potential victims in a node.
-				if p.Pod.Namespace == pod.Namespace && podutil.GetPodPriority(p.Pod) < podPriority {
+				if p.Pod.Namespace == pod.Namespace && corev1helpers.PodPriority(p.Pod) < podPriority {
 					potentialVictims = append(potentialVictims, p.Pod)
 					if err := removePod(p.Pod); err != nil {
 						return nil, 0, false
@@ -514,7 +519,7 @@ func selectVictimsOnNode(
 			if pWithElasticQuota {
 				continue
 			}
-			if podutil.GetPodPriority(p.Pod) < podPriority {
+			if corev1helpers.PodPriority(p.Pod) < podPriority {
 				potentialVictims = append(potentialVictims, p.Pod)
 				if err := removePod(p.Pod); err != nil {
 					return nil, 0, false

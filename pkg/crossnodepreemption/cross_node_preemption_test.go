@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
@@ -33,7 +34,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"

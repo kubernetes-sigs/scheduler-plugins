@@ -23,11 +23,11 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 type PodState struct {
-	handle framework.FrameworkHandle
+	handle framework.Handle
 }
 
 var _ = framework.ScorePlugin(&PodState{})
@@ -97,6 +97,6 @@ func (ps *PodState) NormalizeScore(ctx context.Context, state *framework.CycleSt
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, h framework.FrameworkHandle) (framework.Plugin, error) {
+func New(_ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &PodState{handle: h}, nil
 }

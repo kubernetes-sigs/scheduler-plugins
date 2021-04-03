@@ -37,10 +37,10 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"

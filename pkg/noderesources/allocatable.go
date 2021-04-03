@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
@@ -33,7 +33,7 @@ import (
 // Allocatable is a score plugin that favors nodes based on their allocatable
 // resources.
 type Allocatable struct {
-	handle framework.FrameworkHandle
+	handle framework.Handle
 	resourceAllocationScorer
 }
 
@@ -77,7 +77,7 @@ func (alloc *Allocatable) ScoreExtensions() framework.ScoreExtensions {
 }
 
 // NewAllocatable initializes a new plugin and returns it.
-func NewAllocatable(allocArgs runtime.Object, h framework.FrameworkHandle) (framework.Plugin, error) {
+func NewAllocatable(allocArgs runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	// Start with default values.
 	mode := config.Least
 	resToWeightMap := defaultResourcesToWeightMap

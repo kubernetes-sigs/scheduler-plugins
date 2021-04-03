@@ -38,7 +38,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
@@ -60,7 +60,7 @@ var (
 )
 
 type TargetLoadPacking struct {
-	handle       framework.FrameworkHandle
+	handle       framework.Handle
 	client       loadwatcherapi.Client
 	metrics      watcher.WatcherMetrics
 	eventHandler *trimaran.PodAssignEventHandler
@@ -68,7 +68,7 @@ type TargetLoadPacking struct {
 	mu sync.RWMutex
 }
 
-func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
+func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	args, err := getArgs(obj)
 	if err != nil {
 		return nil, err

@@ -40,18 +40,17 @@ import (
 	"k8s.io/client-go/util/cert"
 	"k8s.io/kubernetes/cmd/kube-apiserver/app"
 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
-	kubeserver "k8s.io/kubernetes/pkg/kubeapiserver/server"
-	"k8s.io/kubernetes/pkg/master"
+	"k8s.io/kubernetes/pkg/controlplane"
 	"k8s.io/kubernetes/test/utils"
 )
 
 // TestServerSetup holds configuration information for a kube-apiserver test server.
 type TestServerSetup struct {
 	ModifyServerRunOptions func(*options.ServerRunOptions)
-	ModifyServerConfig     func(*master.Config)
+	ModifyServerConfig     func(*controlplane.Config)
 }
 
-// StartTestServer runs a kube-apiserver, optionally calling out to the setup.ModifyServerRunOptions and setup.ModifyServerConfig functions
+// StartApi runs a kube-apiserver, optionally calling out to the setup.ModifyServerRunOptions and setup.ModifyServerConfig functions
 func StartApi(t *testing.T, stopCh <-chan struct{}) (client.Interface, *rest.Config) {
 	certDir, _ := ioutil.TempDir("", "test-integration")
 	go func() {
@@ -93,7 +92,6 @@ func StartApi(t *testing.T, stopCh <-chan struct{}) (client.Interface, *rest.Con
 	kubeAPIServerOptions.SecureServing.Listener = listener
 	kubeAPIServerOptions.SecureServing.BindAddress = net.ParseIP("127.0.0.1")
 	kubeAPIServerOptions.SecureServing.ServerCert.CertDirectory = certDir
-	kubeAPIServerOptions.InsecureServing.BindPort = 0
 	kubeAPIServerOptions.Etcd.StorageConfig.Prefix = path.Join("/", uuid.New().String(), "registry")
 	kubeAPIServerOptions.Etcd.StorageConfig.Transport.ServerList = IntegrationEtcdServers()
 	kubeAPIServerOptions.ServiceClusterIPRanges = defaultServiceClusterIPRange.String()
@@ -110,7 +108,7 @@ func StartApi(t *testing.T, stopCh <-chan struct{}) (client.Interface, *rest.Con
 	if err != nil {
 		t.Fatalf("%+v", err)
 	}
-	kubeAPIServerConfig, insecureServingInfo, serviceResolver, pluginInitializer, err := app.CreateKubeAPIServerConfig(completedOptions, tunneler, proxyTransport)
+	kubeAPIServerConfig, serviceResolver, pluginInitializer, err := app.CreateKubeAPIServerConfig(completedOptions, tunneler, proxyTransport)
 	if err != nil {
 		t.Fatalf("%+v", err)
 	}
@@ -140,14 +138,6 @@ func StartApi(t *testing.T, stopCh <-chan struct{}) (client.Interface, *rest.Con
 	if err != nil {
 		// we don't need special handling for innerStopCh because the aggregator server doesn't create any go routines
 		t.Fatalf("%+v", err)
-	}
-
-	if insecureServingInfo != nil {
-		insecureHandlerChain := kubeserver.BuildInsecureHandlerChain(aggregatorServer.GenericAPIServer.UnprotectedHandler(), kubeAPIServerConfig.GenericConfig)
-		if err := insecureServingInfo.Serve(insecureHandlerChain, kubeAPIServerConfig.GenericConfig.RequestTimeout, stopCh); err != nil {
-			t.Fatalf("%+v", err)
-
-		}
 	}
 
 	go func() {

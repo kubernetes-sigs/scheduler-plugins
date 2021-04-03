@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	v1 "k8s.io/api/core/v1"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 )
 

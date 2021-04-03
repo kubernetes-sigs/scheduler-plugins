@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"k8s.io/api/core/v1"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 func TestReserveResource(t *testing.T) {

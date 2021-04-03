@@ -28,7 +28,7 @@ import (
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -229,7 +229,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 }
 
 // New initializes a new plugin and returns it.
-func New(args runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
+func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(5).Infof("creating new TopologyMatch plugin")
 	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)
 	if !ok {
