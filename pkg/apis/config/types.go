@@ -111,3 +111,30 @@ type TargetLoadPackingArgs struct {
 	// Address of load watcher service
 	WatcherAddress string
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
+type LoadVariationRiskBalancingArgs struct {
+	metav1.TypeMeta
+
+	// Metric Provider to use when using load watcher as a library
+	MetricProvider MetricProviderSpec
+	// Address of load watcher service
+	WatcherAddress string
+	// Multiplier of standard deviation in risk value
+	SafeVarianceMargin float64
+	// Root power of standard deviation in risk value
+	SafeVarianceSensitivity float64
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
+type NodeResourceTopologyMatchArgs struct {
+	metav1.TypeMeta
+
+	KubeConfigPath string
+	MasterOverride string
+	Namespaces     []string
+}

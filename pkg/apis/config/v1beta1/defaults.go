@@ -23,7 +23,10 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+
+	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
 
 var (
@@ -42,12 +45,27 @@ var (
 	}
 
 	// Defaults for TargetLoadPacking plugin
+
 	// Default 1 core CPU usage for containers without requests and limits i.e. Best Effort QoS.
 	DefaultRequestsMilliCores int64 = 1000
-	// Default requests multiplier for containers without limits predicted as 1.5*requests i.e. Burstable QoS class
+	// DefaultRequestsMultiplier for containers without limits predicted as 1.5*requests i.e. Burstable QoS class
 	DefaultRequestsMultiplier = "1.5"
-	// Default CPU Util target. Recommended to keep -10 than desired limit.
+	// DefaultTargetUtilizationPercent Recommended to keep -10 than desired limit.
 	DefaultTargetUtilizationPercent int64 = 40
+
+	// Defaults for LoadVariationRiskBalancing plugin
+
+	// Risk is usually calculated as average (aka. mu) plus standard deviation (aka. sigma).
+	// In order to allow customization in the calculation of risk, two parameters are provided:
+	// Margin and Sensitivity. Margin is a multiplier of sigma, and Sensitivity is a root power of sigma.
+	// For example, Margin=3 and Sensitivity=2 leads to a risk evaluated as: mu + 3 sqrt(sigma).
+	// The default value for both parameters is 1, leading to: mu + sigma.
+	// DefaultSafeVarianceMargin is one
+	DefaultSafeVarianceMargin = 1.0
+	// DefaultSafeVarianceSensitivity is one
+	DefaultSafeVarianceSensitivity = 1.0
+	// DefaultMetricProviderType is the Kubernetes metrics server
+	DefaultMetricProviderType = pluginConfig.KubernetesMetricsServer
 
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 )
@@ -93,5 +111,32 @@ func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 	}
 	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
 		args.TargetUtilization = &DefaultTargetUtilizationPercent
+	}
+}
+
+// SetDefaultLoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
+func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
+	metricProviderType := string(args.MetricProvider.Type)
+	validMetricProviderType := metricProviderType == string(pluginConfig.KubernetesMetricsServer) ||
+		metricProviderType == string(pluginConfig.Prometheus) ||
+		metricProviderType == string(pluginConfig.SignalFx)
+	if args.WatcherAddress == nil && !validMetricProviderType {
+		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+	}
+	if args.SafeVarianceMargin == nil || *args.SafeVarianceMargin < 0 {
+		args.SafeVarianceMargin = &DefaultSafeVarianceMargin
+	}
+	if args.SafeVarianceSensitivity == nil || *args.SafeVarianceSensitivity < 0 {
+		args.SafeVarianceSensitivity = &DefaultSafeVarianceSensitivity
+	}
+}
+
+// SetDefaultsNodeResourceTopologyMatchArgs sets the default parameters for NodeResourceTopologyMatch plugin.
+func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs) {
+	if obj.KubeConfigPath == nil {
+		obj.KubeConfigPath = &defaultKubeConfigPath
+	}
+	if len(obj.Namespaces) == 0 {
+		obj.Namespaces = []string{metav1.NamespaceDefault}
 	}
 }

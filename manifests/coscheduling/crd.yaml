@@ -43,12 +43,16 @@ spec:
                 type: string
               scheduled:
                 type: integer
+                default: 0
               running:
                 type: integer
+                default: 0
               succeeded:
                 type: integer
+                default: 0
               failed:
                 type: integer
+                default: 0
               scheduleStartTime:
                 type: string
                 format: date-time

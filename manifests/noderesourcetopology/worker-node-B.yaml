@@ -1,0 +1,26 @@
+---
+apiVersion: topology.node.k8s.io/v1alpha1
+kind: NodeResourceTopology
+metadata:
+  name: worker-node-b
+  namespace: test-namespace
+topologyPolicies: ["SingleNUMANodeContainerLevel"]
+zones:
+  - name: node-0
+    type: Node
+    resources:
+      - name: cpu
+        capacity: 4
+        allocatable: 3
+      - name: example.com/deviceA
+        capacity: 3
+        allocatable: 3
+  - name: node-1
+    type: Node
+    resources:
+      - name: cpu
+        capacity: 4
+        allocatable: 3
+      - name: example.com/deviceB
+        capacity: 3
+        allocatable: 3
