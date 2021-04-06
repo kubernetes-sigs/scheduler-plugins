@@ -39,6 +39,9 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&LoadVariationRiskBalancingArgs{}, func(obj interface{}) {
 		SetObjectDefaultsLoadVariationRiskBalancingArgs(obj.(*LoadVariationRiskBalancingArgs))
 	})
+	scheme.AddTypeDefaultingFunc(&NodeResourceTopologyMatchArgs{}, func(obj interface{}) {
+		SetDefaultsNodeResourceTopologyMatchArgs(obj.(*NodeResourceTopologyMatchArgs))
+	})
 	return nil
 }
 
