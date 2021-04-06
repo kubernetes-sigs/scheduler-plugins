@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+spec:
+  selector:
+      matchLabels:
+        name: test
+  template:
+    metadata:
+      labels:
+        name: test
+    spec:
+      schedulerName: topo-aware-scheduler
+      containers:
+      - name: test-deployment-1-container-1
+        image: quay.io/fromani/numalign
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args: [ "while true; do numalign; sleep 100000; done;" ]
+        resources:
+          limits:
+            cpu: 1
+            memory: 0
+            example.com/deviceA: 1
+            example.com/deviceB: 1
+          requests:
+            cpu: 1
+            memory: 0
+            example.com/deviceA: 1
+            example.com/deviceB: 1
