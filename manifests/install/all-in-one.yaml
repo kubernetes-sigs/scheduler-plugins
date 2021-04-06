@@ -81,3 +81,4 @@ spec:
       containers:
       - name: scheduler-plugins-controller
         image: k8s.gcr.io/scheduler-plugins/controller:v0.19.8
+        imagePullPolicy: IfNotPresent
