@@ -147,7 +147,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     $ kubectl get pod -n kube-system | grep kube-scheduler
     kube-scheduler-kind-control-plane            1/1     Running   0          3m27s
  
-    $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}"
+    $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}{'\n'}"
     k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8
     ```
 
