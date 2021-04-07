@@ -32,7 +32,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
@@ -44,13 +44,13 @@ const (
 
 // LoadVariationRiskBalancing : scheduler plugin
 type LoadVariationRiskBalancing struct {
-	handle       framework.FrameworkHandle
+	handle       framework.Handle
 	eventHandler *trimaran.PodAssignEventHandler
 	collector    *Collector
 }
 
 // New : create an instance of a LoadVariationRiskBalancing plugin
-func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin, error) {
+func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 
 	klog.V(4).Infof("Creating new instance of the LoadVariationRiskBalancing plugin")
 	collector, err := newCollector(obj)

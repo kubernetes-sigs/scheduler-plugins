@@ -19,7 +19,7 @@ package capacityscheduling
 import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 type ElasticQuotaInfos map[string]*ElasticQuotaInfo

@@ -69,7 +69,7 @@ labels:
 ```go
 // Coscheduling is a plugin that implements the mechanism of gang scheduling.
 type Coscheduling struct {
-    FrameworkHandle         framework.FrameworkHandle
+    FrameworkHandle         framework.Handle
     PodLister               corelisters.PodLister
     // Key is the name of PodGroup.
     PodGroupInfos           map[string]PodGroupInfo

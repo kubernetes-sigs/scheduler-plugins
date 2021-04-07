@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"k8s.io/client-go/informers"
-	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
@@ -38,9 +37,6 @@ func InitTestSchedulerWithOptions(
 ) *testutils.TestContext {
 	testCtx.InformerFactory = informers.NewSharedInformerFactory(testCtx.ClientSet, 0)
 
-	var podInformer coreinformers.PodInformer
-
-	podInformer = testCtx.InformerFactory.Core().V1().Pods()
 	var err error
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{
 		Interface: testCtx.ClientSet.EventsV1(),
@@ -49,7 +45,6 @@ func InitTestSchedulerWithOptions(
 	testCtx.Scheduler, err = scheduler.New(
 		testCtx.ClientSet,
 		testCtx.InformerFactory,
-		podInformer,
 		profile.NewRecorderFactory(eventBroadcaster),
 		testCtx.Ctx.Done(),
 		opts...,

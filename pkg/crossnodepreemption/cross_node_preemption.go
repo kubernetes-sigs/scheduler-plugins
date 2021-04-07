@@ -21,12 +21,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	corelisters "k8s.io/client-go/listers/core/v1"
+	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
-	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/scheduler/core"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
-	"k8s.io/kubernetes/pkg/scheduler/util"
 )
 
 const (
@@ -36,7 +36,8 @@ const (
 
 // CrossNodePreemption is a PostFilter plugin implements the preemption logic.
 type CrossNodePreemption struct {
-	fh framework.FrameworkHandle
+	fh        framework.Handle
+	podLister corelisters.PodLister
 }
 
 var _ framework.PostFilterPlugin = &CrossNodePreemption{}
@@ -47,9 +48,10 @@ func (pl *CrossNodePreemption) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, fh framework.FrameworkHandle) (framework.Plugin, error) {
+func New(_ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	pl := CrossNodePreemption{
-		fh: fh,
+		fh:        fh,
+		podLister: fh.SharedInformerFactory().Core().V1().Pods().Lister(),
 	}
 	return &pl, nil
 }
@@ -71,9 +73,11 @@ func (pl *CrossNodePreemption) preempt(ctx context.Context, state *framework.Cyc
 	ph := pl.fh.PreemptHandle()
 	nodeLister := pl.fh.SnapshotSharedLister().NodeInfos()
 
-	// 0) Fetch the latest version of <pod>.
-	// TODO(Huang-Wei): get pod from informer cache instead of API server.
-	pod, err := util.GetUpdatedPod(cs, pod)
+	// Fetch the latest version of <pod>.
+	// It's safe to directly fetch pod here. Because the informer cache has already been
+	// initialized when creating the Scheduler obj, i.e., factory.go#MakeDefaultErrorFunc().
+	// However, tests may need to manually initialize the shared pod informer.
+	pod, err := pl.podLister.Pods(pod.Namespace).Get(pod.Name)
 	if err != nil {
 		klog.Errorf("Error getting the updated preemptor pod object: %v", err)
 		return "", err
@@ -133,12 +137,12 @@ func FindCandidates(ctx context.Context, state *framework.CycleState, pod *v1.Po
 func bruteForceDryRunPreemption(ctx context.Context, ph framework.PreemptHandle, state *framework.CycleState,
 	pod *v1.Pod, potentialNodes []*framework.NodeInfo, nodeLister framework.NodeInfoLister) []dp.Candidate {
 	// Loop over <potentialNodes> and collect the pods that has lower priority than <pod>.
-	priority := podutil.GetPodPriority(pod)
+	priority := corev1helpers.PodPriority(pod)
 	var pods []*v1.Pod
 	for _, node := range potentialNodes {
 		for i := range node.Pods {
 			p := node.Pods[i].Pod
-			if podutil.GetPodPriority(p) < priority {
+			if corev1helpers.PodPriority(p) < priority {
 				pods = append(pods, p)
 			}
 		}

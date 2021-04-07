@@ -19,9 +19,9 @@ package qos
 import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/kubernetes/pkg/api/v1/pod"
+	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 // Name is the name of the plugin used in the plugin registry and configurations.
@@ -41,8 +41,8 @@ func (pl *Sort) Name() string {
 // It sorts pods based on their priorities. When the priorities are equal, it uses
 // the Pod QoS classes to break the tie.
 func (*Sort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
-	p1 := pod.GetPodPriority(pInfo1.Pod)
-	p2 := pod.GetPodPriority(pInfo2.Pod)
+	p1 := corev1helpers.PodPriority(pInfo1.Pod)
+	p2 := corev1helpers.PodPriority(pInfo2.Pod)
 	return (p1 > p2) || (p1 == p2 && compQOS(pInfo1.Pod, pInfo2.Pod))
 }
 
@@ -58,6 +58,6 @@ func compQOS(p1, p2 *v1.Pod) bool {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, _ framework.FrameworkHandle) (framework.Plugin, error) {
+func New(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
 	return &Sort{}, nil
 }
