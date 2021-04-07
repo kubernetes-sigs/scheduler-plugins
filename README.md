@@ -33,11 +33,13 @@ changed.
 
 Scheduler Plugins  | Compiled With k8s Version | Container Image                                     | Arch           |
 -------------------|---------------------------|-----------------------------------------------------|----------------|
+v0.19.9            | v1.19.9                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.9 | AMD64<br>ARM64 |
 v0.19.8            | v1.19.8                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8 | AMD64<br>ARM64 |
 v0.18.9            | v1.18.9                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.18.9 | AMD64          |
 
 Controller | Compiled With k8s Version | Container Image                                 | Arch           |
 -----------|---------------------------|-------------------------------------------------|----------------|
+v0.19.9    | v1.19.9                   | k8s.gcr.io/scheduler-plugins/controller:v0.19.9 | AMD64<br>ARM64 |
 v0.19.8    | v1.19.8                   | k8s.gcr.io/scheduler-plugins/controller:v0.19.8 | AMD64<br>ARM64 |
 
 ## Community, discussion, contribution, and support
