@@ -1,6 +1,6 @@
 # Scheduler Plugins
 
-Repository for out-of-tree scheduler plugins based on scheduler framework.
+Repository for out-of-tree scheduler plugins based on the [scheduler framework](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/).
 
 ## Install
 
@@ -14,6 +14,24 @@ docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG
 ```
 
 You can find [how to install release image](doc/install.md) here.
+
+## Plugins
+
+The kube-scheduler binary includes the below list of plugins. They can be configured by creating one or more
+[scheduler profiles](https://kubernetes.io/docs/reference/scheduling/config/#multiple-profiles).
+
+* [Capacity Scheduling](pkg/capacityscheduling/README.md)
+* [Coscheduling](pkg/coscheduling/README.md)
+* [Node Resources](pkg/noderesources/README.md)
+* [Node Resource Topology](pkg/noderesourcetopology/README.md)
+* [Trimaran](pkg/trimaran/README.md)
+
+Additionally the kube-scheduler binary includes the below list of sample plugins. These plugins are not intended for use in production
+environments.
+
+* [Cross Node Preemption](pkg/crossnodepreemption/README.md)
+* [Pod State](pkg/podstate/README.md)
+* [Quality of Service](pkg/qos/README.md)
 
 ## Compatibility Matrix
 
