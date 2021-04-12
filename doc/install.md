@@ -5,7 +5,7 @@
 - [Create a Kubernetes Cluster](#create-a-kubernetes-cluster)
 - [Install release v0.19.8 and use Coscheduling](#install-release-v0198-and-use-coscheduling)
   - [Test Coscheduling](#test-coscheduling)
-- [Instal old-version releases](#install-old-version-releases)
+- [Install old-version releases](#install-old-version-releases)
 - [Uninstall Scheduler-plugins](#uninstall-scheduler-plugins)
 
 ## Create a Kubernetes Cluster
