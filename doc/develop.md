@@ -13,11 +13,13 @@ After that you'll take localhost:5000/scheduler-plugins/kube-scheduler:latest an
 localhost:5000/scheduler-plugins/controller:latest images.
 
 Your source code has to be located at `$GOPATH/src/sigs.k8s.io`, if you would like to change some type definition of the interfaces
-and regenerate their implementation by running
+and regenerate their implementation by running the command:
 ```shell
 hack/update-codegen.sh
 ```
-command.
+
+Also, if you are adding a new plugin args struct, to have it properly decoded, its name needs to follow the convention `<PluginName>Args`.
+
 If you would like to build just the binaries you can do it by
 ```shell
 make
