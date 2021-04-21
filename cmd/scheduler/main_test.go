@@ -35,6 +35,7 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
+	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
@@ -88,9 +89,6 @@ clientConnection:
   kubeconfig: "%s"
 profiles:
 - plugins:
-    queueSort:
-      disabled:
-      - name: "*"
     preFilter:
       disabled:
       - name: "*"
@@ -455,6 +453,21 @@ profiles:
 			},
 			wantPlugins: map[string]map[string][]kubeschedulerconfig.Plugin{
 				"default-scheduler": defaultPlugins,
+			},
+		},
+		{
+			name:            "single profile config - PodState",
+			flags:           []string{"--config", podStateConfigFile},
+			registryOptions: []app.Option{app.WithPlugin(podstate.Name, podstate.New)},
+			wantPlugins: map[string]map[string][]kubeschedulerconfig.Plugin{
+				"default-scheduler": {
+					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
+					"BindPlugin":       {{Name: "DefaultBinder"}},
+					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
+					"ScorePlugin":      {{Name: "PodState", Weight: 1}},
+					"ReservePlugin":    {{Name: "VolumeBinding"}},
+					"PreBindPlugin":    {{Name: "VolumeBinding"}},
+				},
 			},
 		},
 		{
