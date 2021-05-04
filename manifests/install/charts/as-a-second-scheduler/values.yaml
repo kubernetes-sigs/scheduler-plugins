@@ -1,0 +1,15 @@
+# Default values for scheduler-plugins-as-a-second-scheduler.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+scheduler:
+  name: scheduler-plugins-scheduler
+  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.9
+  namespace: scheduler-plugins
+  replicaCount: 1
+
+controller:
+  name: scheduler-plugins-controller
+  image: k8s.gcr.io/scheduler-plugins/controller:v0.19.9
+  namespace: scheduler-plugins
+  replicaCount: 1
