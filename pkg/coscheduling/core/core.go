@@ -115,6 +115,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return fmt.Errorf("podLister list pods failed: %v", err)
 	}
 	if len(pods) < int(pg.Spec.MinMember) {
+		pgMgr.AddDeniedPodGroup(pgFullName)
 		return fmt.Errorf("pre-filter pod %v cannot find enough sibling pods, "+
 			"current pods number: %v, minMember of group: %v", pod.Name, len(pods), pg.Spec.MinMember)
 	}

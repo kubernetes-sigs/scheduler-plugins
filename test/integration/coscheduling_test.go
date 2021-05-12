@@ -98,8 +98,9 @@ func TestCoschedulingPlugin(t *testing.T) {
 		t.Fatalf("Waiting for crd read time out: %v", err)
 	}
 	cfg := &scheconfig.CoschedulingArgs{
-		KubeConfigPath:           kubeConfigPath,
-		PermitWaitingTimeSeconds: 3,
+		KubeConfigPath:                kubeConfigPath,
+		PermitWaitingTimeSeconds:      3,
+		DeniedPGExpirationTimeSeconds: 1,
 	}
 
 	profile := schedapi.KubeSchedulerProfile{
