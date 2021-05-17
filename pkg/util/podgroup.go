@@ -69,7 +69,7 @@ func GetWaitTimeDuration(pg *v1alpha1.PodGroup, scheduleTimeout *time.Duration) 
 	if pg != nil && pg.Spec.ScheduleTimeoutSeconds != nil {
 		return time.Duration(*pg.Spec.ScheduleTimeoutSeconds) * time.Second
 	}
-	if scheduleTimeout != nil || *scheduleTimeout != 0 {
+	if scheduleTimeout != nil && *scheduleTimeout != 0 {
 		return *scheduleTimeout
 	}
 	return DefaultWaitTime
