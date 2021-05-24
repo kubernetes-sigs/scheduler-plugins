@@ -203,7 +203,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 	if err != nil {
 		_, pg := cs.pgMgr.GetPodGroup(pod)
 		if pg == nil {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PodGroup not found"), waitTime
+			return framework.NewStatus(framework.Unschedulable, "PodGroup not found"), 0
 		}
 		if wait := util.GetWaitTimeDuration(pg, cs.scheduleTimeout); wait != 0 {
 			waitTime = wait
@@ -213,7 +213,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 			return framework.NewStatus(framework.Wait, ""), waitTime
 		}
 		klog.Infof("Permit error %v", err)
-		return framework.NewStatus(framework.Unschedulable, err.Error()), waitTime
+		return framework.NewStatus(framework.Unschedulable, err.Error()), 0
 	}
 
 	klog.V(5).Infof("Pod requires pgName %v", fullName)
