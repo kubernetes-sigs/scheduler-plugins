@@ -24,6 +24,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
@@ -44,7 +45,7 @@ const (
 
 var _ framework.FilterPlugin = &TopologyMatch{}
 
-type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList) *framework.Status
+type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList, excludeList sets.String) *framework.Status
 
 type PolicyHandlerMap map[topologyv1alpha1.TopologyManagerPolicy]PolicyHandler
 
@@ -53,6 +54,7 @@ type TopologyMatch struct {
 	policyHandlers PolicyHandlerMap
 	lister         listerv1alpha1.NodeResourceTopologyLister
 	namespaces     []string
+	excludeList    sets.String
 }
 
 type NUMANode struct {
@@ -80,7 +82,7 @@ func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
 	return res
 }
 
-func SingleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
+func SingleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, excludeList sets.String) *framework.Status {
 	klog.V(5).Infof("Single NUMA node handler")
 
 	// prepare NUMANodes list from zoneMap
@@ -90,7 +92,7 @@ func SingleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 	// We count here in the way TopologyManager is doing it, IOW we put InitContainers
 	// and normal containers in the one scope
 	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
-		if resMatchNUMANodes(nodes, container.Resources.Requests, qos) {
+		if resMatchNUMANodes(nodes, container.Resources.Requests, qos, excludeList) {
 			// definitely we can't align container, so we can't align a pod
 			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Cannot align container: %s", container.Name))
 		}
@@ -100,7 +102,7 @@ func SingleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 
 // resMatchNUMANodes checks for sufficient resource, this function
 // requires NUMANodeList with properly populated NUMANode, NUMAID should be in range 0-63
-func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.PodQOSClass) bool {
+func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.PodQOSClass, excludeList sets.String) bool {
 	bitmask := bm.NewEmptyBitMask()
 	// set all bits, each bit is a NUMA node, if resources couldn't be aligned
 	// on the NUMA node, bit should be unset
@@ -108,6 +110,10 @@ func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.Pod
 
 	zeroQuantity := resource.MustParse("0")
 	for resource, quantity := range resources {
+		// skip the check if resource is in the exclude list
+		if excludeList.Has(string(resource)) {
+			continue
+		}
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
 		resourceBitmask := bm.NewEmptyBitMask()
@@ -140,7 +146,7 @@ func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.Pod
 	return bitmask.IsEmpty()
 }
 
-func SingleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
+func SingleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, excludeList sets.String) *framework.Status {
 	klog.V(5).Infof("Pod Level Resource handler")
 	resources := make(v1.ResourceList)
 
@@ -155,7 +161,7 @@ func SingleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *fr
 		}
 	}
 
-	if resMatchNUMANodes(createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod)) {
+	if resMatchNUMANodes(createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod), excludeList) {
 		// definitely we can't align container, so we can't align a pod
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Cannot align pod: %s", pod.Name))
 	}
@@ -218,7 +224,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	klog.V(5).Infof("nodeTopology: %v", nodeTopology)
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-			if status := handler(pod, nodeTopology.Zones); status != nil {
+			if status := handler(pod, nodeTopology.Zones, tm.excludeList); status != nil {
 				return status
 			}
 		} else {
@@ -255,8 +261,9 @@ func New(args runtime.Object, handle framework.FrameworkHandle) (framework.Plugi
 			topologyv1alpha1.SingleNUMANodePodLevel:       SingleNUMAPodLevelHandler,
 			topologyv1alpha1.SingleNUMANodeContainerLevel: SingleNUMAContainerLevelHandler,
 		},
-		lister:     nodeTopologyInformer.Lister(),
-		namespaces: tcfg.Namespaces,
+		lister:      nodeTopologyInformer.Lister(),
+		namespaces:  tcfg.Namespaces,
+		excludeList: sets.NewString(tcfg.ExcludeList...),
 	}
 
 	klog.V(5).Infof("start nodeTopologyInformer")

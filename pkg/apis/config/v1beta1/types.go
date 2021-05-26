@@ -139,4 +139,5 @@ type NodeResourceTopologyMatchArgs struct {
 	KubeConfigPath *string  `json:"kubeconfigpath,omitempty"`
 	MasterOverride *string  `json:"masteroverride,omitempty"`
 	Namespaces     []string `json:"namespaces,omitempty"`
+	ExcludeList    []string `json:"excludelist,omitempty"`
 }

@@ -318,6 +318,7 @@ func TestNodeResourceTopology(t *testing.T) {
 		},
 		namespaces: []string{metav1.NamespaceDefault},
 		lister:     fakeInformer.Lister(),
+		excludeList: NewExcludeResSet([]string{}),
 	}
 
 	for _, tt := range tests {
