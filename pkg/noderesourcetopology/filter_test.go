@@ -29,16 +29,18 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 )
 
 const (
-	cpu                        = string(v1.ResourceCPU)
-	memory                     = string(v1.ResourceMemory)
-	nicResourceName            = "vendor/nic1"
-	notExistingNICResourceName = "vendor/notexistingnic"
-	containerName              = "container1"
+	cpu                                     = string(v1.ResourceCPU)
+	memory                                  = string(v1.ResourceMemory)
+	nicResourceName                         = "vendor/nic1"
+	notExistingNICResourceName              = "vendor/notexistingnic"
+	notExistingNICResourceNameInExcludeList = "vendor/notexistingnicbutexcluded"
+	containerName                           = "container1"
 )
 
 func makePodByResourceList(resources *v1.ResourceList) *v1.Pod {
@@ -303,6 +305,24 @@ func TestNodeResourceTopology(t *testing.T) {
 			node:       nodes[3],
 			wantStatus: framework.NewStatus(framework.Unschedulable, "Cannot align pod: "),
 		},
+		{
+			name: "Resource not in exclude list, pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:             *resource.NewQuantity(1, resource.DecimalSI),
+				v1.ResourceMemory:          resource.MustParse("1Gi"),
+				notExistingNICResourceName: *resource.NewQuantity(1, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: framework.NewStatus(framework.Unschedulable, "Cannot align pod: "),
+		},
+		{
+			name: "Resource in exclude list, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:                          *resource.NewQuantity(1, resource.DecimalSI),
+				v1.ResourceMemory:                       resource.MustParse("1Gi"),
+				notExistingNICResourceNameInExcludeList: *resource.NewQuantity(1, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
 	}
 
 	fakeClient := faketopologyv1alpha1.NewSimpleClientset()
@@ -316,9 +336,9 @@ func TestNodeResourceTopology(t *testing.T) {
 			topologyv1alpha1.SingleNUMANodePodLevel:       SingleNUMAPodLevelHandler,
 			topologyv1alpha1.SingleNUMANodeContainerLevel: SingleNUMAContainerLevelHandler,
 		},
-		namespaces: []string{metav1.NamespaceDefault},
-		lister:     fakeInformer.Lister(),
-		excludeList: NewExcludeResSet([]string{}),
+		namespaces:  []string{metav1.NamespaceDefault},
+		lister:      fakeInformer.Lister(),
+		excludeList: sets.NewString(notExistingNICResourceNameInExcludeList),
 	}
 
 	for _, tt := range tests {
