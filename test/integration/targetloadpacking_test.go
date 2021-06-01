@@ -90,7 +90,7 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
 		Plugins: &schedapi.Plugins{
-			Score: &schedapi.PluginSet{
+			Score: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: targetloadpacking.Name},
 				},

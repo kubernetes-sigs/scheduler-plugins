@@ -29,6 +29,7 @@ import (
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
+	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -94,7 +95,8 @@ func TestNew(t *testing.T) {
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
-	fh, err := NewFramework(registeredPlugins, []config.PluginConfig{targetLoadPackingConfig}, runtime.WithClientSet(cs),
+	fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{targetLoadPackingConfig},
+		"kube-scheduler", runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 	assert.Nil(t, err)
 	p, err := New(&targetLoadPackingArgs, fh)
@@ -240,7 +242,8 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 			cs := testClientSet.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			snapshot := newTestSharedLister(nil, nodes)
-			fh, err := NewFramework(registeredPlugins, []config.PluginConfig{targetLoadPackingConfig}, runtime.WithClientSet(cs),
+			fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{targetLoadPackingConfig},
+				"default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)
 			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
@@ -334,7 +337,7 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			bfbpArgs.WatcherAddress = server.URL
 			defer server.Close()
 
-			fh, err := st.NewFramework(registeredPlugins, runtime.WithClientSet(cs),
+			fh, err := st.NewFramework(registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(b, err)
 			pl, err := New(&bfbpArgs, fh)
@@ -440,14 +443,4 @@ func getNodes(nodesNum int64) (nodes []*v1.Node) {
 		nodes = append(nodes, st.MakeNode().Name(fmt.Sprintf("node-%v", i)).Capacity(nodeResources).Obj())
 	}
 	return
-}
-
-func NewFramework(fns []st.RegisterPluginFunc, args []config.PluginConfig, opts ...runtime.Option) (framework.Framework, error) {
-	registry := runtime.Registry{}
-	plugins := &config.Plugins{}
-	var pluginConfigs []config.PluginConfig
-	for _, f := range fns {
-		f(&registry, plugins, pluginConfigs)
-	}
-	return runtime.NewFramework(registry, plugins, args, opts...)
 }

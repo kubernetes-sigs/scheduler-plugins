@@ -104,12 +104,12 @@ func TestCapacityScheduling(t *testing.T) {
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
 		Plugins: &schedapi.Plugins{
-			PreFilter: &schedapi.PluginSet{
+			PreFilter: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: capacityscheduling.Name},
 				},
 			},
-			PostFilter: &schedapi.PluginSet{
+			PostFilter: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: capacityscheduling.Name},
 				},
@@ -117,7 +117,7 @@ func TestCapacityScheduling(t *testing.T) {
 					{Name: "*"},
 				},
 			},
-			Reserve: &schedapi.PluginSet{
+			Reserve: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: capacityscheduling.Name},
 				},

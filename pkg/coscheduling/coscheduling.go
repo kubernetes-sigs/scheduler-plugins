@@ -178,7 +178,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[util.PodGroupLabel] == pg.Name {
 			klog.V(3).Infof("PostFilter rejects the pod: %v/%v", pgName, waitingPod.GetPod().Name)
-			waitingPod.Reject(cs.Name())
+			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
 	cs.pgMgr.AddDeniedPodGroup(pgName)
@@ -245,7 +245,7 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[util.PodGroupLabel] == pg.Name {
 			klog.V(3).Infof("Unreserve rejects the pod: %v/%v", pgName, waitingPod.GetPod().Name)
-			waitingPod.Reject(cs.Name())
+			waitingPod.Reject(cs.Name(), "rejection in Unreserve")
 		}
 	})
 	cs.pgMgr.AddDeniedPodGroup(pgName)
@@ -264,7 +264,7 @@ func (cs *Coscheduling) rejectPod(uid types.UID) {
 	if waitingPod == nil {
 		return
 	}
-	waitingPod.Reject(Name)
+	waitingPod.Reject(Name, "")
 }
 
 func (cs *Coscheduling) getStateKey() framework.StateKey {

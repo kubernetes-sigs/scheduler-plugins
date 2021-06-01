@@ -83,6 +83,7 @@ func TestPodState(t *testing.T) {
 
 			fh, err := st.NewFramework(
 				registeredPlugins,
+				"default-scheduler",
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(fakeSharedLister),
@@ -93,9 +94,9 @@ func TestPodState(t *testing.T) {
 			}
 			// initialize nominated pod by adding nominated pods into nominatedPodMap
 			for _, n := range test.nodeInfos {
-				for _, p := range n.Pods {
-					if p.Pod.Status.NominatedNodeName != "" {
-						addNominatedPod(p.Pod, n.Node().Name, fh.PreemptHandle())
+				for _, pi := range n.Pods {
+					if pi.Pod.Status.NominatedNodeName != "" {
+						addNominatedPod(pi, n.Node().Name, fh)
 					}
 				}
 			}
@@ -180,9 +181,9 @@ func makeRegularPod(name string) *v1.Pod {
 	}
 }
 
-func addNominatedPod(pod *v1.Pod, nodeName string, ph framework.PreemptHandle) *v1.Pod {
-	ph.AddNominatedPod(pod, nodeName)
-	return pod
+func addNominatedPod(pi *framework.PodInfo, nodeName string, fh framework.Handle) *framework.PodInfo {
+	fh.AddNominatedPod(pi, nodeName)
+	return pi
 }
 
 var _ framework.SharedLister = &fakeSharedLister{}
