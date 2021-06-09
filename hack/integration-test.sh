@@ -48,7 +48,7 @@ runTests() {
   kube::log::status "Running integration test cases"
 
   # TODO: make args customizable.
-  go test -mod=vendor sigs.k8s.io/scheduler-plugins/test/integration/...
+  go test -timeout=40m -mod=vendor sigs.k8s.io/scheduler-plugins/test/integration/...
 
   cleanup
 }
