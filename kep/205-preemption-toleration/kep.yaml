@@ -1,0 +1,14 @@
+title: Preemption Toleration
+kep-number: 205
+authors:
+  - "@everpeace"
+  - "@ordovicia"
+  - "@shioshiota"
+owning-sig: sig-scheduling
+reviewers:
+- "@Huang-Wei"
+approvers:
+- "@Huang-Wei"
+creation-date: 2021-08-04
+last-updated: 2021-08-04
+status: implementable
