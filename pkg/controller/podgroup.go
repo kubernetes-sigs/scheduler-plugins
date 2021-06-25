@@ -96,7 +96,7 @@ func (ctrl *PodGroupController) Run(workers int, stopCh <-chan struct{}) {
 	klog.Info("Starting coscheduling")
 	defer klog.Info("Shutting coscheduling")
 
-	if !cache.WaitForCacheSync(stopCh, ctrl.pgListerSynced, ctrl.pgListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, ctrl.pgListerSynced, ctrl.podListerSynced) {
 		klog.Error("Cannot sync caches")
 		return
 	}
