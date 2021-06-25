@@ -5,8 +5,10 @@ authors:
   - "@ordovicia"
   - "@shioshiota"
 owning-sig: sig-scheduling
-reviewers: [] # TBD
-approvers: [] # TBD
+reviewers:
+- "@Huang-Wei"
+approvers:
+- "@Huang-Wei"
 creation-date: 2021-06-24
 last-updated: 2021-06-24
 status: implementable
