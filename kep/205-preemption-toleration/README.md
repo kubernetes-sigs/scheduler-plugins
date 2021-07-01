@@ -79,11 +79,7 @@ For example, cluster administrator would introduce several priority classes with
 Preemption toleration policy is defined in this struct type.
 
 ```go
-// Please note that this does NOT have ObjectMeta 
-// because this will be embedded in annotation in PriorityClass as unnamed object.
 type PreemptionToleration struct {
-  metav1.TypeMeta `json:",inline"`
-
   // MinimumPreemptablePriority specifies the minimum priority value that can preempt this priority class.
   MinimumPreemptablePriority *int32 `json:"minimumPreemptablePriority,omitempty"`
 
@@ -94,23 +90,17 @@ type PreemptionToleration struct {
 }
 ```
 
-Users specifies the preemption toleration policy as an annotation with the key `scheduling.sigs.k8s.io/preemption-toleration` in `PriorityClass` as below:
+Users specifies the preemption toleration policy as an annotation with the key `preemption-toleration.scheduling.sigs.k8s.io/<property_name>` in `PriorityClass` as below:
 
 ```yaml
 kind: PriorityClass
 metadata:
   name: toleration-policy-sample
   annotation:
-    scheduling.sigs.k8s.io/preemption-toleration: |
-      # the api is versioned for future enhancement
-      apiVersion: scheduling.sigs.k8s.io/v1beta1
-      kind: PreemptionToleration
-
-      # This priority class can tolerate preemption by priority with 8000 <= p < 10000.
-      minimumPreemptablePriority: 10000
-
-      # And it can tolerate preemption in 1 hour by the pod with priority (8000 <= p < 10000).
-      tolerationSeconds: 3600
+    # This priority class can tolerate preemption by priority with p < 10000.
+    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
+    # And it can tolerate preemption in 1 hour by the pod with priority (p < 10000).
+    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
 value: 8000
 ```
 
