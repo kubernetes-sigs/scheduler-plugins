@@ -82,7 +82,7 @@ Preemption toleration policy is defined in this struct type.
 // Please note that this does NOT have ObjectMeta 
 // because this will be embedded in annotation in PriorityClass as unnamed object.
 type PreemptionToleration struct {
-	metav1.TypeMeta `json:",inline"`
+  metav1.TypeMeta `json:",inline"`
 
   // MinimumPreemptablePriority specifies the minimum priority value that can preempt this priority class.
   MinimumPreemptablePriority *int32 `json:"minimumPreemptablePriority,omitempty"`
