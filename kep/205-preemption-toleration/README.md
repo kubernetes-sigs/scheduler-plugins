@@ -20,7 +20,7 @@
 
 This plugin provides extended behavior of [Priority and Preemption](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/) in Kubernetes Scheduler.
 
-Especially, this plugin enables cluster administrators to define preemption policy from the _victim_ side which is not covered public `PriorityClass` API. This plugin provides _preemption toleration_ policy in `PriorityClass`.  The policy defines the criteria by which the priority class will be exempt from preemption.
+Especially, this plugin enables cluster administrators to define preemption policy from the _victim_ side which is not covered by public `PriorityClass` API. This plugin provides _preemption toleration_ policy in `PriorityClass`, which defines the criteria by which the priority class will be exempt from preemption.
 
 ## Motivation
 
@@ -123,4 +123,3 @@ This plugin implements the PostFilter extension point because this plugin focuse
 ## Implementation History
 
 - 2021-06-24: Initial KEP sent out for review, including Summary, Motivation, etc.
-
