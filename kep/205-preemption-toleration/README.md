@@ -118,7 +118,101 @@ value: 8000
 
 #### PostFilter
 
-This plugin implements the PostFilter extension point because this plugin focuses to extend the scheduler's preemption behavior.  Moreover, this plugin just extends victim candidate selection logics in the default preemption behavior. 
+This plugin implements the PostFilter extension point because this plugin focuses to extend the scheduler's preemption behavior. Moreover, this plugin just extends victim candidate selection logics in the default preemption behavior. 
+
+The modification would be only in `selectVictimsOnNode` as below:
+
+```golang
+// selectVictimsOnNode finds a minimal set of pods on the given node that should
+// be preempted in order to make enough room for "preemptor" to be scheduled.
+// The algorithm is almost identical to DefaultPreemption plugin's one.
+// The only difference is that it takes PreemptionToleration annotations in
+// PriorityClass resources into account for selecting victim pods.
+func (pl *PreemptionToleration) selectVictimsOnNode(
+	ctx context.Context,
+	ph framework.PreemptHandle,
+	state *framework.CycleState,
+	pod *v1.Pod,
+	nodeInfo *framework.NodeInfo,
+	pdbs []*policy.PodDisruptionBudget,
+	now time.Time,
+) ([]*v1.Pod, int, bool) {
+	...
+	// As the first step, remove all lower priority pods 
+	// that can NOT tolerate preemption by the preemptor 
+	// from the node.
+	podPriority := corev1helpers.PodPriority(pod)
+	for _, p := range nodeInfo.Pods {
+		canToleratePreemption, err := CanToleratePreemption(p.Pod, pod, pl.priorityClassLister, now)
+		if err != nil {
+			klog.Warningf("Encountered error while selecting victims on node %v: %v", nodeInfo.Node().Name, err)
+			return nil, 0, false
+		}
+		if corev1helpers.PodPriority(p.Pod) < podPriority && !canToleratePreemption {
+			potentialVictims = append(potentialVictims, p.Pod)
+			if err := removePod(p.Pod); err != nil {
+				return nil, 0, false
+			}
+		}
+	}
+
+	// In tha later steps, it calculates a 'minimal' victim pods set 
+	// by reprieving removed pods above and check preemptor can fit 
+	// the node in one-by-one manner
+	...
+```
+
+`CanToleratePreemption` is the function which evaluate `PreemptionToleration` policy and returns it can tolerate.  The code would be like this:
+
+```golang
+// CanToleratePreemption evaluates whether the victimCandidate pod 
+// can tolerate from preemption by the preemptor pod or not
+// by inspecting PriorityClass of victimCandidate pod.
+// NOTE: The function will be public so that other plugins can evaluate PreemptionToleration policy
+func CanToleratePreemption(
+	victimCandidate, preemptor *v1.Pod,
+	priorityClassLister schedulingv1listers.PriorityClassLister,
+	now time.Time,
+) (bool, error) {
+	preemptorPriority := corev1helpers.PodPriority(preemptor)
+
+	if victimCandidate.Spec.PriorityClassName == "" {
+		return false, nil
+	}
+
+	victimCandidatePriorityClass, err := priorityClassLister.Get(victimCandidate.Spec.PriorityClassName)
+	if err != nil {
+		return false, err
+	}
+
+	// get completed PreemptionToleration policy (it completes default values)
+	toleration, err := getCompletingPreemptionToleration(*victimCandidatePriorityClass)
+	if err != nil || toleration == nil{
+		return false, err
+	}
+
+	// check it can tolerate the preemption in terms of priority value
+	canTolerateOnPriorityValue := preemptorPriority < *toleration.MinimumPreemptablePriority
+	if !canTolerateOnPriorityValue {
+		return canTolerateOnPriorityValue, nil
+	}
+
+	if toleration.TolerationSeconds == nil {
+		return canTolerateOnPriorityValue, nil
+	}
+
+	// check it can tolerate the preemption in terms of toleration seconds
+	_, scheduledCondition := podutil.GetPodCondition(&victimCandidate.Status, v1.PodScheduled)
+	if scheduledCondition == nil {
+		return canTolerateOnPriorityValue, nil
+	}
+	canTolerateOnTolerationSeconds := !now.After(
+		scheduledCondition.LastTransitionTime.Time.Add(time.Duration(*toleration.TolerationSeconds)*time.Second),
+	)
+
+	return canTolerateOnTolerationSeconds, nil
+}
+```
 
 ## Implementation History
 
