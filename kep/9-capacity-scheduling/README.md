@@ -163,8 +163,6 @@ type ElasticQuotaSpec struct {
 
 // ElasticQuotaStatus defines the observed use.
 type ElasticQuotaStatus struct {
-	Min  v1.ResourceList
-	Max  v1.ResourceList
 	Used v1.ResourceList
 }
 ```
@@ -261,6 +259,37 @@ guaranteed and hence non-preemptable.
 
 In the end, UserA consumes 4 GPUs and UserB consumes 6 GPUs, satisfying each 
 user's "min" quota.
+
+#### Story 2
+We assume three elastic quotas are defined: QuotaA (min:3,  max:4), QuotaB
+(min:4, max:6) and QuotaC (min:3,  max:4), the quota unit is the number of GPUs. UserA in blue color
+consumes QuotaA, UserB in red color consumes QuotaB and UserC in green color consumes QuotaC. The entire cluster
+has 10 GPUs available hence the sum of quota min is equal to the cluster capacity.
+
+Initially, UserA consumes 2 GPUs, UserB consumes 2 GPUs and UserC consumes 3 GPUS. All consumptions
+are within the reserved "min" quota range.
+
+![5](./5.png)
+
+Next, UserA consumes 4 GPUs reaching the "max" quota of QuotaA.UserB consumes 3 GPUs. UserC still consumes 3 GPUs.
+
+![6](./6.png)
+
+Later, UserB submits a pod that requests 1 GPU, at this time the cluster does not have enough resources and needs 
+to trigger a preemption. When `QuotaB.used + Preemptor.request <= QuotaB.min`, victims will be selected from the EQ which used > min
+In this case, `QuotaA.used > min` and `QuotaC.used <= min`. So a pod in QuotaA will be the victim.
+
+![7](./7.png)
+
+At some point, UserA consumes 2GPUs and UserC consumes 3 GPUs. UserB's two pods consume a total of 5 GPUs.
+
+![8](./8.png)
+
+Next, UserB submits a PodC that requests 1 GPU, at this time the cluster does not have enough resources and needs
+to trigger a preemption. When `QuotaB.used + Preemptor.request > QuotaB.min`, victims will be selected from the same Quota. So PodA will be the victim.
+
+![9](./9.png)
+
 
 ## Design Details
 
