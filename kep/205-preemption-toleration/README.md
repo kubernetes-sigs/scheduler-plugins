@@ -4,15 +4,15 @@
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
+	- [Goals](#goals)
+	- [Non-Goals](#non-goals)
 - [Use Cases](#use-cases)
-  - [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority)
-  - [Guarantee to running at least N minutes even in lower priority](#guarantee-to-running-at-least-n-minutes-even-in-lower-priority)
+	- [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority)
+	- [Guarantee to running at least N minutes even in lower priority](#guarantee-to-running-at-least-n-minutes-even-in-lower-priority)
 - [Design Details](#design-details)
-  - [Preemption Toleration API](#preemption-toleration-api)
-  - [Plugin implementation](#plugin-implementation)
-    - [PostFilter](#postfilter)
+	- [Preemption Toleration API](#preemption-toleration-api)
+	- [Plugin implementation](#plugin-implementation)
+		- [PostFilter](#postfilter)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -100,6 +100,9 @@ kind: PriorityClass
 metadata:
   name: toleration-policy-sample
   annotation:
+    # this key is needed to enable preemption toleration policy for distinguishing 
+	# between no toleration policy and empty toleration policy (all fields will be default)
+    preemption-toleration.scheduling.sigs.k8s.io/enabled: ""
     # This priority class can tolerate preemption by priority with p < 10000.
     preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
     # And it can tolerate preemption in 1 hour by the pod with priority (p < 10000).
