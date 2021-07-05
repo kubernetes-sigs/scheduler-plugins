@@ -18,7 +18,8 @@ package app
 
 import (
 	"context"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"os"
+
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/informers"
@@ -29,12 +30,10 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog/v2"
-	"os"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	"sigs.k8s.io/scheduler-plugins/pkg/util"
+	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
+	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 )
 
 func newConfig(kubeconfig, master string, inCluster bool) (*restclient.Config, error) {
@@ -62,24 +61,25 @@ func Run(s *ServerRunOptions) error {
 	config.QPS = float32(s.ApiServerQPS)
 	config.Burst = s.ApiServerBurst
 	stopCh := server.SetupSignalHandler()
-
-	pgClient := pgclientset.NewForConfigOrDie(config)
+	schedClient := schedclientset.NewForConfigOrDie(config)
 	kubeClient := kubernetes.NewForConfigOrDie(config)
 
-	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
+	schedInformerFactory := schedformers.NewSharedInformerFactory(schedClient, 0)
+	pgInformer := schedInformerFactory.Scheduling().V1alpha1().PodGroups()
+	eqInformer := schedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
 
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, 0, informers.WithTweakListOptions(func(opt *metav1.ListOptions) {
-		opt.LabelSelector = util.PodGroupLabel
-	}))
-	podInformer := informerFactory.Core().V1().Pods()
-	ctrl := controller.NewPodGroupController(kubeClient, pgInformer, podInformer, pgClient)
-	pgInformerFactory.Start(stopCh)
-	informerFactory.Start(stopCh)
+	coreInformerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
+	podInformer := coreInformerFactory.Core().V1().Pods()
+	pgCtrl := controller.NewPodGroupController(kubeClient, pgInformer, podInformer, schedClient)
+	eqCtrl := controller.NewElasticQuotaController(kubeClient, eqInformer, podInformer, schedClient)
+
 	run := func(ctx context.Context) {
-		ctrl.Run(s.Workers, ctx.Done())
+		go pgCtrl.Run(s.Workers, ctx.Done())
+		go eqCtrl.Run(s.Workers, ctx.Done())
+		select {}
 	}
-
+	schedInformerFactory.Start(stopCh)
+	coreInformerFactory.Start(stopCh)
 	if !s.EnableLeaderElection {
 		run(ctx)
 	} else {
@@ -87,7 +87,6 @@ func Run(s *ServerRunOptions) error {
 		if err != nil {
 			return err
 		}
-
 		// add a uniquifier so that two processes on the same host don't accidentally both become active
 		id = id + "_" + string(uuid.NewUUID())
 

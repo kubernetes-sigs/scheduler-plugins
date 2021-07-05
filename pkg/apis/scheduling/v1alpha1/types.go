@@ -80,21 +80,21 @@ type PodGroupPhase string
 
 // These are the valid phase of podGroups.
 const (
-	// PodPending means the pod group has been accepted by the system, but scheduler can not allocate
+	// PodGroupPending means the pod group has been accepted by the system, but scheduler can not allocate
 	// enough resources to it.
 	PodGroupPending PodGroupPhase = "Pending"
 
-	// PodRunning means `spec.minMember` pods of PodGroups has been in running phase.
+	// PodGroupRunning means `spec.minMember` pods of PodGroups has been in running phase.
 	PodGroupRunning PodGroupPhase = "Running"
 
-	// PreScheduling means all of pods has been are waiting to be scheduled, enqueue waitingPod
+	// PodGroupPreScheduling means all of pods has been are waiting to be scheduled, enqueue waitingPod
 	PodGroupPreScheduling PodGroupPhase = "PreScheduling"
 
-	// PodRunning means some of pods has been scheduling in running phase but have not reach the `spec.
+	// PodGroupScheduling means some of pods has been scheduling in running phase but have not reach the `spec.
 	// minMember` pods of PodGroups.
 	PodGroupScheduling PodGroupPhase = "Scheduling"
 
-	// PodScheduled means `spec.minMember` pods of PodGroups have been scheduled finished and pods have been in running
+	// PodGroupScheduled means `spec.minMember` pods of PodGroups have been scheduled finished and pods have been in running
 	// phase.
 	PodGroupScheduled PodGroupPhase = "Scheduled"
 
@@ -102,7 +102,7 @@ const (
 	// be scheduled, e.g. not enough resource; scheduler will wait for related controller to recover it.
 	PodGroupUnknown PodGroupPhase = "Unknown"
 
-	// PodGroupFinish means all of `spec.minMember` pods are successfully.
+	// PodGroupFinished means all of `spec.minMember` pods are successfully.
 	PodGroupFinished PodGroupPhase = "Finished"
 
 	// PodGroupFailed means at least one of `spec.minMember` pods is failed.
