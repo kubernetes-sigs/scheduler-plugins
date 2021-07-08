@@ -42,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/core"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/util"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -201,11 +202,46 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.Cyc
 		return framework.NewStatus(framework.Success, "skipCapacityScheduling")
 	}
 
-	if eq.overUsed(preFilterState.Resource, eq.Max) {
+	// nominatedResource is the sum of the requested resources of the Nominated Pods
+	// which subject to the same quota(namespace).
+	nominatedResource := &framework.Resource{}
+	// totalNominatedResource is the sum of the requested resources of the Nominated Pods
+	// which subject to the all quota(namespace).
+	totalNominatedResource := &framework.Resource{}
+
+	nodeList, err := c.frameworkHandle.SnapshotSharedLister().NodeInfos().List()
+	if err != nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("Error getting the nodelist: %v", err))
+	}
+
+	for _, node := range nodeList {
+		nominatedPods := c.frameworkHandle.PreemptHandle().NominatedPodsForNode(node.Node().Name)
+		for _, p := range nominatedPods {
+			ns := p.Namespace
+			info := c.elasticQuotaInfos[ns]
+			if info != nil {
+				pResourceRequest := computePodResourceRequest(p).ResourceList()
+				// If they are subject to the same quota(namespace) and p is more important than pod,
+				// p will be added to the nominatedResource and totalNominatedResource.
+				// If they aren't subject to the same quota(namespace) and the usage of quota(p's namespace) does not exceed min,
+				// p will be added to the totalNominatedResource.
+				if ns == pod.Namespace && !util.MoreImportantPod(pod, p) {
+					nominatedResource.Add(pResourceRequest)
+					totalNominatedResource.Add(pResourceRequest)
+				} else if ns != pod.Namespace && !info.usedOverMin() {
+					totalNominatedResource.Add(pResourceRequest)
+				}
+			}
+		}
+	}
+
+	nominatedResource.Add(preFilterState.Resource.ResourceList())
+	if eq.overUsed(*nominatedResource, eq.Max) {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Pod %v/%v is rejected in Prefilter because ElasticQuota %v is more than Max", pod.Namespace, pod.Name, eq.Namespace))
 	}
 
-	if elasticQuotaInfos.aggregatedMinOverUsedWithPod(preFilterState.Resource) {
+	totalNominatedResource.Add(preFilterState.Resource.ResourceList())
+	if elasticQuotaInfos.aggregatedMinOverUsedWithPod(*totalNominatedResource) {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Pod %v/%v is rejected in Prefilter because total ElasticQuota used is more than min", pod.Namespace, pod.Name))
 	}
 
@@ -335,7 +371,7 @@ func (c *CapacityScheduling) preempt(ctx context.Context, state *framework.Cycle
 	}
 
 	// 5) Perform preparation work before nominating the selected candidate.
-	if err := defaultpreemption.PrepareCandidate(bestCandidate, c.frameworkHandle, client, pod); err != nil {
+	if err := c.PrepareCandidate(bestCandidate, c.frameworkHandle, client, pod); err != nil {
 		return "", err
 	}
 
@@ -605,6 +641,66 @@ func selectVictimsOnNode(
 	return victims, numViolatingVictim, true
 }
 
+// PrepareCandidate does some preparation work before nominating the selected candidate:
+// - Evict the victim pods
+// - Release the elastic quota if the victim pods reserved
+// - Reject the victim pods if they are in waitingPod map
+// - Clear the low-priority pods' nominatedNodeName status if needed
+func (c *CapacityScheduling) PrepareCandidate(candidate Candidate, fh framework.Handle, cs kubernetes.Interface, pod *v1.Pod) error {
+	for _, victim := range candidate.Victims().Pods {
+		if err := util.DeletePod(cs, victim); err != nil {
+			klog.Errorf("Error preempting pod %v/%v: %v", victim.Namespace, victim.Name, err)
+			return err
+		}
+
+		c.deletePodIfPresent(pod)
+
+		// If the victim is a WaitingPod, send a reject message to the PermitPlugin
+		if waitingPod := fh.GetWaitingPod(victim.UID); waitingPod != nil {
+			waitingPod.Reject("preempted")
+		}
+		fh.EventRecorder().Eventf(victim, pod, v1.EventTypeNormal, "Preempted", "Preempting", "Preempted by %v/%v on node %v",
+			pod.Namespace, pod.Name, c.Name())
+	}
+	metrics.PreemptionVictims.Observe(float64(len(candidate.Victims().Pods)))
+
+	// Lower priority pods nominated to run on this node, may no longer fit on
+	// this node. So, we should remove their nomination. Removing their
+	// nomination updates these pods and moves them to the active queue. It
+	// lets scheduler find another place for them.
+	nominatedPods := getLowerPriorityNominatedPods(fh.PreemptHandle(), pod, c.Name())
+	if err := util.ClearNominatedNodeName(cs, nominatedPods...); err != nil {
+		klog.Errorf("Cannot clear 'NominatedNodeName' field: %v", err)
+		// We do not return as this error is not critical.
+	}
+
+	return nil
+}
+
+// getLowerPriorityNominatedPods returns pods whose priority is smaller than the
+// priority of the given "pod" and are nominated to run on the given node.
+// Note: We could possibly check if the nominated lower priority pods still fit
+// and return those that no longer fit, but that would require lots of
+// manipulation of NodeInfo and PreFilter state per nominated pod. It may not be
+// worth the complexity, especially because we generally expect to have a very
+// small number of nominated pods per node.
+func getLowerPriorityNominatedPods(pn framework.PodNominator, pod *v1.Pod, nodeName string) []*v1.Pod {
+	pods := pn.NominatedPodsForNode(nodeName)
+
+	if len(pods) == 0 {
+		return nil
+	}
+
+	var lowerPriorityPods []*v1.Pod
+	podPriority := corev1helpers.PodPriority(pod)
+	for _, p := range pods {
+		if corev1helpers.PodPriority(p) < podPriority {
+			lowerPriorityPods = append(lowerPriorityPods, p)
+		}
+	}
+	return lowerPriorityPods
+}
+
 func (c *CapacityScheduling) addElasticQuota(obj interface{}) {
 	eq := obj.(*v1alpha1.ElasticQuota)
 	oldElasticQuotaInfo := c.elasticQuotaInfos[eq.Namespace]
@@ -705,6 +801,18 @@ func (c *CapacityScheduling) deletePod(obj interface{}) {
 
 	elasticQuotaInfo := c.elasticQuotaInfos[pod.Namespace]
 	if elasticQuotaInfo != nil {
+		err := elasticQuotaInfo.deletePodIfPresent(pod)
+		if err != nil {
+			klog.Errorf("ElasticQuota deletePodIfPresent for pod %v/%v error %v", pod.Namespace, pod.Name, err)
+		}
+	}
+}
+
+func (c *CapacityScheduling) deletePodIfPresent(pod *v1.Pod) {
+	c.Lock()
+	defer c.Unlock()
+
+	if elasticQuotaInfo := c.elasticQuotaInfos[pod.Namespace]; elasticQuotaInfo != nil {
 		err := elasticQuotaInfo.deletePodIfPresent(pod)
 		if err != nil {
 			klog.Errorf("ElasticQuota deletePodIfPresent for pod %v/%v error %v", pod.Namespace, pod.Name, err)

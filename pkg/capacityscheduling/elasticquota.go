@@ -103,6 +103,23 @@ func (e *ElasticQuotaInfo) overUsed(podRequest framework.Resource, resource *fra
 	return false
 }
 
+func (e *ElasticQuotaInfo) usedOverMin() bool {
+	if e.Used.MilliCPU > e.Min.MilliCPU {
+		return true
+	}
+
+	if e.Used.Memory > e.Min.Memory {
+		return true
+	}
+
+	for rName, rQuant := range e.Min.ScalarResources {
+		if rQuant > e.Min.ScalarResources[rName] {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
 	newEQInfo := &ElasticQuotaInfo{
 		Namespace: e.Namespace,
