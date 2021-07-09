@@ -505,20 +505,8 @@ func selectVictimsOnNode(
 		return nil, 0, false
 	}
 
-	nominatedResourceWithPodState, err := getNominatedResourceWithPodState(state)
-	if err != nil {
-		klog.Errorf("error reading %q from cycleState: %v", NominatedResourceWithPodStateKey, err)
-		return nil, 0, false
-	}
-
-	totalNominatedResourceWithPodState, err := getTotalNominatedResourceWithPodState(state)
-	if err != nil {
-		klog.Errorf("error reading %q from cycleState: %v", TotalNominatedResourceWithPodStateKey, err)
-		return nil, 0, false
-	}
-
-	nominatedResourceWithPod := nominatedResourceWithPodState.Resource
-	totalNominatedResourceWithPod := totalNominatedResourceWithPodState.Resource
+	var nominatedResourceWithPod framework.Resource
+	var totalNominatedResourceWithPod framework.Resource
 
 	removePod := func(rp *v1.Pod) error {
 		if err := nodeInfo.RemovePod(rp); err != nil {
@@ -546,6 +534,21 @@ func selectVictimsOnNode(
 	var moreThanMinWithPreemptor bool
 	// Check if there is elastic quota in the preemptor's namespace.
 	if preemptorWithElasticQuota {
+		nominatedResourceWithPodState, err := getNominatedResourceWithPodState(state)
+		if err != nil {
+			klog.Errorf("error reading %q from cycleState: %v", NominatedResourceWithPodStateKey, err)
+			return nil, 0, false
+		}
+
+		totalNominatedResourceWithPodState, err := getTotalNominatedResourceWithPodState(state)
+		if err != nil {
+			klog.Errorf("error reading %q from cycleState: %v", TotalNominatedResourceWithPodStateKey, err)
+			return nil, 0, false
+		}
+
+		nominatedResourceWithPod = nominatedResourceWithPodState.Resource
+		totalNominatedResourceWithPod = totalNominatedResourceWithPodState.Resource
+
 		moreThanMinWithPreemptor = preemptorElasticQuotaInfo.overUsed(nominatedResourceWithPod, preemptorElasticQuotaInfo.Min)
 	}
 
