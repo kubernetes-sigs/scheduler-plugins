@@ -855,6 +855,7 @@ func (c *CapacityScheduling) addDeletingPod(pod *v1.Pod) {
 		key, err := framework.GetPodKey(pod)
 		if err != nil {
 			klog.Errorf(err.Error())
+			return
 		}
 		elasticQuotaInfo.deletingPods[key] = pod
 	}
@@ -868,6 +869,7 @@ func (c *CapacityScheduling) removeDeletingPod(pod *v1.Pod) {
 		key, err := framework.GetPodKey(pod)
 		if err != nil {
 			klog.Errorf(err.Error())
+			return
 		}
 		delete(elasticQuotaInfo.deletingPods, key)
 	}

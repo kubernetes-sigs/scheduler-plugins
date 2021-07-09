@@ -124,8 +124,9 @@ func (e *ElasticQuotaInfo) usedOverMin() bool {
 
 func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
 	newEQInfo := &ElasticQuotaInfo{
-		Namespace: e.Namespace,
-		pods:      sets.NewString(),
+		Namespace:    e.Namespace,
+		pods:         sets.NewString(),
+		deletingPods: make(map[string]*v1.Pod),
 	}
 
 	if e.Min != nil {
@@ -141,6 +142,11 @@ func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
 		pods := e.pods.List()
 		for _, pod := range pods {
 			newEQInfo.pods.Insert(pod)
+		}
+	}
+	if len(e.deletingPods) > 0 {
+		for key, pod := range e.deletingPods {
+			newEQInfo.deletingPods[key] = pod
 		}
 	}
 
@@ -190,7 +196,7 @@ func (e *ElasticQuotaInfo) moreThanMinExcludeDeletingPods() bool {
 		used.Memory -= pResource.Memory
 		used.MilliCPU -= pResource.MilliCPU
 		for name, value := range pResource.ScalarResources {
-			e.Used.SetScalar(name, e.Used.ScalarResources[name]-value)
+			used.SetScalar(name, e.Used.ScalarResources[name]-value)
 		}
 	}
 
