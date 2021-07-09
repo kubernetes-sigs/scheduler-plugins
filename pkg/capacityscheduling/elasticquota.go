@@ -52,20 +52,22 @@ func (e ElasticQuotaInfos) aggregatedMinOverUsedWithPod(podRequest framework.Res
 // ElasticQuotaInfo is a wrapper to a ElasticQuota with information.
 // Each namespace can only have one ElasticQuota.
 type ElasticQuotaInfo struct {
-	Namespace string
-	pods      sets.String
-	Min       *framework.Resource
-	Max       *framework.Resource
-	Used      *framework.Resource
+	Namespace    string
+	pods         sets.String
+	deletingPods map[string]*v1.Pod
+	Min          *framework.Resource
+	Max          *framework.Resource
+	Used         *framework.Resource
 }
 
 func newElasticQuotaInfo(namespace string, min, max, used v1.ResourceList) *ElasticQuotaInfo {
 	elasticQuotaInfo := &ElasticQuotaInfo{
-		Namespace: namespace,
-		pods:      sets.NewString(),
-		Min:       framework.NewResource(min),
-		Max:       framework.NewResource(max),
-		Used:      framework.NewResource(used),
+		Namespace:    namespace,
+		pods:         sets.NewString(),
+		deletingPods: make(map[string]*v1.Pod),
+		Min:          framework.NewResource(min),
+		Max:          framework.NewResource(max),
+		Used:         framework.NewResource(used),
 	}
 	return elasticQuotaInfo
 }
@@ -173,10 +175,39 @@ func (e *ElasticQuotaInfo) deletePodIfPresent(pod *v1.Pod) error {
 	}
 
 	e.pods.Delete(key)
+	delete(e.deletingPods, key)
 	podRequest := computePodResourceRequest(pod)
 	e.unreserveResource(podRequest.Resource)
 
 	return nil
+}
+
+func (e *ElasticQuotaInfo) moreThanMinExcludeDeletingPods() bool {
+	used := e.Used.Clone()
+	min := e.Min
+	for _, p := range e.deletingPods {
+		pResource := computePodResourceRequest(p).Resource
+		used.Memory -= pResource.Memory
+		used.MilliCPU -= pResource.MilliCPU
+		for name, value := range pResource.ScalarResources {
+			e.Used.SetScalar(name, e.Used.ScalarResources[name]-value)
+		}
+	}
+
+	if used.MilliCPU > min.MilliCPU {
+		return true
+	}
+	if used.Memory > min.Memory {
+		return true
+	}
+
+	for rName, rQuant := range used.ScalarResources {
+		if rQuant > min.ScalarResources[rName] {
+			return true
+		}
+	}
+
+	return false
 }
 
 func moreThanMin(used, min framework.Resource) bool {
