@@ -312,8 +312,16 @@ func TestFindCandidates(t *testing.T) {
 			elasticQuotaSnapshotState := &ElasticQuotaSnapshotState{
 				elasticQuotaInfos: tt.elasticQuotas,
 			}
+			nominatedResourceWithPodState := &NominatedResourceWithPodState{
+				prefilterStatue.Resource,
+			}
+			totalNominatedResourceWithPodState := &TotalNominatedResourceWithPodState{
+				prefilterStatue.Resource,
+			}
 			state.Write(preFilterStateKey, prefilterStatue)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
+			state.Write(NominatedResourceWithPodStateKey, nominatedResourceWithPodState)
+			state.Write(TotalNominatedResourceWithPodStateKey, totalNominatedResourceWithPodState)
 
 			got, err := FindCandidates(ctx, cs, state, tt.pod, tt.nodesStatuses, fwk.PreemptHandle(), fwk.SnapshotSharedLister().NodeInfos(), getPDBLister(fwk.SharedInformerFactory()))
 			if err != nil {
