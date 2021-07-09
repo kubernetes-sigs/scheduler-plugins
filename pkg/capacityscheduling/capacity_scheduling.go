@@ -225,7 +225,7 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.Cyc
 				// p will be added to the nominatedResource and totalNominatedResource.
 				// If they aren't subject to the same quota(namespace) and the usage of quota(p's namespace) does not exceed min,
 				// p will be added to the totalNominatedResource.
-				if ns == pod.Namespace && !util.MoreImportantPod(pod, p) {
+				if ns == pod.Namespace && p.UID != pod.UID && corev1helpers.PodPriority(p) >= corev1helpers.PodPriority(pod) {
 					nominatedResource.Add(pResourceRequest)
 					totalNominatedResource.Add(pResourceRequest)
 				} else if ns != pod.Namespace && !info.usedOverMin() {
