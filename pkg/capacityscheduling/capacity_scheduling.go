@@ -371,7 +371,7 @@ func (c *CapacityScheduling) preempt(ctx context.Context, state *framework.Cycle
 	}
 
 	// 1) Ensure the preemptor is eligible to preempt other pods.
-	if !defaultpreemption.PodEligibleToPreemptOthers(pod, nodeLister, m[pod.Status.NominatedNodeName]) {
+	if !c.PodEligibleToPreemptOthers(pod, nodeLister, m[pod.Status.NominatedNodeName], state) {
 		klog.V(5).Infof("Pod %v/%v is not eligible for more preemption.", pod.Namespace, pod.Name)
 		return "", nil
 	}
@@ -400,6 +400,83 @@ func (c *CapacityScheduling) preempt(ctx context.Context, state *framework.Cycle
 	}
 
 	return bestCandidate.Name(), nil
+}
+
+// PodEligibleToPreemptOthers determines whether this pod should be considered
+// for preempting other pods or not. If this pod has already preempted other
+// pods and those are in their graceful termination period, it shouldn't be
+// considered for preemption.
+// We look at the node that is nominated for this pod and as long as there are
+// terminating pods on the node, we don't consider this for preempting more pods.
+func (c *CapacityScheduling) PodEligibleToPreemptOthers(pod *v1.Pod, nodeInfos framework.NodeInfoLister, nominatedNodeStatus *framework.Status, state *framework.CycleState) bool {
+	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
+		klog.V(5).Infof("Pod %v/%v is not eligible for preemption because it has a preemptionPolicy of %v", pod.Namespace, pod.Name, v1.PreemptNever)
+		return false
+	}
+	nomNodeName := pod.Status.NominatedNodeName
+	if len(nomNodeName) > 0 {
+		// If the pod's nominated node is considered as UnschedulableAndUnresolvable by the filters,
+		// then the pod should be considered for preempting again.
+		if nominatedNodeStatus.Code() == framework.UnschedulableAndUnresolvable {
+			return true
+		}
+
+		elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(state)
+		if err != nil {
+			klog.Errorf("error reading %q from cycleState: %v", ElasticQuotaSnapshotKey, err)
+			return true
+		}
+		preemptorElasticQuotaInfo, preemptorWithElasticQuota := elasticQuotaSnapshotState.elasticQuotaInfos[pod.Namespace]
+
+		var nominatedResourceWithPod framework.Resource
+		var moreThanMinWithPreemptor bool
+		// Check if there is elastic quota in the preemptor's namespace.
+		if preemptorWithElasticQuota {
+			nominatedResourceWithPodState, err := getNominatedResourceWithPodState(state)
+			if err != nil {
+				klog.Errorf("error reading %q from cycleState: %v", NominatedResourceWithPodStateKey, err)
+				return true
+			}
+
+			nominatedResourceWithPod = nominatedResourceWithPodState.Resource
+			moreThanMinWithPreemptor = preemptorElasticQuotaInfo.overUsed(nominatedResourceWithPod, preemptorElasticQuotaInfo.Min)
+		}
+		nodeInfo, _ := nodeInfos.Get(nomNodeName)
+		if nodeInfo == nil {
+			return true
+		}
+
+		podPriority := corev1helpers.PodPriority(pod)
+		if preemptorWithElasticQuota {
+			for _, p := range nodeInfo.Pods {
+				if p.Pod.DeletionTimestamp != nil {
+					_, pWithElasticQuota := elasticQuotaSnapshotState.elasticQuotaInfos[p.Pod.Namespace]
+					if !pWithElasticQuota {
+						continue
+					}
+					if p.Pod.Namespace == pod.Namespace && corev1helpers.PodPriority(p.Pod) < podPriority {
+						return false
+					} else if p.Pod.Namespace != pod.Namespace && !moreThanMinWithPreemptor {
+						// There is a terminating pod on the nominated node.
+						return false
+					}
+				}
+			}
+		} else {
+			podPriority := corev1helpers.PodPriority(pod)
+			for _, p := range nodeInfo.Pods {
+				_, pWithElasticQuota := elasticQuotaSnapshotState.elasticQuotaInfos[p.Pod.Namespace]
+				if pWithElasticQuota {
+					continue
+				}
+				if p.Pod.DeletionTimestamp != nil && corev1helpers.PodPriority(p.Pod) < podPriority {
+					// There is a terminating pod on the nominated node.
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // FindCandidates calculates a slice of preemption candidates.
@@ -689,7 +766,8 @@ func selectVictimsOnNode(
 // - Reject the victim pods if they are in waitingPod map
 // - Clear the low-priority pods' nominatedNodeName status if needed
 func (c *CapacityScheduling) PrepareCandidate(candidate Candidate, fh framework.Handle, cs kubernetes.Interface, pod *v1.Pod) error {
-	for _, victim := range candidate.Victims().Pods {
+	for key, victim := range candidate.Victims().Pods {
+		klog.V(1).Infof("evict result %v:  %v/%v --> %v/%v", key, pod.Namespace, pod.Name, victim.Namespace, victim.Name)
 		c.addDeletingPod(victim)
 		if err := util.DeletePod(cs, victim); err != nil {
 			c.removeDeletingPod(victim)
@@ -702,7 +780,7 @@ func (c *CapacityScheduling) PrepareCandidate(candidate Candidate, fh framework.
 			waitingPod.Reject("preempted")
 		}
 		fh.EventRecorder().Eventf(victim, pod, v1.EventTypeNormal, "Preempted", "Preempting", "Preempted by %v/%v on node %v",
-			pod.Namespace, pod.Name, c.Name())
+			pod.Namespace, pod.Name, candidate.Name())
 	}
 	metrics.PreemptionVictims.Observe(float64(len(candidate.Victims().Pods)))
 
