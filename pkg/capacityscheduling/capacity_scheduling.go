@@ -72,7 +72,7 @@ func (s *PreFilterState) Clone() framework.StateData {
 	return s
 }
 
-// ElasticQuotaSnapshot stores the snapshot of elasticQuotas.
+// ElasticQuotaSnapshotState stores the snapshot of elasticQuotas.
 type ElasticQuotaSnapshotState struct {
 	elasticQuotaInfos ElasticQuotaInfos
 }
