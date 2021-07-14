@@ -29,7 +29,7 @@ spec:
 labels:
   pod-group.scheduling.sigs.k8s.io: nginx
 ```
-We will calculate the sum of the Running pods and the Waiting pods (assumed but not bind) in scheduler, if the sum is greater than or equal to the minAvailable, the Waiting pods
+We will calculate the sum of the Running pods and the Waiting pods (assumed but not bind) in scheduler, if the sum is greater than or equal to the minMember, the Waiting pods
 will be created.
 
 Pods in the same PodGroup with different priorities might lead to unintended behavior, so need to ensure Pods in the same PodGroup with the same priority.
@@ -40,7 +40,7 @@ Pods in the same PodGroup with different priorities might lead to unintended beh
 
 ### Config
 1. queueSort, permit and unreserve must be enabled in coscheduling.
-2. preFilter is enhanced feature to reduce the overall scheduling time for the whole group. It will check the total number of pods belonging to the same `PodGroup`. If the total number is less than minAvailable, the pod will reject in preFilter, then the scheduling cycle will interrupt. And the preFilter is user selectable according to the actual situation of users. If the minAvailable of PodGroup is relatively small, for example less than 5, you can disable this plugin. But if the minAvailable of PodGroup is relatively large, please enable this plugin to reduce the overall scheduling time.
+2. preFilter is enhanced feature to reduce the overall scheduling time for the whole group. It will check the total number of pods belonging to the same `PodGroup`. If the total number is less than minMember, the pod will reject in preFilter, then the scheduling cycle will interrupt. And the preFilter is user selectable according to the actual situation of users. If the minMember of PodGroup is relatively small, for example less than 5, you can disable this plugin. But if the minMember of PodGroup is relatively large, please enable this plugin to reduce the overall scheduling time.
 ```
 apiVersion: kubescheduler.config.k8s.io/v1beta1
 kind: KubeSchedulerConfiguration
@@ -71,7 +71,7 @@ profiles:
 ```
 
 ### Demo
-Suppose we have a cluster which can only afford 3 nginx pods. We create a ReplicaSet with replicas=6, and set the value of minAvailable to 3.
+Suppose we have a cluster which can only afford 3 nginx pods. We create a ReplicaSet with replicas=6, and set the value of minMember to 3.
 ```yaml
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: PodGroup
@@ -122,7 +122,7 @@ nginx-hsflk   0/1     Pending   0          55s
 nginx-qtj5f   1/1     Running   0          55s
 ```
 
-If min-available is set to 4 at this time, all nginx pods are in pending state because the resource does not meet the requirements of minavailable
+If minMember is set to 4 at this time, all nginx pods are in pending state because the resource does not meet the requirements of minMember
 ```script
 $ kubectl get pods
 NAME          READY   STATUS    RESTARTS   AGE
