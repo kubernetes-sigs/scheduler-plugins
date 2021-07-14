@@ -45,6 +45,9 @@ profiles:
         - default
         - production
         - test-namespace
+      excludelist:
+        - memory
+        - storage
 ```
 
 ### Demo

@@ -137,4 +137,5 @@ type NodeResourceTopologyMatchArgs struct {
 	KubeConfigPath string
 	MasterOverride string
 	Namespaces     []string
+	ExcludeList    []string
 }

@@ -127,6 +127,11 @@ func (in *NodeResourceTopologyMatchArgs) DeepCopyInto(out *NodeResourceTopologyM
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.ExcludeList != nil {
+		in, out := &in.ExcludeList, &out.ExcludeList
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
