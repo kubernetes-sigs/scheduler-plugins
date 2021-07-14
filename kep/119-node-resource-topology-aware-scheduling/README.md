@@ -40,42 +40,44 @@ handlers may pass.
 
 - Make scheduling process more precise when we have NUMA topology on the
 worker node by using scheduler plugin.
+- Make more optimal scheduling decisions that take NUMA topology into consideration.
 
 ## Non-Goals
 
 - Change the PodSpec to allow requesting a specific node topology manager policy
 - This Proposal requires exposing NUMA topology information. This KEP doesn't
-describe how to expose all necessary information it just declare what kind of
+describe how to expose all necessary information it just declares what kind of
 information is necessary. Please see [topology aware resource provisioning daemon KEP][4] for more information.
 
 # Proposal
 
-This plugin implements a simplified version of Topology Manager and hence is different from original topology manager algorithm.
-Plugin would check for the ability to run pod only in case of single-numa-node policy on the
-node, since it is the most strict policy, it implies that the launch on the node with
+A Filter plugin implements a simplified version of Topology Manager and hence is different from original topology manager algorithm.
+This plugin would check for the ability to run pod only in case of single-numa-node policy on the
+node. Since it is the strictest policy, it implies that the launch on the node with
 other existing policies will be successful if the condition for single-numa-node policy passed for the worker node.
-Proposed plugin will use [CRD][1] to identify which topology policy is enabled on the node.
+Proposed Filter plugin will use [CRD][1] to identify which topology policy is enabled on the node.
 To work, this plugin requires topology information of the available resource on the worker nodes.
+An additional Score plugin would prioritize the most suitable node, among the ones provided by the Filter plugin, for running the pod.
 
 ## Topology format
 
 Available resources with topology of the node should be stored in CRD. Format of the topology described
 [in this document][1].
 
-[The daemon][5] which runs outside of the kubelet will collect all necessary information on running pods, based on allocatable resources of the node and consumed resources by pods it will provide available resources in CRD, where one CRD instance represents one worker node. The name of the CRD instance is the name of the worker node.
+[The daemon][5] which runs outside the kubelet will collect all necessary information on running pods, based on allocatable resources of the node and consumed resources by pods it will provide available resources in CRD, where one CRD instance represents one worker node. The name of the CRD instance is the name of the worker node.
 
 ## CRD API
 
-[Code][3] responsible for working with NodeResourceTopology CRD API will imported in the scheduler-plugins repo.
+[Code][3] responsible for working with NodeResourceTopology CRD API will be imported in the scheduler-plugins repo.
 
-## Plugin implementation details
+## Filter and Score plugins implementation details
 
-Since topology of the node is stored in the CRD, kube-scheduler should be subscribed for updates of appropriate CRD type. Kube-scheduler will use informers which will be generated with the name NodeTopologyInformer. NodeTopologyInformer will run in NodeResourceTopologyMatch plugin.
+Since topology of the node is stored in the CRD, kube-scheduler should be subscribed for updates of appropriate CRD type. Kube-scheduler will use informers which will be generated with the name NodeTopologyInformer. NodeTopologyInformer will run in NodeResourceTopologyMatch and NodeResourceTopologyResourceAllocationScore plugin.
 
-### Topology information in the NodeResourceTopologyMatch plugin
+### Topology information in the NodeResourceTopologyMatch Filter and NodeResourceTopologyResourceAllocationScore Score plugin
 
-Once NodeResourceTopology is received NodeResourceTopologyMatch plugin keeps it in its own state of type
-NodeTopologyMap. This state will be used every time when scheduler needs to make a decidion based on node topology.
+Once NodeResourceTopology is received, NodeResourceTopologyMatch and NodeResourceTopologyResourceAllocationScore plugins keep it in their own state of type
+NodeTopologyMap. This state will be used every time when scheduler needs to make a decision based on node topology.
 
 ```go
 
@@ -139,7 +141,7 @@ To use these policy names both in kube-scheduler and in kubelet, string constant
 
 NUMAID is an auxiliary field since scheduler version of Topology Manager doesn't make a real assignment.
 
-### Description of the Algorithm
+### Description of the Filter Algorithm
 
 The algorithm which implements SingleNumaNode policy is following:
 
@@ -184,6 +186,23 @@ The algorithm which implements SingleNumaNode policy is following:
 	}
 	return nil
 }
+```
+
+### Description of the Score Algorithm
+
+The algorithm which prioritizes based on a specific scoring strategy is as follows:
+```go
+    numaScores := make([]int64, len(numaList))
+    for _, numa := range numaList {
+    	// score is a pointer to a function that can be implemented in various ways 
+        numaScores[numa.NUMAID] = score(requested, numa.Resources, resourceToWeightMap)
+    }
+    // Since we can't explicitly tell Kubelet which NUMA to select,
+    // we'll choose a conservative strategy to assume Kubelet will choose the least optimal NUMA,
+    // i.e. NUMA with the minimal score.
+    minScore := findMinScore(numaScores)
+    return minScore, nil
+
 ```
 ## Accessing NodeResourceTopology CRD
 
@@ -274,7 +293,7 @@ roleRef:
 
 # Use cases
 
-Numbers of kubernetes worker nodes on bare metal with NUMA topology. TopologyManager feature gate enabled on the nodes. In this configuration, the operator does not want that in the case of an unsatisfactory host topology, it should be re-scheduled for launch, but wants the scheduling to be successful the first time.
+Numbers of kubernetes worker nodes on bare metal with NUMA topology. TopologyManager feature gate enabled on the nodes. In this configuration, the operator does not want that in the case of an unsatisfactory host topology, it should be re-scheduled for launch, but wants the scheduling to be successful the first time. Moreover in the case of some available hosts, it should be able to prioritize the most suitable one based on a pre-configured set of instructions.   
 
 # Known limitations
 
@@ -327,6 +346,7 @@ Following changes are required:
 # Implementation history
 
 - 2020-11-24: Initial KEP sent out for review, including Summary, Motivation, Proposal, Test plans and Graduation criteria.
+- 2021-06-01: Updated KEP sent out for review, including the latest changes regard the Score plugin.  
 
 [1]: https://docs.google.com/document/d/12kj3fK8boNuPNqob6F_pPU9ZTaNEnPGaXEooW1Cilwg/edit
 [2]: https://github.com/kubernetes-sigs/node-feature-discovery
