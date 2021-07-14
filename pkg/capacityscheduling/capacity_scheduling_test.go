@@ -123,8 +123,26 @@ func TestPreFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var registerPlugins []st.RegisterPluginFunc
+			registeredPlugins := append(
+				registerPlugins,
+				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			)
+
+			fwk, err := st.NewFramework(
+				registeredPlugins,
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator()),
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
+			)
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			cs := &CapacityScheduling{
 				elasticQuotaInfos: tt.elasticQuotas,
+				frameworkHandle:   fwk,
 			}
 
 			pods := make([]*v1.Pod, 0)
@@ -294,8 +312,16 @@ func TestFindCandidates(t *testing.T) {
 			elasticQuotaSnapshotState := &ElasticQuotaSnapshotState{
 				elasticQuotaInfos: tt.elasticQuotas,
 			}
+			nominatedResourceWithPodState := &NominatedResourceWithPodState{
+				prefilterStatue.Resource,
+			}
+			totalNominatedResourceWithPodState := &TotalNominatedResourceWithPodState{
+				prefilterStatue.Resource,
+			}
 			state.Write(preFilterStateKey, prefilterStatue)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
+			state.Write(NominatedResourceWithPodStateKey, nominatedResourceWithPodState)
+			state.Write(TotalNominatedResourceWithPodStateKey, totalNominatedResourceWithPodState)
 
 			got, err := FindCandidates(ctx, cs, state, tt.pod, tt.nodesStatuses, fwk.PreemptHandle(), fwk.SnapshotSharedLister().NodeInfos(), getPDBLister(fwk.SharedInformerFactory()))
 			if err != nil {
