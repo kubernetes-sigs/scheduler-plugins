@@ -199,36 +199,33 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		return framework.NewStatus(framework.Success, ""), 0
 	}
 	waitTime := *cs.scheduleTimeout
-	ready, err := cs.pgMgr.Permit(ctx, pod, nodeName)
-	if err != nil {
+	s := cs.pgMgr.Permit(ctx, pod)
+	var retStatus *framework.Status
+	switch s {
+	case core.NoPodGroup:
+		return framework.NewStatus(framework.Success, ""), 0
+	case core.IllegalPodGroup:
+		return framework.NewStatus(framework.Unschedulable, "PodGroup not found"), 0
+	case core.Wait:
+		klog.Infof("Pod %v is waiting to be scheduled to node %v", core.GetNamespacedName(pod), nodeName)
 		_, pg := cs.pgMgr.GetPodGroup(pod)
-		if pg == nil {
-			return framework.NewStatus(framework.Unschedulable, "PodGroup not found"), 0
-		}
 		if wait := util.GetWaitTimeDuration(pg, cs.scheduleTimeout); wait != 0 {
 			waitTime = wait
 		}
-		if err == util.ErrorWaiting {
-			klog.Infof("Pod: %v is waiting to be scheduled to node: %v", core.GetNamespacedName(pod), nodeName)
-			return framework.NewStatus(framework.Wait, ""), waitTime
-		}
-		klog.Infof("Permit error %v", err)
-		return framework.NewStatus(framework.Unschedulable, err.Error()), 0
+		retStatus = framework.NewStatus(framework.Wait)
+	case core.Success:
+		cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
+			if util.GetPodGroupFullName(waitingPod.GetPod()) == fullName {
+				klog.V(3).Infof("Permit allows the pod: %v", core.GetNamespacedName(waitingPod.GetPod()))
+				waitingPod.Allow(cs.Name())
+			}
+		})
+		klog.V(3).Infof("Permit allows the pod: %v", core.GetNamespacedName(pod))
+		retStatus = framework.NewStatus(framework.Success)
+		waitTime = 0
 	}
 
-	klog.V(5).Infof("Pod requires pgName %v", fullName)
-	if !ready {
-		return framework.NewStatus(framework.Wait, ""), waitTime
-	}
-
-	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-		if util.GetPodGroupFullName(waitingPod.GetPod()) == fullName {
-			klog.V(3).Infof("Permit allows the pod: %v", core.GetNamespacedName(waitingPod.GetPod()))
-			waitingPod.Allow(cs.Name())
-		}
-	})
-	klog.V(3).Infof("Permit allows the pod: %v", core.GetNamespacedName(pod))
-	return framework.NewStatus(framework.Success, ""), 0
+	return retStatus, waitTime
 }
 
 // Reserve is the functions invoked by the framework at "reserve" extension point.

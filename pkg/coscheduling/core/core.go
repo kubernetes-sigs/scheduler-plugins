@@ -40,10 +40,19 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
+type Status string
+
+const (
+	NoPodGroup      Status = "No PodGroup found"
+	IllegalPodGroup Status = "Illegal PodGroup"
+	Success         Status = "Success"
+	Wait            Status = "Wait"
+)
+
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
-	Permit(context.Context, *corev1.Pod, string) (bool, error)
+	Permit(context.Context, *corev1.Pod) Status
 	PostBind(context.Context, *corev1.Pod, string)
 	GetPodGroup(*corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
@@ -149,24 +158,23 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 }
 
 // Permit permits a pod to run, if the minMember match, it would send a signal to chan.
-func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod, nodeName string) (bool, error) {
+func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Status {
 	pgFullName, pg := pgMgr.GetPodGroup(pod)
 	if pgFullName == "" {
-		return true, util.ErrorNotMatched
+		return NoPodGroup
 	}
 	if pg == nil {
 		// A Pod with a podGroup name but without a PodGroup found is denied.
-		return false, fmt.Errorf("PodGroup not found")
+		return IllegalPodGroup
 	}
 
 	assigned := pgMgr.CalculateAssignedPods(pg.Name, pg.Namespace)
 	// The number of pods that have been assigned nodes is calculated from the snapshot.
 	// The current pod in not included in the snapshot during the current scheduling cycle.
-	ready := int32(assigned)+1 >= pg.Spec.MinMember
-	if ready {
-		return true, nil
+	if int32(assigned)+1 >= pg.Spec.MinMember {
+		return Success
 	}
-	return false, util.ErrorWaiting
+	return Wait
 }
 
 // PostBind updates a PodGroup's status.
