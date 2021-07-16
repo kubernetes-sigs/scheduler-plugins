@@ -50,16 +50,16 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 					Name: "node-0",
 					Type: "Node",
 					Resources: topologyv1alpha1.ResourceInfoList{
-						makeTopologyResInfo(cpu, "4", "4"),
-						makeTopologyResInfo(memory, "500Mi", "500Mi"),
+						MakeTopologyResInfo(cpu, "4", "4"),
+						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
 					},
 				},
 				topologyv1alpha1.Zone{
 					Name: "node-1",
 					Type: "Node",
 					Resources: topologyv1alpha1.ResourceInfoList{
-						makeTopologyResInfo(cpu, "4", "4"),
-						makeTopologyResInfo(memory, "500Mi", "500Mi"),
+						MakeTopologyResInfo(cpu, "4", "4"),
+						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
 					},
 				},
 			},
@@ -73,15 +73,15 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 					Name: "node-0",
 					Type: "Node",
 					Resources: topologyv1alpha1.ResourceInfoList{
-						makeTopologyResInfo(cpu, "2", "2"),
-						makeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
 					},
 				}, topologyv1alpha1.Zone{
 					Name: "node-1",
 					Type: "Node",
 					Resources: topologyv1alpha1.ResourceInfoList{
-						makeTopologyResInfo(cpu, "2", "2"),
-						makeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
 					},
 				},
 			},
@@ -94,15 +94,15 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 					Name: "node-0",
 					Type: "Node",
 					Resources: topologyv1alpha1.ResourceInfoList{
-						makeTopologyResInfo(cpu, "6", "6"),
-						makeTopologyResInfo(memory, "60Mi", "60Mi"),
+						MakeTopologyResInfo(cpu, "6", "6"),
+						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
 					},
 				}, topologyv1alpha1.Zone{
 					Name: "node-1",
 					Type: "Node",
 					Resources: topologyv1alpha1.ResourceInfoList{
-						makeTopologyResInfo(cpu, "6", "6"),
-						makeTopologyResInfo(memory, "60Mi", "60Mi"),
+						MakeTopologyResInfo(cpu, "6", "6"),
+						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
 					},
 				},
 			},

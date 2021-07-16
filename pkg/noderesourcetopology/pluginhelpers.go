@@ -22,7 +22,6 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
@@ -115,11 +114,7 @@ func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) v1.ResourceList 
 	result := make(v1.ResourceList)
 	for _, zone := range zones {
 		for _, resInfo := range zone.Resources {
-			resQuantity, err := resource.ParseQuantity(resInfo.Allocatable.String())
-			if err != nil {
-				klog.Errorf("Failed to parse %s", resInfo.Allocatable.String())
-				continue
-			}
+			resQuantity := resInfo.Available
 			if quantity, ok := result[v1.ResourceName(resInfo.Name)]; ok {
 				resQuantity.Add(quantity)
 			}
@@ -129,11 +124,11 @@ func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) v1.ResourceList 
 	return result
 }
 
-func makeTopologyResInfo(name, capacity, allocatable string) topologyv1alpha1.ResourceInfo {
+func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha1.ResourceInfo {
 	return topologyv1alpha1.ResourceInfo{
-		Name:        name,
-		Capacity:    intstr.Parse(capacity),
-		Allocatable: intstr.Parse(allocatable),
+		Name:      name,
+		Capacity:  resource.MustParse(capacity),
+		Available: resource.MustParse(available),
 	}
 }
 
@@ -158,13 +153,8 @@ func makePodByResourceListWithManyContainers(resources *v1.ResourceList, contain
 func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
 	res := make(v1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		quantity, err := resource.ParseQuantity(resInfo.Allocatable.String())
-		klog.V(5).Infof("extractResources: resInfo.FilterPluginName %v, resInfo quantity %d", resInfo.Name, quantity.AsDec())
-		if err != nil {
-			klog.Errorf("Failed to parse %s", resInfo.Allocatable.String())
-			continue
-		}
-		res[v1.ResourceName(resInfo.Name)] = quantity
+		klog.V(5).Infof("extractResources: resInfo.FilterPluginName %v, resInfo quantity %d", resInfo.Name, resInfo.Available)
+		res[v1.ResourceName(resInfo.Name)] = resInfo.Available
 	}
 	return res
 }
