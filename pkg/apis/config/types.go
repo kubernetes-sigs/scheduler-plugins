@@ -134,7 +134,12 @@ type LoadVariationRiskBalancingArgs struct {
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta
 
+	// KubeConfigPath is the path of kubeconfig.
 	KubeConfigPath string
+
+	// MasterOverride is the url of api-server
 	MasterOverride string
-	Namespaces     []string
+
+	// Namespaces to be considered by NodeResourceTopologyMatch plugin
+	Namespaces []string
 }
