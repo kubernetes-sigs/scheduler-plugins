@@ -1,0 +1,13 @@
+title: Pod IP Allocatable Scheduling
+kep-number: 219
+authors:
+  - "@lianghao208"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@denkensk"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2021-07-24
+last-updated: 2021-07-24
+status: implementable
