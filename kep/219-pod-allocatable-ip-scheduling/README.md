@@ -18,7 +18,7 @@ Even though kubelet has its own `--max-pods` option flag to limit the total numb
 
 ## Motivation
 [kube-controller-manager](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/) provides the `--allocate-node-cidrs` options to mark Pod CIDR in each node's `.spec.PodCIDR` field.
-When a node has already allocated all the Pod IPs from `.spec.PodCIDR`, a scheduling Pod will ignore this node in scheduling cycle. It avoids the situation that pods are binding to insufficient Pod IP nodes,
+When a node has already allocated all the Pod IPs from `.spec.PodCIDR`, a scheduling Pod will ignore this node in scheduling cycle. It avoids the situation that pods are bound to nodes without insufficient Pod IPs,
 which is useful when a Pod cannot be scheduled due to the limited Pod IP allocation constraint in one node. This constraint is likely to result in Pods stucking in `ContainerCreating` phase.
 
 ### Goals
