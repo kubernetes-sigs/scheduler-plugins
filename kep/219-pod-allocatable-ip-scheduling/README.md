@@ -13,7 +13,7 @@
 
 ## Summary
 
-This plugin takes node's `.spec.PodCIDR` into account in scheduling cycle. When the density of pods in a node is relatively high, nodes might not have sufficient allocatable Pod IP to allocate.
+This plugin takes a node's `.spec.PodCIDR` into account in a scheduling cycle. When the density of pods in a node is relatively high, the node might not have sufficient allocatable Pod IPs to allocate.
 Even though kubelet has its own `--max-pods` option flag to limit the total number of Pods on nodes, we can filter those nodes who have insufficient Pod IP to allocate in scheduling cycle. 
 
 ## Motivation
