@@ -18,3 +18,20 @@ This is a score plugin that takes terminating and nominated Pods into accounts i
 - the nodes that have more terminating Pods will get a higher score as those terminating Pods would be physically removed eventually from nodes
 - the nodes that have more nominated Pods (which carry .status.nominatedNodeName) will get a lower score as the nominated nodes are supposed to accommodate some preemptor pod in a 
 future scheduling cycle.
+
+## Example config:
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1beta1
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+clientConnection:
+  kubeconfig: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
+profiles:
+- schedulerName: default-scheduler
+  plugins:
+    score:
+      enabled:
+      - name: PodState
+```
