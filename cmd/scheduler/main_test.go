@@ -35,6 +35,7 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
@@ -359,6 +360,34 @@ profiles:
 		t.Fatal(err)
 	}
 
+	// NodeResourceTopologyMatch plugin config
+	nodeResourceTopologyMatchConfigWithArgsFile := filepath.Join(tmpDir, "nodeResourceTopologyMatch.yaml")
+	if err := ioutil.WriteFile(nodeResourceTopologyMatchConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    filter:
+      enabled:
+      - name: NodeResourceTopologyMatch
+      disabled:
+      - name: "*"
+    score:
+      enabled:
+      - name: NodeResourceTopologyMatch
+      disabled:
+      - name: "*"
+  pluginConfig:
+  - name: NodeResourceTopologyMatch
+    args:
+      kubeconfigpath: "%s"
+
+`, configKubeconfig, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
 	if err := ioutil.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
@@ -589,6 +618,24 @@ profiles:
 					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
 					"ReservePlugin":    {{Name: "VolumeBinding"}},
 					"ScorePlugin":      {{Name: loadvariationriskbalancing.Name, Weight: 1}},
+				},
+			},
+		},
+		{
+			name:            "single profile config - NodeResourceTopologyMatch with args",
+			flags:           []string{"--config", nodeResourceTopologyMatchConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(noderesourcetopology.Name, noderesourcetopology.New)},
+			wantPlugins: map[string]map[string][]kubeschedulerconfig.Plugin{
+				"default-scheduler": {
+					"BindPlugin":       {{Name: "DefaultBinder"}},
+					"FilterPlugin":     {{Name: "NodeResourceTopologyMatch"}},
+					"PostFilterPlugin": {{Name: "DefaultPreemption"}},
+					"PreBindPlugin":    {{Name: "VolumeBinding"}},
+					"PreFilterPlugin":  defaultPlugins["PreFilterPlugin"],
+					"PreScorePlugin":   defaultPlugins["PreScorePlugin"],
+					"QueueSortPlugin":  defaultPlugins["QueueSortPlugin"],
+					"ReservePlugin":    {{Name: "VolumeBinding"}},
+					"ScorePlugin":      {{Name: "NodeResourceTopologyMatch", Weight: 1}},
 				},
 			},
 		},

@@ -130,13 +130,32 @@ type LoadVariationRiskBalancingArgs struct {
 	SafeVarianceSensitivity *float64 `json:"safeVarianceSensitivity,omitempty"`
 }
 
+// ScoringStrategyType is a "string" type.
+type ScoringStrategyType string
+
+const (
+	// MostAllocated strategy favors node with the least amount of available resource
+	MostAllocated ScoringStrategyType = "MostAllocated"
+	// BalancedAllocation strategy favors nodes with balanced resource usage rate
+	BalancedAllocation ScoringStrategyType = "BalancedAllocation"
+	// LeastAllocated strategy favors node with the most amount of available resource
+	LeastAllocated ScoringStrategyType = "LeastAllocated"
+)
+
+type ScoringStrategy struct {
+	Type      ScoringStrategyType            `json:"type,omitempty"`
+	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
 
 // NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	KubeConfigPath *string  `json:"kubeconfigpath,omitempty"`
-	MasterOverride *string  `json:"masteroverride,omitempty"`
-	Namespaces     []string `json:"namespaces,omitempty"`
+	KubeConfigPath  *string          `json:"kubeconfigpath,omitempty"`
+	MasterOverride  *string          `json:"masteroverride,omitempty"`
+	Namespaces      []string         `json:"namespaces,omitempty"`
+	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }

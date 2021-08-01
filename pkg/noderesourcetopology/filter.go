@@ -21,67 +21,19 @@ import (
 	"fmt"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	topoclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
-	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
-	listerv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 )
-
-const (
-	// Name is the name of the plugin used in the plugin registry and configurations.
-	Name = "NodeResourceTopologyMatch"
-)
-
-var _ framework.FilterPlugin = &TopologyMatch{}
-var _ framework.EnqueueExtensions = &TopologyMatch{}
 
 type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList) *framework.Status
 
-type PolicyHandlerMap map[topologyv1alpha1.TopologyManagerPolicy]PolicyHandler
-
-// TopologyMatch plugin which run simplified version of TopologyManager's admit handler
-type TopologyMatch struct {
-	policyHandlers PolicyHandlerMap
-	lister         listerv1alpha1.NodeResourceTopologyLister
-	namespaces     []string
-}
-
-type NUMANode struct {
-	NUMAID    int
-	Resources v1.ResourceList
-}
-
-type NUMANodeList []NUMANode
-
-// Name returns name of the plugin. It is used in logs, etc.
-func (tm *TopologyMatch) Name() string {
-	return Name
-}
-
-func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
-	res := make(v1.ResourceList)
-	for _, resInfo := range zone.Resources {
-		quantity, err := resource.ParseQuantity(resInfo.Allocatable.String())
-		if err != nil {
-			klog.Errorf("Failed to parse %s", resInfo.Allocatable.String())
-			continue
-		}
-		res[v1.ResourceName(resInfo.Name)] = quantity
-	}
-	return res
-}
-
-func SingleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
+func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
 	klog.V(5).Infof("Single NUMA node handler")
 
 	// prepare NUMANodes list from zoneMap
@@ -141,7 +93,7 @@ func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.Pod
 	return bitmask.IsEmpty()
 }
 
-func SingleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
+func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
 	klog.V(5).Infof("Pod Level Resource handler")
 	resources := make(v1.ResourceList)
 
@@ -163,43 +115,6 @@ func SingleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *fr
 	return nil
 }
 
-func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
-	nodes := make(NUMANodeList, 0)
-	for _, zone := range zones {
-		if zone.Type == "Node" {
-			var numaID int
-			_, err := fmt.Sscanf(zone.Name, "node-%d", &numaID)
-			if err != nil {
-				klog.Errorf("Invalid format: %v", zone.Name)
-				continue
-			}
-			if numaID > 63 || numaID < 0 {
-				klog.Errorf("Invalid NUMA id range: %v", numaID)
-				continue
-			}
-			resources := extractResources(zone)
-			nodes = append(nodes, NUMANode{NUMAID: numaID, Resources: resources})
-		}
-	}
-	return nodes
-}
-
-func (tm *TopologyMatch) findNodeTopology(nodeName string) *topologyv1alpha1.NodeResourceTopology {
-	klog.V(5).Infof("tm.namespaces: %s", tm.namespaces)
-	for _, namespace := range tm.namespaces {
-		// NodeTopology couldn't be placed in several namespaces simultaneously
-		nodeTopology, err := tm.lister.NodeResourceTopologies(namespace).Get(nodeName)
-		if err != nil {
-			klog.V(5).Infof("Cannot get NodeTopologies from NodeResourceTopologyNamespaceLister: %v", err)
-			continue
-		}
-		if nodeTopology != nil {
-			return nodeTopology
-		}
-	}
-	return nil
-}
-
 // Filter Now only single-numa-node supported
 func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	if nodeInfo.Node() == nil {
@@ -210,7 +125,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	nodeName := nodeInfo.Node().Name
-	nodeTopology := tm.findNodeTopology(nodeName)
+	nodeTopology := findNodeTopology(nodeName, &tm.nodeResTopologyPlugin)
 
 	if nodeTopology == nil {
 		return nil
@@ -219,7 +134,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	klog.V(5).Infof("nodeTopology: %v", nodeTopology)
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-			if status := handler(pod, nodeTopology.Zones); status != nil {
+			if status := handler.filter(pod, nodeTopology.Zones); status != nil {
 				return status
 			}
 		} else {
@@ -227,55 +142,4 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		}
 	}
 	return nil
-}
-
-// New initializes a new plugin and returns it.
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	klog.V(5).Infof("creating new TopologyMatch plugin")
-	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)
-	if !ok {
-		return nil, fmt.Errorf("want args to be of type NodeResourceTopologyMatchArgs, got %T", args)
-	}
-
-	kubeConfig, err := clientcmd.BuildConfigFromFlags(tcfg.MasterOverride, tcfg.KubeConfigPath)
-	if err != nil {
-		klog.Errorf("Cannot create kubeconfig based on: %s, %s, %v", tcfg.KubeConfigPath, tcfg.MasterOverride, err)
-		return nil, err
-	}
-
-	topoClient, err := topoclientset.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Errorf("Cannot create clientset for NodeTopologyResource: %s, %s", kubeConfig, err)
-		return nil, err
-	}
-
-	topologyInformerFactory := topologyinformers.NewSharedInformerFactory(topoClient, 0)
-	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha1().NodeResourceTopologies()
-	topologyMatch := &TopologyMatch{
-		policyHandlers: PolicyHandlerMap{
-			topologyv1alpha1.SingleNUMANodePodLevel:       SingleNUMAPodLevelHandler,
-			topologyv1alpha1.SingleNUMANodeContainerLevel: SingleNUMAContainerLevelHandler,
-		},
-		lister:     nodeTopologyInformer.Lister(),
-		namespaces: tcfg.Namespaces,
-	}
-
-	klog.V(5).Infof("start nodeTopologyInformer")
-	ctx := context.Background()
-	topologyInformerFactory.Start(ctx.Done())
-	topologyInformerFactory.WaitForCacheSync(ctx.Done())
-
-	return topologyMatch, nil
-}
-
-// EventsToRegister returns the possible events that may make a Pod
-// failed by this plugin schedulable.
-// NOTE: if in-place-update (KEP 1287) gets implemented, then PodUpdate event
-// should be registered for this plugin since a Pod update may free up resources
-// that make other Pods schedulable.
-func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEvent {
-	return []framework.ClusterEvent{
-		{Resource: framework.Pod, ActionType: framework.Delete},
-		{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable},
-	}
 }
