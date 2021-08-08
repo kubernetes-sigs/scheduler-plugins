@@ -109,6 +109,7 @@ update-vendor:
 .PHONY: unit-test
 unit-test: autogen
 	hack/unit-test.sh
+	hack/verify-crdgen.sh
 
 .PHONY: install-etcd
 install-etcd:
@@ -125,7 +126,6 @@ integration-test: install-etcd autogen
 .PHONY: verify-gofmt
 verify-gofmt:
 	hack/verify-gofmt.sh
-	hack/verify-crdgen.sh
 
 .PHONY: clean
 clean:

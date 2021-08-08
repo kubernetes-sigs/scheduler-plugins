@@ -18,35 +18,28 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-SCHED_PLUGIN_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
-source "${SCHED_PLUGIN_ROOT}/hack/lib/init.sh"
+
+SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
+source "${SCRIPT_ROOT}/hack/lib/init.sh"
 
 kube::golang::verify_go_version
-
-cd "${SCHED_PLUGIN_ROOT}"
 
 CRD_OPTIONS="crd:trivialVersions=true,preserveUnknownFields=false"
 
 # Download controller-gen locally
-CONTROLLER_GEN="$(shell pwd)/bin/controller-gen"
-$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen)
+CONTROLLER_GEN="${GOPATH}/bin/controller-gen"
+go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
 
-# Create a temp directory
-_tmpdir="$(mktemp -d "${SCHED_PLUGIN_ROOT}/_tmp")"
 # Generate CRD
-pushd "${_tmpdir}" &> /dev/null
-$(CONTROLLER_GEN) ${CRD_OPTIONS} path="./..." output:crd:artifacts:config=${_tmpdir}/crd/bases
+api_paths="./pkg/apis/scheduling/v1alpha1/...;./vendor/github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/..."
 
-popd &> /dev/null
+${CONTROLLER_GEN} ${CRD_OPTIONS} paths="${api_paths}" output:dir="./manifests/crds"
 
-pushd "${SCHED_PLUGIN_ROOT}" > /dev/null 2>&1
-if ! _out="$(diff -Naupr manifests/coscheduling/ "${_crdtmp}/crd/bases/}")"; then
-    echo "Generated output differs:" >&2
+if ! _out="$(git --no-pager diff -I"edited\smanually" --exit-code)"; then
+    echo "Generated output differs" >&2
     echo "${_out}" >&2
-    echo "Verification failed."
+    echo "Verification for CRD generators failed."
     exit 1
 fi
-popd &> /dev/null
 
-rm -r ./_tmpdir
 echo "Controllers Gen for CRD verified."
