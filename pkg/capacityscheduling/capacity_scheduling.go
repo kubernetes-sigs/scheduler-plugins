@@ -85,6 +85,7 @@ func (s *ElasticQuotaSnapshotState) Clone() framework.StateData {
 var _ framework.PreFilterPlugin = &CapacityScheduling{}
 var _ framework.PostFilterPlugin = &CapacityScheduling{}
 var _ framework.ReservePlugin = &CapacityScheduling{}
+var _ framework.EnqueueExtensions = &CapacityScheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
@@ -181,6 +182,13 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	)
 	klog.Infof("CapacityScheduling start")
 	return c, nil
+}
+
+func (c *CapacityScheduling) EventsToRegister() []framework.ClusterEvent {
+	return []framework.ClusterEvent{
+		{Resource: framework.Pod, ActionType: framework.Delete},
+		// TODO: once bump the dependency to k8s 1.22, addd custom object events.
+	}
 }
 
 // PreFilter performs the following validations.
