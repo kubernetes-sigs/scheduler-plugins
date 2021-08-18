@@ -3,7 +3,7 @@
 ## Table of Contents
 
 - [Create a Kubernetes Cluster](#create-a-kubernetes-cluster)
-- [Install release v0.19.9 and use Coscheduling](#install-release-v0199-and-use-coscheduling)
+- [Install release v0.20.10 and use Coscheduling](#install-release-v0199-and-use-coscheduling)
     - [As a second scheduler](#as-a-second-scheduler)
     - [As a single scheduler(replacing the vanilla default-scheduler)](#as-a-single-schedulerreplacing-the-vanilla-default-scheduler)
 - [Test Coscheduling](#test-coscheduling)
@@ -14,7 +14,7 @@
 
 Firstly you need to have a Kubernetes cluster, and a `kubectl` command-line tool must be configured to communicate with the cluster.
 
-The Kubernetes version must equal to or greater than **v1.19.0**. To check the version, use `kubectl version --short`.
+The Kubernetes version must equal to or greater than **v1.20.0**. To check the version, use `kubectl version --short`.
 
 If you do not have a cluster yet, create one by using one of the following provision tools:
 
@@ -22,7 +22,7 @@ If you do not have a cluster yet, create one by using one of the following provi
 * [kubeadm](https://kubernetes.io/docs/admin/kubeadm/)
 * [minikube](https://minikube.sigs.k8s.io/)
 
-## Install release v0.19.9 and use Coscheduling
+## Install release v0.20.10 and use Coscheduling
 
 Note: we provide two ways to install the scheduler-plugin artifacts: as a second scheduler
 and as a single scheduler. Their pros and cons are as below:
@@ -178,9 +178,9 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     >     - --kubeconfig=/etc/kubernetes/scheduler.conf
     >     - --leader-elect=true
     19,20c20
-    <     image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.9
+    <     image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.20.10
     ---
-    >     image: k8s.gcr.io/kube-scheduler:v1.19.9
+    >     image: k8s.gcr.io/kube-scheduler:v1.20.10
     50,52d49
     <     - mountPath: /etc/kubernetes/sched-cc.yaml
     <       name: sched-cc
@@ -192,14 +192,14 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     <     name: sched-cc
     ```
    
-1. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.9`
+1. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.20.10`
 
     ```bash
     $ kubectl get pod -n kube-system | grep kube-scheduler
     kube-scheduler-kind-control-plane            1/1     Running   0          3m27s
  
     $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}{'\n'}"
-    k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.9
+    k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.20.10
     ```
 
 ## Test Coscheduling
@@ -301,7 +301,7 @@ Now, we're able to verify how the coscheduling plugin works.
       annotations:
         kubectl.kubernetes.io/last-applied-configuration: |
           {"apiVersion":"scheduling.sigs.k8s.io/v1alpha1","kind":"PodGroup","metadata":{"annotations":{},"name":"pg1","namespace":"default"}, "spec":{"minMember":3,"scheduleTimeoutSeconds":10}}
-      creationTimestamp: "2021-03-16T00:22:34Z"
+      creationTimestamp: "2021-08-17T19:20:08Z"
       generation: 1
       managedFields:
       ...
@@ -314,7 +314,12 @@ Now, we're able to verify how the coscheduling plugin works.
       minMember: 3
       scheduleTimeoutSeconds: 10
     status:
-      phase: pending
+      failed: 0
+      phase: Running
+      running: 3
+      scheduleStartTime: "2021-08-17T19:20:58Z"
+      scheduled: 3
+      succeeded: 0
     ```
     
 > ⚠ NOTE: There are some UX issues need to be addressed in controller side -
