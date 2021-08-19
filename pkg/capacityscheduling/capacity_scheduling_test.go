@@ -271,6 +271,7 @@ func TestFindCandidates(t *testing.T) {
 			cs := clientsetfake.NewSimpleClientset()
 			fwk, err := st.NewFramework(
 				registeredPlugins,
+				"default-scheduler",
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator()),
@@ -297,9 +298,15 @@ func TestFindCandidates(t *testing.T) {
 			state.Write(preFilterStateKey, prefilterStatue)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
 
-			got, err := FindCandidates(ctx, cs, state, tt.pod, tt.nodesStatuses, fwk.PreemptHandle(), fwk.SnapshotSharedLister().NodeInfos(), getPDBLister(fwk.SharedInformerFactory()))
-			if err != nil {
-				t.Fatal(err)
+			c := CapacityScheduling{
+				fh:        fwk,
+				podLister: fwk.SharedInformerFactory().Core().V1().Pods().Lister(),
+				pdbLister: getPDBLister(fwk.SharedInformerFactory()),
+			}
+
+			got, status := c.FindCandidates(ctx, cs, state, tt.pod, tt.nodesStatuses)
+			if !status.IsSuccess() {
+				t.Fatalf("unexpected error during FindCandidates(): %v", status)
 			}
 
 			// Sort the values (inner victims) and the candidate itself (by its NominatedNodeName).

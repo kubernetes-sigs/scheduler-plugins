@@ -82,7 +82,7 @@ func TestCrossNodePreemptionPlugin(t *testing.T) {
 			profile := schedapi.KubeSchedulerProfile{
 				SchedulerName: v1.DefaultSchedulerName,
 				Plugins: &schedapi.Plugins{
-					PostFilter: &schedapi.PluginSet{
+					PostFilter: schedapi.PluginSet{
 						Enabled: []schedapi.Plugin{
 							{Name: crossnodepreemption.Name},
 						},

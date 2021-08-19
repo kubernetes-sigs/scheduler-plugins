@@ -20,7 +20,7 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
-	ktypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -108,34 +108,34 @@ type nominatedPodMap struct {
 	// nominatedPods is a map keyed by a node name and the value is a list of
 	// pods which are nominated to run on the node. These are pods which can be in
 	// the activeQ or unschedulableQ.
-	nominatedPods map[string][]*v1.Pod
+	nominatedPods map[string][]*framework.PodInfo
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is
 	// nominated.
-	nominatedPodToNode map[ktypes.UID]string
+	nominatedPodToNode map[types.UID]string
 
 	sync.RWMutex
 }
 
-func (npm *nominatedPodMap) add(p *v1.Pod, nodeName string) {
+func (npm *nominatedPodMap) add(pi *framework.PodInfo, nodeName string) {
 	// always delete the pod if it already exist, to ensure we never store more than
 	// one instance of the pod.
-	npm.delete(p)
+	npm.delete(pi.Pod)
 
 	nnn := nodeName
 	if len(nnn) == 0 {
-		nnn = NominatedNodeName(p)
+		nnn = NominatedNodeName(pi.Pod)
 		if len(nnn) == 0 {
 			return
 		}
 	}
-	npm.nominatedPodToNode[p.UID] = nnn
-	for _, np := range npm.nominatedPods[nnn] {
-		if np.UID == p.UID {
-			klog.V(4).Infof("Pod %v/%v already exists in the nominated map!", p.Namespace, p.Name)
+	npm.nominatedPodToNode[pi.Pod.UID] = nnn
+	for _, npi := range npm.nominatedPods[nnn] {
+		if npi.Pod.UID == pi.Pod.UID {
+			klog.V(4).InfoS("Pod already exists in the nominated map", "pod", klog.KObj(npi.Pod))
 			return
 		}
 	}
-	npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn], p)
+	npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn], pi)
 }
 
 func (npm *nominatedPodMap) delete(p *v1.Pod) {
@@ -144,7 +144,7 @@ func (npm *nominatedPodMap) delete(p *v1.Pod) {
 		return
 	}
 	for i, np := range npm.nominatedPods[nnn] {
-		if np.UID == p.UID {
+		if np.Pod.UID == p.UID {
 			npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn][:i], npm.nominatedPods[nnn][i+1:]...)
 			if len(npm.nominatedPods[nnn]) == 0 {
 				delete(npm.nominatedPods, nnn)
@@ -156,7 +156,7 @@ func (npm *nominatedPodMap) delete(p *v1.Pod) {
 }
 
 // UpdateNominatedPod updates the <oldPod> with <newPod>.
-func (npm *nominatedPodMap) UpdateNominatedPod(oldPod, newPod *v1.Pod) {
+func (npm *nominatedPodMap) UpdateNominatedPod(oldPod *v1.Pod, newPodInfo *framework.PodInfo) {
 	npm.Lock()
 	defer npm.Unlock()
 	// In some cases, an Update event with no "NominatedNode" present is received right
@@ -167,7 +167,7 @@ func (npm *nominatedPodMap) UpdateNominatedPod(oldPod, newPod *v1.Pod) {
 	// (1) NominatedNode info is added
 	// (2) NominatedNode info is updated
 	// (3) NominatedNode info is removed
-	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPod) == "" {
+	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.Pod) == "" {
 		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
 			// This is the only case we should continue reserving the NominatedNode
 			nodeName = nnn
@@ -176,14 +176,14 @@ func (npm *nominatedPodMap) UpdateNominatedPod(oldPod, newPod *v1.Pod) {
 	// We update irrespective of the nominatedNodeName changed or not, to ensure
 	// that pod pointer is updated.
 	npm.delete(oldPod)
-	npm.add(newPod, nodeName)
+	npm.add(newPodInfo, nodeName)
 }
 
 // NewPodNominator creates a nominatedPodMap as a backing of framework.PodNominator.
 func NewPodNominator() framework.PodNominator {
 	return &nominatedPodMap{
-		nominatedPods:      make(map[string][]*v1.Pod),
-		nominatedPodToNode: make(map[ktypes.UID]string),
+		nominatedPods:      make(map[string][]*framework.PodInfo),
+		nominatedPodToNode: make(map[types.UID]string),
 	}
 }
 
@@ -203,15 +203,15 @@ func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *v1.Pod) {
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominatedPodMap) AddNominatedPod(pod *v1.Pod, nodeName string) {
+func (npm *nominatedPodMap) AddNominatedPod(pi *framework.PodInfo, nodeName string) {
 	npm.Lock()
-	npm.add(pod, nodeName)
+	npm.add(pi, nodeName)
 	npm.Unlock()
 }
 
 // NominatedPodsForNode returns pods that are nominated to run on the given node,
 // but they are waiting for other pods to be removed from the node.
-func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []*v1.Pod {
+func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
 	npm.RLock()
 	defer npm.RUnlock()
 	// TODO: we may need to return a copy of []*Pods to avoid modification

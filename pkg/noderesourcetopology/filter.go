@@ -43,6 +43,7 @@ const (
 )
 
 var _ framework.FilterPlugin = &TopologyMatch{}
+var _ framework.EnqueueExtensions = &TopologyMatch{}
 
 type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList) *framework.Status
 
@@ -265,4 +266,16 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	topologyInformerFactory.WaitForCacheSync(ctx.Done())
 
 	return topologyMatch, nil
+}
+
+// EventsToRegister returns the possible events that may make a Pod
+// failed by this plugin schedulable.
+// NOTE: if in-place-update (KEP 1287) gets implemented, then PodUpdate event
+// should be registered for this plugin since a Pod update may free up resources
+// that make other Pods schedulable.
+func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEvent {
+	return []framework.ClusterEvent{
+		{Resource: framework.Pod, ActionType: framework.Delete},
+		{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable},
+	}
 }

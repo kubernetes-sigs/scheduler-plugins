@@ -23,12 +23,14 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread"
@@ -116,7 +118,9 @@ func TestFindCandidates(t *testing.T) {
 			},
 			registerPlugins: []st.RegisterPluginFunc{
 				st.RegisterPluginAsExtensions(noderesources.FitName, noderesources.NewFit, "Filter", "PreFilter"),
-				st.RegisterPluginAsExtensions(interpodaffinity.Name, interpodaffinity.New, "PreFilter", "Filter"),
+				st.RegisterPluginAsExtensions(interpodaffinity.Name, func(plArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+					return interpodaffinity.New(plArgs, fh, feature.Features{})
+				}, "PreFilter", "Filter"),
 			},
 			want: []dp.Candidate{
 				&candidate{
@@ -147,6 +151,7 @@ func TestFindCandidates(t *testing.T) {
 			cs := clientsetfake.NewSimpleClientset()
 			fwk, err := st.NewFramework(
 				registeredPlugins,
+				"default-scheduler",
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator()),
@@ -165,9 +170,9 @@ func TestFindCandidates(t *testing.T) {
 				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
 			}
 
-			got, err := FindCandidates(ctx, state, tt.pod, tt.nodesStatuses, fwk.PreemptHandle(), fwk.SnapshotSharedLister().NodeInfos())
-			if err != nil {
-				t.Fatal(err)
+			got, status := FindCandidates(ctx, state, tt.pod, tt.nodesStatuses, fwk, fwk.SnapshotSharedLister().NodeInfos())
+			if !status.IsSuccess() {
+				t.Fatal(status.AsError())
 			}
 			// Sort the values (inner victims) and the candidate itself (by its NominatedNodeName).
 			for i := range got {

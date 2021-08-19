@@ -105,7 +105,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
 		Plugins: &schedapi.Plugins{
-			QueueSort: &schedapi.PluginSet{
+			QueueSort: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: coscheduling.Name},
 				},
@@ -113,22 +113,22 @@ func TestCoschedulingPlugin(t *testing.T) {
 					{Name: "*"},
 				},
 			},
-			PreFilter: &schedapi.PluginSet{
+			PreFilter: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: coscheduling.Name},
 				},
 			},
-			PostFilter: &schedapi.PluginSet{
+			PostFilter: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: coscheduling.Name},
 				},
 			},
-			Permit: &schedapi.PluginSet{
+			Permit: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: coscheduling.Name},
 				},
 			},
-			PostBind: &schedapi.PluginSet{
+			PostBind: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: coscheduling.Name},
 				},

@@ -252,6 +252,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 
 			fh, err := st.NewFramework(
 				registeredPlugins,
+				"default-scheduler",
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(fakeSharedLister),
