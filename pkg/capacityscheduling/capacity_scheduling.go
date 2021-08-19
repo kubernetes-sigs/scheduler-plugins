@@ -357,10 +357,10 @@ func FindCandidates(ctx context.Context, cs kubernetes.Interface, state *framewo
 
 	potentialNodes := nodesWherePreemptionMightHelp(allNodes, m)
 	if len(potentialNodes) == 0 {
-		klog.V(3).Infof("Preemption will not help schedule pod %v/%v on any node.", pod.Namespace, pod.Name)
+		klog.V(3).InfoS("Preemption will not help schedule pod", pod.Namespace, pod.Name, "on any node.")
 		// In this case, we should clean-up any existing nominated node name of the pod.
 		if err := util.ClearNominatedNodeName(cs, pod); err != nil {
-			klog.Errorf("Cannot clear 'NominatedNodeName' field of pod %v/%v: %v", pod.Namespace, pod.Name, err)
+			klog.ErrorS("Cannot clear 'NominatedNodeName' field of pod", pod.Namespace, "/" pod.Name, ": ", err)
 			// We do not return as this error is not critical.
 		}
 		return nil, nil
@@ -370,7 +370,7 @@ func FindCandidates(ctx context.Context, cs kubernetes.Interface, state *framewo
 		for i := 0; i < 10 && i < len(potentialNodes); i++ {
 			sample = append(sample, potentialNodes[i].Node().Name)
 		}
-		klog.Infof("%v potential nodes for preemption, first %v are: %v", len(potentialNodes), len(sample), sample)
+		klog.InfoS(len(potentialNodes), "potential nodes for preemption, first", len(sample), "are: ", sample)
 	}
 
 	pdbs, err := getPodDisruptionBudgets(pdbLister)
@@ -435,13 +435,13 @@ func selectVictimsOnNode(
 ) ([]*v1.Pod, int, bool) {
 	elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(state)
 	if err != nil {
-		klog.Errorf("error reading %q from cycleState: %v", ElasticQuotaSnapshotKey, err)
+		klog.ErrorS("error reading", ElasticQuotaSnapshotKey, "from cycleState: ", err)
 		return nil, 0, false
 	}
 
 	preFilterState, err := getPreFilterState(state)
 	if err != nil {
-		klog.Errorf("error reading %q from cycleState: %v", preFilterStateKey, err)
+		klog.ErrorS("error reading", preFilterStateKey,"from cycleState: ", err)
 		return nil, 0, false
 	}
 
@@ -541,7 +541,7 @@ func selectVictimsOnNode(
 	// priority pods is not a recommended configuration anyway.
 	if fits, _, err := core.PodPassesFiltersOnNode(ctx, ph, state, pod, nodeInfo); !fits {
 		if err != nil {
-			klog.Warningf("Encountered error while selecting victims on node %v: %v", nodeInfo.Node().Name, err)
+			klog.InfoS("Encountered error while selecting victims on node", nodeInfo.Node().Name, ": ", err)
 		}
 
 		return nil, 0, false
@@ -574,7 +574,7 @@ func selectVictimsOnNode(
 				return false, err
 			}
 			victims = append(victims, p)
-			klog.V(5).Infof("Pod %v/%v is a potential preemption victim on node %v.", p.Namespace, p.Name, nodeInfo.Node().Name)
+			klog.V(5).InfoS("Pod", p.Namespace,"/", p.Name," is a potential preemption victim on node", nodeInfo.Node().Name)
 		}
 
 		if preemptorWithElasticQuota && (preemptorElasticQuotaInfo.overUsed(preFilterState.Resource, preemptorElasticQuotaInfo.Max) || elasticQuotaInfos.aggregatedMinOverUsedWithPod(preFilterState.Resource)) {
@@ -582,14 +582,14 @@ func selectVictimsOnNode(
 				return false, err
 			}
 			victims = append(victims, p)
-			klog.V(5).Infof("Pod %v/%v is a potential preemption victim on node %v.", p.Namespace, p.Name, nodeInfo.Node().Name)
+			klog.V(5).InfoS("Pod ", p.Namespace, "/", p.Name, " is a potential preemption victim on node ", nodeInfo.Node().Name)
 		}
 
 		return fits, nil
 	}
 	for _, p := range violatingVictims {
 		if fits, err := reprievePod(p); err != nil {
-			klog.Warningf("Failed to reprieve pod %q: %v", p.Name, err)
+			klog.InfoS("Failed to reprieve pod", p.Name,":", err)
 			return nil, 0, false
 		} else if !fits {
 			numViolatingVictim++
@@ -598,7 +598,7 @@ func selectVictimsOnNode(
 	// Now we try to reprieve non-violating victims.
 	for _, p := range nonViolatingVictims {
 		if _, err := reprievePod(p); err != nil {
-			klog.Warningf("Failed to reprieve pod %q: %v", p.Name, err)
+			klog.InfoS("Failed to reprieve pod", p.Name,":", err)
 			return nil, 0, false
 		}
 	}
@@ -653,7 +653,7 @@ func (c *CapacityScheduling) addPod(obj interface{}) {
 	if elasticQuotaInfo == nil {
 		eqs, err := c.elasticQuotaLister.ElasticQuotas(pod.Namespace).List(labels.NewSelector())
 		if err != nil {
-			klog.Errorf("Get ElasticQuota %v error %v", pod.Namespace, err)
+			klog.ErrorS(err, "Get ElasticQuota", pod.Namespace)
 			return
 		}
 
@@ -672,7 +672,7 @@ func (c *CapacityScheduling) addPod(obj interface{}) {
 
 	err := elasticQuotaInfo.addPodIfNotPresent(pod)
 	if err != nil {
-		klog.Errorf("ElasticQuota addPodIfNotPresent for pod %v/%v error %v", pod.Namespace, pod.Name, err)
+		klog.ErrorS(err, "ElasticQuota addPodIfNotPresent for pod error", pod.Namespace,"/", pod.Name)
 	}
 }
 
@@ -692,7 +692,7 @@ func (c *CapacityScheduling) updatePod(oldObj, newObj interface{}) {
 		if elasticQuotaInfo != nil {
 			err := elasticQuotaInfo.deletePodIfPresent(newPod)
 			if err != nil {
-				klog.Errorf("ElasticQuota deletePodIfPresent for pod %v/%v error %v", newPod.Namespace, newPod.Name, err)
+				klog.ErrorS(err, "ElasticQuota deletePodIfPresent for pod error", newPod.Namespace,"/" , newPod.Name)
 			}
 		}
 	}
@@ -707,7 +707,7 @@ func (c *CapacityScheduling) deletePod(obj interface{}) {
 	if elasticQuotaInfo != nil {
 		err := elasticQuotaInfo.deletePodIfPresent(pod)
 		if err != nil {
-			klog.Errorf("ElasticQuota deletePodIfPresent for pod %v/%v error %v", pod.Namespace, pod.Name, err)
+			klog.ErrorS(err, "ElasticQuota deletePodIfPresent for pod error", pod.Namespace,"/", pod.Name)
 		}
 	}
 }
