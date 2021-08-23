@@ -29,19 +29,9 @@ kube::etcd::validate() {
     exit 1
   }
 
-  # validate etcd port is free
-  local port_check_command
-  if command -v ss &> /dev/null && ss -Version | grep 'iproute2' &> /dev/null; then
-    port_check_command="ss"
-  elif command -v netstat &>/dev/null; then
-    port_check_command="netstat"
-  else
-    kube::log::usage "unable to identify if etcd is bound to port ${ETCD_PORT}. unable to find ss or netstat utilities."
-    exit 1
-  fi
-  if ${port_check_command} -nat | grep "LISTEN" | grep "[\.:]${ETCD_PORT:?}" >/dev/null 2>&1; then
+  # validate if etcd is running and $ETCD_PORT is in use
+  if ps -ef | grep "etcd " | grep ${ETCD_PORT} &> /dev/null; then
     kube::log::usage "unable to start etcd as port ${ETCD_PORT} is in use. please stop the process listening on this port and retry."
-    kube::log::usage "$(netstat -nat | grep "[\.:]${ETCD_PORT:?} .*LISTEN")"
     exit 1
   fi
 
