@@ -59,7 +59,7 @@ func (ps *PodState) ScoreExtensions() framework.ScoreExtensions {
 func (ps *PodState) score(nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
 	var terminatingPodNum, nominatedPodNum int64
 	// get nominated Pods for node from nominatedPodMap
-	nominatedPodNum = int64(len(ps.handle.PreemptHandle().NominatedPodsForNode(nodeInfo.Node().Name)))
+	nominatedPodNum = int64(len(ps.handle.NominatedPodsForNode(nodeInfo.Node().Name)))
 	for _, p := range nodeInfo.Pods {
 		// Pod is terminating if DeletionTimestamp has been set
 		if p.Pod.DeletionTimestamp != nil {

@@ -70,7 +70,7 @@ func TestPodStatePlugin(t *testing.T) {
 			profile := schedapi.KubeSchedulerProfile{
 				SchedulerName: v1.DefaultSchedulerName,
 				Plugins: &schedapi.Plugins{
-					Score: &schedapi.PluginSet{
+					Score: schedapi.PluginSet{
 						Enabled: []schedapi.Plugin{
 							{Name: podstate.Name},
 						},

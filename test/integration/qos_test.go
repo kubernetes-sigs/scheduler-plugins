@@ -41,7 +41,7 @@ func TestQOSPlugin(t *testing.T) {
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
 		Plugins: &schedapi.Plugins{
-			QueueSort: &schedapi.PluginSet{
+			QueueSort: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: qos.Name},
 				},

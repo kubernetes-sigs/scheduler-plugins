@@ -399,6 +399,7 @@ profiles:
 			{Name: "PodTopologySpread"},
 			{Name: "InterPodAffinity"},
 			{Name: "VolumeBinding"},
+			{Name: "NodeAffinity"},
 		},
 		"FilterPlugin": {
 			{Name: "NodeUnschedulable"},
@@ -424,6 +425,7 @@ profiles:
 			{Name: "InterPodAffinity"},
 			{Name: "PodTopologySpread"},
 			{Name: "TaintToleration"},
+			{Name: "NodeAffinity"},
 		},
 		"ScorePlugin": {
 			{Name: "NodeResourcesBalancedAllocation", Weight: 1},

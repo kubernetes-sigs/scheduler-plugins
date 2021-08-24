@@ -133,7 +133,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	profile := schedapi.KubeSchedulerProfile{
 		SchedulerName: v1.DefaultSchedulerName,
 		Plugins: &schedapi.Plugins{
-			Filter: &schedapi.PluginSet{
+			Filter: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: noderesourcetopology.Name},
 				},

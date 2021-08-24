@@ -214,7 +214,7 @@ The modification would be only in `selectVictimsOnNode` as below:
 // PriorityClass resources into account for selecting victim pods.
 func (pl *PreemptionToleration) selectVictimsOnNode(
 	ctx context.Context,
-	ph framework.PreemptHandle,
+	ph framework.Handle,
 	state *framework.CycleState,
 	pod *v1.Pod,
 	nodeInfo *framework.NodeInfo,

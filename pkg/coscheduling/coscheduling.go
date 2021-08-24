@@ -53,6 +53,7 @@ var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
 var _ framework.ReservePlugin = &Coscheduling{}
 var _ framework.PostBindPlugin = &Coscheduling{}
+var _ framework.EnqueueExtensions = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
@@ -102,6 +103,13 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		return nil, fmt.Errorf("WaitForCacheSync failed")
 	}
 	return plugin, nil
+}
+
+func (cs *Coscheduling) EventsToRegister() []framework.ClusterEvent {
+	return []framework.ClusterEvent{
+		{Resource: framework.Pod, ActionType: framework.Add},
+		// TODO: once bump the dependency to k8s 1.22, addd custom object events.
+	}
 }
 
 // Name returns name of the plugin. It is used in logs, etc.
@@ -178,7 +186,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[util.PodGroupLabel] == pg.Name {
 			klog.V(3).Infof("PostFilter rejects the pod: %v/%v", pgName, waitingPod.GetPod().Name)
-			waitingPod.Reject(cs.Name())
+			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
 	cs.pgMgr.AddDeniedPodGroup(pgName)
@@ -245,7 +253,7 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[util.PodGroupLabel] == pg.Name {
 			klog.V(3).Infof("Unreserve rejects the pod: %v/%v", pgName, waitingPod.GetPod().Name)
-			waitingPod.Reject(cs.Name())
+			waitingPod.Reject(cs.Name(), "rejection in Unreserve")
 		}
 	})
 	cs.pgMgr.AddDeniedPodGroup(pgName)
@@ -264,7 +272,7 @@ func (cs *Coscheduling) rejectPod(uid types.UID) {
 	if waitingPod == nil {
 		return
 	}
-	waitingPod.Reject(Name)
+	waitingPod.Reject(Name, "")
 }
 
 func (cs *Coscheduling) getStateKey() framework.StateKey {
