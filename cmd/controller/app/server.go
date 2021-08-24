@@ -29,8 +29,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"k8s.io/klog/v2"
-
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
 	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -99,7 +97,7 @@ func Run(s *ServerRunOptions) error {
 				Identity: id,
 			})
 		if err != nil {
-			klog.Fatalf("error creating lock: %v", err)
+			klog.ErrorS(err, "error creating lock")
 		}
 
 		leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
@@ -107,7 +105,7 @@ func Run(s *ServerRunOptions) error {
 			Callbacks: leaderelection.LeaderCallbacks{
 				OnStartedLeading: run,
 				OnStoppedLeading: func() {
-					klog.Fatalf("leaderelection lost")
+					klog.ErrorS("leaderelection lost")
 				},
 			},
 			Name: "scheduler-plugins controller",
