@@ -54,7 +54,7 @@ func Run(s *ServerRunOptions) error {
 	ctx := context.Background()
 	config, err := newConfig(s.KubeConfig, s.MasterUrl, s.InCluster)
 	if err != nil {
-		klog.Fatal(err)
+		klog.ErrorS(err)
 	}
 	config.QPS = float32(s.ApiServerQPS)
 	config.Burst = s.ApiServerBurst

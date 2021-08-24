@@ -582,7 +582,6 @@ func selectVictimsOnNode(
 			}
 			victims = append(victims, p)
       		klog.V(5).InfoS("Pod is a potential preemption victim on node.", "pod", klog.KObj(p), "node", nodeInfo.Node().Name)
-
 		}
 
 		if preemptorWithElasticQuota && (preemptorElasticQuotaInfo.overUsed(preFilterState.Resource, preemptorElasticQuotaInfo.Max) || elasticQuotaInfos.aggregatedMinOverUsedWithPod(preFilterState.Resource)) {
