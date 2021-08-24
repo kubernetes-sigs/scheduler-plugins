@@ -68,6 +68,11 @@ var (
 	DefaultMetricProviderType = pluginConfig.KubernetesMetricsServer
 
 	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
+
+	defaultResourceSpec = []schedulerconfig.ResourceSpec{
+		{Name: string(v1.ResourceCPU), Weight: 1},
+		{Name: string(v1.ResourceMemory), Weight: 1},
+	}
 )
 
 // SetDefaultsCoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -138,5 +143,23 @@ func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs
 	}
 	if len(obj.Namespaces) == 0 {
 		obj.Namespaces = []string{metav1.NamespaceDefault}
+	}
+
+	if obj.ScoringStrategy == nil {
+		obj.ScoringStrategy = &ScoringStrategy{
+			Type:      LeastAllocated,
+			Resources: defaultResourceSpec,
+		}
+	}
+
+	if len(obj.ScoringStrategy.Resources) == 0 {
+		// If no resources specified, use the default set.
+		obj.ScoringStrategy.Resources = append(obj.ScoringStrategy.Resources, defaultResourceSpec...)
+	}
+
+	for i := range obj.ScoringStrategy.Resources {
+		if obj.ScoringStrategy.Resources[i].Weight == 0 {
+			obj.ScoringStrategy.Resources[i].Weight = 1
+		}
 	}
 }

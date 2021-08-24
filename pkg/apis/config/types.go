@@ -128,6 +128,28 @@ type LoadVariationRiskBalancingArgs struct {
 	SafeVarianceSensitivity float64
 }
 
+// ScoringStrategyType is a "string" type.
+type ScoringStrategyType string
+
+const (
+	// MostAllocated strategy favors node with the least amount of available resource
+	MostAllocated ScoringStrategyType = "MostAllocated"
+	// BalancedAllocation strategy favors nodes with balanced resource usage rate
+	BalancedAllocation ScoringStrategyType = "BalancedAllocation"
+	// LeastAllocated strategy favors node with the most amount of available resource
+	LeastAllocated ScoringStrategyType = "LeastAllocated"
+)
+
+// ScoringStrategy define ScoringStrategyType for node resource topology plugin
+type ScoringStrategy struct {
+	// Type selects which strategy to run.
+	Type ScoringStrategyType
+
+	// Resources a list of pairs <resource, weight> to be considered while scoring
+	// allowed weights start from 1.
+	Resources []schedulerconfig.ResourceSpec
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
@@ -142,4 +164,7 @@ type NodeResourceTopologyMatchArgs struct {
 
 	// Namespaces to be considered by NodeResourceTopologyMatch plugin
 	Namespaces []string
+
+	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
+	ScoringStrategy ScoringStrategy
 }

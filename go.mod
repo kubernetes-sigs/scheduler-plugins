@@ -10,6 +10,7 @@ require (
 	github.com/paypal/load-watcher v0.1.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.6.1
+	gonum.org/v1/gonum v0.6.2
 	k8s.io/api v0.21.4
 	k8s.io/apiextensions-apiserver v0.0.0
 	k8s.io/apimachinery v0.21.4

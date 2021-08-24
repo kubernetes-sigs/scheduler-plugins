@@ -11,6 +11,9 @@ profiles:
     filter:
       enabled:
       - name: NodeResourceTopologyMatch
+    score:
+      enabled:
+      - name: NodeResourceTopologyMatch
 # optional plugin configs
   pluginConfig:
   - name: NodeResourceTopologyMatch
@@ -19,3 +22,6 @@ profiles:
       kubeconfigpath: "/etc/kubernetes/scheduler.conf"
       namespaces:
       - "test-namespace"
+      # other strategies are MostAllocated and BalancedAllocation
+      scoringStrategy:
+        type: "LeastAllocated"

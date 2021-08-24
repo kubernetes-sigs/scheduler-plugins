@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
@@ -42,17 +42,23 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutils "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
-
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	scheconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/test/util"
+
+	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 )
 
 const (
 	cpu    = string(v1.ResourceCPU)
 	memory = string(v1.ResourceMemory)
+)
+
+var (
+	leastAllocatableScheduler   = fmt.Sprintf("%v-scheduler", string(scheconfig.MostAllocated))
+	balancedAllocationScheduler = fmt.Sprintf("%v-scheduler", string(scheconfig.BalancedAllocation))
+	mostAllocatableScheduler    = fmt.Sprintf("%v-scheduler", string(scheconfig.LeastAllocated))
 )
 
 func TestTopologyMatchPlugin(t *testing.T) {
@@ -63,7 +69,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		CancelFn: cancelFunc,
 		CloseFn:  func() {},
 	}
-	registry := fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}
+	registry := fwkruntime.Registry{
+		noderesourcetopology.Name: noderesourcetopology.New,
+	}
 	t.Log("create apiserver")
 	_, config := util.StartApi(t, todo.Done())
 
@@ -125,33 +133,55 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	testCtx.NS = ns
 	testCtx.ClientSet = cs
 
-	args := &scheconfig.NodeResourceTopologyMatchArgs{
-		KubeConfigPath: kubeConfigPath,
-		Namespaces:     []string{ns.Name},
-	}
-
-	profile := schedapi.KubeSchedulerProfile{
-		SchedulerName: v1.DefaultSchedulerName,
-		Plugins: &schedapi.Plugins{
-			Filter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: noderesourcetopology.Name},
+	profiles := []schedapi.KubeSchedulerProfile{
+		// a profile with only the filter plugin enabled
+		{
+			SchedulerName: v1.DefaultSchedulerName,
+			Plugins: &schedapi.Plugins{
+				Filter: schedapi.PluginSet{
+					Enabled: []schedapi.Plugin{
+						{Name: noderesourcetopology.Name},
+					},
+				},
+				Score: schedapi.PluginSet{
+					Disabled: []schedapi.Plugin{
+						{Name: noderesourcetopology.Name},
+					},
+				},
+			},
+			PluginConfig: []schedapi.PluginConfig{
+				{
+					Name: noderesourcetopology.Name,
+					Args: &scheconfig.NodeResourceTopologyMatchArgs{
+						KubeConfigPath:  kubeConfigPath,
+						Namespaces:      []string{ns.Name},
+						ScoringStrategy: scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated},
+					},
 				},
 			},
 		},
-		PluginConfig: []schedapi.PluginConfig{
-			{
-				Name: noderesourcetopology.Name,
-				Args: args,
-			},
-		},
+		// a profile with both the filter and score enabled and score strategy is MostAllocated
+		makeProfileByPluginArgs(
+			leastAllocatableScheduler,
+			makeResourceAllocationScoreArgs(kubeConfigPath, ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated}),
+		),
+		// a profile with both the filter and score enabled and score strategy is BalancedAllocation
+		makeProfileByPluginArgs(
+			balancedAllocationScheduler,
+			makeResourceAllocationScoreArgs(kubeConfigPath, ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.BalancedAllocation}),
+		),
+		// a profile with both the filter and score enabled and score strategy is LeastAllocated
+		makeProfileByPluginArgs(
+			mostAllocatableScheduler,
+			makeResourceAllocationScoreArgs(kubeConfigPath, ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.LeastAllocated}),
+		),
 	}
 
 	testCtx = util.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
 		true,
-		scheduler.WithProfiles(profile),
+		scheduler.WithProfiles(profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),
 	)
 	t.Log("init scheduler success")
@@ -397,6 +427,168 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
+		{
+			name: "Scheduling Guaranteed pod with least-allocatable strategy scheduler",
+			pods: []*v1.Pod{
+				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatableScheduler),
+					map[v1.ResourceName]string{v1.ResourceCPU: "1", v1.ResourceMemory: "4Gi"}).Obj(), pause),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				{
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+					Zones: topologyv1alpha1.ZoneList{
+						topologyv1alpha1.Zone{
+							Name: "node-0",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "2", "2"),
+								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+							},
+						},
+						topologyv1alpha1.Zone{
+							Name: "node-1",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "2", "2"),
+								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+					Zones: topologyv1alpha1.ZoneList{
+						topologyv1alpha1.Zone{
+							Name: "node-0",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "1", "1"),
+								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+							},
+						},
+						topologyv1alpha1.Zone{
+							Name: "node-1",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "1", "1"),
+								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+							},
+						},
+					},
+				},
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with balanced-allocation strategy scheduler",
+			pods: []*v1.Pod{
+				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(balancedAllocationScheduler),
+					map[v1.ResourceName]string{v1.ResourceCPU: "2", v1.ResourceMemory: "2Gi"}).Obj(), pause),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				{
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+					Zones: topologyv1alpha1.ZoneList{
+						topologyv1alpha1.Zone{
+							Name: "node-0",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "4", "4"),
+								makeTopologyResInfo(memory, "50Gi", "50Gi"),
+							},
+						},
+						topologyv1alpha1.Zone{
+							Name: "node-1",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "4", "4"),
+								makeTopologyResInfo(memory, "50Gi", "50Gi"),
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+					Zones: topologyv1alpha1.ZoneList{
+						topologyv1alpha1.Zone{
+							Name: "node-0",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "6", "6"),
+								makeTopologyResInfo(memory, "6Gi", "6Gi"),
+							},
+						},
+						topologyv1alpha1.Zone{
+							Name: "node-1",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "6", "6"),
+								makeTopologyResInfo(memory, "6Gi", "6Gi"),
+							},
+						},
+					},
+				},
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with most-allocatable strategy scheduler",
+			pods: []*v1.Pod{
+				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatableScheduler),
+					map[v1.ResourceName]string{v1.ResourceCPU: "1", v1.ResourceMemory: "4Gi"}).Obj(), pause),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				{
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+					Zones: topologyv1alpha1.ZoneList{
+						topologyv1alpha1.Zone{
+							Name: "node-0",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "2", "2"),
+								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+							},
+						},
+						topologyv1alpha1.Zone{
+							Name: "node-1",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "2", "2"),
+								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+					Zones: topologyv1alpha1.ZoneList{
+						topologyv1alpha1.Zone{
+							Name: "node-0",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "1", "1"),
+								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+							},
+						},
+						topologyv1alpha1.Zone{
+							Name: "node-1",
+							Type: "Node",
+							Resources: topologyv1alpha1.ResourceInfoList{
+								makeTopologyResInfo(cpu, "1", "1"),
+								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+							},
+						},
+					},
+				},
+			},
+			expectedNodes: []string{"fake-node-1"},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start-topology-match-test %v", tt.name)
@@ -588,4 +780,47 @@ func withReqAndLimit(p *st.PodWrapper, resMap map[v1.ResourceName]string) *st.Po
 		},
 	})
 	return p
+}
+
+func makeProfileByPluginArgs(
+	name string,
+	args *scheconfig.NodeResourceTopologyMatchArgs,
+) schedapi.KubeSchedulerProfile {
+	return schedapi.KubeSchedulerProfile{
+		SchedulerName: name,
+		Plugins: &schedapi.Plugins{
+			Filter: schedapi.PluginSet{
+				Enabled: []schedapi.Plugin{
+					{Name: noderesourcetopology.Name},
+				},
+			},
+			Score: schedapi.PluginSet{
+				Enabled: []schedapi.Plugin{
+					{Name: noderesourcetopology.Name},
+				},
+			},
+		},
+		PluginConfig: []schedapi.PluginConfig{
+			{
+				Name: noderesourcetopology.Name,
+				Args: args,
+			},
+		},
+	}
+}
+
+func makeResourceAllocationScoreArgs(kubeConfigPath, ns string, strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
+	return &scheconfig.NodeResourceTopologyMatchArgs{
+		KubeConfigPath:  kubeConfigPath,
+		Namespaces:      []string{ns},
+		ScoringStrategy: *strategy,
+	}
+}
+
+func makeTopologyResInfo(name, capacity, allocatable string) topologyv1alpha1.ResourceInfo {
+	return topologyv1alpha1.ResourceInfo{
+		Name:        name,
+		Capacity:    intstr.Parse(capacity),
+		Allocatable: intstr.Parse(allocatable),
+	}
 }

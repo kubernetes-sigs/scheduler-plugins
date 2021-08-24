@@ -21,7 +21,7 @@ In case the cumulative count of node resource allocatable appear to be the same 
 
 ### Config
 
- Enable the "NodeResourceTopologyMatch" Fitler plugin via SchedulerConfigConfiguration.
+Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerConfigConfiguration.
 
 ```yaml
 apiVersion: kubescheduler.config.k8s.io/v1beta1
@@ -36,6 +36,9 @@ profiles:
     filter:
       enabled:
       - name: NodeResourceTopologyMatch
+    score:
+      enabled:
+      - name: NodeResourceTopologyMatch
 # optional plugin configs
   pluginConfig:
   - name: NodeResourceTopologyMatch
@@ -45,6 +48,9 @@ profiles:
         - default
         - production
         - test-namespace
+      # other strategies are MostAllocatable and BalancedAllocation
+      scoringStrategy:
+        type: "LeastAllocatable"
 ```
 
 ### Demo
