@@ -196,7 +196,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
 		},
 		{
 			name: "Guaranteed QoS, pod doesn't fit",
@@ -205,7 +205,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("1Gi"),
 				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[0],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
 		},
 		{
 			name: "Guaranteed QoS, pod fit",
@@ -223,7 +223,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory:          resource.MustParse("1Gi"),
 				notExistingNICResourceName: *resource.NewQuantity(0, resource.DecimalSI)}, 3),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
 		},
 		{
 			name: "Guaranteed QoS Topology Scope, pod fit",
@@ -241,7 +241,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory:          resource.MustParse("1Gi"),
 				notExistingNICResourceName: *resource.NewQuantity(0, resource.DecimalSI)}, 3),
 			node:       nodes[3],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
 		},
 	}
 
