@@ -45,7 +45,7 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
 		if resMatchNUMANodes(nodes, container.Resources.Requests, qos) {
 			// definitely we can't align container, so we can't align a pod
-			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Cannot align container: %s", container.Name))
+			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", container.Name))
 		}
 	}
 	return nil
@@ -110,7 +110,7 @@ func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *fr
 
 	if resMatchNUMANodes(createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod)) {
 		// definitely we can't align container, so we can't align a pod
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Cannot align pod: %s", pod.Name))
+		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align pod: %s", pod.Name))
 	}
 	return nil
 }
@@ -118,7 +118,7 @@ func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *fr
 // Filter Now only single-numa-node supported
 func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	if nodeInfo.Node() == nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("Node is nil %s", nodeInfo.Node().Name))
+		return framework.NewStatus(framework.Error, "node not found")
 	}
 	if v1qos.GetPodQOS(pod) == v1.PodQOSBestEffort {
 		return nil
