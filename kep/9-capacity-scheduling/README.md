@@ -17,6 +17,8 @@
       - [PreFilter](#prefilter)
       - [PostFilter](#postfilter)
       - [Cache](#cache)
+    - [Additional Preemption Details](#additional-preemption-details)
+    - [Known Limitations](#known-limitations)
     - [Test Plan](#test-plan)
     - [Graduation Criteria](#graduation-criteria)
     - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -170,7 +172,7 @@ type ElasticQuotaStatus struct {
 sample yaml is listed below:
 
 ```yaml
-apiVersion: v1
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: test
@@ -319,6 +321,243 @@ preemptor’s priority as potential victims in a node.
 #### Cache
 We will watch the event of ElasticQuota and pod. The status of ElasticQuota 
 like allocated will store in Cache.
+
+### Additional Preemption Details
+Preemption happens when a pod is unschedulable, i.e., failed in PreFilter or Filter phases.
+
+In particular for capacity scheduling, the failure reasons could be:
+- Prefilter Stage
+  - sum(allocated res of pods in the same elasticquota) + pod.request > elasticquota.spec.max
+  - sum(allocated res of pods in the same elasticquota) + pod.request > sum(elasticquota.spec.min)
+
+So the preemption logic will attempt to make the pod schedulable, with a cost of preempting other running pods.
+
+
+#### ⚠️ Cross-namespace vs. single-namespace preemption
+During the preemption, if allowing the current pod leads to excessive usage of its elastic quota's min, the plugin will only try to preempt lower-priority pods within this preemptor pod's namespace. That's to say, it won't preempt the lower-priority pods among other namespaces even if they have overused their elastic quota's min.
+
+This is to adhere to the elastic quota's API semantics:
+
+- wild cross-namespace preemption to guarantee an elastic quota's min resource
+- restricted single-namespace preemption if the aggregated usage is larger than min
+
+Below is a simple example. 
+##### Elastic Quota Configuration for namespace 1
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: quota1
+  namespace: quota1
+spec:
+  max:
+    cpu: 2
+  min:
+    cpu: 0
+```
+##### Elastic Quota Configuration for namespace 2
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: quota2
+  namespace: quota2
+spec:
+  max:
+    cpu: 2
+  min:
+    cpu: 0
+```
+##### Elastic Quota Configuration for namespace 3
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: quota3
+  namespace: quota3
+spec:
+  max:
+    cpu: 2
+  min:
+    cpu: 1
+```
+##### Deployment on Namespace quota1
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: quota1
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+      schedulerName: capacityscheduler
+      containers:
+        - name: nginx
+          image: nginx
+          resources:
+            limits:
+              cpu: 1
+            requests:
+              cpu: 1
+```
+The nginx pod is able to run because it will borrow the 1 free cpu min from namespace quota3. Note, by default if the PriorityClassName is not configured, the pod will have a priority of 0.
+
+Next, let's try to run another deployment with higher priority on namespace quota2.
+
+##### A sample Priority Class Deployment
+```yaml
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000000
+globalDefault: false
+description: "Sample High Priority Class"
+```
+
+##### Deployment on Namespace quota2
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: quota2
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+      schedulerName: capacityscheduler
+      priorityClassName: high-priority
+      containers:
+        - name: nginx
+          image: nginx
+          resources:
+            limits:
+              cpu: 1
+            requests:
+              cpu: 1
+```
+In this case, the high priority pod in namespace quota2 cannot run even though it has a higher priority compared to the running pod in namespace quota1 because the capacity scheduler follows a restricted "in-namespace" preemption rule - pods within quota2 have overused their namespace resource min. 
+
+### Known Limitations
+#### ⚠️ Cross Node Preemption is not supported
+Current default Kubernetes scheduler does not support cross node preemption, which means that preemption process only happens in one node. In order to make capacity scheduler compatible with the default scheduler, current implementation also does not support cross node preemption.
+
+Because of that, it's expected in some cases the scheduler is incapable to give the resources back to the original namespace. This will lead to resource fragmentation. In the production environment, it is recommended to set the sum of min to be less than the total resources of the cluster. This can avoid this problem as much as possible.
+
+Below is a simple example. Suppossed that you have **exactly** 2 nodes in your cluster with the following configuration:
+##### Elastic Quota Configuration for namespace 1
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: quota1
+  namespace: quota1
+spec:
+  max:
+    cpu: 2
+  min:
+    cpu: 0
+```
+##### Elastic Quota Configuration for namespace 2
+```yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: quota2
+  namespace: quota2
+spec:
+  max:
+    cpu: 2
+  min:
+    cpu: 2
+```
+##### Run Sample Deployment on namespace 1
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: quota1
+  labels:
+    app: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+      schedulerName: capacityscheduler
+      containers:
+        - name: nginx
+          image: nginx
+          resources:
+            limits:
+              cpu: 1
+            requests:
+              cpu: 1
+```
+Suppose two replicas of the deployment get scheduled to Node 1 and Node 2 respectively.
+
+Next, let's try to run another deployment on namespace 2.
+
+
+##### Run Sample Deployment on namespace 2
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: quota2
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+      schedulerName: capacityscheduler
+      containers:
+        - name: nginx
+          image: nginx
+          resources:
+            limits:
+              cpu: 2
+            requests:
+              cpu: 2
+```
+As you may have noticed, namespace quota1 overused its min quota, and has borrowed 2 cpus from quota2. Now here comes a pod from namespace quota2: ideally, the two pods in namespace quota1 should get preempted and the newly deployed pod on namespace quota2 should be scheduled. However, preemption is restricted to be attempted on one single node, so preempting either pod of namespace quota1 won't satisfy the incoming pod of quota2 - used cpus = 3 > 2 (sum of elastic quota min). Thus in this case, the preemption process fails no matter which node is selected.
 
 ### Test Plan
 
