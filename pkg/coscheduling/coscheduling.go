@@ -19,6 +19,7 @@ package coscheduling
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -77,7 +78,8 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 
 	fieldSelector, err := fields.ParseSelector(",status.phase!=" + string(v1.PodSucceeded) + ",status.phase!=" + string(v1.PodFailed))
 	if err != nil {
-		klog.Fatalf("ParseSelector failed %+v", err)
+		klog.ErrorS(err, "ParseSelector failed")
+		os.Exit(1)
 	}
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(handle.ClientSet(), 0, informers.WithTweakListOptions(func(opt *metav1.ListOptions) {
 		opt.LabelSelector = util.PodGroupLabel
@@ -99,8 +101,9 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	pgInformerFactory.Start(ctx.Done())
 	informerFactory.Start(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), pgInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
-		klog.Error("Cannot sync caches")
-		return nil, fmt.Errorf("WaitForCacheSync failed")
+		err := fmt.Errorf("WaitForCacheSync failed")
+		klog.ErrorS(err, "Cannot sync caches")
+		return nil, err
 	}
 	return plugin, nil
 }
@@ -142,7 +145,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	// If any validation failed, a no-op state data is injected to "state" so that in later
 	// phases we can tell whether the failure comes from PreFilter or not.
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
-		klog.Error(err)
+		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
 		state.Write(cs.getStateKey(), NewNoopStateData())
 		return framework.NewStatus(framework.Unschedulable, err.Error())
 	}
@@ -161,7 +164,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 
 	pgName, pg := cs.pgMgr.GetPodGroup(pod)
 	if pg == nil {
-		klog.V(4).Info("Pod does not belong to any group")
+		klog.V(4).InfoS("Pod does not belong to any group", "pod", klog.KObj(pod))
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "can not find pod group")
 	}
 
@@ -169,7 +172,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	// so don't bother to reject the whole PodGroup.
 	assigned := cs.pgMgr.CalculateAssignedPods(pg.Name, pod.Namespace)
 	if assigned >= int(pg.Spec.MinMember) {
-		klog.V(4).Infof("%v pods of %v assigned", assigned, pgName)
+		klog.V(4).InfoS("Assigned pods", "podGroup", klog.KObj(pg), "assigned", assigned)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
@@ -177,7 +180,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	// to see they can satisfy the PodGroup
 	notAssiginedPercentage := float32(int(pg.Spec.MinMember)-assigned) / float32(pg.Spec.MinMember)
 	if notAssiginedPercentage <= 0.1 {
-		klog.V(4).Infof("%.2f/100 pods of group %v have not assigned", float32(assigned*100), pgName)
+		klog.V(4).InfoS("A small gap of pods to reach the quorum", "podGroup", klog.KObj(pg), "percentage", notAssiginedPercentage)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
@@ -185,7 +188,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	// it's inferrable other Pods belonging to the same PodGroup would be very likely to fail.
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[util.PodGroupLabel] == pg.Name {
-			klog.V(3).Infof("PostFilter rejects the pod: %v/%v", pgName, waitingPod.GetPod().Name)
+			klog.V(3).InfoS("PostFilter rejects the pod", "podGroup", klog.KObj(pg), "pod", klog.KObj(waitingPod.GetPod()))
 			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
@@ -217,25 +220,25 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 			waitTime = wait
 		}
 		if err == util.ErrorWaiting {
-			klog.Infof("Pod: %v is waiting to be scheduled to node: %v", core.GetNamespacedName(pod), nodeName)
+			klog.InfoS("Pod is waiting to be scheduled to node", "pod", klog.KObj(pod), "node", nodeName)
 			return framework.NewStatus(framework.Wait, ""), waitTime
 		}
-		klog.Infof("Permit error %v", err)
+		klog.InfoS(err.Error(), "Permit error")
 		return framework.NewStatus(framework.Unschedulable, err.Error()), 0
 	}
 
-	klog.V(5).Infof("Pod requires pgName %v", fullName)
+	klog.V(5).InfoS("Pod requires pgName", "pod", klog.KObj(pod), "podGroup", fullName)
 	if !ready {
 		return framework.NewStatus(framework.Wait, ""), waitTime
 	}
 
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if util.GetPodGroupFullName(waitingPod.GetPod()) == fullName {
-			klog.V(3).Infof("Permit allows the pod: %v", core.GetNamespacedName(waitingPod.GetPod()))
+			klog.V(3).InfoS("Permit allows", "pod", klog.KObj(waitingPod.GetPod()))
 			waitingPod.Allow(cs.Name())
 		}
 	})
-	klog.V(3).Infof("Permit allows the pod: %v", core.GetNamespacedName(pod))
+	klog.V(3).InfoS("Permit allows", "pod", klog.KObj(pod))
 	return framework.NewStatus(framework.Success, ""), 0
 }
 
@@ -252,7 +255,7 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 	}
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[util.PodGroupLabel] == pg.Name {
-			klog.V(3).Infof("Unreserve rejects the pod: %v/%v", pgName, waitingPod.GetPod().Name)
+			klog.V(3).InfoS("Unreserve rejects", "pod", klog.KObj(waitingPod.GetPod()), "podGroup", klog.KObj(pg))
 			waitingPod.Reject(cs.Name(), "rejection in Unreserve")
 		}
 	})
@@ -262,7 +265,7 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 
 // PostBind is called after a pod is successfully bound. These plugins are used update PodGroup when pod is bound.
 func (cs *Coscheduling) PostBind(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, nodeName string) {
-	klog.V(5).Infof("PostBind pod: %v", core.GetNamespacedName(pod))
+	klog.V(5).InfoS("PostBind", "pod", klog.KObj(pod))
 	cs.pgMgr.PostBind(ctx, pod, nodeName)
 }
 
