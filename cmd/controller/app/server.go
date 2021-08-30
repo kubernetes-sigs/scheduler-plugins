@@ -56,7 +56,8 @@ func Run(s *ServerRunOptions) error {
 	ctx := context.Background()
 	config, err := newConfig(s.KubeConfig, s.MasterUrl, s.InCluster)
 	if err != nil {
-		klog.Fatal(err)
+		klog.ErrorS(err, "Failed to parse config")
+		os.Exit(1)
 	}
 	config.QPS = float32(s.ApiServerQPS)
 	config.Burst = s.ApiServerBurst
@@ -99,7 +100,8 @@ func Run(s *ServerRunOptions) error {
 				Identity: id,
 			})
 		if err != nil {
-			klog.Fatalf("error creating lock: %v", err)
+			klog.ErrorS(err, "Resource lock creation failed")
+			os.Exit(1)
 		}
 
 		leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
@@ -107,7 +109,8 @@ func Run(s *ServerRunOptions) error {
 			Callbacks: leaderelection.LeaderCallbacks{
 				OnStartedLeading: run,
 				OnStoppedLeading: func() {
-					klog.Fatalf("leaderelection lost")
+					klog.ErrorS(err, "Leaderelection lost")
+					os.Exit(1)
 				},
 			},
 			Name: "scheduler-plugins controller",

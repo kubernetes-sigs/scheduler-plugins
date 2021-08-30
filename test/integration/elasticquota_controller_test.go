@@ -307,7 +307,7 @@ func TestElasticController(t *testing.T) {
 					eq, err := extClient.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(context.TODO(), v.Name, metav1.GetOptions{})
 					if err != nil {
 						// This could be a connection error so we want to retry.
-						klog.Errorf("klog error %v", err)
+						klog.ErrorS(err, "Failed to obtain the elasticQuota clientSet")
 						return false, err
 					}
 					if !quota.Equals(eq.Status.Used, v.Status.Used) {
@@ -344,7 +344,7 @@ func TestElasticController(t *testing.T) {
 					eq, err := extClient.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(context.TODO(), v.Name, metav1.GetOptions{})
 					if err != nil {
 						// This could be a connection error so we want to retry.
-						klog.Errorf("klog error %v", err)
+						klog.ErrorS(err, "Failed to obtain the elasticQuota clientSet")
 						return false, err
 					}
 					if !quota.Equals(eq.Status.Used, v.Status.Used) {
