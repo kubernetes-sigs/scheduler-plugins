@@ -113,6 +113,9 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
         preFilter:
           enabled:
           - name: Coscheduling
+        postFilter:
+          enabled:
+          - name: Coscheduling
         permit:
           enabled:
           - name: Coscheduling

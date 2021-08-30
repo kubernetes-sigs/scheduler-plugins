@@ -59,6 +59,9 @@ profiles:
     preFilter:
       enabled:
         - name: Coscheduling
+    postFilter:
+      enabled:
+        - name: Coscheduling
     permit:
       enabled:
         - name: Coscheduling

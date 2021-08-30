@@ -15,6 +15,7 @@
     - [Extension points](#extension-points)
       - [QueueSort](#queuesort)
       - [PreFilter](#prefilter)
+      - [PostFilter](#postfilter)
       - [Permit](#permit)
       - [PostBind](#postbind)
   - [Known Limitations](#Known Limitations)
@@ -113,6 +114,10 @@ This extension pre-filters pods to save scheduling cycles. This is especially he
         - if not, we check if the current pod has higher priority than the top-progressed pod group (I guess for convenience, you would still need the `PriorityClass` defined in PodGroup?). If it does, this pod is allowed and the top-progressed pod group gets rejected.
 
 For any pod that gets rejected, their pod group would be added to a backoff list and get retried until a TTL is met.
+
+#### PostFilter
+
+If the gap to reach the quorum of a PodGroup is greater than 10%, we reject the whole PodGroup. Note that this plugin should be configured as the last one among PostFilter plugins.
 
 #### Permit
 
