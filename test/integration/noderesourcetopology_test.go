@@ -655,8 +655,8 @@ func getNodeName(c clientset.Interface, podNamespace, podName string) (string, e
 	return pod.Spec.NodeName, nil
 }
 
-// makeNodeResourceTopologyCRD prepares CRD, TODO(aperevalov) use
-// manifests/noderesourcetopology/crd.yaml
+// makeNodeResourceTopologyCRD prepares a CRD.
+// TODO(aperevalov): use manifests/noderesourcetopology/crd.yaml.
 func makeNodeResourceTopologyCRD() *apiextensionsv1.CustomResourceDefinition {
 	return &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
