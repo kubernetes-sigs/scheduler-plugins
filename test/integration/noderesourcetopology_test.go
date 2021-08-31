@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -215,7 +214,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Filtering out nodes that cannot fit resources on a single numa node in case of Guaranteed pod",
 			pods: []*v1.Pod{
-				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod"), map[v1.ResourceName]string{v1.ResourceCPU: "4", v1.ResourceMemory: "50Gi"}).Obj(), pause),
+				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod"), map[v1.ResourceName]string{v1.ResourceCPU: "4", v1.ResourceMemory: "5Gi"}).Obj(), pause),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				{
@@ -227,14 +226,14 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      cpu,
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 								topologyv1alpha1.ResourceInfo{
-									Name:        memory,
-									Allocatable: intstr.Parse("8Gi"),
-									Capacity:    intstr.Parse("8Gi"),
+									Name:      memory,
+									Available: resource.MustParse("8Gi"),
+									Capacity:  resource.MustParse("8Gi"),
 								},
 							},
 						},
@@ -243,14 +242,14 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      cpu,
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 								topologyv1alpha1.ResourceInfo{
-									Name:        memory,
-									Allocatable: intstr.Parse("8Gi"),
-									Capacity:    intstr.Parse("8Gi"),
+									Name:      memory,
+									Available: resource.MustParse("8Gi"),
+									Capacity:  resource.MustParse("8Gi"),
 								},
 							},
 						},
@@ -265,14 +264,14 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("4"),
-									Capacity:    intstr.FromString("4"),
+									Name:      cpu,
+									Available: resource.MustParse("4"),
+									Capacity:  resource.MustParse("4"),
 								},
 								topologyv1alpha1.ResourceInfo{
-									Name:        memory,
-									Allocatable: intstr.Parse("8Gi"),
-									Capacity:    intstr.Parse("8Gi"),
+									Name:      memory,
+									Available: resource.MustParse("8Gi"),
+									Capacity:  resource.MustParse("8Gi"),
 								},
 							},
 						},
@@ -281,14 +280,14 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("0"),
-									Capacity:    intstr.FromString("0"),
+									Name:      cpu,
+									Available: resource.MustParse("0"),
+									Capacity:  resource.MustParse("0"),
 								},
 								topologyv1alpha1.ResourceInfo{
-									Name:        memory,
-									Allocatable: intstr.Parse("8Gi"),
-									Capacity:    intstr.Parse("8Gi"),
+									Name:      memory,
+									Available: resource.MustParse("8Gi"),
+									Capacity:  resource.MustParse("8Gi"),
 								},
 							},
 						},
@@ -312,9 +311,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("4"),
-									Capacity:    intstr.FromString("4"),
+									Name:      cpu,
+									Available: resource.MustParse("4"),
+									Capacity:  resource.MustParse("4"),
 								},
 							},
 						},
@@ -323,9 +322,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("0"),
-									Capacity:    intstr.FromString("0"),
+									Name:      cpu,
+									Available: resource.MustParse("0"),
+									Capacity:  resource.MustParse("0"),
 								},
 							},
 						},
@@ -340,9 +339,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      cpu,
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 							},
 						},
@@ -351,9 +350,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        cpu,
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      cpu,
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 							},
 						},
@@ -377,9 +376,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        "foo",
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      "foo",
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 							},
 						},
@@ -388,9 +387,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        "foo",
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      "foo",
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 							},
 						},
@@ -405,9 +404,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        "foo",
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      "foo",
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 							},
 						},
@@ -416,9 +415,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
 								topologyv1alpha1.ResourceInfo{
-									Name:        "foo",
-									Allocatable: intstr.FromString("2"),
-									Capacity:    intstr.FromString("2"),
+									Name:      "foo",
+									Available: resource.MustParse("2"),
+									Capacity:  resource.MustParse("2"),
 								},
 							},
 						},
@@ -442,16 +441,16 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Name: "node-0",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "2", "2"),
-								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							},
 						},
 						topologyv1alpha1.Zone{
 							Name: "node-1",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "2", "2"),
-								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							},
 						},
 					},
@@ -464,16 +463,16 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Name: "node-0",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "1", "1"),
-								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 							},
 						},
 						topologyv1alpha1.Zone{
 							Name: "node-1",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "1", "1"),
-								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 							},
 						},
 					},
@@ -496,16 +495,16 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Name: "node-0",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "4", "4"),
-								makeTopologyResInfo(memory, "50Gi", "50Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
 							},
 						},
 						topologyv1alpha1.Zone{
 							Name: "node-1",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "4", "4"),
-								makeTopologyResInfo(memory, "50Gi", "50Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
 							},
 						},
 					},
@@ -518,16 +517,16 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Name: "node-0",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "6", "6"),
-								makeTopologyResInfo(memory, "6Gi", "6Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
 							},
 						},
 						topologyv1alpha1.Zone{
 							Name: "node-1",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "6", "6"),
-								makeTopologyResInfo(memory, "6Gi", "6Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
 							},
 						},
 					},
@@ -550,16 +549,16 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Name: "node-0",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "2", "2"),
-								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							},
 						},
 						topologyv1alpha1.Zone{
 							Name: "node-1",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "2", "2"),
-								makeTopologyResInfo(memory, "8Gi", "8Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							},
 						},
 					},
@@ -572,16 +571,16 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							Name: "node-0",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "1", "1"),
-								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 							},
 						},
 						topologyv1alpha1.Zone{
 							Name: "node-1",
 							Type: "Node",
 							Resources: topologyv1alpha1.ResourceInfoList{
-								makeTopologyResInfo(cpu, "1", "1"),
-								makeTopologyResInfo(memory, "4Gi", "4Gi"),
+								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 							},
 						},
 					},
@@ -656,6 +655,8 @@ func getNodeName(c clientset.Interface, podNamespace, podName string) (string, e
 	return pod.Spec.NodeName, nil
 }
 
+// makeNodeResourceTopologyCRD prepares a CRD.
+// TODO(aperevalov): use manifests/noderesourcetopology/crd.yaml.
 func makeNodeResourceTopologyCRD() *apiextensionsv1.CustomResourceDefinition {
 	return &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
@@ -718,6 +719,10 @@ func makeNodeResourceTopologyCRD() *apiextensionsv1.CustomResourceDefinition {
 																	XIntOrString: true,
 																},
 																"allocatable": {
+																	XIntOrString: true,
+																},
+
+																"available": {
 																	XIntOrString: true,
 																},
 															},
@@ -814,13 +819,5 @@ func makeResourceAllocationScoreArgs(kubeConfigPath, ns string, strategy *scheco
 		KubeConfigPath:  kubeConfigPath,
 		Namespaces:      []string{ns},
 		ScoringStrategy: *strategy,
-	}
-}
-
-func makeTopologyResInfo(name, capacity, allocatable string) topologyv1alpha1.ResourceInfo {
-	return topologyv1alpha1.ResourceInfo{
-		Name:        name,
-		Capacity:    intstr.Parse(capacity),
-		Allocatable: intstr.Parse(allocatable),
 	}
 }
