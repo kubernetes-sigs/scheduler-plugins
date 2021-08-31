@@ -98,15 +98,13 @@ func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister fra
 // 2. the total number of pods in the podgroup is less than the minimum number of pods
 // that is required to be scheduled.
 func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) error {
-	klog.V(5).Infof("Pre-filter %v", pod.Name)
+	klog.V(5).InfoS("Pre-filter", "pod", klog.KObj(pod))
 	pgFullName, pg := pgMgr.GetPodGroup(pod)
 	if pg == nil {
 		return nil
 	}
 	if _, ok := pgMgr.lastDeniedPG.Get(pgFullName); ok {
-		err := fmt.Errorf("pod with pgName: %v last failed in 3s, deny", pgFullName)
-		klog.V(6).Info(err)
-		return err
+		return fmt.Errorf("pod with pgName: %v last failed in 3s, deny", pgFullName)
 	}
 	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
 		labels.SelectorFromSet(labels.Set{util.PodGroupLabel: util.GetPodGroupLabel(pod)}),
@@ -140,7 +138,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	minResources[corev1.ResourcePods] = *podQuantity
 	err = CheckClusterResource(nodes, minResources, pgFullName)
 	if err != nil {
-		klog.Errorf("PreFilter pod group %v error: %v", pgFullName, err)
+		klog.ErrorS(err, "Failed to PreFilter", "podGroup", klog.KObj(pg))
 		pgMgr.AddDeniedPodGroup(pgFullName)
 		return err
 	}
@@ -191,16 +189,16 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 	if pgCopy.Status.Phase != pg.Status.Phase {
 		pg, err := pgMgr.pgLister.PodGroups(pgCopy.Namespace).Get(pgCopy.Name)
 		if err != nil {
-			klog.Error(err)
+			klog.ErrorS(err, "podGroup", klog.KObj(pgCopy))
 			return
 		}
 		patch, err := util.CreateMergePatch(pg, pgCopy)
 		if err != nil {
-			klog.Error(err)
+			klog.ErrorS(err, "Failed to create merge patch", "podGroup", klog.KObj(pg), "podGroup", klog.KObj(pgCopy))
 			return
 		}
 		if err := pgMgr.PatchPodGroup(pg.Name, pg.Namespace, patch); err != nil {
-			klog.Error(err)
+			klog.ErrorS(err, "Failed to patch", "podGroup", klog.KObj(pg))
 			return
 		}
 		pg.Status.Phase = pgCopy.Status.Phase
@@ -259,7 +257,7 @@ func (pgMgr *PodGroupManager) GetPodGroup(pod *corev1.Pod) (string, *v1alpha1.Po
 func (pgMgr *PodGroupManager) CalculateAssignedPods(podGroupName, namespace string) int {
 	nodeInfos, err := pgMgr.snapshotSharedLister.NodeInfos().List()
 	if err != nil {
-		klog.Errorf("Cannot get nodeInfos from frameworkHandle: %v", err)
+		klog.ErrorS(err, "Cannot get nodeInfos from frameworkHandle")
 		return 0
 	}
 	var count int
@@ -335,6 +333,6 @@ func getNodeResource(info *framework.NodeInfo, desiredPodGroupName string) *fram
 			leftResource.ScalarResources[k] = allocatableEx - requestEx
 		}
 	}
-	klog.V(4).Infof("Node %v left resource %+v", info.Node().Name, leftResource)
+	klog.V(4).InfoS("Node left resource", "node", klog.KObj(info.Node()), "resource", leftResource)
 	return &leftResource
 }

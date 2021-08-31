@@ -78,13 +78,13 @@ func (pl *CrossNodePreemption) preempt(ctx context.Context, state *framework.Cyc
 	// However, tests may need to manually initialize the shared pod informer.
 	pod, err := pl.podLister.Pods(pod.Namespace).Get(pod.Name)
 	if err != nil {
-		klog.Errorf("Error getting the updated preemptor pod object: %v", err)
+		klog.ErrorS(err, "Error getting the updated preemptor", "pod", klog.KObj(pod))
 		return "", framework.AsStatus(err)
 	}
 
 	// 1) Ensure the preemptor is eligible to preempt other pods.
 	if !dp.PodEligibleToPreemptOthers(pod, nodeLister, m[pod.Status.NominatedNodeName]) {
-		klog.V(5).Infof("Pod %v/%v is not eligible for more preemption.", pod.Namespace, pod.Name)
+		klog.V(5).InfoS("Pod is not eligible for more preemption", "pod", klog.KObj(pod))
 		return "", nil
 	}
 
