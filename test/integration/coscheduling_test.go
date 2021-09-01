@@ -424,7 +424,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 			defer testutils.CleanupPods(cs, t, tt.pods)
 			// Create Pods, We will expect them to be scheduled in a reversed order.
 			for i := range tt.pods {
-				klog.Infof("Creating pod %v", tt.pods[i].Name)
+				klog.InfoS("Creating pod ", "podName", tt.pods[i].Name)
 				_, err := cs.CoreV1().Pods(tt.pods[i].Namespace).Create(testCtx.Ctx, tt.pods[i], metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)

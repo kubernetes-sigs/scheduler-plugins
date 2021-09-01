@@ -758,7 +758,7 @@ func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *topology
 	for _, nrt := range noderesourcetopologies {
 		err := topologyClient.TopologyV1alpha1().NodeResourceTopologies(nrt.Namespace).Delete(ctx, nrt.Name, metav1.DeleteOptions{})
 		if err != nil {
-			klog.Errorf("clean up NodeResourceTopologies (%v/%v) error %s", nrt.Namespace, nrt.Name, err.Error())
+			klog.ErrorS(err, "Failed to clean up NodeResourceTopology", "nodeResourceTopology", nrt)
 		}
 	}
 }

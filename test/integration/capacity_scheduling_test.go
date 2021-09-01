@@ -654,7 +654,7 @@ func cleanupElasticQuotas(ctx context.Context, client versioned.Interface, elast
 	for _, eq := range elasticQuotas {
 		err := client.SchedulingV1alpha1().ElasticQuotas(eq.Namespace).Delete(ctx, eq.Name, metav1.DeleteOptions{})
 		if err != nil {
-			klog.Errorf("clean up ElasticQuota (%v/%v) error %s", eq.Namespace, eq.Name, err.Error())
+			klog.ErrorS(err, "Failed to clean up ElasticQuota", "elasticQuota", klog.KObj(eq))
 		}
 	}
 }
