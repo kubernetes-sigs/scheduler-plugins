@@ -178,9 +178,9 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 
 	// If the gap is less than/equal 10%, we may want to try subsequent Pods
 	// to see they can satisfy the PodGroup
-	notAssiginedPercentage := float32(int(pg.Spec.MinMember)-assigned) / float32(pg.Spec.MinMember)
-	if notAssiginedPercentage <= 0.1 {
-		klog.V(4).InfoS("A small gap of pods to reach the quorum", "podGroup", klog.KObj(pg), "percentage", notAssiginedPercentage)
+	notAssignedPercentage := float32(int(pg.Spec.MinMember)-assigned) / float32(pg.Spec.MinMember)
+	if notAssignedPercentage <= 0.1 {
+		klog.V(4).InfoS("A small gap of pods to reach the quorum", "podGroup", klog.KObj(pg), "percentage", notAssignedPercentage)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
