@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -88,7 +89,7 @@ func NewElasticQuotaController(
 	for _, f := range newOpt {
 		f(ctrl)
 	}
-	klog.V(5).Info("Setting up elastic quota event handlers")
+	klog.V(5).InfoS("Setting up elastic quota event handlers")
 	eqInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    ctrl.eqAdded,
@@ -96,7 +97,7 @@ func NewElasticQuotaController(
 			DeleteFunc: ctrl.eqDeleted,
 		},
 	)
-	klog.V(5).Info("Setting up pod event handlers")
+	klog.V(5).InfoS("Setting up pod event handlers")
 	podInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    ctrl.podAdded,
@@ -111,20 +112,21 @@ func (ctrl *ElasticQuotaController) Run(workers int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer ctrl.eqQueue.ShutDown()
 	// Start the informer factories to begin populating the informer caches
-	klog.Info("Starting Elastic Quota control loop")
+	klog.InfoS("Starting Elastic Quota control loop")
 	// Wait for the caches to be synced before starting workers
-	klog.Info("Waiting for informer caches to sync")
+	klog.InfoS("Waiting for informer caches to sync")
 	if ok := cache.WaitForCacheSync(stopCh, ctrl.eqListerSynced, ctrl.podListerSynced); !ok {
-		klog.Fatalf("Cannot sync caches")
+		klog.ErrorS(nil, "Cannot sync caches")
+		os.Exit(1)
 	}
-	klog.Info("Elastic Quota sync finished")
-	klog.V(5).Infof("Starting %d workers to process elastic quota", workers)
+	klog.InfoS("Elastic Quota sync finished")
+	klog.V(5).InfoS("Starting workers to process elastic quota", "workers", workers)
 	// Launch workers to process elastic quota resources
 	for i := 0; i < workers; i++ {
 		go wait.Until(ctrl.worker, time.Second, stopCh)
 	}
 	<-stopCh
-	klog.V(2).Info("Shutting down elastic quota workers")
+	klog.V(2).InfoS("Shutting down elastic quota workers")
 }
 
 // WithFakeRecorder will set a fake recorder.It is usually used for unit testing
@@ -154,11 +156,11 @@ func (ctrl *ElasticQuotaController) processNextWorkItem() bool {
 	}
 	if err := ctrl.syncHandler(key); err != nil {
 		runtime.HandleError(err)
-		klog.Errorf("error syncing elastic quota %q: %s", key, err.Error())
+		klog.ErrorS(err, "Error syncing elastic quota", "elasticQuota", key)
 		return true
 	}
 	ctrl.eqQueue.Forget(keyObj)
-	klog.V(5).Infof("Successfully synced %s", key)
+	klog.V(5).InfoS("Successfully synced elastic quota ", "elasticQuota", key)
 	return true
 }
 
@@ -173,15 +175,15 @@ func (ctrl *ElasticQuotaController) syncHandler(key string) error {
 	// Get the elastic quota resource with this namespace/name
 	eq, err := ctrl.eqLister.ElasticQuotas(namespace).Get(name)
 	if apierrs.IsNotFound(err) {
-		klog.V(5).Infof("Elastic quota %q has been deleted ", key)
+		klog.V(5).InfoS("ElasticQuota has been deleted", "elasticQuota", key)
 		return nil
 	}
 	if err != nil {
-		klog.V(3).Infof("Unable to retrieve elastic quota %q from store: %v", key, err)
+		klog.V(3).ErrorS(err, "Unable to retrieve elastic quota from store", "elasticQuota", key)
 		return err
 	}
 
-	klog.V(5).Infof("Try to process elastic quota: %q", key)
+	klog.V(5).InfoS("Try to process elastic quota", "elasticQuota", key)
 	used, err := ctrl.computeElasticQuotaUsed(namespace, eq)
 	if err != nil {
 		return err
@@ -228,7 +230,7 @@ func (ctrl *ElasticQuotaController) eqAdded(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	}
-	klog.V(5).Infof("Enqueue new elastic quota key %q", key)
+	klog.V(5).InfoS("Enqueue new elastic quota key", "elasticQuota", key)
 	ctrl.eqQueue.AddRateLimited(key)
 }
 
@@ -244,7 +246,7 @@ func (ctrl *ElasticQuotaController) eqDeleted(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	}
-	klog.V(5).Infof("Enqueue deleted elastic quota key %q", key)
+	klog.V(5).InfoS("Enqueue deleted elastic quota key", "elasticQuota", key)
 	ctrl.eqQueue.AddRateLimited(key)
 }
 

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -214,7 +215,8 @@ func TestElasticQuotaController_Run(t *testing.T) {
 				return true, nil
 			})
 			if err != nil {
-				klog.Fatal(err)
+				klog.ErrorS(err, "Elastic Quota Test Failed")
+				os.Exit(1)
 			}
 		})
 	}
