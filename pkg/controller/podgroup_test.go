@@ -96,7 +96,7 @@ func Test_Run(t *testing.T) {
 			podNames:          []string{"pod1", "pod2"},
 			podPhase:          v1.PodPending,
 			previousPhase:     v1alpha1.PodGroupScheduling,
-			desiredGroupPhase: v1alpha1.PodGroupFailed,
+			desiredGroupPhase: v1alpha1.PodGroupFinished,
 			podNextPhase:      v1.PodSucceeded,
 		},
 		{
@@ -106,7 +106,7 @@ func Test_Run(t *testing.T) {
 			podNames:          []string{"pod1", "pod2"},
 			podPhase:          v1.PodPending,
 			previousPhase:     v1alpha1.PodGroupPending,
-			desiredGroupPhase: v1alpha1.PodGroupPreScheduling,
+			desiredGroupPhase: v1alpha1.PodGroupFinished,
 			podNextPhase:      v1.PodSucceeded,
 		},
 		{
@@ -118,6 +118,15 @@ func Test_Run(t *testing.T) {
 			previousPhase:      v1alpha1.PodGroupPending,
 			desiredGroupPhase:  v1alpha1.PodGroupPending,
 			podGroupCreateTime: &createTime,
+		},
+		{
+			name:              "Group group min member more than Pod number",
+			pgName:            "pg9",
+			minMember:         3,
+			podNames:          []string{"pod91", "pod92"},
+			podPhase:          v1.PodPending,
+			previousPhase:     v1alpha1.PodGroupPending,
+			desiredGroupPhase: v1alpha1.PodGroupPreScheduling,
 		},
 	}
 	for _, c := range cases {
@@ -154,7 +163,7 @@ func Test_Run(t *testing.T) {
 				return true, nil
 			})
 			if err != nil {
-
+				t.Fatal("Unexpected error", err)
 			}
 		})
 	}
