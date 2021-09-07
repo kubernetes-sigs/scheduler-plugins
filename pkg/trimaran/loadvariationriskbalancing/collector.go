@@ -58,10 +58,10 @@ func newCollector(obj runtime.Object) (*Collector, error) {
 	// get the plugin arguments
 	args := getArgs(obj)
 
-	klog.V(4).Infof("Using LoadVariationRiskBalancingArgs: MetricProvider.Type=%q, MetricProvider.Address=%q,"+
-		" SafeVarianceMargin=%f, SafeVarianceSensitivity=%f, WatcherAddress=%q",
-		args.MetricProvider.Type, args.MetricProvider.Address, args.SafeVarianceMargin,
-		args.SafeVarianceSensitivity, args.WatcherAddress)
+	klog.V(4).InfoS("Using LoadVariationRiskBalancingArgs: MetricProvider.Type=type, MetricProvider.Address=address"+
+		" SafeVarianceMargin=margin, SafeVarianceSensitivity=sensitivity, WatcherAddress=watcher",
+		"type", args.MetricProvider.Type, "address", args.MetricProvider.Address, "margin", args.SafeVarianceMargin,
+		"sensitivity", args.SafeVarianceSensitivity, "watcher", args.WatcherAddress)
 
 	var client loadwatcherapi.Client
 	if args.WatcherAddress != "" {
@@ -139,7 +139,7 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 func (collector *Collector) updateMetrics() error {
 	metrics, err := collector.client.GetLatestWatcherMetrics()
 	if err != nil {
-		klog.Errorf("load watcher client failed: %v", err)
+		klog.ErrorS(err, "load watcher client failed")
 		return err
 	}
 	collector.mu.Lock()
