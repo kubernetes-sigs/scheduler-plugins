@@ -76,8 +76,8 @@ func (r *resourceAllocationScorer) score(
 			klog.InfoS(
 				"score resources and volumes",
 				"podName", pod.Name, "nodeName", node.Name, "scorerName", r.Name,
-				"allocatableResources", allocatable, "requestedResources", requested, "allocatableVolumes",nodeInfo.TransientInfo.TransNodeInfo.AllocatableVolumesCount,
-				"requestedVolumes",nodeInfo.TransientInfo.TransNodeInfo.RequestedVolumes,
+				"allocatableResources", allocatable, "requestedResources", requested, "allocatableVolumes", nodeInfo.TransientInfo.TransNodeInfo.AllocatableVolumesCount,
+				"requestedVolumes", nodeInfo.TransientInfo.TransNodeInfo.RequestedVolumes,
 				"score", score,
 			)
 		} else {
