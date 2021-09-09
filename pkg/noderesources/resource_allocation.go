@@ -73,18 +73,18 @@ func (r *resourceAllocationScorer) score(
 	}
 	if klog.V(10).Enabled() {
 		if len(pod.Spec.Volumes) >= 0 && utilfeature.DefaultFeatureGate.Enabled(features.BalanceAttachedNodeVolumes) && nodeInfo.TransientInfo != nil {
-			klog.Infof(
-				"%v -> %v: %v, map of allocatable resources %v, map of requested resources %v , allocatable volumes %d, requested volumes %d, score %d",
-				pod.Name, node.Name, r.Name,
-				allocatable, requested, nodeInfo.TransientInfo.TransNodeInfo.AllocatableVolumesCount,
-				nodeInfo.TransientInfo.TransNodeInfo.RequestedVolumes,
-				score,
+			klog.InfoS(
+				"score resources and volumes",
+				"podName", pod.Name, "nodeName", node.Name, "scorerName", r.Name,
+				"allocatableResources", allocatable, "requestedResources", requested, "allocatableVolumes",nodeInfo.TransientInfo.TransNodeInfo.AllocatableVolumesCount,
+				"requestedVolumes",nodeInfo.TransientInfo.TransNodeInfo.RequestedVolumes,
+				"score", score,
 			)
 		} else {
-			klog.Infof(
+			klog.InfoS(
 				"%v -> %v: %v, map of allocatable resources %v, map of requested resources %v ,score %d,",
-				pod.Name, node.Name, r.Name,
-				allocatable, requested, score,
+				"podName", pod.Name, "nodeName", node.Name, "scorerName", r.Name,
+				"allocatableResource", allocatable, "requestedResource", requested, "score", score,
 			)
 
 		}
@@ -110,7 +110,7 @@ func calculateResourceAllocatableRequest(nodeInfo *framework.NodeInfo, pod *v1.P
 		}
 	}
 	if klog.V(10).Enabled() {
-		klog.Infof("requested resource %v not considered for node score calculation",
+		klog.InfoS("requested resource not considered for node score calculation", "resource",
 			resource,
 		)
 	}
