@@ -138,7 +138,7 @@ func score(capacity int64, mode config.ModeType) int64 {
 		return capacity
 	}
 
-	klog.V(10).Infoln("No match for mode: ", mode)
+	klog.V(10).InfoS("No match for mode", "mode", mode)
 	return 0
 }
 
