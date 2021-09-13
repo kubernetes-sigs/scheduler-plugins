@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+#
 # Copyright 2021 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,6 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-
 SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 source "${SCRIPT_ROOT}/hack/lib/init.sh"
 
@@ -28,14 +27,14 @@ CRD_OPTIONS="crd:trivialVersions=true,preserveUnknownFields=false"
 
 # Download controller-gen locally
 CONTROLLER_GEN="${GOPATH}/bin/controller-gen"
-go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.6.2
 
 # Generate CRD
 api_paths="./pkg/apis/scheduling/v1alpha1/...;./vendor/github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/..."
 
 ${CONTROLLER_GEN} ${CRD_OPTIONS} paths="${api_paths}" output:dir="./manifests/crds"
 
-if ! _out="$(git --no-pager diff -I"edited\smanually" --exit-code)"; then
+if ! _out="$(git --no-pager diff -I"edited\smanually" --exit-code ./manifests)"; then
     echo "Generated output differs" >&2
     echo "${_out}" >&2
     echo "Verification for CRD generators failed."
