@@ -183,7 +183,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	pl.mu.RUnlock()
 	// This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok {
-		klog.V(6).InfoS("unable to find metrics for node", "nodeName", nodeName)
+		klog.V(6).InfoS("Unable to find metrics for node", "nodeName", nodeName)
 		// Avoid the node by scoring minimum
 		return framework.MinNodeScore, nil
 		//TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state
@@ -193,7 +193,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	for _, container := range pod.Spec.Containers {
 		curPodCPUUsage += PredictUtilisation(&container)
 	}
-	klog.V(6).InfoS("predicted utilization for pod", klog.KObj(pod), "curPodCPUUsage", curPodCPUUsage)
+	klog.V(6).InfoS("Predicted utilization for pod", "pod", klog.KObj(pod), "curPodCPUUsage", curPodCPUUsage)
 	if pod.Spec.Overhead != nil {
 		curPodCPUUsage += pod.Spec.Overhead.Cpu().MilliValue()
 	}
@@ -235,7 +235,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		}
 	}
 	pl.eventHandler.RUnlock()
-	klog.V(6).InfoS("missing utilization for node", "nodeName", nodeName, "missingCPUUtilMillis", missingCPUUtilMillis)
+	klog.V(6).InfoS("Missing utilization for node", "nodeName", nodeName, "missingCPUUtilMillis", missingCPUUtilMillis)
 
 	var predictedCPUUsage float64
 	if nodeCPUCapMillis != 0 {
@@ -246,13 +246,13 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
 		}
 		penalisedScore := int64(math.Round(50 * (100 - predictedCPUUsage) / (100 - float64(hostTargetUtilizationPercent))))
-		klog.V(6).InfoS("penalised score for host", "nodeName", nodeName, "penalisedScore", penalisedScore)
+		klog.V(6).InfoS("Penalised score for host", "nodeName", nodeName, "penalisedScore", penalisedScore)
 		return penalisedScore, framework.NewStatus(framework.Success, "")
 	}
 
 	score := int64(math.Round((100-float64(hostTargetUtilizationPercent))*
 		predictedCPUUsage/float64(hostTargetUtilizationPercent) + float64(hostTargetUtilizationPercent)))
-	klog.V(6).InfoS("score for host", "nodeName", nodeName, "score", score)
+	klog.V(6).InfoS("Score for host", "nodeName", nodeName, "score", score)
 	return score, framework.NewStatus(framework.Success, "")
 }
 

@@ -118,7 +118,7 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 	if memoryOK {
 		memoryScore = memoryStats.computeScore(pl.collector.args.SafeVarianceMargin, pl.collector.args.SafeVarianceSensitivity)
 	}
-	klog.V(6).InfoS("pod:Name; node:nodeName; MemoryScore=memoryScore", "Name", klog.KObj(pod), "nodeName", nodeName, "memoryScore", memoryScore)
+	klog.V(6).InfoS("pod", klog.KObj(pod), " node",  nodeName, " MemoryScore", memoryScore)
 	// calculate total score
 	var totalScore float64 = 0
 	if memoryOK && cpuOK {
@@ -127,7 +127,7 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 		totalScore = math.Max(memoryScore, cpuScore)
 	}
 	score = int64(math.Round(totalScore))
-	klog.V(6).InfoS("pod:Name; node:nodeName; TotalScore=score", "Name", klog.KObj(pod), "nodeName", nodeName, "score", score)
+	klog.V(6).InfoS("pod", klog.KObj(pod), " nodeName", nodeName, " TotalScore", score)
 	return score, framework.NewStatus(framework.Success, "")
 }
 
