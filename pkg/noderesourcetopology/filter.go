@@ -34,7 +34,7 @@ import (
 type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList) *framework.Status
 
 func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
-	klog.V(5).Infof("Single NUMA node handler")
+	klog.V(5).InfoS("Single NUMA node handler")
 
 	// prepare NUMANodes list from zoneMap
 	nodes := createNUMANodeList(zones)
@@ -94,7 +94,7 @@ func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.Pod
 }
 
 func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
-	klog.V(5).Infof("Pod Level Resource handler")
+	klog.V(5).InfoS("Pod Level Resource handler")
 	resources := make(v1.ResourceList)
 
 	// We count here in the way TopologyManager is doing it, IOW we put InitContainers
@@ -131,14 +131,14 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		return nil
 	}
 
-	klog.V(5).Infof("nodeTopology: %v", nodeTopology)
+	klog.V(5).InfoS("Found NodeResourceTopology", klog.KObj(nodeTopology))
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			if status := handler.filter(pod, nodeTopology.Zones); status != nil {
 				return status
 			}
 		} else {
-			klog.V(5).Infof("Handler for policy %s not found", policyName)
+			klog.V(5).Infof("Policy handler not found", "policy", policyName)
 		}
 	}
 	return nil
