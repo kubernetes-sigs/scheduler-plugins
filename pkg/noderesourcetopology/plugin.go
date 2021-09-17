@@ -42,7 +42,7 @@ type nodeResTopologyPlugin struct {
 }
 
 type tmScopeHandler struct {
-	filter func(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status
+	filter func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
 	score  func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status)
 }
 

@@ -33,7 +33,7 @@ import (
 
 type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList) *framework.Status
 
-func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
+func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
 	klog.V(5).InfoS("Single NUMA node handler")
 
 	// prepare NUMANodes list from zoneMap
@@ -43,7 +43,7 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 	// We count here in the way TopologyManager is doing it, IOW we put InitContainers
 	// and normal containers in the one scope
 	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
-		if resMatchNUMANodes(nodes, container.Resources.Requests, qos) {
+		if resMatchNUMANodes(nodes, container.Resources.Requests, qos, nodeInfo) {
 			// definitely we can't align container, so we can't align a pod
 			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", container.Name))
 		}
@@ -53,7 +53,7 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 
 // resMatchNUMANodes checks for sufficient resource, this function
 // requires NUMANodeList with properly populated NUMANode, NUMAID should be in range 0-63
-func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.PodQOSClass) bool {
+func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1.PodQOSClass, nodeInfo *framework.NodeInfo) bool {
 	bitmask := bm.NewEmptyBitMask()
 	// set all bits, each bit is a NUMA node, if resources couldn't be aligned
 	// on the NUMA node, bit should be unset
@@ -64,11 +64,13 @@ func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.Pod
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
 		resourceBitmask := bm.NewEmptyBitMask()
-		for _, numaNode := range nodes {
+		for _, numaNode := range numaNodes {
 			numaQuantity, ok := numaNode.Resources[resource]
-			// if can't find requested resource on the node - skip (don't set it as available NUMA node)
-			// if unfound resource has 0 quantity probably this numa node can be considered
-			if !ok && quantity.Cmp(zeroQuantity) != 0 {
+			// if the requested resource can't be found on the NUMA node, we still need to check
+			// if the resource can be found at the node itself, because there are resources which are not NUMA aligned
+			// or not supported by the topology exporter - if resource was not found at both checks - skip (don't set it as available NUMA node).
+			// if the un-found resource has 0 quantity probably this numa node can be considered.
+			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) && quantity.Cmp(zeroQuantity) != 0 {
 				continue
 			}
 			// Check for the following:
@@ -93,7 +95,7 @@ func resMatchNUMANodes(nodes NUMANodeList, resources v1.ResourceList, qos v1.Pod
 	return bitmask.IsEmpty()
 }
 
-func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *framework.Status {
+func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
 	klog.V(5).InfoS("Pod Level Resource handler")
 	resources := make(v1.ResourceList)
 
@@ -108,7 +110,7 @@ func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList) *fr
 		}
 	}
 
-	if resMatchNUMANodes(createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod)) {
+	if resMatchNUMANodes(createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod), nodeInfo) {
 		// definitely we can't align container, so we can't align a pod
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align pod: %s", pod.Name))
 	}
@@ -134,7 +136,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	klog.V(5).InfoS("Found NodeResourceTopology", klog.KObj(nodeTopology))
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-			if status := handler.filter(pod, nodeTopology.Zones); status != nil {
+			if status := handler.filter(pod, nodeTopology.Zones, nodeInfo); status != nil {
 				return status
 			}
 		} else {
@@ -142,4 +144,14 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		}
 	}
 	return nil
+}
+
+// resourceFoundOnNode checks whether a given resource exist at the node level
+// and whether the given quantity is big enough
+func resourceFoundOnNode(resName v1.ResourceName, wantQuantity resource.Quantity, nodeInfo *framework.NodeInfo) bool {
+	resourceList := nodeInfo.Allocatable.ResourceList()
+	if gotQuantity, ok := resourceList[resName]; ok {
+		return gotQuantity.Cmp(wantQuantity) >= 0
+	}
+	return false
 }
