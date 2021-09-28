@@ -19,7 +19,9 @@ package integration
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
 
@@ -656,92 +658,19 @@ func getNodeName(c clientset.Interface, podNamespace, podName string) (string, e
 }
 
 // makeNodeResourceTopologyCRD prepares a CRD.
-// TODO(aperevalov): use manifests/noderesourcetopology/crd.yaml.
 func makeNodeResourceTopologyCRD() *apiextensionsv1.CustomResourceDefinition {
-	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "noderesourcetopologies.topology.node.k8s.io",
-			Annotations: map[string]string{
-				"api-approved.kubernetes.io": "https://github.com/kubernetes/enhancements/pull/1870",
-			},
-		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: "topology.node.k8s.io",
-			Names: apiextensionsv1.CustomResourceDefinitionNames{
-				Plural:   "noderesourcetopologies",
-				Singular: "noderesourcetopology",
-				ShortNames: []string{
-					"node-res-topo",
-				},
-				Kind: "NodeResourceTopology",
-			},
-			Scope: "Namespaced",
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
-				{
-					Name: "v1alpha1",
-					Schema: &apiextensionsv1.CustomResourceValidation{
-						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-							Type: "object",
-							Properties: map[string]apiextensionsv1.JSONSchemaProps{
-								"topologyPolicies": {
-									Type: "array",
-									Items: &apiextensionsv1.JSONSchemaPropsOrArray{
-										Schema: &apiextensionsv1.JSONSchemaProps{
-											Type: "string",
-										},
-									},
-								},
-								"zones": {
-									Type: "array",
-									Items: &apiextensionsv1.JSONSchemaPropsOrArray{
-										Schema: &apiextensionsv1.JSONSchemaProps{
-											Type: "object",
-											Properties: map[string]apiextensionsv1.JSONSchemaProps{
-												"name": {
-													Type: "string",
-												},
-												"type": {
-													Type: "string",
-												},
-												"parent": {
-													Type: "string",
-												},
-												"resources": {
-													Type: "array",
-													Items: &apiextensionsv1.JSONSchemaPropsOrArray{
-														Schema: &apiextensionsv1.JSONSchemaProps{
-															Type: "object",
-															Properties: map[string]apiextensionsv1.JSONSchemaProps{
-																"name": {
-																	Type: "string",
-																},
-																"capacity": {
-																	XIntOrString: true,
-																},
-																"allocatable": {
-																	XIntOrString: true,
-																},
-
-																"available": {
-																	XIntOrString: true,
-																},
-															},
-														},
-													},
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-					Served:  true,
-					Storage: true,
-				},
-			},
-		},
+	content, err := ioutil.ReadFile("../../manifests/noderesourcetopology/crd.yaml")
+	if err != nil {
+		return &apiextensionsv1.CustomResourceDefinition{}
 	}
+
+	noderesourcetopologyCRD := &apiextensionsv1.CustomResourceDefinition{}
+	err = yaml.Unmarshal(content, noderesourcetopologyCRD)
+	if err != nil {
+		return &apiextensionsv1.CustomResourceDefinition{}
+	}
+
+	return noderesourcetopologyCRD
 }
 
 func createNodeResourceTopologies(ctx context.Context, topologyClient *topologyclientset.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) error {
