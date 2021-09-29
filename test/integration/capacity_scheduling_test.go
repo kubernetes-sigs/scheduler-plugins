@@ -18,7 +18,9 @@ package integration
 
 import (
 	"context"
+	"io/ioutil"
 	"os"
+	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
 
@@ -555,89 +557,18 @@ func TestCapacityScheduling(t *testing.T) {
 }
 
 func makeElasticQuotaCRD() *apiextensionsv1.CustomResourceDefinition {
-	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "elasticquotas.scheduling.sigs.k8s.io",
-			Annotations: map[string]string{
-				"api-approved.kubernetes.io": "https://github.com/kubernetes-sigs/scheduler-plugins/pull/50",
-			},
-		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: scheduling.GroupName,
-			Names: apiextensionsv1.CustomResourceDefinitionNames{
-				Kind:       "ElasticQuota",
-				Plural:     "elasticquotas",
-				Singular:   "elasticquota",
-				ShortNames: []string{"eq", "eqs"},
-			},
-			Scope: apiextensionsv1.NamespaceScoped,
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{Name: "v1alpha1", Served: true, Storage: true,
-				Schema: &apiextensionsv1.CustomResourceValidation{
-					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-						Type: "object",
-						Properties: map[string]apiextensionsv1.JSONSchemaProps{
-							"spec": {
-								Type: "object",
-								Properties: map[string]apiextensionsv1.JSONSchemaProps{
-									"min": {
-										Type: "object",
-										AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{
-											Schema: &apiextensionsv1.JSONSchemaProps{
-												AnyOf: []apiextensionsv1.JSONSchemaProps{
-													{
-														Type: "integer",
-													},
-													{
-														Type: "string",
-													},
-												},
-												XIntOrString: true,
-											},
-										},
-									},
-									"max": {
-										Type: "object",
-										AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{
-											Schema: &apiextensionsv1.JSONSchemaProps{
-												AnyOf: []apiextensionsv1.JSONSchemaProps{
-													{
-														Type: "integer",
-													},
-													{
-														Type: "string",
-													},
-												},
-												XIntOrString: true,
-											},
-										},
-									},
-								},
-							},
-							"status": {
-								Type: "object",
-								Properties: map[string]apiextensionsv1.JSONSchemaProps{
-									"used": {
-										Type: "object",
-										AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{
-											Schema: &apiextensionsv1.JSONSchemaProps{
-												AnyOf: []apiextensionsv1.JSONSchemaProps{
-													{
-														Type: "integer",
-													},
-													{
-														Type: "string",
-													},
-												},
-												XIntOrString: true,
-											},
-										}},
-								},
-							},
-						},
-					},
-				}}},
-		},
+	content, err := ioutil.ReadFile("../../manifests/capacityscheduling/crd.yaml")
+	if err != nil {
+		return &apiextensionsv1.CustomResourceDefinition{}
 	}
+
+	elasticquotasCRD := &apiextensionsv1.CustomResourceDefinition{}
+	err = yaml.Unmarshal(content, elasticquotasCRD)
+	if err != nil {
+		return &apiextensionsv1.CustomResourceDefinition{}
+	}
+
+	return elasticquotasCRD
 }
 
 func createElasticQuotas(ctx context.Context, client versioned.Interface, elasticQuotas []*v1alpha1.ElasticQuota) error {
