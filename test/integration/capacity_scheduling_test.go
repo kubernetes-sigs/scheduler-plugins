@@ -160,7 +160,7 @@ func TestCapacityScheduling(t *testing.T) {
 		}
 	}
 
-	for _, ns := range []string{"ns1", "ns2"} {
+	for _, ns := range []string{"ns1", "ns2", "ns3"} {
 		_, err := cs.CoreV1().Namespaces().Create(ctx, &v1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{})
 		if err != nil && !errors.IsAlreadyExists(err) {
@@ -501,7 +501,91 @@ func TestCapacityScheduling(t *testing.T) {
 				},
 			},
 		},
-	} {
+		{
+			name:       "cross-namespace preemption with three elasticquota",
+			namespaces: []string{"ns1", "ns2", "ns3"},
+			existPods: []*v1.Pod{
+				util.MakePod("t7-p1", "ns1", 0, 1, highPriority, "t7-p1", "fake-node-1"),
+				util.MakePod("t7-p2", "ns1", 0, 1, midPriority, "t7-p2", "fake-node-2"),
+				util.MakePod("t7-p3", "ns1", 0, 1, midPriority, "t7-p3", "fake-node-2"),
+				util.MakePod("t7-p5", "ns2", 0, 1, midPriority, "t7-p5", "fake-node-2"),
+				util.MakePod("t7-p6", "ns2", 0, 1, midPriority, "t7-p6", "fake-node-1"),
+				util.MakePod("t7-p7", "ns2", 0, 1, midPriority, "t7-p7", "fake-node-2"),
+			},
+			addPods: []*v1.Pod{
+				util.MakePod("t7-p9", "ns3", 0, 1, midPriority, "t7-p9", ""),
+				util.MakePod("t7-p10", "ns3", 0, 1, midPriority, "t7-p10", ""),
+				util.MakePod("t7-p11", "ns3", 0, 1, midPriority, "t7-p11", ""),
+				util.MakePod("t7-p12", "ns3", 0, 1, midPriority, "t7-p12", ""),
+			},
+			elasticQuotas: []*v1alpha1.ElasticQuota{
+				{
+					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
+					ObjectMeta: metav1.ObjectMeta{Name: "eq1", Namespace: "ns1"},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Min: v1.ResourceList{
+							v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
+							v1.ResourceCPU:    *resource.NewMilliQuantity(1, resource.DecimalSI),
+						},
+						Max: v1.ResourceList{
+							v1.ResourceMemory: *resource.NewQuantity(200, resource.DecimalSI),
+							v1.ResourceCPU:    *resource.NewMilliQuantity(3, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
+					ObjectMeta: metav1.ObjectMeta{Name: "eq2", Namespace: "ns2"},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Min: v1.ResourceList{
+							v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
+							v1.ResourceCPU:    *resource.NewMilliQuantity(3, resource.DecimalSI),
+						},
+						Max: v1.ResourceList{
+							v1.ResourceMemory: *resource.NewQuantity(200, resource.DecimalSI),
+							v1.ResourceCPU:    *resource.NewMilliQuantity(3, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
+					ObjectMeta: metav1.ObjectMeta{Name: "eq3", Namespace: "ns3"},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Min: v1.ResourceList{
+							v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
+							v1.ResourceCPU:    *resource.NewMilliQuantity(3, resource.DecimalSI),
+						},
+						Max: v1.ResourceList{
+							v1.ResourceMemory: *resource.NewQuantity(200, resource.DecimalSI),
+							v1.ResourceCPU:    *resource.NewMilliQuantity(4, resource.DecimalSI),
+						},
+					},
+				},
+			},
+			expectedPods: []*v1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "t7-p1", Namespace: "ns1"},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "t7-p5", Namespace: "ns2"},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "t7-p6", Namespace: "ns2"},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "t7-p7", Namespace: "ns2"},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "t7-p9", Namespace: "ns3"},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "t7-p10", Namespace: "ns3"},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "t7-p11", Namespace: "ns3"},
+				},
+			},
+		}} {
 		t.Run(tt.name, func(t *testing.T) {
 			defer cleanupElasticQuotas(ctx, extClient, tt.elasticQuotas)
 			defer testutil.CleanupPods(cs, t, tt.existPods)

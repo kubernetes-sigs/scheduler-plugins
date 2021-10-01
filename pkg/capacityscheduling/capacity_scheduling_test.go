@@ -21,7 +21,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	gocmp "github.com/google/go-cmp/cmp"
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -123,8 +123,26 @@ func TestPreFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var registerPlugins []st.RegisterPluginFunc
+			registeredPlugins := append(
+				registerPlugins,
+				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			)
+
+			fwk, err := st.NewFramework(
+				registeredPlugins, "",
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator()),
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
+			)
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			cs := &CapacityScheduling{
 				elasticQuotaInfos: tt.elasticQuotas,
+				fh:                fwk,
 			}
 
 			pods := make([]*v1.Pod, 0)
@@ -291,9 +309,14 @@ func TestFindCandidates(t *testing.T) {
 				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
 			}
 
-			prefilterStatue := computePodResourceRequest(tt.pod)
+			podReq := computePodResourceRequest(tt.pod)
 			elasticQuotaSnapshotState := &ElasticQuotaSnapshotState{
 				elasticQuotaInfos: tt.elasticQuotas,
+			}
+			prefilterStatue := &PreFilterState{
+				podReq:                         *podReq,
+				nominatedPodsReqWithPodReq:     *podReq,
+				nominatedPodsReqInEQWithPodReq: *podReq,
 			}
 			state.Write(preFilterStateKey, prefilterStatue)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
@@ -319,7 +342,7 @@ func TestFindCandidates(t *testing.T) {
 			sort.Slice(got, func(i, j int) bool {
 				return got[i].Name() < got[j].Name()
 			})
-			if diff := cmp.Diff(tt.want, got, cmp.AllowUnexported(candidate{})); diff != "" {
+			if diff := gocmp.Diff(tt.want, got, gocmp.AllowUnexported(candidate{})); diff != "" {
 				t.Errorf("Unexpected candidates (-want, +got): %s", diff)
 			}
 		})

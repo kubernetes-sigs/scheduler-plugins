@@ -66,7 +66,7 @@ func TestReserveResource(t *testing.T) {
 			elasticQuotaInfo := tt.before
 			for _, pod := range tt.pods {
 				request := computePodResourceRequest(pod)
-				elasticQuotaInfo.reserveResource(request.Resource)
+				elasticQuotaInfo.reserveResource(*request)
 			}
 
 			if !reflect.DeepEqual(elasticQuotaInfo, tt.expected) {
@@ -118,7 +118,7 @@ func TestUnReserveResource(t *testing.T) {
 			elasticQuotaInfo := tt.before
 			for _, pod := range tt.pods {
 				request := computePodResourceRequest(pod)
-				elasticQuotaInfo.unreserveResource(request.Resource)
+				elasticQuotaInfo.unreserveResource(*request)
 			}
 
 			if !reflect.DeepEqual(elasticQuotaInfo, tt.expected) {
