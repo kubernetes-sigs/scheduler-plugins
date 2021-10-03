@@ -183,7 +183,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	pl.mu.RUnlock()
 	// This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok {
-		klog.V(6).InfoS("Unable to find metrics for node", "nodeName", nodeName)
+		klog.V(6).InfoS("Unable to find metrics for node", "node", nodeName)
 		// Avoid the node by scoring minimum
 		return framework.MinNodeScore, nil
 		//TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state
