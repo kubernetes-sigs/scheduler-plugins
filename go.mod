@@ -24,6 +24,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
 	k8s.io/kube-scheduler v0.21.4
 	k8s.io/kubernetes v1.21.4
+	k8s.io/utils v0.0.0-20201110183641-67b214c5f920
 	sigs.k8s.io/yaml v1.2.0
 )
 

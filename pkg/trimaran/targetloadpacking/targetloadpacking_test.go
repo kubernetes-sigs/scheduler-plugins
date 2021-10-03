@@ -329,7 +329,7 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 				bytes, err := json.Marshal(watcherResponse)
 				if err != nil {
-					klog.Fatalf("Error marshalling watcher response: %v", err)
+					klog.ErrorS(err, "Error marshalling watcher response")
 				}
 				resp.Write(bytes)
 			}))

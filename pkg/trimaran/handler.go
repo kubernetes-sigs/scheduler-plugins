@@ -90,7 +90,7 @@ func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
 	for i, v := range p.ScheduledPodsCache[nodeName] {
 		n := len(p.ScheduledPodsCache[nodeName])
 		if pod.ObjectMeta.UID == v.Pod.ObjectMeta.UID {
-			klog.V(10).Infof("deleting pod %#v", v.Pod)
+			klog.V(10).InfoS("Deleting pod", "pod", klog.KObj(v.Pod))
 			copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
 			p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
 			p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]
