@@ -73,7 +73,8 @@ func (rs *resourceStats) computeScore(margin float64, sensitivity float64) float
 
 	// evaluate overall risk factor
 	risk := (mu + sigma) / 2
-	klog.V(6).Infof("mu=%f; sigma=%f; margin=%f; sensitivity=%f; risk=%f", mu, sigma, margin, sensitivity, risk)
+	klog.V(6).InfoS("mu=", "mu", mu, " sigma=", "s", sigma, " margin=", "margin", margin, 
+	   " sensitivity=", "sensitivity", sensitivity, " risk=", "risk", risk)
 	return (1. - risk) * float64(framework.MaxNodeScore)
 }
 
@@ -83,7 +84,7 @@ func createResourceStats(metrics []watcher.Metric, node *v1.Node, podRequest *fr
 	// get resource usage statistics
 	nodeUtil, nodeStd, metricFound := getResourceData(metrics, watcherType)
 	if !metricFound {
-		klog.V(6).Infof("resource %s usage statistics for node %s: no valid data", watcherType, node.GetName())
+		klog.V(6).InfoS("Rsource usage statistics for node : no valid data", " node", klog.KObj(node))
 		return nil, false
 	}
 	// get resource capacity
@@ -105,8 +106,8 @@ func createResourceStats(metrics []watcher.Metric, node *v1.Node, podRequest *fr
 	rs.usedAvg = nodeUtil * rs.capacity / 100
 	rs.usedStdev = nodeStd * rs.capacity / 100
 
-	klog.V(6).Infof("resource %s usage statistics for node %s: capacity=%f; req=%f; usedAvg=%f; usedStdev=%f",
-		watcherType, node.GetName(), rs.capacity, rs.req, rs.usedAvg, rs.usedStdev)
+	klog.V(6).InfoS("resource usage statistics for node:", "node", klog.KObj(node), " capacity", rs.capacity, 
+	    " required", rs.req, " usedAvg", rs.usedAvg, " usedStdev", rs.usedStdev)
 	return rs, true
 }
 
