@@ -130,6 +130,10 @@ verify-gofmt:
 verify-crdgen: autogen
 	hack/verify-crdgen.sh
 
+.PHONY: verify-structured-logging
+verify-structured-logging:
+	hack/verify-structured-logging.sh
+
 .PHONY: clean
 clean:
 	rm -rf ./bin

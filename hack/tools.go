@@ -20,5 +20,6 @@ package tools
 
 import (
 	_ "k8s.io/code-generator"
+	_ "k8s.io/klog/hack/tools/logcheck"
 	_ "k8s.io/kube-openapi/cmd/openapi-gen"
 )
