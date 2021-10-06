@@ -100,9 +100,7 @@ func SetDefaultsNodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) 
 
 // SetDefaultsCapacitySchedulingArgs sets the default parameters for CapacityScheduling plugin.
 func SetDefaultsCapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
-	if obj.KubeConfigPath == nil {
-		obj.KubeConfigPath = &defaultKubeConfigPath
-	}
+	// TODO(k/k#96427): get KubeConfigPath and KubeMaster from configuration or command args.
 }
 
 // SetDefaultTargetLoadPackingArgs sets the default parameters for TargetLoadPacking plugin
