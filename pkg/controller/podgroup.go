@@ -97,7 +97,7 @@ func (ctrl *PodGroupController) Run(workers int, stopCh <-chan struct{}) {
 	defer klog.InfoS("Shutting Pod Group controller")
 
 	if !cache.WaitForCacheSync(stopCh, ctrl.pgListerSynced, ctrl.podListerSynced) {
-		klog.Error("Cannot sync caches")
+		klog.ErrorS(nil, "Cannot sync caches")
 		return
 	}
 	klog.InfoS("Pod Group sync finished")

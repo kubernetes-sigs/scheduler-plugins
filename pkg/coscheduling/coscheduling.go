@@ -223,7 +223,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 			klog.InfoS("Pod is waiting to be scheduled to node", "pod", klog.KObj(pod), "node", nodeName)
 			return framework.NewStatus(framework.Wait, ""), waitTime
 		}
-		klog.InfoS(err.Error(), "Permit error")
+		klog.ErrorS(err, "Permit error")
 		return framework.NewStatus(framework.Unschedulable, err.Error()), 0
 	}
 

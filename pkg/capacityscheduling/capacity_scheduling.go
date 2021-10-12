@@ -190,7 +190,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 			},
 		},
 	)
-	klog.Infof("CapacityScheduling start")
+	klog.InfoS("CapacityScheduling start")
 	return c, nil
 }
 
@@ -417,13 +417,13 @@ func (c *CapacityScheduling) preempt(ctx context.Context, state *framework.Cycle
 // terminating pods on the node, we don't consider this for preempting more pods.
 func (c *CapacityScheduling) PodEligibleToPreemptOthers(pod *v1.Pod, nodeInfos framework.NodeInfoLister, nominatedNodeStatus *framework.Status, state *framework.CycleState) bool {
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
-		klog.V(5).Infof("Pod %v/%v is not eligible for preemption because it has a preemptionPolicy of %v", pod.Namespace, pod.Name, v1.PreemptNever)
+		klog.V(5).InfoS("Pod is not eligible for preemption because of its preemptionPolicy", "pod", klog.KObj(pod), "preemptionPolicy", v1.PreemptNever)
 		return false
 	}
 
 	preFilterState, err := getPreFilterState(state)
 	if err != nil {
-		klog.Errorf("error reading %q from cycleState: %v", preFilterStateKey, err)
+		klog.ErrorS(err, "Failed to read preFilterState from cycleState", "preFilterStateKey", preFilterStateKey)
 		return false
 	}
 
@@ -437,7 +437,7 @@ func (c *CapacityScheduling) PodEligibleToPreemptOthers(pod *v1.Pod, nodeInfos f
 
 		elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(state)
 		if err != nil {
-			klog.Errorf("error reading %q from cycleState: %v", ElasticQuotaSnapshotKey, err)
+			klog.ErrorS(err, "Failed to read elasticQuotaSnapshot from cycleState", "elasticQuotaSnapshotKey", ElasticQuotaSnapshotKey)
 			return true
 		}
 
@@ -515,7 +515,7 @@ func (c *CapacityScheduling) FindCandidates(ctx context.Context, cs kubernetes.I
 		for i := 0; i < 10 && i < len(potentialNodes); i++ {
 			sample = append(sample, potentialNodes[i].Node().Name)
 		}
-		klog.Infof("%v potential nodes for preemption, first %v are: %v", len(potentialNodes), len(sample), sample)
+		klog.InfoS("Sample potential nodes for preemption", "potentialNodes", len(potentialNodes), "sampleSize", len(sample), "sample", sample)
 	}
 
 	pdbs, err := getPodDisruptionBudgets(c.pdbLister)

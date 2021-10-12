@@ -47,7 +47,7 @@ type resourceStats struct {
 // - score = ( 1 - risk ) * maxScore
 func (rs *resourceStats) computeScore(margin float64, sensitivity float64) float64 {
 	if rs.capacity <= 0 {
-		klog.Errorf("invalid resource capacity %f!", rs.capacity)
+		klog.ErrorS(nil, "Invalid resource capacity", "capacity", rs.capacity)
 		return 0
 	}
 
