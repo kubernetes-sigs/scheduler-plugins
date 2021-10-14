@@ -32,14 +32,14 @@ import (
 )
 
 func findNodeTopology(nodeName string, nodeResTopoPlugin *nodeResTopologyPlugin) *topologyv1alpha1.NodeResourceTopology {
-	klog.V(5).Infof("namespaces: %s", nodeResTopoPlugin.namespaces)
+	klog.V(5).InfoS("Namespaces for nodeResTopoPlugin", "namespaces", nodeResTopoPlugin.namespaces)
 	for _, namespace := range nodeResTopoPlugin.namespaces {
-		klog.V(5).Infof("data.lister: %v", nodeResTopoPlugin.lister)
+		klog.V(5).InfoS("Lister for nodeResTopoPlugin", "lister", nodeResTopoPlugin.lister)
 		// NodeTopology couldn't be placed in several namespaces simultaneously
 		lister := nodeResTopoPlugin.lister
 		nodeTopology, err := (*lister).NodeResourceTopologies(namespace).Get(nodeName)
 		if err != nil {
-			klog.V(5).Infof("Cannot get NodeTopologies from NodeResourceTopologyNamespaceLister: %v", err)
+			klog.V(5).ErrorS(err, "Cannot get NodeTopologies from NodeResourceTopologyNamespaceLister")
 			continue
 		}
 		if nodeTopology != nil {
@@ -52,13 +52,13 @@ func findNodeTopology(nodeName string, nodeResTopoPlugin *nodeResTopologyPlugin)
 func initNodeTopologyInformer(masterOverride, kubeConfigPath *string) (*listerv1alpha1.NodeResourceTopologyLister, error) {
 	kubeConfig, err := clientcmd.BuildConfigFromFlags(*masterOverride, *kubeConfigPath)
 	if err != nil {
-		klog.Errorf("Cannot create kubeconfig based on: %s, %s, %v", *masterOverride, *kubeConfigPath, err)
+		klog.ErrorS(err, "Cannot create kubeconfig", "masterOverride", *masterOverride, "kubeConfigPath", *kubeConfigPath)
 		return nil, err
 	}
 
 	topoClient, err := topoclientset.NewForConfig(kubeConfig)
 	if err != nil {
-		klog.Errorf("Cannot create clientset for NodeTopologyResource: %s, %s", kubeConfig, err)
+		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", kubeConfig)
 		return nil, err
 	}
 
@@ -66,7 +66,7 @@ func initNodeTopologyInformer(masterOverride, kubeConfigPath *string) (*listerv1
 	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha1().NodeResourceTopologies()
 	nodeResourceTopologyLister := nodeTopologyInformer.Lister()
 
-	klog.V(5).Infof("start nodeTopologyInformer")
+	klog.V(5).InfoS("Start nodeTopologyInformer")
 	ctx := context.Background()
 	topologyInformerFactory.Start(ctx.Done())
 	topologyInformerFactory.WaitForCacheSync(ctx.Done())
@@ -81,11 +81,11 @@ func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
 			var numaID int
 			_, err := fmt.Sscanf(zone.Name, "node-%d", &numaID)
 			if err != nil {
-				klog.Errorf("Invalid format: %v", zone.Name)
+				klog.ErrorS(nil, "Invalid zone format", "zone", zone.Name)
 				continue
 			}
 			if numaID > 63 || numaID < 0 {
-				klog.Errorf("Invalid NUMA id range: %v", numaID)
+				klog.ErrorS(nil, "Invalid NUMA id range", "numaID", numaID)
 				continue
 			}
 			resources := extractResources(zone)
@@ -153,7 +153,7 @@ func makePodByResourceListWithManyContainers(resources *v1.ResourceList, contain
 func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
 	res := make(v1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		klog.V(5).Infof("extractResources: resInfo.FilterPluginName %v, resInfo quantity %d", resInfo.Name, resInfo.Available)
+		klog.V(5).InfoS("Extract resources for zone", "resName", resInfo.Name, "resAvailable", resInfo.Available)
 		res[v1.ResourceName(resInfo.Name)] = resInfo.Available
 	}
 	return res

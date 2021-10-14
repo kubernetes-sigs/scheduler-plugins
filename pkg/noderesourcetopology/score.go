@@ -54,21 +54,21 @@ func (rw resourceToWeightMap) weight(r v1.ResourceName) int64 {
 }
 
 func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	klog.V(5).Infof("Call score for node %v", nodeName)
+	klog.V(5).InfoS("Scoring node", "nodeName", nodeName)
 	nodeTopology := findNodeTopology(nodeName, &tm.nodeResTopologyPlugin)
 
 	if nodeTopology == nil {
 		return 0, nil
 	}
 
-	klog.V(5).Infof("nodeTopology: %v", nodeTopology)
+	klog.V(5).InfoS("NodeTopology found", "nodeTopology", nodeTopology)
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			// calculates the fraction of requested to capacity per each numa-node.
 			// return the numa-node with the minimal score as the node's total score
 			return handler.score(pod, nodeTopology.Zones, tm.scorerFn, tm.resourceToWeightMap)
 		} else {
-			klog.V(5).Infof("Handler for policy %s not found", policyName)
+			klog.V(5).InfoS("Policy handler not found", "policy", policyName)
 		}
 	}
 	return 0, nil
@@ -93,7 +93,7 @@ func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, scor
 		numaScores[numa.NUMAID] = numaScore
 	}
 
-	klog.V(5).Infof("numa scores: %v; node score:%v", numaScores, minScore)
+	klog.V(5).InfoS("Score for NUMA nodes", "numaScores", numaScores, "nodeScore", minScore)
 	return minScore
 }
 

@@ -17,6 +17,7 @@ limitations under the License.
 package loadvariationriskbalancing
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -80,7 +81,7 @@ func newCollector(obj runtime.Object) (*Collector, error) {
 	// populate metrics before returning
 	err := collector.updateMetrics()
 	if err != nil {
-		klog.Warningf("unable to populate metrics initially: %v", err)
+		klog.ErrorS(err, "Unable to populate metrics initially")
 	}
 	// start periodic updates
 	go func() {
@@ -88,7 +89,7 @@ func newCollector(obj runtime.Object) (*Collector, error) {
 		for range metricsUpdaterTicker.C {
 			err = collector.updateMetrics()
 			if err != nil {
-				klog.Warningf("unable to update metrics: %v", err)
+				klog.ErrorS(err, "Unable to update metrics")
 			}
 		}
 	}()
@@ -108,7 +109,7 @@ func (collector *Collector) getNodeMetrics(nodeName string) []watcher.Metric {
 	allMetrics := collector.getAllMetrics()
 	// Check if node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := allMetrics.Data.NodeMetricsMap[nodeName]; !ok {
-		klog.Errorf("unable to find metrics for node %v", nodeName)
+		klog.ErrorS(nil, "Unable to find metrics for node", "nodeName", nodeName)
 		return nil
 	}
 	return allMetrics.Data.NodeMetricsMap[nodeName].Metrics
@@ -119,7 +120,7 @@ func getArgs(obj runtime.Object) *pluginConfig.LoadVariationRiskBalancingArgs {
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LoadVariationRiskBalancingArgs)
 	if !ok {
-		klog.Errorf("want args to be of type LoadVariationRiskBalancingArgs, got %T, using defaults", obj)
+		klog.ErrorS(nil, "PluginArgs is not of type LoadVariationRiskBalancingArgs, using defaults", "argsType", fmt.Sprintf("%T", obj))
 		args = &pluginConfig.LoadVariationRiskBalancingArgs{
 			MetricProvider: pluginConfig.MetricProviderSpec{
 				Type: v1beta1.DefaultMetricProviderType,

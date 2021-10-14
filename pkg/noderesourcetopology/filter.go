@@ -133,14 +133,14 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		return nil
 	}
 
-	klog.V(5).InfoS("Found NodeResourceTopology", klog.KObj(nodeTopology))
+	klog.V(5).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			if status := handler.filter(pod, nodeTopology.Zones, nodeInfo); status != nil {
 				return status
 			}
 		} else {
-			klog.V(5).Infof("Policy handler not found", "policy", policyName)
+			klog.V(5).InfoS("Policy handler not found", "policy", policyName)
 		}
 	}
 	return nil

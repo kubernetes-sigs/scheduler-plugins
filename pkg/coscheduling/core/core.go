@@ -189,7 +189,7 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 	if pgCopy.Status.Phase != pg.Status.Phase {
 		pg, err := pgMgr.pgLister.PodGroups(pgCopy.Namespace).Get(pgCopy.Name)
 		if err != nil {
-			klog.ErrorS(err, "podGroup", klog.KObj(pgCopy))
+			klog.ErrorS(err, "Failed to get PodGroup", "podGroup", klog.KObj(pgCopy))
 			return
 		}
 		patch, err := util.CreateMergePatch(pg, pgCopy)
