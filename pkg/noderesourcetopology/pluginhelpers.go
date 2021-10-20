@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -31,22 +31,28 @@ import (
 	listerv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 )
 
-func findNodeTopology(nodeName string, nodeResTopoPlugin *nodeResTopologyPlugin) *topologyv1alpha1.NodeResourceTopology {
+func findNodeTopology(nodeName string, nodeResTopoPlugin *nodeResTopologyPlugin) (*topologyv1alpha1.NodeResourceTopology, error) {
 	klog.V(5).InfoS("Namespaces for nodeResTopoPlugin", "namespaces", nodeResTopoPlugin.namespaces)
+	var nodeTopology *topologyv1alpha1.NodeResourceTopology
+	var err error
 	for _, namespace := range nodeResTopoPlugin.namespaces {
 		klog.V(5).InfoS("Lister for nodeResTopoPlugin", "lister", nodeResTopoPlugin.lister)
 		// NodeTopology couldn't be placed in several namespaces simultaneously
 		lister := nodeResTopoPlugin.lister
-		nodeTopology, err := (*lister).NodeResourceTopologies(namespace).Get(nodeName)
+		nodeTopology, err = (*lister).NodeResourceTopologies(namespace).Get(nodeName)
 		if err != nil {
 			klog.V(5).ErrorS(err, "Cannot get NodeTopologies from NodeResourceTopologyNamespaceLister")
 			continue
 		}
 		if nodeTopology != nil {
-			return nodeTopology
+			return nodeTopology, nil
 		}
 	}
-	return nil
+	if nodeTopology == nil {
+		klog.V(5).ErrorS(err, fmt.Sprintf("Cannot get NodeTopology instances from any of the specified namespaces:%v", nodeResTopoPlugin.namespaces))
+		return nil, fmt.Errorf("Cannot get NodeTopology instances from any of the specified namespaces:%v", nodeResTopoPlugin.namespaces)
+	}
+	return nil, nil
 }
 
 func initNodeTopologyInformer(masterOverride, kubeConfigPath *string) (*listerv1alpha1.NodeResourceTopologyLister, error) {
