@@ -22,7 +22,7 @@ RUN RELEASE_VERSION=${RELEASE_VERSION} make build-noderesourcetopology-plugin
 
 FROM $ARCH/alpine:3.12
 
-COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/noderesourcetopology-plugin /bin/noderesourcetopology-plugin
+COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/noderesourcetopology-plugin /bin/kube-scheduler
 
 WORKDIR /bin
-CMD ["noderesourcetopology-plugin"]
+CMD ["kube-scheduler"]
