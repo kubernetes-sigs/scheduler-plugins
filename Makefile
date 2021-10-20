@@ -42,7 +42,7 @@ all: build
 build: build-controller build-scheduler build-noderesourcetopology-plugin
 
 .PHONY: build.amd64
-build.amd64: build-controller.amd64 build-scheduler.amd64
+build.amd64: build-controller.amd64 build-scheduler.amd64 build-noderesourcetopology-plugin.amd64
 
 .PHONY: build.arm64v8
 build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
@@ -63,10 +63,6 @@ build-controller.arm64v8: autogen
 build-scheduler: autogen
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
-.PHONY: build-noderesourcetopology-plugin
-build-noderesourcetopology-plugin: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/noderesourcetopology-plugin cmd/noderesourcetopology-plugin/main.go
-
 .PHONY: build-scheduler.amd64
 build-scheduler.amd64: autogen
 	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
@@ -74,6 +70,14 @@ build-scheduler.amd64: autogen
 .PHONY: build-scheduler.arm64v8
 build-scheduler.arm64v8: autogen
 	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+
+.PHONY: build-noderesourcetopology-plugin
+build-noderesourcetopology-plugin: autogen
+	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/noderesourcetopology-plugin cmd/noderesourcetopology-plugin/main.go
+
+.PHONY: build-noderesourcetopology-plugin.amd64
+build-noderesourcetopology-plugin.amd64: autogen
+	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/noderesourcetopology-plugin cmd/noderesourcetopology-plugin/main.go
 
 .PHONY: local-image
 local-image: clean
