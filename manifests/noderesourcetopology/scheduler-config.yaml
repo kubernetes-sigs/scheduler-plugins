@@ -21,7 +21,7 @@ profiles:
       # kubeconfig: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
       kubeconfigpath: "/etc/kubernetes/scheduler.conf"
       namespaces:
-      - "test-namespace"
+      - "default"
       # other strategies are MostAllocated and BalancedAllocation
       scoringStrategy:
         type: "LeastAllocated"
