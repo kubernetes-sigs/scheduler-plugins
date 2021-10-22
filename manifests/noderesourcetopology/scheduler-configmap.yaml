@@ -26,6 +26,6 @@ data:
             args:
               kubeconfigpath: "/etc/kubernetes/scheduler.conf"
               namespaces:
-              - "test-namespace"
+              - "default"
               scoringStrategy:
                 type: "LeastAllocated"

@@ -22,6 +22,7 @@ In case the cumulative count of node resource allocatable appear to be the same 
 ### Config
 
 Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerConfigConfiguration.
+NOTE: Update the config below to specify the namespace(s) in which NodeResourceTopology CR instances are present.
 
 ```yaml
 apiVersion: kubescheduler.config.k8s.io/v1beta1
@@ -68,7 +69,7 @@ apiVersion: topology.node.k8s.io/v1alpha1
 kind: NodeResourceTopology
 metadata:
   name: worker-node-A
-  namespace: test-namespace
+  namespace: default
 topologyPolicies: ["SingleNUMANodeContainerLevel"]
 zones:
   - name: numa-node-0
@@ -103,7 +104,7 @@ apiVersion: topology.node.k8s.io/v1alpha1
 kind: NodeResourceTopology
 metadata:
   name: worker-node-B
-  namespace: test-namespace
+  namespace: default
 topologyPolicies: ["SingleNUMANodeContainerLevel"]
 zones:
   - name: numa-node-0
@@ -151,7 +152,6 @@ zones:
          1. Deploy the CRs representative of the hardware topology of the worker-node-A and worker-node-B:
 
             ```bash
-             $ kubectl create -f ns.yaml
              $ kubectl create -f worker-node-A.yaml
              $ kubectl create -f worker-node-B.yaml
             ```
