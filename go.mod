@@ -19,6 +19,7 @@ require (
 	k8s.io/code-generator v0.21.4
 	k8s.io/component-base v0.21.4
 	k8s.io/component-helpers v0.21.4
+	k8s.io/klog/hack/tools v0.0.0-20210917071902-331d2323a192
 	k8s.io/klog/v2 v2.8.0
 	k8s.io/kube-aggregator v0.0.0
 	k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
