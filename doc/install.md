@@ -156,11 +156,11 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
 
 1. **❗IMPORTANT**❗ Install the CRDs your workloads depend on.
 
-    You can refer to each folder under [manifests](../manifests) to obtain the CRD yaml for each
+    You can refer to each folder under [manifests/crds](../manifests/crds) to obtain the CRD yaml for each
     plugin. Here we install coscheduling CRD:
 
     ```bash
-    $ kubectl apply -f manifests/coscheduling/crd.yaml
+    $ kubectl apply -f manifests/crds/scheduling.sigs.k8s.io_podgroups.yaml
     ```
 
 1. Modify `/etc/kubernetes/manifests/kube-scheduler.yaml` to run scheduler-plugins with coscheduling
