@@ -115,6 +115,13 @@ func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
 		args.TargetUtilization = &DefaultTargetUtilizationPercent
 	}
+	metricProviderType := string(args.MetricProvider.Type)
+	validMetricProviderType := metricProviderType == string(pluginConfig.KubernetesMetricsServer) ||
+		metricProviderType == string(pluginConfig.Prometheus) ||
+		metricProviderType == string(pluginConfig.SignalFx)
+	if args.WatcherAddress == nil && !validMetricProviderType {
+		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+	}
 }
 
 // SetDefaultLoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
