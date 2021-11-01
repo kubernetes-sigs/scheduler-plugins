@@ -86,6 +86,9 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		opts := watcher.MetricsProviderOpts{string(args.MetricProvider.Type), args.MetricProvider.Address, args.MetricProvider.Token}
 		client, err = loadwatcherapi.NewLibraryClient(opts)
 	}
+	if err != nil {
+		return nil, err
+	}
 
 	pl := &TargetLoadPacking{
 		handle:       handle,
@@ -181,9 +184,15 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	pl.mu.RLock()
 	metrics := pl.metrics
 	pl.mu.RUnlock()
+
+	// This happens if metrics were never populated since scheduler started
+	if metrics.Data.NodeMetricsMap == nil {
+		klog.ErrorS(nil, "Metrics not available from watcher, assigning 0 score to node", "nodeName", nodeName);
+		return framework.MinNodeScore, nil;
+	}
 	// This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok {
-		klog.V(6).InfoS("Unable to find metrics for node", "nodeName", nodeName)
+		klog.InfoS("Unable to find metrics for node", "nodeName", nodeName)
 		// Avoid the node by scoring minimum
 		return framework.MinNodeScore, nil
 		// TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state

@@ -107,6 +107,11 @@ func (collector *Collector) getAllMetrics() *watcher.WatcherMetrics {
 // getNodeMetrics : get metrics for a node from watcher
 func (collector *Collector) getNodeMetrics(nodeName string) []watcher.Metric {
 	allMetrics := collector.getAllMetrics()
+	// This happens if metrics were never populated since scheduler started
+	if allMetrics.Data.NodeMetricsMap == nil {
+		klog.ErrorS(nil, "Metrics not available from watcher, assigning 0 score to node", "nodeName", nodeName);
+		return nil;
+	}
 	// Check if node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := allMetrics.Data.NodeMetricsMap[nodeName]; !ok {
 		klog.ErrorS(nil, "Unable to find metrics for node", "nodeName", nodeName)
