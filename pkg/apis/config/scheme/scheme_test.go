@@ -189,7 +189,7 @@ profiles:
 								DefaultRequestsMultiplier: "1.5",
 								WatcherAddress:            "",
 								MetricProvider: config.MetricProviderSpec{
-									Type:    "",
+									Type:    config.KubernetesMetricsServer,
 									Address: "",
 									Token:   "",
 								},
