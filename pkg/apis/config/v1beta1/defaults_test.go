@@ -87,6 +87,9 @@ func TestSchedulingDefaults(t *testing.T) {
 					strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("1.5"),
 				TargetUtilization:         pointer.Int64Ptr(40),
+				MetricProvider: MetricProviderSpec{
+					Type: "KubernetesMetricsServer",
+				},
 			},
 		},
 		{
@@ -95,11 +98,13 @@ func TestSchedulingDefaults(t *testing.T) {
 				DefaultRequests:           v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("2.5"),
 				TargetUtilization:         pointer.Int64Ptr(50),
+				WatcherAddress:            pointer.StringPtr("http://localhost:2020"),
 			},
 			expect: &TargetLoadPackingArgs{
 				DefaultRequests:           v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("2.5"),
 				TargetUtilization:         pointer.Int64Ptr(50),
+				WatcherAddress:            pointer.StringPtr("http://localhost:2020"),
 			},
 		},
 		{
