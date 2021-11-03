@@ -26,14 +26,13 @@ import (
 // NewFramework is a variant version of st.NewFramework - with extra PluginConfig slice as input.
 func NewFramework(fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profileName string, opts ...runtime.Option) (framework.Framework, error) {
 	registry := runtime.Registry{}
-	plugins := &config.Plugins{}
-	for _, f := range fns {
-		f(&registry, plugins)
-	}
 	profile := &config.KubeSchedulerProfile{
 		SchedulerName: profileName,
-		Plugins:       plugins,
+		Plugins:       &config.Plugins{},
 		PluginConfig:  cfgs,
+	}
+	for _, f := range fns {
+		f(&registry, profile)
 	}
 	return runtime.NewFramework(registry, profile, opts...)
 }

@@ -53,7 +53,7 @@ func TestQOSPlugin(t *testing.T) {
 	}
 	testCtx := util.InitTestSchedulerWithOptions(
 		t,
-		testutils.InitTestMaster(t, "sched-qos", nil),
+		testutils.InitTestAPIServer(t, "sched-qos", nil),
 		false,
 		scheduler.WithProfiles(profile),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),

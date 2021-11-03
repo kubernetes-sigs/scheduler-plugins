@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	v1 "k8s.io/kube-scheduler/config/v1"
 	defaultconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	"k8s.io/kubernetes/pkg/scheduler/apis/config/testing/defaults"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
@@ -92,6 +93,7 @@ profiles:
 			wantProfiles: []defaultconfig.KubeSchedulerProfile{
 				{
 					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1beta1,
 					PluginConfig: []defaultconfig.PluginConfig{
 						{
 							Name: coscheduling.Name,
@@ -137,6 +139,43 @@ profiles:
 								},
 							},
 						},
+						{
+							Name: "DefaultPreemption",
+							Args: &defaultconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &defaultconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &defaultconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &defaultconfig.NodeResourcesBalancedAllocationArgs{Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &defaultconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &defaultconfig.ScoringStrategy{
+									Type:      defaultconfig.LeastAllocated,
+									Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "NodeResourcesLeastAllocated",
+							Args: &defaultconfig.NodeResourcesLeastAllocatedArgs{Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &defaultconfig.PodTopologySpreadArgs{DefaultingType: defaultconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &defaultconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
+						},
 					},
 				},
 			},
@@ -161,6 +200,7 @@ profiles:
 			wantProfiles: []defaultconfig.KubeSchedulerProfile{
 				{
 					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1beta1,
 					PluginConfig: []defaultconfig.PluginConfig{
 						{
 							Name: coscheduling.Name,
@@ -207,6 +247,43 @@ profiles:
 									Token:   "",
 								},
 							},
+						},
+						{
+							Name: "DefaultPreemption",
+							Args: &defaultconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &defaultconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &defaultconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &defaultconfig.NodeResourcesBalancedAllocationArgs{Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &defaultconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &defaultconfig.ScoringStrategy{
+									Type:      defaultconfig.LeastAllocated,
+									Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "NodeResourcesLeastAllocated",
+							Args: &defaultconfig.NodeResourcesLeastAllocatedArgs{Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &defaultconfig.PodTopologySpreadArgs{DefaultingType: defaultconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &defaultconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
 						},
 					},
 				},
@@ -259,7 +336,7 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 		version schema.GroupVersion
 		want    string
 	}{
-		//v1beta1 tests
+		// v1beta1 tests
 		{
 			name:    "v1beta1 plugins",
 			version: v1beta1.SchemeGroupVersion,

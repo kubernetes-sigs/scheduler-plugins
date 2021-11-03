@@ -55,7 +55,7 @@ func TestAllocatablePlugin(t *testing.T) {
 
 	testCtx := util.InitTestSchedulerWithOptions(
 		t,
-		testutils.InitTestMaster(t, "sched-allocatable", nil),
+		testutils.InitTestAPIServer(t, "sched-allocatable", nil),
 		true,
 		scheduler.WithProfiles(profile),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),

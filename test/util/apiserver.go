@@ -31,6 +31,7 @@ import (
 	"github.com/google/uuid"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	genericapiserveroptions "k8s.io/apiserver/pkg/server/options"
@@ -104,18 +105,19 @@ func StartApi(t *testing.T, stopCh <-chan struct{}) (client.Interface, *rest.Con
 	if err != nil {
 		t.Fatalf("%+v", err)
 	}
-	tunneler, proxyTransport, err := app.CreateNodeDialer(completedOptions)
-	if err != nil {
-		t.Fatalf("%+v", err)
+
+	if errs := completedOptions.Validate(); len(errs) != 0 {
+		t.Fatalf("failed to validate ServerRunOptions: %v", utilerrors.NewAggregate(errs))
 	}
-	kubeAPIServerConfig, serviceResolver, pluginInitializer, err := app.CreateKubeAPIServerConfig(completedOptions, tunneler, proxyTransport)
+
+	kubeAPIServerConfig, serviceResolver, pluginInitializer, err := app.CreateKubeAPIServerConfig(completedOptions)
 	if err != nil {
-		t.Fatalf("%+v", err)
+		t.Fatal(err)
 	}
 
 	// If additional API servers are added, they should be gated.
 	apiExtensionsConfig, err := createAPIExtensionsConfig(*kubeAPIServerConfig.GenericConfig, kubeAPIServerConfig.ExtraConfig.VersionedInformers, pluginInitializer, completedOptions.ServerRunOptions, completedOptions.MasterCount,
-		serviceResolver, webhook.NewDefaultAuthenticationInfoResolverWrapper(proxyTransport, kubeAPIServerConfig.GenericConfig.EgressSelector, kubeAPIServerConfig.GenericConfig.LoopbackClientConfig))
+		serviceResolver, webhook.NewDefaultAuthenticationInfoResolverWrapper(kubeAPIServerConfig.ExtraConfig.ProxyTransport, kubeAPIServerConfig.GenericConfig.EgressSelector, kubeAPIServerConfig.GenericConfig.LoopbackClientConfig, kubeAPIServerConfig.GenericConfig.TracerProvider))
 	if err != nil {
 		t.Fatalf("%+v", err)
 	}
@@ -130,7 +132,7 @@ func StartApi(t *testing.T, stopCh <-chan struct{}) (client.Interface, *rest.Con
 	}
 
 	// aggregator comes last in the chain
-	aggregatorConfig, err := createAggregatorConfig(*kubeAPIServerConfig.GenericConfig, completedOptions.ServerRunOptions, kubeAPIServerConfig.ExtraConfig.VersionedInformers, serviceResolver, proxyTransport, pluginInitializer)
+	aggregatorConfig, err := createAggregatorConfig(*kubeAPIServerConfig.GenericConfig, completedOptions.ServerRunOptions, kubeAPIServerConfig.ExtraConfig.VersionedInformers, serviceResolver, kubeAPIServerConfig.ExtraConfig.ProxyTransport, pluginInitializer)
 	if err != nil {
 		t.Fatalf("%+v", err)
 	}

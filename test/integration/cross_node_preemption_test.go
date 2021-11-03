@@ -91,7 +91,7 @@ func TestCrossNodePreemptionPlugin(t *testing.T) {
 			}
 			testCtx := util.InitTestSchedulerWithOptions(
 				t,
-				testutils.InitTestMaster(t, "sched-crossnodepreemption", nil),
+				testutils.InitTestAPIServer(t, "sched-crossnodepreemption", nil),
 				true,
 				scheduler.WithProfiles(profile),
 				scheduler.WithFrameworkOutOfTreeRegistry(registry),

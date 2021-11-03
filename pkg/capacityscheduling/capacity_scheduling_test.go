@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
@@ -32,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
+	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -283,7 +285,9 @@ func TestFindCandidates(t *testing.T) {
 			registeredPlugins := []st.RegisterPluginFunc{
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterPluginAsExtensions(noderesources.FitName, noderesources.NewFit, "Filter", "PreFilter"),
+				st.RegisterPluginAsExtensions(noderesources.FitName, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
+				}, "Filter", "PreFilter"),
 			}
 
 			cs := clientsetfake.NewSimpleClientset()

@@ -113,7 +113,7 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 
 	testCtx := util.InitTestSchedulerWithOptions(
 		t,
-		testutils.InitTestMaster(t, "sched-trimaran", nil),
+		testutils.InitTestAPIServer(t, "sched-trimaran", nil),
 		true,
 		scheduler.WithProfiles(profile),
 		scheduler.WithFrameworkOutOfTreeRegistry(registry),

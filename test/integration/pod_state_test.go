@@ -82,7 +82,7 @@ func TestPodStatePlugin(t *testing.T) {
 			}
 			testCtx := util.InitTestSchedulerWithOptions(
 				t,
-				testutils.InitTestMaster(t, "sched-podstate", nil),
+				testutils.InitTestAPIServer(t, "sched-podstate", nil),
 				true,
 				scheduler.WithProfiles(profile),
 				scheduler.WithFrameworkOutOfTreeRegistry(registry),

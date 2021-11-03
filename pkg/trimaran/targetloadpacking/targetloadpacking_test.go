@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -399,10 +398,7 @@ func newTestSharedLister(pods []*v1.Pod, nodes []*v1.Node) *testSharedLister {
 		if _, ok := nodeInfoMap[node.Name]; !ok {
 			nodeInfoMap[node.Name] = framework.NewNodeInfo()
 		}
-		err := nodeInfoMap[node.Name].SetNode(node)
-		if err != nil {
-			log.Fatal(err)
-		}
+		nodeInfoMap[node.Name].SetNode(node)
 	}
 
 	for _, v := range nodeInfoMap {
