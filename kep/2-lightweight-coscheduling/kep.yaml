@@ -1,0 +1,18 @@
+title: Lightweight coscheduling based on back-to-back queue sorting
+kep-number: 2
+authors:
+  - "@denkensk"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@ahg-g"
+  - "@alculquicondor"
+  - "k82cn"
+  - "@resouer"
+  - "@hex108"
+  - "@everpeace"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2020-01-16
+last-updated: 2020-01-16
+status: implementable

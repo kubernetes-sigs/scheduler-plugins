@@ -1,0 +1,15 @@
+title: Simplified version of Topology Manager in kube-scheduler
+kep-number: 119
+authors:
+  - "@AlexeyPerevalov"
+  - "@swatisehgal"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@ahg-g"
+  - "@alculquicondor"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2020-11-24
+last-updated: 2020-11-24
+status: implementable

@@ -1,0 +1,26 @@
+title: Capacity scheduling
+kep-number: 
+authors:
+  - "@denkensk"
+  - "@Fei-Guo"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-scheduling
+status: implementable
+creation-date: 2020-06-22
+reviewers:
+  - "@ahg-g"
+  - "@Huang-Wei"
+  - "@alculquicondor"
+  - "@yuanchen8911"
+approvers:
+  - "Huang-Wei"
+stage: alpha
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+disable-supported: true
+metrics:
+  - pod_preemption_victims
+  - total_preemption_attempts
+  - scheduling_algorithm_preemption_evaluation_seconds

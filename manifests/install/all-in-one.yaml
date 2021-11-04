@@ -1,0 +1,84 @@
+# First part
+# Apply extra privileges to system:kube-scheduler.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: system:kube-scheduler:plugins
+rules:
+- apiGroups: ["scheduling.sigs.k8s.io"]
+  resources: ["podgroups", "elasticquotas"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: system:kube-scheduler:plugins
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-scheduler:plugins
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: system:kube-scheduler
+---
+# Second part
+# Install the controller image.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scheduler-plugins
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scheduler-plugins-controller
+  namespace: scheduler-plugins
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: scheduler-plugins-controller
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["scheduling.sigs.k8s.io"]
+  resources: ["podgroups", "elasticquotas"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: scheduler-plugins-controller
+subjects:
+- kind: ServiceAccount
+  name: scheduler-plugins-controller
+  namespace: scheduler-plugins
+roleRef:
+  kind: ClusterRole
+  name: scheduler-plugins-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: scheduler-plugins-controller
+  namespace: scheduler-plugins
+  labels:
+    app: scheduler-plugins-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler-plugins-controller
+  template:
+    metadata:
+      labels:
+        app: scheduler-plugins-controller
+    spec:
+      serviceAccount: scheduler-plugins-controller
+      containers:
+      - name: scheduler-plugins-controller
+        image: k8s.gcr.io/scheduler-plugins/controller:v0.20.10
+        imagePullPolicy: IfNotPresent
