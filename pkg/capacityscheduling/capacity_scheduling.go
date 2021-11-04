@@ -41,13 +41,14 @@ import (
 	kubefeatures "k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
-	"k8s.io/kubernetes/pkg/scheduler/util"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	externalv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 // CapacityScheduling is a plugin that implements the mechanism of capacity scheduling.
@@ -245,7 +246,7 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.Cyc
 			ns := p.Pod.Namespace
 			info := c.elasticQuotaInfos[ns]
 			if info != nil {
-				pResourceRequest := computePodResourceRequest(p.Pod).ResourceList()
+				pResourceRequest := util.ResourceList(computePodResourceRequest(p.Pod))
 				// If they are subject to the same quota(namespace) and p is more important than pod,
 				// p will be added to the nominatedResource and totalNominatedResource.
 				// If they aren't subject to the same quota(namespace) and the usage of quota(p's namespace) does not exceed min,
@@ -260,8 +261,8 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.Cyc
 		}
 	}
 
-	nominatedPodsReqInEQWithPodReq.Add(podReq.ResourceList())
-	nominatedPodsReqWithPodReq.Add(podReq.ResourceList())
+	nominatedPodsReqInEQWithPodReq.Add(util.ResourceList(podReq))
+	nominatedPodsReqWithPodReq.Add(util.ResourceList(podReq))
 	preFilterState := &PreFilterState{
 		podReq:                         *podReq,
 		nominatedPodsReqInEQWithPodReq: *nominatedPodsReqInEQWithPodReq,
@@ -504,7 +505,7 @@ func (c *CapacityScheduling) FindCandidates(ctx context.Context, cs kubernetes.I
 	if len(potentialNodes) == 0 {
 		klog.V(3).InfoS("Preemption will not help schedule pod on any node.", "pod", klog.KObj(pod))
 		// In this case, we should clean-up any existing nominated node name of the pod.
-		if err := util.ClearNominatedNodeName(cs, pod); err != nil {
+		if err := schedutil.ClearNominatedNodeName(cs, pod); err != nil {
 			klog.ErrorS(err, "Cannot clear 'NominatedNodeName' field of pod", "pod", klog.KObj(pod))
 			// We do not return as this error is not critical.
 		}
@@ -621,7 +622,7 @@ func selectVictimsOnNode(
 	preemptorElasticQuotaInfo, preemptorWithElasticQuota := elasticQuotaInfos[pod.Namespace]
 
 	// sort the pods in node by the priority class
-	sort.Slice(nodeInfo.Pods, func(i, j int) bool { return !util.MoreImportantPod(nodeInfo.Pods[i].Pod, nodeInfo.Pods[j].Pod) })
+	sort.Slice(nodeInfo.Pods, func(i, j int) bool { return !schedutil.MoreImportantPod(nodeInfo.Pods[i].Pod, nodeInfo.Pods[j].Pod) })
 
 	var potentialVictims []*framework.PodInfo
 	if preemptorWithElasticQuota {
@@ -705,7 +706,9 @@ func selectVictimsOnNode(
 
 	var victims []*v1.Pod
 	numViolatingVictim := 0
-	sort.Slice(potentialVictims, func(i, j int) bool { return util.MoreImportantPod(potentialVictims[i].Pod, potentialVictims[j].Pod) })
+	sort.Slice(potentialVictims, func(i, j int) bool {
+		return schedutil.MoreImportantPod(potentialVictims[i].Pod, potentialVictims[j].Pod)
+	})
 	// Try to reprieve as many pods as possible. We first try to reprieve the PDB
 	// violating victims and then other non-violating ones. In both cases, we start
 	// from the highest priority victims.

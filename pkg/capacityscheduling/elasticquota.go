@@ -20,6 +20,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 type ElasticQuotaInfos map[string]*ElasticQuotaInfo
@@ -41,11 +42,11 @@ func (e ElasticQuotaInfos) aggregatedUsedOverMinWith(podRequest framework.Resour
 	min := framework.NewResource(nil)
 
 	for _, elasticQuotaInfo := range e {
-		used.Add(elasticQuotaInfo.Used.ResourceList())
-		min.Add(elasticQuotaInfo.Min.ResourceList())
+		used.Add(util.ResourceList(elasticQuotaInfo.Used))
+		min.Add(util.ResourceList(elasticQuotaInfo.Min))
 	}
 
-	used.Add(podRequest.ResourceList())
+	used.Add(util.ResourceList(&podRequest))
 	return cmp(used, min)
 }
 
