@@ -11,13 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG ARCH
+
 FROM golang:1.17 as builder
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
 
-ARG ARCH
 ARG RELEASE_VERSION
 RUN RELEASE_VERSION=${RELEASE_VERSION} make build-noderesourcetopology-plugin
 
