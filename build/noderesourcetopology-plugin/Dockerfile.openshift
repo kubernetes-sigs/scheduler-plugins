@@ -1,0 +1,5 @@
+FROM registry.access.redhat.com/ubi8/ubi-minimal
+COPY noderesourcetopology-plugin /bin/kube-scheduler
+USER 65532:65532
+WORKDIR /bin
+CMD ["kube-scheduler"]
