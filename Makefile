@@ -122,6 +122,10 @@ update-vendor:
 unit-test: autogen
 	hack/unit-test.sh
 
+.PHONY: unit-test-quick
+unit-test-quick:
+	hack/unit-test-quick.sh
+
 .PHONY: install-etcd
 install-etcd:
 	hack/install-etcd.sh
