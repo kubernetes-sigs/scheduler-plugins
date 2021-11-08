@@ -40,10 +40,7 @@ func podScheduled(c clientset.Interface, podNamespace, podName string) bool {
 		klog.ErrorS(err, "Failed to get pod", "pod", klog.KRef(podNamespace, podName))
 		return false
 	}
-	if pod.Spec.NodeName == "" {
-		return false
-	}
-	return true
+	return pod.Spec.NodeName != ""
 }
 
 type resourceWrapper struct{ v1.ResourceList }

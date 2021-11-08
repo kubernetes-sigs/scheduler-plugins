@@ -21,9 +21,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	"k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -70,9 +71,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		CancelFn: cancelFunc,
 		CloseFn:  func() {},
 	}
-	registry := fwkruntime.Registry{
-		noderesourcetopology.Name: noderesourcetopology.New,
-	}
+
 	t.Log("create apiserver")
 	_, config := util.StartApi(t, todo.Done())
 
@@ -134,33 +133,21 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	testCtx.NS = ns
 	testCtx.ClientSet = cs
 
-	profiles := []schedapi.KubeSchedulerProfile{
-		// a profile with only the filter plugin enabled
-		{
-			SchedulerName: v1.DefaultSchedulerName,
-			Plugins: &schedapi.Plugins{
-				Filter: schedapi.PluginSet{
-					Enabled: []schedapi.Plugin{
-						{Name: noderesourcetopology.Name},
-					},
-				},
-				Score: schedapi.PluginSet{
-					Disabled: []schedapi.Plugin{
-						{Name: noderesourcetopology.Name},
-					},
-				},
-			},
-			PluginConfig: []schedapi.PluginConfig{
-				{
-					Name: noderesourcetopology.Name,
-					Args: &scheconfig.NodeResourceTopologyMatchArgs{
-						KubeConfigPath:  kubeConfigPath,
-						Namespaces:      []string{ns.Name},
-						ScoringStrategy: scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated},
-					},
-				},
-			},
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Profiles[0].Plugins.Filter.Enabled = append(cfg.Profiles[0].Plugins.Filter.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].Plugins.Score.Enabled = append(cfg.Profiles[0].Plugins.Score.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: noderesourcetopology.Name,
+		Args: &scheconfig.NodeResourceTopologyMatchArgs{
+			KubeConfigPath:  kubeConfigPath,
+			Namespaces:      []string{ns.Name},
+			ScoringStrategy: scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated},
 		},
+	})
+	cfg.Profiles = append(cfg.Profiles,
 		// a profile with both the filter and score enabled and score strategy is MostAllocated
 		makeProfileByPluginArgs(
 			leastAllocatableScheduler,
@@ -176,14 +163,14 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			mostAllocatableScheduler,
 			makeResourceAllocationScoreArgs(kubeConfigPath, ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.LeastAllocated}),
 		),
-	}
+	)
 
 	testCtx = util.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
 		true,
-		scheduler.WithProfiles(profiles...),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
 	)
 	t.Log("init scheduler success")
 	defer testutils.CleanupTest(t, testCtx)

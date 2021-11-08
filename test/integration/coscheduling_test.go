@@ -39,8 +39,9 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutils "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 
-	scheconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
@@ -57,7 +58,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 		CancelFn: cancelFunc,
 		CloseFn:  func() {},
 	}
-	registry := fwkruntime.Registry{coscheduling.Name: coscheduling.New}
+
 	t.Log("create apiserver")
 	_, config := util.StartApi(t, todo.Done())
 
@@ -97,50 +98,26 @@ func TestCoschedulingPlugin(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Waiting for crd read time out: %v", err)
 	}
-	cfg := &scheconfig.CoschedulingArgs{
-		KubeConfigPath:           kubeConfigPath,
-		PermitWaitingTimeSeconds: 3,
-	}
 
-	profile := schedapi.KubeSchedulerProfile{
-		SchedulerName: v1.DefaultSchedulerName,
-		Plugins: &schedapi.Plugins{
-			QueueSort: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-				Disabled: []schedapi.Plugin{
-					{Name: "*"},
-				},
-			},
-			PreFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-			PostFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-			Permit: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-			PostBind: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-		},
-		PluginConfig: []schedapi.PluginConfig{
-			{
-				Name: coscheduling.Name,
-				Args: cfg,
-			},
-		},
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
+	cfg.Profiles[0].Plugins.QueueSort = schedapi.PluginSet{
+		Enabled:  []schedapi.Plugin{{Name: coscheduling.Name}},
+		Disabled: []schedapi.Plugin{{Name: "*"}},
+	}
+	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.PostFilter.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.Permit.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.PostBind.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: capacityscheduling.Name,
+		Args: &schedconfig.CoschedulingArgs{
+			KubeConfigPath:           kubeConfigPath,
+			PermitWaitingTimeSeconds: 3,
+		},
+	})
 
 	ns, err := cs.CoreV1().Namespaces().Create(ctx, &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))}}, metav1.CreateOptions{})
@@ -163,8 +140,8 @@ func TestCoschedulingPlugin(t *testing.T) {
 		t,
 		testCtx,
 		true,
-		scheduler.WithProfiles(profile),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{coscheduling.Name: coscheduling.New}),
 	)
 	t.Log("init scheduler success")
 	defer testutils.CleanupTest(t, testCtx)
@@ -429,7 +406,6 @@ func TestCoschedulingPlugin(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)
 				}
-
 			}
 			err = wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {

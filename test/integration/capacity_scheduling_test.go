@@ -20,9 +20,11 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
-	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
+
+	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	"sigs.k8s.io/yaml"
 
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -39,7 +41,6 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutil "k8s.io/kubernetes/test/integration/util"
 
-	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
@@ -58,7 +59,6 @@ func TestCapacityScheduling(t *testing.T) {
 		CloseFn:  func() {},
 	}
 
-	registry := fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}
 	t.Log("create apiserver")
 	_, config := util.StartApi(t, todo.Done())
 
@@ -99,47 +99,30 @@ func TestCapacityScheduling(t *testing.T) {
 		t.Fatalf("Waiting for crd read time out: %v", err)
 	}
 
-	cfg := &schedconfig.CapacitySchedulingArgs{
-		KubeConfigPath: kubeConfigPath,
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	profile := schedapi.KubeSchedulerProfile{
-		SchedulerName: v1.DefaultSchedulerName,
-		Plugins: &schedapi.Plugins{
-			PreFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: capacityscheduling.Name},
-				},
-			},
-			PostFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: capacityscheduling.Name},
-				},
-				Disabled: []schedapi.Plugin{
-					{Name: "*"},
-				},
-			},
-			Reserve: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: capacityscheduling.Name},
-				},
-			},
-		},
-		PluginConfig: []schedapi.PluginConfig{
-			{
-				Name: capacityscheduling.Name,
-				Args: cfg,
-			},
-		},
+	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: capacityscheduling.Name})
+	cfg.Profiles[0].Plugins.PostFilter = schedapi.PluginSet{
+		Enabled:  []schedapi.Plugin{{Name: capacityscheduling.Name}},
+		Disabled: []schedapi.Plugin{{Name: "*"}},
 	}
+	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: capacityscheduling.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: capacityscheduling.Name,
+		Args: &schedconfig.CapacitySchedulingArgs{
+			KubeConfigPath: kubeConfigPath,
+		},
+	})
 
 	testCtx.ClientSet = cs
 	testCtx = util.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
 		true,
-		scheduler.WithProfiles(profile),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}),
 	)
 	t.Log("init scheduler success")
 	defer testutil.CleanupTest(t, testCtx)
