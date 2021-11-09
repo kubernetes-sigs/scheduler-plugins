@@ -42,6 +42,7 @@ func InitTestSchedulerWithOptions(
 		Interface: testCtx.ClientSet.EventsV1(),
 	})
 
+	opts = append(opts, scheduler.WithKubeConfig(testCtx.KubeConfig))
 	testCtx.Scheduler, err = scheduler.New(
 		testCtx.ClientSet,
 		testCtx.InformerFactory,

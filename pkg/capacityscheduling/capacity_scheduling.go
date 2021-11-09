@@ -34,7 +34,6 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	policylisters "k8s.io/client-go/listers/policy/v1beta1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
@@ -43,7 +42,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -114,12 +112,6 @@ func (c *CapacityScheduling) Name() string {
 
 // New initializes a new plugin and returns it.
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	args, ok := obj.(*config.CapacitySchedulingArgs)
-	if !ok {
-		return nil, fmt.Errorf("want args to be of type CapacitySchedulingArgs, got %T", obj)
-	}
-	kubeConfigPath := args.KubeConfigPath
-
 	c := &CapacityScheduling{
 		fh:                handle,
 		elasticQuotaInfos: NewElasticQuotaInfos(),
@@ -127,11 +119,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		pdbLister:         getPDBLister(handle.SharedInformerFactory()),
 	}
 
-	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
-	if err != nil {
-		return nil, err
-	}
-	client, err := versioned.NewForConfig(restConfig)
+	client, err := versioned.NewForConfig(handle.KubeConfig())
 	if err != nil {
 		return nil, err
 	}
