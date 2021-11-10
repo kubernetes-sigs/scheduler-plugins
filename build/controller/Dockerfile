@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ARG ARCH
-FROM golang:1.15.10
+FROM golang:1.16.10
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
