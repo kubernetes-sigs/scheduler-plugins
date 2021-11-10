@@ -22,6 +22,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,12 +40,10 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testfwk "k8s.io/kubernetes/test/integration/framework"
 	testutil "k8s.io/kubernetes/test/integration/util"
-	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
-
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -110,7 +109,7 @@ func TestElasticController(t *testing.T) {
 		t,
 		testCtx,
 		true,
-		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{coscheduling.Name: coscheduling.New}),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}),
 	)
 	t.Log("Init scheduler success")
 	defer testutil.CleanupTest(t, testCtx)

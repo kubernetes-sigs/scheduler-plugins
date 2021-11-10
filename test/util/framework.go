@@ -46,7 +46,7 @@ func NewDefaultSchedulerComponentConfig() (config.KubeSchedulerConfiguration, er
 	scheme.Scheme.Default(&versionedCfg)
 	cfg := config.KubeSchedulerConfiguration{}
 	if err := scheme.Scheme.Convert(&versionedCfg, &cfg, nil); err != nil {
-		return config.KubeSchedulerConfiguration{}, nil
+		return config.KubeSchedulerConfiguration{}, err
 	}
 	return cfg, nil
 }

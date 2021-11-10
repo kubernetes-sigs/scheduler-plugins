@@ -130,7 +130,7 @@ func TestCapacityScheduling(t *testing.T) {
 		_, err := testCtx.ClientSet.CoreV1().Namespaces().Create(testCtx.Ctx, &v1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{})
 		if err != nil && !errors.IsAlreadyExists(err) {
-			t.Fatalf("Failed to crate integration test ns: %v", err)
+			t.Fatalf("Failed to create integration test ns: %v", err)
 		}
 	}
 
