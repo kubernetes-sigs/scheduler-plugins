@@ -23,11 +23,12 @@ import (
 	"gonum.org/v1/gonum/stat"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+
+	ulog "sigs.k8s.io/scheduler-plugins/pkg/util/log"
 )
 
 const (
@@ -54,21 +55,21 @@ func (rw resourceToWeightMap) weight(r v1.ResourceName) int64 {
 }
 
 func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	klog.V(5).InfoS("Scoring node", "nodeName", nodeName)
+	ulog.V(5, pod).InfoS("Scoring node", "nodeName", nodeName)
 	nodeTopology := findNodeTopology(nodeName, tm.lister)
 
 	if nodeTopology == nil {
 		return 0, nil
 	}
 
-	klog.V(5).InfoS("NodeTopology found", "nodeTopology", nodeTopology)
+	ulog.V(5, pod).InfoS("NodeTopology found", "nodeTopology", nodeTopology)
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			// calculates the fraction of requested to capacity per each numa-node.
 			// return the numa-node with the minimal score as the node's total score
 			return handler.score(pod, nodeTopology.Zones, tm.scorerFn, tm.resourceToWeightMap)
 		} else {
-			klog.V(5).InfoS("Policy handler not found", "policy", policyName)
+			ulog.V(5, pod).InfoS("Policy handler not found", "policy", policyName)
 		}
 	}
 	return 0, nil
@@ -80,7 +81,7 @@ func (tm *TopologyMatch) ScoreExtensions() framework.ScoreExtensions {
 
 // scoreForEachNUMANode will iterate over all NUMA zones of the node and invoke the scoreStrategy func for every zone.
 // it will return the minimal score of all the calculated NUMA's score, in order to avoid edge cases.
-func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, score scoreStrategy, resourceToWeightMap resourceToWeightMap) int64 {
+func scoreForEachNUMANode(pod *v1.Pod, requested v1.ResourceList, numaList NUMANodeList, score scoreStrategy, resourceToWeightMap resourceToWeightMap) int64 {
 	numaScores := make([]int64, len(numaList))
 	minScore := int64(0)
 
@@ -93,7 +94,7 @@ func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, scor
 		numaScores[numa.NUMAID] = numaScore
 	}
 
-	klog.V(5).InfoS("Score for NUMA nodes", "numaScores", numaScores, "nodeScore", minScore)
+	ulog.V(5, pod).InfoS("Score for NUMA nodes", "numaScores", numaScores, "nodeScore", minScore)
 	return minScore
 }
 
@@ -126,7 +127,7 @@ func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreS
 		}
 	}
 	allocatablePerNUMA := createNUMANodeList(zones)
-	return scoreForEachNUMANode(resources, allocatablePerNUMA, scorerFn, resourceToWeightMap), nil
+	return scoreForEachNUMANode(pod, resources, allocatablePerNUMA, scorerFn, resourceToWeightMap), nil
 }
 
 func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
@@ -137,7 +138,7 @@ func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn 
 	allocatablePerNUMA := createNUMANodeList(zones)
 
 	for i, container := range containers {
-		contScore[i] = float64(scoreForEachNUMANode(container.Resources.Requests, allocatablePerNUMA, scorerFn, resourceToWeightMap))
+		contScore[i] = float64(scoreForEachNUMANode(pod, container.Resources.Requests, allocatablePerNUMA, scorerFn, resourceToWeightMap))
 	}
 	return int64(stat.Mean(contScore, nil)), nil
 }

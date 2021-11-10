@@ -30,12 +30,13 @@ import (
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
+	ulog "sigs.k8s.io/scheduler-plugins/pkg/util/log"
 )
 
 type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList) *framework.Status
 
 func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
-	klog.V(5).InfoS("Single NUMA node handler")
+	ulog.V(5, pod).InfoS("Single NUMA node handler")
 
 	// prepare NUMANodes list from zoneMap
 	nodes := createNUMANodeList(zones)
@@ -97,7 +98,7 @@ func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1
 }
 
 func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
-	klog.V(5).InfoS("Pod Level Resource handler")
+	ulog.V(5, pod).InfoS("Pod Level Resource handler")
 	resources := make(v1.ResourceList)
 
 	// We count here in the way TopologyManager is doing it, IOW we put InitContainers
@@ -123,7 +124,8 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	if nodeInfo.Node() == nil {
 		return framework.NewStatus(framework.Error, "node not found")
 	}
-	if v1qos.GetPodQOS(pod) == v1.PodQOSBestEffort {
+	if podQos := v1qos.GetPodQOS(pod); podQos == v1.PodQOSBestEffort {
+		ulog.V(7, pod).InfoS("Unsupported pod QoS", "QoS", podQos)
 		return nil
 	}
 
@@ -131,17 +133,18 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	nodeTopology := findNodeTopology(nodeName, tm.lister)
 
 	if nodeTopology == nil {
+		ulog.V(6, pod).InfoS("Missing NodeResourceTopology", "node", nodeName)
 		return nil
 	}
 
-	klog.V(5).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
+	ulog.V(5, pod).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			if status := handler.filter(pod, nodeTopology.Zones, nodeInfo); status != nil {
 				return status
 			}
 		} else {
-			klog.V(5).InfoS("Policy handler not found", "policy", policyName)
+			ulog.V(5, pod).InfoS("Policy handler not found", "policy", policyName)
 		}
 	}
 	return nil
