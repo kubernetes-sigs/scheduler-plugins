@@ -4,12 +4,12 @@
 
 scheduler:
   name: scheduler-plugins-scheduler
-  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.20.10
+  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.21.6
   namespace: scheduler-plugins
   replicaCount: 1
 
 controller:
   name: scheduler-plugins-controller
-  image: k8s.gcr.io/scheduler-plugins/controller:v0.20.10
+  image: k8s.gcr.io/scheduler-plugins/controller:v0.21.6
   namespace: scheduler-plugins
   replicaCount: 1

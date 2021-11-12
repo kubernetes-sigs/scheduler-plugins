@@ -51,6 +51,7 @@ changed.
 
 Scheduler Plugins  | Compiled With k8s Version | Container Image                                      | Arch           |
 -------------------|---------------------------|------------------------------------------------------|----------------|
+v0.21.6            | v1.21.6                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.21.6  | AMD64<br>ARM64 |
 v0.20.10           | v1.20.10                  | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.20.10 | AMD64<br>ARM64 |
 v0.19.9            | v1.19.9                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.9  | AMD64<br>ARM64 |
 v0.19.8            | v1.19.8                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8  | AMD64<br>ARM64 |
@@ -58,6 +59,7 @@ v0.18.9            | v1.18.9                   | k8s.gcr.io/scheduler-plugins/ku
 
 Controller | Compiled With k8s Version | Container Image                                  | Arch           |
 -----------|---------------------------|--------------------------------------------------|----------------|
+v0.21.6    | v1.21.6                   | k8s.gcr.io/scheduler-plugins/controller:v0.21.6  | AMD64<br>ARM64 |
 v0.20.10   | v1.20.10                  | k8s.gcr.io/scheduler-plugins/controller:v0.20.10 | AMD64<br>ARM64 |
 v0.19.9    | v1.19.9                   | k8s.gcr.io/scheduler-plugins/controller:v0.19.9  | AMD64<br>ARM64 |
 v0.19.8    | v1.19.8                   | k8s.gcr.io/scheduler-plugins/controller:v0.19.8  | AMD64<br>ARM64 |
