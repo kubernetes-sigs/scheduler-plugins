@@ -19,7 +19,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -33,141 +32,99 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
+	apiservertesting "k8s.io/kubernetes/cmd/kube-apiserver/app/testing"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutils "k8s.io/kubernetes/test/integration/util"
+	testfwk "k8s.io/kubernetes/test/integration/framework"
+	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
-	scheconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
+	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	coschedulingutil "sigs.k8s.io/scheduler-plugins/pkg/util"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestCoschedulingPlugin(t *testing.T) {
-	todo := context.TODO()
-	ctx, cancelFunc := context.WithCancel(todo)
-	testCtx := &testutils.TestContext{
-		Ctx:      ctx,
-		CancelFn: cancelFunc,
-		CloseFn:  func() {},
-	}
-	registry := fwkruntime.Registry{coscheduling.Name: coscheduling.New}
-	t.Log("create apiserver")
-	_, config := util.StartApi(t, todo.Done())
+	t.Log("Creating API Server...")
+	// Start API Server with apiextensions supported.
+	server := apiservertesting.StartTestServerOrDie(
+		t, apiservertesting.NewDefaultTestServerOptions(),
+		[]string{"--disable-admission-plugins=ServiceAccount,TaintNodesByCondition,Priority", "--runtime-config=api/all=true"},
+		testfwk.SharedEtcd(),
+	)
+	testCtx := &testutil.TestContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+	testCtx.CloseFn = func() { server.TearDownFn() }
 
-	config.ContentType = "application/json"
-
-	apiExtensionClient, err := apiextensionsclient.NewForConfig(config)
-	if err != nil {
+	t.Log("Creating CRD...")
+	apiExtensionClient := apiextensionsclient.NewForConfigOrDie(server.ClientConfig)
+	ctx := testCtx.Ctx
+	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(ctx, makePodGroupCRD(), metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 
-	kubeConfigPath := util.BuildKubeConfigFile(config)
-	if len(kubeConfigPath) == 0 {
-		t.Fatal("Build KubeConfigFile failed")
-	}
-	defer os.RemoveAll(kubeConfigPath)
+	server.ClientConfig.ContentType = "application/json"
+	testCtx.KubeConfig = server.ClientConfig
+	cs := kubernetes.NewForConfigOrDie(testCtx.KubeConfig)
+	testCtx.ClientSet = cs
+	extClient := versioned.NewForConfigOrDie(testCtx.KubeConfig)
 
-	t.Log("create crd")
-	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(ctx, makeCRD(), metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	cs := kubernetes.NewForConfigOrDie(config)
-	extClient := pgclientset.NewForConfigOrDie(config)
-
-	if err = wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
 		}
 		for _, group := range groupList {
 			if group.Name == scheduling.GroupName {
+				t.Log("The CRD is ready to serve")
 				return true, nil
 			}
 		}
-		t.Log("waiting for crd api ready")
 		return false, nil
 	}); err != nil {
-		t.Fatalf("Waiting for crd read time out: %v", err)
-	}
-	cfg := &scheconfig.CoschedulingArgs{
-		KubeConfigPath:           kubeConfigPath,
-		PermitWaitingTimeSeconds: 3,
+		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
 	}
 
-	profile := schedapi.KubeSchedulerProfile{
-		SchedulerName: v1.DefaultSchedulerName,
-		Plugins: &schedapi.Plugins{
-			QueueSort: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-				Disabled: []schedapi.Plugin{
-					{Name: "*"},
-				},
-			},
-			PreFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-			PostFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-			Permit: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-			PostBind: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: coscheduling.Name},
-				},
-			},
-		},
-		PluginConfig: []schedapi.PluginConfig{
-			{
-				Name: coscheduling.Name,
-				Args: cfg,
-			},
-		},
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
+	cfg.Profiles[0].Plugins.QueueSort = schedapi.PluginSet{
+		Enabled:  []schedapi.Plugin{{Name: coscheduling.Name}},
+		Disabled: []schedapi.Plugin{{Name: "*"}},
+	}
+	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.PostFilter.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.Permit.Enabled = append(cfg.Profiles[0].Plugins.Permit.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.PostBind.Enabled = append(cfg.Profiles[0].Plugins.PostBind.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: coscheduling.Name,
+		Args: &schedconfig.CoschedulingArgs{
+			PermitWaitingTimeSeconds: 3,
+		},
+	})
 
 	ns, err := cs.CoreV1().Namespaces().Create(ctx, &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))}}, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		t.Fatalf("Failed to integration test ns: %v", err)
+		t.Fatalf("Failed to create integration test ns: %v", err)
 	}
-
-	autoCreate := false
-	t.Logf("namespaces %+v", ns.Name)
-	_, err = cs.CoreV1().ServiceAccounts(ns.Name).Create(ctx, &v1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: ns.Name}, AutomountServiceAccountToken: &autoCreate}, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		t.Fatalf("Failed to create ns default: %v", err)
-	}
-
-	testCtx.NS = ns
-	testCtx.ClientSet = cs
 
 	testCtx = util.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
 		true,
-		scheduler.WithProfiles(profile),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{coscheduling.Name: coscheduling.New}),
 	)
-	t.Log("init scheduler success")
-	defer testutils.CleanupTest(t, testCtx)
+	t.Log("Init scheduler success")
+	defer testutil.CleanupTest(t, testCtx)
 
 	// Create a Node.
 	nodeName := "fake-node"
@@ -421,15 +378,13 @@ func TestCoschedulingPlugin(t *testing.T) {
 			if err := createPodGroups(ctx, extClient, tt.podGroups); err != nil {
 				t.Fatal(err)
 			}
-			defer testutils.CleanupPods(cs, t, tt.pods)
-			// Create Pods, We will expect them to be scheduled in a reversed order.
+			defer testutil.CleanupPods(cs, t, tt.pods)
+			// Create Pods, we will expect them to be scheduled in a reversed order.
 			for i := range tt.pods {
 				klog.InfoS("Creating pod ", "podName", tt.pods[i].Name)
-				_, err := cs.CoreV1().Pods(tt.pods[i].Namespace).Create(testCtx.Ctx, tt.pods[i], metav1.CreateOptions{})
-				if err != nil {
+				if _, err := cs.CoreV1().Pods(tt.pods[i].Namespace).Create(testCtx.Ctx, tt.pods[i], metav1.CreateOptions{}); err != nil {
 					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)
 				}
-
 			}
 			err = wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {
@@ -442,12 +397,12 @@ func TestCoschedulingPlugin(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v Waiting expectedPods error: %v", tt.name, err.Error())
 			}
-			t.Logf("case %v finished", tt.name)
+			t.Logf("Case %v finished", tt.name)
 		})
 	}
 }
 
-func makeCRD() *apiextensionsv1.CustomResourceDefinition {
+func makePodGroupCRD() *apiextensionsv1.CustomResourceDefinition {
 	var min = 1.0
 	return &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
@@ -499,7 +454,7 @@ func WithContainer(pod *v1.Pod, image string) *v1.Pod {
 	return pod
 }
 
-func createPodGroups(ctx context.Context, client pgclientset.Interface, podGroups []*v1alpha1.PodGroup) error {
+func createPodGroups(ctx context.Context, client versioned.Interface, podGroups []*v1alpha1.PodGroup) error {
 	for _, pg := range podGroups {
 		_, err := client.SchedulingV1alpha1().PodGroups(pg.Namespace).Create(ctx, pg, metav1.CreateOptions{})
 		if err != nil && !errors.IsAlreadyExists(err) {
@@ -509,7 +464,7 @@ func createPodGroups(ctx context.Context, client pgclientset.Interface, podGroup
 	return nil
 }
 
-func cleanupPodGroups(ctx context.Context, client pgclientset.Interface, podGroups []*v1alpha1.PodGroup) {
+func cleanupPodGroups(ctx context.Context, client versioned.Interface, podGroups []*v1alpha1.PodGroup) {
 	for _, pg := range podGroups {
 		client.SchedulingV1alpha1().PodGroups(pg.Namespace).Delete(ctx, pg.Name, metav1.DeleteOptions{})
 	}

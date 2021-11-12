@@ -281,7 +281,7 @@ func CheckClusterResource(nodeList []*framework.NodeInfo, resourceRequest corev1
 			continue
 		}
 
-		nodeResource := getNodeResource(info, desiredPodGroupName).ResourceList()
+		nodeResource := util.ResourceList(getNodeResource(info, desiredPodGroupName))
 		for name, quant := range resourceRequest {
 			quant.Sub(nodeResource[name])
 			if quant.Sign() <= 0 {

@@ -19,7 +19,6 @@ package loadvariationriskbalancing
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -381,10 +380,7 @@ func newTestSharedLister(pods []*v1.Pod, nodes []*v1.Node) *testSharedLister {
 		if _, ok := nodeInfoMap[node.Name]; !ok {
 			nodeInfoMap[node.Name] = framework.NewNodeInfo()
 		}
-		err := nodeInfoMap[node.Name].SetNode(node)
-		if err != nil {
-			log.Fatal(err)
-		}
+		nodeInfoMap[node.Name].SetNode(node)
 	}
 
 	for _, v := range nodeInfoMap {

@@ -31,32 +31,26 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutils "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
-
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestQOSPlugin(t *testing.T) {
-	registry := fwkruntime.Registry{qos.Name: qos.New}
-	profile := schedapi.KubeSchedulerProfile{
-		SchedulerName: v1.DefaultSchedulerName,
-		Plugins: &schedapi.Plugins{
-			QueueSort: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: qos.Name},
-				},
-				Disabled: []schedapi.Plugin{
-					{Name: "*"},
-				},
-			},
-		},
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
+	cfg.Profiles[0].Plugins.QueueSort = schedapi.PluginSet{
+		Enabled:  []schedapi.Plugin{{Name: qos.Name}},
+		Disabled: []schedapi.Plugin{{Name: "*"}},
+	}
+
 	testCtx := util.InitTestSchedulerWithOptions(
 		t,
-		testutils.InitTestMaster(t, "sched-qos", nil),
+		testutils.InitTestAPIServer(t, "sched-qos", nil),
 		false,
-		scheduler.WithProfiles(profile),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{qos.Name: qos.New}),
 	)
 	defer testutils.CleanupTest(t, testCtx)
 
@@ -69,7 +63,7 @@ func TestQOSPlugin(t *testing.T) {
 		v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
 		v1.ResourceMemory: *resource.NewQuantity(500, resource.DecimalSI),
 	}
-	node, err := cs.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+	node, err = cs.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create Node %q: %v", nodeName, err)
 	}

@@ -47,6 +47,7 @@ runTests() {
   kube::etcd::start
   kube::log::status "Running integration test cases"
 
+  ln -s ../../../../../../../hack/testdata vendor/k8s.io/kubernetes/cmd/kube-apiserver/app/testing/testdata
   # TODO: make args customizable.
   go test -timeout=40m -mod=vendor sigs.k8s.io/scheduler-plugins/test/integration/...
 

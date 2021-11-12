@@ -37,28 +37,21 @@ import (
 )
 
 func TestAllocatablePlugin(t *testing.T) {
-	registry := fwkruntime.Registry{noderesources.AllocatableName: noderesources.NewAllocatable}
-	profile := schedapi.KubeSchedulerProfile{
-		SchedulerName: v1.DefaultSchedulerName,
-		Plugins: &schedapi.Plugins{
-			Score: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: noderesources.AllocatableName,
-						Weight: 50000},
-				},
-				Disabled: []schedapi.Plugin{
-					{Name: "*"},
-				},
-			},
-		},
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Profiles[0].Plugins.Score = schedapi.PluginSet{
+		Enabled:  []schedapi.Plugin{{Name: noderesources.AllocatableName, Weight: 50000}},
+		Disabled: []schedapi.Plugin{{Name: "*"}},
 	}
 
 	testCtx := util.InitTestSchedulerWithOptions(
 		t,
-		testutils.InitTestMaster(t, "sched-allocatable", nil),
+		testutils.InitTestAPIServer(t, "sched-allocatable", nil),
 		true,
-		scheduler.WithProfiles(profile),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesources.AllocatableName: noderesources.NewAllocatable}),
 	)
 
 	defer testutils.CleanupTest(t, testCtx)
@@ -113,7 +106,7 @@ func TestAllocatablePlugin(t *testing.T) {
 	}
 	pods = append(pods, pod)
 
-	// Create the Pods. By default the small pods should land on the small nodes.
+	// Create the Pods. By default, the small pods should land on the small nodes.
 	t.Logf("Start to create 5 Pods.")
 	for i := range pods {
 		t.Logf("Creating Pod %q", pods[i].Name)
@@ -125,7 +118,7 @@ func TestAllocatablePlugin(t *testing.T) {
 
 	for i := range pods {
 		// Wait for the pod to be scheduled.
-		err := wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
+		err := wait.Poll(1*time.Second, 60*time.Second, func() (bool, error) {
 			return podScheduled(cs, pods[i].Namespace, pods[i].Name), nil
 		})
 		if err != nil {

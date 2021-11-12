@@ -117,8 +117,8 @@ func NewAllocatable(allocArgs runtime.Object, h framework.Handle) (framework.Plu
 	}, nil
 }
 
-func resourceScorer(resToWeightMap resourceToWeightMap, mode config.ModeType) func(resourceToValueMap, resourceToValueMap, bool, int, int) int64 {
-	return func(requested, allocable resourceToValueMap, includeVolumes bool, requestedVolumes int, allocatableVolumes int) int64 {
+func resourceScorer(resToWeightMap resourceToWeightMap, mode config.ModeType) func(resourceToValueMap, resourceToValueMap) int64 {
+	return func(requested, allocable resourceToValueMap) int64 {
 		// TODO: consider volumes in scoring.
 		var nodeScore, weightSum int64
 		for resource, weight := range resToWeightMap {

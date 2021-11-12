@@ -22,7 +22,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/tools/clientcmd"
+	restclient "k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -49,13 +49,7 @@ func findNodeTopology(nodeName string, nodeResTopoPlugin *nodeResTopologyPlugin)
 	return nil
 }
 
-func initNodeTopologyInformer(masterOverride, kubeConfigPath *string) (*listerv1alpha1.NodeResourceTopologyLister, error) {
-	kubeConfig, err := clientcmd.BuildConfigFromFlags(*masterOverride, *kubeConfigPath)
-	if err != nil {
-		klog.ErrorS(err, "Cannot create kubeconfig", "masterOverride", *masterOverride, "kubeConfigPath", *kubeConfigPath)
-		return nil, err
-	}
-
+func initNodeTopologyInformer(kubeConfig *restclient.Config) (*listerv1alpha1.NodeResourceTopologyLister, error) {
 	topoClient, err := topoclientset.NewForConfig(kubeConfig)
 	if err != nil {
 		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", kubeConfig)

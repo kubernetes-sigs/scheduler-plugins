@@ -19,8 +19,6 @@ package integration
 import (
 	"context"
 	"io/ioutil"
-	"os"
-	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
 
@@ -33,13 +31,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
+	apiservertesting "k8s.io/kubernetes/cmd/kube-apiserver/app/testing"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	testfwk "k8s.io/kubernetes/test/integration/framework"
 	testutil "k8s.io/kubernetes/test/integration/util"
+	"sigs.k8s.io/yaml"
 
-	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
@@ -47,101 +47,66 @@ import (
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
-const ResourceGPU v1.ResourceName = "nvidia.com/gpu"
-
 func TestCapacityScheduling(t *testing.T) {
-	todo := context.TODO()
-	ctx, cancelFunc := context.WithCancel(todo)
-	testCtx := &testutil.TestContext{
-		Ctx:      ctx,
-		CancelFn: cancelFunc,
-		CloseFn:  func() {},
-	}
+	t.Log("Creating API Server...")
+	// Start API Server with apiextensions supported.
+	server := apiservertesting.StartTestServerOrDie(
+		t, apiservertesting.NewDefaultTestServerOptions(),
+		[]string{"--disable-admission-plugins=ServiceAccount,TaintNodesByCondition,Priority", "--runtime-config=api/all=true"},
+		testfwk.SharedEtcd(),
+	)
+	testCtx := &testutil.TestContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+	testCtx.CloseFn = func() { server.TearDownFn() }
 
-	registry := fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}
-	t.Log("create apiserver")
-	_, config := util.StartApi(t, todo.Done())
-
-	config.ContentType = "application/json"
-
-	apiExtensionClient, err := apiextensionsclient.NewForConfig(config)
-	if err != nil {
+	t.Log("Creating CRD...")
+	apiExtensionClient := apiextensionsclient.NewForConfigOrDie(server.ClientConfig)
+	ctx := testCtx.Ctx
+	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(testCtx.Ctx, makeElasticQuotaCRD(), metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 
-	kubeConfigPath := util.BuildKubeConfigFile(config)
-	if len(kubeConfigPath) == 0 {
-		t.Fatal("Build KubeConfigFile failed")
-	}
-	defer os.RemoveAll(kubeConfigPath)
+	server.ClientConfig.ContentType = "application/json"
+	testCtx.KubeConfig = server.ClientConfig
+	cs := kubernetes.NewForConfigOrDie(testCtx.KubeConfig)
+	testCtx.ClientSet = cs
+	extClient := versioned.NewForConfigOrDie(testCtx.KubeConfig)
 
-	t.Log("create crd")
-	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(ctx, makeElasticQuotaCRD(), metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	cs := kubernetes.NewForConfigOrDie(config)
-	extClient := versioned.NewForConfigOrDie(config)
-
-	if err = wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
 		}
 		for _, group := range groupList {
 			if group.Name == scheduling.GroupName {
+				t.Log("The CRD is ready to serve")
 				return true, nil
 			}
 		}
-		t.Log("waiting for crd api ready")
 		return false, nil
 	}); err != nil {
-		t.Fatalf("Waiting for crd read time out: %v", err)
+		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
 	}
 
-	cfg := &schedconfig.CapacitySchedulingArgs{
-		KubeConfigPath: kubeConfigPath,
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	profile := schedapi.KubeSchedulerProfile{
-		SchedulerName: v1.DefaultSchedulerName,
-		Plugins: &schedapi.Plugins{
-			PreFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: capacityscheduling.Name},
-				},
-			},
-			PostFilter: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: capacityscheduling.Name},
-				},
-				Disabled: []schedapi.Plugin{
-					{Name: "*"},
-				},
-			},
-			Reserve: schedapi.PluginSet{
-				Enabled: []schedapi.Plugin{
-					{Name: capacityscheduling.Name},
-				},
-			},
-		},
-		PluginConfig: []schedapi.PluginConfig{
-			{
-				Name: capacityscheduling.Name,
-				Args: cfg,
-			},
-		},
+	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: capacityscheduling.Name})
+	cfg.Profiles[0].Plugins.PostFilter = schedapi.PluginSet{
+		Enabled:  []schedapi.Plugin{{Name: capacityscheduling.Name}},
+		Disabled: []schedapi.Plugin{{Name: "*"}},
 	}
+	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: capacityscheduling.Name})
 
-	testCtx.ClientSet = cs
 	testCtx = util.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
 		true,
-		scheduler.WithProfiles(profile),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}),
 	)
-	t.Log("init scheduler success")
+	t.Log("Init scheduler success")
 	defer testutil.CleanupTest(t, testCtx)
 
 	for _, nodeName := range []string{"fake-node-1", "fake-node-2"} {
@@ -156,24 +121,16 @@ func TestCapacityScheduling(t *testing.T) {
 			v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
 			v1.ResourceCPU:    *resource.NewQuantity(100, resource.DecimalSI),
 		}
-		node, err = cs.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
-		if err != nil {
+		if _, err := testCtx.ClientSet.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{}); err != nil {
 			t.Fatalf("Failed to create Node %q: %v", nodeName, err)
 		}
 	}
 
 	for _, ns := range []string{"ns1", "ns2", "ns3"} {
-		_, err := cs.CoreV1().Namespaces().Create(ctx, &v1.Namespace{
+		_, err := testCtx.ClientSet.CoreV1().Namespaces().Create(testCtx.Ctx, &v1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{})
 		if err != nil && !errors.IsAlreadyExists(err) {
-			t.Fatalf("Failed to integration test ns: %v", err)
-		}
-		autoCreate := false
-		t.Logf("namespaces %+v", ns)
-		_, err = cs.CoreV1().ServiceAccounts(ns).Create(ctx, &v1.ServiceAccount{
-			ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: ns}, AutomountServiceAccountToken: &autoCreate}, metav1.CreateOptions{})
-		if err != nil && !errors.IsAlreadyExists(err) {
-			t.Fatalf("Failed to create ns default: %v", err)
+			t.Fatalf("Failed to create integration test ns: %v", err)
 		}
 	}
 
@@ -604,19 +561,18 @@ func TestCapacityScheduling(t *testing.T) {
 				}
 			}
 
-			err = wait.Poll(time.Millisecond*200, 10*time.Second, func() (bool, error) {
+			if err := wait.Poll(time.Millisecond*200, 10*time.Second, func() (bool, error) {
 				for _, pod := range tt.existPods {
 					if !podScheduled(cs, pod.Namespace, pod.Name) {
 						return false, nil
 					}
 				}
 				return true, nil
-			})
-			if err != nil {
+			}); err != nil {
 				t.Fatalf("%v Waiting existPods created error: %v", tt.name, err.Error())
 			}
 
-			// Create Pods, We will expect them to be scheduled in a reversed order.
+			// Create Pods, we will expect them to be scheduled in a reversed order.
 			for _, pod := range tt.addPods {
 				_, err := cs.CoreV1().Pods(pod.Namespace).Create(testCtx.Ctx, pod, metav1.CreateOptions{})
 				if err != nil {
@@ -624,18 +580,17 @@ func TestCapacityScheduling(t *testing.T) {
 				}
 			}
 
-			err = wait.Poll(time.Millisecond*200, 10*time.Second, func() (bool, error) {
+			if err := wait.Poll(time.Millisecond*200, 10*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {
 					if !podScheduled(cs, v.Namespace, v.Name) {
 						return false, nil
 					}
 				}
 				return true, nil
-			})
-			if err != nil {
+			}); err != nil {
 				t.Fatalf("%v Waiting expectedPods error: %v", tt.name, err.Error())
 			}
-			t.Logf("case %v finished", tt.name)
+			t.Logf("Case %v finished", tt.name)
 		})
 	}
 }

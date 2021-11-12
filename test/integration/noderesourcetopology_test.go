@@ -20,15 +20,12 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
-	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
 
 	"k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,18 +34,23 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
+	apiservertesting "k8s.io/kubernetes/cmd/kube-apiserver/app/testing"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutils "k8s.io/kubernetes/test/integration/util"
+	testfwk "k8s.io/kubernetes/test/integration/framework"
+	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 	scheconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/test/util"
+	"sigs.k8s.io/yaml"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 )
 
 const (
@@ -63,130 +65,92 @@ var (
 )
 
 func TestTopologyMatchPlugin(t *testing.T) {
-	todo := context.TODO()
-	ctx, cancelFunc := context.WithCancel(todo)
-	testCtx := &testutils.TestContext{
-		Ctx:      ctx,
-		CancelFn: cancelFunc,
-		CloseFn:  func() {},
-	}
-	registry := fwkruntime.Registry{
-		noderesourcetopology.Name: noderesourcetopology.New,
-	}
-	t.Log("create apiserver")
-	_, config := util.StartApi(t, todo.Done())
+	t.Log("Creating API Server...")
+	// Start API Server with apiextensions supported.
+	server := apiservertesting.StartTestServerOrDie(
+		t, apiservertesting.NewDefaultTestServerOptions(),
+		[]string{"--disable-admission-plugins=ServiceAccount,TaintNodesByCondition,Priority", "--runtime-config=api/all=true"},
+		testfwk.SharedEtcd(),
+	)
+	testCtx := &testutil.TestContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+	testCtx.CloseFn = func() { server.TearDownFn() }
 
-	config.ContentType = "application/json"
-
-	apiExtensionClient, err := apiextensionsclient.NewForConfig(config)
-	if err != nil {
+	t.Log("Creating CRD...")
+	apiExtensionClient := apiextensionsclient.NewForConfigOrDie(server.ClientConfig)
+	ctx := testCtx.Ctx
+	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(testCtx.Ctx, makeNodeResourceTopologyCRD(), metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 
-	kubeConfigPath := util.BuildKubeConfigFile(config)
-	if len(kubeConfigPath) == 0 {
-		t.Fatal("Build KubeConfigFile failed")
-	}
-	defer os.RemoveAll(kubeConfigPath)
+	server.ClientConfig.ContentType = "application/json"
+	testCtx.KubeConfig = server.ClientConfig
+	cs := kubernetes.NewForConfigOrDie(testCtx.KubeConfig)
+	testCtx.ClientSet = cs
+	extClient := versioned.NewForConfigOrDie(testCtx.KubeConfig)
 
-	t.Log("create crd")
-	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(ctx, makeNodeResourceTopologyCRD(), metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	cs := kubernetes.NewForConfigOrDie(config)
-
-	topologyClient, err := topologyclientset.NewForConfig(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err = wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
 		}
 		for _, group := range groupList {
 			if group.Name == "topology.node.k8s.io" {
+				t.Log("The CRD is ready to serve")
 				return true, nil
 			}
 		}
-		t.Log("waiting for crd api ready")
 		return false, nil
 	}); err != nil {
-		t.Fatalf("Waiting for crd read time out: %v", err)
+		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
 	}
 
 	ns, err := cs.CoreV1().Namespaces().Create(ctx, &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))}}, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		t.Fatalf("Failed to integration test ns: %v", err)
+		t.Fatalf("Failed to create integration test ns: %v", err)
 	}
 
-	autoCreate := false
-	t.Logf("namespaces %+v", ns.Name)
-	_, err = cs.CoreV1().ServiceAccounts(ns.Name).Create(ctx, &v1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: ns.Name}, AutomountServiceAccountToken: &autoCreate}, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		t.Fatalf("Failed to create ns default: %v", err)
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	testCtx.NS = ns
-	testCtx.ClientSet = cs
-
-	profiles := []schedapi.KubeSchedulerProfile{
-		// a profile with only the filter plugin enabled
-		{
-			SchedulerName: v1.DefaultSchedulerName,
-			Plugins: &schedapi.Plugins{
-				Filter: schedapi.PluginSet{
-					Enabled: []schedapi.Plugin{
-						{Name: noderesourcetopology.Name},
-					},
-				},
-				Score: schedapi.PluginSet{
-					Disabled: []schedapi.Plugin{
-						{Name: noderesourcetopology.Name},
-					},
-				},
-			},
-			PluginConfig: []schedapi.PluginConfig{
-				{
-					Name: noderesourcetopology.Name,
-					Args: &scheconfig.NodeResourceTopologyMatchArgs{
-						KubeConfigPath:  kubeConfigPath,
-						Namespaces:      []string{ns.Name},
-						ScoringStrategy: scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated},
-					},
-				},
-			},
+	cfg.Profiles[0].Plugins.Filter.Enabled = append(cfg.Profiles[0].Plugins.Filter.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].Plugins.Score.Enabled = append(cfg.Profiles[0].Plugins.Score.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: noderesourcetopology.Name,
+		Args: &scheconfig.NodeResourceTopologyMatchArgs{
+			Namespaces:      []string{ns.Name},
+			ScoringStrategy: scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated},
 		},
+	})
+	cfg.Profiles = append(cfg.Profiles,
 		// a profile with both the filter and score enabled and score strategy is MostAllocated
 		makeProfileByPluginArgs(
 			leastAllocatableScheduler,
-			makeResourceAllocationScoreArgs(kubeConfigPath, ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated}),
+			makeResourceAllocationScoreArgs(ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated}),
 		),
 		// a profile with both the filter and score enabled and score strategy is BalancedAllocation
 		makeProfileByPluginArgs(
 			balancedAllocationScheduler,
-			makeResourceAllocationScoreArgs(kubeConfigPath, ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.BalancedAllocation}),
+			makeResourceAllocationScoreArgs(ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.BalancedAllocation}),
 		),
 		// a profile with both the filter and score enabled and score strategy is LeastAllocated
 		makeProfileByPluginArgs(
 			mostAllocatableScheduler,
-			makeResourceAllocationScoreArgs(kubeConfigPath, ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.LeastAllocated}),
+			makeResourceAllocationScoreArgs(ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.LeastAllocated}),
 		),
-	}
+	)
 
 	testCtx = util.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
 		true,
-		scheduler.WithProfiles(profiles...),
-		scheduler.WithFrameworkOutOfTreeRegistry(registry),
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
 	)
-	t.Log("init scheduler success")
-	defer testutils.CleanupTest(t, testCtx)
+	t.Log("Init scheduler success")
+	defer testutil.CleanupTest(t, testCtx)
 
 	// Create a Node.
 	resList := map[v1.ResourceName]string{
@@ -205,7 +169,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	}
 
 	nodeList, err := cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	t.Logf(" NodeList: %v", nodeList)
+	t.Logf("NodeList: %v", nodeList)
 	pause := imageutils.GetPauseImageName()
 	for _, tt := range []struct {
 		name                   string
@@ -593,14 +557,13 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start-topology-match-test %v", tt.name)
+			defer cleanupNodeResourceTopologies(ctx, extClient, tt.nodeResourceTopologies)
+			defer testutil.CleanupPods(cs, t, tt.pods)
 
-			defer cleanupNodeResourceTopologies(ctx, topologyClient, tt.nodeResourceTopologies)
-
-			if err := createNodeResourceTopologies(ctx, topologyClient, tt.nodeResourceTopologies); err != nil {
+			if err := createNodeResourceTopologies(ctx, extClient, tt.nodeResourceTopologies); err != nil {
 				t.Fatal(err)
 			}
 
-			defer testutils.CleanupPods(cs, t, tt.pods)
 			// Create Pods
 			for _, p := range tt.pods {
 				t.Logf("Creating Pod %q", p.Name)
@@ -612,14 +575,13 @@ func TestTopologyMatchPlugin(t *testing.T) {
 
 			for _, p := range tt.pods {
 				// Wait for the pod to be scheduled.
-				err = wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+				if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
 					return podScheduled(cs, ns.Name, p.Name), nil
-				})
-				if err != nil {
+				}); err != nil {
 					t.Errorf("pod %q to be scheduled, error: %v", p.Name, err)
 				}
 
-				t.Logf("p scheduled: %v", p.Name)
+				t.Logf("Pod %v scheduled", p.Name)
 
 				// The other pods should be scheduled on the small nodes.
 				nodeName, err := getNodeName(cs, ns.Name, p.Name)
@@ -634,7 +596,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				}
 
 			}
-			t.Logf("case %v finished", tt.name)
+			t.Logf("Case %v finished", tt.name)
 		})
 	}
 }
@@ -673,7 +635,7 @@ func makeNodeResourceTopologyCRD() *apiextensionsv1.CustomResourceDefinition {
 	return noderesourcetopologyCRD
 }
 
-func createNodeResourceTopologies(ctx context.Context, topologyClient *topologyclientset.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) error {
+func createNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) error {
 	for _, nrt := range noderesourcetopologies {
 		_, err := topologyClient.TopologyV1alpha1().NodeResourceTopologies(nrt.Namespace).Create(ctx, nrt, metav1.CreateOptions{})
 		if err != nil && !errors.IsAlreadyExists(err) {
@@ -683,7 +645,7 @@ func createNodeResourceTopologies(ctx context.Context, topologyClient *topologyc
 	return nil
 }
 
-func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *topologyclientset.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) {
+func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) {
 	for _, nrt := range noderesourcetopologies {
 		err := topologyClient.TopologyV1alpha1().NodeResourceTopologies(nrt.Namespace).Delete(ctx, nrt.Name, metav1.DeleteOptions{})
 		if err != nil {
@@ -723,6 +685,11 @@ func makeProfileByPluginArgs(
 	return schedapi.KubeSchedulerProfile{
 		SchedulerName: name,
 		Plugins: &schedapi.Plugins{
+			QueueSort: schedapi.PluginSet{
+				Enabled: []schedapi.Plugin{
+					{Name: queuesort.Name},
+				},
+			},
 			Filter: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: noderesourcetopology.Name},
@@ -731,6 +698,11 @@ func makeProfileByPluginArgs(
 			Score: schedapi.PluginSet{
 				Enabled: []schedapi.Plugin{
 					{Name: noderesourcetopology.Name},
+				},
+			},
+			Bind: schedapi.PluginSet{
+				Enabled: []schedapi.Plugin{
+					{Name: defaultbinder.Name},
 				},
 			},
 		},
@@ -743,9 +715,8 @@ func makeProfileByPluginArgs(
 	}
 }
 
-func makeResourceAllocationScoreArgs(kubeConfigPath, ns string, strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
+func makeResourceAllocationScoreArgs(ns string, strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
 	return &scheconfig.NodeResourceTopologyMatchArgs{
-		KubeConfigPath:  kubeConfigPath,
 		Namespaces:      []string{ns},
 		ScoringStrategy: *strategy,
 	}

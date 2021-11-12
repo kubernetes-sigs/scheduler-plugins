@@ -40,7 +40,7 @@ var defaultResourcesToWeightMap = resourceToWeightMap{v1.ResourceMemory: 1, v1.R
 // resourceAllocationScorer contains information to calculate resource allocation score.
 type resourceAllocationScorer struct {
 	Name                string
-	scorer              func(requested, allocatable resourceToValueMap, includeVolumes bool, requestedVolumes int, allocatableVolumes int) int64
+	scorer              func(requested, allocatable resourceToValueMap) int64
 	resourceToWeightMap resourceToWeightMap
 }
 
@@ -63,27 +63,14 @@ func (r *resourceAllocationScorer) score(
 	for resource := range r.resourceToWeightMap {
 		allocatable[resource], requested[resource] = calculateResourceAllocatableRequest(nodeInfo, pod, resource)
 	}
-	var score int64
 
-	// Check if the pod has volumes and this could be added to scorer function for balanced resource allocation.
-	if len(pod.Spec.Volumes) >= 0 && utilfeature.DefaultFeatureGate.Enabled(features.BalanceAttachedNodeVolumes) && nodeInfo.TransientInfo != nil {
-		score = r.scorer(requested, allocatable, true, nodeInfo.TransientInfo.TransNodeInfo.RequestedVolumes, nodeInfo.TransientInfo.TransNodeInfo.AllocatableVolumesCount)
-	} else {
-		score = r.scorer(requested, allocatable, false, 0, 0)
-	}
+	score := r.scorer(requested, allocatable)
+
 	if klog.V(10).Enabled() {
-		if len(pod.Spec.Volumes) >= 0 && utilfeature.DefaultFeatureGate.Enabled(features.BalanceAttachedNodeVolumes) && nodeInfo.TransientInfo != nil {
-			klog.InfoS("Resources, volumes and score",
-				"podName", pod.Name, "nodeName", node.Name, "scorer", r.Name,
-				"allocatableResources", allocatable, "requestedResources", requested,
-				"allocatableVolumes", nodeInfo.TransientInfo.TransNodeInfo.AllocatableVolumesCount, "requestedVolumes", nodeInfo.TransientInfo.TransNodeInfo.RequestedVolumes,
-				"score", score)
-		} else {
-			klog.InfoS("Resources and score",
-				"podName", pod.Name, "nodeName", node.Name, "scorer", r.Name,
-				"allocatableResources", allocatable, "requestedResources", requested,
-				"score", score)
-		}
+		klog.InfoS("Resources and score",
+			"podName", pod.Name, "nodeName", node.Name, "scorer", r.Name,
+			"allocatableResources", allocatable, "requestedResources", requested,
+			"score", score)
 	}
 
 	return score, nil

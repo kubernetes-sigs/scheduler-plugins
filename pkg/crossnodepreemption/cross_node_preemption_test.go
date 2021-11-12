@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
@@ -31,6 +31,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
+	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/podtopologyspread"
@@ -77,7 +78,9 @@ func TestFindCandidates(t *testing.T) {
 				"node-x": framework.NewStatus(framework.Unschedulable),
 			},
 			registerPlugins: []st.RegisterPluginFunc{
-				st.RegisterPluginAsExtensions(noderesources.FitName, noderesources.NewFit, "Filter", "PreFilter"),
+				st.RegisterPluginAsExtensions(noderesources.FitName, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
+				}, "Filter", "PreFilter"),
 				st.RegisterPluginAsExtensions(podtopologyspread.Name, podtopologyspread.New, "PreFilter", "Filter"),
 			},
 			want: []dp.Candidate{
@@ -117,8 +120,10 @@ func TestFindCandidates(t *testing.T) {
 				"node-x": framework.NewStatus(framework.Unschedulable),
 			},
 			registerPlugins: []st.RegisterPluginFunc{
-				st.RegisterPluginAsExtensions(noderesources.FitName, noderesources.NewFit, "Filter", "PreFilter"),
-				st.RegisterPluginAsExtensions(interpodaffinity.Name, func(plArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+				st.RegisterPluginAsExtensions(noderesources.FitName, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
+				}, "Filter", "PreFilter"),
+				st.RegisterPluginAsExtensions(interpodaffinity.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
 					return interpodaffinity.New(plArgs, fh, feature.Features{})
 				}, "PreFilter", "Filter"),
 			},
