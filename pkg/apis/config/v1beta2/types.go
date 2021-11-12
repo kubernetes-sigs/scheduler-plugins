@@ -32,10 +32,6 @@ type CoschedulingArgs struct {
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
 	DeniedPGExpirationTimeSeconds *int64 `json:"deniedPGExpirationTimeSeconds,omitempty"`
-	// KubeMaster is the url of api-server
-	KubeMaster *string `json:"kubeMaster,omitempty"`
-	// KubeConfigPath for scheduler
-	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }
 
 // ModeType is a type "string".
@@ -63,16 +59,6 @@ type NodeResourcesAllocatableArgs struct {
 
 	// Whether to prioritize nodes with least or most allocatable resources.
 	Mode ModeType `json:"mode,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// CapacitySchedulingArgs defines the scheduling parameters for CapacityScheduling plugin.
-type CapacitySchedulingArgs struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// KubeConfigPath is the path of kubeconfig.
-	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }
 
 // MetricProviderType is a "string" type.
@@ -154,8 +140,6 @@ type ScoringStrategy struct {
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	KubeConfigPath  *string          `json:"kubeconfigpath,omitempty"`
-	MasterOverride  *string          `json:"masteroverride,omitempty"`
 	Namespaces      []string         `json:"namespaces,omitempty"`
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }

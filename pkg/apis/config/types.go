@@ -32,10 +32,6 @@ type CoschedulingArgs struct {
 	PermitWaitingTimeSeconds int64
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
 	DeniedPGExpirationTimeSeconds int64
-	// KubeMaster is the url of api-server
-	KubeMaster string
-	// KubeConfigPath for scheduler
-	KubeConfigPath string
 }
 
 // ModeType is a "string" type.
@@ -63,16 +59,6 @@ type NodeResourcesAllocatableArgs struct {
 
 	// Whether to prioritize nodes with least or most allocatable resources.
 	Mode ModeType `json:"mode,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// CapacitySchedulingArgs defines the scheduling parameters for CapacityScheduling plugin.
-type CapacitySchedulingArgs struct {
-	metav1.TypeMeta
-
-	// KubeConfigPath is the path of kubeconfig.
-	KubeConfigPath string
 }
 
 // MetricProviderType is a "string" type.
@@ -155,12 +141,6 @@ type ScoringStrategy struct {
 // NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta
-
-	// KubeConfigPath is the path of kubeconfig.
-	KubeConfigPath string
-
-	// MasterOverride is the url of api-server
-	MasterOverride string
 
 	// Namespaces to be considered by NodeResourceTopologyMatch plugin
 	Namespaces []string

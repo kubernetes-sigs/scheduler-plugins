@@ -22,11 +22,19 @@ SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 CODEGEN_PKG=${CODEGEN_PKG:-$(cd "${SCRIPT_ROOT}"; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
 
 bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
-  "deepcopy,defaulter,conversion" \
+  "deepcopy,conversion" \
   sigs.k8s.io/scheduler-plugins/pkg/generated \
   sigs.k8s.io/scheduler-plugins/pkg/apis \
   sigs.k8s.io/scheduler-plugins/pkg/apis \
   "config:v1beta1" \
+  --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
+
+bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
+  "deepcopy,conversion" \
+  sigs.k8s.io/scheduler-plugins/pkg/generated \
+  sigs.k8s.io/scheduler-plugins/pkg/apis \
+  sigs.k8s.io/scheduler-plugins/pkg/apis \
+  "config:v1beta2" \
   --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
 
 bash "${CODEGEN_PKG}"/generate-groups.sh \

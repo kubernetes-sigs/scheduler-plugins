@@ -67,8 +67,6 @@ var (
 	// DefaultMetricProviderType is the Kubernetes metrics server
 	DefaultMetricProviderType = pluginConfig.KubernetesMetricsServer
 
-	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
-
 	defaultResourceSpec = []schedulerconfig.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
@@ -83,8 +81,6 @@ func SetDefaultsCoschedulingArgs(obj *CoschedulingArgs) {
 	if obj.DeniedPGExpirationTimeSeconds == nil {
 		obj.DeniedPGExpirationTimeSeconds = &defaultDeniedPGExpirationTimeSeconds
 	}
-
-	// TODO(k/k#96427): get KubeConfigPath and KubeMaster from configuration or command args.
 }
 
 // SetDefaultsNodeResourcesAllocatableArgs sets the defaults parameters for NodeResourceAllocatable.
@@ -96,11 +92,6 @@ func SetDefaultsNodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) 
 	if obj.Mode == "" {
 		obj.Mode = defaultNodeResourcesAllocatableMode
 	}
-}
-
-// SetDefaultsCapacitySchedulingArgs sets the default parameters for CapacityScheduling plugin.
-func SetDefaultsCapacitySchedulingArgs(obj *CapacitySchedulingArgs) {
-	// TODO(k/k#96427): get KubeConfigPath and KubeMaster from configuration or command args.
 }
 
 // SetDefaultTargetLoadPackingArgs sets the default parameters for TargetLoadPacking plugin
@@ -135,9 +126,6 @@ func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingAr
 
 // SetDefaultsNodeResourceTopologyMatchArgs sets the default parameters for NodeResourceTopologyMatch plugin.
 func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs) {
-	if obj.KubeConfigPath == nil {
-		obj.KubeConfigPath = &defaultKubeConfigPath
-	}
 	if len(obj.Namespaces) == 0 {
 		obj.Namespaces = []string{metav1.NamespaceDefault}
 	}

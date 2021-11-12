@@ -423,8 +423,6 @@ profiles:
       apiVersion: kubescheduler.config.k8s.io/v1beta1
       deniedPGExpirationTimeSeconds: 3
       kind: CoschedulingArgs
-      kubeConfigPath: ""
-      kubeMaster: ""
       permitWaitingTimeSeconds: 10
     name: Coscheduling
   - args:
@@ -481,7 +479,7 @@ profiles:
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
-				t.Errorf("unexpected encoded configuration:\n%s", diff)
+				t.Errorf("unexpected encoded configuration: (-want,+got)\n%s", diff)
 			}
 			encoder = Codecs.EncoderForVersion(jsonInfo.Serializer, tt.version)
 			buf = bytes.Buffer{}
@@ -493,7 +491,7 @@ profiles:
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(tt.want, string(out)); diff != "" {
-				t.Errorf("unexpected encoded configuration:\n%s", diff)
+				t.Errorf("unexpected encoded configuration: (-want,+got)\n%s", diff)
 			}
 		})
 	}
