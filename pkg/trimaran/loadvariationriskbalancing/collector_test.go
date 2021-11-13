@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta2"
 )
 
 var (
@@ -84,7 +84,7 @@ func TestGetAllMetrics(t *testing.T) {
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 		WatcherAddress:     server.URL,
-		SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
+		SafeVarianceMargin: v1beta2.DefaultSafeVarianceMargin,
 	}
 	collector, err := newCollector(&loadVariationRiskBalancingArgs)
 	assert.NotNil(t, collector)
@@ -106,7 +106,7 @@ func TestUpdateMetrics(t *testing.T) {
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 		WatcherAddress:     server.URL,
-		SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
+		SafeVarianceMargin: v1beta2.DefaultSafeVarianceMargin,
 	}
 	collector, err := newCollector(&loadVariationRiskBalancingArgs)
 	assert.NotNil(t, collector)
@@ -126,7 +126,7 @@ func TestGetNodeMetrics(t *testing.T) {
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 		WatcherAddress:     server.URL,
-		SafeVarianceMargin: v1beta1.DefaultSafeVarianceMargin,
+		SafeVarianceMargin: v1beta2.DefaultSafeVarianceMargin,
 	}
 	collector, err := newCollector(&loadVariationRiskBalancingArgs)
 	assert.NotNil(t, collector)

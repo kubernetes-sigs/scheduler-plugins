@@ -31,11 +31,11 @@ func NewFramework(fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profi
 	profile := &config.KubeSchedulerProfile{
 		SchedulerName: profileName,
 		Plugins:       &config.Plugins{},
-		PluginConfig:  cfgs,
 	}
 	for _, f := range fns {
 		f(&registry, profile)
 	}
+	profile.PluginConfig = cfgs
 	return runtime.NewFramework(registry, profile, opts...)
 }
 
