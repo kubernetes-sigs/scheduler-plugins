@@ -13,8 +13,11 @@ This folder holds the coscheduling plugin implementations based on [Coscheduling
 - [ ] 👨 Stable (used in companies for production workloads)
 
 ## Tutorial
+
 ### PodGroup
+
 We use a special label named `pod-group.scheduling.sigs.k8s.io` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup.
+
 ```
 # PodGroup CRD spec
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
@@ -29,20 +32,24 @@ spec:
 labels:
   pod-group.scheduling.sigs.k8s.io: nginx
 ```
+
 We will calculate the sum of the Running pods and the Waiting pods (assumed but not bind) in scheduler, if the sum is greater than or equal to the minMember, the Waiting pods
 will be created.
 
 Pods in the same PodGroup with different priorities might lead to unintended behavior, so need to ensure Pods in the same PodGroup with the same priority.
 
 ### Expectation
+
 1. If 2 PodGroups with different priorities come in, the PodGroup with high priority has higher precedence.
 2. If 2 PodGroups with same priority come in when there are limited resources, the PodGroup created first one has higher precedence.
 
 ### Config
+
 1. queueSort, permit and unreserve must be enabled in coscheduling.
 2. preFilter is enhanced feature to reduce the overall scheduling time for the whole group. It will check the total number of pods belonging to the same `PodGroup`. If the total number is less than minMember, the pod will reject in preFilter, then the scheduling cycle will interrupt. And the preFilter is user selectable according to the actual situation of users. If the minMember of PodGroup is relatively small, for example less than 5, you can disable this plugin. But if the minMember of PodGroup is relatively large, please enable this plugin to reduce the overall scheduling time.
+
 ```
-apiVersion: kubescheduler.config.k8s.io/v1beta1
+apiVersion: kubescheduler.config.k8s.io/v1beta2
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -53,27 +60,28 @@ profiles:
   plugins:
     queueSort:
       enabled:
-        - name: Coscheduling
+      - name: Coscheduling
       disabled:
-        - name: "*"
+      - name: "*"
     preFilter:
       enabled:
-        - name: Coscheduling
+      - name: Coscheduling
     postFilter:
       enabled:
-        - name: Coscheduling
+      - name: Coscheduling
     permit:
       enabled:
-        - name: Coscheduling
+      - name: Coscheduling
     reserve:
       enabled:
-        - name: Coscheduling
+      - name: Coscheduling
     postBind:
       enabled:
-        - name: Coscheduling
+      - name: Coscheduling
 ```
 
 ### Demo
+
 Suppose we have a cluster which can only afford 3 nginx pods. We create a ReplicaSet with replicas=6, and set the value of minMember to 3.
 ```yaml
 apiVersion: scheduling.sigs.k8s.io/v1alpha1

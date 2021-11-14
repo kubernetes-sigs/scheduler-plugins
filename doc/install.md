@@ -95,7 +95,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
 1. Create `/etc/kubernetes/sched-cc.yaml`
 
     ```yaml
-    apiVersion: kubescheduler.config.k8s.io/v1beta1
+    apiVersion: kubescheduler.config.k8s.io/v1beta2
     kind: KubeSchedulerConfiguration
     leaderElection:
       # (Optional) Change true to false if you are not running a HA control-plane.
@@ -125,11 +125,6 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
         postBind:
           enabled:
           - name: Coscheduling
-      # pluginConfig is needed for coscheduling plugin to manipulate PodGroup CR objects.
-      pluginConfig:
-      - name: Coscheduling
-        args:
-          kubeConfigPath: /etc/kubernetes/scheduler.conf
     ```
 
 1. **❗IMPORTANT**❗ Starting with release v0.19, several plugins (e.g., coscheduling) introduced CRD

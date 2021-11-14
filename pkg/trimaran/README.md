@@ -47,7 +47,7 @@ In addition to the above configuration parameters, the Trimaran plugin may have 
 Following is an example scheduler configuration.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta1
+apiVersion: kubescheduler.config.k8s.io/v1beta2
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
