@@ -39,10 +39,10 @@ VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
 all: build
 
 .PHONY: build
-build: build-controller build-scheduler build-noderesourcetopology-plugin
+build: build-controller build-scheduler
 
 .PHONY: build.amd64
-build.amd64: build-controller.amd64 build-scheduler.amd64 build-noderesourcetopology-plugin.amd64
+build.amd64: build-controller.amd64 build-scheduler.amd64
 
 .PHONY: build.arm64v8
 build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
@@ -71,22 +71,10 @@ build-scheduler.amd64: autogen
 build-scheduler.arm64v8: autogen
 	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
-.PHONY: build-noderesourcetopology-plugin
-build-noderesourcetopology-plugin: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/noderesourcetopology-plugin cmd/noderesourcetopology-plugin/main.go
-
-.PHONY: build-noderesourcetopology-plugin.amd64
-build-noderesourcetopology-plugin.amd64: autogen
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/noderesourcetopology-plugin cmd/noderesourcetopology-plugin/main.go
-
 .PHONY: local-image
 local-image: clean
 	docker build -f ./build/scheduler/Dockerfile --build-arg ARCH="amd64" --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
 	docker build -f ./build/controller/Dockerfile --build-arg ARCH="amd64" -t $(LOCAL_REGISTRY)/$(LOCAL_CONTROLLER_IMAGE) .
-
-.PHONY: local-noderesourcetopology-image
-local-noderesourcetopology-image: clean
-	docker build -f ./build/noderesourcetopology-plugin/Dockerfile --build-arg ARCH="amd64" --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
 
 .PHONY: release-image.amd64
 release-image.amd64: clean
@@ -121,10 +109,6 @@ update-vendor:
 .PHONY: unit-test
 unit-test: autogen
 	hack/unit-test.sh
-
-.PHONY: unit-test-quick
-unit-test-quick:
-	hack/unit-test-quick.sh
 
 .PHONY: install-etcd
 install-etcd:
