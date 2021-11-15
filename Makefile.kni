@@ -66,7 +66,7 @@ unit-test: autogen
 
 .PHONY: unit-test-quick
 unit-test-quick:
-	hack/unit-test-quick.sh
+	hack-kni/unit-test-quick.sh
 
 .PHONY: install-etcd
 install-etcd:
