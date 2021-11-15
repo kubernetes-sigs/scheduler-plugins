@@ -198,37 +198,36 @@ func TestPermit(t *testing.T) {
 		name     string
 		pod      *corev1.Pod
 		snapshot framework.SharedLister
-		allow    bool
+		want     Status
 	}{
 		{
-			name:  "pod does not belong to any pg, allow",
-			pod:   st.MakePod().Name("p").UID("p").Namespace("ns1").Obj(),
-			allow: true,
+			name: "pod does not belong to any pg, allow",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Obj(),
+			want: PodGroupNotSpecified,
 		},
 		{
-			name:  "pod belongs to pg, a non-existing pg",
-			pod:   st.MakePod().Name("p").UID("p").Namespace("ns1").Label(util.PodGroupLabel, "pg-noexist").Obj(),
-			allow: false,
+			name: "pod belongs to a non-existing pg",
+			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(util.PodGroupLabel, "pg-noexist").Obj(),
+			want: PodGroupNotFound,
 		},
 		{
 			name:     "pod belongs to a pg that doesn't have enough pods",
 			pod:      st.MakePod().Name("p").UID("p").Namespace("ns1").Label(util.PodGroupLabel, "pg1").Obj(),
 			snapshot: testutil.NewFakeSharedLister([]*corev1.Pod{}, []*corev1.Node{}),
-			allow:    false,
+			want:     Wait,
 		},
 		{
 			name:     "pod belongs to a pg that has enough pods",
 			pod:      st.MakePod().Name("p").UID("p").Namespace("ns1").Label(util.PodGroupLabel, "pg1").Obj(),
 			snapshot: snapshot,
-			allow:    true,
+			want:     Success,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pgMgr := &PodGroupManager{pgClient: fakeClient, pgLister: pgLister, scheduleTimeout: &timeout, snapshotSharedLister: tt.snapshot}
-			allow, err := pgMgr.Permit(ctx, tt.pod, "test")
-			if allow != tt.allow {
-				t.Errorf("want %v, but got %v. err: %v", tt.allow, allow, err)
+			if got := pgMgr.Permit(ctx, tt.pod); got != tt.want {
+				t.Errorf("Expect %v, but got %v", tt.want, got)
 			}
 		})
 	}
