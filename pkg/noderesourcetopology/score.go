@@ -22,7 +22,7 @@ import (
 
 	"gonum.org/v1/gonum/stat"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -55,7 +55,7 @@ func (rw resourceToWeightMap) weight(r v1.ResourceName) int64 {
 
 func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	klog.V(5).InfoS("Scoring node", "nodeName", nodeName)
-	nodeTopology := findNodeTopology(nodeName, &tm.nodeResTopologyPlugin)
+	nodeTopology := findNodeTopology(nodeName, tm.lister)
 
 	if nodeTopology == nil {
 		return 0, nil

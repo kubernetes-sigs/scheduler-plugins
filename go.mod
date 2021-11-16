@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/google/go-cmp v0.5.5
 	github.com/google/uuid v1.1.2
-	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.10
+	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/paypal/load-watcher v0.2.1
 	github.com/spf13/pflag v1.0.5

@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -184,7 +184,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -222,7 +222,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -269,7 +269,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -297,7 +297,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -334,7 +334,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -362,7 +362,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
 					TopologyPolicies: []string{"foo"},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -400,7 +400,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -422,7 +422,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -454,7 +454,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -476,7 +476,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -508,7 +508,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -530,7 +530,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					},
 				},
 				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2", Namespace: ns.Name},
+					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
 					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 					Zones: topologyv1alpha1.ZoneList{
 						topologyv1alpha1.Zone{
@@ -637,7 +637,7 @@ func makeNodeResourceTopologyCRD() *apiextensionsv1.CustomResourceDefinition {
 
 func createNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) error {
 	for _, nrt := range noderesourcetopologies {
-		_, err := topologyClient.TopologyV1alpha1().NodeResourceTopologies(nrt.Namespace).Create(ctx, nrt, metav1.CreateOptions{})
+		_, err := topologyClient.TopologyV1alpha1().NodeResourceTopologies().Create(ctx, nrt, metav1.CreateOptions{})
 		if err != nil && !errors.IsAlreadyExists(err) {
 			return err
 		}
@@ -647,7 +647,7 @@ func createNodeResourceTopologies(ctx context.Context, topologyClient *versioned
 
 func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) {
 	for _, nrt := range noderesourcetopologies {
-		err := topologyClient.TopologyV1alpha1().NodeResourceTopologies(nrt.Namespace).Delete(ctx, nrt.Name, metav1.DeleteOptions{})
+		err := topologyClient.TopologyV1alpha1().NodeResourceTopologies().Delete(ctx, nrt.Name, metav1.DeleteOptions{})
 		if err != nil {
 			klog.ErrorS(err, "Failed to clean up NodeResourceTopology", "nodeResourceTopology", nrt)
 		}
@@ -717,7 +717,6 @@ func makeProfileByPluginArgs(
 
 func makeResourceAllocationScoreArgs(ns string, strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
 	return &scheconfig.NodeResourceTopologyMatchArgs{
-		Namespaces:      []string{ns},
 		ScoringStrategy: *strategy,
 	}
 }

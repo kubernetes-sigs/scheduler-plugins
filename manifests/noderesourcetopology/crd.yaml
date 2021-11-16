@@ -17,7 +17,7 @@ spec:
     shortNames:
     - node-res-topo
     singular: noderesourcetopology
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:

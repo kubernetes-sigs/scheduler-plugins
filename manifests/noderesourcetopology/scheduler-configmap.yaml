@@ -24,7 +24,5 @@ data:
           pluginConfig:
           - name: NodeResourceTopologyMatch
             args:
-              namespaces:
-              - "default"
               scoringStrategy:
                 type: "LeastAllocated"

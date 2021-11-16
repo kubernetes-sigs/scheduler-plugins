@@ -36,11 +36,6 @@ type NUMANode struct {
 
 type NUMANodeList []NUMANode
 
-type nodeResTopologyPlugin struct {
-	lister     *listerv1alpha1.NodeResourceTopologyLister
-	namespaces []string
-}
-
 type tmScopeHandler struct {
 	filter func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
 	score  func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status)
@@ -64,7 +59,7 @@ type PolicyHandlerMap map[topologyv1alpha1.TopologyManagerPolicy]tmScopeHandler
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
-	nodeResTopologyPlugin
+	lister              listerv1alpha1.NodeResourceTopologyLister
 	policyHandlers      PolicyHandlerMap
 	scorerFn            scoreStrategy
 	resourceToWeightMap resourceToWeightMap
@@ -107,10 +102,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	}
 
 	topologyMatch := &TopologyMatch{
-		nodeResTopologyPlugin: nodeResTopologyPlugin{
-			lister:     lister,
-			namespaces: tcfg.Namespaces,
-		},
+		lister:              lister,
 		policyHandlers:      newPolicyHandlerMap(),
 		scorerFn:            scoringFunction,
 		resourceToWeightMap: resToWeightMap,
