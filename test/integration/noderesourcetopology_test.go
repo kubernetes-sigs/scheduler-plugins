@@ -120,7 +120,6 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
 		Name: noderesourcetopology.Name,
 		Args: &scheconfig.NodeResourceTopologyMatchArgs{
-			Namespaces:      []string{ns.Name},
 			ScoringStrategy: scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated},
 		},
 	})

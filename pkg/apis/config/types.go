@@ -142,9 +142,6 @@ type ScoringStrategy struct {
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta
 
-	// Namespaces to be considered by NodeResourceTopologyMatch plugin
-	Namespaces []string
-
 	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
 	ScoringStrategy ScoringStrategy
 }

@@ -141,7 +141,6 @@ func TestSchedulingDefaults(t *testing.T) {
 			config: &NodeResourceTopologyMatchArgs{},
 			expect: &NodeResourceTopologyMatchArgs{
 				KubeConfigPath: pointer.StringPtr("/etc/kubernetes/scheduler.conf"),
-				Namespaces:     []string{"default"},
 				ScoringStrategy: &ScoringStrategy{
 					Type:      LeastAllocated,
 					Resources: defaultResourceSpec,
