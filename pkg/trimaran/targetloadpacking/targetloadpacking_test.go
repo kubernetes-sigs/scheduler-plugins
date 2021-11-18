@@ -44,7 +44,7 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta2"
 )
 
 var _ framework.SharedLister = &testSharedLister{}
@@ -77,8 +77,8 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 
 func TestNew(t *testing.T) {
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
-		TargetUtilization:         v1beta1.DefaultTargetUtilizationPercent,
-		DefaultRequestsMultiplier: v1beta1.DefaultRequestsMultiplier,
+		TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
+		DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
 		WatcherAddress:            "http://deadbeef:2020",
 	}
 	targetLoadPackingConfig := config.PluginConfig{
@@ -112,8 +112,8 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 	}
 
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
-		TargetUtilization:         v1beta1.DefaultTargetUtilizationPercent,
-		DefaultRequestsMultiplier: v1beta1.DefaultRequestsMultiplier,
+		TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
+		DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
 		WatcherAddress:            "http://deadbeef:2020",
 	}
 	targetLoadPackingConfig := config.PluginConfig{
@@ -156,7 +156,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				},
 			},
 			expected: []framework.NodeScore{
-				{Name: "node-1", Score: v1beta1.DefaultTargetUtilizationPercent},
+				{Name: "node-1", Score: v1beta2.DefaultTargetUtilizationPercent},
 			},
 		},
 		{
@@ -174,7 +174,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 							Metrics: []watcher.Metric{
 								{
 									Type:     watcher.CPU,
-									Value:    float64(v1beta1.DefaultTargetUtilizationPercent + 10),
+									Value:    float64(v1beta2.DefaultTargetUtilizationPercent + 10),
 									Operator: watcher.Latest,
 								},
 							},
@@ -246,9 +246,9 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)
 			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
-				TargetUtilization:         v1beta1.DefaultTargetUtilizationPercent,
+				TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
 				WatcherAddress:            server.URL,
-				DefaultRequestsMultiplier: v1beta1.DefaultRequestsMultiplier,
+				DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
 			}
 			p, err := New(&targetLoadPackingArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)

@@ -41,7 +41,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta2"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
@@ -54,8 +54,8 @@ const (
 )
 
 var (
-	requestsMilliCores           = v1beta1.DefaultRequestsMilliCores
-	hostTargetUtilizationPercent = v1beta1.DefaultTargetUtilizationPercent
+	requestsMilliCores           = v1beta2.DefaultRequestsMilliCores
+	hostTargetUtilizationPercent = v1beta2.DefaultTargetUtilizationPercent
 	requestsMultiplier           float64
 )
 

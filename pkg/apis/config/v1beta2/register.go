@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,22 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package v1beta2
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	schedscheme "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	schedschemev1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 )
 
 // GroupName is the group name used in this package
 const GroupName = "kubescheduler.config.k8s.io"
 
 // SchemeGroupVersion is group version used to register these objects
-var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: runtime.APIVersionInternal}
+var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1beta2"}
 
 var (
-	localSchemeBuilder = &schedscheme.SchemeBuilder
+	localSchemeBuilder = &schedschemev1beta2.SchemeBuilder
 	// AddToScheme is a global function that registers this API group & version to a scheme
 	AddToScheme = localSchemeBuilder.AddToScheme
 )
@@ -51,4 +51,6 @@ func init() {
 	// generated functions takes place in the generated files. The separation
 	// makes the code compile even when the generated files are missing.
 	localSchemeBuilder.Register(addKnownTypes)
+	localSchemeBuilder.Register(RegisterDefaults)
+	localSchemeBuilder.Register(RegisterConversions)
 }

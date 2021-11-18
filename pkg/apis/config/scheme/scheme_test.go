@@ -61,6 +61,7 @@ profiles:
   pluginConfig:
   - name: Coscheduling
     args:
+      kubeConfigPath: "/var/run/kubernetes/kube.config"
       permitWaitingTimeSeconds: 10
       deniedPGExpirationTimeSeconds: 3
   - name: NodeResourcesAllocatable
@@ -304,6 +305,264 @@ profiles:
 `),
 			wantErr: `decoding .profiles[0].pluginConfig[0]: decoding args for plugin Coscheduling: strict decoder error for {"DeniedPGExpirationTimeSeconds":3,"PermitWaitingTimeSeconds":10}: v1beta1.CoschedulingArgs.ReadObject: found unknown field: DeniedPGExpirationTimeSeconds, error found in #10 byte of ...|meSeconds":3,"Permit|..., bigger context ...|{"DeniedPGExpirationTimeSeconds":3,"PermitWaitingTimeSeconds":10}|...`,
 		},
+		{
+			name: "CoScheduling args is removed in the latest(v1beta2) config",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1beta1
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: CapacityScheduling
+    args:
+      kubeConfigPath: "/var/run/kubernetes/kube.config"
+`),
+			wantErr: `converting .Profiles[0].PluginConfig[0].Args into internal type: no kind "CapacitySchedulingArgs" is registered for the internal version of group "kubescheduler.config.k8s.io" in scheme "k8s.io/kubernetes/pkg/scheduler/apis/config/v1beta1/conversion.go:41"`,
+		},
+		{
+			name: "v1beta2 all plugin args in default profile",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1beta2
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: Coscheduling
+    args:
+      permitWaitingTimeSeconds: 10
+      deniedPGExpirationTimeSeconds: 3
+  - name: NodeResourcesAllocatable
+    args:
+      mode: Least
+      resources:
+      - name: cpu
+        weight: 1000000
+      - name: memory
+        weight: 1
+  - name: TargetLoadPacking
+    args:
+      targetUtilization: 60 
+      defaultRequests:
+        cpu: "1000m"
+      defaultRequestsMultiplier: "1.8"
+      watcherAddress: http://deadbeef:2020
+      metricProvider: 
+        type: Prometheus
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+  - name: LoadVariationRiskBalancing
+    args:
+      metricProvider:
+        type: Prometheus
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+      safeVarianceMargin: 1.0
+      safeVarianceSensitivity: 1.0
+      watcherAddress: http://deadbeef:2020
+`),
+			wantProfiles: []defaultconfig.KubeSchedulerProfile{
+				{
+					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1beta2,
+					PluginConfig: []defaultconfig.PluginConfig{
+						{
+							Name: coscheduling.Name,
+							Args: &config.CoschedulingArgs{
+								PermitWaitingTimeSeconds:      10,
+								DeniedPGExpirationTimeSeconds: 3,
+							},
+						},
+						{
+							Name: noderesources.AllocatableName,
+							Args: &config.NodeResourcesAllocatableArgs{
+								Mode: config.Least,
+								Resources: []v1.ResourceSpec{
+									{Name: string(corev1.ResourceCPU), Weight: 1000000},
+									{Name: string(corev1.ResourceMemory), Weight: 1},
+								},
+							},
+						},
+						{
+							Name: targetloadpacking.Name,
+							Args: &config.TargetLoadPackingArgs{
+								TargetUtilization: 60,
+								DefaultRequests: corev1.ResourceList{
+									corev1.ResourceCPU: testCPUQuantity,
+								},
+								DefaultRequestsMultiplier: "1.8",
+								WatcherAddress:            "http://deadbeef:2020",
+								MetricProvider: config.MetricProviderSpec{
+									Type:    config.Prometheus,
+									Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+								},
+							},
+						},
+						{
+							Name: loadvariationriskbalancing.Name,
+							Args: &config.LoadVariationRiskBalancingArgs{
+								SafeVarianceMargin:      v1beta1.DefaultSafeVarianceMargin,
+								SafeVarianceSensitivity: v1beta1.DefaultSafeVarianceSensitivity,
+								WatcherAddress:          "http://deadbeef:2020",
+								MetricProvider: config.MetricProviderSpec{
+									Type:    config.Prometheus,
+									Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+								},
+							},
+						},
+						{
+							Name: "DefaultPreemption",
+							Args: &defaultconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &defaultconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &defaultconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &defaultconfig.NodeResourcesBalancedAllocationArgs{Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &defaultconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &defaultconfig.ScoringStrategy{
+									Type:      defaultconfig.LeastAllocated,
+									Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &defaultconfig.PodTopologySpreadArgs{DefaultingType: defaultconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &defaultconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "v1beta2 plugin args unspecified to verify the default profile",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1beta2
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: Coscheduling
+    args:
+  - name: NodeResourcesAllocatable
+    args:
+  - name: TargetLoadPacking
+    args:
+  - name: LoadVariationRiskBalancing
+    args:
+`),
+			wantProfiles: []defaultconfig.KubeSchedulerProfile{
+				{
+					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1beta2,
+					PluginConfig: []defaultconfig.PluginConfig{
+						{
+							Name: coscheduling.Name,
+							Args: &config.CoschedulingArgs{
+								PermitWaitingTimeSeconds:      60,
+								DeniedPGExpirationTimeSeconds: 20,
+							},
+						},
+						{
+							Name: noderesources.AllocatableName,
+							Args: &config.NodeResourcesAllocatableArgs{
+								Mode: config.Least,
+								Resources: []v1.ResourceSpec{
+									{Name: string(corev1.ResourceCPU), Weight: 1048576},
+									{Name: string(corev1.ResourceMemory), Weight: 1},
+								},
+							},
+						},
+						{
+							Name: targetloadpacking.Name,
+							Args: &config.TargetLoadPackingArgs{
+								TargetUtilization: 40,
+								DefaultRequests: corev1.ResourceList{
+									corev1.ResourceCPU: testCPUQuantity,
+								},
+								DefaultRequestsMultiplier: "1.5",
+								WatcherAddress:            "",
+								MetricProvider: config.MetricProviderSpec{
+									Type:    config.KubernetesMetricsServer,
+									Address: "",
+									Token:   "",
+								},
+							},
+						},
+						{
+							Name: loadvariationriskbalancing.Name,
+							Args: &config.LoadVariationRiskBalancingArgs{
+								SafeVarianceMargin:      v1beta1.DefaultSafeVarianceMargin,
+								SafeVarianceSensitivity: v1beta1.DefaultSafeVarianceSensitivity,
+								WatcherAddress:          "",
+								MetricProvider: config.MetricProviderSpec{
+									Type:    config.KubernetesMetricsServer,
+									Address: "",
+									Token:   "",
+								},
+							},
+						},
+						{
+							Name: "DefaultPreemption",
+							Args: &defaultconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &defaultconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &defaultconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &defaultconfig.NodeResourcesBalancedAllocationArgs{Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &defaultconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &defaultconfig.ScoringStrategy{
+									Type:      defaultconfig.LeastAllocated,
+									Resources: []defaultconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &defaultconfig.PodTopologySpreadArgs{DefaultingType: defaultconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &defaultconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "v1beta2 coscheduling plugin args illegal to get validation error",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1beta2
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: Coscheduling
+    args:
+      kubeConfigPath: "/var/run/kubernetes/kube.config"
+`),
+			wantErr: `decoding .profiles[0].pluginConfig[0]: decoding args for plugin Coscheduling: strict decoder error for {"kubeConfigPath":"/var/run/kubernetes/kube.config"}: v1beta2.CoschedulingArgs.ReadObject: found unknown field: kubeConfigPath, error found in #10 byte of ...|onfigPath":"/var/run|..., bigger context ...|{"kubeConfigPath":"/var/run/kubernetes/kube.config"}|...`,
+		},
 	}
 	decoder := Codecs.UniversalDecoder()
 	for _, tt := range testCases {
@@ -423,8 +682,6 @@ profiles:
       apiVersion: kubescheduler.config.k8s.io/v1beta1
       deniedPGExpirationTimeSeconds: 3
       kind: CoschedulingArgs
-      kubeConfigPath: ""
-      kubeMaster: ""
       permitWaitingTimeSeconds: 10
     name: Coscheduling
   - args:
@@ -481,7 +738,7 @@ profiles:
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
-				t.Errorf("unexpected encoded configuration:\n%s", diff)
+				t.Errorf("unexpected encoded configuration: (-want,+got)\n%s", diff)
 			}
 			encoder = Codecs.EncoderForVersion(jsonInfo.Serializer, tt.version)
 			buf = bytes.Buffer{}
@@ -493,7 +750,7 @@ profiles:
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(tt.want, string(out)); diff != "" {
-				t.Errorf("unexpected encoded configuration:\n%s", diff)
+				t.Errorf("unexpected encoded configuration: (-want,+got)\n%s", diff)
 			}
 		})
 	}

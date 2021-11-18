@@ -16,7 +16,7 @@ This folder holds the capacity scheduling plugin implementations based on [Capac
 Example config:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta1
+apiVersion: kubescheduler.config.k8s.io/v1beta2
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -36,12 +36,10 @@ profiles:
     reserve:
       enabled:
       - name: CapacityScheduling
-  pluginConfig:
-  - name: CapacityScheduling
-    args:
-      kubeConfigPath: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
 ```
+
 ### ElasticQuota
+
 ```yaml
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: ElasticQuota
@@ -58,10 +56,8 @@ spec:
 - max: the upper bound of the resource consumption of the consumers.
 - min: the minimum resources that are guaranteed to ensure the basic functionality/performance of the consumers
 
-
-
-
 ### Demo
+
 We assume two elastic quotas are defined: quota1 (min:`cpu 4`, max:`cpu 6`) and quota2 
 (min:`cpu 4`, max:`cpu 6`). The entire cluster 
 has 8 CPUs available hence the sum of quota min is equal to the cluster capacity.

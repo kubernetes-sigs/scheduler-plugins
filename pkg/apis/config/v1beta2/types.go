@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package config
+package v1beta2
 
 import (
 	v1 "k8s.io/api/core/v1"
@@ -24,17 +24,17 @@ import (
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// CoschedulingArgs defines the parameters for Coscheduling plugin.
+// CoschedulingArgs defines the scheduling parameters for Coscheduling plugin.
 type CoschedulingArgs struct {
-	metav1.TypeMeta
+	metav1.TypeMeta `json:",inline"`
 
 	// PermitWaitingTime is the wait timeout in seconds.
-	PermitWaitingTimeSeconds int64
+	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
-	DeniedPGExpirationTimeSeconds int64
+	DeniedPGExpirationTimeSeconds *int64 `json:"deniedPGExpirationTimeSeconds,omitempty"`
 }
 
-// ModeType is a "string" type.
+// ModeType is a type "string".
 type ModeType string
 
 const (
@@ -73,45 +73,47 @@ const (
 // Denote the spec of the metric provider
 type MetricProviderSpec struct {
 	// Types of the metric provider
-	Type MetricProviderType
+	Type MetricProviderType `json:"type,omitempty"`
 	// The address of the metric provider
-	Address string
+	Address *string `json:"address,omitempty"`
 	// The authentication token of the metric provider
-	Token string
+	Token *string `json:"token,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
 
 // TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
 type TargetLoadPackingArgs struct {
-	metav1.TypeMeta
+	metav1.TypeMeta `json:",inline"`
 
 	// Default requests to use for best effort QoS
-	DefaultRequests v1.ResourceList
+	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
 	// Default requests multiplier for busrtable QoS
-	DefaultRequestsMultiplier string
+	DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
 	// Node target CPU Utilization for bin packing
-	TargetUtilization int64
-	// Metric Provider to use when using load watcher as a library
-	MetricProvider MetricProviderSpec
+	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
+	// Specify the metric provider type, address and token using MetricProviderSpec
+	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
 	// Address of load watcher service
-	WatcherAddress string
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
 
 // LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
 type LoadVariationRiskBalancingArgs struct {
-	metav1.TypeMeta
+	metav1.TypeMeta `json:",inline"`
 
-	// Metric Provider to use when using load watcher as a library
-	MetricProvider MetricProviderSpec
+	// Metric Provider specification when using load watcher as library
+	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
 	// Address of load watcher service
-	WatcherAddress string
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
 	// Multiplier of standard deviation in risk value
-	SafeVarianceMargin float64
+	SafeVarianceMargin *float64 `json:"safeVarianceMargin,omitempty"`
 	// Root power of standard deviation in risk value
-	SafeVarianceSensitivity float64
+	SafeVarianceSensitivity *float64 `json:"safeVarianceSensitivity,omitempty"`
 }
 
 // ScoringStrategyType is a "string" type.
@@ -126,25 +128,18 @@ const (
 	LeastAllocated ScoringStrategyType = "LeastAllocated"
 )
 
-// ScoringStrategy define ScoringStrategyType for node resource topology plugin
 type ScoringStrategy struct {
-	// Type selects which strategy to run.
-	Type ScoringStrategyType
-
-	// Resources a list of pairs <resource, weight> to be considered while scoring
-	// allowed weights start from 1.
-	Resources []schedulerconfig.ResourceSpec
+	Type      ScoringStrategyType            `json:"type,omitempty"`
+	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
 
 // NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
 type NodeResourceTopologyMatchArgs struct {
-	metav1.TypeMeta
+	metav1.TypeMeta `json:",inline"`
 
-	// Namespaces to be considered by NodeResourceTopologyMatch plugin
-	Namespaces []string
-
-	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
-	ScoringStrategy ScoringStrategy
+	Namespaces      []string         `json:"namespaces,omitempty"`
+	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }

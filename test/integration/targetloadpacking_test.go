@@ -36,9 +36,9 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	testutils "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta2"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
@@ -101,8 +101,8 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 		Name: targetloadpacking.Name,
 		Args: &config.TargetLoadPackingArgs{
 			WatcherAddress:            server.URL,
-			TargetUtilization:         v1beta1.DefaultTargetUtilizationPercent,
-			DefaultRequestsMultiplier: v1beta1.DefaultRequestsMultiplier,
+			TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
+			DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
 		},
 	})
 

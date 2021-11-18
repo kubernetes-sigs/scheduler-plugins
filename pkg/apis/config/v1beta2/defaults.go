@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ limitations under the License.
 
 // +k8s:defaulter-gen=true
 
-package v1beta1
+package v1beta2
 
 import (
 	"strconv"
@@ -66,8 +66,6 @@ var (
 	DefaultSafeVarianceSensitivity = 1.0
 	// DefaultMetricProviderType is the Kubernetes metrics server
 	DefaultMetricProviderType = pluginConfig.KubernetesMetricsServer
-
-	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
 
 	defaultResourceSpec = []schedulerconfig.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1},
@@ -128,9 +126,6 @@ func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingAr
 
 // SetDefaultsNodeResourceTopologyMatchArgs sets the default parameters for NodeResourceTopologyMatch plugin.
 func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs) {
-	if obj.KubeConfigPath == nil {
-		obj.KubeConfigPath = &defaultKubeConfigPath
-	}
 	if len(obj.Namespaces) == 0 {
 		obj.Namespaces = []string{metav1.NamespaceDefault}
 	}

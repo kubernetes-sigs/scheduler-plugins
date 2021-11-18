@@ -25,7 +25,7 @@ Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerCon
 NOTE: Update the config below to specify the namespace(s) in which NodeResourceTopology CR instances are present.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta1
+apiVersion: kubescheduler.config.k8s.io/v1beta2
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -44,11 +44,10 @@ profiles:
   pluginConfig:
   - name: NodeResourceTopologyMatch
     args:
-      kubeconfigpath: "/etc/kubernetes/scheduler.conf"
       namespaces:
-        - default
-        - production
-        - test-namespace
+      - default
+      - production
+      - test-namespace
       # other strategies are MostAllocatable and BalancedAllocation
       scoringStrategy:
         type: "LeastAllocatable"

@@ -19,8 +19,6 @@ package util
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -28,9 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
@@ -91,55 +86,6 @@ func MakePG(name, namespace string, min int32, creationTime *time.Time, minResou
 		pg.Spec.MinResources = minResource
 	}
 	return pg
-}
-
-func createKubeConfig(clientCfg *restclient.Config) *clientcmdapi.Config {
-	clusterNick := "cluster"
-	userNick := "user"
-	contextNick := "context"
-
-	configCmd := clientcmdapi.NewConfig()
-
-	credentials := clientcmdapi.NewAuthInfo()
-	credentials.Token = clientCfg.BearerToken
-	credentials.TokenFile = clientCfg.BearerTokenFile
-	credentials.ClientCertificate = clientCfg.TLSClientConfig.CertFile
-	if len(credentials.ClientCertificate) == 0 {
-		credentials.ClientCertificateData = clientCfg.TLSClientConfig.CertData
-	}
-	credentials.ClientKey = clientCfg.TLSClientConfig.KeyFile
-	if len(credentials.ClientKey) == 0 {
-		credentials.ClientKeyData = clientCfg.TLSClientConfig.KeyData
-	}
-	configCmd.AuthInfos[userNick] = credentials
-
-	cluster := clientcmdapi.NewCluster()
-	cluster.Server = clientCfg.Host
-	cluster.CertificateAuthority = clientCfg.CAFile
-	if len(cluster.CertificateAuthority) == 0 {
-		cluster.CertificateAuthorityData = clientCfg.CAData
-	}
-	cluster.InsecureSkipTLSVerify = clientCfg.Insecure
-	configCmd.Clusters[clusterNick] = cluster
-
-	context := clientcmdapi.NewContext()
-	context.Cluster = clusterNick
-	context.AuthInfo = userNick
-	configCmd.Contexts[contextNick] = context
-	configCmd.CurrentContext = contextNick
-
-	return configCmd
-}
-
-func BuildKubeConfigFile(config *restclient.Config) string {
-	kubeConfigPath := ""
-	if tempFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-"); err == nil {
-		kubeConfig := createKubeConfig(config)
-		clientcmd.WriteToFile(*kubeConfig, tempFile.Name())
-		kubeConfigPath = tempFile.Name()
-		return kubeConfigPath
-	}
-	return ""
 }
 
 func MakePod(podName string, namespace string, memReq int64, cpuReq int64, priority int32, uid string, nodeName string) *corev1.Pod {
