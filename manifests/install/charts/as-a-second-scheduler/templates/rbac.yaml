@@ -57,7 +57,7 @@ rules:
   resources: ["subjectaccessreviews"]
   verbs: ["create"]
 - apiGroups: ["storage.k8s.io"]
-  resources: ["csinodes", "storageclasses" , "csidrivers" , "csistoragecapacities"]
+  resources: ["csinodes", "storageclasses", "csidrivers", "csistoragecapacities"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["topology.node.k8s.io"]
   resources: ["noderesourcetopologies"]
