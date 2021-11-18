@@ -213,6 +213,21 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		waitTime = 0
 	}
 
+	// We will also request to move the sibling pods back to activeQ.
+	if podsToMove := cs.pgMgr.SiblingPods(pod); len(podsToMove) != 0 {
+		c, err := state.Read(framework.PodsToActivateKey)
+		if err == nil {
+			if s, ok := c.(*framework.PodsToActivate); ok {
+				s.Lock()
+				for _, pod := range podsToMove {
+					namespacedName := core.GetNamespacedName(pod)
+					s.Map[namespacedName] = pod
+				}
+				s.Unlock()
+			}
+		}
+	}
+
 	return retStatus, waitTime
 }
 
