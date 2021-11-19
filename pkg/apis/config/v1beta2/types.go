@@ -140,6 +140,5 @@ type ScoringStrategy struct {
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	Namespaces      []string         `json:"namespaces,omitempty"`
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
