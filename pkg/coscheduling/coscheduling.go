@@ -200,6 +200,8 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 			waitTime = wait
 		}
 		retStatus = framework.NewStatus(framework.Wait)
+		// We will also request to move the sibling pods back to activeQ.
+		cs.pgMgr.ActivateSiblings(pod, state)
 	case core.Success:
 		pgFullName := util.GetPodGroupFullName(pod)
 		cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
@@ -211,21 +213,6 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		klog.V(3).InfoS("Permit allows", "pod", klog.KObj(pod))
 		retStatus = framework.NewStatus(framework.Success)
 		waitTime = 0
-	}
-
-	// We will also request to move the sibling pods back to activeQ.
-	if podsToMove := cs.pgMgr.SiblingPods(pod); len(podsToMove) != 0 {
-		c, err := state.Read(framework.PodsToActivateKey)
-		if err == nil {
-			if s, ok := c.(*framework.PodsToActivate); ok {
-				s.Lock()
-				for _, pod := range podsToMove {
-					namespacedName := core.GetNamespacedName(pod)
-					s.Map[namespacedName] = pod
-				}
-				s.Unlock()
-			}
-		}
 	}
 
 	return retStatus, waitTime
