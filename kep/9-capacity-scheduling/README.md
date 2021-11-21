@@ -80,7 +80,7 @@ There is increasing demand to use Kubernetes to manage batch workloads
 (ML/DL). In those cases, one challenge is to improve cluster utilization 
 while ensuring that each user has a reasonable amount of resources. The 
 problem can be partially addressed by the Kubernetes [ResourceQuota].
-he native Kubernetes ResourceQuota API can be used to specify the maximum 
+The native Kubernetes ResourceQuota API can be used to specify the maximum 
 overall resource allocation per namespace. The quota enforcement is done 
 through an admission check. A quota consumer (e.g., a Pod) cannot be 
 created if the aggregated resource allocation exceeds the quota limit. 
