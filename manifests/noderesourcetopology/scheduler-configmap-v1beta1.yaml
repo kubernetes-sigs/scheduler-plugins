@@ -5,11 +5,12 @@ metadata:
   namespace: kube-system
 data:
   scheduler-config.yaml: |
-      apiVersion: kubescheduler.config.k8s.io/v1beta2
+      apiVersion: kubescheduler.config.k8s.io/v1beta1
       kind: KubeSchedulerConfiguration
       leaderElection:
         leaderElect: false
       clientConnection:
+        # kubeconfig: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
         kubeconfig: "/etc/kubernetes/scheduler.conf"
       profiles:
         - schedulerName: topo-aware-scheduler
@@ -24,5 +25,7 @@ data:
           pluginConfig:
           - name: NodeResourceTopologyMatch
             args:
+              # kubeconfig: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
+              kubeconfigpath: "/etc/kubernetes/scheduler.conf"
               scoringStrategy:
                 type: "LeastAllocated"

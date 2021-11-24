@@ -140,7 +140,6 @@ func TestSchedulingDefaults(t *testing.T) {
 			name:   "empty config NodeResourceTopologyMatchArgs",
 			config: &NodeResourceTopologyMatchArgs{},
 			expect: &NodeResourceTopologyMatchArgs{
-				Namespaces: []string{"default"},
 				ScoringStrategy: &ScoringStrategy{
 					Type:      LeastAllocated,
 					Resources: defaultResourceSpec,

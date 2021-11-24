@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -43,7 +43,7 @@ const (
 func TestNodeResourceTopology(t *testing.T) {
 	nodeTopologies := make([]*topologyv1alpha1.NodeResourceTopology, 4)
 	nodeTopologies[0] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node1", Namespace: "default"},
+		ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
 		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 		Zones: topologyv1alpha1.ZoneList{
 			{
@@ -67,7 +67,7 @@ func TestNodeResourceTopology(t *testing.T) {
 		},
 	}
 	nodeTopologies[1] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node2", Namespace: "default"},
+		ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
 		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 		Zones: topologyv1alpha1.ZoneList{
 			{
@@ -91,7 +91,7 @@ func TestNodeResourceTopology(t *testing.T) {
 		},
 	}
 	nodeTopologies[2] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node3", Namespace: "default"},
+		ObjectMeta:       metav1.ObjectMeta{Name: "node3"},
 		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
 		Zones: topologyv1alpha1.ZoneList{
 			{
@@ -115,7 +115,7 @@ func TestNodeResourceTopology(t *testing.T) {
 		},
 	}
 	nodeTopologies[3] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node", Namespace: "default"},
+		ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node"},
 		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
 		Zones: topologyv1alpha1.ZoneList{
 			{
@@ -253,10 +253,7 @@ func TestNodeResourceTopology(t *testing.T) {
 	lister := fakeInformer.Lister()
 
 	tm := TopologyMatch{
-		nodeResTopologyPlugin: nodeResTopologyPlugin{
-			namespaces: []string{metav1.NamespaceDefault},
-			lister:     &lister,
-		},
+		lister:         lister,
 		policyHandlers: newPolicyHandlerMap(),
 	}
 

@@ -23,7 +23,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -130,9 +129,6 @@ func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingAr
 func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs) {
 	if obj.KubeConfigPath == nil {
 		obj.KubeConfigPath = &defaultKubeConfigPath
-	}
-	if len(obj.Namespaces) == 0 {
-		obj.Namespaces = []string{metav1.NamespaceDefault}
 	}
 
 	if obj.ScoringStrategy == nil {

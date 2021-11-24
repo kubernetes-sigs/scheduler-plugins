@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -43,7 +43,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 	initTest := func() {
 		// noderesourcetopology objects
 		nodeTopologies[0] = &topologyv1alpha1.NodeResourceTopology{
-			ObjectMeta:       metav1.ObjectMeta{Name: "Node1", Namespace: "default"},
+			ObjectMeta:       metav1.ObjectMeta{Name: "Node1"},
 			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 			Zones: topologyv1alpha1.ZoneList{
 				topologyv1alpha1.Zone{
@@ -66,7 +66,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 		}
 
 		nodeTopologies[1] = &topologyv1alpha1.NodeResourceTopology{
-			ObjectMeta:       metav1.ObjectMeta{Name: "Node2", Namespace: "default"},
+			ObjectMeta:       metav1.ObjectMeta{Name: "Node2"},
 			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 			Zones: topologyv1alpha1.ZoneList{
 				topologyv1alpha1.Zone{
@@ -87,7 +87,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			},
 		}
 		nodeTopologies[2] = &topologyv1alpha1.NodeResourceTopology{
-			ObjectMeta:       metav1.ObjectMeta{Name: "Node3", Namespace: "default"},
+			ObjectMeta:       metav1.ObjectMeta{Name: "Node3"},
 			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
 			Zones: topologyv1alpha1.ZoneList{
 				topologyv1alpha1.Zone{
@@ -196,10 +196,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			}
 
 			tm := &TopologyMatch{
-				nodeResTopologyPlugin: nodeResTopologyPlugin{
-					lister:     &lister,
-					namespaces: []string{metav1.NamespaceDefault},
-				},
+				lister:         lister,
 				policyHandlers: newPolicyHandlerMap(),
 				scorerFn:       scoringFunction,
 			}

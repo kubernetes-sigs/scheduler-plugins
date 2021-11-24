@@ -98,11 +98,6 @@ func (in *MetricProviderSpec) DeepCopy() *MetricProviderSpec {
 func (in *NodeResourceTopologyMatchArgs) DeepCopyInto(out *NodeResourceTopologyMatchArgs) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	if in.Namespaces != nil {
-		in, out := &in.Namespaces, &out.Namespaces
-		*out = make([]string, len(*in))
-		copy(*out, *in)
-	}
 	in.ScoringStrategy.DeepCopyInto(&out.ScoringStrategy)
 	return
 }

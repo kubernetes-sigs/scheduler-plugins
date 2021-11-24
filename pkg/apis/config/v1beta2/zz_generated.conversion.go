@@ -217,7 +217,6 @@ func Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(in *config.
 }
 
 func autoConvert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs(in *NodeResourceTopologyMatchArgs, out *config.NodeResourceTopologyMatchArgs, s conversion.Scope) error {
-	out.Namespaces = *(*[]string)(unsafe.Pointer(&in.Namespaces))
 	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (*sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta2.ScoringStrategy vs sigs.k8s.io/scheduler-plugins/pkg/apis/config.ScoringStrategy)
 	// Added manually
 	out.ScoringStrategy = *(*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
@@ -230,7 +229,6 @@ func Convert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopolog
 }
 
 func autoConvert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTopologyMatchArgs(in *config.NodeResourceTopologyMatchArgs, out *NodeResourceTopologyMatchArgs, s conversion.Scope) error {
-	out.Namespaces = *(*[]string)(unsafe.Pointer(&in.Namespaces))
 	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (sigs.k8s.io/scheduler-plugins/pkg/apis/config.ScoringStrategy vs *sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta2.ScoringStrategy)
 	// Added manually
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(&in.ScoringStrategy))

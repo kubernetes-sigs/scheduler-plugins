@@ -3,7 +3,6 @@ apiVersion: topology.node.k8s.io/v1alpha1
 kind: NodeResourceTopology
 metadata:
   name: worker-node-a
-  namespace: default
 topologyPolicies: ["SingleNUMANodeContainerLevel"]
 zones:
   - name: node-0
