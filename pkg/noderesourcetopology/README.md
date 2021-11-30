@@ -19,6 +19,14 @@ Document capturing the NodeResourceTopology API Custom Resource Definition Stand
 
 In case the cumulative count of node resource allocatable appear to be the same for both the nodes in the cluster, topology aware scheduler plugin uses the CRD instance corresponding to the nodes to obtain the resource topology information to make a topology-aware scheduling decision.
 
+**NOTE:**
+- [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12) onwards, CRD has been changed from namespace to cluster scoped. 
+Scheduler plugin version > v0.21.6 depends on NodeResourceTopology CRD v0.0.12 and the namespace field has been deprecated from the NodeResourceTopology scheduler config args.
+
+Dependency:
+- Scheduler plugin version <= v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.10](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.10).  
+- Scheduler plugin version > v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12).
+
 ### Config
 
 Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerConfigConfiguration.
