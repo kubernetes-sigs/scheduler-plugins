@@ -19,15 +19,11 @@ package coscheduling
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
@@ -70,17 +66,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	pgClient := pgclientset.NewForConfigOrDie(handle.KubeConfig())
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-
-	fieldSelector, err := fields.ParseSelector(",status.phase!=" + string(v1.PodSucceeded) + ",status.phase!=" + string(v1.PodFailed))
-	if err != nil {
-		klog.ErrorS(err, "ParseSelector failed")
-		os.Exit(1)
-	}
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(handle.ClientSet(), 0, informers.WithTweakListOptions(func(opt *metav1.ListOptions) {
-		opt.LabelSelector = util.PodGroupLabel
-		opt.FieldSelector = fieldSelector.String()
-	}))
-	podInformer := informerFactory.Core().V1().Pods()
+	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
 
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
 	deniedPGExpirationTime := time.Duration(args.DeniedPGExpirationTimeSeconds) * time.Second
@@ -94,8 +80,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		scheduleTimeout:  &scheduleTimeDuration,
 	}
 	pgInformerFactory.Start(ctx.Done())
-	informerFactory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), pgInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), pgInformer.Informer().HasSynced) {
 		err := fmt.Errorf("WaitForCacheSync failed")
 		klog.ErrorS(err, "Cannot sync caches")
 		return nil, err
