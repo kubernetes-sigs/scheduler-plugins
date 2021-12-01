@@ -200,6 +200,8 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 			waitTime = wait
 		}
 		retStatus = framework.NewStatus(framework.Wait)
+		// We will also request to move the sibling pods back to activeQ.
+		cs.pgMgr.ActivateSiblings(pod, state)
 	case core.Success:
 		pgFullName := util.GetPodGroupFullName(pod)
 		cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
