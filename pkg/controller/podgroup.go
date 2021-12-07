@@ -243,6 +243,11 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 		pgCopy.Status.Succeeded = succeeded
 		pgCopy.Status.Running = running
 
+		if len(pods) == 0 {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
+			break
+		}
+
 		if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember && pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduling {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
 		}
