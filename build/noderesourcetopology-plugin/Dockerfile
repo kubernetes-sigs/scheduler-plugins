@@ -18,7 +18,7 @@ WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
 
 ARG RELEASE_VERSION
-RUN RELEASE_VERSION=${RELEASE_VERSION} make build-noderesourcetopology-plugin
+RUN RELEASE_VERSION=${RELEASE_VERSION} make -f Makefile.kni build-noderesourcetopology-plugin
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal
 COPY --from=builder /go/src/sigs.k8s.io/scheduler-plugins/bin/noderesourcetopology-plugin /bin/kube-scheduler
