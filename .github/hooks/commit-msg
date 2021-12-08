@@ -1,0 +1,13 @@
+#!/bin/bash
+
+function enforce_commit_msg()
+{
+  local cmtmsg="$1"
+  if [[ $cmtmsg != \[KNI\]* ]]; then
+    echo "commit message $cmtmsg not formatted correctly, please refer to \
+     https://github.com/Tal-or/scheduler-plugins/blob/master/RESYNC.md#patching-openshift-kni-specific-commits"
+    exit 1
+  fi
+}
+
+enforce_commit_msg "$1"
