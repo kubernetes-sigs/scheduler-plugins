@@ -126,7 +126,6 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	// phases we can tell whether the failure comes from PreFilter or not.
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
-		state.Write(cs.getStateKey(), NewNoopStateData())
 		return framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 	return framework.NewStatus(framework.Success, "")
@@ -135,13 +134,6 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 // PostFilter is used to rejecting a group of pods if a pod does not pass PreFilter or Filter.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	// Check if the failure comes from PreFilter or not.
-	_, err := state.Read(cs.getStateKey())
-	if err == nil {
-		state.Delete(cs.getStateKey())
-		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
-	}
-
 	pgName, pg := cs.pgMgr.GetPodGroup(pod)
 	if pg == nil {
 		klog.V(4).InfoS("Pod does not belong to any group", "pod", klog.KObj(pod))
@@ -252,18 +244,4 @@ func (cs *Coscheduling) rejectPod(uid types.UID) {
 		return
 	}
 	waitingPod.Reject(Name, "")
-}
-
-func (cs *Coscheduling) getStateKey() framework.StateKey {
-	return framework.StateKey(fmt.Sprintf("Prefilter-%v", cs.Name()))
-}
-
-type noopStateData struct{}
-
-func NewNoopStateData() framework.StateData {
-	return &noopStateData{}
-}
-
-func (d *noopStateData) Clone() framework.StateData {
-	return d
 }
