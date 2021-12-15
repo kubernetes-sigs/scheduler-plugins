@@ -30,9 +30,11 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
+	"sigs.k8s.io/scheduler-plugins/pkg/preemptiontoleration"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
+
 	// Ensure scheme package is initialized.
 	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
 )
@@ -49,6 +51,7 @@ func main() {
 		app.WithPlugin(loadvariationriskbalancing.Name, loadvariationriskbalancing.New),
 		app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable),
 		app.WithPlugin(noderesourcetopology.Name, noderesourcetopology.New),
+		app.WithPlugin(preemptiontoleration.Name, preemptiontoleration.New),
 		app.WithPlugin(targetloadpacking.Name, targetloadpacking.New),
 		// Sample plugins below.
 		app.WithPlugin(crossnodepreemption.Name, crossnodepreemption.New),

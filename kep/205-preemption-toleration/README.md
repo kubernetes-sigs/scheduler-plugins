@@ -111,9 +111,6 @@ kind: PriorityClass
 metadata:
   name: toleration-policy-sample
   annotation:
-    # this key is needed to enable preemption toleration policy for distinguishing 
-    # between no toleration policy and empty toleration policy (all fields will be default)
-    preemption-toleration.scheduling.sigs.k8s.io/enabled: ""
     preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
     preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
 value: 8000
@@ -155,7 +152,6 @@ kind: PriorityClass
 metadata:
   name: low-non-preempted
   annotation:
-    preemption-toleration.scheduling.sigs.k8s.io/enabled: ""
     # This priority class can tolerate preemption by priority with p < 10000.
     preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
     # This priority class can tolerate preemption forever by priority with p < 10000(=minimum-preemptable-priority)
@@ -189,7 +185,6 @@ kind: PriorityClass
 metadata:
   name: low-non-preempted-10min
   annotation:
-    preemption-toleration.scheduling.sigs.k8s.io/enabled: ""
     # This priority class can tolerate preemption by priority with p < 10000.
     preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
     # This priority class can tolerate preemption for 10 minutes (600 seconds) 
