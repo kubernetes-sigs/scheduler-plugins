@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
+	"sigs.k8s.io/scheduler-plugins/pkg/preemptiontoleration"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/yaml"
@@ -357,6 +358,10 @@ profiles:
       safeVarianceMargin: 1.0
       safeVarianceSensitivity: 1.0
       watcherAddress: http://deadbeef:2020
+  - name: PreemptionToleration
+    args:
+      minCandidateNodesPercentage: 20
+      minCandidateNodesAbsolute: 200
 `),
 			wantProfiles: []defaultconfig.KubeSchedulerProfile{
 				{
@@ -406,6 +411,10 @@ profiles:
 									Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
 								},
 							},
+						},
+						{
+							Name: preemptiontoleration.Name,
+							Args: &config.PreemptionTolerationArgs{MinCandidateNodesPercentage: 20, MinCandidateNodesAbsolute: 200},
 						},
 						{
 							Name: "DefaultPreemption",
@@ -460,6 +469,8 @@ profiles:
     args:
   - name: LoadVariationRiskBalancing
     args:
+  - name: PreemptionToleration
+    args:
 `),
 			wantProfiles: []defaultconfig.KubeSchedulerProfile{
 				{
@@ -511,6 +522,10 @@ profiles:
 									Token:   "",
 								},
 							},
+						},
+						{
+							Name: preemptiontoleration.Name,
+							Args: &config.PreemptionTolerationArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
 						},
 						{
 							Name: "DefaultPreemption",

@@ -20,6 +20,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	schedulerconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -142,3 +143,9 @@ type NodeResourceTopologyMatchArgs struct {
 
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// PreemptionTolerationArgs reuses DefaultPluginArgs.
+type PreemptionTolerationArgs schedulerconfigv1beta2.DefaultPreemptionArgs

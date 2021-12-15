@@ -24,7 +24,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	schedulerconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 
+	k8sschedulerconfigv1beta2 "k8s.io/kubernetes/pkg/scheduler/apis/config/v1beta2"
 	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
 
@@ -142,4 +144,9 @@ func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs
 			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
 	}
+}
+
+// PreemptionTolerationArgs reuses SetDefaults_DefaultPreemptionArgs
+func SetDefaultsPreemptionTolerationArgs(obj *PreemptionTolerationArgs) {
+	k8sschedulerconfigv1beta2.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1beta2.DefaultPreemptionArgs)(obj))
 }

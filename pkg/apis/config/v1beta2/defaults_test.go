@@ -146,6 +146,14 @@ func TestSchedulingDefaults(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:   "empty config PreeemptionTolerationArgs",
+			config: &PreemptionTolerationArgs{},
+			expect: &PreemptionTolerationArgs{
+				MinCandidateNodesPercentage: pointer.Int32Ptr(10),
+				MinCandidateNodesAbsolute:   pointer.Int32Ptr(100),
+			},
+		},
 	}
 
 	for _, tc := range tests {
