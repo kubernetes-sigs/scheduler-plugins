@@ -19,7 +19,10 @@ package config
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	// TODO: eliminate the "versioned" import, i.e., schedulerconfig.ResourceSpec should be unversioned.ResourceSpec.
 	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	unversioned "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -145,3 +148,8 @@ type NodeResourceTopologyMatchArgs struct {
 	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
 	ScoringStrategy ScoringStrategy
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PreemptionTolerationArgs reuses DefaultPluginArgs.
+type PreemptionTolerationArgs unversioned.DefaultPreemptionArgs
