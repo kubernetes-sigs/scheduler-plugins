@@ -29,6 +29,7 @@ import (
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	configv1 "k8s.io/kube-scheduler/config/v1"
+	apisconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	config "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
 
@@ -245,7 +246,7 @@ func Convert_config_NodeResourceTopologyMatchArgs_To_v1beta1_NodeResourceTopolog
 }
 
 func autoConvert_v1beta1_NodeResourcesAllocatableArgs_To_config_NodeResourcesAllocatableArgs(in *NodeResourcesAllocatableArgs, out *config.NodeResourcesAllocatableArgs, s conversion.Scope) error {
-	out.Resources = *(*[]configv1.ResourceSpec)(unsafe.Pointer(&in.Resources))
+	out.Resources = *(*[]apisconfig.ResourceSpec)(unsafe.Pointer(&in.Resources))
 	out.Mode = config.ModeType(in.Mode)
 	return nil
 }
@@ -268,7 +269,7 @@ func Convert_config_NodeResourcesAllocatableArgs_To_v1beta1_NodeResourcesAllocat
 
 func autoConvert_v1beta1_ScoringStrategy_To_config_ScoringStrategy(in *ScoringStrategy, out *config.ScoringStrategy, s conversion.Scope) error {
 	out.Type = config.ScoringStrategyType(in.Type)
-	out.Resources = *(*[]configv1.ResourceSpec)(unsafe.Pointer(&in.Resources))
+	out.Resources = *(*[]apisconfig.ResourceSpec)(unsafe.Pointer(&in.Resources))
 	return nil
 }
 

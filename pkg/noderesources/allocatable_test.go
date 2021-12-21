@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	unversioned "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	fakeframework "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -87,13 +87,13 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 	)
 
 	// 1 millicore weighted the same as 1 MiB.
-	defaultResourceAllocatableSet := []schedulerconfig.ResourceSpec{
+	defaultResourceAllocatableSet := []unversioned.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1 << 20},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
 
 	// 1 millicore weighted the same as 1 GiB.
-	cpuResourceAllocatableSet := []schedulerconfig.ResourceSpec{
+	cpuResourceAllocatableSet := []unversioned.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1 << 30},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
@@ -221,7 +221,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			// resource with negative weight is not allowed
 			pod:       cpuAndMemory,
 			nodeInfos: []*framework.NodeInfo{makeNodeInfo("machine", 4000, 10000)},
-			args:      config.NodeResourcesAllocatableArgs{Resources: []schedulerconfig.ResourceSpec{{Name: "memory", Weight: -1}, {Name: "cpu", Weight: 1}}},
+			args:      config.NodeResourcesAllocatableArgs{Resources: []unversioned.ResourceSpec{{Name: "memory", Weight: -1}, {Name: "cpu", Weight: 1}}},
 			wantErr:   "resource Weight of memory should be a positive value, got -1",
 			name:      "resource with negative weight",
 		},
@@ -229,7 +229,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			// resource with zero weight is not allowed
 			pod:       cpuAndMemory,
 			nodeInfos: []*framework.NodeInfo{makeNodeInfo("machine", 4000, 10000)},
-			args:      config.NodeResourcesAllocatableArgs{Resources: []schedulerconfig.ResourceSpec{{Name: "memory", Weight: 1}, {Name: "cpu", Weight: 0}}},
+			args:      config.NodeResourcesAllocatableArgs{Resources: []unversioned.ResourceSpec{{Name: "memory", Weight: 1}, {Name: "cpu", Weight: 0}}},
 			wantErr:   "resource Weight of cpu should be a positive value, got 0",
 			name:      "resource with zero weight",
 		},

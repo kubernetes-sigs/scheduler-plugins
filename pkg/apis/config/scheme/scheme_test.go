@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	v1 "k8s.io/kube-scheduler/config/v1"
 	defaultconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/testing/defaults"
 
@@ -108,7 +107,7 @@ profiles:
 							Name: noderesources.AllocatableName,
 							Args: &config.NodeResourcesAllocatableArgs{
 								Mode: config.Least,
-								Resources: []v1.ResourceSpec{
+								Resources: []defaultconfig.ResourceSpec{
 									{Name: string(corev1.ResourceCPU), Weight: 1000000},
 									{Name: string(corev1.ResourceMemory), Weight: 1},
 								},
@@ -215,7 +214,7 @@ profiles:
 							Name: noderesources.AllocatableName,
 							Args: &config.NodeResourcesAllocatableArgs{
 								Mode: config.Least,
-								Resources: []v1.ResourceSpec{
+								Resources: []defaultconfig.ResourceSpec{
 									{Name: string(corev1.ResourceCPU), Weight: 1048576},
 									{Name: string(corev1.ResourceMemory), Weight: 1},
 								},
@@ -379,7 +378,7 @@ profiles:
 							Name: noderesources.AllocatableName,
 							Args: &config.NodeResourcesAllocatableArgs{
 								Mode: config.Least,
-								Resources: []v1.ResourceSpec{
+								Resources: []defaultconfig.ResourceSpec{
 									{Name: string(corev1.ResourceCPU), Weight: 1000000},
 									{Name: string(corev1.ResourceMemory), Weight: 1},
 								},
@@ -488,7 +487,7 @@ profiles:
 							Name: noderesources.AllocatableName,
 							Args: &config.NodeResourcesAllocatableArgs{
 								Mode: config.Least,
-								Resources: []v1.ResourceSpec{
+								Resources: []defaultconfig.ResourceSpec{
 									{Name: string(corev1.ResourceCPU), Weight: 1048576},
 									{Name: string(corev1.ResourceMemory), Weight: 1},
 								},
@@ -630,7 +629,7 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 								Name: noderesources.AllocatableName,
 								Args: &config.NodeResourcesAllocatableArgs{
 									Mode: config.Least,
-									Resources: []v1.ResourceSpec{
+									Resources: []defaultconfig.ResourceSpec{
 										{Name: string(corev1.ResourceCPU), Weight: 1000000},
 										{Name: string(corev1.ResourceMemory), Weight: 1},
 									},

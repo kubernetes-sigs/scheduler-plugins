@@ -24,7 +24,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	unversioned "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -47,7 +47,7 @@ func (alloc *Allocatable) Name() string {
 	return AllocatableName
 }
 
-func validateResources(resources []schedulerconfig.ResourceSpec) error {
+func validateResources(resources []unversioned.ResourceSpec) error {
 	for _, resource := range resources {
 		if resource.Weight <= 0 {
 			return fmt.Errorf("resource Weight of %v should be a positive value, got %v", resource.Name, resource.Weight)
