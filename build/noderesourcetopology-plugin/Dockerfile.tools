@@ -1,0 +1,48 @@
+FROM registry.access.redhat.com/ubi8/ubi
+
+ENV HOME=/home/ci
+ENV GOROOT=/usr/local/go
+ENV GOVERSION=1.17.2
+ENV GOPATH=/go
+ENV GOBIN=${GOPATH}/bin
+ENV PATH=${PATH}:${GOROOT}/bin:${GOBIN}
+
+ARG GO_PACKAGE_PATH=github.com/openshift-kni/scheduler-plugins
+
+# rpms required for building and running test suites
+RUN yum --setopt=install_weak_deps=False -y install \
+    gcc \
+    git \
+    make \
+    gettext \
+    which \
+    findutils \
+    python2 \
+    && yum clean all
+
+RUN mkdir -p $HOME && \
+    # install go
+    curl -JL https://dl.google.com/go/go${GOVERSION}.linux-amd64.tar.gz -o go.tar.gz && \
+    tar -C /usr/local -xzf go.tar.gz && \
+    rm go.tar.gz && \
+    # get required golang tools and OC client
+    go get github.com/onsi/ginkgo/ginkgo && \
+    go get golang.org/x/lint/golint && \
+    go get github.com/mattn/goveralls && \
+    go clean -cache -modcache && \
+    rm -rf ${GOPATH}/src/* && \
+    rm -rf ${GOPATH}/pkg/* && \
+    export latest_oc_client_version=$(curl https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/ 2>/dev/null | grep -o \"openshift-client-linux-4.*tar.gz\" | tr -d \") && \
+    curl -JL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/${latest_oc_client_version} -o oc.tar.gz && \
+    tar -xzvf oc.tar.gz && \
+    mv oc /usr/local/bin/oc && \
+    rm -f oc.tar.gz && \
+    echo 'alias kubectl="oc"' >> ~/.bashrc && \
+    chmod -R 777 $HOME
+
+RUN mkdir -p ${GOPATH}/src/${GO_PACKAGE_PATH}/ && \
+    chmod -R 775 ${GOPATH}
+
+WORKDIR ${GOPATH}/src/${GO_PACKAGE_PATH}
+
+ENTRYPOINT [ "/bin/bash" ]
