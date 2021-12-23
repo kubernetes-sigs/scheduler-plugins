@@ -44,16 +44,18 @@ if [[ $commits_diff_count -eq 0 ]]; then
 fi
 
 echo commits between "$latest_upstream_commit"..HEAD:
-git log --oneline "$latest_upstream_commit"..HEAD
-echo
+echo "---"
+git log --oneline --no-merges "$latest_upstream_commit"..HEAD
+echo "---"
 
 # list commits
-for commitish in $(git log --oneline --no-merges "$latest_upstream_commit"..HEAD | cut -d' ' -f 1); do
-	commit_msg_filename=$(mktemp)
-  git log --format=%B -n 1 "$commitish" > "$commit_msg_filename"
-  if ! .github/hooks/commit-msg "$commit_msg_filename"; then
-    echo validation failed for "$commitish"
+for commitish in $( git log --oneline --no-merges "$latest_upstream_commit"..HEAD | cut -d' ' -f 1); do
+  echo "CHECK: $commitish"
+  .github/hooks/commit-msg $( git log --format=%s -n 1 "$commitish" )
+  if [[ "$?" != "0" ]]; then
+    echo "-> FAIL: $commitish"
     exit 20
   fi
+  echo "-> PASS: $commitish"
 done
 
