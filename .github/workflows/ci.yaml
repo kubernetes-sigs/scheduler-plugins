@@ -20,4 +20,4 @@ jobs:
           go-version: 1.17
 
       - name: verify commits
-        run: TRIGGER_BRANCH=$GITHUB_REF_NAME ./hack/verify-commits.sh
+        run: TRIGGER_BRANCH=$GITHUB_REF_NAME ./hack-kni/verify-commits.sh
