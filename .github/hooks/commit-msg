@@ -4,8 +4,8 @@ function enforce_commit_msg()
 {
   local cmtmsg="$1"
   if [[ $cmtmsg != \[KNI\]* ]]; then
-    echo "commit message $cmtmsg not formatted correctly, please refer to \
-     https://github.com/openshift-kni/scheduler-plugins/blob/master/RESYNC.md#patching-openshift-kni-specific-commits"
+    echo "commit message [$cmtmsg] not formatted correctly"
+    echo "please refer to https://github.com/openshift-kni/scheduler-plugins/blob/master/RESYNC.md#patching-openshift-kni-specific-commits"
     exit 1
   fi
 }
