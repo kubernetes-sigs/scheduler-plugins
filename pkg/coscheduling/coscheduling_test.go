@@ -374,34 +374,23 @@ func TestPostFilter(t *testing.T) {
 		name                 string
 		pod                  *v1.Pod
 		expectedEmptyMsg     bool
-		preFilterSuccess     bool
 		snapshotSharedLister framework.SharedLister
 	}{
-		{
-			name:             "pod failed at pre-filter phase",
-			pod:              st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Obj(),
-			expectedEmptyMsg: true,
-			preFilterSuccess: false,
-		},
 		{
 			name:             "pod does not belong to any pod group",
 			pod:              st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Obj(),
 			expectedEmptyMsg: false,
-
-			preFilterSuccess: true,
 		},
 		{
 			name:                 "enough pods assigned, do not reject all",
 			pod:                  st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Label(pgutil.PodGroupLabel, "pg").Obj(),
 			expectedEmptyMsg:     true,
 			snapshotSharedLister: groupPodSnapshot,
-			preFilterSuccess:     true,
 		},
 		{
 			name:             "pod failed at filter phase, reject all pods",
 			pod:              st.MakePod().Name("pod1").Namespace("ns1").UID("pod1").Label(pgutil.PodGroupLabel, "pg").Obj(),
 			expectedEmptyMsg: false,
-			preFilterSuccess: true,
 		},
 	}
 
@@ -415,15 +404,9 @@ func TestPostFilter(t *testing.T) {
 
 			pgMgr := core.NewPodGroupManager(cs, mgrSnapShot, &scheduleDuration, &deniedPGExpirationTime, pgInformer, podInformer)
 			coscheduling := &Coscheduling{pgMgr: pgMgr, frameworkHandler: f, scheduleTimeout: &scheduleDuration}
-			if !tt.preFilterSuccess {
-				cycleState.Write(coscheduling.getStateKey(), NewNoopStateData())
-			}
 			_, code := coscheduling.PostFilter(context.Background(), cycleState, tt.pod, nodeStatusMap)
 			if code.Message() == "" != tt.expectedEmptyMsg {
 				t.Errorf("expectedEmptyMsg %v, got %v", tt.expectedEmptyMsg, code.Message() == "")
-			}
-			if _, err := cycleState.Read(coscheduling.getStateKey()); err == nil {
-				t.Errorf("stateData leaking")
 			}
 		})
 	}
