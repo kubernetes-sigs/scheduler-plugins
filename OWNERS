@@ -1,10 +1,8 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
-approvers:
-  - ahg-g
-  - Huang-Wei
-reviewers:
-  - cwdsuzhou
-  - denkensk
-  - seanmalloy
-  - yuanchen8911
+filters:
+  ".*":
+    reviewers:
+      - performance-reviewers
+    approvers:
+      - performance-approvers
