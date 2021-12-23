@@ -10,9 +10,17 @@ jobs:
   commit-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout sources
+        uses: actions/checkout@v2
         with:
           fetch-depth: 0
 
-      - name: verify commits
-        run: TRIGGER_BRANCH=$GITHUB_REF_NAME ./hack-kni/verify-commits.sh
+      - name: Get branch name (pull request)
+        shell: bash
+        run: echo "BRANCH_NAME=$(echo ${GITHUB_HEAD_REF} | tr / -)" >> $GITHUB_ENV
+
+      - name: Debug
+        run: echo ${{ env.BRANCH_NAME }}
+
+      - name: Verify commits
+        run: TRIGGER_BRANCH=${{ env.BRANCH_NAME }} ./hack-kni/verify-commits.sh
