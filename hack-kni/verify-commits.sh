@@ -9,7 +9,8 @@ function finish {
 }
 trap finish EXIT
 
-if [[ "$TRIGGER_BRANCH" = resync-* ]]; then
+shopt -s extglob
+if [[ "$TRIGGER_BRANCH" == resync-* ]]; then
   echo "WARN: resync branch no commit enforcement will be triggered"
   exit 0
 fi
