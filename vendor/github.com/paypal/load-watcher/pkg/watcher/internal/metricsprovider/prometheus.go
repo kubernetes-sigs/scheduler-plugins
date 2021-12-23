@@ -19,6 +19,7 @@ package metricsprovider
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
@@ -63,7 +64,7 @@ func NewPromClient(opts watcher.MetricsProviderOpts) (watcher.MetricsProviderCli
 	if promToken != "" {
 		client, err = api.NewClient(api.Config{
 			Address:      promAddress,
-			RoundTripper: config.NewBearerAuthRoundTripper(config.Secret(opts.AuthToken), api.DefaultRoundTripper),
+			RoundTripper: config.NewAuthorizationCredentialsRoundTripper("Bearer", config.Secret(opts.AuthToken), api.DefaultRoundTripper),
 		})
 	} else {
 		client, err = api.NewClient(api.Config{
@@ -131,6 +132,21 @@ func (s promClient) FetchAllHostsMetrics(window *watcher.Window) (map[string][]w
 	}
 
 	return hostMetrics, anyerr
+}
+
+func (s promClient) Health() (int, error) {
+	req, err := http.NewRequest("HEAD", DefaultPromAddress, nil)
+	if err != nil {
+		return -1, err
+	}
+	resp, _, err := s.client.Do(context.Background(), req)
+	if err != nil {
+		return -1, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return -1, fmt.Errorf("received response status code: %v", resp.StatusCode)
+	}
+	return 0, nil
 }
 
 func (s promClient) buildPromQuery(host string, metric string, method string, rollup string) string {

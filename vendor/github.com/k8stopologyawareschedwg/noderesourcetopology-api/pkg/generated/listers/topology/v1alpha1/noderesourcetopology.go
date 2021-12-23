@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,8 +33,9 @@ type NodeResourceTopologyLister interface {
 	// List lists all NodeResourceTopologies in the indexer.
 	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.NodeResourceTopology, err error)
-	// NodeResourceTopologies returns an object that can list and get NodeResourceTopologies.
-	NodeResourceTopologies(namespace string) NodeResourceTopologyNamespaceLister
+	// Get retrieves the NodeResourceTopology from the index for a given name.
+	// Objects returned here must be treated as read-only.
+	Get(name string) (*v1alpha1.NodeResourceTopology, error)
 	NodeResourceTopologyListerExpansion
 }
 
@@ -56,41 +57,9 @@ func (s *nodeResourceTopologyLister) List(selector labels.Selector) (ret []*v1al
 	return ret, err
 }
 
-// NodeResourceTopologies returns an object that can list and get NodeResourceTopologies.
-func (s *nodeResourceTopologyLister) NodeResourceTopologies(namespace string) NodeResourceTopologyNamespaceLister {
-	return nodeResourceTopologyNamespaceLister{indexer: s.indexer, namespace: namespace}
-}
-
-// NodeResourceTopologyNamespaceLister helps list and get NodeResourceTopologies.
-// All objects returned here must be treated as read-only.
-type NodeResourceTopologyNamespaceLister interface {
-	// List lists all NodeResourceTopologies in the indexer for a given namespace.
-	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.NodeResourceTopology, err error)
-	// Get retrieves the NodeResourceTopology from the indexer for a given namespace and name.
-	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.NodeResourceTopology, error)
-	NodeResourceTopologyNamespaceListerExpansion
-}
-
-// nodeResourceTopologyNamespaceLister implements the NodeResourceTopologyNamespaceLister
-// interface.
-type nodeResourceTopologyNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all NodeResourceTopologies in the indexer for a given namespace.
-func (s nodeResourceTopologyNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.NodeResourceTopology, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.NodeResourceTopology))
-	})
-	return ret, err
-}
-
-// Get retrieves the NodeResourceTopology from the indexer for a given namespace and name.
-func (s nodeResourceTopologyNamespaceLister) Get(name string) (*v1alpha1.NodeResourceTopology, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+// Get retrieves the NodeResourceTopology from the index for a given name.
+func (s *nodeResourceTopologyLister) Get(name string) (*v1alpha1.NodeResourceTopology, error) {
+	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}

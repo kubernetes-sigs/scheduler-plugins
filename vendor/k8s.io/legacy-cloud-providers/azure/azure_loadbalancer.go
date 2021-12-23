@@ -20,6 +20,7 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -98,11 +99,6 @@ const (
 	// ServiceAnnotationLoadBalancerEnableHighAvailabilityPorts is the annotation used on the service
 	// to enable the high availability ports on the standard internal load balancer.
 	ServiceAnnotationLoadBalancerEnableHighAvailabilityPorts = "service.beta.kubernetes.io/azure-load-balancer-enable-high-availability-ports"
-
-	// ServiceAnnotationLoadBalancerDisableTCPReset is the annotation used on the service
-	// to set enableTcpReset to false in load balancer rule. This only works for Azure standard load balancer backed service.
-	// TODO(feiskyer): disable-tcp-reset annotations has been depracated since v1.18, it would removed on v1.20.
-	ServiceAnnotationLoadBalancerDisableTCPReset = "service.beta.kubernetes.io/azure-load-balancer-disable-tcp-reset"
 
 	// ServiceAnnotationLoadBalancerHealthProbeProtocol determines the network protocol that the load balancer health probe use.
 	// If not set, the local service would use the HTTP and the cluster service would use the TCP by default.
@@ -309,7 +305,7 @@ func (az *Cloud) cleanBackendpoolForPrimarySLB(primarySLB *network.LoadBalancer,
 					ipConf := (*bp.BackendIPConfigurations)[i]
 					ipConfigID := to.String(ipConf.ID)
 					_, vmSetName, err := az.VMSet.GetNodeNameByIPConfigurationID(ipConfigID)
-					if err != nil {
+					if err != nil && !errors.Is(err, cloudprovider.InstanceNotFound) {
 						return nil, err
 					}
 					primaryVMSetName := az.VMSet.GetPrimaryVMSetName()
@@ -1134,13 +1130,10 @@ func (az *Cloud) reconcileLoadBalancer(clusterName string, service *v1.Service, 
 					for _, ipConf := range *bp.BackendIPConfigurations {
 						ipConfID := to.String(ipConf.ID)
 						nodeName, _, err := az.VMSet.GetNodeNameByIPConfigurationID(ipConfID)
-						if err != nil {
+						if err != nil && !errors.Is(err, cloudprovider.InstanceNotFound) {
 							return nil, err
 						}
-						if nodeName == "" {
-							// VM may under deletion
-							continue
-						}
+
 						// If a node is not supposed to be included in the LB, it
 						// would not be in the `nodes` slice. We need to check the nodes that
 						// have been added to the LB's backendpool, find the unwanted ones and
@@ -1624,9 +1617,6 @@ func (az *Cloud) reconcileLoadBalancerRule(
 	var enableTCPReset *bool
 	if az.useStandardLoadBalancer() {
 		enableTCPReset = to.BoolPtr(true)
-		if _, ok := service.Annotations[ServiceAnnotationLoadBalancerDisableTCPReset]; ok {
-			klog.Warning("annotation service.beta.kubernetes.io/azure-load-balancer-disable-tcp-reset has been removed as of Kubernetes 1.20. TCP Resets are always enabled on Standard SKU load balancers.")
-		}
 	}
 
 	var expectedProbes []network.Probe
@@ -1866,18 +1856,18 @@ func (az *Cloud) reconcileSecurityGroup(clusterName string, service *v1.Service,
 				sharedRuleName := az.getSecurityRuleName(service, port, sourceAddressPrefix)
 				sharedIndex, sharedRule, sharedRuleFound := findSecurityRuleByName(updatedRules, sharedRuleName)
 				if !sharedRuleFound {
-					klog.V(4).Infof("Expected to find shared rule %s for service %s being deleted, but did not", sharedRuleName, service.Name)
-					return nil, fmt.Errorf("expected to find shared rule %s for service %s being deleted, but did not", sharedRuleName, service.Name)
+					klog.V(4).Infof("Didn't find shared rule %s for service %s", sharedRuleName, service.Name)
+					continue
 				}
 				if sharedRule.DestinationAddressPrefixes == nil {
-					klog.V(4).Infof("Expected to have array of destinations in shared rule for service %s being deleted, but did not", service.Name)
-					return nil, fmt.Errorf("expected to have array of destinations in shared rule for service %s being deleted, but did not", service.Name)
+					klog.V(4).Infof("Didn't find DestinationAddressPrefixes in shared rule for service %s", service.Name)
+					continue
 				}
 				existingPrefixes := *sharedRule.DestinationAddressPrefixes
 				addressIndex, found := findIndex(existingPrefixes, destinationIPAddress)
 				if !found {
-					klog.V(4).Infof("Expected to find destination address %s in shared rule %s for service %s being deleted, but did not", destinationIPAddress, sharedRuleName, service.Name)
-					return nil, fmt.Errorf("expected to find destination address %s in shared rule %s for service %s being deleted, but did not", destinationIPAddress, sharedRuleName, service.Name)
+					klog.V(4).Infof("Didn't find destination address %v in shared rule %s for service %s", destinationIPAddress, sharedRuleName, service.Name)
+					continue
 				}
 				if len(existingPrefixes) == 1 {
 					updatedRules = append(updatedRules[:sharedIndex], updatedRules[sharedIndex+1:]...)
@@ -2434,7 +2424,7 @@ func findSecurityRule(rules []network.SecurityRule, rule network.SecurityRule) b
 		if !strings.EqualFold(to.String(existingRule.Name), to.String(rule.Name)) {
 			continue
 		}
-		if existingRule.Protocol != rule.Protocol {
+		if !strings.EqualFold(string(existingRule.Protocol), string(rule.Protocol)) {
 			continue
 		}
 		if !strings.EqualFold(to.String(existingRule.SourcePortRange), to.String(rule.SourcePortRange)) {
@@ -2451,10 +2441,10 @@ func findSecurityRule(rules []network.SecurityRule, rule network.SecurityRule) b
 				continue
 			}
 		}
-		if existingRule.Access != rule.Access {
+		if !strings.EqualFold(string(existingRule.Access), string(rule.Access)) {
 			continue
 		}
-		if existingRule.Direction != rule.Direction {
+		if !strings.EqualFold(string(existingRule.Direction), string(rule.Direction)) {
 			continue
 		}
 		return true

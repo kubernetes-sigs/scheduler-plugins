@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import (
 // NodeResourceTopologiesGetter has a method to return a NodeResourceTopologyInterface.
 // A group's client should implement this interface.
 type NodeResourceTopologiesGetter interface {
-	NodeResourceTopologies(namespace string) NodeResourceTopologyInterface
+	NodeResourceTopologies() NodeResourceTopologyInterface
 }
 
 // NodeResourceTopologyInterface has methods to work with NodeResourceTopology resources.
@@ -54,14 +54,12 @@ type NodeResourceTopologyInterface interface {
 // nodeResourceTopologies implements NodeResourceTopologyInterface
 type nodeResourceTopologies struct {
 	client rest.Interface
-	ns     string
 }
 
 // newNodeResourceTopologies returns a NodeResourceTopologies
-func newNodeResourceTopologies(c *TopologyV1alpha1Client, namespace string) *nodeResourceTopologies {
+func newNodeResourceTopologies(c *TopologyV1alpha1Client) *nodeResourceTopologies {
 	return &nodeResourceTopologies{
 		client: c.RESTClient(),
-		ns:     namespace,
 	}
 }
 
@@ -69,7 +67,6 @@ func newNodeResourceTopologies(c *TopologyV1alpha1Client, namespace string) *nod
 func (c *nodeResourceTopologies) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NodeResourceTopology, err error) {
 	result = &v1alpha1.NodeResourceTopology{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
@@ -86,7 +83,6 @@ func (c *nodeResourceTopologies) List(ctx context.Context, opts v1.ListOptions) 
 	}
 	result = &v1alpha1.NodeResourceTopologyList{}
 	err = c.client.Get().
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -103,7 +99,6 @@ func (c *nodeResourceTopologies) Watch(ctx context.Context, opts v1.ListOptions)
 	}
 	opts.Watch = true
 	return c.client.Get().
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -114,7 +109,6 @@ func (c *nodeResourceTopologies) Watch(ctx context.Context, opts v1.ListOptions)
 func (c *nodeResourceTopologies) Create(ctx context.Context, nodeResourceTopology *v1alpha1.NodeResourceTopology, opts v1.CreateOptions) (result *v1alpha1.NodeResourceTopology, err error) {
 	result = &v1alpha1.NodeResourceTopology{}
 	err = c.client.Post().
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(nodeResourceTopology).
@@ -127,7 +121,6 @@ func (c *nodeResourceTopologies) Create(ctx context.Context, nodeResourceTopolog
 func (c *nodeResourceTopologies) Update(ctx context.Context, nodeResourceTopology *v1alpha1.NodeResourceTopology, opts v1.UpdateOptions) (result *v1alpha1.NodeResourceTopology, err error) {
 	result = &v1alpha1.NodeResourceTopology{}
 	err = c.client.Put().
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		Name(nodeResourceTopology.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
@@ -140,7 +133,6 @@ func (c *nodeResourceTopologies) Update(ctx context.Context, nodeResourceTopolog
 // Delete takes name of the nodeResourceTopology and deletes it. Returns an error if one occurs.
 func (c *nodeResourceTopologies) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		Name(name).
 		Body(&opts).
@@ -155,7 +147,6 @@ func (c *nodeResourceTopologies) DeleteCollection(ctx context.Context, opts v1.D
 		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
@@ -168,7 +159,6 @@ func (c *nodeResourceTopologies) DeleteCollection(ctx context.Context, opts v1.D
 func (c *nodeResourceTopologies) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.NodeResourceTopology, err error) {
 	result = &v1alpha1.NodeResourceTopology{}
 	err = c.client.Patch(pt).
-		Namespace(c.ns).
 		Resource("noderesourcetopologies").
 		Name(name).
 		SubResource(subresources...).

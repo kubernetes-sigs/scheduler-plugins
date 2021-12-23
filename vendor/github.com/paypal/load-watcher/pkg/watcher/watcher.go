@@ -37,6 +37,7 @@ import (
 
 const (
 	BaseUrl         = "/watcher"
+	HealthCheckUrl  = "/watcher/health"
 	FifteenMinutes  = "15m"
 	TenMinutes      = "10m"
 	FiveMinutes     = "5m"
@@ -153,6 +154,7 @@ func (w *Watcher) StartWatching() {
 	}
 
 	http.HandleFunc(BaseUrl, w.handler)
+	http.HandleFunc(HealthCheckUrl, w.healthCheckHandler)
 	server := &http.Server{
 		Addr:    ":2020",
 		Handler: http.DefaultServeMux,
@@ -176,6 +178,7 @@ func (w *Watcher) StartWatching() {
 	w.mutex.Lock()
 	w.isStarted = true
 	w.mutex.Unlock()
+	log.Info("Started watching metrics")
 }
 
 // StartWatching() should be called before calling this.
@@ -295,6 +298,16 @@ func (w *Watcher) handler(resp http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 		resp.WriteHeader(http.StatusInternalServerError)
 	}
+}
+
+// Simple server status handler
+func (w *Watcher) healthCheckHandler(resp http.ResponseWriter, r *http.Request) {
+	if status, err := w.client.Health(); status != 0 {
+		log.Warnf("health check failed with: %v", err)
+		resp.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	resp.WriteHeader(http.StatusOK)
 }
 
 // Utility functions

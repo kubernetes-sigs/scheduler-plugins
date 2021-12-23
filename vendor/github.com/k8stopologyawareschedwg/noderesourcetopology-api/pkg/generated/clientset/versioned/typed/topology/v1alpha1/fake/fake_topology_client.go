@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,8 +30,8 @@ type FakeTopologyV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeTopologyV1alpha1) NodeResourceTopologies(namespace string) v1alpha1.NodeResourceTopologyInterface {
-	return &FakeNodeResourceTopologies{c, namespace}
+func (c *FakeTopologyV1alpha1) NodeResourceTopologies() v1alpha1.NodeResourceTopologyInterface {
+	return &FakeNodeResourceTopologies{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

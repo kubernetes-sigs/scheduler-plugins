@@ -18,6 +18,8 @@ package metricsprovider
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
@@ -152,4 +154,13 @@ func (m metricsServerClient) FetchAllHostsMetrics(window *watcher.Window) (map[s
 	}
 
 	return metrics, nil
+}
+
+func (m metricsServerClient) Health() (int, error) {
+	var status int
+	m.metricsClientSet.RESTClient().Verb("HEAD").Do(context.Background()).StatusCode(&status)
+	if status != http.StatusOK {
+		return -1, fmt.Errorf("received response status code: %v", status)
+	}
+	return 0, nil
 }

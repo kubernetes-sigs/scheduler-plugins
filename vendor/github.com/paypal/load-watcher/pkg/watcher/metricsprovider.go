@@ -50,6 +50,9 @@ type MetricsProviderClient interface {
 	FetchHostMetrics(host string, window *Window) ([]Metric, error)
 	// Fetch metrics for all hosts
 	FetchAllHostsMetrics(window *Window) (map[string][]Metric, error)
+	// Get metric provider server health status
+	// Returns 0 if healthy, -1 if unhealthy along with error if any
+	Health() (int, error)
 }
 
 // Generic metrics provider options

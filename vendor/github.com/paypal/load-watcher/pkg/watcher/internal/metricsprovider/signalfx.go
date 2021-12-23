@@ -191,6 +191,27 @@ func (s signalFxClient) FetchAllHostsMetrics(window *watcher.Window) (map[string
 	return metrics, nil
 }
 
+func (s signalFxClient) Health() (int, error) {
+	return Ping(s.client, s.signalFxAddress)
+}
+
+// Simple ping utility to a given URL
+// Returns -1 if unhealthy, 0 if healthy along with error if any
+func Ping(client http.Client, url string) (int, error) {
+	req, err := http.NewRequest("HEAD", url, nil)
+	if err != nil {
+		return -1, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return -1, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return -1, fmt.Errorf("received response code: %v", resp.StatusCode)
+	}
+	return 0, nil
+}
+
 func addMetadata(metric *watcher.Metric, metricType string) {
 	metric.Operator = watcher.Average
 	if metricType == cpuUtilizationMetric {

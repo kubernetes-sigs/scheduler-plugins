@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,3 @@ package v1alpha1
 // NodeResourceTopologyListerExpansion allows custom methods to be added to
 // NodeResourceTopologyLister.
 type NodeResourceTopologyListerExpansion interface{}
-
-// NodeResourceTopologyNamespaceListerExpansion allows custom methods to be added to
-// NodeResourceTopologyNamespaceLister.
-type NodeResourceTopologyNamespaceListerExpansion interface{}

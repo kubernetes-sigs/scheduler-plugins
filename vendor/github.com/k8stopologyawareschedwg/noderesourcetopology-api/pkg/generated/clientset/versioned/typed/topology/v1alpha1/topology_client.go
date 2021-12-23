@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,8 +36,8 @@ type TopologyV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *TopologyV1alpha1Client) NodeResourceTopologies(namespace string) NodeResourceTopologyInterface {
-	return newNodeResourceTopologies(c, namespace)
+func (c *TopologyV1alpha1Client) NodeResourceTopologies() NodeResourceTopologyInterface {
+	return newNodeResourceTopologies(c)
 }
 
 // NewForConfig creates a new TopologyV1alpha1Client for the given config.

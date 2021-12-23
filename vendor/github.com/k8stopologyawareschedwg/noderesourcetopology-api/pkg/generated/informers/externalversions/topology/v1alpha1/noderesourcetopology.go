@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,33 +44,32 @@ type NodeResourceTopologyInformer interface {
 type nodeResourceTopologyInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
-	namespace        string
 }
 
 // NewNodeResourceTopologyInformer constructs a new informer for NodeResourceTopology type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewNodeResourceTopologyInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredNodeResourceTopologyInformer(client, namespace, resyncPeriod, indexers, nil)
+func NewNodeResourceTopologyInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredNodeResourceTopologyInformer(client, resyncPeriod, indexers, nil)
 }
 
 // NewFilteredNodeResourceTopologyInformer constructs a new informer for NodeResourceTopology type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredNodeResourceTopologyInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredNodeResourceTopologyInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.TopologyV1alpha1().NodeResourceTopologies(namespace).List(context.TODO(), options)
+				return client.TopologyV1alpha1().NodeResourceTopologies().List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.TopologyV1alpha1().NodeResourceTopologies(namespace).Watch(context.TODO(), options)
+				return client.TopologyV1alpha1().NodeResourceTopologies().Watch(context.TODO(), options)
 			},
 		},
 		&topologyv1alpha1.NodeResourceTopology{},
@@ -80,7 +79,7 @@ func NewFilteredNodeResourceTopologyInformer(client versioned.Interface, namespa
 }
 
 func (f *nodeResourceTopologyInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredNodeResourceTopologyInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+	return NewFilteredNodeResourceTopologyInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
 func (f *nodeResourceTopologyInformer) Informer() cache.SharedIndexInformer {
