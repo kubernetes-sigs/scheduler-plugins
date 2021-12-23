@@ -62,6 +62,7 @@ type Manager interface {
 	AddDeniedPodGroup(string)
 	DeletePermittedPodGroup(string)
 	CalculateAssignedPods(string, string) int
+	ActivateSiblings(pod *corev1.Pod, state *framework.CycleState)
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -103,6 +104,42 @@ func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister fra
 		permittedPG:                gochache.New(3*time.Second, 3*time.Second),
 	}
 	return pgMgr
+}
+
+// ActivateSiblings stashes the pods belonging to the same PodGroup of the given pod
+// in the given state, with a reserved key "kubernetes.io/pods-to-activate".
+func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework.CycleState) {
+	pgName := util.GetPodGroupLabel(pod)
+	if pgName == "" {
+		return
+	}
+
+	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
+		labels.SelectorFromSet(labels.Set{util.PodGroupLabel: pgName}),
+	)
+	if err != nil {
+		klog.ErrorS(err, "Failed to obtain pods belong to a PodGroup", "podGroup", pgName)
+		return
+	}
+	for i := range pods {
+		if pods[i].UID == pod.UID {
+			pods = append(pods[:i], pods[i+1:]...)
+			break
+		}
+	}
+
+	if len(pods) != 0 {
+		if c, err := state.Read(framework.PodsToActivateKey); err == nil {
+			if s, ok := c.(*framework.PodsToActivate); ok {
+				s.Lock()
+				for _, pod := range pods {
+					namespacedName := GetNamespacedName(pod)
+					s.Map[namespacedName] = pod
+				}
+				s.Unlock()
+			}
+		}
+	}
 }
 
 // PreFilter filters out a pod if it
