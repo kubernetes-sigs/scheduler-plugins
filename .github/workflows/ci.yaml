@@ -14,10 +14,5 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: set up golang
-        uses: actions/setup-go@v2
-        with:
-          go-version: 1.17
-
       - name: verify commits
         run: TRIGGER_BRANCH=$GITHUB_REF_NAME ./hack-kni/verify-commits.sh
