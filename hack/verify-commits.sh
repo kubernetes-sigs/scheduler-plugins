@@ -17,7 +17,7 @@ fi
 if [[ -z "$UPSTREAM_COMMIT" ]]; then
 	# CI=true is set by prow as a way to detect we are running under the ci
 	if [[ -n "$CI" ]]; then
-		latest_upstream_commit=$(curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/Tal-or/scheduler-plugins/commits?per_page=1 | jq -r '.[0].sha')
+		latest_upstream_commit=$(curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/openshift-kni/scheduler-plugins/commits?per_page=1 | jq -r '.[0].sha')
 	else
 		if [[ -z "$UPSTREAM_BRANCH" ]]; then
 			latest_upstream_commit="origin/master"
