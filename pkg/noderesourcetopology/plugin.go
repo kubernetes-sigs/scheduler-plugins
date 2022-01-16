@@ -25,6 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	listerv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 )
@@ -117,8 +118,12 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 // should be registered for this plugin since a Pod update may free up resources
 // that make other Pods schedulable.
 func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEvent {
+	// To register a custom event, follow the naming convention at:
+	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
+	nrtGVK := fmt.Sprintf("noderesourcetopologies.v1alpha1.%v", topologyapi.GroupName)
 	return []framework.ClusterEvent{
 		{Resource: framework.Pod, ActionType: framework.Delete},
 		{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable},
+		{Resource: framework.GVK(nrtGVK), ActionType: framework.Add | framework.Update},
 	}
 }
