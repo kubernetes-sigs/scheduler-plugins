@@ -24,6 +24,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 
@@ -55,6 +56,11 @@ func (rw resourceToWeightMap) weight(r v1.ResourceName) int64 {
 
 func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	klog.V(5).InfoS("Scoring node", "nodeName", nodeName)
+	// if it's a non-guaranteed pod, every node is considered to be a good fit
+	if v1qos.GetPodQOS(pod) != v1.PodQOSGuaranteed {
+		return framework.MaxNodeScore, nil
+	}
+
 	nodeTopology := findNodeTopology(nodeName, tm.lister)
 
 	if nodeTopology == nil {
