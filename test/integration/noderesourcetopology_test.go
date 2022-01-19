@@ -553,6 +553,32 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			expectedNodes: []string{"fake-node-1"},
 		},
+		// in the following "Scheduling Best-Effort pod with least-allocatable/balanced-allocation/most-allocatable strategy" tests,
+		// both nodes are expected to get the maximum score.
+		// in case of multiple nodes with the same highest score, the chosen node selection might vary.
+		// thus, we can't tell exactly which node will get selected, so the only option is to accept both of them,
+		// and it's still good enough for making sure that pod not stuck in pending state and/or the program isn't crashing
+		{
+			name: "Scheduling Best-Effort pod with least-allocatable strategy scheduler",
+			pods: []*v1.Pod{
+				st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatableScheduler).Container(pause).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
+		{
+			name: "Scheduling Best-Effort pod with balanced-allocation strategy scheduler",
+			pods: []*v1.Pod{
+				st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(balancedAllocationScheduler).Container(pause).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
+		{
+			name: "Scheduling Best-Effort pod with most-allocatable strategy scheduler",
+			pods: []*v1.Pod{
+				st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatableScheduler).Container(pause).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start-topology-match-test %v", tt.name)
