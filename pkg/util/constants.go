@@ -18,11 +18,6 @@ package util
 
 import "fmt"
 
-const (
-	// PodGroupLabel is the default label of coscheduling
-	PodGroupLabel = "pod-group.scheduling.sigs.k8s.io"
-)
-
 var (
 	// ErrorNotMatched means pod does not match coscheduling
 	ErrorNotMatched = fmt.Errorf("not match coscheduling")

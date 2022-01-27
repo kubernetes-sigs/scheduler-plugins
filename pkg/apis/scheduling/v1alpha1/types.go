@@ -107,6 +107,9 @@ const (
 
 	// PodGroupFailed means at least one of `spec.minMember` pods is failed.
 	PodGroupFailed PodGroupPhase = "Failed"
+
+	// PodGroupLabel is the default label of coscheduling
+	PodGroupLabel = "pod-group.scheduling.sigs.k8s.io"
 )
 
 // +genclient
