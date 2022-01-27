@@ -206,7 +206,7 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 	}
 
 	pgCopy := pg.DeepCopy()
-	selector := labels.Set(map[string]string{util.PodGroupLabel: pgCopy.Name}).AsSelector()
+	selector := labels.Set(map[string]string{schedv1alpha1.PodGroupLabel: pgCopy.Name}).AsSelector()
 	pods, err := ctrl.podLister.List(selector)
 	if err != nil {
 		klog.ErrorS(err, "List pods for group failed", "podGroup", klog.KObj(pgCopy))
