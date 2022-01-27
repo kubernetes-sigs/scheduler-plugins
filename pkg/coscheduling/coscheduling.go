@@ -80,7 +80,7 @@ func New(obj runtime.Object, handle framework.FrameworkHandle) (framework.Plugin
 		klog.Fatalf("ParseSelector failed %+v", err)
 	}
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(handle.ClientSet(), 0, informers.WithTweakListOptions(func(opt *metav1.ListOptions) {
-		opt.LabelSelector = util.PodGroupLabel
+		opt.LabelSelector = v1alpha1.PodGroupLabel
 		opt.FieldSelector = fieldSelector.String()
 	}))
 	podInformer := informerFactory.Core().V1().Pods()

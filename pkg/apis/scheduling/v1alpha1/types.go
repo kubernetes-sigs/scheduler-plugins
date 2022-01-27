@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 )
 
 // +genclient
@@ -109,7 +110,7 @@ const (
 	PodGroupFailed PodGroupPhase = "Failed"
 
 	// PodGroupLabel is the default label of coscheduling
-	PodGroupLabel = "pod-group.scheduling.sigs.k8s.io"
+	PodGroupLabel = "pod-group." + scheduling.GroupName
 )
 
 // +genclient

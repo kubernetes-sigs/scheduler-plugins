@@ -18,6 +18,8 @@ package app
 
 import (
 	"context"
+	"os"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apiserver/pkg/server"
@@ -29,12 +31,11 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog/v2"
-	"os"
 
+	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 func newConfig(kubeconfig, master string, inCluster bool) (*restclient.Config, error) {
@@ -70,7 +71,7 @@ func Run(s *ServerRunOptions) error {
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, 0, informers.WithTweakListOptions(func(opt *metav1.ListOptions) {
-		opt.LabelSelector = util.PodGroupLabel
+		opt.LabelSelector = v1alpha1.PodGroupLabel
 	}))
 	podInformer := informerFactory.Core().V1().Pods()
 	ctrl := controller.NewPodGroupController(kubeClient, pgInformer, podInformer, pgClient)
