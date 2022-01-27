@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 func Test_Run(t *testing.T) {
@@ -188,7 +187,7 @@ func makePods(podNames []string, pgName string, phase v1.PodPhase) []*v1.Pod {
 	pds := make([]*v1.Pod, 0)
 	for _, name := range podNames {
 		pod := st.MakePod().Namespace("default").Name(name).Obj()
-		pod.Labels = map[string]string{util.PodGroupLabel: pgName}
+		pod.Labels = map[string]string{v1alpha1.PodGroupLabel: pgName}
 		pod.Status.Phase = phase
 		pds = append(pds, pod)
 	}
