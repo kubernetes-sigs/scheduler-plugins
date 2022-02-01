@@ -3,6 +3,9 @@ kind: ClusterRole
 metadata:
   name: scheduler-plugins-scheduler
 rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["", "events.k8s.io"]
   resources: ["events"]
   verbs: ["create", "patch", "update"]
@@ -22,10 +25,10 @@ rules:
   verbs: ["get", "update"]
 - apiGroups: [""]
   resources: ["nodes"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "patch"]
 - apiGroups: [""]
   resources: ["pods"]
-  verbs: ["delete", "get", "list", "watch"]
+  verbs: ["delete", "get", "list", "watch", "update"]
 - apiGroups: [""]
   resources: ["bindings", "pods/binding"]
   verbs: ["create"]
@@ -54,8 +57,12 @@ rules:
   resources: ["subjectaccessreviews"]
   verbs: ["create"]
 - apiGroups: ["storage.k8s.io"]
-  resources: ["csinodes", "storageclasses"]
+  resources: ["csinodes", "storageclasses" , "csidrivers" , "csistoragecapacities"]
   verbs: ["get", "list", "watch"]
+- apiGroups: ["topology.node.k8s.io"]
+  resources: ["noderesourcetopologies"]
+  verbs: ["*"]
+# resources need to be updated with the scheduler plugins used
 - apiGroups: ["scheduling.sigs.k8s.io"]
   resources: ["podgroups", "elasticquotas"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
@@ -81,6 +88,13 @@ rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["topology.node.k8s.io"]
+  resources: ["noderesourcetopologies"]
+  verbs: ["*"]
+# resources need to be updated with the scheduler plugins used
 - apiGroups: ["scheduling.sigs.k8s.io"]
   resources: ["podgroups", "elasticquotas"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
@@ -114,4 +128,3 @@ subjects:
 - kind: ServiceAccount
   name: {{ .Values.controller.name }}
   namespace: {{ .Values.controller.namespace }}
-

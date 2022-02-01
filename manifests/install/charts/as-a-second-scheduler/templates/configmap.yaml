@@ -1,3 +1,4 @@
+{{- if .Values.plugins.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -5,35 +6,43 @@ metadata:
   namespace: {{ .Values.scheduler.namespace }}
 data:
   scheduler-config.yaml: |
-    apiVersion: kubescheduler.config.k8s.io/v1beta1
+    apiVersion: kubescheduler.config.k8s.io/v1beta2
     kind: KubeSchedulerConfiguration
     leaderElection:
       leaderElect: false
     profiles:
+    # Compose all plugins in one profile
     - schedulerName: scheduler-plugins-scheduler
       plugins:
+      # Ensure only the first queueSort plugin is rendered.
+
+ {{- $enabledPlugins := .Values.plugins.enabled -}}
+
+  {{- if and (.Values.global.queueSort) (has (index .Values.global.queueSort 0) $enabledPlugins) }}
         queueSort:
           enabled:
-          - name: Coscheduling
+          - name: {{ index .Values.global.queueSort 0 }}
           disabled:
           - name: "*"
-        preFilter:
+  {{- end }}
+   
+    {{- $hasExtension := true -}}
+    
+      {{- range $extension, $plugins := .Values.global.extensions }}
+       {{- $hasExtension = true -}}
+           {{- range $plugins }}
+             {{- if and $hasExtension (has . $enabledPlugins) }}
+        {{ $extension }}:
           enabled:
-          - name: Coscheduling
-        postFilter:
-          enabled:
-          - name: Coscheduling
-        permit:
-          enabled:
-          - name: Coscheduling
-        reserve:
-          enabled:
-          - name: Coscheduling
-        postBind:
-          enabled:
-          - name: Coscheduling
-      pluginConfig:
-      - name: Coscheduling
-        args:
-          permitWaitingTimeSeconds: 10
-          deniedPGExpirationTimeSeconds: 3
+           {{- $hasExtension = false -}}
+              {{- end}}
+            {{- if has . $enabledPlugins }}
+           - name: {{ title . }} 
+            {{- end}}
+         
+        {{- end }}
+      {{- end }}
+
+ {{- end }}
+
+  {{- /* TODO: wire CRD installation with enabled plugins. */}}

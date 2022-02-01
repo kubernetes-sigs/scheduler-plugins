@@ -1,15 +1,35 @@
+
 # Default values for scheduler-plugins-as-a-second-scheduler.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
 scheduler:
   name: scheduler-plugins-scheduler
-  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.21.6
+  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.22.6
   namespace: scheduler-plugins
   replicaCount: 1
 
 controller:
   name: scheduler-plugins-controller
-  image: k8s.gcr.io/scheduler-plugins/controller:v0.21.6
+  image: k8s.gcr.io/scheduler-plugins/controller:v0.22.6
   namespace: scheduler-plugins
   replicaCount: 1
+
+# LoadVariationRiskBalancing and TargetLoadPacking are not enabled by default
+# as they need extra RBAC privileges on metrics.k8s.io.
+
+plugins:
+  enabled: ["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]
+
+global:  
+   # queueSort is not indented under extensions 
+   # as it needs to be globally enabled once. 
+  queueSort: ["Coscheduling"]
+  extensions: 
+    preFilter: ["Coscheduling", "CapacityScheduling"] 
+    filter: ["NodeResourceTopologyMatch"] 
+    postFilter: ["Coscheduling", "CapacityScheduling"] 
+    score: ["NodeResourceTopologyMatch", "NodeResourcesAllocatable"] 
+    permit: ["Coscheduling"] 
+    reserve: ["Coscheduling", "CapacityScheduling"] 
+    postBind: ["Coscheduling"]
