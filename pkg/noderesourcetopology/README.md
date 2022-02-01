@@ -64,6 +64,8 @@ Let us assume we have two nodes in a cluster deployed with sample-device-plugin 
 
 The hardware topology corresponding to both the nodes is represented by the below CRD instances. These CRD instances are supposed to be created by Node Agents like [Resource Topology Exporter](https://github.com/k8stopologyawareschedwg/resource-topology-exporter) (RTE) or Node feature Discovery (NFD). Please refer to issue [Exposing Hardware Topology through CRDs in NFD](https://github.com/kubernetes-sigs/node-feature-discovery/issues/333) and [Design document](https://docs.google.com/document/d/1Q-4wSu1tzmbOXyGk_2r5_mK6JdXXJA-bOd3cAtBFnwo/edit?ts=5f24171f#) which captures details of enhancing NFD to expose node resource topology through CRDs.
 
+For configuring your cluster with [NFD-topology updater](https://github.com/kubernetes-sigs/node-feature-discovery/blob/master/docs/get-started/introduction.md#nfd-topology-updater), a software component in Node Feature Discovery which creates NodeResourceTopology CRs corresponding to nodes in the cluster follow the Quick Start guide [here]( https://github.com/kubernetes-sigs/node-feature-discovery/blob/master/docs/get-started/quick-start.md#additional-optional-installation-steps).
+
 ```yaml
 # Worker Node A CRD spec
 apiVersion: topology.node.k8s.io/v1alpha1
@@ -148,7 +150,7 @@ zones:
              $ kubectl get noderesourcetopologies.topology.node.k8s.io
             ```
 
-         1. Deploy the CRs representative of the hardware topology of the worker-node-A and worker-node-B:
+         1. Deploy the CRs representative of the hardware topology of the worker-node-A and worker-node-B if CRs haven't been created using RTE or NFD as mentioned above:
 
             ```bash
              $ kubectl create -f worker-node-A.yaml
@@ -157,7 +159,6 @@ zones:
             NOTE: In case you are testing this demo by creating CRs manually, ensure that the names of the nodes in the cluster match the CR names.
 
 - Copy cluster kubeconfig file to /etc/kubernetes/scheduler.conf
-
 - Build the image locally
 
     ```bash
@@ -218,8 +219,10 @@ spec:
       schedulerName: topo-aware-scheduler
       containers:
       - name: test-deployment-1-container-1
-        image: nginx:1.7.9
+        image: quay.io/fromani/numalign
         imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args: [ "while true; do numalign; sleep 100000; done;" ]
         resources:
           limits:
             cpu: 1
