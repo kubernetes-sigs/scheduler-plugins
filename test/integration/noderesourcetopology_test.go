@@ -59,9 +59,9 @@ const (
 )
 
 var (
-	leastAllocatableScheduler   = fmt.Sprintf("%v-scheduler", string(scheconfig.MostAllocated))
+	mostAllocatedScheduler      = fmt.Sprintf("%v-scheduler", string(scheconfig.MostAllocated))
 	balancedAllocationScheduler = fmt.Sprintf("%v-scheduler", string(scheconfig.BalancedAllocation))
-	mostAllocatableScheduler    = fmt.Sprintf("%v-scheduler", string(scheconfig.LeastAllocated))
+	leastAllocatedScheduler     = fmt.Sprintf("%v-scheduler", string(scheconfig.LeastAllocated))
 )
 
 func TestTopologyMatchPlugin(t *testing.T) {
@@ -126,7 +126,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	cfg.Profiles = append(cfg.Profiles,
 		// a profile with both the filter and score enabled and score strategy is MostAllocated
 		makeProfileByPluginArgs(
-			leastAllocatableScheduler,
+			mostAllocatedScheduler,
 			makeResourceAllocationScoreArgs(ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.MostAllocated}),
 		),
 		// a profile with both the filter and score enabled and score strategy is BalancedAllocation
@@ -136,7 +136,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		),
 		// a profile with both the filter and score enabled and score strategy is LeastAllocated
 		makeProfileByPluginArgs(
-			mostAllocatableScheduler,
+			leastAllocatedScheduler,
 			makeResourceAllocationScoreArgs(ns.Name, &scheconfig.ScoringStrategy{Type: scheconfig.LeastAllocated}),
 		),
 	)
@@ -392,9 +392,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
 		{
-			name: "Scheduling Guaranteed pod with least-allocatable strategy scheduler",
+			name: "Scheduling Guaranteed pod with most-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatableScheduler),
+				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatedScheduler),
 					map[v1.ResourceName]string{v1.ResourceCPU: "1", v1.ResourceMemory: "4Gi"}).Obj(), pause),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -500,9 +500,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			expectedNodes: []string{"fake-node-2"},
 		},
 		{
-			name: "Scheduling Guaranteed pod with most-allocatable strategy scheduler",
+			name: "Scheduling Guaranteed pod with least-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatableScheduler),
+				withContainer(withReqAndLimit(st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatedScheduler),
 					map[v1.ResourceName]string{v1.ResourceCPU: "1", v1.ResourceMemory: "4Gi"}).Obj(), pause),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -553,15 +553,15 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			expectedNodes: []string{"fake-node-1"},
 		},
-		// in the following "Scheduling Best-Effort pod with least-allocatable/balanced-allocation/most-allocatable strategy" tests,
+		// in the following "Scheduling Best-Effort pod with most-allocated/balanced-allocation/least-allocated strategy" tests,
 		// both nodes are expected to get the maximum score.
 		// in case of multiple nodes with the same highest score, the chosen node selection might vary.
 		// thus, we can't tell exactly which node will get selected, so the only option is to accept both of them,
 		// and it's still good enough for making sure that pod not stuck in pending state and/or the program isn't crashing
 		{
-			name: "Scheduling Best-Effort pod with least-allocatable strategy scheduler",
+			name: "Scheduling Best-Effort pod with most-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatableScheduler).Container(pause).Obj(),
+				st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatedScheduler).Container(pause).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
@@ -573,9 +573,9 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
 		{
-			name: "Scheduling Best-Effort pod with most-allocatable strategy scheduler",
+			name: "Scheduling Best-Effort pod with least-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatableScheduler).Container(pause).Obj(),
+				st.MakePod().Namespace(ns.Name).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatedScheduler).Container(pause).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},

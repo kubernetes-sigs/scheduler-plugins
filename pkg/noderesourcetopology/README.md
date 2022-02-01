@@ -51,9 +51,9 @@ profiles:
   pluginConfig:
   - name: NodeResourceTopologyMatch
     args:
-      # other strategies are MostAllocatable and BalancedAllocation
+      # other strategies are MostAllocated and BalancedAllocation
       scoringStrategy:
-        type: "LeastAllocatable"
+        type: "LeastAllocated"
 ```
 
 ### Demo
