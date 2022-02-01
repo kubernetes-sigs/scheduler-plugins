@@ -21,11 +21,11 @@ spec:
         resources:
           limits:
             cpu: 1
-            memory: 0
+            memory: 100Mi
             example.com/deviceA: 1
             example.com/deviceB: 1
           requests:
             cpu: 1
-            memory: 0
+            memory: 100Mi
             example.com/deviceA: 1
             example.com/deviceB: 1

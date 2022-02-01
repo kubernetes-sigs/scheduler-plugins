@@ -27,7 +27,6 @@ spec:
           imagePullPolicy: Never
           command:
           - /bin/kube-scheduler
-          - --scheduler-name=topo-aware-scheduler
           - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
           - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
           - --config=/etc/kubernetes/scheduler-config/scheduler-config.yaml
