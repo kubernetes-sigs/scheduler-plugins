@@ -1,0 +1,15 @@
+title: Network-Aware Scheduling
+kep-number: 260
+authors:
+  - "@jpedro1992"
+  - "@wangchen615"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@ttsokov"
+  - "@lianghao208"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2021-11-04
+last-updated: 2022-01-03
+status: implementable
