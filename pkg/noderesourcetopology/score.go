@@ -29,6 +29,7 @@ import (
 	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 const (
@@ -120,17 +121,8 @@ func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreS
 	// This code is in Admit implementation of pod scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_pod.go#L52
 	// but it works with HintProviders, takes into account all possible allocations.
-	containers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
-	resources := make(v1.ResourceList)
+	resources := util.GetPodEffectiveRequest(pod)
 
-	for _, container := range containers {
-		for resource, quantity := range container.Resources.Requests {
-			if quan, ok := resources[resource]; ok {
-				quantity.Add(quan)
-			}
-			resources[resource] = quantity
-		}
-	}
 	allocatablePerNUMA := createNUMANodeList(zones)
 	return scoreForEachNUMANode(resources, allocatablePerNUMA, scorerFn, resourceToWeightMap), nil
 }
