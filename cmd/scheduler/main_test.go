@@ -597,20 +597,13 @@ profiles:
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			fs := pflag.NewFlagSet("test", pflag.PanicOnError)
-			opts, err := options.NewOptions()
-			if err != nil {
-				t.Fatal(err)
-			}
+			opts := options.NewOptions()
 
-			nfs := opts.Flags()
+			nfs := opts.Flags
 			for _, f := range nfs.FlagSets {
 				fs.AddFlagSet(f)
 			}
 			if err := fs.Parse(tc.flags); err != nil {
-				t.Fatal(err)
-			}
-
-			if err := opts.Complete(&nfs); err != nil {
 				t.Fatal(err)
 			}
 
