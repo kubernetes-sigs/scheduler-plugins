@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/testing/defaults"
 
+	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
@@ -523,6 +524,28 @@ profiles:
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: noderesources.AllocatableName, Weight: 1}}},
 					Reserve:    defaults.PluginsV1beta2.Reserve,
 					PreBind:    defaults.PluginsV1beta2.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - Capacityscheduling",
+			flags:           []string{"--config", capacitySchedulingConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					QueueSort: defaults.PluginsV1beta2.QueueSort,
+					Bind:      defaults.PluginsV1beta2.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.PluginsV1beta2.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
+					},
+					Filter:     defaults.PluginsV1beta2.Filter,
+					PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: capacityscheduling.Name}}},
+					PreScore:   defaults.PluginsV1beta2.PreScore,
+					Score:      defaults.PluginsV1beta2.Score,
+					Reserve: config.PluginSet{
+						Enabled: append(defaults.PluginsV1beta2.Reserve.Enabled, config.Plugin{Name: capacityscheduling.Name}),
+					},
+					PreBind: defaults.PluginsV1beta2.PreBind,
 				},
 			},
 		},
