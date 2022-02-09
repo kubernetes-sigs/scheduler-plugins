@@ -29,7 +29,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
-
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -114,7 +113,7 @@ profiles:
 	// QOSSort plugin config
 	qosSortConfigFile := filepath.Join(tmpDir, "qosSort.yaml")
 	if err := ioutil.WriteFile(qosSortConfigFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -144,113 +143,31 @@ profiles:
 	// Coscheduling plugin config
 	coschedulingConfigFile := filepath.Join(tmpDir, "coscheduling.yaml")
 	if err := ioutil.WriteFile(coschedulingConfigFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
 profiles:
 - plugins:
+    multiPoint:
+      enabled:
+      - name: Coscheduling
     queueSort:
-      enabled:
-      - name: Coscheduling
       disabled:
-      - name: "*"
-    preFilter:
-      enabled:
-      - name: Coscheduling
-      disabled:
-      - name: "*"
+      - name: PrioritySort
     filter:
-      disabled:
-      - name: "*"
-    postFilter:
-      enabled:
-      - name: Coscheduling
-    preScore:
       disabled:
       - name: "*"
     score:
       disabled:
       - name: "*"
-    permit:
-      enabled:
-      - name: Coscheduling
-    reserve:
-      enabled:
-      - name: Coscheduling
-    postBind:
-      enabled:
-      - name: Coscheduling
+    preScore:
+      disabled:
+      - name: "*"
   pluginConfig:
   - name: Coscheduling
     args:
       permitWaitingTimeSeconds: 10
-`, configKubeconfig)), os.FileMode(0600)); err != nil {
-		t.Fatal(err)
-	}
-
-	// Coscheduling plugin config with arguments
-	coschedulingConfigWithArgsFile := filepath.Join(tmpDir, "coscheduling-with-args.yaml")
-	if err := ioutil.WriteFile(coschedulingConfigWithArgsFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
-kind: KubeSchedulerConfiguration
-clientConnection:
-  kubeconfig: "%s"
-profiles:
-- plugins:
-    queueSort:
-      enabled:
-      - name: Coscheduling
-      disabled:
-      - name: "*"
-    preFilter:
-      enabled:
-      - name: Coscheduling
-      disabled:
-      - name: "*"
-    filter:
-      disabled:
-      - name: "*"
-    postFilter:
-      enabled:
-      - name: Coscheduling
-    preScore:
-      disabled:
-      - name: "*"
-    score:
-      disabled:
-      - name: "*"
-    permit:
-      enabled:
-      - name: Coscheduling
-    reserve:
-      enabled:
-      - name: Coscheduling
-    postBind:
-      enabled:
-      - name: Coscheduling
-  pluginConfig:
-  - name: Coscheduling
-    args:
-      permitWaitingTimeSeconds: 10
-`, configKubeconfig)), os.FileMode(0600)); err != nil {
-		t.Fatal(err)
-	}
-
-	// NodeResourcesAllocatable plugin config
-	nodeResourcesAllocatableConfigFile := filepath.Join(tmpDir, "nodeResourcesAllocatable.yaml")
-	if err := ioutil.WriteFile(nodeResourcesAllocatableConfigFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
-kind: KubeSchedulerConfiguration
-clientConnection:
-  kubeconfig: "%s"
-profiles:
-- plugins:
-    score:
-      enabled:
-      - name: NodeResourcesAllocatable
-      disabled:
-      - name: "*"
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +175,7 @@ profiles:
 	// NodeResourcesAllocatable plugin config with arguments
 	nodeResourcesAllocatableConfigWithArgsFile := filepath.Join(tmpDir, "nodeResourcesAllocatable-with-args.yaml")
 	if err := ioutil.WriteFile(nodeResourcesAllocatableConfigWithArgsFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -283,9 +200,32 @@ profiles:
 	}
 
 	// CapacityScheduling plugin config with arguments
-	capacitySchedulingConfigWithArgsFile := filepath.Join(tmpDir, "capacityScheduling-with-args.yaml")
-	if err := ioutil.WriteFile(capacitySchedulingConfigWithArgsFile, []byte(fmt.Sprintf(`
+	capacitySchedulingConfigv1beta2 := filepath.Join(tmpDir, "capacityScheduling-v1beta2.yaml")
+	if err := ioutil.WriteFile(capacitySchedulingConfigv1beta2, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta2
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- schedulerName: default-scheduler
+  plugins:
+    preFilter:
+      enabled:
+      - name: CapacityScheduling
+    postFilter:
+      enabled:
+      - name: CapacityScheduling
+      disabled:
+      - name: "*"
+    reserve:
+      enabled:
+      - name: CapacityScheduling
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+	capacitySchedulingConfigv1beta3 := filepath.Join(tmpDir, "capacityScheduling-v1beta3.yaml")
+	if err := ioutil.WriteFile(capacitySchedulingConfigv1beta3, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -310,7 +250,7 @@ profiles:
 	// TargetLoadPacking plugin config with arguments
 	targetLoadPackingConfigWithArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-args.yaml")
 	if err := ioutil.WriteFile(targetLoadPackingConfigWithArgsFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -336,7 +276,7 @@ profiles:
 	// LoadVariationRiskBalancing plugin config with arguments
 	loadVariationRiskBalancingConfigWithArgsFile := filepath.Join(tmpDir, "loadVariationRiskBalancing-with-args.yaml")
 	if err := ioutil.WriteFile(loadVariationRiskBalancingConfigWithArgsFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -363,7 +303,7 @@ profiles:
 	// NodeResourceTopologyMatch plugin config
 	nodeResourceTopologyMatchConfigWithArgsFile := filepath.Join(tmpDir, "nodeResourceTopologyMatch.yaml")
 	if err := ioutil.WriteFile(nodeResourceTopologyMatchConfigWithArgsFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -386,7 +326,7 @@ profiles:
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
 	if err := ioutil.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -425,11 +365,11 @@ profiles:
 				"--kubeconfig", configKubeconfig,
 			},
 			wantPlugins: map[string]*config.Plugins{
-				"default-scheduler": defaults.PluginsV1beta2,
+				"default-scheduler": defaults.ExpandedPluginsV1beta3,
 			},
 		},
 		{
-			name:            "single profile config - PodState",
+			name:            "single profile config - PodState - v1beta2",
 			flags:           []string{"--config", podStateConfigFile},
 			registryOptions: []app.Option{app.WithPlugin(podstate.Name, podstate.New)},
 			wantPlugins: map[string]*config.Plugins{
@@ -450,10 +390,10 @@ profiles:
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
 					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: qos.Name}}},
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PostFilter: defaults.PluginsV1beta2.PostFilter,
-					Reserve:    defaults.PluginsV1beta2.Reserve,
-					PreBind:    defaults.PluginsV1beta2.PreBind,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},
 			},
 		},
@@ -463,49 +403,25 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(coscheduling.Name, coscheduling.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					MultiPoint: defaults.ExpandedPluginsV1beta3.MultiPoint,
 					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter:  config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-					PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: "DefaultPreemption"}, {Name: coscheduling.Name}}},
-					Permit:     config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-					Reserve:    config.PluginSet{Enabled: []config.Plugin{{Name: "VolumeBinding"}, {Name: coscheduling.Name}}},
-					PreBind:    defaults.PluginsV1beta2.PreBind,
-					PostBind:   config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-				},
-			},
-		},
-		{
-			name:            "single profile config - Coscheduling with args",
-			flags:           []string{"--config", coschedulingConfigWithArgsFile},
-			registryOptions: []app.Option{app.WithPlugin(coscheduling.Name, coscheduling.New)},
-			wantPlugins: map[string]*config.Plugins{
-				"default-scheduler": {
-					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter:  config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-					PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: "DefaultPreemption"}, {Name: coscheduling.Name}}},
-					Permit:     config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-					Reserve:    config.PluginSet{Enabled: []config.Plugin{{Name: "VolumeBinding"}, {Name: coscheduling.Name}}},
-					PreBind:    defaults.PluginsV1beta2.PreBind,
-					PostBind:   config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
-				},
-			},
-		},
-		{
-			name:            "single profile config - Node Resources Allocatable",
-			flags:           []string{"--config", nodeResourcesAllocatableConfigFile},
-			registryOptions: []app.Option{app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable)},
-			wantPlugins: map[string]*config.Plugins{
-				"default-scheduler": {
-					QueueSort:  defaults.PluginsV1beta2.QueueSort,
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter:  defaults.PluginsV1beta2.PreFilter,
-					Filter:     defaults.PluginsV1beta2.Filter,
-					PostFilter: defaults.PluginsV1beta2.PostFilter,
-					PreScore:   defaults.PluginsV1beta2.PreScore,
-					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: noderesources.AllocatableName, Weight: 1}}},
-					Reserve:    defaults.PluginsV1beta2.Reserve,
-					PreBind:    defaults.PluginsV1beta2.PreBind,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.PreFilter.Enabled, config.Plugin{Name: coscheduling.Name}),
+					},
+					PostFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.PostFilter.Enabled, config.Plugin{Name: coscheduling.Name}),
+					},
+					Permit: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.Permit.Enabled, config.Plugin{Name: coscheduling.Name}),
+					},
+					Reserve: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.Reserve.Enabled, config.Plugin{Name: coscheduling.Name}),
+					},
+					PreBind: defaults.ExpandedPluginsV1beta3.PreBind,
+					PostBind: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.PostBind.Enabled, config.Plugin{Name: coscheduling.Name}),
+					},
 				},
 			},
 		},
@@ -515,21 +431,21 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					QueueSort:  defaults.PluginsV1beta2.QueueSort,
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter:  defaults.PluginsV1beta2.PreFilter,
-					Filter:     defaults.PluginsV1beta2.Filter,
-					PostFilter: defaults.PluginsV1beta2.PostFilter,
-					PreScore:   defaults.PluginsV1beta2.PreScore,
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
+					Filter:     defaults.ExpandedPluginsV1beta3.Filter,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: noderesources.AllocatableName, Weight: 1}}},
-					Reserve:    defaults.PluginsV1beta2.Reserve,
-					PreBind:    defaults.PluginsV1beta2.PreBind,
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},
 			},
 		},
 		{
-			name:            "single profile config - Capacityscheduling",
-			flags:           []string{"--config", capacitySchedulingConfigWithArgsFile},
+			name:            "single profile config - Capacityscheduling - v1beta2",
+			flags:           []string{"--config", capacitySchedulingConfigv1beta2},
 			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
@@ -549,21 +465,46 @@ profiles:
 				},
 			},
 		},
+		// TODO(Huang-Wei): Comment out after the upstream bug gets fixed.
+		/*
+			{
+					name:            "single profile config - Capacityscheduling - v1beta3",
+					flags:           []string{"--config", capacitySchedulingConfigv1beta3},
+					registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
+					wantPlugins: map[string]*config.Plugins{
+						"default-scheduler": {
+							QueueSort: defaults.ExpandedPluginsV1beta3.QueueSort,
+							Bind:      defaults.ExpandedPluginsV1beta3.Bind,
+							PreFilter: config.PluginSet{
+								Enabled: append(defaults.ExpandedPluginsV1beta3.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
+							},
+							Filter:     defaults.ExpandedPluginsV1beta3.Filter,
+							PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: capacityscheduling.Name}}},
+							PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
+							Score:      defaults.ExpandedPluginsV1beta3.Score,
+							Reserve: config.PluginSet{
+								Enabled: append(defaults.ExpandedPluginsV1beta3.Reserve.Enabled, config.Plugin{Name: capacityscheduling.Name}),
+							},
+							PreBind: defaults.ExpandedPluginsV1beta3.PreBind,
+						},
+					},
+			},
+		*/
 		{
 			name:            "single profile config - TargetLoadPacking with args",
 			flags:           []string{"--config", targetLoadPackingConfigWithArgsFile},
 			registryOptions: []app.Option{app.WithPlugin(targetloadpacking.Name, targetloadpacking.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					QueueSort:  defaults.PluginsV1beta2.QueueSort,
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter:  defaults.PluginsV1beta2.PreFilter,
-					Filter:     defaults.PluginsV1beta2.Filter,
-					PostFilter: defaults.PluginsV1beta2.PostFilter,
-					PreScore:   defaults.PluginsV1beta2.PreScore,
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
+					Filter:     defaults.ExpandedPluginsV1beta3.Filter,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: targetloadpacking.Name, Weight: 1}}},
-					Reserve:    defaults.PluginsV1beta2.Reserve,
-					PreBind:    defaults.PluginsV1beta2.PreBind,
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},
 			},
 		},
@@ -573,15 +514,15 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(loadvariationriskbalancing.Name, loadvariationriskbalancing.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					QueueSort:  defaults.PluginsV1beta2.QueueSort,
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter:  defaults.PluginsV1beta2.PreFilter,
-					Filter:     defaults.PluginsV1beta2.Filter,
-					PostFilter: defaults.PluginsV1beta2.PostFilter,
-					PreScore:   defaults.PluginsV1beta2.PreScore,
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
+					Filter:     defaults.ExpandedPluginsV1beta3.Filter,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: loadvariationriskbalancing.Name, Weight: 1}}},
-					Reserve:    defaults.PluginsV1beta2.Reserve,
-					PreBind:    defaults.PluginsV1beta2.PreBind,
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},
 			},
 		},
@@ -591,15 +532,15 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(noderesourcetopology.Name, noderesourcetopology.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					QueueSort:  defaults.PluginsV1beta2.QueueSort,
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter:  defaults.PluginsV1beta2.PreFilter,
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
 					Filter:     config.PluginSet{Enabled: []config.Plugin{{Name: noderesourcetopology.Name}}},
-					PostFilter: defaults.PluginsV1beta2.PostFilter,
-					PreScore:   defaults.PluginsV1beta2.PreScore,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: noderesourcetopology.Name, Weight: 1}}},
-					Reserve:    defaults.PluginsV1beta2.Reserve,
-					PreBind:    defaults.PluginsV1beta2.PreBind,
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},
 			},
 		},
@@ -633,10 +574,6 @@ profiles:
 			// use listeners instead of static ports so parallel test runs don't conflict
 			opts.SecureServing.Listener = makeListener(t)
 			defer opts.SecureServing.Listener.Close()
-			opts.CombinedInsecureServing.Metrics.Listener = makeListener(t)
-			defer opts.CombinedInsecureServing.Metrics.Listener.Close()
-			opts.CombinedInsecureServing.Healthz.Listener = makeListener(t)
-			defer opts.CombinedInsecureServing.Healthz.Listener.Close()
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

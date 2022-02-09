@@ -99,13 +99,14 @@ func TestCapacityScheduling(t *testing.T) {
 	}
 	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: capacityscheduling.Name})
 
-	testCtx = util.InitTestSchedulerWithOptions(
+	testCtx = testutil.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
-		true,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}),
 	)
+	testutil.SyncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
 	t.Log("Init scheduler success")
 	defer testutil.CleanupTest(t, testCtx)
 
@@ -544,7 +545,8 @@ func TestCapacityScheduling(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{Name: "t7-p11", Namespace: "ns3"},
 				},
 			},
-		}} {
+		},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			defer cleanupElasticQuotas(ctx, extClient, tt.elasticQuotas)
 			defer testutil.CleanupPods(cs, t, tt.existPods)

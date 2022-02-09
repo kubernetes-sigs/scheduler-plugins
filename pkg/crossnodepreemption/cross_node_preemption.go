@@ -16,6 +16,7 @@ limitations under the License.
 
 package crossnodepreemption
 
+/*
 import (
 	"context"
 
@@ -220,3 +221,4 @@ func nodesWherePreemptionMightHelp(nodes []*framework.NodeInfo, m framework.Node
 	}
 	return potentialNodes
 }
+*/

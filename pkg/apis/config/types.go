@@ -19,9 +19,6 @@ package config
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	// TODO: eliminate the "versioned" import, i.e., schedulerconfig.ResourceSpec should be unversioned.ResourceSpec.
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 	unversioned "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
@@ -58,7 +55,7 @@ type NodeResourcesAllocatableArgs struct {
 	// An example resource set might include "cpu" (millicores) and "memory" (bytes)
 	// with weights of 1<<20 and 1 respectfully. That would mean 1 MiB has equivalent
 	// weight as 1 millicore.
-	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
+	Resources []unversioned.ResourceSpec `json:"resources,omitempty"`
 
 	// Whether to prioritize nodes with least or most allocatable resources.
 	Mode ModeType `json:"mode,omitempty"`
@@ -136,7 +133,7 @@ type ScoringStrategy struct {
 
 	// Resources a list of pairs <resource, weight> to be considered while scoring
 	// allowed weights start from 1.
-	Resources []schedulerconfig.ResourceSpec
+	Resources []unversioned.ResourceSpec
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

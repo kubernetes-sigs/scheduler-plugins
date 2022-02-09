@@ -23,6 +23,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -99,4 +100,10 @@ func MakePod(podName string, namespace string, memReq int64, cpuReq int64, prior
 		},
 	}
 	return pod
+}
+
+// PodNotExist returns true if the given pod does not exist.
+func PodNotExist(cs clientset.Interface, podNamespace, podName string) bool {
+	_, err := cs.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	return errors.IsNotFound(err)
 }

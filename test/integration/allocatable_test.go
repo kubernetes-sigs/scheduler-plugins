@@ -29,7 +29,7 @@ import (
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutils "k8s.io/kubernetes/test/integration/util"
+	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
@@ -46,15 +46,15 @@ func TestAllocatablePlugin(t *testing.T) {
 		Disabled: []schedapi.Plugin{{Name: "*"}},
 	}
 
-	testCtx := util.InitTestSchedulerWithOptions(
+	testCtx := testutil.InitTestSchedulerWithOptions(
 		t,
-		testutils.InitTestAPIServer(t, "sched-allocatable", nil),
-		true,
+		testutil.InitTestAPIServer(t, "sched-allocatable", nil),
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesources.AllocatableName: noderesources.NewAllocatable}),
 	)
-
-	defer testutils.CleanupTest(t, testCtx)
+	testutil.SyncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
+	defer testutil.CleanupTest(t, testCtx)
 
 	cs, ns := testCtx.ClientSet, testCtx.NS.Name
 	// Create nodes. First two are small nodes.

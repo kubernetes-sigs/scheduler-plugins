@@ -141,13 +141,14 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		),
 	)
 
-	testCtx = util.InitTestSchedulerWithOptions(
+	testCtx = testutil.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
-		true,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
 	)
+	testutil.SyncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
 	t.Log("Init scheduler success")
 	defer testutil.CleanupTest(t, testCtx)
 

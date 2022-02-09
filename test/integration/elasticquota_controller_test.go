@@ -47,7 +47,6 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestElasticController(t *testing.T) {
@@ -105,12 +104,13 @@ func TestElasticController(t *testing.T) {
 	coreInformerFactory.Start(stopCh)
 
 	testCtx.ClientSet = cs
-	testCtx = util.InitTestSchedulerWithOptions(
+	testCtx = testutil.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
-		true,
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}),
 	)
+	testutil.SyncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
 	t.Log("Init scheduler success")
 	defer testutil.CleanupTest(t, testCtx)
 

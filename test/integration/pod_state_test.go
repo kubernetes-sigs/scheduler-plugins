@@ -28,7 +28,7 @@ import (
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutils "k8s.io/kubernetes/test/integration/util"
+	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/test/util"
@@ -79,14 +79,15 @@ func TestPodStatePlugin(t *testing.T) {
 				},
 			}
 
-			testCtx := util.InitTestSchedulerWithOptions(
+			testCtx := testutil.InitTestSchedulerWithOptions(
 				t,
-				testutils.InitTestAPIServer(t, "sched-podstate", nil),
-				true,
+				testutil.InitTestAPIServer(t, "sched-podstate", nil),
 				scheduler.WithProfiles(cfg.Profiles...),
 				scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{podstate.Name: podstate.New}),
 			)
-			defer testutils.CleanupTest(t, testCtx)
+			testutil.SyncInformerFactory(testCtx)
+			go testCtx.Scheduler.Run(testCtx.Ctx)
+			defer testutil.CleanupTest(t, testCtx)
 
 			cs, ns := testCtx.ClientSet, testCtx.NS.Name
 

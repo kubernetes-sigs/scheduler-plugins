@@ -105,7 +105,7 @@ func (c *FakeElasticQuotas) Update(ctx context.Context, elasticQuota *v1alpha1.E
 // Delete takes name of the elasticQuota and deletes it. Returns an error if one occurs.
 func (c *FakeElasticQuotas) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(elasticquotasResource, c.ns, name), &v1alpha1.ElasticQuota{})
+		Invokes(testing.NewDeleteActionWithOptions(elasticquotasResource, c.ns, name, opts), &v1alpha1.ElasticQuota{})
 
 	return err
 }

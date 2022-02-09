@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,16 +16,15 @@ limitations under the License.
 
 // +k8s:defaulter-gen=true
 
-package v1beta1
+package v1beta3
 
 import (
 	"strconv"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
-
-	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	schedulerconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
+	k8sschedulerconfigv1beta3 "k8s.io/kubernetes/pkg/scheduler/apis/config/v1beta3"
 )
 
 var (
@@ -39,7 +38,7 @@ var (
 	// The base unit for CPU is millicore, while the base using for memory is a byte.
 	// The default CPU weight is 1<<20 and default memory weight is 1. That means a millicore
 	// has a weighted score equivalent to 1 MiB.
-	defaultNodeResourcesAllocatableResourcesToWeightMap = []schedulerconfig.ResourceSpec{
+	defaultNodeResourcesAllocatableResourcesToWeightMap = []schedulerconfigv1beta3.ResourceSpec{
 		{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
 	}
 
@@ -64,11 +63,9 @@ var (
 	// DefaultSafeVarianceSensitivity is one
 	DefaultSafeVarianceSensitivity = 1.0
 	// DefaultMetricProviderType is the Kubernetes metrics server
-	DefaultMetricProviderType = pluginConfig.KubernetesMetricsServer
+	DefaultMetricProviderType = KubernetesMetricsServer
 
-	defaultKubeConfigPath string = "/etc/kubernetes/scheduler.conf"
-
-	defaultResourceSpec = []schedulerconfig.ResourceSpec{
+	defaultResourceSpec = []schedulerconfigv1beta3.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
@@ -127,10 +124,6 @@ func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingAr
 
 // SetDefaultsNodeResourceTopologyMatchArgs sets the default parameters for NodeResourceTopologyMatch plugin.
 func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs) {
-	if obj.KubeConfigPath == nil {
-		obj.KubeConfigPath = &defaultKubeConfigPath
-	}
-
 	if obj.ScoringStrategy == nil {
 		obj.ScoringStrategy = &ScoringStrategy{
 			Type:      LeastAllocated,
@@ -148,4 +141,9 @@ func SetDefaultsNodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs
 			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
 	}
+}
+
+// PreemptionTolerationArgs reuses SetDefaults_DefaultPreemptionArgs
+func SetDefaultsPreemptionTolerationArgs(obj *PreemptionTolerationArgs) {
+	k8sschedulerconfigv1beta3.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1beta3.DefaultPreemptionArgs)(obj))
 }

@@ -19,25 +19,30 @@ package preemptiontoleration
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sort"
-	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	policy "k8s.io/api/policy/v1beta1"
+	policy "k8s.io/api/policy/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/client-go/informers"
 	corelisters "k8s.io/client-go/listers/core/v1"
-	policylisters "k8s.io/client-go/listers/policy/v1beta1"
+	policylisters "k8s.io/client-go/listers/policy/v1"
 	schedulinglisters "k8s.io/client-go/listers/scheduling/v1"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	kubefeatures "k8s.io/kubernetes/pkg/features"
 	schedulerapisconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/validation"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
+	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/util"
 
@@ -51,6 +56,7 @@ const (
 
 var (
 	_ framework.PostFilterPlugin = &PreemptionToleration{}
+	_ preemption.Interface       = &PreemptionToleration{}
 )
 
 // PreemptionToleration is a PostFilter plugin implements the preemption logic.
@@ -60,10 +66,10 @@ type PreemptionToleration struct {
 	podLister           corelisters.PodLister
 	pdbLister           policylisters.PodDisruptionBudgetLister
 	priorityClassLister schedulinglisters.PriorityClassLister
-	clock               util.Clock
-}
 
-var _ framework.PostFilterPlugin = &PreemptionToleration{}
+	clock   util.Clock
+	curTime time.Time
+}
 
 // Name returns name of the plugin. It is used in logs, etc.
 func (pl *PreemptionToleration) Name() string {
@@ -98,75 +104,17 @@ func (pl *PreemptionToleration) PostFilter(ctx context.Context, state *framework
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	nnn, status := pl.preempt(ctx, state, pod, m)
-	if !status.IsSuccess() {
-		return nil, status
-	}
-	// This happens when the pod is not eligible for preemption or extenders filtered all candidates.
-	if nnn == "" {
-		return nil, framework.NewStatus(framework.Unschedulable)
-	}
-	return &framework.PostFilterResult{NominatedNodeName: nnn}, framework.NewStatus(framework.Success)
-}
-
-func (pl *PreemptionToleration) preempt(ctx context.Context, state *framework.CycleState, preemptor *v1.Pod, m framework.NodeToStatusMap) (string, *framework.Status) {
-	cs := pl.fh.ClientSet()
-	nodeLister := pl.fh.SnapshotSharedLister().NodeInfos()
-
-	// 0) Fetch the latest version of <preemptor>.
-	// It's safe to directly fetch pod here. Because the informer cache has already been
-	// initialized when creating the Scheduler obj, i.e., factory.go#MakeDefaultErrorFunc().
-	// However, tests may need to manually initialize the shared pod informer.
-	preemptorNamespace, preemptorName := preemptor.Namespace, preemptor.Name
-	preemptor, err := pl.podLister.Pods(preemptor.Namespace).Get(preemptor.Name)
-	if err != nil {
-		klog.ErrorS(err, "getting the updated preemptor pod object", "pod", klog.KRef(preemptorNamespace, preemptorName))
-		return "", framework.AsStatus(err)
+	pe := preemption.Evaluator{
+		PluginName: pl.Name(),
+		Handler:    pl.fh,
+		PodLister:  pl.podLister,
+		PdbLister:  pl.pdbLister,
+		State:      state,
+		Interface:  pl,
 	}
 
-	// 1) Ensure the preemptor is eligible to preempt other pods.
-	if !dp.PodEligibleToPreemptOthers(preemptor, nodeLister, m[preemptor.Status.NominatedNodeName]) {
-		klog.V(5).InfoS("Pod is not eligible for more preemption", "pod", klog.KObj(preemptor))
-		return "", nil
-	}
-
-	// 2) Find all preemption candidates.
-	candidates, nodeToStatusMap, status := pl.FindCandidates(ctx, state, preemptor, m)
-	if !status.IsSuccess() {
-		return "", status
-	}
-
-	// Return a FitError only when there are no candidates that fit the preemptor.
-	if len(candidates) == 0 {
-		fitError := &framework.FitError{
-			Pod:         preemptor,
-			NumAllNodes: len(nodeToStatusMap),
-			Diagnosis: framework.Diagnosis{
-				NodeToStatusMap: nodeToStatusMap,
-				// Leave FailedPlugins as nil as it won't be used on moving Pods.
-			},
-		}
-		return "", framework.NewStatus(framework.Unschedulable, fitError.Error())
-	}
-
-	// 3) Interact with registered Extenders to filter out some candidates if needed.
-	candidates, status = dp.CallExtenders(pl.fh.Extenders(), preemptor, nodeLister, candidates)
-	if !status.IsSuccess() {
-		return "", status
-	}
-
-	// 4) Find the best candidate.
-	bestCandidate := dp.SelectCandidate(candidates)
-	if bestCandidate == nil || len(bestCandidate.Name()) == 0 {
-		return "", nil
-	}
-
-	// 5) Perform preparation work before nominating the selected candidate.
-	if status := dp.PrepareCandidate(bestCandidate, pl.fh, cs, preemptor, pl.Name()); !status.IsSuccess() {
-		return "", status
-	}
-
-	return bestCandidate.Name(), nil
+	pl.curTime = pl.clock.Now()
+	return pe.Preempt(ctx, pod, m)
 }
 
 // ExemptedFromPreemption evaluates whether the victimCandidate
@@ -226,118 +174,23 @@ func ExemptedFromPreemption(
 	return scheduledAt.Add(tolerationDuration).After(now), nil
 }
 
-// FindCandidates calculates a slice of preemption candidates.
-// Each candidate is executable to make the given <preemptor> pod schedulable.
-// This is almost identical to DefaultPreemption plugin's one.
-func (pl *PreemptionToleration) FindCandidates(
-	ctx context.Context,
-	state *framework.CycleState,
-	preemptor *v1.Pod,
-	m framework.NodeToStatusMap,
-) ([]dp.Candidate, framework.NodeToStatusMap, *framework.Status) {
-	allNodes, err := pl.fh.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return nil, nil, framework.AsStatus(err)
-	}
-	if len(allNodes) == 0 {
-		return nil, nil, framework.NewStatus(framework.Error, "no nodes available")
-	}
-	potentialNodes, unschedulableNodeStatus := nodesWherePreemptionMightHelp(allNodes, m)
-	if len(potentialNodes) == 0 {
-		klog.V(3).InfoS("Preemption will not help schedule pod on any node", "pod", klog.KObj(preemptor))
-		// In this case, we should clean-up any existing nominated node name of the pod.
-		if err := util.ClearNominatedNodeName(pl.fh.ClientSet(), preemptor); err != nil {
-			klog.ErrorS(err, "cannot clear 'NominatedNodeName' field of pod", "pod", klog.KObj(preemptor))
-			// We do not return as this error is not critical.
-		}
-		return nil, unschedulableNodeStatus, nil
-	}
-
-	pdbs, err := getPodDisruptionBudgets(pl.pdbLister)
-	if err != nil {
-		return nil, nil, framework.AsStatus(err)
-	}
-
-	offset, numCandidates := pl.getOffsetAndNumCandidates(int32(len(potentialNodes)))
-	if klog.V(5).Enabled() {
-		var sample []string
-		for i := offset; i < offset+10 && i < int32(len(potentialNodes)); i++ {
-			sample = append(sample, potentialNodes[i].Node().Name)
-		}
-		klog.InfoS("Selecting candidates from a pool of nodes", "potentialNodesCount", len(potentialNodes), "offset", offset, "sampleLength", len(sample), "sample", sample, "candidates", numCandidates)
-	}
-	candidates, nodeStatuses := pl.dryRunPreemption(ctx, pl.fh, state, preemptor, potentialNodes, pdbs, offset, numCandidates)
-	for node, status := range unschedulableNodeStatus {
-		nodeStatuses[node] = status
-	}
-	return candidates, nodeStatuses, nil
-}
-
-// dryRunPreemption simulates Preemption logic on <potentialNodes> in parallel,
-// returns preemption candidates and a map indicating filtered nodes statuses.
-// The number of candidates depends on the constraints defined in the plugin's args. In the returned list of
-// candidates, ones that do not violate PDB are preferred over ones that do.
-func (pl *PreemptionToleration) dryRunPreemption(ctx context.Context, fh framework.Handle,
-	state *framework.CycleState, pod *v1.Pod, potentialNodes []*framework.NodeInfo,
-	pdbs []*policy.PodDisruptionBudget, offset int32, numCandidates int32) ([]dp.Candidate, framework.NodeToStatusMap) {
-	nonViolatingCandidates := newCandidateList(numCandidates)
-	violatingCandidates := newCandidateList(numCandidates)
-	parallelCtx, cancel := context.WithCancel(ctx)
-	nodeStatuses := make(framework.NodeToStatusMap)
-	var statusesLock sync.Mutex
-	now := pl.clock.Now()
-	checkNode := func(i int) {
-		nodeInfoCopy := potentialNodes[(int(offset)+i)%len(potentialNodes)].Clone()
-		stateCopy := state.Clone()
-		pods, numPDBViolations, status := pl.selectVictimsOnNode(ctx, fh, stateCopy, pod, nodeInfoCopy, pdbs, now)
-		if status.IsSuccess() {
-			victims := extenderv1.Victims{
-				Pods:             pods,
-				NumPDBViolations: int64(numPDBViolations),
-			}
-			c := &candidate{
-				victims: &victims,
-				name:    nodeInfoCopy.Node().Name,
-			}
-			if numPDBViolations == 0 {
-				nonViolatingCandidates.add(c)
-			} else {
-				violatingCandidates.add(c)
-			}
-			nvcSize, vcSize := nonViolatingCandidates.size(), violatingCandidates.size()
-			if nvcSize > 0 && nvcSize+vcSize >= numCandidates {
-				cancel()
-			}
-		} else {
-			statusesLock.Lock()
-			nodeStatuses[nodeInfoCopy.Node().Name] = status
-			statusesLock.Unlock()
-		}
-	}
-	fh.Parallelizer().Until(parallelCtx, len(potentialNodes), checkNode)
-	return append(nonViolatingCandidates.get(), violatingCandidates.get()...), nodeStatuses
-}
-
-// selectVictimsOnNode finds minimum set of pods on the given node that should
+// SelectVictimsOnNode finds minimum set of pods on the given node that should
 // be preempted in order to make enough room for "preemptor" to be scheduled.
 // The algorithm is almost identical to DefaultPreemption plugin's one.
 // The only difference is that it takes PreemptionToleration annotations in
 // PriorityClass resources into account for selecting victim pods.
-func (pl *PreemptionToleration) selectVictimsOnNode(
+func (pl *PreemptionToleration) SelectVictimsOnNode(
 	ctx context.Context,
-	fh framework.Handle,
 	state *framework.CycleState,
 	preemptor *v1.Pod,
 	nodeInfo *framework.NodeInfo,
-	pdbs []*policy.PodDisruptionBudget,
-	now time.Time,
-) ([]*v1.Pod, int, *framework.Status) {
+	pdbs []*policy.PodDisruptionBudget) ([]*v1.Pod, int, *framework.Status) {
 	var potentialVictims []*framework.PodInfo
 	removePod := func(rpi *framework.PodInfo) error {
 		if err := nodeInfo.RemovePod(rpi.Pod); err != nil {
 			return err
 		}
-		status := fh.RunPreFilterExtensionRemovePod(ctx, state, preemptor, rpi, nodeInfo)
+		status := pl.fh.RunPreFilterExtensionRemovePod(ctx, state, preemptor, rpi, nodeInfo)
 		if !status.IsSuccess() {
 			return status.AsError()
 		}
@@ -345,7 +198,7 @@ func (pl *PreemptionToleration) selectVictimsOnNode(
 	}
 	addPod := func(api *framework.PodInfo) error {
 		nodeInfo.AddPodInfo(api)
-		status := fh.RunPreFilterExtensionAddPod(ctx, state, preemptor, api, nodeInfo)
+		status := pl.fh.RunPreFilterExtensionAddPod(ctx, state, preemptor, api, nodeInfo)
 		if !status.IsSuccess() {
 			return status.AsError()
 		}
@@ -361,7 +214,7 @@ func (pl *PreemptionToleration) selectVictimsOnNode(
 		}
 
 		// For a pod with lower priority, check if it can be exempted from the preemption.
-		exempted, err := ExemptedFromPreemption(pi.Pod, preemptor, pl.priorityClassLister, now)
+		exempted, err := ExemptedFromPreemption(pi.Pod, preemptor, pl.priorityClassLister, pl.curTime)
 		if err != nil {
 			klog.ErrorS(err, "Encountered error while selecting victims on node", "Node", nodeInfo.Node().Name)
 			return nil, 0, framework.AsStatus(err)
@@ -387,7 +240,7 @@ func (pl *PreemptionToleration) selectVictimsOnNode(
 	// inter-pod affinity to one or more victims, but we have decided not to
 	// support this case for performance reasons. Having affinity to lower
 	// priority pods is not a recommended configuration anyway.
-	if status := fh.RunFilterPluginsWithNominatedPods(ctx, state, preemptor, nodeInfo); !status.IsSuccess() {
+	if status := pl.fh.RunFilterPluginsWithNominatedPods(ctx, state, preemptor, nodeInfo); !status.IsSuccess() {
 		return nil, 0, status
 	}
 	var victims []*v1.Pod
@@ -401,7 +254,7 @@ func (pl *PreemptionToleration) selectVictimsOnNode(
 		if err := addPod(pi); err != nil {
 			return false, err
 		}
-		status := fh.RunFilterPluginsWithNominatedPods(ctx, state, preemptor, nodeInfo)
+		status := pl.fh.RunFilterPluginsWithNominatedPods(ctx, state, preemptor, nodeInfo)
 		fits := status.IsSuccess()
 		if !fits {
 			if err := removePod(pi); err != nil {
@@ -427,4 +280,128 @@ func (pl *PreemptionToleration) selectVictimsOnNode(
 		}
 	}
 	return victims, numViolatingVictim, framework.NewStatus(framework.Success)
+}
+
+/* DO NOT EDIT CONTENT BELOW */
+/* Copied from k/k#pkg/scheduler/framework/plugins/defaultpreemption/default_preemption.go */
+
+// GetOffsetAndNumCandidates chooses a random offset and calculates the number
+// of candidates that should be shortlisted for dry running preemption.
+func (pl *PreemptionToleration) GetOffsetAndNumCandidates(numNodes int32) (int32, int32) {
+	return rand.Int31n(numNodes), pl.calculateNumCandidates(numNodes)
+}
+
+func (pl *PreemptionToleration) CandidatesToVictimsMap(candidates []preemption.Candidate) map[string]*extenderv1.Victims {
+	m := make(map[string]*extenderv1.Victims)
+	for _, c := range candidates {
+		m[c.Name()] = c.Victims()
+	}
+	return m
+}
+
+// calculateNumCandidates returns the number of candidates the FindCandidates
+// method must produce from dry running based on the constraints given by
+// <minCandidateNodesPercentage> and <minCandidateNodesAbsolute>. The number of
+// candidates returned will never be greater than <numNodes>.
+func (pl *PreemptionToleration) calculateNumCandidates(numNodes int32) int32 {
+	n := (numNodes * pl.args.MinCandidateNodesPercentage) / 100
+	if n < pl.args.MinCandidateNodesAbsolute {
+		n = pl.args.MinCandidateNodesAbsolute
+	}
+	if n > numNodes {
+		n = numNodes
+	}
+	return n
+}
+
+// PodEligibleToPreemptOthers determines whether this pod should be considered
+// for preempting other pods or not. If this pod has already preempted other
+// pods and those are in their graceful termination period, it shouldn't be
+// considered for preemption.
+// We look at the node that is nominated for this pod and as long as there are
+// terminating pods on the node, we don't consider this for preempting more pods.
+func (pl *PreemptionToleration) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus *framework.Status) bool {
+	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
+		klog.V(5).InfoS("Pod is not eligible for preemption because it has a preemptionPolicy of Never", "pod", klog.KObj(pod))
+		return false
+	}
+	nodeInfos := pl.fh.SnapshotSharedLister().NodeInfos()
+	nomNodeName := pod.Status.NominatedNodeName
+	if len(nomNodeName) > 0 {
+		// If the pod's nominated node is considered as UnschedulableAndUnresolvable by the filters,
+		// then the pod should be considered for preempting again.
+		if nominatedNodeStatus.Code() == framework.UnschedulableAndUnresolvable {
+			return true
+		}
+
+		if nodeInfo, _ := nodeInfos.Get(nomNodeName); nodeInfo != nil {
+			podPriority := corev1helpers.PodPriority(pod)
+			for _, p := range nodeInfo.Pods {
+				if p.Pod.DeletionTimestamp != nil && corev1helpers.PodPriority(p.Pod) < podPriority {
+					// There is a terminating pod on the nominated node.
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// filterPodsWithPDBViolation groups the given "pods" into two groups of "violatingPods"
+// and "nonViolatingPods" based on whether their PDBs will be violated if they are
+// preempted.
+// This function is stable and does not change the order of received pods. So, if it
+// receives a sorted list, grouping will preserve the order of the input list.
+func filterPodsWithPDBViolation(podInfos []*framework.PodInfo, pdbs []*policy.PodDisruptionBudget) (violatingPodInfos, nonViolatingPodInfos []*framework.PodInfo) {
+	pdbsAllowed := make([]int32, len(pdbs))
+	for i, pdb := range pdbs {
+		pdbsAllowed[i] = pdb.Status.DisruptionsAllowed
+	}
+
+	for _, podInfo := range podInfos {
+		pod := podInfo.Pod
+		pdbForPodIsViolated := false
+		// A pod with no labels will not match any PDB. So, no need to check.
+		if len(pod.Labels) != 0 {
+			for i, pdb := range pdbs {
+				if pdb.Namespace != pod.Namespace {
+					continue
+				}
+				selector, err := metav1.LabelSelectorAsSelector(pdb.Spec.Selector)
+				if err != nil {
+					continue
+				}
+				// A PDB with a nil or empty selector matches nothing.
+				if selector.Empty() || !selector.Matches(labels.Set(pod.Labels)) {
+					continue
+				}
+
+				// Existing in DisruptedPods means it has been processed in API server,
+				// we don't treat it as a violating case.
+				if _, exist := pdb.Status.DisruptedPods[pod.Name]; exist {
+					continue
+				}
+				// Only decrement the matched pdb when it's not in its <DisruptedPods>;
+				// otherwise we may over-decrement the budget number.
+				pdbsAllowed[i]--
+				// We have found a matching PDB.
+				if pdbsAllowed[i] < 0 {
+					pdbForPodIsViolated = true
+				}
+			}
+		}
+		if pdbForPodIsViolated {
+			violatingPodInfos = append(violatingPodInfos, podInfo)
+		} else {
+			nonViolatingPodInfos = append(nonViolatingPodInfos, podInfo)
+		}
+	}
+	return violatingPodInfos, nonViolatingPodInfos
+}
+
+func getPDBLister(informerFactory informers.SharedInformerFactory) policylisters.PodDisruptionBudgetLister {
+	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.PodDisruptionBudget) {
+		return informerFactory.Policy().V1().PodDisruptionBudgets().Lister()
+	}
+	return nil
 }

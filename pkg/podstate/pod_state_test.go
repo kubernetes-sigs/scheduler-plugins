@@ -87,7 +87,7 @@ func TestPodState(t *testing.T) {
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(fakeSharedLister),
-				frameworkruntime.WithPodNominator(testutil.NewPodNominator()),
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 			)
 			if err != nil {
 				t.Fatalf("fail to create framework: %s", err)
@@ -182,7 +182,7 @@ func makeRegularPod(name string) *v1.Pod {
 }
 
 func addNominatedPod(pi *framework.PodInfo, nodeName string, fh framework.Handle) *framework.PodInfo {
-	fh.AddNominatedPod(pi, nodeName)
+	fh.AddNominatedPod(pi, &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: nodeName})
 	return pi
 }
 

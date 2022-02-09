@@ -115,13 +115,14 @@ func TestCoschedulingPlugin(t *testing.T) {
 		t.Fatalf("Failed to create integration test ns: %v", err)
 	}
 
-	testCtx = util.InitTestSchedulerWithOptions(
+	testCtx = testutil.InitTestSchedulerWithOptions(
 		t,
 		testCtx,
-		true,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{coscheduling.Name: coscheduling.New}),
 	)
+	testutil.SyncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
 	t.Log("Init scheduler success")
 	defer testutil.CleanupTest(t, testCtx)
 
