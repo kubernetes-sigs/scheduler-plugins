@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
+
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -465,7 +466,7 @@ profiles:
 				},
 			},
 		},
-		// TODO(Huang-Wei): Comment out after the upstream bug gets fixed.
+		// TODO(Huang-Wei): Comment out after the upstream bug k/k#108083 gets fixed.
 		/*
 			{
 					name:            "single profile config - Capacityscheduling - v1beta3",

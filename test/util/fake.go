@@ -119,10 +119,10 @@ type nominator struct {
 	sync.RWMutex
 }
 
-func (npm *nominator) add(pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
+func (n *nominator) add(pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
 	// Always delete the pod if it already exists, to ensure we never store more than
 	// one instance of the pod.
-	npm.delete(pi.Pod)
+	n.delete(pi.Pod)
 
 	var nodeName string
 	if nominatingInfo.Mode() == framework.ModeOverride {
@@ -134,45 +134,45 @@ func (npm *nominator) add(pi *framework.PodInfo, nominatingInfo *framework.Nomin
 		nodeName = pi.Pod.Status.NominatedNodeName
 	}
 
-	if npm.podLister != nil {
+	if n.podLister != nil {
 		// If the pod is not alive, don't contain it.
-		if _, err := npm.podLister.Pods(pi.Pod.Namespace).Get(pi.Pod.Name); err != nil {
+		if _, err := n.podLister.Pods(pi.Pod.Namespace).Get(pi.Pod.Name); err != nil {
 			klog.V(4).InfoS("Pod doesn't exist in podLister, aborting adding it to the nominator", "pod", klog.KObj(pi.Pod))
 			return
 		}
 	}
 
-	npm.nominatedPodToNode[pi.Pod.UID] = nodeName
-	for _, npi := range npm.nominatedPods[nodeName] {
+	n.nominatedPodToNode[pi.Pod.UID] = nodeName
+	for _, npi := range n.nominatedPods[nodeName] {
 		if npi.Pod.UID == pi.Pod.UID {
 			klog.V(4).InfoS("Pod already exists in the nominator", "pod", klog.KObj(npi.Pod))
 			return
 		}
 	}
-	npm.nominatedPods[nodeName] = append(npm.nominatedPods[nodeName], pi)
+	n.nominatedPods[nodeName] = append(n.nominatedPods[nodeName], pi)
 }
 
-func (npm *nominator) delete(p *v1.Pod) {
-	nnn, ok := npm.nominatedPodToNode[p.UID]
+func (n *nominator) delete(p *v1.Pod) {
+	nnn, ok := n.nominatedPodToNode[p.UID]
 	if !ok {
 		return
 	}
-	for i, np := range npm.nominatedPods[nnn] {
+	for i, np := range n.nominatedPods[nnn] {
 		if np.Pod.UID == p.UID {
-			npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn][:i], npm.nominatedPods[nnn][i+1:]...)
-			if len(npm.nominatedPods[nnn]) == 0 {
-				delete(npm.nominatedPods, nnn)
+			n.nominatedPods[nnn] = append(n.nominatedPods[nnn][:i], n.nominatedPods[nnn][i+1:]...)
+			if len(n.nominatedPods[nnn]) == 0 {
+				delete(n.nominatedPods, nnn)
 			}
 			break
 		}
 	}
-	delete(npm.nominatedPodToNode, p.UID)
+	delete(n.nominatedPodToNode, p.UID)
 }
 
 // UpdateNominatedPod updates the <oldPod> with <newPod>.
-func (npm *nominator) UpdateNominatedPod(oldPod *v1.Pod, newPodInfo *framework.PodInfo) {
-	npm.Lock()
-	defer npm.Unlock()
+func (n *nominator) UpdateNominatedPod(oldPod *v1.Pod, newPodInfo *framework.PodInfo) {
+	n.Lock()
+	defer n.Unlock()
 	// In some cases, an Update event with no "NominatedNode" present is received right
 	// after a node("NominatedNode") is reserved for this pod in memory.
 	// In this case, we need to keep reserving the NominatedNode when updating the pod pointer.
@@ -182,7 +182,7 @@ func (npm *nominator) UpdateNominatedPod(oldPod *v1.Pod, newPodInfo *framework.P
 	// (2) NominatedNode info is updated
 	// (3) NominatedNode info is removed
 	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.Pod) == "" {
-		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
+		if nnn, ok := n.nominatedPodToNode[oldPod.UID]; ok {
 			// This is the only case we should continue reserving the NominatedNode
 			nominatingInfo = &framework.NominatingInfo{
 				NominatingMode:    framework.ModeOverride,
@@ -192,36 +192,36 @@ func (npm *nominator) UpdateNominatedPod(oldPod *v1.Pod, newPodInfo *framework.P
 	}
 	// We update irrespective of the nominatedNodeName changed or not, to ensure
 	// that pod pointer is updated.
-	npm.delete(oldPod)
-	npm.add(newPodInfo, nominatingInfo)
+	n.delete(oldPod)
+	n.add(newPodInfo, nominatingInfo)
 }
 
 // DeleteNominatedPodIfExists deletes <pod> from nominatedPods.
-func (npm *nominator) DeleteNominatedPodIfExists(pod *v1.Pod) {
-	npm.Lock()
-	npm.delete(pod)
-	npm.Unlock()
+func (n *nominator) DeleteNominatedPodIfExists(pod *v1.Pod) {
+	n.Lock()
+	n.delete(pod)
+	n.Unlock()
 }
 
 // AddNominatedPod adds a pod to the nominated pods of the given node.
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominator) AddNominatedPod(pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
-	npm.Lock()
-	npm.add(pi, nominatingInfo)
-	npm.Unlock()
+func (n *nominator) AddNominatedPod(pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
+	n.Lock()
+	n.add(pi, nominatingInfo)
+	n.Unlock()
 }
 
 // NominatedPodsForNode returns a copy of pods that are nominated to run on the given node,
 // but they are waiting for other pods to be removed from the node.
-func (npm *nominator) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
-	npm.RLock()
-	defer npm.RUnlock()
+func (n *nominator) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
+	n.RLock()
+	defer n.RUnlock()
 	// Make a copy of the nominated Pods so the caller can mutate safely.
-	pods := make([]*framework.PodInfo, len(npm.nominatedPods[nodeName]))
+	pods := make([]*framework.PodInfo, len(n.nominatedPods[nodeName]))
 	for i := 0; i < len(pods); i++ {
-		pods[i] = npm.nominatedPods[nodeName][i].DeepCopy()
+		pods[i] = n.nominatedPods[nodeName][i].DeepCopy()
 	}
 	return pods
 }

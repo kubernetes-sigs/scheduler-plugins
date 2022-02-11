@@ -1,6 +1,6 @@
 module sigs.k8s.io/scheduler-plugins
 
-go 1.16
+go 1.17
 
 require (
 	github.com/google/go-cmp v0.5.5
