@@ -16,6 +16,7 @@ limitations under the License.
 
 package crossnodepreemption
 
+/*
 import (
 	v1 "k8s.io/api/core/v1"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
@@ -38,3 +39,4 @@ func (s *candidate) Victims() *extenderv1.Victims {
 func (s *candidate) Name() string {
 	return s.name
 }
+*/

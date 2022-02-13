@@ -29,7 +29,7 @@ import (
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutils "k8s.io/kubernetes/test/integration/util"
+	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 	"sigs.k8s.io/scheduler-plugins/test/util"
@@ -45,14 +45,16 @@ func TestQOSPlugin(t *testing.T) {
 		Disabled: []schedapi.Plugin{{Name: "*"}},
 	}
 
-	testCtx := util.InitTestSchedulerWithOptions(
+	testCtx := testutil.InitTestSchedulerWithOptions(
 		t,
-		testutils.InitTestAPIServer(t, "sched-qos", nil),
-		false,
+		testutil.InitTestAPIServer(t, "sched-qos", nil),
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{qos.Name: qos.New}),
 	)
-	defer testutils.CleanupTest(t, testCtx)
+	testutil.SyncInformerFactory(testCtx)
+	// Do not start the scheduler.
+	// go testCtx.Scheduler.Run(testCtx.Ctx)
+	defer testutil.CleanupTest(t, testCtx)
 
 	cs, ns := testCtx.ClientSet, testCtx.NS.Name
 	// Create a Node.

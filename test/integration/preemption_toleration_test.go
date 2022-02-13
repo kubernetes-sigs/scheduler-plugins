@@ -30,7 +30,7 @@ import (
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutils "k8s.io/kubernetes/test/integration/util"
+	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -175,16 +175,17 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 					MinCandidateNodesAbsolute:   100,
 				},
 			})
-			testCtx := util.InitTestSchedulerWithOptions(
+			testCtx := testutil.InitTestSchedulerWithOptions(
 				t,
-				testutils.InitTestAPIServer(t, "sched-preemptiontoleration", nil),
-				true,
+				testutil.InitTestAPIServer(t, "sched-preemptiontoleration", nil),
 				scheduler.WithProfiles(cfg.Profiles[0]),
 				scheduler.WithFrameworkOutOfTreeRegistry(registry),
 				scheduler.WithPodInitialBackoffSeconds(int64(0)),
 				scheduler.WithPodMaxBackoffSeconds(int64(0)),
 			)
-			defer testutils.CleanupTest(t, testCtx)
+			testutil.SyncInformerFactory(testCtx)
+			go testCtx.Scheduler.Run(testCtx.Ctx)
+			defer testutil.CleanupTest(t, testCtx)
 
 			cs, ns := testCtx.ClientSet, testCtx.NS.Name
 
@@ -247,7 +248,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 				// - the preemptor pod got scheduled successfully
 				// - the victim pod does not exist (preempted)
 				if err := wait.Poll(1*time.Second, 30*time.Second, func() (bool, error) {
-					return podScheduled(cs, ns, tt.preemptor.Name) && podNotExist(cs, ns, victimCandidate.Name), nil
+					return podScheduled(cs, ns, tt.preemptor.Name) && util.PodNotExist(cs, ns, victimCandidate.Name), nil
 				}); err != nil {
 					t.Fatalf("preemptor pod %q failed to be scheduled: %v", tt.preemptor.Name, err)
 				}

@@ -19,7 +19,6 @@ package v1beta2
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 	schedulerconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 )
 
@@ -56,7 +55,7 @@ type NodeResourcesAllocatableArgs struct {
 	// An example resource set might include "cpu" (millicores) and "memory" (bytes)
 	// with weights of 1<<20 and 1 respectfully. That would mean 1 MiB has equivalent
 	// weight as 1 millicore.
-	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
+	Resources []schedulerconfigv1beta2.ResourceSpec `json:"resources,omitempty"`
 
 	// Whether to prioritize nodes with least or most allocatable resources.
 	Mode ModeType `json:"mode,omitempty"`
@@ -130,8 +129,8 @@ const (
 )
 
 type ScoringStrategy struct {
-	Type      ScoringStrategyType            `json:"type,omitempty"`
-	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
+	Type      ScoringStrategyType                   `json:"type,omitempty"`
+	Resources []schedulerconfigv1beta2.ResourceSpec `json:"resources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

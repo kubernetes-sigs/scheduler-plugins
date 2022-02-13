@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1beta3
 
 import (
 	"strconv"
@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	schedulerconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 	"k8s.io/utils/pointer"
 )
 
@@ -58,7 +58,7 @@ func TestSchedulingDefaults(t *testing.T) {
 			name:   "empty config NodeResourcesAllocatableArgs",
 			config: &NodeResourcesAllocatableArgs{},
 			expect: &NodeResourcesAllocatableArgs{
-				Resources: []schedulerconfig.ResourceSpec{
+				Resources: []schedulerconfigv1beta3.ResourceSpec{
 					{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
 				},
 				Mode: Least,
@@ -67,13 +67,13 @@ func TestSchedulingDefaults(t *testing.T) {
 		{
 			name: "set non default NodeResourcesAllocatableArgs",
 			config: &NodeResourcesAllocatableArgs{
-				Resources: []schedulerconfig.ResourceSpec{
+				Resources: []schedulerconfigv1beta3.ResourceSpec{
 					{Name: "cpu", Weight: 1 << 10}, {Name: "memory", Weight: 2},
 				},
 				Mode: Most,
 			},
 			expect: &NodeResourcesAllocatableArgs{
-				Resources: []schedulerconfig.ResourceSpec{
+				Resources: []schedulerconfigv1beta3.ResourceSpec{
 					{Name: "cpu", Weight: 1 << 10}, {Name: "memory", Weight: 2},
 				},
 				Mode: Most,
@@ -140,11 +140,18 @@ func TestSchedulingDefaults(t *testing.T) {
 			name:   "empty config NodeResourceTopologyMatchArgs",
 			config: &NodeResourceTopologyMatchArgs{},
 			expect: &NodeResourceTopologyMatchArgs{
-				KubeConfigPath: pointer.StringPtr("/etc/kubernetes/scheduler.conf"),
 				ScoringStrategy: &ScoringStrategy{
 					Type:      LeastAllocated,
 					Resources: defaultResourceSpec,
 				},
+			},
+		},
+		{
+			name:   "empty config PreeemptionTolerationArgs",
+			config: &PreemptionTolerationArgs{},
+			expect: &PreemptionTolerationArgs{
+				MinCandidateNodesPercentage: pointer.Int32Ptr(10),
+				MinCandidateNodesAbsolute:   pointer.Int32Ptr(100),
 			},
 		},
 	}

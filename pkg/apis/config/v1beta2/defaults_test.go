@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	schedulerconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
 	"k8s.io/utils/pointer"
 )
 
@@ -58,7 +58,7 @@ func TestSchedulingDefaults(t *testing.T) {
 			name:   "empty config NodeResourcesAllocatableArgs",
 			config: &NodeResourcesAllocatableArgs{},
 			expect: &NodeResourcesAllocatableArgs{
-				Resources: []schedulerconfig.ResourceSpec{
+				Resources: []schedulerconfigv1beta2.ResourceSpec{
 					{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
 				},
 				Mode: Least,
@@ -67,13 +67,13 @@ func TestSchedulingDefaults(t *testing.T) {
 		{
 			name: "set non default NodeResourcesAllocatableArgs",
 			config: &NodeResourcesAllocatableArgs{
-				Resources: []schedulerconfig.ResourceSpec{
+				Resources: []schedulerconfigv1beta2.ResourceSpec{
 					{Name: "cpu", Weight: 1 << 10}, {Name: "memory", Weight: 2},
 				},
 				Mode: Most,
 			},
 			expect: &NodeResourcesAllocatableArgs{
-				Resources: []schedulerconfig.ResourceSpec{
+				Resources: []schedulerconfigv1beta2.ResourceSpec{
 					{Name: "cpu", Weight: 1 << 10}, {Name: "memory", Weight: 2},
 				},
 				Mode: Most,

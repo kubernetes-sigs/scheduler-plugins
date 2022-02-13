@@ -16,6 +16,7 @@ limitations under the License.
 
 package crossnodepreemption
 
+/*
 import (
 	"context"
 	"sort"
@@ -195,3 +196,4 @@ func TestFindCandidates(t *testing.T) {
 		})
 	}
 }
+*/

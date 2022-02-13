@@ -32,10 +32,10 @@ import (
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
-	dp "k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpreemption"
 	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
+	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
@@ -134,7 +134,7 @@ func TestPreFilter(t *testing.T) {
 
 			fwk, err := st.NewFramework(
 				registeredPlugins, "",
-				frameworkruntime.WithPodNominator(testutil.NewPodNominator()),
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
 
@@ -163,7 +163,7 @@ func TestPreFilter(t *testing.T) {
 	}
 }
 
-func TestFindCandidates(t *testing.T) {
+func TestDryRunPreemption(t *testing.T) {
 	res := map[v1.ResourceName]string{v1.ResourceMemory: "150"}
 	tests := []struct {
 		name          string
@@ -172,7 +172,7 @@ func TestFindCandidates(t *testing.T) {
 		nodes         []*v1.Node
 		nodesStatuses framework.NodeToStatusMap
 		elasticQuotas map[string]*ElasticQuotaInfo
-		want          []dp.Candidate
+		want          []preemption.Candidate
 	}{
 		{
 			name: "in-namespace preemption",
@@ -214,7 +214,7 @@ func TestFindCandidates(t *testing.T) {
 			nodesStatuses: framework.NodeToStatusMap{
 				"node-a": framework.NewStatus(framework.Unschedulable),
 			},
-			want: []dp.Candidate{
+			want: []preemption.Candidate{
 				&candidate{
 					victims: &extenderv1.Victims{
 						Pods: []*v1.Pod{
@@ -266,7 +266,7 @@ func TestFindCandidates(t *testing.T) {
 			nodesStatuses: framework.NodeToStatusMap{
 				"node-a": framework.NewStatus(framework.Unschedulable),
 			},
-			want: []dp.Candidate{
+			want: []preemption.Candidate{
 				&candidate{
 					victims: &extenderv1.Victims{
 						Pods: []*v1.Pod{
@@ -296,7 +296,7 @@ func TestFindCandidates(t *testing.T) {
 				"default-scheduler",
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
-				frameworkruntime.WithPodNominator(testutil.NewPodNominator()),
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.pods, tt.nodes)),
 				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(cs, 0)),
 			)
@@ -325,15 +325,22 @@ func TestFindCandidates(t *testing.T) {
 			state.Write(preFilterStateKey, prefilterStatue)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
 
-			c := CapacityScheduling{
-				fh:        fwk,
-				podLister: fwk.SharedInformerFactory().Core().V1().Pods().Lister(),
-				pdbLister: getPDBLister(fwk.SharedInformerFactory()),
+			pe := preemption.Evaluator{
+				PluginName: Name,
+				Handler:    fwk,
+				PodLister:  fwk.SharedInformerFactory().Core().V1().Pods().Lister(),
+				PdbLister:  getPDBLister(fwk.SharedInformerFactory()),
+				State:      state,
+				Interface: &preemptor{
+					fh:    fwk,
+					state: state,
+				},
 			}
 
-			got, status := c.FindCandidates(ctx, cs, state, tt.pod, tt.nodesStatuses)
-			if !status.IsSuccess() {
-				t.Fatalf("unexpected error during FindCandidates(): %v", status)
+			nodeInfos, _ := fwk.SnapshotSharedLister().NodeInfos().List()
+			got, _, err := pe.DryRunPreemption(ctx, tt.pod, nodeInfos, nil, 0, int32(len(nodeInfos)))
+			if err != nil {
+				t.Fatalf("unexpected error during DryRunPreemption(): %v", err)
 			}
 
 			// Sort the values (inner victims) and the candidate itself (by its NominatedNodeName).
@@ -346,8 +353,17 @@ func TestFindCandidates(t *testing.T) {
 			sort.Slice(got, func(i, j int) bool {
 				return got[i].Name() < got[j].Name()
 			})
-			if diff := gocmp.Diff(tt.want, got, gocmp.AllowUnexported(candidate{})); diff != "" {
-				t.Errorf("Unexpected candidates (-want, +got): %s", diff)
+
+			if len(got) != len(tt.want) {
+				t.Fatalf("Unexpected candidate length: want %v, but bot %v", len(tt.want), len(got))
+			}
+			for i, c := range got {
+				if diff := gocmp.Diff(c.Victims(), got[i].Victims()); diff != "" {
+					t.Errorf("Unexpected victims at index %v (-want, +got): %s", i, diff)
+				}
+				if diff := gocmp.Diff(c.Name(), got[i].Name()); diff != "" {
+					t.Errorf("Unexpected victims at index %v (-want, +got): %s", i, diff)
+				}
 			}
 		})
 	}

@@ -42,6 +42,7 @@ func NewFramework(fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profi
 // NewDefaultSchedulerComponentConfig returns a default scheduler cc object.
 // We need this function due to k/k#102796 - default profile needs to built manually.
 func NewDefaultSchedulerComponentConfig() (config.KubeSchedulerConfiguration, error) {
+	// TODO(Huang-Wei): use v1beta3 after we fix the upstream bug k/k#108083.
 	var versionedCfg v1beta2.KubeSchedulerConfiguration
 	scheme.Scheme.Default(&versionedCfg)
 	cfg := config.KubeSchedulerConfiguration{}

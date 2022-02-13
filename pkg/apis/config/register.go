@@ -19,7 +19,7 @@ package config
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	schedscheme "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
 // GroupName is the group name used in this package
@@ -29,7 +29,7 @@ const GroupName = "kubescheduler.config.k8s.io"
 var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: runtime.APIVersionInternal}
 
 var (
-	localSchemeBuilder = &schedscheme.SchemeBuilder
+	localSchemeBuilder = &schedconfig.SchemeBuilder
 	// AddToScheme is a global function that registers this API group & version to a scheme
 	AddToScheme = localSchemeBuilder.AddToScheme
 )

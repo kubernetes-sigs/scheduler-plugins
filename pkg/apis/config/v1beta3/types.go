@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2022 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1beta3
 
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
+	schedulerconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -32,10 +32,6 @@ type CoschedulingArgs struct {
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
 	DeniedPGExpirationTimeSeconds *int64 `json:"deniedPGExpirationTimeSeconds,omitempty"`
-	// KubeMaster is the url of api-server
-	KubeMaster *string `json:"kubeMaster,omitempty"`
-	// KubeConfigPath for scheduler
-	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }
 
 // ModeType is a type "string".
@@ -59,20 +55,10 @@ type NodeResourcesAllocatableArgs struct {
 	// An example resource set might include "cpu" (millicores) and "memory" (bytes)
 	// with weights of 1<<20 and 1 respectfully. That would mean 1 MiB has equivalent
 	// weight as 1 millicore.
-	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
+	Resources []schedulerconfigv1beta3.ResourceSpec `json:"resources,omitempty"`
 
 	// Whether to prioritize nodes with least or most allocatable resources.
 	Mode ModeType `json:"mode,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// CapacitySchedulingArgs defines the scheduling parameters for CapacityScheduling plugin.
-type CapacitySchedulingArgs struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// KubeConfigPath is the path of kubeconfig.
-	KubeConfigPath *string `json:"kubeConfigPath,omitempty"`
 }
 
 // MetricProviderType is a "string" type.
@@ -143,8 +129,8 @@ const (
 )
 
 type ScoringStrategy struct {
-	Type      ScoringStrategyType            `json:"type,omitempty"`
-	Resources []schedulerconfig.ResourceSpec `json:"resources,omitempty"`
+	Type      ScoringStrategyType                   `json:"type,omitempty"`
+	Resources []schedulerconfigv1beta3.ResourceSpec `json:"resources,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -154,7 +140,11 @@ type ScoringStrategy struct {
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	KubeConfigPath  *string          `json:"kubeconfigpath,omitempty"`
-	MasterOverride  *string          `json:"masteroverride,omitempty"`
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// PreemptionTolerationArgs reuses DefaultPluginArgs.
+type PreemptionTolerationArgs schedulerconfigv1beta3.DefaultPreemptionArgs

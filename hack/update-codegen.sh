@@ -26,15 +26,7 @@ bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
   sigs.k8s.io/scheduler-plugins/pkg/generated \
   sigs.k8s.io/scheduler-plugins/pkg/apis \
   sigs.k8s.io/scheduler-plugins/pkg/apis \
-  "config:v1beta1" \
-  --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
-
-bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
-  "deepcopy,conversion" \
-  sigs.k8s.io/scheduler-plugins/pkg/generated \
-  sigs.k8s.io/scheduler-plugins/pkg/apis \
-  sigs.k8s.io/scheduler-plugins/pkg/apis \
-  "config:v1beta2" \
+  "config:v1beta2,v1beta3" \
   --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
 
 bash "${CODEGEN_PKG}"/generate-groups.sh \

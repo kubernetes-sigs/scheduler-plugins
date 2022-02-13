@@ -23,11 +23,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	schedulerconfig "k8s.io/kube-scheduler/config/v1"
 	schedulerconfigv1beta2 "k8s.io/kube-scheduler/config/v1beta2"
-
 	k8sschedulerconfigv1beta2 "k8s.io/kubernetes/pkg/scheduler/apis/config/v1beta2"
-	pluginConfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
 )
 
 var (
@@ -41,7 +38,7 @@ var (
 	// The base unit for CPU is millicore, while the base using for memory is a byte.
 	// The default CPU weight is 1<<20 and default memory weight is 1. That means a millicore
 	// has a weighted score equivalent to 1 MiB.
-	defaultNodeResourcesAllocatableResourcesToWeightMap = []schedulerconfig.ResourceSpec{
+	defaultNodeResourcesAllocatableResourcesToWeightMap = []schedulerconfigv1beta2.ResourceSpec{
 		{Name: "cpu", Weight: 1 << 20}, {Name: "memory", Weight: 1},
 	}
 
@@ -66,9 +63,9 @@ var (
 	// DefaultSafeVarianceSensitivity is one
 	DefaultSafeVarianceSensitivity = 1.0
 	// DefaultMetricProviderType is the Kubernetes metrics server
-	DefaultMetricProviderType = pluginConfig.KubernetesMetricsServer
+	DefaultMetricProviderType = KubernetesMetricsServer
 
-	defaultResourceSpec = []schedulerconfig.ResourceSpec{
+	defaultResourceSpec = []schedulerconfigv1beta2.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}

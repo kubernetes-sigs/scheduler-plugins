@@ -90,7 +90,6 @@ API rule violation: list_type_missing,k8s.io/api/core/v1,EphemeralContainerCommo
 API rule violation: list_type_missing,k8s.io/api/core/v1,EphemeralContainerCommon,Command
 API rule violation: list_type_missing,k8s.io/api/core/v1,EphemeralContainerCommon,Env
 API rule violation: list_type_missing,k8s.io/api/core/v1,EphemeralContainerCommon,EnvFrom
-API rule violation: list_type_missing,k8s.io/api/core/v1,EphemeralContainerCommon,Ports
 API rule violation: list_type_missing,k8s.io/api/core/v1,EphemeralContainerCommon,VolumeDevices
 API rule violation: list_type_missing,k8s.io/api/core/v1,EphemeralContainerCommon,VolumeMounts
 API rule violation: list_type_missing,k8s.io/api/core/v1,ExecAction,Command
@@ -361,17 +360,12 @@ API rule violation: list_type_missing,k8s.io/apiserver/pkg/apis/audit/v1beta1,Po
 API rule violation: list_type_missing,k8s.io/apiserver/pkg/apis/audit/v1beta1,PolicyRule,UserGroups
 API rule violation: list_type_missing,k8s.io/apiserver/pkg/apis/audit/v1beta1,PolicyRule,Users
 API rule violation: list_type_missing,k8s.io/apiserver/pkg/apis/audit/v1beta1,PolicyRule,Verbs
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,ExtenderTLSConfig,CAData
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,ExtenderTLSConfig,CertData
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,ExtenderTLSConfig,KeyData
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,LabelsPresence,Labels
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,LegacyExtender,ManagedResources
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,Policy,Extenders
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,Policy,Predicates
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,Policy,Priorities
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,RequestedToCapacityRatioArguments,Resources
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,RequestedToCapacityRatioArguments,Shape
-API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1,ServiceAffinity,Labels
+API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1beta2,ExtenderTLSConfig,CAData
+API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1beta2,ExtenderTLSConfig,CertData
+API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1beta2,ExtenderTLSConfig,KeyData
+API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1beta3,ExtenderTLSConfig,CAData
+API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1beta3,ExtenderTLSConfig,CertData
+API rule violation: list_type_missing,k8s.io/kube-scheduler/config/v1beta3,ExtenderTLSConfig,KeyData
 API rule violation: list_type_missing,k8s.io/metrics/pkg/apis/metrics/v1alpha1,PodMetrics,Containers
 API rule violation: list_type_missing,k8s.io/metrics/pkg/apis/metrics/v1beta1,PodMetrics,Containers
 API rule violation: names_match,k8s.io/api/authorization/v1beta1,SubjectAccessReviewSpec,Groups
@@ -410,6 +404,7 @@ API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiexten
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1,JSONSchemaProps,XListType
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1,JSONSchemaProps,XMapType
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1,JSONSchemaProps,XPreserveUnknownFields
+API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1,JSONSchemaProps,XValidations
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1,JSONSchemaPropsOrArray,JSONSchemas
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1,JSONSchemaPropsOrArray,Schema
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1,JSONSchemaPropsOrBool,Allows
@@ -426,6 +421,7 @@ API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiexten
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1,JSONSchemaProps,XListType
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1,JSONSchemaProps,XMapType
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1,JSONSchemaProps,XPreserveUnknownFields
+API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1,JSONSchemaProps,XValidations
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1,JSONSchemaPropsOrArray,JSONSchemas
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1,JSONSchemaPropsOrArray,Schema
 API rule violation: names_match,k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1,JSONSchemaPropsOrBool,Allows
@@ -459,4 +455,3 @@ API rule violation: names_match,k8s.io/client-go/pkg/apis/clientauthentication/v
 API rule violation: names_match,k8s.io/client-go/pkg/apis/clientauthentication/v1beta1,Cluster,InsecureSkipTLSVerify
 API rule violation: names_match,k8s.io/client-go/pkg/apis/clientauthentication/v1beta1,Cluster,ProxyURL
 API rule violation: names_match,k8s.io/client-go/pkg/apis/clientauthentication/v1beta1,Cluster,TLSServerName
-API rule violation: names_match,k8s.io/kube-scheduler/config/v1,LegacyExtender,EnableHTTPS
