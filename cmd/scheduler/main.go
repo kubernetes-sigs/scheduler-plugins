@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 
 	// Ensure scheme package is initialized.
-	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
+	_ "sigs.k8s.io/scheduler-plugins/apis/config/scheme"
 )
 
 func main() {

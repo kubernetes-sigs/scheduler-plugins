@@ -18,20 +18,32 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
+SCRIPT_ROOT=$(dirname "${BASH_SOURCE[@]}")/..
+
+TOOLS_DIR=$(realpath ./hack/tools)
+TOOLS_BIN_DIR="${TOOLS_DIR}/bin"
+GO_INSTALL=$(realpath ./hack/go-install.sh)
+CONTROLLER_GEN_VER=v0.6.2
+CONTROLLER_GEN_BIN=controller-gen
+CONTROLLER_GEN=${TOOLS_BIN_DIR}/${CONTROLLER_GEN_BIN}-${CONTROLLER_GEN_VER}
+# Need v1 to support defaults in CRDs, unfortunately limiting us to k8s 1.16+
+CRD_OPTIONS="crd:crdVersions=v1"
+
+GOBIN=${TOOLS_BIN_DIR} ${GO_INSTALL} sigs.k8s.io/controller-tools/cmd/controller-gen ${CONTROLLER_GEN_BIN} ${CONTROLLER_GEN_VER}
+
 CODEGEN_PKG=${CODEGEN_PKG:-$(cd "${SCRIPT_ROOT}"; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
 
 bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
-  "deepcopy,conversion" \
+  "deepcopy,conversion,defaulter" \
   sigs.k8s.io/scheduler-plugins/pkg/generated \
-  sigs.k8s.io/scheduler-plugins/pkg/apis \
-  sigs.k8s.io/scheduler-plugins/pkg/apis \
+  sigs.k8s.io/scheduler-plugins/apis \
+  sigs.k8s.io/scheduler-plugins/apis \
   "config:v1beta2,v1beta3" \
   --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
 
-bash "${CODEGEN_PKG}"/generate-groups.sh \
-  all \
-  sigs.k8s.io/scheduler-plugins/pkg/generated \
-  sigs.k8s.io/scheduler-plugins/pkg/apis \
-  "scheduling:v1alpha1" \
-  --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
+
+${CONTROLLER_GEN} object:headerFile="hack/boilerplate/boilerplate.generatego.txt" \
+paths="./apis/scheduling/..."
+
+${CONTROLLER_GEN} ${CRD_OPTIONS} rbac:roleName=work-manager webhook \
+paths="./apis/scheduling/..." output:crd:artifacts:config=config/crd/bases
