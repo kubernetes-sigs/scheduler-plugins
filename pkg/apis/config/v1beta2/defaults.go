@@ -62,8 +62,12 @@ var (
 	DefaultSafeVarianceMargin = 1.0
 	// DefaultSafeVarianceSensitivity is one
 	DefaultSafeVarianceSensitivity = 1.0
+
+	// Defaults for MetricProviderSpec
 	// DefaultMetricProviderType is the Kubernetes metrics server
 	DefaultMetricProviderType = KubernetesMetricsServer
+	// DefaultInsecureSkipVerify is whether to skip the certificate verification
+	DefaultInsecureSkipVerify = true
 
 	defaultResourceSpec = []schedulerconfigv1beta2.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1},
@@ -107,6 +111,9 @@ func SetDefaultTargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
 		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
 	}
+	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
+		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
+	}
 }
 
 // SetDefaultLoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
@@ -119,6 +126,9 @@ func SetDefaultLoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingAr
 	}
 	if args.SafeVarianceSensitivity == nil || *args.SafeVarianceSensitivity < 0 {
 		args.SafeVarianceSensitivity = &DefaultSafeVarianceSensitivity
+	}
+	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
+		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
 	}
 }
 

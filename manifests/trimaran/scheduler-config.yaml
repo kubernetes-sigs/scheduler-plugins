@@ -13,3 +13,11 @@ profiles:
       - name: NodeResourcesLeastAllocated
       enabled:
       - name: TargetLoadPacking
+  pluginConfig:
+    - name: TargetLoadPacking
+      args:
+        defaultRequestsMultiplier: "1"
+        targetUtilization: 40
+        metricProvider:
+          type: Prometheus
+          address: "http://replace_me_with_prometheus_server:9090"
