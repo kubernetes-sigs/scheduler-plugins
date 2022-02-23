@@ -18,27 +18,20 @@ package integration
 
 import (
 	"context"
-	"io/ioutil"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	apiservertesting "k8s.io/kubernetes/cmd/kube-apiserver/app/testing"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testfwk "k8s.io/kubernetes/test/integration/framework"
-	testutil "k8s.io/kubernetes/test/integration/util"
-	"sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -48,29 +41,13 @@ import (
 )
 
 func TestCapacityScheduling(t *testing.T) {
-	t.Log("Creating API Server...")
-	// Start API Server with apiextensions supported.
-	server := apiservertesting.StartTestServerOrDie(
-		t, apiservertesting.NewDefaultTestServerOptions(),
-		[]string{"--disable-admission-plugins=ServiceAccount,TaintNodesByCondition,Priority", "--runtime-config=api/all=true"},
-		testfwk.SharedEtcd(),
-	)
-	testCtx := &testutil.TestContext{}
+	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
-	testCtx.CloseFn = func() { server.TearDownFn() }
 
-	t.Log("Creating CRD...")
-	apiExtensionClient := apiextensionsclient.NewForConfigOrDie(server.ClientConfig)
-	ctx := testCtx.Ctx
-	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(testCtx.Ctx, makeElasticQuotaCRD(), metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	server.ClientConfig.ContentType = "application/json"
-	testCtx.KubeConfig = server.ClientConfig
-	cs := kubernetes.NewForConfigOrDie(testCtx.KubeConfig)
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
-	extClient := versioned.NewForConfigOrDie(testCtx.KubeConfig)
+	testCtx.KubeConfig = globalKubeConfig
 
 	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
@@ -99,16 +76,16 @@ func TestCapacityScheduling(t *testing.T) {
 	}
 	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: capacityscheduling.Name})
 
-	testCtx = testutil.InitTestSchedulerWithOptions(
+	testCtx = initTestSchedulerWithOptions(
 		t,
 		testCtx,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{capacityscheduling.Name: capacityscheduling.New}),
 	)
-	testutil.SyncInformerFactory(testCtx)
+	syncInformerFactory(testCtx)
 	go testCtx.Scheduler.Run(testCtx.Ctx)
 	t.Log("Init scheduler success")
-	defer testutil.CleanupTest(t, testCtx)
+	defer cleanupTest(t, testCtx)
 
 	for _, nodeName := range []string{"fake-node-1", "fake-node-2"} {
 		node := st.MakeNode().Name(nodeName).Label("node", nodeName).Obj()
@@ -128,11 +105,7 @@ func TestCapacityScheduling(t *testing.T) {
 	}
 
 	for _, ns := range []string{"ns1", "ns2", "ns3"} {
-		_, err := testCtx.ClientSet.CoreV1().Namespaces().Create(testCtx.Ctx, &v1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{})
-		if err != nil && !errors.IsAlreadyExists(err) {
-			t.Fatalf("Failed to create integration test ns: %v", err)
-		}
+		createNamespace(t, testCtx, ns)
 	}
 
 	for _, tt := range []struct {
@@ -548,11 +521,11 @@ func TestCapacityScheduling(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			defer cleanupElasticQuotas(ctx, extClient, tt.elasticQuotas)
-			defer testutil.CleanupPods(cs, t, tt.existPods)
-			defer testutil.CleanupPods(cs, t, tt.addPods)
+			defer cleanupElasticQuotas(testCtx.Ctx, extClient, tt.elasticQuotas)
+			defer cleanupPods(t, testCtx, tt.existPods)
+			defer cleanupPods(t, testCtx, tt.addPods)
 
-			if err := createElasticQuotas(ctx, extClient, tt.elasticQuotas); err != nil {
+			if err := createElasticQuotas(testCtx.Ctx, extClient, tt.elasticQuotas); err != nil {
 				t.Fatal(err)
 			}
 
@@ -595,21 +568,6 @@ func TestCapacityScheduling(t *testing.T) {
 			t.Logf("Case %v finished", tt.name)
 		})
 	}
-}
-
-func makeElasticQuotaCRD() *apiextensionsv1.CustomResourceDefinition {
-	content, err := ioutil.ReadFile("../../manifests/capacityscheduling/crd.yaml")
-	if err != nil {
-		return &apiextensionsv1.CustomResourceDefinition{}
-	}
-
-	elasticquotasCRD := &apiextensionsv1.CustomResourceDefinition{}
-	err = yaml.Unmarshal(content, elasticquotasCRD)
-	if err != nil {
-		return &apiextensionsv1.CustomResourceDefinition{}
-	}
-
-	return elasticquotasCRD
 }
 
 func createElasticQuotas(ctx context.Context, client versioned.Interface, elasticQuotas []*v1alpha1.ElasticQuota) error {

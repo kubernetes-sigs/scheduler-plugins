@@ -23,8 +23,6 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,13 +30,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	apiservertesting "k8s.io/kubernetes/cmd/kube-apiserver/app/testing"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testfwk "k8s.io/kubernetes/test/integration/framework"
-	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -50,29 +45,13 @@ import (
 )
 
 func TestCoschedulingPlugin(t *testing.T) {
-	t.Log("Creating API Server...")
-	// Start API Server with apiextensions supported.
-	server := apiservertesting.StartTestServerOrDie(
-		t, apiservertesting.NewDefaultTestServerOptions(),
-		[]string{"--disable-admission-plugins=ServiceAccount,TaintNodesByCondition,Priority", "--runtime-config=api/all=true"},
-		testfwk.SharedEtcd(),
-	)
-	testCtx := &testutil.TestContext{}
+	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
-	testCtx.CloseFn = func() { server.TearDownFn() }
 
-	t.Log("Creating CRD...")
-	apiExtensionClient := apiextensionsclient.NewForConfigOrDie(server.ClientConfig)
-	ctx := testCtx.Ctx
-	if _, err := apiExtensionClient.ApiextensionsV1().CustomResourceDefinitions().Create(ctx, makePodGroupCRD(), metav1.CreateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-
-	server.ClientConfig.ContentType = "application/json"
-	testCtx.KubeConfig = server.ClientConfig
-	cs := kubernetes.NewForConfigOrDie(testCtx.KubeConfig)
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
-	extClient := versioned.NewForConfigOrDie(testCtx.KubeConfig)
+	testCtx.KubeConfig = globalKubeConfig
 
 	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
@@ -109,22 +88,19 @@ func TestCoschedulingPlugin(t *testing.T) {
 		},
 	})
 
-	ns, err := cs.CoreV1().Namespaces().Create(ctx, &v1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))}}, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		t.Fatalf("Failed to create integration test ns: %v", err)
-	}
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
 
-	testCtx = testutil.InitTestSchedulerWithOptions(
+	testCtx = initTestSchedulerWithOptions(
 		t,
 		testCtx,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{coscheduling.Name: coscheduling.New}),
 	)
-	testutil.SyncInformerFactory(testCtx)
+	syncInformerFactory(testCtx)
 	go testCtx.Scheduler.Run(testCtx.Ctx)
 	t.Log("Init scheduler success")
-	defer testutil.CleanupTest(t, testCtx)
+	defer cleanupTest(t, testCtx)
 
 	// Create a Node.
 	nodeName := "fake-node"
@@ -137,7 +113,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 		v1.ResourcePods:   *resource.NewQuantity(32, resource.DecimalSI),
 		v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
 	}
-	node, err = cs.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
+	node, err = cs.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create Node %q: %v", nodeName, err)
 	}
@@ -151,234 +127,234 @@ func TestCoschedulingPlugin(t *testing.T) {
 		{
 			name: "equal priority, sequentially pg1 meet min and pg2 not meet min",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t1-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t1-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t1-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t1-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t1-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t1-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t1-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-2").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg1-1", ns.Name, 3, nil, nil),
-				util.MakePG("pg1-2", ns.Name, 4, nil, nil),
+				util.MakePG("pg1-1", ns, 3, nil, nil),
+				util.MakePG("pg1-2", ns, 4, nil, nil),
 			},
 			expectedPods: []string{"t1-p1-1", "t1-p1-2", "t1-p1-3"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 meet min and pg2 not meet min",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t2-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t2-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg2-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t2-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t2-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg2-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t2-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t2-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg2-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t2-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t2-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg2-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t2-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t2-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg2-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t2-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t2-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg2-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t2-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t2-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg2-2").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg2-1", ns.Name, 3, nil, nil),
-				util.MakePG("pg2-2", ns.Name, 4, nil, nil),
+				util.MakePG("pg2-1", ns, 3, nil, nil),
+				util.MakePG("pg2-2", ns, 4, nil, nil),
 			},
 			expectedPods: []string{"t2-p1-1", "t2-p1-2", "t2-p1-3"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 not meet min and 3 regular pods",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t3-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t3-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg3-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t3-p2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t3-p2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t3-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t3-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg3-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t3-p3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t3-p3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t3-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t3-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg3-1").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg3-1", ns.Name, 4, nil, nil),
+				util.MakePG("pg3-1", ns, 4, nil, nil),
 			},
 			expectedPods: []string{"t3-p2", "t3-p3"},
 		},
 		{
 			name: "different priority, sequentially pg1 meet min and pg2 meet min",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t4-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t4-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg4-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t4-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t4-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg4-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t4-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t4-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg4-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t4-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t4-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					highPriority).Label(v1alpha1.PodGroupLabel, "pg4-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t4-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t4-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					highPriority).Label(v1alpha1.PodGroupLabel, "pg4-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t4-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t4-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					highPriority).Label(v1alpha1.PodGroupLabel, "pg4-2").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg4-1", ns.Name, 3, nil, nil),
-				util.MakePG("pg4-2", ns.Name, 3, nil, nil),
+				util.MakePG("pg4-1", ns, 3, nil, nil),
+				util.MakePG("pg4-2", ns, 3, nil, nil),
 			},
 			expectedPods: []string{"t4-p2-1", "t4-p2-2", "t4-p2-3"},
 		},
 		{
 			name: "different priority, not sequentially pg1 meet min and pg2 meet min",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t5-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t5-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg5-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t5-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t5-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					highPriority).Label(v1alpha1.PodGroupLabel, "pg5-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t5-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t5-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg5-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t5-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t5-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					highPriority).Label(v1alpha1.PodGroupLabel, "pg5-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t5-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t5-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg5-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t5-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t5-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					highPriority).Label(v1alpha1.PodGroupLabel, "pg5-2").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg5-1", ns.Name, 3, nil, nil),
-				util.MakePG("pg5-2", ns.Name, 3, nil, nil),
+				util.MakePG("pg5-1", ns, 3, nil, nil),
+				util.MakePG("pg5-2", ns, 3, nil, nil),
 			},
 			expectedPods: []string{"t5-p2-1", "t5-p2-2", "t5-p2-3"},
 		},
 		{
 			name: "different priority, not sequentially pg1 meet min and 3 regular pods",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t6-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t6-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg6-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t6-p2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t6-p2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					highPriority).ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t6-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t6-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg6-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t6-p3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t6-p3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					highPriority).ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t6-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t6-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg6-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t6-p4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t6-p4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					highPriority).ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg6-1", ns.Name, 3, nil, nil),
+				util.MakePG("pg6-1", ns, 3, nil, nil),
 			},
 			expectedPods: []string{"t6-p2", "t6-p3", "t6-p4"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 meet min and p2 p3 not meet min",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p3-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p3-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-3").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p3-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p3-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-3").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p3-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p3-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-3").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t7-p3-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t7-p3-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg7-3").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg7-1", ns.Name, 3, nil, nil),
-				util.MakePG("pg7-2", ns.Name, 4, nil, nil),
-				util.MakePG("pg7-3", ns.Name, 4, nil, nil),
+				util.MakePG("pg7-1", ns, 3, nil, nil),
+				util.MakePG("pg7-2", ns, 4, nil, nil),
+				util.MakePG("pg7-3", ns, 4, nil, nil),
 			},
 			expectedPods: []string{"t7-p1-1", "t7-p1-2", "t7-p1-3"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 meet min and p2 p3 not meet min, pgs have min resources",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p3-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p3-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p3-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t8-p3-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t8-p3-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg8-3").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg8-1", ns.Name, 3, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("150")}),
-				util.MakePG("pg8-2", ns.Name, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
-				util.MakePG("pg8-3", ns.Name, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
+				util.MakePG("pg8-1", ns, 3, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("150")}),
+				util.MakePG("pg8-2", ns, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
+				util.MakePG("pg8-3", ns, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
 			},
 			expectedPods: []string{"t8-p1-1", "t8-p1-2", "t8-p1-3"},
 		},
 		{
 			name: "equal priority, not sequentially pg1 meet min and pg2 not meet min, pgs have min resources",
 			pods: []*v1.Pod{
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t9-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg9-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t9-p2-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t9-p1-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg9-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t9-p2-2").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t9-p1-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg9-1").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t9-p2-3").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
-				WithContainer(st.MakePod().Namespace(ns.Name).Name("t9-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
+				WithContainer(st.MakePod().Namespace(ns).Name("t9-p2-4").Req(map[v1.ResourceName]string{v1.ResourceMemory: "100"}).Priority(
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg9-2").ZeroTerminationGracePeriod().Obj(), pause),
 			},
 			podGroups: []*v1alpha1.PodGroup{
-				util.MakePG("pg9-1", ns.Name, 3, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("150")}),
-				util.MakePG("pg9-2", ns.Name, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
+				util.MakePG("pg9-1", ns, 3, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("150")}),
+				util.MakePG("pg9-2", ns, 4, nil, &v1.ResourceList{v1.ResourceMemory: resource.MustParse("400")}),
 			},
 			expectedPods: []string{"t9-p1-1", "t9-p1-2", "t9-p1-3"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start-coscheduling-test %v", tt.name)
-			defer cleanupPodGroups(ctx, extClient, tt.podGroups)
+			defer cleanupPodGroups(testCtx.Ctx, extClient, tt.podGroups)
 			// create pod group
-			if err := createPodGroups(ctx, extClient, tt.podGroups); err != nil {
+			if err := createPodGroups(testCtx.Ctx, extClient, tt.podGroups); err != nil {
 				t.Fatal(err)
 			}
-			defer testutil.CleanupPods(cs, t, tt.pods)
+			defer cleanupPods(t, testCtx, tt.pods)
 			// Create Pods, we will expect them to be scheduled in a reversed order.
 			for i := range tt.pods {
 				klog.InfoS("Creating pod ", "podName", tt.pods[i].Name)
@@ -388,7 +364,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 			}
 			err = wait.Poll(1*time.Second, 120*time.Second, func() (bool, error) {
 				for _, v := range tt.expectedPods {
-					if !podScheduled(cs, ns.Name, v) {
+					if !podScheduled(cs, ns, v) {
 						return false, nil
 					}
 				}
@@ -399,52 +375,6 @@ func TestCoschedulingPlugin(t *testing.T) {
 			}
 			t.Logf("Case %v finished", tt.name)
 		})
-	}
-}
-
-func makePodGroupCRD() *apiextensionsv1.CustomResourceDefinition {
-	var min = 1.0
-	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "podgroups.scheduling.sigs.k8s.io",
-			Annotations: map[string]string{
-				"api-approved.kubernetes.io": "https://github.com/kubernetes-sigs/scheduler-plugins/pull/52",
-			},
-		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: scheduling.GroupName,
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{Name: "v1alpha1", Served: true, Storage: true,
-				Schema: &apiextensionsv1.CustomResourceValidation{
-					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-						Type: "object",
-						Properties: map[string]apiextensionsv1.JSONSchemaProps{
-							"spec": {
-								Type: "object",
-								Properties: map[string]apiextensionsv1.JSONSchemaProps{
-									"minMember": {
-										Type:    "integer",
-										Minimum: &min,
-									},
-									"minResources": {
-										Type: "object",
-										AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{
-											Schema: &apiextensionsv1.JSONSchemaProps{
-												Type: "string",
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				}}},
-			Scope: apiextensionsv1.NamespaceScoped,
-			Names: apiextensionsv1.CustomResourceDefinitionNames{
-				Kind:       "PodGroup",
-				Plural:     "podgroups",
-				ShortNames: []string{"pg", "pgs"},
-			},
-		},
 	}
 }
 
@@ -466,6 +396,6 @@ func createPodGroups(ctx context.Context, client versioned.Interface, podGroups 
 
 func cleanupPodGroups(ctx context.Context, client versioned.Interface, podGroups []*v1alpha1.PodGroup) {
 	for _, pg := range podGroups {
-		client.SchedulingV1alpha1().PodGroups(pg.Namespace).Delete(ctx, pg.Name, metav1.DeleteOptions{})
+		_ = client.SchedulingV1alpha1().PodGroups(pg.Namespace).Delete(ctx, pg.Name, metav1.DeleteOptions{})
 	}
 }

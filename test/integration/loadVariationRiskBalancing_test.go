@@ -19,6 +19,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,12 +30,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -44,6 +46,13 @@ import (
 )
 
 func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
+	testCtx := &testContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	testCtx.ClientSet = cs
+	testCtx.KubeConfig = globalKubeConfig
+
 	metrics := watcher.WatcherMetrics{
 		Window: watcher.Window{},
 		Data: watcher.Data{
@@ -105,17 +114,18 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 		},
 	})
 
-	testCtx := testutil.InitTestSchedulerWithOptions(
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
+
+	testCtx = initTestSchedulerWithOptions(
 		t,
-		testutil.InitTestAPIServer(t, "sched-trimaran", nil),
+		testCtx,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{loadvariationriskbalancing.Name: loadvariationriskbalancing.New}),
 	)
-	testutil.SyncInformerFactory(testCtx)
+	syncInformerFactory(testCtx)
 	go testCtx.Scheduler.Run(testCtx.Ctx)
-	defer testutil.CleanupTest(t, testCtx)
-
-	cs, ns := testCtx.ClientSet, testCtx.NS.Name
+	defer cleanupTest(t, testCtx)
 
 	var nodes []*v1.Node
 	nodeNames := []string{"node-1", "node-2", "node-3"}
@@ -125,7 +135,7 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 	}
 	for i := 0; i < len(nodeNames); i++ {
 		node := st.MakeNode().Name(nodeNames[i]).Label("node", nodeNames[i]).Capacity(capacity).Obj()
-		node, err := cs.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+		node, err := cs.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{})
 		assert.Nil(t, err)
 		nodes = append(nodes, node)
 	}
@@ -146,11 +156,12 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 
 	for i := range newPods {
 		t.Logf("Creating Pod %q", newPods[i].Name)
-		_, err := cs.CoreV1().Pods(ns).Create(context.TODO(), newPods[i], metav1.CreateOptions{})
+		_, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, newPods[i], metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create Pod %q: %v", newPods[i].Name, err)
 		}
 	}
+	defer cleanupPods(t, testCtx, newPods)
 
 	expected := [2]string{nodeNames[2], nodeNames[2]}
 	for i := range newPods {
@@ -159,7 +170,7 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 		})
 		assert.Nil(t, err)
 
-		pod, err := cs.CoreV1().Pods(ns).Get(context.TODO(), newPods[i].Name, metav1.GetOptions{})
+		pod, err := cs.CoreV1().Pods(ns).Get(testCtx.Ctx, newPods[i].Name, metav1.GetOptions{})
 		assert.Nil(t, err)
 		assert.Equal(t, expected[i], pod.Spec.NodeName)
 	}

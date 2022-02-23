@@ -17,11 +17,33 @@ limitations under the License.
 package integration
 
 import (
+	"log"
+	"path/filepath"
 	"testing"
 
-	"k8s.io/kubernetes/test/integration/framework"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
+// globalKubeConfig is the kubeConfig from envtest that is used to connect to the testing API server.
+var globalKubeConfig *rest.Config
+
 func TestMain(m *testing.M) {
-	framework.EtcdMain(m.Run)
+	testEnv := &envtest.Environment{
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "manifests", "crds"),
+		},
+	}
+	apiServerArgs := testEnv.ControlPlane.GetAPIServer().Configure()
+	apiServerArgs.Append("disable-admission-plugins", "TaintNodesByCondition", "Priority")
+	apiServerArgs.Append("runtime-config", "api/all=true")
+
+	// start envtest cluster
+	cfg, err := testEnv.Start()
+	defer testEnv.Stop()
+	if err != nil {
+		log.Fatal(err)
+	}
+	globalKubeConfig = cfg
+	m.Run()
 }
