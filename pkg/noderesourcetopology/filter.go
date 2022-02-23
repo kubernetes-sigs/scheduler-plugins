@@ -60,7 +60,6 @@ func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1
 	// on the NUMA node, bit should be unset
 	bitmask.Fill()
 
-	zeroQuantity := resource.MustParse("0")
 	for resource, quantity := range resources {
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
@@ -71,7 +70,7 @@ func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1
 			// if the resource can be found at the node itself, because there are resources which are not NUMA aligned
 			// or not supported by the topology exporter - if resource was not found at both checks - skip (don't set it as available NUMA node).
 			// if the un-found resource has 0 quantity probably this numa node can be considered.
-			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) && quantity.Cmp(zeroQuantity) != 0 {
+			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) && !quantity.IsZero() {
 				continue
 			}
 			// Check for the following:
@@ -82,7 +81,7 @@ func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1
 			if resource == v1.ResourceMemory ||
 				strings.HasPrefix(string(resource), v1.ResourceHugePagesPrefix) ||
 				resource == v1.ResourceCPU && qos != v1.PodQOSGuaranteed ||
-				quantity.Cmp(zeroQuantity) == 0 ||
+				quantity.IsZero() ||
 				numaQuantity.Cmp(quantity) >= 0 {
 				// possible to align resources on NUMA node
 				resourceBitmask.Add(numaNode.NUMAID)
