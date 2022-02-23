@@ -48,27 +48,27 @@ build.amd64: build-controller.amd64 build-scheduler.amd64
 build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
 
 .PHONY: build-controller
-build-controller: autogen
+build-controller: update-vendor
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-controller.amd64
-build-controller.amd64: autogen
+build-controller.amd64: update-vendor
 	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-controller.arm64v8
-build-controller.arm64v8: autogen
+build-controller.arm64v8: update-vendor
 	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
-build-scheduler: autogen
+build-scheduler: update-vendor
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: build-scheduler.amd64
-build-scheduler.amd64: autogen
+build-scheduler.amd64: update-vendor
 	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: build-scheduler.arm64v8
-build-scheduler.arm64v8: autogen
+build-scheduler.arm64v8: update-vendor
 	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
@@ -107,23 +107,19 @@ update-vendor:
 	hack/update-vendor.sh
 
 .PHONY: unit-test
-unit-test: autogen
+unit-test: update-vendor
 	hack/unit-test.sh
 
-.PHONY: install-etcd
-install-etcd:
-	hack/install-etcd.sh
-
-.PHONY: autogen
-autogen: update-vendor
-	hack/update-generated-openapi.sh
+.PHONY: install-envtest
+install-envtest: update-vendor
+	hack/install-envtest.sh
 
 .PHONY: integration-test
-integration-test: install-etcd autogen
+integration-test: install-envtest
 	hack/integration-test.sh
 
 .PHONY: verify
-verify: autogen
+verify: update-vendor
 	hack/verify-gofmt.sh
 	hack/verify-crdgen.sh
 	hack/verify-structured-logging.sh

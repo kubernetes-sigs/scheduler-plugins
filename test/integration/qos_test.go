@@ -18,24 +18,34 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestQOSPlugin(t *testing.T) {
+	testCtx := &testContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	testCtx.ClientSet = cs
+	testCtx.KubeConfig = globalKubeConfig
+
 	cfg, err := util.NewDefaultSchedulerComponentConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -45,18 +55,20 @@ func TestQOSPlugin(t *testing.T) {
 		Disabled: []schedapi.Plugin{{Name: "*"}},
 	}
 
-	testCtx := testutil.InitTestSchedulerWithOptions(
+	testCtx = initTestSchedulerWithOptions(
 		t,
-		testutil.InitTestAPIServer(t, "sched-qos", nil),
+		testCtx,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{qos.Name: qos.New}),
 	)
-	testutil.SyncInformerFactory(testCtx)
+	syncInformerFactory(testCtx)
 	// Do not start the scheduler.
 	// go testCtx.Scheduler.Run(testCtx.Ctx)
-	defer testutil.CleanupTest(t, testCtx)
+	defer cleanupTest(t, testCtx)
 
-	cs, ns := testCtx.ClientSet, testCtx.NS.Name
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
+
 	// Create a Node.
 	nodeName := "fake-node"
 	node := st.MakeNode().Name("fake-node").Label("node", nodeName).Obj()
@@ -65,7 +77,7 @@ func TestQOSPlugin(t *testing.T) {
 		v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
 		v1.ResourceMemory: *resource.NewQuantity(500, resource.DecimalSI),
 	}
-	node, err = cs.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+	node, err = cs.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create Node %q: %v", nodeName, err)
 	}
@@ -103,11 +115,12 @@ func TestQOSPlugin(t *testing.T) {
 	t.Logf("Start to create 3 Pods.")
 	for i := range pods {
 		t.Logf("Creating Pod %q", pods[i].Name)
-		_, err = cs.CoreV1().Pods(ns).Create(context.TODO(), pods[i], metav1.CreateOptions{})
+		_, err = cs.CoreV1().Pods(ns).Create(testCtx.Ctx, pods[i], metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create Pod %q: %v", pods[i].Name, err)
 		}
 	}
+	defer cleanupPods(t, testCtx, pods)
 
 	// Wait for all Pods are in the scheduling queue.
 	err = wait.Poll(time.Millisecond*200, wait.ForeverTestTimeout, func() (bool, error) {

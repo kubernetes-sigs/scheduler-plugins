@@ -17,6 +17,7 @@ limitations under the License.
 package integration
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -25,12 +26,13 @@ import (
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	schedconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
@@ -39,6 +41,12 @@ import (
 )
 
 func TestPreemptionTolerationPlugin(t *testing.T) {
+	testCtx := &testContext{}
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	testCtx.ClientSet = cs
+	testCtx.KubeConfig = globalKubeConfig
+
 	testPriorityClassName := "priority-class-for-victim-candidates"
 	testPriority := int32(1000)
 	pauseImage := imageutils.GetPauseImageName()
@@ -52,9 +60,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		v1.ResourceMemory: "3Gi",
 	}
 	node := st.MakeNode().Name("node-a").Capacity(nodeCapacity).Obj()
-	victimCandidate := makePod(
-		st.MakePod().Name("victim-candidate").Priority(testPriority).Container(pauseImage).ZeroTerminationGracePeriod(),
-	).PriorityClassName(testPriorityClassName).ResourceRequests(podRequest).Obj()
+
 	tests := []struct {
 		name          string
 		priorityClass *schedulingv1.PriorityClass
@@ -66,7 +72,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 	}{
 		{
 			name: "when preemptor's priority >= MinimumPreemptablePriority(=testPriority+10), it can NOT tolerate the preemption",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-1", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: fmt.Sprintf("%d", testPriority+10),
 			}),
 			preemptor: makePod(
@@ -76,7 +82,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		},
 		{
 			name: "when preemptor's priority >= MinimumPreemptablePriority(=testPriority+10), TolerationSeconds has no effect (it can NOT tolerate the preemption)",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-2", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: fmt.Sprintf("%d", testPriority+10),
 				preemptiontoleration.AnnotationKeyTolerationSeconds:          fmt.Sprintf("%d", 30),
 			}),
@@ -87,7 +93,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		},
 		{
 			name: "when preemptor's priority < MinimumPreemptablePriority(=testPriority+10), it can not tolerate at all if no TolerationSeconds (defaut is 0)",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-3", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: fmt.Sprintf("%d", testPriority+10),
 			}),
 			preemptor: makePod(
@@ -97,7 +103,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		},
 		{
 			name: "when preemptor's priority < MinimumPreemptablePriority(=testPriority+10), it can tolerate forever if tolerationSeconds = -1",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-4", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: fmt.Sprintf("%d", testPriority+10),
 				preemptiontoleration.AnnotationKeyTolerationSeconds:          fmt.Sprintf("%d", -1),
 			}),
@@ -109,7 +115,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		},
 		{
 			name: "when preemptor's priority < MinimumPreemptablePriority(=testPriority+10), it can tolerate the preemption if victimCandidate is scheduled within TolerationSeconds",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-5", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: fmt.Sprintf("%d", testPriority+10),
 				preemptiontoleration.AnnotationKeyTolerationSeconds:          fmt.Sprintf("%d", 30),
 			}),
@@ -120,7 +126,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		},
 		{
 			name: "when preemptor's priority < MinimumPreemptablePriority(=testPriority+10), it can NOT tolerate the preemption after TolerationSeconds elapsed from victimCandidate being scheduled",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-6", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: fmt.Sprintf("%d", testPriority+10),
 				preemptiontoleration.AnnotationKeyTolerationSeconds:          fmt.Sprintf("%d", 5),
 			}),
@@ -132,7 +138,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		},
 		{
 			name: "when unparsable preemption toleration policy, victim should be preempted if preemptor's preemption policy is PreemptLowerPriority",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-7", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: "a",
 			}),
 			preemptor: makePod(
@@ -142,7 +148,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 		},
 		{
 			name: "when unparsable preemption toleration policy, victim should not be preempted if preemptor's preemption policy is PreemptNone",
-			priorityClass: makeTestPriorityClass(testPriorityClassName, testPriority, map[string]string{
+			priorityClass: makeTestPriorityClass(fmt.Sprintf("%s-8", testPriorityClassName), testPriority, map[string]string{
 				preemptiontoleration.AnnotationKeyMinimumPreemptablePriority: "a",
 			}),
 			preemptor: makePod(
@@ -154,6 +160,8 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+
 			// prepare test cluster
 			registry := fwkruntime.Registry{preemptiontoleration.Name: preemptiontoleration.New}
 			cfg, err := util.NewDefaultSchedulerComponentConfig()
@@ -175,19 +183,21 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 					MinCandidateNodesAbsolute:   100,
 				},
 			})
-			testCtx := testutil.InitTestSchedulerWithOptions(
+
+			ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+			createNamespace(t, testCtx, ns)
+
+			testCtx = initTestSchedulerWithOptions(
 				t,
-				testutil.InitTestAPIServer(t, "sched-preemptiontoleration", nil),
+				testCtx,
 				scheduler.WithProfiles(cfg.Profiles[0]),
 				scheduler.WithFrameworkOutOfTreeRegistry(registry),
 				scheduler.WithPodInitialBackoffSeconds(int64(0)),
 				scheduler.WithPodMaxBackoffSeconds(int64(0)),
 			)
-			testutil.SyncInformerFactory(testCtx)
+			syncInformerFactory(testCtx)
 			go testCtx.Scheduler.Run(testCtx.Ctx)
-			defer testutil.CleanupTest(t, testCtx)
-
-			cs, ns := testCtx.ClientSet, testCtx.NS.Name
+			defer cleanupTest(t, testCtx)
 
 			// Create test node
 			if _, err := cs.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{}); err != nil {
@@ -200,7 +210,10 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 			}
 
 			// Create victim candidate pod and it should be scheduled
-			if _, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, victimCandidate, metav1.CreateOptions{}); err != nil {
+			victimCandidate := makePod(
+				st.MakePod().Name("victim-candidate").Priority(testPriority).Container(pauseImage).ZeroTerminationGracePeriod(),
+			).PriorityClassName(tt.priorityClass.Name).ResourceRequests(podRequest).Obj()
+			if victimCandidate, err = cs.CoreV1().Pods(ns).Create(testCtx.Ctx, victimCandidate, metav1.CreateOptions{}); err != nil {
 				t.Fatalf("failed to create victim candidate pod %q: %v", victimCandidate.Name, err)
 			}
 			if err := wait.Poll(1*time.Second, 60*time.Second, func() (bool, error) {
@@ -229,9 +242,15 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 			}
 
 			// Create the preemptor pod.
-			if _, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, tt.preemptor, metav1.CreateOptions{}); err != nil {
+			preemptor, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, tt.preemptor, metav1.CreateOptions{})
+			if err != nil {
 				t.Fatalf("failed to create preemptor Pod %q: %v", tt.preemptor.Name, err)
 			}
+
+			defer cleanupPods(t, testCtx, []*v1.Pod{
+				victimCandidate,
+				preemptor,
+			})
 
 			if tt.canTolerate {
 				// - the victim candidate pod keeps being scheduled, and

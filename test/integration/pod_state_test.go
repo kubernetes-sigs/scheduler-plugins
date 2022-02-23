@@ -18,23 +18,32 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestPodStatePlugin(t *testing.T) {
+	testCtx := &testContext{}
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	testCtx.ClientSet = cs
+	testCtx.KubeConfig = globalKubeConfig
+
 	pause := imageutils.GetPauseImageName()
 	nodeNominatedSelector := map[string]string{"nominated": "true"}
 	tests := []struct {
@@ -66,6 +75,8 @@ func TestPodStatePlugin(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+
 			cfg, err := util.NewDefaultSchedulerComponentConfig()
 			if err != nil {
 				t.Fatal(err)
@@ -79,17 +90,18 @@ func TestPodStatePlugin(t *testing.T) {
 				},
 			}
 
-			testCtx := testutil.InitTestSchedulerWithOptions(
+			ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+			createNamespace(t, testCtx, ns)
+
+			testCtx = initTestSchedulerWithOptions(
 				t,
-				testutil.InitTestAPIServer(t, "sched-podstate", nil),
+				testCtx,
 				scheduler.WithProfiles(cfg.Profiles...),
 				scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{podstate.Name: podstate.New}),
 			)
-			testutil.SyncInformerFactory(testCtx)
+			syncInformerFactory(testCtx)
 			go testCtx.Scheduler.Run(testCtx.Ctx)
-			defer testutil.CleanupTest(t, testCtx)
-
-			cs, ns := testCtx.ClientSet, testCtx.NS.Name
+			defer cleanupTest(t, testCtx)
 
 			// Create nodes and pods.
 			for _, node := range tt.nodes {
@@ -99,15 +111,17 @@ func TestPodStatePlugin(t *testing.T) {
 			}
 
 			// Create existing Pods on node.
+			var pods []*v1.Pod
 			for _, pod := range tt.pods {
-
 				// Create Nominated Pods by setting two pods exposing same host port in one node.
 				if _, ok := pod.Spec.NodeSelector["nominated"]; ok {
 					pod.Spec.Containers[0].Ports = []v1.ContainerPort{{HostPort: 8080, ContainerPort: 8080}}
 				}
-				if _, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, pod, metav1.CreateOptions{}); err != nil {
+				p, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, pod, metav1.CreateOptions{})
+				if err != nil {
 					t.Fatalf("failed to create existing Pod %q: %v", pod.Name, err)
 				}
+				pods = append(pods, p)
 
 				// Ensure the existing Pods are scheduled successfully except for the nominated pods.
 				if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
@@ -118,16 +132,19 @@ func TestPodStatePlugin(t *testing.T) {
 
 				// Create Terminating Pods by deleting pods from cluster.
 				if pod.DeletionTimestamp != nil {
-					if err := cs.CoreV1().Pods(ns).Delete(context.TODO(), pod.Name, metav1.DeleteOptions{}); err != nil {
+					if err := cs.CoreV1().Pods(ns).Delete(testCtx.Ctx, pod.Name, metav1.DeleteOptions{}); err != nil {
 						t.Fatalf("failed to delete existing Pod %q: %v", pod.Name, err)
 					}
 				}
 			}
+			defer cleanupPods(t, testCtx, pods)
 
 			// Create Pod to be scheduled.
-			if _, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, tt.pod, metav1.CreateOptions{}); err != nil {
+			p, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, tt.pod, metav1.CreateOptions{})
+			if err != nil {
 				t.Fatalf("failed to create Pod %q: %v", tt.pod.Name, err)
 			}
+			defer cleanupPods(t, testCtx, []*v1.Pod{p})
 
 			// Ensure the Pod is scheduled successfully.
 			if err := wait.Poll(1*time.Second, 60*time.Second, func() (bool, error) {
@@ -137,7 +154,7 @@ func TestPodStatePlugin(t *testing.T) {
 			}
 
 			// Lastly, verify pod gets scheduled to the expected node.
-			pod, err := cs.CoreV1().Pods(ns).Get(context.TODO(), tt.pod.Name, metav1.GetOptions{})
+			pod, err := cs.CoreV1().Pods(ns).Get(testCtx.Ctx, tt.pod.Name, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("failed to get Pod %q: %v", tt.pod.Name, err)
 			}

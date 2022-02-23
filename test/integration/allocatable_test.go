@@ -18,18 +18,20 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	testutil "k8s.io/kubernetes/test/integration/util"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
@@ -37,6 +39,13 @@ import (
 )
 
 func TestAllocatablePlugin(t *testing.T) {
+	testCtx := &testContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	testCtx.ClientSet = cs
+	testCtx.KubeConfig = globalKubeConfig
+
 	cfg, err := util.NewDefaultSchedulerComponentConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -46,17 +55,19 @@ func TestAllocatablePlugin(t *testing.T) {
 		Disabled: []schedapi.Plugin{{Name: "*"}},
 	}
 
-	testCtx := testutil.InitTestSchedulerWithOptions(
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
+
+	testCtx = initTestSchedulerWithOptions(
 		t,
-		testutil.InitTestAPIServer(t, "sched-allocatable", nil),
+		testCtx,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesources.AllocatableName: noderesources.NewAllocatable}),
 	)
-	testutil.SyncInformerFactory(testCtx)
+	syncInformerFactory(testCtx)
 	go testCtx.Scheduler.Run(testCtx.Ctx)
-	defer testutil.CleanupTest(t, testCtx)
+	defer cleanupTest(t, testCtx)
 
-	cs, ns := testCtx.ClientSet, testCtx.NS.Name
 	// Create nodes. First two are small nodes.
 	bigNodeName := "fake-node-big"
 	nodeNames := []string{"fake-node-small-1", "fake-node-small-2", bigNodeName}
@@ -76,7 +87,7 @@ func TestAllocatablePlugin(t *testing.T) {
 			v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
 			v1.ResourceMemory: *resource.NewQuantity(memory, resource.DecimalSI),
 		}
-		node, err := cs.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
+		node, err := cs.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create Node %q: %v", nodeName, err)
 		}
@@ -110,11 +121,12 @@ func TestAllocatablePlugin(t *testing.T) {
 	t.Logf("Start to create 5 Pods.")
 	for i := range pods {
 		t.Logf("Creating Pod %q", pods[i].Name)
-		_, err := cs.CoreV1().Pods(ns).Create(context.TODO(), pods[i], metav1.CreateOptions{})
+		_, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, pods[i], metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create Pod %q: %v", pods[i].Name, err)
 		}
 	}
+	defer cleanupPods(t, testCtx, pods)
 
 	for i := range pods {
 		// Wait for the pod to be scheduled.
@@ -125,7 +137,7 @@ func TestAllocatablePlugin(t *testing.T) {
 			t.Fatalf("Waiting for pod %q to be scheduled, error: %v", pods[i].Name, err.Error())
 		}
 
-		pod, err := cs.CoreV1().Pods(ns).Get(context.TODO(), pods[i].Name, metav1.GetOptions{})
+		pod, err := cs.CoreV1().Pods(ns).Get(testCtx.Ctx, pods[i].Name, metav1.GetOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
