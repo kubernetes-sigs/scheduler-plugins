@@ -73,19 +73,12 @@ func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1
 			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) && !quantity.IsZero() {
 				continue
 			}
-			// Check for the following:
-			// 1. set numa node as possible node if resource is memory or Hugepages
-			// 2. set numa node as possible node if resource is cpu and it's not guaranteed QoS, since cpu will flow
-			// 3. set numa node as possible node if zero quantity for non existing resource was requested
-			// 4. otherwise check amount of resources
-			if resource == v1.ResourceMemory ||
-				strings.HasPrefix(string(resource), v1.ResourceHugePagesPrefix) ||
-				resource == v1.ResourceCPU && qos != v1.PodQOSGuaranteed ||
-				quantity.IsZero() ||
-				numaQuantity.Cmp(quantity) >= 0 {
-				// possible to align resources on NUMA node
-				resourceBitmask.Add(numaNode.NUMAID)
+
+			if !isNUMANodeSuitable(qos, resource, quantity, numaQuantity) {
+				continue
 			}
+
+			resourceBitmask.Add(numaNode.NUMAID)
 		}
 		bitmask.And(resourceBitmask)
 		if bitmask.IsEmpty() {
@@ -93,6 +86,23 @@ func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1
 		}
 	}
 	return bitmask.IsEmpty()
+}
+
+func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, numaQuantity resource.Quantity) bool {
+	// Check for the following:
+	// 1. set numa node as possible node if resource is memory or Hugepages
+	// 2. set numa node as possible node if resource is cpu and it's not guaranteed QoS, since cpu will flow
+	// 3. set numa node as possible node if zero quantity for non existing resource was requested
+	// 4. otherwise check amount of resources
+	if resource == v1.ResourceMemory ||
+		strings.HasPrefix(string(resource), v1.ResourceHugePagesPrefix) ||
+		resource == v1.ResourceCPU && qos != v1.PodQOSGuaranteed ||
+		quantity.IsZero() ||
+		numaQuantity.Cmp(quantity) >= 0 {
+		// possible to align resources on NUMA node
+		return true
+	}
+	return false
 }
 
 func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
