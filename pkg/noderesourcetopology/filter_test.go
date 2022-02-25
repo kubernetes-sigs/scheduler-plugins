@@ -35,6 +35,7 @@ import (
 const (
 	cpu                        = string(v1.ResourceCPU)
 	memory                     = string(v1.ResourceMemory)
+	hugepages2Mi               = "hugepages-2Mi"
 	nicResourceName            = "vendor/nic1"
 	notExistingNICResourceName = "vendor/notexistingnic"
 	containerName              = "container1"
@@ -76,6 +77,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				Resources: topologyv1alpha1.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "20", "2"),
 					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+					MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
 					MakeTopologyResInfo(nicResourceName, "30", "5"),
 				},
 			},
@@ -85,6 +87,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				Resources: topologyv1alpha1.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "30", "4"),
 					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+					MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
 					MakeTopologyResInfo(nicResourceName, "30", "2"),
 				},
 			},
@@ -166,10 +169,30 @@ func TestNodeResourceTopology(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name: "Guaranteed QoS, zero quantity of unavailable resource, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				hugepages2Mi:      resource.MustParse("0"),
+				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
+			node:       nodes[0],
+			wantStatus: nil,
+		},
+		{
 			name: "Guaranteed QoS, pod fit",
 			pod: makePodByResourceList(&v1.ResourceList{
 				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
 				v1.ResourceMemory: resource.MustParse("2Gi"),
+				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Guaranteed QoS, hugepages, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				hugepages2Mi:      resource.MustParse("64Mi"),
 				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[1],
 			wantStatus: nil,
@@ -195,6 +218,16 @@ func TestNodeResourceTopology(t *testing.T) {
 			pod: makePodByResourceList(&v1.ResourceList{
 				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(11, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+		},
+		{
+			name: "Guaranteed QoS, hugepages, pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				hugepages2Mi:      resource.MustParse("256Mi"),
+				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[1],
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
 		},

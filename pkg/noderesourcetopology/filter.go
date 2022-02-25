@@ -90,16 +90,18 @@ func resMatchNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1
 
 func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, numaQuantity resource.Quantity) bool {
 	// Check for the following:
-	// 1. set numa node as possible node if resource is memory or Hugepages
-	if resource == v1.ResourceMemory {
-		return true
-	}
-	if strings.HasPrefix(string(resource), v1.ResourceHugePagesPrefix) {
-		return true
-	}
-	// 2. set numa node as possible node if resource is cpu and it's not guaranteed QoS, since cpu will flow
-	if resource == v1.ResourceCPU && qos != v1.PodQOSGuaranteed {
-		return true
+	if qos != v1.PodQOSGuaranteed {
+		// 1. set numa node as possible node if resource is memory or Hugepages
+		if resource == v1.ResourceMemory {
+			return true
+		}
+		if strings.HasPrefix(string(resource), v1.ResourceHugePagesPrefix) {
+			return true
+		}
+		// 2. set numa node as possible node if resource is CPU
+		if resource == v1.ResourceCPU {
+			return true
+		}
 	}
 	// 3. set numa node as possible node if zero quantity for non existing resource was requested
 	if quantity.IsZero() {
