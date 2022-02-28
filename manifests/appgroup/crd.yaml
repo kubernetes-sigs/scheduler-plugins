@@ -1,0 +1,193 @@
+
+---
+# App Group CRD spec
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    api-approved.kubernetes.io: "To be Defined" # edited manually
+    controller-gen.kubebuilder.io/version: v0.6.2
+  creationTimestamp: null
+  name: appgroups.scheduling.sigs.k8s.io
+spec:
+  group: scheduling.sigs.k8s.io
+  names:
+    kind: AppGroup
+    listKind: AppGroupList
+    plural: appgroups
+    singular: appgroup
+    shortNames:
+      - ag
+      - ags
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          description: AppGroup establishes a service dependency graph among different Pods.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AppGroup defines the number of Pods and which Pods belong to the group.
+              properties:
+                numMembers:
+                  format: int32
+                  type: integer
+                  minimum: 1
+                  description: Number of Pods belonging to the App Group
+                topologySortingAlgorithm:
+                  type: string
+                  description: The algorithm for TopologyOrder (Status)
+                workloads:
+                  description: The workloads belonging to the group array of AppGroupWorkload
+                  items:
+                    description: AppGroupWorkload contains information about one Workload.
+                    properties:
+                      workload:
+                        properties:
+                          kind:
+                            description: Kind is a string value representing the REST resource.
+                            type: string
+                          name:
+                            description: Represents the name of the Object
+                            type: string
+                          selector:
+                            description: Defines how to find pods related to the workload
+                            type: string
+                          apiVersion:
+                            description: APIVersion defines the versioned schema of an object.
+                            type: string
+                          namespace:
+                            description: Represents the namespace of the Object
+                            type: string
+                        required:
+                          - kind
+                          - name
+                          - selector
+                        type: object
+                      dependencies:
+                        items:
+                          description: DependenciesList establishes dependencies between workloads.
+                          properties:
+                            workload:
+                              properties:
+                                kind:
+                                  description: Kind is a string value representing the REST resource.
+                                  type: string
+                                name:
+                                  description: Represents the name of the Object
+                                  type: string
+                                selector:
+                                  description: Defines how to find pods related to the workload
+                                  type: string
+                                apiVersion:
+                                  description: APIVersion defines the versioned schema of an object.
+                                  type: string
+                                namespace:
+                                  description: Represents the namespace of the Object
+                                  type: string
+                              required:
+                                - kind
+                                - name
+                                - selector
+                              type: object
+                            minBandwidth:
+                              anyOf:
+                                - type: integer
+                                - type: string
+                              description: Bandwidth demand between two workloads.
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            maxNetworkCost:
+                              type: integer
+                              default: 0
+                              minimum: 0
+                              maximum: 10000
+                              format: int64
+                              description: The max Network Cost between two workloads.
+                          required:
+                            - workload
+                          type: object
+                        type: array
+                    required:
+                      - workload
+                    type: object
+                  type: array
+              required:
+                - numMembers
+                - topologySortingAlgorithm
+                - workloads
+              type: object
+            status:
+              description: Record the number of workload allocations and the favored topology order.
+              properties:
+                runningWorkloads:
+                  description: The number of actively running workloads (e.g., pods).
+                  format: int32
+                  type: integer
+                  minimum: 0
+                scheduleStartTime:
+                  description: ScheduleStartTime of the AppGroup
+                  format: date-time
+                  type: string
+                topologyCalculationTime:
+                  description: topologyCalculationTime of the AppGroup
+                  format: date-time
+                  type: string
+                topologyOrder:
+                  description: The optimal order to schedule workloads on this App Group based on a given algorithm.
+                  items:
+                    description: Workload reference and Priority index
+                    properties:
+                      workload:
+                        properties:
+                          kind:
+                            description: Kind is a string value representing the REST resource.
+                            type: string
+                          name:
+                            description: Represents the name of the Object
+                            type: string
+                          selector:
+                            description: Defines how to find pods related to the workload
+                            type: string
+                          apiVersion:
+                            description: APIVersion defines the versioned schema of an object.
+                            type: string
+                          namespace:
+                            description: Represents the namespace of the Object
+                            type: string
+                        required:
+                          - kind
+                          - name
+                          - selector
+                        type: object
+                      index:
+                        type: integer
+                        default: 1
+                        minimum: 1
+                        format: int64
+                        description: Priority index for each workload (e.g., 1, 2, ...)
+                          (1 means workload should be scheduled first in the AppGroup)
+                    type: object
+                  type: array
+              type: object
+          type: object
+      served: true
+      storage: true
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

@@ -28,7 +28,9 @@ import (
 
 type SchedulingV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	AppGroupsGetter
 	ElasticQuotasGetter
+	NetworkTopologiesGetter
 	PodGroupsGetter
 }
 
@@ -37,8 +39,16 @@ type SchedulingV1alpha1Client struct {
 	restClient rest.Interface
 }
 
+func (c *SchedulingV1alpha1Client) AppGroups(namespace string) AppGroupInterface {
+	return newAppGroups(c, namespace)
+}
+
 func (c *SchedulingV1alpha1Client) ElasticQuotas(namespace string) ElasticQuotaInterface {
 	return newElasticQuotas(c, namespace)
+}
+
+func (c *SchedulingV1alpha1Client) NetworkTopologies(namespace string) NetworkTopologyInterface {
+	return newNetworkTopologies(c, namespace)
 }
 
 func (c *SchedulingV1alpha1Client) PodGroups(namespace string) PodGroupInterface {

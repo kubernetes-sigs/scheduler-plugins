@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1alpha1
 
+type AppGroupExpansion interface{}
+
 type ElasticQuotaExpansion interface{}
+
+type NetworkTopologyExpansion interface{}
 
 type PodGroupExpansion interface{}

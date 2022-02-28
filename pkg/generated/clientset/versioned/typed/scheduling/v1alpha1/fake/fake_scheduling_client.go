@@ -28,8 +28,16 @@ type FakeSchedulingV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeSchedulingV1alpha1) AppGroups(namespace string) v1alpha1.AppGroupInterface {
+	return &FakeAppGroups{c, namespace}
+}
+
 func (c *FakeSchedulingV1alpha1) ElasticQuotas(namespace string) v1alpha1.ElasticQuotaInterface {
 	return &FakeElasticQuotas{c, namespace}
+}
+
+func (c *FakeSchedulingV1alpha1) NetworkTopologies(namespace string) v1alpha1.NetworkTopologyInterface {
+	return &FakeNetworkTopologies{c, namespace}
 }
 
 func (c *FakeSchedulingV1alpha1) PodGroups(namespace string) v1alpha1.PodGroupInterface {

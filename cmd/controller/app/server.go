@@ -68,15 +68,18 @@ func Run(s *ServerRunOptions) error {
 	schedInformerFactory := schedformers.NewSharedInformerFactory(schedClient, 0)
 	pgInformer := schedInformerFactory.Scheduling().V1alpha1().PodGroups()
 	eqInformer := schedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
+	agInformer := schedInformerFactory.Scheduling().V1alpha1().AppGroups()
 
 	coreInformerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 	podInformer := coreInformerFactory.Core().V1().Pods()
 	pgCtrl := controller.NewPodGroupController(kubeClient, pgInformer, podInformer, schedClient)
 	eqCtrl := controller.NewElasticQuotaController(kubeClient, eqInformer, podInformer, schedClient)
+	agCtrl := controller.NewAppGroupController(kubeClient, agInformer, podInformer, schedClient)
 
 	run := func(ctx context.Context) {
 		go pgCtrl.Run(s.Workers, ctx.Done())
 		go eqCtrl.Run(s.Workers, ctx.Done())
+		go agCtrl.Run(s.Workers, ctx.Done())
 		select {}
 	}
 	schedInformerFactory.Start(stopCh)

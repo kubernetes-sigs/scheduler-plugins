@@ -18,6 +18,14 @@ limitations under the License.
 
 package v1alpha1
 
+// AppGroupListerExpansion allows custom methods to be added to
+// AppGroupLister.
+type AppGroupListerExpansion interface{}
+
+// AppGroupNamespaceListerExpansion allows custom methods to be added to
+// AppGroupNamespaceLister.
+type AppGroupNamespaceListerExpansion interface{}
+
 // ElasticQuotaListerExpansion allows custom methods to be added to
 // ElasticQuotaLister.
 type ElasticQuotaListerExpansion interface{}
@@ -25,6 +33,14 @@ type ElasticQuotaListerExpansion interface{}
 // ElasticQuotaNamespaceListerExpansion allows custom methods to be added to
 // ElasticQuotaNamespaceLister.
 type ElasticQuotaNamespaceListerExpansion interface{}
+
+// NetworkTopologyListerExpansion allows custom methods to be added to
+// NetworkTopologyLister.
+type NetworkTopologyListerExpansion interface{}
+
+// NetworkTopologyNamespaceListerExpansion allows custom methods to be added to
+// NetworkTopologyNamespaceLister.
+type NetworkTopologyNamespaceListerExpansion interface{}
 
 // PodGroupListerExpansion allows custom methods to be added to
 // PodGroupLister.

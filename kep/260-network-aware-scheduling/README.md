@@ -348,7 +348,7 @@ status:
 <p align="center"><img src="figs/chain.png" title="Chain" width="600" class="center"/></p>
 
 ```yaml
-# Example App Group CRD spec
+# Example AppGroup CRD spec
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: AppGroup
 metadata:
@@ -356,38 +356,43 @@ metadata:
 spec:
   numMembers: 3
   topologySortingAlgorithm: KahnSort
-  workloads: 
+  workloads:
     - workload:
         kind: Deployment
+        name: P1-deployment
+        selector: P1
         apiVersion: apps/v1
         namespace: default
-        name: P1
-      dependencies:
-        - workload: 
-            kind: Deployment
-            apiVersion: apps/v1
-            namespace: default
-            name: P2
-          minBandwidth: "100Mi"
-          maxNetworkCost: 30
-    - workload: 
-        kind: Deployment
-        apiVersion: apps/v1
-        namespace: default
-        name: P2
       dependencies:
         - workload:
             kind: Deployment
+            name: P2-deployment
+            selector: P2
             apiVersion: apps/v1
             namespace: default
-            name: P3
+          minBandwidth: "100Mi"
+          maxNetworkCost: 30
+    - workload:
+        kind: Deployment
+        name: P2-deployment
+        selector: P2
+        apiVersion: apps/v1
+        namespace: default
+      dependencies:
+        - workload:
+            kind: Deployment
+            name: P3-deployment
+            selector: P3
+            apiVersion: apps/v1
+            namespace: default
           minBandwidth: "250Mi"
           maxNetworkCost: 20
     - workload:
         kind: Deployment
+        name: P3-deployment
+        selector: P3
         apiVersion: apps/v1
         namespace: default
-        name: P3
 ```
 
 An AppGroup controller updates the AppGroup CR regarding the preferred topology order for scheduling workloads. 
@@ -444,6 +449,23 @@ type AppGroup struct {
 	Status AppGroupStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
+// Constants for AppGroup
+const (
+	// AppGroupLabel is the default label of the AppGroup for the network-aware framework
+	AppGroupLabel = "app-group." + scheduling.GroupName
+
+	// AppGroupSelectorLabel is the default selector label for Pods belonging to a given Workload (e.g., workload = App-A)
+	AppGroupSelectorLabel = "workload"
+
+	// Topological Sorting algorithms supported by AppGroup
+	AppGroupKahnSort        = "KahnSort"
+	AppGroupTarjanSort      = "TarjanSort"
+	AppGroupReverseKahn     = "ReverseKahn"
+	AppGroupReverseTarjan   = "ReverseTarjan"
+	AppGroupAlternateKahn   = "AlternateKahn"
+	AppGroupAlternateTarjan = "AlternateTarjan"
+)
+
 // AppGroupSpec represents the template of a app group.
 type AppGroupSpec struct {
 	// NumMembers defines the number of Pods belonging to the App Group
@@ -452,13 +474,9 @@ type AppGroupSpec struct {
 	// The preferred Topology Sorting Algorithm
 	TopologySortingAlgorithm string `json:"topologySortingAlgorithm,omitempty" protobuf:"bytes,2,opt,name=topologySortingAlgorithm"`
 
-	// Workloads defines the workloads belonging to the Appgroup
-	Workloads AppGroupWorkloadList `json:"workloads,omitempty" protobuf:"bytes,3,opt,name=workloads, casttype=AppGroupWorkloadList"`
+	// Workloads defines the workloads belonging to the group
+	Workloads AppGroupWorkloadList `json:"workloads,omitempty" protobuf:"bytes,3,rep,name=workloads, casttype=AppGroupWorkloadList"`
 }
-
-// AppGroupWorkloadList contains an array of AppGroupWorkload objects.
-// +protobuf=true
-type AppGroupWorkloadList []AppGroupWorkload
 
 // AppGroupWorkload represents the Workloads belonging to the App Group.
 // +protobuf=true
@@ -466,27 +484,34 @@ type AppGroupWorkload struct {
 	// Workload reference Info.
 	Workload AppGroupWorkloadInfo `json:"workload,omitempty" protobuf:"bytes,1,opt,name=workload, casttype=AppGroupWorkloadInfo"`
 
-	// Dependencies of the Workload. 
+	// Dependencies of the Workload.
 	Dependencies DependenciesList `json:"dependencies,omitempty" protobuf:"bytes,2,opt,name=dependencies, casttype=DependenciesList"`
 }
 
 // AppGroupWorkloadInfo contains information about one workload.
 // +protobuf=true
 type AppGroupWorkloadInfo struct {
-	// Kind of the workload; info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds" 
+	// Kind of the workload; info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds"
 	Kind string `json:"kind,omitempty" protobuf:"bytes,1,opt,name=kind"`
 
 	// Name represents the workload, info: http://kubernetes.io/docs/user-guide/identifiers#names
 	Name string `json:"name,omitempty" protobuf:"bytes,2,opt,name=name"`
 
-	// ApiVersion defines the versioned schema of an object. 
-	//+optional 
-	APIVersion string `json:"apiVersion,omitempty" protobuf:"bytes,3,opt,name=apiVersion"`
-	
+	// Selector defines how to find Pods related to the Workload (key = workload). (e.g., workload=w1)
+	Selector string `json:"selector,omitempty" protobuf:"bytes,3,opt,name=selector"`
+
+	// ApiVersion defines the versioned schema of an object.
+	//+optional
+	APIVersion string `json:"apiVersion,omitempty" protobuf:"bytes,4,opt,name=apiVersion"`
+
 	// Namespace of the workload
 	//+optional
-	Namespace string `json:"namespace,omitempty" protobuf:"bytes,4,opt,name=namespace"`
+	Namespace string `json:"namespace,omitempty" protobuf:"bytes,5,opt,name=namespace"`
 }
+
+// AppGroupWorkloadList contains an array of Pod objects.
+// +protobuf=true
+type AppGroupWorkloadList []AppGroupWorkload
 
 // DependenciesInfo contains information about one dependency.
 // +protobuf=true
@@ -503,13 +528,13 @@ type DependenciesInfo struct {
 	MaxNetworkCost int64 `json:"maxNetworkCost,omitempty" protobuf:"bytes,3,opt,name=maxNetworkCost"`
 }
 
-// DependenciesList contains an array of DependenciesInfo objects.
+// DependenciesList contains an array of ResourceInfo objects.
 // +protobuf=true
 type DependenciesList []DependenciesInfo
 
-// AppGroupStatus represents the current state of a app group.
+// AppGroupStatus represents the current state of an AppGroup.
 type AppGroupStatus struct {
-	// The number of actively running workloads (e.g., pods).
+	// The number of actively running workloads (e.g., number of pods).
 	// +optional
 	RunningWorkloads int32 `json:"runningWorkloads,omitempty" protobuf:"bytes,1,opt,name=runningWorkloads"`
 
@@ -520,22 +545,22 @@ type AppGroupStatus struct {
 	TopologyCalculationTime metav1.Time `json:"topologyCalculationTime,omitempty" protobuf:"bytes,3,opt,name=topologyCalculationTime"`
 
 	// Topology order for TopSort plugin (QueueSort)
-	TopologyOrder TopologyList `json:"topologyOrder,omitempty" protobuf:"bytes,4,opt,name=topologyOrder,casttype=TopologyList"`
+	TopologyOrder AppGroupTopologyList `json:"topologyOrder,omitempty" protobuf:"bytes,4,rep,name=topologyOrder,casttype=TopologyList"`
 }
 
 // AppGroupTopologyInfo represents the calculated order for a given Workload.
 // +protobuf=true
 type AppGroupTopologyInfo struct {
-    // Workload reference Info. 
-    Workload AppGroupWorkloadInfo `json:"workload,omitempty" protobuf:"bytes,1,opt,name=workload, casttype=AppGroupWorkloadInfo"`
-    
-    // Topology index. 
-    Index int32  `json:"index,omitempty" protobuf:"bytes,2,opt,name=index"`
+	// Workload reference Info.
+	Workload AppGroupWorkloadInfo `json:"workload,omitempty" protobuf:"bytes,1,opt,name=workload, casttype=AppGroupWorkloadInfo"`
+
+	// Topology index.
+	Index int32 `json:"index,omitempty" protobuf:"bytes,2,opt,name=index"`
 }
 
-// TopologyList contains an array of TopologyInfo.
+// TopologyList contains an array of workload indexes for the TopologySorting plugin.
 // +protobuf=true
-type TopologyList []AppGroupTopologyInfo
+type AppGroupTopologyList []AppGroupTopologyInfo
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
@@ -561,10 +586,10 @@ It consists of 11 workloads each one corresponding to a group of Pods, which we 
 As shown below, the preferred order for the KahnSort algorithm is P1, P10, P9, P8, P7, P6, P5, P4, P3, P2, P11. 
 
 We attribute an **index** to each workload to evaluate their topology preference in the **Less function of the TopologicalSort plugin** described [here](#description-of-the-topologicalsort).
-The topology list corresponds to:
+The AppGroup topology list corresponds to:
 
 ```go
-topologyList = [(P1 1) (P10 2) (P9 3) (P8 4) (P7 5) (P6 6) (P5 7) (P4 8) (P3 9) (P2 10) (P11 11)]
+appGroupTopologyList = [(P1 1) (P10 2) (P9 3) (P8 4) (P7 5) (P6 6) (P5 7) (P4 8) (P3 9) (P2 10) (P11 11)]
 ```
 
 <p align="center"><img src="figs/appGroupTest.png" title="appGroupTest" width="900" class="center"/></p>
@@ -758,14 +783,14 @@ status:
 Let's consider the following NetworkTopology CRD as an example: 
 
 ```yaml
-# Example Network CRD 
+# Example Network CRD
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: NetworkTopology
 metadata:
   name: net-topology-test
   namespace: default
 spec:
-  configMapName: "netperfMetrics"
+  configmapName: "netperfMetrics"
   weights:
     # Region label: "topology.kubernetes.io/region"
     # Zone Label:   "topology.kubernetes.io/zone"
@@ -774,44 +799,59 @@ spec:
     # 4 Zones:    us-west-1: z1, z2
     #             us-east-1: z3, z4
     - name: "UserDefined"
-      costList: # Define weights between regions or between zones 
+      topologyList: # Define weights between regions or between zones
         - topologyKey: "topology.kubernetes.io/region" # region costs
-          originCosts:
+          originList:
             - origin: "us-west-1"
-              costs:
+              costList:
                 - destination: "us-east-1"
                   bandwidthCapacity: "10Gi"
                   networkCost: 20
             - origin: "us-east-1"
-              costs:
+              costList:
                 - destination: "us-west-1"
                   bandwidthCapacity: "10Gi"
                   networkCost: 20
         - topologyKey: "topology.kubernetes.io/zone" # zone costs
-          originCosts:
+          originList:
             - origin: "z1"
-              costs:
+              costList:
                 - destination: "z2"
                   bandwidthCapacity: "1Gi"
                   networkCost: 5
             - origin: "z2"
-              costs:
+              costList:
                 - destination: "z1"
                   bandwidthCapacity: "1Gi"
                   networkCost: 5
             - origin: "z3"
-              costs:
+              costList:
                 - destination: "z4"
                   bandwidthCapacity: "1Gi"
                   networkCost: 10
             - origin: "z4"
-              costs:
+              costList:
                 - destination: "z3"
                   bandwidthCapacity: "1Gi"
                   networkCost: 10
 ```
 
 ```go
+// TopologyKey is the key of a OriginList in a NetworkTopology.
+type TopologyKey string
+
+// Constants for Network Topology
+const (
+	// NetworkTopologyRegion corresponds to "topology.kubernetes.io/region"
+	NetworkTopologyRegion TopologyKey = v1.LabelTopologyRegion
+
+	// NetworkTopologyRegion corresponds to "topology.kubernetes.io/zone"
+	NetworkTopologyZone TopologyKey = v1.LabelTopologyZone
+
+	// NetworkTopologyNetperfCosts corresponds to costs defined with measurements via the Netperf Component: "NetperfCosts"
+	NetworkTopologyNetperfCosts string = "NetperfCosts"
+)
+
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
@@ -835,9 +875,9 @@ type NetworkTopology struct {
 // NetworkTopologySpec represents the template of a NetworkTopology.
 type NetworkTopologySpec struct {
 	// The manual defined weights of the cluster
-	Weights WeightList `json:"weights,omitempty" protobuf:"bytes,1,rep,name=weights,casttype=WeightList"`
+	Weights WeightList `json:"weights,omitempty" protobuf:"bytes,1,opt,name=weights,casttype=WeightList"`
 
-	// ConfigmapName to be used for cost calculation (To be used by the Network Topology Controller)
+	// ConfigmapName to be used for cost calculation
 	ConfigmapName string `json:"configmapName,omitempty" protobuf:"bytes,2,opt,name=configmapName"`
 }
 
@@ -854,9 +894,9 @@ type NetworkTopologyStatus struct {
 // +protobuf=true
 type WeightList []WeightInfo
 
-// CostList contains an array of TopologyInfo objects.
+// TopologyList contains an array of OriginInfo objects.
 // +protobuf=true
-type CostList []TopologyInfo
+type TopologyList []TopologyInfo
 
 // WeightInfo contains information about all network costs for a given algorithm.
 // +protobuf=true
@@ -864,18 +904,18 @@ type WeightInfo struct {
 	// Algorithm Name for network cost calculation (e.g., userDefined)
 	Name string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
 
-	// Costs between regions and zones
-	CostList CostList `json:"costList,omitempty" protobuf:"bytes,2,rep,name=costList,casttype=CostList"`
+	// TopologyList owns Costs between origins
+	TopologyList TopologyList `json:"topologyList,omitempty" protobuf:"bytes,2,opt,name=topologyList,casttype=TopologyList"`
 }
 
 // TopologyInfo contains information about network costs for a particular Topology Key.
 // +protobuf=true
 type TopologyInfo struct {
 	// Topology key (e.g., "topology.kubernetes.io/region", "topology.kubernetes.io/zone").
-	TopologyKey string `json:"topologyKey,omitempty" protobuf:"bytes,1,opt,name=topologyKey"`
+	TopologyKey TopologyKey `json:"topologyKey,omitempty" protobuf:"bytes,1,opt,name=topologyKey"` // add as enum instead of string
 
-	// OriginCosts for a particular origin.
-	OriginCosts OriginList `json:"originCosts,omitempty" protobuf:"bytes,2,rep,name=originCosts,casttype=OriginList"`
+	// OriginList for a particular origin.
+	OriginList OriginList `json:"originList,omitempty" protobuf:"bytes,2,rep,name=originList,casttype=OriginList"`
 }
 
 // OriginList contains an array of OriginInfo objects.
@@ -889,8 +929,12 @@ type OriginInfo struct {
 	Origin string `json:"origin,omitempty" protobuf:"bytes,1,opt,name=origin"`
 
 	// Costs for the particular origin.
-	Costs []CostInfo `json:"costs,omitempty" protobuf:"bytes,2,rep,name=costs,casttype=CostInfo"`
+	CostList CostList `json:"costList,omitempty" protobuf:"bytes,2,rep,name=costList,casttype=CostList"`
 }
+
+// CostList contains an array of CostInfo objects.
+// +protobuf=true
+type CostList []CostInfo
 
 // CostInfo contains information about networkCosts.
 // +protobuf=true
@@ -902,9 +946,9 @@ type CostInfo struct {
 	// +optional
 	BandwidthCapacity resource.Quantity `json:"bandwidthCapacity,omitempty" protobuf:"bytes,2,opt,name=bandwidthCapacity"`
 
-	// Bandwidth allocatable between origin and destination.
+	// Bandwidth allocated between origin and destination.
 	// +optional
-	BandwidthAllocatable resource.Quantity `json:"bandwidthAllocatable,omitempty" protobuf:"bytes,3,opt,name=bandwidthAllocatable"`
+	BandwidthAllocated resource.Quantity `json:"bandwidthAllocated,omitempty" protobuf:"bytes,3,opt,name=bandwidthAllocated"`
 
 	// Network Cost between origin and destination (e.g., Dijkstra shortest path, etc)
 	NetworkCost int64 `json:"networkCost,omitempty" protobuf:"bytes,4,opt,name=networkCost"`
@@ -919,7 +963,7 @@ type NetworkTopologyList struct {
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 
-	// Items is the list of NetworkTopology
+	// Items is the list of AppGroup
 	Items []NetworkTopology `json:"items"`
 }
 ```
@@ -1144,38 +1188,43 @@ metadata:
 spec:
   numMembers: 3
   topologySortingAlgorithm: KahnSort
-  workloads: 
+  workloads:
     - workload:
         kind: Deployment
+        name: P1-deployment
+        selector: P1
         apiVersion: apps/v1
         namespace: default
-        name: P1
-      dependencies:
-        - workload: 
-            kind: Deployment
-            apiVersion: apps/v1
-            namespace: default
-            name: P2
-          minBandwidth: "100Mi"
-          maxNetworkCost: 30
-    - workload: 
-        kind: Deployment
-        apiVersion: apps/v1
-        namespace: default
-        name: P2
       dependencies:
         - workload:
             kind: Deployment
+            name: P2-deployment
+            selector: P2
             apiVersion: apps/v1
             namespace: default
-            name: P3
+          minBandwidth: "100Mi"
+          maxNetworkCost: 30
+    - workload:
+        kind: Deployment
+        name: P2-deployment
+        selector: P2
+        apiVersion: apps/v1
+        namespace: default
+      dependencies:
+        - workload:
+            kind: Deployment
+            name: P3-deployment
+            selector: P3
+            apiVersion: apps/v1
+            namespace: default
           minBandwidth: "250Mi"
           maxNetworkCost: 20
     - workload:
         kind: Deployment
+        name: P3-deployment
+        selector: P3
         apiVersion: apps/v1
         namespace: default
-        name: P3
 ```
 
 Then, workloads already allocated in the cluster are retrieved via an AppGroup lister. Two pods have already been allocated: one instance of `P2` in node `N1` and one instance of `P3` in node `N4`. 
@@ -1185,14 +1234,14 @@ Also, the kubernetes cluster has two regions `us-west-1` and `us-east-1`, four z
 The NetworkTopology CRD is the following:
 
 ```yaml
-# Example Network CRD 
+# Example Network CRD
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: NetworkTopology
 metadata:
   name: net-topology-test
   namespace: default
 spec:
-  configMapName: "netperfMetrics"
+  configmapName: "netperfMetrics"
   weights:
     # Region label: "topology.kubernetes.io/region"
     # Zone Label:   "topology.kubernetes.io/zone"
@@ -1201,38 +1250,38 @@ spec:
     # 4 Zones:    us-west-1: z1, z2
     #             us-east-1: z3, z4
     - name: "UserDefined"
-      costList: # Define weights between regions or between zones 
+      topologyList: # Define weights between regions or between zones
         - topologyKey: "topology.kubernetes.io/region" # region costs
-          originCosts:
+          originList:
             - origin: "us-west-1"
-              costs:
+              costList:
                 - destination: "us-east-1"
                   bandwidthCapacity: "10Gi"
                   networkCost: 20
             - origin: "us-east-1"
-              costs:
+              costList:
                 - destination: "us-west-1"
                   bandwidthCapacity: "10Gi"
                   networkCost: 20
         - topologyKey: "topology.kubernetes.io/zone" # zone costs
-          originCosts:
+          originList:
             - origin: "z1"
-              costs:
+              costList:
                 - destination: "z2"
                   bandwidthCapacity: "1Gi"
                   networkCost: 5
             - origin: "z2"
-              costs:
+              costList:
                 - destination: "z1"
                   bandwidthCapacity: "1Gi"
                   networkCost: 5
             - origin: "z3"
-              costs:
+              costList:
                 - destination: "z4"
                   bandwidthCapacity: "1Gi"
                   networkCost: 10
             - origin: "z4"
-              costs:
+              costList:
                 - destination: "z3"
                   bandwidthCapacity: "1Gi"
                   networkCost: 10
@@ -1495,3 +1544,4 @@ Received feedback and comments on the design and implementation. Recording avail
 - 2022-01-11: KEP v0.1 sent out for review after receiving feedback on the initial KEP.
 - 2022-01-19: KEP v0.1 revised after feedback. Further details added. 
 - 2022-02-02: KEP v0.1 updated after revision. Further API modifications. 
+- 2022-02-28: PR open for the initial commit for the Network-Aware framework. KEP v0.1 updated.

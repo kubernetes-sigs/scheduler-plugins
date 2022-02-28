@@ -24,8 +24,12 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// AppGroups returns a AppGroupInformer.
+	AppGroups() AppGroupInformer
 	// ElasticQuotas returns a ElasticQuotaInformer.
 	ElasticQuotas() ElasticQuotaInformer
+	// NetworkTopologies returns a NetworkTopologyInformer.
+	NetworkTopologies() NetworkTopologyInformer
 	// PodGroups returns a PodGroupInformer.
 	PodGroups() PodGroupInformer
 }
@@ -41,9 +45,19 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
+// AppGroups returns a AppGroupInformer.
+func (v *version) AppGroups() AppGroupInformer {
+	return &appGroupInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
 // ElasticQuotas returns a ElasticQuotaInformer.
 func (v *version) ElasticQuotas() ElasticQuotaInformer {
 	return &elasticQuotaInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// NetworkTopologies returns a NetworkTopologyInformer.
+func (v *version) NetworkTopologies() NetworkTopologyInformer {
+	return &networkTopologyInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // PodGroups returns a PodGroupInformer.
