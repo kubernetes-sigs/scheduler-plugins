@@ -127,3 +127,8 @@ verify:
 .PHONY: clean
 clean:
 	rm -rf ./bin
+
+.PHONY: e2e-test
+e2e-test: local-image
+	LOCAL_REGISTRY=${LOCAL_REGISTRY}  LOCAL_CONTROLLER_IMAGE=${LOCAL_CONTROLLER_IMAGE} LOCAL_IMAGE=${LOCAL_IMAGE} go test -tags=e2e -v ./test/e2e
+
