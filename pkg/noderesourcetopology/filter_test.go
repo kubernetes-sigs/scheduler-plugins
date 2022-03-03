@@ -42,107 +42,108 @@ const (
 )
 
 func TestNodeResourceTopology(t *testing.T) {
-	nodeTopologies := make([]*topologyv1alpha1.NodeResourceTopology, 4)
-	nodeTopologies[0] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "10"),
+	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
 				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "8"),
-					MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "10"),
-				},
-			},
-		},
-	}
-	nodeTopologies[1] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "2"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
-					MakeTopologyResInfo(nicResourceName, "30", "5"),
-				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
-					MakeTopologyResInfo(nicResourceName, "30", "2"),
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "8"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
 				},
 			},
 		},
-	}
-	nodeTopologies[2] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node3"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "2"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "5"),
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "2"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
+						MakeTopologyResInfo(nicResourceName, "30", "5"),
+					},
 				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "2"),
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
+						MakeTopologyResInfo(nicResourceName, "30", "2"),
+					},
 				},
 			},
 		},
-	}
-	nodeTopologies[3] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "2"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "5"),
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node3"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "2"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "5"),
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "2"),
+					},
 				},
 			},
-			{
-				Name: "node-75",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "2"),
+		},
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "2"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "5"),
+					},
+				},
+				{
+					Name: "node-75",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "2"),
+					},
 				},
 			},
 		},
 	}
 
-	nodes := make([]*v1.Node, 4)
+	nodes := make([]*v1.Node, len(nodeTopologies))
 	for i := range nodes {
 		nodeResTopology := nodeTopologies[i]
 		res := makeResourceListFromZones(nodeResTopology.Zones)
