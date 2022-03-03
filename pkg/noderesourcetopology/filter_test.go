@@ -170,6 +170,22 @@ func TestNodeResourceTopology(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name: "Guaranteed QoS, minimal, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi")}),
+			node:       nodes[0],
+			wantStatus: nil,
+		},
+		{
+			name: "Guaranteed QoS, minimal, saturating zone, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    findAvailableResourceByName(nodeTopologies[0].Zones[1].Resources, cpu),
+				v1.ResourceMemory: findAvailableResourceByName(nodeTopologies[0].Zones[1].Resources, memory)}),
+			node:       nodes[0],
+			wantStatus: nil,
+		},
+		{
 			name: "Guaranteed QoS, zero quantity of unavailable resource, pod fit",
 			pod: makePodByResourceList(&v1.ResourceList{
 				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
@@ -260,6 +276,22 @@ func TestNodeResourceTopology(t *testing.T) {
 			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
 		},
 		{
+			name: "Guaranteed QoS Topology Scope, minimal, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(1, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("1Gi")}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Guaranteed QoS TopologyScope, minimal, saturating zone, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    findAvailableResourceByName(nodeTopologies[3].Zones[0].Resources, cpu),
+				v1.ResourceMemory: findAvailableResourceByName(nodeTopologies[3].Zones[0].Resources, memory)}),
+			node:       nodes[3],
+			wantStatus: nil,
+		},
+		{
 			name: "Guaranteed QoS Topology Scope, pod fit",
 			pod: makePodByResourceListWithManyContainers(&v1.ResourceList{
 				v1.ResourceCPU:             *resource.NewQuantity(1, resource.DecimalSI),
@@ -305,4 +337,13 @@ func TestNodeResourceTopology(t *testing.T) {
 			}
 		})
 	}
+}
+
+func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoList, name string) resource.Quantity {
+	for _, resourceInfo := range resourceInfoList {
+		if resourceInfo.Name == name {
+			return resourceInfo.Available
+		}
+	}
+	return resource.MustParse("0")
 }
