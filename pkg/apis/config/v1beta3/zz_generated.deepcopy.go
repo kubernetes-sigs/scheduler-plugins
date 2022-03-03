@@ -116,6 +116,11 @@ func (in *MetricProviderSpec) DeepCopyInto(out *MetricProviderSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.InsecureSkipVerify != nil {
+		in, out := &in.InsecureSkipVerify, &out.InsecureSkipVerify
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 
