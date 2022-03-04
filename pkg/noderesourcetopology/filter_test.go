@@ -339,6 +339,233 @@ func TestNodeResourceTopology(t *testing.T) {
 	}
 }
 
+type resourceDescriptor struct {
+	Host     string
+	Node     string
+	Resource string
+	Quantity string
+}
+
+func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
+	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "host0"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "30"),
+						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "384Mi", "384Mi"),
+						MakeTopologyResInfo(nicResourceName, "16", "16"),
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "32"),
+						MakeTopologyResInfo(memory, "64Gi", "64Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "512Mi", "512Mi"),
+						MakeTopologyResInfo(nicResourceName, "32", "32"),
+					},
+				},
+			},
+		},
+	}
+
+	nodes := make([]*v1.Node, len(nodeTopologies))
+	for i := range nodes {
+		nodes[i] = makeNodeFromNodeResourceTopology(nodeTopologies[i])
+	}
+
+	tests := []struct {
+		name       string
+		pod        *v1.Pod
+		node       *v1.Node
+		nrts       []*topologyv1alpha1.NodeResourceTopology
+		avail      []resourceDescriptor
+		wantStatus *framework.Status
+	}{
+		{
+			name: "gu pod fits only on a numa node",
+			pod: makeMultiContainerPodWithResourceList("testpod",
+				[]v1.ResourceList{
+					{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					{
+						v1.ResourceCPU:    resource.MustParse("4"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					{
+						v1.ResourceCPU:                   resource.MustParse("26"),
+						v1.ResourceMemory:                resource.MustParse("32Gi"),
+						v1.ResourceName(hugepages2Mi):    resource.MustParse("512Mi"),
+						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+					},
+				},
+			),
+			node: nodes[0],
+			nrts: []*topologyv1alpha1.NodeResourceTopology{
+				nodeTopologies[0],
+			},
+			avail:      []resourceDescriptor{},
+			wantStatus: nil,
+		},
+		{
+			name: "gu pod does not fit - not enough CPUs available on any NUMA node",
+			pod: makeMultiContainerPodWithResourceList("testpod",
+				[]v1.ResourceList{
+					{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					{
+						v1.ResourceCPU:    resource.MustParse("8"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					{
+						v1.ResourceCPU:                   resource.MustParse("26"),
+						v1.ResourceMemory:                resource.MustParse("26Gi"),
+						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
+						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+					},
+				},
+			),
+			node: nodes[0],
+			nrts: []*topologyv1alpha1.NodeResourceTopology{
+				nodeTopologies[0],
+			},
+			avail:      []resourceDescriptor{},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+		},
+		{
+			name: "gu pod does not fit - not enough memory available on any NUMA node",
+			pod: makeMultiContainerPodWithResourceList("testpod",
+				[]v1.ResourceList{
+					{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("4Gi"),
+					},
+					{
+						v1.ResourceCPU:    resource.MustParse("4"),
+						v1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+					{
+						v1.ResourceCPU:                   resource.MustParse("26"),
+						v1.ResourceMemory:                resource.MustParse("52Gi"),
+						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
+						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+					},
+				},
+			),
+			node: nodes[0],
+			nrts: []*topologyv1alpha1.NodeResourceTopology{
+				nodeTopologies[0],
+			},
+			avail:      []resourceDescriptor{},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+		},
+		{
+			name: "gu pod does not fit - not enough Hugepages available on any NUMA node",
+			pod: makeMultiContainerPodWithResourceList("testpod",
+				[]v1.ResourceList{
+					{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					{
+						v1.ResourceCPU:    resource.MustParse("4"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					{
+						v1.ResourceCPU:                   resource.MustParse("26"),
+						v1.ResourceMemory:                resource.MustParse("32Gi"),
+						v1.ResourceName(hugepages2Mi):    resource.MustParse("3328Mi"), // 128Mi * 26
+						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+					},
+				},
+			),
+			node: nodes[0],
+			nrts: []*topologyv1alpha1.NodeResourceTopology{
+				nodeTopologies[0],
+			},
+			avail:      []resourceDescriptor{},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+		},
+		{
+			name: "gu pod does not fit - not enough devices available on any NUMA node",
+			pod: makeMultiContainerPodWithResourceList("testpod",
+				[]v1.ResourceList{
+					{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					{
+						v1.ResourceCPU:    resource.MustParse("4"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+					{
+						v1.ResourceCPU:                   resource.MustParse("26"),
+						v1.ResourceMemory:                resource.MustParse("26Gi"),
+						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
+						v1.ResourceName(nicResourceName): resource.MustParse("52"),
+					},
+				},
+			),
+			node: nodes[0],
+			nrts: []*topologyv1alpha1.NodeResourceTopology{
+				nodeTopologies[0],
+			},
+			avail:      []resourceDescriptor{},
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeClient := faketopologyv1alpha1.NewSimpleClientset()
+			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+			for _, obj := range nodeTopologies {
+				fakeInformer.Informer().GetStore().Add(obj)
+			}
+
+			tm := TopologyMatch{
+				lister:         fakeInformer.Lister(),
+				policyHandlers: newPolicyHandlerMap(),
+			}
+
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(tt.node)
+			if len(tt.pod.Spec.Containers) > 0 {
+				tt.pod.Spec.Containers[0].Name = containerName
+			}
+			gotStatus := tm.Filter(context.Background(), framework.NewCycleState(), tt.pod, nodeInfo)
+
+			if !reflect.DeepEqual(gotStatus, tt.wantStatus) {
+				t.Errorf("status does not match: %v, want: %v", gotStatus, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha1.NodeResourceTopology) *v1.Node {
+	res := makeResourceListFromZones(nrt.Zones)
+	return &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nrt.Name,
+		},
+		Status: v1.NodeStatus{
+			Capacity:    res,
+			Allocatable: res,
+		},
+	}
+}
+
 func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoList, name string) resource.Quantity {
 	for _, resourceInfo := range resourceInfoList {
 		if resourceInfo.Name == name {
@@ -346,4 +573,35 @@ func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoL
 		}
 	}
 	return resource.MustParse("0")
+}
+
+func makeMultiContainerPodWithResourceList(name string, resourcesList []v1.ResourceList) *v1.Pod {
+	var containers []v1.Container
+
+	for idx := range resourcesList {
+		res := cloneResourceList(resourcesList[idx])
+		containers = append(containers, v1.Container{
+			Name: fmt.Sprintf("cnt-%d", idx),
+			Resources: v1.ResourceRequirements{
+				Requests: res,
+				Limits:   res,
+			},
+		})
+	}
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: v1.PodSpec{
+			Containers: containers,
+		},
+	}
+}
+
+func cloneResourceList(rl v1.ResourceList) v1.ResourceList {
+	res := make(v1.ResourceList)
+	for name, qty := range rl {
+		res[name] = qty
+	}
+	return res
 }
