@@ -274,6 +274,36 @@ profiles:
 		t.Fatal(err)
 	}
 
+	// TargetLoadPacking plugin config with Prometheus Metric Provider arguments
+	targetLoadPackingConfigWithPrometheusArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-prometheus-args.yaml")
+	if err := ioutil.WriteFile(targetLoadPackingConfigWithPrometheusArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta3
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    score:
+      enabled:
+      - name: TargetLoadPacking
+      disabled:
+      - name: "*"
+  pluginConfig:
+  - name: TargetLoadPacking
+    args:
+      metricProvider:
+        type: Prometheus
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
+      targetUtilization: 60 
+      defaultRequests:
+        cpu: "1000m"
+      defaultRequestsMultiplier: "1.8"
+      watcherAddress: http://deadbeef:2020
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
 	// LoadVariationRiskBalancing plugin config with arguments
 	loadVariationRiskBalancingConfigWithArgsFile := filepath.Join(tmpDir, "loadVariationRiskBalancing-with-args.yaml")
 	if err := ioutil.WriteFile(loadVariationRiskBalancingConfigWithArgsFile, []byte(fmt.Sprintf(`
@@ -494,6 +524,24 @@ profiles:
 		{
 			name:            "single profile config - TargetLoadPacking with args",
 			flags:           []string{"--config", targetLoadPackingConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(targetloadpacking.Name, targetloadpacking.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
+					Filter:     defaults.ExpandedPluginsV1beta3.Filter,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
+					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: targetloadpacking.Name, Weight: 1}}},
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - TargetLoadPacking with prometheus metric provider args",
+			flags:           []string{"--config", targetLoadPackingConfigWithPrometheusArgsFile},
 			registryOptions: []app.Option{app.WithPlugin(targetloadpacking.Name, targetloadpacking.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
