@@ -78,6 +78,8 @@ type MetricProviderSpec struct {
 	Address *string `json:"address,omitempty"`
 	// The authentication token of the metric provider
 	Token *string `json:"token,omitempty"`
+	// Whether to enable the InsureSkipVerify options for https requests on Prometheus Metric Provider.
+	InsecureSkipVerify *bool `json:"insecureSkipVerify,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

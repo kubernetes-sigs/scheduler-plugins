@@ -536,8 +536,8 @@ github.com/openzipkin/zipkin-go v0.1.1/go.mod h1:NtoC/o8u3JlF1lSlyPNswIbeQH9bJTm
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
-github.com/paypal/load-watcher v0.2.1 h1:qHcSfbaSyL85Uc3FJ+Jyv+XDChZGGgezKeCXja/sC3E=
-github.com/paypal/load-watcher v0.2.1/go.mod h1:MMCDf8aXF5k+K2q6AtMOBZItCvZ3oFAk+zNO4OAtp0w=
+github.com/paypal/load-watcher v0.2.2 h1:tKCy3Ts8LnihFSLKmyrOODrdt9ulbRXe0MFbxe9U2Bk=
+github.com/paypal/load-watcher v0.2.2/go.mod h1:MMCDf8aXF5k+K2q6AtMOBZItCvZ3oFAk+zNO4OAtp0w=
 github.com/pelletier/go-toml v1.2.0/go.mod h1:5z9KED0ma1S8pY6P1sdut58dfprrGBbd/94hg7ilaic=
 github.com/pelletier/go-toml v1.9.3/go.mod h1:u1nR/EPcESfeI/szUZKdtJ0xRNbUoANCkoOuaOx1Y+c=
 github.com/peterbourgon/diskv v2.0.1+incompatible/go.mod h1:uqqh8zWWbv1HBMNONnaR/tNboyR3/BZd58JJSHlUSCU=

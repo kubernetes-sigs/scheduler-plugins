@@ -83,7 +83,12 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	if args.WatcherAddress != "" {
 		client, err = loadwatcherapi.NewServiceClient(args.WatcherAddress)
 	} else {
-		opts := watcher.MetricsProviderOpts{string(args.MetricProvider.Type), args.MetricProvider.Address, args.MetricProvider.Token}
+		opts := watcher.MetricsProviderOpts{
+			Name:               string(args.MetricProvider.Type),
+			Address:            args.MetricProvider.Address,
+			AuthToken:          args.MetricProvider.Token,
+			InsecureSkipVerify: args.MetricProvider.InsecureSkipVerify,
+		}
 		client, err = loadwatcherapi.NewLibraryClient(opts)
 	}
 	if err != nil {

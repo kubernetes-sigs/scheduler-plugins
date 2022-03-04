@@ -86,6 +86,7 @@ profiles:
       metricProvider:
         type: Prometheus
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
       safeVarianceMargin: 1.0
       safeVarianceSensitivity: 1.0
       watcherAddress: http://deadbeef:2020
@@ -126,8 +127,9 @@ profiles:
 								DefaultRequestsMultiplier: "1.8",
 								WatcherAddress:            "http://deadbeef:2020",
 								MetricProvider: config.MetricProviderSpec{
-									Type:    config.Prometheus,
-									Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+									Type:               config.Prometheus,
+									Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+									InsecureSkipVerify: true,
 								},
 							},
 						},
@@ -138,8 +140,9 @@ profiles:
 								SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
 								WatcherAddress:          "http://deadbeef:2020",
 								MetricProvider: config.MetricProviderSpec{
-									Type:    config.Prometheus,
-									Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+									Type:               config.Prometheus,
+									Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+									InsecureSkipVerify: false,
 								},
 							},
 						},
@@ -389,8 +392,9 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 									SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
 									WatcherAddress:          "http://deadbeef:2020",
 									MetricProvider: config.MetricProviderSpec{
-										Type:    config.Prometheus,
-										Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+										Type:               config.Prometheus,
+										Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+										InsecureSkipVerify: false,
 									},
 								},
 							},
@@ -448,6 +452,7 @@ profiles:
       kind: TargetLoadPackingArgs
       metricProvider:
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
         token: ""
         type: Prometheus
       targetUtilization: 60
@@ -458,6 +463,7 @@ profiles:
       kind: LoadVariationRiskBalancingArgs
       metricProvider:
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
         token: ""
         type: Prometheus
       safeVarianceMargin: 1

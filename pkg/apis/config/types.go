@@ -78,6 +78,8 @@ type MetricProviderSpec struct {
 	Address string
 	// The authentication token of the metric provider
 	Token string
+	// Whether to enable the InsureSkipVerify options for https requests on Metric Providers.
+	InsecureSkipVerify bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

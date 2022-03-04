@@ -203,6 +203,9 @@ func autoConvert_v1beta3_MetricProviderSpec_To_config_MetricProviderSpec(in *Met
 	if err := v1.Convert_Pointer_string_To_string(&in.Token, &out.Token, s); err != nil {
 		return err
 	}
+	if err := v1.Convert_Pointer_bool_To_bool(&in.InsecureSkipVerify, &out.InsecureSkipVerify, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -217,6 +220,9 @@ func autoConvert_config_MetricProviderSpec_To_v1beta3_MetricProviderSpec(in *con
 		return err
 	}
 	if err := v1.Convert_string_To_Pointer_string(&in.Token, &out.Token, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_bool_To_Pointer_bool(&in.InsecureSkipVerify, &out.InsecureSkipVerify, s); err != nil {
 		return err
 	}
 	return nil
