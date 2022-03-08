@@ -35,111 +35,115 @@ import (
 const (
 	cpu                        = string(v1.ResourceCPU)
 	memory                     = string(v1.ResourceMemory)
+	hugepages2Mi               = "hugepages-2Mi"
 	nicResourceName            = "vendor/nic1"
 	notExistingNICResourceName = "vendor/notexistingnic"
 	containerName              = "container1"
 )
 
 func TestNodeResourceTopology(t *testing.T) {
-	nodeTopologies := make([]*topologyv1alpha1.NodeResourceTopology, 4)
-	nodeTopologies[0] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "10"),
+	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
 				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "8"),
-					MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "10"),
-				},
-			},
-		},
-	}
-	nodeTopologies[1] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "2"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "5"),
-				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "2"),
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "8"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
 				},
 			},
 		},
-	}
-	nodeTopologies[2] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "node3"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "2"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "5"),
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "2"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
+						MakeTopologyResInfo(nicResourceName, "30", "5"),
+					},
 				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "2"),
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
+						MakeTopologyResInfo(nicResourceName, "30", "2"),
+					},
 				},
 			},
 		},
-	}
-	nodeTopologies[3] = &topologyv1alpha1.NodeResourceTopology{
-		ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-		Zones: topologyv1alpha1.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "20", "2"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "5"),
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node3"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "2"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "5"),
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "2"),
+					},
 				},
 			},
-			{
-				Name: "node-75",
-				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "30", "4"),
-					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
-					MakeTopologyResInfo(nicResourceName, "30", "2"),
+		},
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "2"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "5"),
+					},
+				},
+				{
+					Name: "node-75",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "2"),
+					},
 				},
 			},
 		},
 	}
 
-	nodes := make([]*v1.Node, 4)
+	nodes := make([]*v1.Node, len(nodeTopologies))
 	for i := range nodes {
 		nodeResTopology := nodeTopologies[i]
 		res := makeResourceListFromZones(nodeResTopology.Zones)
@@ -166,10 +170,46 @@ func TestNodeResourceTopology(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name: "Guaranteed QoS, minimal, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi")}),
+			node:       nodes[0],
+			wantStatus: nil,
+		},
+		{
+			name: "Guaranteed QoS, minimal, saturating zone, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    findAvailableResourceByName(nodeTopologies[0].Zones[1].Resources, cpu),
+				v1.ResourceMemory: findAvailableResourceByName(nodeTopologies[0].Zones[1].Resources, memory)}),
+			node:       nodes[0],
+			wantStatus: nil,
+		},
+		{
+			name: "Guaranteed QoS, zero quantity of unavailable resource, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				hugepages2Mi:      resource.MustParse("0"),
+				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
+			node:       nodes[0],
+			wantStatus: nil,
+		},
+		{
 			name: "Guaranteed QoS, pod fit",
 			pod: makePodByResourceList(&v1.ResourceList{
 				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
 				v1.ResourceMemory: resource.MustParse("2Gi"),
+				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Guaranteed QoS, hugepages, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				hugepages2Mi:      resource.MustParse("64Mi"),
 				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[1],
 			wantStatus: nil,
@@ -199,6 +239,16 @@ func TestNodeResourceTopology(t *testing.T) {
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
 		},
 		{
+			name: "Guaranteed QoS, hugepages, pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				hugepages2Mi:      resource.MustParse("256Mi"),
+				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+		},
+		{
 			name: "Guaranteed QoS, pod doesn't fit",
 			pod: makePodByResourceList(&v1.ResourceList{
 				v1.ResourceCPU:    *resource.NewQuantity(9, resource.DecimalSI),
@@ -224,6 +274,22 @@ func TestNodeResourceTopology(t *testing.T) {
 				notExistingNICResourceName: *resource.NewQuantity(0, resource.DecimalSI)}, 3),
 			node:       nodes[2],
 			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+		},
+		{
+			name: "Guaranteed QoS Topology Scope, minimal, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(1, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("1Gi")}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Guaranteed QoS TopologyScope, minimal, saturating zone, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    findAvailableResourceByName(nodeTopologies[3].Zones[0].Resources, cpu),
+				v1.ResourceMemory: findAvailableResourceByName(nodeTopologies[3].Zones[0].Resources, memory)}),
+			node:       nodes[3],
+			wantStatus: nil,
 		},
 		{
 			name: "Guaranteed QoS Topology Scope, pod fit",
@@ -271,4 +337,13 @@ func TestNodeResourceTopology(t *testing.T) {
 			}
 		})
 	}
+}
+
+func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoList, name string) resource.Quantity {
+	for _, resourceInfo := range resourceInfoList {
+		if resourceInfo.Name == name {
+			return resourceInfo.Available
+		}
+	}
+	return resource.MustParse("0")
 }
