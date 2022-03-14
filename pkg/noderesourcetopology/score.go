@@ -26,7 +26,7 @@ import (
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	apiconfig "sigs.k8s.io/scheduler-plugins/pkg/apis/config"
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"

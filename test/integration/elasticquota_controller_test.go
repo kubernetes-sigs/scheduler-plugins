@@ -37,9 +37,9 @@ import (
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
-	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"

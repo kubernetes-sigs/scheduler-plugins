@@ -39,8 +39,8 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/config/v1beta2"
+	"sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta2"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )

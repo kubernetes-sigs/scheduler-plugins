@@ -38,7 +38,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
 var lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)

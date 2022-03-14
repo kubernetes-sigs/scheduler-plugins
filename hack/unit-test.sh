@@ -24,4 +24,5 @@ source "${SCRIPT_ROOT}/hack/lib/init.sh"
 # TODO: make args customizable.
 go test -mod=vendor \
   sigs.k8s.io/scheduler-plugins/cmd/... \
-  sigs.k8s.io/scheduler-plugins/pkg/...
+  sigs.k8s.io/scheduler-plugins/pkg/... \
+  sigs.k8s.io/scheduler-plugins/apis/...

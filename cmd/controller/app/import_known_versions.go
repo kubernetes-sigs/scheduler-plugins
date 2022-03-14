@@ -17,5 +17,5 @@ limitations under the License.
 package app
 
 import (
-	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/scheme"
+	_ "sigs.k8s.io/scheduler-plugins/apis/scheduling/scheme"
 )

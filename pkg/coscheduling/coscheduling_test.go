@@ -31,8 +31,8 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
-	_ "sigs.k8s.io/scheduler-plugins/pkg/apis/config/scheme"
-	"sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	_ "sigs.k8s.io/scheduler-plugins/apis/config/scheme"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling/core"
 	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"

@@ -22,7 +22,7 @@ import (
 	"net/http"
 
 	rest "k8s.io/client-go/rest"
-	v1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/scheme"
 )
 

@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
-	v1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
 // ElasticQuotaLister helps list ElasticQuotas.
