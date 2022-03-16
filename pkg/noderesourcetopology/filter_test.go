@@ -35,6 +35,7 @@ import (
 const (
 	cpu                        = string(v1.ResourceCPU)
 	memory                     = string(v1.ResourceMemory)
+	extended                   = "namespace/extended"
 	hugepages2Mi               = "hugepages-2Mi"
 	nicResourceName            = "vendor/nic1"
 	notExistingNICResourceName = "vendor/notexistingnic"
@@ -141,6 +142,30 @@ func TestNodeResourceTopology(t *testing.T) {
 				},
 			},
 		},
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "extended"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "8"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
+				},
+			},
+		},
 	}
 
 	nodes := make([]*v1.Node, len(nodeTopologies))
@@ -154,6 +179,12 @@ func TestNodeResourceTopology(t *testing.T) {
 				Allocatable: res,
 			},
 		}
+
+		if nodes[i].ObjectMeta.Name == "extended" {
+			extendedResourceQuantity := resource.MustParse("1")
+			nodes[i].Status.Capacity[v1.ResourceName(extended)] = extendedResourceQuantity
+			nodes[i].Status.Allocatable[v1.ResourceName(extended)] = extendedResourceQuantity
+		}
 	}
 
 	// Test different QoS Guaranteed/Burstable/BestEffort
@@ -163,6 +194,16 @@ func TestNodeResourceTopology(t *testing.T) {
 		node       *v1.Node
 		wantStatus *framework.Status
 	}{
+		{
+			name: "Guaranteed QoS, pod with extended resource fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				extended:          resource.MustParse("1"),
+				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
+			node:       nodes[4],
+			wantStatus: nil,
+		},
 		{
 			name:       "Best effort QoS, pod fit",
 			pod:        &v1.Pod{},
