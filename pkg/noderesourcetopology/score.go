@@ -56,7 +56,7 @@ func (rw resourceToWeightMap) weight(r v1.ResourceName) int64 {
 }
 
 func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	klog.V(5).InfoS("Scoring node", "nodeName", nodeName)
+	klog.V(6).InfoS("scoring node", "nodeName", nodeName)
 	// if it's a non-guaranteed pod, every node is considered to be a good fit
 	if v1qos.GetPodQOS(pod) != v1.PodQOSGuaranteed {
 		return framework.MaxNodeScore, nil
@@ -65,17 +65,18 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 	nodeTopology := findNodeTopology(nodeName, tm.lister)
 
 	if nodeTopology == nil {
+		klog.V(5).InfoS("noderesourcetopology was not found for node", "node", nodeName)
 		return 0, nil
 	}
 
-	klog.V(5).InfoS("NodeTopology found", "nodeTopology", nodeTopology)
+	logNRT("noderesourcetopology found", nodeTopology)
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			// calculates the fraction of requested to capacity per each numa-node.
 			// return the numa-node with the minimal score as the node's total score
 			return handler.score(pod, nodeTopology.Zones, tm.scorerFn, tm.resourceToWeightMap)
 		} else {
-			klog.V(5).InfoS("Policy handler not found", "policy", policyName)
+			klog.V(4).InfoS("policy handler not found", "policy", policyName)
 		}
 	}
 	return 0, nil
@@ -93,14 +94,13 @@ func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, scor
 
 	for _, numa := range numaList {
 		numaScore := score(requested, numa.Resources, resourceToWeightMap)
-		// if NUMA's score is 0, i.e. not fit at all, it won't be take under consideration by Kubelet.
+		// if NUMA's score is 0, i.e. not fit at all, it won't be taken under consideration by Kubelet.
 		if (minScore == 0) || (numaScore != 0 && numaScore < minScore) {
 			minScore = numaScore
 		}
 		numaScores[numa.NUMAID] = numaScore
+		klog.V(6).InfoS("numa score result", "numaID", numa.NUMAID, "score", numaScore)
 	}
-
-	klog.V(5).InfoS("Score for NUMA nodes", "numaScores", numaScores, "nodeScore", minScore)
 	return minScore
 }
 
@@ -124,7 +124,9 @@ func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreS
 	resources := util.GetPodEffectiveRequest(pod)
 
 	allocatablePerNUMA := createNUMANodeList(zones)
-	return scoreForEachNUMANode(resources, allocatablePerNUMA, scorerFn, resourceToWeightMap), nil
+	finalScore := scoreForEachNUMANode(resources, allocatablePerNUMA, scorerFn, resourceToWeightMap)
+	klog.V(5).InfoS("pod scope scoring final node score", "finalScore", finalScore)
+	return finalScore, nil
 }
 
 func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
@@ -135,7 +137,11 @@ func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn 
 	allocatablePerNUMA := createNUMANodeList(zones)
 
 	for i, container := range containers {
+		identifier := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, container.Name)
 		contScore[i] = float64(scoreForEachNUMANode(container.Resources.Requests, allocatablePerNUMA, scorerFn, resourceToWeightMap))
+		klog.V(6).InfoS("container scope scoring", "container", identifier, "score", contScore[i])
 	}
-	return int64(stat.Mean(contScore, nil)), nil
+	finalScore := int64(stat.Mean(contScore, nil))
+	klog.V(5).InfoS("container scope scoring final node score", "finalScore", finalScore)
+	return finalScore, nil
 }
