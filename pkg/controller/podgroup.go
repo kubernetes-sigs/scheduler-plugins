@@ -219,7 +219,7 @@ func (ctrl *PodGroupController) syncHandler(key string) error {
 	case schedv1alpha1.PodGroupPending:
 		if len(pods) >= int(pg.Spec.MinMember) {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupPreScheduling
-			fillOccupiedObj(pg, pods[0])
+			fillOccupiedObj(pgCopy, pods[0])
 		}
 	default:
 		var (
