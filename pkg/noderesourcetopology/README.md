@@ -29,6 +29,8 @@ Dependency:
 
 ### Config
 
+#### Scheduler
+
 Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerConfigConfiguration.
 
 ```yaml
@@ -55,6 +57,23 @@ profiles:
       scoringStrategy:
         type: "LeastAllocated"
 ```
+
+#### Cluster
+
+The Topology-aware scheduler performs its decision over a number of node-specific hardware details or configuration settings which have node granularity (not at cluster granularity).
+Consistent settings across a set of nodes or all over the cluster is a fundamental prerequisite for the scheduler to work correctly.
+In other words, it is a prerequisite that a set of nodes share the same NUMA topology and kubelet configuration, at least for settings like topology and resource (cpu, memory, device) managers.
+
+However, the scheduler has no means to enforce or even validate this prerequisite;
+for example the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD does not expose all the relevant fields, nor it should (it would be out of scope).
+
+Hence, proper cluster configuration is expected from the cluster admins, or to other software components, like controllers or operators, outside of the scope here.
+
+Should the cluster need to have different settings (e.g. topology manager) or NUMA topologies, we recommend to use the
+[standard kubernetes tools](https://kubernetes.io/blog/2017/03/advanced-scheduling-in-kubernetes/) to identify each set of nodes
+using [affinity](https://kubernetes.io/docs/user-guide/node-selection/#node-affinity-beta-feature) or also
+[taints](https://kubernetes.io/docs/user-guide/node-selection/#taints-and-toleations-beta-feature).
+
 
 ### Demo
 
