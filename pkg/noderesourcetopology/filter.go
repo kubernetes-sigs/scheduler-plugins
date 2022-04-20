@@ -41,10 +41,16 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 	nodes := createNUMANodeList(zones)
 	qos := v1qos.GetPodQOS(pod)
 
+	// Node() != nil already verified in Filter(), which is the only public entry point
+	logNumaNodes("container handler NUMA resources", nodeInfo.Node().Name, nodes)
+
 	// We count here in the way TopologyManager is doing it, IOW we put InitContainers
 	// and normal containers in the one scope
 	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
-		if !resourcesAvailableInAnyNUMANodes(nodes, container.Resources.Requests, qos, nodeInfo) {
+		logKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, container.Name)
+		klog.V(6).InfoS("target resources", resourceListToLoggable(logKey, container.Resources.Requests)...)
+
+		if !resourcesAvailableInAnyNUMANodes(logKey, nodes, container.Resources.Requests, qos, nodeInfo) {
 			// definitely we can't align container, so we can't align a pod
 			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", container.Name))
 		}
@@ -54,11 +60,14 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 
 // resourcesAvailableInAnyNUMANodes checks for sufficient resource, this function
 // requires NUMANodeList with properly populated NUMANode, NUMAID should be in range 0-63
-func resourcesAvailableInAnyNUMANodes(numaNodes NUMANodeList, resources v1.ResourceList, qos v1.PodQOSClass, nodeInfo *framework.NodeInfo) bool {
+func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, resources v1.ResourceList, qos v1.PodQOSClass, nodeInfo *framework.NodeInfo) bool {
 	bitmask := bm.NewEmptyBitMask()
 	// set all bits, each bit is a NUMA node, if resources couldn't be aligned
 	// on the NUMA node, bit should be unset
 	bitmask.Fill()
+
+	// Node() != nil already verified in Filter(), which is the only public entry point
+	nodeName := nodeInfo.Node().Name
 
 	for resource, quantity := range resources {
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
@@ -79,13 +88,17 @@ func resourcesAvailableInAnyNUMANodes(numaNodes NUMANodeList, resources v1.Resou
 			}
 
 			resourceBitmask.Add(numaNode.NUMAID)
+			klog.V(6).InfoS("feasible", "logKey", logKey, "node", nodeName, "NUMA", numaNode.NUMAID, "resource", resource)
 		}
 		bitmask.And(resourceBitmask)
 		if bitmask.IsEmpty() {
+			klog.V(5).InfoS("early verdict", "logKey", logKey, "node", nodeName, "resource", resource, "suitable", "false")
 			return false
 		}
 	}
-	return !bitmask.IsEmpty()
+	ret := !bitmask.IsEmpty()
+	klog.V(5).InfoS("final verdict", "logKey", logKey, "node", nodeName, "suitable", ret)
+	return ret
 }
 
 func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, numaQuantity resource.Quantity) bool {
@@ -116,7 +129,14 @@ func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nod
 
 	resources := util.GetPodEffectiveRequest(pod)
 
-	if !resourcesAvailableInAnyNUMANodes(createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod), nodeInfo) {
+	logKey := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+	nodes := createNUMANodeList(zones)
+
+	// Node() != nil already verified in Filter(), which is the only public entry point
+	logNumaNodes("pod handler NUMA resources", nodeInfo.Node().Name, nodes)
+	klog.V(6).InfoS("target resources", resourceListToLoggable(logKey, resources)...)
+
+	if !resourcesAvailableInAnyNUMANodes(logKey, createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod), nodeInfo) {
 		// definitely we can't align container, so we can't align a pod
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align pod: %s", pod.Name))
 	}

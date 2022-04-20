@@ -19,6 +19,11 @@ package noderesourcetopology
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/dustin/go-humanize"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -75,6 +80,7 @@ func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
 				continue
 			}
 			resources := extractResources(zone)
+			klog.V(6).InfoS("extracted NUMA resources", resourceListToLoggable(zone.Name, resources)...)
 			nodes = append(nodes, NUMANode{NUMAID: numaID, Resources: resources})
 		}
 	}
@@ -139,10 +145,45 @@ func makePodByResourceListWithManyContainers(resources *v1.ResourceList, contain
 func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
 	res := make(v1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		klog.V(5).InfoS("Extract resources for zone", "resName", resInfo.Name, "resAvailable", resInfo.Available)
 		res[v1.ResourceName(resInfo.Name)] = resInfo.Available
 	}
 	return res
+}
+
+func logNumaNodes(desc, nodeName string, nodes NUMANodeList) {
+	for _, numaNode := range nodes {
+		numaLogKey := fmt.Sprintf("%s/node-%d", nodeName, numaNode.NUMAID)
+		klog.V(6).InfoS(desc, resourceListToLoggable(numaLogKey, numaNode.Resources)...)
+	}
+}
+
+func resourceListToLoggable(logKey string, resources v1.ResourceList) []interface{} {
+	items := []interface{}{"logKey", logKey}
+
+	resNames := []string{}
+	for resName := range resources {
+		resNames = append(resNames, string(resName))
+	}
+	sort.Strings(resNames)
+
+	for _, resName := range resNames {
+		qty := resources[v1.ResourceName(resName)]
+		items = append(items, resName)
+		resVal, _ := qty.AsInt64()
+		if needsHumanization(resName) {
+			items = append(items, humanize.IBytes(uint64(resVal)))
+		} else {
+			items = append(items, strconv.FormatInt(resVal, 10))
+		}
+	}
+	return items
+}
+
+func needsHumanization(resName string) bool {
+	// memory-related resources may be expressed in KiB/Bytes, which makes
+	// for long numbers, harder to read and compare. To make it easier for
+	// the reader, we express them in a more compact form using go-humanize.
+	return resName == string(v1.ResourceMemory) || strings.HasPrefix(resName, v1.ResourceHugePagesPrefix)
 }
 
 func newPolicyHandlerMap() PolicyHandlerMap {
