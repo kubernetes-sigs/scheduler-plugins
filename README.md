@@ -2,6 +2,10 @@
 
 Repository for out-of-tree scheduler plugins based on the [scheduler framework](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/).
 
+This repo provides scheduler plugins that are exercised in large companies.
+These plugins can be vendored as Golang SDK libraries or used out-of-box via the pre-built images or Helm charts.
+Additionally, this repo incorporates best practices and utilities to compose a high-quality scheduler plugin.
+
 ## Install
 
 Container images are available in the official scheduler-plugins k8s container registry. There are two images one
