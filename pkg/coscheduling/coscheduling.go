@@ -127,11 +127,11 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 // 1. Whether the PodGroup that the Pod belongs to is on the deny list.
 // 2. Whether the total number of pods in a PodGroup is less than its `minMember`.
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) *framework.Status {
-	// If any validation failed, a no-op state data is injected to "state" so that in later
-	// phases we can tell whether the failure comes from PreFilter or not.
+	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid
+	// any preemption attempts.
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
 		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
-		return framework.NewStatus(framework.Unschedulable, err.Error())
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	return framework.NewStatus(framework.Success, "")
 }
