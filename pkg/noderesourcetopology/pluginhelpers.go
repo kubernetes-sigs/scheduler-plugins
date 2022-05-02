@@ -18,6 +18,7 @@ package noderesourcetopology
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -191,4 +192,18 @@ func newPolicyHandlerMap() PolicyHandlerMap {
 		topologyv1alpha1.SingleNUMANodePodLevel:       newPodScopedHandler(),
 		topologyv1alpha1.SingleNUMANodeContainerLevel: newContainerScopedHandler(),
 	}
+}
+
+func logNRT(desc string, nrtObj *topologyv1alpha1.NodeResourceTopology) {
+	if !klog.V(6).Enabled() {
+		// avoid the expensive marshal operation
+		return
+	}
+
+	ntrJson, err := json.MarshalIndent(nrtObj, "", " ")
+	if err != nil {
+		klog.V(6).ErrorS(err, "failed to marshal noderesourcetopology object")
+		return
+	}
+	klog.V(6).Info(desc, "noderesourcetopology", string(ntrJson))
 }
