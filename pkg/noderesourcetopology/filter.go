@@ -19,11 +19,11 @@ package noderesourcetopology
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -108,7 +108,7 @@ func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, 
 		if resource == v1.ResourceMemory {
 			return true
 		}
-		if strings.HasPrefix(string(resource), v1.ResourceHugePagesPrefix) {
+		if v1helper.IsHugePageResourceName(resource) {
 			return true
 		}
 		// 2. set numa node as possible node if resource is CPU

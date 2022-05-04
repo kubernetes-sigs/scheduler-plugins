@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/dustin/go-humanize"
 
@@ -30,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	topoclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
@@ -184,7 +184,7 @@ func needsHumanization(resName string) bool {
 	// memory-related resources may be expressed in KiB/Bytes, which makes
 	// for long numbers, harder to read and compare. To make it easier for
 	// the reader, we express them in a more compact form using go-humanize.
-	return resName == string(v1.ResourceMemory) || strings.HasPrefix(resName, v1.ResourceHugePagesPrefix)
+	return resName == string(v1.ResourceMemory) || v1helper.IsHugePageResourceName(v1.ResourceName(resName))
 }
 
 func newPolicyHandlerMap() PolicyHandlerMap {
