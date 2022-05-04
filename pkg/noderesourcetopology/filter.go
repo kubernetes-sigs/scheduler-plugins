@@ -70,6 +70,12 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 	nodeName := nodeInfo.Node().Name
 
 	for resource, quantity := range resources {
+		if quantity.IsZero() {
+			// why bother? everything's fine from the perspective of this resource
+			klog.V(4).InfoS("ignoring zero-qty resource request", "logKey", logKey, "node", nodeName, "resource", resource)
+			continue
+		}
+
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
 		resourceBitmask := bm.NewEmptyBitMask()
@@ -78,8 +84,7 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 			// if the requested resource can't be found on the NUMA node, we still need to check
 			// if the resource can be found at the node itself, because there are resources which are not NUMA aligned
 			// or not supported by the topology exporter - if resource was not found at both checks - skip (don't set it as available NUMA node).
-			// if the un-found resource has 0 quantity probably this numa node can be considered.
-			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) && !quantity.IsZero() {
+			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) {
 				continue
 			}
 
@@ -116,11 +121,7 @@ func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, 
 			return true
 		}
 	}
-	// 3. set numa node as possible node if zero quantity for non existing resource was requested
-	if quantity.IsZero() {
-		return true
-	}
-	// 4. otherwise check amount of resources
+	// 3. otherwise check amount of resources
 	return numaQuantity.Cmp(quantity) >= 0
 }
 
