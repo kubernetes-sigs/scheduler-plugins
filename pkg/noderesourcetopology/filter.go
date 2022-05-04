@@ -76,6 +76,8 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 			continue
 		}
 
+		isNodeResource := resourceFoundOnNode(resource, quantity, nodeInfo)
+
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
 		resourceBitmask := bm.NewEmptyBitMask()
@@ -84,7 +86,7 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 			// if the requested resource can't be found on the NUMA node, we still need to check
 			// if the resource can be found at the node itself, because there are resources which are not NUMA aligned
 			// or not supported by the topology exporter - if resource was not found at both checks - skip (don't set it as available NUMA node).
-			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) {
+			if !ok && !isNodeResource {
 				continue
 			}
 
