@@ -55,6 +55,10 @@ const (
 	nicResourceName = "vendor/nic1"
 )
 
+const (
+	testPodName = "topology-aware-scheduler-pod"
+)
+
 var (
 	mostAllocatedScheduler      = fmt.Sprintf("%v-scheduler", string(scheconfig.MostAllocated))
 	balancedAllocationScheduler = fmt.Sprintf("%v-scheduler", string(scheconfig.BalancedAllocation))
@@ -174,7 +178,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Filtering out nodes that cannot fit resources on a single numa node in case of Guaranteed pod",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"), map[string]string{cpu: "4", memory: "5Gi"}, false).Obj(),
+				withLimits(st.MakePod().Namespace(ns).Name(testPodName), map[string]string{cpu: "4", memory: "5Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
@@ -205,7 +209,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling of a burstable pod requesting only cpus",
 			pods: []*v1.Pod{
-				st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").Req(map[v1.ResourceName]string{v1.ResourceCPU: "4"}).Obj(),
+				st.MakePod().Namespace(ns).Name(testPodName).Req(map[v1.ResourceName]string{v1.ResourceCPU: "4"}).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
@@ -233,7 +237,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling of a burstable pod requesting only memory",
 			pods: []*v1.Pod{
-				st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").Req(map[v1.ResourceName]string{v1.ResourceMemory: "5Gi"}).Obj(),
+				st.MakePod().Namespace(ns).Name(testPodName).Req(map[v1.ResourceName]string{v1.ResourceMemory: "5Gi"}).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
@@ -260,7 +264,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling Guaranteed pod with most-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatedScheduler),
+				withLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(mostAllocatedScheduler),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -292,7 +296,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling Guaranteed pod with balanced-allocation strategy scheduler",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").SchedulerName(balancedAllocationScheduler),
+				withLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(balancedAllocationScheduler),
 					map[string]string{cpu: "2", memory: "2Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -324,7 +328,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling Guaranteed pod with least-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatedScheduler),
+				withLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastAllocatedScheduler),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -361,21 +365,21 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling Best-Effort pod with most-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").SchedulerName(mostAllocatedScheduler).Container(pause).Obj(),
+				st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(mostAllocatedScheduler).Container(pause).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
 		{
 			name: "Scheduling Best-Effort pod with balanced-allocation strategy scheduler",
 			pods: []*v1.Pod{
-				st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").SchedulerName(balancedAllocationScheduler).Container(pause).Obj(),
+				st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(balancedAllocationScheduler).Container(pause).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
 		{
 			name: "Scheduling Best-Effort pod with least-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").SchedulerName(leastAllocatedScheduler).Container(pause).Obj(),
+				st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastAllocatedScheduler).Container(pause).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
@@ -384,7 +388,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				withLimits(
 					withLimits(
-						st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"),
+						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
@@ -422,7 +426,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				withLimits(
 					withLimits(
-						st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"),
+						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "3", memory: "5Gi"}, false),
 					map[string]string{cpu: "3", memory: "5Gi"}, false).Obj(),
 			},
@@ -457,7 +461,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				withLimits(
 					withLimits(
-						st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"),
+						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "4Gi"}, true).Obj(),
 			},
@@ -492,7 +496,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				withLimits(
 					withLimits(
-						st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"),
+						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "4", memory: "4Gi"}, false),
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
@@ -527,7 +531,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				withLimits(
 					withLimits(
-						st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"),
+						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
 			},
@@ -562,7 +566,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				withLimits(
 					withLimits(
-						st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"),
+						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
 			},
@@ -597,7 +601,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				withLimits(
 					withLimits(
-						st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"),
+						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "4", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "6Gi"}, false).Obj(),
 			},
@@ -1069,7 +1073,7 @@ func (n *nrtWrapper) Obj() *topologyv1alpha1.NodeResourceTopology {
 func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 	var teList []nrtTestEntry
 	for i, e := range entries {
-		p := st.MakePod().Name(fmt.Sprintf("%s-%d", "topology-aware-scheduler-pod", i+1)).Namespace(ns)
+		p := st.MakePod().Name(fmt.Sprintf("%s-%d", testPodName, i+1)).Namespace(ns)
 		for _, req := range e.initCntReq {
 			p = withLimits(p, req, true)
 		}
