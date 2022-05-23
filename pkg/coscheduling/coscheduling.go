@@ -72,10 +72,11 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
 	deniedPGExpirationTime := time.Duration(args.DeniedPGExpirationTimeSeconds) * time.Second
+	ignorePodNumCheckingTime := time.Duration(args.IgnorePodNumCheckingTimeSeconds) * time.Second
 
 	ctx := context.TODO()
 
-	pgMgr := core.NewPodGroupManager(pgClient, handle.SnapshotSharedLister(), &scheduleTimeDuration, &deniedPGExpirationTime, pgInformer, podInformer)
+	pgMgr := core.NewPodGroupManager(pgClient, handle.SnapshotSharedLister(), &scheduleTimeDuration, &deniedPGExpirationTime, &ignorePodNumCheckingTime, pgInformer, podInformer)
 	plugin := &Coscheduling{
 		frameworkHandler: handle,
 		pgMgr:            pgMgr,

@@ -47,6 +47,7 @@ func TestPreFilter(t *testing.T) {
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pgInformerFactory.Start(ctx.Done())
 	scheduleTimeout := 10 * time.Second
+	ignorePodNumCheckingTime := 0 * time.Second
 	pg := testutil.MakePG("pg", "ns1", 2, nil, nil)
 	pg1 := testutil.MakePG("pg1", "ns1", 2, nil, nil)
 	pg2 := testutil.MakePG("pg2", "ns1", 2, nil, &corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")})
@@ -159,7 +160,7 @@ func TestPreFilter(t *testing.T) {
 			existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
 			snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
 			pgMgr := &PodGroupManager{pgLister: pgLister, lastDeniedPG: tt.lastDeniedPG, permittedPG: newCache(),
-				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout, lastDeniedPGExpirationTime: &scheduleTimeout}
+				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout, lastDeniedPGExpirationTime: &scheduleTimeout, ignorePodNumCheckingTime: &ignorePodNumCheckingTime}
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")

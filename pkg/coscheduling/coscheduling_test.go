@@ -90,6 +90,7 @@ func TestLess(t *testing.T) {
 	snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
 	scheudleDuration := 10 * time.Second
 	deniedPGExpirationTime := 3 * time.Second
+	ignorePodNumCheckingTime := 3 * time.Second
 	var lowPriority, highPriority = int32(10), int32(100)
 	ns1, ns2 := "namespace1", "namespace2"
 	for _, tt := range []struct {
@@ -257,7 +258,7 @@ func TestLess(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, &deniedPGExpirationTime, pgInformer, podInformer)
+			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, &deniedPGExpirationTime, &ignorePodNumCheckingTime, pgInformer, podInformer)
 			coscheduling := &Coscheduling{pgMgr: pgMgr}
 			if got := coscheduling.Less(tt.p1, tt.p2); got != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, got)
@@ -320,9 +321,10 @@ func TestPermit(t *testing.T) {
 	}
 	scheudleDuration := 10 * time.Second
 	deniedPGExpirationTime := 3 * time.Second
+	ignorePodNumCheckingTime := 3 * time.Second
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, &deniedPGExpirationTime, pgInformer, podInformer)
+			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheudleDuration, &deniedPGExpirationTime, &ignorePodNumCheckingTime, pgInformer, podInformer)
 			coscheduling := &Coscheduling{pgMgr: pgMgr, frameworkHandler: f, scheduleTimeout: &scheudleDuration}
 			code, _ := coscheduling.Permit(context.Background(), framework.NewCycleState(), tt.pod, "test")
 			if code.Code() != tt.expected {
@@ -370,6 +372,7 @@ func TestPostFilter(t *testing.T) {
 	groupPodSnapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
 	scheduleDuration := 10 * time.Second
 	deniedPGExpirationTime := 3 * time.Second
+	ignorePodNumCheckingTime := 3 * time.Second
 	tests := []struct {
 		name                 string
 		pod                  *v1.Pod
@@ -402,7 +405,7 @@ func TestPostFilter(t *testing.T) {
 				mgrSnapShot = tt.snapshotSharedLister
 			}
 
-			pgMgr := core.NewPodGroupManager(cs, mgrSnapShot, &scheduleDuration, &deniedPGExpirationTime, pgInformer, podInformer)
+			pgMgr := core.NewPodGroupManager(cs, mgrSnapShot, &scheduleDuration, &deniedPGExpirationTime, &ignorePodNumCheckingTime, pgInformer, podInformer)
 			coscheduling := &Coscheduling{pgMgr: pgMgr, frameworkHandler: f, scheduleTimeout: &scheduleDuration}
 			_, code := coscheduling.PostFilter(context.Background(), cycleState, tt.pod, nodeStatusMap)
 			if code.Message() == "" != tt.expectedEmptyMsg {

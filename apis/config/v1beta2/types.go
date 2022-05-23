@@ -32,6 +32,11 @@ type CoschedulingArgs struct {
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
 	DeniedPGExpirationTimeSeconds *int64 `json:"deniedPGExpirationTimeSeconds,omitempty"`
+
+	// IgnorePodNumCheckingTimeSeconds describes a time window in seconds, which can help
+	// newly created pods (whose survival time is within this window) quickly pass through
+	// the perFilter stage, where they can skip the pod number check.
+	IgnorePodNumCheckingTimeSeconds *int64 `json:"ignorePodNumCheckingTimeSeconds,omitempty"`
 }
 
 // ModeType is a type "string".

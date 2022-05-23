@@ -32,6 +32,10 @@ type CoschedulingArgs struct {
 	PermitWaitingTimeSeconds int64
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup.
 	DeniedPGExpirationTimeSeconds int64
+	// IgnorePodNumCheckingTimeSeconds describes a time window in seconds, which can help
+	// newly created pods (whose survival time is within this window) quickly pass through
+	// the perFilter stage, where they can skip the pod number check.
+	IgnorePodNumCheckingTimeSeconds int64
 }
 
 // ModeType is a "string" type.

@@ -88,16 +88,24 @@ type PodGroupManager struct {
 	// reserveResourcePercentage is the reserved resource for the max finished group, range (0,100]
 	reserveResourcePercentage int32
 	sync.RWMutex
+	// ignorePodNumCheckingTime describes a time window in seconds, which can help
+	// newly created pods (whose survival time is within this window) quickly pass through
+	// the perFilter stage, where they can skip the pod number check. Default value is 3s,
+	// minimum is 0s.
+	// NOTE: even if IgnorePodNumCheckingTime is configured, the newly created pod may still
+	// fail at perFilter stage, since they may not pass resource restrictions or other checks.
+	ignorePodNumCheckingTime *time.Duration
 }
 
 // NewPodGroupManager creates a new operation object.
-func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister framework.SharedLister, scheduleTimeout, deniedPGExpirationTime *time.Duration,
+func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister framework.SharedLister, scheduleTimeout, deniedPGExpirationTime, ignorePodNumCheckingTime *time.Duration,
 	pgInformer pginformer.PodGroupInformer, podInformer informerv1.PodInformer) *PodGroupManager {
 	pgMgr := &PodGroupManager{
 		pgClient:                   pgClient,
 		snapshotSharedLister:       snapshotSharedLister,
 		scheduleTimeout:            scheduleTimeout,
 		lastDeniedPGExpirationTime: deniedPGExpirationTime,
+		ignorePodNumCheckingTime:   ignorePodNumCheckingTime,
 		pgLister:                   pgInformer.Lister(),
 		podLister:                  podInformer.Lister(),
 		lastDeniedPG:               gochache.New(3*time.Second, 3*time.Second),
@@ -155,15 +163,18 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	if _, ok := pgMgr.lastDeniedPG.Get(pgFullName); ok {
 		return fmt.Errorf("pod with pgName: %v last failed in %v, deny", pgFullName, *pgMgr.lastDeniedPGExpirationTime)
 	}
-	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
-		labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
-	)
-	if err != nil {
-		return fmt.Errorf("podLister list pods failed: %v", err)
-	}
-	if len(pods) < int(pg.Spec.MinMember) {
-		return fmt.Errorf("pre-filter pod %v cannot find enough sibling pods, "+
-			"current pods number: %v, minMember of group: %v", pod.Name, len(pods), pg.Spec.MinMember)
+
+	if time.Now().After(pod.CreationTimestamp.Time.Add(*pgMgr.ignorePodNumCheckingTime)) {
+		pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
+			labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
+		)
+		if err != nil {
+			return fmt.Errorf("podLister list pods failed: %v", err)
+		}
+		if len(pods) < int(pg.Spec.MinMember) {
+			return fmt.Errorf("pre-filter pod %v cannot find enough sibling pods, "+
+				"current pods number: %v, minMember of group: %v", pod.Name, len(pods), pg.Spec.MinMember)
+		}
 	}
 
 	if pg.Spec.MinResources == nil {

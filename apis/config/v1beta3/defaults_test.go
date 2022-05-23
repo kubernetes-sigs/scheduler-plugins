@@ -39,19 +39,35 @@ func TestSchedulingDefaults(t *testing.T) {
 			name:   "empty config CoschedulingArgs",
 			config: &CoschedulingArgs{},
 			expect: &CoschedulingArgs{
-				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
-				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(20),
+				PermitWaitingTimeSeconds:        pointer.Int64Ptr(60),
+				DeniedPGExpirationTimeSeconds:   pointer.Int64Ptr(20),
+				IgnorePodNumCheckingTimeSeconds: pointer.Int64Ptr(3),
 			},
 		},
 		{
 			name: "set non default CoschedulingArgs",
 			config: &CoschedulingArgs{
-				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
-				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(10),
+				PermitWaitingTimeSeconds:        pointer.Int64Ptr(60),
+				DeniedPGExpirationTimeSeconds:   pointer.Int64Ptr(10),
+				IgnorePodNumCheckingTimeSeconds: pointer.Int64Ptr(2),
 			},
 			expect: &CoschedulingArgs{
-				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
-				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(10),
+				PermitWaitingTimeSeconds:        pointer.Int64Ptr(60),
+				DeniedPGExpirationTimeSeconds:   pointer.Int64Ptr(10),
+				IgnorePodNumCheckingTimeSeconds: pointer.Int64Ptr(2),
+			},
+		},
+		{
+			name: "set negative IgnorePodNumCheckingTimeSeconds in CoschedulingArgs",
+			config: &CoschedulingArgs{
+				PermitWaitingTimeSeconds:        pointer.Int64Ptr(60),
+				DeniedPGExpirationTimeSeconds:   pointer.Int64Ptr(10),
+				IgnorePodNumCheckingTimeSeconds: pointer.Int64Ptr(-2),
+			},
+			expect: &CoschedulingArgs{
+				PermitWaitingTimeSeconds:        pointer.Int64Ptr(60),
+				DeniedPGExpirationTimeSeconds:   pointer.Int64Ptr(10),
+				IgnorePodNumCheckingTimeSeconds: pointer.Int64Ptr(0),
 			},
 		},
 		{

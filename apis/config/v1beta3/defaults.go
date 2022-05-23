@@ -26,8 +26,10 @@ import (
 )
 
 var (
-	defaultPermitWaitingTimeSeconds      int64 = 60
-	defaultDeniedPGExpirationTimeSeconds int64 = 20
+	defaultPermitWaitingTimeSeconds        int64 = 60
+	defaultDeniedPGExpirationTimeSeconds   int64 = 20
+	defaultIgnorePodNumCheckingTimeSeconds int64 = 3
+	notIgnorePodNumCheckingTimeSeconds     int64 = 0
 
 	defaultNodeResourcesAllocatableMode = Least
 
@@ -80,6 +82,12 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.DeniedPGExpirationTimeSeconds == nil {
 		obj.DeniedPGExpirationTimeSeconds = &defaultDeniedPGExpirationTimeSeconds
+	}
+	if obj.IgnorePodNumCheckingTimeSeconds == nil {
+		obj.IgnorePodNumCheckingTimeSeconds = &defaultIgnorePodNumCheckingTimeSeconds
+	}
+	if obj.IgnorePodNumCheckingTimeSeconds != nil && *obj.IgnorePodNumCheckingTimeSeconds < 0 {
+		obj.IgnorePodNumCheckingTimeSeconds = &notIgnorePodNumCheckingTimeSeconds
 	}
 }
 
