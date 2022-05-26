@@ -68,6 +68,7 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 
 	// Node() != nil already verified in Filter(), which is the only public entry point
 	nodeName := nodeInfo.Node().Name
+	nodeResources := util.ResourceList(nodeInfo.Allocatable)
 
 	for resource, quantity := range resources {
 		if quantity.IsZero() {
@@ -76,17 +77,20 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 			continue
 		}
 
-		isNodeResource := resourceFoundOnNode(resource, quantity, nodeInfo)
+		if _, ok := nodeResources[resource]; !ok {
+			// some resources may not expose NUMA affinity (device plugins, extended resources), but all resources
+			// must be reported at node level; thus, if they are not present at node level, we can safely assume
+			// we don't have the resource at all.
+			klog.V(5).InfoS("early verdict: cannot meet request", "logKey", logKey, "node", nodeName, "resource", resource, "suitable", "false")
+			return false
+		}
 
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
 		resourceBitmask := bm.NewEmptyBitMask()
 		for _, numaNode := range numaNodes {
 			numaQuantity, ok := numaNode.Resources[resource]
-			// if the requested resource can't be found on the NUMA node, we still need to check
-			// if the resource can be found at the node itself, because there are resources which are not NUMA aligned
-			// or not supported by the topology exporter - if resource was not found at both checks - skip (don't set it as available NUMA node).
-			if !ok && !isNodeResource {
+			if !ok {
 				continue
 			}
 
@@ -173,14 +177,4 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		}
 	}
 	return nil
-}
-
-// resourceFoundOnNode checks whether a given resource exist at the node level
-// and whether the given quantity is big enough
-func resourceFoundOnNode(resName v1.ResourceName, wantQuantity resource.Quantity, nodeInfo *framework.NodeInfo) bool {
-	resourceList := util.ResourceList(nodeInfo.Allocatable)
-	if gotQuantity, ok := resourceList[resName]; ok {
-		return gotQuantity.Cmp(wantQuantity) >= 0
-	}
-	return false
 }
