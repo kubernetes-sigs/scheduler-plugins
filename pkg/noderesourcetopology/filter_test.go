@@ -225,14 +225,6 @@ func TestNodeResourceTopology(t *testing.T) {
 		{
 			name: "Burstable QoS, pod doesn't fit",
 			pod: makePodByResourceList(&v1.ResourceList{
-				v1.ResourceCPU:  *resource.NewQuantity(14, resource.DecimalSI),
-				nicResourceName: *resource.NewQuantity(3, resource.DecimalSI)}),
-			node:       nodes[1],
-			wantStatus: nil, // number of cpu is exceeded, but in case of burstable QoS for cpu resources we rely on fit.go
-		},
-		{
-			name: "Burstable QoS, pod doesn't fit",
-			pod: makePodByResourceList(&v1.ResourceList{
 				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
