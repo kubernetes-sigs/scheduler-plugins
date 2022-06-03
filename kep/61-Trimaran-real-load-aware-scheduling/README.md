@@ -110,7 +110,7 @@ Following is the algorithm:
 2. Calculate the current pod's total CPU requests and overhead. Call it B.
 3. Calculate the expected utilization if the pod is scheduled under this node by adding i.e. U = A + B.
 4. If U &lt;= X%, return (100 - X)U/X + X as the score
-5. If X% &lt; U &lt;= 100%, return 50(100 - U)/(100 - X)
+5. If X% &lt; U &lt;= 100%, return X(100 - U)/(100 - X)
 6. If U > 100%, return 0
 
 For example, let’s say we have three nodes X, Y, and Z, with four cores each and utilization 1, 2, and 3 cores respectively. For simplicity, let’s assume our pod to be scheduled has 0 cores CPU requests and overhead. Let X = 50%.
