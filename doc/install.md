@@ -34,7 +34,7 @@ and as a single scheduler. Their pros and cons are as below:
     Consider the scenario where multiple schedulers attempt to assign their pods simultaneously to a node which can only fit one of the pods.
     The pod that arrives later will be evicted by the kubelet, and hang there (without its `.spec.nodeName` cleared) until resources get released on the node.
 
-    Running multiple schedulers, therefore, is not recommended in the production env. However, it's a good starting point to play with.
+    Running multiple schedulers, therefore, is not recommended in the production env. However, it's a good starting point to play with
     scheduler framework and exercise plugin development, no matter you're on managed or on-premise Kubernetes clusters.
 - **single scheduler:**
   - **pro**: you will be using a unified scheduler and hence keep the resources conflict-free. It's recommended for the production env.
