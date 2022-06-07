@@ -383,8 +383,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 	}{
 		{
 			name: "gu pod fits only on a numa node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -394,13 +394,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("32Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("512Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("32Gi"),
+						hugepages2Mi:      resource.MustParse("512Mi"),
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -410,8 +410,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough CPUs available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -421,13 +421,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("26Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("26Gi"),
+						hugepages2Mi:      resource.MustParse("52Mi"),
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -437,8 +437,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough memory available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("4Gi"),
@@ -448,13 +448,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("16Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("52Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("52Gi"),
+						hugepages2Mi:      resource.MustParse("52Mi"),
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -464,8 +464,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough Hugepages available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -475,13 +475,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("32Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("3328Mi"), // 128Mi * 26
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("32Gi"),
+						hugepages2Mi:      resource.MustParse("3328Mi"), // 128Mi * 26
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -491,8 +491,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough devices available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -502,13 +502,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("26Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("52"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("26Gi"),
+						hugepages2Mi:      resource.MustParse("52Mi"),
+						nicResourceName:   resource.MustParse("52"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -567,26 +567,42 @@ func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoL
 	return resource.MustParse("0")
 }
 
-func makeMultiContainerPodWithResourceList(name string, resourcesList []v1.ResourceList) *v1.Pod {
-	var containers []v1.Container
-
-	for idx := range resourcesList {
-		res := cloneResourceList(resourcesList[idx])
-		containers = append(containers, v1.Container{
-			Name: fmt.Sprintf("cnt-%d", idx),
-			Resources: v1.ResourceRequirements{
-				Requests: res,
-				Limits:   res,
-			},
-		})
-	}
-	return &v1.Pod{
+func makePod(name string, options ...func(*v1.Pod)) *v1.Pod {
+	pod := v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: v1.PodSpec{
-			Containers: containers,
-		},
+	}
+	for _, o := range options {
+		o(&pod)
+	}
+	return &pod
+}
+
+func withMultiContainers(resourcesList []v1.ResourceList) func(*v1.Pod) {
+	return func(pod *v1.Pod) {
+		var containers []v1.Container
+
+		for idx := range resourcesList {
+			res := cloneResourceList(resourcesList[idx])
+			containers = append(containers, v1.Container{
+				Name: fmt.Sprintf("cnt-%d", idx+1),
+				Resources: v1.ResourceRequirements{
+					Requests: res,
+					Limits:   res,
+				},
+			})
+		}
+		pod.Spec.Containers = containers
+	}
+}
+
+func withMultiInitContainers(resourcesList []v1.ResourceList) func(*v1.Pod) {
+	return func(pod *v1.Pod) {
+		p := &v1.Pod{}
+		f := withMultiContainers(resourcesList)
+		f(p)
+		pod.Spec.InitContainers = p.Spec.Containers
 	}
 }
 
