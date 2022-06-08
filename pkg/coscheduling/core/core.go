@@ -216,9 +216,8 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Statu
 }
 
 // PostBind updates a PodGroup's status.
+// TODO: move this logic to PodGroup's controller.
 func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nodeName string) {
-	pgMgr.Lock()
-	defer pgMgr.Unlock()
 	pgFullName, pg := pgMgr.GetPodGroup(pod)
 	if pgFullName == "" || pg == nil {
 		return
@@ -249,10 +248,7 @@ func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nod
 			klog.ErrorS(err, "Failed to patch", "podGroup", klog.KObj(pg))
 			return
 		}
-		pg.Status.Phase = pgCopy.Status.Phase
 	}
-	pg.Status.Scheduled = pgCopy.Status.Scheduled
-	return
 }
 
 // GetCreationTimestamp returns the creation time of a podGroup or a pod.
