@@ -183,7 +183,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				},
 			},
 			expected: []framework.NodeScore{
-				{Name: "node-1", Score: 42},
+				{Name: "node-1", Score: 33},
 			},
 		},
 		{
