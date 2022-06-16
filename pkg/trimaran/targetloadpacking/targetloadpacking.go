@@ -258,7 +258,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		if predictedCPUUsage > 100 {
 			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
 		}
-		penalisedScore := int64(math.Round(50 * (100 - predictedCPUUsage) / (100 - float64(hostTargetUtilizationPercent))))
+		penalisedScore := int64(math.Round(float64(hostTargetUtilizationPercent) * (100 - predictedCPUUsage) / (100 - float64(hostTargetUtilizationPercent))))
 		klog.V(6).InfoS("Penalised score for host", "nodeName", nodeName, "penalisedScore", penalisedScore)
 		return penalisedScore, framework.NewStatus(framework.Success, "")
 	}
