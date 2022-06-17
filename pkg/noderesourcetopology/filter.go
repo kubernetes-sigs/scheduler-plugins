@@ -19,11 +19,11 @@ package noderesourcetopology
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -68,18 +68,29 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 
 	// Node() != nil already verified in Filter(), which is the only public entry point
 	nodeName := nodeInfo.Node().Name
+	nodeResources := util.ResourceList(nodeInfo.Allocatable)
 
 	for resource, quantity := range resources {
+		if quantity.IsZero() {
+			// why bother? everything's fine from the perspective of this resource
+			klog.V(4).InfoS("ignoring zero-qty resource request", "logKey", logKey, "node", nodeName, "resource", resource)
+			continue
+		}
+
+		if _, ok := nodeResources[resource]; !ok {
+			// some resources may not expose NUMA affinity (device plugins, extended resources), but all resources
+			// must be reported at node level; thus, if they are not present at node level, we can safely assume
+			// we don't have the resource at all.
+			klog.V(5).InfoS("early verdict: cannot meet request", "logKey", logKey, "node", nodeName, "resource", resource, "suitable", "false")
+			return false
+		}
+
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
 		resourceBitmask := bm.NewEmptyBitMask()
 		for _, numaNode := range numaNodes {
 			numaQuantity, ok := numaNode.Resources[resource]
-			// if the requested resource can't be found on the NUMA node, we still need to check
-			// if the resource can be found at the node itself, because there are resources which are not NUMA aligned
-			// or not supported by the topology exporter - if resource was not found at both checks - skip (don't set it as available NUMA node).
-			// if the un-found resource has 0 quantity probably this numa node can be considered.
-			if !ok && !resourceFoundOnNode(resource, quantity, nodeInfo) && !quantity.IsZero() {
+			if !ok {
 				continue
 			}
 
@@ -108,7 +119,7 @@ func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, 
 		if resource == v1.ResourceMemory {
 			return true
 		}
-		if strings.HasPrefix(string(resource), v1.ResourceHugePagesPrefix) {
+		if v1helper.IsHugePageResourceName(resource) {
 			return true
 		}
 		// 2. set numa node as possible node if resource is CPU
@@ -116,11 +127,7 @@ func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, 
 			return true
 		}
 	}
-	// 3. set numa node as possible node if zero quantity for non existing resource was requested
-	if quantity.IsZero() {
-		return true
-	}
-	// 4. otherwise check amount of resources
+	// 3. otherwise check amount of resources
 	return numaQuantity.Cmp(quantity) >= 0
 }
 
@@ -170,14 +177,4 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		}
 	}
 	return nil
-}
-
-// resourceFoundOnNode checks whether a given resource exist at the node level
-// and whether the given quantity is big enough
-func resourceFoundOnNode(resName v1.ResourceName, wantQuantity resource.Quantity, nodeInfo *framework.NodeInfo) bool {
-	resourceList := util.ResourceList(nodeInfo.Allocatable)
-	if gotQuantity, ok := resourceList[resName]; ok {
-		return gotQuantity.Cmp(wantQuantity) >= 0
-	}
-	return false
 }
