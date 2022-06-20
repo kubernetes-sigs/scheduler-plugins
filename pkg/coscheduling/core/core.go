@@ -153,7 +153,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return nil
 	}
 	if _, ok := pgMgr.lastDeniedPG.Get(pgFullName); ok {
-		return fmt.Errorf("pod with pgName: %v last failed in 3s, deny", pgFullName)
+		return fmt.Errorf("pod with pgName: %v last failed in %v, deny", pgFullName, *pgMgr.lastDeniedPGExpirationTime)
 	}
 	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
 		labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
