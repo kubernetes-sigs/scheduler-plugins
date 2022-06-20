@@ -136,7 +136,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 	return framework.NewStatus(framework.Success, "")
 }
 
-// PostFilter is used to rejecting a group of pods if a pod does not pass PreFilter or Filter.
+// PostFilter is used to reject a group of pods if a pod does not pass PreFilter or Filter.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	pgName, pg := cs.pgMgr.GetPodGroup(pod)

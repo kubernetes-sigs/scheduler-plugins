@@ -28,7 +28,7 @@ import (
 type CoschedulingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// PermitWaitingTime is the wait timeout in seconds.
+	// PermitWaitingTimeSeconds is the waiting timeout in seconds.
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
 
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
