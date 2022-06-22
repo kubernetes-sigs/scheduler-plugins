@@ -48,27 +48,27 @@ build.amd64: build-controller.amd64 build-scheduler.amd64
 build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
 
 .PHONY: build-controller
-build-controller: update-vendor
+build-controller:
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-controller.amd64
-build-controller.amd64: update-vendor
+build-controller.amd64:
 	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-controller.arm64v8
-build-controller.arm64v8: update-vendor
+build-controller.arm64v8:
 	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
-build-scheduler: update-vendor
+build-scheduler:
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: build-scheduler.amd64
-build-scheduler.amd64: update-vendor
+build-scheduler.amd64:
 	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: build-scheduler.arm64v8
-build-scheduler.arm64v8: update-vendor
+build-scheduler.arm64v8:
 	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
@@ -107,11 +107,11 @@ update-vendor:
 	hack/update-vendor.sh
 
 .PHONY: unit-test
-unit-test: update-vendor
+unit-test:
 	hack/unit-test.sh
 
 .PHONY: install-envtest
-install-envtest: update-vendor
+install-envtest:
 	hack/install-envtest.sh
 
 .PHONY: integration-test
@@ -119,7 +119,7 @@ integration-test: install-envtest
 	hack/integration-test.sh
 
 .PHONY: verify
-verify: update-vendor
+verify:
 	hack/verify-gofmt.sh
 	hack/verify-crdgen.sh
 	hack/verify-structured-logging.sh
