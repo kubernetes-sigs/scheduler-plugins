@@ -383,8 +383,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 	}{
 		{
 			name: "gu pod fits only on a numa node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -394,13 +394,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("32Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("512Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("32Gi"),
+						hugepages2Mi:      resource.MustParse("512Mi"),
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -410,8 +410,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough CPUs available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -421,13 +421,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("26Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("26Gi"),
+						hugepages2Mi:      resource.MustParse("52Mi"),
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -437,8 +437,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough memory available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("4Gi"),
@@ -448,13 +448,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("16Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("52Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("52Gi"),
+						hugepages2Mi:      resource.MustParse("52Mi"),
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -464,8 +464,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough Hugepages available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -475,13 +475,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("32Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("3328Mi"), // 128Mi * 26
-						v1.ResourceName(nicResourceName): resource.MustParse("26"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("32Gi"),
+						hugepages2Mi:      resource.MustParse("3328Mi"), // 128Mi * 26
+						nicResourceName:   resource.MustParse("26"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -491,8 +491,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		},
 		{
 			name: "gu pod does not fit - not enough devices available on any NUMA node",
-			pod: makeMultiContainerPodWithResourceList("testpod",
-				[]v1.ResourceList{
+			pod: makePod("testpod",
+				withMultiContainers([]v1.ResourceList{
 					{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("2Gi"),
@@ -502,13 +502,13 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 						v1.ResourceMemory: resource.MustParse("8Gi"),
 					},
 					{
-						v1.ResourceCPU:                   resource.MustParse("26"),
-						v1.ResourceMemory:                resource.MustParse("26Gi"),
-						v1.ResourceName(hugepages2Mi):    resource.MustParse("52Mi"),
-						v1.ResourceName(nicResourceName): resource.MustParse("52"),
+						v1.ResourceCPU:    resource.MustParse("26"),
+						v1.ResourceMemory: resource.MustParse("26Gi"),
+						hugepages2Mi:      resource.MustParse("52Mi"),
+						nicResourceName:   resource.MustParse("52"),
 					},
 				},
-			),
+				)),
 			node: nodes[0],
 			nrts: []*topologyv1alpha1.NodeResourceTopology{
 				nodeTopologies[0],
@@ -545,6 +545,261 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 	}
 }
 
+// should be filled by the user
+type testUserEntry struct {
+	// description contains the test type and tier as described in TESTS.md
+	// and a short description of the test itself
+	description string
+	initCntReq  []map[string]string
+	cntReq      []map[string]string
+	statusErr   string
+	// this testing batch is going to br run against the same node and NRT objects, hence we're not specifying them.
+}
+
+// will be generated by parseTestUserEntry given a []testUserEntry
+type testEntry struct {
+	name       string
+	pod        *v1.Pod
+	wantStatus *framework.Status
+}
+
+func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
+	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "host0"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "30"),
+						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "384Mi", "384Mi"),
+						MakeTopologyResInfo(nicResourceName, "16", "16"),
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "32"),
+						MakeTopologyResInfo(memory, "64Gi", "64Gi"),
+						MakeTopologyResInfo(hugepages2Mi, "512Mi", "512Mi"),
+						MakeTopologyResInfo(nicResourceName, "32", "32"),
+					},
+				},
+			},
+		},
+	}
+
+	nodes := make([]*v1.Node, len(nodeTopologies))
+	for i := range nodes {
+		nodes[i] = makeNodeFromNodeResourceTopology(nodeTopologies[i])
+	}
+
+	tue := []testUserEntry{
+		{
+			description: "[1][tier3] single container with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4G"},
+			},
+		},
+		{
+			description: "[2][tier3] single container with cpu over allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "40", memory: "4G"},
+			},
+			statusErr: "cannot align container: cnt-1",
+		},
+		{
+			description: "[2][tier3] single container with memory over allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "100G"},
+			},
+			statusErr: "cannot align container: cnt-1",
+		},
+		{
+			description: "[2][tier3] single container with cpu and memory over allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "40", memory: "100G"},
+			},
+			statusErr: "cannot align container: cnt-1",
+		},
+		{
+			description: "[4][tier2] multi-containers with good allocation, spread across NUMAs - fit",
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "40G"},
+			},
+		},
+		{
+			description: "[4][tier1] multi containers with good devices and hugepages allocation, spread across NUMAs - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "6G", hugepages2Mi: "500Mi", nicResourceName: "16"},
+				{cpu: "2", memory: "6G", hugepages2Mi: "50Mi", nicResourceName: "8"},
+			},
+		},
+		{
+			description: "[7][tier1] init container with cpu over allocation, multi-containers with good allocation - not fit",
+			initCntReq: []map[string]string{
+				{cpu: "40", memory: "40G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "1", memory: "4G"},
+				{cpu: "1", memory: "4G"},
+			},
+			statusErr: "cannot align init container: cnt-1",
+		},
+		{
+			description: "[7][tier1] init container with memory over allocation, multi-containers with good allocation - not fit",
+			initCntReq: []map[string]string{
+				{cpu: "4", memory: "70G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "1", memory: "4G"},
+				{cpu: "1", memory: "4G"},
+			},
+			statusErr: "cannot align init container: cnt-1",
+		},
+		{
+			description: "[11][tier1] init container with good allocation, multi-containers spread across NUMAs - fit",
+			initCntReq: []map[string]string{
+				{cpu: "4", memory: "10G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "40G"},
+			},
+		},
+		{
+			description: "[17][tier1] multi init containers with good allocation, multi-containers spread across NUMAs - fit",
+			initCntReq: []map[string]string{
+				{cpu: "4", memory: "10G"},
+				{cpu: "4", memory: "10G"},
+				{cpu: "4", memory: "10G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "40G"},
+				{cpu: "6", memory: "10G"},
+			},
+		},
+		{
+			description: "[24][tier1] multi init containers with good allocation, multi-containers with over cpu allocation - not fit",
+			initCntReq: []map[string]string{
+				{cpu: "30", memory: "10G"},
+				{cpu: "30", memory: "10G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "6G"},
+			},
+			statusErr: "cannot align container: cnt-3",
+		},
+		{
+			description: "[27][tier1] multi init containers with good allocation, container with cpu over allocation - not fit",
+			initCntReq: []map[string]string{
+				{cpu: "30", memory: "10G"},
+				{cpu: "30", memory: "10G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "35", memory: "40G"},
+			},
+			statusErr: "cannot align container: cnt-1",
+		},
+		{
+			description: "[28][tier1] multi init containers with good allocation, multi-containers with good allocation - fit",
+			initCntReq: []map[string]string{
+				{cpu: "30", memory: "10G"},
+				{cpu: "30", memory: "10G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "40G"},
+			},
+		},
+		{
+			description: "[29][tier1] multi init containers when sum of their cpus requests (together) is over allocatable, multi-containers with good allocation - fit",
+			initCntReq: []map[string]string{
+				{cpu: "30", memory: "10G"},
+				{cpu: "30", memory: "10G"},
+				{cpu: "30", memory: "10G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "40G"},
+				{cpu: "2", memory: "6G"},
+			},
+		},
+		{
+			description: "[29][tier1] multi init containers when sum of their memory requests (together) is over allocatable, multi-containers with good allocation - fit",
+			initCntReq: []map[string]string{
+				{cpu: "3", memory: "50G"},
+				{cpu: "3", memory: "50G"},
+				{cpu: "3", memory: "50G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "20", memory: "40G"},
+				{cpu: "2", memory: "6G"},
+			},
+		},
+		{
+			description: "[32][tier1] multi init containers with over cpu allocation - not fit",
+			initCntReq: []map[string]string{
+				{cpu: "40", memory: "50G"},
+				{cpu: "3", memory: "50G"},
+				{cpu: "3", memory: "50G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "2", memory: "6G"},
+			},
+			statusErr: "cannot align init container: cnt-1",
+		},
+		{
+			description: "[32][tier1] multi init containers with over memory allocation - not fit",
+			initCntReq: []map[string]string{
+				{cpu: "20", memory: "50G"},
+				{cpu: "40", memory: "50G"},
+				{cpu: "3", memory: "50G"},
+			},
+			cntReq: []map[string]string{
+				{cpu: "20", memory: "40G"},
+				{cpu: "2", memory: "6G"},
+			},
+			statusErr: "cannot align init container: cnt-2",
+		},
+	}
+
+	tests := parseTestUserEntry(tue)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeClient := faketopologyv1alpha1.NewSimpleClientset()
+			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+			for _, obj := range nodeTopologies {
+				fakeInformer.Informer().GetStore().Add(obj)
+			}
+
+			tm := TopologyMatch{
+				lister:         fakeInformer.Lister(),
+				policyHandlers: newPolicyHandlerMap(),
+			}
+
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(nodes[0])
+			gotStatus := tm.Filter(context.Background(), framework.NewCycleState(), tt.pod, nodeInfo)
+
+			if !reflect.DeepEqual(gotStatus, tt.wantStatus) {
+				t.Errorf("status does not match: %v, want: %v", gotStatus, tt.wantStatus)
+			}
+		})
+	}
+}
+
 func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha1.NodeResourceTopology) *v1.Node {
 	res := makeResourceListFromZones(nrt.Zones)
 	return &v1.Node{
@@ -567,26 +822,42 @@ func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoL
 	return resource.MustParse("0")
 }
 
-func makeMultiContainerPodWithResourceList(name string, resourcesList []v1.ResourceList) *v1.Pod {
-	var containers []v1.Container
-
-	for idx := range resourcesList {
-		res := cloneResourceList(resourcesList[idx])
-		containers = append(containers, v1.Container{
-			Name: fmt.Sprintf("cnt-%d", idx),
-			Resources: v1.ResourceRequirements{
-				Requests: res,
-				Limits:   res,
-			},
-		})
-	}
-	return &v1.Pod{
+func makePod(name string, options ...func(*v1.Pod)) *v1.Pod {
+	pod := v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: v1.PodSpec{
-			Containers: containers,
-		},
+	}
+	for _, o := range options {
+		o(&pod)
+	}
+	return &pod
+}
+
+func withMultiContainers(resourcesList []v1.ResourceList) func(*v1.Pod) {
+	return func(pod *v1.Pod) {
+		var containers []v1.Container
+
+		for idx := range resourcesList {
+			res := cloneResourceList(resourcesList[idx])
+			containers = append(containers, v1.Container{
+				Name: fmt.Sprintf("cnt-%d", idx+1),
+				Resources: v1.ResourceRequirements{
+					Requests: res,
+					Limits:   res,
+				},
+			})
+		}
+		pod.Spec.Containers = containers
+	}
+}
+
+func withMultiInitContainers(resourcesList []v1.ResourceList) func(*v1.Pod) {
+	return func(pod *v1.Pod) {
+		p := &v1.Pod{}
+		f := withMultiContainers(resourcesList)
+		f(p)
+		pod.Spec.InitContainers = p.Spec.Containers
 	}
 }
 
@@ -596,4 +867,51 @@ func cloneResourceList(rl v1.ResourceList) v1.ResourceList {
 		res[name] = qty
 	}
 	return res
+}
+
+func parseTestUserEntry(entries []testUserEntry) []testEntry {
+	var teList []testEntry
+	for i, e := range entries {
+		irl, err := parseContainerRes(e.initCntReq)
+		if err != nil {
+			panic(fmt.Errorf("cannot parse entry: %q, error: %v", e.description, err))
+		}
+
+		rl, err := parseContainerRes(e.cntReq)
+		if err != nil {
+			panic(fmt.Errorf("cannot parse entry: %q, error: %v", e.description, err))
+		}
+
+		pod := makePod(fmt.Sprintf("testpod%d", i), withMultiInitContainers(irl), withMultiContainers(rl))
+		te := testEntry{
+			name:       e.description,
+			pod:        pod,
+			wantStatus: parseState(e.statusErr),
+		}
+		teList = append(teList, te)
+	}
+	return teList
+}
+
+func parseContainerRes(cntRes []map[string]string) ([]v1.ResourceList, error) {
+	rll := []v1.ResourceList{}
+	for i := 0; i < len(cntRes); i++ {
+		resMap := cntRes[i]
+
+		rl := v1.ResourceList{}
+		for k, v := range resMap {
+			rl[v1.ResourceName(k)] = resource.MustParse(v)
+		}
+		rll = append(rll, rl)
+	}
+
+	return rll, nil
+}
+
+func parseState(error string) *framework.Status {
+	if len(error) == 0 {
+		return nil
+	}
+
+	return framework.NewStatus(framework.Unschedulable, error)
 }
