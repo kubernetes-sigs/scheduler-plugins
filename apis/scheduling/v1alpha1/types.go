@@ -86,28 +86,27 @@ const (
 	// enough resources to it.
 	PodGroupPending PodGroupPhase = "Pending"
 
-	// PodGroupRunning means `spec.minMember` pods of PodGroups has been in running phase.
+	// PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
 	PodGroupRunning PodGroupPhase = "Running"
 
-	// PodGroupPreScheduling means all of pods has been are waiting to be scheduled, enqueue waitingPod
+	// PodGroupPreScheduling means all pods of the pod group have enqueued and are waiting to be scheduled.
 	PodGroupPreScheduling PodGroupPhase = "PreScheduling"
 
-	// PodGroupScheduling means some of pods has been scheduling in running phase but have not reach the `spec.
-	// minMember` pods of PodGroups.
+	// PodGroupScheduling means partial pods of the pod group have been scheduled and are in running phase
+	// but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
 	PodGroupScheduling PodGroupPhase = "Scheduling"
 
-	// PodGroupScheduled means `spec.minMember` pods of PodGroups have been scheduled finished and pods have been in running
-	// phase.
+	// PodGroupScheduled means the `spec.minMember` pods of the pod group have been scheduled and are in running phase.
 	PodGroupScheduled PodGroupPhase = "Scheduled"
 
-	// PodGroupUnknown means part of `spec.minMember` pods are running but the other part can not
-	// be scheduled, e.g. not enough resource; scheduler will wait for related controller to recover it.
+	// PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
+	// be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
 	PodGroupUnknown PodGroupPhase = "Unknown"
 
-	// PodGroupFinished means all of `spec.minMember` pods are successfully.
+	// PodGroupFinished means the `spec.minMember` pods of the pod group are successfully finished.
 	PodGroupFinished PodGroupPhase = "Finished"
 
-	// PodGroupFailed means at least one of `spec.minMember` pods is failed.
+	// PodGroupFailed means at least one of `spec.minMember` pods have failed.
 	PodGroupFailed PodGroupPhase = "Failed"
 
 	// PodGroupLabel is the default label of coscheduling
