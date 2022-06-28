@@ -109,6 +109,7 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 
 		// for each requested resource, calculate which NUMA slots are good fits, and then AND with the aggregated bitmask, IOW unset appropriate bit if we can't align resources, or set it
 		// obvious, bits which are not in the NUMA id's range would be unset
+		hasNUMAAffinity := false
 		resourceBitmask := bm.NewEmptyBitMask()
 		for _, numaNode := range numaNodes {
 			numaQuantity, ok := numaNode.Resources[resource]
@@ -116,6 +117,7 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 				continue
 			}
 
+			hasNUMAAffinity = true
 			if !isNUMANodeSuitable(qos, resource, quantity, numaQuantity) {
 				continue
 			}
@@ -123,6 +125,12 @@ func resourcesAvailableInAnyNUMANodes(logKey string, numaNodes NUMANodeList, res
 			resourceBitmask.Add(numaNode.NUMAID)
 			klog.V(6).InfoS("feasible", "logKey", logKey, "node", nodeName, "NUMA", numaNode.NUMAID, "resource", resource)
 		}
+
+		if !hasNUMAAffinity && !v1helper.IsNativeResource(resource) {
+			klog.V(6).InfoS("resource available at node level (no NUMA affinity)", "logKey", logKey, "node", nodeName, "resource", resource)
+			continue
+		}
+
 		bitmask.And(resourceBitmask)
 		if bitmask.IsEmpty() {
 			klog.V(5).InfoS("early verdict", "logKey", logKey, "node", nodeName, "resource", resource, "suitable", "false")
