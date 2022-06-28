@@ -19,7 +19,7 @@ COPY . .
 ARG ARCH
 RUN make build-controller.$ARCH
 
-FROM $ARCH/alpine:3.12
+FROM $ARCH/alpine:3.16
 
 COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/controller /bin/controller
 
