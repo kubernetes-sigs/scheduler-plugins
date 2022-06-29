@@ -19,6 +19,15 @@ $ cd scheduler-plugins/manifests/install/charts
 $ helm install scheduler-plugins as-a-second-scheduler/
 ```
 
+#### Verify that scheduler and plugin-controller pod are running properly.
+
+```bash
+$ kubectl get deploy -n scheduler-plugins
+NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+scheduler-plugins-controller   1/1     1            1           7s
+scheduler-plugins-scheduler    1/1     1            1           7s
+```
+
 ### Configuration
 
 The following table lists the configurable parameters of the as-a-second-scheduler chart and their default values.
