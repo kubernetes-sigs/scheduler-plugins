@@ -44,29 +44,7 @@ and as a single scheduler. Their pros and cons are as below:
 The quickest way to try scheduler-plugins is to install it using helm chart as a second scheduler.
 You can find the demo chart in [manifests/install/charts](../manifests/install/charts). **But if in the production environment, it is recommended to replace the default-scheduler manually(as described in next section).**
 
-1. Helm install.
-
-    ```bash
-    $ git clone git@github.com:kubernetes-sigs/scheduler-plugins.git
-    $ cd scheduler-plugins/manifests/install/charts
-    $ helm install scheduler-plugins as-a-second-scheduler/
-      ...
-      NAME: scheduler-plugins
-      LAST DEPLOYED: Tue Feb  8 09:53:27 2022
-      NAMESPACE: default
-      STATUS: deployed
-      REVISION: 1
-      TEST SUITE: None
-    ```
-
-1. Verify that scheduler and plugin-controller pod are running properly.
-
-    ```bash
-    $ kubectl get deploy -n scheduler-plugins
-    NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
-    scheduler-plugins-controller   1/1     1            1           7s
-    scheduler-plugins-scheduler    1/1     1            1           7s
-    ```
+[Install using Helm Chart](../manifests/install/charts/as-a-second-scheduler/README.md#installing-the-chart)
 
 ### As a single scheduler (replacing the vanilla default-scheduler)
 
