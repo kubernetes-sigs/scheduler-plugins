@@ -146,94 +146,35 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	nodeList, err := cs.CoreV1().Nodes().List(testCtx.Ctx, metav1.ListOptions{})
 	t.Logf("NodeList: %v", nodeList)
 	pause := imageutils.GetPauseImageName()
-	for _, tt := range []struct {
-		name                   string
-		pods                   []*v1.Pod
-		nodeResourceTopologies []*topologyv1alpha1.NodeResourceTopology
-		expectedNodes          []string
-	}{
+	tests := []nrtTestEntry{
 		{
 			name: "Filtering out nodes that cannot fit resources on a single numa node in case of Guaranteed pod",
 			pods: []*v1.Pod{
 				withLimits(st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod"), map[string]string{cpu: "4", memory: "5Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-								topologyv1alpha1.ResourceInfo{
-									Name:      memory,
-									Available: resource.MustParse("8Gi"),
-									Capacity:  resource.MustParse("8Gi"),
-								},
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-								topologyv1alpha1.ResourceInfo{
-									Name:      memory,
-									Available: resource.MustParse("8Gi"),
-									Capacity:  resource.MustParse("8Gi"),
-								},
-							},
-						},
-					},
-				},
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("4"),
-									Capacity:  resource.MustParse("4"),
-								},
-								topologyv1alpha1.ResourceInfo{
-									Name:      memory,
-									Available: resource.MustParse("8Gi"),
-									Capacity:  resource.MustParse("8Gi"),
-								},
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("0"),
-									Capacity:  resource.MustParse("0"),
-								},
-								topologyv1alpha1.ResourceInfo{
-									Name:      memory,
-									Available: resource.MustParse("8Gi"),
-									Capacity:  resource.MustParse("8Gi"),
-								},
-							},
-						},
-					},
-				},
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "0", "0"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-2"},
 		},
@@ -243,62 +184,25 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").Req(map[v1.ResourceName]string{v1.ResourceCPU: "4"}).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("4"),
-									Capacity:  resource.MustParse("4"),
-								},
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("0"),
-									Capacity:  resource.MustParse("0"),
-								},
-							},
-						},
-					},
-				},
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      cpu,
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-							},
-						},
-					},
-				},
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "0", "0"),
+						}).Obj(),
+
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
@@ -308,62 +212,24 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				st.MakePod().Namespace(ns).Name("topology-aware-scheduler-pod").Req(map[v1.ResourceName]string{v1.ResourceMemory: "5Gi"}).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      "foo",
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      "foo",
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-							},
-						},
-					},
-				},
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
-					TopologyPolicies: []string{"foo"},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      "foo",
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								topologyv1alpha1.ResourceInfo{
-									Name:      "foo",
-									Available: resource.MustParse("2"),
-									Capacity:  resource.MustParse("2"),
-								},
-							},
-						},
-					},
-				},
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy("foo").
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
@@ -374,50 +240,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-							},
-						},
-					},
-				},
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
-							},
-						},
-					},
-				},
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-2"},
 		},
@@ -428,50 +272,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "2", memory: "2Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
-							},
-						},
-					},
-				},
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
-							},
-						},
-					},
-				},
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-2"},
 		},
@@ -482,50 +304,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-1"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-							},
-						},
-					},
-				},
-				{
-					ObjectMeta:       metav1.ObjectMeta{Name: "fake-node-2"},
-					TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-					Zones: topologyv1alpha1.ZoneList{
-						topologyv1alpha1.Zone{
-							Name: "node-0",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
-							},
-						},
-						topologyv1alpha1.Zone{
-							Name: "node-1",
-							Type: "Node",
-							Resources: topologyv1alpha1.ResourceInfoList{
-								noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
-								noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
-							},
-						},
-					},
-				},
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1"},
 		},
@@ -565,28 +365,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				makeNodeResourceTopology("fake-node-1", topologyv1alpha1.SingleNUMANodePodLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodePodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
-				makeNodeResourceTopology("fake-node-2", topologyv1alpha1.SingleNUMANodePodLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodePodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-2"},
 		},
@@ -603,28 +403,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "3", memory: "5Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				makeNodeResourceTopology("fake-node-1", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "8", "6"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
-				makeNodeResourceTopology("fake-node-2", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-2"},
 		},
@@ -638,28 +438,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "4", memory: "4Gi"}, true).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				makeNodeResourceTopology("fake-node-1", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
-				makeNodeResourceTopology("fake-node-2", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-2"},
 		},
@@ -673,28 +473,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				makeNodeResourceTopology("fake-node-1", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
-				makeNodeResourceTopology("fake-node-2", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "6", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
+						}).Obj(),
 			},
 			expectedNodes: []string{"fake-node-1"},
 		},
@@ -708,28 +508,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				makeNodeResourceTopology("fake-node-1", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
-				makeNodeResourceTopology("fake-node-2", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
+						}).Obj(),
 			},
 			expectedNodes: []string{},
 		},
@@ -743,28 +543,28 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				makeNodeResourceTopology("fake-node-1", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
-				makeNodeResourceTopology("fake-node-2", topologyv1alpha1.SingleNUMANodeContainerLevel,
-					[]topologyv1alpha1.ResourceInfoList{
-						{
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-						{
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						},
-					}),
+						}).Obj(),
 			},
 			expectedNodes: []string{},
 		},
