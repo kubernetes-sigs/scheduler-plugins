@@ -225,6 +225,13 @@ github.com/spf13/pflag
 # github.com/stretchr/testify v1.7.0
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
+# github.com/vladimirvivien/gexe v0.1.1
+## explicit; go 1.16
+github.com/vladimirvivien/gexe
+github.com/vladimirvivien/gexe/exec
+github.com/vladimirvivien/gexe/fs
+github.com/vladimirvivien/gexe/prog
+github.com/vladimirvivien/gexe/vars
 # go.etcd.io/etcd/api/v3 v3.5.1
 ## explicit; go 1.16
 go.etcd.io/etcd/api/v3/authpb
@@ -1366,6 +1373,22 @@ sigs.k8s.io/controller-runtime/pkg/webhook
 sigs.k8s.io/controller-runtime/pkg/webhook/admission
 sigs.k8s.io/controller-runtime/pkg/webhook/conversion
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
+# sigs.k8s.io/e2e-framework v0.0.6
+## explicit; go 1.17
+sigs.k8s.io/e2e-framework/klient
+sigs.k8s.io/e2e-framework/klient/conf
+sigs.k8s.io/e2e-framework/klient/k8s
+sigs.k8s.io/e2e-framework/klient/k8s/resources
+sigs.k8s.io/e2e-framework/klient/wait
+sigs.k8s.io/e2e-framework/klient/wait/conditions
+sigs.k8s.io/e2e-framework/pkg/env
+sigs.k8s.io/e2e-framework/pkg/envconf
+sigs.k8s.io/e2e-framework/pkg/envfuncs
+sigs.k8s.io/e2e-framework/pkg/features
+sigs.k8s.io/e2e-framework/pkg/flags
+sigs.k8s.io/e2e-framework/pkg/internal/types
+sigs.k8s.io/e2e-framework/support/kind
+sigs.k8s.io/e2e-framework/third_party/helm
 # sigs.k8s.io/json v0.0.0-20211208200746-9f7c6b3444d2
 ## explicit; go 1.17
 sigs.k8s.io/json
