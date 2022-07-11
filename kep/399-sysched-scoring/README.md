@@ -116,20 +116,16 @@ We developed a new plugin to implement the scoring extension API point in the Ku
 
 **How the Scheduler gets access to pods' system call profiles**
 
-We assume that the system call profiles of pods have explicitly been made available to the scheduler through a pod's security context. The seccomp profile directory on the host is mounted into the scheduler's pod. Then it reads and parses the seccomp profiles and obtains the the system call set for that pod. If the Security Profile Operator (SPO) is used (see below), the scheduler can instead use API server to access the seccomp profile CRD to get the system call profile. With the SPO, there's no need to mount the host's seccomp profile directory into the scheduler pod.
+We assume that the system call profiles of pods have explicitly been made available to the scheduler via the Security Profile Operator (SPO). The scheduler can use the API server to access a pod's seccomp profile via the SPO's CRD.
 
+**Generating system call profile with Security Profile Operator (SPO)**
 
-**Generating system call profile**
-
-There are multiple ways to generate a system call profile and convert it to a seccomp profile and attach it to a pod. We describe two ways:
-
-1.  Manually creating seccomp profile: One can create the system call profile for a pod by creating the seccomp profile manually and setting the profile location in local file system through a pod's security context
-2.  Creating seccomp profile using Security Profile Operator (SPO): The Kubernetes sigs community developed the Kubernetes [Security Profiles Operator](https://github.com/kubernetes-sigs/security-profiles-operator) that creates Custom Resource Definition (CRD) for seccomp profile. One can manually create a seccomp profile CRD for a pod by specifying the allowed or denied list in the CRD's yaml file. The operator can also be used to automate generating the seccomp profile. In the end, the operator creates the CRD and provides a relative path where the actual json file for the CRD is stored. One can then update the pod's security context using the relative path. Optionally, SPO can also automate binding the seccomp profile to a pod. 
+The Kubernetes sigs community developed the Kubernetes [Security Profiles Operator](https://github.com/kubernetes-sigs/security-profiles-operator) that creates Custom Resource Definitions (CRDs) for seccomp profiles. One can manually create a seccomp profile CRD for a pod by specifying the allowed or denied system call list in the CRD's yaml file. Alternatively, the operator can also be used to automate generating the seccomp profile. In the end, the operator creates the CRD and provides a relative path where the actual json file for the CRD is stored. One can then update the pod's security context using the relative path. Optionally, SPO can also automate binding the seccomp profile to a pod. 
 
 ### Known limitations
 
--   System call profile associated with a pod must be accessible to the scheduler either locally on the file system or through a CRD
--   If there are not enough nodes or the variance in system call usage of the workload is small, the security benefit will be small if any.
+-   System call profile associated with a pod must be accessible to the scheduler via the SPO's CRD
+-   If there are not enough nodes or the variance in system call usage of the workload is small, the security benefit will be small, if any.
 -   Generating a tight and complete system call profile for a pod is not trivial.
 
 ### Test plans
