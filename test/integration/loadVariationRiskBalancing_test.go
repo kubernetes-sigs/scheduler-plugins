@@ -61,8 +61,13 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 					Metrics: []watcher.Metric{
 						{
 							Type:     watcher.CPU,
-							Value:    10,
-							Operator: watcher.Latest,
+							Value:    30,
+							Operator: watcher.Average,
+						},
+						{
+							Type:     watcher.CPU,
+							Operator: watcher.Std,
+							Value:    20,
 						},
 					},
 				},
@@ -70,8 +75,13 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 					Metrics: []watcher.Metric{
 						{
 							Type:     watcher.CPU,
-							Value:    60,
-							Operator: watcher.Latest,
+							Value:    70,
+							Operator: watcher.Average,
+						},
+						{
+							Type:     watcher.CPU,
+							Operator: watcher.Std,
+							Value:    20,
 						},
 					},
 				},
@@ -79,8 +89,13 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 					Metrics: []watcher.Metric{
 						{
 							Type:     watcher.CPU,
-							Value:    0,
-							Operator: watcher.Latest,
+							Value:    50,
+							Operator: watcher.Average,
+						},
+						{
+							Type:     watcher.CPU,
+							Operator: watcher.Std,
+							Value:    50,
 						},
 					},
 				},
@@ -114,9 +129,6 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 		},
 	})
 
-	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
-	createNamespace(t, testCtx, ns)
-
 	testCtx = initTestSchedulerWithOptions(
 		t,
 		testCtx,
@@ -127,7 +139,9 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 	go testCtx.Scheduler.Run(testCtx.Ctx)
 	defer cleanupTest(t, testCtx)
 
-	var nodes []*v1.Node
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
+
 	nodeNames := []string{"node-1", "node-2", "node-3"}
 	capacity := map[v1.ResourceName]string{
 		v1.ResourceCPU:    "2",
@@ -135,9 +149,8 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 	}
 	for i := 0; i < len(nodeNames); i++ {
 		node := st.MakeNode().Name(nodeNames[i]).Label("node", nodeNames[i]).Capacity(capacity).Obj()
-		node, err := cs.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{})
+		_, err := cs.CoreV1().Nodes().Create(testCtx.Ctx, node, metav1.CreateOptions{})
 		assert.Nil(t, err)
-		nodes = append(nodes, node)
 	}
 
 	var newPods []*v1.Pod
@@ -163,7 +176,7 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 	}
 	defer cleanupPods(t, testCtx, newPods)
 
-	expected := [2]string{nodeNames[2], nodeNames[2]}
+	expected := [2]string{nodeNames[0], nodeNames[0]}
 	for i := range newPods {
 		err := wait.Poll(1*time.Second, 10*time.Second, func() (bool, error) {
 			return podScheduled(cs, newPods[i].Namespace, newPods[i].Name), nil
