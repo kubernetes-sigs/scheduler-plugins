@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadvariationriskbalancing
+package trimaran
 
 import (
 	"fmt"
@@ -36,31 +36,29 @@ const (
 
 // Collector : get data from load watcher, encapsulating the load watcher and its operations
 //
-// Currently, the Collector owns its own load watcher and is used solely by the LoadVariationRiskBalancing
-// plugin. Other Trimaran plugins, such as the TargetLoadPacking, have their own load watchers. The reason
-// being that the Trimaran plugins have different, potentially conflicting, objectives. Thus, it is recommended
-// not to enable them concurrently. As such, they are currently designed to each have its own load-watcher.
-// If a need arises in the future to enable multiple Trimaran plugins, a restructuring to have a single Collector,
-// serving the multiple plugins, may be beneficial for performance reasons.
+// Trimaran plugins have different, potentially conflicting, objectives. Thus, it is recommended not
+// to enable them concurrently. As such, they are currently designed to each have its own Collector.
+// If a need arises in the future to enable multiple Trimaran plugins, a restructuring to have a single
+// Collector, serving the multiple plugins, may be beneficial for performance reasons.
 type Collector struct {
 	// load watcher client
 	client loadwatcherapi.Client
 	// data collected by load watcher
 	metrics watcher.WatcherMetrics
 	// plugin arguments
-	args *pluginConfig.LoadVariationRiskBalancingArgs
+	args *pluginConfig.TrimaranArgs
 	// for safe access to metrics
 	mu sync.RWMutex
 }
 
-// newCollector : create an instance of a data collector
-func newCollector(obj runtime.Object) (*Collector, error) {
+// NewCollector : create an instance of a data collector
+func NewCollector(obj runtime.Object) (*Collector, error) {
 	// get the plugin arguments
 	args, err := getArgs(obj)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(4).InfoS("Using LoadVariationRiskBalancingArgs", "type", args.MetricProvider.Type, "address", args.MetricProvider.Address, "margin", args.SafeVarianceMargin, "sensitivity", args.SafeVarianceSensitivity, "watcher", args.WatcherAddress)
+	klog.V(4).InfoS("Using TrimaranArgs", "type", args.MetricProvider.Type, "address", args.MetricProvider.Address, "watcher", args.WatcherAddress)
 
 	var client loadwatcherapi.Client
 	if args.WatcherAddress != "" {
@@ -106,28 +104,28 @@ func (collector *Collector) getAllMetrics() *watcher.WatcherMetrics {
 	return &metrics
 }
 
-// getNodeMetrics : get metrics for a node from watcher
-func (collector *Collector) getNodeMetrics(nodeName string) []watcher.Metric {
+// GetNodeMetrics : get metrics for a node from watcher
+func (collector *Collector) GetNodeMetrics(nodeName string) ([]watcher.Metric, *watcher.WatcherMetrics) {
 	allMetrics := collector.getAllMetrics()
 	// This happens if metrics were never populated since scheduler started
 	if allMetrics.Data.NodeMetricsMap == nil {
 		klog.ErrorS(nil, "Metrics not available from watcher")
-		return nil
+		return nil, nil
 	}
 	// Check if node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := allMetrics.Data.NodeMetricsMap[nodeName]; !ok {
 		klog.ErrorS(nil, "Unable to find metrics for node", "nodeName", nodeName)
-		return nil
+		return nil, allMetrics
 	}
-	return allMetrics.Data.NodeMetricsMap[nodeName].Metrics
+	return allMetrics.Data.NodeMetricsMap[nodeName].Metrics, allMetrics
 }
 
 // getArgs : get configured args
-func getArgs(obj runtime.Object) (*pluginConfig.LoadVariationRiskBalancingArgs, error) {
+func getArgs(obj runtime.Object) (*pluginConfig.TrimaranArgs, error) {
 	// cast object into plugin arguments object
-	args, ok := obj.(*pluginConfig.LoadVariationRiskBalancingArgs)
+	args, ok := obj.(*pluginConfig.TrimaranArgs)
 	if !ok {
-		return nil, fmt.Errorf("want args to be of type LoadVariationRiskBalancingArgs, got %T", obj)
+		return nil, fmt.Errorf("want args to be of type TrimaranArgs, got %T", obj)
 	}
 	if args.WatcherAddress == "" {
 		metricProviderType := string(args.MetricProvider.Type)

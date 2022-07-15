@@ -59,9 +59,7 @@ func TestHandlerCacheCleanup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := New()
-			for _, v := range tt.podInfoList {
-				p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], v)
-			}
+			p.ScheduledPodsCache[testNode] = append(p.ScheduledPodsCache[testNode], tt.podInfoList...)
 			if tt.podToUpdate != "" {
 				pod := st.MakePod().Name(tt.podToUpdate).Obj()
 				pod.Spec.NodeName = testNode

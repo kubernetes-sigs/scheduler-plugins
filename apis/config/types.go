@@ -82,16 +82,10 @@ type MetricProviderSpec struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
-type TargetLoadPackingArgs struct {
+// TrimaranArgs holds common arguments for trimaran plugins
+type TrimaranArgs struct {
 	metav1.TypeMeta
 
-	// Default requests to use for best effort QoS
-	DefaultRequests v1.ResourceList
-	// Default requests multiplier for busrtable QoS
-	DefaultRequestsMultiplier string
-	// Node target CPU Utilization for bin packing
-	TargetUtilization int64
 	// Metric Provider to use when using load watcher as a library
 	MetricProvider MetricProviderSpec
 	// Address of load watcher service
@@ -100,14 +94,24 @@ type TargetLoadPackingArgs struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
+type TargetLoadPackingArgs struct {
+	TrimaranArgs
+
+	// Default requests to use for best effort QoS
+	DefaultRequests v1.ResourceList
+	// Default requests multiplier for busrtable QoS
+	DefaultRequestsMultiplier string
+	// Node target CPU Utilization for bin packing
+	TargetUtilization int64
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 // LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
 type LoadVariationRiskBalancingArgs struct {
-	metav1.TypeMeta
+	TrimaranArgs
 
-	// Metric Provider to use when using load watcher as a library
-	MetricProvider MetricProviderSpec
-	// Address of load watcher service
-	WatcherAddress string
 	// Multiplier of standard deviation in risk value
 	SafeVarianceMargin float64
 	// Root power of standard deviation in risk value
