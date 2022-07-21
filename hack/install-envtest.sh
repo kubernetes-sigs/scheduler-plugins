@@ -26,9 +26,9 @@ set -o pipefail
 SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 source "${SCRIPT_ROOT}/hack/lib/init.sh"
 
-# setup-envtest requires the version to be in the form of X.XX.X (e.g. 1.23.3)
+# setup-envtest requires the version to be in the form of X.Y(.Z) (e.g. 1.23 or 1.23.3)
 # thus we want to remove the 'v' from the version extracted out of the go.mod file
-version=$(cat ${SCRIPT_ROOT}/go.mod | grep 'k8s.io/kubernetes' | grep -v '=>' | awk '{ print $2 }' | sed 's/v//')
+version=$(cat ${SCRIPT_ROOT}/go.mod | grep 'k8s.io/kubernetes' | grep -v '=>' | awk '{print $NF}' | awk 'BEGIN{FS=OFS="."}NF--' | sed 's/v//')
 
 GOPATH=$(go env GOPATH)
 TEMP_DIR=${TMPDIR-/tmp}
