@@ -56,14 +56,11 @@ func TestPreFilter(t *testing.T) {
 	pgInformer.Informer().GetStore().Add(pg2)
 	pgInformer.Informer().GetStore().Add(pg3)
 	pgLister := pgInformer.Lister()
-	denyCache := newCache()
-	denyCache.SetDefault("ns1/pg1", "ns1/pg1")
 
 	tests := []struct {
 		name            string
 		pod             *corev1.Pod
 		pods            []*corev1.Pod
-		lastDeniedPG    *gochache.Cache
 		expectedSuccess bool
 	}{
 		{
@@ -73,19 +70,11 @@ func TestPreFilter(t *testing.T) {
 				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
 				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
 			},
-			lastDeniedPG:    newCache(),
 			expectedSuccess: true,
-		},
-		{
-			name:            "pg was previously denied",
-			pod:             st.MakePod().Name("p1").UID("p1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			lastDeniedPG:    denyCache,
-			expectedSuccess: false,
 		},
 		{
 			name:            "pod belongs to a non-existing pg",
 			pod:             st.MakePod().Name("p2").UID("p2").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg-notexisting").Obj(),
-			lastDeniedPG:    newCache(),
 			expectedSuccess: true,
 		},
 		{
@@ -94,7 +83,6 @@ func TestPreFilter(t *testing.T) {
 			pods: []*corev1.Pod{
 				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
 			},
-			lastDeniedPG:    newCache(),
 			expectedSuccess: false,
 		},
 		{
@@ -104,7 +92,6 @@ func TestPreFilter(t *testing.T) {
 				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
 				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
 			},
-			lastDeniedPG:    newCache(),
 			expectedSuccess: true,
 		},
 		{
@@ -115,7 +102,6 @@ func TestPreFilter(t *testing.T) {
 				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
 				st.MakePod().Name("pg3-1").UID("pg3-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
 			},
-			lastDeniedPG:    newCache(),
 			expectedSuccess: true,
 		},
 		{
@@ -126,7 +112,6 @@ func TestPreFilter(t *testing.T) {
 				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
 				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
 			},
-			lastDeniedPG:    newCache(),
 			expectedSuccess: true,
 		},
 		{
@@ -137,7 +122,6 @@ func TestPreFilter(t *testing.T) {
 				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg3").Obj(),
 				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg3").Obj(),
 			},
-			lastDeniedPG:    newCache(),
 			expectedSuccess: false,
 		},
 		{
@@ -147,7 +131,6 @@ func TestPreFilter(t *testing.T) {
 				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
 				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
 			},
-			lastDeniedPG:    newCache(),
 			expectedSuccess: true,
 		},
 	}
@@ -158,8 +141,8 @@ func TestPreFilter(t *testing.T) {
 			podInformer := informerFactory.Core().V1().Pods()
 			existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
 			snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
-			pgMgr := &PodGroupManager{pgLister: pgLister, lastDeniedPG: tt.lastDeniedPG, permittedPG: newCache(),
-				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout, lastDeniedPGExpirationTime: &scheduleTimeout}
+			pgMgr := &PodGroupManager{pgLister: pgLister, permittedPG: newCache(),
+				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout}
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
