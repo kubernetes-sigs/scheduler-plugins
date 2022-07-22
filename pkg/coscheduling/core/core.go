@@ -59,7 +59,6 @@ type Manager interface {
 	PostBind(context.Context, *corev1.Pod, string)
 	GetPodGroup(*corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
-	AddDeniedPodGroup(string)
 	DeletePermittedPodGroup(string)
 	CalculateAssignedPods(string, string) int
 	ActivateSiblings(pod *corev1.Pod, state *framework.CycleState)
@@ -74,13 +73,8 @@ type PodGroupManager struct {
 	// scheduleTimeout is the default timeout for podgroup scheduling.
 	// If podgroup's scheduleTimeoutSeconds is set, it will be used.
 	scheduleTimeout *time.Duration
-	// lastDeniedPG stores the podgroup name if a pod can not pass pre-filer,
-	// or times out
-	lastDeniedPG *gochache.Cache
 	// permittedPG stores the podgroup name which has passed the pre resource check.
 	permittedPG *gochache.Cache
-	// deniedCacheExpirationTime is the expiration time that the podgroup remains in lastDeniedPG store.
-	lastDeniedPGExpirationTime *time.Duration
 	// pgLister is podgroup lister
 	pgLister pglister.PodGroupLister
 	// podLister is pod lister
@@ -91,17 +85,15 @@ type PodGroupManager struct {
 }
 
 // NewPodGroupManager creates a new operation object.
-func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister framework.SharedLister, scheduleTimeout, deniedPGExpirationTime *time.Duration,
+func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister framework.SharedLister, scheduleTimeout *time.Duration,
 	pgInformer pginformer.PodGroupInformer, podInformer informerv1.PodInformer) *PodGroupManager {
 	pgMgr := &PodGroupManager{
-		pgClient:                   pgClient,
-		snapshotSharedLister:       snapshotSharedLister,
-		scheduleTimeout:            scheduleTimeout,
-		lastDeniedPGExpirationTime: deniedPGExpirationTime,
-		pgLister:                   pgInformer.Lister(),
-		podLister:                  podInformer.Lister(),
-		lastDeniedPG:               gochache.New(3*time.Second, 3*time.Second),
-		permittedPG:                gochache.New(3*time.Second, 3*time.Second),
+		pgClient:             pgClient,
+		snapshotSharedLister: snapshotSharedLister,
+		scheduleTimeout:      scheduleTimeout,
+		pgLister:             pgInformer.Lister(),
+		podLister:            podInformer.Lister(),
+		permittedPG:          gochache.New(3*time.Second, 3*time.Second),
 	}
 	return pgMgr
 }
@@ -152,9 +144,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	if pg == nil {
 		return nil
 	}
-	if _, ok := pgMgr.lastDeniedPG.Get(pgFullName); ok {
-		return fmt.Errorf("pod with pgName: %v last failed in %v, deny", pgFullName, *pgMgr.lastDeniedPGExpirationTime)
-	}
+
 	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
 		labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
 	)
@@ -188,7 +178,6 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	err = CheckClusterResource(nodes, minResources, pgFullName)
 	if err != nil {
 		klog.ErrorS(err, "Failed to PreFilter", "podGroup", klog.KObj(pg))
-		pgMgr.AddDeniedPodGroup(pgFullName)
 		return err
 	}
 	pgMgr.permittedPG.Add(pgFullName, pgFullName, *pgMgr.scheduleTimeout)
@@ -262,11 +251,6 @@ func (pgMgr *PodGroupManager) GetCreationTimestamp(pod *corev1.Pod, ts time.Time
 		return ts
 	}
 	return pg.CreationTimestamp.Time
-}
-
-// AddDeniedPodGroup adds a podGroup that fails to be scheduled to a PodGroup cache with expiration time.
-func (pgMgr *PodGroupManager) AddDeniedPodGroup(pgFullName string) {
-	pgMgr.lastDeniedPG.Add(pgFullName, "", *pgMgr.lastDeniedPGExpirationTime)
 }
 
 // DeletePermittedPodGroup deletes a podGroup that passes Pre-Filter but reaches PostFilter.
