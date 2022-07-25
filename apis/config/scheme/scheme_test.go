@@ -103,8 +103,7 @@ profiles:
 						{
 							Name: coscheduling.Name,
 							Args: &config.CoschedulingArgs{
-								PermitWaitingTimeSeconds:      10,
-								DeniedPGExpirationTimeSeconds: 3,
+								PermitWaitingTimeSeconds: 10,
 							},
 						},
 						{
@@ -214,8 +213,7 @@ profiles:
 						{
 							Name: coscheduling.Name,
 							Args: &config.CoschedulingArgs{
-								PermitWaitingTimeSeconds:      60,
-								DeniedPGExpirationTimeSeconds: 20,
+								PermitWaitingTimeSeconds: 60,
 							},
 						},
 						{
@@ -356,8 +354,7 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 							{
 								Name: coscheduling.Name,
 								Args: &config.CoschedulingArgs{
-									PermitWaitingTimeSeconds:      10,
-									DeniedPGExpirationTimeSeconds: 3,
+									PermitWaitingTimeSeconds: 10,
 								},
 							},
 							{
@@ -430,7 +427,6 @@ profiles:
 - pluginConfig:
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1beta2
-      deniedPGExpirationTimeSeconds: 3
       kind: CoschedulingArgs
       permitWaitingTimeSeconds: 10
     name: Coscheduling

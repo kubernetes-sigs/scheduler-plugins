@@ -30,8 +30,6 @@ type CoschedulingArgs struct {
 
 	// PermitWaitingTimeSeconds is the waiting timeout in seconds.
 	PermitWaitingTimeSeconds int64
-	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup.
-	DeniedPGExpirationTimeSeconds int64
 }
 
 // ModeType is a "string" type.

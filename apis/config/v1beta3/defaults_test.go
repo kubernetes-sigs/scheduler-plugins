@@ -39,19 +39,16 @@ func TestSchedulingDefaults(t *testing.T) {
 			name:   "empty config CoschedulingArgs",
 			config: &CoschedulingArgs{},
 			expect: &CoschedulingArgs{
-				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
-				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(20),
+				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
 			},
 		},
 		{
 			name: "set non default CoschedulingArgs",
 			config: &CoschedulingArgs{
-				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
-				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(10),
+				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
 			},
 			expect: &CoschedulingArgs{
-				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
-				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(10),
+				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
 			},
 		},
 		{
