@@ -308,7 +308,7 @@ profiles:
     args:
       kubeConfigPath: "/var/run/kubernetes/kube.config"
 `),
-			wantErr: `decoding .profiles[0].pluginConfig[0]: decoding args for plugin Coscheduling: strict decoding error: unknown field "kubeConfigPath"`,
+			wantErr: `strict decoding error: decoding .profiles[0].pluginConfig[0]: strict decoding error: decoding args for plugin Coscheduling: strict decoding error: unknown field "kubeConfigPath"`,
 		},
 	}
 	decoder := Codecs.UniversalDecoder()
