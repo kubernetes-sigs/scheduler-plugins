@@ -155,7 +155,7 @@ func TestPreFilter(t *testing.T) {
 
 			state := framework.NewCycleState()
 			for i := range pods {
-				if got := cs.PreFilter(nil, state, pods[i]); got.Code() != tt.expected[i] {
+				if _, got := cs.PreFilter(nil, state, pods[i]); got.Code() != tt.expected[i] {
 					t.Errorf("expected %v, got %v : %v", tt.expected[i], got.Code(), got.Message())
 				}
 			}
@@ -285,7 +285,7 @@ func TestDryRunPreemption(t *testing.T) {
 			registeredPlugins := []st.RegisterPluginFunc{
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterPluginAsExtensions(noderesources.FitName, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+				st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
 					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
 				}, "Filter", "PreFilter"),
 			}
@@ -308,7 +308,7 @@ func TestDryRunPreemption(t *testing.T) {
 			ctx := context.Background()
 
 			// Some tests rely on PreFilter plugin to compute its CycleState.
-			preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
+			_, preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
 			if !preFilterStatus.IsSuccess() {
 				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
 			}

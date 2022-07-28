@@ -496,31 +496,28 @@ profiles:
 				},
 			},
 		},
-		// TODO(Huang-Wei): Comment out after the upstream bug k/k#108083 gets fixed.
-		/*
-			{
-					name:            "single profile config - Capacityscheduling - v1beta3",
-					flags:           []string{"--config", capacitySchedulingConfigv1beta3},
-					registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
-					wantPlugins: map[string]*config.Plugins{
-						"default-scheduler": {
-							QueueSort: defaults.ExpandedPluginsV1beta3.QueueSort,
-							Bind:      defaults.ExpandedPluginsV1beta3.Bind,
-							PreFilter: config.PluginSet{
-								Enabled: append(defaults.ExpandedPluginsV1beta3.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
-							},
-							Filter:     defaults.ExpandedPluginsV1beta3.Filter,
-							PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: capacityscheduling.Name}}},
-							PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
-							Score:      defaults.ExpandedPluginsV1beta3.Score,
-							Reserve: config.PluginSet{
-								Enabled: append(defaults.ExpandedPluginsV1beta3.Reserve.Enabled, config.Plugin{Name: capacityscheduling.Name}),
-							},
-							PreBind: defaults.ExpandedPluginsV1beta3.PreBind,
-						},
+		{
+			name:            "single profile config - Capacityscheduling - v1beta3",
+			flags:           []string{"--config", capacitySchedulingConfigv1beta3},
+			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					QueueSort: defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:      defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
 					},
+					Filter:     defaults.ExpandedPluginsV1beta3.Filter,
+					PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: capacityscheduling.Name}}},
+					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
+					Score:      defaults.ExpandedPluginsV1beta3.Score,
+					Reserve: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.Reserve.Enabled, config.Plugin{Name: capacityscheduling.Name}),
+					},
+					PreBind: defaults.ExpandedPluginsV1beta3.PreBind,
+				},
 			},
-		*/
+		},
 		{
 			name:            "single profile config - TargetLoadPacking with args",
 			flags:           []string{"--config", targetLoadPackingConfigWithArgsFile},

@@ -99,10 +99,6 @@ type frameworkImpl struct {
 	framework.PodNominator
 
 	parallelizer parallelize.Parallelizer
-
-	// Indicates that RunFilterPlugins should accumulate all failed statuses and not return
-	// after the first failure.
-	runAllFilters bool
 }
 
 // extensionPoint encapsulates desired and applied set of plugins at a specific extension
@@ -147,7 +143,6 @@ type frameworkOptions struct {
 	metricsRecorder        *metricsRecorder
 	podNominator           framework.PodNominator
 	extenders              []framework.Extender
-	runAllFilters          bool
 	captureProfile         CaptureProfile
 	clusterEventMap        map[framework.ClusterEvent]sets.String
 	parallelizer           parallelize.Parallelizer
@@ -198,14 +193,6 @@ func WithInformerFactory(informerFactory informers.SharedInformerFactory) Option
 func WithSnapshotSharedLister(snapshotSharedLister framework.SharedLister) Option {
 	return func(o *frameworkOptions) {
 		o.snapshotSharedLister = snapshotSharedLister
-	}
-}
-
-// WithRunAllFilters sets the runAllFilters flag, which means RunFilterPlugins accumulates
-// all failure Statuses.
-func WithRunAllFilters(runAllFilters bool) Option {
-	return func(o *frameworkOptions) {
-		o.runAllFilters = runAllFilters
 	}
 }
 
@@ -274,7 +261,6 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, opts ...Opti
 		eventRecorder:        options.eventRecorder,
 		informerFactory:      options.informerFactory,
 		metricsRecorder:      options.metricsRecorder,
-		runAllFilters:        options.runAllFilters,
 		extenders:            options.extenders,
 		PodNominator:         options.podNominator,
 		parallelizer:         options.parallelizer,
@@ -612,33 +598,46 @@ func (f *frameworkImpl) QueueSortFunc() framework.LessFunc {
 // *Status and its code is set to non-success if any of the plugins returns
 // anything but Success. If a non-success status is returned, then the scheduling
 // cycle is aborted.
-func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (status *framework.Status) {
+func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (_ *framework.PreFilterResult, status *framework.Status) {
 	startTime := time.Now()
 	defer func() {
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(preFilter, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
+	var result *framework.PreFilterResult
+	var pluginsWithNodes []string
 	for _, pl := range f.preFilterPlugins {
-		status = f.runPreFilterPlugin(ctx, pl, state, pod)
-		if !status.IsSuccess() {
-			status.SetFailedPlugin(pl.Name())
-			if status.IsUnschedulable() {
-				return status
+		r, s := f.runPreFilterPlugin(ctx, pl, state, pod)
+		if !s.IsSuccess() {
+			s.SetFailedPlugin(pl.Name())
+			if s.IsUnschedulable() {
+				return nil, s
 			}
-			return framework.AsStatus(fmt.Errorf("running PreFilter plugin %q: %w", pl.Name(), status.AsError())).WithFailedPlugin(pl.Name())
+			return nil, framework.AsStatus(fmt.Errorf("running PreFilter plugin %q: %w", pl.Name(), status.AsError())).WithFailedPlugin(pl.Name())
 		}
-	}
+		if !r.AllNodes() {
+			pluginsWithNodes = append(pluginsWithNodes, pl.Name())
+		}
+		result = result.Merge(r)
+		if !result.AllNodes() && len(result.NodeNames) == 0 {
+			msg := fmt.Sprintf("node(s) didn't satisfy plugin(s) %v simultaneously", pluginsWithNodes)
+			if len(pluginsWithNodes) == 1 {
+				msg = fmt.Sprintf("node(s) didn't satisfy plugin %v", pluginsWithNodes[0])
+			}
+			return nil, framework.NewStatus(framework.Unschedulable, msg)
+		}
 
-	return nil
+	}
+	return result, nil
 }
 
-func (f *frameworkImpl) runPreFilterPlugin(ctx context.Context, pl framework.PreFilterPlugin, state *framework.CycleState, pod *v1.Pod) *framework.Status {
+func (f *frameworkImpl) runPreFilterPlugin(ctx context.Context, pl framework.PreFilterPlugin, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	if !state.ShouldRecordPluginMetrics() {
 		return pl.PreFilter(ctx, state, pod)
 	}
 	startTime := time.Now()
-	status := pl.PreFilter(ctx, state, pod)
+	result, status := pl.PreFilter(ctx, state, pod)
 	f.metricsRecorder.observePluginDurationAsync(preFilter, pl.Name(), status, metrics.SinceInSeconds(startTime))
-	return status
+	return result, status
 }
 
 // RunPreFilterExtensionAddPod calls the AddPod interface for the set of configured
@@ -733,10 +732,6 @@ func (f *frameworkImpl) RunFilterPlugins(
 			}
 			pluginStatus.SetFailedPlugin(pl.Name())
 			statuses[pl.Name()] = pluginStatus
-			if !f.runAllFilters {
-				// Exit early if we don't need to run all filters.
-				return statuses
-			}
 		}
 	}
 
@@ -1314,25 +1309,26 @@ func (f *frameworkImpl) SharedInformerFactory() informers.SharedInformerFactory 
 	return f.informerFactory
 }
 
-func (f *frameworkImpl) pluginsNeeded(plugins *config.Plugins) map[string]config.Plugin {
-	pgMap := make(map[string]config.Plugin)
+func (f *frameworkImpl) pluginsNeeded(plugins *config.Plugins) sets.String {
+	pgSet := sets.String{}
 
 	if plugins == nil {
-		return pgMap
+		return pgSet
 	}
 
 	find := func(pgs *config.PluginSet) {
 		for _, pg := range pgs.Enabled {
-			pgMap[pg.Name] = pg
+			pgSet.Insert(pg.Name)
 		}
 	}
+
 	for _, e := range f.getExtensionPoints(plugins) {
 		find(e.plugins)
 	}
-
 	// Parse MultiPoint separately since they are not returned by f.getExtensionPoints()
 	find(&plugins.MultiPoint)
-	return pgMap
+
+	return pgSet
 }
 
 // ProfileName returns the profile name associated to this framework.
