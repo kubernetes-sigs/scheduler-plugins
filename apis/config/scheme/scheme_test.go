@@ -73,23 +73,23 @@ profiles:
         weight: 1
   - name: TargetLoadPacking
     args:
-      metricProvider: 
-        type: Prometheus
-        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
-      watcherAddress: http://deadbeef:2020
       targetUtilization: 60 
       defaultRequests:
         cpu: "1000m"
       defaultRequestsMultiplier: "1.8"
+      watcherAddress: http://deadbeef:2020
+      metricProvider: 
+        type: Prometheus
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
   - name: LoadVariationRiskBalancing
     args:
       metricProvider:
         type: Prometheus
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
         insecureSkipVerify: false
-      watcherAddress: http://deadbeef:2020
       safeVarianceMargin: 1.0
       safeVarianceSensitivity: 1.0
+      watcherAddress: http://deadbeef:2020
   - name: PreemptionToleration
     args:
       minCandidateNodesPercentage: 20
