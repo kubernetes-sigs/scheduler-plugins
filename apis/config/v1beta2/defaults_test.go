@@ -83,41 +83,39 @@ func TestSchedulingDefaults(t *testing.T) {
 			name:   "empty config TargetLoadPackingArgs",
 			config: &TargetLoadPackingArgs{},
 			expect: &TargetLoadPackingArgs{
-				TrimaranArgs: TrimaranArgs{
-					MetricProvider: MetricProviderSpec{
-						Type: "KubernetesMetricsServer",
-					}},
 				DefaultRequests: v1.ResourceList{v1.ResourceCPU: resource.MustParse(
 					strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("1.5"),
 				TargetUtilization:         pointer.Int64Ptr(40),
+				MetricProvider: MetricProviderSpec{
+					Type: "KubernetesMetricsServer",
+				},
 			},
 		},
 		{
 			name: "set non default TargetLoadPackingArgs",
 			config: &TargetLoadPackingArgs{
-				TrimaranArgs: TrimaranArgs{
-					WatcherAddress: pointer.StringPtr("http://localhost:2020")},
 				DefaultRequests:           v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("2.5"),
 				TargetUtilization:         pointer.Int64Ptr(50),
+				WatcherAddress:            pointer.StringPtr("http://localhost:2020"),
 			},
 			expect: &TargetLoadPackingArgs{
-				TrimaranArgs: TrimaranArgs{
-					WatcherAddress: pointer.StringPtr("http://localhost:2020")},
 				DefaultRequests:           v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("2.5"),
 				TargetUtilization:         pointer.Int64Ptr(50),
+				WatcherAddress:            pointer.StringPtr("http://localhost:2020"),
 			},
 		},
 		{
 			name:   "empty config LoadVariationRiskBalancingArgs",
 			config: &LoadVariationRiskBalancingArgs{},
 			expect: &LoadVariationRiskBalancingArgs{
-				TrimaranArgs: TrimaranArgs{
-					MetricProvider: MetricProviderSpec{
-						Type: "KubernetesMetricsServer",
-					}},
+				MetricProvider: MetricProviderSpec{
+					Type:    "KubernetesMetricsServer",
+					Address: nil,
+					Token:   nil,
+				},
 				SafeVarianceMargin:      pointer.Float64Ptr(1.0),
 				SafeVarianceSensitivity: pointer.Float64Ptr(1.0),
 			},
@@ -129,10 +127,11 @@ func TestSchedulingDefaults(t *testing.T) {
 				SafeVarianceSensitivity: pointer.Float64Ptr(2.0),
 			},
 			expect: &LoadVariationRiskBalancingArgs{
-				TrimaranArgs: TrimaranArgs{
-					MetricProvider: MetricProviderSpec{
-						Type: "KubernetesMetricsServer",
-					}},
+				MetricProvider: MetricProviderSpec{
+					Type:    "KubernetesMetricsServer",
+					Address: nil,
+					Token:   nil,
+				},
 				SafeVarianceMargin:      pointer.Float64Ptr(2.0),
 				SafeVarianceSensitivity: pointer.Float64Ptr(2.0),
 			},

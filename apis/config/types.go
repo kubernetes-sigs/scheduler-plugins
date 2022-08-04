@@ -80,12 +80,8 @@ type MetricProviderSpec struct {
 	InsecureSkipVerify bool
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// TrimaranArgs holds common arguments for trimaran plugins
-type TrimaranArgs struct {
-	metav1.TypeMeta
-
+// TrimaranSpec holds common parameters for trimaran plugins
+type TrimaranSpec struct {
 	// Metric Provider to use when using load watcher as a library
 	MetricProvider MetricProviderSpec
 	// Address of load watcher service
@@ -96,8 +92,10 @@ type TrimaranArgs struct {
 
 // TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
 type TargetLoadPackingArgs struct {
-	TrimaranArgs
+	metav1.TypeMeta
 
+	// Common parameters for trimaran plugins
+	TrimaranSpec
 	// Default requests to use for best effort QoS
 	DefaultRequests v1.ResourceList
 	// Default requests multiplier for busrtable QoS
@@ -110,8 +108,10 @@ type TargetLoadPackingArgs struct {
 
 // LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
 type LoadVariationRiskBalancingArgs struct {
-	TrimaranArgs
+	metav1.TypeMeta
 
+	// Common parameters for trimaran plugins
+	TrimaranSpec
 	// Multiplier of standard deviation in risk value
 	SafeVarianceMargin float64
 	// Root power of standard deviation in risk value

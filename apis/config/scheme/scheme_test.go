@@ -119,7 +119,7 @@ profiles:
 						{
 							Name: targetloadpacking.Name,
 							Args: &config.TargetLoadPackingArgs{
-								TrimaranArgs: config.TrimaranArgs{
+								TrimaranSpec: config.TrimaranSpec{
 									MetricProvider: config.MetricProviderSpec{
 										Type:               config.Prometheus,
 										Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
@@ -136,7 +136,7 @@ profiles:
 						{
 							Name: loadvariationriskbalancing.Name,
 							Args: &config.LoadVariationRiskBalancingArgs{
-								TrimaranArgs: config.TrimaranArgs{
+								TrimaranSpec: config.TrimaranSpec{
 									MetricProvider: config.MetricProviderSpec{
 										Type:               config.Prometheus,
 										Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
@@ -231,7 +231,7 @@ profiles:
 						{
 							Name: targetloadpacking.Name,
 							Args: &config.TargetLoadPackingArgs{
-								TrimaranArgs: config.TrimaranArgs{
+								TrimaranSpec: config.TrimaranSpec{
 									MetricProvider: config.MetricProviderSpec{
 										Type:    config.KubernetesMetricsServer,
 										Address: "",
@@ -248,7 +248,7 @@ profiles:
 						{
 							Name: loadvariationriskbalancing.Name,
 							Args: &config.LoadVariationRiskBalancingArgs{
-								TrimaranArgs: config.TrimaranArgs{
+								TrimaranSpec: config.TrimaranSpec{
 									MetricProvider: config.MetricProviderSpec{
 										Type:    config.KubernetesMetricsServer,
 										Address: "",
@@ -374,7 +374,7 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 							{
 								Name: targetloadpacking.Name,
 								Args: &config.TargetLoadPackingArgs{
-									TrimaranArgs: config.TrimaranArgs{
+									TrimaranSpec: config.TrimaranSpec{
 										MetricProvider: config.MetricProviderSpec{
 											Type:    config.Prometheus,
 											Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
@@ -390,7 +390,7 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 							{
 								Name: loadvariationriskbalancing.Name,
 								Args: &config.LoadVariationRiskBalancingArgs{
-									TrimaranArgs: config.TrimaranArgs{
+									TrimaranSpec: config.TrimaranSpec{
 										MetricProvider: config.MetricProviderSpec{
 											Type:               config.Prometheus,
 											Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",

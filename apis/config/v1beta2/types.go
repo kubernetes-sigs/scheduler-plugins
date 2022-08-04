@@ -83,24 +83,10 @@ type MetricProviderSpec struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +k8s:defaulter-gen=true
-
-// TrimaranArgs holds common arguments for trimaran plugins
-type TrimaranArgs struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// Metric Provider specification when using load watcher as library
-	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
-	// Address of load watcher service
-	WatcherAddress *string `json:"watcherAddress,omitempty"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +k8s:defaulter-gen=true
 
 // TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
 type TargetLoadPackingArgs struct {
-	TrimaranArgs `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// Default requests to use for best effort QoS
 	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
@@ -108,15 +94,23 @@ type TargetLoadPackingArgs struct {
 	DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
 	// Node target CPU Utilization for bin packing
 	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
+	// Specify the metric provider type, address and token using MetricProviderSpec
+	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
+	// Address of load watcher service
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +k8s:defaulter-gen=true
 
 // LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
 type LoadVariationRiskBalancingArgs struct {
-	TrimaranArgs `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
+	// Metric Provider specification when using load watcher as library
+	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
+	// Address of load watcher service
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
+	// Multiplier of standard deviation in risk value
 	SafeVarianceMargin *float64 `json:"safeVarianceMargin,omitempty"`
 	// Root power of standard deviation in risk value
 	SafeVarianceSensitivity *float64 `json:"safeVarianceSensitivity,omitempty"`

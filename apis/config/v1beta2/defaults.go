@@ -94,19 +94,8 @@ func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs)
 	}
 }
 
-// SetDefaultTrimaranArgs sets the default parameters for common Trimaran plugins
-func SetDefaultTrimaranArgs(args *TrimaranArgs) {
-	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
-		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
-	}
-	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
-		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
-	}
-}
-
 // SetDefaults_TargetLoadPackingArgs sets the default parameters for TargetLoadPacking plugin
 func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
-	SetDefaultTrimaranArgs(&args.TrimaranArgs)
 	if args.DefaultRequests == nil {
 		args.DefaultRequests = v1.ResourceList{v1.ResourceCPU: resource.MustParse(
 			strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")}
@@ -117,16 +106,27 @@ func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 	if args.TargetUtilization == nil || *args.TargetUtilization <= 0 {
 		args.TargetUtilization = &DefaultTargetUtilizationPercent
 	}
+	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
+		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+	}
+	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
+		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
+	}
 }
 
 // SetDefaults_LoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
 func SetDefaults_LoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
-	SetDefaultTrimaranArgs(&args.TrimaranArgs)
+	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
+		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+	}
 	if args.SafeVarianceMargin == nil || *args.SafeVarianceMargin < 0 {
 		args.SafeVarianceMargin = &DefaultSafeVarianceMargin
 	}
 	if args.SafeVarianceSensitivity == nil || *args.SafeVarianceSensitivity < 0 {
 		args.SafeVarianceSensitivity = &DefaultSafeVarianceSensitivity
+	}
+	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
+		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
 	}
 }
 

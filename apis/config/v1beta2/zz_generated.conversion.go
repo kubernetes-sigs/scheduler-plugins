@@ -148,10 +148,14 @@ func Convert_config_CoschedulingArgs_To_v1beta2_CoschedulingArgs(in *config.Cosc
 }
 
 func autoConvert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs(in *LoadVariationRiskBalancingArgs, out *config.LoadVariationRiskBalancingArgs, s conversion.Scope) error {
-	if err := Convert_v1beta2_MetricProviderSpec_To_config_MetricProviderSpec(&in.MetricProvider, &out.MetricProvider, s); err != nil {
+	// WARNING: in.MetricProvider requires manual conversion: does not exist in peer-type
+	// Added manually
+	if err := Convert_v1beta2_MetricProviderSpec_To_config_MetricProviderSpec(&in.MetricProvider, &out.TrimaranSpec.MetricProvider, s); err != nil {
 		return err
 	}
-	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
+	// WARNING: in.WatcherAddress requires manual conversion: does not exist in peer-type
+	// Added manually
+		if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.TrimaranSpec.WatcherAddress, s); err != nil {
 		return err
 	}
 	if err := v1.Convert_Pointer_float64_To_float64(&in.SafeVarianceMargin, &out.SafeVarianceMargin, s); err != nil {
@@ -169,10 +173,13 @@ func Convert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskB
 }
 
 func autoConvert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationRiskBalancingArgs(in *config.LoadVariationRiskBalancingArgs, out *LoadVariationRiskBalancingArgs, s conversion.Scope) error {
-	if err := Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(&in.MetricProvider, &out.MetricProvider, s); err != nil {
+	// WARNING: in.TrimaranSpec requires manual conversion: does not exist in peer-type
+	// Added manually
+	if err := Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(&in.TrimaranSpec.MetricProvider, &out.MetricProvider, s); err != nil {
 		return err
 	}
-	if err := v1.Convert_string_To_Pointer_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
+	// Added manually
+	if err := v1.Convert_string_To_Pointer_string(&in.TrimaranSpec.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}
 	if err := v1.Convert_float64_To_Pointer_float64(&in.SafeVarianceMargin, &out.SafeVarianceMargin, s); err != nil {
@@ -333,12 +340,16 @@ func autoConvert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(i
 	if err := v1.Convert_Pointer_int64_To_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
 		return err
 	}
-	if err := Convert_v1beta2_MetricProviderSpec_To_config_MetricProviderSpec(&in.MetricProvider, &out.MetricProvider, s); err != nil {
+	// WARNING: in.MetricProvider requires manual conversion: does not exist in peer-type
+	// Added manually
+	if err := Convert_v1beta2_MetricProviderSpec_To_config_MetricProviderSpec(&in.MetricProvider, &out.TrimaranSpec.MetricProvider, s); err != nil {
 		return err
 	}
-	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
+	// WARNING: in.WatcherAddress requires manual conversion: does not exist in peer-type
+	// Added manually
+	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.TrimaranSpec.WatcherAddress, s); err != nil {
 		return err
-	}
+		}
 	return nil
 }
 
@@ -348,17 +359,20 @@ func Convert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *T
 }
 
 func autoConvert_config_TargetLoadPackingArgs_To_v1beta2_TargetLoadPackingArgs(in *config.TargetLoadPackingArgs, out *TargetLoadPackingArgs, s conversion.Scope) error {
+	// WARNING: in.TrimaranSpec requires manual conversion: does not exist in peer-type
+	// Added manually
+	if err := Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(&in.TrimaranSpec.MetricProvider, &out.MetricProvider, s); err != nil {
+		return err
+	}
+	// Added manually
+	if err := v1.Convert_string_To_Pointer_string(&in.TrimaranSpec.WatcherAddress, &out.WatcherAddress, s); err != nil {
+		return err
+	}
 	out.DefaultRequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultRequests))
 	if err := v1.Convert_string_To_Pointer_string(&in.DefaultRequestsMultiplier, &out.DefaultRequestsMultiplier, s); err != nil {
 		return err
 	}
 	if err := v1.Convert_int64_To_Pointer_int64(&in.TargetUtilization, &out.TargetUtilization, s); err != nil {
-		return err
-	}
-	if err := Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(&in.MetricProvider, &out.MetricProvider, s); err != nil {
-		return err
-	}
-	if err := v1.Convert_string_To_Pointer_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}
 	return nil

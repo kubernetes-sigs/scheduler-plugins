@@ -80,13 +80,8 @@ type MetricProviderSpec struct {
 	InsecureSkipVerify *bool `json:"insecureSkipVerify,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +k8s:defaulter-gen=true
-
-// TrimaranArgs holds common arguments for trimaran plugins
-type TrimaranArgs struct {
-	metav1.TypeMeta `json:",inline"`
-
+// TrimaranSpec holds common parameters for trimaran plugins
+type TrimaranSpec struct {
 	// Metric Provider specification when using load watcher as library
 	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
 	// Address of load watcher service
@@ -98,8 +93,10 @@ type TrimaranArgs struct {
 
 // TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
 type TargetLoadPackingArgs struct {
-	TrimaranArgs `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
+	// Common parameters for trimaran plugins
+	TrimaranSpec `json:",inline"`
 	// Default requests to use for best effort QoS
 	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
 	// Default requests multiplier for busrtable QoS
@@ -113,8 +110,10 @@ type TargetLoadPackingArgs struct {
 
 // LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
 type LoadVariationRiskBalancingArgs struct {
-	TrimaranArgs `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
+	// Common parameters for trimaran plugins
+	TrimaranSpec `json:",inline"`
 	// Multiplier of standard deviation in risk value
 	SafeVarianceMargin *float64 `json:"safeVarianceMargin,omitempty"`
 	// Root power of standard deviation in risk value

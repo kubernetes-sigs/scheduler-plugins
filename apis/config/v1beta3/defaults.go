@@ -90,8 +90,8 @@ func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs)
 	}
 }
 
-// SetDefaultTrimaranArgs sets the default parameters for common Trimaran plugins
-func SetDefaultTrimaranArgs(args *TrimaranArgs) {
+// SetDefaultTrimaranSpec sets the default parameters for common Trimaran plugins
+func SetDefaultTrimaranSpec(args *TrimaranSpec) {
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
 		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
 	}
@@ -102,7 +102,7 @@ func SetDefaultTrimaranArgs(args *TrimaranArgs) {
 
 // SetDefaults_TargetLoadPackingArgs sets the default parameters for TargetLoadPacking plugin
 func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
-	SetDefaultTrimaranArgs(&args.TrimaranArgs)
+	SetDefaultTrimaranSpec(&args.TrimaranSpec)
 	if args.DefaultRequests == nil {
 		args.DefaultRequests = v1.ResourceList{v1.ResourceCPU: resource.MustParse(
 			strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")}
@@ -117,7 +117,7 @@ func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 
 // SetDefaults_LoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
 func SetDefaults_LoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
-	SetDefaultTrimaranArgs(&args.TrimaranArgs)
+	SetDefaultTrimaranSpec(&args.TrimaranSpec)
 	if args.SafeVarianceMargin == nil || *args.SafeVarianceMargin < 0 {
 		args.SafeVarianceMargin = &DefaultSafeVarianceMargin
 	}

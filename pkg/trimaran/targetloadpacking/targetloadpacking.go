@@ -66,7 +66,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type TargetLoadPackingArgs, got %T", obj)
 	}
-	collector, err := trimaran.NewCollector(&args.TrimaranArgs)
+	collector, err := trimaran.NewCollector(&args.TrimaranSpec)
 	if err != nil {
 		return nil, err
 	}

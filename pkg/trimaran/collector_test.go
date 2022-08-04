@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	args = pluginConfig.TrimaranArgs{
+	args = pluginConfig.TrimaranSpec{
 		WatcherAddress: "http://deadbeef:2020",
 	}
 
@@ -80,10 +80,10 @@ func TestGetAllMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	trimaranArgs := pluginConfig.TrimaranArgs{
+	trimaranSpec := pluginConfig.TrimaranSpec{
 		WatcherAddress: server.URL,
 	}
-	collector, err := NewCollector(&trimaranArgs)
+	collector, err := NewCollector(&trimaranSpec)
 	assert.NotNil(t, collector)
 	assert.Nil(t, err)
 
@@ -101,10 +101,10 @@ func TestUpdateMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	trimaranArgs := pluginConfig.TrimaranArgs{
+	trimaranSpec := pluginConfig.TrimaranSpec{
 		WatcherAddress: server.URL,
 	}
-	collector, err := NewCollector(&trimaranArgs)
+	collector, err := NewCollector(&trimaranSpec)
 	assert.NotNil(t, collector)
 	assert.Nil(t, err)
 
@@ -120,10 +120,10 @@ func TestGetNodeMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	trimaranArgs := pluginConfig.TrimaranArgs{
+	trimaranSpec := pluginConfig.TrimaranSpec{
 		WatcherAddress: server.URL,
 	}
-	collector, err := NewCollector(&trimaranArgs)
+	collector, err := NewCollector(&trimaranSpec)
 	assert.NotNil(t, collector)
 	assert.Nil(t, err)
 	nodeName := "node-1"

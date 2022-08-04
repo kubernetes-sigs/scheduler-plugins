@@ -24,7 +24,6 @@ import (
 	"github.com/paypal/load-watcher/pkg/watcher"
 	loadwatcherapi "github.com/paypal/load-watcher/pkg/watcher/api"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
@@ -45,41 +44,37 @@ type Collector struct {
 	client loadwatcherapi.Client
 	// data collected by load watcher
 	metrics watcher.WatcherMetrics
-	// plugin arguments
-	args *pluginConfig.TrimaranArgs
 	// for safe access to metrics
 	mu sync.RWMutex
 }
 
 // NewCollector : create an instance of a data collector
-func NewCollector(obj runtime.Object) (*Collector, error) {
-	// get the plugin arguments
-	args, err := getArgs(obj)
-	if err != nil {
+func NewCollector(trimaranSpec *pluginConfig.TrimaranSpec) (*Collector, error) {
+	if err := checkSpecs(trimaranSpec); err != nil {
 		return nil, err
 	}
-	klog.V(4).InfoS("Using TrimaranArgs", "type", args.MetricProvider.Type, "address", args.MetricProvider.Address, "watcher", args.WatcherAddress)
+	klog.V(4).InfoS("Using TrimaranSpec", "type", trimaranSpec.MetricProvider.Type,
+		"address", trimaranSpec.MetricProvider.Address, "watcher", trimaranSpec.WatcherAddress)
 
 	var client loadwatcherapi.Client
-	if args.WatcherAddress != "" {
-		client, _ = loadwatcherapi.NewServiceClient(args.WatcherAddress)
+	if trimaranSpec.WatcherAddress != "" {
+		client, _ = loadwatcherapi.NewServiceClient(trimaranSpec.WatcherAddress)
 	} else {
 		opts := watcher.MetricsProviderOpts{
-			Name:               string(args.MetricProvider.Type),
-			Address:            args.MetricProvider.Address,
-			AuthToken:          args.MetricProvider.Token,
-			InsecureSkipVerify: args.MetricProvider.InsecureSkipVerify,
+			Name:               string(trimaranSpec.MetricProvider.Type),
+			Address:            trimaranSpec.MetricProvider.Address,
+			AuthToken:          trimaranSpec.MetricProvider.Token,
+			InsecureSkipVerify: trimaranSpec.MetricProvider.InsecureSkipVerify,
 		}
 		client, _ = loadwatcherapi.NewLibraryClient(opts)
 	}
 
 	collector := &Collector{
 		client: client,
-		args:   args,
 	}
 
 	// populate metrics before returning
-	err = collector.updateMetrics()
+	err := collector.updateMetrics()
 	if err != nil {
 		klog.ErrorS(err, "Unable to populate metrics initially")
 	}
@@ -120,23 +115,18 @@ func (collector *Collector) GetNodeMetrics(nodeName string) ([]watcher.Metric, *
 	return allMetrics.Data.NodeMetricsMap[nodeName].Metrics, allMetrics
 }
 
-// getArgs : get configured args
-func getArgs(obj runtime.Object) (*pluginConfig.TrimaranArgs, error) {
-	// cast object into plugin arguments object
-	args, ok := obj.(*pluginConfig.TrimaranArgs)
-	if !ok {
-		return nil, fmt.Errorf("want args to be of type TrimaranArgs, got %T", obj)
-	}
-	if args.WatcherAddress == "" {
-		metricProviderType := string(args.MetricProvider.Type)
+// checkSpecs : check trimaran specs
+func checkSpecs(trimaranSpec *pluginConfig.TrimaranSpec) error {
+	if trimaranSpec.WatcherAddress == "" {
+		metricProviderType := string(trimaranSpec.MetricProvider.Type)
 		validMetricProviderType := metricProviderType == string(pluginConfig.KubernetesMetricsServer) ||
 			metricProviderType == string(pluginConfig.Prometheus) ||
 			metricProviderType == string(pluginConfig.SignalFx)
 		if !validMetricProviderType {
-			return nil, fmt.Errorf("invalid MetricProvider.Type, got %T", args.MetricProvider.Type)
+			return fmt.Errorf("invalid MetricProvider.Type, got %T", trimaranSpec.MetricProvider.Type)
 		}
 	}
-	return args, nil
+	return nil
 }
 
 // updateMetrics : request to load watcher to update all metrics
