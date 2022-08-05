@@ -109,7 +109,7 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
 		Name: loadvariationriskbalancing.Name,
 		Args: &config.LoadVariationRiskBalancingArgs{
-			WatcherAddress:     server.URL,
+			TrimaranSpec:       config.TrimaranSpec{WatcherAddress: server.URL},
 			SafeVarianceMargin: v1beta2.DefaultSafeVarianceMargin,
 		},
 	})

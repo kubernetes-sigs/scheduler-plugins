@@ -21,13 +21,16 @@ Package Trimaran provides common code for plugins developed for real load aware 
 package trimaran
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 const (
@@ -63,6 +66,30 @@ func New() *PodAssignEventHandler {
 		}
 	}()
 	return &p
+}
+
+// AddToHandle : add event handler to framework handle
+func (p *PodAssignEventHandler) AddToHandle(handle framework.Handle) {
+	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
+		clientcache.FilteringResourceEventHandler{
+			FilterFunc: func(obj interface{}) bool {
+				switch t := obj.(type) {
+				case *v1.Pod:
+					return isAssigned(t)
+				case clientcache.DeletedFinalStateUnknown:
+					if pod, ok := t.Obj.(*v1.Pod); ok {
+						return isAssigned(pod)
+					}
+					utilruntime.HandleError(fmt.Errorf("unable to convert object %T to *v1.Pod", obj))
+					return false
+				default:
+					utilruntime.HandleError(fmt.Errorf("unable to handle object: %T", obj))
+					return false
+				}
+			},
+			Handler: p,
+		},
+	)
 }
 
 func (p *PodAssignEventHandler) OnAdd(obj interface{}) {
@@ -135,4 +162,9 @@ func (p *PodAssignEventHandler) cleanupCache() {
 			p.ScheduledPodsCache[nodeName] = cache
 		}
 	}
+}
+
+// Checks and returns true if the pod is assigned to a node
+func isAssigned(pod *v1.Pod) bool {
+	return len(pod.Spec.NodeName) != 0
 }

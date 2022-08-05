@@ -81,7 +81,7 @@ func TestNew(t *testing.T) {
 	defer server.Close()
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:          server.URL,
+		TrimaranSpec:            pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
 		SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
 		SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
 	}
@@ -108,7 +108,7 @@ func TestNew(t *testing.T) {
 
 	// bad arguments will be substituted by default values
 	badArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     server.URL,
+		TrimaranSpec:       pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
 		SafeVarianceMargin: -5,
 	}
 	badp, err := New(&badArgs, fh)
@@ -334,7 +334,7 @@ func TestScore(t *testing.T) {
 			state := framework.NewCycleState()
 
 			loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-				WatcherAddress:          server.URL,
+				TrimaranSpec:            pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
 				SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
 				SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
 			}

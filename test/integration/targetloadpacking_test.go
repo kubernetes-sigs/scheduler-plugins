@@ -109,7 +109,7 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
 		Name: targetloadpacking.Name,
 		Args: &config.TargetLoadPackingArgs{
-			WatcherAddress:            server.URL,
+			TrimaranSpec:              config.TrimaranSpec{WatcherAddress: server.URL},
 			TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
 			DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
 		},

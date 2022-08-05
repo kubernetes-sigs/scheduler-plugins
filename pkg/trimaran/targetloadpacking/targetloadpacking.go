@@ -27,16 +27,11 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"sync"
-	"time"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
-	loadwatcherapi "github.com/paypal/load-watcher/pkg/watcher/api"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -46,11 +41,9 @@ import (
 )
 
 const (
+	Name = "TargetLoadPacking"
 	// Time interval in seconds for each metrics agent ingestion.
 	metricsAgentReportingIntervalSeconds = 60
-	metricsUpdateIntervalSeconds         = 30
-	LoadWatcherServiceClientName         = "load-watcher"
-	Name                                 = "TargetLoadPacking"
 )
 
 var (
@@ -61,145 +54,66 @@ var (
 
 type TargetLoadPacking struct {
 	handle       framework.Handle
-	client       loadwatcherapi.Client
-	metrics      watcher.WatcherMetrics
 	eventHandler *trimaran.PodAssignEventHandler
-	// For safe access to metrics
-	mu sync.RWMutex
+	collector    *trimaran.Collector
+	args         *pluginConfig.TargetLoadPackingArgs
 }
 
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	args, err := getArgs(obj)
+	klog.V(4).InfoS("Creating new instance of the TargetLoadPacking plugin")
+	// cast object into plugin arguments object
+	args, ok := obj.(*pluginConfig.TargetLoadPackingArgs)
+	if !ok {
+		return nil, fmt.Errorf("want args to be of type TargetLoadPackingArgs, got %T", obj)
+	}
+	collector, err := trimaran.NewCollector(&args.TrimaranSpec)
 	if err != nil {
 		return nil, err
 	}
+
 	hostTargetUtilizationPercent = args.TargetUtilization
 	requestsMilliCores = args.DefaultRequests.Cpu().MilliValue()
-	requestsMultiplier, _ = strconv.ParseFloat(args.DefaultRequestsMultiplier, 64)
+	requestsMultiplier, err = strconv.ParseFloat(args.DefaultRequestsMultiplier, 64)
+	if err != nil {
+		return nil, errors.New("unable to parse DefaultRequestsMultiplier: " + err.Error())
+	}
+
+	klog.V(4).InfoS("Using TargetLoadPackingArgs",
+		"requestsMilliCores", requestsMilliCores,
+		"requestsMultiplier", requestsMultiplier,
+		"targetUtilization", hostTargetUtilizationPercent)
 
 	podAssignEventHandler := trimaran.New()
-
-	var client loadwatcherapi.Client
-	if args.WatcherAddress != "" {
-		client, err = loadwatcherapi.NewServiceClient(args.WatcherAddress)
-	} else {
-		opts := watcher.MetricsProviderOpts{
-			Name:               string(args.MetricProvider.Type),
-			Address:            args.MetricProvider.Address,
-			AuthToken:          args.MetricProvider.Token,
-			InsecureSkipVerify: args.MetricProvider.InsecureSkipVerify,
-		}
-		client, err = loadwatcherapi.NewLibraryClient(opts)
-	}
-	if err != nil {
-		return nil, err
-	}
+	podAssignEventHandler.AddToHandle(handle)
 
 	pl := &TargetLoadPacking{
 		handle:       handle,
-		client:       client,
 		eventHandler: podAssignEventHandler,
+		collector:    collector,
+		args:         args,
 	}
-
-	pl.handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
-		cache.FilteringResourceEventHandler{
-			FilterFunc: func(obj interface{}) bool {
-				switch t := obj.(type) {
-				case *v1.Pod:
-					return isAssigned(t)
-				case cache.DeletedFinalStateUnknown:
-					if pod, ok := t.Obj.(*v1.Pod); ok {
-						return isAssigned(pod)
-					}
-					utilruntime.HandleError(fmt.Errorf("unable to convert object %T to *v1.Pod in %T", obj, pl))
-					return false
-				default:
-					utilruntime.HandleError(fmt.Errorf("unable to handle object in %T: %T", pl, obj))
-					return false
-				}
-			},
-			Handler: podAssignEventHandler,
-		},
-	)
-
-	// populate metrics before returning
-	err = pl.updateMetrics()
-	if err != nil {
-		klog.ErrorS(err, "Unable to populate metrics initially")
-	}
-	go func() {
-		metricsUpdaterTicker := time.NewTicker(time.Second * metricsUpdateIntervalSeconds)
-		for range metricsUpdaterTicker.C {
-			err = pl.updateMetrics()
-			if err != nil {
-				klog.ErrorS(err, "Unable to update metrics")
-			}
-		}
-	}()
-
 	return pl, nil
-}
-
-func (pl *TargetLoadPacking) updateMetrics() error {
-	metrics, err := pl.client.GetLatestWatcherMetrics()
-	if err != nil {
-		return err
-	}
-
-	pl.mu.Lock()
-	pl.metrics = *metrics
-	pl.mu.Unlock()
-
-	return nil
 }
 
 func (pl *TargetLoadPacking) Name() string {
 	return Name
 }
 
-func getArgs(obj runtime.Object) (*pluginConfig.TargetLoadPackingArgs, error) {
-	args, ok := obj.(*pluginConfig.TargetLoadPackingArgs)
-	if !ok {
-		return nil, fmt.Errorf("want args to be of type TargetLoadPackingArgs, got %T", obj)
-	}
-	if args.WatcherAddress == "" {
-		metricProviderType := string(args.MetricProvider.Type)
-		validMetricProviderType := metricProviderType == string(pluginConfig.KubernetesMetricsServer) ||
-			metricProviderType == string(pluginConfig.Prometheus) ||
-			metricProviderType == string(pluginConfig.SignalFx)
-		if !validMetricProviderType {
-			return nil, fmt.Errorf("invalid MetricProvider.Type, got %T", args.MetricProvider.Type)
-		}
-	}
-	_, err := strconv.ParseFloat(args.DefaultRequestsMultiplier, 64)
-	if err != nil {
-		return nil, errors.New("unable to parse DefaultRequestsMultiplier: " + err.Error())
-	}
-	return args, nil
-}
-
 func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+	score := framework.MinNodeScore
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return framework.MinNodeScore, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+		return score, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 
-	// copy value lest updateMetrics() updates it and to avoid locking for rest of the function
-	pl.mu.RLock()
-	metrics := pl.metrics
-	pl.mu.RUnlock()
-
-	// This happens if metrics were never populated since scheduler started
-	if metrics.Data.NodeMetricsMap == nil {
-		klog.ErrorS(nil, "Metrics not available from watcher, assigning 0 score to node", "nodeName", nodeName)
-		return framework.MinNodeScore, nil
-	}
-	// This means the node is new (no metrics yet) or metrics are unavailable due to 404 or 500
-	if _, ok := metrics.Data.NodeMetricsMap[nodeName]; !ok {
-		klog.InfoS("Unable to find metrics for node", "nodeName", nodeName)
+	// get node metrics
+	metrics, allMetrics := pl.collector.GetNodeMetrics(nodeName)
+	if metrics == nil {
+		klog.InfoS("Failed to get metrics for node; using minimum score", "nodeName", nodeName)
 		// Avoid the node by scoring minimum
-		return framework.MinNodeScore, nil
+		return score, nil
 		// TODO(aqadeer): If this happens for a long time, fall back to allocation based packing. This could mean maintaining failure state across cycles if scheduler doesn't provide this state
+
 	}
 
 	var curPodCPUUsage int64
@@ -213,7 +127,7 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 
 	var nodeCPUUtilPercent float64
 	var cpuMetricFound bool
-	for _, metric := range metrics.Data.NodeMetricsMap[nodeName].Metrics {
+	for _, metric := range metrics {
 		if metric.Type == watcher.CPU {
 			if metric.Operator == watcher.Average || metric.Operator == watcher.Latest {
 				nodeCPUUtilPercent = metric.Value
@@ -223,8 +137,8 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	}
 
 	if !cpuMetricFound {
-		klog.ErrorS(nil, "Cpu metric not found in node metrics", "nodeName", nodeName, "nodeMetrics", metrics.Data.NodeMetricsMap[nodeName].Metrics)
-		return framework.MinNodeScore, nil
+		klog.ErrorS(nil, "Cpu metric not found in node metrics", "nodeName", nodeName, "nodeMetrics", metrics)
+		return score, nil
 	}
 	nodeCPUCapMillis := float64(nodeInfo.Node().Status.Capacity.Cpu().MilliValue())
 	nodeCPUUtilMillis := (nodeCPUUtilPercent / 100) * nodeCPUCapMillis
@@ -238,8 +152,8 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 		// Note that the second condition doesn't guarantee metrics for that pod are not reported yet as the 0 <= t <= 2*metricsAgentReportingIntervalSeconds
 		// t = metricsAgentReportingIntervalSeconds is taken as average case and it doesn't hurt us much if we are
 		// counting metrics twice in case actual t is less than metricsAgentReportingIntervalSeconds
-		if info.Timestamp.Unix() > metrics.Window.End || info.Timestamp.Unix() <= metrics.Window.End &&
-			(metrics.Window.End-info.Timestamp.Unix()) < metricsAgentReportingIntervalSeconds {
+		if info.Timestamp.Unix() > allMetrics.Window.End || info.Timestamp.Unix() <= allMetrics.Window.End &&
+			(allMetrics.Window.End-info.Timestamp.Unix()) < metricsAgentReportingIntervalSeconds {
 			for _, container := range info.Pod.Spec.Containers {
 				missingCPUUtilMillis += PredictUtilisation(&container)
 			}
@@ -256,14 +170,14 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.Cy
 	}
 	if predictedCPUUsage > float64(hostTargetUtilizationPercent) {
 		if predictedCPUUsage > 100 {
-			return framework.MinNodeScore, framework.NewStatus(framework.Success, "")
+			return score, framework.NewStatus(framework.Success, "")
 		}
 		penalisedScore := int64(math.Round(float64(hostTargetUtilizationPercent) * (100 - predictedCPUUsage) / (100 - float64(hostTargetUtilizationPercent))))
 		klog.V(6).InfoS("Penalised score for host", "nodeName", nodeName, "penalisedScore", penalisedScore)
 		return penalisedScore, framework.NewStatus(framework.Success, "")
 	}
 
-	score := int64(math.Round((100-float64(hostTargetUtilizationPercent))*
+	score = int64(math.Round((100-float64(hostTargetUtilizationPercent))*
 		predictedCPUUsage/float64(hostTargetUtilizationPercent) + float64(hostTargetUtilizationPercent)))
 	klog.V(6).InfoS("Score for host", "nodeName", nodeName, "score", score)
 	return score, framework.NewStatus(framework.Success, "")
@@ -275,11 +189,6 @@ func (pl *TargetLoadPacking) ScoreExtensions() framework.ScoreExtensions {
 
 func (pl *TargetLoadPacking) NormalizeScore(context.Context, *framework.CycleState, *v1.Pod, framework.NodeScoreList) *framework.Status {
 	return nil
-}
-
-// Checks and returns true if the pod is assigned to a node
-func isAssigned(pod *v1.Pod) bool {
-	return len(pod.Spec.NodeName) != 0
 }
 
 // Predict utilization for a container based on its requests/limits

@@ -80,34 +80,40 @@ type MetricProviderSpec struct {
 	InsecureSkipVerify *bool `json:"insecureSkipVerify,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
-type TargetLoadPackingArgs struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// Default requests to use for best effort QoS
-	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
-	// Default requests multiplier for busrtable QoS
-	DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
-	// Node target CPU Utilization for bin packing
-	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
-	// Specify the metric provider type, address and token using MetricProviderSpec
+// TrimaranSpec holds common parameters for trimaran plugins
+type TrimaranSpec struct {
+	// Metric Provider specification when using load watcher as library
 	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
 	// Address of load watcher service
 	WatcherAddress *string `json:"watcherAddress,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// TargetLoadPackingArgs holds arguments used to configure TargetLoadPacking plugin.
+type TargetLoadPackingArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Common parameters for trimaran plugins
+	TrimaranSpec `json:",inline"`
+	// Default requests to use for best effort QoS
+	DefaultRequests v1.ResourceList `json:"defaultRequests,omitempty"`
+	// Default requests multiplier for busrtable QoS
+	DefaultRequestsMultiplier *string `json:"defaultRequestsMultiplier,omitempty"`
+	// Node target CPU Utilization for bin packing
+	TargetUtilization *int64 `json:"targetUtilization,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
 
 // LoadVariationRiskBalancingArgs holds arguments used to configure LoadVariationRiskBalancing plugin.
 type LoadVariationRiskBalancingArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// Metric Provider specification when using load watcher as library
-	MetricProvider MetricProviderSpec `json:"metricProvider,omitempty"`
-	// Address of load watcher service
-	WatcherAddress *string `json:"watcherAddress,omitempty"`
+	// Common parameters for trimaran plugins
+	TrimaranSpec `json:",inline"`
 	// Multiplier of standard deviation in risk value
 	SafeVarianceMargin *float64 `json:"safeVarianceMargin,omitempty"`
 	// Root power of standard deviation in risk value

@@ -29,11 +29,10 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
@@ -46,43 +45,32 @@ const (
 type LoadVariationRiskBalancing struct {
 	handle       framework.Handle
 	eventHandler *trimaran.PodAssignEventHandler
-	collector    *Collector
+	collector    *trimaran.Collector
+	args         *pluginConfig.LoadVariationRiskBalancingArgs
 }
 
 // New : create an instance of a LoadVariationRiskBalancing plugin
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(4).InfoS("Creating new instance of the LoadVariationRiskBalancing plugin")
-	collector, err := newCollector(obj)
+	// cast object into plugin arguments object
+	args, ok := obj.(*pluginConfig.LoadVariationRiskBalancingArgs)
+	if !ok {
+		return nil, fmt.Errorf("want args to be of type LoadVariationRiskBalancingArgs, got %T", obj)
+	}
+	collector, err := trimaran.NewCollector(&args.TrimaranSpec)
 	if err != nil {
 		return nil, err
 	}
+	klog.V(4).InfoS("Using LoadVariationRiskBalancingArgs", "margin", args.SafeVarianceMargin, "sensitivity", args.SafeVarianceSensitivity)
 
 	podAssignEventHandler := trimaran.New()
-	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
-		cache.FilteringResourceEventHandler{
-			FilterFunc: func(obj interface{}) bool {
-				switch t := obj.(type) {
-				case *v1.Pod:
-					return isAssigned(t)
-				case cache.DeletedFinalStateUnknown:
-					if pod, ok := t.Obj.(*v1.Pod); ok {
-						return isAssigned(pod)
-					}
-					utilruntime.HandleError(fmt.Errorf("unable to convert object %T to *v1.Pod", obj))
-					return false
-				default:
-					utilruntime.HandleError(fmt.Errorf("unable to handle object: %T", obj))
-					return false
-				}
-			},
-			Handler: podAssignEventHandler,
-		},
-	)
+	podAssignEventHandler.AddToHandle(handle)
 
 	pl := &LoadVariationRiskBalancing{
 		handle:       handle,
 		eventHandler: podAssignEventHandler,
 		collector:    collector,
+		args:         args,
 	}
 	return pl, nil
 }
@@ -96,25 +84,26 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 		return score, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	// get node metrics
-	metrics := pl.collector.getNodeMetrics(nodeName)
+	metrics, _ := pl.collector.GetNodeMetrics(nodeName)
 	if metrics == nil {
 		klog.InfoS("Failed to get metrics for node; using minimum score", "nodeName", nodeName)
 		return score, nil
 	}
-	podRequest := getResourceRequested(pod)
+	podRequest := trimaran.GetResourceRequested(pod)
 	node := nodeInfo.Node()
+
 	// calculate CPU score
 	var cpuScore float64 = 0
-	cpuStats, cpuOK := createResourceStats(metrics, node, podRequest, v1.ResourceCPU, watcher.CPU)
+	cpuStats, cpuOK := trimaran.CreateResourceStats(metrics, node, podRequest, v1.ResourceCPU, watcher.CPU)
 	if cpuOK {
-		cpuScore = cpuStats.computeScore(pl.collector.args.SafeVarianceMargin, pl.collector.args.SafeVarianceSensitivity)
+		cpuScore = computeScore(cpuStats, pl.args.SafeVarianceMargin, pl.args.SafeVarianceSensitivity)
 	}
 	klog.V(6).InfoS("Calculating CPUScore", "pod", klog.KObj(pod), "nodeName", nodeName, "cpuScore", cpuScore)
 	// calculate Memory score
 	var memoryScore float64 = 0
-	memoryStats, memoryOK := createResourceStats(metrics, node, podRequest, v1.ResourceMemory, watcher.Memory)
+	memoryStats, memoryOK := trimaran.CreateResourceStats(metrics, node, podRequest, v1.ResourceMemory, watcher.Memory)
 	if memoryOK {
-		memoryScore = memoryStats.computeScore(pl.collector.args.SafeVarianceMargin, pl.collector.args.SafeVarianceSensitivity)
+		memoryScore = computeScore(memoryStats, pl.args.SafeVarianceMargin, pl.args.SafeVarianceSensitivity)
 	}
 	klog.V(6).InfoS("Calculating MemoryScore", "pod", klog.KObj(pod), "nodeName", nodeName, "memoryScore", memoryScore)
 	// calculate total score
@@ -142,9 +131,4 @@ func (pl *LoadVariationRiskBalancing) ScoreExtensions() framework.ScoreExtension
 // NormalizeScore : normalize scores
 func (pl *LoadVariationRiskBalancing) NormalizeScore(context.Context, *framework.CycleState, *v1.Pod, framework.NodeScoreList) *framework.Status {
 	return nil
-}
-
-// Checks and returns true if the pod is assigned to a node
-func isAssigned(pod *v1.Pod) bool {
-	return len(pod.Spec.NodeName) != 0
 }

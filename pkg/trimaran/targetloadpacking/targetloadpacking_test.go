@@ -77,9 +77,9 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 
 func TestNew(t *testing.T) {
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
+		TrimaranSpec:              pluginConfig.TrimaranSpec{WatcherAddress: "http://deadbeef:2020"},
 		TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
 		DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
-		WatcherAddress:            "http://deadbeef:2020",
 	}
 	targetLoadPackingConfig := config.PluginConfig{
 		Name: Name,
@@ -112,9 +112,9 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 	}
 
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
+		TrimaranSpec:              pluginConfig.TrimaranSpec{WatcherAddress: "http://deadbeef:2020"},
 		TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
 		DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
-		WatcherAddress:            "http://deadbeef:2020",
 	}
 	targetLoadPackingConfig := config.PluginConfig{
 		Name: Name,
@@ -246,11 +246,11 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)
 			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
+				TrimaranSpec:              pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
 				TargetUtilization:         v1beta2.DefaultTargetUtilizationPercent,
-				WatcherAddress:            server.URL,
 				DefaultRequestsMultiplier: v1beta2.DefaultRequestsMultiplier,
 			}
-			p, err := New(&targetLoadPackingArgs, fh)
+			p, _ := New(&targetLoadPackingArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)
 			var actualList framework.NodeScoreList
 			for _, n := range tt.nodes {

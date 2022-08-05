@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadvariationriskbalancing
+package trimaran
 
 import (
 	"encoding/json"
@@ -26,13 +26,11 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta2"
 )
 
 var (
-	args = pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     "http://deadbeef:2020",
-		SafeVarianceMargin: 1,
+	args = pluginConfig.TrimaranSpec{
+		WatcherAddress: "http://deadbeef:2020",
 	}
 
 	watcherResponse = watcher.WatcherMetrics{
@@ -69,7 +67,7 @@ var (
 )
 
 func TestNewCollector(t *testing.T) {
-	col, err := newCollector(&args)
+	col, err := NewCollector(&args)
 	assert.NotNil(t, col)
 	assert.Nil(t, err)
 }
@@ -82,11 +80,10 @@ func TestGetAllMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     server.URL,
-		SafeVarianceMargin: v1beta2.DefaultSafeVarianceMargin,
+	trimaranSpec := pluginConfig.TrimaranSpec{
+		WatcherAddress: server.URL,
 	}
-	collector, err := newCollector(&loadVariationRiskBalancingArgs)
+	collector, err := NewCollector(&trimaranSpec)
 	assert.NotNil(t, collector)
 	assert.Nil(t, err)
 
@@ -104,11 +101,10 @@ func TestUpdateMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     server.URL,
-		SafeVarianceMargin: v1beta2.DefaultSafeVarianceMargin,
+	trimaranSpec := pluginConfig.TrimaranSpec{
+		WatcherAddress: server.URL,
 	}
-	collector, err := newCollector(&loadVariationRiskBalancingArgs)
+	collector, err := NewCollector(&trimaranSpec)
 	assert.NotNil(t, collector)
 	assert.Nil(t, err)
 
@@ -124,15 +120,14 @@ func TestGetNodeMetrics(t *testing.T) {
 	}))
 	defer server.Close()
 
-	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
-		WatcherAddress:     server.URL,
-		SafeVarianceMargin: v1beta2.DefaultSafeVarianceMargin,
+	trimaranSpec := pluginConfig.TrimaranSpec{
+		WatcherAddress: server.URL,
 	}
-	collector, err := newCollector(&loadVariationRiskBalancingArgs)
+	collector, err := NewCollector(&trimaranSpec)
 	assert.NotNil(t, collector)
 	assert.Nil(t, err)
 	nodeName := "node-1"
-	metrics := collector.getNodeMetrics(nodeName)
+	metrics, _ := collector.GetNodeMetrics(nodeName)
 	expectedMetrics := watcherResponse.Data.NodeMetricsMap[nodeName].Metrics
 	assert.EqualValues(t, expectedMetrics, metrics)
 }
