@@ -155,7 +155,7 @@ func autoConvert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationR
 	}
 	// WARNING: in.WatcherAddress requires manual conversion: does not exist in peer-type
 	// Added manually
-		if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.TrimaranSpec.WatcherAddress, s); err != nil {
+	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.TrimaranSpec.WatcherAddress, s); err != nil {
 		return err
 	}
 	if err := v1.Convert_Pointer_float64_To_float64(&in.SafeVarianceMargin, &out.SafeVarianceMargin, s); err != nil {
@@ -349,7 +349,7 @@ func autoConvert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(i
 	// Added manually
 	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.TrimaranSpec.WatcherAddress, s); err != nil {
 		return err
-		}
+	}
 	return nil
 }
 
