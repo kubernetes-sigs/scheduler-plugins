@@ -89,13 +89,8 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 					Metrics: []watcher.Metric{
 						{
 							Type:     watcher.CPU,
-							Value:    50,
+							Value:    30,
 							Operator: watcher.Average,
-						},
-						{
-							Type:     watcher.CPU,
-							Operator: watcher.Std,
-							Value:    50,
 						},
 					},
 				},
@@ -176,7 +171,7 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 	}
 	defer cleanupPods(t, testCtx, newPods)
 
-	expected := [2]string{nodeNames[0], nodeNames[0]}
+	expected := [2]string{nodeNames[2], nodeNames[2]}
 	for i := range newPods {
 		err := wait.Poll(1*time.Second, 10*time.Second, func() (bool, error) {
 			return podScheduled(cs, newPods[i].Namespace, newPods[i].Name), nil
