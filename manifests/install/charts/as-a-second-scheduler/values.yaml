@@ -5,13 +5,14 @@
 
 scheduler:
   name: scheduler-plugins-scheduler
-  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.22.6
+  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.23.10
   namespace: scheduler-plugins
   replicaCount: 1
+  leaderElect: false
 
 controller:
   name: scheduler-plugins-controller
-  image: k8s.gcr.io/scheduler-plugins/controller:v0.22.6
+  image: k8s.gcr.io/scheduler-plugins/controller:v0.23.10
   namespace: scheduler-plugins
   replicaCount: 1
 
@@ -19,17 +20,6 @@ controller:
 # as they need extra RBAC privileges on metrics.k8s.io.
 
 plugins:
-  enabled: ["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]
+  enabled: ["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch","NodeResourcesAllocatable"]
+  disabled: ["PrioritySort"] # only in-tree plugins need to be defined here
 
-global:  
-   # queueSort is not indented under extensions 
-   # as it needs to be globally enabled once. 
-  queueSort: ["Coscheduling"]
-  extensions: 
-    preFilter: ["Coscheduling", "CapacityScheduling"] 
-    filter: ["NodeResourceTopologyMatch"] 
-    postFilter: ["Coscheduling", "CapacityScheduling"] 
-    score: ["NodeResourceTopologyMatch", "NodeResourcesAllocatable"] 
-    permit: ["Coscheduling"] 
-    reserve: ["Coscheduling", "CapacityScheduling"] 
-    postBind: ["Coscheduling"]
