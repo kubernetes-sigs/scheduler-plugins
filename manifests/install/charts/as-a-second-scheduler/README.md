@@ -35,12 +35,12 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | --------------------------------------- |-------------------------------|-------------------------------------------------------------------------------------------------|
 | `scheduler.name`                        | Scheduler name                | `scheduler-plugins-scheduler`                                                                   |
 | `scheduler.image`                       | Scheduler image               | `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.23.10`                                          |
-| `scheduler.namespace`                   | Default scheduler-plugins namespace | `scheduler-plugins`                                                                             |
-| `scheduler.replicaCount`                | scheduler-plugins replicas    | `1`                                                                                             |
+| `scheduler.namespace`                   | Scheduler namespace           | `scheduler-plugins`                                                                             |
+| `scheduler.replicaCount`                | Scheduler replicaCount        | `1`                                                                                             |
 | `controller.name`                       | Controller name               | `scheduler-plugins-controller`                                                                  |
 | `controller.image`                      | Controller image              | `k8s.gcr.io/scheduler-plugins/controller:v0.23.10`                                              |
-| `controller.namespace`                  | Controller namespace          | `scheduler-plugins`                                                                             |    
+| `controller.namespace`                  | Controller namespace          | `scheduler-plugins`                                                                             |
 | `controller.replicaCount`               | Controller replicaCount       | `1`                                                                                             |
 | `plugins.enabled`                       | Plugins enabled by default    | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
-| `plugins.enabled`                       | Plugins are disabled by default | `["PrioritySort"]`                                                                              |
+| `plugins.enabled`                       | Plugins disabled by default   | `["PrioritySort"]`                                                                              |
 

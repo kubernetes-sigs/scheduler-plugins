@@ -22,3 +22,4 @@ controller:
 plugins:
   enabled: ["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch","NodeResourcesAllocatable"]
   disabled: ["PrioritySort"] # only in-tree plugins need to be defined here
+
