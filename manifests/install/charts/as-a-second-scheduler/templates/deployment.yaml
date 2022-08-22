@@ -15,7 +15,7 @@ spec:
       labels:
         app: scheduler-plugins-controller
     spec:
-      serviceAccount: scheduler-plugins-controller
+      serviceAccountName: scheduler-plugins-controller
       containers:
       - name: scheduler-plugins-controller
         image: {{ .Values.controller.image }}
@@ -42,20 +42,20 @@ spec:
       containers:
       - command:
         - /bin/kube-scheduler
-        - --address=0.0.0.0
-        - --leader-elect=false
         - --config=/etc/kubernetes/scheduler-config.yaml
         image: {{ .Values.scheduler.image }}
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 10251
+            port: 10259
+            scheme: HTTPS
           initialDelaySeconds: 15
         name: scheduler-plugins-scheduler
         readinessProbe:
           httpGet:
             path: /healthz
-            port: 10251
+            port: 10259
+            scheme: HTTPS
         resources:
           requests:
             cpu: '0.1'
@@ -71,3 +71,4 @@ spec:
       - name: scheduler-config
         configMap:
           name: scheduler-config
+
