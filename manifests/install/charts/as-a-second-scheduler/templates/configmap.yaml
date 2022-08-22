@@ -6,43 +6,24 @@ metadata:
   namespace: {{ .Values.scheduler.namespace }}
 data:
   scheduler-config.yaml: |
-    apiVersion: kubescheduler.config.k8s.io/v1beta2
+    apiVersion: kubescheduler.config.k8s.io/v1beta3
     kind: KubeSchedulerConfiguration
     leaderElection:
-      leaderElect: false
+      leaderElect: {{ .Values.scheduler.leaderElect }}
     profiles:
     # Compose all plugins in one profile
-    - schedulerName: scheduler-plugins-scheduler
+    - schedulerName: {{ .Values.scheduler.name }}
       plugins:
-      # Ensure only the first queueSort plugin is rendered.
-
- {{- $enabledPlugins := .Values.plugins.enabled -}}
-
-  {{- if and (.Values.global.queueSort) (has (index .Values.global.queueSort 0) $enabledPlugins) }}
-        queueSort:
+        multiPoint:
           enabled:
-          - name: {{ index .Values.global.queueSort 0 }}
+          {{- range $.Values.plugins.enabled }}
+          - name: {{ title . }}
+          {{- end }}
           disabled:
-          - name: "*"
-  {{- end }}
-   
-    {{- $hasExtension := true -}}
-    
-      {{- range $extension, $plugins := .Values.global.extensions }}
-       {{- $hasExtension = true -}}
-           {{- range $plugins }}
-             {{- if and $hasExtension (has . $enabledPlugins) }}
-        {{ $extension }}:
-          enabled:
-           {{- $hasExtension = false -}}
-              {{- end}}
-            {{- if has . $enabledPlugins }}
-           - name: {{ title . }} 
-            {{- end}}
-         
-        {{- end }}
-      {{- end }}
-
- {{- end }}
+          {{- range $.Values.plugins.disabled }}
+          - name: {{ title . }}
+          {{- end }}
 
   {{- /* TODO: wire CRD installation with enabled plugins. */}}
+{{- end }}
+

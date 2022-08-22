@@ -128,3 +128,4 @@ subjects:
 - kind: ServiceAccount
   name: {{ .Values.controller.name }}
   namespace: {{ .Values.controller.namespace }}
+
