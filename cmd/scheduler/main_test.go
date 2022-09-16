@@ -25,6 +25,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
+	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -354,6 +356,62 @@ profiles:
 		t.Fatal(err)
 	}
 
+	// topologicalSort plugin config
+	topologicalSortConfigFile := filepath.Join(tmpDir, "topologicalSort.yaml")
+	if err := ioutil.WriteFile(topologicalSortConfigFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta3
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    queueSort:
+      enabled:
+      - name: TopologicalSort
+      disabled:
+      - name: "*"
+    preFilter:
+      disabled:
+      - name: "*"
+    filter:
+      disabled:
+      - name: "*"
+    preScore:
+      disabled:
+      - name: "*"
+    score:
+      disabled:
+      - name: "*"
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
+	// networkOverhead plugin config
+	networkOverheadConfigWithArgsFile := filepath.Join(tmpDir, "networkOverhead.yaml")
+	if err := ioutil.WriteFile(networkOverheadConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta3
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    preFilter:
+      enabled:
+      - name: NetworkOverhead
+    filter:
+      enabled:
+      - name: NetworkOverhead
+      disabled:
+      - name: "*"
+    score:
+      enabled:
+      - name: NetworkOverhead
+      disabled:
+      - name: "*"
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
 	if err := ioutil.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
@@ -585,6 +643,40 @@ profiles:
 					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
 					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: noderesourcetopology.Name, Weight: 1}}},
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - topologicalSort",
+			flags:           []string{"--config", topologicalSortConfigFile},
+			registryOptions: []app.Option{app.WithPlugin(topologicalsort.Name, topologicalsort.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: topologicalsort.Name}}},
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - NetworkOverhead with args",
+			flags:           []string{"--config", networkOverheadConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(networkoverhead.Name, networkoverhead.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					QueueSort: defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:      defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1beta3.PreFilter.Enabled, config.Plugin{Name: networkoverhead.Name}),
+					},
+					Filter:     config.PluginSet{Enabled: []config.Plugin{{Name: networkoverhead.Name}}},
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
+					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: networkoverhead.Name, Weight: 1}}},
 					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
 					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},

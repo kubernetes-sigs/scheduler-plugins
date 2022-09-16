@@ -152,6 +152,44 @@ func TestSchedulingDefaults(t *testing.T) {
 				MinCandidateNodesAbsolute:   pointer.Int32Ptr(100),
 			},
 		},
+		{
+			name:   "empty config TopologySortArgs",
+			config: &TopologicalSortArgs{},
+			expect: &TopologicalSortArgs{
+				Namespaces: []string{"default"},
+			},
+		},
+		{
+			name: "set non default TopologySortArgs",
+			config: &TopologicalSortArgs{
+				Namespaces: []string{"n1"},
+			},
+			expect: &TopologicalSortArgs{
+				Namespaces: []string{"n1"},
+			},
+		},
+		{
+			name:   "empty config NetworkOverheadArgs",
+			config: &NetworkOverheadArgs{},
+			expect: &NetworkOverheadArgs{
+				Namespaces:          []string{"default"},
+				WeightsName:         pointer.StringPtr("UserDefined"),
+				NetworkTopologyName: pointer.StringPtr("nt-default"),
+			},
+		},
+		{
+			name: "set non default TopologySortArgs",
+			config: &NetworkOverheadArgs{
+				Namespaces:          []string{"n2"},
+				WeightsName:         pointer.StringPtr("latency"),
+				NetworkTopologyName: pointer.StringPtr("nt-latency-costs"),
+			},
+			expect: &NetworkOverheadArgs{
+				Namespaces:          []string{"n2"},
+				WeightsName:         pointer.StringPtr("latency"),
+				NetworkTopologyName: pointer.StringPtr("nt-latency-costs"),
+			},
+		},
 	}
 
 	for _, tc := range tests {

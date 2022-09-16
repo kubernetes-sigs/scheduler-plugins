@@ -41,6 +41,12 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	})
 	scheme.AddTypeDefaultingFunc(&PreemptionTolerationArgs{}, func(obj interface{}) { SetObjectDefaults_PreemptionTolerationArgs(obj.(*PreemptionTolerationArgs)) })
 	scheme.AddTypeDefaultingFunc(&TargetLoadPackingArgs{}, func(obj interface{}) { SetObjectDefaults_TargetLoadPackingArgs(obj.(*TargetLoadPackingArgs)) })
+	scheme.AddTypeDefaultingFunc(&TopologicalSortArgs{}, func(obj interface{}) {
+		SetObjectDefaults_TopologicalSortArgs(obj.(*TopologicalSortArgs))
+	})
+	scheme.AddTypeDefaultingFunc(&NetworkOverheadArgs{}, func(obj interface{}) {
+		SetObjectDefaults_NetworkOverheadArgs(obj.(*NetworkOverheadArgs))
+	})
 	return nil
 }
 
@@ -66,4 +72,12 @@ func SetObjectDefaults_PreemptionTolerationArgs(in *PreemptionTolerationArgs) {
 
 func SetObjectDefaults_TargetLoadPackingArgs(in *TargetLoadPackingArgs) {
 	SetDefaults_TargetLoadPackingArgs(in)
+}
+
+func SetObjectDefaults_TopologicalSortArgs(in *TopologicalSortArgs) {
+	SetDefaults_TopologicalSortArgs(in)
+}
+
+func SetObjectDefaults_NetworkOverheadArgs(in *NetworkOverheadArgs) {
+	SetDefaults_NetworkOverheadArgs(in)
 }

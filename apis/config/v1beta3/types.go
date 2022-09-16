@@ -150,3 +150,27 @@ type NodeResourceTopologyMatchArgs struct {
 
 // PreemptionTolerationArgs reuses DefaultPluginArgs.
 type PreemptionTolerationArgs schedulerconfigv1beta3.DefaultPreemptionArgs
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type TopologicalSortArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Namespaces to be considered by TopologySort plugin
+	Namespaces []string `json:"namespaces,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type NetworkOverheadArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Namespaces to be considered by NetworkMinCost plugin
+	Namespaces []string `json:"namespaces,omitempty"`
+
+	// Preferred weights (Default: UserDefined)
+	WeightsName *string `json:"weightsName,omitempty"`
+
+	// The NetworkTopology CRD name
+	NetworkTopologyName *string `json:"networkTopologyName,omitempty"`
+}
