@@ -37,15 +37,23 @@ While pod-centric security schemes such as seccomp are necessary, they alone are
 
 ### Notes/Constraints/Caveats
 
-We assume the pod's configuration contains seccomp security context provided by the user or automatically configured using the Security Profile Operator (more on this below). We make use of the seccomp profile to retrieve what system calls are used by the pods. seccomp is also used to filter the system calls for each pod to enforce system call restriction.
+#### Seccomp
 
-Creating a seccomp profile that is inaccurate can result in pod execution failure. Creating an accurate seccomp filter can be challenging but this is an existing difficulty of using seccomp. The Security Profile Operator can be used to ease and automate this process.
+* We assume the pod's configuration contains seccomp security context provided by the user or automatically configured using the Security Profile Operator (more on this below). We make use of the seccomp profile to retrieve what system calls are used by the pods. seccomp is also used to filter the system calls for each pod to enforce system call restriction.
+
+* Creating a seccomp profile that is inaccurate can result in pod execution failure. Creating an accurate seccomp filter can be challenging but this is an existing difficulty of using seccomp. The Security Profile Operator can be used to ease and automate this process.
+
+* We currently only support seccomp profiles with an allowed set of system calls, i.e., SCMP_ACT_ALLOW, and with the `defaultAction` of SCMP_ACT_ERRNO or SCMP_ACT_LOG. Supporting a deny list will require keeping an up-to-date list of available system calls in the cluster. This can be done in future iteration depending on need.
+
+* We do not support system call filtering based on arguments.
+
+* We also assume each node in the cluster runs a similar Linux kernel version and the resulting seccomp profiles generated either with SPO or other approaches will be for the corresponding host kernel version. The `architecture` field of the pod's seccomp profiles will have to match the corresponding hosts. This is to ensure that the pods' seccomp profiles will be correct and applicable across all the nodes.
+
+Weights can be used to denote the "riskiness" of certain system calls or groups of system calls. We can define riskiness in a few ways but one way is to base on historical CVE data associated with system calls or how system calls are used in known exploits. We discuss how weights can be incorporated in the formulation of ExS below. While weights can be specified through the plugin's configuration or by extending the SPO CRD to encode it, chosing what weight values to use is not straightforward. Hence, implementing weights will depend on the interest/demand from the community.
 
 ### Risks and Mitigations
 
-Pods with the same workload might get scheduled on the same set of nodes, potentially impacting performance. Can remedy this by applying existing tainting or anti-affinity policies to spread those pods out.
-
-A security-aware scheduler scoring plugin (SySched) scores a node for an incoming pod by comparing the system call profile of the incoming pod with the system call profiles of existing pods in the node. It aims to co-locate pods with the same or similar system call profile for improving pod security while maintaining a high level of performance.
+Pods with the same workload (same syscall profiles) might get scheduled on the same set of nodes, potentially impacting performance. This would be a concern if the plugin is used as the sole decider of placement. However, we do not anticipate it being used as such since if there are performance critical workloads or other scheduling metric that is more important, one would want to make use of existing tagging/anti-affinity mechanisms or other scheduling plugins in conjunction with our security plugin and provide the appropriate weights to ensure some form of QoS is maintained. The workloads without specific restrictions can then benefit from our approach.
 
 ## Design Details: Overall architecture
 
@@ -86,6 +94,8 @@ To find the systems calls that are enabled a given node $n$, we perform a logica
 
 We can now compute the vector, $E_i^n = [e_1^n, e_2^n, ..., e_M^n]$, which represents the extraneous systems calls for pod $i$ on node $n$: $$E_i^n = S_i^n \oplus S^n$$
 
+Let $W = [w_1, w_2, ..., w_M]$ be the set of "riskiness" weights associated with each system call. If all system calls are treated equally, then $W = [1, 1, ... , 1]$. $ExS$ reflects the extraneous system call exposure and is computed as follows: for pod $i$ on node $n$, this score can then be computed as the dot product between $E_i^n$ and $W$: $$ExS_i^n = E_i^n \cdot W = e_1^n \times w_1 + e_2^n \times w_2 + ... + e_M^n \times w_M$$
+
 ### Scheduling Illustrative Example
 
 Figure 3 illustrates how our scoring impacts placement decisions. To make the illustration simple, we consider two feasible nodes (Node 1 and Node 2) and the ExS score as the sole factor for ranking the feasible nodes. However, in reality, our normalized ExS scores <!--(i.e., reversed scores by subtracting them from maxPriority) --> are combined with other plugin scores to rank feasible nodes. The figure shows the placement of three pods $(P_1$, $P_2$, and $P_3)$ in Node 1 and Node 2. The numbers inside a pod indicate the system call profile of the pod, i.e., the profile for $P_1$ is $\{1, 2, 3, 5\}$, $P_2$ is $\{4, 7, 8\}$, and $P_3$ is $\{1, 3, 5, 9\}$. 
@@ -104,7 +114,7 @@ Figure 3 also highlights the opportunities not only for reducing the exposure to
 
 ### Scheduling Plugin
 
-There are two main components of our plugin: 1) a lightweight in-memory cache that is kept synchronize with pod events in order to keep an up-to-date node to pod mapping in the cluster, and 2) mechanisms for retrieving the system call sets used by pods for computing the ExS scores. The in-memory cache reduces the cost of querying the API server for each pod scheduling event. We obtain the system call profiles for pods from their seccomp profiles. Our plugin leverages the Kubernetes sigs community-developed [Security Profiles Operator](https://github.com/kubernetes-sigs/security-profiles-operator) (SPO) that creates Custom Resource Definitions (CRDs) for seccomp profiles. If a pod has no seccomp profile associated with it, then our plugin simply returns, effectively a no-op.
+There are two main components of our plugin: 1) a lightweight in-memory cache that is kept synchronize with pod events in order to keep an up-to-date node to pod mapping in the cluster, and 2) mechanisms for retrieving the system call sets used by pods for computing the ExS scores. The in-memory cache reduces the cost of querying the API server for each pod scheduling event. We obtain the system call profiles for pods from their seccomp profiles. Our plugin leverages the Kubernetes sigs community-developed [Security Profiles Operator](https://github.com/kubernetes-sigs/security-profiles-operator) (SPO) that creates Custom Resource Definitions (CRDs) for seccomp profiles. If a pod has no seccomp profile associated with it, i.e., `unconfined`, it will have access to all system calls on a host (denoting highest risk), hence, our plugin will associate all system calls available on a particular host to the pod when calculating ExS.
 
 #### **How the Scheduler gets access to pods' system call profiles**
 
@@ -205,9 +215,11 @@ Controlled By:  ReplicaSet/multi-container-pod-bdc58d9fb
 ### Graduation criteria
 
 -   Alpha
-	-   Pods are placed based on their system call profiles provided via seccomp files on the local file system of the scheduler
+	-   Pods are placed based on their system call profiles provided via seccomp files in the SPO CRD
+	-   Pods without seccomp profiles (or `unconfined`) will be treated as no-op (return score of 0)
 -   Beta
-	-   User can define weights for each system call
+	-   Provide list of available system calls in a cluster via the plugin's configuration 
+	-   Weights for system calls (potentially)
 
 ## Implementation history
 
