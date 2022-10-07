@@ -103,6 +103,35 @@ func makePodByResourceList(resources *v1.ResourceList) *v1.Pod {
 	}
 }
 
+func makePodWithReqByResourceList(resources *v1.ResourceList) *v1.Pod {
+	return &v1.Pod{
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: *resources,
+					},
+				},
+			},
+		},
+	}
+}
+
+func makePodWithReqAndLimitByResourceList(resourcesReq, resourcesLim *v1.ResourceList) *v1.Pod {
+	return &v1.Pod{
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: *resourcesReq,
+						Limits:   *resourcesLim,
+					},
+				},
+			},
+		},
+	}
+}
+
 func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) v1.ResourceList {
 	result := make(v1.ResourceList)
 	for _, zone := range zones {

@@ -226,9 +226,144 @@ func TestNodeResourceTopology(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
+			name: "Guaranteed QoS, pod with extended resource no devices; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				extended:          resource.MustParse("1")}),
+			node:       nodes[4],
+			wantStatus: nil,
+		},
+		{
 			name:       "Best effort QoS, pod fit",
 			pod:        &v1.Pod{},
 			node:       nodes[0],
+			wantStatus: nil,
+		},
+		{
+			name: "Best effort QoS requesting devices, Pod Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				nicResourceName: *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Best effort QoS requesting devices, Pod Scope Topology policy; pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				nicResourceName: *resource.NewQuantity(20, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+		},
+		{
+			name: "Best effort QoS requesting devices, Container Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				nicResourceName: *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Best effort QoS requesting devices, Container Scope Topology policy; pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				nicResourceName: *resource.NewQuantity(20, resource.DecimalSI)}),
+			node:       nodes[0],
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+		},
+		{
+			name: "Best effort QoS requesting devices and extended resources, Container Scope Topology policy; pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				extended:        resource.MustParse("1"),
+				nicResourceName: *resource.NewQuantity(10, resource.DecimalSI)}),
+			node:       nodes[4],
+			wantStatus: nil,
+		},
+		{
+			name: "Best effort QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Container Scope Topology policy; pod doesn't fit",
+			pod: makePodWithReqAndLimitByResourceList(
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(3, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("3Gi"),
+					nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)},
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("4Gi"),
+					nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)},
+			),
+			node:       nodes[1],
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+		},
+		{
+			name: "Best effort QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
+			pod: makePodWithReqAndLimitByResourceList(
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(1, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("1Gi"),
+					nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)},
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("2Gi"),
+					nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)},
+			),
+			node:       nodes[2],
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+		},
+		{
+			name: "Best effort QoS requesting CPU, memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodWithReqAndLimitByResourceList(
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(1, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("1Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("2Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+			),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Best effort QoS requesting CPU, memory (not enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodWithReqAndLimitByResourceList(
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(19, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("5Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(20, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("6Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+			),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Best effort QoS requesting CPU, memory (enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodWithReqAndLimitByResourceList(
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(3, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("3Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("4Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+			),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Best effort QoS requesting CPU, memory (not enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodWithReqAndLimitByResourceList(
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(5, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("5Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+				&v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewQuantity(6, resource.DecimalSI),
+					v1.ResourceMemory: resource.MustParse("6Gi"),
+					nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)},
+			),
+			node:       nodes[1],
 			wantStatus: nil,
 		},
 		{
@@ -285,12 +420,163 @@ func TestNodeResourceTopology(t *testing.T) {
 			wantStatus: nil,
 		},
 		{
-			name: "Burstable QoS, pod doesn't fit",
+			name: "Burstable QoS, requesting CPU and devices (not enough), Container Scope Topology policy; pod doesn't fit",
 			pod: makePodByResourceList(&v1.ResourceList{
 				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
 			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+		},
+		{
+			name: "Burstable QoS, requesting CPU and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:  *resource.NewQuantity(2, resource.DecimalSI),
+				nicResourceName: *resource.NewQuantity(6, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+		},
+		{
+			name: "Burstable QoS requesting CPU (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:  *resource.NewQuantity(2, resource.DecimalSI),
+				nicResourceName: *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "BurstableQoS requesting CPU (not enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:  *resource.NewQuantity(20, resource.DecimalSI),
+				nicResourceName: *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting CPU (enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:  *resource.NewQuantity(2, resource.DecimalSI),
+				nicResourceName: *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting CPU (not enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
+				nicResourceName: *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS, requesting memory (enough on NUMA) and devices (not enough), Container Scope Topology policy; pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+		},
+		{
+			name: "Burstable QoS, requesting memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+		},
+		{
+			name: "Burstable QoS requesting memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting memory (not enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting memory (enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("4Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting memory (not enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Container Scope Topology policy; pod doesn't fit",
+			pod: makePodWithReqByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("4Gi"),
+				nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+		},
+		{
+			name: "Burstable QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
+			pod: makePodWithReqByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+		},
+		{
+			name: "Burstable QoS requesting CPU, memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodWithReqByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting CPU, memory (not enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
+			pod: makePodWithReqByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(20, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[2],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting CPU, memory (enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodWithReqByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("4Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS requesting CPU, memory (not enough on NUMA) and devices, Container Scope Topology policy; pod fit",
+			pod: makePodWithReqByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(5, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+				nicResourceName:   *resource.NewQuantity(5, resource.DecimalSI)}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
+		{
+			name: "Burstable QoS with extended resources, pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				extended:        resource.MustParse("1"),
+				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
+				nicResourceName: *resource.NewQuantity(3, resource.DecimalSI)}),
+			node:       nodes[4],
+			wantStatus: nil,
 		},
 		{
 			name: "Guaranteed QoS, hugepages, pod doesn't fit",

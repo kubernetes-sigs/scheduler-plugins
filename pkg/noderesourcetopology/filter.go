@@ -191,7 +191,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	if nodeInfo.Node() == nil {
 		return framework.NewStatus(framework.Error, "node not found")
 	}
-	if v1qos.GetPodQOS(pod) == v1.PodQOSBestEffort {
+	if v1qos.GetPodQOS(pod) == v1.PodQOSBestEffort && !hasNonNativeResource(pod) {
 		return nil
 	}
 
@@ -235,4 +235,24 @@ func subtractFromNUMA(nodes NUMANodeList, numaID int, container v1.Container) {
 			nRes[resName] = nodeResQuan
 		}
 	}
+}
+
+func hasNonNativeResource(pod *v1.Pod) bool {
+	for _, initContainer := range pod.Spec.InitContainers {
+		for resource := range initContainer.Resources.Requests {
+			if !v1helper.IsNativeResource(resource) {
+				return true
+			}
+
+		}
+	}
+	for _, container := range pod.Spec.Containers {
+		for resource := range container.Resources.Requests {
+			if !v1helper.IsNativeResource(resource) {
+				return true
+			}
+
+		}
+	}
+	return false
 }
