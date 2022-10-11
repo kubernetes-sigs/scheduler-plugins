@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 	// Create KinD Cluster
 	namespace := "scheduler-plugins"
 	testenv.Setup(
-		envfuncs.CreateKindClusterWithConfig(kindClusterName, "kindest/node:v1.22.2", "kind-config.yaml"),
+		envfuncs.CreateKindClusterWithConfig(kindClusterName, "kindest/node:v1.24.3", "kind-config.yaml"),
 		envfuncs.LoadDockerImageToCluster(kindClusterName, fmt.Sprintf("%s/%s", registry, controllerImageName)),
 		envfuncs.LoadDockerImageToCluster(kindClusterName, fmt.Sprintf("%s/%s", registry, KubeSchedImageName)),
 		deploySchedulerPluginsChart(namespace),
@@ -50,7 +50,6 @@ func TestMain(m *testing.M) {
 }
 
 func deploySchedulerPluginsChart(namespace string) env.Func {
-
 	return func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
 		wd, err := os.Getwd()
 		if err != nil {
