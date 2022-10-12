@@ -42,5 +42,5 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | `controller.namespace`                  | Controller namespace          | `scheduler-plugins`                                                                             |
 | `controller.replicaCount`               | Controller replicaCount       | `1`                                                                                             |
 | `plugins.enabled`                       | Plugins enabled by default    | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
-| `plugins.enabled`                       | Plugins disabled by default   | `["PrioritySort"]`                                                                              |
+| `plugins.disabled`                      | Plugins disabled by default   | `["PrioritySort"]`                                                                              |
 
