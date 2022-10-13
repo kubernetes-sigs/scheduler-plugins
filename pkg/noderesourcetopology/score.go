@@ -62,8 +62,12 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 		return framework.MaxNodeScore, nil
 	}
 
-	nodeTopology := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
+	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
 
+	if !ok {
+		klog.V(4).InfoS("noderesourcetopology is not validf for node", "node", nodeName)
+		return 0, nil
+	}
 	if nodeTopology == nil {
 		klog.V(5).InfoS("noderesourcetopology was not found for node", "node", nodeName)
 		return 0, nil

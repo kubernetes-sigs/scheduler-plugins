@@ -55,6 +55,11 @@ func newNrtStore(nrts []*topologyv1alpha1.NodeResourceTopology) *nrtStore {
 	}
 }
 
+func (nrs nrtStore) Contains(nodeName string) bool {
+	_, ok := nrs.data[nodeName]
+	return ok
+}
+
 // GetNRTCopyByNodeName returns a copy of the stored Node Resource Topology data for the given node,
 // or nil if no data is associated to that node.
 func (nrs *nrtStore) GetNRTCopyByNodeName(nodeName string) *topologyv1alpha1.NodeResourceTopology {
@@ -179,6 +184,18 @@ func (cnt counter) Keys() []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+func (cnt counter) Clone() counter {
+	cloned := make(map[string]int)
+	for key, val := range cnt {
+		cloned[key] = val
+	}
+	return cloned
+}
+
+func (cnt counter) Len() int {
+	return len(cnt)
 }
 
 // podFingerprintForNodeTopology extracts without recomputing the pods fingerprint from

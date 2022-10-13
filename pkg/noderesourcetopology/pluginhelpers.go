@@ -64,6 +64,15 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 		return nil, err
 	}
 
+	if fwk, ok := handle.(framework.Framework); ok {
+		profileName := fwk.ProfileName()
+		klog.InfoS("setting up foreign pods detection", "name", profileName)
+		nrtcache.RegisterSchedulerProfileName(profileName)
+		nrtcache.SetupForeignPodsDetector(profileName, podSharedInformer, nrtCache)
+	} else {
+		klog.Warningf("cannot determine the scheduler profile names - no foreign pod detection enabled")
+	}
+
 	resyncPeriod := time.Duration(tcfg.CacheResyncPeriodSeconds) * time.Second
 	go wait.Forever(nrtCache.Resync, resyncPeriod)
 

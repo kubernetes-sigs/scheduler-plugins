@@ -197,8 +197,11 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	nodeName := nodeInfo.Node().Name
-	nodeTopology := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
+	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
 
+	if !ok {
+		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("invalid node topology data for node %s", nodeName))
+	}
 	if nodeTopology == nil {
 		return nil
 	}

@@ -162,7 +162,6 @@ func TestNodeNameIndexerByIndexAdd(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 const (

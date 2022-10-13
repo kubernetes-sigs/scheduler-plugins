@@ -34,16 +34,17 @@ func NewPassthrough(lister listerv1alpha1.NodeResourceTopologyLister) Interface 
 	}
 }
 
-func (pt Passthrough) GetCachedNRTCopy(nodeName string, _ *corev1.Pod) *topologyv1alpha1.NodeResourceTopology {
+func (pt Passthrough) GetCachedNRTCopy(nodeName string, _ *corev1.Pod) (*topologyv1alpha1.NodeResourceTopology, bool) {
 	klog.V(5).InfoS("Lister for nodeResTopoPlugin", "lister", pt.lister)
 	nrt, err := pt.lister.Get(nodeName)
 	if err != nil {
 		klog.V(5).ErrorS(err, "Cannot get NodeTopologies from NodeResourceTopologyLister")
-		return nil
+		return nil, true
 	}
-	return nrt
+	return nrt, true
 }
 
 func (pt Passthrough) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod)  {}
+func (pt Passthrough) NodeHasForeignPods(nodeName string, pod *corev1.Pod)     {}
 func (pt Passthrough) ReserveNodeResources(nodeName string, pod *corev1.Pod)   {}
 func (pt Passthrough) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {}

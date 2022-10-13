@@ -62,7 +62,7 @@ func TestNodesMaybeOverReservedCount(t *testing.T) {
 	fakeIndex := &fakePodByNodeNameIndex{}
 
 	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakeIndex)
-	dirtyNodes := nrtCache.NodesMaybeOverReserved()
+	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -84,7 +84,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved()
+	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -93,7 +93,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.NodeMaybeOverReserved(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes = nrtCache.NodesMaybeOverReserved()
+	dirtyNodes = nrtCache.NodesMaybeOverReserved("testing")
 	sort.Strings(dirtyNodes)
 
 	if !reflect.DeepEqual(dirtyNodes, expectedNodes) {
@@ -117,7 +117,7 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved()
+	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -133,7 +133,7 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 		"node-1",
 	}
 
-	dirtyNodes = nrtCache.NodesMaybeOverReserved()
+	dirtyNodes = nrtCache.NodesMaybeOverReserved("testing")
 
 	if !reflect.DeepEqual(dirtyNodes, expectedNodes) {
 		t.Errorf("got=%v expected=%v", dirtyNodes, expectedNodes)
@@ -148,7 +148,7 @@ func TestGetCachedNRTCopy(t *testing.T) {
 	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakeIndex)
 
 	var nrtObj *topologyv1alpha1.NodeResourceTopology
-	nrtObj = nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
+	nrtObj, _ = nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
 	if nrtObj != nil {
 		t.Fatalf("non-empty object from empty cache")
 	}
@@ -183,7 +183,7 @@ func TestGetCachedNRTCopy(t *testing.T) {
 		nrtCache.Store().Update(obj)
 	}
 
-	nrtObj = nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
+	nrtObj, _ = nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
 	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
@@ -221,7 +221,7 @@ func TestGetCachedNRTCopyReserve(t *testing.T) {
 	}
 	nrtCache.ReserveNodeResources("node1", testPod)
 
-	nrtObj := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
 	for _, zone := range nrtObj.Zones {
 		for _, zoneRes := range zone.Resources {
 			switch zoneRes.Name {
@@ -270,7 +270,7 @@ func TestGetCachedNRTCopyReleaseNone(t *testing.T) {
 	}
 	nrtCache.UnreserveNodeResources("node1", testPod)
 
-	nrtObj := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
 	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
@@ -309,7 +309,7 @@ func TestGetCachedNRTCopyReserveRelease(t *testing.T) {
 	nrtCache.ReserveNodeResources("node1", testPod)
 	nrtCache.UnreserveNodeResources("node1", testPod)
 
-	nrtObj := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
 	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
@@ -378,12 +378,12 @@ func TestFlush(t *testing.T) {
 
 	nrtCache.FlushNodes(logID, expectedNodeTopology.DeepCopy())
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved()
+	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes after flush: %v", dirtyNodes)
 	}
 
-	nrtObj := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
 	if !reflect.DeepEqual(nrtObj, expectedNodeTopology) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
@@ -457,7 +457,8 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved()
+	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+
 	if len(dirtyNodes) != 1 || dirtyNodes[0] != "node1" {
 		t.Errorf("cleaned nodes after resyncing with bad data: %v", dirtyNodes)
 	}
@@ -536,14 +537,104 @@ func TestResyncMatchFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved()
+	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
 	if len(dirtyNodes) > 0 {
 		t.Errorf("node still dirty after resyncing with good data: %v", dirtyNodes)
 	}
 
-	nrtObj := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
 	if !reflect.DeepEqual(nrtObj, expectedNodeTopology) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
+	}
+}
+
+func TestUnknownNodeWithForeignPods(t *testing.T) {
+	fakeClient := faketopologyv1alpha1.NewSimpleClientset()
+	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+	fakeIndex := &fakePodByNodeNameIndex{}
+
+	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakeIndex)
+
+	nrtCache.NodeHasForeignPods("node-bogus", &corev1.Pod{})
+
+	names := nrtCache.NodesMaybeOverReserved("testing")
+	if len(names) != 0 {
+		t.Errorf("non-existent node has foreign pods!")
+	}
+}
+
+func TestNodeWithForeignPods(t *testing.T) {
+	fakeClient := faketopologyv1alpha1.NewSimpleClientset()
+	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+	fakeIndex := &fakePodByNodeNameIndex{}
+
+	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakeIndex)
+
+	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node1-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "30"),
+						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+						MakeTopologyResInfo(nicResourceName, "16", "16"),
+					},
+				},
+				{
+					Name: "node1-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "30"),
+						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+						MakeTopologyResInfo(nicResourceName, "16", "16"),
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
+			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha1.ZoneList{
+				{
+					Name: "node2-0",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "30"),
+						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+						MakeTopologyResInfo(nicResourceName, "16", "16"),
+					},
+				},
+				{
+					Name: "node2-1",
+					Type: "Node",
+					Resources: topologyv1alpha1.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "32", "30"),
+						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+						MakeTopologyResInfo(nicResourceName, "16", "16"),
+					},
+				},
+			},
+		},
+	}
+	for _, obj := range nodeTopologies {
+		nrtCache.Store().Update(obj)
+	}
+
+	target := "node2"
+	nrtCache.NodeHasForeignPods(target, &corev1.Pod{})
+
+	names := nrtCache.NodesMaybeOverReserved("testing")
+	if len(names) != 1 || names[0] != target {
+		t.Errorf("unexpected dirty nodes: %v", names)
+	}
+
+	_, ok := nrtCache.GetCachedNRTCopy(target, &corev1.Pod{})
+	if ok {
+		t.Errorf("succesfully got node with foreign pods!")
 	}
 }
 

@@ -140,6 +140,36 @@ func TestNRTStoreGetMissing(t *testing.T) {
 	}
 }
 
+func TestNRTStoreContains(t *testing.T) {
+	ns := newNrtStore(nil)
+	if ns.Contains("node-0") {
+		t.Errorf("unexpected node found")
+	}
+
+	nrts := []*topologyv1alpha1.NodeResourceTopology{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node-0",
+			},
+			TopologyPolicies: []string{
+				"best-effort",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node-1",
+			},
+			TopologyPolicies: []string{
+				"restricted",
+			},
+		},
+	}
+	ns = newNrtStore(nrts)
+	if !ns.Contains("node-0") {
+		t.Errorf("missing node")
+	}
+}
+
 func TestCounterIncr(t *testing.T) {
 	cnt := newCounter()
 
@@ -193,6 +223,40 @@ func TestCounterKeys(t *testing.T) {
 	expected := []string{"a", "b", "c"}
 	if !reflect.DeepEqual(keys, expected) {
 		t.Errorf("keys mismatch got=%v expected=%v", keys, expected)
+	}
+}
+
+func TestCounterClone(t *testing.T) {
+	cnt := newCounter()
+
+	cnt.Incr("a")
+	cnt.Incr("b")
+	cnt.Incr("c")
+
+	cnt2 := cnt.Clone()
+	cnt2.Incr("d")
+
+	if cnt.IsSet("d") {
+		t.Errorf("imperfect clone, key \"d\" set on cloned")
+	}
+	if !cnt2.IsSet("d") {
+		t.Errorf("imperfect clone, key \"d\" NOT set on clone")
+	}
+}
+
+func TestCounterLen(t *testing.T) {
+	cnt := newCounter()
+	val := cnt.Len()
+	if val != 0 {
+		t.Errorf("unexpected len: %d", val)
+	}
+
+	cnt.Incr("a")
+	cnt.Incr("b")
+	cnt.Incr("a")
+	val = cnt.Len()
+	if val != 2 {
+		t.Errorf("unexpected len: %d", val)
 	}
 }
 
