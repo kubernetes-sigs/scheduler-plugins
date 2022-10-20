@@ -84,7 +84,7 @@ func MakePG(name, namespace string, min int32, creationTime *time.Time, minResou
 		pg.CreationTimestamp = metav1.Time{Time: *creationTime}
 	}
 	if minResource != nil {
-		pg.Spec.MinResources = minResource
+		pg.Spec.MinResources = *minResource
 	}
 	return pg
 }

@@ -40,23 +40,8 @@ func init() {
 // RegisterConversions adds conversion functions to the given scheme.
 // Public to allow building arbitrary schemes.
 func RegisterConversions(s *runtime.Scheme) error {
-	if err := s.AddGeneratedConversionFunc((*CoschedulingArgs)(nil), (*config.CoschedulingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(a.(*CoschedulingArgs), b.(*config.CoschedulingArgs), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*config.CoschedulingArgs)(nil), (*CoschedulingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_config_CoschedulingArgs_To_v1beta2_CoschedulingArgs(a.(*config.CoschedulingArgs), b.(*CoschedulingArgs), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*LoadVariationRiskBalancingArgs)(nil), (*config.LoadVariationRiskBalancingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs(a.(*LoadVariationRiskBalancingArgs), b.(*config.LoadVariationRiskBalancingArgs), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*config.LoadVariationRiskBalancingArgs)(nil), (*LoadVariationRiskBalancingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationRiskBalancingArgs(a.(*config.LoadVariationRiskBalancingArgs), b.(*LoadVariationRiskBalancingArgs), scope)
 	}); err != nil {
 		return err
 	}
@@ -67,16 +52,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*config.MetricProviderSpec)(nil), (*MetricProviderSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(a.(*config.MetricProviderSpec), b.(*MetricProviderSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NodeResourceTopologyMatchArgs)(nil), (*config.NodeResourceTopologyMatchArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs(a.(*NodeResourceTopologyMatchArgs), b.(*config.NodeResourceTopologyMatchArgs), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*config.NodeResourceTopologyMatchArgs)(nil), (*NodeResourceTopologyMatchArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTopologyMatchArgs(a.(*config.NodeResourceTopologyMatchArgs), b.(*NodeResourceTopologyMatchArgs), scope)
 	}); err != nil {
 		return err
 	}
@@ -110,13 +85,38 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*TargetLoadPackingArgs)(nil), (*config.TargetLoadPackingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(a.(*TargetLoadPackingArgs), b.(*config.TargetLoadPackingArgs), scope)
+	if err := s.AddConversionFunc((*config.LoadVariationRiskBalancingArgs)(nil), (*LoadVariationRiskBalancingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationRiskBalancingArgs(a.(*config.LoadVariationRiskBalancingArgs), b.(*LoadVariationRiskBalancingArgs), scope)
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*config.TargetLoadPackingArgs)(nil), (*TargetLoadPackingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
+	if err := s.AddConversionFunc((*config.NodeResourceTopologyMatchArgs)(nil), (*NodeResourceTopologyMatchArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTopologyMatchArgs(a.(*config.NodeResourceTopologyMatchArgs), b.(*NodeResourceTopologyMatchArgs), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*config.TargetLoadPackingArgs)(nil), (*TargetLoadPackingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_config_TargetLoadPackingArgs_To_v1beta2_TargetLoadPackingArgs(a.(*config.TargetLoadPackingArgs), b.(*TargetLoadPackingArgs), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*CoschedulingArgs)(nil), (*config.CoschedulingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(a.(*CoschedulingArgs), b.(*config.CoschedulingArgs), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*LoadVariationRiskBalancingArgs)(nil), (*config.LoadVariationRiskBalancingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs(a.(*LoadVariationRiskBalancingArgs), b.(*config.LoadVariationRiskBalancingArgs), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NodeResourceTopologyMatchArgs)(nil), (*config.NodeResourceTopologyMatchArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs(a.(*NodeResourceTopologyMatchArgs), b.(*config.NodeResourceTopologyMatchArgs), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*TargetLoadPackingArgs)(nil), (*config.TargetLoadPackingArgs)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(a.(*TargetLoadPackingArgs), b.(*config.TargetLoadPackingArgs), scope)
 	}); err != nil {
 		return err
 	}
@@ -127,12 +127,8 @@ func autoConvert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in *Cosched
 	if err := v1.Convert_Pointer_int64_To_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
 		return err
 	}
+	// WARNING: in.DeniedPGExpirationTimeSeconds requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs is an autogenerated conversion function.
-func Convert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in *CoschedulingArgs, out *config.CoschedulingArgs, s conversion.Scope) error {
-	return autoConvert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in, out, s)
 }
 
 func autoConvert_config_CoschedulingArgs_To_v1beta2_CoschedulingArgs(in *config.CoschedulingArgs, out *CoschedulingArgs, s conversion.Scope) error {
@@ -149,15 +145,7 @@ func Convert_config_CoschedulingArgs_To_v1beta2_CoschedulingArgs(in *config.Cosc
 
 func autoConvert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs(in *LoadVariationRiskBalancingArgs, out *config.LoadVariationRiskBalancingArgs, s conversion.Scope) error {
 	// WARNING: in.MetricProvider requires manual conversion: does not exist in peer-type
-	// Added manually
-	if err := Convert_v1beta2_MetricProviderSpec_To_config_MetricProviderSpec(&in.MetricProvider, &out.TrimaranSpec.MetricProvider, s); err != nil {
-		return err
-	}
 	// WARNING: in.WatcherAddress requires manual conversion: does not exist in peer-type
-	// Added manually
-	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.TrimaranSpec.WatcherAddress, s); err != nil {
-		return err
-	}
 	if err := v1.Convert_Pointer_float64_To_float64(&in.SafeVarianceMargin, &out.SafeVarianceMargin, s); err != nil {
 		return err
 	}
@@ -167,21 +155,8 @@ func autoConvert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationR
 	return nil
 }
 
-// Convert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs is an autogenerated conversion function.
-func Convert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs(in *LoadVariationRiskBalancingArgs, out *config.LoadVariationRiskBalancingArgs, s conversion.Scope) error {
-	return autoConvert_v1beta2_LoadVariationRiskBalancingArgs_To_config_LoadVariationRiskBalancingArgs(in, out, s)
-}
-
 func autoConvert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationRiskBalancingArgs(in *config.LoadVariationRiskBalancingArgs, out *LoadVariationRiskBalancingArgs, s conversion.Scope) error {
 	// WARNING: in.TrimaranSpec requires manual conversion: does not exist in peer-type
-	// Added manually
-	if err := Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(&in.TrimaranSpec.MetricProvider, &out.MetricProvider, s); err != nil {
-		return err
-	}
-	// Added manually
-	if err := v1.Convert_string_To_Pointer_string(&in.TrimaranSpec.WatcherAddress, &out.WatcherAddress, s); err != nil {
-		return err
-	}
 	if err := v1.Convert_float64_To_Pointer_float64(&in.SafeVarianceMargin, &out.SafeVarianceMargin, s); err != nil {
 		return err
 	}
@@ -189,11 +164,6 @@ func autoConvert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationR
 		return err
 	}
 	return nil
-}
-
-// Convert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationRiskBalancingArgs is an autogenerated conversion function.
-func Convert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationRiskBalancingArgs(in *config.LoadVariationRiskBalancingArgs, out *LoadVariationRiskBalancingArgs, s conversion.Scope) error {
-	return autoConvert_config_LoadVariationRiskBalancingArgs_To_v1beta2_LoadVariationRiskBalancingArgs(in, out, s)
 }
 
 func autoConvert_v1beta2_MetricProviderSpec_To_config_MetricProviderSpec(in *MetricProviderSpec, out *config.MetricProviderSpec, s conversion.Scope) error {
@@ -236,26 +206,12 @@ func Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(in *config.
 
 func autoConvert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs(in *NodeResourceTopologyMatchArgs, out *config.NodeResourceTopologyMatchArgs, s conversion.Scope) error {
 	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (*sigs.k8s.io/scheduler-plugins/apis/config/v1beta2.ScoringStrategy vs sigs.k8s.io/scheduler-plugins/apis/config.ScoringStrategy)
-	// Added manually
-	out.ScoringStrategy = *(*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	return nil
-}
-
-// Convert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs is an autogenerated conversion function.
-func Convert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs(in *NodeResourceTopologyMatchArgs, out *config.NodeResourceTopologyMatchArgs, s conversion.Scope) error {
-	return autoConvert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs(in, out, s)
 }
 
 func autoConvert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTopologyMatchArgs(in *config.NodeResourceTopologyMatchArgs, out *NodeResourceTopologyMatchArgs, s conversion.Scope) error {
 	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (sigs.k8s.io/scheduler-plugins/apis/config.ScoringStrategy vs *sigs.k8s.io/scheduler-plugins/apis/config/v1beta2.ScoringStrategy)
-	// Added manually
-	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(&in.ScoringStrategy))
 	return nil
-}
-
-// Convert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTopologyMatchArgs is an autogenerated conversion function.
-func Convert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTopologyMatchArgs(in *config.NodeResourceTopologyMatchArgs, out *NodeResourceTopologyMatchArgs, s conversion.Scope) error {
-	return autoConvert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTopologyMatchArgs(in, out, s)
 }
 
 func autoConvert_v1beta2_NodeResourcesAllocatableArgs_To_config_NodeResourcesAllocatableArgs(in *NodeResourcesAllocatableArgs, out *config.NodeResourcesAllocatableArgs, s conversion.Scope) error {
@@ -341,33 +297,12 @@ func autoConvert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(i
 		return err
 	}
 	// WARNING: in.MetricProvider requires manual conversion: does not exist in peer-type
-	// Added manually
-	if err := Convert_v1beta2_MetricProviderSpec_To_config_MetricProviderSpec(&in.MetricProvider, &out.TrimaranSpec.MetricProvider, s); err != nil {
-		return err
-	}
 	// WARNING: in.WatcherAddress requires manual conversion: does not exist in peer-type
-	// Added manually
-	if err := v1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.TrimaranSpec.WatcherAddress, s); err != nil {
-		return err
-	}
 	return nil
-}
-
-// Convert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs is an autogenerated conversion function.
-func Convert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in *TargetLoadPackingArgs, out *config.TargetLoadPackingArgs, s conversion.Scope) error {
-	return autoConvert_v1beta2_TargetLoadPackingArgs_To_config_TargetLoadPackingArgs(in, out, s)
 }
 
 func autoConvert_config_TargetLoadPackingArgs_To_v1beta2_TargetLoadPackingArgs(in *config.TargetLoadPackingArgs, out *TargetLoadPackingArgs, s conversion.Scope) error {
 	// WARNING: in.TrimaranSpec requires manual conversion: does not exist in peer-type
-	// Added manually
-	if err := Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(&in.TrimaranSpec.MetricProvider, &out.MetricProvider, s); err != nil {
-		return err
-	}
-	// Added manually
-	if err := v1.Convert_string_To_Pointer_string(&in.TrimaranSpec.WatcherAddress, &out.WatcherAddress, s); err != nil {
-		return err
-	}
 	out.DefaultRequests = *(*corev1.ResourceList)(unsafe.Pointer(&in.DefaultRequests))
 	if err := v1.Convert_string_To_Pointer_string(&in.DefaultRequestsMultiplier, &out.DefaultRequestsMultiplier, s); err != nil {
 		return err
@@ -376,9 +311,4 @@ func autoConvert_config_TargetLoadPackingArgs_To_v1beta2_TargetLoadPackingArgs(i
 		return err
 	}
 	return nil
-}
-
-// Convert_config_TargetLoadPackingArgs_To_v1beta2_TargetLoadPackingArgs is an autogenerated conversion function.
-func Convert_config_TargetLoadPackingArgs_To_v1beta2_TargetLoadPackingArgs(in *config.TargetLoadPackingArgs, out *TargetLoadPackingArgs, s conversion.Scope) error {
-	return autoConvert_config_TargetLoadPackingArgs_To_v1beta2_TargetLoadPackingArgs(in, out, s)
 }
