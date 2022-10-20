@@ -148,6 +148,8 @@ type NodeResourceTopologyMatchArgs struct {
 
 	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
 	ScoringStrategy ScoringStrategy
+	// If > 0, enables the caching facilities of the reserve plugin - which must be enabled
+	CacheResyncPeriodSeconds int64
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
