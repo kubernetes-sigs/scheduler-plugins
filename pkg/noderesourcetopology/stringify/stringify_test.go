@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package noderesourcetopology
+package stringify
 
 import (
 	"bytes"
@@ -116,7 +116,7 @@ func TestResourceListToLoggable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			keysAndValues := resourceListToLoggable(tt.logKey, tt.resources)
+			keysAndValues := ResourceListToLoggable(tt.logKey, tt.resources)
 			kvListFormat(&buf, keysAndValues...)
 			got := buf.String()
 			if got != tt.expected {

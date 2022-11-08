@@ -27,6 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
+
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	faketopologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
@@ -666,11 +668,10 @@ func TestNodeResourceTopology(t *testing.T) {
 	for _, desc := range nodeTopologyDescs {
 		fakeInformer.Informer().GetStore().Add(desc.nrt)
 	}
-	lister := fakeInformer.Lister()
 
 	tm := TopologyMatch{
-		lister:         lister,
 		policyHandlers: newPolicyHandlerMap(),
+		nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
 	}
 
 	for _, tt := range tests {
@@ -885,8 +886,8 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 			}
 
 			tm := TopologyMatch{
-				lister:         fakeInformer.Lister(),
 				policyHandlers: newPolicyHandlerMap(),
+				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()
@@ -1143,8 +1144,8 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 			}
 
 			tm := TopologyMatch{
-				lister:         fakeInformer.Lister(),
 				policyHandlers: newPolicyHandlerMap(),
+				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()

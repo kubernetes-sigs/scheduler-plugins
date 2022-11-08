@@ -29,6 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -53,7 +54,7 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 	// therefore, we don't need to accumulate their resources together
 	for _, initContainer := range pod.Spec.InitContainers {
 		logKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, initContainer.Name)
-		klog.V(6).InfoS("target resources", resourceListToLoggable(logKey, initContainer.Resources.Requests)...)
+		klog.V(6).InfoS("target resources", stringify.ResourceListToLoggable(logKey, initContainer.Resources.Requests)...)
 
 		_, match := resourcesAvailableInAnyNUMANodes(logKey, nodes, initContainer.Resources.Requests, qos, nodeInfo)
 		if !match {
@@ -64,7 +65,7 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneLis
 
 	for _, container := range pod.Spec.Containers {
 		logKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, container.Name)
-		klog.V(6).InfoS("target resources", resourceListToLoggable(logKey, container.Resources.Requests)...)
+		klog.V(6).InfoS("target resources", stringify.ResourceListToLoggable(logKey, container.Resources.Requests)...)
 
 		numaID, match := resourcesAvailableInAnyNUMANodes(logKey, nodes, container.Resources.Requests, qos, nodeInfo)
 		if !match {
@@ -178,7 +179,7 @@ func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nod
 
 	// Node() != nil already verified in Filter(), which is the only public entry point
 	logNumaNodes("pod handler NUMA resources", nodeInfo.Node().Name, nodes)
-	klog.V(6).InfoS("target resources", resourceListToLoggable(logKey, resources)...)
+	klog.V(6).InfoS("target resources", stringify.ResourceListToLoggable(logKey, resources)...)
 
 	if _, match := resourcesAvailableInAnyNUMANodes(logKey, createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod), nodeInfo); !match {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align pod: %s", pod.Name))
@@ -196,7 +197,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	nodeName := nodeInfo.Node().Name
-	nodeTopology := findNodeTopology(nodeName, tm.lister)
+	nodeTopology := tm.nrtCache.GetByNode(nodeName, pod)
 
 	if nodeTopology == nil {
 		return nil
@@ -206,6 +207,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			if status := handler.filter(pod, nodeTopology.Zones, nodeInfo); status != nil {
+				tm.nrtCache.MarkNodeDiscarded(nodeName, pod)
 				return status
 			}
 		} else {
