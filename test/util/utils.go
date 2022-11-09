@@ -107,3 +107,56 @@ func PodNotExist(cs clientset.Interface, podNamespace, podName string) bool {
 	_, err := cs.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	return errors.IsNotFound(err)
 }
+
+// WithLimits adds a new app or init container to the inner pod with a given resource map.
+func WithLimits(p *st.PodWrapper, resMap map[string]string, initContainer bool) *st.PodWrapper {
+	if len(resMap) == 0 {
+		return p
+	}
+
+	containers, cntName := findContainerList(p, initContainer)
+
+	*containers = append(*containers, corev1.Container{
+		Name:  fmt.Sprintf("%s-%d", cntName, len(*containers)+1),
+		Image: imageutils.GetPauseImageName(),
+		Resources: corev1.ResourceRequirements{
+			Limits: makeResListMap(resMap),
+		},
+	})
+
+	return p
+}
+
+// WithRequests adds a new app or init container to the inner pod with a given resource map.
+func WithRequests(p *st.PodWrapper, resMap map[string]string, initContainer bool) *st.PodWrapper {
+	if len(resMap) == 0 {
+		return p
+	}
+
+	containers, cntName := findContainerList(p, initContainer)
+
+	*containers = append(*containers, corev1.Container{
+		Name:  fmt.Sprintf("%s-%d", cntName, len(*containers)+1),
+		Image: imageutils.GetPauseImageName(),
+		Resources: corev1.ResourceRequirements{
+			Requests: makeResListMap(resMap),
+		},
+	})
+
+	return p
+}
+
+func findContainerList(p *st.PodWrapper, initContainer bool) (*[]corev1.Container, string) {
+	if initContainer {
+		return &p.Obj().Spec.InitContainers, "initcnt"
+	}
+	return &p.Obj().Spec.Containers, "cnt"
+}
+
+func makeResListMap(resMap map[string]string) corev1.ResourceList {
+	res := corev1.ResourceList{}
+	for k, v := range resMap {
+		res[corev1.ResourceName(k)] = resource.MustParse(v)
+	}
+	return res
+}

@@ -24,7 +24,6 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -45,13 +44,6 @@ import (
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
-)
-
-const (
-	cpu             = string(v1.ResourceCPU)
-	memory          = string(v1.ResourceMemory)
-	hugepages2Mi    = "hugepages-2Mi"
-	nicResourceName = "vendor/nic1"
 )
 
 const (
@@ -177,7 +169,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Filtering out nodes that cannot fit resources on a single numa node in case of Guaranteed pod",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name(testPodName), map[string]string{cpu: "4", memory: "5Gi"}, false).Obj(),
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName), map[string]string{cpu: "4", memory: "5Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
 				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
@@ -263,7 +255,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling Guaranteed pod with most-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(mostAllocatedScheduler),
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(mostAllocatedScheduler),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -295,7 +287,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling Guaranteed pod with balanced-allocation strategy scheduler",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(balancedAllocationScheduler),
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(balancedAllocationScheduler),
 					map[string]string{cpu: "2", memory: "2Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -327,7 +319,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Scheduling Guaranteed pod with least-allocated strategy scheduler",
 			pods: []*v1.Pod{
-				withLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastAllocatedScheduler),
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastAllocatedScheduler),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
 			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
@@ -385,8 +377,8 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "SingleNUMANodePodLevel: Filtering out nodes that cannot fit resources in case of Guaranteed pod with multi containers",
 			pods: []*v1.Pod{
-				withLimits(
-					withLimits(
+				util.WithLimits(
+					util.WithLimits(
 						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
@@ -423,8 +415,8 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "SingleNUMANodeContainerLevel: Filtering out nodes that cannot fit resources in case of Guaranteed pod with multi containers",
 			pods: []*v1.Pod{
-				withLimits(
-					withLimits(
+				util.WithLimits(
+					util.WithLimits(
 						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "3", memory: "5Gi"}, false),
 					map[string]string{cpu: "3", memory: "5Gi"}, false).Obj(),
@@ -458,8 +450,8 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "SingleNUMANodeContainerLevel: Filtering out nodes that cannot fit resources in case of Guaranteed pod with init container",
 			pods: []*v1.Pod{
-				withLimits(
-					withLimits(
+				util.WithLimits(
+					util.WithLimits(
 						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "4Gi"}, true).Obj(),
@@ -493,8 +485,8 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "SingleNUMANodeContainerLevel: Cannot fit resources in case of Guaranteed pod with multi containers",
 			pods: []*v1.Pod{
-				withLimits(
-					withLimits(
+				util.WithLimits(
+					util.WithLimits(
 						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "4", memory: "4Gi"}, false),
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
@@ -528,8 +520,8 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Negative: SingleNUMANodeContainerLevel: Cannot fit resources in case of Guaranteed pod with init container",
 			pods: []*v1.Pod{
-				withLimits(
-					withLimits(
+				util.WithLimits(
+					util.WithLimits(
 						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
@@ -563,8 +555,8 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Negative: SingleNUMANodeContainerLevel: Cannot fit resources in case of Guaranteed pod with init container",
 			pods: []*v1.Pod{
-				withLimits(
-					withLimits(
+				util.WithLimits(
+					util.WithLimits(
 						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
@@ -598,8 +590,8 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		{
 			name: "Negative: SingleNUMANodeContainerLevel: Cannot fit resources in case of Guaranteed pod with multi containers",
 			pods: []*v1.Pod{
-				withLimits(
-					withLimits(
+				util.WithLimits(
+					util.WithLimits(
 						st.MakePod().Namespace(ns).Name(testPodName),
 						map[string]string{cpu: "4", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "6Gi"}, false).Obj(),
@@ -934,66 +926,6 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-// getNodeName returns the name of the node if a node has assigned to the given pod
-func getNodeName(ctx context.Context, c clientset.Interface, podNamespace, podName string) (string, error) {
-	pod, err := c.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
-	if err != nil {
-		return "", err
-	}
-	return pod.Spec.NodeName, nil
-}
-
-func createNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) error {
-	for _, nrt := range noderesourcetopologies {
-		_, err := topologyClient.TopologyV1alpha1().NodeResourceTopologies().Create(ctx, nrt, metav1.CreateOptions{})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) {
-	for _, nrt := range noderesourcetopologies {
-		err := topologyClient.TopologyV1alpha1().NodeResourceTopologies().Delete(ctx, nrt.Name, metav1.DeleteOptions{})
-		if err != nil {
-			klog.ErrorS(err, "Failed to clean up NodeResourceTopology", "nodeResourceTopology", nrt)
-		}
-	}
-}
-
-// withLimits adds a new app or init container to the inner pod with a given resource map.
-func withLimits(p *st.PodWrapper, resMap map[string]string, initContainer bool) *st.PodWrapper {
-	if len(resMap) == 0 {
-		return p
-	}
-
-	res := v1.ResourceList{}
-	for k, v := range resMap {
-		res[v1.ResourceName(k)] = resource.MustParse(v)
-	}
-
-	var containers *[]v1.Container
-	var cntName string
-	if initContainer {
-		containers = &p.Obj().Spec.InitContainers
-		cntName = "initcnt"
-	} else {
-		containers = &p.Obj().Spec.Containers
-		cntName = "cnt"
-	}
-
-	*containers = append(*containers, v1.Container{
-		Name:  fmt.Sprintf("%s-%d", cntName, len(*containers)+1),
-		Image: imageutils.GetPauseImageName(),
-		Resources: v1.ResourceRequirements{
-			Limits: res,
-		},
-	})
-
-	return p
-}
-
 func makeProfileByPluginArgs(
 	name string,
 	args *scheconfig.NodeResourceTopologyMatchArgs,
@@ -1031,54 +963,16 @@ func makeProfileByPluginArgs(
 	}
 }
 
-func makeResourceAllocationScoreArgs(strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
-	return &scheconfig.NodeResourceTopologyMatchArgs{
-		ScoringStrategy: *strategy,
-	}
-}
-
-type nrtWrapper struct {
-	nrt topologyv1alpha1.NodeResourceTopology
-}
-
-func MakeNRT() *nrtWrapper {
-	return &nrtWrapper{topologyv1alpha1.NodeResourceTopology{}}
-}
-
-func (n *nrtWrapper) Name(name string) *nrtWrapper {
-	n.nrt.Name = name
-	return n
-}
-
-func (n *nrtWrapper) Policy(policy topologyv1alpha1.TopologyManagerPolicy) *nrtWrapper {
-	n.nrt.TopologyPolicies = append(n.nrt.TopologyPolicies, string(policy))
-	return n
-}
-
-func (n *nrtWrapper) Zone(resInfo topologyv1alpha1.ResourceInfoList) *nrtWrapper {
-	z := topologyv1alpha1.Zone{
-		Name:      fmt.Sprintf("node-%d", len(n.nrt.Zones)),
-		Type:      "Node",
-		Resources: resInfo,
-	}
-	n.nrt.Zones = append(n.nrt.Zones, z)
-	return n
-}
-
-func (n *nrtWrapper) Obj() *topologyv1alpha1.NodeResourceTopology {
-	return &n.nrt
-}
-
 func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 	var teList []nrtTestEntry
 	for i, e := range entries {
 		p := st.MakePod().Name(fmt.Sprintf("%s-%d", testPodName, i+1)).Namespace(ns)
 		for _, req := range e.initCntReq {
-			p = withLimits(p, req, true)
+			p = util.WithLimits(p, req, true)
 		}
 
 		for _, req := range e.cntReq {
-			p = withLimits(p, req, false)
+			p = util.WithLimits(p, req, false)
 		}
 		nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
 			MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
