@@ -2,7 +2,7 @@
 
 ## Summary
 
-We propose the use of pod placement as a way to improve the security of nodes in a cluster. Specifically, we propose a new scheduler scoring plugin (SySched) that enables the ranking of feasible nodes based on the relative risks of pods' system call usage. Key to this risk calculation is the Extraneous System Call (ExS) metric &mdash; a metric defined by us &mdash; which measures the amount of excess system call a pod is exposed to on a given node. The benefits of this approach are the following:
+We propose the use of pod placement as a way to improve the security of nodes in a cluster. Specifically, we propose a new scheduler scoring plugin (SySched) that enables the ranking of feasible nodes based on the relative risks of pods' system call usage. Key to this risk calculation is the Extraneous System Call (ExS) metric, a metric defined at [IBM Research](https://research.ibm.com/topics/security-research), which measures the amount of excess system call a pod is exposed to on a given node. The benefits of this approach are the following:
 
 1. reduce the number of victim pods that can be impacted by a "bad" pod, where a "bad" pod uses one or more system calls that are vulnerable and potentially exploitable to compromise the host kernel
 2. reduce the number of nodes in a cluster that can be impacted by a "bad" pod
@@ -88,7 +88,7 @@ For illustrative purpose, we consider a hypothetical node capable of executing n
 <b>Figure 2: Example ExS score calculation</b>
 </p>
 
-To express the computation of the ExS score as mathematical equations, let assume that all system calls in a node are numbered as $1, ..., M$. Let $S_i^n$ represent the binary vector of enabled system calls for pod $i$ on node $n$: $S_i^n = [s_1, s_2, ..., s_M]$, where $s_k = 1$ when the $k$-th system call is enabled, and $s_k = 0$ otherwise. Practically, $S_i^n$ mirrors a typical **seccomp** policy for the corresponding pod.
+To express the computation of the ExS score as mathematical equations, let's assume that all system calls in a node are numbered as $1, ..., M$. Let $S_i^n$ represent the binary vector of enabled system calls for pod $i$ on node $n$: $S_i^n = [s_1, s_2, ..., s_M]$, where $s_k = 1$ when the $k$-th system call is enabled, and $s_k = 0$ otherwise. Practically, $S_i^n$ mirrors a typical **seccomp** policy for the corresponding pod.
 
 To find the systems calls that are enabled a given node $n$, we perform a logical $or$ (union) of the enabled system calls across all pods within that node:  $$S^n = \bigcup_i S_i^n$$ 
 
@@ -96,11 +96,19 @@ We can now compute the vector, $E_i^n = [e_1^n, e_2^n, ..., e_M^n]$, which repre
 
 Let $W = [w_1, w_2, ..., w_M]$ be the set of "riskiness" weights associated with each system call. If all system calls are treated equally, then $W = [1, 1, ... , 1]$. $ExS$ reflects the extraneous system call exposure and is computed as follows: for pod $i$ on node $n$, this score can then be computed as the dot product between $E_i^n$ and $W$: $$ExS_i^n = E_i^n \cdot W = e_1^n \times w_1 + e_2^n \times w_2 + ... + e_M^n \times w_M$$
 
+The $ExS_i^n$ score provides an answer to a key question during scheduling: how does the placement of a new pod on a host impact that pod's $ExS_i^n$ score as well as the scores of all current running pods on that node? This node-wide $ExS^n$ score can be calculated by first assuming the new incoming pod is placed on the target node and then calculating the $ExS^n$ score for each pod on that node and adding those scores together:
+
+$$ ExS^n = \sum_i ExS_{i}^{n}$$
+
+It is useful to also calculate the $ExS$ score for an entire cluster as a way to evaluate how well syscall-aware scheduling can reduce the extraneous system call exposure of all the nodes in that cluster. The cluster-wide $ExS$ score for a cluster with $N$ nodes is the summation of the $ExS^n$ score across all nodes:
+
+$$ ExS = \sum_n ExS^n $$
+
 ### Scheduling Illustrative Example
 
 Figure 3 illustrates how our scoring impacts placement decisions. To make the illustration simple, we consider two feasible nodes (Node 1 and Node 2) and the ExS score as the sole factor for ranking the feasible nodes. However, in reality, our normalized ExS scores <!--(i.e., reversed scores by subtracting them from maxPriority) --> are combined with other plugin scores to rank feasible nodes. The figure shows the placement of three pods $(P_1$, $P_2$, and $P_3)$ in Node 1 and Node 2. The numbers inside a pod indicate the system call profile of the pod, i.e., the profile for $P_1$ is $\{1, 2, 3, 5\}$, $P_2$ is $\{4, 7, 8\}$, and $P_3$ is $\{1, 3, 5, 9\}$. 
 
-Initially, to schedule pod $P_1$, the ExS  scores for both Node 1 and Node 2 are the same (i.e., 0), since there are no pods running on the nodes (Figure 3(a)). Thus, we randomly pick one of the two nodes, Node 1 in this case, and updates Node 1's system call usage list using $P_1$'s system call profile (Figure 3(b)). When pod $P_2$ arrives to be scheduled, our plugin computes the ExS scores 7 and 0 for $P_2$ w.r.t. Node 1 and Node 2, respectively (Figure 3(b)). In this case, the plugins ranked Node 2 over Node 1 since Node 2 has a lower ExS  score (i.e., higher normalized score). Figure 3(c) shows the updated system call lists for Node 2. This process repeats for all incoming pods. After all pods are placed, the cluster-wide ExS score in this example is 12, i.e., $ExS_1$ is 5 and $ExS_2$ is 7, where 1 and 2 are node numbers.
+Initially, to schedule pod $P_1$, the ExS  scores for both Node 1 and Node 2 are the same (i.e., 0), since there are no pods running on the nodes (Figure 3(a)). Thus, we randomly pick one of the two nodes, Node 1 in this case, and updates Node 1's system call usage list using $P_1$'s system call profile (Figure 3(b)). When pod $P_2$ arrives to be scheduled, our plugin computes the ExS scores 7 and 0 for $P_2$ w.r.t. Node 1 and Node 2, respectively (Figure 3(b)). In this case, the plugins ranked Node 2 over Node 1 since Node 2 has a lower ExS  score (i.e., higher normalized score). Figure 3(c) shows the updated system call lists for Node 2. This process repeats for all incoming pods. After all pods are placed, the cluster-wide ExS score in this example is 2, i.e., $ExS_1$ is 2 $(ExS_1^1 + ExS_1^2 = 1 + 1)$ and $ExS_2$ is 0 (only $P_3$ on Node 2 so no extraneous syscalls).
 
 <p align="center">
 <img src="images/example_complete.png" style="width:50%">
@@ -122,7 +130,7 @@ We assume that the system call profiles of pods have explicitly been made availa
 
 An example of an SPO's seccomp profile CRD:
 
-```
+``` yaml
 ---
 apiVersion: security-profiles-operator.x-k8s.io/v1beta1
 kind: SeccompProfile
@@ -147,12 +155,12 @@ spec:
     - umask
     - getegid
     - read
-	...
+    ...
 ```
 
 An example of pod's security context specifying the associated seccomp profile:
 
-```
+``` yaml
 ...
     spec:
       securityContext:
