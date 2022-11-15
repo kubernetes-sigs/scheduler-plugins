@@ -20,9 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -51,7 +53,23 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	topologyInformerFactory.Start(ctx.Done())
 	topologyInformerFactory.WaitForCacheSync(ctx.Done())
 
-	return nrtcache.NewPassthrough(nodeTopologyLister), nil
+	if tcfg.CacheResyncPeriodSeconds <= 0 {
+		return nrtcache.NewPassthrough(nodeTopologyLister), nil
+	}
+
+	podSharedInformer := nrtcache.InformerFromHandle(handle)
+	podIndexer := nrtcache.NewNodeNameIndexer(podSharedInformer)
+	nrtCache, err := nrtcache.NewOverReserve(nodeTopologyLister, podIndexer)
+	if err != nil {
+		return nil, err
+	}
+
+	resyncPeriod := time.Duration(tcfg.CacheResyncPeriodSeconds) * time.Second
+	go wait.Forever(nrtCache.Resync, resyncPeriod)
+
+	klog.V(3).InfoS("enable NodeTopology cache (needs the Reserve plugin)", "resyncPeriod", resyncPeriod)
+
+	return nrtCache, nil
 }
 
 func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
