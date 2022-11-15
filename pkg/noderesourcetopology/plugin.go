@@ -69,7 +69,7 @@ type TopologyMatch struct {
 	policyHandlers      PolicyHandlerMap
 	scorerFn            scoreStrategy
 	resourceToWeightMap resourceToWeightMap
-	nrtCache            nrtcache.Cache
+	nrtCache            nrtcache.Interface
 }
 
 var _ framework.FilterPlugin = &TopologyMatch{}

@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 )
 
-func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Cache, error) {
+func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
 	topoClient, err := topoclientset.NewForConfig(handle.KubeConfig())
 	if err != nil {
 		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())

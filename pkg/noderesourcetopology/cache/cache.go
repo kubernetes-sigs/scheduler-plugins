@@ -18,13 +18,11 @@ package cache
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	listerv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 )
 
-type Cache interface {
+type Interface interface {
 	// GetByNode returns the last Node Resource Topology info available for a node, adjusted with the assumed
 	// resources for that node. Assumed resources are the resources consumed by pods scheduled to that node
 	// after the last update of NRT pertaining to the same node, pessimistically overallocated on ALL the NUMA
@@ -49,27 +47,3 @@ type Cache interface {
 	// UnreserveNodeResources decrement from the node assumed resources the resources required by the given pod.
 	UnreserveNodeResources(nodeName string, pod *corev1.Pod)
 }
-
-type Passthrough struct {
-	lister listerv1alpha1.NodeResourceTopologyLister
-}
-
-func NewPassthrough(lister listerv1alpha1.NodeResourceTopologyLister) Passthrough {
-	return Passthrough{
-		lister: lister,
-	}
-}
-
-func (pt Passthrough) GetByNode(nodeName string, _ *corev1.Pod) *topologyv1alpha1.NodeResourceTopology {
-	klog.V(5).InfoS("Lister for nodeResTopoPlugin", "lister", pt.lister)
-	nrt, err := pt.lister.Get(nodeName)
-	if err != nil {
-		klog.V(5).ErrorS(err, "Cannot get NodeTopologies from NodeResourceTopologyLister")
-		return nil
-	}
-	return nrt
-}
-
-func (pt Passthrough) MarkNodeDiscarded(nodeName string, pod *corev1.Pod)      {}
-func (pt Passthrough) ReserveNodeResources(nodeName string, pod *corev1.Pod)   {}
-func (pt Passthrough) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {}
