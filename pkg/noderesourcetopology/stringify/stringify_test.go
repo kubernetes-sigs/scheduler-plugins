@@ -28,80 +28,80 @@ import (
 func TestResourceListToLoggable(t *testing.T) {
 	tests := []struct {
 		name      string
-		logKey    string
+		logID     string
 		resources corev1.ResourceList
 		expected  string
 	}{
 		{
 			name:      "empty",
-			logKey:    "",
+			logID:     "",
 			resources: corev1.ResourceList{},
-			expected:  ` logKey=""`,
+			expected:  ` logID=""`,
 		},
 		{
-			name:      "only logKey",
-			logKey:    "TEST1",
+			name:      "only logID",
+			logID:     "TEST1",
 			resources: corev1.ResourceList{},
-			expected:  ` logKey="TEST1"`,
+			expected:  ` logID="TEST1"`,
 		},
 		{
-			name:   "only CPUs",
-			logKey: "TEST1",
+			name:  "only CPUs",
+			logID: "TEST1",
 			resources: corev1.ResourceList{
 				corev1.ResourceCPU: resource.MustParse("16"),
 			},
-			expected: ` logKey="TEST1" cpu="16"`,
+			expected: ` logID="TEST1" cpu="16"`,
 		},
 		{
-			name:   "only Memory",
-			logKey: "TEST2",
+			name:  "only Memory",
+			logID: "TEST2",
 			resources: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("16Gi"),
 			},
-			expected: ` logKey="TEST2" memory="16 GiB"`,
+			expected: ` logID="TEST2" memory="16 GiB"`,
 		},
 		{
-			name:   "CPUs and Memory, no logKey",
-			logKey: "",
-			resources: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("24"),
-				corev1.ResourceMemory: resource.MustParse("16Gi"),
-			},
-			expected: ` logKey="" cpu="24" memory="16 GiB"`,
-		},
-		{
-			name:   "CPUs and Memory",
-			logKey: "TEST3",
+			name:  "CPUs and Memory, no logID",
+			logID: "",
 			resources: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("24"),
 				corev1.ResourceMemory: resource.MustParse("16Gi"),
 			},
-			expected: ` logKey="TEST3" cpu="24" memory="16 GiB"`,
+			expected: ` logID="" cpu="24" memory="16 GiB"`,
 		},
 		{
-			name:   "CPUs, Memory, hugepages-2Mi",
-			logKey: "TEST4",
+			name:  "CPUs and Memory",
+			logID: "TEST3",
+			resources: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("24"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+			expected: ` logID="TEST3" cpu="24" memory="16 GiB"`,
+		},
+		{
+			name:  "CPUs, Memory, hugepages-2Mi",
+			logID: "TEST4",
 			resources: corev1.ResourceList{
 				corev1.ResourceCPU:                   resource.MustParse("24"),
 				corev1.ResourceMemory:                resource.MustParse("16Gi"),
 				corev1.ResourceName("hugepages-2Mi"): resource.MustParse("1Gi"),
 			},
-			expected: ` logKey="TEST4" cpu="24" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
+			expected: ` logID="TEST4" cpu="24" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
 		},
 		{
-			name:   "CPUs, Memory, hugepages-2Mi, hugepages-1Gi",
-			logKey: "TEST4",
+			name:  "CPUs, Memory, hugepages-2Mi, hugepages-1Gi",
+			logID: "TEST4",
 			resources: corev1.ResourceList{
 				corev1.ResourceCPU:                   resource.MustParse("24"),
 				corev1.ResourceMemory:                resource.MustParse("16Gi"),
 				corev1.ResourceName("hugepages-2Mi"): resource.MustParse("1Gi"),
 				corev1.ResourceName("hugepages-1Gi"): resource.MustParse("2Gi"),
 			},
-			expected: ` logKey="TEST4" cpu="24" hugepages-1Gi="2.0 GiB" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
+			expected: ` logID="TEST4" cpu="24" hugepages-1Gi="2.0 GiB" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
 		},
 		{
-			name:   "CPUs, Memory, hugepages-2Mi, devices",
-			logKey: "TEST4",
+			name:  "CPUs, Memory, hugepages-2Mi, devices",
+			logID: "TEST4",
 			resources: corev1.ResourceList{
 				corev1.ResourceCPU:                           resource.MustParse("24"),
 				corev1.ResourceMemory:                        resource.MustParse("16Gi"),
@@ -109,14 +109,14 @@ func TestResourceListToLoggable(t *testing.T) {
 				corev1.ResourceName("example.com/netdevice"): resource.MustParse("16"),
 				corev1.ResourceName("awesome.net/gpu"):       resource.MustParse("4"),
 			},
-			expected: ` logKey="TEST4" awesome.net/gpu="4" cpu="24" example.com/netdevice="16" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
+			expected: ` logID="TEST4" awesome.net/gpu="4" cpu="24" example.com/netdevice="16" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			keysAndValues := ResourceListToLoggable(tt.logKey, tt.resources)
+			keysAndValues := ResourceListToLoggable(tt.logID, tt.resources)
 			kvListFormat(&buf, keysAndValues...)
 			got := buf.String()
 			if got != tt.expected {
