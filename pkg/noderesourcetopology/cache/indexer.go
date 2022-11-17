@@ -47,18 +47,45 @@ import (
 
 // TODO: tests using multiple goroutines (+ race detector)
 
+type podObservedState int
+
+const (
+	podObservedReserved podObservedState = 1 << iota
+	podObservedBound
+)
+
+func (pos podObservedState) String() string {
+	if pos == podObservedReserved {
+		return "reserved"
+	}
+	return "bound"
+}
+
 type NodeIndexer interface {
 	GetPodNamespacedNamesByNode(logID, nodeName string) ([]types.NamespacedName, error)
+	TrackReservedPod(pod *corev1.Pod, nodeName string)
+	UntrackReservedPod(pod *corev1.Pod, nodeName string)
 }
 
 type nodeNameIndexer struct {
-	rwLock        sync.RWMutex
-	nodeToPodsMap map[string]map[types.UID]types.NamespacedName
+	rwLock sync.RWMutex
+	// nodeName -> podUID -> podNamespacedName
+	nodeToPodsMap map[string]map[types.UID]podData
+	// nodeName -> podUID
+	// we need this map to handle possible deletions when pods have been are reserved but not yet detected running
+	// note we do NOT clean up this map when pods are detected running, but only on pod deletion - or on Unreserve.
+	podUIDToCandidateNodeMap map[types.UID]string
+}
+
+type podData struct {
+	namespacedName types.NamespacedName
+	observedState  podObservedState
 }
 
 func NewNodeNameIndexer(podInformer k8scache.SharedInformer) NodeIndexer {
 	nni := &nodeNameIndexer{
-		nodeToPodsMap: make(map[string]map[types.UID]types.NamespacedName),
+		nodeToPodsMap:            make(map[string]map[types.UID]podData),
+		podUIDToCandidateNodeMap: make(map[types.UID]string),
 	}
 	podInformer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -85,18 +112,37 @@ func NewNodeNameIndexer(podInformer k8scache.SharedInformer) NodeIndexer {
 func (nni *nodeNameIndexer) GetPodNamespacedNamesByNode(logID, nodeName string) ([]types.NamespacedName, error) {
 	nni.rwLock.RLock()
 	defer nni.rwLock.RUnlock()
-	nns, ok := nni.nodeToPodsMap[nodeName]
+	data, ok := nni.nodeToPodsMap[nodeName]
 	if !ok {
 		klog.V(6).InfoS("nrtcache: nni GET ", "logID", logID, "node", nodeName, "pods", "NONE")
 		return []types.NamespacedName{}, nil
 	}
 
-	objs := make([]types.NamespacedName, 0, len(nns))
-	for _, nname := range nns {
-		objs = append(objs, nname)
+	objs := make([]types.NamespacedName, 0, len(data))
+	for _, item := range data {
+		objs = append(objs, item.namespacedName)
 	}
 	klog.V(6).InfoS("nrtcache: nni GET ", "logID", logID, "node", nodeName, "pods", namespacedNameListToString(objs))
 	return objs, nil
+}
+
+func (nni *nodeNameIndexer) TrackReservedPod(pod *corev1.Pod, nodeName string) {
+	nni.rwLock.Lock()
+	defer nni.rwLock.Unlock()
+	nni.podUIDToCandidateNodeMap[pod.UID] = nodeName
+	nni.insertPod(pod, nodeName, podObservedReserved)
+	klog.V(6).InfoS("nrtcache: nni RES ", "logID", klog.KObj(pod), "node", nodeName, "podUID", pod.UID)
+}
+
+func (nni *nodeNameIndexer) UntrackReservedPod(pod *corev1.Pod, nodeName string) {
+	nni.rwLock.Lock()
+	defer nni.rwLock.Unlock()
+	delete(nni.podUIDToCandidateNodeMap, pod.UID)
+	obsState, ok := nni.getPodObservedState(pod, nodeName)
+	if ok && obsState == podObservedBound {
+		delete(nni.nodeToPodsMap[nodeName], pod.UID)
+	}
+	klog.V(6).InfoS("nrtcache: nni UNR ", "logID", klog.KObj(pod), "node", nodeName, "podUID", pod.UID, "obsState", obsState)
 }
 
 func (nni *nodeNameIndexer) addPod(pod *corev1.Pod) {
@@ -114,24 +160,28 @@ func (nni *nodeNameIndexer) addPod(pod *corev1.Pod) {
 		klog.V(4).InfoS("nrtcache: nni WARN", "logID", klog.KObj(pod), "node", pod.Spec.NodeName, "podUID", pod.UID, "phase", pod.Status.Phase)
 		// intentional fallback
 	}
-
 	nni.rwLock.Lock()
 	defer nni.rwLock.Unlock()
-	pods, ok := nni.nodeToPodsMap[pod.Spec.NodeName]
-	if !ok {
-		pods = make(map[types.UID]types.NamespacedName)
-		nni.nodeToPodsMap[pod.Spec.NodeName] = pods
-	}
 	klog.V(6).InfoS("nrtcache: nni ADD ", "logID", klog.KObj(pod), "node", pod.Spec.NodeName, "podUID", pod.UID)
-	pods[pod.UID] = types.NamespacedName{
-		Namespace: pod.GetNamespace(),
-		Name:      pod.GetName(),
-	}
+	nni.insertPod(pod, pod.Spec.NodeName, podObservedBound)
 }
 
 func (nni *nodeNameIndexer) deletePod(pod *corev1.Pod) {
 	nni.rwLock.Lock()
 	defer nni.rwLock.Unlock()
+
+	nodeName := pod.Spec.NodeName
+	wasReserved := false
+	if nodeName == "" {
+		// we're deleting a pod which passed the reserve stage but never got to the binding stage.
+		// Should be unlikely, but can happen!
+		nodeName, wasReserved = nni.podUIDToCandidateNodeMap[pod.UID]
+	}
+	if nodeName == "" { // how come?
+		klog.V(6).InfoS("nrtcache: nni DEL ignored - missing node!", "logID", klog.KObj(pod), "podUID", pod.UID)
+		return
+	}
+
 	// so maps in golang (up to 1.19 included) do NOT release the memory for the buckets even on delete
 	// of their elements. We use maps -even nested- heavily, so are we at risk of leaking memory and
 	// being eventually OOM-killed?
@@ -144,8 +194,33 @@ func (nni *nodeNameIndexer) deletePod(pod *corev1.Pod) {
 	// churn (easily trackable with an integer counting the deletes) crosses a threshold, whose value is TBD.
 	//
 	// for more details: https://github.com/golang/go/issues/20135
-	delete(nni.nodeToPodsMap[pod.Spec.NodeName], pod.UID)
-	klog.V(6).InfoS("nrtcache: nni DEL ", "logID", klog.KObj(pod), "node", pod.Spec.NodeName, "podUID", pod.UID)
+	delete(nni.nodeToPodsMap[nodeName], pod.UID)
+	delete(nni.podUIDToCandidateNodeMap, pod.UID)
+	klog.V(6).InfoS("nrtcache: nni DEL ", "logID", klog.KObj(pod), "node", nodeName, "podUID", pod.UID, "wasReserved", wasReserved)
+}
+
+func (nni *nodeNameIndexer) insertPod(pod *corev1.Pod, nodeName string, obsState podObservedState) {
+	pods, ok := nni.nodeToPodsMap[nodeName]
+	if !ok {
+		pods = make(map[types.UID]podData)
+		nni.nodeToPodsMap[nodeName] = pods
+	}
+	pods[pod.UID] = podData{
+		namespacedName: types.NamespacedName{
+			Namespace: pod.GetNamespace(),
+			Name:      pod.GetName(),
+		},
+		observedState: obsState,
+	}
+}
+
+func (nni *nodeNameIndexer) getPodObservedState(pod *corev1.Pod, nodeName string) (podObservedState, bool) {
+	pods, ok := nni.nodeToPodsMap[nodeName]
+	if !ok {
+		return podObservedBound, false
+	}
+	data, ok := pods[pod.UID]
+	return data.observedState, ok
 }
 
 func namespacedNameListToString(nns []types.NamespacedName) string {

@@ -582,6 +582,9 @@ func (fi *fakePodByNodeNameIndex) GetPodNamespacedNamesByNode(logID, nodeName st
 	return objs, nil
 }
 
+func (fi *fakePodByNodeNameIndex) TrackReservedPod(pod *corev1.Pod, nodeName string)   {}
+func (fi *fakePodByNodeNameIndex) UntrackReservedPod(pod *corev1.Pod, nodeName string) {}
+
 func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha1.ResourceInfo {
 	return topologyv1alpha1.ResourceInfo{
 		Name:      name,

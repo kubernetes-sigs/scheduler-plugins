@@ -106,6 +106,8 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 	nodeAssumedResources.AddPod(pod)
 	klog.V(5).InfoS("nrtcache post reserve", "logID", klog.KObj(pod), "node", nodeName, "assumedResources", nodeAssumedResources.String())
 
+	ov.nodeIndexer.TrackReservedPod(pod, nodeName)
+
 	ov.nodesMaybeOverreserved.Delete(nodeName)
 	klog.V(6).InfoS("nrtcache: reset discard counter", "logID", klog.KObj(pod), "node", nodeName)
 }
@@ -123,6 +125,8 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 
 	nodeAssumedResources.DeletePod(pod)
 	klog.V(5).InfoS("nrtcache post release", "logID", klog.KObj(pod), "node", nodeName, "assumedResources", nodeAssumedResources.String())
+
+	ov.nodeIndexer.UntrackReservedPod(pod, nodeName)
 }
 
 // NodesMaybeOverReserved returns a slice of all the node names which have been discarded previously,
