@@ -197,7 +197,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	nodeName := nodeInfo.Node().Name
-	nodeTopology := tm.nrtCache.GetByNode(nodeName, pod)
+	nodeTopology := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
 
 	if nodeTopology == nil {
 		return nil
@@ -207,7 +207,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	for _, policyName := range nodeTopology.TopologyPolicies {
 		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			if status := handler.filter(pod, nodeTopology.Zones, nodeInfo); status != nil {
-				tm.nrtCache.MarkNodeDiscarded(nodeName, pod)
+				tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
 				return status
 			}
 		} else {

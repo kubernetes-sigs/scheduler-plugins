@@ -23,19 +23,19 @@ import (
 )
 
 type Interface interface {
-	// GetByNode returns the last Node Resource Topology info available for a node, adjusted with the assumed
-	// resources for that node. Assumed resources are the resources consumed by pods scheduled to that node
-	// after the last update of NRT pertaining to the same node, pessimistically overallocated on ALL the NUMA
-	// zones of the node.
+	// GetCachedNRTCopy retrieves a NRT copy from cache, and then deducts over-reserved resources if necessary.
+	// It will be used as the source of truth across the Pod's scheduling cycle.
+	// Over-reserved resources are the resources consumed by pods scheduled to that node after the last update
+	// of NRT pertaining to the same node, pessimistically overallocated on ALL the NUMA zones of the node.
 	// The pod argument is used only for logging purposes.
-	GetByNode(nodeName string, pod *corev1.Pod) *topologyv1alpha1.NodeResourceTopology
+	GetCachedNRTCopy(nodeName string, pod *corev1.Pod) *topologyv1alpha1.NodeResourceTopology
 
-	// MarkNodeDiscarded declares a node was filtered out for not enough resources available.
+	// NodeMaybeOverReserved declares a node was filtered out for not enough resources available.
 	// This means this node is eligible for a resync. When a node is marked discarded (dirty), it matters not
 	// if it is so because pessimistic overallocation or because the node truly cannot accomodate the request;
 	// this is for the resync step to figure out.
 	// The pod argument is used only for logging purposes.
-	MarkNodeDiscarded(nodeName string, pod *corev1.Pod)
+	NodeMaybeOverReserved(nodeName string, pod *corev1.Pod)
 
 	// ReserveNodeResources add the resources requested by a pod to the assumed resources for the node on which the pod
 	// is scheduled on. This is a prerequesite for the pessimistic overallocation tracking.
