@@ -3,6 +3,8 @@ module sigs.k8s.io/scheduler-plugins
 go 1.17
 
 require (
+	github.com/diktyo-io/appgroup-api v0.0.9-alpha
+	github.com/diktyo-io/networktopology-api v0.0.8-alpha
 	github.com/dustin/go-humanize v1.0.0
 	github.com/google/go-cmp v0.5.5
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.12

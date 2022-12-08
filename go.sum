@@ -179,6 +179,16 @@ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/daviddengcn/go-colortext v0.0.0-20160507010035-511bcaf42ccd/go.mod h1:dv4zxwHi5C/8AeI+4gX4dCWOIvNi7I6JCSX0HvlKPgE=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZmtrrCbhqsmaPHjLKYnJCaQ=
 github.com/dgryski/go-sip13 v0.0.0-20181026042036-e10d5fee7954/go.mod h1:vAd38F8PWV+bWy6jNmig1y/TA+kYO4g3RSRF0IAv0no=
+github.com/diktyo-io/appgroup-api v0.0.7-alpha h1:3D4kBrT6oKGyds5X4tPBO2XcURcvTsKoQiGDD/pEdC8=
+github.com/diktyo-io/appgroup-api v0.0.7-alpha/go.mod h1:Q0UPLA6aFBogLpiOiA9+7sqnlvPES6ge/PIaQohfR8Y=
+github.com/diktyo-io/appgroup-api v0.0.8-alpha h1:S3BHOq/MsMqi4o1WA8ZuaYh/WGnB0fWbNLB5CG0+M6g=
+github.com/diktyo-io/appgroup-api v0.0.8-alpha/go.mod h1:Q0UPLA6aFBogLpiOiA9+7sqnlvPES6ge/PIaQohfR8Y=
+github.com/diktyo-io/appgroup-api v0.0.9-alpha h1:rqRNOl4CRD313a+ugZJ2rJAN2sNe5GGd4PfyaV44Dy4=
+github.com/diktyo-io/appgroup-api v0.0.9-alpha/go.mod h1:Q0UPLA6aFBogLpiOiA9+7sqnlvPES6ge/PIaQohfR8Y=
+github.com/diktyo-io/networktopology-api v0.0.7-alpha h1:ZCPJ1keFe+tfAJEQG3/BVlsaa524ISWetAkP1dm9s4k=
+github.com/diktyo-io/networktopology-api v0.0.7-alpha/go.mod h1:a9YAoBY96ITcSMUTNPJAljMPpDcig91scxJ1smaAhEg=
+github.com/diktyo-io/networktopology-api v0.0.8-alpha h1:8bSVk6JdUgYd719mXfHgkGZ2eXOfTF436mLu/TQ7WHM=
+github.com/diktyo-io/networktopology-api v0.0.8-alpha/go.mod h1:a9YAoBY96ITcSMUTNPJAljMPpDcig91scxJ1smaAhEg=
 github.com/dnaeon/go-vcr v1.0.1/go.mod h1:aBB1+wY4s93YsC3HHjMBMrwTj2R9FHDzUr9KyGc8n1E=
 github.com/docker/distribution v2.8.0+incompatible/go.mod h1:J2gT2udsDAN96Uj4KfcMRqY0/ypR+oyYUYmja8H+y+w=
 github.com/docker/distribution v2.8.1+incompatible h1:Q50tZOPR6T/hjNsyc9g8/syEs6bk8XXApsHjKukMl68=

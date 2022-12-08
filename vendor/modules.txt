@@ -33,6 +33,34 @@ github.com/coreos/go-systemd/v22/journal
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
+# github.com/diktyo-io/appgroup-api v0.0.9-alpha
+## explicit; go 1.16
+github.com/diktyo-io/appgroup-api/pkg/apis/appgroup
+github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1
+github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned
+github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned/fake
+github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned/scheme
+github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned/typed/appgroup/v1alpha1
+github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned/typed/appgroup/v1alpha1/fake
+github.com/diktyo-io/appgroup-api/pkg/generated/informers/externalversions
+github.com/diktyo-io/appgroup-api/pkg/generated/informers/externalversions/appgroup
+github.com/diktyo-io/appgroup-api/pkg/generated/informers/externalversions/appgroup/v1alpha1
+github.com/diktyo-io/appgroup-api/pkg/generated/informers/externalversions/internalinterfaces
+github.com/diktyo-io/appgroup-api/pkg/generated/listers/appgroup/v1alpha1
+# github.com/diktyo-io/networktopology-api v0.0.8-alpha
+## explicit; go 1.16
+github.com/diktyo-io/networktopology-api/pkg/apis/networktopology
+github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1
+github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned
+github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned/fake
+github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned/scheme
+github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned/typed/networktopology/v1alpha1
+github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned/typed/networktopology/v1alpha1/fake
+github.com/diktyo-io/networktopology-api/pkg/generated/informers/externalversions
+github.com/diktyo-io/networktopology-api/pkg/generated/informers/externalversions/internalinterfaces
+github.com/diktyo-io/networktopology-api/pkg/generated/informers/externalversions/networktopology
+github.com/diktyo-io/networktopology-api/pkg/generated/informers/externalversions/networktopology/v1alpha1
+github.com/diktyo-io/networktopology-api/pkg/generated/listers/networktopology/v1alpha1
 # github.com/docker/distribution v2.8.1+incompatible
 ## explicit
 github.com/docker/distribution/digestset

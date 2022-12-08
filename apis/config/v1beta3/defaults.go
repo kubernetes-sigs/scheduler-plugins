@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta3
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"strconv"
 
 	v1 "k8s.io/api/core/v1"
@@ -60,7 +61,6 @@ var (
 	// DefaultSafeVarianceSensitivity is one
 	DefaultSafeVarianceSensitivity = 1.0
 
-	// Defaults for MetricProviderSpec
 	// DefaultMetricProviderType is the Kubernetes metrics server
 	DefaultMetricProviderType = KubernetesMetricsServer
 	// DefaultInsecureSkipVerify is whether to skip the certificate verification
@@ -70,6 +70,12 @@ var (
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
+
+	// Defaults for NetworkOverhead
+	// DefaultWeightsName contains the default costs to be used by networkAware plugins
+	DefaultWeightsName = "UserDefined"
+	// DefaultNetworkTopologyName contains the networkTopology CR name to be used by networkAware plugins
+	DefaultNetworkTopologyName = "nt-default"
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -150,4 +156,26 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 // SetDefaults_PreemptionTolerationArgs reuses SetDefaults_DefaultPreemptionArgs
 func SetDefaults_PreemptionTolerationArgs(obj *PreemptionTolerationArgs) {
 	k8sschedulerconfigv1beta3.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1beta3.DefaultPreemptionArgs)(obj))
+}
+
+// SetDefaults_TopologicalSortArgs sets the default parameters for TopologicalSortArgs plugin.
+func SetDefaults_TopologicalSortArgs(obj *TopologicalSortArgs) {
+	if len(obj.Namespaces) == 0 {
+		obj.Namespaces = []string{metav1.NamespaceDefault}
+	}
+}
+
+// SetDefaults_NetworkOverheadArgs sets the default parameters for NetworkMinCostArgs plugin.
+func SetDefaults_NetworkOverheadArgs(obj *NetworkOverheadArgs) {
+	if len(obj.Namespaces) == 0 {
+		obj.Namespaces = []string{metav1.NamespaceDefault}
+	}
+
+	if obj.WeightsName == nil {
+		obj.WeightsName = &DefaultWeightsName
+	}
+
+	if obj.NetworkTopologyName == nil {
+		obj.NetworkTopologyName = &DefaultNetworkTopologyName
+	}
 }
