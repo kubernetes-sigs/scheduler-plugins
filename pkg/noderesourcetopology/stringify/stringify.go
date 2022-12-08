@@ -30,8 +30,8 @@ import (
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 )
 
-func ResourceListToLoggable(logKey string, resources corev1.ResourceList) []interface{} {
-	items := []interface{}{"logKey", logKey}
+func ResourceListToLoggable(logID string, resources corev1.ResourceList) []interface{} {
+	items := []interface{}{"logID", logID}
 
 	resNames := []string{}
 	for resName := range resources {

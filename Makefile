@@ -15,6 +15,7 @@
 ARCHS = amd64 arm64
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
 BUILDENVVAR=CGO_ENABLED=0
+INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
 LOCAL_REGISTRY=localhost:5000/scheduler-plugins
 LOCAL_IMAGE=kube-scheduler:latest
@@ -116,7 +117,7 @@ install-envtest:
 
 .PHONY: integration-test
 integration-test: install-envtest
-	hack/integration-test.sh
+	$(INTEGTESTENVVAR) hack/integration-test.sh
 
 .PHONY: verify
 verify:
