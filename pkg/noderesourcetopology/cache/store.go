@@ -199,16 +199,15 @@ func checkPodFingerprintForNode(logID string, indexer NodeIndexer, nodeName, pfp
 		return err
 	}
 
-	klog.V(6).InfoS("nrtcache: podset fingerprint", "logID", logID, "pods", len(objs))
-
-	pfp := podfingerprint.NewFingerprint(len(objs))
+	var st podfingerprint.Status
+	pfp := podfingerprint.NewTracingFingerprint(len(objs), &st)
 	for _, obj := range objs {
-		klog.V(6).InfoS("nrtcache: podset fingerprint", "logID", logID, "namespacedName", obj.Namespace+"/"+obj.Name)
 		pfp.Add(obj.Namespace, obj.Name)
 	}
 	pfpComputed := pfp.Sign()
 
 	klog.V(5).InfoS("nrtcache: podset fingerprint check", "logID", logID, "node", nodeName, "expected", pfpExpected, "computed", pfpComputed)
+	klog.V(6).InfoS("nrtcache: podset fingerprint debug", "logID", logID, "node", nodeName, "status", st.Repr())
 
 	return pfp.Check(pfpExpected)
 }
