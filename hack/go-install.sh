@@ -50,9 +50,6 @@ rm "${GOBIN}/${2}"* || true
 
 cd "${tmp_dir}"
 
-# create a new module in the tmp directory
-go mod init fake/mod
-
 # install the golang module specified as the first argument
 go install "${1}@${3}"
 mv "${GOBIN}/${2}" "${GOBIN}/${2}-${3}"
