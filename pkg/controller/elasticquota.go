@@ -202,7 +202,7 @@ func (ctrl *ElasticQuotaController) syncHandler(key string) error {
 	}
 	if _, err = ctrl.schedClient.SchedulingV1alpha1().ElasticQuotas(namespace).
 		Patch(context.TODO(), eq.Name, types.MergePatchType,
-			patch, metav1.PatchOptions{}); err != nil {
+			patch, metav1.PatchOptions{}, "status"); err != nil {
 		return err
 	}
 	ctrl.recorder.Event(eq, v1.EventTypeNormal, "Synced", fmt.Sprintf("Elastic Quota %s synced successfully", key))
