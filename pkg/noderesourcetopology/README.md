@@ -9,8 +9,8 @@ Document capturing the NodeResourceTopology API Custom Resource Definition Stand
 <!-- Check one of the values: Sample, Alpha, Beta, GA -->
 
 - [ ] 💡 Sample (for demonstrating and inspiring purpose)
-- [x] 👶 Alpha (used in companies for pilot projects)
-- [ ] 👦 Beta (used in companies and developed actively)
+- [ ] 👶 Alpha (used in companies for pilot projects)
+- [x] 👦 Beta (used in companies and developed actively)
 - [ ] 👨 Stable (used in companies for production workloads)
 
 ## Tutorial
@@ -56,6 +56,46 @@ profiles:
       # other strategies are MostAllocated and BalancedAllocation
       scoringStrategy:
         type: "LeastAllocated"
+```
+
+#### Scheduler-side cache with the reserve plugin
+
+The quality of the scheduling decisions of the "NodeResourceTopologyMatch" filter and score plugins depends on the freshness of the resource allocation data.
+When deployed on large clusters, or when facing high pod churn, or both, it's often impractical or impossible to have frequent enough updates, and the scheduler plugins
+may run with stale data, leading to suboptimal scheduling decisions.
+Using the Reserve plugin, the "NodeResourceTopologyMatch" Filter and Score can use a pessimistic overreserving cache which prevents these suboptimal decisions at the cost
+of leaving pods pending longer. This cache is described in detail in [the docs/ directory](docs/).
+
+To enable the cache, you need to **both** enable the Reserve plugin and to set the `cacheResyncPeriodSeconds` config options. Values less than 5 seconds are not recommended
+for performance reasons.
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1beta2
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+clientConnection:
+  kubeconfig: "/etc/kubernetes/scheduler.conf"
+profiles:
+- schedulerName: topo-aware-scheduler
+  plugins:
+    filter:
+      enabled:
+      - name: NodeResourceTopologyMatch
+    reserve:
+      enabled:
+      - name: NodeResourceTopologyMatch
+    score:
+      enabled:
+      - name: NodeResourceTopologyMatch
+# optional plugin configs
+  pluginConfig:
+  - name: NodeResourceTopologyMatch
+    args:
+      # other strategies are MostAllocated and BalancedAllocation
+      scoringStrategy:
+        type: "LeastAllocated"
+      cacheResyncPeriodSeconds: 5
 ```
 
 #### Cluster

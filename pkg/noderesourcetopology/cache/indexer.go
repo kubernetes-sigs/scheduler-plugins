@@ -96,7 +96,15 @@ func NewNodeNameIndexer(podInformer k8scache.SharedInformer) NodeIndexer {
 			}
 			nni.addPod(pod)
 		},
-		// Updates are not yet supported
+		// need to track pods scheduled by the default scheduler
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			pod, ok := newObj.(*corev1.Pod)
+			if !ok {
+				klog.V(3).InfoS("nrtcache: nni: update unsupported object %T", newObj)
+				return
+			}
+			nni.addPod(pod)
+		},
 		DeleteFunc: func(obj interface{}) {
 			pod, ok := obj.(*corev1.Pod)
 			if !ok {

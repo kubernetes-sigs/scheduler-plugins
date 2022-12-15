@@ -43,6 +43,7 @@ type OverReserve struct {
 	// nodesMaybeOverreserved counts how many times a node is filtered out. This is used as trigger condition to try
 	// to resync nodes. See The documentation of Resync() below for more details.
 	nodesMaybeOverreserved counter
+	nodesWithForeignPods   counter
 	nrtLister              listerv1alpha1.NodeResourceTopologyLister
 	nodeIndexer            NodeIndexer
 }
@@ -62,29 +63,34 @@ func NewOverReserve(lister listerv1alpha1.NodeResourceTopologyLister, indexer No
 		nrts:                   newNrtStore(nrtObjs),
 		assumedResources:       make(map[string]*resourceStore),
 		nodesMaybeOverreserved: newCounter(),
+		nodesWithForeignPods:   newCounter(),
 		nrtLister:              lister,
 		nodeIndexer:            indexer,
 	}
 	return obj, nil
 }
 
-func (ov *OverReserve) GetCachedNRTCopy(nodeName string, pod *corev1.Pod) *topologyv1alpha1.NodeResourceTopology {
+func (ov *OverReserve) GetCachedNRTCopy(nodeName string, pod *corev1.Pod) (*topologyv1alpha1.NodeResourceTopology, bool) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+	if ov.nodesWithForeignPods.IsSet(nodeName) {
+		return nil, false
+	}
+
 	nrt := ov.nrts.GetNRTCopyByNodeName(nodeName)
 	if nrt == nil {
-		return nil
+		return nil, true
 	}
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
-		return nrt
+		return nrt, true
 	}
 
 	klog.V(6).InfoS("nrtcache NRT", "logID", klog.KObj(pod), "vanilla", stringify.NodeResourceTopologyResources(nrt))
 	nodeAssumedResources.UpdateNRT(klog.KObj(pod).String(), nrt)
 
 	klog.V(5).InfoS("nrtcache NRT", "logID", klog.KObj(pod), "updated", stringify.NodeResourceTopologyResources(nrt))
-	return nrt
+	return nrt, true
 }
 
 func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {
@@ -92,6 +98,17 @@ func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {
 	defer ov.lock.Unlock()
 	val := ov.nodesMaybeOverreserved.Incr(nodeName)
 	klog.V(4).InfoS("nrtcache: mark discarded", "logID", klog.KObj(pod), "node", nodeName, "count", val)
+}
+
+func (ov *OverReserve) NodeHasForeignPods(nodeName string, pod *corev1.Pod) {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	if !ov.nrts.Contains(nodeName) {
+		klog.V(5).InfoS("nrtcache: ignoring foreign pods", "logID", klog.KObj(pod), "node", nodeName, "nrtinfo", "missing")
+		return
+	}
+	val := ov.nodesWithForeignPods.Incr(nodeName)
+	klog.V(4).InfoS("nrtcache: marked with foreign pods", "logID", klog.KObj(pod), "node", nodeName, "count", val)
 }
 
 func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
@@ -136,7 +153,7 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 // 2. it was pessimistically overallocated, so the node is a candidate for resync
 // This function enables the caller to know the slice of nodes should be considered for resync,
 // avoiding the need to rescan the full node list.
-func (ov *OverReserve) NodesMaybeOverReserved() []string {
+func (ov *OverReserve) NodesMaybeOverReserved(logID string) []string {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	// this is intentionally aggressive. We don't yet make any attempt to find out if the
@@ -145,7 +162,17 @@ func (ov *OverReserve) NodesMaybeOverReserved() []string {
 	// exhausted. We do like this because this is the safest approach. We will optimize
 	// the node selection logic later on to make the resync procedure less aggressive but
 	// still correct.
-	return ov.nodesMaybeOverreserved.Keys()
+	nodes := ov.nodesWithForeignPods.Clone()
+	foreignCount := nodes.Len()
+
+	for _, node := range ov.nodesMaybeOverreserved.Keys() {
+		nodes.Incr(node)
+	}
+
+	if nodes.Len() > 0 {
+		klog.V(4).InfoS("nrtcache: found dirty nodes", "logID", logID, "foreign", foreignCount, "discarded", nodes.Len()-foreignCount, "total", nodes.Len())
+	}
+	return nodes.Keys()
 }
 
 // Resync implements the cache resync loop step. This function checks if the latest available NRT information received matches the
@@ -157,15 +184,16 @@ func (ov *OverReserve) NodesMaybeOverReserved() []string {
 // which needs to be set and tuned) times, then it becomes a candidate for resync. Just using one of these two factors would lead to
 // too aggressive resync attempts, so to more, likely unnecessary, computation work on the scheduler side.
 func (ov *OverReserve) Resync() {
-	nodeNames := ov.NodesMaybeOverReserved()
+	// we are not working with a specific pod, so we need a unique key to track this flow
+	logID := logIDFromTime()
+
+	nodeNames := ov.NodesMaybeOverReserved(logID)
 	// avoid as much as we can unnecessary work and logs.
 	if len(nodeNames) == 0 {
 		klog.V(6).InfoS("nrtcache: resync: no dirty nodes detected")
 		return
 	}
 
-	// we are not working with a specific pod, so we need a unique key to track this flow
-	logID := logIDFromTime()
 	klog.V(6).InfoS("nrtcache: resync NodeTopology cache starting", "logID", logID)
 	defer klog.V(6).InfoS("nrtcache: resync NodeTopology cache complete", "logID", logID)
 
@@ -217,6 +245,7 @@ func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha1.NodeRe
 		ov.nrts.Update(nrt)
 		delete(ov.assumedResources, nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrt.Name)
+		ov.nodesWithForeignPods.Delete(nrt.Name)
 	}
 }
 
