@@ -96,7 +96,8 @@ func TestTopologicalSortPlugin(t *testing.T) {
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{topologicalsort.Name: topologicalsort.New}),
 	)
 	syncInformerFactory(testCtx)
-	go testCtx.Scheduler.Run(testCtx.Ctx)
+	// Do not start the scheduler.
+	// go testCtx.Scheduler.Run(testCtx.Ctx)
 	t.Log("Init scheduler success")
 	defer cleanupTest(t, testCtx)
 
@@ -146,8 +147,91 @@ func TestTopologicalSortPlugin(t *testing.T) {
 	},
 	).Obj()
 
+	// Create AppGroup CRD: onlineboutique
+	onlineboutiqueAppGroup := MakeAppGroup(ns, "onlineboutique").Spec(
+		agv1alpha1.AppGroupSpec{
+			NumMembers:               3,
+			TopologySortingAlgorithm: "KahnSort",
+			Workloads: agv1alpha1.AppGroupWorkloadList{
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p1", Selector: "p1", APIVersion: "apps/v1", Namespace: "default"}, // frontend
+					Dependencies: agv1alpha1.DependenciesList{
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p2", Selector: "p2", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p3", Selector: "p3", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p4", Selector: "p4", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p6", Selector: "p6", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p8", Selector: "p8", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p9", Selector: "p9", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p10", Selector: "p10", APIVersion: "apps/v1", Namespace: "default"}},
+					},
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p2", Selector: "p2", APIVersion: "apps/v1", Namespace: "default"}, // cartService
+					Dependencies: agv1alpha1.DependenciesList{
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p11", Selector: "p11", APIVersion: "apps/v1", Namespace: "default"}},
+					},
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p3", Selector: "p3", APIVersion: "apps/v1", Namespace: "default"}, // productCatalogService
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p4", Selector: "p4", APIVersion: "apps/v1", Namespace: "default"}, // currencyService
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p5", Selector: "p5", APIVersion: "apps/v1", Namespace: "default"}, // paymentService
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p6", Selector: "p6", APIVersion: "apps/v1", Namespace: "default"}, // shippingService
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p7", Selector: "p7", APIVersion: "apps/v1", Namespace: "default"}, // emailService
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p8", Selector: "p8", APIVersion: "apps/v1", Namespace: "default"}, // checkoutService
+					Dependencies: agv1alpha1.DependenciesList{
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p2", Selector: "p2", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p3", Selector: "p3", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p4", Selector: "p4", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p5", Selector: "p5", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p6", Selector: "p6", APIVersion: "apps/v1", Namespace: "default"}},
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p7", Selector: "p7", APIVersion: "apps/v1", Namespace: "default"}},
+					},
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p9", Selector: "p9", APIVersion: "apps/v1", Namespace: "default"}, // recommendationService
+					Dependencies: agv1alpha1.DependenciesList{
+						agv1alpha1.DependenciesInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p3", Selector: "p3", APIVersion: "apps/v1", Namespace: "default"}},
+					}},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p10", Selector: "p10", APIVersion: "apps/v1", Namespace: "default"}, // adService
+				},
+				agv1alpha1.AppGroupWorkload{
+					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p11", Selector: "p11", APIVersion: "apps/v1", Namespace: "default"}, // redis-cart
+				},
+			},
+		},
+	).Status(agv1alpha1.AppGroupStatus{
+		RunningWorkloads:  3,
+		ScheduleStartTime: metav1.Time{time.Now()}, TopologyCalculationTime: metav1.Time{time.Now()},
+		TopologyOrder: agv1alpha1.AppGroupTopologyList{
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p1", Selector: "p1", APIVersion: "apps/v1", Namespace: "default"}, Index: 1},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p10", Selector: "p10", APIVersion: "apps/v1", Namespace: "default"}, Index: 2},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p9", Selector: "p9", APIVersion: "apps/v1", Namespace: "default"}, Index: 3},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p8", Selector: "p8", APIVersion: "apps/v1", Namespace: "default"}, Index: 4},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p7", Selector: "p7", APIVersion: "apps/v1", Namespace: "default"}, Index: 5},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p6", Selector: "p6", APIVersion: "apps/v1", Namespace: "default"}, Index: 6},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p5", Selector: "p5", APIVersion: "apps/v1", Namespace: "default"}, Index: 7},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p4", Selector: "p4", APIVersion: "apps/v1", Namespace: "default"}, Index: 8},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p3", Selector: "p3", APIVersion: "apps/v1", Namespace: "default"}, Index: 9},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p2", Selector: "p2", APIVersion: "apps/v1", Namespace: "default"}, Index: 10},
+			agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p11", Selector: "p11", APIVersion: "apps/v1", Namespace: "default"}, Index: 11},
+		},
+	},
+	).Obj()
+
 	// Sort Topology order in AppGroup CR
 	sort.Sort(networkawareutil.ByWorkloadSelector(basicAppGroup.Status.TopologyOrder))
+	sort.Sort(networkawareutil.ByWorkloadSelector(onlineboutiqueAppGroup.Status.TopologyOrder))
 
 	pause := imageutils.GetPauseImageName()
 	for _, tt := range []struct {
@@ -156,6 +240,39 @@ func TestTopologicalSortPlugin(t *testing.T) {
 		appGroup []*agv1alpha1.AppGroup
 		podNames []string
 	}{
+		{
+			name: "basic-appGroup-compare-p1-p2",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("p1-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "basic").Label(agv1alpha1.AppGroupSelectorLabel, "p1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p2-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "basic").Label(agv1alpha1.AppGroupSelectorLabel, "p2").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			appGroup: []*agv1alpha1.AppGroup{basicAppGroup},
+			podNames: []string{"p1-test-1", "p2-test-1"},
+		},
+		{
+			name: "basic-appGroup-compare-p1-p3",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("p1-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "basic").Label(agv1alpha1.AppGroupSelectorLabel, "p1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p3-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "basic").Label(agv1alpha1.AppGroupSelectorLabel, "p3").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			appGroup: []*agv1alpha1.AppGroup{basicAppGroup},
+			podNames: []string{"p1-test-1", "p3-test-1"},
+		},
+		{
+			name: "basic-appGroup-compare-p2-p3",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("p2-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "basic").Label(agv1alpha1.AppGroupSelectorLabel, "p2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p3-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "basic").Label(agv1alpha1.AppGroupSelectorLabel, "p3").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			appGroup: []*agv1alpha1.AppGroup{basicAppGroup},
+			podNames: []string{"p2-test-1", "p3-test-1"},
+		},
 		{
 			name: "basic-appGroup-compare-p1-p2-p3",
 			pods: []*v1.Pod{
@@ -168,6 +285,58 @@ func TestTopologicalSortPlugin(t *testing.T) {
 			},
 			appGroup: []*agv1alpha1.AppGroup{basicAppGroup},
 			podNames: []string{"p1-test-1", "p2-test-1", "p3-test-1"},
+		},
+		{
+			name: "onlineboutique-appGroup-compare-p1-p5",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("p1-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p5-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p5").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			appGroup: []*agv1alpha1.AppGroup{onlineboutiqueAppGroup},
+			podNames: []string{"p1-test-1", "p5-test-1"},
+		},
+		{
+			name: "onlineboutique-appGroup-compare-p4-p8",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("p4-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p4").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p8-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p8").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			appGroup: []*agv1alpha1.AppGroup{onlineboutiqueAppGroup},
+			podNames: []string{"p8-test-1", "p4-test-1"},
+		},
+		{
+			name: "onlineboutique-appGroup-compare-p1-p2-p3-p4-p5-p6-p7-p8-p9-p10-p11",
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("p1-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p2-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p2").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p3-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p3").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p4-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p4").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p5-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p5").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p6-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p6").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p7-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p7").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p8-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p8").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p9-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p9").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p10-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p10").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("p11-test-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(
+					midPriority).Label(agv1alpha1.AppGroupLabel, "onlineboutique").Label(agv1alpha1.AppGroupSelectorLabel, "p11").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			appGroup: []*agv1alpha1.AppGroup{onlineboutiqueAppGroup},
+			podNames: []string{"p1-test-1", "p10-test-1", "p9-test-1", "p8-test-1", "p7-test-1", "p6-test-1",
+				"p5-test-1", "p4-test-1", "p3-test-1", "p2-test-1", "p11-test-1"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
