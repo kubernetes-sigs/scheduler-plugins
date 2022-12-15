@@ -328,7 +328,7 @@ func (no *NetworkOverhead) Filter(ctx context.Context, cycleState *framework.Cyc
 	// Get satisfied and violated number of dependencies
 	satisfied := preFilterState.satisfiedMap[nodeInfo.Node().Name]
 	violated := preFilterState.violatedMap[nodeInfo.Node().Name]
-	klog.V(6).InfoS("Number of dependencies", "satisfied", satisfied, "violated", violated)
+	klog.V(6).InfoS("Number of dependencies:", "satisfied", satisfied, "violated", violated)
 
 	// The pod is filtered out if the number of violated dependencies is higher than the satisfied ones
 	if violated > satisfied {
@@ -356,8 +356,7 @@ func (no *NetworkOverhead) Score(ctx context.Context, cycleState *framework.Cycl
 
 	// Return Accumulated Cost as score
 	score = preFilterState.finalCostMap[nodeName]
-
-	klog.V(4).InfoS("pod:%s; node:%s; finalScore=%d", pod.GetName(), nodeName, score)
+	klog.V(4).InfoS("Score:", "pod", pod.GetName(), "node", nodeName, "finalScore", score)
 	return score, framework.NewStatus(framework.Success, "Accumulated cost added as score, normalization ensures lower costs are favored")
 }
 
@@ -612,12 +611,11 @@ func getPreFilterState(cycleState *framework.CycleState) (*PreFilterState, error
 func (no *NetworkOverhead) findAppGroupNetworkOverhead(agName string) *agv1alpha1.AppGroup {
 	klog.V(6).InfoS("namespaces: %s", no.namespaces)
 	for _, namespace := range no.namespaces {
-		klog.V(6).InfoS("ag.lister: %v", no.agLister)
-
+		klog.V(6).InfoS("appGroup CR", "namespace", namespace, "ag.lister", no.agLister)
 		// AppGroup could not be placed in several namespaces simultaneously
 		appGroup, err := no.agLister.AppGroups(namespace).Get(agName)
 		if err != nil {
-			klog.V(4).InfoS("Cannot get AppGroup from AppGroupNamespaceLister: %v", err)
+			klog.V(4).InfoS("Cannot get AppGroup from AppGroupNamespaceLister:", "error", err)
 			continue
 		}
 		if appGroup != nil {
@@ -630,11 +628,11 @@ func (no *NetworkOverhead) findAppGroupNetworkOverhead(agName string) *agv1alpha
 func (no *NetworkOverhead) findNetworkTopologyNetworkOverhead() *ntv1alpha1.NetworkTopology {
 	klog.V(6).InfoS("namespaces: %s", no.namespaces)
 	for _, namespace := range no.namespaces {
-		klog.V(6).InfoS("nt.lister: %v", no.ntLister)
+		klog.V(6).InfoS("networkTopology CR:", "namespace", namespace, "nt.lister", no.ntLister)
 		// NetworkTopology could not be placed in several namespaces simultaneously
 		networkTopology, err := no.ntLister.NetworkTopologies(namespace).Get(no.ntName)
 		if err != nil {
-			klog.V(4).InfoS("Cannot get networkTopology from networkTopologyNamespaceLister: %v", err)
+			klog.V(4).InfoS("Cannot get networkTopology from networkTopologyNamespaceLister:", "error", err)
 			continue
 		}
 		if networkTopology != nil {

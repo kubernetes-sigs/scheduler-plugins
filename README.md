@@ -32,6 +32,7 @@ The kube-scheduler binary includes the below list of plugins. They can be config
 * [Node Resource Topology](pkg/noderesourcetopology/README.md)
 * [Preemption Toleration](pkg/preemptiontoleration/README.md)
 * [Trimaran](pkg/trimaran/README.md)
+* [Network-Aware Scheduling](pkg/networkaware/README.md)
 
 Additionally, the kube-scheduler binary includes the below list of sample plugins. These plugins are not intended for use in production
 environments.

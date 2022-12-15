@@ -118,11 +118,11 @@ func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 func (ts *TopologicalSort) findAppGroupTopologicalSort(agName string) *agv1alpha.AppGroup {
 	klog.V(6).InfoS("namespaces: %s", ts.namespaces)
 	for _, namespace := range ts.namespaces {
-		klog.V(6).InfoS("data.lister: %v", ts.agLister)
+		klog.V(6).InfoS("appGroup CR", "namespace", namespace, "ag.lister", ts.agLister)
 		// AppGroup couldn't be placed in several namespaces simultaneously
 		appGroup, err := ts.agLister.AppGroups(namespace).Get(agName)
 		if err != nil {
-			klog.V(4).InfoS("Cannot get AppGroup from AppGroupNamespaceLister: %v", err)
+			klog.V(4).InfoS("Cannot get AppGroup from AppGroupNamespaceLister:", "error", err)
 			continue
 		}
 		if appGroup != nil {

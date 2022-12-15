@@ -12,6 +12,9 @@ profiles:
       - name: TopologicalSort
       disabled:
       - name: "*"
+    preFilter:
+      enabled:
+        - name: NetworkOverhead
     filter:
       enabled:
       - name: NetworkOverhead
