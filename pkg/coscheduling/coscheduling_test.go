@@ -308,7 +308,7 @@ func TestPermit(t *testing.T) {
 		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 	}
-	f, err := st.NewFramework(registeredPlugins, "",
+	f, err := st.NewFramework(registeredPlugins, "", ctx.Done(),
 		frameworkruntime.WithClientSet(fakeClient),
 		frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 		frameworkruntime.WithInformerFactory(informerFactory),
@@ -351,7 +351,7 @@ func TestPostFilter(t *testing.T) {
 		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 	}
-	f, err := st.NewFramework(registeredPlugins, "",
+	f, err := st.NewFramework(registeredPlugins, "", ctx.Done(),
 		frameworkruntime.WithClientSet(fakeClient),
 		frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 		frameworkruntime.WithInformerFactory(informerFactory),

@@ -25,6 +25,7 @@ import (
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -84,6 +85,7 @@ func TestPodState(t *testing.T) {
 			fh, err := st.NewFramework(
 				registeredPlugins,
 				"default-scheduler",
+				wait.NeverStop,
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(fakeSharedLister),
@@ -190,6 +192,10 @@ var _ framework.SharedLister = &fakeSharedLister{}
 
 type fakeSharedLister struct {
 	nodes []*framework.NodeInfo
+}
+
+func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+	return nil
 }
 
 func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
