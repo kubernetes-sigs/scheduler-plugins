@@ -280,7 +280,7 @@ func (ctrl *PodGroupController) patchPodGroup(old, new *schedv1alpha1.PodGroup) 
 		}
 
 		_, err = ctrl.pgClient.SchedulingV1alpha1().PodGroups(old.Namespace).Patch(context.TODO(), old.Name, types.MergePatchType,
-			patch, metav1.PatchOptions{})
+			patch, metav1.PatchOptions{}, "status")
 		if err != nil {
 			return err
 		}
