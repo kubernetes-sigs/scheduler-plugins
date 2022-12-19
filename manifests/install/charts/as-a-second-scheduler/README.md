@@ -31,16 +31,15 @@ scheduler-plugins-scheduler    1/1     1            1           7s
 
 The following table lists the configurable parameters of the as-a-second-scheduler chart and their default values.
 
-| Parameter                               | Description                   | Default                                                                                         |
-| --------------------------------------- |-------------------------------|-------------------------------------------------------------------------------------------------|
-| `scheduler.name`                        | Scheduler name                | `scheduler-plugins-scheduler`                                                                   |
-| `scheduler.image`                       | Scheduler image               | `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.23.10`                                          |
-| `scheduler.namespace`                   | Scheduler namespace           | `scheduler-plugins`                                                                             |
-| `scheduler.replicaCount`                | Scheduler replicaCount        | `1`                                                                                             |
-| `controller.name`                       | Controller name               | `scheduler-plugins-controller`                                                                  |
-| `controller.image`                      | Controller image              | `k8s.gcr.io/scheduler-plugins/controller:v0.23.10`                                              |
-| `controller.namespace`                  | Controller namespace          | `scheduler-plugins`                                                                             |
-| `controller.replicaCount`               | Controller replicaCount       | `1`                                                                                             |
-| `plugins.enabled`                       | Plugins enabled by default    | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
-| `plugins.disabled`                      | Plugins disabled by default   | `["PrioritySort"]`                                                                              |
-
+| Parameter                 | Description                 | Default                                                                                         |
+|---------------------------|-----------------------------|-------------------------------------------------------------------------------------------------|
+| `scheduler.name`          | Scheduler name              | `scheduler-plugins-scheduler`                                                                   |
+| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9`                                      |
+| `scheduler.namespace`     | Scheduler namespace         | `scheduler-plugins`                                                                             |
+| `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
+| `controller.name`         | Controller name             | `scheduler-plugins-controller`                                                                  |
+| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.24.9`                                          |
+| `controller.namespace`    | Controller namespace        | `scheduler-plugins`                                                                             |
+| `controller.replicaCount` | Controller replicaCount     | `1`                                                                                             |
+| `plugins.enabled`         | Plugins enabled by default  | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
+| `plugins.disabled`        | Plugins disabled by default | `["PrioritySort"]`                                                                              |
