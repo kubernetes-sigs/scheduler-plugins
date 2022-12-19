@@ -2,13 +2,15 @@
 
 ## Table of Contents
 
+<!-- toc -->
 - [Create a Kubernetes Cluster](#create-a-kubernetes-cluster)
 - [Install release v0.24.9 and use Coscheduling](#install-release-v0249-and-use-coscheduling)
-    - [As a second scheduler](#as-a-second-scheduler)
-    - [As a single scheduler(replacing the vanilla default-scheduler)](#as-a-single-schedulerreplacing-the-vanilla-default-scheduler)
+  - [As a second scheduler](#as-a-second-scheduler)
+  - [As a single scheduler (replacing the vanilla default-scheduler)](#as-a-single-scheduler-replacing-the-vanilla-default-scheduler)
 - [Test Coscheduling](#test-coscheduling)
 - [Install old-version releases](#install-old-version-releases)
-- [Uninstall Scheduler-plugins](#uninstall-scheduler-plugins)
+- [Uninstall scheduler-plugins](#uninstall-scheduler-plugins)
+<!-- /toc -->
 
 ## Create a Kubernetes Cluster
 

@@ -1,5 +1,31 @@
 ﻿# KEP: SySched  - System call-based scheduling
 
+## Table of Contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+- [Proposal](#proposal)
+- [User Stories](#user-stories)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [Seccomp](#seccomp)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details: Overall architecture](#design-details-overall-architecture)
+  - [Scheduling Metrics - Extraneous System Call (ExS)](#scheduling-metrics---extraneous-system-call-exs)
+  - [Scheduling Illustrative Example](#scheduling-illustrative-example)
+  - [Scheduling Plugin](#scheduling-plugin)
+    - [<strong>How the Scheduler gets access to pods' system call profiles</strong>](#how-the-scheduler-gets-access-to-pods-system-call-profiles)
+  - [Known limitations](#known-limitations)
+  - [Test plans](#test-plans)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+  - [Graduation criteria](#graduation-criteria)
+- [Implementation history](#implementation-history)
+<!-- /toc -->
+
 ## Summary
 
 We propose the use of pod placement as a way to improve the security of nodes in a cluster. Specifically, we propose a new scheduler scoring plugin (SySched) that enables the ranking of feasible nodes based on the relative risks of pods' system call usage. Key to this risk calculation is the Extraneous System Call (ExS) metric, a metric defined at [IBM Research](https://research.ibm.com/topics/security-research), which measures the amount of excess system call a pod is exposed to on a given node. The benefits of this approach are the following:

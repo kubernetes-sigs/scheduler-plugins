@@ -3,23 +3,21 @@
 ## Table of Contents
 
 <!-- toc -->
-- [Node resources allocatable scoring](#node-resources-allocatable-scoring)
-  - [Table of Contents](#table-of-contents)
-  - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-  - [Use Cases](#use-cases)
-  - [Terms](#terms)
-  - [Proposal](#proposal)
-  - [Design Details](#design-details)
-    - [Extension points](#extension-points)
-      - [Score](#score)
-  - [Known Limitations](#known-limitations)
-  - [Alternatives considered](#alternatives-considered)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Testing Plan](#testing-plan)
-  - [Implementation History](#implementation-history)
-  - [References](#references)
+- [Motivation](#motivation)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
+- [Use Cases](#use-cases)
+- [Terms](#terms)
+- [Proposal](#proposal)
+- [Design Details](#design-details)
+  - [Extension points](#extension-points)
+    - [Score](#score)
+- [Known Limitations](#known-limitations)
+- [Alternatives considered](#alternatives-considered)
+- [Graduation Criteria](#graduation-criteria)
+- [Testing Plan](#testing-plan)
+- [Implementation History](#implementation-history)
+- [References](#references)
 <!-- /toc -->
 
 ## Motivation
