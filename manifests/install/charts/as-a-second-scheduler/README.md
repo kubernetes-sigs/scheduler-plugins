@@ -1,5 +1,16 @@
 # Scheduler-plugins as a second scheduler in cluster
 
+## Table of Contents
+
+<!-- toc -->
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Installing the chart](#installing-the-chart)
+    - [Install chart using Helm v3.0+](#install-chart-using-helm-v30)
+    - [Verify that scheduler and plugin-controller pod are running properly.](#verify-that-scheduler-and-plugin-controller-pod-are-running-properly)
+  - [Configuration](#configuration)
+<!-- /toc -->
+
 ## Installation
 
 Quick start instructions for the setup and configuration of as-a-second-scheduler using Helm.

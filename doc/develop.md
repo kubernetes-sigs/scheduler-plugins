@@ -1,5 +1,14 @@
 # Developer guide
 
+## Table of Contents
+
+<!-- toc -->
+- [How to build](#how-to-build)
+- [How to debug](#how-to-debug)
+- [How to start](#how-to-start)
+- [Before submitting](#before-submitting)
+<!-- /toc -->
+
 ## How to build
 
 This section is about building on the local host, e.g. for debug purpose.
