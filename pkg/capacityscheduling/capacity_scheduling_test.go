@@ -22,11 +22,10 @@ import (
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
-	"k8s.io/apimachinery/pkg/util/wait"
-
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"

@@ -35,10 +35,6 @@ type fakeSharedLister struct {
 	havePodsWithRequiredAntiAffinityNodeInfoList []*framework.NodeInfo
 }
 
-func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
-	return nil
-}
-
 func NewFakeSharedLister(pods []*v1.Pod, nodes []*v1.Node) framework.SharedLister {
 	nodeInfoMap := createNodeInfoMap(pods, nodes)
 	nodeInfos := make([]*framework.NodeInfo, 0, len(nodeInfoMap))
@@ -83,6 +79,10 @@ func createNodeInfoMap(pods []*v1.Pod, nodes []*v1.Node) map[string]*framework.N
 
 func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
+}
+
+func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+	return nil
 }
 
 func (f *fakeSharedLister) List() ([]*framework.NodeInfo, error) {

@@ -1443,7 +1443,6 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 				if err != nil {
 					b.Fatalf("Failed to create Workload %q: %v", p.Name, err)
 				}
-				// b.Logf("Workload %v created  \n", p.Name)
 			}
 
 			registeredPlugins := []st.RegisterPluginFunc{
