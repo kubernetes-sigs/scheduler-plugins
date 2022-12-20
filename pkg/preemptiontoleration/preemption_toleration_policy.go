@@ -30,12 +30,13 @@ const (
 
 // Policy holds preemption toleration policy configuration.  Each property values are annotated in the target PriorityClass resource.
 // Example:
-//   kind: PriorityClass
-//     metadata:
-//     name: toleration-policy-sample
-//     annotation:
-//       preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
-//       preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
+//
+//	kind: PriorityClass
+//	  metadata:
+//	  name: toleration-policy-sample
+//	  annotation:
+//	    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
+//	    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
 type Policy struct {
 	// MinimumPreemptablePriority specifies the minimum priority value that can preempt this priority class.
 	// It defaults to the PriorityClass's priority value + 1 if not set, which means pods that have a higher priority value can preempt it.
