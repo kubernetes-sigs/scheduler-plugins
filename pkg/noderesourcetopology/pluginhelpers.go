@@ -118,6 +118,25 @@ func makePodByResourceList(resources *v1.ResourceList) *v1.Pod {
 	}
 }
 
+func makePodByResourceLists(resources ...v1.ResourceList) *v1.Pod {
+	pod := &v1.Pod{
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{},
+		},
+	}
+
+	for _, r := range resources {
+		pod.Spec.Containers = append(pod.Spec.Containers, v1.Container{
+			Resources: v1.ResourceRequirements{
+				Requests: r,
+				Limits:   r,
+			},
+		})
+	}
+
+	return pod
+}
+
 func makePodWithReqByResourceList(resources *v1.ResourceList) *v1.Pod {
 	return &v1.Pod{
 		Spec: v1.PodSpec{

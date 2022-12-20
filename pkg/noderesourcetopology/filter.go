@@ -119,7 +119,7 @@ func resourcesAvailableInAnyNUMANodes(logID string, numaNodes NUMANodeList, reso
 			}
 
 			hasNUMAAffinity = true
-			if !isNUMANodeSuitable(qos, resource, quantity, numaQuantity) {
+			if !isResourceSetSuitable(qos, resource, quantity, numaQuantity) {
 				continue
 			}
 
@@ -150,7 +150,7 @@ func resourcesAvailableInAnyNUMANodes(logID string, numaNodes NUMANodeList, reso
 	return numaID, ret
 }
 
-func isNUMANodeSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, numaQuantity resource.Quantity) bool {
+func isResourceSetSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, numaQuantity resource.Quantity) bool {
 	// Check for the following:
 	if qos != v1.PodQOSGuaranteed {
 		// 1. set numa node as possible node if resource is memory or Hugepages

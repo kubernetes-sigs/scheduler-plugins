@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -43,11 +44,55 @@ type NUMANode struct {
 
 type NUMANodeList []NUMANode
 
+func subtractFromNUMAs(resources v1.ResourceList, numaNodes NUMANodeList, nodes ...int) {
+	for resName, quantity := range resources {
+		for _, node := range nodes {
+			// quantity is zero no need to iterate through another NUMA node, go to another resource
+			if quantity.IsZero() {
+				break
+			}
+
+			nRes := numaNodes[node].Resources
+			if available, ok := nRes[resName]; ok {
+				switch quantity.Cmp(available) {
+				case 0: // the same
+					// basically zero container resources
+					quantity.Sub(available)
+					// zero NUMA quantity
+					nRes[resName] = resource.Quantity{}
+				case 1: // container wants more resources than available in this NUMA zone
+					// substract NUMA resources from container request, to calculate how much is missing
+					quantity.Sub(available)
+					// zero NUMA quantity
+					nRes[resName] = resource.Quantity{}
+				case -1: // there are more resources available in this NUMA zone than container requests
+					// substract container resources from resources available in this NUMA node
+					available.Sub(quantity)
+					// zero container quantity
+					quantity = resource.Quantity{}
+					nRes[resName] = available
+				}
+			}
+		}
+	}
+}
+
 type filterFn func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
 type scoringFn func(*v1.Pod, topologyv1alpha1.ZoneList) (int64, *framework.Status)
 
 type filterHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]filterFn
 type scoreHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]scoringFn
+
+func leastNUMAscoreHandlers() scoreHandlersMap {
+	return scoreHandlersMap{
+		topologyv1alpha1.SingleNUMANodePodLevel:       leastNUMAPodScopeScore,
+		topologyv1alpha1.SingleNUMANodeContainerLevel: leastNUMAContainerScopeScore,
+		topologyv1alpha1.BestEffortPodLevel:           leastNUMAPodScopeScore,
+		topologyv1alpha1.BestEffortContainerLevel:     leastNUMAContainerScopeScore,
+		topologyv1alpha1.RestrictedPodLevel:           leastNUMAPodScopeScore,
+		topologyv1alpha1.RestrictedContainerLevel:     leastNUMAContainerScopeScore,
+	}
+}
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
@@ -86,12 +131,18 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		resToWeightMap[v1.ResourceName(resource.Name)] = resource.Weight
 	}
 
-	strategy, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
-	if err != nil {
-		return nil, err
-	}
+	var scoringHandlers scoreHandlersMap
 
-	scoringHandlers := newScoringHandlers(strategy, resToWeightMap)
+	if tcfg.ScoringStrategy.Type == apiconfig.LeastNUMANodes {
+		scoringHandlers = leastNUMAscoreHandlers()
+	} else {
+		strategy, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
+		if err != nil {
+			return nil, err
+		}
+
+		scoringHandlers = newScoringHandlers(strategy, resToWeightMap)
+	}
 
 	topologyMatch := &TopologyMatch{
 		filterHandlers:      newFilterHandlers(),
