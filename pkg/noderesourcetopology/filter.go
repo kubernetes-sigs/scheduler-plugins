@@ -208,8 +208,8 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 
 	klog.V(5).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
 	for _, policyName := range nodeTopology.TopologyPolicies {
-		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-			if status := handler.filter(pod, nodeTopology.Zones, nodeInfo); status != nil {
+		if handler, ok := tm.filterHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
+			if status := handler(pod, nodeTopology.Zones, nodeInfo); status != nil {
 				tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
 				return status
 			}

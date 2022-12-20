@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -147,10 +146,10 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 
 	// Each testScenario will describe a set pod requests arrived sequentially to the scoring plugin.
 	type testScenario struct {
-		name         string
-		wantedRes    nodeToScoreMap
-		requests     []podRequests
-		strategyName apiconfig.ScoringStrategyType
+		name      string
+		wantedRes nodeToScoreMap
+		requests  []podRequests
+		strategy  scoreStrategy
 	}
 
 	tests := []testScenario{
@@ -160,10 +159,10 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			// CPU Fraction: 2 / 2 = 100%
 			// Memory Fraction: 20M / 50M = 40%
 			// Node2 score:(100 + 40) / 2 = 70
-			name:         "MostAllocated strategy",
-			wantedRes:    nodeToScoreMap{"Node2": 70},
-			requests:     pRequests,
-			strategyName: apiconfig.MostAllocated,
+			name:      "MostAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node2": 70},
+			requests:  pRequests,
+			strategy:  mostAllocatedScoreStrategy,
 		},
 		{
 			// On 0-MaxNodeScore scale
@@ -171,10 +170,10 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			// CPU Fraction: 2 / 6 = 33%
 			// Memory Fraction: 20M / 60M = 33%
 			// Node3 score: MaxNodeScore - (0.33 - 0.33) = MaxNodeScore
-			name:         "BalancedAllocation strategy",
-			wantedRes:    nodeToScoreMap{"Node3": 100},
-			requests:     pRequests,
-			strategyName: apiconfig.BalancedAllocation,
+			name:      "BalancedAllocation strategy",
+			wantedRes: nodeToScoreMap{"Node3": 100},
+			requests:  pRequests,
+			strategy:  balancedAllocationScoreStrategy,
 		},
 		{
 			// On 0-MaxNodeScore scale
@@ -182,25 +181,22 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			// CPU Fraction: 2 / 4 = 50%
 			// Memory Fraction: 20M / 500M = 4%
 			// Node1 score: ((100 - 50) + (100 - 4)) / 2 = 73
-			name:         "LeastAllocated strategy",
-			wantedRes:    nodeToScoreMap{"Node1": 73},
-			requests:     pRequests,
-			strategyName: apiconfig.LeastAllocated,
+			name:      "LeastAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node1": 73},
+			requests:  pRequests,
+			strategy:  leastAllocatedScoreStrategy,
 		},
 	}
 
 	for _, test := range tests {
 		initTest()
 		t.Run(test.name, func(t *testing.T) {
-			scoringFunction, err := getScoringStrategyFunction(test.strategyName)
-			if err != nil {
-				t.Errorf("%v", err)
-			}
+			scoringHandlers := newScoringHandlers(test.strategy, nil)
 
 			tm := &TopologyMatch{
-				policyHandlers: newPolicyHandlerMap(),
-				scorerFn:       scoringFunction,
-				nrtCache:       nrtcache.NewPassthrough(lister),
+				filterHandlers:  newFilterHandlers(),
+				scoringHandlers: scoringHandlers,
+				nrtCache:        nrtcache.NewPassthrough(lister),
 			}
 
 			for _, req := range test.requests {

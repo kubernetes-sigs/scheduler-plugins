@@ -195,10 +195,21 @@ func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
 	return res
 }
 
-func newPolicyHandlerMap() PolicyHandlerMap {
-	return PolicyHandlerMap{
-		topologyv1alpha1.SingleNUMANodePodLevel:       newPodScopedHandler(),
-		topologyv1alpha1.SingleNUMANodeContainerLevel: newContainerScopedHandler(),
+func newFilterHandlers() filterHandlersMap {
+	return filterHandlersMap{
+		topologyv1alpha1.SingleNUMANodePodLevel:       singleNUMAPodLevelHandler,
+		topologyv1alpha1.SingleNUMANodeContainerLevel: singleNUMAContainerLevelHandler,
+	}
+}
+
+func newScoringHandlers(strategy scoreStrategy, resourceToWeightMap resourceToWeightMap) scoreHandlersMap {
+	return scoreHandlersMap{
+		topologyv1alpha1.SingleNUMANodePodLevel: func(pod *v1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
+			return podScopeScore(pod, zones, strategy, resourceToWeightMap)
+		},
+		topologyv1alpha1.SingleNUMANodeContainerLevel: func(pod *v1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
+			return containerScopeScore(pod, zones, strategy, resourceToWeightMap)
+		},
 	}
 }
 

@@ -43,31 +43,16 @@ type NUMANode struct {
 
 type NUMANodeList []NUMANode
 
-type tmScopeHandler struct {
-	filter func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
-	score  func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status)
-}
+type filterFn func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
+type scoringFn func(*v1.Pod, topologyv1alpha1.ZoneList) (int64, *framework.Status)
 
-func newPodScopedHandler() tmScopeHandler {
-	return tmScopeHandler{
-		filter: singleNUMAPodLevelHandler,
-		score:  podScopeScore,
-	}
-}
-
-func newContainerScopedHandler() tmScopeHandler {
-	return tmScopeHandler{
-		filter: singleNUMAContainerLevelHandler,
-		score:  containerScopeScore,
-	}
-}
-
-type PolicyHandlerMap map[topologyv1alpha1.TopologyManagerPolicy]tmScopeHandler
+type filterHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]filterFn
+type scoreHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]scoringFn
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
-	policyHandlers      PolicyHandlerMap
-	scorerFn            scoreStrategy
+	filterHandlers      filterHandlersMap
+	scoringHandlers     scoreHandlersMap
 	resourceToWeightMap resourceToWeightMap
 	nrtCache            nrtcache.Interface
 }
@@ -96,19 +81,21 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	scoringFunction, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
-	if err != nil {
-		return nil, err
-	}
-
 	resToWeightMap := make(resourceToWeightMap)
 	for _, resource := range tcfg.ScoringStrategy.Resources {
 		resToWeightMap[v1.ResourceName(resource.Name)] = resource.Weight
 	}
 
+	strategy, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
+	if err != nil {
+		return nil, err
+	}
+
+	scoringHandlers := newScoringHandlers(strategy, resToWeightMap)
+
 	topologyMatch := &TopologyMatch{
-		policyHandlers:      newPolicyHandlerMap(),
-		scorerFn:            scoringFunction,
+		filterHandlers:      newFilterHandlers(),
+		scoringHandlers:     scoringHandlers,
 		resourceToWeightMap: resToWeightMap,
 		nrtCache:            nrtCache,
 	}
