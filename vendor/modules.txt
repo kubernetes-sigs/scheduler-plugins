@@ -458,13 +458,14 @@ golang.org/x/tools/internal/typesinternal
 # gomodules.xyz/jsonpatch/v2 v2.2.0
 ## explicit; go 1.12
 gomodules.xyz/jsonpatch/v2
-# gonum.org/v1/gonum v0.6.2
-## explicit; go 1.12
+# gonum.org/v1/gonum v0.12.0
+## explicit; go 1.18
 gonum.org/v1/gonum/blas
 gonum.org/v1/gonum/blas/blas64
 gonum.org/v1/gonum/blas/cblas128
 gonum.org/v1/gonum/blas/gonum
 gonum.org/v1/gonum/floats
+gonum.org/v1/gonum/floats/scalar
 gonum.org/v1/gonum/internal/asm/c128
 gonum.org/v1/gonum/internal/asm/c64
 gonum.org/v1/gonum/internal/asm/f32
