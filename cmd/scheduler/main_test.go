@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +48,7 @@ import (
 
 func TestSetup(t *testing.T) {
 	// temp dir
-	tmpDir, err := ioutil.TempDir("", "scheduler-options")
+	tmpDir, err := os.MkdirTemp("", "scheduler-options")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +63,7 @@ func TestSetup(t *testing.T) {
 	defer server.Close()
 
 	configKubeconfig := filepath.Join(tmpDir, "config.kubeconfig")
-	if err := ioutil.WriteFile(configKubeconfig, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(configKubeconfig, []byte(fmt.Sprintf(`
 apiVersion: v1
 kind: Config
 clusters:
@@ -88,7 +87,7 @@ users:
 
 	// PodState plugin config
 	podStateConfigFile := filepath.Join(tmpDir, "podState.yaml")
-	if err := ioutil.WriteFile(podStateConfigFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(podStateConfigFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta2
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -115,7 +114,7 @@ profiles:
 
 	// QOSSort plugin config
 	qosSortConfigFile := filepath.Join(tmpDir, "qosSort.yaml")
-	if err := ioutil.WriteFile(qosSortConfigFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(qosSortConfigFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -145,7 +144,7 @@ profiles:
 
 	// Coscheduling plugin config
 	coschedulingConfigFile := filepath.Join(tmpDir, "coscheduling.yaml")
-	if err := ioutil.WriteFile(coschedulingConfigFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(coschedulingConfigFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -177,7 +176,7 @@ profiles:
 
 	// NodeResourcesAllocatable plugin config with arguments
 	nodeResourcesAllocatableConfigWithArgsFile := filepath.Join(tmpDir, "nodeResourcesAllocatable-with-args.yaml")
-	if err := ioutil.WriteFile(nodeResourcesAllocatableConfigWithArgsFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(nodeResourcesAllocatableConfigWithArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -204,7 +203,7 @@ profiles:
 
 	// CapacityScheduling plugin config with arguments
 	capacitySchedulingConfigv1beta2 := filepath.Join(tmpDir, "capacityScheduling-v1beta2.yaml")
-	if err := ioutil.WriteFile(capacitySchedulingConfigv1beta2, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(capacitySchedulingConfigv1beta2, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta2
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -227,7 +226,7 @@ profiles:
 		t.Fatal(err)
 	}
 	capacitySchedulingConfigv1beta3 := filepath.Join(tmpDir, "capacityScheduling-v1beta3.yaml")
-	if err := ioutil.WriteFile(capacitySchedulingConfigv1beta3, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(capacitySchedulingConfigv1beta3, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -252,7 +251,7 @@ profiles:
 
 	// TargetLoadPacking plugin config with arguments
 	targetLoadPackingConfigWithArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-args.yaml")
-	if err := ioutil.WriteFile(targetLoadPackingConfigWithArgsFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(targetLoadPackingConfigWithArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -278,7 +277,7 @@ profiles:
 
 	// TargetLoadPacking plugin config with Prometheus Metric Provider arguments
 	targetLoadPackingConfigWithPrometheusArgsFile := filepath.Join(tmpDir, "targetLoadPacking-with-prometheus-args.yaml")
-	if err := ioutil.WriteFile(targetLoadPackingConfigWithPrometheusArgsFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(targetLoadPackingConfigWithPrometheusArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -308,7 +307,7 @@ profiles:
 
 	// LoadVariationRiskBalancing plugin config with arguments
 	loadVariationRiskBalancingConfigWithArgsFile := filepath.Join(tmpDir, "loadVariationRiskBalancing-with-args.yaml")
-	if err := ioutil.WriteFile(loadVariationRiskBalancingConfigWithArgsFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(loadVariationRiskBalancingConfigWithArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -335,7 +334,7 @@ profiles:
 
 	// NodeResourceTopologyMatch plugin config
 	nodeResourceTopologyMatchConfigWithArgsFile := filepath.Join(tmpDir, "nodeResourceTopologyMatch.yaml")
-	if err := ioutil.WriteFile(nodeResourceTopologyMatchConfigWithArgsFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(nodeResourceTopologyMatchConfigWithArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -358,7 +357,7 @@ profiles:
 
 	// topologicalSort plugin config
 	topologicalSortConfigFile := filepath.Join(tmpDir, "topologicalSort.yaml")
-	if err := ioutil.WriteFile(topologicalSortConfigFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(topologicalSortConfigFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -388,7 +387,7 @@ profiles:
 
 	// networkOverhead plugin config
 	networkOverheadConfigWithArgsFile := filepath.Join(tmpDir, "networkOverhead.yaml")
-	if err := ioutil.WriteFile(networkOverheadConfigWithArgsFile, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(networkOverheadConfigWithArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
@@ -414,7 +413,7 @@ profiles:
 
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
-	if err := ioutil.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
+	if err := os.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
