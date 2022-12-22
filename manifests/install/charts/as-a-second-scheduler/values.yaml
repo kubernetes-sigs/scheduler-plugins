@@ -5,14 +5,14 @@
 
 scheduler:
   name: scheduler-plugins-scheduler
-  image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.23.10
+  image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9
   namespace: scheduler-plugins
   replicaCount: 1
   leaderElect: false
 
 controller:
   name: scheduler-plugins-controller
-  image: k8s.gcr.io/scheduler-plugins/controller:v0.23.10
+  image: registry.k8s.io/scheduler-plugins/controller:v0.24.9
   namespace: scheduler-plugins
   replicaCount: 1
 

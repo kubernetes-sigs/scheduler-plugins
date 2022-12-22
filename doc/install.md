@@ -2,13 +2,15 @@
 
 ## Table of Contents
 
+<!-- toc -->
 - [Create a Kubernetes Cluster](#create-a-kubernetes-cluster)
-- [Install release v0.23.10 and use Coscheduling](#install-release-v02310-and-use-coscheduling)
-    - [As a second scheduler](#as-a-second-scheduler)
-    - [As a single scheduler(replacing the vanilla default-scheduler)](#as-a-single-schedulerreplacing-the-vanilla-default-scheduler)
+- [Install release v0.24.9 and use Coscheduling](#install-release-v0249-and-use-coscheduling)
+  - [As a second scheduler](#as-a-second-scheduler)
+  - [As a single scheduler (replacing the vanilla default-scheduler)](#as-a-single-scheduler-replacing-the-vanilla-default-scheduler)
 - [Test Coscheduling](#test-coscheduling)
 - [Install old-version releases](#install-old-version-releases)
-- [Uninstall Scheduler-plugins](#uninstall-scheduler-plugins)
+- [Uninstall scheduler-plugins](#uninstall-scheduler-plugins)
+<!-- /toc -->
 
 ## Create a Kubernetes Cluster
 
@@ -22,7 +24,7 @@ If you do not have a cluster yet, create one by using one of the following provi
 * [kubeadm](https://kubernetes.io/docs/admin/kubeadm/)
 * [minikube](https://minikube.sigs.k8s.io/)
 
-## Install release v0.23.10 and use Coscheduling
+## Install release v0.24.9 and use Coscheduling
 
 Note: we provide two ways to install the scheduler-plugin artifacts: as a second scheduler
 and as a single scheduler. Their pros and cons are as below:
@@ -144,9 +146,9 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     >     - --kubeconfig=/etc/kubernetes/scheduler.conf
     >     - --leader-elect=true
     19,20c20
-    <     image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.23.10
+    <     image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9
     ---
-    >     image: k8s.gcr.io/kube-scheduler:v1.23.10
+    >     image: k8s.gcr.io/kube-scheduler:v1.24.9
     50,52d49
     <     - mountPath: /etc/kubernetes/sched-cc.yaml
     <       name: sched-cc
@@ -165,7 +167,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     kube-scheduler-kind-control-plane            1/1     Running   0          3m27s
  
     $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}{'\n'}"
-    k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.23.10
+    k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9
     ```
    
     > **⚠️Troubleshooting:** If the kube-scheudler is not up, you may need to restart kubelet service inside the kind control plane (`systemctl restart kubelet.service`)

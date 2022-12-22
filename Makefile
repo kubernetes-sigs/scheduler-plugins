@@ -124,6 +124,7 @@ verify:
 	hack/verify-gofmt.sh
 	hack/verify-crdgen.sh
 	hack/verify-structured-logging.sh
+	hack/verify-toc.sh
 
 .PHONY: clean
 clean:

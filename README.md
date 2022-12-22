@@ -13,8 +13,8 @@ for the kube-scheduler and one for the controller. See the [Compatibility Matrix
 for the complete list of images.
 
 ```shell
-docker pull k8s.gcr.io/scheduler-plugins/kube-scheduler:$TAG
-docker pull k8s.gcr.io/scheduler-plugins/controller:$TAG
+docker pull registry.k8s.io/scheduler-plugins/kube-scheduler:$TAG
+docker pull registry.k8s.io/scheduler-plugins/controller:$TAG
 ```
 
 You can find [how to install release image](doc/install.md) here.
@@ -54,24 +54,26 @@ on demand, (e.g., `v0.18.800`) are used to indicated that the k8s client package
 changed since the previous release, and that only scheduler plugins code (features or bug fixes) was
 changed.
 
-| Scheduler Plugins | Compiled With k8s Version | Container Image                                      | Arch           |
-|-------------------|---------------------------|------------------------------------------------------|----------------|
-| v0.23.10          | v1.23.10                  | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.23.10 | AMD64<br>ARM64 |
-| v0.22.6           | v1.22.6                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.22.6  | AMD64<br>ARM64 |
-| v0.21.6           | v1.21.6                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.21.6  | AMD64<br>ARM64 |
-| v0.20.10          | v1.20.10                  | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.20.10 | AMD64<br>ARM64 |
-| v0.19.9           | v1.19.9                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.9  | AMD64<br>ARM64 |
-| v0.19.8           | v1.19.8                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.19.8  | AMD64<br>ARM64 |
-| v0.18.9           | v1.18.9                   | k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.18.9  | AMD64          |
+| Scheduler Plugins | Compiled With k8s Version | Container Image                                           | Arch           |
+|-------------------|---------------------------|-----------------------------------------------------------|----------------|
+| v0.24.9           | v1.24.9                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9  | AMD64<br>ARM64 |
+| v0.23.10          | v1.23.10                  | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.23.10 | AMD64<br>ARM64 |
+| v0.22.6           | v1.22.6                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.22.6  | AMD64<br>ARM64 |
+| v0.21.6           | v1.21.6                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.21.6  | AMD64<br>ARM64 |
+| v0.20.10          | v1.20.10                  | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.20.10 | AMD64<br>ARM64 |
+| v0.19.9           | v1.19.9                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.19.9  | AMD64<br>ARM64 |
+| v0.19.8           | v1.19.8                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.19.8  | AMD64<br>ARM64 |
+| v0.18.9           | v1.18.9                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.18.9  | AMD64          |
 
-| Controller | Compiled With k8s Version | Container Image                                  | Arch           |
-|------------|---------------------------|--------------------------------------------------|----------------|
-| v0.23.10   | v1.23.10                  | k8s.gcr.io/scheduler-plugins/controller:v0.23.10 | AMD64<br>ARM64 |
-| v0.22.6    | v1.22.6                   | k8s.gcr.io/scheduler-plugins/controller:v0.22.6  | AMD64<br>ARM64 |
-| v0.21.6    | v1.21.6                   | k8s.gcr.io/scheduler-plugins/controller:v0.21.6  | AMD64<br>ARM64 |
-| v0.20.10   | v1.20.10                  | k8s.gcr.io/scheduler-plugins/controller:v0.20.10 | AMD64<br>ARM64 |
-| v0.19.9    | v1.19.9                   | k8s.gcr.io/scheduler-plugins/controller:v0.19.9  | AMD64<br>ARM64 |
-| v0.19.8    | v1.19.8                   | k8s.gcr.io/scheduler-plugins/controller:v0.19.8  | AMD64<br>ARM64 |
+| Controller | Compiled With k8s Version | Container Image                                       | Arch           |
+|------------|---------------------------|-------------------------------------------------------|----------------|
+| v0.24.9    | v1.24.9                   | registry.k8s.io/scheduler-plugins/controller:v0.24.9  | AMD64<br>ARM64 |
+| v0.23.10   | v1.23.10                  | registry.k8s.io/scheduler-plugins/controller:v0.23.10 | AMD64<br>ARM64 |
+| v0.22.6    | v1.22.6                   | registry.k8s.io/scheduler-plugins/controller:v0.22.6  | AMD64<br>ARM64 |
+| v0.21.6    | v1.21.6                   | registry.k8s.io/scheduler-plugins/controller:v0.21.6  | AMD64<br>ARM64 |
+| v0.20.10   | v1.20.10                  | registry.k8s.io/scheduler-plugins/controller:v0.20.10 | AMD64<br>ARM64 |
+| v0.19.9    | v1.19.9                   | registry.k8s.io/scheduler-plugins/controller:v0.19.9  | AMD64<br>ARM64 |
+| v0.19.8    | v1.19.8                   | registry.k8s.io/scheduler-plugins/controller:v0.19.8  | AMD64<br>ARM64 |
 
 ## Community, discussion, contribution, and support
 
