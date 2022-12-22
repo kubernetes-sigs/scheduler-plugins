@@ -3,22 +3,20 @@
 ## Table of Contents
 
 <!-- toc -->
-- [Coscheduling based on PodGroup CRD](#Coscheduling based on PodGroup CRD)
-  - [Table of Contents](#table-of-contents)
-  - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-  - [Use Cases](#use-cases)
-  - [Design Details](#design-details)
-    - [PodGroup](#podgroup)
-    - [Controller](#controller)
-    - [Extension points](#extension-points)
-      - [QueueSort](#queuesort)
-      - [PreFilter](#prefilter)
-      - [PostFilter](#postfilter)
-      - [Permit](#permit)
-      - [PostBind](#postbind)
-  - [Known Limitations](#Known Limitations)
+- [Motivation](#motivation)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
+- [Use Cases](#use-cases)
+- [Design Details](#design-details)
+  - [PodGroup](#podgroup)
+  - [Controller](#controller)
+  - [Extension points](#extension-points)
+    - [QueueSort](#queuesort)
+    - [PreFilter](#prefilter)
+    - [PostFilter](#postfilter)
+    - [Permit](#permit)
+    - [PostBind](#postbind)
+  - [Known Limitations](#known-limitations)
 <!-- /toc -->
 
 ## Motivation

@@ -1,5 +1,7 @@
 # Topology Aware Scheduling
 
+## Table of Contents
+
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -8,9 +10,10 @@
 - [Proposal](#proposal)
   - [Topology format](#topology-format)
   - [CRD API](#crd-api)
-  - [Plugin implementation details](#plugin-implementation-details)
-    - [Topology information in the NodeResourceTopologyMatch plugin](#topology-information-in-the-noderesourcetopologymatch-plugin)
-    - [Description of the Algorithm](#description-of-the-algorithm)
+  - [Filter and Score plugins implementation details](#filter-and-score-plugins-implementation-details)
+    - [Topology information in the NodeResourceTopologyMatch Filter and NodeResourceTopologyResourceAllocationScore Score plugin](#topology-information-in-the-noderesourcetopologymatch-filter-and-noderesourcetopologyresourceallocationscore-score-plugin)
+    - [Description of the Filter Algorithm](#description-of-the-filter-algorithm)
+    - [Description of the Score Algorithm](#description-of-the-score-algorithm)
   - [Accessing NodeResourceTopology CRD](#accessing-noderesourcetopology-crd)
 - [Use cases](#use-cases)
 - [Known limitations](#known-limitations)

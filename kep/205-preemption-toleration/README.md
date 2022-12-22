@@ -1,21 +1,22 @@
 # Preemption Toleration <!-- omit in toc -->
 
-## Table of Contents <!-- omit in toc -->
+## Table of Contents
+
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-	- [Goals](#goals)
-	- [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Use Cases](#use-cases)
-	- [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority)
-	- [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time)
+  - [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority)
+  - [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time)
 - [Design Details](#design-details)
-	- [Preemption Toleration API](#preemption-toleration-api)
-	- [Implementing Typical Use Cases by Preemption Toleration APIs](#implementing-typical-use-cases-by-preemption-toleration-apis)
-		- [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority-1)
-		- [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time-1)
-	- [Plugin implementation](#plugin-implementation)
-		- [PostFilter](#postfilter)
+  - [Preemption Toleration API](#preemption-toleration-api)
+  - [Implementing Typical Use Cases by Preemption Toleration APIs](#implementing-typical-use-cases-by-preemption-toleration-apis)
+    - [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority-1)
+    - [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time-1)
+  - [Plugin implementation](#plugin-implementation)
+    - [PostFilter](#postfilter)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 

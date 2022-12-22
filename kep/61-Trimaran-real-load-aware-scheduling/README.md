@@ -1,5 +1,38 @@
 # KEP - Trimaran: Real Load Aware Scheduling
 
+## Table of Contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Metrics Provider](#metrics-provider)
+  - [Load Watcher/Load Analyser](#load-watcherload-analyser)
+  - [DB](#db)
+  - [Scheduler Plugins](#scheduler-plugins)
+  - [TargetLoadPacking Plugin](#targetloadpacking-plugin)
+    - [Score plugin](#score-plugin)
+  - [LoadVariationRiskBalancing Plugin](#loadvariationriskbalancing-plugin)
+    - [Score plugin](#score-plugin-1)
+  - [<strong>Bad Metrics</strong>](#bad-metrics)
+  - [<strong>Load Watcher API</strong>](#load-watcher-api)
+  - [<strong>Scheduled Pods State</strong>](#scheduled-pods-state)
+  - [<strong>Test Plan</strong>](#test-plan)
+- [<strong>Production Readiness Review Questionnaire</strong>](#production-readiness-review-questionnaire)
+  - [<strong>Scalability</strong>](#scalability)
+  - [<strong>Troubleshooting</strong>](#troubleshooting)
+- [<strong>Implementation History</strong>](#implementation-history)
+- [<strong>Appendix</strong>](#appendix)
+      - [Load Watcher JSON schema](#load-watcher-json-schema)
+<!-- /toc -->
 
 ## Summary
 
