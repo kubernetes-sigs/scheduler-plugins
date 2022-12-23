@@ -21,12 +21,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
@@ -37,6 +40,7 @@ import (
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	schedconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
@@ -44,8 +48,12 @@ import (
 )
 
 const (
-	defaultCacheResyncPeriodSeconds = 5
-	anyNode                         = "*"
+	defaultCacheResyncPeriodSeconds int64 = 5
+	anyNode                               = "*"
+)
+
+var (
+	schedVerbose = "0"
 )
 
 type podDesc struct {
@@ -75,17 +83,14 @@ type testCase struct {
 
 func init() {
 	klog.InitFlags(nil)
+	if val, ok := os.LookupEnv("SCHED_PLUGINS_TEST_VERBOSE"); ok {
+		schedVerbose = val
+	}
 }
 
 func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
-	verbose := "0"
-	if val, ok := os.LookupEnv("SCHED_PLUGINS_TEST_VERBOSE"); ok {
-		verbose = val
-	}
 
-	cacheResyncPeriod := int64(defaultCacheResyncPeriodSeconds)
-
-	os.Args = []string{"unused", "-logtostderr", "-v", verbose}
+	os.Args = []string{"unused", "-logtostderr", "-v", schedVerbose}
 	klog.Infof("args = %v", os.Args[1:])
 	flag.Parse()
 
@@ -159,32 +164,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: "",
 				},
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
-					Zone(
-						topologyv1alpha1.ResourceInfoList{
-							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
-							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
-						}).
-					Zone(
-						topologyv1alpha1.ResourceInfoList{
-							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
-							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
-						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
-					Zone(
-						topologyv1alpha1.ResourceInfoList{
-							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
-							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
-							noderesourcetopology.MakeTopologyResInfo(nicResourceName, "2", "2"),
-						}).
-					Zone(
-						topologyv1alpha1.ResourceInfoList{
-							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
-							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
-							noderesourcetopology.MakeTopologyResInfo(nicResourceName, "2", "2"),
-						}).Obj(),
-			},
+			nodeResourceTopologies: makeTestFullyAvailableNRTs(),
 		},
 		{
 			name: "GU pod: pessimistic cache overallocation prevents pod to be scheduled",
@@ -313,7 +293,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				Name: noderesourcetopology.Name,
 				Args: &schedconfig.NodeResourceTopologyMatchArgs{
 					ScoringStrategy:          schedconfig.ScoringStrategy{Type: schedconfig.LeastAllocated},
-					CacheResyncPeriodSeconds: cacheResyncPeriod,
+					CacheResyncPeriodSeconds: defaultCacheResyncPeriodSeconds,
 				},
 			})
 
@@ -413,22 +393,292 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				if err != nil {
 					klog.Infof("%v", err)
 				}
-				if p.expectedNode == nodeName {
-					t.Logf("Pod %q is on a nodes as expected.", p.pod.Name)
-				} else if p.expectedNode == anyNode {
-					if nodeName == "" {
-						t.Errorf("Pod %q is expected to be running on any node, but still pending", p.pod.Name)
-					} else {
-						t.Logf("Pod %q is running, any node is fine (currently on %q)", p.pod.Name, nodeName)
-					}
-				} else if p.expectedNode == "" {
-					t.Errorf("Pod %q is expected to be pending, but found on node %q", p.pod.Name, nodeName)
-				} else {
-					t.Errorf("Pod %q is expected on node %q, but found on node %q", p.pod.Name, p.expectedNode, nodeName)
+
+				if !podMatchesExpectedNode(p.pod.Namespace, p.pod.Name, nodeName, p.expectedNode) {
+					t.Errorf("misplaced pod: %q", p.pod.Name)
 				}
 			}
 
 			t.Logf("Case %v finished", tt.name)
 		})
 	}
+}
+
+func TestTopologyCachePluginWithUpdates(t *testing.T) {
+
+	os.Args = []string{"unused", "-logtostderr", "-v", schedVerbose}
+	klog.Infof("args = %v", os.Args[1:])
+	flag.Parse()
+
+	tt := testCase{
+		name: "GU pod: pessimistic cache overallocation prevents pod to be scheduled until resync happens",
+		podDescs: []podDesc{
+			// each pod asks > 50% CPUs on NUMA zones; thus, the NRT overallocation will pessimistically
+			// overreserve > 50% CPUs on the node. Note the NodeResourceFit plugin must still pass
+			{
+				podName:      "nrt-wkp-pod-1000",
+				isGuaranteed: true,
+				resourcesMap: map[string]string{
+					string(corev1.ResourceCPU):    "24",
+					string(corev1.ResourceMemory): "12Gi",
+				},
+				expectedNode: "fake-node-cache-1",
+			},
+			{
+				podName:      "nrt-wkp-pod-2000",
+				isGuaranteed: true,
+				resourcesMap: map[string]string{
+					string(corev1.ResourceCPU):    "24",
+					string(corev1.ResourceMemory): "12Gi",
+				},
+				expectedNode: "fake-node-cache-1",
+			},
+		},
+		nodeResourceTopologies: makeTestFullyAvailableNRTSingle(),
+	}
+
+	// because caching, each testcase needs to run from a clean slate
+	testCtx := &testContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
+	testCtx.ClientSet = cs
+	testCtx.KubeConfig = globalKubeConfig
+
+	if err := waitForNRT(cs); err != nil {
+		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
+	}
+
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
+
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	matchArgs := schedconfig.NodeResourceTopologyMatchArgs{
+		ScoringStrategy:          schedconfig.ScoringStrategy{Type: schedconfig.LeastAllocated},
+		CacheResyncPeriodSeconds: defaultCacheResyncPeriodSeconds,
+	}
+
+	cfg.Profiles[0].Plugins.Filter.Enabled = append(cfg.Profiles[0].Plugins.Filter.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].Plugins.Reserve.Enabled = append(cfg.Profiles[0].Plugins.Reserve.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].Plugins.Score.Enabled = append(cfg.Profiles[0].Plugins.Score.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: noderesourcetopology.Name,
+		Args: &matchArgs,
+	})
+
+	defer func() {
+		cleanupTest(t, testCtx)
+		klog.Infof("test environment cleaned up")
+	}()
+
+	if err := createNodesFromNodeResourceTopologies(cs, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	var pods []*corev1.Pod
+	for idx := range tt.podDescs {
+		p := &tt.podDescs[idx]
+		if p.isDelete {
+			continue
+		}
+
+		p.SetupPod(ns, false)
+		pods = append(pods, p.pod)
+		klog.Infof("Prepared pod: %s", p.pod.Name)
+	}
+
+	t.Logf("Start-topology-match-cache-test %q", tt.name)
+	defer cleanupNodeResourceTopologies(testCtx.Ctx, extClient, tt.nodeResourceTopologies)
+	defer func() {
+		cleanupPods(t, testCtx, pods)
+		klog.Infof("Pods cleaned up")
+	}()
+
+	klog.Infof("Creating %d NRT objects", len(tt.nodeResourceTopologies))
+	if err := createNodeResourceTopologies(testCtx.Ctx, extClient, tt.nodeResourceTopologies); err != nil {
+		t.Fatal(err)
+	}
+
+	testCtx = initTestSchedulerWithOptions(
+		t,
+		testCtx,
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
+	)
+	syncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
+	klog.Infof("init scheduler success")
+
+	for idx := range tt.podDescs {
+		p := &tt.podDescs[idx]
+		klog.Infof("Creating Pod %q", p.pod.Name)
+		_, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, p.pod, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatalf("Failed to create Pod %q: %v", p.pod.Name, err)
+		}
+	}
+
+	scheduledPods, _, _ := waitForPodList(cs, tt.podDescs, 1*time.Minute)
+	expectedScheduled := 1
+	if len(scheduledPods) != expectedScheduled {
+		t.Fatalf("pods scheduled %d expected %d", len(scheduledPods), expectedScheduled)
+	}
+
+	// we want to run concurrently with the resync loop is running.
+	go func() {
+		updatedNRTs := []*topologyv1alpha1.NodeResourceTopology{
+			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				Annotations(map[string]string{
+					podfingerprint.Annotation: mkPFP("fake-node-cache-1", tt.podDescs[0].pod),
+				}).
+				Zone(
+					topologyv1alpha1.ResourceInfoList{
+						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "6"),
+						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "48Gi"),
+					}).
+				Zone(
+					topologyv1alpha1.ResourceInfoList{
+						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+					}).Obj(),
+		}
+
+		// wait some time to have reasonnable chance to hit while the resync loop is running
+		time.Sleep(time.Duration(3*matchArgs.CacheResyncPeriodSeconds) * time.Second)
+
+		// first update: this is supposed to trigger the cache update because PFP are expected to match
+		klog.Infof("updating %d NRTs", len(updatedNRTs))
+		err = updateNodeResourceTopologies(testCtx.Ctx, extClient, updatedNRTs)
+		if err != nil {
+			// we can call t.Fatalf only on the main goroutine, so we just log
+			klog.ErrorS(err, "cannot update NRTs")
+		}
+		klog.Infof("updated %d NRTs", len(updatedNRTs))
+
+		// When will the resync loop trigger? we can't predict. So we wait "long enough" before to send the trigger event
+		time.Sleep(time.Duration(5*matchArgs.CacheResyncPeriodSeconds) * time.Second)
+
+		updatedNRTs = []*topologyv1alpha1.NodeResourceTopology{
+			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				Annotations(map[string]string{
+					podfingerprint.Annotation: mkPFP("fake-node-cache-1", tt.podDescs[0].pod),
+					"foo":                     "bar", // we need _ANY_ change to the object to trigger the update
+				}).
+				Zone(
+					topologyv1alpha1.ResourceInfoList{
+						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "6"),
+						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "48Gi"),
+					}).
+				Zone(
+					topologyv1alpha1.ResourceInfoList{
+						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+					}).Obj(),
+		}
+
+		// second update. This will trigger the reschedule attempt, cache content won't change.
+		klog.Infof("updating %d NRTs", len(updatedNRTs))
+		err = updateNodeResourceTopologies(testCtx.Ctx, extClient, updatedNRTs)
+		if err != nil {
+			// we can call t.Fatalf only on the main goroutine, so we just log
+			klog.ErrorS(err, "cannot update NRTs")
+		}
+		klog.Infof("updated %d NRTs", len(updatedNRTs))
+
+	}()
+
+	// we need a very generous timeout here to make sure the resync code in the scheduler plugin catches up
+	scheduledPods, pendingPods, failedPods := waitForPodList(cs, tt.podDescs, 5*time.Minute)
+
+	if len(failedPods) > 0 {
+		var sb strings.Builder
+		for name, err := range failedPods {
+			fmt.Fprintf(&sb, "[%s: %v] ", name, err)
+		}
+		t.Fatalf("failed pods: %s", sb.String())
+	}
+
+	expectedScheduled = 2
+	if len(scheduledPods) != expectedScheduled {
+		t.Fatalf("pods running %d expected %d", len(scheduledPods), expectedScheduled)
+	}
+	if len(pendingPods) > 0 {
+		t.Fatalf("expected non-running pods 0 got %d", len(pendingPods))
+	}
+
+	t.Logf("Case %v finished", tt.name)
+}
+
+func waitForPodList(cs clientset.Interface, podDescs []podDesc, timeout time.Duration) ([]*corev1.Pod, []*corev1.Pod, map[string]error) {
+	var lock sync.Mutex
+	var scheduled []*corev1.Pod
+	var pending []*corev1.Pod
+	failed := make(map[string]error)
+
+	var wg sync.WaitGroup
+	for _, podDesc := range podDescs {
+		wg.Add(1)
+		go func(pod *corev1.Pod, expectedNode string) {
+			defer wg.Done()
+
+			var updatedPod *corev1.Pod
+			err := wait.Poll(5*time.Second, timeout, func() (bool, error) {
+				var nerr error
+				updatedPod, nerr = cs.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+				if nerr != nil {
+					klog.ErrorS(nerr, "Failed to get pod", "pod", klog.KRef(pod.Namespace, pod.Name))
+					return false, nerr
+				}
+
+				return podMatchesExpectedNode(updatedPod.Namespace, updatedPod.Name, updatedPod.Spec.NodeName, expectedNode), nil
+			})
+
+			// TODO: channels would be nicer
+			lock.Lock()
+			if err != nil {
+				failed[updatedPod.Name] = err
+			} else if expectedNode == "" {
+				pending = append(pending, updatedPod)
+			} else {
+				scheduled = append(scheduled, updatedPod)
+			}
+			lock.Unlock()
+		}(podDesc.pod, podDesc.expectedNode)
+	}
+	wg.Wait()
+	return scheduled, pending, failed
+}
+
+func podMatchesExpectedNode(podNamespace, podName, nodeName, expectedNode string) bool {
+	if expectedNode == nodeName {
+		klog.Infof("Pod %s/%s is on node %q as expected.", podNamespace, podName, nodeName)
+		return true
+	} else if expectedNode == anyNode {
+		if nodeName != "" {
+			klog.Infof("Pod %s/%s is running, any node is fine (currently on %q)", podNamespace, podName, nodeName)
+			return true
+		}
+		klog.Infof("Pod %s/%s is expected to be bound to any node, but still pending", podNamespace, podName)
+	} else if expectedNode == "" {
+		klog.Infof("Pod %s/%s is expected to be pending, but found on node %q", podNamespace, podName, nodeName)
+	} else {
+		klog.Infof("Pod %s/%s is expected on node %q, but found on node %q", podNamespace, podName, expectedNode, nodeName)
+	}
+	return false
+}
+
+func mkPFP(nodeName string, pods ...*corev1.Pod) string {
+	var st podfingerprint.Status
+	fp := podfingerprint.NewTracingFingerprint(len(pods), &st)
+	for _, pod := range pods {
+		fp.AddPod(pod)
+	}
+	pfp := fp.Sign()
+	klog.Infof("PFP for %q: %s", nodeName, st.Repr())
+	return pfp
 }

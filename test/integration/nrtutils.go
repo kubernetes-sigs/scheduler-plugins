@@ -32,6 +32,7 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	scheconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -99,6 +100,32 @@ func createNodeResourceTopologies(ctx context.Context, topologyClient *versioned
 	return nil
 }
 
+func updateNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) error {
+	for _, nrt := range noderesourcetopologies {
+		updatedNrt, err := topologyClient.TopologyV1alpha1().NodeResourceTopologies().Get(ctx, nrt.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		obj := updatedNrt.DeepCopy()
+		if obj.Annotations == nil {
+			obj.Annotations = make(map[string]string)
+		}
+		for key, value := range nrt.Annotations {
+			obj.Annotations[key] = value
+		}
+
+		obj.TopologyPolicies = nrt.TopologyPolicies // TODO: shallow copy
+		obj.Zones = nrt.Zones.DeepCopy()
+
+		_, err = topologyClient.TopologyV1alpha1().NodeResourceTopologies().Update(ctx, obj, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha1.NodeResourceTopology) {
 	for _, nrt := range noderesourcetopologies {
 		err := topologyClient.TopologyV1alpha1().NodeResourceTopologies().Delete(ctx, nrt.Name, metav1.DeleteOptions{})
@@ -140,6 +167,16 @@ func (n *nrtWrapper) Zone(resInfo topologyv1alpha1.ResourceInfoList) *nrtWrapper
 		Resources: resInfo,
 	}
 	n.nrt.Zones = append(n.nrt.Zones, z)
+	return n
+}
+
+func (n *nrtWrapper) Annotations(anns map[string]string) *nrtWrapper {
+	if n.nrt.Annotations == nil {
+		n.nrt.Annotations = make(map[string]string)
+	}
+	for key, val := range anns {
+		n.nrt.Annotations[key] = val
+	}
 	return n
 }
 
@@ -210,4 +247,39 @@ func resMapToString(resMap map[corev1.ResourceName]string) string {
 		resItems = append(resItems, resName+"="+qty)
 	}
 	return strings.Join(resItems, ",")
+}
+
+func makeTestFullyAvailableNRTSingle() []*topologyv1alpha1.NodeResourceTopology {
+	return []*topologyv1alpha1.NodeResourceTopology{
+		MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			Zone(
+				topologyv1alpha1.ResourceInfoList{
+					noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+					noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+				}).
+			Zone(
+				topologyv1alpha1.ResourceInfoList{
+					noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+					noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+				}).Obj(),
+	}
+}
+
+func makeTestFullyAvailableNRTs() []*topologyv1alpha1.NodeResourceTopology {
+	nrts := makeTestFullyAvailableNRTSingle()
+	return append(nrts,
+		MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			Zone(
+				topologyv1alpha1.ResourceInfoList{
+					noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+					noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+					noderesourcetopology.MakeTopologyResInfo(nicResourceName, "2", "2"),
+				}).
+			Zone(
+				topologyv1alpha1.ResourceInfoList{
+					noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
+					noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
+					noderesourcetopology.MakeTopologyResInfo(nicResourceName, "2", "2"),
+				}).Obj(),
+	)
 }
