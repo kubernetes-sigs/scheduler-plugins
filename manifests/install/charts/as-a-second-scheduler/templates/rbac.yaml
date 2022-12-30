@@ -64,7 +64,7 @@ rules:
   verbs: ["get", "list", "watch"]
 # resources need to be updated with the scheduler plugins used
 - apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding
@@ -96,7 +96,7 @@ rules:
   verbs: ["get", "list", "watch"]
 # resources need to be updated with the scheduler plugins used
 - apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding
