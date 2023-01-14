@@ -17,6 +17,7 @@ limitations under the License.
 package util
 
 import (
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kube-scheduler/config/v1beta3"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/scheme"
@@ -36,7 +37,7 @@ func NewFramework(fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profi
 		f(&registry, profile)
 	}
 	profile.PluginConfig = cfgs
-	return runtime.NewFramework(registry, profile, opts...)
+	return runtime.NewFramework(registry, profile, wait.NeverStop, opts...)
 }
 
 // NewDefaultSchedulerComponentConfig returns a default scheduler cc object.

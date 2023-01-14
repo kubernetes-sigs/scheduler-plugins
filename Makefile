@@ -121,6 +121,7 @@ integration-test: install-envtest
 
 .PHONY: verify
 verify:
+	hack/verify-gomod.sh
 	hack/verify-gofmt.sh
 	hack/verify-crdgen.sh
 	hack/verify-structured-logging.sh

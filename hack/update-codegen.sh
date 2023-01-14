@@ -38,7 +38,7 @@ bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
   sigs.k8s.io/scheduler-plugins/pkg/generated \
   sigs.k8s.io/scheduler-plugins/apis \
   sigs.k8s.io/scheduler-plugins/apis \
-  "config:v1beta2,v1beta3" \
+  "config:v1,v1beta2,v1beta3" \
   --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
 
 

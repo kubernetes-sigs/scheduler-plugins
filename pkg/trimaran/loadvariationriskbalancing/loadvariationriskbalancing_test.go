@@ -51,6 +51,10 @@ type testSharedLister struct {
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return nil
+}
+
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }

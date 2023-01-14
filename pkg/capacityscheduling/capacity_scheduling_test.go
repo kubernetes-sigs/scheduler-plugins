@@ -22,10 +22,10 @@ import (
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
-
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
@@ -133,7 +133,7 @@ func TestPreFilter(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "",
+				registeredPlugins, "", wait.NeverStop,
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -291,9 +291,11 @@ func TestDryRunPreemption(t *testing.T) {
 			}
 
 			cs := clientsetfake.NewSimpleClientset()
+			ctx := context.Background()
 			fwk, err := st.NewFramework(
 				registeredPlugins,
 				"default-scheduler",
+				ctx.Done(),
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
@@ -305,7 +307,6 @@ func TestDryRunPreemption(t *testing.T) {
 			}
 
 			state := framework.NewCycleState()
-			ctx := context.Background()
 
 			// Some tests rely on PreFilter plugin to compute its CycleState.
 			_, preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)

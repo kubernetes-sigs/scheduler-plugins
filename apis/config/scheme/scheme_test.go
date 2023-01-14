@@ -29,6 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/testing/defaults"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta2"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
@@ -462,6 +463,151 @@ profiles:
 				},
 			},
 		},
+		// v1 tests
+		{
+			name: "v1 all plugin args in default profile",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: TopologicalSort
+    args:
+      namespaces:
+      - "networkAware"
+  - name: NetworkOverhead
+    args:
+      namespaces:
+      - "networkAware"
+      weightsName: "netCosts"
+      networkTopologyName: "net-topology-v1"
+`),
+			wantProfiles: []schedconfig.KubeSchedulerProfile{
+				{
+					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1,
+					PluginConfig: []schedconfig.PluginConfig{
+						{
+							Name: topologicalsort.Name,
+							Args: &config.TopologicalSortArgs{
+								Namespaces: []string{"networkAware"},
+							},
+						},
+						{
+							Name: networkoverhead.Name,
+							Args: &config.NetworkOverheadArgs{
+								Namespaces:          []string{"networkAware"},
+								WeightsName:         "netCosts",
+								NetworkTopologyName: "net-topology-v1",
+							},
+						},
+						{
+							Name: "DefaultPreemption",
+							Args: &schedconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &schedconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &schedconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &schedconfig.NodeResourcesBalancedAllocationArgs{Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &schedconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &schedconfig.ScoringStrategy{
+									Type:      schedconfig.LeastAllocated,
+									Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &schedconfig.PodTopologySpreadArgs{DefaultingType: schedconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &schedconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "v1 plugin args unspecified to verify the default profile",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: TopologicalSort
+    args:
+  - name: NetworkOverhead
+    args:
+`),
+			wantProfiles: []schedconfig.KubeSchedulerProfile{
+				{
+					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1beta3,
+					PluginConfig: []schedconfig.PluginConfig{
+						{
+							Name: topologicalsort.Name,
+							Args: &config.TopologicalSortArgs{
+								Namespaces: []string{"default"},
+							},
+						},
+						{
+							Name: networkoverhead.Name,
+							Args: &config.NetworkOverheadArgs{
+								Namespaces:          []string{"default"},
+								WeightsName:         "UserDefined",
+								NetworkTopologyName: "nt-default",
+							},
+						},
+						{
+							Name: "DefaultPreemption",
+							Args: &schedconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &schedconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &schedconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &schedconfig.NodeResourcesBalancedAllocationArgs{Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &schedconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &schedconfig.ScoringStrategy{
+									Type:      schedconfig.LeastAllocated,
+									Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &schedconfig.PodTopologySpreadArgs{DefaultingType: schedconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &schedconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
+						},
+					},
+				},
+			},
+		},
 	}
 	decoder := Codecs.UniversalDecoder()
 	for _, tt := range testCases {
@@ -769,6 +915,161 @@ profiles:
     name: TopologicalSort
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1beta3
+      kind: NetworkOverheadArgs
+      namespaces:
+      - default
+      networkTopologyName: net-topology-v1
+      weightsName: netCosts
+    name: NetworkOverhead
+  schedulerName: scheduler-plugins
+`,
+		},
+		// v1 tests
+		{
+			name:    "v1 plugins",
+			version: v1.SchemeGroupVersion,
+			obj: &schedconfig.KubeSchedulerConfiguration{
+				Profiles: []schedconfig.KubeSchedulerProfile{
+					{
+						SchedulerName: "scheduler-plugins",
+						PluginConfig: []schedconfig.PluginConfig{
+							{
+								Name: coscheduling.Name,
+								Args: &config.CoschedulingArgs{
+									PermitWaitingTimeSeconds: 10,
+								},
+							},
+							{
+								Name: noderesources.AllocatableName,
+								Args: &config.NodeResourcesAllocatableArgs{
+									Mode: config.Least,
+									Resources: []schedconfig.ResourceSpec{
+										{Name: string(corev1.ResourceCPU), Weight: 1000000},
+										{Name: string(corev1.ResourceMemory), Weight: 1},
+									},
+								},
+							},
+							{
+								Name: targetloadpacking.Name,
+								Args: &config.TargetLoadPackingArgs{
+									TrimaranSpec: config.TrimaranSpec{
+										MetricProvider: config.MetricProviderSpec{
+											Type:    config.Prometheus,
+											Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+										},
+										WatcherAddress: "http://deadbeef:2020"},
+									TargetUtilization: 60,
+									DefaultRequests: corev1.ResourceList{
+										corev1.ResourceCPU: testCPUQuantity,
+									},
+									DefaultRequestsMultiplier: "1.8",
+								},
+							},
+							{
+								Name: loadvariationriskbalancing.Name,
+								Args: &config.LoadVariationRiskBalancingArgs{
+									TrimaranSpec: config.TrimaranSpec{
+										MetricProvider: config.MetricProviderSpec{
+											Type:               config.Prometheus,
+											Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+											InsecureSkipVerify: false,
+										},
+										WatcherAddress: "http://deadbeef:2020"},
+									SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
+									SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+								},
+							},
+							{
+								Name: topologicalsort.Name,
+								Args: &config.TopologicalSortArgs{
+									Namespaces: []string{"default"},
+								},
+							},
+							{
+								Name: networkoverhead.Name,
+								Args: &config.NetworkOverheadArgs{
+									Namespaces:          []string{"default"},
+									WeightsName:         "netCosts",
+									NetworkTopologyName: "net-topology-v1",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: `apiVersion: kubescheduler.config.k8s.io/v1
+clientConnection:
+  acceptContentTypes: ""
+  burst: 0
+  contentType: ""
+  kubeconfig: ""
+  qps: 0
+enableContentionProfiling: false
+enableProfiling: false
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+  leaseDuration: 0s
+  renewDeadline: 0s
+  resourceLock: ""
+  resourceName: ""
+  resourceNamespace: ""
+  retryPeriod: 0s
+parallelism: 0
+percentageOfNodesToScore: 0
+podInitialBackoffSeconds: 0
+podMaxBackoffSeconds: 0
+profiles:
+- pluginConfig:
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
+      kind: CoschedulingArgs
+      permitWaitingTimeSeconds: 10
+    name: Coscheduling
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
+      kind: NodeResourcesAllocatableArgs
+      mode: Least
+      resources:
+      - name: cpu
+        weight: 1000000
+      - name: memory
+        weight: 1
+    name: NodeResourcesAllocatable
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
+      defaultRequests:
+        cpu: "1"
+      defaultRequestsMultiplier: "1.8"
+      kind: TargetLoadPackingArgs
+      metricProvider:
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
+        token: ""
+        type: Prometheus
+      targetUtilization: 60
+      watcherAddress: http://deadbeef:2020
+    name: TargetLoadPacking
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
+      kind: LoadVariationRiskBalancingArgs
+      metricProvider:
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
+        token: ""
+        type: Prometheus
+      safeVarianceMargin: 1
+      safeVarianceSensitivity: 1
+      watcherAddress: http://deadbeef:2020
+    name: LoadVariationRiskBalancing
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
+      kind: TopologicalSortArgs
+      namespaces:
+      - default
+    name: TopologicalSort
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
       kind: NetworkOverheadArgs
       namespaces:
       - default

@@ -790,10 +790,7 @@ func getElasticQuotaSnapshotState(cycleState *framework.CycleState) (*ElasticQuo
 }
 
 func getPDBLister(informerFactory informers.SharedInformerFactory) policylisters.PodDisruptionBudgetLister {
-	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.PodDisruptionBudget) {
-		return informerFactory.Policy().V1().PodDisruptionBudgets().Lister()
-	}
-	return nil
+	return informerFactory.Policy().V1().PodDisruptionBudgets().Lister()
 }
 
 func getPodDisruptionBudgets(pdbLister policylisters.PodDisruptionBudgetLister) ([]*policy.PodDisruptionBudget, error) {

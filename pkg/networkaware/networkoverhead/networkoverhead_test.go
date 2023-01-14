@@ -55,6 +55,10 @@ type testSharedLister struct {
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return nil
+}
+
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
@@ -520,7 +524,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
+			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -742,7 +746,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
+			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -991,7 +995,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
+			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -1220,7 +1224,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
+			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -1439,7 +1443,6 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 				if err != nil {
 					b.Fatalf("Failed to create Workload %q: %v", p.Name, err)
 				}
-				//b.Logf("Workload %v created  \n", p.Name)
 			}
 
 			registeredPlugins := []st.RegisterPluginFunc{
@@ -1447,7 +1450,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
+			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
