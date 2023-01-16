@@ -6,7 +6,7 @@ metadata:
   name: system:kube-scheduler:plugins
 rules:
 - apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding
@@ -44,7 +44,7 @@ rules:
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding
