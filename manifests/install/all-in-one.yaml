@@ -77,7 +77,7 @@ spec:
       labels:
         app: scheduler-plugins-controller
     spec:
-      serviceAccount: scheduler-plugins-controller
+      serviceAccountName: scheduler-plugins-controller
       containers:
       - name: scheduler-plugins-controller
         image: registry.k8s.io/scheduler-plugins/controller:v0.24.9
