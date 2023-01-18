@@ -107,7 +107,7 @@ In other words, it is a prerequisite that a set of nodes share the same NUMA top
 However, the scheduler has no means to enforce or even validate this prerequisite;
 for example the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD does not expose all the relevant fields, nor it should (it would be out of scope).
 
-Hence, proper cluster configuration is expected from the cluster admins, or to other software components, like controllers or operators, outside of the scope here.
+Hence, proper cluster configuration is expected from the cluster admins, or to other software components, like controllers or operators, outside the scope here.
 
 Should the cluster need to have different settings (e.g. topology manager) or NUMA topologies, we recommend to use the
 [standard kubernetes tools](https://kubernetes.io/blog/2017/03/advanced-scheduling-in-kubernetes/) to identify each set of nodes

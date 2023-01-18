@@ -19,7 +19,7 @@ Further details and examples are described [here](../networkaware/topologicalsor
 ## NetworkOverhead Plugin (Filter & Score)
 
 The `NetworkOverhead` **Filter & Score** plugin filters out nodes based on microservice dependencies 
-defined in an **AppGroup** and scores nodes with lower network costs (described in a [**NetworkTopology**](https://github.com/diktyo-io/networktopology-api)
+defined in an **AppGroup** and scores nodes with lower network costs (described in a [**NetworkTopology**](https://github.com/diktyo-io/networktopology-api))
 higher to achieve latency-aware scheduling.
 
 Further details and examples are described [here](../networkaware/networkoverhead). 

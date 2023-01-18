@@ -41,7 +41,7 @@ make autogen
 command.
 
 ## How to debug
-By default debug information is stripped, to keep it in the binary you need to remove -w command line option from
+By default, debug information is stripped, to keep it in the binary you need to remove -w command line option from
 ldflags in the Makefile.
 You can run all unit tests by **make unit-test** command or if you would like to run exact unit test
 ```shell
