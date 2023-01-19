@@ -160,7 +160,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     <     name: sched-cc
     ```
    
-1. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.22.6`
+1. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9`
 
     ```bash
     $ kubectl get pod -n kube-system | grep kube-scheduler
