@@ -27,6 +27,7 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName={eq,eqs}
 // +kubebuilder:subresource:status
+// +kubebuilder:metadata:annotations="api-approved.kubernetes.io=https://github.com/kubernetes-sigs/scheduler-plugins/pull/52"
 type ElasticQuota struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -118,6 +119,7 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName={pg,pgs}
 // +kubebuilder:subresource:status
+// +kubebuilder:metadata:annotations="api-approved.kubernetes.io=https://github.com/kubernetes-sigs/scheduler-plugins/pull/50"
 type PodGroup struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
