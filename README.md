@@ -31,7 +31,7 @@ The kube-scheduler binary includes the below list of plugins. They can be config
 * [Preemption Toleration](pkg/preemptiontoleration/README.md)
 * [Trimaran](pkg/trimaran/README.md)
 
-Additionally the kube-scheduler binary includes the below list of sample plugins. These plugins are not intended for use in production
+Additionally, the kube-scheduler binary includes the below list of sample plugins. These plugins are not intended for use in production
 environments.
 
 * [Cross Node Preemption](pkg/crossnodepreemption/README.md)
@@ -48,7 +48,7 @@ it is compiled with. For example scheduler-plugins `v0.18.x` releases are built 
 dependencies.
 
 The scheduler-plugins patch versions come in two different varieties (single digit or three digits).
-The single digit patch versions (e.g., `v0.18.9`) exactly align with the the k8s client package
+The single digit patch versions (e.g., `v0.18.9`) exactly align with the k8s client package
 versions that the scheduler plugins are built with. The three digit patch versions, which are built
 on demand, (e.g., `v0.18.800`) are used to indicated that the k8s client package versions have not
 changed since the previous release, and that only scheduler plugins code (features or bug fixes) was
