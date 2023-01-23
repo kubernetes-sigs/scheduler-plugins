@@ -31,12 +31,6 @@ import (
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
 
-var zeroQty resource.Quantity
-
-func init() {
-	zeroQty = resource.MustParse("0")
-}
-
 // nrtStore maps the NRT data by node name. It is not thread safe and needs to be protected by a lock.
 // data is intentionally copied each time it enters and exists the store. E.g, no pointer sharing.
 type nrtStore struct {
@@ -148,7 +142,7 @@ func (rs *resourceStore) UpdateNRT(logID string, nrt *topologyv1alpha1.NodeResou
 					// this should happen rarely, and it is likely caused by
 					// a bug elsewhere.
 					klog.V(3).InfoS("nrtcache: cannot decrement resource", "logID", logID, "zone", zr.Name, "node", nrt.Name, "available", zr.Available, "requestor", key, "quantity", qty)
-					zr.Available = zeroQty
+					zr.Available = resource.Quantity{}
 					continue
 				}
 
