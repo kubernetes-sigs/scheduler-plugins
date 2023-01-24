@@ -54,6 +54,7 @@ var (
 	mostAllocatedScheduler      = fmt.Sprintf("%v-scheduler", string(scheconfig.MostAllocated))
 	balancedAllocationScheduler = fmt.Sprintf("%v-scheduler", string(scheconfig.BalancedAllocation))
 	leastAllocatedScheduler     = fmt.Sprintf("%v-scheduler", string(scheconfig.LeastAllocated))
+	leastNUMAScheduler          = fmt.Sprintf("%v-scheduler", string(scheconfig.LeastNUMANodes))
 )
 
 // should be filled by the user
@@ -130,6 +131,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 		makeProfileByPluginArgs(
 			leastAllocatedScheduler,
 			makeResourceAllocationScoreArgs(&scheconfig.ScoringStrategy{Type: scheconfig.LeastAllocated}),
+		),
+		// a profile with both the filter and score enabled and score strategy is LeastNUMANodes
+		makeProfileByPluginArgs(
+			leastNUMAScheduler,
+			makeResourceAllocationScoreArgs(&scheconfig.ScoringStrategy{Type: scheconfig.LeastNUMANodes}),
 		),
 	)
 
@@ -621,6 +627,319 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						}).Obj(),
 			},
 			expectedNodes: []string{},
+		},
+		{
+			name: "Scheduling Guaranteed pod with LeastNUMANodes strategy scheduler, pod scope",
+			pods: []*v1.Pod{
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with LeastNUMANodes strategy scheduler, different allocation pod scope",
+			pods: []*v1.Pod{
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+					map[string]string{cpu: "4", memory: "4Gi"}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with init container with LeastNUMANodes strategy scheduler and pod scope",
+			pods: []*v1.Pod{
+				util.WithLimits(
+					util.WithLimits(
+						st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+						map[string]string{cpu: "2", memory: "4Gi"}, false),
+					map[string]string{cpu: "2", memory: "6Gi"}, true).Obj(),
+			},
+
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed multi container pod with LeastNUMANodes strategy scheduler and pod scope",
+			pods: []*v1.Pod{
+				util.WithLimits(
+					util.WithLimits(
+						st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+						map[string]string{cpu: "2", memory: "4Gi"}, false),
+					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
+			},
+
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed multi container pod with LeastNUMANodes strategy scheduler and container scope",
+			pods: []*v1.Pod{
+				util.WithLimits(
+					util.WithLimits(
+						st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+						map[string]string{cpu: "2", memory: "4Gi"}, false),
+					map[string]string{cpu: "2", memory: "6Gi"}, false).Obj(),
+			},
+
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with init container with LeastNUMANodes strategy scheduler and container scope",
+			pods: []*v1.Pod{
+				util.WithLimits(
+					util.WithLimits(
+						st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+						map[string]string{cpu: "2", memory: "4Gi"}, false),
+					map[string]string{cpu: "2", memory: "6Gi"}, true).Obj(),
+			},
+
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with multiple containers with LeastNUMANodes strategy scheduler, different resource allocation, pod scope",
+			pods: []*v1.Pod{
+				util.WithLimits(
+					util.WithLimits(
+						st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+						map[string]string{cpu: "3", memory: "4Gi"}, false),
+					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with multiple containers with LeastNUMANodes strategy scheduler, different resource allocation, container scope",
+			pods: []*v1.Pod{
+				util.WithLimits(
+					util.WithLimits(
+						st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+						map[string]string{cpu: "3", memory: "4Gi"}, false),
+					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortContainerLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed multiple containers pod with LeastNUMANodes strategy scheduler, can't fit one node, pod scope",
+			pods: []*v1.Pod{
+				util.WithLimits(
+					util.WithLimits(
+						st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+						map[string]string{cpu: "3", memory: "4Gi"}, false),
+					map[string]string{cpu: "4", memory: "6Gi"}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha1.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-2"},
 		},
 	}
 
