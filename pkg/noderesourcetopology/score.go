@@ -80,12 +80,13 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 	}
 
 	policyName := nodeTopology.TopologyPolicies[0]
-	if handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-		return handler(pod, nodeTopology.Zones)
-	} else {
+	handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]
+	if !ok {
 		klog.V(4).InfoS("policy handler not found", "policy", policyName)
+		return 0, nil
 	}
-	return 0, nil
+
+	return handler(pod, nodeTopology.Zones)
 }
 
 func (tm *TopologyMatch) ScoreExtensions() framework.ScoreExtensions {

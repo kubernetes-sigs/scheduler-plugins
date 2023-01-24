@@ -213,15 +213,16 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	policyName := nodeTopology.TopologyPolicies[0]
-	if handler, ok := tm.filterHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-		if status := handler(pod, nodeTopology.Zones, nodeInfo); status != nil {
-			tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
-			return status
-		}
-	} else {
-		klog.V(5).InfoS("Policy handler not found", "policy", policyName)
+	handler, ok := tm.filterHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]
+	if !ok {
+		klog.V(4).InfoS("Policy handler not found", "policy", policyName)
+		return nil
 	}
-	return nil
+	status := handler(pod, nodeTopology.Zones, nodeInfo)
+	if status != nil {
+		tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
+	}
+	return status
 }
 
 // subtractFromNUMA finds the correct NUMA ID's resources and subtract them from `nodes`.
