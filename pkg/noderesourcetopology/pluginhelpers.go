@@ -82,7 +82,7 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 }
 
 func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
-	nodes := make(NUMANodeList, 0)
+	nodes := make(NUMANodeList, 0, len(zones))
 	for _, zone := range zones {
 		if zone.Type == "Node" {
 			var numaID int
