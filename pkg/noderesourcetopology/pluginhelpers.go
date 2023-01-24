@@ -209,7 +209,7 @@ func makePodByResourceListWithManyContainers(resources *v1.ResourceList, contain
 func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
 	res := make(v1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		res[v1.ResourceName(resInfo.Name)] = resInfo.Available
+		res[v1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
 	}
 	return res
 }
