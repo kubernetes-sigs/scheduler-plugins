@@ -74,12 +74,16 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 	}
 
 	logNRT("noderesourcetopology found", nodeTopology)
-	for _, policyName := range nodeTopology.TopologyPolicies {
-		if handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-			return handler(pod, nodeTopology.Zones)
-		} else {
-			klog.V(4).InfoS("policy handler not found", "policy", policyName)
-		}
+	if len(nodeTopology.TopologyPolicies) == 0 {
+		klog.V(2).InfoS("Cannot determine policy", "node", nodeName)
+		return 0, nil
+	}
+
+	policyName := nodeTopology.TopologyPolicies[0]
+	if handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
+		return handler(pod, nodeTopology.Zones)
+	} else {
+		klog.V(4).InfoS("policy handler not found", "policy", policyName)
 	}
 	return 0, nil
 }

@@ -207,15 +207,19 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	klog.V(5).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
-	for _, policyName := range nodeTopology.TopologyPolicies {
-		if handler, ok := tm.filterHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-			if status := handler(pod, nodeTopology.Zones, nodeInfo); status != nil {
-				tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
-				return status
-			}
-		} else {
-			klog.V(5).InfoS("Policy handler not found", "policy", policyName)
+	if len(nodeTopology.TopologyPolicies) == 0 {
+		klog.V(2).InfoS("Cannot determine policy", "node", nodeName)
+		return nil
+	}
+
+	policyName := nodeTopology.TopologyPolicies[0]
+	if handler, ok := tm.filterHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
+		if status := handler(pod, nodeTopology.Zones, nodeInfo); status != nil {
+			tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
+			return status
 		}
+	} else {
+		klog.V(5).InfoS("Policy handler not found", "policy", policyName)
 	}
 	return nil
 }
