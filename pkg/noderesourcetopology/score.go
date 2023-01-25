@@ -75,10 +75,10 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 
 	logNRT("noderesourcetopology found", nodeTopology)
 	for _, policyName := range nodeTopology.TopologyPolicies {
-		if handler, ok := tm.policyHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
+		if handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
 			// calculates the fraction of requested to capacity per each numa-node.
 			// return the numa-node with the minimal score as the node's total score
-			return handler.score(pod, nodeTopology.Zones, tm.scorerFn, tm.resourceToWeightMap)
+			return handler(pod, nodeTopology.Zones)
 		} else {
 			klog.V(4).InfoS("policy handler not found", "policy", policyName)
 		}
