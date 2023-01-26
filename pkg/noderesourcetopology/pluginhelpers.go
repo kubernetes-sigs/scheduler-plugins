@@ -82,23 +82,24 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 }
 
 func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
-	nodes := make(NUMANodeList, 0)
+	nodes := make(NUMANodeList, 0, len(zones))
 	for _, zone := range zones {
-		if zone.Type == "Node" {
-			var numaID int
-			_, err := fmt.Sscanf(zone.Name, "node-%d", &numaID)
-			if err != nil {
-				klog.ErrorS(nil, "Invalid zone format", "zone", zone.Name)
-				continue
-			}
-			if numaID > 63 || numaID < 0 {
-				klog.ErrorS(nil, "Invalid NUMA id range", "numaID", numaID)
-				continue
-			}
-			resources := extractResources(zone)
-			klog.V(6).InfoS("extracted NUMA resources", stringify.ResourceListToLoggable(zone.Name, resources)...)
-			nodes = append(nodes, NUMANode{NUMAID: numaID, Resources: resources})
+		if zone.Type != "Node" {
+			continue
 		}
+		var numaID int
+		_, err := fmt.Sscanf(zone.Name, "node-%d", &numaID)
+		if err != nil {
+			klog.ErrorS(nil, "Invalid zone format", "zone", zone.Name)
+			continue
+		}
+		if numaID > 63 || numaID < 0 {
+			klog.ErrorS(nil, "Invalid NUMA id range", "numaID", numaID)
+			continue
+		}
+		resources := extractResources(zone)
+		klog.V(6).InfoS("extracted NUMA resources", stringify.ResourceListToLoggable(zone.Name, resources)...)
+		nodes = append(nodes, NUMANode{NUMAID: numaID, Resources: resources})
 	}
 	return nodes
 }
@@ -209,7 +210,7 @@ func makePodByResourceListWithManyContainers(resources *v1.ResourceList, contain
 func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
 	res := make(v1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		res[v1.ResourceName(resInfo.Name)] = resInfo.Available
+		res[v1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
 	}
 	return res
 }

@@ -147,7 +147,10 @@ type NodeResourceTopologyMatchArgs struct {
 
 	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
-	// If > 0, enables the caching facilities of the reserve plugin - which must be enabled
+	// CacheResyncPeriodSeconds sets the resync period, in seconds, between the internal
+	// NodeResourceTopoology cache and the apiserver. If present and greater than zero,
+	// implicitely enables the caching. If zero, disables the caching entirely.
+	// If the cache is enabled, the Reserve plugin must be enabled.
 	CacheResyncPeriodSeconds *int64 `json:"cacheResyncPeriodSeconds,omitempty"`
 }
 

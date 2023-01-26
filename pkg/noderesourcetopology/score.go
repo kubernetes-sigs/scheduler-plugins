@@ -65,7 +65,7 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
 
 	if !ok {
-		klog.V(4).InfoS("noderesourcetopology is not validf for node", "node", nodeName)
+		klog.V(4).InfoS("noderesourcetopology is not valid for node", "node", nodeName)
 		return 0, nil
 	}
 	if nodeTopology == nil {
@@ -74,16 +74,19 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 	}
 
 	logNRT("noderesourcetopology found", nodeTopology)
-	for _, policyName := range nodeTopology.TopologyPolicies {
-		if handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]; ok {
-			// calculates the fraction of requested to capacity per each numa-node.
-			// return the numa-node with the minimal score as the node's total score
-			return handler(pod, nodeTopology.Zones)
-		} else {
-			klog.V(4).InfoS("policy handler not found", "policy", policyName)
-		}
+	if len(nodeTopology.TopologyPolicies) == 0 {
+		klog.V(2).InfoS("Cannot determine policy", "node", nodeName)
+		return 0, nil
 	}
-	return 0, nil
+
+	policyName := nodeTopology.TopologyPolicies[0]
+	handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]
+	if !ok {
+		klog.V(4).InfoS("policy handler not found", "policy", policyName)
+		return 0, nil
+	}
+
+	return handler(pod, nodeTopology.Zones)
 }
 
 func (tm *TopologyMatch) ScoreExtensions() framework.ScoreExtensions {
