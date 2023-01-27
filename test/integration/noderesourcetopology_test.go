@@ -215,6 +215,10 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	}
 
 	nodeList, err := cs.CoreV1().Nodes().List(testCtx.Ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Errorf("can't list nodes: %s", err.Error())
+	}
+
 	t.Logf("NodeList: %v", nodeList)
 	pause := imageutils.GetPauseImageName()
 	tests := []nrtTestEntry{
@@ -707,6 +711,69 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			expectedNodes: []string{"fake-node-1", "fake-node-2"},
 		},
 		{
+			name: "Scheduling Guaranteed pod with LeastNUMANodes strategy scheduler, one node only non NUMA resources",
+			pods: []*v1.Pod{
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+					map[string]string{memory: "4Gi"}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+						}).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1", "fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed pod with LeastNUMANodes strategy scheduler, different allocation pod scope",
+			pods: []*v1.Pod{
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+					map[string]string{cpu: "4", memory: "4Gi"}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						}).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
 			name: "Scheduling Guaranteed pod with LeastNUMANodes strategy scheduler, different allocation pod scope",
 			pods: []*v1.Pod{
 				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
@@ -747,7 +814,6 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "2", memory: "6Gi"}, true).Obj(),
 			},
-
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
 				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
@@ -984,6 +1050,235 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-2"},
+		},
+		{
+			name: "Scheduling Guaranteed single containers pod with LeastNUMANodes strategy scheduler, pod scope,one node non optimal, one no resources left",
+			pods: []*v1.Pod{
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+					map[string]string{
+						cpu: "4", memory: "4Gi", gpuResourceName: "2",
+					}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "1", "1"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 10,
+							},
+							{
+								Name:  "node-1",
+								Value: 12,
+							},
+							{
+								Name:  "node-2",
+								Value: 20,
+							},
+						},
+					).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "0", "0"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 12,
+							},
+							{
+								Name:  "node-1",
+								Value: 10,
+							},
+							{
+								Name:  "node-2",
+								Value: 20,
+							},
+						},
+					).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "1", "1"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 20,
+							},
+							{
+								Name:  "node-1",
+								Value: 20,
+							},
+							{
+								Name:  "node-2",
+								Value: 10,
+							},
+						},
+					).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "0", "0"),
+						}).
+					Zone(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "0", "0"),
+						}).Obj(),
+			},
+			expectedNodes: []string{"fake-node-1"},
+		},
+		{
+			name: "Scheduling Guaranteed single containers pod with LeastNUMANodes strategy scheduler, pod scope,one node non optimal, one node optimal",
+			pods: []*v1.Pod{
+				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
+					map[string]string{
+						cpu: "4", memory: "4Gi", gpuResourceName: "2",
+					}, false).Obj(),
+			},
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "1", "1"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 10,
+							},
+							{
+								Name:  "node-1",
+								Value: 12,
+							},
+							{
+								Name:  "node-2",
+								Value: 20,
+							},
+						},
+					).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "0", "0"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 12,
+							},
+							{
+								Name:  "node-1",
+								Value: 10,
+							},
+							{
+								Name:  "node-2",
+								Value: 20,
+							},
+						},
+					).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "1", "1"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 20,
+							},
+							{
+								Name:  "node-1",
+								Value: 20,
+							},
+							{
+								Name:  "node-2",
+								Value: 10,
+							},
+						},
+					).Obj(),
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "1", "1"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 10,
+							},
+							{
+								Name:  "node-1",
+								Value: 12,
+							},
+							{
+								Name:  "node-2",
+								Value: 20,
+							},
+						},
+					).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "1", "1"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 12,
+							},
+							{
+								Name:  "node-1",
+								Value: 10,
+							},
+							{
+								Name:  "node-2",
+								Value: 20,
+							},
+						},
+					).
+					ZoneWithCosts(
+						topologyv1alpha2.ResourceInfoList{
+							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
+							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
+							noderesourcetopology.MakeTopologyResInfo(gpuResourceName, "0", "0"),
+						},
+						topologyv1alpha2.CostList{
+							{
+								Name:  "node-0",
+								Value: 20,
+							},
+							{
+								Name:  "node-1",
+								Value: 20,
+							},
+							{
+								Name:  "node-2",
+								Value: 10,
+							},
+						},
+					).Obj(),
 			},
 			expectedNodes: []string{"fake-node-2"},
 		},
