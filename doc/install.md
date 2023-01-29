@@ -193,7 +193,7 @@ Now, we're able to verify how the coscheduling plugin works.
     $ kubectl apply -f podgroup.yaml
     ```
 
-1. Create a deployment labelled `pod-group.scheduling.sigs.k8s.io: pg1` to associated with PodGroup
+2. Create a deployment labelled `pod-group.scheduling.sigs.k8s.io: pg1` to associated with PodGroup
    `pg1` created in the previous step.
 
     ```yaml
@@ -230,7 +230,7 @@ Now, we're able to verify how the coscheduling plugin works.
     >       schedulerName: scheduler-plugins-scheduler
     > ```
 
-1. As PodGroup `pg1` requires at least 3 pods to be scheduled all-together, and there are only 2 Pods
+3. As PodGroup `pg1` requires at least 3 pods to be scheduled all-together, and there are only 2 Pods
    so far, so it's expected to observer they are pending:
 
     All nginx pods are expected to be `Pending` as they cannot be co-scheduled altogether.
@@ -242,7 +242,7 @@ Now, we're able to verify how the coscheduling plugin works.
     pause-58f7d7db67-jbmfv   0/1     Pending   0          9s
    ```
 
-1. Now let's delete the deployment to re-create it with replicas=3, so as to qualify for `minMember`
+4. Now let's delete the deployment to re-create it with replicas=3, so as to qualify for `minMember`
    (i.e., 3) of the associated PodGroup:
 
     ```bash
@@ -261,7 +261,7 @@ Now, we're able to verify how the coscheduling plugin works.
     pause-64f5c9ccf4-xrgkw   1/1     Running   0          8s
     ```
 
-1. You can also get the PodGroup's spec via:
+5. You can also get the PodGroup's spec via:
 
     ```bash
     $ kubectl get podgroup pg1 -o yaml
@@ -320,7 +320,7 @@ branch `release-1.18` for detailed installation instructions.
         exit
         ```
 
-4. Check state of default scheduler
+3. Check state of default scheduler
 
     ```bash
     $ kubectl get pod -n kube-system | grep kube-scheduler
