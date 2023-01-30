@@ -22,8 +22,7 @@ import (
 	"fmt"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -104,113 +103,10 @@ func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
 	return nodes
 }
 
-func makePodByResourceList(resources *v1.ResourceList) *v1.Pod {
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Resources: v1.ResourceRequirements{
-						Requests: *resources,
-						Limits:   *resources,
-					},
-				},
-			},
-		},
-	}
-}
-
-func makePodByResourceLists(resources ...v1.ResourceList) *v1.Pod {
-	pod := &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{},
-		},
-	}
-
-	for _, r := range resources {
-		pod.Spec.Containers = append(pod.Spec.Containers, v1.Container{
-			Resources: v1.ResourceRequirements{
-				Requests: r,
-				Limits:   r,
-			},
-		})
-	}
-
-	return pod
-}
-
-func makePodWithReqByResourceList(resources *v1.ResourceList) *v1.Pod {
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Resources: v1.ResourceRequirements{
-						Requests: *resources,
-					},
-				},
-			},
-		},
-	}
-}
-
-func makePodWithReqAndLimitByResourceList(resourcesReq, resourcesLim *v1.ResourceList) *v1.Pod {
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Resources: v1.ResourceRequirements{
-						Requests: *resourcesReq,
-						Limits:   *resourcesLim,
-					},
-				},
-			},
-		},
-	}
-}
-
-func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) v1.ResourceList {
-	result := make(v1.ResourceList)
-	for _, zone := range zones {
-		for _, resInfo := range zone.Resources {
-			resQuantity := resInfo.Available
-			if quantity, ok := result[v1.ResourceName(resInfo.Name)]; ok {
-				resQuantity.Add(quantity)
-			}
-			result[v1.ResourceName(resInfo.Name)] = resQuantity
-		}
-	}
-	return result
-}
-
-func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha1.ResourceInfo {
-	return topologyv1alpha1.ResourceInfo{
-		Name:      name,
-		Capacity:  resource.MustParse(capacity),
-		Available: resource.MustParse(available),
-	}
-}
-
-func makePodByResourceListWithManyContainers(resources *v1.ResourceList, containerCount int) *v1.Pod {
-	var containers []v1.Container
-
-	for i := 0; i < containerCount; i++ {
-		containers = append(containers, v1.Container{
-			Resources: v1.ResourceRequirements{
-				Requests: *resources,
-				Limits:   *resources,
-			},
-		})
-	}
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: containers,
-		},
-	}
-}
-
-func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
-	res := make(v1.ResourceList)
+func extractResources(zone topologyv1alpha1.Zone) corev1.ResourceList {
+	res := make(corev1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		res[v1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
+		res[corev1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
 	}
 	return res
 }
@@ -224,10 +120,10 @@ func newFilterHandlers() filterHandlersMap {
 
 func newScoringHandlers(strategy scoreStrategy, resourceToWeightMap resourceToWeightMap) scoreHandlersMap {
 	return scoreHandlersMap{
-		topologyv1alpha1.SingleNUMANodePodLevel: func(pod *v1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
+		topologyv1alpha1.SingleNUMANodePodLevel: func(pod *corev1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
 			return podScopeScore(pod, zones, strategy, resourceToWeightMap)
 		},
-		topologyv1alpha1.SingleNUMANodeContainerLevel: func(pod *v1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
+		topologyv1alpha1.SingleNUMANodeContainerLevel: func(pod *corev1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
 			return containerScopeScore(pod, zones, strategy, resourceToWeightMap)
 		},
 	}
