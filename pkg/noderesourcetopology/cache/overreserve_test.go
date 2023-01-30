@@ -509,6 +509,12 @@ func TestResyncMatchFingerprint(t *testing.T) {
 				podfingerprint.Annotation: "pfp0v0019e0420efb37746c6",
 			},
 		},
+		Attributes: topologyv1alpha2.AttributeList{
+			{
+				Name:  podfingerprint.Attribute,
+				Value: "pfp0v0019e0420efb37746c6",
+			},
+		},
 		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
 		Zones: topologyv1alpha2.ZoneList{
 			{

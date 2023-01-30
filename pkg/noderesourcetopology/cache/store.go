@@ -195,10 +195,13 @@ func (cnt counter) Len() int {
 // podFingerprintForNodeTopology extracts without recomputing the pods fingerprint from
 // the provided Node Resource Topology object.
 func podFingerprintForNodeTopology(nrt *topologyv1alpha2.NodeResourceTopology) string {
-	if nrt.Annotations == nil {
-		return ""
+	if attrValue, ok := findAttribute(nrt.Attributes, podfingerprint.Attribute); ok {
+		return attrValue
 	}
-	return nrt.Annotations[podfingerprint.Annotation]
+	if nrt.Annotations != nil {
+		return nrt.Annotations[podfingerprint.Annotation]
+	}
+	return ""
 }
 
 // checkPodFingerprintForNode verifies if the given pods fingeprint (usually from NRT update) matches the
@@ -221,4 +224,13 @@ func checkPodFingerprintForNode(logID string, indexer NodeIndexer, nodeName, pfp
 	klog.V(6).InfoS("nrtcache: podset fingerprint debug", "logID", logID, "node", nodeName, "status", st.Repr())
 
 	return pfp.Check(pfpExpected)
+}
+
+func findAttribute(attrs topologyv1alpha2.AttributeList, name string) (string, bool) {
+	for _, attr := range attrs {
+		if attr.Name == name {
+			return attr.Value, true
+		}
+	}
+	return "", false
 }

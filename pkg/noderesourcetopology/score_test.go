@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
@@ -192,12 +193,9 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 	for _, test := range tests {
 		nodesMap, lister := initTest(topologyv1alpha2.SingleNUMANodeContainerLevel)
 		t.Run(test.name, func(t *testing.T) {
-			scoringHandlers := newScoringHandlers(test.strategy, nil)
-
 			tm := &TopologyMatch{
-				filterHandlers:  newFilterHandlers(),
-				scoringHandlers: scoringHandlers,
-				nrtCache:        nrtcache.NewPassthrough(lister),
+				scoreStrategyFunc: test.strategy,
+				nrtCache:          nrtcache.NewPassthrough(lister),
 			}
 
 			for _, req := range test.requests {
@@ -442,9 +440,8 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 			nodesMap, lister := initTest(tc.policy)
 
 			tm := &TopologyMatch{
-				filterHandlers:  newFilterHandlers(),
-				scoringHandlers: leastNUMAscoreHandlers(),
-				nrtCache:        nrtcache.NewPassthrough(lister),
+				scoreStrategyType: apiconfig.LeastNUMANodes,
+				nrtCache:          nrtcache.NewPassthrough(lister),
 			}
 			nodeToScore := make(nodeToScoreMap, len(nodesMap))
 			pod := makePodByResourceLists(tc.podRequests...)

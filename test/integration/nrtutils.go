@@ -180,6 +180,11 @@ func (n *nrtWrapper) Annotations(anns map[string]string) *nrtWrapper {
 	return n
 }
 
+func (n *nrtWrapper) Attributes(attrs topologyv1alpha2.AttributeList) *nrtWrapper {
+	n.nrt.Attributes = append(n.nrt.Attributes, attrs...)
+	return n
+}
+
 func (n *nrtWrapper) Obj() *topologyv1alpha2.NodeResourceTopology {
 	return &n.nrt
 }

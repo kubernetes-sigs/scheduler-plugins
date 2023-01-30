@@ -531,10 +531,17 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 
 	// we want to run concurrently with the resync loop is running.
 	go func() {
+		pfpSign := mkPFP("fake-node-cache-1", tt.podDescs[0].pod)
 		updatedNRTs := []*topologyv1alpha2.NodeResourceTopology{
 			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 				Annotations(map[string]string{
-					podfingerprint.Annotation: mkPFP("fake-node-cache-1", tt.podDescs[0].pod),
+					podfingerprint.Annotation: pfpSign,
+				}).
+				Attributes(topologyv1alpha2.AttributeList{
+					{
+						Name:  podfingerprint.Attribute,
+						Value: pfpSign,
+					},
 				}).
 				Zone(
 					topologyv1alpha2.ResourceInfoList{

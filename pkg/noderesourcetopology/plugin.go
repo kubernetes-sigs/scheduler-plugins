@@ -80,26 +80,12 @@ func subtractFromNUMAs(resources v1.ResourceList, numaNodes NUMANodeList, nodes 
 type filterFn func(pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
 type scoringFn func(*v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
 
-type filterHandlersMap map[topologyv1alpha2.TopologyManagerPolicy]filterFn
-type scoreHandlersMap map[topologyv1alpha2.TopologyManagerPolicy]scoringFn
-
-func leastNUMAscoreHandlers() scoreHandlersMap {
-	return scoreHandlersMap{
-		topologyv1alpha2.SingleNUMANodePodLevel:       leastNUMAPodScopeScore,
-		topologyv1alpha2.SingleNUMANodeContainerLevel: leastNUMAContainerScopeScore,
-		topologyv1alpha2.BestEffortPodLevel:           leastNUMAPodScopeScore,
-		topologyv1alpha2.BestEffortContainerLevel:     leastNUMAContainerScopeScore,
-		topologyv1alpha2.RestrictedPodLevel:           leastNUMAPodScopeScore,
-		topologyv1alpha2.RestrictedContainerLevel:     leastNUMAContainerScopeScore,
-	}
-}
-
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
-	filterHandlers      filterHandlersMap
-	scoringHandlers     scoreHandlersMap
 	resourceToWeightMap resourceToWeightMap
 	nrtCache            nrtcache.Interface
+	scoreStrategyFunc   scoreStrategyFn
+	scoreStrategyType   apiconfig.ScoringStrategyType
 }
 
 var _ framework.FilterPlugin = &TopologyMatch{}
@@ -131,24 +117,21 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		resToWeightMap[v1.ResourceName(resource.Name)] = resource.Weight
 	}
 
-	var scoringHandlers scoreHandlersMap
-
-	if tcfg.ScoringStrategy.Type == apiconfig.LeastNUMANodes {
-		scoringHandlers = leastNUMAscoreHandlers()
-	} else {
-		strategy, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
-		if err != nil {
-			return nil, err
-		}
-
-		scoringHandlers = newScoringHandlers(strategy, resToWeightMap)
+	// This is not strictly needed, but we do it here and we carry `scoreStrategyFunc` around
+	// to be able to do as much parameter validation as possible here in this function.
+	// We perform only the NRT-object-specific validation in `Filter()` and `Score()`
+	// because we can't help it, being the earliest point in time on which we have access
+	// to NRT instances.
+	strategy, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
+	if err != nil {
+		return nil, err
 	}
 
 	topologyMatch := &TopologyMatch{
-		filterHandlers:      newFilterHandlers(),
-		scoringHandlers:     scoringHandlers,
 		resourceToWeightMap: resToWeightMap,
 		nrtCache:            nrtCache,
+		scoreStrategyFunc:   strategy,
+		scoreStrategyType:   tcfg.ScoringStrategy.Type,
 	}
 
 	return topologyMatch, nil

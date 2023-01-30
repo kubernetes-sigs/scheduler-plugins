@@ -670,8 +670,7 @@ func TestNodeResourceTopology(t *testing.T) {
 	}
 
 	tm := TopologyMatch{
-		filterHandlers: newFilterHandlers(),
-		nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+		nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 	}
 
 	for _, tt := range tests {
@@ -886,8 +885,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 			}
 
 			tm := TopologyMatch{
-				filterHandlers: newFilterHandlers(),
-				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()
@@ -1144,8 +1142,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 			}
 
 			tm := TopologyMatch{
-				filterHandlers: newFilterHandlers(),
-				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()

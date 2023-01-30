@@ -51,11 +51,22 @@ func TestFingerprintFromNRT(t *testing.T) {
 		t.Errorf("misdetected fingerprint from empty annotations")
 	}
 
-	pfpTest := "test"
-	nrt.Annotations[podfingerprint.Annotation] = pfpTest
+	pfpTestAnn := "test-ann"
+	nrt.Annotations[podfingerprint.Annotation] = pfpTestAnn
 	pfp = podFingerprintForNodeTopology(nrt)
-	if pfp != pfpTest {
-		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTest)
+	if pfp != pfpTestAnn {
+		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAnn)
+	}
+
+	// test attribute overrides annotation
+	pfpTestAttr := "test-attr"
+	nrt.Attributes = append(nrt.Attributes, topologyv1alpha2.AttributeInfo{
+		Name:  podfingerprint.Attribute,
+		Value: pfpTestAttr,
+	})
+	pfp = podFingerprintForNodeTopology(nrt)
+	if pfp != pfpTestAttr {
+		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAttr)
 	}
 }
 

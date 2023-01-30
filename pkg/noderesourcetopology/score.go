@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
@@ -74,18 +75,11 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 	}
 
 	logNRT("noderesourcetopology found", nodeTopology)
-	if len(nodeTopology.TopologyPolicies) == 0 {
-		klog.V(2).InfoS("Cannot determine policy", "node", nodeName)
+
+	handler := tm.scoringHandlerFromTopologyManagerConfig(topologyManagerConfigFromNodeResourceTopology(nodeTopology))
+	if handler == nil {
 		return 0, nil
 	}
-
-	policyName := nodeTopology.TopologyPolicies[0]
-	handler, ok := tm.scoringHandlers[topologyv1alpha2.TopologyManagerPolicy(policyName)]
-	if !ok {
-		klog.V(4).InfoS("policy handler not found", "policy", policyName)
-		return 0, nil
-	}
-
 	return handler(pod, nodeTopology.Zones)
 }
 
@@ -119,6 +113,9 @@ func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreSt
 		return leastAllocatedScoreStrategy, nil
 	case apiconfig.BalancedAllocation:
 		return balancedAllocationScoreStrategy, nil
+	case apiconfig.LeastNUMANodes:
+		// this is a special case handled down the flow. We just need to NOT error out.
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("illegal scoring strategy found")
 	}
@@ -151,4 +148,30 @@ func containerScopeScore(pod *v1.Pod, zones topologyv1alpha2.ZoneList, scorerFn 
 	finalScore := int64(stat.Mean(contScore, nil))
 	klog.V(5).InfoS("container scope scoring final node score", "finalScore", finalScore)
 	return finalScore, nil
+}
+
+func (tm *TopologyMatch) scoringHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) scoringFn {
+	if tm.scoreStrategyType == apiconfig.LeastNUMANodes {
+		if conf.Scope == kubeletconfig.PodTopologyManagerScope {
+			return leastNUMAPodScopeScore
+		}
+		if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
+			return leastNUMAContainerScopeScore
+		}
+		return nil // cannot happen
+	}
+	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
+		return nil
+	}
+	if conf.Scope == kubeletconfig.PodTopologyManagerScope {
+		return func(pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
+			return podScopeScore(pod, zones, tm.scoreStrategyFunc, tm.resourceToWeightMap)
+		}
+	}
+	if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
+		return func(pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
+			return containerScopeScore(pod, zones, tm.scoreStrategyFunc, tm.resourceToWeightMap)
+		}
+	}
+	return nil // cannot happen
 }

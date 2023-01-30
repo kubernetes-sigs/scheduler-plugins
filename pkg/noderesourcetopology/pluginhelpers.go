@@ -109,21 +109,3 @@ func extractResources(zone topologyv1alpha2.Zone) corev1.ResourceList {
 	}
 	return res
 }
-
-func newFilterHandlers() filterHandlersMap {
-	return filterHandlersMap{
-		topologyv1alpha2.SingleNUMANodePodLevel:       singleNUMAPodLevelHandler,
-		topologyv1alpha2.SingleNUMANodeContainerLevel: singleNUMAContainerLevelHandler,
-	}
-}
-
-func newScoringHandlers(strategy scoreStrategyFn, resourceToWeightMap resourceToWeightMap) scoreHandlersMap {
-	return scoreHandlersMap{
-		topologyv1alpha2.SingleNUMANodePodLevel: func(pod *corev1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
-			return podScopeScore(pod, zones, strategy, resourceToWeightMap)
-		},
-		topologyv1alpha2.SingleNUMANodeContainerLevel: func(pod *corev1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
-			return containerScopeScore(pod, zones, strategy, resourceToWeightMap)
-		},
-	}
-}

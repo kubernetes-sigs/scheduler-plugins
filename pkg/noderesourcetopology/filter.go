@@ -25,6 +25,7 @@ import (
 	"k8s.io/klog/v2"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -198,7 +199,6 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 
 	nodeName := nodeInfo.Node().Name
 	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
-
 	if !ok {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("invalid node topology data for node %s", nodeName))
 	}
@@ -207,15 +207,9 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	klog.V(5).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
-	if len(nodeTopology.TopologyPolicies) == 0 {
-		klog.V(2).InfoS("Cannot determine policy", "node", nodeName)
-		return nil
-	}
 
-	policyName := nodeTopology.TopologyPolicies[0]
-	handler, ok := tm.filterHandlers[topologyv1alpha2.TopologyManagerPolicy(policyName)]
-	if !ok {
-		klog.V(4).InfoS("Policy handler not found", "policy", policyName)
+	handler := filterHandlerFromTopologyManagerConfig(topologyManagerConfigFromNodeResourceTopology(nodeTopology))
+	if handler == nil {
 		return nil
 	}
 	status := handler(pod, nodeTopology.Zones, nodeInfo)
@@ -265,4 +259,17 @@ func hasNonNativeResource(pod *v1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func filterHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) filterFn {
+	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
+		return nil
+	}
+	if conf.Scope == kubeletconfig.PodTopologyManagerScope {
+		return singleNUMAPodLevelHandler
+	}
+	if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
+		return singleNUMAContainerLevelHandler
+	}
+	return nil // cannot happen
 }
