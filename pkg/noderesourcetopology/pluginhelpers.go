@@ -117,7 +117,7 @@ func newFilterHandlers() filterHandlersMap {
 	}
 }
 
-func newScoringHandlers(strategy scoreStrategy, resourceToWeightMap resourceToWeightMap) scoreHandlersMap {
+func newScoringHandlers(strategy scoreStrategyFn, resourceToWeightMap resourceToWeightMap) scoreHandlersMap {
 	return scoreHandlersMap{
 		topologyv1alpha1.SingleNUMANodePodLevel: func(pod *corev1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
 			return podScopeScore(pod, zones, strategy, resourceToWeightMap)

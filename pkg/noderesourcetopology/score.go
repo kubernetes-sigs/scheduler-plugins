@@ -36,7 +36,7 @@ const (
 	defaultWeight = int64(1)
 )
 
-type scoreStrategy func(v1.ResourceList, v1.ResourceList, resourceToWeightMap) int64
+type scoreStrategyFn func(v1.ResourceList, v1.ResourceList, resourceToWeightMap) int64
 
 // resourceToWeightMap contains resource name and weight.
 type resourceToWeightMap map[v1.ResourceName]int64
@@ -93,9 +93,9 @@ func (tm *TopologyMatch) ScoreExtensions() framework.ScoreExtensions {
 	return nil
 }
 
-// scoreForEachNUMANode will iterate over all NUMA zones of the node and invoke the scoreStrategy func for every zone.
+// scoreForEachNUMANode will iterate over all NUMA zones of the node and invoke the scoreStrategyFn func for every zone.
 // it will return the minimal score of all the calculated NUMA's score, in order to avoid edge cases.
-func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, score scoreStrategy, resourceToWeightMap resourceToWeightMap) int64 {
+func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, score scoreStrategyFn, resourceToWeightMap resourceToWeightMap) int64 {
 	numaScores := make([]int64, len(numaList))
 	minScore := int64(0)
 
@@ -111,7 +111,7 @@ func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, scor
 	return minScore
 }
 
-func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreStrategy, error) {
+func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreStrategyFn, error) {
 	switch strategy {
 	case apiconfig.MostAllocated:
 		return mostAllocatedScoreStrategy, nil
@@ -124,7 +124,7 @@ func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreSt
 	}
 }
 
-func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
+func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
 	// This code is in Admit implementation of pod scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_pod.go#L52
 	// but it works with HintProviders, takes into account all possible allocations.
@@ -136,7 +136,7 @@ func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreS
 	return finalScore, nil
 }
 
-func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
+func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
 	// This code is in Admit implementation of container scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_container.go#L52
 	containers := append(pod.Spec.InitContainers, pod.Spec.Containers...)

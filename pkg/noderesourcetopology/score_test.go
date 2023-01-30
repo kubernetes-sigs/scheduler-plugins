@@ -150,7 +150,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 		name      string
 		wantedRes nodeToScoreMap
 		requests  []podRequests
-		strategy  scoreStrategy
+		strategy  scoreStrategyFn
 	}
 
 	tests := []testScenario{
