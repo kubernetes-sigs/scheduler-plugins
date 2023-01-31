@@ -124,7 +124,8 @@ func TestQOSPlugin(t *testing.T) {
 
 	// Wait for all Pods are in the scheduling queue.
 	err = wait.Poll(time.Millisecond*200, wait.ForeverTestTimeout, func() (bool, error) {
-		if len(testCtx.Scheduler.SchedulingQueue.PendingPods()) == len(pods) {
+		pendingPods, _ := testCtx.Scheduler.SchedulingQueue.PendingPods()
+		if len(pendingPods) == len(pods) {
 			return true, nil
 		}
 		return false, nil
