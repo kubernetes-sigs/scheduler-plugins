@@ -43,6 +43,8 @@ type TopologicalSort struct {
 	namespaces []string
 }
 
+var _ framework.QueueSortPlugin = &TopologicalSort{}
+
 // Name : returns the name of the plugin.
 func (ts *TopologicalSort) Name() string {
 	return Name
