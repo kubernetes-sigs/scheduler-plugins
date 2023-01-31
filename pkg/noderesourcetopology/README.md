@@ -20,11 +20,11 @@ Document capturing the NodeResourceTopology API Custom Resource Definition Stand
 In case the cumulative count of node resource allocatable appear to be the same for both the nodes in the cluster, topology aware scheduler plugin uses the CRD instance corresponding to the nodes to obtain the resource topology information to make a topology-aware scheduling decision.
 
 **NOTE:**
-- [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12) onwards, CRD has been changed from namespace to cluster scoped. 
+- [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12) onwards, CRD has been changed from namespace to cluster scoped.
 Scheduler plugin version > v0.21.6 depends on NodeResourceTopology CRD v0.0.12 and the namespace field has been deprecated from the NodeResourceTopology scheduler config args.
 
 Dependency:
-- Scheduler plugin version <= v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.10](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.10).  
+- Scheduler plugin version <= v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.10](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.10).
 - Scheduler plugin version > v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12).
 
 ### Config
@@ -97,6 +97,25 @@ profiles:
         type: "LeastAllocated"
       cacheResyncPeriodSeconds: 5
 ```
+
+#### ScoringStrategy
+
+The topology-aware scheduler supports four scoring strategies. You can set a strategy via SchedulerConfigConfiguration, by setting the scoringStrategy option.
+There are four supported strategies:
+
+* MostAllocated
+* BalancedAllocation
+* LeastAllocated
+* LeastNUMANodes
+
+The MostAllocated, BalancedAllocation and LeastAllocated strategies only work with the single-numa-node Topology Manager policy and indicate how score of the worker
+node will be calculated based on current utilization:
+
+* MostAllocated - favors node with the least amount of available resources
+* BalancedAllocation - favors node with balanced resource usage rate
+* LeastAllocated - favors node with the most amount of available resource
+
+The LeastNUMANodes strategy works with all the Topology Manager policies and favors nodes which require the least amount of topology zones to satisfy the resource requests for a given pod.
 
 #### Cluster
 
