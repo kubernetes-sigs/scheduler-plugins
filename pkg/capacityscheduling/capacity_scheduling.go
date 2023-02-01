@@ -793,13 +793,6 @@ func getPDBLister(informerFactory informers.SharedInformerFactory) policylisters
 	return informerFactory.Policy().V1().PodDisruptionBudgets().Lister()
 }
 
-func getPodDisruptionBudgets(pdbLister policylisters.PodDisruptionBudgetLister) ([]*policy.PodDisruptionBudget, error) {
-	if pdbLister != nil {
-		return pdbLister.List(labels.Everything())
-	}
-	return nil, nil
-}
-
 // computePodResourceRequest returns a framework.Resource that covers the largest
 // width in each resource dimension. Because init-containers run sequentially, we collect
 // the max in each dimension iteratively. In contrast, we sum the resource vectors for
