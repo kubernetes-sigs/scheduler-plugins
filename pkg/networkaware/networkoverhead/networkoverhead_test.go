@@ -31,7 +31,6 @@ import (
 	"k8s.io/client-go/informers"
 	testClientSet "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
@@ -1610,15 +1609,4 @@ func makePodAllocated(selector string, podName string, hostname string, priority
 			},
 		},
 	}
-}
-
-// podScheduled returns true if a node is assigned to the given pod.
-func podScheduled(c *testClientSet.Clientset, podNamespace, podName string) bool {
-	pod, err := c.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	if err != nil {
-		// This could be a connection error so we want to retry.
-		klog.ErrorS(err, "Failed to get pod", "pod", klog.KRef(podNamespace, podName))
-		return false
-	}
-	return pod.Spec.NodeName != ""
 }

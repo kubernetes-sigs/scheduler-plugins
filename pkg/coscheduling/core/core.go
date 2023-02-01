@@ -79,8 +79,6 @@ type PodGroupManager struct {
 	pgLister pglister.PodGroupLister
 	// podLister is pod lister
 	podLister listerv1.PodLister
-	// reserveResourcePercentage is the reserved resource for the max finished group, range (0,100]
-	reserveResourcePercentage int32
 	sync.RWMutex
 }
 

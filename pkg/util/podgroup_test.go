@@ -22,12 +22,6 @@ import (
 	"k8s.io/kubernetes/pkg/apis/core"
 )
 
-type test struct {
-	old           interface{}
-	new           interface{}
-	expectedError bool
-}
-
 func TestCreateMergePatch(t *testing.T) {
 	tests := []struct {
 		old      interface{}
