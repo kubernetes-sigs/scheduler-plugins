@@ -1231,16 +1231,8 @@ func cloneResourceList(rl v1.ResourceList) v1.ResourceList {
 func parseTestUserEntry(entries []testUserEntry) []testEntry {
 	var teList []testEntry
 	for i, e := range entries {
-		irl, err := parseContainerRes(e.initCntReq)
-		if err != nil {
-			panic(fmt.Errorf("cannot parse entry: %q, error: %v", e.description, err))
-		}
-
-		rl, err := parseContainerRes(e.cntReq)
-		if err != nil {
-			panic(fmt.Errorf("cannot parse entry: %q, error: %v", e.description, err))
-		}
-
+		irl := parseContainerRes(e.initCntReq)
+		rl := parseContainerRes(e.cntReq)
 		pod := makePod(fmt.Sprintf("testpod%d", i), withMultiInitContainers(irl), withMultiContainers(rl))
 		te := testEntry{
 			name:       e.description,
@@ -1252,7 +1244,7 @@ func parseTestUserEntry(entries []testUserEntry) []testEntry {
 	return teList
 }
 
-func parseContainerRes(cntRes []map[string]string) ([]v1.ResourceList, error) {
+func parseContainerRes(cntRes []map[string]string) []v1.ResourceList {
 	rll := []v1.ResourceList{}
 	for i := 0; i < len(cntRes); i++ {
 		resMap := cntRes[i]
@@ -1264,7 +1256,7 @@ func parseContainerRes(cntRes []map[string]string) ([]v1.ResourceList, error) {
 		rll = append(rll, rl)
 	}
 
-	return rll, nil
+	return rll
 }
 
 func parseState(error string) *framework.Status {
