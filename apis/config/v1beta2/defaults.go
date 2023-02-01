@@ -107,7 +107,7 @@ func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 		args.TargetUtilization = &DefaultTargetUtilizationPercent
 	}
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
-		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+		args.MetricProvider.Type = DefaultMetricProviderType
 	}
 	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
 		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
@@ -117,7 +117,7 @@ func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 // SetDefaults_LoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
 func SetDefaults_LoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
-		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+		args.MetricProvider.Type = DefaultMetricProviderType
 	}
 	if args.SafeVarianceMargin == nil || *args.SafeVarianceMargin < 0 {
 		args.SafeVarianceMargin = &DefaultSafeVarianceMargin

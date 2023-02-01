@@ -99,7 +99,7 @@ func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs)
 // SetDefaultTrimaranSpec sets the default parameters for common Trimaran plugins
 func SetDefaultTrimaranSpec(args *TrimaranSpec) {
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
-		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+		args.MetricProvider.Type = DefaultMetricProviderType
 	}
 	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
 		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
