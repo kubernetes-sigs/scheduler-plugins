@@ -182,10 +182,7 @@ func (no *NetworkOverhead) PreFilter(ctx context.Context, state *framework.Cycle
 	}
 
 	// Get AppGroup CR
-	appGroup, err := no.findAppGroupNetworkOverhead(agName)
-	if err != nil {
-		return nil, framework.NewStatus(framework.Success, "Error while returning AppGroup, return")
-	}
+	appGroup := no.findAppGroupNetworkOverhead(agName)
 
 	// Get NetworkTopology CR
 	networkTopology, err := no.findNetworkTopologyNetworkOverhead()
@@ -615,9 +612,8 @@ func getPreFilterState(cycleState *framework.CycleState) (*PreFilterState, error
 	return state, nil
 }
 
-func (no *NetworkOverhead) findAppGroupNetworkOverhead(agName string) (*agv1alpha1.AppGroup, error) {
+func (no *NetworkOverhead) findAppGroupNetworkOverhead(agName string) *agv1alpha1.AppGroup {
 	klog.V(6).InfoS("namespaces: %s", no.namespaces)
-	var err error
 	for _, namespace := range no.namespaces {
 		klog.V(6).InfoS("ag.lister: %v", no.agLister)
 
@@ -628,10 +624,10 @@ func (no *NetworkOverhead) findAppGroupNetworkOverhead(agName string) (*agv1alph
 			continue
 		}
 		if appGroup != nil {
-			return appGroup, nil
+			return appGroup
 		}
 	}
-	return nil, err
+	return nil
 }
 
 func (no *NetworkOverhead) findNetworkTopologyNetworkOverhead() (*ntv1alpha1.NetworkTopology, error) {
