@@ -765,7 +765,7 @@ func getPreFilterState(cycleState *framework.CycleState) (*PreFilterState, error
 	c, err := cycleState.Read(preFilterStateKey)
 	if err != nil {
 		// preFilterState doesn't exist, likely PreFilter wasn't invoked.
-		return nil, fmt.Errorf("error reading %q from cycleState: %v", preFilterStateKey, err)
+		return nil, fmt.Errorf("error reading %q from cycleState: %w", preFilterStateKey, err)
 	}
 
 	s, ok := c.(*PreFilterState)
@@ -779,7 +779,7 @@ func getElasticQuotaSnapshotState(cycleState *framework.CycleState) (*ElasticQuo
 	c, err := cycleState.Read(ElasticQuotaSnapshotKey)
 	if err != nil {
 		// ElasticQuotaSnapshotState doesn't exist, likely PreFilter wasn't invoked.
-		return nil, fmt.Errorf("error reading %q from cycleState: %v", ElasticQuotaSnapshotKey, err)
+		return nil, fmt.Errorf("error reading %q from cycleState: %w", ElasticQuotaSnapshotKey, err)
 	}
 
 	s, ok := c.(*ElasticQuotaSnapshotState)
