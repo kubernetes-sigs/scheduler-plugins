@@ -20,21 +20,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	listerv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
 )
 
 type Passthrough struct {
-	lister listerv1alpha1.NodeResourceTopologyLister
+	lister listerv1alpha2.NodeResourceTopologyLister
 }
 
-func NewPassthrough(lister listerv1alpha1.NodeResourceTopologyLister) Interface {
+func NewPassthrough(lister listerv1alpha2.NodeResourceTopologyLister) Interface {
 	return Passthrough{
 		lister: lister,
 	}
 }
 
-func (pt Passthrough) GetCachedNRTCopy(nodeName string, _ *corev1.Pod) (*topologyv1alpha1.NodeResourceTopology, bool) {
+func (pt Passthrough) GetCachedNRTCopy(nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
 	klog.V(5).InfoS("Lister for nodeResTopoPlugin", "lister", pt.lister)
 	nrt, err := pt.lister.Get(nodeName)
 	if err != nil {

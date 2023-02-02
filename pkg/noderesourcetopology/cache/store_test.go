@@ -21,7 +21,7 @@ import (
 	"sort"
 	"testing"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,7 +30,7 @@ import (
 )
 
 func TestFingerprintFromNRT(t *testing.T) {
-	nrt := &topologyv1alpha1.NodeResourceTopology{
+	nrt := &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "node-0",
 		},
@@ -60,7 +60,7 @@ func TestFingerprintFromNRT(t *testing.T) {
 }
 
 func TestNRTStoreGet(t *testing.T) {
-	nrts := []*topologyv1alpha1.NodeResourceTopology{
+	nrts := []*topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "node-0",
@@ -96,7 +96,7 @@ func TestNRTStoreGet(t *testing.T) {
 }
 
 func TestNRTStoreUpdate(t *testing.T) {
-	nrts := []*topologyv1alpha1.NodeResourceTopology{
+	nrts := []*topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "node-0",
@@ -116,7 +116,7 @@ func TestNRTStoreUpdate(t *testing.T) {
 	}
 	ns := newNrtStore(nrts)
 
-	nrt3 := &topologyv1alpha1.NodeResourceTopology{
+	nrt3 := &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "node-2",
 		},
@@ -146,7 +146,7 @@ func TestNRTStoreContains(t *testing.T) {
 		t.Errorf("unexpected node found")
 	}
 
-	nrts := []*topologyv1alpha1.NodeResourceTopology{
+	nrts := []*topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "node-0",
@@ -330,14 +330,14 @@ func TestResourceStoreDeletePod(t *testing.T) {
 }
 
 func TestResourceStoreUpdate(t *testing.T) {
-	nrt := &topologyv1alpha1.NodeResourceTopology{
+	nrt := &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta:       metav1.ObjectMeta{Name: "node"},
-		TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-		Zones: topologyv1alpha1.ZoneList{
+		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
+		Zones: topologyv1alpha2.ZoneList{
 			{
 				Name: "node-0",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "20", "20"),
 					MakeTopologyResInfo(memory, "32Gi", "32Gi"),
 				},
@@ -345,7 +345,7 @@ func TestResourceStoreUpdate(t *testing.T) {
 			{
 				Name: "node-1",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "20", "20"),
 					MakeTopologyResInfo(memory, "32Gi", "32Gi"),
 					MakeTopologyResInfo(nicName, "8", "8"),
@@ -440,7 +440,7 @@ func TestResourceStoreUpdate(t *testing.T) {
 	}
 }
 
-func findResourceInfo(rinfos []topologyv1alpha1.ResourceInfo, name string) *topologyv1alpha1.ResourceInfo {
+func findResourceInfo(rinfos []topologyv1alpha2.ResourceInfo, name string) *topologyv1alpha2.ResourceInfo {
 	for idx := 0; idx < len(rinfos); idx++ {
 		if rinfos[idx].Name == name {
 			return &rinfos[idx]

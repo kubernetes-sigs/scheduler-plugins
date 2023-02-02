@@ -29,7 +29,7 @@ import (
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
 const (
@@ -77,20 +77,20 @@ func subtractFromNUMAs(resources v1.ResourceList, numaNodes NUMANodeList, nodes 
 	}
 }
 
-type filterFn func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
-type scoringFn func(*v1.Pod, topologyv1alpha1.ZoneList) (int64, *framework.Status)
+type filterFn func(pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
+type scoringFn func(*v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
 
-type filterHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]filterFn
-type scoreHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]scoringFn
+type filterHandlersMap map[topologyv1alpha2.TopologyManagerPolicy]filterFn
+type scoreHandlersMap map[topologyv1alpha2.TopologyManagerPolicy]scoringFn
 
 func leastNUMAscoreHandlers() scoreHandlersMap {
 	return scoreHandlersMap{
-		topologyv1alpha1.SingleNUMANodePodLevel:       leastNUMAPodScopeScore,
-		topologyv1alpha1.SingleNUMANodeContainerLevel: leastNUMAContainerScopeScore,
-		topologyv1alpha1.BestEffortPodLevel:           leastNUMAPodScopeScore,
-		topologyv1alpha1.BestEffortContainerLevel:     leastNUMAContainerScopeScore,
-		topologyv1alpha1.RestrictedPodLevel:           leastNUMAPodScopeScore,
-		topologyv1alpha1.RestrictedContainerLevel:     leastNUMAContainerScopeScore,
+		topologyv1alpha2.SingleNUMANodePodLevel:       leastNUMAPodScopeScore,
+		topologyv1alpha2.SingleNUMANodeContainerLevel: leastNUMAContainerScopeScore,
+		topologyv1alpha2.BestEffortPodLevel:           leastNUMAPodScopeScore,
+		topologyv1alpha2.BestEffortContainerLevel:     leastNUMAContainerScopeScore,
+		topologyv1alpha2.RestrictedPodLevel:           leastNUMAPodScopeScore,
+		topologyv1alpha2.RestrictedContainerLevel:     leastNUMAContainerScopeScore,
 	}
 }
 
@@ -162,7 +162,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEvent {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
-	nrtGVK := fmt.Sprintf("noderesourcetopologies.v1alpha1.%v", topologyapi.GroupName)
+	nrtGVK := fmt.Sprintf("noderesourcetopologies.v1alpha2.%v", topologyapi.GroupName)
 	return []framework.ClusterEvent{
 		{Resource: framework.Pod, ActionType: framework.Delete},
 		{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable},

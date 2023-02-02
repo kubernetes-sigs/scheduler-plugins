@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,34 +29,34 @@ import (
 
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	faketopologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 )
 
 type nodeToScoreMap map[string]int64
 
-func initTest(policy topologyv1alpha1.TopologyManagerPolicy) (map[string]*v1.Node, v1alpha1.NodeResourceTopologyLister) {
-	nodeTopologies := make([]*topologyv1alpha1.NodeResourceTopology, 3)
+func initTest(policy topologyv1alpha2.TopologyManagerPolicy) (map[string]*v1.Node, v1alpha2.NodeResourceTopologyLister) {
+	nodeTopologies := make([]*topologyv1alpha2.NodeResourceTopology, 3)
 	nodesMap := make(map[string]*v1.Node)
 
 	// noderesourcetopology objects
-	nodeTopologies[0] = &topologyv1alpha1.NodeResourceTopology{
+	nodeTopologies[0] = &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta:       metav1.ObjectMeta{Name: "Node1"},
 		TopologyPolicies: []string{string(policy)},
-		Zones: topologyv1alpha1.ZoneList{
-			topologyv1alpha1.Zone{
+		Zones: topologyv1alpha2.ZoneList{
+			topologyv1alpha2.Zone{
 				Name: "node-0",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "4", "4"),
 					MakeTopologyResInfo(memory, "500Mi", "500Mi"),
 				},
 			},
-			topologyv1alpha1.Zone{
+			topologyv1alpha2.Zone{
 				Name: "node-1",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "4", "4"),
 					MakeTopologyResInfo(memory, "500Mi", "500Mi"),
 				},
@@ -64,42 +64,42 @@ func initTest(policy topologyv1alpha1.TopologyManagerPolicy) (map[string]*v1.Nod
 		},
 	}
 
-	nodeTopologies[1] = &topologyv1alpha1.NodeResourceTopology{
+	nodeTopologies[1] = &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta:       metav1.ObjectMeta{Name: "Node2"},
 		TopologyPolicies: []string{string(policy)},
-		Zones: topologyv1alpha1.ZoneList{
-			topologyv1alpha1.Zone{
+		Zones: topologyv1alpha2.ZoneList{
+			topologyv1alpha2.Zone{
 				Name: "node-0",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "2", "2"),
 					MakeTopologyResInfo(memory, "50Mi", "50Mi"),
 				},
-			}, topologyv1alpha1.Zone{
+			}, topologyv1alpha2.Zone{
 				Name: "node-1",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "2", "2"),
 					MakeTopologyResInfo(memory, "50Mi", "50Mi"),
 				},
 			},
 		},
 	}
-	nodeTopologies[2] = &topologyv1alpha1.NodeResourceTopology{
+	nodeTopologies[2] = &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta:       metav1.ObjectMeta{Name: "Node3"},
 		TopologyPolicies: []string{string(policy)},
-		Zones: topologyv1alpha1.ZoneList{
-			topologyv1alpha1.Zone{
+		Zones: topologyv1alpha2.ZoneList{
+			topologyv1alpha2.Zone{
 				Name: "node-0",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "6", "6"),
 					MakeTopologyResInfo(memory, "60Mi", "60Mi"),
 				},
-			}, topologyv1alpha1.Zone{
+			}, topologyv1alpha2.Zone{
 				Name: "node-1",
 				Type: "Node",
-				Resources: topologyv1alpha1.ResourceInfoList{
+				Resources: topologyv1alpha2.ResourceInfoList{
 					MakeTopologyResInfo(cpu, "6", "6"),
 					MakeTopologyResInfo(memory, "60Mi", "60Mi"),
 				},
@@ -119,8 +119,8 @@ func initTest(policy topologyv1alpha1.TopologyManagerPolicy) (map[string]*v1.Nod
 	}
 
 	// init topology lister
-	fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 	for _, obj := range nodeTopologies {
 		fakeInformer.Informer().GetStore().Add(obj)
 	}
@@ -190,7 +190,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		nodesMap, lister := initTest(topologyv1alpha1.SingleNUMANodeContainerLevel)
+		nodesMap, lister := initTest(topologyv1alpha2.SingleNUMANodeContainerLevel)
 		t.Run(test.name, func(t *testing.T) {
 			scoringHandlers := newScoringHandlers(test.strategy, nil)
 
@@ -243,7 +243,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 		name        string
 		podRequests []v1.ResourceList
 		wantedRes   nodeToScoreMap
-		policy      topologyv1alpha1.TopologyManagerPolicy
+		policy      topologyv1alpha2.TopologyManagerPolicy
 	}{
 		{
 			name: "container scope, one container case 1",
@@ -258,7 +258,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 88,
 				"Node3": 88,
 			},
-			policy: topologyv1alpha1.BestEffortContainerLevel,
+			policy: topologyv1alpha2.BestEffortContainerLevel,
 		},
 		{
 			name: "container scope, one container case 2",
@@ -273,7 +273,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 76,
 				"Node3": 88,
 			},
-			policy: topologyv1alpha1.BestEffortContainerLevel,
+			policy: topologyv1alpha2.BestEffortContainerLevel,
 		},
 		{
 			name: "container scope, one container case 3",
@@ -288,7 +288,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 0,
 				"Node3": 88,
 			},
-			policy: topologyv1alpha1.BestEffortContainerLevel,
+			policy: topologyv1alpha2.BestEffortContainerLevel,
 		},
 		{
 			name: "container scope, two containers case 1",
@@ -307,7 +307,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 88,
 				"Node3": 88,
 			},
-			policy: topologyv1alpha1.BestEffortContainerLevel,
+			policy: topologyv1alpha2.BestEffortContainerLevel,
 		},
 		{
 			name: "container scope, two containers case 2",
@@ -326,7 +326,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 76,
 				"Node3": 88,
 			},
-			policy: topologyv1alpha1.BestEffortContainerLevel,
+			policy: topologyv1alpha2.BestEffortContainerLevel,
 		},
 		{
 			name: "container scope, two containers case 3",
@@ -345,7 +345,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 0,
 				"Node3": 88,
 			},
-			policy: topologyv1alpha1.BestEffortContainerLevel,
+			policy: topologyv1alpha2.BestEffortContainerLevel,
 		},
 		{
 			name: "container scope, two containers non NUMA resource",
@@ -362,7 +362,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 100,
 				"Node3": 100,
 			},
-			policy: topologyv1alpha1.BestEffortContainerLevel,
+			policy: topologyv1alpha2.BestEffortContainerLevel,
 		},
 		{
 			name: "pod scope, two containers case 1",
@@ -381,7 +381,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 76,
 				"Node3": 76,
 			},
-			policy: topologyv1alpha1.BestEffortPodLevel,
+			policy: topologyv1alpha2.BestEffortPodLevel,
 		},
 		{
 			name: "pod scope, two containers case 2",
@@ -400,7 +400,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 76,
 				"Node3": 76,
 			},
-			policy: topologyv1alpha1.BestEffortPodLevel,
+			policy: topologyv1alpha2.BestEffortPodLevel,
 		},
 		{
 			name: "pod scope, two containers case 3",
@@ -419,7 +419,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 0,
 				"Node3": 76,
 			},
-			policy: topologyv1alpha1.BestEffortPodLevel,
+			policy: topologyv1alpha2.BestEffortPodLevel,
 		},
 		{
 			name: "pod scope, one containers non NUMA resource",
@@ -433,7 +433,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 100,
 				"Node3": 100,
 			},
-			policy: topologyv1alpha1.BestEffortPodLevel,
+			policy: topologyv1alpha2.BestEffortPodLevel,
 		},
 	}
 

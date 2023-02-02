@@ -168,7 +168,7 @@ For configuring your cluster with [NFD-topology updater](https://github.com/kube
 
 ```yaml
 # Worker Node A CRD spec
-apiVersion: topology.node.k8s.io/v1alpha1
+apiVersion: topology.node.k8s.io/v1alpha2
 kind: NodeResourceTopology
 metadata:
   name: worker-node-A
@@ -202,7 +202,7 @@ zones:
 
 ```yaml
 # Worker Node B CRD spec
-apiVersion: topology.node.k8s.io/v1alpha1
+apiVersion: topology.node.k8s.io/v1alpha2
 kind: NodeResourceTopology
 metadata:
   name: worker-node-B

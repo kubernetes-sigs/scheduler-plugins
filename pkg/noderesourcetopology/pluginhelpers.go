@@ -26,7 +26,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	topoclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 
@@ -43,7 +43,7 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	}
 
 	topologyInformerFactory := topologyinformers.NewSharedInformerFactory(topoClient, 0)
-	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha1().NodeResourceTopologies()
+	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha2().NodeResourceTopologies()
 	nodeTopologyLister := nodeTopologyInformer.Lister()
 
 	klog.V(5).InfoS("Start nodeTopologyInformer")
@@ -79,7 +79,7 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	return nrtCache, nil
 }
 
-func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
+func createNUMANodeList(zones topologyv1alpha2.ZoneList) NUMANodeList {
 	nodes := make(NUMANodeList, 0, len(zones))
 	for _, zone := range zones {
 		if zone.Type != "Node" {
@@ -102,7 +102,7 @@ func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
 	return nodes
 }
 
-func extractResources(zone topologyv1alpha1.Zone) corev1.ResourceList {
+func extractResources(zone topologyv1alpha2.Zone) corev1.ResourceList {
 	res := make(corev1.ResourceList)
 	for _, resInfo := range zone.Resources {
 		res[corev1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
@@ -112,17 +112,17 @@ func extractResources(zone topologyv1alpha1.Zone) corev1.ResourceList {
 
 func newFilterHandlers() filterHandlersMap {
 	return filterHandlersMap{
-		topologyv1alpha1.SingleNUMANodePodLevel:       singleNUMAPodLevelHandler,
-		topologyv1alpha1.SingleNUMANodeContainerLevel: singleNUMAContainerLevelHandler,
+		topologyv1alpha2.SingleNUMANodePodLevel:       singleNUMAPodLevelHandler,
+		topologyv1alpha2.SingleNUMANodeContainerLevel: singleNUMAContainerLevelHandler,
 	}
 }
 
 func newScoringHandlers(strategy scoreStrategyFn, resourceToWeightMap resourceToWeightMap) scoreHandlersMap {
 	return scoreHandlersMap{
-		topologyv1alpha1.SingleNUMANodePodLevel: func(pod *corev1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
+		topologyv1alpha2.SingleNUMANodePodLevel: func(pod *corev1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
 			return podScopeScore(pod, zones, strategy, resourceToWeightMap)
 		},
-		topologyv1alpha1.SingleNUMANodeContainerLevel: func(pod *corev1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
+		topologyv1alpha2.SingleNUMANodeContainerLevel: func(pod *corev1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
 			return containerScopeScore(pod, zones, strategy, resourceToWeightMap)
 		},
 	}

@@ -20,7 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
 func makePodByResourceList(resources *corev1.ResourceList) *corev1.Pod {
@@ -86,7 +86,7 @@ func makePodWithReqAndLimitByResourceList(resourcesReq, resourcesLim *corev1.Res
 	}
 }
 
-func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) corev1.ResourceList {
+func makeResourceListFromZones(zones topologyv1alpha2.ZoneList) corev1.ResourceList {
 	result := make(corev1.ResourceList)
 	for _, zone := range zones {
 		for _, resInfo := range zone.Resources {
@@ -100,8 +100,8 @@ func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) corev1.ResourceL
 	return result
 }
 
-func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha1.ResourceInfo {
-	return topologyv1alpha1.ResourceInfo{
+func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha2.ResourceInfo {
+	return topologyv1alpha2.ResourceInfo{
 		Name:      name,
 		Capacity:  resource.MustParse(capacity),
 		Available: resource.MustParse(available),

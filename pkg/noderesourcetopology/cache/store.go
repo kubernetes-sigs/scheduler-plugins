@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -34,12 +34,12 @@ import (
 // nrtStore maps the NRT data by node name. It is not thread safe and needs to be protected by a lock.
 // data is intentionally copied each time it enters and exists the store. E.g, no pointer sharing.
 type nrtStore struct {
-	data map[string]*topologyv1alpha1.NodeResourceTopology
+	data map[string]*topologyv1alpha2.NodeResourceTopology
 }
 
 // newNrtStore creates a new nrtStore and initializes it with copies of the provided Node Resource Topology data.
-func newNrtStore(nrts []*topologyv1alpha1.NodeResourceTopology) *nrtStore {
-	data := make(map[string]*topologyv1alpha1.NodeResourceTopology, len(nrts))
+func newNrtStore(nrts []*topologyv1alpha2.NodeResourceTopology) *nrtStore {
+	data := make(map[string]*topologyv1alpha2.NodeResourceTopology, len(nrts))
 	for _, nrt := range nrts {
 		data[nrt.Name] = nrt.DeepCopy()
 	}
@@ -56,7 +56,7 @@ func (nrs nrtStore) Contains(nodeName string) bool {
 
 // GetNRTCopyByNodeName returns a copy of the stored Node Resource Topology data for the given node,
 // or nil if no data is associated to that node.
-func (nrs *nrtStore) GetNRTCopyByNodeName(nodeName string) *topologyv1alpha1.NodeResourceTopology {
+func (nrs *nrtStore) GetNRTCopyByNodeName(nodeName string) *topologyv1alpha2.NodeResourceTopology {
 	obj, ok := nrs.data[nodeName]
 	if !ok {
 		klog.V(3).InfoS("nrtcache: missing cached NodeTopology", "node", nodeName)
@@ -66,7 +66,7 @@ func (nrs *nrtStore) GetNRTCopyByNodeName(nodeName string) *topologyv1alpha1.Nod
 }
 
 // Update adds or replace the Node Resource Topology associated to a node. Always do a copy.
-func (nrs *nrtStore) Update(nrt *topologyv1alpha1.NodeResourceTopology) {
+func (nrs *nrtStore) Update(nrt *topologyv1alpha2.NodeResourceTopology) {
 	nrs.data[nrt.Name] = nrt.DeepCopy()
 	klog.V(5).InfoS("nrtcache: updated cached NodeTopology", "node", nrt.Name)
 }
@@ -120,7 +120,7 @@ func (rs *resourceStore) DeletePod(pod *corev1.Pod) bool {
 
 // UpdateNRT updates the provided Node Resource Topology object with the resources tracked in this store,
 // performing pessimistic overallocation across all the NUMA zones.
-func (rs *resourceStore) UpdateNRT(logID string, nrt *topologyv1alpha1.NodeResourceTopology) {
+func (rs *resourceStore) UpdateNRT(logID string, nrt *topologyv1alpha2.NodeResourceTopology) {
 	for key, res := range rs.data {
 		// We cannot predict on which Zone the workload will be placed.
 		// And we should totally not guess. So the only safe (and conservative)
@@ -194,7 +194,7 @@ func (cnt counter) Len() int {
 
 // podFingerprintForNodeTopology extracts without recomputing the pods fingerprint from
 // the provided Node Resource Topology object.
-func podFingerprintForNodeTopology(nrt *topologyv1alpha1.NodeResourceTopology) string {
+func podFingerprintForNodeTopology(nrt *topologyv1alpha2.NodeResourceTopology) string {
 	if nrt.Annotations == nil {
 		return ""
 	}
