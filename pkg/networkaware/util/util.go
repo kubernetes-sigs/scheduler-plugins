@@ -62,13 +62,7 @@ func GetNodeRegion(node *v1.Node) string {
 	if labels == nil {
 		return ""
 	}
-
-	zone, _ := labels[v1.LabelTopologyRegion]
-	if zone == "" {
-		return ""
-	}
-
-	return zone
+	return labels[v1.LabelTopologyRegion]
 }
 
 // GetNodeZone : return the zone of the node
@@ -77,13 +71,7 @@ func GetNodeZone(node *v1.Node) string {
 	if labels == nil {
 		return ""
 	}
-
-	region, _ := labels[v1.LabelTopologyZone]
-	if region == "" {
-		return ""
-	}
-
-	return region
+	return labels[v1.LabelTopologyZone]
 }
 
 // GetPodAppGroupLabel : get AppGroup from pod annotations

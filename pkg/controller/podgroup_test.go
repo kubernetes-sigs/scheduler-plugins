@@ -263,7 +263,7 @@ func makePods(podNames []string, pgName string, phase v1.PodPhase, reference []m
 		pod := st.MakePod().Namespace("default").Name(name).Obj()
 		pod.Labels = map[string]string{v1alpha1.PodGroupLabel: pgName}
 		pod.Status.Phase = phase
-		if reference != nil && len(reference) != 0 {
+		if len(reference) != 0 {
 			pod.OwnerReferences = reference
 		}
 		pds = append(pds, pod)

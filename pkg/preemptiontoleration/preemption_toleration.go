@@ -321,7 +321,7 @@ func (pl *PreemptionToleration) calculateNumCandidates(numNodes int32) int32 {
 func (pl *PreemptionToleration) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
 		klog.V(5).InfoS("Pod is not eligible for preemption because it has a preemptionPolicy of Never", "pod", klog.KObj(pod))
-		return false, fmt.Sprint("not eligible due to preemptionPolicy=Never.")
+		return false, "not eligible due to preemptionPolicy=Never."
 	}
 	nodeInfos := pl.fh.SnapshotSharedLister().NodeInfos()
 	nomNodeName := pod.Status.NominatedNodeName
@@ -336,7 +336,7 @@ func (pl *PreemptionToleration) PodEligibleToPreemptOthers(pod *v1.Pod, nominate
 			podPriority := corev1helpers.PodPriority(pod)
 			for _, p := range nodeInfo.Pods {
 				if p.Pod.DeletionTimestamp != nil && corev1helpers.PodPriority(p.Pod) < podPriority {
-					return false, fmt.Sprint("not eligible due to a terminating pod on the nominated node.")
+					return false, "not eligible due to a terminating pod on the nominated node."
 				}
 			}
 		}

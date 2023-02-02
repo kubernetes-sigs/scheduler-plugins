@@ -349,7 +349,7 @@ func (no *NetworkOverhead) Score(ctx context.Context, cycleState *framework.Cycl
 	preFilterState, err := getPreFilterState(cycleState)
 	if err != nil {
 		klog.ErrorS(err, "Failed to read preFilterState from cycleState", "preFilterStateKey", preFilterStateKey)
-		return score, framework.NewStatus(framework.Error, fmt.Sprintf("not eligible due to failed to read from cycleState, return min score"))
+		return score, framework.NewStatus(framework.Error, "not eligible due to failed to read from cycleState, return min score")
 	}
 
 	// If scoreEqually, return minScore
