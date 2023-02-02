@@ -185,10 +185,7 @@ func (no *NetworkOverhead) PreFilter(ctx context.Context, state *framework.Cycle
 	appGroup := no.findAppGroupNetworkOverhead(agName)
 
 	// Get NetworkTopology CR
-	networkTopology, err := no.findNetworkTopologyNetworkOverhead()
-	if err != nil {
-		return nil, framework.NewStatus(framework.Success, "Error while returning NetworkTopology, return")
-	}
+	networkTopology := no.findNetworkTopologyNetworkOverhead()
 
 	// Sort Costs if manual weights were selected
 	no.sortNetworkTopologyCosts(networkTopology)
@@ -630,9 +627,8 @@ func (no *NetworkOverhead) findAppGroupNetworkOverhead(agName string) *agv1alpha
 	return nil
 }
 
-func (no *NetworkOverhead) findNetworkTopologyNetworkOverhead() (*ntv1alpha1.NetworkTopology, error) {
+func (no *NetworkOverhead) findNetworkTopologyNetworkOverhead() *ntv1alpha1.NetworkTopology {
 	klog.V(6).InfoS("namespaces: %s", no.namespaces)
-	var err error
 	for _, namespace := range no.namespaces {
 		klog.V(6).InfoS("nt.lister: %v", no.ntLister)
 		// NetworkTopology could not be placed in several namespaces simultaneously
@@ -642,8 +638,8 @@ func (no *NetworkOverhead) findNetworkTopologyNetworkOverhead() (*ntv1alpha1.Net
 			continue
 		}
 		if networkTopology != nil {
-			return networkTopology, nil
+			return networkTopology
 		}
 	}
-	return nil, err
+	return nil
 }
