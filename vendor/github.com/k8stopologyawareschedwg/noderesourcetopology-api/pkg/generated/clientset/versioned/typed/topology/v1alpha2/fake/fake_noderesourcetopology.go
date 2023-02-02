@@ -23,7 +23,7 @@ package fake
 import (
 	"context"
 
-	v1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	v1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -34,27 +34,27 @@ import (
 
 // FakeNodeResourceTopologies implements NodeResourceTopologyInterface
 type FakeNodeResourceTopologies struct {
-	Fake *FakeTopologyV1alpha1
+	Fake *FakeTopologyV1alpha2
 }
 
-var noderesourcetopologiesResource = schema.GroupVersionResource{Group: "topology.node.k8s.io", Version: "v1alpha1", Resource: "noderesourcetopologies"}
+var noderesourcetopologiesResource = schema.GroupVersionResource{Group: "topology.node.k8s.io", Version: "v1alpha2", Resource: "noderesourcetopologies"}
 
-var noderesourcetopologiesKind = schema.GroupVersionKind{Group: "topology.node.k8s.io", Version: "v1alpha1", Kind: "NodeResourceTopology"}
+var noderesourcetopologiesKind = schema.GroupVersionKind{Group: "topology.node.k8s.io", Version: "v1alpha2", Kind: "NodeResourceTopology"}
 
 // Get takes name of the nodeResourceTopology, and returns the corresponding nodeResourceTopology object, and an error if there is any.
-func (c *FakeNodeResourceTopologies) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NodeResourceTopology, err error) {
+func (c *FakeNodeResourceTopologies) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha2.NodeResourceTopology, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(noderesourcetopologiesResource, name), &v1alpha1.NodeResourceTopology{})
+		Invokes(testing.NewRootGetAction(noderesourcetopologiesResource, name), &v1alpha2.NodeResourceTopology{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.NodeResourceTopology), err
+	return obj.(*v1alpha2.NodeResourceTopology), err
 }
 
 // List takes label and field selectors, and returns the list of NodeResourceTopologies that match those selectors.
-func (c *FakeNodeResourceTopologies) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.NodeResourceTopologyList, err error) {
+func (c *FakeNodeResourceTopologies) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha2.NodeResourceTopologyList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(noderesourcetopologiesResource, noderesourcetopologiesKind, opts), &v1alpha1.NodeResourceTopologyList{})
+		Invokes(testing.NewRootListAction(noderesourcetopologiesResource, noderesourcetopologiesKind, opts), &v1alpha2.NodeResourceTopologyList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -63,8 +63,8 @@ func (c *FakeNodeResourceTopologies) List(ctx context.Context, opts v1.ListOptio
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1alpha1.NodeResourceTopologyList{ListMeta: obj.(*v1alpha1.NodeResourceTopologyList).ListMeta}
-	for _, item := range obj.(*v1alpha1.NodeResourceTopologyList).Items {
+	list := &v1alpha2.NodeResourceTopologyList{ListMeta: obj.(*v1alpha2.NodeResourceTopologyList).ListMeta}
+	for _, item := range obj.(*v1alpha2.NodeResourceTopologyList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -79,29 +79,29 @@ func (c *FakeNodeResourceTopologies) Watch(ctx context.Context, opts v1.ListOpti
 }
 
 // Create takes the representation of a nodeResourceTopology and creates it.  Returns the server's representation of the nodeResourceTopology, and an error, if there is any.
-func (c *FakeNodeResourceTopologies) Create(ctx context.Context, nodeResourceTopology *v1alpha1.NodeResourceTopology, opts v1.CreateOptions) (result *v1alpha1.NodeResourceTopology, err error) {
+func (c *FakeNodeResourceTopologies) Create(ctx context.Context, nodeResourceTopology *v1alpha2.NodeResourceTopology, opts v1.CreateOptions) (result *v1alpha2.NodeResourceTopology, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(noderesourcetopologiesResource, nodeResourceTopology), &v1alpha1.NodeResourceTopology{})
+		Invokes(testing.NewRootCreateAction(noderesourcetopologiesResource, nodeResourceTopology), &v1alpha2.NodeResourceTopology{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.NodeResourceTopology), err
+	return obj.(*v1alpha2.NodeResourceTopology), err
 }
 
 // Update takes the representation of a nodeResourceTopology and updates it. Returns the server's representation of the nodeResourceTopology, and an error, if there is any.
-func (c *FakeNodeResourceTopologies) Update(ctx context.Context, nodeResourceTopology *v1alpha1.NodeResourceTopology, opts v1.UpdateOptions) (result *v1alpha1.NodeResourceTopology, err error) {
+func (c *FakeNodeResourceTopologies) Update(ctx context.Context, nodeResourceTopology *v1alpha2.NodeResourceTopology, opts v1.UpdateOptions) (result *v1alpha2.NodeResourceTopology, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(noderesourcetopologiesResource, nodeResourceTopology), &v1alpha1.NodeResourceTopology{})
+		Invokes(testing.NewRootUpdateAction(noderesourcetopologiesResource, nodeResourceTopology), &v1alpha2.NodeResourceTopology{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.NodeResourceTopology), err
+	return obj.(*v1alpha2.NodeResourceTopology), err
 }
 
 // Delete takes name of the nodeResourceTopology and deletes it. Returns an error if one occurs.
 func (c *FakeNodeResourceTopologies) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(noderesourcetopologiesResource, name), &v1alpha1.NodeResourceTopology{})
+		Invokes(testing.NewRootDeleteAction(noderesourcetopologiesResource, name), &v1alpha2.NodeResourceTopology{})
 	return err
 }
 
@@ -109,16 +109,16 @@ func (c *FakeNodeResourceTopologies) Delete(ctx context.Context, name string, op
 func (c *FakeNodeResourceTopologies) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
 	action := testing.NewRootDeleteCollectionAction(noderesourcetopologiesResource, listOpts)
 
-	_, err := c.Fake.Invokes(action, &v1alpha1.NodeResourceTopologyList{})
+	_, err := c.Fake.Invokes(action, &v1alpha2.NodeResourceTopologyList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched nodeResourceTopology.
-func (c *FakeNodeResourceTopologies) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.NodeResourceTopology, err error) {
+func (c *FakeNodeResourceTopologies) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha2.NodeResourceTopology, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(noderesourcetopologiesResource, name, pt, data, subresources...), &v1alpha1.NodeResourceTopology{})
+		Invokes(testing.NewRootPatchSubresourceAction(noderesourcetopologiesResource, name, pt, data, subresources...), &v1alpha2.NodeResourceTopology{})
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.NodeResourceTopology), err
+	return obj.(*v1alpha2.NodeResourceTopology), err
 }

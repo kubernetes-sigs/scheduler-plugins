@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2023 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha2"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -32,6 +33,7 @@ import (
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	TopologyV1alpha1() topologyv1alpha1.TopologyV1alpha1Interface
+	TopologyV1alpha2() topologyv1alpha2.TopologyV1alpha2Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
@@ -39,11 +41,17 @@ type Interface interface {
 type Clientset struct {
 	*discovery.DiscoveryClient
 	topologyV1alpha1 *topologyv1alpha1.TopologyV1alpha1Client
+	topologyV1alpha2 *topologyv1alpha2.TopologyV1alpha2Client
 }
 
 // TopologyV1alpha1 retrieves the TopologyV1alpha1Client
 func (c *Clientset) TopologyV1alpha1() topologyv1alpha1.TopologyV1alpha1Interface {
 	return c.topologyV1alpha1
+}
+
+// TopologyV1alpha2 retrieves the TopologyV1alpha2Client
+func (c *Clientset) TopologyV1alpha2() topologyv1alpha2.TopologyV1alpha2Interface {
+	return c.topologyV1alpha2
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -71,6 +79,10 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	if err != nil {
 		return nil, err
 	}
+	cs.topologyV1alpha2, err = topologyv1alpha2.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfig(&configShallowCopy)
 	if err != nil {
@@ -84,6 +96,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
 	cs.topologyV1alpha1 = topologyv1alpha1.NewForConfigOrDie(c)
+	cs.topologyV1alpha2 = topologyv1alpha2.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -93,6 +106,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
 	cs.topologyV1alpha1 = topologyv1alpha1.New(c)
+	cs.topologyV1alpha2 = topologyv1alpha2.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

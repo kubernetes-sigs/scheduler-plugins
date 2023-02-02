@@ -1,4 +1,4 @@
-package v1alpha1
+package v1alpha2
 
 import (
 	_ "github.com/gogo/protobuf/gogoproto"
@@ -6,11 +6,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// DEPRECATED (to be removed in v1beta1): use top level attributes if needed
 type TopologyManagerPolicy string
 
 const (
 	// Constants of type TopologyManagerPolicy represent policy of the worker
-	// node's resource management component. It's TopologyManager in kubele.
+	// node's resource management component. It's TopologyManager in kubelet.
+	// DEPRECATED (to be removed in v1beta1): use top level attributes if needed
 	// SingleNUMANodeContainerLevel represent single-numa-node policy of
 	// the TopologyManager
 	SingleNUMANodeContainerLevel TopologyManagerPolicy = "SingleNUMANodeContainerLevel"
@@ -38,14 +40,18 @@ const (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Cluster,shortName=node-res-topo
 // +kubebuilder:metadata:annotations="api-approved.kubernetes.io=https://github.com/kubernetes/enhancements/pull/1870"
+// +kubebuilder:storageversion
 
 // NodeResourceTopology describes node resources and their topology.
 type NodeResourceTopology struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	TopologyPolicies []string `json:"topologyPolicies"`
-	Zones            ZoneList `json:"zones"`
+	// DEPRECATED (to be removed in v1beta1): use top level attributes if needed
+	TopologyPolicies []string `json:"topologyPolicies,omitempty"`
+
+	Zones      ZoneList      `json:"zones"`
+	Attributes AttributeList `json:"attributes,omitempty"`
 }
 
 // Zone represents a resource topology zone, e.g. socket, node, die or core.
