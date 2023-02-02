@@ -99,13 +99,7 @@ func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	// Pods belong to the same appGroup, get the CR
 	klog.V(6).InfoS("Pods belong to the same AppGroup CR", "p1 name", pInfo1.Pod.Name, "p2 name", pInfo2.Pod.Name, "appGroup", p1AppGroup)
 	agName := p1AppGroup
-	appGroup, err := ts.findAppGroupTopologicalSort(agName)
-
-	if err != nil {
-		klog.ErrorS(err, "Error while returning AppGroup")
-		s := &queuesort.PrioritySort{}
-		return s.Less(pInfo1, pInfo2)
-	}
+	appGroup := ts.findAppGroupTopologicalSort(agName)
 
 	// Get labels from both pods
 	labelsP1 := pInfo1.Pod.GetLabels()
@@ -121,9 +115,8 @@ func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	return orderP1 <= orderP2
 }
 
-func (ts *TopologicalSort) findAppGroupTopologicalSort(agName string) (*agv1alpha.AppGroup, error) {
+func (ts *TopologicalSort) findAppGroupTopologicalSort(agName string) *agv1alpha.AppGroup {
 	klog.V(6).InfoS("namespaces: %s", ts.namespaces)
-	var err error
 	for _, namespace := range ts.namespaces {
 		klog.V(6).InfoS("data.lister: %v", ts.agLister)
 		// AppGroup couldn't be placed in several namespaces simultaneously
@@ -133,8 +126,8 @@ func (ts *TopologicalSort) findAppGroupTopologicalSort(agName string) (*agv1alph
 			continue
 		}
 		if appGroup != nil {
-			return appGroup, nil
+			return appGroup
 		}
 	}
-	return nil, err
+	return nil
 }
