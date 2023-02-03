@@ -1,11 +1,10 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/50 # edited manually
-    controller-gen.kubebuilder.io/version: v0.6.2
+    api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/50
+    controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
   name: podgroups.scheduling.sigs.k8s.io
 spec:
@@ -98,9 +97,5 @@ spec:
         type: object
     served: true
     storage: true
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
+    subresources:
+      status: {}
