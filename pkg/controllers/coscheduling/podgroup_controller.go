@@ -18,17 +18,36 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"sort"
+	"strings"
+	"time"
 
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 // PodGroupReconciler reconciles a PodGroup object
 type PodGroupReconciler struct {
+	log      logr.Logger
+	recorder record.EventRecorder
+
 	client.Client
 	Scheme *runtime.Scheme
 }
@@ -47,16 +66,158 @@ type PodGroupReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	log := log.FromContext(ctx)
+	pg := &schedv1alpha1.PodGroup{}
+	if err := r.Get(ctx, req.NamespacedName, pg); err != nil {
+		if apierrs.IsNotFound(err) {
+			log.V(5).Info("Pod group has been deleted")
+			return ctrl.Result{}, nil
+		}
+		log.V(3).Error(err, "Unable to retrieve pod group")
+		return ctrl.Result{}, err
+	}
 
-	// TODO(user): your logic here
+	if pg.Status.Phase == schedv1alpha1.PodGroupFinished ||
+		pg.Status.Phase == schedv1alpha1.PodGroupFailed {
+		return ctrl.Result{}, nil
+	}
+	// If startScheduleTime - createTime > 2days,
+	// do not reconcile again because pod may have been GCed
+	if pg.Status.Scheduled == pg.Spec.MinMember && pg.Status.Running == 0 &&
+		pg.Status.ScheduleStartTime.Sub(pg.CreationTimestamp.Time) > 48*time.Hour {
+		r.recorder.Event(pg, v1.EventTypeWarning,
+			"Timeout", "schedule time longer than 48 hours")
+		return ctrl.Result{}, nil
+	}
 
-	return ctrl.Result{}, nil
+	pgCopy := pg.DeepCopy()
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList,
+		client.MatchingLabelsSelector{
+			Selector: labels.Set(map[string]string{
+				schedv1alpha1.PodGroupLabel: pgCopy.Name}).AsSelector(),
+		}); err != nil {
+		log.Error(err, "List pods for group failed")
+		return ctrl.Result{}, err
+	}
+	pods := podList.Items
+
+	switch pgCopy.Status.Phase {
+	case "":
+		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
+	case schedv1alpha1.PodGroupPending:
+		if len(pods) >= int(pg.Spec.MinMember) {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupPreScheduling
+			fillOccupiedObj(pgCopy, &pods[0])
+		}
+	default:
+		pgCopy.Status.Running, pgCopy.Status.Succeeded, pgCopy.Status.Failed = getCurrentPodStats(pods)
+
+		if len(pods) == 0 {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
+			break
+		}
+
+		if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember &&
+			pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduling {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
+		}
+
+		if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember &&
+			pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduled {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupRunning
+		}
+		// Final state of pod group
+		if pgCopy.Status.Failed != 0 &&
+			pgCopy.Status.Failed+pgCopy.Status.Running+pgCopy.Status.Succeeded >= pg.Spec.MinMember {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupFailed
+		}
+		if pgCopy.Status.Succeeded >= pg.Spec.MinMember {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupFinished
+		}
+	}
+
+	return r.patchPodGroup(ctx, pg, pgCopy)
+}
+
+func (r *PodGroupReconciler) patchPodGroup(ctx context.Context, old, new *schedv1alpha1.PodGroup) (ctrl.Result, error) {
+	if reflect.DeepEqual(old, new) {
+		return ctrl.Result{}, nil
+	}
+
+	patch := client.MergeFrom(old)
+	if err := r.Patch(ctx, new, patch); err != nil {
+		return ctrl.Result{}, err
+	}
+	err := r.Status().Patch(ctx, new, patch)
+	return ctrl.Result{}, err
+}
+
+func getCurrentPodStats(pods []v1.Pod) (int32, int32, int32) {
+	if len(pods) == 0 {
+		return 0, 0, 0
+	}
+
+	var (
+		running   int32 = 0
+		succeeded int32 = 0
+		failed    int32 = 0
+	)
+	for _, pod := range pods {
+		switch pod.Status.Phase {
+		case v1.PodRunning:
+			running++
+		case v1.PodSucceeded:
+			succeeded++
+		case v1.PodFailed:
+			failed++
+		}
+	}
+	return running, succeeded, failed
+}
+
+func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *corev1.Pod) {
+	if len(pod.OwnerReferences) == 0 {
+		return
+	}
+
+	var refs []string
+	for _, ownerRef := range pod.OwnerReferences {
+		refs = append(refs, fmt.Sprintf("%s/%s", pod.Namespace, ownerRef.Name))
+	}
+	if len(refs) != 0 {
+		sort.Strings(refs)
+		pg.Status.OccupiedBy = strings.Join(refs, ",")
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.recorder = mgr.GetEventRecorderFor("PodGroupController")
+	r.log = mgr.GetLogger()
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.PodGroup{}).
+		Watches(&source.Kind{Type: &corev1.Pod{}},
+			handler.EnqueueRequestsFromMapFunc(r.podToPodGroup)).
+		For(&schedv1alpha1.PodGroup{}).
 		Complete(r)
+}
+
+func (r *PodGroupReconciler) podToPodGroup(obj client.Object) []ctrl.Request {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		return nil
+	}
+	pgName := util.GetPodGroupLabel(pod)
+	if len(pgName) == 0 {
+		return nil
+	}
+
+	r.log.V(5).Info("Add pod group when pod gets added", "podGroup", pgName, "pod", pod.Name, "namespace", pod.Namespace)
+
+	return []ctrl.Request{{
+		NamespacedName: types.NamespacedName{
+			Namespace: pod.Namespace,
+			Name:      pgName,
+		}}}
 }

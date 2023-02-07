@@ -24,7 +24,7 @@ type ServerRunOptions struct {
 	KubeConfig           string
 	MasterUrl            string
 	MetricsAddr          string
-	ProbeAddr          string
+	ProbeAddr            string
 	InCluster            bool
 	ApiServerQPS         int
 	ApiServerBurst       int

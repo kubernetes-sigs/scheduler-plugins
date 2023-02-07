@@ -86,16 +86,13 @@ func Run(s *ServerRunOptions) error {
 	kubeClient := kubernetes.NewForConfigOrDie(config)
 
 	schedInformerFactory := schedformers.NewSharedInformerFactory(schedClient, 0)
-	pgInformer := schedInformerFactory.Scheduling().V1alpha1().PodGroups()
 	eqInformer := schedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
 
 	coreInformerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 	podInformer := coreInformerFactory.Core().V1().Pods()
-	pgCtrl := controller.NewPodGroupController(kubeClient, pgInformer, podInformer, schedClient)
 	eqCtrl := controller.NewElasticQuotaController(kubeClient, eqInformer, podInformer, schedClient)
 
 	run := func(ctx context.Context) {
-		go pgCtrl.Run(s.Workers, ctx.Done())
 		go eqCtrl.Run(s.Workers, ctx.Done())
 		select {}
 	}
