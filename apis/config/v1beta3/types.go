@@ -152,6 +152,10 @@ type NodeResourceTopologyMatchArgs struct {
 	// implicitely enables the caching. If zero, disables the caching entirely.
 	// If the cache is enabled, the Reserve plugin must be enabled.
 	CacheResyncPeriodSeconds *int64 `json:"cacheResyncPeriodSeconds,omitempty"`
+	// if set to true, exclude node from scheduling if there are any reserved pods for given node
+	// this option takes precedence over CacheResyncPeriodSeconds
+	// if DiscardReservedNodes is enabled, CacheResyncPeriodSeconds option is noop
+	DiscardReservedNodes bool `json:"discardReservedNodes,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
