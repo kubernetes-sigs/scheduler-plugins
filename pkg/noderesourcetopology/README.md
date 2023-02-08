@@ -21,11 +21,33 @@ In case the cumulative count of node resource allocatable appear to be the same 
 
 **NOTE:**
 - [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12) onwards, CRD has been changed from namespace to cluster scoped.
-Scheduler plugin version > v0.21.6 depends on NodeResourceTopology CRD v0.0.12 and the namespace field has been deprecated from the NodeResourceTopology scheduler config args.
+Scheduler plugin version > v0.21.6 depends on NodeResourceTopology CRD v0.0.12 or newer and the namespace field has been deprecated from the NodeResourceTopology scheduler config args.
 
-Dependency:
-- Scheduler plugin version <= v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.10](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.10).
-- Scheduler plugin version > v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12).
+### Compatibility Matrix
+
+NodeResourceTopologyMatch plugin to work properly requires specific version of NodeResourceTopology CRD:
+
+| Scheduler Plugins | NodeResourceTopology CRD version |
+|-------------------|----------------------------------|
+| master            | v0.0.13                          |
+| v0.24.9           | v0.0.12                          |
+| v0.23.10          | v0.0.12                          |
+| v0.22.6           | v0.0.12                          |
+| v0.21.6           | v0.0.10                          |
+| v0.20.10          | v0.0.10                          |
+| v0.19.9           | v0.0.10                          |
+
+In case NodeResourceTopology CRD is being installed and advertised by [NFD](https://github.com/kubernetes-sigs/node-feature-discovery), check compatibility matrix below:
+
+| Scheduler Plugins | NodeResourceTopology CRD version | NFD version |
+|-------------------|----------------------------------|-------------|
+| master            | v0.0.13                          | master      |
+| v0.24.9           | v0.0.12                          | > v0.10.0   |
+| v0.23.10          | v0.0.12                          | > v0.10.0   |
+| v0.22.6           | v0.0.12                          | > v0.10.0   |
+| v0.21.6           | v0.0.10                          | N/A         |
+| v0.20.10          | v0.0.10                          | N/A         |
+| v0.19.9           | v0.0.10                          | N/A         |
 
 ### Config
 
