@@ -29,42 +29,45 @@ Further details and examples are described [here](../networkaware/networkoverhea
 Consider the following scheduler config as an example to enable both plugins:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
 clientConnection:
-  kubeconfig: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
+  kubeconfig: "/etc/kubernetes/scheduler.conf"
 profiles:
-- schedulerName: network-aware-scheduler
-  plugins:
-    queueSort:
-      enabled:
+  - schedulerName: network-aware-scheduler
+    plugins:
+      queueSort:
+        enabled:
+          - name: TopologicalSort
+        disabled:
+          - name: "*"
+      preFilter:
+        enabled:
+          - name: NetworkOverhead
+      filter:
+        enabled:
+          - name: NetworkOverhead
+      score:
+        disabled: # Preferably avoid the combination of NodeResourcesFit with NetworkOverhead
+          - name: NodeResourcesFit
+        enabled: # A higher weight is given to NetworkOverhead to favor allocation schemes with lower latency.
+          - name: NetworkOverhead
+            weight: 5
+          - name: BalancedAllocation
+            weight: 1
+    pluginConfig:
       - name: TopologicalSort
-      disabled:
-      - name: "*"
-    filter:
-      enabled:
+        args:
+          namespaces:
+            - "default"
       - name: NetworkOverhead
-    score:
-      disabled: # Preferably avoid the combination of NodeResourcesFit with NetworkOverhead
-      - name: NodeResourcesFit
-      enabled: # A higher weight is given to NetworkOverhead to favor allocation schemes with lower latency.
-      - name: NetworkOverhead
-        weight: 5
-      - name: BalancedAllocation
-        weight: 1
-  pluginConfig:
-  - name: TopologicalSort
-    args:
-      namespaces:
-      - "default"
-  - name: NetworkOverhead
-    args:
-      namespaces:
-      - "default"
-      weightsName: "UserDefined" # weights applied by the plugin
-      networkTopologyName: "net-topology-test" # networkTopology CR used by the plugin
+        args:
+          namespaces:
+            - "default"
+          weightsName: "UserDefined" # The respective weights to consider in the plugins
+          networkTopologyName: "net-topology-test" # networkTopology CR to be used by the plugins
 ```
 
 ## Summary
