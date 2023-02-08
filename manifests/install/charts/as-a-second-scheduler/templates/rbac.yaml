@@ -73,6 +73,9 @@ rules:
 #- apiGroups: [ "networktopology.diktyo.k8s.io" ]
 #  resources: [ "networktopologies" ]
 #  verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
+- apiGroups: ["security-profiles-operator.x-k8s.io"]
+  resources: ["seccompprofiles", "profilebindings"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -104,6 +107,9 @@ rules:
 # resources need to be updated with the scheduler plugins used
 - apiGroups: ["scheduling.sigs.k8s.io"]
   resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+- apiGroups: ["security-profiles-operator.x-k8s.io"]
+  resources: ["seccompprofiles", "profilebindings"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding

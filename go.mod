@@ -28,6 +28,7 @@ require (
 	k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed
 	sigs.k8s.io/controller-runtime v0.12.3
 	sigs.k8s.io/yaml v1.3.0
+        sigs.k8s.io/security-profiles-operator v0.4.0
 )
 
 require (
