@@ -29,7 +29,7 @@ NodeResourceTopologyMatch plugin to work properly requires specific version of N
 
 | Scheduler Plugins | NodeResourceTopology CRD version |
 |-------------------|----------------------------------|
-| master            | v0.0.13                          |
+| master            | v0.1.0                           |
 | v0.24.9           | v0.0.12                          |
 | v0.23.10          | v0.0.12                          |
 | v0.22.6           | v0.0.12                          |
@@ -41,7 +41,7 @@ In case NodeResourceTopology CRD is being installed and advertised by [NFD](http
 
 | Scheduler Plugins | NodeResourceTopology CRD version | NFD version |
 |-------------------|----------------------------------|-------------|
-| master            | v0.0.13                          | master      |
+| master            | v0.1.0                           | master      |
 | v0.24.9           | v0.0.12                          | > v0.10.0   |
 | v0.23.10          | v0.0.12                          | > v0.10.0   |
 | v0.22.6           | v0.0.12                          | > v0.10.0   |
