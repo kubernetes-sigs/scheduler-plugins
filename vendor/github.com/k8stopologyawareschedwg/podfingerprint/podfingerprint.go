@@ -48,6 +48,9 @@ const (
 	// Annotation is the recommended key to use to annotate objects
 	// with the fingerprint.
 	Annotation = "topology.node.k8s.io/fingerprint"
+	// Attribute is the recommended attribute name to use in
+	// NodeResourceTopology objects
+	Attribute = "nodeTopologyPodsFingerprint"
 )
 
 const (
