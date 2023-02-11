@@ -598,7 +598,7 @@ func getPreFilterState(cycleState *framework.CycleState) (*PreFilterState, error
 	no, err := cycleState.Read(preFilterStateKey)
 	if err != nil {
 		// preFilterState doesn't exist, likely PreFilter wasn't invoked.
-		return nil, fmt.Errorf("error reading %q from cycleState: %v", preFilterStateKey, err)
+		return nil, fmt.Errorf("error reading %q from cycleState: %w", preFilterStateKey, err)
 	}
 
 	state, ok := no.(*PreFilterState)
