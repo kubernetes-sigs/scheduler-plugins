@@ -220,19 +220,19 @@ Following is the algorithm:
 **Algorithm**
 
 
-1. Get the requested resource for the pod to be scheduled as, <img src="https://render.githubusercontent.com/render/math?math=r">.
-2. Get the sliding window average (<img src="https://render.githubusercontent.com/render/math?math=M">) and standard deviation (<img src="https://render.githubusercontent.com/render/math?math=V">) of resource utilization fraction (range from 0 to 1) for all types of resources (CPU, Memory, GPU, etc.) of the current node to be scored. 
-3. Calculate the score of the current node for each type of resource: <img src="https://render.githubusercontent.com/render/math?math=S_i = M %2B r %2B V">
-4. Get a score for each type of resource and bound it to [0,1]: <img src="https://render.githubusercontent.com/render/math?math=S_i = \min(S_i, 1.0)">
-5. Calculate the node priority score per resource as: <img src="https://render.githubusercontent.com/render/math?math=U_i = (1 - S_i) \times MaxPriority ">
-6. Get the final node score as: <img src="https://render.githubusercontent.com/render/math?math=U =\min(U_i)">
+1. Get the requested resource for the pod to be scheduled as, $r$.
+2. Get the sliding window average $M$ and standard deviation $V$ of resource utilization fraction (range from 0 to 1) for all types of resources (CPU, Memory, GPU, etc.) of the current node to be scored. 
+3. Calculate the score of the current node for each type of resource: $S_i = M + r + V$
+4. Get a score for each type of resource and bound it to [0,1]: $S_i = min(S_i, 1.0)$
+5. Calculate the node priority score per resource as: $U_i = (1 - S_i) \times MaxPriority$
+6. Get the final node score as: $U = min(U_i)$
 
 **Example**
 
 
 For example, let's say we have three nodes `N1`, `N2`, and `N3`, and the pod to be scheduled have CPU and Memory requests as 500 milicores and 1 GB. All nodes have a capacity of 4 cores and 8 GB.
 
-The pod request fraction can be computed as <img src="https://render.githubusercontent.com/render/math?math=r_{cpu} = \frac{1}{8}, r_{memory} = \frac{1}{8}">. 
+The pod request fraction can be computed as $r_{cpu} = \frac{1}{8}, r_{memory} = \frac{1}{8}$. 
 
 
 <img src="images/image6.png" alt="node-capacity" width="700" height="200"/>
