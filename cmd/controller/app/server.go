@@ -20,21 +20,41 @@ import (
 	"context"
 	"os"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/klogr"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+
+	schedulingv1a1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
+	controllers "sigs.k8s.io/scheduler-plugins/pkg/controllers/coscheduling"
 	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 )
+
+var (
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
+)
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+
+	utilruntime.Must(schedulingv1a1.AddToScheme(scheme))
+}
 
 func newConfig(kubeconfig, master string, inCluster bool) (*restclient.Config, error) {
 	var (
@@ -115,6 +135,45 @@ func Run(s *ServerRunOptions) error {
 			},
 			Name: "scheduler-plugins controller",
 		})
+	}
+
+	// Controller Runtime Controllers
+	ctrl.SetLogger(klogr.New())
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                  scheme,
+		MetricsBindAddress:      s.MetricsAddr,
+		Port:                    9443,
+		HealthProbeBindAddress:  s.ProbeAddr,
+		LeaderElection:          s.EnableLeaderElection,
+		LeaderElectionID:        "sched-plugins-runtime-controllers",
+		LeaderElectionNamespace: "kube-system",
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		return err
+	}
+
+	if err = (&controllers.PodGroupReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PodGroup")
+		return err
+	}
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		return err
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		return err
+	}
+
+	setupLog.Info("starting manager")
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "problem running manager")
+		return err
 	}
 
 	<-stopCh
