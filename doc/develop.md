@@ -105,5 +105,5 @@ Where example for scheduler-config.yaml, could be taken from manifests/*/schedul
 ## Before submitting
 In addition to starting integration and unit tests, check formatting
 ```shell
-make verify-gofmt
+make verify
 ```
