@@ -17,8 +17,6 @@ limitations under the License.
 package capacityscheduling
 
 import (
-	"reflect"
-
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -90,30 +88,27 @@ func (e *ElasticQuotaInfo) unreserveResource(request framework.Resource) {
 }
 
 func (e *ElasticQuotaInfo) usedOverMinWith(podRequest *framework.Resource) bool {
-	eqMin := reflect.ValueOf(e).Elem().FieldByName("Min")
-	if eqMin.IsValid() && !eqMin.IsZero() {
-		return cmp2(podRequest, e.Used, e.Min)
-	}
 	// "ElasticQuotaInfo doesn't have Min" means used values exceeded min(0)
-	return true
+	if e.Min == nil {
+		return true
+	}
+	return cmp2(podRequest, e.Used, e.Min)
 }
 
 func (e *ElasticQuotaInfo) usedOverMaxWith(podRequest *framework.Resource) bool {
-	eqMax := reflect.ValueOf(e).Elem().FieldByName("Max")
-	if eqMax.IsValid() && !eqMax.IsZero() {
-		return cmp2(podRequest, e.Used, e.Max)
-	}
 	// "ElasticQuotaInfo doesn't have Max" means there are no limitations(infinite)
-	return false
+	if e.Max == nil {
+		return false
+	}
+	return cmp2(podRequest, e.Used, e.Max)
 }
 
 func (e *ElasticQuotaInfo) usedOverMin() bool {
-	eqMin := reflect.ValueOf(e).Elem().FieldByName("Min")
-	if eqMin.IsValid() && !eqMin.IsZero() {
-		return cmp(e.Used, e.Min)
-	}
 	// "ElasticQuotaInfo doesn't have Min" means used values exceeded min(0)
-	return true
+	if e.Min == nil {
+		return true
+	}
+	return cmp(e.Used, e.Min)
 }
 
 func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
