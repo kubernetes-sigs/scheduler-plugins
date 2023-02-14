@@ -88,14 +88,26 @@ func (e *ElasticQuotaInfo) unreserveResource(request framework.Resource) {
 }
 
 func (e *ElasticQuotaInfo) usedOverMinWith(podRequest *framework.Resource) bool {
+	// "ElasticQuotaInfo doesn't have Min" means used values exceeded min(0)
+	if e.Min == nil {
+		return true
+	}
 	return cmp2(podRequest, e.Used, e.Min)
 }
 
 func (e *ElasticQuotaInfo) usedOverMaxWith(podRequest *framework.Resource) bool {
+	// "ElasticQuotaInfo doesn't have Max" means there are no limitations(infinite)
+	if e.Max == nil {
+		return false
+	}
 	return cmp2(podRequest, e.Used, e.Max)
 }
 
 func (e *ElasticQuotaInfo) usedOverMin() bool {
+	// "ElasticQuotaInfo doesn't have Min" means used values exceeded min(0)
+	if e.Min == nil {
+		return true
+	}
 	return cmp(e.Used, e.Min)
 }
 
