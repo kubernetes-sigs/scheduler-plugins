@@ -40,7 +40,7 @@ import (
 
 	schedulingv1a1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/controller"
-	controllers "sigs.k8s.io/scheduler-plugins/pkg/controllers/coscheduling"
+	"sigs.k8s.io/scheduler-plugins/pkg/controllers"
 	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 )
@@ -92,8 +92,47 @@ func Run(s *ServerRunOptions) error {
 	podInformer := coreInformerFactory.Core().V1().Pods()
 	eqCtrl := controller.NewElasticQuotaController(kubeClient, eqInformer, podInformer, schedClient)
 
+	// Controller Runtime Controllers
+	ctrl.SetLogger(klogr.New())
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                  scheme,
+		MetricsBindAddress:      s.MetricsAddr,
+		Port:                    9443,
+		HealthProbeBindAddress:  s.ProbeAddr,
+		LeaderElection:          s.EnableLeaderElection,
+		LeaderElectionID:        "sched-plugins-controllers",
+		LeaderElectionNamespace: "kube-system",
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		return err
+	}
+
+	if err = (&controllers.PodGroupReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PodGroup")
+		return err
+	}
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		return err
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		return err
+	}
+
 	run := func(ctx context.Context) {
 		go eqCtrl.Run(s.Workers, ctx.Done())
+		setupLog.Info("starting manager")
+		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+			setupLog.Error(err, "unable to start manager")
+			panic(err)
+		}
+
 		select {}
 	}
 	schedInformerFactory.Start(stopCh)
@@ -132,45 +171,6 @@ func Run(s *ServerRunOptions) error {
 			},
 			Name: "scheduler-plugins controller",
 		})
-	}
-
-	// Controller Runtime Controllers
-	ctrl.SetLogger(klogr.New())
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                  scheme,
-		MetricsBindAddress:      s.MetricsAddr,
-		Port:                    9443,
-		HealthProbeBindAddress:  s.ProbeAddr,
-		LeaderElection:          s.EnableLeaderElection,
-		LeaderElectionID:        "sched-plugins-runtime-controllers",
-		LeaderElectionNamespace: "kube-system",
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		return err
-	}
-
-	if err = (&controllers.PodGroupReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "PodGroup")
-		return err
-	}
-
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		return err
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		return err
-	}
-
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		return err
 	}
 
 	<-stopCh

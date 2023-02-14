@@ -1,3 +1,19 @@
+/*
+Copyright 2023 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package controllers
 
 import (
@@ -143,12 +159,12 @@ func Test_Run(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			controller, kclient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.previousPhase, c.podGroupCreateTime, nil)
+			controller, kClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.previousPhase, c.podGroupCreateTime, nil)
 			// 0 means not set
 			if len(c.podNextPhase) != 0 {
 				ps := makePods(c.podNames, c.pgName, c.podNextPhase, nil)
 				for _, p := range ps {
-					kclient.Status().Update(ctx, p)
+					kClient.Status().Update(ctx, p)
 					reqs := controller.podToPodGroup(p)
 					for _, req := range reqs {
 						if _, err := controller.Reconcile(ctx, req); err != nil {
@@ -163,7 +179,7 @@ func Test_Run(t *testing.T) {
 						Namespace: metav1.NamespaceDefault,
 					},
 				}
-				err := kclient.Get(ctx, client.ObjectKeyFromObject(pg), pg)
+				err := kClient.Get(ctx, client.ObjectKeyFromObject(pg), pg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -224,7 +240,7 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			controller, kclient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.groupPhase, nil, c.podOwnerReference)
+			controller, kClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.groupPhase, nil, c.podOwnerReference)
 			controller.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      c.pgName,
@@ -238,7 +254,7 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 					Namespace: metav1.NamespaceDefault,
 				},
 			}
-			err := kclient.Get(ctx, client.ObjectKeyFromObject(pg), pg)
+			err := kClient.Get(ctx, client.ObjectKeyFromObject(pg), pg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -252,8 +268,12 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 }
 
 func setUp(ctx context.Context,
-	podNames []string, pgName string, podPhase v1.PodPhase, minMember int32,
-	groupPhase v1alpha1.PodGroupPhase, podGroupCreateTime *metav1.Time,
+	podNames []string,
+	pgName string,
+	podPhase v1.PodPhase,
+	minMember int32,
+	groupPhase v1alpha1.PodGroupPhase,
+	podGroupCreateTime *metav1.Time,
 	podOwnerReference []metav1.OwnerReference) (*PodGroupReconciler, client.WithWatch) {
 	s := scheme.Scheme
 	pg := makePG(pgName, minMember, groupPhase, podGroupCreateTime)

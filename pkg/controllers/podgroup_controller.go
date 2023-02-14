@@ -1,5 +1,5 @@
 /*
-Copyright 2022 The Kubernetes Authors.
+Copyright 2023 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -67,6 +66,7 @@ type PodGroupReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
+	log.Info("reconciling")
 	pg := &schedv1alpha1.PodGroup{}
 	if err := r.Get(ctx, req.NamespacedName, pg); err != nil {
 		if apierrs.IsNotFound(err) {
@@ -90,18 +90,18 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	pgCopy := pg.DeepCopy()
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList,
 		client.MatchingLabelsSelector{
 			Selector: labels.Set(map[string]string{
-				schedv1alpha1.PodGroupLabel: pgCopy.Name}).AsSelector(),
+				schedv1alpha1.PodGroupLabel: pg.Name}).AsSelector(),
 		}); err != nil {
 		log.Error(err, "List pods for group failed")
 		return ctrl.Result{}, err
 	}
 	pods := podList.Items
 
+	pgCopy := pg.DeepCopy()
 	switch pgCopy.Status.Phase {
 	case "":
 		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
@@ -141,15 +141,11 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *PodGroupReconciler) patchPodGroup(ctx context.Context, old, new *schedv1alpha1.PodGroup) (ctrl.Result, error) {
-	if reflect.DeepEqual(old, new) {
-		return ctrl.Result{}, nil
-	}
-
 	patch := client.MergeFrom(old)
-	if err := r.Patch(ctx, new, patch); err != nil {
+	if err := r.Status().Patch(ctx, new, patch); err != nil {
 		return ctrl.Result{}, err
 	}
-	err := r.Status().Patch(ctx, new, patch)
+	err := r.Patch(ctx, new, patch)
 	return ctrl.Result{}, err
 }
 
