@@ -17,10 +17,15 @@ limitations under the License.
 package capacityscheduling
 
 import (
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
+)
+
+const (
+	UpperBoundOfMax = 9223372036854775807
+	LowerBoundOfMin = 0
 )
 
 type ElasticQuotaInfos map[string]*ElasticQuotaInfo
@@ -47,7 +52,7 @@ func (e ElasticQuotaInfos) aggregatedUsedOverMinWith(podRequest framework.Resour
 	}
 
 	used.Add(util.ResourceList(&podRequest))
-	return cmp(used, min)
+	return cmp(used, min, LowerBoundOfMin)
 }
 
 // ElasticQuotaInfo is a wrapper to a ElasticQuota with information.
@@ -92,7 +97,7 @@ func (e *ElasticQuotaInfo) usedOverMinWith(podRequest *framework.Resource) bool 
 	if e.Min == nil {
 		return true
 	}
-	return cmp2(podRequest, e.Used, e.Min)
+	return cmp2(podRequest, e.Used, e.Min, LowerBoundOfMin)
 }
 
 func (e *ElasticQuotaInfo) usedOverMaxWith(podRequest *framework.Resource) bool {
@@ -100,7 +105,7 @@ func (e *ElasticQuotaInfo) usedOverMaxWith(podRequest *framework.Resource) bool 
 	if e.Max == nil {
 		return false
 	}
-	return cmp2(podRequest, e.Used, e.Max)
+	return cmp2(podRequest, e.Used, e.Max, UpperBoundOfMax)
 }
 
 func (e *ElasticQuotaInfo) usedOverMin() bool {
@@ -108,7 +113,7 @@ func (e *ElasticQuotaInfo) usedOverMin() bool {
 	if e.Min == nil {
 		return true
 	}
-	return cmp(e.Used, e.Min)
+	return cmp(e.Used, e.Min, LowerBoundOfMin)
 }
 
 func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
@@ -170,11 +175,11 @@ func (e *ElasticQuotaInfo) deletePodIfPresent(pod *v1.Pod) error {
 	return nil
 }
 
-func cmp(x, y *framework.Resource) bool {
-	return cmp2(x, &framework.Resource{}, y)
+func cmp(x, y *framework.Resource, bound int64) bool {
+	return cmp2(x, &framework.Resource{}, y, bound)
 }
 
-func cmp2(x1, x2, y *framework.Resource) bool {
+func cmp2(x1, x2, y *framework.Resource, bound int64) bool {
 	if x1.MilliCPU+x2.MilliCPU > y.MilliCPU {
 		return true
 	}
@@ -184,7 +189,11 @@ func cmp2(x1, x2, y *framework.Resource) bool {
 	}
 
 	for rName, rQuant := range x1.ScalarResources {
-		if rQuant+x2.ScalarResources[rName] > y.ScalarResources[rName] {
+		yQuant := bound
+		if yq, ok := y.ScalarResources[rName]; ok {
+			yQuant = yq
+		}
+		if rQuant+x2.ScalarResources[rName] > yQuant {
 			return true
 		}
 	}

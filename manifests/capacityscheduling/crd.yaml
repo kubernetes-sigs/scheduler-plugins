@@ -46,6 +46,9 @@ spec:
                   - type: string
                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                   x-kubernetes-int-or-string: true
+                default:
+                  cpu: 9223372036854775807
+                  memory: 9223372036854775807
                 description: Max is the set of desired max limits for each named resource.
                   The usage of max is based on the resource configurations of successfully
                   scheduled pods.
@@ -57,6 +60,9 @@ spec:
                   - type: string
                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                   x-kubernetes-int-or-string: true
+                default:
+                  cpu: 0
+                  memory: 0
                 description: Min is the set of desired guaranteed limits for each
                   named resource.
                 type: object

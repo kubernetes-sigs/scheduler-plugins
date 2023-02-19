@@ -37,7 +37,7 @@ type ElasticQuota struct {
 
 	// ElasticQuotaSpec defines the Min and Max for Quota.
 	// +optional
-	Spec ElasticQuotaSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	Spec ElasticQuotaSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
 	// ElasticQuotaStatus defines the observed use.
 	// +optional
@@ -47,13 +47,15 @@ type ElasticQuota struct {
 // ElasticQuotaSpec defines the Min and Max for Quota.
 type ElasticQuotaSpec struct {
 	// Min is the set of desired guaranteed limits for each named resource.
+	// +kubebuilder:default={cpu:0,memory:0}
 	// +optional
-	Min v1.ResourceList `json:"min,omitempty" protobuf:"bytes,1,rep,name=min, casttype=ResourceList,castkey=ResourceName"`
+	Min v1.ResourceList `json:"min" protobuf:"bytes,1,rep,name=min, casttype=ResourceList,castkey=ResourceName"`
 
 	// Max is the set of desired max limits for each named resource. The usage of max is based on the resource configurations of
 	// successfully scheduled pods.
+	// +kubebuilder:default={cpu:9223372036854775807,memory:9223372036854775807}
 	// +optional
-	Max v1.ResourceList `json:"max,omitempty" protobuf:"bytes,2,rep,name=max, casttype=ResourceList,castkey=ResourceName"`
+	Max v1.ResourceList `json:"max" protobuf:"bytes,2,rep,name=max, casttype=ResourceList,castkey=ResourceName"`
 }
 
 // ElasticQuotaStatus defines the observed use.
