@@ -225,6 +225,28 @@ func TestUsedOverMinWith(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			before: &ElasticQuotaInfo{
+				Namespace: "ns1",
+				Used: &framework.Resource{
+					MilliCPU:         10,
+					Memory:           10,
+					EphemeralStorage: 10,
+				},
+				Min: &framework.Resource{
+					MilliCPU:         3000,
+					Memory:           100,
+					EphemeralStorage: 100,
+				},
+			},
+			name: "ElasticQuotaInfo OverMinWith EphemeralStorage",
+			podRequest: &framework.Resource{
+				MilliCPU:         10,
+				Memory:           10,
+				EphemeralStorage: 10,
+			},
+			expected: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -325,7 +347,7 @@ func TestUsedOverMaxWith(t *testing.T) {
 					Memory:   100,
 				},
 			},
-			name: "ElasticQuotaInfo OverMinWith Used And Max Don't Have GPU Value",
+			name: "ElasticQuotaInfo OverMaxWith Used And Max Don't Have GPU Value",
 			podRequest: &framework.Resource{
 				MilliCPU: 10,
 				Memory:   10,
@@ -334,6 +356,28 @@ func TestUsedOverMaxWith(t *testing.T) {
 				},
 			},
 			expected: false,
+		},
+		{
+			before: &ElasticQuotaInfo{
+				Namespace: "ns1",
+				Used: &framework.Resource{
+					MilliCPU:         10,
+					Memory:           10,
+					EphemeralStorage: 10,
+				},
+				Max: &framework.Resource{
+					MilliCPU:         3000,
+					Memory:           100,
+					EphemeralStorage: 100,
+				},
+			},
+			name: "ElasticQuotaInfo OverMaxWith EphemeralStorage",
+			podRequest: &framework.Resource{
+				MilliCPU:         10,
+				Memory:           10,
+				EphemeralStorage: 100,
+			},
+			expected: true,
 		},
 	}
 	for _, tt := range tests {
@@ -426,6 +470,23 @@ func TestUsedOverMin(t *testing.T) {
 				},
 			},
 			name:     "ElasticQuotaInfo OverMin Used Has GPU But Min Doesn't Have GPU",
+			expected: true,
+		},
+		{
+			before: &ElasticQuotaInfo{
+				Namespace: "ns1",
+				Used: &framework.Resource{
+					MilliCPU:         300,
+					Memory:           100,
+					EphemeralStorage: 100,
+				},
+				Min: &framework.Resource{
+					MilliCPU:         4000,
+					Memory:           200,
+					EphemeralStorage: 10,
+				},
+			},
+			name:     "ElasticQuotaInfo OverMin EphemeralStorage",
 			expected: true,
 		},
 	}

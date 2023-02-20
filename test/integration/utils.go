@@ -75,6 +75,11 @@ func (r *resourceWrapper) Mem(val int64) *resourceWrapper {
 	return r
 }
 
+func (r *resourceWrapper) StorageEphemeral(val int64) *resourceWrapper {
+	r.ResourceList[v1.ResourceEphemeralStorage] = *resource.NewQuantity(val, resource.DecimalSI)
+	return r
+}
+
 func (r *resourceWrapper) GPU(val int64) *resourceWrapper {
 	r.ResourceList["nvidia.com/gpu"] = *resource.NewQuantity(val, resource.DecimalSI)
 	return r

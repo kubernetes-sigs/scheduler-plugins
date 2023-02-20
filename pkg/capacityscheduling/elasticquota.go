@@ -17,6 +17,8 @@ limitations under the License.
 package capacityscheduling
 
 import (
+	"math"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -24,7 +26,7 @@ import (
 )
 
 const (
-	UpperBoundOfMax = 9223372036854775807
+	UpperBoundOfMax = math.MaxInt64
 	LowerBoundOfMin = 0
 )
 
@@ -185,6 +187,10 @@ func cmp2(x1, x2, y *framework.Resource, bound int64) bool {
 	}
 
 	if x1.Memory+x2.Memory > y.Memory {
+		return true
+	}
+
+	if x1.EphemeralStorage+x2.EphemeralStorage > y.EphemeralStorage {
 		return true
 	}
 

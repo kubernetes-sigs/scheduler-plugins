@@ -48,6 +48,7 @@ spec:
                   x-kubernetes-int-or-string: true
                 default:
                   cpu: 9223372036854775807
+                  ephemeral-storage: 9223372036854775807
                   memory: 9223372036854775807
                 description: Max is the set of desired max limits for each named resource.
                   The usage of max is based on the resource configurations of successfully
@@ -62,6 +63,7 @@ spec:
                   x-kubernetes-int-or-string: true
                 default:
                   cpu: 0
+                  ephemeral-storage: 0
                   memory: 0
                 description: Min is the set of desired guaranteed limits for each
                   named resource.
