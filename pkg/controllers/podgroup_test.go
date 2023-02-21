@@ -281,7 +281,6 @@ func setUp(ctx context.Context,
 	objs := []runtime.Object{pg}
 	if len(podNames) != 0 {
 		ps := makePods(podNames, pgName, podPhase, podOwnerReference)
-		// s.AddKnownTypes(clientgoscheme.SchemeGroupVersion, ps)
 		objs = append(objs, ps[0], ps[1])
 	}
 	client := fake.NewFakeClient(objs...)

@@ -16,7 +16,7 @@ This folder holds the coscheduling plugin implementations based on [Coscheduling
 
 ### PodGroup
 
-We use a special label named `pod-group.scheduling.x-k8s.io` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup.
+We use a special label named `scheduling.x-k8s.io/pod-group` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup.
 
 ```
 # PodGroup CRD spec
@@ -28,9 +28,9 @@ spec:
   scheduleTimeoutSeconds: 10
   minMember: 3
 ---
-# Add a label `pod-group.scheduling.x-k8s.io` to mark the pod belongs to a group
+# Add a label `scheduling.x-k8s.io/pod-group` to mark the pod belongs to a group
 labels:
-  pod-group.scheduling.x-k8s.io: nginx
+  scheduling.x-k8s.io/pod-group: nginx
 ```
 
 We will calculate the sum of the Running pods and the Waiting pods (assumed but not bind) in scheduler, if the sum is greater than or equal to the minMember, the Waiting pods
@@ -108,7 +108,7 @@ spec:
       name: nginx
       labels:
         app: nginx
-        pod-group.scheduling.x-k8s.io: nginx
+        scheduling.x-k8s.io/pod-group: nginx
     spec:
       containers:
       - name: nginx

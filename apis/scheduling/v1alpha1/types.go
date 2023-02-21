@@ -112,7 +112,7 @@ const (
 	PodGroupFailed PodGroupPhase = "Failed"
 
 	// PodGroupLabel is the default label of coscheduling
-	PodGroupLabel = "pod-group." + scheduling.GroupName
+	PodGroupLabel = scheduling.GroupName + "/pod-group"
 )
 
 // PodGroup is a collection of Pod; used for batch workload.

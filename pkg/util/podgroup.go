@@ -47,12 +47,12 @@ func CreateMergePatch(original, new interface{}) ([]byte, error) {
 	return patch, nil
 }
 
-// GetPodGroupLabel get pod group from pod annotations
+// GetPodGroupLabel get pod group name from pod labels
 func GetPodGroupLabel(pod *v1.Pod) string {
 	return pod.Labels[v1alpha1.PodGroupLabel]
 }
 
-// GetPodGroupFullName get namespaced group name from pod annotations
+// GetPodGroupFullName get namespaced group name from pod labels
 func GetPodGroupFullName(pod *v1.Pod) string {
 	pgName := GetPodGroupLabel(pod)
 	if len(pgName) == 0 {
