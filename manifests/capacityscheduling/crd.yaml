@@ -37,6 +37,15 @@ spec:
           metadata:
             type: object
           spec:
+            default:
+              max:
+                cpu: 9223372036854775807
+                ephemeral-storage: 9223372036854775807
+                memory: 9223372036854775807
+              min:
+                cpu: 0
+                ephemeral-storage: 0
+                memory: 0
             description: ElasticQuotaSpec defines the Min and Max for Quota.
             properties:
               max:
