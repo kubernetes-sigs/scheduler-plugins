@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/client-go/kubernetes/scheme"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -36,6 +37,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
 	agfake "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned/fake"
@@ -479,41 +483,27 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
-			// init listers
-			agClient := agfake.NewSimpleClientset()
-			ntClient := ntfake.NewSimpleClientset()
-
-			fakeAgInformer := aginformers.NewSharedInformerFactory(agClient, 0).Appgroup().V1alpha1().AppGroups()
-			fakeNTInformer := ntinformers.NewSharedInformerFactory(ntClient, 0).Networktopology().V1alpha1().NetworkTopologies()
+			s := scheme.Scheme
 
 			// init nodes
 			nodes := getNodes(tt.nodesNum, tt.regionNames, tt.zoneNames)
+			s.AddKnownTypes(v1.SchemeGroupVersion, nodes[0], tt.pods[0])
 
 			// Create dependencies
 			tt.appGroup.Status.RunningWorkloads = tt.dependenciesNum
+			s.AddKnownTypes(agv1alpha1.SchemeGroupVersion, tt.appGroup)
+			s.AddKnownTypes(ntv1alpha1.SchemeGroupVersion, tt.networkTopology)
 
-			// add CRDs
-			agLister := fakeAgInformer.Lister()
-			ntLister := fakeNTInformer.Lister()
-
-			_ = fakeAgInformer.Informer().GetStore().Add(tt.appGroup)
-			_ = fakeNTInformer.Informer().GetStore().Add(tt.networkTopology)
+			client := fake.NewClientBuilder().
+				WithScheme(s).
+			WithRuntimeObjects(tt.appGroup, tt.networkTopology).
+				Build()
 
 			// create plugin
 			ctx := context.Background()
-			cs := testClientSet.NewSimpleClientset()
-
-			informerFactory := informers.NewSharedInformerFactory(cs, 0)
-
-			snapshot := newTestSharedLister(nil, nodes)
-
-			podInformer := informerFactory.Core().V1().Pods()
-			podLister := podInformer.Lister()
-			informerFactory.Start(ctx.Done())
 
 			for _, p := range tt.pods {
-				_, err := cs.CoreV1().Pods("default").Create(ctx, p, metav1.CreateOptions{})
-				if err != nil {
+				if err := client.Create(ctx, p); err != nil {
 					b.Fatalf("Failed to create Workload %q: %v", p.Name, err)
 				}
 			}
@@ -523,7 +513,8 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), runtime.WithClientSet(cs),
+				snapshot := newTestSharedLister(nil, nodes)
+				fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
