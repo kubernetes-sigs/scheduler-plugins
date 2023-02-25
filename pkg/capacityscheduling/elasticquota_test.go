@@ -20,6 +20,8 @@ import (
 	"reflect"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -496,6 +498,134 @@ func TestUsedOverMin(t *testing.T) {
 			actual := elasticQuotaInfo.usedOverMin()
 			if actual != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, actual)
+			}
+		})
+	}
+}
+
+func TestNewElasticQuotaInfo(t *testing.T) {
+	type elasticQuotaParam struct {
+		namespace string
+		max       v1.ResourceList
+		min       v1.ResourceList
+		used      v1.ResourceList
+	}
+
+	tests := []struct {
+		name              string
+		elasticQuotaParam elasticQuotaParam
+		expected          *ElasticQuotaInfo
+	}{
+		{
+			name: "ElasticQuota",
+			elasticQuotaParam: elasticQuotaParam{
+				namespace: "ns1",
+				max:       makeResourceList(100, 1000),
+				min:       makeResourceList(10, 100),
+				used:      makeResourceList(0, 0),
+			},
+			expected: &ElasticQuotaInfo{
+				Namespace: "ns1",
+				pods:      sets.String{},
+				Max: &framework.Resource{
+					MilliCPU: 100,
+					Memory:   1000,
+				},
+				Min: &framework.Resource{
+					MilliCPU: 10,
+					Memory:   100,
+				},
+				Used: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+			},
+		},
+		{
+			name: "ElasticQuota Without Max",
+			elasticQuotaParam: elasticQuotaParam{
+				namespace: "ns1",
+				max:       nil,
+				min:       makeResourceList(10, 100),
+				used:      makeResourceList(0, 0),
+			},
+			expected: &ElasticQuotaInfo{
+				Namespace: "ns1",
+				pods:      sets.String{},
+				Max: &framework.Resource{
+					MilliCPU:         UpperBoundOfMax,
+					Memory:           UpperBoundOfMax,
+					EphemeralStorage: UpperBoundOfMax,
+				},
+				Min: &framework.Resource{
+					MilliCPU: 10,
+					Memory:   100,
+				},
+				Used: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+			},
+		},
+		{
+			name: "ElasticQuota Without Min",
+			elasticQuotaParam: elasticQuotaParam{
+				namespace: "ns1",
+				max:       makeResourceList(100, 1000),
+				min:       nil,
+				used:      makeResourceList(0, 0),
+			},
+			expected: &ElasticQuotaInfo{
+				Namespace: "ns1",
+				pods:      sets.String{},
+				Max: &framework.Resource{
+					MilliCPU: 100,
+					Memory:   1000,
+				},
+				Min: &framework.Resource{
+					MilliCPU:         LowerBoundOfMin,
+					Memory:           LowerBoundOfMin,
+					EphemeralStorage: LowerBoundOfMin,
+				},
+				Used: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+			},
+		},
+		{
+			name: "ElasticQuota Without Max and Min",
+			elasticQuotaParam: elasticQuotaParam{
+				namespace: "ns1",
+				max:       nil,
+				min:       nil,
+				used:      makeResourceList(0, 0),
+			},
+			expected: &ElasticQuotaInfo{
+				Namespace: "ns1",
+				pods:      sets.String{},
+				Max: &framework.Resource{
+					MilliCPU:         UpperBoundOfMax,
+					Memory:           UpperBoundOfMax,
+					EphemeralStorage: UpperBoundOfMax,
+				},
+				Min: &framework.Resource{
+					MilliCPU:         LowerBoundOfMin,
+					Memory:           LowerBoundOfMin,
+					EphemeralStorage: LowerBoundOfMin,
+				},
+				Used: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eqp := tt.elasticQuotaParam
+			if got := newElasticQuotaInfo(eqp.namespace, eqp.min, eqp.max, eqp.used); !reflect.DeepEqual(got, tt.expected) {
+				t.Errorf("expected %v, got %v", tt.expected, got)
 			}
 		})
 	}

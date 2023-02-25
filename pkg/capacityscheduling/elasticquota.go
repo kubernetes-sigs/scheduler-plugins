@@ -20,6 +20,7 @@ import (
 	"math"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -68,6 +69,13 @@ type ElasticQuotaInfo struct {
 }
 
 func newElasticQuotaInfo(namespace string, min, max, used v1.ResourceList) *ElasticQuotaInfo {
+	if min == nil {
+		min = makeResourceListForBound(LowerBoundOfMin)
+	}
+	if max == nil {
+		max = makeResourceListForBound(UpperBoundOfMax)
+	}
+
 	elasticQuotaInfo := &ElasticQuotaInfo{
 		Namespace: namespace,
 		pods:      sets.NewString(),
@@ -81,6 +89,8 @@ func newElasticQuotaInfo(namespace string, min, max, used v1.ResourceList) *Elas
 func (e *ElasticQuotaInfo) reserveResource(request framework.Resource) {
 	e.Used.Memory += request.Memory
 	e.Used.MilliCPU += request.MilliCPU
+	e.Used.EphemeralStorage += request.EphemeralStorage
+	e.Used.AllowedPodNumber += request.AllowedPodNumber
 	for name, value := range request.ScalarResources {
 		e.Used.SetScalar(name, e.Used.ScalarResources[name]+value)
 	}
@@ -89,6 +99,8 @@ func (e *ElasticQuotaInfo) reserveResource(request framework.Resource) {
 func (e *ElasticQuotaInfo) unreserveResource(request framework.Resource) {
 	e.Used.Memory -= request.Memory
 	e.Used.MilliCPU -= request.MilliCPU
+	e.Used.EphemeralStorage -= request.EphemeralStorage
+	e.Used.AllowedPodNumber -= request.AllowedPodNumber
 	for name, value := range request.ScalarResources {
 		e.Used.SetScalar(name, e.Used.ScalarResources[name]-value)
 	}
@@ -194,6 +206,10 @@ func cmp2(x1, x2, y *framework.Resource, bound int64) bool {
 		return true
 	}
 
+	if x1.AllowedPodNumber+x2.AllowedPodNumber > y.AllowedPodNumber {
+		return true
+	}
+
 	for rName, rQuant := range x1.ScalarResources {
 		yQuant := bound
 		if yq, ok := y.ScalarResources[rName]; ok {
@@ -205,4 +221,12 @@ func cmp2(x1, x2, y *framework.Resource, bound int64) bool {
 	}
 
 	return false
+}
+
+func makeResourceListForBound(bound int64) v1.ResourceList {
+	return v1.ResourceList{
+		v1.ResourceCPU:              *resource.NewMilliQuantity(bound, resource.DecimalSI),
+		v1.ResourceMemory:           *resource.NewQuantity(bound, resource.BinarySI),
+		v1.ResourceEphemeralStorage: *resource.NewQuantity(bound, resource.BinarySI),
+	}
 }

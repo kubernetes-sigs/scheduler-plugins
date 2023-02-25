@@ -252,7 +252,7 @@ func TestElasticController(t *testing.T) {
 			},
 			used: []*v1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t4-eq1").
-					Used(MakeResourceList().CPU(0).Mem(0).StorageEphemeral(0).Obj()).Obj(),
+					Used(MakeResourceList().CPU(0).Mem(0).Obj()).Obj(),
 			},
 			incomingPods: []*v1.Pod{
 				MakePod("ns1", "t4-p1").Phase(v1.PodRunning).Node("fake-node").
@@ -267,7 +267,7 @@ func TestElasticController(t *testing.T) {
 
 			want: []*v1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t4-eq1").
-					Used(MakeResourceList().CPU(40).Mem(50).StorageEphemeral(0).Obj()).Obj(),
+					Used(MakeResourceList().CPU(40).Mem(50).Obj()).Obj(),
 			},
 		},
 	} {
