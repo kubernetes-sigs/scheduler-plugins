@@ -15,6 +15,6 @@ limitations under the License.
 */
 
 // +kubebuilder:object:generate=true
-// +groupName=scheduling.sigs.k8s.io
+// +groupName=scheduling.x-k8s.io
 
 package scheduling

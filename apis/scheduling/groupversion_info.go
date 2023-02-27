@@ -18,5 +18,5 @@ package scheduling
 
 // GroupName is the group name used in this package
 const (
-	GroupName = "scheduling.sigs.k8s.io"
+	GroupName = "scheduling.x-k8s.io"
 )

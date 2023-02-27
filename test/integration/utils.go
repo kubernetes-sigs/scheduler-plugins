@@ -132,7 +132,7 @@ type eqWrapper struct{ *v1alpha1.ElasticQuota }
 
 func MakeEQ(namespace, name string) *eqWrapper {
 	eq := &v1alpha1.ElasticQuota{
-		TypeMeta: metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
+		TypeMeta: metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.x-k8s.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,

@@ -41,7 +41,7 @@ profiles:
 ### ElasticQuota
 
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota1
@@ -68,7 +68,7 @@ has 8 CPUs available hence the sum of quota min is equal to the cluster capacity
 $ kubectl create ns quota1
 $ kubectl create ns quota2
 $ cat <<EOF | kubectl apply -f -
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota1
@@ -80,7 +80,7 @@ spec:
     cpu: 4
 EOF
 $ cat <<EOF | kubectl apply -f -
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota2

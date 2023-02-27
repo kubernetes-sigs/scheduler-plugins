@@ -54,12 +54,12 @@ In order to implement coscheduling, we developed plugins in different extension 
 
 ### PodGroup
 
-We use a special label named ```pod-group.scheduling.sigs.k8s.io/name``` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. This is a short term solution, in the future if the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal. 
+We use a special label named ```pod-group.scheduling.x-k8s.io/name``` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. This is a short term solution, in the future if the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal. 
 
 ```yaml 
 labels:
-     pod-group.scheduling.sigs.k8s.io/name: nginx
-     pod-group.scheduling.sigs.k8s.io/min-available: "2"
+     pod-group.scheduling.x-k8s.io/name: nginx
+     pod-group.scheduling.x-k8s.io/min-available: "2"
 ``` 
 `Pods` in the same `PodGroup` with different priorities might lead to unintended behavior, so need to ensure `Pods` in the same `PodGroup` with the same priority.
 

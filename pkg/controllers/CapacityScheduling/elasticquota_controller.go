@@ -33,9 +33,9 @@ type ElasticQuotaReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=scheduling.sigs.k8s.io,resources=elasticquota,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=scheduling.sigs.k8s.io,resources=elasticquota/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=scheduling.sigs.k8s.io,resources=elasticquota/finalizers,verbs=update
+// +kubebuilder:rbac:groups=scheduling.x-k8s.io,resources=elasticquota,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=scheduling.x-k8s.io,resources=elasticquota/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=scheduling.x-k8s.io,resources=elasticquota/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

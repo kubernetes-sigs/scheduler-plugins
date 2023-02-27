@@ -125,7 +125,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     plugin. Here we install coscheduling CRD:
 
     ```bash
-    $ kubectl apply -f manifests/crds/scheduling.sigs.k8s.io_podgroups.yaml
+    $ kubectl apply -f manifests/crds/scheduling.x-k8s.io_podgroups.yaml
     ```
 
 1. Modify `/etc/kubernetes/manifests/kube-scheduler.yaml` to run scheduler-plugins with coscheduling
@@ -180,7 +180,7 @@ Now, we're able to verify how the coscheduling plugin works.
 
     ```yaml
     # podgroup.yaml
-    apiVersion: scheduling.sigs.k8s.io/v1alpha1
+    apiVersion: scheduling.x-k8s.io/v1alpha1
     kind: PodGroup
     metadata:
       name: pg1
@@ -193,7 +193,7 @@ Now, we're able to verify how the coscheduling plugin works.
     $ kubectl apply -f podgroup.yaml
     ```
 
-1. Create a deployment labelled `pod-group.scheduling.sigs.k8s.io: pg1` to associated with PodGroup
+1. Create a deployment labelled `pod-group.scheduling.x-k8s.io: pg1` to associated with PodGroup
    `pg1` created in the previous step.
 
     ```yaml
@@ -211,7 +211,7 @@ Now, we're able to verify how the coscheduling plugin works.
         metadata:
           labels:
             app: pause
-            pod-group.scheduling.sigs.k8s.io: pg1
+            pod-group.scheduling.x-k8s.io: pg1
         spec:
           containers:
           - name: pause
@@ -265,12 +265,12 @@ Now, we're able to verify how the coscheduling plugin works.
 
     ```bash
     $ kubectl get podgroup pg1 -o yaml
-    apiVersion: scheduling.sigs.k8s.io/v1alpha1
+    apiVersion: scheduling.x-k8s.io/v1alpha1
     kind: PodGroup
     metadata:
       annotations:
         kubectl.kubernetes.io/last-applied-configuration: |
-          {"apiVersion":"scheduling.sigs.k8s.io/v1alpha1","kind":"PodGroup","metadata":{"annotations":{},"name":"pg1","namespace":"default"},"spec":{"minMember":3,"scheduleTimeoutSeconds":10}}
+          {"apiVersion":"scheduling.x-k8s.io/v1alpha1","kind":"PodGroup","metadata":{"annotations":{},"name":"pg1","namespace":"default"},"spec":{"minMember":3,"scheduleTimeoutSeconds":10}}
       creationTimestamp: "2022-02-08T19:55:24Z"
       generation: 8
       name: pg1

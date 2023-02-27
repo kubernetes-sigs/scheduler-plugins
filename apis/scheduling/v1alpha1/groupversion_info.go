@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains API Schema definitions for the scheduling.sigs.k8s.io v1alpha1 API group
+// Package v1alpha1 contains API Schema definitions for the scheduling.x-k8s.io v1alpha1 API group
 // +kubebuilder:object:generate=true
-// +groupName=scheduling.sigs.k8s.io
+// +groupName=scheduling.x-k8s.io
 package v1alpha1
 
 import (
