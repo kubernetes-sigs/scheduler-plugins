@@ -6,9 +6,9 @@ metadata:
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/50
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: podgroups.scheduling.sigs.k8s.io
+  name: podgroups.scheduling.x-k8s.io
 spec:
-  group: scheduling.sigs.k8s.io
+  group: scheduling.x-k8s.io
   names:
     kind: PodGroup
     listKind: PodGroupList
