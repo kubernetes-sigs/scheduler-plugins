@@ -39,7 +39,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	schedulingv1a1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
-	"sigs.k8s.io/scheduler-plugins/pkg/controller"
 	"sigs.k8s.io/scheduler-plugins/pkg/controllers"
 	schedclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -86,11 +85,8 @@ func Run(s *ServerRunOptions) error {
 	kubeClient := kubernetes.NewForConfigOrDie(config)
 
 	schedInformerFactory := schedformers.NewSharedInformerFactory(schedClient, 0)
-	eqInformer := schedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
 
 	coreInformerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
-	podInformer := coreInformerFactory.Core().V1().Pods()
-	eqCtrl := controller.NewElasticQuotaController(kubeClient, eqInformer, podInformer, schedClient)
 
 	// Controller Runtime Controllers
 	ctrl.SetLogger(klogr.New())
@@ -116,6 +112,14 @@ func Run(s *ServerRunOptions) error {
 		return err
 	}
 
+	if err = (&controllers.ElasticQuotaReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ElasticQuota")
+		return err
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		return err
@@ -126,7 +130,6 @@ func Run(s *ServerRunOptions) error {
 	}
 
 	run := func(ctx context.Context) {
-		go eqCtrl.Run(s.Workers, ctx.Done())
 		setupLog.Info("starting manager")
 		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 			setupLog.Error(err, "unable to start manager")
