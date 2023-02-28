@@ -36,9 +36,9 @@ type FakePodGroups struct {
 	ns   string
 }
 
-var podgroupsResource = schema.GroupVersionResource{Group: "scheduling.sigs.k8s.io", Version: "v1alpha1", Resource: "podgroups"}
+var podgroupsResource = schema.GroupVersionResource{Group: "scheduling.x-k8s.io", Version: "v1alpha1", Resource: "podgroups"}
 
-var podgroupsKind = schema.GroupVersionKind{Group: "scheduling.sigs.k8s.io", Version: "v1alpha1", Kind: "PodGroup"}
+var podgroupsKind = schema.GroupVersionKind{Group: "scheduling.x-k8s.io", Version: "v1alpha1", Kind: "PodGroup"}
 
 // Get takes name of the podGroup, and returns the corresponding podGroup object, and an error if there is any.
 func (c *FakePodGroups) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.PodGroup, err error) {
