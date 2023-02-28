@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	AnnotationKeyPrefix                     = "preemption-toleration.scheduling.sigs.k8s.io/"
+	AnnotationKeyPrefix                     = "preemption-toleration.scheduling.x-k8s.io/"
 	AnnotationKeyMinimumPreemptablePriority = AnnotationKeyPrefix + "minimum-preemptable-priority"
 	AnnotationKeyTolerationSeconds          = AnnotationKeyPrefix + "toleration-seconds"
 )
@@ -35,8 +35,8 @@ const (
 //	  metadata:
 //	  name: toleration-policy-sample
 //	  annotation:
-//	    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
-//	    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
+//	    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
+//	    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "3600"
 type Policy struct {
 	// MinimumPreemptablePriority specifies the minimum priority value that can preempt this priority class.
 	// It defaults to the PriorityClass's priority value + 1 if not set, which means pods that have a higher priority value can preempt it.

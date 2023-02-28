@@ -43,7 +43,7 @@ kind: PriorityClass
 metadata:
   name: toleration-policy-sample
   annotation:
-    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
-    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
+    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
+    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "3600"
 value: 8000
 ```

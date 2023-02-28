@@ -105,15 +105,15 @@ type PreemptionToleration struct {
 }
 ```
 
-Users specifies the preemption toleration policy as an annotation with the key `preemption-toleration.scheduling.sigs.k8s.io/<property_name>` in `PriorityClass` as below:
+Users specifies the preemption toleration policy as an annotation with the key `preemption-toleration.scheduling.x-k8s.io/<property_name>` in `PriorityClass` as below:
 
 ```yaml
 kind: PriorityClass
 metadata:
   name: toleration-policy-sample
   annotation:
-    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
-    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
+    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
+    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "3600"
 value: 8000
 ```
 
@@ -154,9 +154,9 @@ metadata:
   name: low-non-preempted
   annotation:
     # This priority class can tolerate preemption by priority with p < 10000.
-    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
+    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
     # This priority class can tolerate preemption forever by priority with p < 10000(=minimum-preemptable-priority)
-    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "-1"
+    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "-1"
 value: 8000
 ```
 
@@ -187,10 +187,10 @@ metadata:
   name: low-non-preempted-10min
   annotation:
     # This priority class can tolerate preemption by priority with p < 10000.
-    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
+    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
     # This priority class can tolerate preemption for 10 minutes (600 seconds) 
     # by priority with p < 10000(=minimum-preemptable-priority)
-    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "600"
+    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "600"
 value: 8000
 ```
 

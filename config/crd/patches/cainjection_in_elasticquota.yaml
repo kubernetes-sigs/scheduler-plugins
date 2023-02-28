@@ -4,4 +4,4 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
-  name: elasticquota.scheduling.sigs.k8s.io
+  name: elasticquota.scheduling.x-k8s.io

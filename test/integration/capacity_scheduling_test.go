@@ -131,7 +131,6 @@ func TestCapacityScheduling(t *testing.T) {
 			},
 			elasticQuotas: []*v1alpha1.ElasticQuota{
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq1", Namespace: "ns1"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -145,7 +144,6 @@ func TestCapacityScheduling(t *testing.T) {
 					},
 				},
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq2", Namespace: "ns2"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -189,7 +187,6 @@ func TestCapacityScheduling(t *testing.T) {
 			},
 			elasticQuotas: []*v1alpha1.ElasticQuota{
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq1", Namespace: "ns1"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -203,7 +200,6 @@ func TestCapacityScheduling(t *testing.T) {
 					},
 				},
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq2", Namespace: "ns2"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -276,7 +272,6 @@ func TestCapacityScheduling(t *testing.T) {
 			},
 			elasticQuotas: []*v1alpha1.ElasticQuota{
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq1", Namespace: "ns1"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -290,7 +285,6 @@ func TestCapacityScheduling(t *testing.T) {
 					},
 				},
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq2", Namespace: "ns2"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -333,7 +327,6 @@ func TestCapacityScheduling(t *testing.T) {
 			},
 			elasticQuotas: []*v1alpha1.ElasticQuota{
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq1", Namespace: "ns1"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -347,7 +340,6 @@ func TestCapacityScheduling(t *testing.T) {
 					},
 				},
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq2", Namespace: "ns2"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -391,7 +383,6 @@ func TestCapacityScheduling(t *testing.T) {
 			},
 			elasticQuotas: []*v1alpha1.ElasticQuota{
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq1", Namespace: "ns1"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -405,7 +396,6 @@ func TestCapacityScheduling(t *testing.T) {
 					},
 				},
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq2", Namespace: "ns2"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -453,7 +443,6 @@ func TestCapacityScheduling(t *testing.T) {
 			},
 			elasticQuotas: []*v1alpha1.ElasticQuota{
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq1", Namespace: "ns1"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -467,7 +456,6 @@ func TestCapacityScheduling(t *testing.T) {
 					},
 				},
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq2", Namespace: "ns2"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{
@@ -481,7 +469,6 @@ func TestCapacityScheduling(t *testing.T) {
 					},
 				},
 				{
-					TypeMeta:   metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 					ObjectMeta: metav1.ObjectMeta{Name: "eq3", Namespace: "ns3"},
 					Spec: v1alpha1.ElasticQuotaSpec{
 						Min: v1.ResourceList{

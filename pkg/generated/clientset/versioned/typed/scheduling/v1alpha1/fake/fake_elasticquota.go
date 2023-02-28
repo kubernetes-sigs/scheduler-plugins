@@ -36,9 +36,9 @@ type FakeElasticQuotas struct {
 	ns   string
 }
 
-var elasticquotasResource = schema.GroupVersionResource{Group: "scheduling.sigs.k8s.io", Version: "v1alpha1", Resource: "elasticquotas"}
+var elasticquotasResource = schema.GroupVersionResource{Group: "scheduling.x-k8s.io", Version: "v1alpha1", Resource: "elasticquotas"}
 
-var elasticquotasKind = schema.GroupVersionKind{Group: "scheduling.sigs.k8s.io", Version: "v1alpha1", Kind: "ElasticQuota"}
+var elasticquotasKind = schema.GroupVersionKind{Group: "scheduling.x-k8s.io", Version: "v1alpha1", Kind: "ElasticQuota"}
 
 // Get takes name of the elasticQuota, and returns the corresponding elasticQuota object, and an error if there is any.
 func (c *FakeElasticQuotas) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ElasticQuota, err error) {
@@ -95,6 +95,18 @@ func (c *FakeElasticQuotas) Create(ctx context.Context, elasticQuota *v1alpha1.E
 func (c *FakeElasticQuotas) Update(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (result *v1alpha1.ElasticQuota, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewUpdateAction(elasticquotasResource, c.ns, elasticQuota), &v1alpha1.ElasticQuota{})
+
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1alpha1.ElasticQuota), err
+}
+
+// UpdateStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+func (c *FakeElasticQuotas) UpdateStatus(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (*v1alpha1.ElasticQuota, error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewUpdateSubresourceAction(elasticquotasResource, "status", c.ns, elasticQuota), &v1alpha1.ElasticQuota{})
 
 	if obj == nil {
 		return nil, err
