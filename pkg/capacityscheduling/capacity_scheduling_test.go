@@ -18,11 +18,14 @@ package capacityscheduling
 
 import (
 	"context"
+	"reflect"
 	"sort"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	gocmp "github.com/google/go-cmp/cmp"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,6 +43,8 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -370,6 +375,155 @@ func TestDryRunPreemption(t *testing.T) {
 	}
 }
 
+func TestAddElasticQuota(t *testing.T) {
+	tests := []struct {
+		name          string
+		ns            []string
+		elasticQuotas []interface{}
+		expected      map[string]*ElasticQuotaInfo
+	}{
+		{
+			name: "Add ElasticQuota",
+			elasticQuotas: []interface{}{
+				makeEQ("ns1", "t1-eq1", makeResourceList(100, 1000), makeResourceList(10, 100)),
+			},
+			ns: []string{"ns1"},
+			expected: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					pods:      sets.String{},
+					Max: &framework.Resource{
+						MilliCPU: 100,
+						Memory:   1000,
+					},
+					Min: &framework.Resource{
+						MilliCPU: 10,
+						Memory:   100,
+					},
+					Used: &framework.Resource{
+						MilliCPU: 0,
+						Memory:   0,
+					},
+				},
+			},
+		},
+		{
+			name: "Add ElasticQuota without Max",
+			elasticQuotas: []interface{}{
+				makeEQ("ns1", "t1-eq1", nil, makeResourceList(10, 100)),
+			},
+			ns: []string{"ns1"},
+			expected: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					pods:      sets.String{},
+					Max: &framework.Resource{
+						MilliCPU:         UpperBoundOfMax,
+						Memory:           UpperBoundOfMax,
+						EphemeralStorage: UpperBoundOfMax,
+					},
+					Min: &framework.Resource{
+						MilliCPU: 10,
+						Memory:   100,
+					},
+					Used: &framework.Resource{
+						MilliCPU: 0,
+						Memory:   0,
+					},
+				},
+			},
+		},
+		{
+			name: "Add ElasticQuota without Min",
+			elasticQuotas: []interface{}{
+				makeEQ("ns1", "t1-eq1", makeResourceList(100, 1000), nil),
+			},
+			ns: []string{"ns1"},
+			expected: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					pods:      sets.String{},
+					Max: &framework.Resource{
+						MilliCPU: 100,
+						Memory:   1000,
+					},
+					Min: &framework.Resource{
+						MilliCPU:         LowerBoundOfMin,
+						Memory:           LowerBoundOfMin,
+						EphemeralStorage: LowerBoundOfMin,
+					},
+					Used: &framework.Resource{
+						MilliCPU: 0,
+						Memory:   0,
+					},
+				},
+			},
+		},
+		{
+			name: "Add ElasticQuota without Max and Min",
+			elasticQuotas: []interface{}{
+				makeEQ("ns1", "t1-eq1", nil, nil),
+			},
+			ns: []string{"ns1"},
+			expected: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					pods:      sets.String{},
+					Max: &framework.Resource{
+						MilliCPU:         UpperBoundOfMax,
+						Memory:           UpperBoundOfMax,
+						EphemeralStorage: UpperBoundOfMax,
+					},
+					Min: &framework.Resource{
+						MilliCPU:         LowerBoundOfMin,
+						Memory:           LowerBoundOfMin,
+						EphemeralStorage: LowerBoundOfMin,
+					},
+					Used: &framework.Resource{
+						MilliCPU: 0,
+						Memory:   0,
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var registerPlugins []st.RegisterPluginFunc
+			registeredPlugins := append(
+				registerPlugins,
+				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			)
+
+			fwk, err := st.NewFramework(
+				registeredPlugins, "", wait.NeverStop,
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
+			)
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cs := &CapacityScheduling{
+				elasticQuotaInfos: map[string]*ElasticQuotaInfo{},
+				fh:                fwk,
+			}
+
+			for _, elasticQuota := range tt.elasticQuotas {
+				cs.addElasticQuota(elasticQuota)
+			}
+
+			for _, ns := range tt.ns {
+				if got := cs.elasticQuotaInfos[ns]; !reflect.DeepEqual(got, tt.expected[ns]) {
+					t.Errorf("expected %v, got %v", tt.expected[ns], got)
+				}
+			}
+		})
+	}
+}
+
 func makePod(podName string, namespace string, memReq int64, cpuReq int64, gpuReq int64, priority int32, uid string, nodeName string) *v1.Pod {
 	pause := imageutils.GetPauseImageName()
 	pod := st.MakePod().Namespace(namespace).Name(podName).Container(pause).
@@ -382,4 +536,24 @@ func makePod(podName string, namespace string, memReq int64, cpuReq int64, gpuRe
 		},
 	}
 	return pod
+}
+
+func makeEQ(namespace, name string, max, min v1.ResourceList) *v1alpha1.ElasticQuota {
+	eq := &v1alpha1.ElasticQuota{
+		TypeMeta: metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	eq.Spec.Max = max
+	eq.Spec.Min = min
+	return eq
+}
+
+func makeResourceList(cpu, mem int64) v1.ResourceList {
+	return v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewMilliQuantity(cpu, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(mem, resource.BinarySI),
+	}
 }
