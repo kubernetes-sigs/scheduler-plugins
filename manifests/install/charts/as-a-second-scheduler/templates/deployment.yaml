@@ -44,6 +44,7 @@ spec:
         - /bin/kube-scheduler
         - --config=/etc/kubernetes/scheduler-config.yaml
         image: {{ .Values.scheduler.image }}
+        imagePullPolicy: IfNotPresent        
         livenessProbe:
           httpGet:
             path: /healthz
