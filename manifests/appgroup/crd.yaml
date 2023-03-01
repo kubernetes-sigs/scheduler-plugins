@@ -6,9 +6,9 @@ metadata:
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/432 # edited manually
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: appgroups.appgroup.diktyo.k8s.io
+  name: appgroups.appgroup.diktyo.x-k8s.io
 spec:
-  group: appgroup.diktyo.k8s.io
+  group: appgroup.diktyo.x-k8s.io
   names:
     kind: AppGroup
     listKind: AppGroupList

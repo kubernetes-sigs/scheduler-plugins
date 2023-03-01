@@ -9,13 +9,13 @@ kind: ClusterRole
 metadata:
   name: network-aware-scheduler-handler
 rules:
-  - apiGroups: [ "scheduling.sigs.k8s.io" ]
+  - apiGroups: [ "scheduling.sigs.x-k8s.io" ]
     resources: [ "podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status" ]
     verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
-  - apiGroups: ["appgroup.diktyo.k8s.io"]
+  - apiGroups: ["appgroup.diktyo.x-k8s.io"]
     resources: ["appgroups"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-  - apiGroups: ["networktopology.diktyo.k8s.io"]
+  - apiGroups: ["networktopology.diktyo.x-k8s.io"]
     resources: ["networktopologies"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---

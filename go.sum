@@ -125,10 +125,10 @@ github.com/creack/pty v1.1.11/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/diktyo-io/appgroup-api v0.0.9-alpha h1:rqRNOl4CRD313a+ugZJ2rJAN2sNe5GGd4PfyaV44Dy4=
-github.com/diktyo-io/appgroup-api v0.0.9-alpha/go.mod h1:Q0UPLA6aFBogLpiOiA9+7sqnlvPES6ge/PIaQohfR8Y=
-github.com/diktyo-io/networktopology-api v0.0.8-alpha h1:8bSVk6JdUgYd719mXfHgkGZ2eXOfTF436mLu/TQ7WHM=
-github.com/diktyo-io/networktopology-api v0.0.8-alpha/go.mod h1:a9YAoBY96ITcSMUTNPJAljMPpDcig91scxJ1smaAhEg=
+github.com/diktyo-io/appgroup-api v1.0.0-alpha h1:uN+1y8Rahhs3HoopnCq3jt8r15zbEa8oK3Q+i/HQQkk=
+github.com/diktyo-io/appgroup-api v1.0.0-alpha/go.mod h1:Q0UPLA6aFBogLpiOiA9+7sqnlvPES6ge/PIaQohfR8Y=
+github.com/diktyo-io/networktopology-api v1.0.0-alpha h1:XHMPI4/9wjhlTd91qeFDKhTE5d9oUPtxeLJJCXd89v4=
+github.com/diktyo-io/networktopology-api v1.0.0-alpha/go.mod h1:a9YAoBY96ITcSMUTNPJAljMPpDcig91scxJ1smaAhEg=
 github.com/docker/distribution v2.8.1+incompatible h1:Q50tZOPR6T/hjNsyc9g8/syEs6bk8XXApsHjKukMl68=
 github.com/docker/distribution v2.8.1+incompatible/go.mod h1:J2gT2udsDAN96Uj4KfcMRqY0/ypR+oyYUYmja8H+y+w=
 github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815/go.mod h1:WwZ+bS3ebgob9U8Nd0kOddGdZWjyMGR8Wziv+TBNwSE=

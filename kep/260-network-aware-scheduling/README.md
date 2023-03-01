@@ -166,9 +166,9 @@ metadata:
     api-approved.kubernetes.io: "To be Defined" # edited manually
     controller-gen.kubebuilder.io/version: v0.6.2
   creationTimestamp: null
-  name: appgroups.scheduling.sigs.k8s.io
+  name: appgroups.scheduling.sigs.x-k8s.io
 spec:
-  group: scheduling.sigs.k8s.io
+  group: scheduling.sigs.x-k8s.io
   names:
     kind: AppGroup
     listKind: AppGroupList
@@ -358,7 +358,7 @@ status:
 
 ```yaml
 # Example App Group CRD spec
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: AppGroup
 metadata:
   name: a1
@@ -624,9 +624,9 @@ metadata:
     api-approved.kubernetes.io: "To be Defined" # edited manually
     controller-gen.kubebuilder.io/version: v0.6.2
   creationTimestamp: null
-  name: networktopologies.scheduling.sigs.k8s.io
+  name: networktopologies.scheduling.sigs.x-k8s.io
 spec:
-  group: scheduling.sigs.k8s.io
+  group: scheduling.sigs.x-k8s.io
   names:
     kind: NetworkTopology
     listKind: NetworkTopologyList
@@ -768,7 +768,7 @@ Let's consider the following NetworkTopology CRD as an example:
 
 ```yaml
 # Example Network CRD 
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: NetworkTopology
 metadata:
   name: net-topology-test
@@ -1146,7 +1146,7 @@ Let's consider the following AppGroup CRD for the appGroup `A1` containing three
 
 ```yaml
 # Example App Group CRD spec
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: AppGroup
 metadata:
   name: a1
@@ -1195,7 +1195,7 @@ The NetworkTopology CRD is the following:
 
 ```yaml
 # Example Network CRD 
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: NetworkTopology
 metadata:
   name: net-topology-test
