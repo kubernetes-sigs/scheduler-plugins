@@ -19,7 +19,7 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["appgroup.diktyo.k8s.io"]
+  - apiGroups: ["appgroup.diktyo.x-k8s.io"]
     resources: ["appgroups"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---

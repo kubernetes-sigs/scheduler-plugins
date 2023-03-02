@@ -6,9 +6,9 @@ metadata:
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/432 # edited manually
     controller-gen.kubebuilder.io/version: v0.11.1
   creationTimestamp: null
-  name: networktopologies.networktopology.diktyo.k8s.io
+  name: networktopologies.networktopology.diktyo.x-k8s.io
 spec:
-  group: networktopology.diktyo.k8s.io
+  group: networktopology.diktyo.x-k8s.io
   names:
     kind: NetworkTopology
     listKind: NetworkTopologyList
