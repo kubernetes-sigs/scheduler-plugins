@@ -27,14 +27,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/profile"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
@@ -74,6 +78,48 @@ type nrtTestEntry struct {
 	nodeResourceTopologies []*topologyv1alpha1.NodeResourceTopology
 	expectedNodes          []string
 	errMsg                 string
+}
+
+func TestTopologyMatchPluginValidation(t *testing.T) {
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Profiles[0].Plugins.Filter.Enabled = append(cfg.Profiles[0].Plugins.Filter.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].Plugins.Score.Enabled = append(cfg.Profiles[0].Plugins.Score.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: noderesourcetopology.Name,
+		Args: &scheconfig.NodeResourceTopologyMatchArgs{
+			ScoringStrategy: scheconfig.ScoringStrategy{Type: "incorrect"},
+		},
+	})
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	informer := scheduler.NewInformerFactory(cs, 0)
+	dynInformerFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynamic.NewForConfigOrDie(globalKubeConfig), 0, v1.NamespaceAll, nil)
+	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{
+		Interface: cs.EventsV1(),
+	})
+	done := make(chan struct{})
+
+	_, err = scheduler.New(
+		cs,
+		informer,
+		dynInformerFactory,
+		profile.NewRecorderFactory(eventBroadcaster),
+		done,
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
+	)
+
+	if err == nil {
+		t.Error("expected error not to be nil")
+	}
+
+	errMsg := "scoringStrategy.type: Invalid value:"
+	if !strings.Contains(err.Error(), errMsg) {
+		t.Errorf("expected error to contain: %s in error message: %s", errMsg, err.Error())
+	}
 }
 
 func TestTopologyMatchPlugin(t *testing.T) {

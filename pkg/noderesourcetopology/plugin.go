@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
@@ -118,6 +119,10 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type NodeResourceTopologyMatchArgs, got %T", args)
+	}
+
+	if err := validation.ValidateNodeResourceTopologyMatchArgs(nil, tcfg); err != nil {
+		return nil, err
 	}
 
 	nrtCache, err := initNodeTopologyInformer(tcfg, handle)
