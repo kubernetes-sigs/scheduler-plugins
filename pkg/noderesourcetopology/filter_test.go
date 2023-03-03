@@ -29,8 +29,8 @@ import (
 
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	faketopologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 )
 
@@ -46,21 +46,21 @@ const (
 )
 
 type nodeTopologyDesc struct {
-	nrt  *topologyv1alpha1.NodeResourceTopology
+	nrt  *topologyv1alpha2.NodeResourceTopology
 	node v1.ResourceList
 }
 
 func TestNodeResourceTopology(t *testing.T) {
 	nodeTopologyDescs := []nodeTopologyDesc{
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -69,7 +69,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "8"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -79,14 +79,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "2"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
@@ -96,7 +96,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
@@ -110,14 +110,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "node3"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "2"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "5"),
@@ -126,7 +126,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "2"),
@@ -136,14 +136,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "2"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "5"),
@@ -152,7 +152,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-75",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "2"),
@@ -162,14 +162,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "extended"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -178,7 +178,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "8"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -663,15 +663,14 @@ func TestNodeResourceTopology(t *testing.T) {
 		},
 	}
 
-	fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 	for _, desc := range nodeTopologyDescs {
 		fakeInformer.Informer().GetStore().Add(desc.nrt)
 	}
 
 	tm := TopologyMatch{
-		filterHandlers: newFilterHandlers(),
-		nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+		nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 	}
 
 	for _, tt := range tests {
@@ -698,15 +697,15 @@ type resourceDescriptor struct {
 }
 
 func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
-	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+	nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta:       metav1.ObjectMeta{Name: "host0"},
-			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-			Zones: topologyv1alpha1.ZoneList{
+			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
+			Zones: topologyv1alpha2.ZoneList{
 				{
 					Name: "node-0",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "30"),
 						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "384Mi", "384Mi"),
@@ -716,7 +715,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				{
 					Name: "node-1",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "32"),
 						MakeTopologyResInfo(memory, "64Gi", "64Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "512Mi", "512Mi"),
@@ -736,7 +735,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		name       string
 		pod        *v1.Pod
 		node       *v1.Node
-		nrts       []*topologyv1alpha1.NodeResourceTopology
+		nrts       []*topologyv1alpha2.NodeResourceTopology
 		avail      []resourceDescriptor
 		wantStatus *framework.Status
 	}{
@@ -761,7 +760,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
@@ -788,7 +787,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
@@ -815,7 +814,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
@@ -842,7 +841,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
@@ -869,7 +868,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
@@ -879,15 +878,14 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+			fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 			for _, obj := range nodeTopologies {
 				fakeInformer.Informer().GetStore().Add(obj)
 			}
 
 			tm := TopologyMatch{
-				filterHandlers: newFilterHandlers(),
-				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()
@@ -923,15 +921,15 @@ type testEntry struct {
 }
 
 func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
-	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+	nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta:       metav1.ObjectMeta{Name: "host0"},
-			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha1.ZoneList{
+			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha2.ZoneList{
 				{
 					Name: "node-0",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "30"),
 						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "384Mi", "384Mi"),
@@ -941,7 +939,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{
 					Name: "node-1",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "32"),
 						MakeTopologyResInfo(memory, "64Gi", "64Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "512Mi", "512Mi"),
@@ -1137,15 +1135,14 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+			fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 			for _, obj := range nodeTopologies {
 				fakeInformer.Informer().GetStore().Add(obj)
 			}
 
 			tm := TopologyMatch{
-				filterHandlers: newFilterHandlers(),
-				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()
@@ -1159,7 +1156,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 	}
 }
 
-func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha1.NodeResourceTopology) *v1.Node {
+func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha2.NodeResourceTopology) *v1.Node {
 	res := makeResourceListFromZones(nrt.Zones)
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1172,7 +1169,7 @@ func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha1.NodeResourceTopology
 	}
 }
 
-func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoList, name string) resource.Quantity {
+func findAvailableResourceByName(resourceInfoList topologyv1alpha2.ResourceInfoList, name string) resource.Quantity {
 	for _, resourceInfo := range resourceInfoList {
 		if resourceInfo.Name == name {
 			return resourceInfo.Available

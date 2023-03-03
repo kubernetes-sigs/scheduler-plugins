@@ -25,10 +25,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -36,7 +37,7 @@ const (
 	defaultWeight = int64(1)
 )
 
-type scoreStrategy func(v1.ResourceList, v1.ResourceList, resourceToWeightMap) int64
+type scoreStrategyFn func(v1.ResourceList, v1.ResourceList, resourceToWeightMap) int64
 
 // resourceToWeightMap contains resource name and weight.
 type resourceToWeightMap map[v1.ResourceName]int64
@@ -74,18 +75,11 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 	}
 
 	logNRT("noderesourcetopology found", nodeTopology)
-	if len(nodeTopology.TopologyPolicies) == 0 {
-		klog.V(2).InfoS("Cannot determine policy", "node", nodeName)
+
+	handler := tm.scoringHandlerFromTopologyManagerConfig(topologyManagerConfigFromNodeResourceTopology(nodeTopology))
+	if handler == nil {
 		return 0, nil
 	}
-
-	policyName := nodeTopology.TopologyPolicies[0]
-	handler, ok := tm.scoringHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]
-	if !ok {
-		klog.V(4).InfoS("policy handler not found", "policy", policyName)
-		return 0, nil
-	}
-
 	return handler(pod, nodeTopology.Zones)
 }
 
@@ -93,9 +87,9 @@ func (tm *TopologyMatch) ScoreExtensions() framework.ScoreExtensions {
 	return nil
 }
 
-// scoreForEachNUMANode will iterate over all NUMA zones of the node and invoke the scoreStrategy func for every zone.
+// scoreForEachNUMANode will iterate over all NUMA zones of the node and invoke the scoreStrategyFn func for every zone.
 // it will return the minimal score of all the calculated NUMA's score, in order to avoid edge cases.
-func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, score scoreStrategy, resourceToWeightMap resourceToWeightMap) int64 {
+func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, score scoreStrategyFn, resourceToWeightMap resourceToWeightMap) int64 {
 	numaScores := make([]int64, len(numaList))
 	minScore := int64(0)
 
@@ -111,7 +105,7 @@ func scoreForEachNUMANode(requested v1.ResourceList, numaList NUMANodeList, scor
 	return minScore
 }
 
-func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreStrategy, error) {
+func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreStrategyFn, error) {
 	switch strategy {
 	case apiconfig.MostAllocated:
 		return mostAllocatedScoreStrategy, nil
@@ -119,12 +113,15 @@ func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreSt
 		return leastAllocatedScoreStrategy, nil
 	case apiconfig.BalancedAllocation:
 		return balancedAllocationScoreStrategy, nil
+	case apiconfig.LeastNUMANodes:
+		// this is a special case handled down the flow. We just need to NOT error out.
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("illegal scoring strategy found")
 	}
 }
 
-func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
+func podScopeScore(pod *v1.Pod, zones topologyv1alpha2.ZoneList, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
 	// This code is in Admit implementation of pod scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_pod.go#L52
 	// but it works with HintProviders, takes into account all possible allocations.
@@ -136,7 +133,7 @@ func podScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreS
 	return finalScore, nil
 }
 
-func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn scoreStrategy, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
+func containerScopeScore(pod *v1.Pod, zones topologyv1alpha2.ZoneList, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
 	// This code is in Admit implementation of container scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_container.go#L52
 	containers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
@@ -151,4 +148,30 @@ func containerScopeScore(pod *v1.Pod, zones topologyv1alpha1.ZoneList, scorerFn 
 	finalScore := int64(stat.Mean(contScore, nil))
 	klog.V(5).InfoS("container scope scoring final node score", "finalScore", finalScore)
 	return finalScore, nil
+}
+
+func (tm *TopologyMatch) scoringHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) scoringFn {
+	if tm.scoreStrategyType == apiconfig.LeastNUMANodes {
+		if conf.Scope == kubeletconfig.PodTopologyManagerScope {
+			return leastNUMAPodScopeScore
+		}
+		if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
+			return leastNUMAContainerScopeScore
+		}
+		return nil // cannot happen
+	}
+	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
+		return nil
+	}
+	if conf.Scope == kubeletconfig.PodTopologyManagerScope {
+		return func(pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
+			return podScopeScore(pod, zones, tm.scoreStrategyFunc, tm.resourceToWeightMap)
+		}
+	}
+	if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
+		return func(pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
+			return containerScopeScore(pod, zones, tm.scoreStrategyFunc, tm.resourceToWeightMap)
+		}
+	}
+	return nil // cannot happen
 }

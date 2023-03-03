@@ -29,7 +29,7 @@ NodeResourceTopologyMatch plugin to work properly requires specific version of N
 
 | Scheduler Plugins | NodeResourceTopology CRD version |
 |-------------------|----------------------------------|
-| master            | v0.0.13                          |
+| master            | v0.1.0                           |
 | v0.24.9           | v0.0.12                          |
 | v0.23.10          | v0.0.12                          |
 | v0.22.6           | v0.0.12                          |
@@ -41,7 +41,7 @@ In case NodeResourceTopology CRD is being installed and advertised by [NFD](http
 
 | Scheduler Plugins | NodeResourceTopology CRD version | NFD version |
 |-------------------|----------------------------------|-------------|
-| master            | v0.0.13                          | master      |
+| master            | v0.1.0                           | master      |
 | v0.24.9           | v0.0.12                          | > v0.10.0   |
 | v0.23.10          | v0.0.12                          | > v0.10.0   |
 | v0.22.6           | v0.0.12                          | > v0.10.0   |
@@ -155,6 +155,27 @@ Should the cluster need to have different settings (e.g. topology manager) or NU
 using [affinity](https://kubernetes.io/docs/user-guide/node-selection/#node-affinity-beta-feature) or also
 [taints](https://kubernetes.io/docs/user-guide/node-selection/#taints-and-toleations-beta-feature).
 
+#### Topology Manager configuration
+
+***Target audience: developers and operators of topology updaters (NodeResourceTopology producers)***
+
+In addition to logically partitioning a cluster like explained above, the topology-aware scheduler needs to know key node-specific configuration settings like Topology manager policy and scope.
+This data is expected to be provided as top-level `Attributes` of the NodeResourceTopology objects:
+
+NodeResourceTopology producers should add top-level `Attributes` in the following format
+- For `Name` and `Value` of attributes, words should be `snakeCase`
+- The `Name` of each attribute should be **the same of the corresponding kubelet configuration option**.
+  - example: `--topology-manager-scope` becomes `topologyManagerScope`
+  - example: `topologyManagerPolicy` becomes `topologyManagerPolicy`
+- The `Value` of each attribute should be **one of the value of the corresponding kubelet configuration option, VERBATIM**.
+  - example: `single-numa-node` becomes `single-numa-node`
+- Should `topologyManagerOptions` be exposed:
+  - they should be expanded in key-value pairs, using the `String()` representation
+  - each key-value pair should be preceded by the `topologyManagerOption` prefix
+  - every other provision described above applies
+  - example: the `prefer-closest-numa-nodes` option becomes `topologyManagerOptionPreferClosestNumaNodes`, accepting exactly one of either `true` and `false`.
+  - **RATIONALE**: this representation wants to guarantee all the Attribute Names are unique (no aliasing). It must be noted this is a stricter requirement with respect to the Attribute representation
+    in NRT objects, and this requirement could be lifted in the future (an upgrade path will be provided).
 
 ### Demo
 
@@ -168,7 +189,7 @@ For configuring your cluster with [NFD-topology updater](https://github.com/kube
 
 ```yaml
 # Worker Node A CRD spec
-apiVersion: topology.node.k8s.io/v1alpha1
+apiVersion: topology.node.k8s.io/v1alpha2
 kind: NodeResourceTopology
 metadata:
   name: worker-node-A
@@ -202,7 +223,7 @@ zones:
 
 ```yaml
 # Worker Node B CRD spec
-apiVersion: topology.node.k8s.io/v1alpha1
+apiVersion: topology.node.k8s.io/v1alpha2
 kind: NodeResourceTopology
 metadata:
   name: worker-node-B

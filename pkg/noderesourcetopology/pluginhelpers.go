@@ -18,17 +18,15 @@ package noderesourcetopology
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	topoclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 
@@ -45,7 +43,7 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	}
 
 	topologyInformerFactory := topologyinformers.NewSharedInformerFactory(topoClient, 0)
-	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha1().NodeResourceTopologies()
+	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha2().NodeResourceTopologies()
 	nodeTopologyLister := nodeTopologyInformer.Lister()
 
 	klog.V(5).InfoS("Start nodeTopologyInformer")
@@ -81,7 +79,7 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	return nrtCache, nil
 }
 
-func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
+func createNUMANodeList(zones topologyv1alpha2.ZoneList) NUMANodeList {
 	nodes := make(NUMANodeList, 0, len(zones))
 	for _, zone := range zones {
 		if zone.Type != "Node" {
@@ -104,152 +102,10 @@ func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
 	return nodes
 }
 
-func makePodByResourceList(resources *v1.ResourceList) *v1.Pod {
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Resources: v1.ResourceRequirements{
-						Requests: *resources,
-						Limits:   *resources,
-					},
-				},
-			},
-		},
-	}
-}
-
-func makePodByResourceLists(resources ...v1.ResourceList) *v1.Pod {
-	pod := &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{},
-		},
-	}
-
-	for _, r := range resources {
-		pod.Spec.Containers = append(pod.Spec.Containers, v1.Container{
-			Resources: v1.ResourceRequirements{
-				Requests: r,
-				Limits:   r,
-			},
-		})
-	}
-
-	return pod
-}
-
-func makePodWithReqByResourceList(resources *v1.ResourceList) *v1.Pod {
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Resources: v1.ResourceRequirements{
-						Requests: *resources,
-					},
-				},
-			},
-		},
-	}
-}
-
-func makePodWithReqAndLimitByResourceList(resourcesReq, resourcesLim *v1.ResourceList) *v1.Pod {
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Resources: v1.ResourceRequirements{
-						Requests: *resourcesReq,
-						Limits:   *resourcesLim,
-					},
-				},
-			},
-		},
-	}
-}
-
-func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) v1.ResourceList {
-	result := make(v1.ResourceList)
-	for _, zone := range zones {
-		for _, resInfo := range zone.Resources {
-			resQuantity := resInfo.Available
-			if quantity, ok := result[v1.ResourceName(resInfo.Name)]; ok {
-				resQuantity.Add(quantity)
-			}
-			result[v1.ResourceName(resInfo.Name)] = resQuantity
-		}
-	}
-	return result
-}
-
-func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha1.ResourceInfo {
-	return topologyv1alpha1.ResourceInfo{
-		Name:      name,
-		Capacity:  resource.MustParse(capacity),
-		Available: resource.MustParse(available),
-	}
-}
-
-func makePodByResourceListWithManyContainers(resources *v1.ResourceList, containerCount int) *v1.Pod {
-	var containers []v1.Container
-
-	for i := 0; i < containerCount; i++ {
-		containers = append(containers, v1.Container{
-			Resources: v1.ResourceRequirements{
-				Requests: *resources,
-				Limits:   *resources,
-			},
-		})
-	}
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: containers,
-		},
-	}
-}
-
-func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
-	res := make(v1.ResourceList)
+func extractResources(zone topologyv1alpha2.Zone) corev1.ResourceList {
+	res := make(corev1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		res[v1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
+		res[corev1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
 	}
 	return res
-}
-
-func newFilterHandlers() filterHandlersMap {
-	return filterHandlersMap{
-		topologyv1alpha1.SingleNUMANodePodLevel:       singleNUMAPodLevelHandler,
-		topologyv1alpha1.SingleNUMANodeContainerLevel: singleNUMAContainerLevelHandler,
-	}
-}
-
-func newScoringHandlers(strategy scoreStrategy, resourceToWeightMap resourceToWeightMap) scoreHandlersMap {
-	return scoreHandlersMap{
-		topologyv1alpha1.SingleNUMANodePodLevel: func(pod *v1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
-			return podScopeScore(pod, zones, strategy, resourceToWeightMap)
-		},
-		topologyv1alpha1.SingleNUMANodeContainerLevel: func(pod *v1.Pod, zones topologyv1alpha1.ZoneList) (int64, *framework.Status) {
-			return containerScopeScore(pod, zones, strategy, resourceToWeightMap)
-		},
-	}
-}
-
-func logNumaNodes(desc, nodeName string, nodes NUMANodeList) {
-	for _, numaNode := range nodes {
-		numaLogKey := fmt.Sprintf("%s/node-%d", nodeName, numaNode.NUMAID)
-		klog.V(6).InfoS(desc, stringify.ResourceListToLoggable(numaLogKey, numaNode.Resources)...)
-	}
-}
-
-func logNRT(desc string, nrtObj *topologyv1alpha1.NodeResourceTopology) {
-	if !klog.V(6).Enabled() {
-		// avoid the expensive marshal operation
-		return
-	}
-
-	ntrJson, err := json.MarshalIndent(nrtObj, "", " ")
-	if err != nil {
-		klog.V(6).ErrorS(err, "failed to marshal noderesourcetopology object")
-		return
-	}
-	klog.V(6).Info(desc, "noderesourcetopology", string(ntrJson))
 }

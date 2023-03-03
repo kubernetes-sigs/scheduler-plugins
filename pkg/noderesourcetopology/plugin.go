@@ -30,7 +30,7 @@ import (
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
 const (
@@ -78,29 +78,15 @@ func subtractFromNUMAs(resources v1.ResourceList, numaNodes NUMANodeList, nodes 
 	}
 }
 
-type filterFn func(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
-type scoringFn func(*v1.Pod, topologyv1alpha1.ZoneList) (int64, *framework.Status)
-
-type filterHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]filterFn
-type scoreHandlersMap map[topologyv1alpha1.TopologyManagerPolicy]scoringFn
-
-func leastNUMAscoreHandlers() scoreHandlersMap {
-	return scoreHandlersMap{
-		topologyv1alpha1.SingleNUMANodePodLevel:       leastNUMAPodScopeScore,
-		topologyv1alpha1.SingleNUMANodeContainerLevel: leastNUMAContainerScopeScore,
-		topologyv1alpha1.BestEffortPodLevel:           leastNUMAPodScopeScore,
-		topologyv1alpha1.BestEffortContainerLevel:     leastNUMAContainerScopeScore,
-		topologyv1alpha1.RestrictedPodLevel:           leastNUMAPodScopeScore,
-		topologyv1alpha1.RestrictedContainerLevel:     leastNUMAContainerScopeScore,
-	}
-}
+type filterFn func(pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
+type scoringFn func(*v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
-	filterHandlers      filterHandlersMap
-	scoringHandlers     scoreHandlersMap
 	resourceToWeightMap resourceToWeightMap
 	nrtCache            nrtcache.Interface
+	scoreStrategyFunc   scoreStrategyFn
+	scoreStrategyType   apiconfig.ScoringStrategyType
 }
 
 var _ framework.FilterPlugin = &TopologyMatch{}
@@ -136,24 +122,21 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		resToWeightMap[v1.ResourceName(resource.Name)] = resource.Weight
 	}
 
-	var scoringHandlers scoreHandlersMap
-
-	if tcfg.ScoringStrategy.Type == apiconfig.LeastNUMANodes {
-		scoringHandlers = leastNUMAscoreHandlers()
-	} else {
-		strategy, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
-		if err != nil {
-			return nil, err
-		}
-
-		scoringHandlers = newScoringHandlers(strategy, resToWeightMap)
+	// This is not strictly needed, but we do it here and we carry `scoreStrategyFunc` around
+	// to be able to do as much parameter validation as possible here in this function.
+	// We perform only the NRT-object-specific validation in `Filter()` and `Score()`
+	// because we can't help it, being the earliest point in time on which we have access
+	// to NRT instances.
+	strategy, err := getScoringStrategyFunction(tcfg.ScoringStrategy.Type)
+	if err != nil {
+		return nil, err
 	}
 
 	topologyMatch := &TopologyMatch{
-		filterHandlers:      newFilterHandlers(),
-		scoringHandlers:     scoringHandlers,
 		resourceToWeightMap: resToWeightMap,
 		nrtCache:            nrtCache,
+		scoreStrategyFunc:   strategy,
+		scoreStrategyType:   tcfg.ScoringStrategy.Type,
 	}
 
 	return topologyMatch, nil
@@ -167,7 +150,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEvent {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
-	nrtGVK := fmt.Sprintf("noderesourcetopologies.v1alpha1.%v", topologyapi.GroupName)
+	nrtGVK := fmt.Sprintf("noderesourcetopologies.v1alpha2.%v", topologyapi.GroupName)
 	return []framework.ClusterEvent{
 		{Resource: framework.Pod, ActionType: framework.Delete},
 		{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable},

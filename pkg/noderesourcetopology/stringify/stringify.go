@@ -27,7 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
 func ResourceListToLoggable(logID string, resources corev1.ResourceList) []interface{} {
@@ -72,7 +72,7 @@ func ResourceList(resources corev1.ResourceList) string {
 	return strings.Join(resItems, ",")
 }
 
-func NodeResourceTopologyResources(nrtObj *topologyv1alpha1.NodeResourceTopology) string {
+func NodeResourceTopologyResources(nrtObj *topologyv1alpha2.NodeResourceTopology) string {
 	zones := []string{}
 	for _, zoneInfo := range nrtObj.Zones {
 		zones = append(zones, zoneInfo.Name+"=<"+nrtResourceInfoListToString(zoneInfo.Resources)+">")
@@ -80,7 +80,7 @@ func NodeResourceTopologyResources(nrtObj *topologyv1alpha1.NodeResourceTopology
 	return nrtObj.Name + "={" + strings.Join(zones, ",") + "}"
 }
 
-func nrtResourceInfoListToString(resInfoList []topologyv1alpha1.ResourceInfo) string {
+func nrtResourceInfoListToString(resInfoList []topologyv1alpha2.ResourceInfo) string {
 	items := []string{}
 	for _, resInfo := range resInfoList {
 		items = append(items, fmt.Sprintf("%s=%s/%s/%s", resInfo.Name, resInfo.Capacity.String(), resInfo.Allocatable.String(), resInfo.Available.String()))

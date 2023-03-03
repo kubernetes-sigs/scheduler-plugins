@@ -25,10 +25,11 @@ import (
 	"k8s.io/klog/v2"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
@@ -37,9 +38,9 @@ import (
 // https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#known-limitations
 const highestNUMAID = 8
 
-type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha1.ZoneList) *framework.Status
+type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha2.ZoneList) *framework.Status
 
-func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
+func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
 	klog.V(5).InfoS("Single NUMA node handler")
 
 	// prepare NUMANodes list from zoneMap
@@ -169,7 +170,7 @@ func isResourceSetSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantit
 	return numaQuantity.Cmp(quantity) >= 0
 }
 
-func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha1.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
+func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
 	klog.V(5).InfoS("Pod Level Resource handler")
 
 	resources := util.GetPodEffectiveRequest(pod)
@@ -198,7 +199,6 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 
 	nodeName := nodeInfo.Node().Name
 	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
-
 	if !ok {
 		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("invalid node topology data for node %s", nodeName))
 	}
@@ -207,15 +207,9 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	klog.V(5).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
-	if len(nodeTopology.TopologyPolicies) == 0 {
-		klog.V(2).InfoS("Cannot determine policy", "node", nodeName)
-		return nil
-	}
 
-	policyName := nodeTopology.TopologyPolicies[0]
-	handler, ok := tm.filterHandlers[topologyv1alpha1.TopologyManagerPolicy(policyName)]
-	if !ok {
-		klog.V(4).InfoS("Policy handler not found", "policy", policyName)
+	handler := filterHandlerFromTopologyManagerConfig(topologyManagerConfigFromNodeResourceTopology(nodeTopology))
+	if handler == nil {
 		return nil
 	}
 	status := handler(pod, nodeTopology.Zones, nodeInfo)
@@ -265,4 +259,17 @@ func hasNonNativeResource(pod *v1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func filterHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) filterFn {
+	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
+		return nil
+	}
+	if conf.Scope == kubeletconfig.PodTopologyManagerScope {
+		return singleNUMAPodLevelHandler
+	}
+	if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
+		return singleNUMAContainerLevelHandler
+	}
+	return nil // cannot happen
 }
