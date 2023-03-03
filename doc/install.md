@@ -193,7 +193,7 @@ Now, we're able to verify how the coscheduling plugin works.
     $ kubectl apply -f podgroup.yaml
     ```
 
-1. Create a deployment labelled `pod-group.scheduling.x-k8s.io: pg1` to associated with PodGroup
+1. Create a deployment labelled `scheduling.x-k8s.io/pod-group: pg1` to associated with PodGroup
    `pg1` created in the previous step.
 
     ```yaml
@@ -211,7 +211,7 @@ Now, we're able to verify how the coscheduling plugin works.
         metadata:
           labels:
             app: pause
-            pod-group.scheduling.x-k8s.io: pg1
+            scheduling.x-k8s.io/pod-group: pg1
         spec:
           containers:
           - name: pause
