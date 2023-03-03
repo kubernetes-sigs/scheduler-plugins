@@ -548,7 +548,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Prefilter
-				if _, got := pl.PreFilter(nil, state, tt.pod); got.Code() != tt.expected {
+				if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
 					b.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 					assert.True(b, got.IsSuccess())
 				}
@@ -770,7 +770,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 
 			for _, n := range nodes {
 				// Prefilter
-				if _, got := pl.PreFilter(nil, state, tt.pod); got.Code() != tt.expected {
+				if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
 					t.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 				}
 
@@ -1017,7 +1017,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			}
 
 			// Prefilter
-			if _, got := pl.PreFilter(nil, state, tt.pod); got.Code() != tt.expected {
+			if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
 				b.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 			}
 
@@ -1246,7 +1246,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			state := framework.NewCycleState()
 
 			// Prefilter
-			if _, got := pl.PreFilter(nil, state, tt.pod); got.Code() != tt.expected {
+			if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
 				t.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 			}
 
@@ -1472,7 +1472,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			state := framework.NewCycleState()
 
 			// Prefilter
-			if _, got := pl.PreFilter(nil, state, tt.pod); got.Code() != tt.expected {
+			if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
 				b.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 			}
 

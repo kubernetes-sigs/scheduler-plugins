@@ -160,7 +160,7 @@ func TestPreFilter(t *testing.T) {
 
 			state := framework.NewCycleState()
 			for i := range pods {
-				if _, got := cs.PreFilter(nil, state, pods[i]); got.Code() != tt.expected[i] {
+				if _, got := cs.PreFilter(context.TODO(), state, pods[i]); got.Code() != tt.expected[i] {
 					t.Errorf("expected %v, got %v : %v", tt.expected[i], got.Code(), got.Message())
 				}
 			}
