@@ -1,4 +1,3 @@
-
 # Default values for scheduler-plugins-as-a-second-scheduler.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
@@ -6,14 +5,12 @@
 scheduler:
   name: scheduler-plugins-scheduler
   image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9
-  namespace: scheduler-plugins
   replicaCount: 1
   leaderElect: false
 
 controller:
   name: scheduler-plugins-controller
   image: registry.k8s.io/scheduler-plugins/controller:v0.24.9
-  namespace: scheduler-plugins
   replicaCount: 1
 
 # LoadVariationRiskBalancing and TargetLoadPacking are not enabled by default
