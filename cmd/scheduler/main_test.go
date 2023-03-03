@@ -507,9 +507,6 @@ profiles:
 						Enabled: append(defaults.ExpandedPluginsV1.Reserve.Enabled, config.Plugin{Name: coscheduling.Name}),
 					},
 					PreBind: defaults.ExpandedPluginsV1.PreBind,
-					PostBind: config.PluginSet{
-						Enabled: append(defaults.ExpandedPluginsV1.PostBind.Enabled, config.Plugin{Name: coscheduling.Name}),
-					},
 				},
 			},
 		},

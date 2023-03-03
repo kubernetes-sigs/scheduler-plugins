@@ -48,7 +48,7 @@ var _ framework.PreFilterPlugin = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
 var _ framework.ReservePlugin = &Coscheduling{}
-var _ framework.PostBindPlugin = &Coscheduling{}
+
 var _ framework.EnqueueExtensions = &Coscheduling{}
 
 const (
@@ -229,10 +229,4 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 		}
 	})
 	cs.pgMgr.DeletePermittedPodGroup(pgName)
-}
-
-// PostBind is called after a pod is successfully bound. These plugins are used update PodGroup when pod is bound.
-func (cs *Coscheduling) PostBind(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, nodeName string) {
-	klog.V(5).InfoS("PostBind", "pod", klog.KObj(pod))
-	cs.pgMgr.PostBind(ctx, pod, nodeName)
 }
