@@ -54,7 +54,7 @@ build-controller.amd64:
 
 .PHONY: build-controller.arm64v8
 build-controller.arm64v8:
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:
@@ -66,7 +66,7 @@ build-scheduler.amd64:
 
 .PHONY: build-scheduler.arm64v8
 build-scheduler.arm64v8:
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
 local-image: clean
@@ -86,7 +86,7 @@ release-image.arm64v8: clean
 	ARCH="arm64" \
 	RELEASE_VERSION=$(RELEASE_VERSION) \
 	REGISTRY=$(RELEASE_REGISTRY) \
-	IMAGE=$(RELEASE_IMAGE)-amd64 \
+	IMAGE=$(RELEASE_IMAGE)-arm64 \
 	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-arm64 \
 	hack/build-images.sh
 
