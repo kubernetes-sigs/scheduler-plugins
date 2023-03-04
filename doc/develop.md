@@ -36,7 +36,7 @@ make
 command.
 If you changed the branch or added new dependency you might need to regenerate vendor directory, for this you can use
 ```shell
-make autogen
+make update-vendor
 ```
 command.
 
