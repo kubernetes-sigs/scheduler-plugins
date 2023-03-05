@@ -32,3 +32,19 @@ pluginConfig:
 #   args:
 #     scoringStrategy:
 #       type: MostAllocated # default is LeastAllocated
+# If you want to use bin-packing, you can do so by adding the following codes:
+# - name: NodeResourcesFit
+#   args:
+#     scoringStrategy:
+#       requestedToCapacityRatio:
+#         shape:
+#         - utilization: 0
+#           score: 0
+#         - utilization: 100
+#           score: 10
+#       resources:
+#       - name: intel.com/foo
+#         weight: 3
+#       - name: intel.com/bar
+#         weight: 3
+#       type: RequestedToCapacityRatio
