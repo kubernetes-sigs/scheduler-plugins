@@ -2,7 +2,7 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: {{ .Values.controller.name }}
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ ne .Release.Namespace "default" | ternary .Release.Namespace .Values.namespace }}
   labels:
     app: scheduler-plugins-controller
 spec:
@@ -27,7 +27,7 @@ metadata:
   labels:
     component: scheduler
   name: {{ .Values.scheduler.name }}
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ ne .Release.Namespace "default" | ternary .Release.Namespace .Values.namespace }}
 spec:
   selector:
     matchLabels:
