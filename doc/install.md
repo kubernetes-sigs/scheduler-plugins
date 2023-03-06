@@ -146,9 +146,9 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     >     - --kubeconfig=/etc/kubernetes/scheduler.conf
     >     - --leader-elect=true
     19,20c20
-    <     image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9
+    <     image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9
     ---
-    >     image: k8s.gcr.io/kube-scheduler:v1.24.9
+    >     image: registry.k8s.io/kube-scheduler:v1.24.9
     50,52d49
     <     - mountPath: /etc/kubernetes/sched-cc.yaml
     <       name: sched-cc
@@ -160,14 +160,14 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     <     name: sched-cc
     ```
    
-1. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9`
+1. Verify that kube-scheduler pod is running properly with a correct image: `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9`
 
     ```bash
     $ kubectl get pod -n kube-system | grep kube-scheduler
     kube-scheduler-kind-control-plane            1/1     Running   0          3m27s
  
     $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}{'\n'}"
-    k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9
+    registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9
     ```
    
     > **⚠️Troubleshooting:** If the kube-scheudler is not up, you may need to restart kubelet service inside the kind control plane (`systemctl restart kubelet.service`)
@@ -215,7 +215,7 @@ Now, we're able to verify how the coscheduling plugin works.
         spec:
           containers:
           - name: pause
-            image: k8s.gcr.io/pause:3.6
+            image: registry.k8s.io/pause:3.6
     ```
 
     > **⚠️Note:️** If you are running scheduler-plugins as a second scheduler, you should explicitly
