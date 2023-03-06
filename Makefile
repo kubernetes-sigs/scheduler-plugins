@@ -19,7 +19,7 @@ INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
 # RELEASE_REGISTRY is the container registry to push
 # into. The default is to push to the staging
-# registry, not production(k8s.gcr.io).
+# registry, not production(registry.k8s.io).
 RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
