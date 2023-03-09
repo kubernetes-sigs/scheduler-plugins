@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
@@ -159,4 +160,13 @@ func makeResListMap(resMap map[string]string) corev1.ResourceList {
 		res[corev1.ResourceName(k)] = resource.MustParse(v)
 	}
 	return res
+}
+
+func MustNewPodInfo(t testing.TB, pod *corev1.Pod) *framework.PodInfo {
+	podInfo, err := framework.NewPodInfo(pod)
+	if err != nil {
+		t.Fatalf("expected err to be nil got: %v", err)
+	}
+
+	return podInfo
 }
