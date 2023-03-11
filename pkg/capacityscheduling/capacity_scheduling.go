@@ -423,6 +423,7 @@ func (p *preemptor) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus 
 		if preemptorWithEQ {
 			moreThanMinWithPreemptor := preemptorEQInfo.usedOverMinWith(&preFilterState.nominatedPodsReqInEQWithPodReq)
 			for _, p := range nodeInfo.Pods {
+				// Checking terminating pods
 				if p.Pod.DeletionTimestamp != nil {
 					eqInfo, withEQ := elasticQuotaSnapshotState.elasticQuotaInfos[p.Pod.Namespace]
 					if !withEQ {
