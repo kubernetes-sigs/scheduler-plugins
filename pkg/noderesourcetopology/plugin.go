@@ -93,6 +93,7 @@ var _ framework.FilterPlugin = &TopologyMatch{}
 var _ framework.ReservePlugin = &TopologyMatch{}
 var _ framework.ScorePlugin = &TopologyMatch{}
 var _ framework.EnqueueExtensions = &TopologyMatch{}
+var _ framework.PostBindPlugin = &TopologyMatch{}
 
 // Name returns name of the plugin. It is used in logs, etc.
 func (tm *TopologyMatch) Name() string {
