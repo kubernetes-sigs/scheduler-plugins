@@ -60,7 +60,8 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha2.ZoneLis
 		_, match := resourcesAvailableInAnyNUMANodes(logID, nodes, initContainer.Resources.Requests, qos, nodeInfo)
 		if !match {
 			// we can't align init container, so definitely we can't align a pod
-			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align init container: %s", initContainer.Name))
+			klog.V(2).InfoS("cannot align container", "name", initContainer.Name, "kind", "init")
+			return framework.NewStatus(framework.Unschedulable, "cannot align init container")
 		}
 	}
 
@@ -71,7 +72,8 @@ func singleNUMAContainerLevelHandler(pod *v1.Pod, zones topologyv1alpha2.ZoneLis
 		numaID, match := resourcesAvailableInAnyNUMANodes(logID, nodes, container.Resources.Requests, qos, nodeInfo)
 		if !match {
 			// we can't align container, so definitely we can't align a pod
-			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", container.Name))
+			klog.V(2).InfoS("cannot align container", "name", container.Name, "kind", "app")
+			return framework.NewStatus(framework.Unschedulable, "cannot align container")
 		}
 
 		// subtract the resources requested by the container from the given NUMA.
@@ -183,7 +185,8 @@ func singleNUMAPodLevelHandler(pod *v1.Pod, zones topologyv1alpha2.ZoneList, nod
 	klog.V(6).InfoS("target resources", stringify.ResourceListToLoggable(logID, resources)...)
 
 	if _, match := resourcesAvailableInAnyNUMANodes(logID, createNUMANodeList(zones), resources, v1qos.GetPodQOS(pod), nodeInfo); !match {
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align pod: %s", pod.Name))
+		klog.V(2).InfoS("cannot align pod", "name", pod.Name)
+		return framework.NewStatus(framework.Unschedulable, "cannot align pod")
 	}
 	return nil
 }
@@ -200,7 +203,8 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	nodeName := nodeInfo.Node().Name
 	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
 	if !ok {
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("invalid node topology data for node %s", nodeName))
+		klog.V(2).InfoS("invalid topology data", "node", nodeName)
+		return framework.NewStatus(framework.Unschedulable, "invalid node topology data")
 	}
 	if nodeTopology == nil {
 		return nil

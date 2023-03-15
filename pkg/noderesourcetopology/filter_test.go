@@ -254,7 +254,7 @@ func TestNodeResourceTopology(t *testing.T) {
 			pod: makePodByResourceList(&v1.ResourceList{
 				nicResourceName: *resource.NewQuantity(20, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Best effort QoS requesting devices, Container Scope Topology policy; pod fit",
@@ -268,7 +268,7 @@ func TestNodeResourceTopology(t *testing.T) {
 			pod: makePodByResourceList(&v1.ResourceList{
 				nicResourceName: *resource.NewQuantity(20, resource.DecimalSI)}),
 			node:       nodes[0],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Best effort QoS requesting devices and extended resources, Container Scope Topology policy; pod doesn't fit",
@@ -291,7 +291,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)},
 			),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Best effort QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -306,7 +306,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)},
 			),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Best effort QoS requesting CPU, memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -427,7 +427,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Burstable QoS, requesting CPU and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -435,7 +435,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceCPU:  *resource.NewQuantity(2, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(6, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Burstable QoS requesting CPU (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -475,7 +475,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("2Gi"),
 				nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Burstable QoS, requesting memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -483,7 +483,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("2Gi"),
 				nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Burstable QoS requesting memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -524,7 +524,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("4Gi"),
 				nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Burstable QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -533,7 +533,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("2Gi"),
 				nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Burstable QoS requesting CPU, memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -588,7 +588,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				hugepages2Mi:      resource.MustParse("256Mi"),
 				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Guaranteed QoS, pod doesn't fit",
@@ -597,7 +597,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("1Gi"),
 				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[0],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Guaranteed QoS, pod fit",
@@ -615,7 +615,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory:          resource.MustParse("1Gi"),
 				notExistingNICResourceName: *resource.NewQuantity(0, resource.DecimalSI)}, 3),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Guaranteed QoS Topology Scope, minimal, pod fit",
@@ -649,7 +649,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory:          resource.MustParse("1Gi"),
 				notExistingNICResourceName: *resource.NewQuantity(0, resource.DecimalSI)}, 3),
 			node:       nodes[3],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Guaranteed QoS, hugepages, non-NUMA affine NIC, pod fit",
@@ -791,7 +791,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "gu pod does not fit - not enough memory available on any NUMA node",
@@ -818,7 +818,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "gu pod does not fit - not enough Hugepages available on any NUMA node",
@@ -845,7 +845,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "gu pod does not fit - not enough devices available on any NUMA node",
@@ -872,7 +872,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 	}
 
@@ -967,21 +967,21 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 			cntReq: []map[string]string{
 				{cpu: "40", memory: "4G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[2][tier3] single container with memory over allocation - fit",
 			cntReq: []map[string]string{
 				{cpu: "2", memory: "100G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[2][tier3] single container with cpu and memory over allocation - fit",
 			cntReq: []map[string]string{
 				{cpu: "40", memory: "100G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[4][tier2] multi-containers with good allocation, spread across NUMAs - fit",
@@ -1006,7 +1006,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "1", memory: "4G"},
 				{cpu: "1", memory: "4G"},
 			},
-			statusErr: "cannot align init container: cnt-1",
+			statusErr: "cannot align init container", // cnt-1
 		},
 		{
 			description: "[7][tier1] init container with memory over allocation, multi-containers with good allocation - not fit",
@@ -1017,7 +1017,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "1", memory: "4G"},
 				{cpu: "1", memory: "4G"},
 			},
-			statusErr: "cannot align init container: cnt-1",
+			statusErr: "cannot align init container", // cnt-1
 		},
 		{
 			description: "[11][tier1] init container with good allocation, multi-containers spread across NUMAs - fit",
@@ -1053,7 +1053,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "20", memory: "40G"},
 				{cpu: "20", memory: "6G"},
 			},
-			statusErr: "cannot align container: cnt-3",
+			statusErr: "cannot align container", // cnt-3
 		},
 		{
 			description: "[27][tier1] multi init containers with good allocation, container with cpu over allocation - not fit",
@@ -1064,7 +1064,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 			cntReq: []map[string]string{
 				{cpu: "35", memory: "40G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[28][tier1] multi init containers with good allocation, multi-containers with good allocation - fit",
@@ -1114,7 +1114,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "20", memory: "40G"},
 				{cpu: "2", memory: "6G"},
 			},
-			statusErr: "cannot align init container: cnt-1",
+			statusErr: "cannot align init container", // cnt-1
 		},
 		{
 			description: "[32][tier1] multi init containers with over memory allocation - not fit",
@@ -1127,7 +1127,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "20", memory: "40G"},
 				{cpu: "2", memory: "6G"},
 			},
-			statusErr: "cannot align init container: cnt-2",
+			statusErr: "cannot align init container", // cnt-2
 		},
 	}
 
