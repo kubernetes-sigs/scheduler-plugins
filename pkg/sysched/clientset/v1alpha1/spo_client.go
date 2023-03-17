@@ -14,7 +14,7 @@ type SPOV1Alpha1Interface interface {
 }
 
 type SPOV1Alpha1Client struct {
-    restClient rest.Interface
+    RestClient rest.Interface
 }
 
 func NewForConfig(c *rest.Config) (*SPOV1Alpha1Client, error) {
@@ -33,13 +33,13 @@ func NewForConfig(c *rest.Config) (*SPOV1Alpha1Client, error) {
         return nil, err
     }
 
-    return &SPOV1Alpha1Client{restClient: client}, nil
+    return &SPOV1Alpha1Client{RestClient: client}, nil
 }
 
 //func (c *SPOV1Alpha1Client) Profiles(namespace string) ProfileInterface {
 func (c *SPOV1Alpha1Client) Profiles() ProfileInterface {
     return &profileClient{
-        restClient: c.restClient,
+        restClient: c.RestClient,
         //ns: namespace,
     }
 }

@@ -69,6 +69,9 @@ func union(syscalls map[string]bool, newsyscalls []string) {
 }
 
 func remove(s []*v1.Pod, i int) []*v1.Pod {
+	if len(s) == 0 {
+		return nil
+	}
 	s[i] = s[len(s)-1]
 	return s[:len(s)-1]
 }
