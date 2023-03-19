@@ -42,10 +42,13 @@ import (
 	agversioned "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned"
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"
 	ntversioned "github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
 var lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)
+
+var signalHandler = ctrl.SetupSignalHandler()
 
 // podScheduled returns true if a node is assigned to the given pod.
 func podScheduled(c clientset.Interface, podNamespace, podName string) bool {

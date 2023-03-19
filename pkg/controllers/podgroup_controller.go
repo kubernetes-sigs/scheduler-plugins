@@ -122,8 +122,7 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
 		}
 
-		if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember &&
-			pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduled {
+		if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupRunning
 		}
 		// Final state of pod group
