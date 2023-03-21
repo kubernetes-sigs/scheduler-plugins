@@ -120,7 +120,7 @@ install-envtest:
 
 .PHONY: integration-test
 integration-test: install-envtest
-	$(INTEGTESTENVVAR) hack/integration-test.sh
+	$(INTEGTESTENVVAR) hack/integration-test.sh $(ARGS)
 
 .PHONY: verify
 verify:
