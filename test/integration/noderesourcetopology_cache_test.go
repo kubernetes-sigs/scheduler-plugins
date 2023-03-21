@@ -680,7 +680,7 @@ func podMatchesExpectedNode(podNamespace, podName, nodeName, expectedNode string
 }
 
 func mkPFP(nodeName string, pods ...*corev1.Pod) string {
-	var st podfingerprint.Status
+	st := podfingerprint.MakeStatus(nodeName)
 	fp := podfingerprint.NewTracingFingerprint(len(pods), &st)
 	for _, pod := range pods {
 		fp.AddPod(pod)

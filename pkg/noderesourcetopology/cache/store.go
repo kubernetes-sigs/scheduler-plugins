@@ -213,7 +213,7 @@ func checkPodFingerprintForNode(logID string, indexer NodeIndexer, nodeName, pfp
 		return err
 	}
 
-	var st podfingerprint.Status
+	st := podfingerprint.MakeStatus(nodeName)
 	pfp := podfingerprint.NewTracingFingerprint(len(objs), &st)
 	for _, obj := range objs {
 		pfp.Add(obj.Namespace, obj.Name)
