@@ -261,3 +261,5 @@ func (ov *OverReserve) Store() *nrtStore {
 func logIDFromTime() string {
 	return fmt.Sprintf("resync%v", time.Now().UnixMilli())
 }
+
+func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}
