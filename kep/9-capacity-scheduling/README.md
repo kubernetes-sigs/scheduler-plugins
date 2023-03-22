@@ -202,7 +202,8 @@ spec:
 ```
 
 The definitions of "min" and "max" have been explained above. Max is infinite
-by default, min is 0 by default. The sum of min in all ElasticQuota must be 
+(in particular `math.MaxInt64`) by default, min is 0 by default.
+The sum of min in all ElasticQuota must be 
 less than or equal to the total resource capacity of the cluster.The 
 ElasticQuota objects are created by a cluster administrator. One ElasticQuota
 object per namespace.
