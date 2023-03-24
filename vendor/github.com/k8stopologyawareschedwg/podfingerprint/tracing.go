@@ -65,6 +65,13 @@ type Status struct {
 	FingerprintExpected string           `json:"fingerprintExpected,omitempty"`
 	FingerprintComputed string           `json:"fingerprintComputed,omitempty"`
 	Pods                []NamespacedName `json:"pods,omitempty"`
+	NodeName            string           `json:"nodeName,omitempty"`
+}
+
+func MakeStatus(nodeName string) Status {
+	return Status{
+		NodeName: nodeName,
+	}
 }
 
 func (st *Status) Start(numPods int) {
@@ -90,6 +97,7 @@ func (st *Status) Check(expected string) {
 func (st Status) Repr() string {
 	var sb strings.Builder
 
+	sb.WriteString(fmt.Sprintf("> processing node %q\n", st.NodeName))
 	sb.WriteString(fmt.Sprintf("> processing %d pods\n", len(st.Pods)))
 	for _, pod := range st.Pods {
 		sb.WriteString("+ " + pod.Namespace + "/" + pod.Name + "\n")
@@ -101,6 +109,18 @@ func (st Status) Repr() string {
 	}
 
 	return sb.String()
+}
+
+func (st Status) Clone() Status {
+	pods := make([]NamespacedName, len(st.Pods))
+	copy(pods, st.Pods)
+	ret := Status{
+		FingerprintExpected: st.FingerprintExpected,
+		FingerprintComputed: st.FingerprintComputed,
+		Pods:                pods,
+		NodeName:            st.NodeName,
+	}
+	return ret
 }
 
 type TracingFingerprint struct {
