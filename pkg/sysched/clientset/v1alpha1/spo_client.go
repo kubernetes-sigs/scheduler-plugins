@@ -10,7 +10,7 @@ import (
 
 type SPOV1Alpha1Interface interface {
     //Profiles(namespace string) ProfileInterface 
-    Profiles() ProfileInterface 
+    Profiles() ProfileInterface
 }
 
 type SPOV1Alpha1Client struct {
@@ -43,4 +43,3 @@ func (c *SPOV1Alpha1Client) Profiles() ProfileInterface {
         //ns: namespace,
     }
 }
-

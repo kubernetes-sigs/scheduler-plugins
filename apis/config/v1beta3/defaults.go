@@ -76,6 +76,12 @@ var (
 	DefaultWeightsName = "UserDefined"
 	// DefaultNetworkTopologyName contains the networkTopology CR name to be used by networkAware plugins
 	DefaultNetworkTopologyName = "nt-default"
+
+        // Defaults for SySched
+	// DefaultSySchedCRDNamespace is the default namesapce for full and weighted syscall CRDs used by SySched plugin
+	DefaultSySchedCRDNamespace = "default"
+	// DefaultSySchedFullCRDName contains the full syscall CRD name to be used by SySched plugin
+	DefaultSySchedFullCRDName = "full-profile"
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -177,5 +183,16 @@ func SetDefaults_NetworkOverheadArgs(obj *NetworkOverheadArgs) {
 
 	if obj.NetworkTopologyName == nil {
 		obj.NetworkTopologyName = &DefaultNetworkTopologyName
+	}
+}
+
+// SetDefaults_SySchedArgs sets the default parameters for SySchedArgs plugin.
+func SetDefaults_SySchedArgs(obj *SySchedArgs) {
+	if obj.SySchedCRDNamespace == nil {
+		obj.SySchedCRDNamespace = &DefaultSySchedCRDNamespace
+	}
+
+	if obj.SySchedFullCRDName == nil {
+		obj.SySchedFullCRDName = &DefaultSySchedFullCRDName
 	}
 }

@@ -1,18 +1,19 @@
 package sysched
 
-//Todos
-// 1. system call list for an unconfined pod (no seccomp profiles)
-// 2. how to handle input of wieghts
-// 3. Adding a readme file
-// 4. Adding a scheduler-config file
+//TODO:
+// 1. weighted mechanism: i) extending SPO, ii) overload existing SPO, iii) CRD
+// 2. handling the restart of scheduler to restore states
 
 import (
+	"fmt"
 	"context"
-	"math/rand"
 	"strings"
+	"path"
+	"math"
 
 	"github.com/containers/common/pkg/seccomp"
 	v1 "k8s.io/api/core/v1"
+	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -25,13 +26,16 @@ import (
 )
 
 type SySched struct {
-	handle       framework.Handle
-	clientSet    v1alpha1.SPOV1Alpha1Interface
-	HostToPods   map[string][]*v1.Pod
-	HostSyscalls map[string]map[string]bool
-	CritSyscalls map[string][]string
-	ExSAvg       float64
-	ExSAvgCount  int64
+	handle			framework.Handle
+	clientSet		v1alpha1.SPOV1Alpha1Interface
+	HostToPods		map[string][]*v1.Pod
+	HostSyscalls		map[string]map[string]bool
+	CritSyscalls		map[string][]string
+	ExSAvg			float64
+	ExSAvgCount		int64
+	SyscallCRDNamespace	string
+	FullSyscallProfile	string
+	WeightedSyscallProfile	string
 }
 
 var _ framework.ScorePlugin = &SySched{}
@@ -39,31 +43,37 @@ var _ framework.ScorePlugin = &SySched{}
 // Name is the name of the plugin used in Registry and configurations.
 const Name = "SySched"
 
-func setSubtract(hostsyscalls map[string]bool, podsyscalls []string) []string {
-	var syscalls []string
-	hsyscalls := make(map[string]bool)
+func setSubtract(hostSyscalls map[string]bool, podSyscalls []string) []string {
+	var syscallDiffs []string
+	syscalls := make(map[string]bool)
 
-	for k, v := range hostsyscalls {
-		hsyscalls[k] = v
+	// copying content from hostSyscalls to newHostSyscalls
+	for k, v := range hostSyscalls {
+		syscalls[k] = v
 	}
 
-	for _, s := range podsyscalls {
-		_, ok := hsyscalls[s]
+	// remove a syscall from syscalls by setting the value to
+	// false if the syscall is present in podSyscalls list
+	for _, s := range podSyscalls {
+		_, ok := syscalls[s]
 		if ok {
-			hsyscalls[s] = false
+			syscalls[s] = false
 		}
 	}
-	for s := range hsyscalls {
-		if hsyscalls[s] {
-			syscalls = append(syscalls, s)
+	// now the syscall difference is the list of syscalls that
+	// still contain true values in the syscalls map
+	for s := range syscalls {
+		if syscalls[s] {
+			syscallDiffs = append(syscallDiffs, s)
 		}
 	}
 
-	return syscalls
+	return syscallDiffs
 }
 
-func union(syscalls map[string]bool, newsyscalls []string) {
-	for _, s := range newsyscalls {
+// copying syscalls from the newSyscalls list to the syscalls map
+func union(syscalls map[string]bool, newSyscalls []string) {
+	for _, s := range newSyscalls {
 		syscalls[s] = true
 	}
 }
@@ -73,6 +83,7 @@ func remove(s []*v1.Pod, i int) []*v1.Pod {
 		return nil
 	}
 	s[i] = s[len(s)-1]
+
 	return s[:len(s)-1]
 }
 
@@ -88,12 +99,14 @@ func UnionList(a, b []string) []string {
 			a = append(a, item)
 		}
 	}
+
 	return a
 }
 
+// extracts filename and namespace from the relative seccomp
+// profile path with the following format
+// e.g., localhost/operator/<namespace>/<filename>.json
 func getCRDandNamespace(localhostProfile string) (string, string) {
-	// this function get the local profile relative path
-	// e.g., localhost/operator/default/httpd-seccomp.json
 	if localhostProfile == "" {
 		return "", ""
 	}
@@ -104,66 +117,89 @@ func getCRDandNamespace(localhostProfile string) (string, string) {
 	}
 	ns := parts[2]
 
-	file_parts := strings.Split(parts[3], ".")
-	if len(file_parts) != 2 {
-		return ns, ""
-	}
-	crd_name := file_parts[0]
+	// get filename without extension
+	crdName := strings.TrimSuffix(parts[3], path.Ext(parts[3]))
 
-	return ns, crd_name
+	return ns, crdName
 }
 
-func (sc *SySched) getSyscalls(pod *v1.Pod) ([]string, error) {
-	//FIXME: if the system call list empty, i.e., a pod does
-	// not have a seccomp profile or spo annotation, return all
-	// available system calls
-	var r []string
-	if pod.ObjectMeta.Annotations == nil {
-		return r, nil
+// fetch the system call list from a SPO seccomp profile CRD in a given namespace
+func (sc *SySched) readSPOProfileCRD(crdName string, namespace string) ([]string, error) {
+	var syscalls []string
+
+	if crdName == "" || namespace == "" {
+		return syscalls, nil
 	}
 
-	// this loop looks for all annoations in a pod
-	// and get the secommp security context related
-	// annotations, extract the seccomp crd name from
-	// an annotation, get the crd using the name, and
-	// merge system calls from multiple crds (if any)
-	// or system calls from mutiple action types
-	for k, v := range pod.ObjectMeta.Annotations {
-		// looks for annotation related to the seccomp
-		if strings.Contains(k, "seccomp.security.alpha.kubernetes.io") {
-			ns, crd_name := getCRDandNamespace(v)
-			//klog.Debug("namespace and name = ", ns, crd_name)
-			if ns == "" || crd_name == "" {
-				continue
-			}
+	// extract a seccomp SPO crd using namespace and crd name
+	profile, err := sc.clientSet.Profiles().Get(crdName, namespace, metav1.GetOptions{})
 
-			// extract a seccomp crd using namespace and crd name
-			// crd name is the json file without extension in the
-			// annotion.
+	if err != nil {
+		return syscalls, nil
+	}
 
-			profile, err := sc.clientSet.Profiles().Get(crd_name, ns, metav1.GetOptions{})
-			if err != nil {
-				continue
-			}
+	syscallCategories := profile.Spec.Syscalls
 
-			//profile := raw_profile.(*v1beta1.SeccompProfile)
-			syscall_categories := profile.Spec.Syscalls
+	// need to merge the syscalls in the syscall categories
+	// from multiple relevant actions, e.g., allow, log, notify
+	for _, element := range syscallCategories {
+		// NOTE: should we consider the rest categories, e.g., notify, trace?
+		// SCMP_ACT_TRACE --> ActTrace, seccomp.ActNotify
+		if element.Action == seccomp.ActAllow || element.Action == seccomp.ActLog {
+			syscalls = UnionList(syscalls, element.Names)
+		}
+	}
 
-			// need to merge the syscalls in the syscall categories
-			// from multiple relevant actions, e.g., allow, log, notify
-			// todo: do we need to include the SCMP_ACT_TRACE --> ActTrace
-			// FIXME: what are the categories that we should consider?
-			for _, element := range syscall_categories {
-				if element.Action == seccomp.ActAllow || element.Action == seccomp.ActLog {
-					//|| element.Action == seccomp.ActNotify {
+	return syscalls, nil
+}
 
-					r = UnionList(r, element.Names) //merge syscalls with the result
+// obtains the system call list for a pod from the pod's seccomp profile
+// SPO is used to generate and input the seccomp profile to a pod
+// If a pod does not have a SPO seccomp profile, then an unconfined
+// system call set is return for the pod
+func (sc *SySched) getSyscalls(pod *v1.Pod) ([]string, error) {
+	var r []string
+
+	// SPO seccomp profiles are automatically annotated to a pod
+	if pod.ObjectMeta.Annotations != nil {
+		// there could be multiple SPO seccomp profile annotations for a pod
+		// merge all profiles to obtain the syscal set for a pod
+		for k, v := range pod.ObjectMeta.Annotations {
+			// looks for annotation related to the seccomp
+			if strings.Contains(k, "seccomp.security.alpha.kubernetes.io") {
+				ns, crdName := getCRDandNamespace(v)
+				//klog.Debug("namespace and name = ", ns, crdName)
+
+				syscalls, _ := sc.readSPOProfileCRD(crdName, ns)
+
+				// look for next annotation if the profile is empty
+				if len(syscalls) == 0 {
+					continue
 				}
+
+				// merge if there are multiple profiles
+				r = UnionList(r, syscalls)
 			}
 		}
 	}
 
-	//klog.Info("system calls for pod = ", r)
+	// if a pod does not have a seccomp profile specified, return unconfined syscall set
+	if len(r) == 0 {
+		r, _ = sc.getUnconfinedSyscalls()
+	}
+
+	klog.Info("system calls for pod = ", r)
+	return r, nil
+}
+
+// Returns all available system calls by reading the full SPO seccomp profile CRD
+func (sc *SySched) getUnconfinedSyscalls() ([]string, error) {
+	var r []string
+
+	// extract a seccomp crd using namespace and crd name
+	r, _ = sc.readSPOProfileCRD(sc.FullSyscallProfile, sc.SyscallCRDNamespace)
+
+	klog.Info("unconfined system calls for pod = ", r)
 	return r, nil
 }
 
@@ -175,7 +211,7 @@ func (sc *SySched) Name() string {
 func (sc *SySched) calcScore(syscalls []string) int {
 	tot_crit := 0
 
-	//FIXME: weight for critical/cve syscalls
+	// TODO: weight for critical/cve syscalls
 	W := 1
 	score := len(syscalls) - tot_crit
 	score = score + W*tot_crit
@@ -193,30 +229,36 @@ func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.
 
 	nodeIP := node.Status.Addresses[0].Address
 
-	podsyscalls, _ := sc.getSyscalls(pod)
-	if len(podsyscalls) == 0 {
-		return int64(rand.Intn(2)), nil
+	podSyscalls, _ := sc.getSyscalls(pod)
+
+	// NOTE: this condition is true only when a pod does not
+	// have a syscall profile, or the unconfined syscall is
+	// not set. We return a large number (INT64_MAX) as score.
+	if len(podSyscalls) == 0 {
+		return math.MaxInt64, nil
 	}
 
-	_, hostsyscalls := sc.getHostSyscalls(nodeIP)
-	if hostsyscalls == nil {
+	_, hostSyscalls := sc.getHostSyscalls(nodeIP)
+	// when a host or node does not have any pods
+	// running, the extraneous syscall score is zero
+	if hostSyscalls == nil {
 		return 0, nil
 	}
 
-	diffsyscalls := setSubtract(hostsyscalls, podsyscalls)
-	totalDiffs := sc.calcScore(diffsyscalls)
+	diffSyscalls := setSubtract(hostSyscalls, podSyscalls)
+	totalDiffs := sc.calcScore(diffSyscalls)
 
 	// add the difference existing pods will see if new Pod is added into this host
-	newhostsyscalls := make(map[string]bool)
-	for k, v := range hostsyscalls {
-		newhostsyscalls[k] = v
+	newHostSyscalls := make(map[string]bool)
+	for k, v := range hostSyscalls {
+		newHostSyscalls[k] = v
 	}
 
-	union(newhostsyscalls, podsyscalls)
+	union(newHostSyscalls, podSyscalls)
 	for _, p := range sc.HostToPods[nodeIP] {
-		podsyscalls, _ = sc.getSyscalls(p)
-		diffsyscalls = setSubtract(newhostsyscalls, podsyscalls)
-		totalDiffs += sc.calcScore(diffsyscalls)
+		podSyscalls, _ = sc.getSyscalls(p)
+		diffSyscalls = setSubtract(newHostSyscalls, podSyscalls)
+		totalDiffs += sc.calcScore(diffSyscalls)
 	}
 
 	sc.ExSAvg = sc.ExSAvg + (float64(totalDiffs)-sc.ExSAvg)/float64(sc.ExSAvgCount)
@@ -356,14 +398,35 @@ func (sc *SySched) podDeleted(obj interface{}) {
 	sc.removePod(pod)
 }
 
+// getArgs : returns the arguments for the SySchedArg plugin.
+func getArgs(obj runtime.Object) (*pluginconfig.SySchedArgs, error) {
+	SySchedArgs, ok := obj.(*pluginconfig.SySchedArgs)
+	if !ok {
+		return nil, fmt.Errorf("want args to be of type SySchedArgs, got %T", obj)
+	}
+
+	return SySchedArgs, nil
+}
+
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	sc := SySched{handle: handle}
 	sc.HostToPods = make(map[string][]*v1.Pod)
 	sc.HostSyscalls = make(map[string]map[string]bool)
 	//sc.CritSyscalls = make(map[string][]string)
 	sc.ExSAvg = 0
 	sc.ExSAvgCount = 1
+
+	args, err := getArgs(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	// get the syscall CRD namespace name and CRD names
+	// for full and weighted system call profiles
+	sc.SyscallCRDNamespace = args.SySchedCRDNamespace
+	sc.FullSyscallProfile = args.SySchedFullCRDName
+
 
 	v1beta1.AddToScheme(scheme.Scheme)
 
@@ -376,7 +439,7 @@ func New(_ runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
 
-	klog.Info("Setting up pod event handlers")
+	//klog.Info("Setting up pod event handlers")
 	podInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			//AddFunc:    sc.podAdded,
