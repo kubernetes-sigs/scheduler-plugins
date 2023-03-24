@@ -7,9 +7,9 @@ based on [SySched](https://github.com/kubernetes-sigs/scheduler-plugins/tree/mas
 
 <!-- Check one of the values: Sample, Alpha, Beta, GA -->
 
-- [x ] 💡 Sample (for demonstrating and inspiring purpose)
+- [x] 💡 Sample (for demonstrating and inspiring purpose)
 - [ ] 👶 Alpha (used in companies for pilot projects)
-- [] 👦 Beta (used in companies and developed actively)
+- [ ] 👦 Beta (used in companies and developed actively)
 - [ ] 👨 Stable (used in companies for production workloads)
 
 ## Tutorial
@@ -27,8 +27,8 @@ Kubernetes for ranking candidate nodes.
 
 ### Installation of Security Profile Operator
 We leverage the [Security Profile Operator (SPO)](https://github.com/kubernetes-sigs/security-profiles-operator) for
-creating and storing system call usage profiles as seccomp profiles. We provide a very brief overview for installing
-the SPO in a Kubernetes cluster. For detailed instruction on installation and usage, please refer to the
+creating and storing system call usage profiles as seccomp profiles. We provide a quick installation guide herein.
+For detailed instruction on installation and usage, please refer to the
 [SPO](https://github.com/kubernetes-sigs/security-profiles-operator) GitHub repository.
 
 First, install the `cert-manager` via `kubectl` to deploy the SPO operator:
