@@ -1004,7 +1004,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "400Mi"},
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "400Mi"},
 			},
-			errMsg: "cannot align container: cnt-2",
+			errMsg: "cannot align container", // cnt-2
 		},
 		{
 			description: "[5][tier1] multi containers with device over allocation, spread across NUMAs - not fit",
@@ -1012,7 +1012,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "50Mi", nicResourceName: "20"},
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "500Mi", nicResourceName: "20"},
 			},
-			errMsg: "cannot align container: cnt-2",
+			errMsg: "cannot align container", // cnt-2
 		},
 		{
 			description: "[7][tier1] init container with cpu over allocation, multi-containers with good allocation - not fit",
@@ -1023,7 +1023,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "1", memory: "4Gi"},
 				{cpu: "1", memory: "4Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-1",
+			errMsg: "cannot align init container", // initcnt-1
 		},
 		{
 			description: "[7][tier1] init container with memory over allocation, multi-containers with good allocation - not fit",
@@ -1034,7 +1034,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "1", memory: "4Gi"},
 				{cpu: "1", memory: "4Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-1",
+			errMsg: "cannot align init container", // initcnt-1
 		},
 		{
 			description: "[11][tier1] init container with good allocation, multi-containers spread across NUMAs - fit",
@@ -1056,7 +1056,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "20", memory: "10Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[12][tier1] init container with good allocation, multi-containers with memory over allocation - not fit",
@@ -1068,7 +1068,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "2", memory: "40Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[17][tier1] multi init containers with good allocation, multi-containers spread across NUMAs - fit",
@@ -1095,7 +1095,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "20", memory: "10Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[18][tier1] multi init containers with good allocation, multi-containers with memory over allocation - not fit",
@@ -1109,7 +1109,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "35Gi"},
 				{cpu: "2", memory: "50Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[24][tier1] multi init containers with good allocation, multi-containers with cpu over allocation - not fit",
@@ -1122,7 +1122,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "20", memory: "6Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[24][tier1] multi init containers with good allocation, multi-containers with memory over allocation - not fit",
@@ -1135,7 +1135,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "35Gi"},
 				{cpu: "2", memory: "50Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[27][tier1] multi init containers with good allocation, container with cpu over allocation - not fit",
@@ -1146,7 +1146,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			cntReq: []map[string]string{
 				{cpu: "35", memory: "40Gi"},
 			},
-			errMsg: "cannot align container: cnt-1",
+			errMsg: "cannot align container", // cnt-1
 		},
 		{
 			description: "[28][tier1] multi init containers with good allocation, multi-containers with good allocation - fit",
@@ -1196,7 +1196,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "2", memory: "6Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-1",
+			errMsg: "cannot align init container", // initcnt-1
 		},
 		{
 			description: "[32][tier1] multi init containers with over memory allocation - not fit",
@@ -1209,7 +1209,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "2", memory: "6Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-2",
+			errMsg: "cannot align init container", // initcnt-2
 		},
 	}
 	tests = append(tests, parseTestUserEntry(scopeEqualsContainerTests, ns)...)
