@@ -31,6 +31,7 @@ RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 # v20201009-v0.18.800-46-g939c1c0 - automated build for a commit(not a tag) and also a local build
 # v20200521-v0.18.800             - automated build for a tag
 VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
+VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
 
 .PHONY: all
 all: build
