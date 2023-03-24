@@ -1,4 +1,4 @@
-apiVersion: appgroup.diktyo.k8s.io/v1alpha1
+apiVersion: appgroup.diktyo.x-k8s.io/v1alpha1
 kind: AppGroup
 metadata:
   name: online-boutique

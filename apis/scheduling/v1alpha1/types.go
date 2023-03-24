@@ -23,6 +23,7 @@ import (
 )
 
 // ElasticQuota sets elastic quota restrictions per namespace
+// +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName={eq,eqs}
@@ -111,10 +112,11 @@ const (
 	PodGroupFailed PodGroupPhase = "Failed"
 
 	// PodGroupLabel is the default label of coscheduling
-	PodGroupLabel = "pod-group." + scheduling.GroupName
+	PodGroupLabel = scheduling.GroupName + "/pod-group"
 )
 
 // PodGroup is a collection of Pod; used for batch workload.
+// +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName={pg,pgs}

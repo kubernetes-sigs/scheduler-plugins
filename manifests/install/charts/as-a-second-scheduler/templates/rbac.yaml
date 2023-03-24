@@ -63,14 +63,14 @@ rules:
   resources: ["noderesourcetopologies"]
   verbs: ["get", "list", "watch"]
 # resources need to be updated with the scheduler plugins used
-- apiGroups: ["scheduling.sigs.k8s.io"]
+- apiGroups: ["scheduling.x-k8s.io"]
   resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-# for network-aware plugins add the following lines (scheduler-plugins v.0.24.9)
-#- apiGroups: [ "appgroup.diktyo.k8s.io" ]
+# for network-aware plugins add the following lines (scheduler-plugins v.0.25.7)
+#- apiGroups: [ "appgroup.diktyo.x-k8s.io" ]
 #  resources: [ "appgroups" ]
 #  verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
-#- apiGroups: [ "networktopology.diktyo.k8s.io" ]
+#- apiGroups: [ "networktopology.diktyo.x-k8s.io" ]
 #  resources: [ "networktopologies" ]
 #  verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
 - apiGroups: ["security-profiles-operator.x-k8s.io"]
@@ -88,7 +88,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: {{ .Values.scheduler.name }}
-  namespace: {{ .Values.scheduler.namespace }}
+  namespace: {{ .Release.Namespace }}
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
@@ -105,7 +105,7 @@ rules:
   resources: ["noderesourcetopologies"]
   verbs: ["get", "list", "watch"]
 # resources need to be updated with the scheduler plugins used
-- apiGroups: ["scheduling.sigs.k8s.io"]
+- apiGroups: ["scheduling.x-k8s.io"]
   resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 - apiGroups: ["security-profiles-operator.x-k8s.io"]
@@ -119,7 +119,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: {{ .Values.controller.name }}
-  namespace: {{ .Values.controller.namespace }}
+  namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: scheduler-plugins-controller
@@ -137,8 +137,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: {{ .Values.scheduler.name }}
-  namespace: {{ .Values.scheduler.namespace }}
+  namespace: {{ .Release.Namespace }}
 - kind: ServiceAccount
   name: {{ .Values.controller.name }}
-  namespace: {{ .Values.controller.namespace }}
-
+  namespace: {{ .Release.Namespace }}

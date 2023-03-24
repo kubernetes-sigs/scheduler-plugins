@@ -28,8 +28,8 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	listerv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 
@@ -44,11 +44,11 @@ type OverReserve struct {
 	// to resync nodes. See The documentation of Resync() below for more details.
 	nodesMaybeOverreserved counter
 	nodesWithForeignPods   counter
-	nrtLister              listerv1alpha1.NodeResourceTopologyLister
+	nrtLister              listerv1alpha2.NodeResourceTopologyLister
 	nodeIndexer            NodeIndexer
 }
 
-func NewOverReserve(lister listerv1alpha1.NodeResourceTopologyLister, indexer NodeIndexer) (*OverReserve, error) {
+func NewOverReserve(lister listerv1alpha2.NodeResourceTopologyLister, indexer NodeIndexer) (*OverReserve, error) {
 	if lister == nil || indexer == nil {
 		return nil, fmt.Errorf("nrtcache: received nil references")
 	}
@@ -70,7 +70,7 @@ func NewOverReserve(lister listerv1alpha1.NodeResourceTopologyLister, indexer No
 	return obj, nil
 }
 
-func (ov *OverReserve) GetCachedNRTCopy(nodeName string, pod *corev1.Pod) (*topologyv1alpha1.NodeResourceTopology, bool) {
+func (ov *OverReserve) GetCachedNRTCopy(nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	if ov.nodesWithForeignPods.IsSet(nodeName) {
@@ -197,7 +197,7 @@ func (ov *OverReserve) Resync() {
 	klog.V(6).InfoS("nrtcache: resync NodeTopology cache starting", "logID", logID)
 	defer klog.V(6).InfoS("nrtcache: resync NodeTopology cache complete", "logID", logID)
 
-	var nrtUpdates []*topologyv1alpha1.NodeResourceTopology
+	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
 	for _, nodeName := range nodeNames {
 		nrtCandidate, err := ov.nrtLister.Get(nodeName)
 		if err != nil {
@@ -237,7 +237,7 @@ func (ov *OverReserve) Resync() {
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
-func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha1.NodeResourceTopology) {
+func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha2.NodeResourceTopology) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	for _, nrt := range nrts {
@@ -261,3 +261,5 @@ func (ov *OverReserve) Store() *nrtStore {
 func logIDFromTime() string {
 	return fmt.Sprintf("resync%v", time.Now().UnixMilli())
 }
+
+func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}

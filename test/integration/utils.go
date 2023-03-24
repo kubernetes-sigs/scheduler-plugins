@@ -132,7 +132,6 @@ type eqWrapper struct{ *v1alpha1.ElasticQuota }
 
 func MakeEQ(namespace, name string) *eqWrapper {
 	eq := &v1alpha1.ElasticQuota{
-		TypeMeta: metav1.TypeMeta{Kind: "ElasticQuota", APIVersion: "scheduling.sigs.k8s.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -296,7 +295,6 @@ type agWrapper struct{ *agv1alpha1.AppGroup }
 
 func MakeAppGroup(namespace, name string) *agWrapper {
 	ag := &agv1alpha1.AppGroup{
-		TypeMeta: metav1.TypeMeta{Kind: "AppGroup", APIVersion: "appgroup.diktyo.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -334,7 +332,6 @@ type ntWrapper struct{ *ntv1alpha1.NetworkTopology }
 
 func MakeNetworkTopology(namespace, name string) *ntWrapper {
 	nt := &ntv1alpha1.NetworkTopology{
-		TypeMeta: metav1.TypeMeta{Kind: "NetworkTopology", APIVersion: "networktopology.diktyo.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,

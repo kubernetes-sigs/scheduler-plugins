@@ -43,6 +43,13 @@ bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
   --output-base "./" \
   --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
 
+bash "${CODEGEN_PKG}"/generate-groups.sh \
+  all \
+  sigs.k8s.io/scheduler-plugins/pkg/generated \
+  sigs.k8s.io/scheduler-plugins/apis \
+  "scheduling:v1alpha1" \
+  --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
+
 ${CONTROLLER_GEN} object:headerFile="hack/boilerplate/boilerplate.generatego.txt" \
   paths="./apis/scheduling/..."
 

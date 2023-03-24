@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2023 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	v1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	v1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -57,6 +58,10 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=topology.node.k8s.io, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("noderesourcetopologies"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Topology().V1alpha1().NodeResourceTopologies().Informer()}, nil
+
+		// Group=topology.node.k8s.io, Version=v1alpha2
+	case v1alpha2.SchemeGroupVersion.WithResource("noderesourcetopologies"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Topology().V1alpha2().NodeResourceTopologies().Informer()}, nil
 
 	}
 

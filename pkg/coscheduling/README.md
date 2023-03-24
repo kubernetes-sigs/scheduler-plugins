@@ -16,11 +16,11 @@ This folder holds the coscheduling plugin implementations based on [Coscheduling
 
 ### PodGroup
 
-We use a special label named `pod-group.scheduling.sigs.k8s.io` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup.
+We use a special label named `scheduling.x-k8s.io/pod-group` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup.
 
 ```
 # PodGroup CRD spec
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: PodGroup
 metadata:
   name: nginx
@@ -28,9 +28,9 @@ spec:
   scheduleTimeoutSeconds: 10
   minMember: 3
 ---
-# Add a label `pod-group.scheduling.sigs.k8s.io` to mark the pod belongs to a group
+# Add a label `scheduling.x-k8s.io/pod-group` to mark the pod belongs to a group
 labels:
-  pod-group.scheduling.sigs.k8s.io: nginx
+  scheduling.x-k8s.io/pod-group: nginx
 ```
 
 We will calculate the sum of the Running pods and the Waiting pods (assumed but not bind) in scheduler, if the sum is greater than or equal to the minMember, the Waiting pods
@@ -84,7 +84,7 @@ profiles:
 
 Suppose we have a cluster which can only afford 3 nginx pods. We create a ReplicaSet with replicas=6, and set the value of minMember to 3.
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: PodGroup
 metadata:
   name: nginx
@@ -108,7 +108,7 @@ spec:
       name: nginx
       labels:
         app: nginx
-        pod-group.scheduling.sigs.k8s.io: nginx
+        scheduling.x-k8s.io/pod-group: nginx
     spec:
       containers:
       - name: nginx

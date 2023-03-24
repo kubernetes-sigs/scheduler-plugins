@@ -191,8 +191,10 @@ type fakeInformer struct {
 	events []podEvent
 }
 
-func (fi *fakeInformer) AddEventHandler(handler k8scache.ResourceEventHandler) {
+func (fi *fakeInformer) AddEventHandler(handler k8scache.ResourceEventHandler) (k8scache.ResourceEventHandlerRegistration, error) {
 	fi.rev = handler
+
+	return nil, nil
 }
 
 func (fi *fakeInformer) SendEvents() {
@@ -208,8 +210,14 @@ func (fi *fakeInformer) SendEvents() {
 	}
 }
 
-func (fi *fakeInformer) AddEventHandlerWithResyncPeriod(handler k8scache.ResourceEventHandler, resyncPeriod time.Duration) {
+func (fi *fakeInformer) AddEventHandlerWithResyncPeriod(handler k8scache.ResourceEventHandler, resyncPeriod time.Duration) (k8scache.ResourceEventHandlerRegistration, error) {
+	return nil, nil
 }
+
+func (fi *fakeInformer) RemoveEventHandler(handle k8scache.ResourceEventHandlerRegistration) error {
+	return nil
+}
+
 func (fi *fakeInformer) GetStore() k8scache.Store                                      { return nil }
 func (fi *fakeInformer) GetController() k8scache.Controller                            { return nil }
 func (fi *fakeInformer) Run(stopCh <-chan struct{})                                    {}
@@ -217,6 +225,7 @@ func (fi *fakeInformer) HasSynced() bool                                        
 func (fi *fakeInformer) LastSyncResourceVersion() string                               { return "" }
 func (fi *fakeInformer) SetWatchErrorHandler(handler k8scache.WatchErrorHandler) error { return nil }
 func (fi *fakeInformer) SetTransform(handler k8scache.TransformFunc) error             { return nil }
+func (fi *fakeInformer) IsStopped() bool                                               { return true }
 
 func TestNamespacedNameListToString(t *testing.T) {
 	tests := []struct {

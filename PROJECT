@@ -1,4 +1,4 @@
-domain: scheduling.sigs.k8s.io
+domain: scheduling.x-k8s.io
 layout:
 - go.kubebuilder.io/v3
 multigroup: true
@@ -8,7 +8,7 @@ resources:
 - api:
     crdVersion: v1
   controller: true
-  domain: scheduling.sigs.k8s.io
+  domain: scheduling.x-k8s.io
   group: scheduling
   kind: PodGroup
   path: sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1
@@ -16,7 +16,7 @@ resources:
 - api:
     crdVersion: v1
   controller: true
-  domain: scheduling.sigs.k8s.io
+  domain: scheduling.x-k8s.io
   group: scheduling
   kind: ElasticQuota
   path: sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1

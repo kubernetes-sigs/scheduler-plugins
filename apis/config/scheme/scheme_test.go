@@ -77,12 +77,12 @@ profiles:
         weight: 1
   - name: TargetLoadPacking
     args:
-      targetUtilization: 60 
+      targetUtilization: 60
       defaultRequests:
         cpu: "1000m"
       defaultRequestsMultiplier: "1.8"
       watcherAddress: http://deadbeef:2020
-      metricProvider: 
+      metricProvider:
         type: Prometheus
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
   - name: LoadVariationRiskBalancing
@@ -720,7 +720,6 @@ leaderElection:
   retryPeriod: 0s
 metricsBindAddress: ""
 parallelism: 0
-percentageOfNodesToScore: 0
 podInitialBackoffSeconds: 0
 podMaxBackoffSeconds: 0
 profiles:
@@ -861,7 +860,6 @@ leaderElection:
   resourceNamespace: ""
   retryPeriod: 0s
 parallelism: 0
-percentageOfNodesToScore: 0
 podInitialBackoffSeconds: 0
 podMaxBackoffSeconds: 0
 profiles:
@@ -1016,7 +1014,6 @@ leaderElection:
   resourceNamespace: ""
   retryPeriod: 0s
 parallelism: 0
-percentageOfNodesToScore: 0
 podInitialBackoffSeconds: 0
 podMaxBackoffSeconds: 0
 profiles:

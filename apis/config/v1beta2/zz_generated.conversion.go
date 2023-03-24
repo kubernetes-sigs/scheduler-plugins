@@ -209,6 +209,7 @@ func autoConvert_v1beta2_NodeResourceTopologyMatchArgs_To_config_NodeResourceTop
 	if err := v1.Convert_Pointer_int64_To_int64(&in.CacheResyncPeriodSeconds, &out.CacheResyncPeriodSeconds, s); err != nil {
 		return err
 	}
+	out.DiscardReservedNodes = in.DiscardReservedNodes
 	return nil
 }
 
@@ -217,6 +218,7 @@ func autoConvert_config_NodeResourceTopologyMatchArgs_To_v1beta2_NodeResourceTop
 	if err := v1.Convert_int64_To_Pointer_int64(&in.CacheResyncPeriodSeconds, &out.CacheResyncPeriodSeconds, s); err != nil {
 		return err
 	}
+	out.DiscardReservedNodes = in.DiscardReservedNodes
 	return nil
 }
 

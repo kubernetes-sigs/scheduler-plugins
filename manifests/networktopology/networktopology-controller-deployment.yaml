@@ -25,10 +25,10 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-  - apiGroups: ["appgroup.diktyo.k8s.io"]
+  - apiGroups: ["appgroup.diktyo.x-k8s.io"]
     resources: ["appgroups"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-  - apiGroups: ["networktopology.diktyo.k8s.io"]
+  - apiGroups: ["networktopology.diktyo.x-k8s.io"]
     resources: ["networktopologies"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---

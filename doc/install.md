@@ -4,7 +4,7 @@
 
 <!-- toc -->
 - [Create a Kubernetes Cluster](#create-a-kubernetes-cluster)
-- [Install release v0.24.9 and use Coscheduling](#install-release-v0249-and-use-coscheduling)
+- [Install release v0.25.7 and use Coscheduling](#install-release-v0257-and-use-coscheduling)
   - [As a second scheduler](#as-a-second-scheduler)
   - [As a single scheduler (replacing the vanilla default-scheduler)](#as-a-single-scheduler-replacing-the-vanilla-default-scheduler)
 - [Test Coscheduling](#test-coscheduling)
@@ -24,7 +24,7 @@ If you do not have a cluster yet, create one by using one of the following provi
 * [kubeadm](https://kubernetes.io/docs/admin/kubeadm/)
 * [minikube](https://minikube.sigs.k8s.io/)
 
-## Install release v0.24.9 and use Coscheduling
+## Install release v0.25.7 and use Coscheduling
 
 Note: we provide two ways to install the scheduler-plugin artifacts: as a second scheduler
 and as a single scheduler. Their pros and cons are as below:
@@ -125,7 +125,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     plugin. Here we install coscheduling CRD:
 
     ```bash
-    $ kubectl apply -f manifests/crds/scheduling.sigs.k8s.io_podgroups.yaml
+    $ kubectl apply -f manifests/crds/scheduling.x-k8s.io_podgroups.yaml
     ```
 
 1. Modify `/etc/kubernetes/manifests/kube-scheduler.yaml` to run scheduler-plugins with coscheduling
@@ -146,9 +146,9 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     >     - --kubeconfig=/etc/kubernetes/scheduler.conf
     >     - --leader-elect=true
     19,20c20
-    <     image: k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9
+    <     image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.25.7
     ---
-    >     image: k8s.gcr.io/kube-scheduler:v1.24.9
+    >     image: registry.k8s.io/kube-scheduler:v1.25.7
     50,52d49
     <     - mountPath: /etc/kubernetes/sched-cc.yaml
     <       name: sched-cc
@@ -160,14 +160,14 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     <     name: sched-cc
     ```
    
-1. Verify that kube-scheduler pod is running properly with a correct image: `k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9`
+1. Verify that kube-scheduler pod is running properly with a correct image: `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.25.7`
 
     ```bash
     $ kubectl get pod -n kube-system | grep kube-scheduler
     kube-scheduler-kind-control-plane            1/1     Running   0          3m27s
  
     $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}{'\n'}"
-    k8s.gcr.io/scheduler-plugins/kube-scheduler:v0.24.9
+    registry.k8s.io/scheduler-plugins/kube-scheduler:v0.25.7
     ```
    
     > **⚠️Troubleshooting:** If the kube-scheudler is not up, you may need to restart kubelet service inside the kind control plane (`systemctl restart kubelet.service`)
@@ -180,7 +180,7 @@ Now, we're able to verify how the coscheduling plugin works.
 
     ```yaml
     # podgroup.yaml
-    apiVersion: scheduling.sigs.k8s.io/v1alpha1
+    apiVersion: scheduling.x-k8s.io/v1alpha1
     kind: PodGroup
     metadata:
       name: pg1
@@ -193,7 +193,7 @@ Now, we're able to verify how the coscheduling plugin works.
     $ kubectl apply -f podgroup.yaml
     ```
 
-1. Create a deployment labelled `pod-group.scheduling.sigs.k8s.io: pg1` to associated with PodGroup
+1. Create a deployment labelled `scheduling.x-k8s.io/pod-group: pg1` to associated with PodGroup
    `pg1` created in the previous step.
 
     ```yaml
@@ -211,11 +211,11 @@ Now, we're able to verify how the coscheduling plugin works.
         metadata:
           labels:
             app: pause
-            pod-group.scheduling.sigs.k8s.io: pg1
+            scheduling.x-k8s.io/pod-group: pg1
         spec:
           containers:
           - name: pause
-            image: k8s.gcr.io/pause:3.6
+            image: registry.k8s.io/pause:3.6
     ```
 
     > **⚠️Note:️** If you are running scheduler-plugins as a second scheduler, you should explicitly
@@ -238,17 +238,16 @@ Now, we're able to verify how the coscheduling plugin works.
     ```bash
     $ kubectl get pod
     NAME                     READY   STATUS    RESTARTS   AGE
-    pause-58f7d7db67-7sqgp   0/1     Pending   0          9s
-    pause-58f7d7db67-jbmfv   0/1     Pending   0          9s
+    pause-646dbcfb64-4zvt6   0/1     Pending   0          9s
+    pause-646dbcfb64-8kpg4   0/1     Pending   0          9s
    ```
 
-1. Now let's delete the deployment to re-create it with replicas=3, so as to qualify for `minMember`
+1. Now let's scale the deployment up to have 3 replicas, so as to qualify for `minMember`
    (i.e., 3) of the associated PodGroup:
 
     ```bash
-    $ kubectl delete -f deploy.yaml && sed 's/replicas: 2/replicas: 3/' deploy.yaml | kubectl apply -f -
-    deployment.apps "pause" deleted
-    deployment.apps/pause created
+    $ kubectl scale deploy pause --replicas=3
+    deployment.apps/pause scaled
     ```
 
     And wait for a couple of seconds, it's expected to see all Pods get into running state:
@@ -256,21 +255,21 @@ Now, we're able to verify how the coscheduling plugin works.
     ```bash
     $ kubectl get pod
     NAME                     READY   STATUS    RESTARTS   AGE
-    pause-64f5c9ccf4-kprg7   1/1     Running   0          8s
-    pause-64f5c9ccf4-tc8lx   1/1     Running   0          8s
-    pause-64f5c9ccf4-xrgkw   1/1     Running   0          8s
+    pause-646dbcfb64-4zvt6   1/1     Running   0          42s
+    pause-646dbcfb64-8kpg4   1/1     Running   0          42s
+    pause-646dbcfb64-npzcf   1/1     Running   0          8s
     ```
 
 1. You can also get the PodGroup's spec via:
 
     ```bash
     $ kubectl get podgroup pg1 -o yaml
-    apiVersion: scheduling.sigs.k8s.io/v1alpha1
+    apiVersion: scheduling.x-k8s.io/v1alpha1
     kind: PodGroup
     metadata:
       annotations:
         kubectl.kubernetes.io/last-applied-configuration: |
-          {"apiVersion":"scheduling.sigs.k8s.io/v1alpha1","kind":"PodGroup","metadata":{"annotations":{},"name":"pg1","namespace":"default"},"spec":{"minMember":3,"scheduleTimeoutSeconds":10}}
+          {"apiVersion":"scheduling.x-k8s.io/v1alpha1","kind":"PodGroup","metadata":{"annotations":{},"name":"pg1","namespace":"default"},"spec":{"minMember":3,"scheduleTimeoutSeconds":10}}
       creationTimestamp: "2022-02-08T19:55:24Z"
       generation: 8
       name: pg1

@@ -27,14 +27,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/profile"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
@@ -42,7 +46,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 )
 
@@ -71,9 +75,51 @@ type nrtTestUserEntry struct {
 type nrtTestEntry struct {
 	name                   string
 	pods                   []*v1.Pod
-	nodeResourceTopologies []*topologyv1alpha1.NodeResourceTopology
+	nodeResourceTopologies []*topologyv1alpha2.NodeResourceTopology
 	expectedNodes          []string
 	errMsg                 string
+}
+
+func TestTopologyMatchPluginValidation(t *testing.T) {
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Profiles[0].Plugins.Filter.Enabled = append(cfg.Profiles[0].Plugins.Filter.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].Plugins.Score.Enabled = append(cfg.Profiles[0].Plugins.Score.Enabled, schedapi.Plugin{Name: noderesourcetopology.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: noderesourcetopology.Name,
+		Args: &scheconfig.NodeResourceTopologyMatchArgs{
+			ScoringStrategy: scheconfig.ScoringStrategy{Type: "incorrect"},
+		},
+	})
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	informer := scheduler.NewInformerFactory(cs, 0)
+	dynInformerFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynamic.NewForConfigOrDie(globalKubeConfig), 0, v1.NamespaceAll, nil)
+	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{
+		Interface: cs.EventsV1(),
+	})
+	done := make(chan struct{})
+
+	_, err = scheduler.New(
+		cs,
+		informer,
+		dynInformerFactory,
+		profile.NewRecorderFactory(eventBroadcaster),
+		done,
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
+	)
+
+	if err == nil {
+		t.Error("expected error not to be nil")
+	}
+
+	errMsg := "scoringStrategy.type: Invalid value:"
+	if !strings.Contains(err.Error(), errMsg) {
+		t.Errorf("expected error to contain: %s in error message: %s", errMsg, err.Error())
+	}
 }
 
 func TestTopologyMatchPlugin(t *testing.T) {
@@ -177,26 +223,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName), map[string]string{cpu: "4", memory: "5Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "0", "0"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
@@ -208,24 +254,24 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				st.MakePod().Namespace(ns).Name(testPodName).Req(map[v1.ResourceName]string{v1.ResourceCPU: "4"}).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "0", "0"),
 						}).Obj(),
 
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 						}).Obj(),
 			},
@@ -236,23 +282,23 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			pods: []*v1.Pod{
 				st.MakePod().Namespace(ns).Name(testPodName).Req(map[v1.ResourceName]string{v1.ResourceMemory: "5Gi"}).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
 						}).Obj(),
 				MakeNRT().Name("fake-node-2").Policy("foo").
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo("foo", "2", "2"),
 						}).Obj(),
 			},
@@ -264,26 +310,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(mostAllocatedScheduler),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 						}).Obj(),
@@ -296,26 +342,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(balancedAllocationScheduler),
 					map[string]string{cpu: "2", memory: "2Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "50Gi", "50Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "6", "6"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "6Gi", "6Gi"),
 						}).Obj(),
@@ -328,26 +374,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastAllocatedScheduler),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "1", "1"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "4Gi", "4Gi"),
 						}).Obj(),
@@ -389,26 +435,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodePodLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodePodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodePodLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodePodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
@@ -427,26 +473,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "3", memory: "5Gi"}, false),
 					map[string]string{cpu: "3", memory: "5Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "8", "6"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
@@ -462,26 +508,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "4Gi"}, true).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
@@ -497,26 +543,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "4", memory: "4Gi"}, false),
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "6", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "3"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
@@ -532,26 +578,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
@@ -567,26 +613,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "2", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "10Gi"}, true).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
@@ -602,26 +648,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "4", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "6Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -634,26 +680,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -666,26 +712,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				util.WithLimits(st.MakePod().Namespace(ns).Name(testPodName).SchedulerName(leastNUMAScheduler),
 					map[string]string{cpu: "4", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -702,26 +748,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "2", memory: "6Gi"}, true).Obj(),
 			},
 
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -738,26 +784,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "2", memory: "4Gi"}, false).Obj(),
 			},
 
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -774,26 +820,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "2", memory: "6Gi"}, false).Obj(),
 			},
 
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -810,26 +856,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					map[string]string{cpu: "2", memory: "6Gi"}, true).Obj(),
 			},
 
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -845,26 +891,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "3", memory: "4Gi"}, false),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -880,26 +926,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "3", memory: "4Gi"}, false),
 					map[string]string{cpu: "1", memory: "4Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortContainerLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortContainerLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortContainerLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -915,26 +961,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						map[string]string{cpu: "3", memory: "4Gi"}, false),
 					map[string]string{cpu: "4", memory: "6Gi"}, false).Obj(),
 			},
-			nodeResourceTopologies: []*topologyv1alpha1.NodeResourceTopology{
-				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.BestEffortPodLevel).
+			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "2", "2"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.BestEffortPodLevel).
+				MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.BestEffortPodLevel).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 						}).
 					Zone(
-						topologyv1alpha1.ResourceInfoList{
+						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "4", "4"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "8Gi", "3Gi"),
 						}).Obj(),
@@ -958,7 +1004,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "400Mi"},
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "400Mi"},
 			},
-			errMsg: "cannot align container: cnt-2",
+			errMsg: "cannot align container", // cnt-2
 		},
 		{
 			description: "[5][tier1] multi containers with device over allocation, spread across NUMAs - not fit",
@@ -966,7 +1012,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "50Mi", nicResourceName: "20"},
 				{cpu: "2", memory: "6Gi", hugepages2Mi: "500Mi", nicResourceName: "20"},
 			},
-			errMsg: "cannot align container: cnt-2",
+			errMsg: "cannot align container", // cnt-2
 		},
 		{
 			description: "[7][tier1] init container with cpu over allocation, multi-containers with good allocation - not fit",
@@ -977,7 +1023,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "1", memory: "4Gi"},
 				{cpu: "1", memory: "4Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-1",
+			errMsg: "cannot align init container", // initcnt-1
 		},
 		{
 			description: "[7][tier1] init container with memory over allocation, multi-containers with good allocation - not fit",
@@ -988,7 +1034,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "1", memory: "4Gi"},
 				{cpu: "1", memory: "4Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-1",
+			errMsg: "cannot align init container", // initcnt-1
 		},
 		{
 			description: "[11][tier1] init container with good allocation, multi-containers spread across NUMAs - fit",
@@ -1010,7 +1056,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "20", memory: "10Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[12][tier1] init container with good allocation, multi-containers with memory over allocation - not fit",
@@ -1022,7 +1068,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "2", memory: "40Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[17][tier1] multi init containers with good allocation, multi-containers spread across NUMAs - fit",
@@ -1049,7 +1095,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "20", memory: "10Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[18][tier1] multi init containers with good allocation, multi-containers with memory over allocation - not fit",
@@ -1063,7 +1109,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "35Gi"},
 				{cpu: "2", memory: "50Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[24][tier1] multi init containers with good allocation, multi-containers with cpu over allocation - not fit",
@@ -1076,7 +1122,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "20", memory: "6Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[24][tier1] multi init containers with good allocation, multi-containers with memory over allocation - not fit",
@@ -1089,7 +1135,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "35Gi"},
 				{cpu: "2", memory: "50Gi"},
 			},
-			errMsg: "cannot align container: cnt-3",
+			errMsg: "cannot align container", // cnt-3
 		},
 		{
 			description: "[27][tier1] multi init containers with good allocation, container with cpu over allocation - not fit",
@@ -1100,7 +1146,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			cntReq: []map[string]string{
 				{cpu: "35", memory: "40Gi"},
 			},
-			errMsg: "cannot align container: cnt-1",
+			errMsg: "cannot align container", // cnt-1
 		},
 		{
 			description: "[28][tier1] multi init containers with good allocation, multi-containers with good allocation - fit",
@@ -1150,7 +1196,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "2", memory: "6Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-1",
+			errMsg: "cannot align init container", // initcnt-1
 		},
 		{
 			description: "[32][tier1] multi init containers with over memory allocation - not fit",
@@ -1163,7 +1209,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				{cpu: "20", memory: "40Gi"},
 				{cpu: "2", memory: "6Gi"},
 			},
-			errMsg: "cannot align init container: initcnt-2",
+			errMsg: "cannot align init container", // initcnt-2
 		},
 	}
 	tests = append(tests, parseTestUserEntry(scopeEqualsContainerTests, ns)...)
@@ -1293,16 +1339,16 @@ func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 		for _, req := range e.cntReq {
 			p = util.WithLimits(p, req, false)
 		}
-		nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
-			MakeNRT().Name("fake-node-1").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+		nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
+			MakeNRT().Name("fake-node-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 				Zone(
-					topologyv1alpha1.ResourceInfoList{
+					topologyv1alpha2.ResourceInfoList{
 						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "60Gi"),
 						noderesourcetopology.MakeTopologyResInfo(hugepages2Mi, "384Mi", "384Mi"),
 						noderesourcetopology.MakeTopologyResInfo(nicResourceName, "16", "16")}).
 				Zone(
-					topologyv1alpha1.ResourceInfoList{
+					topologyv1alpha2.ResourceInfoList{
 						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "32"),
 						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "64Gi"),
 						noderesourcetopology.MakeTopologyResInfo(hugepages2Mi, "512Mi", "512Mi"),
@@ -1310,16 +1356,16 @@ func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 					}).Obj(),
 			// we set all available resource as 0
 			// because we want all these tests to be running against fake-node-1
-			MakeNRT().Name("fake-node-2").Policy(topologyv1alpha1.SingleNUMANodeContainerLevel).
+			MakeNRT().Name("fake-node-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
 				Zone(
-					topologyv1alpha1.ResourceInfoList{
+					topologyv1alpha2.ResourceInfoList{
 						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "0"),
 						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "0"),
 						noderesourcetopology.MakeTopologyResInfo(hugepages2Mi, "384Mi", "0"),
 						noderesourcetopology.MakeTopologyResInfo(nicResourceName, "16", "0"),
 					}).
 				Zone(
-					topologyv1alpha1.ResourceInfoList{
+					topologyv1alpha2.ResourceInfoList{
 						noderesourcetopology.MakeTopologyResInfo(cpu, "32", "0"),
 						noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "0"),
 						noderesourcetopology.MakeTopologyResInfo(hugepages2Mi, "512Mi", "0"),

@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
 	agfake "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned/fake"
@@ -193,10 +194,10 @@ func TestTopologicalSortLess(t *testing.T) {
 			podPhase:                 v1.PodRunning,
 			topologySortingAlgorithm: "KahnSort",
 			pInfo1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(makePod("p1", "p1-deployment", 0, "basic", nil, nil)),
+				PodInfo: testutil.MustNewPodInfo(t, makePod("p1", "p1-deployment", 0, "basic", nil, nil)),
 			},
 			pInfo2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(makePod("p2", "p2-deployment", 0, "basic", nil, nil)),
+				PodInfo: testutil.MustNewPodInfo(t, makePod("p2", "p2-deployment", 0, "basic", nil, nil)),
 			},
 			desiredTopologyOrder: basicAppGroup.Status.TopologyOrder,
 			want:                 true,
@@ -213,10 +214,10 @@ func TestTopologicalSortLess(t *testing.T) {
 			podPhase:                 v1.PodRunning,
 			topologySortingAlgorithm: "KahnSort",
 			pInfo1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(makePod("p5", "p5-deployment", 0, "onlineboutique", nil, nil)),
+				PodInfo: testutil.MustNewPodInfo(t, makePod("p5", "p5-deployment", 0, "onlineboutique", nil, nil)),
 			},
 			pInfo2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil)),
+				PodInfo: testutil.MustNewPodInfo(t, makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil)),
 			},
 			desiredTopologyOrder: onlineBoutiqueAppGroup.Status.TopologyOrder,
 			want:                 false,
@@ -233,10 +234,10 @@ func TestTopologicalSortLess(t *testing.T) {
 			podPhase:                 v1.PodRunning,
 			topologySortingAlgorithm: "TarjanSort",
 			pInfo1: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(makePod("p1", "p1-deployment", 0, "basic", nil, nil)),
+				PodInfo: testutil.MustNewPodInfo(t, makePod("p1", "p1-deployment", 0, "basic", nil, nil)),
 			},
 			pInfo2: &framework.QueuedPodInfo{
-				PodInfo: framework.NewPodInfo(makePod("p5", "p5-deployment", 0, "other", nil, nil)),
+				PodInfo: testutil.MustNewPodInfo(t, makePod("p5", "p5-deployment", 0, "other", nil, nil)),
 			},
 			desiredTopologyOrder: basicAppGroup.Status.TopologyOrder,
 			want:                 false,
@@ -459,8 +460,8 @@ func BenchmarkTopologicalSortPlugin(b *testing.B) {
 				namespaces: []string{metav1.NamespaceDefault},
 			}
 
-			pInfo1 := getPodInfos(tt.podNum, tt.agName, tt.selectors, tt.deploymentNames)
-			pInfo2 := getPodInfos(tt.podNum, tt.agName, tt.selectors, tt.deploymentNames)
+			pInfo1 := getPodInfos(b, tt.podNum, tt.agName, tt.selectors, tt.deploymentNames)
+			pInfo2 := getPodInfos(b, tt.podNum, tt.agName, tt.selectors, tt.deploymentNames)
 
 			//b.Logf("len(pInfo1): %v", len(pInfo1))
 			//b.Logf("len(pInfo2): %v", len(pInfo2))
@@ -480,12 +481,12 @@ func randomInt(min int, max int) int {
 	return min + rand.Intn(max-min)
 }
 
-func getPodInfos(podsNum int, agName string, selectors []string, podNames []string) (pInfo []*framework.QueuedPodInfo) {
+func getPodInfos(b *testing.B, podsNum int, agName string, selectors []string, podNames []string) (pInfo []*framework.QueuedPodInfo) {
 	pInfo = []*framework.QueuedPodInfo{}
 
 	for i := 0; i < podsNum; i++ {
 		random := randomInt(0, len(podNames))
-		pInfo = append(pInfo, &framework.QueuedPodInfo{PodInfo: framework.NewPodInfo(makePod(selectors[random], podNames[random], 0, agName, nil, nil))})
+		pInfo = append(pInfo, &framework.QueuedPodInfo{PodInfo: testutil.MustNewPodInfo(b, makePod(selectors[random], podNames[random], 0, agName, nil, nil))})
 	}
 	return pInfo
 }

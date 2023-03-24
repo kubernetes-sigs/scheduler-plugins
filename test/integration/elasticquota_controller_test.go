@@ -234,6 +234,42 @@ func TestElasticController(t *testing.T) {
 					Used(MakeResourceList().CPU(10).Mem(20).Obj()).Obj(),
 			},
 		},
+		{
+			name: "EQ doesn't have max and the status of the pod changes from pending to running",
+			elasticQuotas: []*v1alpha1.ElasticQuota{
+				MakeEQ("ns1", "t4-eq1").
+					Min(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
+			},
+			existingPods: []*v1.Pod{
+				MakePod("ns1", "t4-p1").
+					Container(MakeResourceList().CPU(10).Mem(20).Obj()).Obj(),
+				MakePod("ns1", "t4-p2").
+					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
+				MakePod("ns1", "t4-p3").
+					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
+				MakePod("ns1", "t4-p4").
+					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
+			},
+			used: []*v1alpha1.ElasticQuota{
+				MakeEQ("ns1", "t4-eq1").
+					Used(MakeResourceList().CPU(0).Mem(0).Obj()).Obj(),
+			},
+			incomingPods: []*v1.Pod{
+				MakePod("ns1", "t4-p1").Phase(v1.PodRunning).Node("fake-node").
+					Container(MakeResourceList().CPU(10).Mem(20).Obj()).Obj(),
+				MakePod("ns1", "t4-p2").Phase(v1.PodRunning).Node("fake-node").
+					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
+				MakePod("ns1", "t4-p3").Phase(v1.PodRunning).Node("fake-node").
+					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
+				MakePod("ns1", "t4-p4").Phase(v1.PodRunning).Node("fake-node").
+					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
+			},
+
+			want: []*v1alpha1.ElasticQuota{
+				MakeEQ("ns1", "t4-eq1").
+					Used(MakeResourceList().CPU(40).Mem(50).Obj()).Obj(),
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			defer cleanupElasticQuotas(testCtx.Ctx, extClient, tt.elasticQuotas)

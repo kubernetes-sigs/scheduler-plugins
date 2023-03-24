@@ -23,7 +23,7 @@ LOCAL_CONTROLLER_IMAGE=controller:latest
 
 # RELEASE_REGISTRY is the container registry to push
 # into. The default is to push to the staging
-# registry, not production(k8s.gcr.io).
+# registry, not production(registry.k8s.io).
 RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
@@ -35,6 +35,7 @@ RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 # v20201009-v0.18.800-46-g939c1c0 - automated build for a commit(not a tag) and also a local build
 # v20200521-v0.18.800             - automated build for a tag
 VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
+VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
 
 .PHONY: all
 all: build
@@ -58,7 +59,7 @@ build-controller.amd64:
 
 .PHONY: build-controller.arm64v8
 build-controller.arm64v8:
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:
@@ -70,7 +71,7 @@ build-scheduler.amd64:
 
 .PHONY: build-scheduler.arm64v8
 build-scheduler.arm64v8:
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
 local-image: clean
@@ -90,7 +91,7 @@ release-image.arm64v8: clean
 	ARCH="arm64" \
 	RELEASE_VERSION=$(RELEASE_VERSION) \
 	REGISTRY=$(RELEASE_REGISTRY) \
-	IMAGE=$(RELEASE_IMAGE)-amd64 \
+	IMAGE=$(RELEASE_IMAGE)-arm64 \
 	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-arm64 \
 	hack/build-images.sh
 
@@ -124,7 +125,7 @@ install-envtest:
 
 .PHONY: integration-test
 integration-test: install-envtest
-	$(INTEGTESTENVVAR) hack/integration-test.sh
+	$(INTEGTESTENVVAR) hack/integration-test.sh $(ARGS)
 
 .PHONY: verify
 verify:

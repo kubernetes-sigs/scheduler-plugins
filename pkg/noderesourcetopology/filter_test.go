@@ -29,8 +29,8 @@ import (
 
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	faketopologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 )
 
@@ -46,21 +46,21 @@ const (
 )
 
 type nodeTopologyDesc struct {
-	nrt  *topologyv1alpha1.NodeResourceTopology
+	nrt  *topologyv1alpha2.NodeResourceTopology
 	node v1.ResourceList
 }
 
 func TestNodeResourceTopology(t *testing.T) {
 	nodeTopologyDescs := []nodeTopologyDesc{
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -69,7 +69,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "8"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -79,14 +79,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "node2"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "2"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
@@ -96,7 +96,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(hugepages2Mi, "128Mi", "128Mi"),
@@ -110,14 +110,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "node3"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "2"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "5"),
@@ -126,7 +126,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "2"),
@@ -136,14 +136,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "badly_formed_node"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "2"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "5"),
@@ -152,7 +152,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-75",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "4Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "2"),
@@ -162,14 +162,14 @@ func TestNodeResourceTopology(t *testing.T) {
 			},
 		},
 		{
-			nrt: &topologyv1alpha1.NodeResourceTopology{
+			nrt: &topologyv1alpha2.NodeResourceTopology{
 				ObjectMeta:       metav1.ObjectMeta{Name: "extended"},
-				TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-				Zones: topologyv1alpha1.ZoneList{
+				TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+				Zones: topologyv1alpha2.ZoneList{
 					{
 						Name: "node-0",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "20", "4"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -178,7 +178,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					{
 						Name: "node-1",
 						Type: "Node",
-						Resources: topologyv1alpha1.ResourceInfoList{
+						Resources: topologyv1alpha2.ResourceInfoList{
 							MakeTopologyResInfo(cpu, "30", "8"),
 							MakeTopologyResInfo(memory, "8Gi", "8Gi"),
 							MakeTopologyResInfo(nicResourceName, "30", "10"),
@@ -254,7 +254,7 @@ func TestNodeResourceTopology(t *testing.T) {
 			pod: makePodByResourceList(&v1.ResourceList{
 				nicResourceName: *resource.NewQuantity(20, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Best effort QoS requesting devices, Container Scope Topology policy; pod fit",
@@ -268,7 +268,7 @@ func TestNodeResourceTopology(t *testing.T) {
 			pod: makePodByResourceList(&v1.ResourceList{
 				nicResourceName: *resource.NewQuantity(20, resource.DecimalSI)}),
 			node:       nodes[0],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Best effort QoS requesting devices and extended resources, Container Scope Topology policy; pod doesn't fit",
@@ -291,7 +291,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)},
 			),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Best effort QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -306,7 +306,7 @@ func TestNodeResourceTopology(t *testing.T) {
 					nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)},
 			),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Best effort QoS requesting CPU, memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -427,7 +427,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceCPU:  *resource.NewQuantity(4, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Burstable QoS, requesting CPU and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -435,7 +435,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceCPU:  *resource.NewQuantity(2, resource.DecimalSI),
 				nicResourceName: *resource.NewQuantity(6, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Burstable QoS requesting CPU (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -475,7 +475,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("2Gi"),
 				nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Burstable QoS, requesting memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -483,7 +483,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("2Gi"),
 				nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Burstable QoS requesting memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -524,7 +524,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("4Gi"),
 				nicResourceName:   *resource.NewQuantity(11, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Burstable QoS, requesting CPU, memory (enough on NUMA) and devices (not enough), Pod Scope Topology policy; pod doesn't fit",
@@ -533,7 +533,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("2Gi"),
 				nicResourceName:   *resource.NewQuantity(6, resource.DecimalSI)}),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Burstable QoS requesting CPU, memory (enough on NUMA) and devices, Pod Scope Topology policy; pod fit",
@@ -588,7 +588,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				hugepages2Mi:      resource.MustParse("256Mi"),
 				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[1],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Guaranteed QoS, pod doesn't fit",
@@ -597,7 +597,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory: resource.MustParse("1Gi"),
 				nicResourceName:   *resource.NewQuantity(3, resource.DecimalSI)}),
 			node:       nodes[0],
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("cannot align container: %s", containerName)),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align container"),
 		},
 		{
 			name: "Guaranteed QoS, pod fit",
@@ -615,7 +615,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory:          resource.MustParse("1Gi"),
 				notExistingNICResourceName: *resource.NewQuantity(0, resource.DecimalSI)}, 3),
 			node:       nodes[2],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Guaranteed QoS Topology Scope, minimal, pod fit",
@@ -649,7 +649,7 @@ func TestNodeResourceTopology(t *testing.T) {
 				v1.ResourceMemory:          resource.MustParse("1Gi"),
 				notExistingNICResourceName: *resource.NewQuantity(0, resource.DecimalSI)}, 3),
 			node:       nodes[3],
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: "),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "Guaranteed QoS, hugepages, non-NUMA affine NIC, pod fit",
@@ -663,15 +663,14 @@ func TestNodeResourceTopology(t *testing.T) {
 		},
 	}
 
-	fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 	for _, desc := range nodeTopologyDescs {
 		fakeInformer.Informer().GetStore().Add(desc.nrt)
 	}
 
 	tm := TopologyMatch{
-		filterHandlers: newFilterHandlers(),
-		nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+		nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 	}
 
 	for _, tt := range tests {
@@ -698,15 +697,15 @@ type resourceDescriptor struct {
 }
 
 func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
-	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+	nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta:       metav1.ObjectMeta{Name: "host0"},
-			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodePodLevel)},
-			Zones: topologyv1alpha1.ZoneList{
+			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
+			Zones: topologyv1alpha2.ZoneList{
 				{
 					Name: "node-0",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "30"),
 						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "384Mi", "384Mi"),
@@ -716,7 +715,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				{
 					Name: "node-1",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "32"),
 						MakeTopologyResInfo(memory, "64Gi", "64Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "512Mi", "512Mi"),
@@ -736,7 +735,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 		name       string
 		pod        *v1.Pod
 		node       *v1.Node
-		nrts       []*topologyv1alpha1.NodeResourceTopology
+		nrts       []*topologyv1alpha2.NodeResourceTopology
 		avail      []resourceDescriptor
 		wantStatus *framework.Status
 	}{
@@ -761,7 +760,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
@@ -788,11 +787,11 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "gu pod does not fit - not enough memory available on any NUMA node",
@@ -815,11 +814,11 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "gu pod does not fit - not enough Hugepages available on any NUMA node",
@@ -842,11 +841,11 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 		{
 			name: "gu pod does not fit - not enough devices available on any NUMA node",
@@ -869,25 +868,24 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 				},
 				)),
 			node: nodes[0],
-			nrts: []*topologyv1alpha1.NodeResourceTopology{
+			nrts: []*topologyv1alpha2.NodeResourceTopology{
 				nodeTopologies[0],
 			},
 			avail:      []resourceDescriptor{},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod: testpod"),
+			wantStatus: framework.NewStatus(framework.Unschedulable, "cannot align pod"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+			fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 			for _, obj := range nodeTopologies {
 				fakeInformer.Informer().GetStore().Add(obj)
 			}
 
 			tm := TopologyMatch{
-				filterHandlers: newFilterHandlers(),
-				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()
@@ -923,15 +921,15 @@ type testEntry struct {
 }
 
 func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
-	nodeTopologies := []*topologyv1alpha1.NodeResourceTopology{
+	nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta:       metav1.ObjectMeta{Name: "host0"},
-			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha1.ZoneList{
+			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha2.ZoneList{
 				{
 					Name: "node-0",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "30"),
 						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "384Mi", "384Mi"),
@@ -941,7 +939,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{
 					Name: "node-1",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "32", "32"),
 						MakeTopologyResInfo(memory, "64Gi", "64Gi"),
 						MakeTopologyResInfo(hugepages2Mi, "512Mi", "512Mi"),
@@ -969,21 +967,21 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 			cntReq: []map[string]string{
 				{cpu: "40", memory: "4G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[2][tier3] single container with memory over allocation - fit",
 			cntReq: []map[string]string{
 				{cpu: "2", memory: "100G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[2][tier3] single container with cpu and memory over allocation - fit",
 			cntReq: []map[string]string{
 				{cpu: "40", memory: "100G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[4][tier2] multi-containers with good allocation, spread across NUMAs - fit",
@@ -1008,7 +1006,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "1", memory: "4G"},
 				{cpu: "1", memory: "4G"},
 			},
-			statusErr: "cannot align init container: cnt-1",
+			statusErr: "cannot align init container", // cnt-1
 		},
 		{
 			description: "[7][tier1] init container with memory over allocation, multi-containers with good allocation - not fit",
@@ -1019,7 +1017,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "1", memory: "4G"},
 				{cpu: "1", memory: "4G"},
 			},
-			statusErr: "cannot align init container: cnt-1",
+			statusErr: "cannot align init container", // cnt-1
 		},
 		{
 			description: "[11][tier1] init container with good allocation, multi-containers spread across NUMAs - fit",
@@ -1055,7 +1053,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "20", memory: "40G"},
 				{cpu: "20", memory: "6G"},
 			},
-			statusErr: "cannot align container: cnt-3",
+			statusErr: "cannot align container", // cnt-3
 		},
 		{
 			description: "[27][tier1] multi init containers with good allocation, container with cpu over allocation - not fit",
@@ -1066,7 +1064,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 			cntReq: []map[string]string{
 				{cpu: "35", memory: "40G"},
 			},
-			statusErr: "cannot align container: cnt-1",
+			statusErr: "cannot align container", // cnt-1
 		},
 		{
 			description: "[28][tier1] multi init containers with good allocation, multi-containers with good allocation - fit",
@@ -1116,7 +1114,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "20", memory: "40G"},
 				{cpu: "2", memory: "6G"},
 			},
-			statusErr: "cannot align init container: cnt-1",
+			statusErr: "cannot align init container", // cnt-1
 		},
 		{
 			description: "[32][tier1] multi init containers with over memory allocation - not fit",
@@ -1129,7 +1127,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 				{cpu: "20", memory: "40G"},
 				{cpu: "2", memory: "6G"},
 			},
-			statusErr: "cannot align init container: cnt-2",
+			statusErr: "cannot align init container", // cnt-2
 		},
 	}
 
@@ -1137,15 +1135,14 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
+			fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 			for _, obj := range nodeTopologies {
 				fakeInformer.Informer().GetStore().Add(obj)
 			}
 
 			tm := TopologyMatch{
-				filterHandlers: newFilterHandlers(),
-				nrtCache:       nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
 			}
 
 			nodeInfo := framework.NewNodeInfo()
@@ -1159,7 +1156,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 	}
 }
 
-func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha1.NodeResourceTopology) *v1.Node {
+func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha2.NodeResourceTopology) *v1.Node {
 	res := makeResourceListFromZones(nrt.Zones)
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1172,7 +1169,7 @@ func makeNodeFromNodeResourceTopology(nrt *topologyv1alpha1.NodeResourceTopology
 	}
 }
 
-func findAvailableResourceByName(resourceInfoList topologyv1alpha1.ResourceInfoList, name string) resource.Quantity {
+func findAvailableResourceByName(resourceInfoList topologyv1alpha2.ResourceInfoList, name string) resource.Quantity {
 	for _, resourceInfo := range resourceInfoList {
 		if resourceInfo.Name == name {
 			return resourceInfo.Available

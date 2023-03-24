@@ -26,7 +26,7 @@ Quick start instructions for the setup and configuration of as-a-second-schedule
 ```bash
 $ git clone git@github.com:kubernetes-sigs/scheduler-plugins.git
 $ cd scheduler-plugins/manifests/install/charts
-$ helm install scheduler-plugins as-a-second-scheduler/
+$ helm install scheduler-plugins as-a-second-scheduler/ --create-namespace --namespace scheduler-plugins
 ```
 
 #### Verify that scheduler and plugin-controller pod are running properly.
@@ -45,12 +45,11 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | Parameter                 | Description                 | Default                                                                                         |
 |---------------------------|-----------------------------|-------------------------------------------------------------------------------------------------|
 | `scheduler.name`          | Scheduler name              | `scheduler-plugins-scheduler`                                                                   |
-| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.24.9`                                      |
-| `scheduler.namespace`     | Scheduler namespace         | `scheduler-plugins`                                                                             |
+| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.25.7`                                      |
+| `scheduler.leaderElect`   | Scheduler leaderElection    | `false`                                                                                         |
 | `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
 | `controller.name`         | Controller name             | `scheduler-plugins-controller`                                                                  |
-| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.24.9`                                          |
-| `controller.namespace`    | Controller namespace        | `scheduler-plugins`                                                                             |
+| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.25.7`                                          |
 | `controller.replicaCount` | Controller replicaCount     | `1`                                                                                             |
 | `plugins.enabled`         | Plugins enabled by default  | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
 | `plugins.disabled`        | Plugins disabled by default | `["PrioritySort"]`                                                                              |
