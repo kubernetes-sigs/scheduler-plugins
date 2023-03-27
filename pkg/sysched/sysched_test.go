@@ -24,6 +24,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	informers "k8s.io/client-go/informers"
+	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 )
 
 var (
@@ -205,8 +206,24 @@ func mockSysched() (*SySched, error) {
         sys.HostSyscalls = make(map[string]map[string]bool)
         sys.ExSAvg = 0
         sys.ExSAvgCount = 1
+	sys.FullSyscallProfile = "z-seccomp.json"
+	sys.SyscallCRDNamespace = "default"
 
 	return &sys, err
+}
+
+func TestReadSPOProfileCRD(t *testing.T) {
+	sys, _ := mockSysched()
+	syscalls, err := sys.readSPOProfileCRD("", "")
+	assert.Nil(t, err)
+	assert.EqualValues(t, len(syscalls), 0)
+
+	syscalls, err = sys.readSPOProfileCRD("z-seccomp.json", "default")
+	assert.Nil(t, err)
+	assert.NotNil(t, syscalls)
+        expected := spoResponse["spec"].(map[string]interface{})["syscalls"].
+                        ([]map[string]interface{})[0]["names"].([]string)
+        assert.EqualValues(t, len(syscalls), len(expected))
 }
 
 func TestGetSyscalls(t *testing.T) {
@@ -222,6 +239,16 @@ func TestGetSyscalls(t *testing.T) {
 	expected := spoResponse["spec"].(map[string]interface{})["syscalls"].
 			([]map[string]interface{})[0]["names"].([]string)
 	assert.EqualValues(t, len(syscalls), len(expected))
+}
+
+func TestGetUnconfinedSyscalls(t *testing.T) {
+	sys, _ := mockSysched()
+	syscalls, err := sys.getUnconfinedSyscalls()
+	assert.Nil(t, err)
+        assert.NotNil(t, syscalls)
+        expected := spoResponse["spec"].(map[string]interface{})["syscalls"].
+                        ([]map[string]interface{})[0]["names"].([]string)
+        assert.EqualValues(t, len(syscalls), len(expected))
 }
 
 func TestCalcScore(t *testing.T) {
@@ -496,6 +523,16 @@ func TestPodDeleted(t *testing.T) {
         assert.EqualValues(t, len(sys.HostSyscalls[hostIP]), expected)
 }
 
+func TestGetArgs(t *testing.T) {
+	args := pluginconfig.SySchedArgs {
+		SySchedCRDNamespace: "default",
+		SySchedFullCRDName: "x-seccomp.json",
+	}
+	retargs, err := getArgs(&args)
+	assert.Nil(t, err)
+	assert.EqualValues(t, &args, retargs)
+}
+
 func TestNew(t *testing.T) {
         ctx := context.Background()
 	fakeclient := clientsetfake.NewSimpleClientset()
@@ -507,7 +544,12 @@ func TestNew(t *testing.T) {
                 t.Error(err)
         }
 
-	sys, err := New(nil, fr)
+	args := pluginconfig.SySchedArgs {
+		SySchedCRDNamespace: "default",
+		SySchedFullCRDName: "x-seccomp.json",
+	}
+
+	sys, err := New(&args, fr)
 	assert.Nil(t, err)
 	assert.NotNil(t, sys)
 }
