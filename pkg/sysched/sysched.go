@@ -188,7 +188,7 @@ func (sc *SySched) getSyscalls(pod *v1.Pod) ([]string, error) {
 		r, _ = sc.getUnconfinedSyscalls()
 	}
 
-	klog.Info("system calls for pod = ", r)
+	// klog.Info("system calls for pod = ", r)
 	return r, nil
 }
 
@@ -199,7 +199,7 @@ func (sc *SySched) getUnconfinedSyscalls() ([]string, error) {
 	// extract a seccomp crd using namespace and crd name
 	r, _ = sc.readSPOProfileCRD(sc.FullSyscallProfile, sc.SyscallCRDNamespace)
 
-	klog.Info("unconfined system calls for pod = ", r)
+	// klog.Info("unconfined system calls for pod = ", r)
 	return r, nil
 }
 

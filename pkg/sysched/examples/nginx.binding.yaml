@@ -1,0 +1,11 @@
+---
+apiVersion: security-profiles-operator.x-k8s.io/v1alpha1
+kind: ProfileBinding
+metadata:
+  name: nginx-binding
+  namespace: default
+spec:
+  profileRef:
+    kind: SeccompProfile
+    name: nginx-seccomp
+  image: nginx:1.16
