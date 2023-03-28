@@ -315,7 +315,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 
 				p.SetupPod(ns, false)
 				pods = append(pods, p.pod)
-				klog.Infof("Prepared pod: %s", p.pod.Name)
+				klog.Infof("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
 			}
 
 			t.Logf("Start-topology-match-cache-test %q", tt.name)
@@ -489,7 +489,7 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 
 		p.SetupPod(ns, false)
 		pods = append(pods, p.pod)
-		klog.Infof("Prepared pod: %s", p.pod.Name)
+		klog.Infof("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
 	}
 
 	t.Logf("Start-topology-match-cache-test %q", tt.name)
@@ -531,6 +531,15 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 
 	// we want to run concurrently with the resync loop is running.
 	go func() {
+		// the first pod lands on the expected node
+		runningPod := tt.podDescs[0].pod.DeepCopy()
+		runningPod.Status.Phase = corev1.PodRunning
+		_, err = cs.CoreV1().Pods(runningPod.Namespace).UpdateStatus(testCtx.Ctx, runningPod, metav1.UpdateOptions{})
+		if err != nil {
+			// we can call t.Fatalf only on the main goroutine, so we just log
+			klog.ErrorS(err, "cannot update status of %s/%s", runningPod.Namespace, runningPod.Name)
+		}
+
 		pfpSign := mkPFP("fake-node-cache-1", tt.podDescs[0].pod)
 		updatedNRTs := []*topologyv1alpha2.NodeResourceTopology{
 			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).

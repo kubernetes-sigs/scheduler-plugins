@@ -24,6 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -45,15 +46,15 @@ type OverReserve struct {
 	nodesMaybeOverreserved counter
 	nodesWithForeignPods   counter
 	nrtLister              listerv1alpha2.NodeResourceTopologyLister
-	nodeIndexer            NodeIndexer
+	podLister              podlisterv1.PodLister
 }
 
-func NewOverReserve(lister listerv1alpha2.NodeResourceTopologyLister, indexer NodeIndexer) (*OverReserve, error) {
-	if lister == nil || indexer == nil {
+func NewOverReserve(nrtLister listerv1alpha2.NodeResourceTopologyLister, podLister podlisterv1.PodLister) (*OverReserve, error) {
+	if nrtLister == nil || podLister == nil {
 		return nil, fmt.Errorf("nrtcache: received nil references")
 	}
 
-	nrtObjs, err := lister.List(labels.Everything())
+	nrtObjs, err := nrtLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +65,8 @@ func NewOverReserve(lister listerv1alpha2.NodeResourceTopologyLister, indexer No
 		assumedResources:       make(map[string]*resourceStore),
 		nodesMaybeOverreserved: newCounter(),
 		nodesWithForeignPods:   newCounter(),
-		nrtLister:              lister,
-		nodeIndexer:            indexer,
+		nrtLister:              nrtLister,
+		podLister:              podLister,
 	}
 	return obj, nil
 }
@@ -123,8 +124,6 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 	nodeAssumedResources.AddPod(pod)
 	klog.V(5).InfoS("nrtcache post reserve", "logID", klog.KObj(pod), "node", nodeName, "assumedResources", nodeAssumedResources.String())
 
-	ov.nodeIndexer.TrackReservedPod(pod, nodeName)
-
 	ov.nodesMaybeOverreserved.Delete(nodeName)
 	klog.V(6).InfoS("nrtcache: reset discard counter", "logID", klog.KObj(pod), "node", nodeName)
 }
@@ -142,8 +141,6 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 
 	nodeAssumedResources.DeletePod(pod)
 	klog.V(5).InfoS("nrtcache post release", "logID", klog.KObj(pod), "node", nodeName, "assumedResources", nodeAssumedResources.String())
-
-	ov.nodeIndexer.UntrackReservedPod(pod, nodeName)
 }
 
 // NodesMaybeOverReserved returns a slice of all the node names which have been discarded previously,
@@ -217,7 +214,7 @@ func (ov *OverReserve) Resync() {
 
 		klog.V(6).InfoS("nrtcache: trying to resync NodeTopology", "logID", logID, "node", nodeName, "fingerprint", pfpExpected)
 
-		err = checkPodFingerprintForNode(logID, ov.nodeIndexer, nodeName, pfpExpected)
+		err = checkPodFingerprintForNode(logID, ov.podLister, nodeName, pfpExpected)
 		if errors.Is(err, podfingerprint.ErrSignatureMismatch) {
 			// can happen, not critical
 			klog.V(5).InfoS("nrtcache: NodeTopology podset fingerprint mismatch", "logID", logID, "node", nodeName)
