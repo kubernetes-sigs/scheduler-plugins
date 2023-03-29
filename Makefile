@@ -17,10 +17,6 @@ COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
 BUILDENVVAR=CGO_ENABLED=0
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
-LOCAL_REGISTRY=sched4sec.sl.res.ibm.com:5000/scheduler-plugins
-LOCAL_IMAGE=kube-scheduler:latest
-LOCAL_CONTROLLER_IMAGE=controller:latest
-
 # RELEASE_REGISTRY is the container registry to push
 # into. The default is to push to the staging
 # registry, not production(registry.k8s.io).

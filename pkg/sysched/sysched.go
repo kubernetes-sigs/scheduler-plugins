@@ -104,23 +104,33 @@ func UnionList(a, b []string) []string {
 }
 
 // extracts filename and namespace from the relative seccomp
-// profile path with the following format
-// e.g., localhost/operator/<namespace>/<filename>.json
+// profile path with the following formats
+// e.g., localhost/operator/<namespace>/<filename>.json OR
+// e.g., operator/<namespace>/<filename>.json
 func getCRDandNamespace(localhostProfile string) (string, string) {
-	if localhostProfile == "" {
-		return "", ""
+        if localhostProfile == "" {
+                return "", ""
+        }
+
+        parts := strings.Split(localhostProfile, "/")
+        if len(parts) < 3 {
+                return "", ""
+        }
+
+	// namespace is the second item in the path
+	// e.g.., operator/<namespace>/<filename>.json
+	ns := parts[1]
+
+	// namespace is the third item in the path
+	// localhost/operator/<namespace>/<filename>.json
+	if parts[0] == "localhost" {
+		ns = parts[2]
 	}
 
-	parts := strings.Split(localhostProfile, "/")
-	if len(parts) != 4 {
-		return "", ""
-	}
-	ns := parts[2]
+        // get filename without extension
+        crdName := strings.TrimSuffix(parts[len(parts)-1], path.Ext(parts[len(parts)-1]))
 
-	// get filename without extension
-	crdName := strings.TrimSuffix(parts[3], path.Ext(parts[3]))
-
-	return ns, crdName
+        return ns, crdName
 }
 
 // fetch the system call list from a SPO seccomp profile CRD in a given namespace
@@ -160,7 +170,37 @@ func (sc *SySched) readSPOProfileCRD(crdName string, namespace string) ([]string
 func (sc *SySched) getSyscalls(pod *v1.Pod) ([]string, error) {
 	var r []string
 
-	// SPO seccomp profiles are automatically annotated to a pod
+	// read the seccomp profile from the security context of a pod
+	podSC := pod.Spec.SecurityContext
+	if podSC != nil && podSC.SeccompProfile != nil && podSC.SeccompProfile.Type == "Localhost" {
+		profilePath := *podSC.SeccompProfile.LocalhostProfile
+		ns, crdName := getCRDandNamespace(profilePath)
+		//klog.Info("namespace and profile name from pod sc = ", ns, " ", crdName)
+
+		syscalls, _ := sc.readSPOProfileCRD(crdName, ns)
+
+		if len(syscalls) > 0 {
+			r = UnionList(r, syscalls)
+		}
+	}
+
+	// read the seccomp profile from container security context and merge them
+	for _, container := range pod.Spec.Containers {
+		conSC := container.SecurityContext
+		if conSC != nil && conSC.SeccompProfile != nil && conSC.SeccompProfile.Type == "Localhost" {
+			profilePath := *conSC.SeccompProfile.LocalhostProfile
+			ns, crdName := getCRDandNamespace(profilePath)
+			//klog.Info("namespace and profile name from pod sc = ", ns, " ", crdName)
+
+			syscalls, _ := sc.readSPOProfileCRD(crdName, ns)
+
+			if len(syscalls) > 0 {
+				r = UnionList(r, syscalls)
+			}
+		}
+	}
+
+	// SPO seccomp profiles are sometimes automatically annotated to a pod
 	if pod.ObjectMeta.Annotations != nil {
 		// there could be multiple SPO seccomp profile annotations for a pod
 		// merge all profiles to obtain the syscal set for a pod
@@ -188,7 +228,7 @@ func (sc *SySched) getSyscalls(pod *v1.Pod) ([]string, error) {
 		r, _ = sc.getUnconfinedSyscalls()
 	}
 
-	// klog.Info("system calls for pod = ", r)
+	//klog.Info("number of system calls for pod = ", len(r))
 	return r, nil
 }
 
