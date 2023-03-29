@@ -91,7 +91,7 @@ the deployment yaml for `nginx`:
 
 #### Step 1: Creating seccomp profile CRD using SPO
 
-The following yaml file shows an example seccomp profile CRD specification for `nginx` using SPO. The system call list 
+The following yaml file shows an example seccomp profile CRD specification for `nginx` using SPO. The system call list
 is truncated in the CRD. The complete CRD is available in the
 [examples](https://github.com/mvle/scheduler-plugins/tree/sysched/pkg/sysched/examples) directory.
 
@@ -170,6 +170,10 @@ spec:
     name: nginx-seccomp
   image: nginx:1.16
 ```
+NOTE: In order for the binding webhook to work, one must need to label the namespace (for the seccomp profile and 
+binding CRDs) using `kubectl label` command as follows. The `default` namespace is used here.
+
+``kubectl label ns default spo.x-k8s.io/enable-binding=``
 
 Following commands create the binding CRDs for `nginx`, `memcached`, and `redis` with their corresponding seccomp
 profile CRDs.
@@ -191,8 +195,8 @@ redis-binding       56m
 
 #### Step 3: Creating deployments
 The third step is to create deployments. The following yaml file (`nginx1.yaml`) shows the deployment
-yaml for `nginx` where the scheduler the `default-scheduler` with `SySched` plugin enabled. If the 
-`SySched` plugin is enabled and used through a secondary scheduler please specify the `schedulerName` 
+yaml for `nginx` where the scheduler the `default-scheduler` with `SySched` plugin enabled. If the
+`SySched` plugin is enabled and used through a secondary scheduler please specify the `schedulerName`
 field in the specification.
 
 ```
