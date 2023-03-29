@@ -166,6 +166,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
+	cs.pgMgr.AddToPodGroupBackoff(pgName)
 	cs.pgMgr.DeletePermittedPodGroup(pgName)
 	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 		fmt.Sprintf("PodGroup %v gets rejected due to Pod %v is unschedulable even after PostFilter", pgName, pod.Name))
