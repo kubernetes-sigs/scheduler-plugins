@@ -24,8 +24,6 @@ import (
 	gochache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clicache "k8s.io/client-go/tools/cache"
@@ -35,7 +33,6 @@ import (
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	"sigs.k8s.io/scheduler-plugins/pkg/util"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -211,73 +208,6 @@ func TestPermit(t *testing.T) {
 			pgMgr := &PodGroupManager{pgClient: fakeClient, pgLister: pgLister, scheduleTimeout: &timeout, snapshotSharedLister: tt.snapshot}
 			if got := pgMgr.Permit(ctx, tt.pod); got != tt.want {
 				t.Errorf("Expect %v, but got %v", tt.want, got)
-			}
-		})
-	}
-}
-
-func TestPostBind(t *testing.T) {
-	ctx := context.Background()
-	pg := testutil.MakePG("pg", "ns1", 1, nil, nil)
-	pg1 := testutil.MakePG("pg1", "ns1", 2, nil, nil)
-	pg2 := testutil.MakePG("pg2", "ns1", 3, nil, nil)
-	pg2.Status.Phase = v1alpha1.PodGroupScheduling
-	pg2.Status.Scheduled = 1
-	fakeClient := fakepgclientset.NewSimpleClientset(pg, pg1, pg2)
-
-	pgInformerFactory := pgformers.NewSharedInformerFactory(fakeClient, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-	pgInformerFactory.Start(ctx.Done())
-
-	pgInformer.Informer().GetStore().Add(pg)
-	pgInformer.Informer().GetStore().Add(pg1)
-	pgInformer.Informer().GetStore().Add(pg2)
-	pgLister := pgInformer.Lister()
-
-	tests := []struct {
-		name              string
-		pod               *corev1.Pod
-		desiredGroupPhase v1alpha1.PodGroupPhase
-		desiredScheduled  int32
-	}{
-		{
-			name:              "pg status convert to scheduled",
-			pod:               st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg").Obj(),
-			desiredGroupPhase: v1alpha1.PodGroupScheduled,
-			desiredScheduled:  1,
-		},
-		{
-			name:              "pg status convert to scheduling",
-			pod:               st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			desiredGroupPhase: v1alpha1.PodGroupScheduling,
-			desiredScheduled:  1,
-		},
-		{
-			name:              "pg status does not convert, although scheduled pods change",
-			pod:               st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
-			desiredGroupPhase: v1alpha1.PodGroupScheduling,
-			desiredScheduled:  1,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pgMgr := &PodGroupManager{pgClient: fakeClient, pgLister: pgLister}
-			pgMgr.PostBind(ctx, tt.pod, "test")
-			err := wait.PollImmediate(100*time.Millisecond, 1*time.Second, func() (done bool, err error) {
-				pg, err := pgMgr.pgClient.SchedulingV1alpha1().PodGroups(tt.pod.Namespace).Get(ctx, util.GetPodGroupLabel(tt.pod), v1.GetOptions{})
-				if err != nil {
-					return false, nil
-				}
-				if pg.Status.Phase != tt.desiredGroupPhase {
-					return false, nil
-				}
-				if pg.Status.Scheduled != tt.desiredScheduled {
-					return false, nil
-				}
-				return true, nil
-			})
-			if err != nil {
-				t.Error(err)
 			}
 		})
 	}

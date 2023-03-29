@@ -56,7 +56,6 @@ const (
 type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
 	Permit(context.Context, *corev1.Pod) Status
-	PostBind(context.Context, *corev1.Pod, string)
 	GetPodGroup(*corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
 	DeletePermittedPodGroup(string)
@@ -202,42 +201,6 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Statu
 		return Success
 	}
 	return Wait
-}
-
-// PostBind updates a PodGroup's status.
-// TODO: move this logic to PodGroup's controller.
-func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nodeName string) {
-	pgFullName, pg := pgMgr.GetPodGroup(pod)
-	if pgFullName == "" || pg == nil {
-		return
-	}
-	pgCopy := pg.DeepCopy()
-	pgCopy.Status.Scheduled++
-
-	if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember {
-		pgCopy.Status.Phase = v1alpha1.PodGroupScheduled
-	} else {
-		pgCopy.Status.Phase = v1alpha1.PodGroupScheduling
-		if pgCopy.Status.ScheduleStartTime.IsZero() {
-			pgCopy.Status.ScheduleStartTime = metav1.Time{Time: time.Now()}
-		}
-	}
-	if pgCopy.Status.Phase != pg.Status.Phase {
-		pg, err := pgMgr.pgLister.PodGroups(pgCopy.Namespace).Get(pgCopy.Name)
-		if err != nil {
-			klog.ErrorS(err, "Failed to get PodGroup", "podGroup", klog.KObj(pgCopy))
-			return
-		}
-		patch, err := util.CreateMergePatch(pg, pgCopy)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create merge patch", "podGroup", klog.KObj(pg), "podGroup", klog.KObj(pgCopy))
-			return
-		}
-		if err := pgMgr.PatchPodGroup(pg.Name, pg.Namespace, patch); err != nil {
-			klog.ErrorS(err, "Failed to patch", "podGroup", klog.KObj(pg))
-			return
-		}
-	}
 }
 
 // GetCreationTimestamp returns the creation time of a podGroup or a pod.

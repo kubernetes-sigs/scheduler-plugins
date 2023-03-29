@@ -51,13 +51,18 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	topologyInformerFactory.Start(ctx.Done())
 	topologyInformerFactory.WaitForCacheSync(ctx.Done())
 
+	if tcfg.DiscardReservedNodes {
+		return nrtcache.NewDiscardReserved(nodeTopologyLister), nil
+	}
+
 	if tcfg.CacheResyncPeriodSeconds <= 0 {
 		return nrtcache.NewPassthrough(nodeTopologyLister), nil
 	}
 
 	podSharedInformer := nrtcache.InformerFromHandle(handle)
-	podIndexer := nrtcache.NewNodeNameIndexer(podSharedInformer)
-	nrtCache, err := nrtcache.NewOverReserve(nodeTopologyLister, podIndexer)
+	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
+
+	nrtCache, err := nrtcache.NewOverReserve(nodeTopologyLister, podLister)
 	if err != nil {
 		return nil, err
 	}
