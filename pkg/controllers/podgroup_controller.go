@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -90,7 +89,7 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	podList := &corev1.PodList{}
+	podList := &v1.PodList{}
 	if err := r.List(ctx, podList,
 		client.MatchingLabelsSelector{
 			Selector: labels.Set(map[string]string{
@@ -172,7 +171,7 @@ func getCurrentPodStats(pods []v1.Pod) (int32, int32, int32) {
 	return running, succeeded, failed
 }
 
-func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *corev1.Pod) {
+func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *v1.Pod) {
 	if len(pod.OwnerReferences) == 0 {
 		return
 	}
@@ -193,14 +192,14 @@ func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.log = mgr.GetLogger()
 
 	return ctrl.NewControllerManagedBy(mgr).
-		Watches(&source.Kind{Type: &corev1.Pod{}},
+		Watches(&source.Kind{Type: &v1.Pod{}},
 			handler.EnqueueRequestsFromMapFunc(r.podToPodGroup)).
 		For(&schedv1alpha1.PodGroup{}).
 		Complete(r)
 }
 
 func (r *PodGroupReconciler) podToPodGroup(obj client.Object) []ctrl.Request {
-	pod, ok := obj.(*corev1.Pod)
+	pod, ok := obj.(*v1.Pod)
 	if !ok {
 		return nil
 	}

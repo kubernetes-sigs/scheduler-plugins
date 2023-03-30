@@ -36,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
-	schedulingv1a1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
 func Test_Run(t *testing.T) {
@@ -172,7 +171,7 @@ func Test_Run(t *testing.T) {
 					}
 				}
 
-				pg := &schedulingv1a1.PodGroup{
+				pg := &v1alpha1.PodGroup{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      c.pgName,
 						Namespace: metav1.NamespaceDefault,
@@ -247,7 +246,7 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 				},
 			})
 
-			pg := &schedulingv1a1.PodGroup{
+			pg := &v1alpha1.PodGroup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      c.pgName,
 					Namespace: metav1.NamespaceDefault,
@@ -276,13 +275,13 @@ func setUp(ctx context.Context,
 	podOwnerReference []metav1.OwnerReference) (*PodGroupReconciler, client.WithWatch) {
 	s := scheme.Scheme
 	pg := makePG(pgName, minMember, groupPhase, podGroupCreateTime)
-	s.AddKnownTypes(schedulingv1a1.SchemeGroupVersion, pg)
+	s.AddKnownTypes(v1alpha1.SchemeGroupVersion, pg)
 	objs := []runtime.Object{pg}
 	if len(podNames) != 0 {
 		ps := makePods(podNames, pgName, podPhase, podOwnerReference)
 		objs = append(objs, ps[0], ps[1])
 	}
-	client := fake.NewFakeClient(objs...)
+	client := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objs...).Build()
 
 	controller := &PodGroupReconciler{
 		Client: client,

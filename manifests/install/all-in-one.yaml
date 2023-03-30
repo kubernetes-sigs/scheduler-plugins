@@ -53,6 +53,9 @@ rules:
 - apiGroups: ["scheduling.x-k8s.io"]
   resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch", "update"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
