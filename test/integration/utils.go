@@ -23,7 +23,6 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -261,7 +260,7 @@ func createNamespace(t *testing.T, testCtx *testContext, ns string) {
 func createAppGroups(ctx context.Context, client agversioned.Interface, appGroups []*agv1alpha1.AppGroup) error {
 	for _, ag := range appGroups {
 		_, err := client.AppgroupV1alpha1().AppGroups(ag.Namespace).Create(ctx, ag, metav1.CreateOptions{})
-		if err != nil && !errors.IsAlreadyExists(err) {
+		if err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}
 	}
@@ -277,7 +276,7 @@ func cleanupAppGroups(ctx context.Context, client agversioned.Interface, appGrou
 func createNetworkTopologies(ctx context.Context, client ntversioned.Interface, networkTopologies []*ntv1alpha1.NetworkTopology) error {
 	for _, nt := range networkTopologies {
 		_, err := client.NetworktopologyV1alpha1().NetworkTopologies(nt.Namespace).Create(ctx, nt, metav1.CreateOptions{})
-		if err != nil && !errors.IsAlreadyExists(err) {
+		if err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}
 	}
