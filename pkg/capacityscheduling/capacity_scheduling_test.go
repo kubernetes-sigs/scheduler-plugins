@@ -184,7 +184,7 @@ func TestPostFilter(t *testing.T) {
 	tests := []struct {
 		name                  string
 		pod                   *v1.Pod
-		pods                  []*v1.Pod
+		existPods             []*v1.Pod
 		nodes                 []*v1.Node
 		filteredNodesStatuses framework.NodeToStatusMap
 		elasticQuotas         map[string]*ElasticQuotaInfo
@@ -194,7 +194,7 @@ func TestPostFilter(t *testing.T) {
 		{
 			name: "in-namespace preemption",
 			pod:  makePod("t1-p1", "ns1", 50, 0, 0, highPriority, "t1-p1", ""),
-			pods: []*v1.Pod{
+			existPods: []*v1.Pod{
 				makePod("t1-p2", "ns1", 50, 0, 0, midPriority, "t1-p2", "node-a"),
 				makePod("t1-p3", "ns2", 50, 0, 0, midPriority, "t1-p3", "node-a"),
 				makePod("t1-p4", "ns2", 50, 0, 0, midPriority, "t1-p4", "node-a"),
@@ -237,7 +237,7 @@ func TestPostFilter(t *testing.T) {
 		{
 			name: "cross-namespace preemption",
 			pod:  makePod("t1-p1", "ns1", 50, 0, 0, highPriority, "t1-p1", ""),
-			pods: []*v1.Pod{
+			existPods: []*v1.Pod{
 				makePod("t1-p2", "ns1", 50, 0, 0, midPriority, "t1-p2", "node-a"),
 				makePod("t1-p3", "ns2", 50, 0, 0, midPriority, "t1-p3", "node-a"),
 				makePod("t1-p4", "ns2", 50, 0, 0, midPriority, "t1-p4", "node-a"),
@@ -278,9 +278,9 @@ func TestPostFilter(t *testing.T) {
 			wantStatus: framework.NewStatus(framework.Success),
 		},
 		{
-			name: "Without elasticQuotas",
+			name: "without elasticQuotas",
 			pod:  makePod("t1-p1", "ns1", 50, 0, 0, highPriority, "t1-p1", ""),
-			pods: []*v1.Pod{
+			existPods: []*v1.Pod{
 				makePod("t1-p2", "ns1", 50, 0, 0, midPriority, "t1-p2", "node-a"),
 				makePod("t1-p3", "ns2", 50, 0, 0, midPriority, "t1-p3", "node-a"),
 				makePod("t1-p4", "ns2", 50, 0, 0, midPriority, "t1-p4", "node-a"),
@@ -299,24 +299,18 @@ func TestPostFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
-					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
-				}, "Filter", "PreFilter"),
-			}
+			registeredPlugins := makeRegisteredPlugin()
 
 			podItems := []v1.Pod{}
-			for _, pod := range tt.pods {
+			for _, pod := range tt.existPods {
 				podItems = append(podItems, *pod)
 			}
 			cs := clientsetfake.NewSimpleClientset(&v1.PodList{Items: podItems})
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods().Informer()
 			podInformer.GetStore().Add(tt.pod)
-			for i := range tt.pods {
-				podInformer.GetStore().Add(tt.pods[i])
+			for i := range tt.existPods {
+				podInformer.GetStore().Add(tt.existPods[i])
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -329,7 +323,7 @@ func TestPostFilter(t *testing.T) {
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(informerFactory.Core().V1().Pods().Lister())),
-				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.pods, tt.nodes)),
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.existPods, tt.nodes)),
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -360,14 +354,8 @@ func TestPostFilter(t *testing.T) {
 				pdbLister:         getPDBLister(informerFactory),
 			}
 			gotResult, gotStatus := c.PostFilter(ctx, state, tt.pod, tt.filteredNodesStatuses)
-			if gotStatus.Code() == framework.Error {
-				if diff := gocmp.Diff(tt.wantStatus.Reasons(), gotStatus.Reasons()); diff != "" {
-					t.Errorf("Unexpected status (-want, +got):\n%s", diff)
-				}
-			} else {
-				if diff := gocmp.Diff(tt.wantStatus, gotStatus); diff != "" {
-					t.Errorf("Unexpected status (-want, +got):\n%s", diff)
-				}
+			if diff := gocmp.Diff(tt.wantStatus, gotStatus); diff != "" {
+				t.Errorf("Unexpected status (-want, +got):\n%s", diff)
 			}
 			if diff := gocmp.Diff(tt.wantResult, gotResult); diff != "" {
 				t.Errorf("Unexpected postFilterResult (-want, +got):\n%s", diff)
@@ -722,13 +710,7 @@ func TestDryRunPreemption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
-					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
-				}, "Filter", "PreFilter"),
-			}
+			registeredPlugins := makeRegisteredPlugin()
 
 			cs := clientsetfake.NewSimpleClientset()
 			ctx := context.Background()
@@ -815,16 +797,16 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 	tests := []struct {
 		name                string
 		pod                 *v1.Pod
-		pods                []*v1.Pod
+		existPods           []*v1.Pod
 		nodes               []*v1.Node
 		nominatedNodeStatus *framework.Status
 		elasticQuotas       map[string]*ElasticQuotaInfo
 		expected            bool
 	}{
 		{
-			name: "Pod with PreemptNever preemption policy",
-			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Priority(highPriority).PreemptionPolicy(v1.PreemptNever).Obj(),
-			pods: []*v1.Pod{makePod("t1-p0", "ns1", 50, 10, 0, midPriority, "t1-p1", "node-a")},
+			name:      "Pod with PreemptNever preemption policy",
+			pod:       st.MakePod().Name("t1-p1").UID("t1-p1").Priority(highPriority).PreemptionPolicy(v1.PreemptNever).Obj(),
+			existPods: []*v1.Pod{makePod("t1-p0", "ns1", 50, 10, 0, midPriority, "t1-p1", "node-a")},
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
 			},
@@ -846,9 +828,9 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Pod with nominated node",
-			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
-			pods: []*v1.Pod{makePod("t1-p0", "ns1", 50, 10, 0, midPriority, "t1-p1", "node-a")},
+			name:      "Pod with unschedulableAndUnresolvable nominated node",
+			pod:       st.MakePod().Name("t1-p1").UID("t1-p1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
+			existPods: []*v1.Pod{makePod("t1-p0", "ns1", 50, 10, 0, midPriority, "t1-p1", "node-a")},
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
 			},
@@ -872,7 +854,7 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 		{
 			name: "Pod with terminating pod in the same namespace",
 			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
-			pods: []*v1.Pod{
+			existPods: []*v1.Pod{
 				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns1").Priority(midPriority).Node("node-a").Terminating().Obj(),
 			},
 			nodes: []*v1.Node{
@@ -896,9 +878,9 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Pod with terminating pod in the different namespace",
+			name: "Pod with terminating pod in another namespace",
 			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
-			pods: []*v1.Pod{
+			existPods: []*v1.Pod{
 				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns2").Priority(midPriority).Node("node-a").Terminating().Obj(),
 			},
 			nodes: []*v1.Node{
@@ -934,9 +916,9 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Pod without ElasticQuotas  and terminating pod exists",
+			name: "Pod without elasticQuotas and terminating pod exists in the same namespace",
 			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
-			pods: []*v1.Pod{
+			existPods: []*v1.Pod{
 				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns2").Priority(midPriority).Node("node-a").Terminating().Obj(),
 			},
 			nodes: []*v1.Node{
@@ -947,9 +929,9 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 			expected:            false,
 		},
 		{
-			name: "Pod with other namespace's ElasticQuotas and terminating pod exists",
+			name: "Pod without ElasticQuotas and terminating pod exists in another namespace",
 			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
-			pods: []*v1.Pod{
+			existPods: []*v1.Pod{
 				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns2").Priority(midPriority).Node("node-a").Terminating().Obj(),
 			},
 			nodes: []*v1.Node{
@@ -976,13 +958,7 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
-					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
-				}, "Filter", "PreFilter"),
-			}
+			registeredPlugins := makeRegisteredPlugin()
 			cs := clientsetfake.NewSimpleClientset()
 			ctx := context.Background()
 
@@ -993,7 +969,7 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
-				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.pods, tt.nodes)),
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.existPods, tt.nodes)),
 				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(cs, 0)),
 			)
 			if err != nil {
@@ -1631,4 +1607,15 @@ func makeResourceList(cpu, mem int64) v1.ResourceList {
 		v1.ResourceCPU:    *resource.NewMilliQuantity(cpu, resource.DecimalSI),
 		v1.ResourceMemory: *resource.NewQuantity(mem, resource.BinarySI),
 	}
+}
+
+func makeRegisteredPlugin() []st.RegisterPluginFunc {
+	registeredPlugins := []st.RegisterPluginFunc{
+		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+			return noderesources.NewFit(plArgs, fh, plfeature.Features{})
+		}, "Filter", "PreFilter"),
+	}
+	return registeredPlugins
 }
