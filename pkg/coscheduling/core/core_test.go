@@ -139,7 +139,7 @@ func TestPreFilter(t *testing.T) {
 			existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
 			snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
 			pgMgr := &PodGroupManager{pgLister: pgLister, permittedPG: newCache(),
-				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout}
+				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout, podGroupBackoff: gochache.New(10*time.Second, 10*time.Second)}
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")

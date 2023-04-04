@@ -22,6 +22,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
@@ -30,6 +31,7 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling/core"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -166,7 +168,14 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
-	cs.pgMgr.AddToPodGroupBackoff(pgName)
+
+	pods, err := cs.frameworkHandler.SharedInformerFactory().Core().V1().Pods().Lister().Pods(pod.Namespace).List(
+		labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
+	)
+	if err == nil && len(pods) >= int(pg.Spec.MinMember) {
+		cs.pgMgr.AddToPodGroupBackoff(pgName)
+	}
+
 	cs.pgMgr.DeletePermittedPodGroup(pgName)
 	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 		fmt.Sprintf("PodGroup %v gets rejected due to Pod %v is unschedulable even after PostFilter", pgName, pod.Name))
