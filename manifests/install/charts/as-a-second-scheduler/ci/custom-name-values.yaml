@@ -1,0 +1,4 @@
+controller:
+  name: my-controller
+scheduler:
+  name: my-scheduler
