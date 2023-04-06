@@ -17,8 +17,8 @@ controller:
 # as they need extra RBAC privileges on metrics.k8s.io.
 
 plugins:
-  enabled: ["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch","NodeResourcesAllocatable"]
-  disabled: ["PrioritySort"] # only in-tree plugins need to be defined here
+  enabled: ["Coscheduling", "CapacityScheduling", "NodeResourceTopologyMatch", "NodeResourcesAllocatable"]
+  disabled: ["PrioritySort"]  # only in-tree plugins need to be defined here
 
 # Customize the enabled plugins' config.
 # Refer to the "pluginConfig" section of manifests/<plugin>/scheduler-config.yaml.
@@ -26,7 +26,7 @@ plugins:
 pluginConfig:
 - name: Coscheduling
   args:
-    permitWaitingTimeSeconds: 10 # default is 60
+    permitWaitingTimeSeconds: 10  # default is 60
 # Or, customize the other plugins
 # - name: NodeResourceTopologyMatch
 #   args:
