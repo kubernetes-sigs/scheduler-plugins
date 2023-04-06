@@ -90,6 +90,18 @@ func MakePG(name, namespace string, min int32, creationTime *time.Time, minResou
 	return pg
 }
 
+func UpdatePGStatus(pg *v1alpha1.PodGroup, phase v1alpha1.PodGroupPhase, occupiedBy string, scheduled int32, running int32, succeeded int32, failed int32) *v1alpha1.PodGroup {
+	pg.Status = v1alpha1.PodGroupStatus{
+		Phase:      phase,
+		OccupiedBy: occupiedBy,
+		Scheduled:  scheduled,
+		Running:    running,
+		Succeeded:  succeeded,
+		Failed:     failed,
+	}
+	return pg
+}
+
 func MakePod(podName string, namespace string, memReq int64, cpuReq int64, priority int32, uid string, nodeName string) *corev1.Pod {
 	pause := imageutils.GetPauseImageName()
 	pod := st.MakePod().Namespace(namespace).Name(podName).Container(pause).

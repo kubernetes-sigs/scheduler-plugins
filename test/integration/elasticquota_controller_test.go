@@ -70,7 +70,7 @@ func TestElasticController(t *testing.T) {
 	}
 
 	go func() {
-		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		if err := mgr.Start(signalHandler); err != nil {
 			panic(err)
 		}
 	}()

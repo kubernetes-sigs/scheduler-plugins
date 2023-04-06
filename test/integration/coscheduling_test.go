@@ -103,7 +103,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 
 	// Create a Node.
 	nodeName := "fake-node"
-	node := st.MakeNode().Name("fake-node").Label("node", nodeName).Obj()
+	node := st.MakeNode().Name(nodeName).Label("node", nodeName).Obj()
 	node.Status.Allocatable = v1.ResourceList{
 		v1.ResourcePods:   *resource.NewQuantity(32, resource.DecimalSI),
 		v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
