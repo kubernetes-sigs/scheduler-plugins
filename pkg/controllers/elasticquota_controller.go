@@ -30,6 +30,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -41,7 +42,8 @@ type ElasticQuotaReconciler struct {
 	recorder record.EventRecorder
 
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme  *runtime.Scheme
+	Workers int
 }
 
 // +kubebuilder:rbac:groups=scheduling.x-k8s.io,resources=elasticquota,verbs=get;list;watch;create;update;patch;delete
@@ -173,5 +175,6 @@ func (r *ElasticQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Watches(&source.Kind{Type: &v1.Pod{}}, &handler.EnqueueRequestForObject{}).
 		For(&schedv1alpha1.ElasticQuota{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.Workers}).
 		Complete(r)
 }
