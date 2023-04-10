@@ -94,7 +94,6 @@ func UpdatePGStatus(pg *v1alpha1.PodGroup, phase v1alpha1.PodGroupPhase, occupie
 	pg.Status = v1alpha1.PodGroupStatus{
 		Phase:      phase,
 		OccupiedBy: occupiedBy,
-		Scheduled:  scheduled,
 		Running:    running,
 		Succeeded:  succeeded,
 		Failed:     failed,

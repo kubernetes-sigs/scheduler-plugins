@@ -84,7 +84,7 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	// If startScheduleTime - createTime > 2days,
 	// do not reconcile again because pod may have been GCed
-	if pg.Status.Scheduled == pg.Spec.MinMember && pg.Status.Running == 0 &&
+	if (pg.Status.Phase == schedv1alpha1.PodGroupScheduling || pg.Status.Phase == schedv1alpha1.PodGroupPending) && pg.Status.Running == 0 &&
 		pg.Status.ScheduleStartTime.Sub(pg.CreationTimestamp.Time) > 48*time.Hour {
 		r.recorder.Event(pg, v1.EventTypeWarning,
 			"Timeout", "schedule time longer than 48 hours")
@@ -108,20 +108,18 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
 	case schedv1alpha1.PodGroupPending:
 		if len(pods) >= int(pg.Spec.MinMember) {
-			pgCopy.Status.Phase = schedv1alpha1.PodGroupPreScheduling
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduling
 			fillOccupiedObj(pgCopy, &pods[0])
 		}
 	default:
 		pgCopy.Status.Running, pgCopy.Status.Succeeded, pgCopy.Status.Failed = getCurrentPodStats(pods)
-
-		if len(pods) == 0 {
+		if len(pods) < int(pg.Spec.MinMember) {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
 			break
 		}
 
-		if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember &&
-			pgCopy.Status.Phase == schedv1alpha1.PodGroupScheduling {
-			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduled
+		if pgCopy.Status.Succeeded+pgCopy.Status.Running < pg.Spec.MinMember {
+			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduling
 		}
 
 		if pgCopy.Status.Succeeded+pgCopy.Status.Running >= pg.Spec.MinMember {
