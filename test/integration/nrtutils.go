@@ -116,7 +116,8 @@ func updateNodeResourceTopologies(ctx context.Context, topologyClient *versioned
 			obj.Annotations[key] = value
 		}
 
-		obj.TopologyPolicies = nrt.TopologyPolicies // TODO: shallow copy
+		obj.TopologyPolicies = nrt.TopologyPolicies // TODO: Deprecated; shallow copy
+		obj.Attributes = nrt.Attributes.DeepCopy()
 		obj.Zones = nrt.Zones.DeepCopy()
 
 		_, err = topologyClient.TopologyV1alpha2().NodeResourceTopologies().Update(ctx, obj, metav1.UpdateOptions{})

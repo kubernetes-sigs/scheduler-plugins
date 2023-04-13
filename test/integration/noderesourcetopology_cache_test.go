@@ -124,7 +124,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -135,7 +145,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -193,7 +213,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -204,7 +234,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -244,7 +284,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -255,7 +305,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -293,7 +353,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -304,7 +374,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -347,7 +427,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -358,7 +448,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -651,15 +751,23 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 
 		pfpSign := mkPFP("fake-node-cache-1", tt.podDescs[0].pod)
 		updatedNRTs := []*topologyv1alpha2.NodeResourceTopology{
-			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
-				Annotations(map[string]string{
-					podfingerprint.Annotation: pfpSign,
-				}).
+			MakeNRT().Name("fake-node-cache-1").
 				Attributes(topologyv1alpha2.AttributeList{
+					{
+						Name:  noderesourcetopology.AttributePolicy,
+						Value: "single-numa-node",
+					},
+					{
+						Name:  noderesourcetopology.AttributeScope,
+						Value: "container",
+					},
 					{
 						Name:  podfingerprint.Attribute,
 						Value: pfpSign,
 					},
+				}).
+				Annotations(map[string]string{
+					podfingerprint.Annotation: pfpSign,
 				}).
 				Zone(
 					topologyv1alpha2.ResourceInfoList{
@@ -689,10 +797,16 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 		time.Sleep(time.Duration(5*matchArgs.CacheResyncPeriodSeconds) * time.Second)
 
 		updatedNRTs = []*topologyv1alpha2.NodeResourceTopology{
-			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
-				Annotations(map[string]string{
-					podfingerprint.Annotation: mkPFP("fake-node-cache-1", tt.podDescs[0].pod),
-					"foo":                     "bar", // we need _ANY_ change to the object to trigger the update
+			MakeNRT().Name("fake-node-cache-1").
+				Attributes(topologyv1alpha2.AttributeList{
+					{
+						Name:  noderesourcetopology.AttributePolicy,
+						Value: "single-numa-node",
+					},
+					{
+						Name:  noderesourcetopology.AttributeScope,
+						Value: "container",
+					},
 				}).
 				Zone(
 					topologyv1alpha2.ResourceInfoList{
