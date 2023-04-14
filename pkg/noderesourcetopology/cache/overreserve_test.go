@@ -18,7 +18,6 @@ package cache
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"sort"
 	"testing"
@@ -31,7 +30,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 )
 
@@ -655,39 +653,6 @@ func dumpNRT(nrtObj *topologyv1alpha2.NodeResourceTopology) string {
 		return "marshallingError"
 	}
 	return string(nrtJson)
-}
-
-type fakePodLister struct {
-	pods []*corev1.Pod
-	err  error
-}
-
-type fakePodNamespaceLister struct {
-	parent    *fakePodLister
-	namespace string
-}
-
-func (fpl *fakePodLister) AddPod(pod *corev1.Pod) {
-	fpl.pods = append(fpl.pods, pod)
-}
-
-func (fpl *fakePodLister) List(selector labels.Selector) ([]*corev1.Pod, error) {
-	return fpl.pods, fpl.err
-}
-
-func (fpl *fakePodLister) Pods(namespace string) podlisterv1.PodNamespaceLister {
-	return &fakePodNamespaceLister{
-		parent:    fpl,
-		namespace: namespace,
-	}
-}
-
-func (fpnl *fakePodNamespaceLister) List(selector labels.Selector) ([]*corev1.Pod, error) {
-	return nil, fmt.Errorf("not yet implemented")
-}
-
-func (fpnl *fakePodNamespaceLister) Get(name string) (*corev1.Pod, error) {
-	return nil, fmt.Errorf("not yet implemented")
 }
 
 func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha2.ResourceInfo {

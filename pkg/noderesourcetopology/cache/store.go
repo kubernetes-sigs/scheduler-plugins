@@ -211,12 +211,7 @@ func podFingerprintForNodeTopology(nrt *topologyv1alpha2.NodeResourceTopology) s
 // checkPodFingerprintForNode verifies if the given pods fingeprint (usually from NRT update) matches the
 // computed one using the stored data about pods running on nodes. Returns nil on success, or an error
 // describing the failure
-func checkPodFingerprintForNode(logID string, podLister podlisterv1.PodLister, nodeName, pfpExpected string) error {
-	objs, err := getPodNamespacedNamesByNode(podLister, logID, nodeName)
-	if err != nil {
-		return err
-	}
-
+func checkPodFingerprintForNode(logID string, objs []types.NamespacedName, nodeName, pfpExpected string) error {
 	st := podfingerprint.MakeStatus(nodeName)
 	pfp := podfingerprint.NewTracingFingerprint(len(objs), &st)
 	for _, obj := range objs {
@@ -230,24 +225,23 @@ func checkPodFingerprintForNode(logID string, podLister podlisterv1.PodLister, n
 	return pfp.Check(pfpExpected)
 }
 
-func getPodNamespacedNamesByNode(podLister podlisterv1.PodLister, logID, nodeName string) ([]types.NamespacedName, error) {
+func makeNodeToNamespacedNamesMap(podLister podlisterv1.PodLister, logID string) (map[string][]types.NamespacedName, error) {
+	nodeToObjsMap := make(map[string][]types.NamespacedName)
 	pods, err := podLister.List(labels.Everything())
 	if err != nil {
-		return []types.NamespacedName{}, err
+		return nodeToObjsMap, err
 	}
-	objs := make([]types.NamespacedName, 0, len(pods))
 	for _, pod := range pods {
-		if pod.Spec.NodeName != nodeName {
-			continue
-		}
 		if pod.Status.Phase != corev1.PodRunning {
 			// we are interested only about nodes which consume resources
 			continue
 		}
-		objs = append(objs, types.NamespacedName{
+		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
+		nodeObjs = append(nodeObjs, types.NamespacedName{
 			Namespace: pod.Namespace,
 			Name:      pod.Name,
 		})
+		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
 	}
-	return objs, nil
+	return nodeToObjsMap, nil
 }

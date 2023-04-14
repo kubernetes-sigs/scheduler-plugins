@@ -191,6 +191,13 @@ func (ov *OverReserve) Resync() {
 		return
 	}
 
+	// node -> pod identifier (namespace, name)
+	nodeToObjsMap, err := makeNodeToNamespacedNamesMap(ov.podLister, logID)
+	if err != nil {
+		klog.ErrorS(err, "cannot find the mapping between running pods and nodes")
+		return
+	}
+
 	klog.V(6).InfoS("nrtcache: resync NodeTopology cache starting", "logID", logID)
 	defer klog.V(6).InfoS("nrtcache: resync NodeTopology cache complete", "logID", logID)
 
@@ -206,6 +213,13 @@ func (ov *OverReserve) Resync() {
 			continue
 		}
 
+		objs, ok := nodeToObjsMap[nodeName]
+		if !ok {
+			// this really should never happen
+			klog.V(3).InfoS("nrtcache: cannot find any pod for node", "logID", logID, "node", nodeName)
+			continue
+		}
+
 		pfpExpected := podFingerprintForNodeTopology(nrtCandidate)
 		if pfpExpected == "" {
 			klog.V(3).InfoS("nrtcache: missing NodeTopology podset fingerprint data", "logID", logID, "node", nodeName)
@@ -214,7 +228,7 @@ func (ov *OverReserve) Resync() {
 
 		klog.V(6).InfoS("nrtcache: trying to resync NodeTopology", "logID", logID, "node", nodeName, "fingerprint", pfpExpected)
 
-		err = checkPodFingerprintForNode(logID, ov.podLister, nodeName, pfpExpected)
+		err = checkPodFingerprintForNode(logID, objs, nodeName, pfpExpected)
 		if errors.Is(err, podfingerprint.ErrSignatureMismatch) {
 			// can happen, not critical
 			klog.V(5).InfoS("nrtcache: NodeTopology podset fingerprint mismatch", "logID", logID, "node", nodeName)
