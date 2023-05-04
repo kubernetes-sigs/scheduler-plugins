@@ -18,7 +18,6 @@ package integration
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -26,6 +25,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
@@ -1994,21 +1994,26 @@ func TestTopologyMatchPlugin(t *testing.T) {
 					// if tt.expectedNodes == 0 we don't expect the pod to get scheduled
 				} else {
 					// wait for the pod scheduling to failed.
+					var err error
+					var events []v1.Event
 					if err := wait.Poll(5*time.Second, 20*time.Second, func() (bool, error) {
-						events, err := podFailedScheduling(cs, ns, p.Name)
+						events, err = getPodEvents(cs, ns, p.Name)
 						if err != nil {
 							// This could be a connection error, so we want to retry.
 							klog.ErrorS(err, "Failed check pod scheduling status for pod", "pod", klog.KRef(ns, p.Name))
 							return false, nil
 						}
-						for _, e := range events {
-							if strings.Contains(e.Message, tt.errMsg) {
+						candidateEvents := filterPodFailedSchedulingEvents(events)
+						for _, ce := range candidateEvents {
+							if strings.Contains(ce.Message, tt.errMsg) {
 								return true, nil
 							}
-							klog.Warningf("Pod failed but error message does not contain substring: %q; got %q instead", tt.errMsg, e.Message)
+							klog.Warningf("Pod failed but error message does not contain substring: %q; got %q instead", tt.errMsg, ce.Message)
 						}
 						return false, nil
 					}); err != nil {
+						// we need more context to troubleshoot, but let's not clutter the actual error
+						t.Logf("pod %q scheduling should failed with error: %v got %v events:\n%s", p.Name, tt.errMsg, err, formatEvents(events))
 						t.Errorf("pod %q scheduling should failed, error: %v", p.Name, err)
 					}
 				}
@@ -2146,29 +2151,42 @@ func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 	return teList
 }
 
-func podFailedScheduling(c clientset.Interface, podNamespace, podName string) ([]v1.Event, error) {
-	var failedSchedulingEvents []v1.Event
-	opt := metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("involvedObject.name=%s", podName),
-		TypeMeta:      metav1.TypeMeta{Kind: "Pod"},
+func getPodEvents(c clientset.Interface, podNamespace, podName string) ([]v1.Event, error) {
+	opts := metav1.ListOptions{
+		FieldSelector: fields.SelectorFromSet(map[string]string{
+			"involvedObject.name":      podName,
+			"involvedObject.namespace": podNamespace,
+			// TODO: use uid
+		}).String(),
+		TypeMeta: metav1.TypeMeta{Kind: "Pod"},
 	}
-	events, err := c.CoreV1().Events(podNamespace).List(context.TODO(), opt)
+	evs, err := c.CoreV1().Events(podNamespace).List(context.TODO(), opts)
 	if err != nil {
-		return failedSchedulingEvents, err
+		return nil, err
 	}
-
-	for _, e := range events.Items {
-		if e.Reason == "FailedScheduling" {
-			failedSchedulingEvents = append(failedSchedulingEvents, e)
-		}
-	}
-	return failedSchedulingEvents, nil
+	return evs.Items, nil
 }
 
-func formatObject(obj interface{}) string {
-	bytes, err := json.Marshal(obj)
-	if err != nil {
-		return fmt.Sprintf("<ERROR: %s>", err)
+func filterPodFailedSchedulingEvents(events []v1.Event) []v1.Event {
+	var failedSchedulingEvents []v1.Event
+	for _, ev := range events {
+		if ev.Reason == "FailedScheduling" {
+			failedSchedulingEvents = append(failedSchedulingEvents, ev)
+		}
 	}
-	return string(bytes)
+	return failedSchedulingEvents
+}
+
+func formatEvents(events []v1.Event) string {
+	var sb strings.Builder
+	for idx, ev := range events {
+		fmt.Fprintf(&sb, "%02d - %s\n", idx, eventToString(ev))
+	}
+	return sb.String()
+}
+
+func eventToString(ev v1.Event) string {
+	return fmt.Sprintf("type=%q action=%q message=%q reason=%q reportedBy={%s/%s}",
+		ev.Type, ev.Action, ev.Message, ev.Reason, ev.ReportingController, ev.ReportingInstance,
+	)
 }

@@ -338,8 +338,8 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 						string(corev1.ResourceCPU):    "16",
 						string(corev1.ResourceMemory): "24Gi",
 					},
-					expectedNode:  "fake-node-cache-1",
 					schedulerName: discardReservedSchedulerName,
+					expectedNode:  "fake-node-cache-1",
 				},
 				{
 					podName:      "nrt-pod-2000",
@@ -508,7 +508,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 
 			defer func() {
 				cleanupTest(t, testCtx)
-				klog.Infof("test environment cleaned up")
+				klog.Infof("test environment %q cleaned up", tt.name)
 			}()
 
 			if err := createNodesFromNodeResourceTopologies(cs, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
@@ -554,8 +554,10 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				if p.isDelete {
 					var err error
 					klog.Infof("Waiting before to delete Pod %q", p.podName)
-					err = podIsScheduled(1*time.Second, 20, cs, ns, p.podName)
+					updatedPod, err := podIsScheduled(1*time.Second, 20, cs, ns, p.podName)
 					if err != nil {
+						// we need more context, but we don't want to clutter the logs
+						t.Logf("%s: pod %s/%s to be scheduled, error: %v\nstatus=%s", tt.name, p.pod.Namespace, p.pod.Name, err, formatObject(updatedPod.Status))
 						t.Errorf("Pod %q to be scheduled, error: %v", p.pod.Name, err)
 					}
 
@@ -579,15 +581,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				}
 
 				var action string = "scheduled"
-				var checkPod func(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) error = podIsScheduled
+				var checkPod func(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) = podIsScheduled
 				if p.expectedNode == "" {
 					action = "kept pending"
 					checkPod = podIsPending
 				}
 
-				err = checkPod(1*time.Second, 20, cs, p.pod.Namespace, p.pod.Name)
+				updatedPod, err := checkPod(1*time.Second, 20, cs, p.pod.Namespace, p.pod.Name)
 				if err != nil {
-					t.Errorf("Pod %q to be %s, error: %v", p.pod.Name, action, err)
+					// we need more context, but we don't want to clutter the logs
+					t.Logf("%s: pod %s/%s to be %s, error: %v\nstatus=%s", tt.name, p.pod.Namespace, p.pod.Name, action, err, formatObject(updatedPod.Status))
+					t.Errorf("Pod %s/%s to be %s, error: %v", p.pod.Namespace, p.pod.Name, action, err)
 				}
 				klog.Infof("Pod %v %s", p.pod.Name, action)
 			}
@@ -604,7 +608,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				}
 
 				if !podMatchesExpectedNode(p.pod.Namespace, p.pod.Name, nodeName, p.expectedNode) {
-					t.Errorf("misplaced pod: %q", p.pod.Name)
+					t.Errorf("misplaced pod: %q got %q expected %q", p.pod.Name, nodeName, p.expectedNode)
 				}
 			}
 
