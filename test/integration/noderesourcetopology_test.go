@@ -18,6 +18,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -211,7 +212,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			t.Fatalf("Failed to create Node %q: %v", nodeName, err)
 		}
 
-		t.Logf(" Node %s created: %v", nodeName, n)
+		t.Logf(" Node %s created: %s", nodeName, formatObject(n))
 	}
 
 	nodeList, err := cs.CoreV1().Nodes().List(testCtx.Ctx, metav1.ListOptions{})
@@ -2162,4 +2163,12 @@ func podFailedScheduling(c clientset.Interface, podNamespace, podName string) ([
 		}
 	}
 	return failedSchedulingEvents, nil
+}
+
+func formatObject(obj interface{}) string {
+	bytes, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Sprintf("<ERROR: %s>", err)
+	}
+	return string(bytes)
 }
