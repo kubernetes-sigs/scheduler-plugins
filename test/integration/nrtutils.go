@@ -135,7 +135,7 @@ func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *versione
 			klog.ErrorS(err, "Failed to clean up NodeResourceTopology", "nodeResourceTopology", nrt)
 		}
 	}
-	klog.Infof("init scheduler success")
+	klog.Infof("cleaned up NRT %d objects", len(noderesourcetopologies))
 }
 
 func makeResourceAllocationScoreArgs(strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
