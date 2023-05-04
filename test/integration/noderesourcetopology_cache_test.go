@@ -105,7 +105,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "BU pod: pessimistic cache overallocation not impactful, pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-bu-pod-1000",
+					podName:      "nrt-bu-overalloc-1000",
 					isGuaranteed: false,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -114,7 +114,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: anyNode,
 				},
 				{
-					podName:      "nrt-bu-pod-2000",
+					podName:      "nrt-bu-overalloc-2000",
 					isGuaranteed: false,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -172,7 +172,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "BE pod: with devices, pessimistic cache overallocation prevents pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-be-pod-3000",
+					podName:      "nrt-be-overalloc-3000",
 					isGuaranteed: true, // aka set resourcesMap in limits
 					resourcesMap: map[string]string{
 						nicResourceName: "2",
@@ -180,7 +180,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: "fake-node-cache-2",
 				},
 				{
-					podName:      "nrt-be-pod-4000",
+					podName:      "nrt-be-overalloc-4000",
 					isGuaranteed: true, // aka set resourcesMap in limits
 					resourcesMap: map[string]string{
 						nicResourceName: "2",
@@ -194,7 +194,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: pessimistic cache overallocation prevents pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-1000",
+					podName:      "nrt-gu-overalloc-1000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -203,7 +203,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: "fake-node-cache-1",
 				},
 				{
-					podName:      "nrt-pod-2000",
+					podName:      "nrt-gu-overalloc-2000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -261,7 +261,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: pessimistic cache overallocation ignores deletes prevents pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-3000",
+					podName:      "nrt-gu-overalloc-del-3000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -270,11 +270,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: "fake-node-cache-1",
 				},
 				{
-					podName:  "nrt-pod-3000",
+					podName:  "nrt-gu-overalloc-del-3000",
 					isDelete: true,
 				},
 				{
-					podName:      "nrt-pod-4000",
+					podName:      "nrt-gu-overalloc-del-4000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -332,7 +332,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: DiscardReservedNodes: allows scheduling on both Zones",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-1000",
+					podName:      "nrt-gu-discardresv-1000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -342,7 +342,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode:  "fake-node-cache-1",
 				},
 				{
-					podName:      "nrt-pod-2000",
+					podName:      "nrt-gu-discardresv-2000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -401,7 +401,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: DiscardReservedNodes: new pod is successfully scheduled on the node, after deleting pod consuming most resources",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-3000",
+					podName:      "nrt-gu-discardresv-ok-3000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "30",
@@ -411,12 +411,12 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode:  "fake-node-cache-1",
 				},
 				{
-					podName:       "nrt-pod-3000",
+					podName:       "nrt-gu-discardresv-ok-3000",
 					isDelete:      true,
 					schedulerName: "discardReserved",
 				},
 				{
-					podName:      "nrt-pod-4000",
+					podName:      "nrt-gu-discardresv-ok-4000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
