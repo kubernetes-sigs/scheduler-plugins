@@ -38,6 +38,7 @@ import (
 	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -127,6 +128,16 @@ func TestPreFilter(t *testing.T) {
 				framework.Unschedulable,
 			},
 		},
+		{
+			name: "without elasticQuotaInfo",
+			podInfos: []podInfo{
+				{podName: "ns2-p1", podNamespace: "ns2", memReq: 500},
+			},
+			elasticQuotas: map[string]*ElasticQuotaInfo{},
+			expected: []framework.Code{
+				framework.Success,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -163,6 +174,191 @@ func TestPreFilter(t *testing.T) {
 				if _, got := cs.PreFilter(context.TODO(), state, pods[i]); got.Code() != tt.expected[i] {
 					t.Errorf("expected %v, got %v : %v", tt.expected[i], got.Code(), got.Message())
 				}
+			}
+		})
+	}
+}
+
+func TestPostFilter(t *testing.T) {
+	res := map[v1.ResourceName]string{v1.ResourceMemory: "150"}
+	tests := []struct {
+		name                  string
+		pod                   *v1.Pod
+		existPods             []*v1.Pod
+		nodes                 []*v1.Node
+		filteredNodesStatuses framework.NodeToStatusMap
+		elasticQuotas         map[string]*ElasticQuotaInfo
+		wantResult            *framework.PostFilterResult
+		wantStatus            *framework.Status
+	}{
+		{
+			name: "in-namespace preemption",
+			pod:  makePod("t1-p1", "ns1", 50, 0, 0, highPriority, "t1-p1", ""),
+			existPods: []*v1.Pod{
+				makePod("t1-p2", "ns1", 50, 0, 0, midPriority, "t1-p2", "node-a"),
+				makePod("t1-p3", "ns2", 50, 0, 0, midPriority, "t1-p3", "node-a"),
+				makePod("t1-p4", "ns2", 50, 0, 0, midPriority, "t1-p4", "node-a"),
+			},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			filteredNodesStatuses: framework.NodeToStatusMap{
+				"node-a": framework.NewStatus(framework.Unschedulable),
+			},
+			elasticQuotas: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					Max: &framework.Resource{
+						Memory: 200,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 50,
+					},
+				},
+				"ns2": {
+					Namespace: "ns2",
+					Max: &framework.Resource{
+						Memory: 200,
+					},
+					Min: &framework.Resource{
+						Memory: 200,
+					},
+					Used: &framework.Resource{
+						Memory: 100,
+					},
+				},
+			},
+			wantResult: framework.NewPostFilterResultWithNominatedNode("node-a"),
+			wantStatus: framework.NewStatus(framework.Success),
+		},
+		{
+			name: "cross-namespace preemption",
+			pod:  makePod("t1-p1", "ns1", 50, 0, 0, highPriority, "t1-p1", ""),
+			existPods: []*v1.Pod{
+				makePod("t1-p2", "ns1", 50, 0, 0, midPriority, "t1-p2", "node-a"),
+				makePod("t1-p3", "ns2", 50, 0, 0, midPriority, "t1-p3", "node-a"),
+				makePod("t1-p4", "ns2", 50, 0, 0, midPriority, "t1-p4", "node-a"),
+			},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			filteredNodesStatuses: framework.NodeToStatusMap{
+				"node-a": framework.NewStatus(framework.Unschedulable),
+			},
+			elasticQuotas: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					Max: &framework.Resource{
+						Memory: 200,
+					},
+					Min: &framework.Resource{
+						Memory: 150,
+					},
+					Used: &framework.Resource{
+						Memory: 50,
+					},
+				},
+				"ns2": {
+					Namespace: "ns2",
+					Max: &framework.Resource{
+						Memory: 200,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 100,
+					},
+				},
+			},
+			wantResult: framework.NewPostFilterResultWithNominatedNode("node-a"),
+			wantStatus: framework.NewStatus(framework.Success),
+		},
+		{
+			name: "without elasticQuotas",
+			pod:  makePod("t1-p1", "ns1", 50, 0, 0, highPriority, "t1-p1", ""),
+			existPods: []*v1.Pod{
+				makePod("t1-p2", "ns1", 50, 0, 0, midPriority, "t1-p2", "node-a"),
+				makePod("t1-p3", "ns2", 50, 0, 0, midPriority, "t1-p3", "node-a"),
+				makePod("t1-p4", "ns2", 50, 0, 0, midPriority, "t1-p4", "node-a"),
+			},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			filteredNodesStatuses: framework.NodeToStatusMap{
+				"node-a": framework.NewStatus(framework.Unschedulable),
+			},
+			elasticQuotas: map[string]*ElasticQuotaInfo{},
+			wantResult:    framework.NewPostFilterResultWithNominatedNode("node-a"),
+			wantStatus:    framework.NewStatus(framework.Success),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := makeRegisteredPlugin()
+
+			podItems := []v1.Pod{}
+			for _, pod := range tt.existPods {
+				podItems = append(podItems, *pod)
+			}
+			cs := clientsetfake.NewSimpleClientset(&v1.PodList{Items: podItems})
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			podInformer := informerFactory.Core().V1().Pods().Informer()
+			podInformer.GetStore().Add(tt.pod)
+			for i := range tt.existPods {
+				podInformer.GetStore().Add(tt.existPods[i])
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			fwk, err := st.NewFramework(
+				registeredPlugins,
+				"default-scheduler",
+				ctx.Done(),
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator(informerFactory.Core().V1().Pods().Lister())),
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.existPods, tt.nodes)),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			state := framework.NewCycleState()
+			_, preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
+			if !preFilterStatus.IsSuccess() {
+				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
+			}
+
+			podReq := computePodResourceRequest(tt.pod)
+			elasticQuotaSnapshotState := &ElasticQuotaSnapshotState{
+				elasticQuotaInfos: tt.elasticQuotas,
+			}
+			prefilterState := &PreFilterState{
+				podReq:                         *podReq,
+				nominatedPodsReqWithPodReq:     *podReq,
+				nominatedPodsReqInEQWithPodReq: *podReq,
+			}
+			state.Write(preFilterStateKey, prefilterState)
+			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
+
+			c := &CapacityScheduling{
+				elasticQuotaInfos: tt.elasticQuotas,
+				fh:                fwk,
+				podLister:         informerFactory.Core().V1().Pods().Lister(),
+				pdbLister:         getPDBLister(informerFactory),
+			}
+			gotResult, gotStatus := c.PostFilter(ctx, state, tt.pod, tt.filteredNodesStatuses)
+			if diff := gocmp.Diff(tt.wantStatus, gotStatus); diff != "" {
+				t.Errorf("Unexpected status (-want, +got):\n%s", diff)
+			}
+			if diff := gocmp.Diff(tt.wantResult, gotResult); diff != "" {
+				t.Errorf("Unexpected postFilterResult (-want, +got):\n%s", diff)
 			}
 		})
 	}
@@ -408,7 +604,7 @@ func TestDryRunPreemption(t *testing.T) {
 	}{
 		{
 			name: "in-namespace preemption",
-			pod:  makePod("t1-p", "ns1", 50, 0, 0, highPriority, "", "t1-p"),
+			pod:  makePod("t1-p", "ns1", 50, 0, 0, highPriority, "t1-p", ""),
 			pods: []*v1.Pod{
 				makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
 				makePod("t1-p2", "ns2", 50, 0, 0, midPriority, "t1-p2", "node-a"),
@@ -460,7 +656,7 @@ func TestDryRunPreemption(t *testing.T) {
 		},
 		{
 			name: "cross-namespace preemption",
-			pod:  makePod("t1-p", "ns1", 50, 0, 0, highPriority, "", "t1-p"),
+			pod:  makePod("t1-p", "ns1", 50, 0, 0, highPriority, "t1-p", ""),
 			pods: []*v1.Pod{
 				makePod("t1-p1", "ns1", 50, 0, 0, midPriority, "t1-p1", "node-a"),
 				makePod("t1-p2", "ns2", 50, 0, 0, highPriority, "t1-p2", "node-a"),
@@ -514,13 +710,7 @@ func TestDryRunPreemption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
-					return noderesources.NewFit(plArgs, fh, plfeature.Features{})
-				}, "Filter", "PreFilter"),
-			}
+			registeredPlugins := makeRegisteredPlugin()
 
 			cs := clientsetfake.NewSimpleClientset()
 			ctx := context.Background()
@@ -550,12 +740,12 @@ func TestDryRunPreemption(t *testing.T) {
 			elasticQuotaSnapshotState := &ElasticQuotaSnapshotState{
 				elasticQuotaInfos: tt.elasticQuotas,
 			}
-			prefilterStatue := &PreFilterState{
+			prefilterState := &PreFilterState{
 				podReq:                         *podReq,
 				nominatedPodsReqWithPodReq:     *podReq,
 				nominatedPodsReqInEQWithPodReq: *podReq,
 			}
-			state.Write(preFilterStateKey, prefilterStatue)
+			state.Write(preFilterStateKey, prefilterState)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
 
 			pe := preemption.Evaluator{
@@ -597,6 +787,216 @@ func TestDryRunPreemption(t *testing.T) {
 				if diff := gocmp.Diff(c.Name(), got[i].Name()); diff != "" {
 					t.Errorf("Unexpected victims at index %v (-want, +got): %s", i, diff)
 				}
+			}
+		})
+	}
+}
+
+func TestPodEligibleToPreemptOthers(t *testing.T) {
+	res := map[v1.ResourceName]string{v1.ResourceMemory: "150"}
+	tests := []struct {
+		name                string
+		pod                 *v1.Pod
+		existPods           []*v1.Pod
+		nodes               []*v1.Node
+		nominatedNodeStatus *framework.Status
+		elasticQuotas       map[string]*ElasticQuotaInfo
+		expected            bool
+	}{
+		{
+			name:      "Pod with PreemptNever preemption policy",
+			pod:       st.MakePod().Name("t1-p1").UID("t1-p1").Priority(highPriority).PreemptionPolicy(v1.PreemptNever).Obj(),
+			existPods: []*v1.Pod{makePod("t1-p0", "ns1", 50, 10, 0, midPriority, "t1-p1", "node-a")},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			nominatedNodeStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, tainttoleration.ErrReasonNotMatch),
+			elasticQuotas: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					Max: &framework.Resource{
+						Memory: 150,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 0,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:      "Pod with unschedulableAndUnresolvable nominated node",
+			pod:       st.MakePod().Name("t1-p1").UID("t1-p1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
+			existPods: []*v1.Pod{makePod("t1-p0", "ns1", 50, 10, 0, midPriority, "t1-p1", "node-a")},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			nominatedNodeStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, tainttoleration.ErrReasonNotMatch),
+			elasticQuotas: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					Max: &framework.Resource{
+						Memory: 150,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 0,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Pod with terminating pod in the same namespace",
+			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
+			existPods: []*v1.Pod{
+				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns1").Priority(midPriority).Node("node-a").Terminating().Obj(),
+			},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			nominatedNodeStatus: nil,
+			elasticQuotas: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					Max: &framework.Resource{
+						Memory: 150,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 0,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Pod with terminating pod in another namespace",
+			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
+			existPods: []*v1.Pod{
+				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns2").Priority(midPriority).Node("node-a").Terminating().Obj(),
+			},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			nominatedNodeStatus: nil,
+			elasticQuotas: map[string]*ElasticQuotaInfo{
+				"ns1": {
+					Namespace: "ns1",
+					Max: &framework.Resource{
+						Memory: 150,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 0,
+					},
+				},
+				"ns2": {
+					Namespace: "ns2",
+					Max: &framework.Resource{
+						Memory: 150,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 100,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Pod without elasticQuotas and terminating pod exists in the same namespace",
+			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
+			existPods: []*v1.Pod{
+				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns2").Priority(midPriority).Node("node-a").Terminating().Obj(),
+			},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			nominatedNodeStatus: nil,
+			elasticQuotas:       map[string]*ElasticQuotaInfo{},
+			expected:            false,
+		},
+		{
+			name: "Pod without ElasticQuotas and terminating pod exists in another namespace",
+			pod:  st.MakePod().Name("t1-p1").UID("t1-p1").Namespace("ns1").Priority(highPriority).NominatedNodeName("node-a").Obj(),
+			existPods: []*v1.Pod{
+				st.MakePod().Name("t1-p0").UID("t1-p0").Namespace("ns2").Priority(midPriority).Node("node-a").Terminating().Obj(),
+			},
+			nodes: []*v1.Node{
+				st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			},
+			nominatedNodeStatus: nil,
+			elasticQuotas: map[string]*ElasticQuotaInfo{
+				"ns2": {
+					Namespace: "ns2",
+					Max: &framework.Resource{
+						Memory: 150,
+					},
+					Min: &framework.Resource{
+						Memory: 50,
+					},
+					Used: &framework.Resource{
+						Memory: 100,
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := makeRegisteredPlugin()
+			cs := clientsetfake.NewSimpleClientset()
+			ctx := context.Background()
+
+			fwk, err := st.NewFramework(
+				registeredPlugins,
+				"default-scheduler",
+				ctx.Done(),
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
+				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.existPods, tt.nodes)),
+				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(cs, 0)),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			state := framework.NewCycleState()
+			_, preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
+			if !preFilterStatus.IsSuccess() {
+				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
+			}
+
+			podReq := computePodResourceRequest(tt.pod)
+			elasticQuotaSnapshotState := &ElasticQuotaSnapshotState{
+				elasticQuotaInfos: tt.elasticQuotas,
+			}
+			prefilterState := &PreFilterState{
+				podReq:                         *podReq,
+				nominatedPodsReqWithPodReq:     *podReq,
+				nominatedPodsReqInEQWithPodReq: *podReq,
+			}
+			state.Write(preFilterStateKey, prefilterState)
+			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
+
+			p := preemptor{fh: fwk, state: state}
+			if got, _ := p.PodEligibleToPreemptOthers(tt.pod, tt.nominatedNodeStatus); got != tt.expected {
+				t.Errorf("expected %t, got %t for pod: %s", tt.expected, got, tt.pod.Name)
 			}
 		})
 	}
@@ -1207,4 +1607,15 @@ func makeResourceList(cpu, mem int64) v1.ResourceList {
 		v1.ResourceCPU:    *resource.NewMilliQuantity(cpu, resource.DecimalSI),
 		v1.ResourceMemory: *resource.NewQuantity(mem, resource.BinarySI),
 	}
+}
+
+func makeRegisteredPlugin() []st.RegisterPluginFunc {
+	registeredPlugins := []st.RegisterPluginFunc{
+		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+			return noderesources.NewFit(plArgs, fh, plfeature.Features{})
+		}, "Filter", "PreFilter"),
+	}
+	return registeredPlugins
 }

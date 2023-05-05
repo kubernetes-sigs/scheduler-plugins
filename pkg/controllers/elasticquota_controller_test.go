@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2023 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package controllers
 
 import (
 	"context"
@@ -24,17 +24,20 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quota "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/controller"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
-	schedfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
-	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	testutil "sigs.k8s.io/scheduler-plugins/test/integration"
 )
 
@@ -182,34 +185,39 @@ func TestElasticQuotaController_Run(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			kubeClient := fake.NewSimpleClientset()
-			schedClient := schedfake.NewSimpleClientset()
-			for _, v := range c.elasticQuotas {
-				schedClient.Tracker().Add(v)
-			}
-			informerFactory := informers.NewSharedInformerFactory(kubeClient, controller.NoResyncPeriodFunc())
-			pgInformerFactory := schedinformer.NewSharedInformerFactory(schedClient, controller.NoResyncPeriodFunc())
-			podInformer := informerFactory.Core().V1().Pods()
-			eqInformer := pgInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
-			ctrl := NewElasticQuotaController(kubeClient, eqInformer, podInformer, schedClient, WithFakeRecorder(3))
-
-			pgInformerFactory.Start(ctx.Done())
-			informerFactory.Start(ctx.Done())
-			// 0 means not set
-			for _, p := range c.pods {
-				kubeClient.Tracker().Add(p)
-				kubeClient.CoreV1().Pods(p.Namespace).UpdateStatus(ctx, p, metav1.UpdateOptions{})
+			controller, kClient := setUpEQ(ctx, t, c.elasticQuotas, c.pods)
+			for _, pod := range c.pods {
+				if _, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{
+					Namespace: pod.Namespace,
+					Name:      pod.Name,
+				}}); err != nil {
+					t.Errorf("reconcile: (%v)", err)
+				}
 			}
 
-			go ctrl.Run(1, ctx.Done())
+			for _, e := range c.elasticQuotas {
+				if _, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{
+					Namespace: e.Namespace,
+					Name:      e.Name,
+				}}); err != nil {
+					t.Errorf("reconcile: (%v)", err)
+				}
+			}
+
 			err := wait.Poll(200*time.Millisecond, 1*time.Second, func() (done bool, err error) {
 				for _, v := range c.want {
-					get, err := schedClient.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(ctx, v.Name, metav1.GetOptions{})
+					eq := &v1alpha1.ElasticQuota{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      v.Name,
+							Namespace: v.Namespace,
+						},
+					}
+					err := kClient.Get(ctx, client.ObjectKeyFromObject(eq), eq)
 					if err != nil {
 						return false, err
 					}
-					if !quota.Equals(get.Status.Used, v.Status.Used) {
-						return false, fmt.Errorf("want %v, got %v", v.Status.Used, get.Status.Used)
+					if !quota.Equals(eq.Status.Used, v.Status.Used) {
+						return false, fmt.Errorf("want %v, got %v", v.Status.Used, eq.Status.Used)
 					}
 				}
 				return true, nil
@@ -220,4 +228,39 @@ func TestElasticQuotaController_Run(t *testing.T) {
 			}
 		})
 	}
+}
+
+func setUpEQ(ctx context.Context,
+	t *testing.T,
+	eqs []*v1alpha1.ElasticQuota,
+	pods []*v1.Pod) (*ElasticQuotaReconciler, client.WithWatch) {
+	s := scheme.Scheme
+	utilruntime.Must(v1alpha1.AddToScheme(s))
+
+	client := fake.NewClientBuilder().WithScheme(s).Build()
+	for _, eq := range eqs {
+		err := client.Create(ctx, eq)
+		if errors.IsAlreadyExists(err) {
+			err = client.Update(ctx, eq)
+		}
+		if err != nil {
+			t.Fatal("setup controller", err)
+		}
+	}
+	for _, pod := range pods {
+		err := client.Create(ctx, pod)
+		if errors.IsAlreadyExists(err) {
+			err = client.Update(ctx, pod)
+		}
+		if err != nil {
+			t.Fatal("setup controller", err)
+		}
+	}
+	controller := &ElasticQuotaReconciler{
+		Client:   client,
+		Scheme:   s,
+		recorder: record.NewFakeRecorder(3),
+	}
+
+	return controller, client
 }

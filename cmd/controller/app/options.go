@@ -21,11 +21,8 @@ import (
 )
 
 type ServerRunOptions struct {
-	KubeConfig           string
-	MasterUrl            string
 	MetricsAddr          string
 	ProbeAddr            string
-	InCluster            bool
 	ApiServerQPS         int
 	ApiServerBurst       int
 	Workers              int
@@ -39,9 +36,6 @@ func NewServerRunOptions() *ServerRunOptions {
 }
 
 func (s *ServerRunOptions) addAllFlags() {
-	pflag.BoolVar(&s.InCluster, "incluster", s.InCluster, "If controller run incluster.")
-	pflag.StringVar(&s.KubeConfig, "kubeConfig", s.KubeConfig, "Kube Config path if not run in cluster.")
-	pflag.StringVar(&s.MasterUrl, "masterUrl", s.MasterUrl, "Master Url if not run in cluster.")
 	pflag.StringVar(&s.MetricsAddr, "metricsAddr", ":8080", "Metrics server bind listen address.")
 	pflag.StringVar(&s.ProbeAddr, "probeAddr", ":8081", "Probe endpoint bind  address.")
 	pflag.IntVar(&s.ApiServerQPS, "qps", 5, "qps of query apiserver.")

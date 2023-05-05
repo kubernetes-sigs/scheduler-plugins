@@ -28,8 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quota "k8s.io/apiserver/pkg/quota/v1"
-	apiserver "k8s.io/apiserver/pkg/server"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
@@ -37,13 +35,14 @@ import (
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
-	"sigs.k8s.io/scheduler-plugins/pkg/controller"
+	"sigs.k8s.io/scheduler-plugins/pkg/controllers"
 	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	schedformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 )
 
 func TestElasticController(t *testing.T) {
@@ -55,13 +54,26 @@ func TestElasticController(t *testing.T) {
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
-	schedInformerFactory := schedformers.NewSharedInformerFactory(extClient, 0)
-	eqInformer := schedInformerFactory.Scheduling().V1alpha1().ElasticQuotas()
+	s := scheme.Scheme
+	runtime.Must(schedv1alpha1.AddToScheme(s))
 
-	coreInformerFactory := informers.NewSharedInformerFactory(cs, 0)
-	podInformer := coreInformerFactory.Core().V1().Pods()
-	eqCtrl := controller.NewElasticQuotaController(cs, eqInformer, podInformer, extClient)
-	runtime.Must(schedv1alpha1.AddToScheme(scheme.Scheme))
+	mgrOpts := manager.Options{
+		Scheme:             s,
+		MetricsBindAddress: "0", // disable metrics to avoid conflicts between packages.
+	}
+	mgr, err := ctrl.NewManager(globalKubeConfig, mgrOpts)
+	if err = (&controllers.ElasticQuotaReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		t.Fatal("unable to create controller", "controller", "ElasticQuota", err)
+	}
+
+	go func() {
+		if err := mgr.Start(signalHandler); err != nil {
+			panic(err)
+		}
+	}()
 
 	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
@@ -79,13 +91,6 @@ func TestElasticController(t *testing.T) {
 		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
 	}
 
-	// Start controller
-	stopCh := apiserver.SetupSignalHandler()
-	go eqCtrl.Run(1, testCtx.Ctx.Done())
-	schedInformerFactory.Start(stopCh)
-	coreInformerFactory.Start(stopCh)
-
-	testCtx.ClientSet = cs
 	testCtx = initTestSchedulerWithOptions(
 		t,
 		testCtx,
