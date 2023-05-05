@@ -71,6 +71,8 @@ var (
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
+
+	defaultForeignPodsDetect = ForeignPodsDetectAll
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -148,6 +150,13 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 		if obj.ScoringStrategy.Resources[i].Weight == 0 {
 			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
+	}
+
+	if obj.Cache == nil {
+		obj.Cache = &NodeResourceTopologyCache{}
+	}
+	if obj.Cache.ForeignPodsDetect == nil {
+		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
 	}
 }
 

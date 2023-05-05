@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 )
 
 func TestGetID(t *testing.T) {
@@ -165,6 +166,58 @@ func TestOnlyNonNUMAResources(t *testing.T) {
 			result := onlyNonNUMAResources(numaNodes, testCase.resources)
 			if result != testCase.expected {
 				t.Fatalf("expected %t to equal %t", result, testCase.expected)
+			}
+		})
+	}
+}
+
+func TestGetForeignPodsDetectMode(t *testing.T) {
+	detectAll := apiconfig.ForeignPodsDetectAll
+	detectNone := apiconfig.ForeignPodsDetectNone
+	detectOnlyExclusiveResources := apiconfig.ForeignPodsDetectOnlyExclusiveResources
+
+	testCases := []struct {
+		description string
+		cfg         *apiconfig.NodeResourceTopologyCache
+		expected    apiconfig.ForeignPodsDetectMode
+	}{
+		{
+			description: "nil config",
+			expected:    apiconfig.ForeignPodsDetectAll,
+		},
+		{
+			description: "empty config",
+			cfg:         &apiconfig.NodeResourceTopologyCache{},
+			expected:    apiconfig.ForeignPodsDetectAll,
+		},
+		{
+			description: "explicit all",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ForeignPodsDetect: &detectAll,
+			},
+			expected: apiconfig.ForeignPodsDetectAll,
+		},
+		{
+			description: "explicit disable",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ForeignPodsDetect: &detectNone,
+			},
+			expected: apiconfig.ForeignPodsDetectNone,
+		},
+		{
+			description: "explicit OnlyExclusiveResources",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ForeignPodsDetect: &detectOnlyExclusiveResources,
+			},
+			expected: apiconfig.ForeignPodsDetectOnlyExclusiveResources,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			got := getForeignPodsDetectMode(testCase.cfg)
+			if got != testCase.expected {
+				t.Errorf("foreign pods detect mode got %v expected %v", got, testCase.expected)
 			}
 		})
 	}

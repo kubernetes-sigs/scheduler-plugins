@@ -144,6 +144,9 @@ func TestSchedulingDefaults(t *testing.T) {
 					Type:      LeastAllocated,
 					Resources: defaultResourceSpec,
 				},
+				Cache: &NodeResourceTopologyCache{
+					ForeignPodsDetect: &defaultForeignPodsDetect,
+				},
 			},
 		},
 		{

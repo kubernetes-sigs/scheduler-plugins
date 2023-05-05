@@ -71,6 +71,8 @@ var (
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
 
+	defaultForeignPodsDetect = ForeignPodsDetectAll
+
 	// Defaults for NetworkOverhead
 	// DefaultWeightsName contains the default costs to be used by networkAware plugins
 	DefaultWeightsName = "UserDefined"
@@ -150,6 +152,13 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 		if obj.ScoringStrategy.Resources[i].Weight == 0 {
 			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
+	}
+
+	if obj.Cache == nil {
+		obj.Cache = &NodeResourceTopologyCache{}
+	}
+	if obj.Cache.ForeignPodsDetect == nil {
+		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
 	}
 }
 

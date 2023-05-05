@@ -142,6 +142,26 @@ type ScoringStrategy struct {
 	Resources []schedconfig.ResourceSpec
 }
 
+// ForeignPodsDetectMode is a "string" type.
+type ForeignPodsDetectMode string
+
+const (
+	ForeignPodsDetectNone                   ForeignPodsDetectMode = "None"
+	ForeignPodsDetectAll                    ForeignPodsDetectMode = "All"
+	ForeignPodsDetectOnlyExclusiveResources ForeignPodsDetectMode = "OnlyExclusiveResources"
+)
+
+// NodeResourceTopologyCache define configuration details for the NodeResourceTopology cache.
+type NodeResourceTopologyCache struct {
+	// ForeignPodsDetect sets how foreign pods should be handled.
+	// Foreign pods are pods detected running on nodes managed by a NodeResourceTopologyMatch-enabled
+	// scheduler, but not scheduled by this scheduler instance, likely because this is running as
+	// secondary scheduler. To make sure the cache is consistent, foreign pods need to be handled.
+	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or
+	// if DiscardReservedNodes is enabled. If unspecified, default is "All".
+	ForeignPodsDetect *ForeignPodsDetectMode
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
@@ -156,6 +176,8 @@ type NodeResourceTopologyMatchArgs struct {
 	// this option takes precedence over CacheResyncPeriodSeconds
 	// if DiscardReservedNodes is enabled, CacheResyncPeriodSeconds option is noop
 	DiscardReservedNodes bool
+	// Cache enables to fine tune the caching behavior
+	Cache *NodeResourceTopologyCache
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
