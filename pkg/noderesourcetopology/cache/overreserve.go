@@ -192,7 +192,7 @@ func (ov *OverReserve) Resync() {
 	}
 
 	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToNamespacedNamesMap(ov.podLister, logID)
+	nodeToObjsMap, err := makeNodeToPodDataMap(ov.podLister, logID)
 	if err != nil {
 		klog.ErrorS(err, "cannot find the mapping between running pods and nodes")
 		return

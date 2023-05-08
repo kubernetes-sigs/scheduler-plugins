@@ -22,7 +22,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 
@@ -208,10 +207,15 @@ func podFingerprintForNodeTopology(nrt *topologyv1alpha2.NodeResourceTopology) s
 	return ""
 }
 
+type podData struct {
+	Namespace string
+	Name      string
+}
+
 // checkPodFingerprintForNode verifies if the given pods fingeprint (usually from NRT update) matches the
 // computed one using the stored data about pods running on nodes. Returns nil on success, or an error
 // describing the failure
-func checkPodFingerprintForNode(logID string, objs []types.NamespacedName, nodeName, pfpExpected string) error {
+func checkPodFingerprintForNode(logID string, objs []podData, nodeName, pfpExpected string) error {
 	st := podfingerprint.MakeStatus(nodeName)
 	pfp := podfingerprint.NewTracingFingerprint(len(objs), &st)
 	for _, obj := range objs {
@@ -227,8 +231,8 @@ func checkPodFingerprintForNode(logID string, objs []types.NamespacedName, nodeN
 	return err
 }
 
-func makeNodeToNamespacedNamesMap(podLister podlisterv1.PodLister, logID string) (map[string][]types.NamespacedName, error) {
-	nodeToObjsMap := make(map[string][]types.NamespacedName)
+func makeNodeToPodDataMap(podLister podlisterv1.PodLister, logID string) (map[string][]podData, error) {
+	nodeToObjsMap := make(map[string][]podData)
 	pods, err := podLister.List(labels.Everything())
 	if err != nil {
 		return nodeToObjsMap, err
@@ -239,7 +243,7 @@ func makeNodeToNamespacedNamesMap(podLister podlisterv1.PodLister, logID string)
 			continue
 		}
 		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
-		nodeObjs = append(nodeObjs, types.NamespacedName{
+		nodeObjs = append(nodeObjs, podData{
 			Namespace: pod.Namespace,
 			Name:      pod.Name,
 		})

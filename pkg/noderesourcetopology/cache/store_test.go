@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
@@ -457,17 +456,17 @@ func TestResourceStoreUpdate(t *testing.T) {
 	}
 }
 
-func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
+func TestMakeNodeToPodDataMap(t *testing.T) {
 	tcases := []struct {
 		description string
 		pods        []*corev1.Pod
 		err         error
-		expected    map[string][]types.NamespacedName
+		expected    map[string][]podData
 		expectedErr error
 	}{
 		{
 			description: "empty pod list",
-			expected:    make(map[string][]types.NamespacedName),
+			expected:    make(map[string][]podData),
 		},
 		{
 			description: "single pod NOT running",
@@ -482,7 +481,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 					},
 				},
 			},
-			expected: make(map[string][]types.NamespacedName),
+			expected: make(map[string][]podData),
 		},
 		{
 			description: "single pod running",
@@ -500,7 +499,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 					},
 				},
 			},
-			expected: map[string][]types.NamespacedName{
+			expected: map[string][]podData{
 				"node1": {
 					{
 						Namespace: "namespace1",
@@ -549,7 +548,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 					},
 				},
 			},
-			expected: map[string][]types.NamespacedName{
+			expected: map[string][]podData{
 				"node1": {
 					{
 						Namespace: "namespace1",
@@ -574,7 +573,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 				pods: tcase.pods,
 				err:  tcase.err,
 			}
-			got, err := makeNodeToNamespacedNamesMap(podLister, tcase.description)
+			got, err := makeNodeToPodDataMap(podLister, tcase.description)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
@@ -588,7 +587,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 func TestCheckPodFingerprintForNode(t *testing.T) {
 	tcases := []struct {
 		description string
-		objs        []types.NamespacedName
+		objs        []podData
 		pfp         string
 		expectedErr error
 	}{
