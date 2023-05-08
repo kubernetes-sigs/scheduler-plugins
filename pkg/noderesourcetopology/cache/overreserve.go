@@ -32,6 +32,7 @@ import (
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
 
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
@@ -47,19 +48,22 @@ type OverReserve struct {
 	nodesWithForeignPods   counter
 	nrtLister              listerv1alpha2.NodeResourceTopologyLister
 	podLister              podlisterv1.PodLister
+	resyncMethod           apiconfig.CacheResyncMethod
 }
 
-func NewOverReserve(nrtLister listerv1alpha2.NodeResourceTopologyLister, podLister podlisterv1.PodLister) (*OverReserve, error) {
+func NewOverReserve(cfg *apiconfig.NodeResourceTopologyCache, nrtLister listerv1alpha2.NodeResourceTopologyLister, podLister podlisterv1.PodLister) (*OverReserve, error) {
 	if nrtLister == nil || podLister == nil {
 		return nil, fmt.Errorf("nrtcache: received nil references")
 	}
+
+	resyncMethod := getCacheResyncMethod(cfg)
 
 	nrtObjs, err := nrtLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
 
-	klog.V(3).InfoS("nrtcache: initializing", "objects", len(nrtObjs))
+	klog.V(3).InfoS("nrtcache: initializing", "objects", len(nrtObjs), "method", resyncMethod)
 	obj := &OverReserve{
 		nrts:                   newNrtStore(nrtObjs),
 		assumedResources:       make(map[string]*resourceStore),
@@ -67,6 +71,7 @@ func NewOverReserve(nrtLister listerv1alpha2.NodeResourceTopologyLister, podList
 		nodesWithForeignPods:   newCounter(),
 		nrtLister:              nrtLister,
 		podLister:              podLister,
+		resyncMethod:           resyncMethod,
 	}
 	return obj, nil
 }
@@ -220,15 +225,15 @@ func (ov *OverReserve) Resync() {
 			continue
 		}
 
-		pfpExpected := podFingerprintForNodeTopology(nrtCandidate)
+		pfpExpected, onlyExclRes := podFingerprintForNodeTopology(nrtCandidate, ov.resyncMethod)
 		if pfpExpected == "" {
 			klog.V(3).InfoS("nrtcache: missing NodeTopology podset fingerprint data", "logID", logID, "node", nodeName)
 			continue
 		}
 
-		klog.V(6).InfoS("nrtcache: trying to resync NodeTopology", "logID", logID, "node", nodeName, "fingerprint", pfpExpected)
+		klog.V(6).InfoS("nrtcache: trying to resync NodeTopology", "logID", logID, "node", nodeName, "fingerprint", pfpExpected, "onlyExclusiveResources", onlyExclRes)
 
-		err = checkPodFingerprintForNode(logID, objs, nodeName, pfpExpected)
+		err = checkPodFingerprintForNode(logID, objs, nodeName, pfpExpected, onlyExclRes)
 		if errors.Is(err, podfingerprint.ErrSignatureMismatch) {
 			// can happen, not critical
 			klog.V(5).InfoS("nrtcache: NodeTopology podset fingerprint mismatch", "logID", logID, "node", nodeName)
@@ -272,6 +277,17 @@ func (ov *OverReserve) Store() *nrtStore {
 
 func logIDFromTime() string {
 	return fmt.Sprintf("resync%v", time.Now().UnixMilli())
+}
+
+func getCacheResyncMethod(cfg *apiconfig.NodeResourceTopologyCache) apiconfig.CacheResyncMethod {
+	var resyncMethod apiconfig.CacheResyncMethod
+	if cfg != nil && cfg.ResyncMethod != nil {
+		resyncMethod = *cfg.ResyncMethod
+	} else { // explicitly set to nil?
+		resyncMethod = apiconfig.CacheResyncAutodetect
+		klog.InfoS("cache resync method missing", "fallback", resyncMethod)
+	}
+	return resyncMethod
 }
 
 func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}

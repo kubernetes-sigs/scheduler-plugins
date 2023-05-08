@@ -73,6 +73,8 @@ var (
 	}
 
 	defaultForeignPodsDetect = ForeignPodsDetectAll
+
+	defaultResyncMethod = CacheResyncAutodetect
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -157,6 +159,9 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 	}
 	if obj.Cache.ForeignPodsDetect == nil {
 		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
+	}
+	if obj.Cache.ResyncMethod == nil {
+		obj.Cache.ResyncMethod = &defaultResyncMethod
 	}
 }
 

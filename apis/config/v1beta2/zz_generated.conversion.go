@@ -216,6 +216,7 @@ func Convert_config_MetricProviderSpec_To_v1beta2_MetricProviderSpec(in *config.
 
 func autoConvert_v1beta2_NodeResourceTopologyCache_To_config_NodeResourceTopologyCache(in *NodeResourceTopologyCache, out *config.NodeResourceTopologyCache, s conversion.Scope) error {
 	out.ForeignPodsDetect = (*config.ForeignPodsDetectMode)(unsafe.Pointer(in.ForeignPodsDetect))
+	out.ResyncMethod = (*config.CacheResyncMethod)(unsafe.Pointer(in.ResyncMethod))
 	return nil
 }
 
@@ -226,6 +227,7 @@ func Convert_v1beta2_NodeResourceTopologyCache_To_config_NodeResourceTopologyCac
 
 func autoConvert_config_NodeResourceTopologyCache_To_v1beta2_NodeResourceTopologyCache(in *config.NodeResourceTopologyCache, out *NodeResourceTopologyCache, s conversion.Scope) error {
 	out.ForeignPodsDetect = (*ForeignPodsDetectMode)(unsafe.Pointer(in.ForeignPodsDetect))
+	out.ResyncMethod = (*CacheResyncMethod)(unsafe.Pointer(in.ResyncMethod))
 	return nil
 }
 

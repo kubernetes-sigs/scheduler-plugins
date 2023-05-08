@@ -132,6 +132,11 @@ func (in *NodeResourceTopologyCache) DeepCopyInto(out *NodeResourceTopologyCache
 		*out = new(ForeignPodsDetectMode)
 		**out = **in
 	}
+	if in.ResyncMethod != nil {
+		in, out := &in.ResyncMethod, &out.ResyncMethod
+		*out = new(CacheResyncMethod)
+		**out = **in
+	}
 	return
 }
 

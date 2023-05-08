@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 )
 
 const (
@@ -39,18 +40,69 @@ const (
 	nicResourceName = "vendor.com/nic1"
 )
 
+func TestGetCacheResyncMethod(t *testing.T) {
+	resyncAutodetect := apiconfig.CacheResyncAutodetect
+	resyncAll := apiconfig.CacheResyncAll
+	resyncOnlyExclusiveResources := apiconfig.CacheResyncOnlyExclusiveResources
+
+	testCases := []struct {
+		description string
+		cfg         *apiconfig.NodeResourceTopologyCache
+		expected    apiconfig.CacheResyncMethod
+	}{
+		{
+			description: "nil config",
+			expected:    apiconfig.CacheResyncAutodetect,
+		},
+		{
+			description: "empty config",
+			cfg:         &apiconfig.NodeResourceTopologyCache{},
+			expected:    apiconfig.CacheResyncAutodetect,
+		},
+		{
+			description: "explicit all",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ResyncMethod: &resyncAll,
+			},
+			expected: apiconfig.CacheResyncAll,
+		},
+		{
+			description: "explicit autodetect",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ResyncMethod: &resyncAutodetect,
+			},
+			expected: apiconfig.CacheResyncAutodetect,
+		},
+		{
+			description: "explicit OnlyExclusiveResources",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ResyncMethod: &resyncOnlyExclusiveResources,
+			},
+			expected: apiconfig.CacheResyncOnlyExclusiveResources,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			got := getCacheResyncMethod(testCase.cfg)
+			if got != testCase.expected {
+				t.Errorf("cache resync method got %v expected %v", got, testCase.expected)
+			}
+		})
+	}
+}
 func TestInitEmptyLister(t *testing.T) {
 	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
 	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
 	fakePodLister := &fakePodLister{}
 
 	var err error
-	_, err = NewOverReserve(nil, fakePodLister)
+	_, err = NewOverReserve(nil, nil, fakePodLister)
 	if err == nil {
 		t.Fatalf("accepted nil lister")
 	}
 
-	_, err = NewOverReserve(fakeInformer.Lister(), nil)
+	_, err = NewOverReserve(nil, fakeInformer.Lister(), nil)
 	if err == nil {
 		t.Fatalf("accepted nil indexer")
 	}
@@ -693,7 +745,7 @@ func makeDefaultTestTopology() []*topologyv1alpha2.NodeResourceTopology {
 }
 
 func mustOverReserve(t *testing.T, nrtLister listerv1alpha2.NodeResourceTopologyLister, podLister podlisterv1.PodLister) *OverReserve {
-	obj, err := NewOverReserve(nrtLister, podLister)
+	obj, err := NewOverReserve(nil, nrtLister, podLister)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}

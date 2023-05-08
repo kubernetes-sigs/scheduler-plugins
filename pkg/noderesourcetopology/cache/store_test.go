@@ -30,12 +30,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
 
 func TestFingerprintFromNRT(t *testing.T) {
-	nrt := &topologyv1alpha2.NodeResourceTopology{
+	nrtRef := &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "node-0",
 		},
@@ -45,33 +46,105 @@ func TestFingerprintFromNRT(t *testing.T) {
 	}
 
 	var pfp string
-	pfp = podFingerprintForNodeTopology(nrt)
+
+	nrt := nrtRef.DeepCopy()
+	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
 	if pfp != "" {
 		t.Errorf("misdetected fingerprint from missing annotations")
 	}
 
+	nrt = nrtRef.DeepCopy()
 	nrt.Annotations = map[string]string{}
-	pfp = podFingerprintForNodeTopology(nrt)
+	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
 	if pfp != "" {
 		t.Errorf("misdetected fingerprint from empty annotations")
 	}
 
 	pfpTestAnn := "test-ann"
-	nrt.Annotations[podfingerprint.Annotation] = pfpTestAnn
-	pfp = podFingerprintForNodeTopology(nrt)
+	nrt = nrtRef.DeepCopy()
+	nrt.Annotations = map[string]string{
+		podfingerprint.Annotation: pfpTestAnn,
+	}
+	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
 	if pfp != pfpTestAnn {
 		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAnn)
 	}
 
 	// test attribute overrides annotation
 	pfpTestAttr := "test-attr"
+	nrt = nrtRef.DeepCopy()
+	nrt.Annotations = map[string]string{
+		podfingerprint.Annotation: pfpTestAnn,
+	}
 	nrt.Attributes = append(nrt.Attributes, topologyv1alpha2.AttributeInfo{
 		Name:  podfingerprint.Attribute,
 		Value: pfpTestAttr,
 	})
-	pfp = podFingerprintForNodeTopology(nrt)
+	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
 	if pfp != pfpTestAttr {
 		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAttr)
+	}
+}
+
+func TestFingerprintMethodFromNRT(t *testing.T) {
+	pfpTestAttr := "test-attr"
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		TopologyPolicies: []string{
+			"best-effort",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  podfingerprint.Attribute,
+				Value: pfpTestAttr,
+			},
+		},
+	}
+
+	tcases := []struct {
+		description         string
+		methodValue         string
+		expectedOnlyExclRes bool
+	}{
+		{
+			description:         "no attr",
+			methodValue:         "",
+			expectedOnlyExclRes: false,
+		},
+		{
+			description:         "unrecognized attr",
+			methodValue:         "foobar",
+			expectedOnlyExclRes: false,
+		},
+		{
+			description:         "all (old default)",
+			methodValue:         podfingerprint.MethodAll,
+			expectedOnlyExclRes: false,
+		},
+		{
+			description:         "exclusive only",
+			methodValue:         podfingerprint.MethodWithExclusiveResources,
+			expectedOnlyExclRes: true,
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			nrtObj := nrt.DeepCopy()
+			if tcase.methodValue != "" {
+				nrtObj.Attributes = append(nrt.Attributes, topologyv1alpha2.AttributeInfo{
+					Name:  podfingerprint.AttributeMethod,
+					Value: tcase.methodValue,
+				})
+			}
+
+			_, onlyExclRes := podFingerprintForNodeTopology(nrtObj, apiconfig.CacheResyncAutodetect)
+			if onlyExclRes != tcase.expectedOnlyExclRes {
+				t.Errorf("misdetected method: expected %v (from %q) got %v", tcase.expectedOnlyExclRes, tcase.methodValue, onlyExclRes)
+			}
+		})
 	}
 }
 
@@ -588,18 +661,20 @@ func TestCheckPodFingerprintForNode(t *testing.T) {
 	tcases := []struct {
 		description string
 		objs        []podData
+		onlyExclRes bool
 		pfp         string
 		expectedErr error
 	}{
 		{
 			description: "nil objs",
+			onlyExclRes: false,
 			expectedErr: podfingerprint.ErrMalformed,
 		},
 	}
 
 	for _, tcase := range tcases {
 		t.Run(tcase.description, func(t *testing.T) {
-			gotErr := checkPodFingerprintForNode("testing", tcase.objs, "test-node", tcase.pfp)
+			gotErr := checkPodFingerprintForNode("testing", tcase.objs, "test-node", tcase.pfp, tcase.onlyExclRes)
 			if !errors.Is(gotErr, tcase.expectedErr) {
 				t.Errorf("got error %v expected %v", gotErr, tcase.expectedErr)
 			}

@@ -73,6 +73,8 @@ var (
 
 	defaultForeignPodsDetect = ForeignPodsDetectAll
 
+	defaultResyncMethod = CacheResyncAutodetect
+
 	// Defaults for NetworkOverhead
 	// DefaultWeightsName contains the default costs to be used by networkAware plugins
 	DefaultWeightsName = "UserDefined"
@@ -159,6 +161,10 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 	}
 	if obj.Cache.ForeignPodsDetect == nil {
 		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
+
+	}
+	if obj.Cache.ResyncMethod == nil {
+		obj.Cache.ResyncMethod = &defaultResyncMethod
 	}
 }
 
