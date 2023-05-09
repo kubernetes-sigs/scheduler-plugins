@@ -140,7 +140,7 @@ func nodesAvgDistance(numaNodes NUMANodeList, nodes ...int) float32 {
 			cost, ok := numaNodes[node1].Costs[node2]
 			// we couldn't read Costs assign maxDistanceValue
 			if !ok {
-				klog.Warningf("cannot retrieve Costs information for node : %s", node1)
+				klog.Warningf("cannot retrieve Costs information for node %d", node2)
 				cost = maxDistanceValue
 			}
 			accu += cost
