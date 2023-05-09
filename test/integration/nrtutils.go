@@ -42,6 +42,7 @@ import (
 const (
 	cpu             = string(corev1.ResourceCPU)
 	memory          = string(corev1.ResourceMemory)
+	gpuResourceName = "vendor/gpu"
 	hugepages2Mi    = "hugepages-2Mi"
 	nicResourceName = "vendor/nic1"
 )
@@ -165,6 +166,17 @@ func (n *nrtWrapper) Zone(resInfo topologyv1alpha2.ResourceInfoList) *nrtWrapper
 		Name:      fmt.Sprintf("node-%d", len(n.nrt.Zones)),
 		Type:      "Node",
 		Resources: resInfo,
+	}
+	n.nrt.Zones = append(n.nrt.Zones, z)
+	return n
+}
+
+func (n *nrtWrapper) ZoneWithCosts(resInfo topologyv1alpha2.ResourceInfoList, costs topologyv1alpha2.CostList) *nrtWrapper {
+	z := topologyv1alpha2.Zone{
+		Name:      fmt.Sprintf("node-%d", len(n.nrt.Zones)),
+		Type:      "Node",
+		Resources: resInfo,
+		Costs:     costs,
 	}
 	n.nrt.Zones = append(n.nrt.Zones, z)
 	return n
