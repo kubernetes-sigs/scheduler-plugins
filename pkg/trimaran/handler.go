@@ -147,16 +147,15 @@ func (p *PodAssignEventHandler) cleanupCache() {
 		idx := sort.Search(len(cache), func(i int) bool {
 			return cache[i].Timestamp.Add(metricsAgentReportingIntervalSeconds * time.Second).After(curTime)
 		})
-		if idx == len(cache) {
-			continue
+		if idx < len(cache) {
+			n := copy(cache, cache[idx:])
+			for j := n; j < len(cache); j++ {
+				cache[j] = podInfo{}
+			}
+			cache = cache[:n]
 		}
-		n := copy(cache, cache[idx:])
-		for j := n; j < len(cache); j++ {
-			cache[j] = podInfo{}
-		}
-		cache = cache[:n]
 
-		if len(cache) == 0 {
+		if idx == len(cache) || len(cache) == 0 {
 			delete(p.ScheduledPodsCache, nodeName)
 		} else {
 			p.ScheduledPodsCache[nodeName] = cache
