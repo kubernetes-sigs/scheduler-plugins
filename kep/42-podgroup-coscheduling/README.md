@@ -9,7 +9,7 @@
 - [Use Cases](#use-cases)
 - [Design Details](#design-details)
   - [PodGroup](#podgroup)
-	- [PodGroupPhase](#podgroupphase)
+    - [PodGroupPhase](#podgroupphase)
   - [Controller](#controller)
   - [Extension points](#extension-points)
     - [QueueSort](#queuesort)
