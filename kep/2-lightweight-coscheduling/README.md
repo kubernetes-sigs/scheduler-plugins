@@ -41,7 +41,7 @@ When running a Tensorflow/MPI job, all tasks must start before they can do any w
 ## Terms
 
 - **pgPod**: pod belongs to some `PodGroup`.
-- **regularPod**: a regular `Pod` (which doesn't have `PodGropuName` set).
+- **regularPod**: a regular `Pod` (which doesn't have `PodGroupName` set).
 
 ## Proposal
 
