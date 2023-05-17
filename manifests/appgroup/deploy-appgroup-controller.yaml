@@ -1,73 +1,65 @@
 # first: create namespace and service account
+# Warning: But be careful while deleting the namespace
 apiVersion: v1
 kind: Namespace
 metadata:
-  namespace: network-aware-controllers
+  name: network-aware-controllers
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: networktopology-controller
+  name: appgroup-controller
   namespace: network-aware-controllers
 ---
 # second: rbac
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: networktopology-controller
+  name: appgroup-controller
 rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "list", "watch", "patch"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
   - apiGroups: ["appgroup.diktyo.x-k8s.io"]
     resources: ["appgroups"]
-    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-  - apiGroups: ["networktopology.diktyo.x-k8s.io"]
-    resources: ["networktopologies"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: networktopology-controller
+  name: appgroup-controller
 subjects:
   - kind: ServiceAccount
-    name:  networktopology-controller
+    name:  appgroup-controller
     namespace: network-aware-controllers
 roleRef:
   kind: ClusterRole
-  name: networktopology-controller
+  name: appgroup-controller
   apiGroup: rbac.authorization.k8s.io
 ---
 # third: deployment
-# Please check the repo for further info: https://github.com/diktyo-io/networktopology-controller
+# Please check the repo for further info: https://github.com/diktyo-io/appgroup-controller
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: networktopology-controller
+  name: appgroup-controller
   namespace: network-aware-controllers
   labels:
-    app: networktopology-controller
+    app: appgroup-controller
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: networktopology-controller
+      app: appgroup-controller
   template:
     metadata:
       labels:
-        app: networktopology-controller
+        app: appgroup-controller
     spec:
-      serviceAccountName: networktopology-controller
+      serviceAccountName: appgroup-controller
       containers:
-        - name: networktopology-controller
-          image: localhost:5000/networktopology-controller/controller:latest
+        - name: appgroup-controller
+          image: localhost:5000/appgroup-controller/controller:latest
           command:
             - /bin/controller
           imagePullPolicy: IfNotPresent
