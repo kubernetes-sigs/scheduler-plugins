@@ -43,6 +43,8 @@ const (
 	FiveMinutes     = "5m"
 	CPU             = "CPU"
 	Memory          = "Memory"
+	Bandwidth       = "Bandwidth"
+	Storage         = "Storage"
 	Average         = "AVG"
 	Std             = "STD"
 	Latest          = "Latest"
