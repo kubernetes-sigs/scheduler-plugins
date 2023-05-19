@@ -222,7 +222,9 @@ func checkPodFingerprintForNode(logID string, objs []types.NamespacedName, nodeN
 	klog.V(5).InfoS("nrtcache: podset fingerprint check", "logID", logID, "node", nodeName, "expected", pfpExpected, "computed", pfpComputed)
 	klog.V(6).InfoS("nrtcache: podset fingerprint debug", "logID", logID, "node", nodeName, "status", st.Repr())
 
-	return pfp.Check(pfpExpected)
+	err := pfp.Check(pfpExpected)
+	podfingerprint.MarkCompleted(st)
+	return err
 }
 
 func makeNodeToNamespacedNamesMap(podLister podlisterv1.PodLister, logID string) (map[string][]types.NamespacedName, error) {

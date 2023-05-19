@@ -205,7 +205,7 @@ github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/inform
 github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions/topology/v1alpha2
 github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1
 github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2
-# github.com/k8stopologyawareschedwg/podfingerprint v0.2.0
+# github.com/k8stopologyawareschedwg/podfingerprint v0.2.2
 ## explicit; go 1.17
 github.com/k8stopologyawareschedwg/podfingerprint
 # github.com/mailru/easyjson v0.7.6

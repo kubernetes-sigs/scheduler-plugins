@@ -51,6 +51,15 @@ const (
 	// Attribute is the recommended attribute name to use in
 	// NodeResourceTopology objects
 	Attribute = "nodeTopologyPodsFingerprint"
+	// AttributeMethod is the recommended attribute name to use
+	// in NodeResourceTopology objects to declare how the
+	// fingerprint was being computed
+	AttributeMethod = "nodeTopologyPodsFingerprintMethod"
+)
+
+const (
+	MethodAll                    = "all"                      // unrestricted. Just compute all the pods
+	MethodWithExclusiveResources = "with-exclusive-resources" // only consider pods which require exclusive resources
 )
 
 const (
