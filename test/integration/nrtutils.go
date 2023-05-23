@@ -18,6 +18,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -116,7 +117,8 @@ func updateNodeResourceTopologies(ctx context.Context, topologyClient *versioned
 			obj.Annotations[key] = value
 		}
 
-		obj.TopologyPolicies = nrt.TopologyPolicies // TODO: shallow copy
+		obj.TopologyPolicies = nrt.TopologyPolicies // TODO: Deprecated; shallow copy
+		obj.Attributes = nrt.Attributes.DeepCopy()
 		obj.Zones = nrt.Zones.DeepCopy()
 
 		_, err = topologyClient.TopologyV1alpha2().NodeResourceTopologies().Update(ctx, obj, metav1.UpdateOptions{})
@@ -134,7 +136,7 @@ func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *versione
 			klog.ErrorS(err, "Failed to clean up NodeResourceTopology", "nodeResourceTopology", nrt)
 		}
 	}
-	klog.Infof("init scheduler success")
+	klog.Infof("cleaned up NRT %d objects", len(noderesourcetopologies))
 }
 
 func makeResourceAllocationScoreArgs(strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
@@ -201,31 +203,35 @@ func (n *nrtWrapper) Obj() *topologyv1alpha2.NodeResourceTopology {
 	return &n.nrt
 }
 
-func podIsScheduled(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) error {
-	return wait.Poll(interval, time.Duration(times)*interval, func() (bool, error) {
-		return podScheduled(cs, podNamespace, podName), nil
+func podIsScheduled(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
+	var err error
+	var pod *corev1.Pod
+	waitErr := wait.Poll(interval, time.Duration(times)*interval, func() (bool, error) {
+		pod, err = cs.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+		if err != nil {
+			// This could be a connection error so we want to retry.
+			klog.ErrorS(err, "Failed to get pod", "pod", klog.KRef(podNamespace, podName))
+			return false, err
+		}
+		return pod.Spec.NodeName != "", nil
 	})
+	return pod, waitErr
 }
 
-func podIsPending(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) error {
+func podIsPending(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
+	var err error
+	var pod *corev1.Pod
 	for attempt := 0; attempt < times; attempt++ {
-		if !podPending(cs, podNamespace, podName) {
-			return fmt.Errorf("pod %s/%s not pending", podNamespace, podName)
+		pod, err = cs.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+		if err != nil {
+			return pod, fmt.Errorf("pod %s/%s not pending: %w", podNamespace, podName, err)
+		}
+		if pod.Spec.NodeName != "" {
+			return pod, fmt.Errorf("pod %s/%s not pending: bound to %q", podNamespace, podName, pod.Spec.NodeName)
 		}
 		time.Sleep(interval)
 	}
-	return nil
-}
-
-// podPending returns true if a node is not assigned to the given pod.
-func podPending(c clientset.Interface, podNamespace, podName string) bool {
-	pod, err := c.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	if err != nil {
-		// This could be a connection error so we want to retry.
-		klog.ErrorS(err, "Failed to get pod", "pod", klog.KRef(podNamespace, podName))
-		return false
-	}
-	return pod.Spec.NodeName == ""
+	return pod, nil
 }
 
 func accumulateResourcesToCapacity(nrt topologyv1alpha2.NodeResourceTopology) corev1.ResourceList {
@@ -299,4 +305,12 @@ func makeTestFullyAvailableNRTs() []*topologyv1alpha2.NodeResourceTopology {
 					noderesourcetopology.MakeTopologyResInfo(nicResourceName, "2", "2"),
 				}).Obj(),
 	)
+}
+
+func formatObject(obj interface{}) string {
+	bytes, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Sprintf("<ERROR: %s>", err)
+	}
+	return string(bytes)
 }

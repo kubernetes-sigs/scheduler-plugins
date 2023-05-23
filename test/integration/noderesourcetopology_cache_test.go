@@ -105,7 +105,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "BU pod: pessimistic cache overallocation not impactful, pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-bu-pod-1000",
+					podName:      "nrt-bu-overalloc-1000",
 					isGuaranteed: false,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -114,7 +114,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: anyNode,
 				},
 				{
-					podName:      "nrt-bu-pod-2000",
+					podName:      "nrt-bu-overalloc-2000",
 					isGuaranteed: false,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -124,7 +124,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -135,7 +145,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -152,7 +172,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "BE pod: with devices, pessimistic cache overallocation prevents pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-be-pod-3000",
+					podName:      "nrt-be-overalloc-3000",
 					isGuaranteed: true, // aka set resourcesMap in limits
 					resourcesMap: map[string]string{
 						nicResourceName: "2",
@@ -160,7 +180,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: "fake-node-cache-2",
 				},
 				{
-					podName:      "nrt-be-pod-4000",
+					podName:      "nrt-be-overalloc-4000",
 					isGuaranteed: true, // aka set resourcesMap in limits
 					resourcesMap: map[string]string{
 						nicResourceName: "2",
@@ -174,7 +194,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: pessimistic cache overallocation prevents pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-1000",
+					podName:      "nrt-gu-overalloc-1000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -183,7 +203,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: "fake-node-cache-1",
 				},
 				{
-					podName:      "nrt-pod-2000",
+					podName:      "nrt-gu-overalloc-2000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -193,7 +213,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -204,7 +234,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -221,7 +261,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: pessimistic cache overallocation ignores deletes prevents pod to be scheduled",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-3000",
+					podName:      "nrt-gu-overalloc-del-3000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -230,11 +270,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode: "fake-node-cache-1",
 				},
 				{
-					podName:  "nrt-pod-3000",
+					podName:  "nrt-gu-overalloc-del-3000",
 					isDelete: true,
 				},
 				{
-					podName:      "nrt-pod-4000",
+					podName:      "nrt-gu-overalloc-del-4000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -244,7 +284,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -255,7 +305,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -272,17 +332,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: DiscardReservedNodes: allows scheduling on both Zones",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-1000",
+					podName:      "nrt-gu-discardresv-1000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
 						string(corev1.ResourceMemory): "24Gi",
 					},
-					expectedNode:  "fake-node-cache-1",
 					schedulerName: discardReservedSchedulerName,
+					expectedNode:  "fake-node-cache-1",
 				},
 				{
-					podName:      "nrt-pod-2000",
+					podName:      "nrt-gu-discardresv-2000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -293,7 +353,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -304,7 +374,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -321,7 +401,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			name: "GU pod: DiscardReservedNodes: new pod is successfully scheduled on the node, after deleting pod consuming most resources",
 			podDescs: []podDesc{
 				{
-					podName:      "nrt-pod-3000",
+					podName:      "nrt-gu-discardresv-ok-3000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "30",
@@ -331,12 +411,12 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					expectedNode:  "fake-node-cache-1",
 				},
 				{
-					podName:       "nrt-pod-3000",
+					podName:       "nrt-gu-discardresv-ok-3000",
 					isDelete:      true,
 					schedulerName: "discardReserved",
 				},
 				{
-					podName:      "nrt-pod-4000",
+					podName:      "nrt-gu-discardresv-ok-4000",
 					isGuaranteed: true,
 					resourcesMap: map[string]string{
 						string(corev1.ResourceCPU):    "16",
@@ -347,7 +427,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				},
 			},
 			nodeResourceTopologies: []*topologyv1alpha2.NodeResourceTopology{
-				MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-1").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
@@ -358,7 +448,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "30"),
 							noderesourcetopology.MakeTopologyResInfo(memory, "64Gi", "62Gi"),
 						}).Obj(),
-				MakeNRT().Name("fake-node-cache-2").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
+				MakeNRT().Name("fake-node-cache-2").
+					Attributes(topologyv1alpha2.AttributeList{
+						{
+							Name:  noderesourcetopology.AttributePolicy,
+							Value: "single-numa-node",
+						},
+						{
+							Name:  noderesourcetopology.AttributeScope,
+							Value: "container",
+						},
+					}).
 					Zone(
 						topologyv1alpha2.ResourceInfoList{
 							noderesourcetopology.MakeTopologyResInfo(cpu, "32", "10"),
@@ -408,7 +508,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 
 			defer func() {
 				cleanupTest(t, testCtx)
-				klog.Infof("test environment cleaned up")
+				klog.Infof("test environment %q cleaned up", tt.name)
 			}()
 
 			if err := createNodesFromNodeResourceTopologies(cs, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
@@ -454,8 +554,10 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				if p.isDelete {
 					var err error
 					klog.Infof("Waiting before to delete Pod %q", p.podName)
-					err = podIsScheduled(1*time.Second, 20, cs, ns, p.podName)
+					updatedPod, err := podIsScheduled(1*time.Second, 20, cs, ns, p.podName)
 					if err != nil {
+						// we need more context, but we don't want to clutter the logs
+						t.Logf("%s: pod %s/%s to be scheduled, error: %v\nstatus=%s", tt.name, p.pod.Namespace, p.pod.Name, err, formatObject(updatedPod.Status))
 						t.Errorf("Pod %q to be scheduled, error: %v", p.pod.Name, err)
 					}
 
@@ -479,15 +581,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				}
 
 				var action string = "scheduled"
-				var checkPod func(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) error = podIsScheduled
+				var checkPod func(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) = podIsScheduled
 				if p.expectedNode == "" {
 					action = "kept pending"
 					checkPod = podIsPending
 				}
 
-				err = checkPod(1*time.Second, 20, cs, p.pod.Namespace, p.pod.Name)
+				updatedPod, err := checkPod(1*time.Second, 20, cs, p.pod.Namespace, p.pod.Name)
 				if err != nil {
-					t.Errorf("Pod %q to be %s, error: %v", p.pod.Name, action, err)
+					// we need more context, but we don't want to clutter the logs
+					t.Logf("%s: pod %s/%s to be %s, error: %v\nstatus=%s", tt.name, p.pod.Namespace, p.pod.Name, action, err, formatObject(updatedPod.Status))
+					t.Errorf("Pod %s/%s to be %s, error: %v", p.pod.Namespace, p.pod.Name, action, err)
 				}
 				klog.Infof("Pod %v %s", p.pod.Name, action)
 			}
@@ -504,7 +608,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				}
 
 				if !podMatchesExpectedNode(p.pod.Namespace, p.pod.Name, nodeName, p.expectedNode) {
-					t.Errorf("misplaced pod: %q", p.pod.Name)
+					t.Errorf("misplaced pod: %q got %q expected %q", p.pod.Name, nodeName, p.expectedNode)
 				}
 			}
 
@@ -651,15 +755,23 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 
 		pfpSign := mkPFP("fake-node-cache-1", tt.podDescs[0].pod)
 		updatedNRTs := []*topologyv1alpha2.NodeResourceTopology{
-			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
-				Annotations(map[string]string{
-					podfingerprint.Annotation: pfpSign,
-				}).
+			MakeNRT().Name("fake-node-cache-1").
 				Attributes(topologyv1alpha2.AttributeList{
+					{
+						Name:  noderesourcetopology.AttributePolicy,
+						Value: "single-numa-node",
+					},
+					{
+						Name:  noderesourcetopology.AttributeScope,
+						Value: "container",
+					},
 					{
 						Name:  podfingerprint.Attribute,
 						Value: pfpSign,
 					},
+				}).
+				Annotations(map[string]string{
+					podfingerprint.Annotation: pfpSign,
 				}).
 				Zone(
 					topologyv1alpha2.ResourceInfoList{
@@ -689,10 +801,16 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 		time.Sleep(time.Duration(5*matchArgs.CacheResyncPeriodSeconds) * time.Second)
 
 		updatedNRTs = []*topologyv1alpha2.NodeResourceTopology{
-			MakeNRT().Name("fake-node-cache-1").Policy(topologyv1alpha2.SingleNUMANodeContainerLevel).
-				Annotations(map[string]string{
-					podfingerprint.Annotation: mkPFP("fake-node-cache-1", tt.podDescs[0].pod),
-					"foo":                     "bar", // we need _ANY_ change to the object to trigger the update
+			MakeNRT().Name("fake-node-cache-1").
+				Attributes(topologyv1alpha2.AttributeList{
+					{
+						Name:  noderesourcetopology.AttributePolicy,
+						Value: "single-numa-node",
+					},
+					{
+						Name:  noderesourcetopology.AttributeScope,
+						Value: "container",
+					},
 				}).
 				Zone(
 					topologyv1alpha2.ResourceInfoList{
