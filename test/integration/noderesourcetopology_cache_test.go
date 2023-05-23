@@ -543,6 +543,8 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				t,
 				testCtx,
 				scheduler.WithProfiles(cfg.Profiles...),
+				// default value is 30 seconds, lower it to 10 to speed up tests
+				scheduler.WithPodMaxInUnschedulablePodsDuration(10*time.Second),
 				scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
 			)
 			syncInformerFactory(testCtx)
@@ -587,7 +589,9 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 					checkPod = podIsPending
 				}
 
-				updatedPod, err := checkPod(1*time.Second, 20, cs, p.pod.Namespace, p.pod.Name)
+				// set timeout to 50s, flushUnschedulableQLeftover is running every 30 seconds + 10 seconds for podMaxInUnschedulablePodsDuration + 10 seconds just to be sure
+				// we need to make sure scheduler will move failed pod from Unschedulable queue to Active queue at least once
+				updatedPod, err := checkPod(1*time.Second, 50, cs, p.pod.Namespace, p.pod.Name)
 				if err != nil {
 					// we need more context, but we don't want to clutter the logs
 					t.Logf("%s: pod %s/%s to be %s, error: %v\nstatus=%s", tt.name, p.pod.Namespace, p.pod.Name, action, err, formatObject(updatedPod.Status))
