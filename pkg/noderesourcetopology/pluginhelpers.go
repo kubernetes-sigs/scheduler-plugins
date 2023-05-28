@@ -65,8 +65,7 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 		return nrtcache.NewPassthrough(nodeTopologyLister), nil
 	}
 
-	podSharedInformer := nrtcache.InformerFromHandle(handle)
-	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podSharedInformer, podLister := nrtcache.InformerFromHandle(handle)
 
 	nrtCache, err := nrtcache.NewOverReserve(nodeTopologyLister, podLister)
 	if err != nil {

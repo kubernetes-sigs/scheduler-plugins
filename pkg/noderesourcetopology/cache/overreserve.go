@@ -260,8 +260,9 @@ func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha2.NodeRe
 	}
 }
 
-func InformerFromHandle(handle framework.Handle) k8scache.SharedInformer {
-	return handle.SharedInformerFactory().Core().V1().Pods().Informer()
+func InformerFromHandle(handle framework.Handle) (k8scache.SharedIndexInformer, podlisterv1.PodLister) {
+	podHandle := handle.SharedInformerFactory().Core().V1().Pods() // shortcut
+	return podHandle.Informer(), podHandle.Lister()
 }
 
 // to be used only in tests
