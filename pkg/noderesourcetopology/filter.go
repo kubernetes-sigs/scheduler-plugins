@@ -30,6 +30,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
@@ -196,7 +197,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	if nodeInfo.Node() == nil {
 		return framework.NewStatus(framework.Error, "node not found")
 	}
-	if v1qos.GetPodQOS(pod) == v1.PodQOSBestEffort && !hasNonNativeResource(pod) {
+	if v1qos.GetPodQOS(pod) == v1.PodQOSBestEffort && !resourcerequests.IncludeNonNative(pod) {
 		return nil
 	}
 
@@ -243,26 +244,6 @@ func subtractFromNUMA(nodes NUMANodeList, numaID int, container v1.Container) {
 			nRes[resName] = nodeResQuan
 		}
 	}
-}
-
-func hasNonNativeResource(pod *v1.Pod) bool {
-	for _, initContainer := range pod.Spec.InitContainers {
-		for resource := range initContainer.Resources.Requests {
-			if !v1helper.IsNativeResource(resource) {
-				return true
-			}
-
-		}
-	}
-	for _, container := range pod.Spec.Containers {
-		for resource := range container.Resources.Requests {
-			if !v1helper.IsNativeResource(resource) {
-				return true
-			}
-
-		}
-	}
-	return false
 }
 
 func filterHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) filterFn {

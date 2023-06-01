@@ -29,8 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
@@ -45,34 +45,142 @@ func TestFingerprintFromNRT(t *testing.T) {
 		},
 	}
 
-	var pfp string
-	pfp = podFingerprintForNodeTopology(nrt)
-	if pfp != "" {
-		t.Errorf("misdetected fingerprint from missing annotations")
-	}
-
-	nrt.Annotations = map[string]string{}
-	pfp = podFingerprintForNodeTopology(nrt)
-	if pfp != "" {
-		t.Errorf("misdetected fingerprint from empty annotations")
-	}
-
 	pfpTestAnn := "test-ann"
-	nrt.Annotations[podfingerprint.Annotation] = pfpTestAnn
-	pfp = podFingerprintForNodeTopology(nrt)
-	if pfp != pfpTestAnn {
-		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAnn)
+	pfpTestAttr := "test-attr"
+
+	tcases := []struct {
+		description string
+		anns        map[string]string
+		attrs       []topologyv1alpha2.AttributeInfo
+		expectedPFP string
+	}{
+		{
+			description: "no anns, attr",
+			expectedPFP: "",
+		},
+		{
+			description: "no attrs, empty anns",
+			anns:        map[string]string{},
+			expectedPFP: "",
+		},
+		{
+			description: "no attrs, empty pfp ann",
+			anns: map[string]string{
+				podfingerprint.Annotation: "",
+			},
+			expectedPFP: "",
+		},
+		{
+			description: "no attrs, pfp ann",
+			anns: map[string]string{
+				podfingerprint.Annotation: pfpTestAnn,
+			},
+			expectedPFP: pfpTestAnn,
+		},
+		{
+			description: "attr overrides, pfp ann",
+			anns: map[string]string{
+				podfingerprint.Annotation: pfpTestAnn,
+			},
+			attrs: []topologyv1alpha2.AttributeInfo{
+				{
+					Name:  podfingerprint.Attribute,
+					Value: pfpTestAttr,
+				},
+			},
+			expectedPFP: pfpTestAttr,
+		},
+		{
+			description: "attr, no ann",
+			attrs: []topologyv1alpha2.AttributeInfo{
+				{
+					Name:  podfingerprint.Attribute,
+					Value: pfpTestAttr,
+				},
+			},
+			expectedPFP: pfpTestAttr,
+		},
 	}
 
-	// test attribute overrides annotation
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			nrtObj := nrt.DeepCopy()
+			if tcase.anns != nil {
+				nrtObj.Annotations = make(map[string]string)
+				for key, value := range tcase.anns {
+					nrtObj.Annotations[key] = value
+				}
+			}
+			for _, attr := range tcase.attrs {
+				nrtObj.Attributes = append(nrtObj.Attributes, attr)
+			}
+			pfp, _ := podFingerprintForNodeTopology(nrtObj, apiconfig.CacheResyncAutodetect)
+			if pfp != tcase.expectedPFP {
+				t.Errorf("misdetected fingerprint as %q expected %q (anns=%v attrs=%v)", pfp, tcase.expectedPFP, nrtObj.Annotations, nrtObj.Attributes)
+			}
+		})
+	}
+}
+
+func TestFingerprintMethodFromNRT(t *testing.T) {
 	pfpTestAttr := "test-attr"
-	nrt.Attributes = append(nrt.Attributes, topologyv1alpha2.AttributeInfo{
-		Name:  podfingerprint.Attribute,
-		Value: pfpTestAttr,
-	})
-	pfp = podFingerprintForNodeTopology(nrt)
-	if pfp != pfpTestAttr {
-		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAttr)
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		TopologyPolicies: []string{
+			"best-effort",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  podfingerprint.Attribute,
+				Value: pfpTestAttr,
+			},
+		},
+	}
+
+	tcases := []struct {
+		description         string
+		methodValue         string
+		expectedOnlyExclRes bool
+	}{
+		{
+			description:         "no attr",
+			methodValue:         "",
+			expectedOnlyExclRes: false,
+		},
+		{
+			description:         "unrecognized attr",
+			methodValue:         "foobar",
+			expectedOnlyExclRes: false,
+		},
+		{
+			description:         "all (old default)",
+			methodValue:         podfingerprint.MethodAll,
+			expectedOnlyExclRes: false,
+		},
+		{
+			description:         "exclusive only",
+			methodValue:         podfingerprint.MethodWithExclusiveResources,
+			expectedOnlyExclRes: true,
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			nrtObj := nrt.DeepCopy()
+			if tcase.methodValue != "" {
+				nrtObj.Attributes = append(nrt.Attributes, topologyv1alpha2.AttributeInfo{
+					Name:  podfingerprint.AttributeMethod,
+					Value: tcase.methodValue,
+				})
+			}
+
+			_, onlyExclRes := podFingerprintForNodeTopology(nrtObj, apiconfig.CacheResyncAutodetect)
+			if onlyExclRes != tcase.expectedOnlyExclRes {
+				t.Errorf("misdetected method: expected %v (from %q) got %v", tcase.expectedOnlyExclRes, tcase.methodValue, onlyExclRes)
+			}
+		})
 	}
 }
 
@@ -457,17 +565,17 @@ func TestResourceStoreUpdate(t *testing.T) {
 	}
 }
 
-func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
+func TestMakeNodeToPodDataMap(t *testing.T) {
 	tcases := []struct {
 		description string
 		pods        []*corev1.Pod
 		err         error
-		expected    map[string][]types.NamespacedName
+		expected    map[string][]podData
 		expectedErr error
 	}{
 		{
 			description: "empty pod list",
-			expected:    make(map[string][]types.NamespacedName),
+			expected:    make(map[string][]podData),
 		},
 		{
 			description: "single pod NOT running",
@@ -482,7 +590,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 					},
 				},
 			},
-			expected: make(map[string][]types.NamespacedName),
+			expected: make(map[string][]podData),
 		},
 		{
 			description: "single pod running",
@@ -500,7 +608,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 					},
 				},
 			},
-			expected: map[string][]types.NamespacedName{
+			expected: map[string][]podData{
 				"node1": {
 					{
 						Namespace: "namespace1",
@@ -549,7 +657,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 					},
 				},
 			},
-			expected: map[string][]types.NamespacedName{
+			expected: map[string][]podData{
 				"node1": {
 					{
 						Namespace: "namespace1",
@@ -574,7 +682,7 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 				pods: tcase.pods,
 				err:  tcase.err,
 			}
-			got, err := makeNodeToNamespacedNamesMap(podLister, tcase.description)
+			got, err := makeNodeToPodDataMap(podLister, tcase.description)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
@@ -588,19 +696,21 @@ func TestMakeNodeToNamespacedNamesMap(t *testing.T) {
 func TestCheckPodFingerprintForNode(t *testing.T) {
 	tcases := []struct {
 		description string
-		objs        []types.NamespacedName
+		objs        []podData
+		onlyExclRes bool
 		pfp         string
 		expectedErr error
 	}{
 		{
 			description: "nil objs",
+			onlyExclRes: false,
 			expectedErr: podfingerprint.ErrMalformed,
 		},
 	}
 
 	for _, tcase := range tcases {
 		t.Run(tcase.description, func(t *testing.T) {
-			gotErr := checkPodFingerprintForNode("testing", tcase.objs, "test-node", tcase.pfp)
+			gotErr := checkPodFingerprintForNode("testing", tcase.objs, "test-node", tcase.pfp, tcase.onlyExclRes)
 			if !errors.Is(gotErr, tcase.expectedErr) {
 				t.Errorf("got error %v expected %v", gotErr, tcase.expectedErr)
 			}

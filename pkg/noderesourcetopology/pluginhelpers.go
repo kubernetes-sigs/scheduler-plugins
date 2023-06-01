@@ -25,6 +25,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -65,22 +66,14 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 		return nrtcache.NewPassthrough(nodeTopologyLister), nil
 	}
 
-	podSharedInformer := nrtcache.InformerFromHandle(handle)
-	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podSharedInformer, podLister := nrtcache.InformerFromHandle(handle)
 
-	nrtCache, err := nrtcache.NewOverReserve(nodeTopologyLister, podLister)
+	nrtCache, err := nrtcache.NewOverReserve(tcfg.Cache, nodeTopologyLister, podLister)
 	if err != nil {
 		return nil, err
 	}
 
-	if fwk, ok := handle.(framework.Framework); ok {
-		profileName := fwk.ProfileName()
-		klog.InfoS("setting up foreign pods detection", "name", profileName)
-		nrtcache.RegisterSchedulerProfileName(profileName)
-		nrtcache.SetupForeignPodsDetector(profileName, podSharedInformer, nrtCache)
-	} else {
-		klog.Warningf("cannot determine the scheduler profile names - no foreign pod detection enabled")
-	}
+	initNodeTopologyForeignPodsDetection(tcfg.Cache, handle, podSharedInformer, nrtCache)
 
 	resyncPeriod := time.Duration(tcfg.CacheResyncPeriodSeconds) * time.Second
 	go wait.Forever(nrtCache.Resync, resyncPeriod)
@@ -88,6 +81,31 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	klog.V(3).InfoS("enable NodeTopology cache (needs the Reserve plugin)", "resyncPeriod", resyncPeriod)
 
 	return nrtCache, nil
+}
+
+func initNodeTopologyForeignPodsDetection(cfg *apiconfig.NodeResourceTopologyCache, handle framework.Handle, podSharedInformer k8scache.SharedInformer, nrtCache *nrtcache.OverReserve) {
+	foreignPodsDetect := getForeignPodsDetectMode(cfg)
+
+	if foreignPodsDetect == apiconfig.ForeignPodsDetectNone {
+		klog.InfoS("foreign pods detection disabled by configuration")
+		return
+	}
+	fwk, ok := handle.(framework.Framework)
+	if !ok {
+		klog.Warningf("cannot determine the scheduler profile names - no foreign pod detection enabled")
+		return
+	}
+
+	profileName := fwk.ProfileName()
+	klog.InfoS("setting up foreign pods detection", "name", profileName, "mode", foreignPodsDetect)
+
+	if foreignPodsDetect == apiconfig.ForeignPodsDetectOnlyExclusiveResources {
+		nrtcache.TrackOnlyForeignPodsWithExclusiveResources()
+	} else {
+		nrtcache.TrackAllForeignPods()
+	}
+	nrtcache.RegisterSchedulerProfileName(profileName)
+	nrtcache.SetupForeignPodsDetector(profileName, podSharedInformer, nrtCache)
 }
 
 func createNUMANodeList(zones topologyv1alpha2.ZoneList) NUMANodeList {
@@ -179,4 +197,15 @@ func onlyNonNUMAResources(numaNodes NUMANodeList, resources corev1.ResourceList)
 	}
 
 	return true
+}
+
+func getForeignPodsDetectMode(cfg *apiconfig.NodeResourceTopologyCache) apiconfig.ForeignPodsDetectMode {
+	var foreignPodsDetect apiconfig.ForeignPodsDetectMode
+	if cfg != nil && cfg.ForeignPodsDetect != nil {
+		foreignPodsDetect = *cfg.ForeignPodsDetect
+	} else { // explicitly set to nil?
+		foreignPodsDetect = apiconfig.ForeignPodsDetectAll
+		klog.InfoS("foreign pods detection value missing", "fallback", foreignPodsDetect)
+	}
+	return foreignPodsDetect
 }

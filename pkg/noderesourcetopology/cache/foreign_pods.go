@@ -21,6 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 )
 
 // The nodeIndexer and the go client facilities are global objects, so we need this to be global as well.
@@ -29,7 +31,8 @@ import (
 // Note this is NOT lock-protected because the scheduling framework calls New() sequentially,
 // and plugin instances are meant to register their name using SetupForeignPodsDetector inside their New()
 var (
-	schedProfileNames = sets.String{}
+	schedProfileNames      = sets.String{}
+	onlyExclusiveResources = false
 )
 
 func SetupForeignPodsDetector(schedProfileName string, podInformer k8scache.SharedInformer, cc Interface) {
@@ -56,6 +59,14 @@ func SetupForeignPodsDetector(schedProfileName string, podInformer k8scache.Shar
 	})
 }
 
+func TrackOnlyForeignPodsWithExclusiveResources() {
+	onlyExclusiveResources = true
+}
+
+func TrackAllForeignPods() {
+	onlyExclusiveResources = false
+}
+
 func RegisterSchedulerProfileName(schedProfileName string) {
 	klog.InfoS("nrtcache: setting up foreign pod detection", "profile", schedProfileName)
 	schedProfileNames.Insert(schedProfileName)
@@ -72,7 +83,10 @@ func IsForeignPod(pod *corev1.Pod) bool {
 		// nothing to do here - we know already about this pod
 		return false
 	}
-	return true
+	if !onlyExclusiveResources {
+		return true
+	}
+	return resourcerequests.AreExclusiveForPod(pod)
 }
 
 // for testing only; NOT thread safe

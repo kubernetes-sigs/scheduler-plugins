@@ -17,8 +17,9 @@ limitations under the License.
 package v1beta3
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"strconv"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -70,6 +71,10 @@ var (
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
+
+	defaultForeignPodsDetect = ForeignPodsDetectAll
+
+	defaultResyncMethod = CacheResyncAutodetect
 
 	// Defaults for NetworkOverhead
 	// DefaultWeightsName contains the default costs to be used by networkAware plugins
@@ -150,6 +155,17 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 		if obj.ScoringStrategy.Resources[i].Weight == 0 {
 			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
+	}
+
+	if obj.Cache == nil {
+		obj.Cache = &NodeResourceTopologyCache{}
+	}
+	if obj.Cache.ForeignPodsDetect == nil {
+		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
+
+	}
+	if obj.Cache.ResyncMethod == nil {
+		obj.Cache.ResyncMethod = &defaultResyncMethod
 	}
 }
 
