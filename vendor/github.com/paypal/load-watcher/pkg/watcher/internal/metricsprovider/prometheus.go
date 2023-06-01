@@ -21,10 +21,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"io/ioutil"
 	"k8s.io/client-go/transport"
 	"net"
 	"net/http"
@@ -43,19 +40,38 @@ import (
 )
 
 const (
-	EnableOpenShiftAuth = "ENABLE_OPENSHIFT_AUTH"
-	DefaultPromAddress  = "http://prometheus-k8s:9090"
-	promStd             = "stddev_over_time"
-	promAvg             = "avg_over_time"
-	promCpuMetric       = "instance:node_cpu:ratio"
-	promMemMetric       = "instance:node_memory_utilisation:ratio"
-	allHosts            = "all"
-	hostMetricKey       = "instance"
-	defaultKubeConfig   = "~/.kube/config"
+	EnableOpenShiftAuth     = "ENABLE_OPENSHIFT_AUTH"
+	K8sPodCAFilePath        = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	DefaultPromAddress      = "http://prometheus-k8s:9090"
+	promStd                 = "stddev_over_time"
+	promAvg                 = "avg_over_time"
+	promCpuMetric           = "instance:node_cpu:ratio"
+	promMemMetric           = "instance:node_memory_utilisation:ratio"
+	promTransBandMetric     = "instance:node_network_transmit_bytes:rate:sum"
+	promTransBandDropMetric = "instance:node_network_transmit_drop_excluding_lo:rate5m"
+	promRecBandMetric       = "instance:node_network_receive_bytes:rate:sum"
+	promRecBandDropMetric   = "instance:node_network_receive_drop_excluding_lo:rate5m"
+	promDiskIOMetric        = "instance_device:node_disk_io_time_seconds:rate5m"
+	allHosts                = "all"
+	hostMetricKey           = "instance"
 )
 
 type promClient struct {
 	client api.Client
+}
+
+func loadCAFile(filepath string) (*x509.CertPool, error) {
+	caCert, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, err
+	}
+
+	caCertPool := x509.NewCertPool()
+	if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+		return nil, fmt.Errorf("failed to append CA certificate to the pool")
+	}
+
+	return caCertPool, nil
 }
 
 func NewPromClient(opts watcher.MetricsProviderOpts) (watcher.MetricsProviderClient, error) {
@@ -79,36 +95,11 @@ func NewPromClient(opts watcher.MetricsProviderOpts) (watcher.MetricsProviderCli
 	// Check if EnableOpenShiftAuth is set.
 	_, enableOpenShiftAuth := os.LookupEnv(EnableOpenShiftAuth)
 	if enableOpenShiftAuth {
-		// Create the config for kubernetes client
-		clusterConfig, err := rest.InClusterConfig()
+		// Retrieve Pod CA cert
+		caCertPool, err := loadCAFile(K8sPodCAFilePath)
 		if err != nil {
-			// Get the kubeconfig path
-			kubeConfigPath, ok := os.LookupEnv(kubeConfig)
-			if !ok {
-				kubeConfigPath = defaultKubeConfig
-			}
-			clusterConfig, err = clientcmd.BuildConfigFromFlags("", kubeConfigPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get kubernetes config: %v", err)
-			}
+			return nil, fmt.Errorf("Error loading CA file: %v", err)
 		}
-
-		// Create the client for kubernetes
-		kclient, err := kubernetes.NewForConfig(clusterConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kubernetes client: %v", err)
-		}
-
-		// Retrieve router CA cert
-		routerCAConfigMap, err := kclient.CoreV1().ConfigMaps("openshift-config-managed").Get(context.TODO(), "default-ingress-cert", metav1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		bundlePEM := []byte(routerCAConfigMap.Data["ca-bundle.crt"])
-
-		// make a client connection configured with the provided bundle.
-		roots := x509.NewCertPool()
-		roots.AppendCertsFromPEM(bundlePEM)
 
 		// Get Prometheus Host
 		u, _ := url.Parse(opts.Address)
@@ -122,7 +113,7 @@ func NewPromClient(opts watcher.MetricsProviderOpts) (watcher.MetricsProviderCli
 				}).DialContext,
 				TLSHandshakeTimeout: 10 * time.Second,
 				TLSClientConfig: &tls.Config{
-					RootCAs:    roots,
+					RootCAs:    caCertPool,
 					ServerName: u.Host,
 				},
 			},
@@ -167,7 +158,7 @@ func (s promClient) FetchHostMetrics(host string, window *watcher.Window) ([]wat
 	var anyerr error
 
 	for _, method := range []string{promAvg, promStd} {
-		for _, metric := range []string{promCpuMetric, promMemMetric} {
+		for _, metric := range []string{promCpuMetric, promMemMetric, promTransBandMetric, promTransBandDropMetric, promRecBandMetric, promRecBandDropMetric, promDiskIOMetric} {
 			promQuery := s.buildPromQuery(host, metric, method, window.Duration)
 			promResults, err := s.getPromResults(promQuery)
 
@@ -191,7 +182,7 @@ func (s promClient) FetchAllHostsMetrics(window *watcher.Window) (map[string][]w
 	var anyerr error
 
 	for _, method := range []string{promAvg, promStd} {
-		for _, metric := range []string{promCpuMetric, promMemMetric} {
+		for _, metric := range []string{promCpuMetric, promMemMetric, promTransBandMetric, promTransBandDropMetric, promRecBandMetric, promRecBandDropMetric, promDiskIOMetric} {
 			promQuery := s.buildPromQuery(allHosts, metric, method, window.Duration)
 			promResults, err := s.getPromResults(promQuery)
 
@@ -264,8 +255,12 @@ func (s promClient) promResults2MetricMap(promresults model.Value, metric string
 
 	if metric == promCpuMetric {
 		metricType = watcher.CPU
-	} else {
+	} else if metric == promMemMetric {
 		metricType = watcher.Memory
+	} else if metric == promDiskIOMetric {
+		metricType = watcher.Storage
+	} else {
+		metricType = watcher.Bandwidth
 	}
 
 	if method == promAvg {

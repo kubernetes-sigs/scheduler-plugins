@@ -247,7 +247,7 @@ github.com/opencontainers/selinux/pkg/pwalkdir
 # github.com/patrickmn/go-cache v2.1.0+incompatible
 ## explicit
 github.com/patrickmn/go-cache
-# github.com/paypal/load-watcher v0.2.2
+# github.com/paypal/load-watcher v0.2.3
 ## explicit; go 1.16
 github.com/paypal/load-watcher/pkg/watcher
 github.com/paypal/load-watcher/pkg/watcher/api

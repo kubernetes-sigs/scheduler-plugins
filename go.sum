@@ -373,8 +373,8 @@ github.com/opencontainers/selinux v1.10.0/go.mod h1:2i0OySw99QjzBBQByd1Gr9gSjvuh
 github.com/openzipkin/zipkin-go v0.1.1/go.mod h1:NtoC/o8u3JlF1lSlyPNswIbeQH9bJTmOf0Erfk+hxe8=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
-github.com/paypal/load-watcher v0.2.2 h1:tKCy3Ts8LnihFSLKmyrOODrdt9ulbRXe0MFbxe9U2Bk=
-github.com/paypal/load-watcher v0.2.2/go.mod h1:MMCDf8aXF5k+K2q6AtMOBZItCvZ3oFAk+zNO4OAtp0w=
+github.com/paypal/load-watcher v0.2.3 h1:na+oFQ6H1aFyICepj4F0fEVIiFYEACrJhGQXU/C+Ha0=
+github.com/paypal/load-watcher v0.2.3/go.mod h1:+ASR2PLXHCF2H6ShnqHBkdBq3yVcFBZ18UPn0HK4n/4=
 github.com/peterbourgon/diskv v2.0.1+incompatible/go.mod h1:uqqh8zWWbv1HBMNONnaR/tNboyR3/BZd58JJSHlUSCU=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
