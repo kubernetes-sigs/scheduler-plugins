@@ -36,7 +36,7 @@ import (
 )
 
 func TestFingerprintFromNRT(t *testing.T) {
-	nrtRef := &topologyv1alpha2.NodeResourceTopology{
+	nrt := &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "node-0",
 		},
@@ -45,44 +45,80 @@ func TestFingerprintFromNRT(t *testing.T) {
 		},
 	}
 
-	var pfp string
-
-	nrt := nrtRef.DeepCopy()
-	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
-	if pfp != "" {
-		t.Errorf("misdetected fingerprint from missing annotations")
-	}
-
-	nrt = nrtRef.DeepCopy()
-	nrt.Annotations = map[string]string{}
-	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
-	if pfp != "" {
-		t.Errorf("misdetected fingerprint from empty annotations")
-	}
-
 	pfpTestAnn := "test-ann"
-	nrt = nrtRef.DeepCopy()
-	nrt.Annotations = map[string]string{
-		podfingerprint.Annotation: pfpTestAnn,
-	}
-	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
-	if pfp != pfpTestAnn {
-		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAnn)
+	pfpTestAttr := "test-attr"
+
+	tcases := []struct {
+		description string
+		anns        map[string]string
+		attrs       []topologyv1alpha2.AttributeInfo
+		expectedPFP string
+	}{
+		{
+			description: "no anns, attr",
+			expectedPFP: "",
+		},
+		{
+			description: "no attrs, empty anns",
+			anns:        map[string]string{},
+			expectedPFP: "",
+		},
+		{
+			description: "no attrs, empty pfp ann",
+			anns: map[string]string{
+				podfingerprint.Annotation: "",
+			},
+			expectedPFP: "",
+		},
+		{
+			description: "no attrs, pfp ann",
+			anns: map[string]string{
+				podfingerprint.Annotation: pfpTestAnn,
+			},
+			expectedPFP: pfpTestAnn,
+		},
+		{
+			description: "attr overrides, pfp ann",
+			anns: map[string]string{
+				podfingerprint.Annotation: pfpTestAnn,
+			},
+			attrs: []topologyv1alpha2.AttributeInfo{
+				{
+					Name:  podfingerprint.Attribute,
+					Value: pfpTestAttr,
+				},
+			},
+			expectedPFP: pfpTestAttr,
+		},
+		{
+			description: "attr, no ann",
+			attrs: []topologyv1alpha2.AttributeInfo{
+				{
+					Name:  podfingerprint.Attribute,
+					Value: pfpTestAttr,
+				},
+			},
+			expectedPFP: pfpTestAttr,
+		},
 	}
 
-	// test attribute overrides annotation
-	pfpTestAttr := "test-attr"
-	nrt = nrtRef.DeepCopy()
-	nrt.Annotations = map[string]string{
-		podfingerprint.Annotation: pfpTestAnn,
-	}
-	nrt.Attributes = append(nrt.Attributes, topologyv1alpha2.AttributeInfo{
-		Name:  podfingerprint.Attribute,
-		Value: pfpTestAttr,
-	})
-	pfp, _ = podFingerprintForNodeTopology(nrt, apiconfig.CacheResyncAutodetect)
-	if pfp != pfpTestAttr {
-		t.Errorf("misdetected fingerprint as %q expected %q", pfp, pfpTestAttr)
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			nrtObj := nrt.DeepCopy()
+			if tcase.anns != nil {
+				nrtObj.Annotations = make(map[string]string)
+				for key, value := range tcase.anns {
+					nrtObj.Annotations[key] = value
+				}
+			}
+			for _, attr := range tcase.attrs {
+				nrtObj.Attributes = append(nrtObj.Attributes, attr)
+			}
+			pfp, _ := podFingerprintForNodeTopology(nrtObj, apiconfig.CacheResyncAutodetect)
+			if pfp != tcase.expectedPFP {
+				t.Errorf("misdetected fingerprint as %q expected %q (anns=%v attrs=%v)", pfp, tcase.expectedPFP, nrtObj.Annotations, nrtObj.Attributes)
+			}
+		})
 	}
 }
 
