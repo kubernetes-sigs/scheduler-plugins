@@ -99,7 +99,7 @@ func Test_Run(t *testing.T) {
 			desiredGroupPhase: v1alpha1.PodGroupScheduling,
 		},
 		{
-			name:              "Group status convert from prescheduling to finished",
+			name:              "Group status convert from scheduling to finished",
 			pgName:            "pg5",
 			minMember:         2,
 			podNames:          []string{"pod1", "pod2"},
@@ -159,8 +159,8 @@ func Test_Run(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			controller, kClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.previousPhase, c.podGroupCreateTime, nil)
-			// 0 means not set
 			ps := makePods(c.podNames, c.pgName, c.podPhase, nil)
+			// 0 means not set
 			if len(c.podNextPhase) != 0 {
 				ps = makePods(c.podNames, c.pgName, c.podNextPhase, nil)
 			}
