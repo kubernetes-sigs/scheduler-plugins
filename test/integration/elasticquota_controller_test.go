@@ -38,7 +38,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
-	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/controllers"
@@ -128,15 +127,15 @@ func TestElasticController(t *testing.T) {
 
 	for _, tt := range []struct {
 		name          string
-		elasticQuotas []*v1alpha1.ElasticQuota
+		elasticQuotas []*schedv1alpha1.ElasticQuota
 		existingPods  []*v1.Pod
-		used          []*v1alpha1.ElasticQuota
+		used          []*schedv1alpha1.ElasticQuota
 		incomingPods  []*v1.Pod
-		want          []*v1alpha1.ElasticQuota
+		want          []*schedv1alpha1.ElasticQuota
 	}{
 		{
 			name: "The status of the pod changes from pending to running",
-			elasticQuotas: []*v1alpha1.ElasticQuota{
+			elasticQuotas: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t1-eq1").
 					Min(MakeResourceList().CPU(100).Mem(1000).Obj()).
 					Max(MakeResourceList().CPU(100).Mem(1000).Obj()).Obj(),
@@ -154,7 +153,7 @@ func TestElasticController(t *testing.T) {
 				MakePod("ns2", "t1-p4").
 					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
 			},
-			used: []*v1alpha1.ElasticQuota{
+			used: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t1-eq1").
 					Used(MakeResourceList().CPU(0).Mem(0).Obj()).Obj(),
 				MakeEQ("ns2", "t1-eq2").
@@ -171,7 +170,7 @@ func TestElasticController(t *testing.T) {
 					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
 			},
 
-			want: []*v1alpha1.ElasticQuota{
+			want: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t1-eq1").
 					Used(MakeResourceList().CPU(30).Mem(40).Obj()).Obj(),
 				MakeEQ("ns2", "t1-eq2").
@@ -180,7 +179,7 @@ func TestElasticController(t *testing.T) {
 		},
 		{
 			name: "The status of the pod changes from running to others",
-			elasticQuotas: []*v1alpha1.ElasticQuota{
+			elasticQuotas: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t2-eq1").
 					Min(MakeResourceList().CPU(100).Mem(1000).Obj()).
 					Max(MakeResourceList().CPU(100).Mem(1000).Obj()).Obj(),
@@ -198,7 +197,7 @@ func TestElasticController(t *testing.T) {
 				MakePod("ns2", "t2-p4").Phase(v1.PodRunning).Node("fake-node").
 					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
 			},
-			used: []*v1alpha1.ElasticQuota{
+			used: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t2-eq1").
 					Used(MakeResourceList().CPU(30).Mem(40).Obj()).Obj(),
 				MakeEQ("ns2", "t2-eq2").
@@ -208,7 +207,7 @@ func TestElasticController(t *testing.T) {
 				MakePod("ns1", "t2-p1").Phase(v1.PodSucceeded).Obj(),
 				MakePod("ns1", "t2-p3").Phase(v1.PodFailed).Obj(),
 			},
-			want: []*v1alpha1.ElasticQuota{
+			want: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t2-eq1").
 					Used(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
 				MakeEQ("ns2", "t2-eq2").
@@ -217,7 +216,7 @@ func TestElasticController(t *testing.T) {
 		},
 		{
 			name: "Different resource between max and min",
-			elasticQuotas: []*v1alpha1.ElasticQuota{
+			elasticQuotas: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t3-eq1").
 					Min(MakeResourceList().Mem(1000).Obj()).
 					Max(MakeResourceList().CPU(100).Obj()).Obj(),
@@ -226,7 +225,7 @@ func TestElasticController(t *testing.T) {
 				MakePod("ns1", "t3-p1").
 					Container(MakeResourceList().CPU(10).Mem(20).Obj()).Obj(),
 			},
-			used: []*v1alpha1.ElasticQuota{
+			used: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t3-eq1").
 					Used(MakeResourceList().CPU(0).Mem(0).Obj()).Obj(),
 			},
@@ -234,14 +233,14 @@ func TestElasticController(t *testing.T) {
 				MakePod("ns1", "t3-p1").Phase(v1.PodRunning).Node("fake-node").
 					Container(MakeResourceList().CPU(10).Mem(20).Obj()).Obj(),
 			},
-			want: []*v1alpha1.ElasticQuota{
+			want: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t3-eq1").
 					Used(MakeResourceList().CPU(10).Mem(20).Obj()).Obj(),
 			},
 		},
 		{
 			name: "EQ doesn't have max and the status of the pod changes from pending to running",
-			elasticQuotas: []*v1alpha1.ElasticQuota{
+			elasticQuotas: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t4-eq1").
 					Min(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
 			},
@@ -255,7 +254,7 @@ func TestElasticController(t *testing.T) {
 				MakePod("ns1", "t4-p4").
 					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
 			},
-			used: []*v1alpha1.ElasticQuota{
+			used: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t4-eq1").
 					Used(MakeResourceList().CPU(0).Mem(0).Obj()).Obj(),
 			},
@@ -270,7 +269,7 @@ func TestElasticController(t *testing.T) {
 					Container(MakeResourceList().CPU(10).Mem(10).Obj()).Obj(),
 			},
 
-			want: []*v1alpha1.ElasticQuota{
+			want: []*schedv1alpha1.ElasticQuota{
 				MakeEQ("ns1", "t4-eq1").
 					Used(MakeResourceList().CPU(40).Mem(50).Obj()).Obj(),
 			},

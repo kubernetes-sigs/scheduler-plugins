@@ -30,7 +30,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
 	networkawareutil "sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
@@ -89,7 +88,7 @@ type PreFilterState struct {
 	dependencyList []agv1alpha1.DependenciesInfo
 
 	// Pods already scheduled based on the dependency list
-	scheduledList util.ScheduledList
+	scheduledList networkawareutil.ScheduledList
 
 	// node map for cost / destinations. Search for requirements faster...
 	nodeCostMap map[string]map[networkawareutil.CostKey]int64

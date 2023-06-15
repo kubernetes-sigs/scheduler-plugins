@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
-	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
@@ -95,7 +94,7 @@ func TestTopologyMatchPluginValidation(t *testing.T) {
 		},
 	})
 
-	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	cs := clientset.NewForConfigOrDie(globalKubeConfig)
 	informer := scheduler.NewInformerFactory(cs, 0)
 	dynInformerFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynamic.NewForConfigOrDie(globalKubeConfig), 0, v1.NamespaceAll, nil)
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{
@@ -127,7 +126,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
-	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	cs := clientset.NewForConfigOrDie(globalKubeConfig)
 	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
