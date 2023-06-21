@@ -27,7 +27,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -48,7 +47,7 @@ const (
 	nicResourceName = "vendor/nic1"
 )
 
-func waitForNRT(cs *kubernetes.Clientset) error {
+func waitForNRT(cs *clientset.Clientset) error {
 	return wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {

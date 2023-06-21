@@ -30,7 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -477,7 +476,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			testCtx := &testContext{}
 			testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
-			cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+			cs := clientset.NewForConfigOrDie(globalKubeConfig)
 			extClient := versioned.NewForConfigOrDie(globalKubeConfig)
 			testCtx.ClientSet = cs
 			testCtx.KubeConfig = globalKubeConfig
@@ -658,7 +657,7 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
-	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	cs := clientset.NewForConfigOrDie(globalKubeConfig)
 	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
