@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/preemptiontoleration"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/yaml"
 )
@@ -824,6 +825,23 @@ profiles:
 								},
 							},
 							{
+								Name: lowriskovercommitment.Name,
+								Args: &config.LowRiskOverCommitmentArgs{
+									TrimaranSpec: config.TrimaranSpec{
+										MetricProvider: config.MetricProviderSpec{
+											Type:               config.Prometheus,
+											Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+											InsecureSkipVerify: false,
+										},
+										WatcherAddress: "http://deadbeef:2020"},
+									SmoothingWindowSize: v1beta3.DefaultSmoothingWindowSize,
+									RiskLimitWeights: map[corev1.ResourceName]float64{
+										corev1.ResourceCPU:    v1beta3.DefaultRiskLimitWeight,
+										corev1.ResourceMemory: v1beta3.DefaultRiskLimitWeight,
+									},
+								},
+							},
+							{
 								Name: topologicalsort.Name,
 								Args: &config.TopologicalSortArgs{
 									Namespaces: []string{"default"},
@@ -907,6 +925,20 @@ profiles:
     name: LoadVariationRiskBalancing
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1beta3
+      kind: LowRiskOverCommitmentArgs
+      metricProvider:
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
+        token: ""
+        type: Prometheus
+      riskLimitWeights:
+        cpu: 0.5
+        memory: 0.5
+      smoothingWindowSize: 5
+      watcherAddress: http://deadbeef:2020
+    name: LowRiskOverCommitment
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1beta3
       kind: TopologicalSortArgs
       namespaces:
       - default
@@ -975,6 +1007,23 @@ profiles:
 										WatcherAddress: "http://deadbeef:2020"},
 									SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
 									SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+								},
+							},
+							{
+								Name: lowriskovercommitment.Name,
+								Args: &config.LowRiskOverCommitmentArgs{
+									TrimaranSpec: config.TrimaranSpec{
+										MetricProvider: config.MetricProviderSpec{
+											Type:               config.Prometheus,
+											Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
+											InsecureSkipVerify: false,
+										},
+										WatcherAddress: "http://deadbeef:2020"},
+									SmoothingWindowSize: v1.DefaultSmoothingWindowSize,
+									RiskLimitWeights: map[corev1.ResourceName]float64{
+										corev1.ResourceCPU:    v1.DefaultRiskLimitWeight,
+										corev1.ResourceMemory: v1.DefaultRiskLimitWeight,
+									},
 								},
 							},
 							{
@@ -1059,6 +1108,20 @@ profiles:
       safeVarianceSensitivity: 1
       watcherAddress: http://deadbeef:2020
     name: LoadVariationRiskBalancing
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
+      kind: LowRiskOverCommitmentArgs
+      metricProvider:
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+        insecureSkipVerify: false
+        token: ""
+        type: Prometheus
+      riskLimitWeights:
+        cpu: 0.5
+        memory: 0.5
+      smoothingWindowSize: 5
+      watcherAddress: http://deadbeef:2020
+    name: LowRiskOverCommitment
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1
       kind: TopologicalSortArgs

@@ -120,6 +120,21 @@ type LoadVariationRiskBalancingArgs struct {
 	SafeVarianceSensitivity *float64 `json:"safeVarianceSensitivity,omitempty"`
 }
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// LowRiskOverCommitmentArgs holds arguments used to configure LowRiskOverCommitment plugin.
+type LowRiskOverCommitmentArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Common parameters for trimaran plugins
+	TrimaranSpec `json:",inline"`
+	// The number of windows over which usage data metrics are smoothed
+	SmoothingWindowSize *int64 `json:"smoothingWindowSize,omitempty"`
+	// Resources fractional weight of risk due to limits specification [0,1]
+	RiskLimitWeights map[v1.ResourceName]float64 `json:"riskLimitWeights,omitempty"`
+}
+
 // ScoringStrategyType is a "string" type.
 type ScoringStrategyType string
 

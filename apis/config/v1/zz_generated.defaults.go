@@ -33,6 +33,7 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&LoadVariationRiskBalancingArgs{}, func(obj interface{}) {
 		SetObjectDefaults_LoadVariationRiskBalancingArgs(obj.(*LoadVariationRiskBalancingArgs))
 	})
+	scheme.AddTypeDefaultingFunc(&LowRiskOverCommitmentArgs{}, func(obj interface{}) { SetObjectDefaults_LowRiskOverCommitmentArgs(obj.(*LowRiskOverCommitmentArgs)) })
 	scheme.AddTypeDefaultingFunc(&NetworkOverheadArgs{}, func(obj interface{}) { SetObjectDefaults_NetworkOverheadArgs(obj.(*NetworkOverheadArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeResourceTopologyMatchArgs{}, func(obj interface{}) {
 		SetObjectDefaults_NodeResourceTopologyMatchArgs(obj.(*NodeResourceTopologyMatchArgs))
@@ -52,6 +53,10 @@ func SetObjectDefaults_CoschedulingArgs(in *CoschedulingArgs) {
 
 func SetObjectDefaults_LoadVariationRiskBalancingArgs(in *LoadVariationRiskBalancingArgs) {
 	SetDefaults_LoadVariationRiskBalancingArgs(in)
+}
+
+func SetObjectDefaults_LowRiskOverCommitmentArgs(in *LowRiskOverCommitmentArgs) {
+	SetDefaults_LowRiskOverCommitmentArgs(in)
 }
 
 func SetObjectDefaults_NetworkOverheadArgs(in *NetworkOverheadArgs) {
