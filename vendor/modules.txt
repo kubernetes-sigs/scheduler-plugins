@@ -500,6 +500,10 @@ gonum.org/v1/gonum/lapack
 gonum.org/v1/gonum/lapack/gonum
 gonum.org/v1/gonum/lapack/lapack64
 gonum.org/v1/gonum/mat
+gonum.org/v1/gonum/mathext
+gonum.org/v1/gonum/mathext/internal/amos
+gonum.org/v1/gonum/mathext/internal/cephes
+gonum.org/v1/gonum/mathext/internal/gonum
 gonum.org/v1/gonum/stat
 gonum.org/v1/gonum/stat/combin
 # google.golang.org/appengine v1.6.7
