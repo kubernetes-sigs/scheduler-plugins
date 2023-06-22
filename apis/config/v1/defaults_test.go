@@ -135,6 +135,63 @@ func TestSchedulingDefaults(t *testing.T) {
 			},
 		},
 		{
+			name:   "empty config LowRiskOverCommitmentArgs",
+			config: &LowRiskOverCommitmentArgs{},
+			expect: &LowRiskOverCommitmentArgs{
+				TrimaranSpec: TrimaranSpec{
+					MetricProvider: MetricProviderSpec{
+						Type: "KubernetesMetricsServer",
+					}},
+				SmoothingWindowSize: pointer.Int64Ptr(5),
+				RiskLimitWeights: map[v1.ResourceName]float64{
+					v1.ResourceCPU:    0.5,
+					v1.ResourceMemory: 0.5,
+				},
+			},
+		},
+		{
+			name: "set non default LowRiskOverCommitmentArgs",
+			config: &LowRiskOverCommitmentArgs{
+				SmoothingWindowSize: pointer.Int64Ptr(10),
+				RiskLimitWeights: map[v1.ResourceName]float64{
+					v1.ResourceCPU:    0.2,
+					v1.ResourceMemory: 0.8,
+				},
+			},
+			expect: &LowRiskOverCommitmentArgs{
+				TrimaranSpec: TrimaranSpec{
+					MetricProvider: MetricProviderSpec{
+						Type: "KubernetesMetricsServer",
+					}},
+				SmoothingWindowSize: pointer.Int64Ptr(10),
+				RiskLimitWeights: map[v1.ResourceName]float64{
+					v1.ResourceCPU:    0.2,
+					v1.ResourceMemory: 0.8,
+				},
+			},
+		},
+		{
+			name: "set out of range LowRiskOverCommitmentArgs",
+			config: &LowRiskOverCommitmentArgs{
+				SmoothingWindowSize: pointer.Int64Ptr(10),
+				RiskLimitWeights: map[v1.ResourceName]float64{
+					v1.ResourceCPU:    -1,
+					v1.ResourceMemory: 2,
+				},
+			},
+			expect: &LowRiskOverCommitmentArgs{
+				TrimaranSpec: TrimaranSpec{
+					MetricProvider: MetricProviderSpec{
+						Type: "KubernetesMetricsServer",
+					}},
+				SmoothingWindowSize: pointer.Int64Ptr(10),
+				RiskLimitWeights: map[v1.ResourceName]float64{
+					v1.ResourceCPU:    0.5,
+					v1.ResourceMemory: 0.5,
+				},
+			},
+		},
+		{
 			name:   "empty config NodeResourceTopologyMatchArgs",
 			config: &NodeResourceTopologyMatchArgs{},
 			expect: &NodeResourceTopologyMatchArgs{

@@ -124,7 +124,6 @@ func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
 			break
 		}
 	}
-
 }
 
 func (p *PodAssignEventHandler) updateCache(pod *v1.Pod) {

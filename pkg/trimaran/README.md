@@ -7,6 +7,7 @@ Currently, the collection consists of the following plugins.
 
 - `TargetLoadPacking`: Implements a packing policy up to a configured CPU utilization, then switches to a spreading policy among the hot nodes. (Supports CPU resource.)
 - `LoadVariationRiskBalancing`: Equalizes the risk, defined as a combined measure of average utilization and variation in utilization, among nodes. (Supports CPU and memory resources.)
+- `LowRiskOverCommitment`: Evaluates the performance risk of overcommitment and selects the node with lowest risk by taking into consideration (1) the resource limit values of pods (limit-aware) and (2) the actual load (utilization) on the nodes (load-aware). Thus, it provides a low risk environment for pods and alleviate issues with overcommitment, while allowing pods to use their limits.
 
 The Trimaran plugins utilize a [load-watcher](https://github.com/paypal/load-watcher) to access resource utilization data via metrics providers. Currently, the `load-watcher` supports three metrics providers: [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server), [Prometheus Server](https://prometheus.io/), and [SignalFx](https://docs.signalfx.com/en/latest/integrations/agent/index.html).
 
@@ -47,7 +48,7 @@ In addition to the above configuration parameters, the Trimaran plugin may have 
 Following is an example scheduler configuration.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -66,24 +67,23 @@ profiles:
       safeVarianceMargin: 1
       safeVarianceSensitivity: 2
 ```
+
 ### Configure Prometheus Metric Provider under different environments
+
 1. Invalid self-signed SSL connection error for the Prometheus metric queries
-   The Prometheus metric queries may have invalid self-signed SSL connection error when the cluster 
-environment disables the skipInsecureVerify option for HTTPs. In this case, you can configure 
-`insecureSkipVerify: true` for `metricProvider` to skip the SSL verification.
-```
- args:
-   metricProvider:
-     type: Prometheus
-     address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
-     insecureSkipVerify: true
-```
+   The Prometheus metric queries may have invalid self-signed SSL connection error when the cluster environment disables the skipInsecureVerify option for HTTPs. In this case, you can configure `insecureSkipVerify: true` for `metricProvider` to skip the SSL verification.
+
+   ```yaml
+   args:
+     metricProvider:
+       type: Prometheus
+       address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+       insecureSkipVerify: true
+    ```
 
 2. OpenShift Prometheus authentication without tokens.
-   The OpenShift clusters disallow non-verified clients to access its Prometheus metrics. To run the 
-Trimaran plugin on OpenShift, you need to set an environment variable `ENABLE_OPENSHIFT_AUTH=true` for 
-your trimaran scheduler deployment when run [load-watcher](https://github.com/paypal/load-watcher/blob/master/README.md) 
-as a library.
+   The OpenShift clusters disallow non-verified clients to access its Prometheus metrics. To run the Trimaran plugin on OpenShift, you need to set an environment variable `ENABLE_OPENSHIFT_AUTH=true` for your trimaran scheduler deployment when run [load-watcher](https://github.com/paypal/load-watcher/blob/master/README.md) as a library.
 
 ## A note on multiple plugins
+
 The Trimaran plugins have different, potentially conflicting, objectives. Thus, it is recommended not to enable them concurrently. As such, they are designed to each have its own load-watcher.
