@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 )
 
@@ -327,6 +328,40 @@ profiles:
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
       safeVarianceMargin: 1
       safeVarianceSensitivity: 2.5
+      watcherAddress: http://deadbeef:2020
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
+	// LowRiskOverCommitment plugin config with arguments
+	lowRiskOverCommitmentConfigWithArgsFile := filepath.Join(tmpDir, "lowRiskOverCommitment-with-args.yaml")
+	if err := os.WriteFile(lowRiskOverCommitmentConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta3
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    preScore:
+      enabled:
+      - name: LowRiskOverCommitment
+      disabled:
+      - name: "*"
+    score:
+      enabled:
+      - name: LowRiskOverCommitment
+      disabled:
+      - name: "*"
+  pluginConfig:
+  - name: LowRiskOverCommitment
+    args:
+      metricProvider:
+        type: Prometheus
+        address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
+      smoothingWindowSize: 5
+      riskLimitWeights:
+        cpu: 0.5
+        memory: 0.5
       watcherAddress: http://deadbeef:2020
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)
@@ -621,6 +656,24 @@ profiles:
 					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
 					PreScore:   defaults.ExpandedPluginsV1beta3.PreScore,
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: loadvariationriskbalancing.Name, Weight: 1}}},
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - LowRiskOverCommitment with args",
+			flags:           []string{"--config", lowRiskOverCommitmentConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(lowriskovercommitment.Name, lowriskovercommitment.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
+					Filter:     defaults.ExpandedPluginsV1beta3.Filter,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
+					PreScore:   config.PluginSet{Enabled: []config.Plugin{{Name: lowriskovercommitment.Name}}},
+					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: lowriskovercommitment.Name, Weight: 1}}},
 					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
 					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},
