@@ -24,8 +24,6 @@ profiles:
       enabled: # A higher weight is given to NetworkOverhead to favor allocation schemes with lower latency.
         - name: NetworkOverhead
           weight: 5
-        - name: BalancedAllocation
-          weight: 1
   pluginConfig:
   - name: TopologicalSort
     args:
