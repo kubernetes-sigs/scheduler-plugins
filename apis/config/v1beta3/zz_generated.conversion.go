@@ -344,6 +344,7 @@ func Convert_config_NetworkOverheadArgs_To_v1beta3_NetworkOverheadArgs(in *confi
 func autoConvert_v1beta3_NodeResourceTopologyCache_To_config_NodeResourceTopologyCache(in *NodeResourceTopologyCache, out *config.NodeResourceTopologyCache, s conversion.Scope) error {
 	out.ForeignPodsDetect = (*config.ForeignPodsDetectMode)(unsafe.Pointer(in.ForeignPodsDetect))
 	out.ResyncMethod = (*config.CacheResyncMethod)(unsafe.Pointer(in.ResyncMethod))
+	out.InformerMode = (*config.CacheInformerMode)(unsafe.Pointer(in.InformerMode))
 	return nil
 }
 
@@ -355,6 +356,7 @@ func Convert_v1beta3_NodeResourceTopologyCache_To_config_NodeResourceTopologyCac
 func autoConvert_config_NodeResourceTopologyCache_To_v1beta3_NodeResourceTopologyCache(in *config.NodeResourceTopologyCache, out *NodeResourceTopologyCache, s conversion.Scope) error {
 	out.ForeignPodsDetect = (*ForeignPodsDetectMode)(unsafe.Pointer(in.ForeignPodsDetect))
 	out.ResyncMethod = (*CacheResyncMethod)(unsafe.Pointer(in.ResyncMethod))
+	out.InformerMode = (*CacheInformerMode)(unsafe.Pointer(in.InformerMode))
 	return nil
 }
 

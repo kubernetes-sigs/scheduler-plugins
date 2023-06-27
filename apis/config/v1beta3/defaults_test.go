@@ -205,6 +205,7 @@ func TestSchedulingDefaults(t *testing.T) {
 				Cache: &NodeResourceTopologyCache{
 					ForeignPodsDetect: &defaultForeignPodsDetect,
 					ResyncMethod:      &defaultResyncMethod,
+					InformerMode:      &defaultInformerMode,
 				},
 			},
 		},

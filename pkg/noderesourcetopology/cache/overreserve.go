@@ -27,15 +27,16 @@ import (
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
-	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 )
 
@@ -50,9 +51,10 @@ type OverReserve struct {
 	nodesWithForeignPods   counter
 	podLister              podlisterv1.PodLister
 	resyncMethod           apiconfig.CacheResyncMethod
+	isPodRelevant          podprovider.PodFilterFunc
 }
 
-func NewOverReserve(cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.Client, podLister podlisterv1.PodLister) (*OverReserve, error) {
+func NewOverReserve(cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.Client, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (*OverReserve, error) {
 	if client == nil || podLister == nil {
 		return nil, fmt.Errorf("nrtcache: received nil references")
 	}
@@ -74,6 +76,7 @@ func NewOverReserve(cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.
 		nodesWithForeignPods:   newCounter(),
 		podLister:              podLister,
 		resyncMethod:           resyncMethod,
+		isPodRelevant:          isPodRelevant,
 	}
 	return obj, nil
 }
@@ -199,7 +202,7 @@ func (ov *OverReserve) Resync() {
 	}
 
 	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToPodDataMap(ov.podLister, logID)
+	nodeToObjsMap, err := makeNodeToPodDataMap(ov.podLister, ov.isPodRelevant, logID)
 	if err != nil {
 		klog.ErrorS(err, "cannot find the mapping between running pods and nodes")
 		return
@@ -267,14 +270,30 @@ func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha2.NodeRe
 	}
 }
 
-func InformerFromHandle(handle framework.Handle) (k8scache.SharedIndexInformer, podlisterv1.PodLister) {
-	podHandle := handle.SharedInformerFactory().Core().V1().Pods() // shortcut
-	return podHandle.Informer(), podHandle.Lister()
-}
-
 // to be used only in tests
 func (ov *OverReserve) Store() *nrtStore {
 	return ov.nrts
+}
+
+func makeNodeToPodDataMap(podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc, logID string) (map[string][]podData, error) {
+	nodeToObjsMap := make(map[string][]podData)
+	pods, err := podLister.List(labels.Everything())
+	if err != nil {
+		return nodeToObjsMap, err
+	}
+	for _, pod := range pods {
+		if !isPodRelevant(pod, logID) {
+			continue
+		}
+		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
+		nodeObjs = append(nodeObjs, podData{
+			Namespace:             pod.Namespace,
+			Name:                  pod.Name,
+			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
+		})
+		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
+	}
+	return nodeToObjsMap, nil
 }
 
 func logIDFromTime() string {
