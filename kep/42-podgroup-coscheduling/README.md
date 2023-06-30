@@ -118,7 +118,7 @@ stateDiagram-v2
     Pending --> Scheduling: minMember pods are scheduling
     Scheduling --> Running: minMember pods are running
     Running --> Failed: at least one of the pods failed
-    Failed --> if_minMember: failed fixed
+    Failed --> if_minMember: failed resolved
     if_minMember --> Scheduling: minMember pods are scheduling
     if_minMember --> Running: minMember pods are running
     Running --> Finished: all pods successfully finished
