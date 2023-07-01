@@ -91,15 +91,9 @@ const (
 	// PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
 	PodGroupRunning PodGroupPhase = "Running"
 
-	// PodGroupPreScheduling means all pods of the pod group have enqueued and are waiting to be scheduled.
-	PodGroupPreScheduling PodGroupPhase = "PreScheduling"
-
-	// PodGroupScheduling means partial pods of the pod group have been scheduled and are in running phase
+	// PodGroupScheduling means the number of pods scheduled is bigger than `spec.minMember`
 	// but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
 	PodGroupScheduling PodGroupPhase = "Scheduling"
-
-	// PodGroupScheduled means the `spec.minMember` pods of the pod group have been scheduled and are in running phase.
-	PodGroupScheduled PodGroupPhase = "Scheduled"
 
 	// PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
 	// be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
@@ -162,10 +156,6 @@ type PodGroupStatus struct {
 	// OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
 	// It is empty if not initialized.
 	OccupiedBy string `json:"occupiedBy,omitempty"`
-
-	// The number of actively running pods.
-	// +optional
-	Scheduled int32 `json:"scheduled,omitempty"`
 
 	// The number of actively running pods.
 	// +optional

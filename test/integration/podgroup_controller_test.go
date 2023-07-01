@@ -148,7 +148,7 @@ func TestPodGroupController(t *testing.T) {
 					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").Node(nodeName).Obj(),
 			},
 			intermediatePGState: []*v1alpha1.PodGroup{
-				util.UpdatePGStatus(util.MakePG("pg1-1", ns, 3, nil, nil), "PreScheduling", "", 0, 0, 0, 0),
+				util.UpdatePGStatus(util.MakePG("pg1-1", ns, 3, nil, nil), "Scheduling", "", 0, 0, 0, 0),
 			},
 			incomingPods: []*v1.Pod{
 				st.MakePod().Namespace(ns).Name("t1-p1-1").Req(map[v1.ResourceName]string{v1.ResourceMemory: "50"}).Priority(

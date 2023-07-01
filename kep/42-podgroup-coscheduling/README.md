@@ -9,13 +9,13 @@
 - [Use Cases](#use-cases)
 - [Design Details](#design-details)
   - [PodGroup](#podgroup)
+    - [PodGroupPhase](#podgroupphase)
   - [Controller](#controller)
   - [Extension points](#extension-points)
     - [QueueSort](#queuesort)
     - [PreFilter](#prefilter)
     - [PostFilter](#postfilter)
     - [Permit](#permit)
-    - [PostBind](#postbind)
   - [Known Limitations](#known-limitations)
 <!-- /toc -->
 
@@ -64,10 +64,6 @@ type PodGroupStatus struct {
 
 	// The number of actively running pods.
 	// +optional
-	Scheduled uint32 `json:"scheduled"`
-
-	// The number of actively running pods.
-	// +optional
 	Running uint32 `json:"running"`
 
 	// The number of pods which reached phase Succeeded.
@@ -82,6 +78,53 @@ type PodGroupStatus struct {
 	ScheduleStartTime metav1.Time `json:"scheduleStartTime"`
 }
 ```
+
+#### PodGroupPhase
+`PodGroup` has the following states called `PodGroupStatus`.
+
+```go
+// These are the valid phase of podGroups.
+const (
+	// PodGroupPending means the pod group has been accepted by the system, but scheduler can not allocate
+	// enough resources to it.
+	PodGroupPending PodGroupPhase = "Pending"
+
+	// PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
+	PodGroupRunning PodGroupPhase = "Running"
+
+	// PodGroupScheduling means the number of pods scheduled is bigger than `spec.minMember`
+	// but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
+	PodGroupScheduling PodGroupPhase = "Scheduling"
+
+	// PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
+	// be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
+	PodGroupUnknown PodGroupPhase = "Unknown"
+
+	// PodGroupFinished means the `spec.minMember` pods of the pod group are successfully finished.
+	PodGroupFinished PodGroupPhase = "Finished"
+
+	// PodGroupFailed means at least one of `spec.minMember` pods have failed.
+	PodGroupFailed PodGroupPhase = "Failed"
+
+	// PodGroupLabel is the default label of coscheduling
+	PodGroupLabel = scheduling.GroupName + "/pod-group"
+)
+```
+
+```mermaid
+stateDiagram-v2
+	state if_minMember <<choice>>
+    [*] --> Pending
+    Pending --> Scheduling: minMember pods are scheduling
+    Scheduling --> Running: minMember pods are running
+    Running --> Failed: at least one of the pods failed
+    Failed --> if_minMember: failed resolved
+    if_minMember --> Scheduling: minMember pods are scheduling
+    if_minMember --> Running: minMember pods are running
+    Running --> Finished: all pods successfully finished
+    Finished --> [*]
+```
+
 
 ### Controller
 
@@ -123,10 +166,6 @@ If the gap to reach the quorum of a PodGroup is greater than 10%, we reject the 
 2. When the number is equal or greater than `minMember`, send a signal to permit the waiting pods.
 
 We can define `MaxScheduleTime` for a PodGroup. If any pod times out, the whole group would be rejected.
-
-#### PostBind
-
-This extension is primarily used to record the PodGroup Status. When a pod is bound successfully, we would update the status of its affiliated PodGroup.
 
 ### Known Limitations
 

@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2/klogr"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
@@ -58,16 +59,16 @@ func Test_Run(t *testing.T) {
 			minMember:         2,
 			podNames:          []string{"pod1", "pod2"},
 			podPhase:          v1.PodRunning,
-			previousPhase:     v1alpha1.PodGroupScheduled,
+			previousPhase:     v1alpha1.PodGroupScheduling,
 			desiredGroupPhase: v1alpha1.PodGroupRunning,
 		},
 		{
 			name:              "Group running, more than min member",
 			pgName:            "pg11",
 			minMember:         2,
-			podNames:          []string{"pod11", "pod21"},
+			podNames:          []string{"pod11", "pod21", "pod31", "pod41"},
 			podPhase:          v1.PodRunning,
-			previousPhase:     v1alpha1.PodGroupScheduled,
+			previousPhase:     v1alpha1.PodGroupScheduling,
 			desiredGroupPhase: v1alpha1.PodGroupRunning,
 		},
 		{
@@ -76,7 +77,7 @@ func Test_Run(t *testing.T) {
 			minMember:         2,
 			podNames:          []string{"pod1", "pod2"},
 			podPhase:          v1.PodFailed,
-			previousPhase:     v1alpha1.PodGroupScheduled,
+			previousPhase:     v1alpha1.PodGroupScheduling,
 			desiredGroupPhase: v1alpha1.PodGroupFailed,
 		},
 		{
@@ -85,20 +86,20 @@ func Test_Run(t *testing.T) {
 			minMember:         2,
 			podNames:          []string{"pod1", "pod2"},
 			podPhase:          v1.PodSucceeded,
-			previousPhase:     v1alpha1.PodGroupScheduled,
+			previousPhase:     v1alpha1.PodGroupScheduling,
 			desiredGroupPhase: v1alpha1.PodGroupFinished,
 		},
 		{
-			name:              "Group status convert from scheduling to scheduled",
+			name:              "Group status convert from pending to prescheduling",
 			pgName:            "pg4",
 			minMember:         2,
 			podNames:          []string{"pod1", "pod2"},
 			podPhase:          v1.PodPending,
-			previousPhase:     v1alpha1.PodGroupScheduling,
-			desiredGroupPhase: v1alpha1.PodGroupScheduled,
+			previousPhase:     v1alpha1.PodGroupPending,
+			desiredGroupPhase: v1alpha1.PodGroupScheduling,
 		},
 		{
-			name:              "Group status convert from scheduling to succeed",
+			name:              "Group status convert from scheduling to finished",
 			pgName:            "pg5",
 			minMember:         2,
 			podNames:          []string{"pod1", "pod2"},
@@ -108,16 +109,16 @@ func Test_Run(t *testing.T) {
 			podNextPhase:      v1.PodSucceeded,
 		},
 		{
-			name:              "Group status convert from pending to scheduling",
+			name:              "Group status keeps pending",
 			pgName:            "pg6",
 			minMember:         3,
 			podNames:          []string{"pod1", "pod2"},
 			podPhase:          v1.PodRunning,
 			previousPhase:     v1alpha1.PodGroupPending,
-			desiredGroupPhase: v1alpha1.PodGroupScheduling,
+			desiredGroupPhase: v1alpha1.PodGroupPending,
 		},
 		{
-			name:              "Group status convert from pending to prescheduling",
+			name:              "Group status convert from pending to finished",
 			pgName:            "pg7",
 			minMember:         2,
 			podNames:          []string{"pod1", "pod2"},
@@ -148,8 +149,8 @@ func Test_Run(t *testing.T) {
 		{
 			name:              "Group status convert from running to pending",
 			pgName:            "pg10",
-			minMember:         2,
-			podNames:          []string{},
+			minMember:         4,
+			podNames:          []string{"pod101", "pod102"},
 			podPhase:          v1.PodPending,
 			previousPhase:     v1alpha1.PodGroupRunning,
 			desiredGroupPhase: v1alpha1.PodGroupPending,
@@ -158,35 +159,37 @@ func Test_Run(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			controller, kClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.previousPhase, c.podGroupCreateTime, nil)
+			ps := makePods(c.podNames, c.pgName, c.podPhase, nil)
 			// 0 means not set
 			if len(c.podNextPhase) != 0 {
-				ps := makePods(c.podNames, c.pgName, c.podNextPhase, nil)
-				for _, p := range ps {
-					kClient.Status().Update(ctx, p)
-					reqs := controller.podToPodGroup(p)
-					for _, req := range reqs {
-						if _, err := controller.Reconcile(ctx, req); err != nil {
-							t.Errorf("reconcile: (%v)", err)
-						}
+				ps = makePods(c.podNames, c.pgName, c.podNextPhase, nil)
+			}
+			for _, p := range ps {
+				kClient.Status().Update(ctx, p)
+				reqs := controller.podToPodGroup(p)
+				for _, req := range reqs {
+					if _, err := controller.Reconcile(ctx, req); err != nil {
+						t.Errorf("reconcile: (%v)", err)
 					}
 				}
+			}
 
-				pg := &v1alpha1.PodGroup{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      c.pgName,
-						Namespace: metav1.NamespaceDefault,
-					},
-				}
-				err := kClient.Get(ctx, client.ObjectKeyFromObject(pg), pg)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if pg.Status.Phase != c.desiredGroupPhase {
-					t.Fatalf("want %v, got %v", c.desiredGroupPhase, pg.Status.Phase)
-				}
-				if err != nil {
-					t.Fatal("Unexpected error", err)
-				}
+			pg := &v1alpha1.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      c.pgName,
+					Namespace: metav1.NamespaceDefault,
+				},
+			}
+			err := kClient.Get(ctx, client.ObjectKeyFromObject(pg), pg)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if pg.Status.Phase != c.desiredGroupPhase {
+				t.Fatalf("want %v, got %v", c.desiredGroupPhase, pg.Status.Phase)
+			}
+			if err != nil {
+				t.Fatal("Unexpected error", err)
 			}
 		})
 	}
@@ -284,8 +287,9 @@ func setUp(ctx context.Context,
 	client := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objs...).Build()
 
 	controller := &PodGroupReconciler{
-		Client: client,
-		Scheme: s,
+		Client:   client,
+		Scheme:   s,
+		recorder: record.NewFakeRecorder(3),
 
 		log: klogr.New().WithName("podGroupTest"),
 	}
@@ -319,7 +323,6 @@ func makePG(pgName string, minMember int32, previousPhase v1alpha1.PodGroupPhase
 		},
 		Status: v1alpha1.PodGroupStatus{
 			OccupiedBy:        "test",
-			Scheduled:         minMember,
 			ScheduleStartTime: metav1.Time{Time: time.Now()},
 			Phase:             previousPhase,
 		},

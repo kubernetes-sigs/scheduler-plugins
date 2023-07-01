@@ -75,9 +75,6 @@ profiles:
     reserve:
       enabled:
       - name: Coscheduling
-    postBind:
-      enabled:
-      - name: Coscheduling
 ```
 
 ### Demo
