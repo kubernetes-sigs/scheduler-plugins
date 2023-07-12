@@ -40,15 +40,18 @@ func TestSchedulingDefaults(t *testing.T) {
 			config: &CoschedulingArgs{},
 			expect: &CoschedulingArgs{
 				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
+				PodGroupBackoffSeconds:   pointer.Int64Ptr(0),
 			},
 		},
 		{
 			name: "set non default CoschedulingArgs",
 			config: &CoschedulingArgs{
 				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
+				PodGroupBackoffSeconds:   pointer.Int64Ptr(20),
 			},
 			expect: &CoschedulingArgs{
 				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
+				PodGroupBackoffSeconds:   pointer.Int64Ptr(20),
 			},
 		},
 		{

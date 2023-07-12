@@ -22,6 +22,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
@@ -30,6 +31,7 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling/core"
 	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
@@ -41,6 +43,7 @@ type Coscheduling struct {
 	frameworkHandler framework.Handle
 	pgMgr            core.Manager
 	scheduleTimeout  *time.Duration
+	pgBackoff        *time.Duration
 }
 
 var _ framework.QueueSortPlugin = &Coscheduling{}
@@ -77,6 +80,14 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		frameworkHandler: handle,
 		pgMgr:            pgMgr,
 		scheduleTimeout:  &scheduleTimeDuration,
+	}
+	if args.PodGroupBackoffSeconds < 0 {
+		err := fmt.Errorf("Parse Arguments Failed")
+		klog.ErrorS(err, "PodGroupBackoffSeconds cannot be negative")
+		return nil, err
+	} else if args.PodGroupBackoffSeconds > 0 {
+		pgBackoff := time.Duration(args.PodGroupBackoffSeconds) * time.Second
+		plugin.pgBackoff = &pgBackoff
 	}
 	pgInformerFactory.Start(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), pgInformer.Informer().HasSynced) {
@@ -166,6 +177,16 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
+
+	if cs.pgBackoff != nil {
+		pods, err := cs.frameworkHandler.SharedInformerFactory().Core().V1().Pods().Lister().Pods(pod.Namespace).List(
+			labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
+		)
+		if err == nil && len(pods) >= int(pg.Spec.MinMember) {
+			cs.pgMgr.BackoffPodGroup(pgName, *cs.pgBackoff)
+		}
+	}
+
 	cs.pgMgr.DeletePermittedPodGroup(pgName)
 	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 		fmt.Sprintf("PodGroup %v gets rejected due to Pod %v is unschedulable even after PostFilter", pgName, pod.Name))

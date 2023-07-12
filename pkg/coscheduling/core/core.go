@@ -61,6 +61,7 @@ type Manager interface {
 	DeletePermittedPodGroup(string)
 	CalculateAssignedPods(string, string) int
 	ActivateSiblings(pod *corev1.Pod, state *framework.CycleState)
+	BackoffPodGroup(string, time.Duration)
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -74,6 +75,8 @@ type PodGroupManager struct {
 	scheduleTimeout *time.Duration
 	// permittedPG stores the podgroup name which has passed the pre resource check.
 	permittedPG *gochache.Cache
+	// backedOffPG stores the podgorup name which failed scheudling recently.
+	backedOffPG *gochache.Cache
 	// pgLister is podgroup lister
 	pgLister pglister.PodGroupLister
 	// podLister is pod lister
@@ -91,8 +94,16 @@ func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister fra
 		pgLister:             pgInformer.Lister(),
 		podLister:            podInformer.Lister(),
 		permittedPG:          gochache.New(3*time.Second, 3*time.Second),
+		backedOffPG:          gochache.New(10*time.Second, 10*time.Second),
 	}
 	return pgMgr
+}
+
+func (pgMgr *PodGroupManager) BackoffPodGroup(pgName string, backoff time.Duration) {
+	if backoff == time.Duration(0) {
+		return
+	}
+	pgMgr.backedOffPG.Add(pgName, nil, backoff)
 }
 
 // ActivateSiblings stashes the pods belonging to the same PodGroup of the given pod
@@ -141,6 +152,10 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	pgFullName, pg := pgMgr.GetPodGroup(pod)
 	if pg == nil {
 		return nil
+	}
+
+	if _, exist := pgMgr.backedOffPG.Get(pgFullName); exist {
+		return fmt.Errorf("podGroup %v failed recently", pgFullName)
 	}
 
 	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(

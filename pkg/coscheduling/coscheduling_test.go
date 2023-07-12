@@ -18,6 +18,8 @@ package coscheduling
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"k8s.io/utils/pointer"
 
 	_ "sigs.k8s.io/scheduler-plugins/apis/config/scheme"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
@@ -39,6 +42,99 @@ import (
 	"sigs.k8s.io/scheduler-plugins/test/util"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
+
+func TestPodGroupBackoffTime(t *testing.T) {
+	tests := []struct {
+		name string
+		pod1 *v1.Pod
+		pod2 *v1.Pod
+		pod3 *v1.Pod
+	}{
+		{
+			name: "pod in infinite scheduling loop.",
+			pod1: st.MakePod().Name("pod1").UID("pod1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pod2: st.MakePod().Name("pod2").UID("pod2").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pod3: st.MakePod().Name("pod3").UID("pod3").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+		},
+	}
+	ctx := context.Background()
+	cs := fakepgclientset.NewSimpleClientset()
+	pgInformerFactory := pgformers.NewSharedInformerFactory(cs, 0)
+	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
+	pgInformerFactory.Start(ctx.Done())
+	pg1 := testutil.MakePG("pg1", "ns1", 3, nil, nil)
+	pgInformer.Informer().GetStore().Add(pg1)
+
+	fakeClient := clientsetfake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	podInformer := informerFactory.Core().V1().Pods()
+	informerFactory.Start(ctx.Done())
+	existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
+	snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
+	// Compose a framework handle.
+	registeredPlugins := []st.RegisterPluginFunc{
+		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+	}
+	f, err := st.NewFramework(registeredPlugins, "", ctx.Done(),
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
+		frameworkruntime.WithInformerFactory(informerFactory),
+		frameworkruntime.WithSnapshotSharedLister(snapshot),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduleDuration := 10 * time.Second
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			podInformer.Informer().GetStore().Add(tt.pod1)
+			podInformer.Informer().GetStore().Add(tt.pod2)
+			podInformer.Informer().GetStore().Add(tt.pod3)
+			pgMgr := core.NewPodGroupManager(cs, snapshot, &scheduleDuration, pgInformer, podInformer)
+			coscheduling := &Coscheduling{pgMgr: pgMgr, frameworkHandler: f, scheduleTimeout: &scheduleDuration, pgBackoff: pointer.Duration(time.Duration(1 * time.Second))}
+			state := framework.NewCycleState()
+			state.Write(framework.PodsToActivateKey, framework.NewPodsToActivate())
+			code, _ := coscheduling.Permit(context.Background(), state, tt.pod1, "test")
+			if code.Code() != framework.Wait {
+				t.Errorf("expected %v, got %v", framework.Wait, code.Code())
+				return
+			}
+
+			podsToActiveObj, err := state.Read(framework.PodsToActivateKey)
+			if err != nil {
+				t.Errorf("expecte pod2 and pod3 in pods to active")
+				return
+			}
+			podsToActive, ok := podsToActiveObj.(*framework.PodsToActivate)
+			if !ok {
+				t.Errorf("cannot convert type %t to *framework.PodsToActivate", podsToActiveObj)
+				return
+			}
+
+			var expectPodsToActivate = map[string]*v1.Pod{
+				"ns1/pod2": tt.pod2, "ns1/pod3": tt.pod3,
+			}
+			if !reflect.DeepEqual(expectPodsToActivate, podsToActive.Map) {
+				t.Errorf("expected %v, got %v", expectPodsToActivate, podsToActive.Map)
+				return
+			}
+
+			coscheduling.PostFilter(context.Background(), framework.NewCycleState(), tt.pod2, nil)
+
+			_, code = coscheduling.PreFilter(context.Background(), framework.NewCycleState(), tt.pod3)
+			if code.Code() != framework.UnschedulableAndUnresolvable {
+				t.Errorf("expected %v, got %v", framework.UnschedulableAndUnresolvable, code.Code())
+				return
+			}
+			pgFullName, _ := pgMgr.GetPodGroup(tt.pod1)
+			if code.Reasons()[0] != fmt.Sprintf("podGroup %v failed recently", pgFullName) {
+				t.Errorf("expected %v, got %v", pgFullName, code.Reasons()[0])
+				return
+			}
+		})
+	}
+}
 
 func TestLess(t *testing.T) {
 	now := time.Now()

@@ -17,8 +17,9 @@ limitations under the License.
 package v1beta3
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"strconv"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -27,9 +28,9 @@ import (
 )
 
 var (
-	defaultPermitWaitingTimeSeconds int64 = 60
-
-	defaultNodeResourcesAllocatableMode = Least
+	defaultPermitWaitingTimeSeconds     int64 = 60
+	defaultPodGroupBackoffSeconds       int64 = 0
+	defaultNodeResourcesAllocatableMode       = Least
 
 	// defaultResourcesToWeightMap is used to set the default resourceToWeight map for CPU and memory
 	// used by the NodeResourcesAllocatable scoring plugin.
@@ -82,6 +83,9 @@ var (
 func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	if obj.PermitWaitingTimeSeconds == nil {
 		obj.PermitWaitingTimeSeconds = &defaultPermitWaitingTimeSeconds
+	}
+	if obj.PodGroupBackoffSeconds == nil {
+		obj.PodGroupBackoffSeconds = &defaultPodGroupBackoffSeconds
 	}
 }
 
