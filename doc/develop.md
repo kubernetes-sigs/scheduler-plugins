@@ -75,7 +75,7 @@ spec:
         tier: control-plane
     spec:
       nodeSelector:
-        node-role.kubernetes.io/master: ""
+        node-role.kubernetes.io/control-plane: ""
       containers:
         - image: localhost:5000/scheduler-plugins/kube-scheduler:latest
           imagePullPolicy: Never
