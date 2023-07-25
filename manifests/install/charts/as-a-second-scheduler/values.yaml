@@ -4,13 +4,13 @@
 
 scheduler:
   name: scheduler-plugins-scheduler
-  image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.25.7
+  image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.26.7
   replicaCount: 1
   leaderElect: false
 
 controller:
   name: scheduler-plugins-controller
-  image: registry.k8s.io/scheduler-plugins/controller:v0.25.7
+  image: registry.k8s.io/scheduler-plugins/controller:v0.26.7
   replicaCount: 1
 
 # LoadVariationRiskBalancing and TargetLoadPacking are not enabled by default

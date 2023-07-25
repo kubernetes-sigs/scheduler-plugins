@@ -29,7 +29,7 @@ Further details and examples are described [here](../networkaware/networkoverhea
 Consider the following scheduler config as an example to enable both plugins:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
