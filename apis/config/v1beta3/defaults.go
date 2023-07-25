@@ -28,9 +28,9 @@ import (
 )
 
 var (
-	defaultPermitWaitingTimeSeconds int64 = 60
-
-	defaultNodeResourcesAllocatableMode = Least
+	defaultPermitWaitingTimeSeconds     int64 = 60
+	defaultPodGroupBackoffSeconds       int64 = 0
+	defaultNodeResourcesAllocatableMode       = Least
 
 	// defaultResourcesToWeightMap is used to set the default resourceToWeight map for CPU and memory
 	// used by the NodeResourcesAllocatable scoring plugin.
@@ -100,6 +100,9 @@ var (
 func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	if obj.PermitWaitingTimeSeconds == nil {
 		obj.PermitWaitingTimeSeconds = &defaultPermitWaitingTimeSeconds
+	}
+	if obj.PodGroupBackoffSeconds == nil {
+		obj.PodGroupBackoffSeconds = &defaultPodGroupBackoffSeconds
 	}
 }
 

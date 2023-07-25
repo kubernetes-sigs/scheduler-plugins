@@ -28,6 +28,7 @@ import (
 
 var (
 	defaultPermitWaitingTimeSeconds int64 = 60
+	defaultPodGroupBackoffSeconds   int64 = 0
 
 	defaultNodeResourcesAllocatableMode = Least
 
@@ -99,6 +100,9 @@ var (
 func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	if obj.PermitWaitingTimeSeconds == nil {
 		obj.PermitWaitingTimeSeconds = &defaultPermitWaitingTimeSeconds
+	}
+	if obj.PodGroupBackoffSeconds == nil {
+		obj.PodGroupBackoffSeconds = &defaultPodGroupBackoffSeconds
 	}
 }
 

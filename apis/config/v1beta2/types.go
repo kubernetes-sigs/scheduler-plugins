@@ -30,6 +30,8 @@ type CoschedulingArgs struct {
 
 	// PermitWaitingTimeSeconds is the waiting timeout in seconds.
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
+	// PodGroupBackoffSeconds is the backoff time in seconds before a pod group can be scheduled again.
+	PodGroupBackoffSeconds *int64 `json:"podGroupBackoffSeconds,omitempty"`
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
 	DeniedPGExpirationTimeSeconds *int64 `json:"deniedPGExpirationTimeSeconds,omitempty"`
 }

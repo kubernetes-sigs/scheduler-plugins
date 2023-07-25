@@ -29,7 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/testing/defaults"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1"
+	v1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta2"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
@@ -67,6 +67,7 @@ profiles:
   - name: Coscheduling
     args:
       permitWaitingTimeSeconds: 10
+      podGroupBackoffSeconds: 0
       deniedPGExpirationTimeSeconds: 3
   - name: NodeResourcesAllocatable
     args:
@@ -473,6 +474,7 @@ kind: KubeSchedulerConfiguration
 profiles:
 - schedulerName: scheduler-plugins
   pluginConfig:
+  - name: Coscheduling # Test argument defaulting logic
   - name: TopologicalSort
     args:
       namespaces:
@@ -489,6 +491,12 @@ profiles:
 					SchedulerName: "scheduler-plugins",
 					Plugins:       defaults.PluginsV1,
 					PluginConfig: []schedconfig.PluginConfig{
+						{
+							Name: coscheduling.Name,
+							Args: &config.CoschedulingArgs{
+								PermitWaitingTimeSeconds: 60,
+							},
+						},
 						{
 							Name: topologicalsort.Name,
 							Args: &config.TopologicalSortArgs{
@@ -729,6 +737,7 @@ profiles:
       apiVersion: kubescheduler.config.k8s.io/v1beta2
       kind: CoschedulingArgs
       permitWaitingTimeSeconds: 10
+      podGroupBackoffSeconds: 0
     name: Coscheduling
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1beta2
@@ -782,6 +791,7 @@ profiles:
 								Name: coscheduling.Name,
 								Args: &config.CoschedulingArgs{
 									PermitWaitingTimeSeconds: 10,
+									PodGroupBackoffSeconds:   20,
 								},
 							},
 							{
@@ -886,6 +896,7 @@ profiles:
       apiVersion: kubescheduler.config.k8s.io/v1beta3
       kind: CoschedulingArgs
       permitWaitingTimeSeconds: 10
+      podGroupBackoffSeconds: 20
     name: Coscheduling
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1beta3
@@ -1071,6 +1082,7 @@ profiles:
       apiVersion: kubescheduler.config.k8s.io/v1
       kind: CoschedulingArgs
       permitWaitingTimeSeconds: 10
+      podGroupBackoffSeconds: 0
     name: Coscheduling
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1

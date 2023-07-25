@@ -27,6 +27,7 @@ import (
 
 var (
 	defaultPermitWaitingTimeSeconds      int64 = 60
+	defaultPodGroupBackoffSeconds        int64 = 0
 	defaultDeniedPGExpirationTimeSeconds int64 = 20
 
 	defaultNodeResourcesAllocatableMode = Least
@@ -84,6 +85,9 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.DeniedPGExpirationTimeSeconds == nil {
 		obj.DeniedPGExpirationTimeSeconds = &defaultDeniedPGExpirationTimeSeconds
+	}
+	if obj.PodGroupBackoffSeconds == nil {
+		obj.PodGroupBackoffSeconds = &defaultPodGroupBackoffSeconds
 	}
 }
 

@@ -177,6 +177,9 @@ func autoConvert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(in *Cosched
 	if err := v1.Convert_Pointer_int64_To_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
 		return err
 	}
+	if err := v1.Convert_Pointer_int64_To_int64(&in.PodGroupBackoffSeconds, &out.PodGroupBackoffSeconds, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -187,6 +190,9 @@ func Convert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(in *Coschedulin
 
 func autoConvert_config_CoschedulingArgs_To_v1beta3_CoschedulingArgs(in *config.CoschedulingArgs, out *CoschedulingArgs, s conversion.Scope) error {
 	if err := v1.Convert_int64_To_Pointer_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_int64_To_Pointer_int64(&in.PodGroupBackoffSeconds, &out.PodGroupBackoffSeconds, s); err != nil {
 		return err
 	}
 	return nil
