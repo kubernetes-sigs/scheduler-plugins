@@ -497,6 +497,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(podstate.Name, podstate.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.PluginsV1beta2.PreEnqueue,
 					QueueSort:  defaults.PluginsV1beta2.QueueSort,
 					Bind:       defaults.PluginsV1beta2.Bind,
 					PostFilter: defaults.PluginsV1beta2.PostFilter,
@@ -512,6 +513,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(qos.Name, qos.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
 					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: qos.Name}}},
 					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
@@ -527,6 +529,7 @@ profiles:
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
 					MultiPoint: defaults.ExpandedPluginsV1.MultiPoint,
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
 					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: coscheduling.Name}}},
 					Bind:       defaults.ExpandedPluginsV1.Bind,
 					PreFilter: config.PluginSet{
@@ -551,6 +554,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
 					QueueSort:  defaults.ExpandedPluginsV1.QueueSort,
 					Bind:       defaults.ExpandedPluginsV1.Bind,
 					PreFilter:  defaults.ExpandedPluginsV1.PreFilter,
@@ -569,8 +573,9 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					QueueSort: defaults.PluginsV1beta2.QueueSort,
-					Bind:      defaults.PluginsV1beta2.Bind,
+					PreEnqueue: defaults.PluginsV1beta2.PreEnqueue,
+					QueueSort:  defaults.PluginsV1beta2.QueueSort,
+					Bind:       defaults.PluginsV1beta2.Bind,
 					PreFilter: config.PluginSet{
 						Enabled: append(defaults.PluginsV1beta2.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
 					},
@@ -591,8 +596,9 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					QueueSort: defaults.ExpandedPluginsV1beta3.QueueSort,
-					Bind:      defaults.ExpandedPluginsV1beta3.Bind,
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PreFilter: config.PluginSet{
 						Enabled: append(defaults.ExpandedPluginsV1beta3.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
 					},
@@ -613,6 +619,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(targetloadpacking.Name, targetloadpacking.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
 					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
 					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
@@ -631,6 +638,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(targetloadpacking.Name, targetloadpacking.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
 					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
 					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
@@ -649,6 +657,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(loadvariationriskbalancing.Name, loadvariationriskbalancing.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
 					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
 					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
@@ -667,6 +676,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(lowriskovercommitment.Name, lowriskovercommitment.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
 					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
 					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PreFilter:  defaults.ExpandedPluginsV1beta3.PreFilter,
@@ -685,6 +695,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(noderesourcetopology.Name, noderesourcetopology.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
 					QueueSort:  defaults.ExpandedPluginsV1.QueueSort,
 					Bind:       defaults.ExpandedPluginsV1.Bind,
 					PreFilter:  defaults.ExpandedPluginsV1.PreFilter,
@@ -703,6 +714,7 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(topologicalsort.Name, topologicalsort.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
 					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: topologicalsort.Name}}},
 					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
@@ -717,8 +729,9 @@ profiles:
 			registryOptions: []app.Option{app.WithPlugin(networkoverhead.Name, networkoverhead.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					QueueSort: defaults.ExpandedPluginsV1beta3.QueueSort,
-					Bind:      defaults.ExpandedPluginsV1beta3.Bind,
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
 					PreFilter: config.PluginSet{
 						Enabled: append(defaults.ExpandedPluginsV1beta3.PreFilter.Enabled, config.Plugin{Name: networkoverhead.Name}),
 					},
