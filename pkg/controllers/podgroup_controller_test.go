@@ -166,7 +166,7 @@ func Test_Run(t *testing.T) {
 			}
 			for _, p := range ps {
 				kClient.Status().Update(ctx, p)
-				reqs := controller.podToPodGroup(p)
+				reqs := controller.podToPodGroup(ctx, p)
 				for _, req := range reqs {
 					if _, err := controller.Reconcile(ctx, req); err != nil {
 						t.Errorf("reconcile: (%v)", err)

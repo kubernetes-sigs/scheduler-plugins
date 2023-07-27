@@ -36,8 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
 	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
@@ -191,14 +189,13 @@ func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.log = mgr.GetLogger()
 
 	return ctrl.NewControllerManagedBy(mgr).
-		Watches(&source.Kind{Type: &v1.Pod{}},
-			handler.EnqueueRequestsFromMapFunc(r.podToPodGroup)).
+		Watches(&v1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.podToPodGroup)).
 		For(&schedv1alpha1.PodGroup{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.Workers}).
 		Complete(r)
 }
 
-func (r *PodGroupReconciler) podToPodGroup(obj client.Object) []ctrl.Request {
+func (r *PodGroupReconciler) podToPodGroup(ctx context.Context, obj client.Object) []ctrl.Request {
 	pod, ok := obj.(*v1.Pod)
 	if !ok {
 		return nil
