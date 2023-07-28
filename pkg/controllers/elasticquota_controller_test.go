@@ -128,7 +128,7 @@ func TestElasticQuotaController_Run(t *testing.T) {
 			},
 			want: []*v1alpha1.ElasticQuota{
 				testutil.MakeEQ("t3-ns1", "t3-eq1").
-					Used(testutil.MakeResourceList().CPU(0).Mem(0).Obj()).Obj(),
+					Used(testutil.MakeResourceList().CPU(3).Mem(3).Obj()).Obj(),
 				testutil.MakeEQ("t3-ns2", "t3-eq2").
 					Used(testutil.MakeResourceList().CPU(4).Mem(3).Obj()).Obj(),
 			},
@@ -217,7 +217,7 @@ func TestElasticQuotaController_Run(t *testing.T) {
 						return false, err
 					}
 					if !quota.Equals(eq.Status.Used, v.Status.Used) {
-						return false, fmt.Errorf("want %v, got %v", v.Status.Used, eq.Status.Used)
+						return false, fmt.Errorf("%v: want %v, got %v", c.name, v.Status.Used, eq.Status.Used)
 					}
 				}
 				return true, nil
@@ -237,7 +237,10 @@ func setUpEQ(ctx context.Context,
 	s := scheme.Scheme
 	utilruntime.Must(v1alpha1.AddToScheme(s))
 
-	client := fake.NewClientBuilder().WithScheme(s).Build()
+	client := fake.NewClientBuilder().
+		WithScheme(s).
+		WithStatusSubresource(&v1alpha1.ElasticQuota{}).
+		Build()
 	for _, eq := range eqs {
 		err := client.Create(ctx, eq)
 		if errors.IsAlreadyExists(err) {
