@@ -197,8 +197,7 @@ func initTestSchedulerWithOptions(t *testing.T, testCtx *testContext, opts ...sc
 		t.Fatalf("Couldn't create scheduler: %v", err)
 	}
 
-	stopCh := make(chan struct{})
-	eventBroadcaster.StartRecordingToSink(stopCh)
+	eventBroadcaster.StartRecordingToSink(testCtx.Ctx.Done())
 
 	return testCtx
 }
