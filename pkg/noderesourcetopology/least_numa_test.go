@@ -271,6 +271,108 @@ func TestNUMANodesRequired(t *testing.T) {
 			expectedErr:         nil,
 			expectedMinDistance: false,
 		},
+		{
+			description: "4 NUMA node optimal distance",
+			numaNodes: NUMANodeList{
+				{
+					NUMAID: 0,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 10, 1: 20, 2: 40, 3: 30, 4: 20, 5: 30, 6: 50, 7: 40,
+					},
+				},
+				{
+					NUMAID: 3,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 30, 1: 40, 2: 20, 3: 10, 4: 30, 5: 20, 6: 40, 7: 50,
+					},
+				},
+				{
+					NUMAID: 5,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 30, 1: 20, 2: 50, 3: 20, 4: 50, 5: 10, 6: 50, 7: 40,
+					},
+				},
+				{
+					NUMAID: 7,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 40, 1: 50, 2: 30, 3: 50, 4: 20, 5: 40, 6: 30, 7: 10,
+					},
+				},
+				{
+					NUMAID: 1,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 20, 1: 10, 2: 30, 3: 40, 4: 50, 5: 20, 6: 40, 7: 50,
+					},
+				},
+				{
+					NUMAID: 6,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 50, 1: 40, 2: 20, 3: 40, 4: 30, 5: 50, 6: 10, 7: 30,
+					},
+				},
+				{
+					NUMAID: 2,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 40, 1: 30, 2: 10, 3: 20, 4: 40, 5: 50, 6: 20, 7: 30,
+					},
+				},
+				{
+					NUMAID: 4,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 20, 1: 50, 2: 40, 3: 30, 4: 10, 5: 50, 6: 30, 7: 20,
+					},
+				},
+			},
+			podResources: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(3, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				gpuResource:       resource.MustParse("3"),
+			},
+			node:                node,
+			expectedBitmask:     NewTestBitmask(0, 1, 5),
+			expectedErr:         nil,
+			expectedMinDistance: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -496,6 +598,155 @@ func TestMinDistance(t *testing.T) {
 			distance := minAvgDistanceInCombinations(tc.numaNodes, tc.combinations)
 			if distance != tc.expected {
 				t.Errorf("Expected distance to be %f not %f", tc.expected, distance)
+			}
+		})
+	}
+}
+
+func TestGetNumaIDInNumaNodes(t *testing.T) {
+	numaNodes := NUMANodeList{
+		{
+			NUMAID: 0,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 10, 1: 20, 2: 40, 3: 30, 4: 20, 5: 30, 6: 50, 7: 40,
+			},
+		},
+		{
+			NUMAID: 3,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 30, 1: 40, 2: 20, 3: 10, 4: 30, 5: 20, 6: 40, 7: 50,
+			},
+		},
+		{
+			NUMAID: 5,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 30, 1: 20, 2: 50, 3: 20, 4: 50, 5: 10, 6: 50, 7: 40,
+			},
+		},
+		{
+			NUMAID: 7,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 40, 1: 50, 2: 30, 3: 50, 4: 20, 5: 40, 6: 30, 7: 10,
+			},
+		},
+		{
+			NUMAID: 1,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 20, 1: 10, 2: 30, 3: 40, 4: 50, 5: 20, 6: 40, 7: 50,
+			},
+		},
+		{
+			NUMAID: 6,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 50, 1: 40, 2: 20, 3: 40, 4: 30, 5: 50, 6: 10, 7: 30,
+			},
+		},
+		{
+			NUMAID: 2,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 40, 1: 30, 2: 10, 3: 20, 4: 40, 5: 50, 6: 20, 7: 30,
+			},
+		},
+		{
+			NUMAID: 4,
+			Resources: v1.ResourceList{
+				gpuResource:       resource.MustParse("1"),
+				v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("5Gi"),
+			},
+			Costs: map[int]int{
+				0: 20, 1: 50, 2: 40, 3: 30, 4: 10, 5: 50, 6: 30, 7: 20,
+			},
+		},
+	}
+
+	testCases := []struct {
+		description               string
+		combinationValue          int
+		expectedNumaIDInNumaNodes int
+	}{
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          0,
+			expectedNumaIDInNumaNodes: 0,
+		},
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          1,
+			expectedNumaIDInNumaNodes: 4,
+		},
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          2,
+			expectedNumaIDInNumaNodes: 6,
+		},
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          3,
+			expectedNumaIDInNumaNodes: 1,
+		},
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          4,
+			expectedNumaIDInNumaNodes: 7,
+		},
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          5,
+			expectedNumaIDInNumaNodes: 2,
+		},
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          6,
+			expectedNumaIDInNumaNodes: 5,
+		},
+		{
+			description:               "two numa node combination, no costs",
+			combinationValue:          7,
+			expectedNumaIDInNumaNodes: 3,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			NumaIDInNumaNodes := getNumaIDInNumaNodes(numaNodes, tc.combinationValue)
+			if NumaIDInNumaNodes != tc.expectedNumaIDInNumaNodes {
+				t.Errorf("Expected NumaID In Numa Nodes to be %d not %d", tc.expectedNumaIDInNumaNodes, NumaIDInNumaNodes)
 			}
 		})
 	}

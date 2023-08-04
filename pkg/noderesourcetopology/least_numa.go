@@ -136,8 +136,9 @@ func nodesAvgDistance(numaNodes NUMANodeList, nodes ...int) float32 {
 	)
 
 	for _, node1 := range nodes {
+		node1Id := getNumaIDInNumaNodes(numaNodes, node1)
 		for _, node2 := range nodes {
-			cost, ok := numaNodes[node1].Costs[node2]
+			cost, ok := numaNodes[node1Id].Costs[node2]
 			// we couldn't read Costs assign maxDistanceValue
 			if !ok {
 				klog.Warningf("cannot retrieve Costs information for node %d", node2)
@@ -153,7 +154,8 @@ func nodesAvgDistance(numaNodes NUMANodeList, nodes ...int) float32 {
 func combineResources(numaNodes NUMANodeList, combination []int) v1.ResourceList {
 	resources := v1.ResourceList{}
 	for _, nodeIndex := range combination {
-		for resource, quantity := range numaNodes[nodeIndex].Resources {
+		nodeId := getNumaIDInNumaNodes(numaNodes, nodeIndex)
+		for resource, quantity := range numaNodes[nodeId].Resources {
 			if value, ok := resources[resource]; ok {
 				value.Add(quantity)
 				resources[resource] = value
@@ -227,4 +229,14 @@ func checkResourcesFit(identifier string, qos v1.PodQOSClass, resources v1.Resou
 	}
 
 	return true
+}
+
+func getNumaIDInNumaNodes(numaNodes NUMANodeList, nodeIndex int) int {
+	numaID := 0
+	for i, numaNode := range numaNodes {
+		if numaNode.NUMAID == nodeIndex {
+			numaID = i
+		}
+	}
+	return numaID
 }
