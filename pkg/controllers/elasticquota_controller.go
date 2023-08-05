@@ -33,8 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
 	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
@@ -173,7 +171,7 @@ func newZeroUsed(eq *schedv1alpha1.ElasticQuota) v1.ResourceList {
 func (r *ElasticQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor("ElasticQuotaController")
 	return ctrl.NewControllerManagedBy(mgr).
-		Watches(&source.Kind{Type: &v1.Pod{}}, &handler.EnqueueRequestForObject{}).
+		Watches(&v1.Pod{}, &handler.EnqueueRequestForObject{}).
 		For(&schedv1alpha1.ElasticQuota{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.Workers}).
 		Complete(r)

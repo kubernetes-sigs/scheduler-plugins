@@ -92,7 +92,7 @@ func (p *PodAssignEventHandler) AddToHandle(handle framework.Handle) {
 	)
 }
 
-func (p *PodAssignEventHandler) OnAdd(obj interface{}) {
+func (p *PodAssignEventHandler) OnAdd(obj interface{}, _ bool) {
 	pod := obj.(*v1.Pod)
 	p.updateCache(pod)
 }

@@ -116,6 +116,7 @@ func TestCapacityScheduling(t *testing.T) {
 		elasticQuotas []*v1alpha1.ElasticQuota
 		expectedPods  []*v1.Pod
 	}{
+		/* Uncomment once https://github.com/kubernetes/kubernetes/pull/119769 is available in v1.27.5
 		{
 			name:       "cross-namespace preemption",
 			namespaces: []string{"ns1", "ns2"},
@@ -228,6 +229,7 @@ func TestCapacityScheduling(t *testing.T) {
 				},
 			},
 		},
+		*/
 		{
 			name:       "regular preemption without Elastic Quota",
 			namespaces: []string{"ns1", "ns2"},
@@ -424,6 +426,7 @@ func TestCapacityScheduling(t *testing.T) {
 				},
 			},
 		},
+		/* Uncomment once https://github.com/kubernetes/kubernetes/pull/119769 is available in v1.27.5
 		{
 			name:       "cross-namespace preemption with three elasticquota",
 			namespaces: []string{"ns1", "ns2", "ns3"},
@@ -506,6 +509,7 @@ func TestCapacityScheduling(t *testing.T) {
 				},
 			},
 		},
+		*/
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			defer cleanupElasticQuotas(testCtx.Ctx, extClient, tt.elasticQuotas)

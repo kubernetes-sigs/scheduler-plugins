@@ -166,7 +166,7 @@ func Test_Run(t *testing.T) {
 			}
 			for _, p := range ps {
 				kClient.Status().Update(ctx, p)
-				reqs := controller.podToPodGroup(p)
+				reqs := controller.podToPodGroup(ctx, p)
 				for _, req := range reqs {
 					if _, err := controller.Reconcile(ctx, req); err != nil {
 						t.Errorf("reconcile: (%v)", err)
@@ -284,7 +284,11 @@ func setUp(ctx context.Context,
 		ps := makePods(podNames, pgName, podPhase, podOwnerReference)
 		objs = append(objs, ps[0], ps[1])
 	}
-	client := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objs...).Build()
+	client := fake.NewClientBuilder().
+		WithScheme(s).
+		WithStatusSubresource(&v1alpha1.PodGroup{}).
+		WithRuntimeObjects(objs...).
+		Build()
 
 	controller := &PodGroupReconciler{
 		Client:   client,
