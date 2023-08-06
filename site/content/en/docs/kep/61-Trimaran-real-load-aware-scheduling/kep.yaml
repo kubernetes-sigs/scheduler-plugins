@@ -1,0 +1,15 @@
+title: Trimaran - Real Load Aware Scheduling
+kep-number: 61
+authors:
+  - "@zorro786"
+  - "@wangchen615"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@ahg-g"
+  - "@alculquicondor"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2020-09-22
+last-updated: 2020-09-22
+status: implementable

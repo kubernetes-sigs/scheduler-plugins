@@ -1,0 +1,13 @@
+title: Coscheduling based on PodGroup CRD
+kep-number: 42
+authors:
+  - "@cwdsuzhou"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@denkensk"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2020-08-24
+last-updated: 2020-08-24
+status: implementable

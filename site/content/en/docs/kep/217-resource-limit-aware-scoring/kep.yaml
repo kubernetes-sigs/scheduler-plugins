@@ -1,0 +1,13 @@
+title: Resource limit-aware Scoring
+kep-number: 217
+authors:
+- "@yuanchen8911"
+ owning-sig: sig-scheduling
+ reviewers:
+ - "@Huang-Wei"
+ - "@denkensk"
+ approvers:
+ - "@Huang-Wei"
+ creation-date: 2021-07-20
+ last-updated: 2021-07-20
+ status: implementable
