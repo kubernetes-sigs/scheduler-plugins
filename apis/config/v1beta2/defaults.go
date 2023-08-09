@@ -173,3 +173,8 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 func SetDefaults_PreemptionTolerationArgs(obj *PreemptionTolerationArgs) {
 	k8sschedulerconfigv1beta2.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1beta2.DefaultPreemptionArgs)(obj))
 }
+
+// SetDefaults_ReclaimIdleResourceArgs reuses SetDefaults_DefaultPreemptionArgs
+func SetDefaults_ReclaimIdleResourceArgs(obj *ReclaimIdleResourceArgs) {
+	k8sschedulerconfigv1beta2.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1beta2.DefaultPreemptionArgs)(obj))
+}

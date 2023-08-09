@@ -207,6 +207,11 @@ func SetDefaults_PreemptionTolerationArgs(obj *PreemptionTolerationArgs) {
 	k8sschedulerconfigv1.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1.DefaultPreemptionArgs)(obj))
 }
 
+// SetDefaults_ReclaimIdleResourceArgs reuses SetDefaults_DefaultPreemptionArgs
+func SetDefaults_ReclaimIdleResourceArgs(obj *ReclaimIdleResourceArgs) {
+	k8sschedulerconfigv1.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1.DefaultPreemptionArgs)(obj))
+}
+
 // SetDefaults_TopologicalSortArgs sets the default parameters for TopologicalSortArgs plugin.
 func SetDefaults_TopologicalSortArgs(obj *TopologicalSortArgs) {
 	if len(obj.Namespaces) == 0 {

@@ -40,6 +40,7 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 		SetObjectDefaults_NodeResourcesAllocatableArgs(obj.(*NodeResourcesAllocatableArgs))
 	})
 	scheme.AddTypeDefaultingFunc(&PreemptionTolerationArgs{}, func(obj interface{}) { SetObjectDefaults_PreemptionTolerationArgs(obj.(*PreemptionTolerationArgs)) })
+	scheme.AddTypeDefaultingFunc(&ReclaimIdleResourceArgs{}, func(obj interface{}) { SetObjectDefaults_ReclaimIdleResourceArgs(obj.(*ReclaimIdleResourceArgs)) })
 	scheme.AddTypeDefaultingFunc(&TargetLoadPackingArgs{}, func(obj interface{}) { SetObjectDefaults_TargetLoadPackingArgs(obj.(*TargetLoadPackingArgs)) })
 	return nil
 }
@@ -62,6 +63,10 @@ func SetObjectDefaults_NodeResourcesAllocatableArgs(in *NodeResourcesAllocatable
 
 func SetObjectDefaults_PreemptionTolerationArgs(in *PreemptionTolerationArgs) {
 	SetDefaults_PreemptionTolerationArgs(in)
+}
+
+func SetObjectDefaults_ReclaimIdleResourceArgs(in *ReclaimIdleResourceArgs) {
+	SetDefaults_ReclaimIdleResourceArgs(in)
 }
 
 func SetObjectDefaults_TargetLoadPackingArgs(in *TargetLoadPackingArgs) {

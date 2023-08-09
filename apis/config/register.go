@@ -41,6 +41,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&LowRiskOverCommitmentArgs{},
 		&NodeResourceTopologyMatchArgs{},
 		&PreemptionTolerationArgs{},
+		&ReclaimIdleResourceArgs{},
 		&TopologicalSortArgs{},
 		&NetworkOverheadArgs{},
 	)

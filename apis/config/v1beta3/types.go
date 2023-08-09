@@ -220,6 +220,11 @@ type PreemptionTolerationArgs schedulerconfigv1beta3.DefaultPreemptionArgs
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// ReclaimIdleResourceArgs reuses DefaultPluginArgs.
+type ReclaimIdleResourceArgs schedulerconfigv1beta3.DefaultPreemptionArgs
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 type TopologicalSortArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
