@@ -1,10 +1,12 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
 approvers:
-  - ahg-g
-  - Huang-Wei
   - denkensk
+  - ffromani
+  - Huang-Wei
 reviewers:
-  - cwdsuzhou
+  - PiotrProkop
   - seanmalloy
-  - yuanchen8911
+  - swatisehgal
+  - Tal-or
+  - zwpaper

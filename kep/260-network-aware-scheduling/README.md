@@ -7,24 +7,33 @@
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
-- [Use cases/Topologies](#use-cases--topologies)
-  - [1 - Spark/Database applications running in Data centers or small scale cluster topologies](#1---sparkdatabase-applications-running-in-data-centers-or-small-scale-cluster-topologies)
-  - [2 - Cloud2Edge application running on a multi-region geo-distributed cluster](#2---cloud2edge-application-running-on-a-multi-region-geo-distributed-cluster)
-- [Proposal - Design & Implementation Details](#proposal---design--implementation-details)
+  - [Use cases / Topologies](#use-cases--topologies)
+    - [1 - Spark/Database applications running in Data centers or small scale cluster topologies](#1---sparkdatabase-applications-running-in-data-centers-or-small-scale-cluster-topologies)
+    - [2 - Cloud2Edge application running on a multi-region geo-distributed cluster.](#2---cloud2edge-application-running-on-a-multi-region-geo-distributed-cluster)
+- [Proposal - Design &amp; Implementation details](#proposal---design--implementation-details)
   - [Overview of the System Design](#overview-of-the-system-design)
   - [Application Group CRD](#application-group-crd)
+    - [Example](#example)
+    - [AppGroup Test based on Online Boutique](#appgroup-test-based-on-online-boutique)
   - [Network Topology CRD](#network-topology-crd)
+    - [Example](#example-1)
   - [The inclusion of bandwidth in the scheduling process](#the-inclusion-of-bandwidth-in-the-scheduling-process)
     - [Bandwidth Requests via extended resources](#bandwidth-requests-via-extended-resources)
     - [Bandwidth Limitations via the Bandwidth CNI plugin](#bandwidth-limitations-via-the-bandwidth-cni-plugin)
+    - [Example](#example-2)
   - [The Network-aware scheduling Plugins](#the-network-aware-scheduling-plugins)
-    - [Description of the `TopologicalSort` plugin](#description-of-the-topologicalsort-plugin)
-    - [Description of the `NetworkOverhead` plugin](#description-of-the-networkoverhead-plugin)
+    - [Description of the <code>TopologicalSort</code> plugin](#description-of-the--plugin)
+      - [<code>TopologicalSort</code> Example](#-example)
+    - [Description of the <code>NetworkOverhead</code> plugin](#description-of-the--plugin-1)
+      - [Extension point: Filter](#extension-point-filter)
+      - [<code>NetworkOverhead</code> Filter Example](#-filter-example)
+      - [Extension point: Score](#extension-point-score)
+      - [<code>NetworkOverhead</code> Score Example](#-score-example)
 - [Known limitations](#known-limitations)
 - [Test plans](#test-plans)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-    - [Scalability](#scalability)
-    - [Troubleshooting](#troubleshooting)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Graduation criteria](#graduation-criteria)
 - [Implementation history](#implementation-history)
 <!-- /toc -->
@@ -157,9 +166,9 @@ metadata:
     api-approved.kubernetes.io: "To be Defined" # edited manually
     controller-gen.kubebuilder.io/version: v0.6.2
   creationTimestamp: null
-  name: appgroups.scheduling.sigs.k8s.io
+  name: appgroups.scheduling.sigs.x-k8s.io
 spec:
-  group: scheduling.sigs.k8s.io
+  group: scheduling.sigs.x-k8s.io
   names:
     kind: AppGroup
     listKind: AppGroupList
@@ -349,7 +358,7 @@ status:
 
 ```yaml
 # Example App Group CRD spec
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: AppGroup
 metadata:
   name: a1
@@ -615,9 +624,9 @@ metadata:
     api-approved.kubernetes.io: "To be Defined" # edited manually
     controller-gen.kubebuilder.io/version: v0.6.2
   creationTimestamp: null
-  name: networktopologies.scheduling.sigs.k8s.io
+  name: networktopologies.scheduling.sigs.x-k8s.io
 spec:
-  group: scheduling.sigs.k8s.io
+  group: scheduling.sigs.x-k8s.io
   names:
     kind: NetworkTopology
     listKind: NetworkTopologyList
@@ -759,7 +768,7 @@ Let's consider the following NetworkTopology CRD as an example:
 
 ```yaml
 # Example Network CRD 
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: NetworkTopology
 metadata:
   name: net-topology-test
@@ -1137,7 +1146,7 @@ Let's consider the following AppGroup CRD for the appGroup `A1` containing three
 
 ```yaml
 # Example App Group CRD spec
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: AppGroup
 metadata:
   name: a1
@@ -1186,7 +1195,7 @@ The NetworkTopology CRD is the following:
 
 ```yaml
 # Example Network CRD 
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: NetworkTopology
 metadata:
   name: net-topology-test
@@ -1477,7 +1486,10 @@ Unit tests and Integration tests will be added:
 # Graduation criteria
 
 - Alpha 
-    - [ ]  The implementation of the AppGroup controller (AppGroup CRD).
+    - [ ]  The design and implementation of the [AppGroup CRD](https://github.com/diktyo-io/appgroup-api).
+    - [ ]  The design and implementation of the [NetworkTopology CRD](https://github.com/diktyo-io/networktopology-api).
+    - [ ]  The implementation of the [AppGroup controller](https://github.com/diktyo-io/appgroup-controller) (AppGroup CRD).
+    - [ ]  The implementation of the [NetworkTopology controller](https://github.com/diktyo-io/networktopology-controller) (NetworkTopology CRD).
     - [ ]  The development of the bandwidth resource component.
     - [ ]  The implementation of the `TopologicalSort` plugin.
     - [ ]  The implementation of the `NetworkOverhead` plugin.
@@ -1495,3 +1507,5 @@ Received feedback and comments on the design and implementation. Recording avail
 - 2022-01-11: KEP v0.1 sent out for review after receiving feedback on the initial KEP.
 - 2022-01-19: KEP v0.1 revised after feedback. Further details added. 
 - 2022-02-02: KEP v0.1 updated after revision. Further API modifications. 
+- 2022-09-06: Creation of the [Diktyo-io community](https://github.com/diktyo-io) for releasing additional network-aware components. 
+- 2022-12-08: Initial [PR](https://github.com/kubernetes-sigs/scheduler-plugins/pull/432) merged in sig-scheduling. 

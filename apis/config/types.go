@@ -30,6 +30,8 @@ type CoschedulingArgs struct {
 
 	// PermitWaitingTimeSeconds is the waiting timeout in seconds.
 	PermitWaitingTimeSeconds int64
+	// PodGroupBackoffSeconds is the backoff time in seconds before a pod group can be scheduled again.
+	PodGroupBackoffSeconds int64
 }
 
 // ModeType is a "string" type.
@@ -118,6 +120,20 @@ type LoadVariationRiskBalancingArgs struct {
 	SafeVarianceSensitivity float64
 }
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// LowRiskOverCommitmentArgs holds arguments used to configure LowRiskOverCommitment plugin.
+type LowRiskOverCommitmentArgs struct {
+	metav1.TypeMeta
+
+	// Common parameters for trimaran plugins
+	TrimaranSpec
+	// The number of windows over which usage data metrics are smoothed
+	SmoothingWindowSize int64
+	// Resources fractional weight of risk due to limits specification [0,1]
+	RiskLimitWeights map[v1.ResourceName]float64
+}
+
 // ScoringStrategyType is a "string" type.
 type ScoringStrategyType string
 
@@ -128,6 +144,8 @@ const (
 	BalancedAllocation ScoringStrategyType = "BalancedAllocation"
 	// LeastAllocated strategy favors node with the most amount of available resource
 	LeastAllocated ScoringStrategyType = "LeastAllocated"
+	// LeastNUMANodes strategy favors nodes which requires least amount of NUMA nodes to satisfy resource requests for given pod
+	LeastNUMANodes ScoringStrategyType = "LeastNUMANodes"
 )
 
 // ScoringStrategy define ScoringStrategyType for node resource topology plugin
@@ -140,6 +158,42 @@ type ScoringStrategy struct {
 	Resources []schedconfig.ResourceSpec
 }
 
+// ForeignPodsDetectMode is a "string" type.
+type ForeignPodsDetectMode string
+
+const (
+	ForeignPodsDetectNone                   ForeignPodsDetectMode = "None"
+	ForeignPodsDetectAll                    ForeignPodsDetectMode = "All"
+	ForeignPodsDetectOnlyExclusiveResources ForeignPodsDetectMode = "OnlyExclusiveResources"
+)
+
+// CacheResyncMethod is a "string" type.
+type CacheResyncMethod string
+
+const (
+	CacheResyncAutodetect             CacheResyncMethod = "Autodetect"
+	CacheResyncAll                    CacheResyncMethod = "All"
+	CacheResyncOnlyExclusiveResources CacheResyncMethod = "OnlyExclusiveResources"
+)
+
+// NodeResourceTopologyCache define configuration details for the NodeResourceTopology cache.
+type NodeResourceTopologyCache struct {
+	// ForeignPodsDetect sets how foreign pods should be handled.
+	// Foreign pods are pods detected running on nodes managed by a NodeResourceTopologyMatch-enabled
+	// scheduler, but not scheduled by this scheduler instance, likely because this is running as
+	// secondary scheduler. To make sure the cache is consistent, foreign pods need to be handled.
+	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or
+	// if DiscardReservedNodes is enabled. If unspecified, default is "All".
+	ForeignPodsDetect *ForeignPodsDetectMode
+	// ResyncMethod sets how the resync behaves to compute the expected node state.
+	// "All" consider all pods to compute the node state. "OnlyExclusiveResources" consider
+	// only pods regardless of their QoS which have exclusive resources assigned to their
+	// containers (CPUs, devices...).
+	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or if DiscardReservedNodes
+	// is enabled. "Autodetect" is the default, reads hint from NRT objects. Fallback is "All".
+	ResyncMethod *CacheResyncMethod
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // NodeResourceTopologyMatchArgs holds arguments used to configure the NodeResourceTopologyMatch plugin
@@ -148,9 +202,41 @@ type NodeResourceTopologyMatchArgs struct {
 
 	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
 	ScoringStrategy ScoringStrategy
+	// If > 0, enables the caching facilities of the reserve plugin - which must be enabled
+	CacheResyncPeriodSeconds int64
+	// if set to true, exclude node from scheduling if there are any reserved pods for given node
+	// this option takes precedence over CacheResyncPeriodSeconds
+	// if DiscardReservedNodes is enabled, CacheResyncPeriodSeconds option is noop
+	DiscardReservedNodes bool
+	// Cache enables to fine tune the caching behavior
+	Cache *NodeResourceTopologyCache
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // PreemptionTolerationArgs reuses DefaultPluginArgs.
 type PreemptionTolerationArgs schedconfig.DefaultPreemptionArgs
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type TopologicalSortArgs struct {
+	metav1.TypeMeta
+
+	// Namespaces to be considered by TopologySort plugin
+	Namespaces []string
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type NetworkOverheadArgs struct {
+	metav1.TypeMeta
+
+	// Namespaces to be considered by NetworkMinCost plugin
+	Namespaces []string
+
+	// Preferred weights (Default: UserDefined)
+	WeightsName string
+
+	// The NetworkTopology CRD name
+	NetworkTopologyName string
+}

@@ -17,10 +17,18 @@ limitations under the License.
 package capacityscheduling
 
 import (
-	"k8s.io/api/core/v1"
+	"math"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
+)
+
+const (
+	UpperBoundOfMax = math.MaxInt64
+	LowerBoundOfMin = 0
 )
 
 type ElasticQuotaInfos map[string]*ElasticQuotaInfo
@@ -47,7 +55,7 @@ func (e ElasticQuotaInfos) aggregatedUsedOverMinWith(podRequest framework.Resour
 	}
 
 	used.Add(util.ResourceList(&podRequest))
-	return cmp(used, min)
+	return cmp(used, min, LowerBoundOfMin)
 }
 
 // ElasticQuotaInfo is a wrapper to a ElasticQuota with information.
@@ -61,6 +69,13 @@ type ElasticQuotaInfo struct {
 }
 
 func newElasticQuotaInfo(namespace string, min, max, used v1.ResourceList) *ElasticQuotaInfo {
+	if min == nil {
+		min = makeResourceListForBound(LowerBoundOfMin)
+	}
+	if max == nil {
+		max = makeResourceListForBound(UpperBoundOfMax)
+	}
+
 	elasticQuotaInfo := &ElasticQuotaInfo{
 		Namespace: namespace,
 		pods:      sets.NewString(),
@@ -74,6 +89,8 @@ func newElasticQuotaInfo(namespace string, min, max, used v1.ResourceList) *Elas
 func (e *ElasticQuotaInfo) reserveResource(request framework.Resource) {
 	e.Used.Memory += request.Memory
 	e.Used.MilliCPU += request.MilliCPU
+	e.Used.EphemeralStorage += request.EphemeralStorage
+	e.Used.AllowedPodNumber += request.AllowedPodNumber
 	for name, value := range request.ScalarResources {
 		e.Used.SetScalar(name, e.Used.ScalarResources[name]+value)
 	}
@@ -82,21 +99,35 @@ func (e *ElasticQuotaInfo) reserveResource(request framework.Resource) {
 func (e *ElasticQuotaInfo) unreserveResource(request framework.Resource) {
 	e.Used.Memory -= request.Memory
 	e.Used.MilliCPU -= request.MilliCPU
+	e.Used.EphemeralStorage -= request.EphemeralStorage
+	e.Used.AllowedPodNumber -= request.AllowedPodNumber
 	for name, value := range request.ScalarResources {
 		e.Used.SetScalar(name, e.Used.ScalarResources[name]-value)
 	}
 }
 
 func (e *ElasticQuotaInfo) usedOverMinWith(podRequest *framework.Resource) bool {
-	return cmp2(podRequest, e.Used, e.Min)
+	// "ElasticQuotaInfo doesn't have Min" means used values exceeded min(0)
+	if e.Min == nil {
+		return true
+	}
+	return cmp2(podRequest, e.Used, e.Min, LowerBoundOfMin)
 }
 
 func (e *ElasticQuotaInfo) usedOverMaxWith(podRequest *framework.Resource) bool {
-	return cmp2(podRequest, e.Used, e.Max)
+	// "ElasticQuotaInfo doesn't have Max" means there are no limitations(infinite)
+	if e.Max == nil {
+		return false
+	}
+	return cmp2(podRequest, e.Used, e.Max, UpperBoundOfMax)
 }
 
 func (e *ElasticQuotaInfo) usedOverMin() bool {
-	return cmp(e.Used, e.Min)
+	// "ElasticQuotaInfo doesn't have Min" means used values exceeded min(0)
+	if e.Min == nil {
+		return true
+	}
+	return cmp(e.Used, e.Min, LowerBoundOfMin)
 }
 
 func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
@@ -158,11 +189,11 @@ func (e *ElasticQuotaInfo) deletePodIfPresent(pod *v1.Pod) error {
 	return nil
 }
 
-func cmp(x, y *framework.Resource) bool {
-	return cmp2(x, &framework.Resource{}, y)
+func cmp(x, y *framework.Resource, bound int64) bool {
+	return cmp2(x, &framework.Resource{}, y, bound)
 }
 
-func cmp2(x1, x2, y *framework.Resource) bool {
+func cmp2(x1, x2, y *framework.Resource, bound int64) bool {
 	if x1.MilliCPU+x2.MilliCPU > y.MilliCPU {
 		return true
 	}
@@ -171,11 +202,31 @@ func cmp2(x1, x2, y *framework.Resource) bool {
 		return true
 	}
 
+	if x1.EphemeralStorage+x2.EphemeralStorage > y.EphemeralStorage {
+		return true
+	}
+
+	if x1.AllowedPodNumber+x2.AllowedPodNumber > y.AllowedPodNumber {
+		return true
+	}
+
 	for rName, rQuant := range x1.ScalarResources {
-		if rQuant+x2.ScalarResources[rName] > y.ScalarResources[rName] {
+		yQuant := bound
+		if yq, ok := y.ScalarResources[rName]; ok {
+			yQuant = yq
+		}
+		if rQuant+x2.ScalarResources[rName] > yQuant {
 			return true
 		}
 	}
 
 	return false
+}
+
+func makeResourceListForBound(bound int64) v1.ResourceList {
+	return v1.ResourceList{
+		v1.ResourceCPU:              *resource.NewMilliQuantity(bound, resource.DecimalSI),
+		v1.ResourceMemory:           *resource.NewQuantity(bound, resource.BinarySI),
+		v1.ResourceEphemeralStorage: *resource.NewQuantity(bound, resource.BinarySI),
+	}
 }

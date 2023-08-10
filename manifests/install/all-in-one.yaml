@@ -5,9 +5,16 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: system:kube-scheduler:plugins
 rules:
-- apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+- apiGroups: ["scheduling.x-k8s.io"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+# for network-aware plugins add the following lines (scheduler-plugins v.0.24.9)
+#- apiGroups: [ "appgroup.diktyo.k8s.io" ]
+#  resources: [ "appgroups" ]
+#  verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
+#- apiGroups: [ "networktopology.diktyo.k8s.io" ]
+#  resources: [ "networktopologies" ]
+#  verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -43,9 +50,12 @@ rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
-- apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+- apiGroups: ["scheduling.x-k8s.io"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch", "update"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -77,8 +87,8 @@ spec:
       labels:
         app: scheduler-plugins-controller
     spec:
-      serviceAccount: scheduler-plugins-controller
+      serviceAccountName: scheduler-plugins-controller
       containers:
       - name: scheduler-plugins-controller
-        image: k8s.gcr.io/scheduler-plugins/controller:v0.22.6
+        image: registry.k8s.io/scheduler-plugins/controller:v0.26.7
         imagePullPolicy: IfNotPresent

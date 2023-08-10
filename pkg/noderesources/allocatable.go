@@ -131,7 +131,7 @@ func resourceScorer(resToWeightMap resourceToWeightMap, mode config.ModeType) fu
 }
 
 func score(capacity int64, mode config.ModeType) int64 {
-	switch config.ModeType(mode) {
+	switch mode {
 	case config.Least:
 		return -1 * capacity
 	case config.Most:

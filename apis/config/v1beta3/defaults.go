@@ -19,6 +19,8 @@ package v1beta3
 import (
 	"strconv"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	schedulerconfigv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
@@ -26,9 +28,9 @@ import (
 )
 
 var (
-	defaultPermitWaitingTimeSeconds int64 = 60
-
-	defaultNodeResourcesAllocatableMode = Least
+	defaultPermitWaitingTimeSeconds     int64 = 60
+	defaultPodGroupBackoffSeconds       int64 = 0
+	defaultNodeResourcesAllocatableMode       = Least
 
 	// defaultResourcesToWeightMap is used to set the default resourceToWeight map for CPU and memory
 	// used by the NodeResourcesAllocatable scoring plugin.
@@ -60,7 +62,19 @@ var (
 	// DefaultSafeVarianceSensitivity is one
 	DefaultSafeVarianceSensitivity = 1.0
 
-	// Defaults for MetricProviderSpec
+	// Defaults for LowRiskOverCommitment plugin
+
+	// The default number of windows over which usage data metrics are smoothed.
+	// DefaultSmoothingWindowSize is 5 (used by Prometheus)
+	DefaultSmoothingWindowSize int64 = 5
+	// The default weight of risk due to limit for a resource
+	DefaultRiskLimitWeight float64 = 0.5
+	// Resources fractional weight of risk due to limits specification [0,1]
+	DefaultRiskLimitWeights = map[v1.ResourceName]float64{
+		v1.ResourceCPU:    DefaultRiskLimitWeight,
+		v1.ResourceMemory: DefaultRiskLimitWeight,
+	}
+
 	// DefaultMetricProviderType is the Kubernetes metrics server
 	DefaultMetricProviderType = KubernetesMetricsServer
 	// DefaultInsecureSkipVerify is whether to skip the certificate verification
@@ -70,12 +84,25 @@ var (
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
+
+	defaultForeignPodsDetect = ForeignPodsDetectAll
+
+	defaultResyncMethod = CacheResyncAutodetect
+
+	// Defaults for NetworkOverhead
+	// DefaultWeightsName contains the default costs to be used by networkAware plugins
+	DefaultWeightsName = "UserDefined"
+	// DefaultNetworkTopologyName contains the networkTopology CR name to be used by networkAware plugins
+	DefaultNetworkTopologyName = "nt-default"
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
 func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	if obj.PermitWaitingTimeSeconds == nil {
 		obj.PermitWaitingTimeSeconds = &defaultPermitWaitingTimeSeconds
+	}
+	if obj.PodGroupBackoffSeconds == nil {
+		obj.PodGroupBackoffSeconds = &defaultPodGroupBackoffSeconds
 	}
 }
 
@@ -93,7 +120,7 @@ func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs)
 // SetDefaultTrimaranSpec sets the default parameters for common Trimaran plugins
 func SetDefaultTrimaranSpec(args *TrimaranSpec) {
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
-		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+		args.MetricProvider.Type = DefaultMetricProviderType
 	}
 	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
 		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
@@ -126,6 +153,23 @@ func SetDefaults_LoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancing
 	}
 }
 
+// SetDefaults_LowRiskOverCommitmentArgs sets the default parameters for LowRiskOverCommitment plugin
+func SetDefaults_LowRiskOverCommitmentArgs(args *LowRiskOverCommitmentArgs) {
+	SetDefaultTrimaranSpec(&args.TrimaranSpec)
+	if args.SmoothingWindowSize == nil || *args.SmoothingWindowSize <= 0 {
+		args.SmoothingWindowSize = &DefaultSmoothingWindowSize
+	}
+	if args.RiskLimitWeights == nil || len(args.RiskLimitWeights) == 0 {
+		args.RiskLimitWeights = DefaultRiskLimitWeights
+	} else {
+		for r, w := range args.RiskLimitWeights {
+			if w < 0 || w > 1 {
+				args.RiskLimitWeights[r] = DefaultRiskLimitWeight
+			}
+		}
+	}
+}
+
 // SetDefaults_NodeResourceTopologyMatchArgs sets the default parameters for NodeResourceTopologyMatch plugin.
 func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArgs) {
 	if obj.ScoringStrategy == nil {
@@ -145,9 +189,42 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
 	}
+
+	if obj.Cache == nil {
+		obj.Cache = &NodeResourceTopologyCache{}
+	}
+	if obj.Cache.ForeignPodsDetect == nil {
+		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
+
+	}
+	if obj.Cache.ResyncMethod == nil {
+		obj.Cache.ResyncMethod = &defaultResyncMethod
+	}
 }
 
 // SetDefaults_PreemptionTolerationArgs reuses SetDefaults_DefaultPreemptionArgs
 func SetDefaults_PreemptionTolerationArgs(obj *PreemptionTolerationArgs) {
 	k8sschedulerconfigv1beta3.SetDefaults_DefaultPreemptionArgs((*schedulerconfigv1beta3.DefaultPreemptionArgs)(obj))
+}
+
+// SetDefaults_TopologicalSortArgs sets the default parameters for TopologicalSortArgs plugin.
+func SetDefaults_TopologicalSortArgs(obj *TopologicalSortArgs) {
+	if len(obj.Namespaces) == 0 {
+		obj.Namespaces = []string{metav1.NamespaceDefault}
+	}
+}
+
+// SetDefaults_NetworkOverheadArgs sets the default parameters for NetworkMinCostArgs plugin.
+func SetDefaults_NetworkOverheadArgs(obj *NetworkOverheadArgs) {
+	if len(obj.Namespaces) == 0 {
+		obj.Namespaces = []string{metav1.NamespaceDefault}
+	}
+
+	if obj.WeightsName == nil {
+		obj.WeightsName = &DefaultWeightsName
+	}
+
+	if obj.NetworkTopologyName == nil {
+		obj.NetworkTopologyName = &DefaultNetworkTopologyName
+	}
 }

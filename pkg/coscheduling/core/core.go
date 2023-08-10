@@ -56,12 +56,12 @@ const (
 type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
 	Permit(context.Context, *corev1.Pod) Status
-	PostBind(context.Context, *corev1.Pod, string)
 	GetPodGroup(*corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
 	DeletePermittedPodGroup(string)
 	CalculateAssignedPods(string, string) int
 	ActivateSiblings(pod *corev1.Pod, state *framework.CycleState)
+	BackoffPodGroup(string, time.Duration)
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -75,12 +75,12 @@ type PodGroupManager struct {
 	scheduleTimeout *time.Duration
 	// permittedPG stores the podgroup name which has passed the pre resource check.
 	permittedPG *gochache.Cache
+	// backedOffPG stores the podgorup name which failed scheudling recently.
+	backedOffPG *gochache.Cache
 	// pgLister is podgroup lister
 	pgLister pglister.PodGroupLister
 	// podLister is pod lister
 	podLister listerv1.PodLister
-	// reserveResourcePercentage is the reserved resource for the max finished group, range (0,100]
-	reserveResourcePercentage int32
 	sync.RWMutex
 }
 
@@ -94,8 +94,16 @@ func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister fra
 		pgLister:             pgInformer.Lister(),
 		podLister:            podInformer.Lister(),
 		permittedPG:          gochache.New(3*time.Second, 3*time.Second),
+		backedOffPG:          gochache.New(10*time.Second, 10*time.Second),
 	}
 	return pgMgr
+}
+
+func (pgMgr *PodGroupManager) BackoffPodGroup(pgName string, backoff time.Duration) {
+	if backoff == time.Duration(0) {
+		return
+	}
+	pgMgr.backedOffPG.Add(pgName, nil, backoff)
 }
 
 // ActivateSiblings stashes the pods belonging to the same PodGroup of the given pod
@@ -113,6 +121,7 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 		klog.ErrorS(err, "Failed to obtain pods belong to a PodGroup", "podGroup", pgName)
 		return
 	}
+
 	for i := range pods {
 		if pods[i].UID == pod.UID {
 			pods = append(pods[:i], pods[i+1:]...)
@@ -145,12 +154,17 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return nil
 	}
 
+	if _, exist := pgMgr.backedOffPG.Get(pgFullName); exist {
+		return fmt.Errorf("podGroup %v failed recently", pgFullName)
+	}
+
 	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
 		labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
 	)
 	if err != nil {
-		return fmt.Errorf("podLister list pods failed: %v", err)
+		return fmt.Errorf("podLister list pods failed: %w", err)
 	}
+
 	if len(pods) < int(pg.Spec.MinMember) {
 		return fmt.Errorf("pre-filter pod %v cannot find enough sibling pods, "+
 			"current pods number: %v, minMember of group: %v", pod.Name, len(pods), pg.Spec.MinMember)
@@ -202,42 +216,6 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Statu
 		return Success
 	}
 	return Wait
-}
-
-// PostBind updates a PodGroup's status.
-// TODO: move this logic to PodGroup's controller.
-func (pgMgr *PodGroupManager) PostBind(ctx context.Context, pod *corev1.Pod, nodeName string) {
-	pgFullName, pg := pgMgr.GetPodGroup(pod)
-	if pgFullName == "" || pg == nil {
-		return
-	}
-	pgCopy := pg.DeepCopy()
-	pgCopy.Status.Scheduled++
-
-	if pgCopy.Status.Scheduled >= pgCopy.Spec.MinMember {
-		pgCopy.Status.Phase = v1alpha1.PodGroupScheduled
-	} else {
-		pgCopy.Status.Phase = v1alpha1.PodGroupScheduling
-		if pgCopy.Status.ScheduleStartTime.IsZero() {
-			pgCopy.Status.ScheduleStartTime = metav1.Time{Time: time.Now()}
-		}
-	}
-	if pgCopy.Status.Phase != pg.Status.Phase {
-		pg, err := pgMgr.pgLister.PodGroups(pgCopy.Namespace).Get(pgCopy.Name)
-		if err != nil {
-			klog.ErrorS(err, "Failed to get PodGroup", "podGroup", klog.KObj(pgCopy))
-			return
-		}
-		patch, err := util.CreateMergePatch(pg, pgCopy)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create merge patch", "podGroup", klog.KObj(pg), "podGroup", klog.KObj(pgCopy))
-			return
-		}
-		if err := pgMgr.PatchPodGroup(pg.Name, pg.Namespace, patch); err != nil {
-			klog.ErrorS(err, "Failed to patch", "podGroup", klog.KObj(pg))
-			return
-		}
-	}
 }
 
 // GetCreationTimestamp returns the creation time of a podGroup or a pod.
@@ -292,7 +270,7 @@ func (pgMgr *PodGroupManager) CalculateAssignedPods(podGroupName, namespace stri
 	for _, nodeInfo := range nodeInfos {
 		for _, podInfo := range nodeInfo.Pods {
 			pod := podInfo.Pod
-			if pod.Labels[v1alpha1.PodGroupLabel] == podGroupName && pod.Namespace == namespace && pod.Spec.NodeName != "" {
+			if util.GetPodGroupLabel(pod) == podGroupName && pod.Namespace == namespace && pod.Spec.NodeName != "" {
 				count++
 			}
 		}

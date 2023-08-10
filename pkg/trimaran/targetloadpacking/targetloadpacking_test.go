@@ -28,6 +28,7 @@ import (
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/wait"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 
 	v1 "k8s.io/api/core/v1"
@@ -53,6 +54,10 @@ type testSharedLister struct {
 	nodes       []*v1.Node
 	nodeInfos   []*framework.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
+}
+
+func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+	return nil
 }
 
 func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
@@ -336,7 +341,7 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			bfbpArgs.WatcherAddress = server.URL
 			defer server.Close()
 
-			fh, err := st.NewFramework(registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
+			fh, err := st.NewFramework(registeredPlugins, "default-scheduler", wait.NeverStop, runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(b, err)
 			pl, err := New(&bfbpArgs, fh)

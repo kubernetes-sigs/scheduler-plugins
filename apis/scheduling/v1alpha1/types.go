@@ -22,11 +22,13 @@ import (
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
 )
 
+// ElasticQuota sets elastic quota restrictions per namespace
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName={eq,eqs}
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// ElasticQuota sets elastic quota restrictions per namespace
+// +kubebuilder:subresource:status
+// +kubebuilder:metadata:annotations="api-approved.kubernetes.io=https://github.com/kubernetes-sigs/scheduler-plugins/pull/52"
 type ElasticQuota struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -89,15 +91,9 @@ const (
 	// PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
 	PodGroupRunning PodGroupPhase = "Running"
 
-	// PodGroupPreScheduling means all pods of the pod group have enqueued and are waiting to be scheduled.
-	PodGroupPreScheduling PodGroupPhase = "PreScheduling"
-
-	// PodGroupScheduling means partial pods of the pod group have been scheduled and are in running phase
+	// PodGroupScheduling means the number of pods scheduled is bigger than `spec.minMember`
 	// but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
 	PodGroupScheduling PodGroupPhase = "Scheduling"
-
-	// PodGroupScheduled means the `spec.minMember` pods of the pod group have been scheduled and are in running phase.
-	PodGroupScheduled PodGroupPhase = "Scheduled"
 
 	// PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
 	// be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
@@ -110,14 +106,16 @@ const (
 	PodGroupFailed PodGroupPhase = "Failed"
 
 	// PodGroupLabel is the default label of coscheduling
-	PodGroupLabel = "pod-group." + scheduling.GroupName
+	PodGroupLabel = scheduling.GroupName + "/pod-group"
 )
 
+// PodGroup is a collection of Pod; used for batch workload.
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName={pg,pgs}
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// PodGroup is a collection of Pod; used for batch workload.
+// +kubebuilder:subresource:status
+// +kubebuilder:metadata:annotations="api-approved.kubernetes.io=https://github.com/kubernetes-sigs/scheduler-plugins/pull/50"
 type PodGroup struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object's metadata.
@@ -144,7 +142,7 @@ type PodGroupSpec struct {
 	// MinResources defines the minimal resource of members/tasks to run the pod group;
 	// if there's not enough resources to start all tasks, the scheduler
 	// will not start anyone.
-	MinResources *v1.ResourceList `json:"minResources,omitempty"`
+	MinResources v1.ResourceList `json:"minResources,omitempty"`
 
 	// ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
 	ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
@@ -158,10 +156,6 @@ type PodGroupStatus struct {
 	// OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
 	// It is empty if not initialized.
 	OccupiedBy string `json:"occupiedBy,omitempty"`
-
-	// The number of actively running pods.
-	// +optional
-	Scheduled int32 `json:"scheduled,omitempty"`
 
 	// The number of actively running pods.
 	// +optional

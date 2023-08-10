@@ -21,43 +21,48 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
-	faketopologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
+
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
+)
+
+const (
+	gpu = "gpu"
 )
 
 type nodeToScoreMap map[string]int64
 
-func TestNodeResourceScorePlugin(t *testing.T) {
-	nodeTopologies := make([]*topologyv1alpha1.NodeResourceTopology, 3)
+func initTest(policy topologyv1alpha2.TopologyManagerPolicy, nodes ...*topologyv1alpha2.NodeResourceTopology) (map[string]*v1.Node, v1alpha2.NodeResourceTopologyLister) {
+	nodeTopologies := make([]*topologyv1alpha2.NodeResourceTopology, 3)
 	nodesMap := make(map[string]*v1.Node)
-	var lister v1alpha1.NodeResourceTopologyLister
 
-	initTest := func() {
+	if len(nodes) == 0 {
 		// noderesourcetopology objects
-		nodeTopologies[0] = &topologyv1alpha1.NodeResourceTopology{
+		nodeTopologies[0] = &topologyv1alpha2.NodeResourceTopology{
 			ObjectMeta:       metav1.ObjectMeta{Name: "Node1"},
-			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha1.ZoneList{
-				topologyv1alpha1.Zone{
+			TopologyPolicies: []string{string(policy)},
+			Zones: topologyv1alpha2.ZoneList{
+				topologyv1alpha2.Zone{
 					Name: "node-0",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "4", "4"),
 						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
 					},
 				},
-				topologyv1alpha1.Zone{
+				topologyv1alpha2.Zone{
 					Name: "node-1",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "4", "4"),
 						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
 					},
@@ -65,68 +70,74 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			},
 		}
 
-		nodeTopologies[1] = &topologyv1alpha1.NodeResourceTopology{
+		nodeTopologies[1] = &topologyv1alpha2.NodeResourceTopology{
 			ObjectMeta:       metav1.ObjectMeta{Name: "Node2"},
-			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha1.ZoneList{
-				topologyv1alpha1.Zone{
+			TopologyPolicies: []string{string(policy)},
+			Zones: topologyv1alpha2.ZoneList{
+				topologyv1alpha2.Zone{
 					Name: "node-0",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "2", "2"),
 						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
 					},
-				}, topologyv1alpha1.Zone{
+				}, topologyv1alpha2.Zone{
 					Name: "node-1",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "2", "2"),
 						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
 					},
 				},
 			},
 		}
-		nodeTopologies[2] = &topologyv1alpha1.NodeResourceTopology{
+		nodeTopologies[2] = &topologyv1alpha2.NodeResourceTopology{
 			ObjectMeta:       metav1.ObjectMeta{Name: "Node3"},
-			TopologyPolicies: []string{string(topologyv1alpha1.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha1.ZoneList{
-				topologyv1alpha1.Zone{
+			TopologyPolicies: []string{string(policy)},
+			Zones: topologyv1alpha2.ZoneList{
+				topologyv1alpha2.Zone{
 					Name: "node-0",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "6", "6"),
 						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
 					},
-				}, topologyv1alpha1.Zone{
+				}, topologyv1alpha2.Zone{
 					Name: "node-1",
 					Type: "Node",
-					Resources: topologyv1alpha1.ResourceInfoList{
+					Resources: topologyv1alpha2.ResourceInfoList{
 						MakeTopologyResInfo(cpu, "6", "6"),
 						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
 					},
 				},
 			},
 		}
-		// init node objects
-		for _, nrt := range nodeTopologies {
-			res := makeResourceListFromZones(nrt.Zones)
-			nodesMap[nrt.Name] = &v1.Node{
-				ObjectMeta: metav1.ObjectMeta{Name: nrt.Name},
-				Status: v1.NodeStatus{
-					Capacity:    res,
-					Allocatable: res,
-				},
-			}
-		}
-
-		// init topology lister
-		fakeClient := faketopologyv1alpha1.NewSimpleClientset()
-		fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha1().NodeResourceTopologies()
-		for _, obj := range nodeTopologies {
-			fakeInformer.Informer().GetStore().Add(obj)
-		}
-		lister = fakeInformer.Lister()
+	} else {
+		nodeTopologies = nodes
 	}
+	// init node objects
+	for _, nrt := range nodeTopologies {
+		res := makeResourceListFromZones(nrt.Zones)
+		nodesMap[nrt.Name] = &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: nrt.Name},
+			Status: v1.NodeStatus{
+				Capacity:    res,
+				Allocatable: res,
+			},
+		}
+	}
+
+	// init topology lister
+	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	for _, obj := range nodeTopologies {
+		fakeInformer.Informer().GetStore().Add(obj)
+	}
+
+	return nodesMap, fakeInformer.Lister()
+}
+
+func TestNodeResourceScorePlugin(t *testing.T) {
 
 	type podRequests struct {
 		pod        *v1.Pod
@@ -145,10 +156,10 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 
 	// Each testScenario will describe a set pod requests arrived sequentially to the scoring plugin.
 	type testScenario struct {
-		name         string
-		wantedRes    nodeToScoreMap
-		requests     []podRequests
-		strategyName apiconfig.ScoringStrategyType
+		name      string
+		wantedRes nodeToScoreMap
+		requests  []podRequests
+		strategy  scoreStrategyFn
 	}
 
 	tests := []testScenario{
@@ -158,10 +169,10 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			// CPU Fraction: 2 / 2 = 100%
 			// Memory Fraction: 20M / 50M = 40%
 			// Node2 score:(100 + 40) / 2 = 70
-			name:         "MostAllocated strategy",
-			wantedRes:    nodeToScoreMap{"Node2": 70},
-			requests:     pRequests,
-			strategyName: apiconfig.MostAllocated,
+			name:      "MostAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node2": 70},
+			requests:  pRequests,
+			strategy:  mostAllocatedScoreStrategy,
 		},
 		{
 			// On 0-MaxNodeScore scale
@@ -169,10 +180,10 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			// CPU Fraction: 2 / 6 = 33%
 			// Memory Fraction: 20M / 60M = 33%
 			// Node3 score: MaxNodeScore - (0.33 - 0.33) = MaxNodeScore
-			name:         "BalancedAllocation strategy",
-			wantedRes:    nodeToScoreMap{"Node3": 100},
-			requests:     pRequests,
-			strategyName: apiconfig.BalancedAllocation,
+			name:      "BalancedAllocation strategy",
+			wantedRes: nodeToScoreMap{"Node3": 100},
+			requests:  pRequests,
+			strategy:  balancedAllocationScoreStrategy,
 		},
 		{
 			// On 0-MaxNodeScore scale
@@ -180,25 +191,19 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			// CPU Fraction: 2 / 4 = 50%
 			// Memory Fraction: 20M / 500M = 4%
 			// Node1 score: ((100 - 50) + (100 - 4)) / 2 = 73
-			name:         "LeastAllocated strategy",
-			wantedRes:    nodeToScoreMap{"Node1": 73},
-			requests:     pRequests,
-			strategyName: apiconfig.LeastAllocated,
+			name:      "LeastAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node1": 73},
+			requests:  pRequests,
+			strategy:  leastAllocatedScoreStrategy,
 		},
 	}
 
 	for _, test := range tests {
-		initTest()
+		nodesMap, lister := initTest(topologyv1alpha2.SingleNUMANodeContainerLevel)
 		t.Run(test.name, func(t *testing.T) {
-			scoringFunction, err := getScoringStrategyFunction(test.strategyName)
-			if err != nil {
-				t.Errorf("%v", err)
-			}
-
 			tm := &TopologyMatch{
-				lister:         lister,
-				policyHandlers: newPolicyHandlerMap(),
-				scorerFn:       scoringFunction,
+				scoreStrategyFunc: test.strategy,
+				nrtCache:          nrtcache.NewPassthrough(lister),
 			}
 
 			for _, req := range test.requests {
@@ -239,6 +244,293 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 	}
 }
 
+func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
+	testCases := []struct {
+		name        string
+		podRequests []v1.ResourceList
+		wantedRes   nodeToScoreMap
+		policy      topologyv1alpha2.TopologyManagerPolicy
+		nodes       []*topologyv1alpha2.NodeResourceTopology
+	}{
+		{
+			name: "container scope, one container case 1",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 94,
+				"Node2": 94,
+				"Node3": 94,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+		},
+		{
+			name: "container scope, one container case 2",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("4"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 94,
+				"Node2": 82,
+				"Node3": 94,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+		},
+		{
+			name: "container scope, one container case 3",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("6"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 82,
+				"Node2": 0,
+				"Node3": 94,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+		},
+		{
+			name: "container scope, two containers case 1",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 94,
+				"Node2": 94,
+				"Node3": 94,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+		},
+		{
+			name: "container scope, two containers case 2",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("1"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+				{
+					v1.ResourceCPU:    resource.MustParse("3"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 94,
+				"Node2": 82,
+				"Node3": 94,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+		},
+		{
+			name: "container scope, two containers case 3",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("5"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+				{
+					v1.ResourceCPU:    resource.MustParse("3"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 82,
+				"Node2": 0,
+				"Node3": 94,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+		},
+		{
+			name: "container scope, two containers non NUMA resource",
+			podRequests: []v1.ResourceList{
+				{
+					"non-numa-resource": resource.MustParse("1"),
+				},
+				{
+					"non-numa-resource": resource.MustParse("2"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 100,
+				"Node2": 100,
+				"Node3": 100,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+		},
+		{
+			name: "pod scope, two containers case 1",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 94,
+				"Node2": 82,
+				"Node3": 82,
+			},
+			policy: topologyv1alpha2.BestEffortPodLevel,
+		},
+		{
+			name: "pod scope, two containers case 2",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("1"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+				{
+					v1.ResourceCPU:    resource.MustParse("3"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 94,
+				"Node2": 82,
+				"Node3": 82,
+			},
+			policy: topologyv1alpha2.BestEffortPodLevel,
+		},
+		{
+			name: "pod scope, two containers case 3",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("5"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+				{
+					v1.ResourceCPU:    resource.MustParse("3"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 82,
+				"Node2": 0,
+				"Node3": 82,
+			},
+			policy: topologyv1alpha2.BestEffortPodLevel,
+		},
+		{
+			name: "pod scope, one containers non NUMA resource",
+			podRequests: []v1.ResourceList{
+				{
+					"non-numa-resource": resource.MustParse("1"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 100,
+				"Node2": 100,
+				"Node3": 100,
+			},
+			policy: topologyv1alpha2.BestEffortPodLevel,
+		},
+		{
+			name: "container scope, one container, 4 NUMA nodes, 1 gpu ",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+					gpu:               resource.MustParse("1"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 94,
+				"Node2": 94,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes:  fourNUMANodes(),
+		},
+		{
+			name: "container scope, one container, 4 NUMA nodes, 2 gpu ",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+					gpu:               resource.MustParse("2"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 82,
+				"Node2": 76,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes:  fourNUMANodes(),
+		},
+		{
+			name: "container scope, 2 containers, 4 NUMA nodes, 2 gpu in one container ",
+			podRequests: []v1.ResourceList{
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+					gpu:               resource.MustParse("2"),
+				},
+				{
+					v1.ResourceCPU:    resource.MustParse("2"),
+					v1.ResourceMemory: resource.MustParse("50Mi"),
+				},
+			},
+			wantedRes: nodeToScoreMap{
+				"Node1": 82,
+				"Node2": 76,
+			},
+			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes:  fourNUMANodes(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodesMap, lister := initTest(tc.policy, tc.nodes...)
+
+			tm := &TopologyMatch{
+				scoreStrategyType: apiconfig.LeastNUMANodes,
+				nrtCache:          nrtcache.NewPassthrough(lister),
+			}
+			nodeToScore := make(nodeToScoreMap, len(nodesMap))
+			pod := makePodByResourceLists(tc.podRequests...)
+
+			for _, node := range nodesMap {
+				score, gotStatus := tm.Score(
+					context.Background(),
+					framework.NewCycleState(),
+					pod,
+					node.Name)
+
+				t.Logf("%v; %v; %v; score: %v; status: %v\n",
+					tc.name,
+					pod.GetName(),
+					node.Name,
+					score,
+					gotStatus)
+
+				nodeToScore[node.Name] = score
+			}
+			if !reflect.DeepEqual(nodeToScore, tc.wantedRes) {
+				t.Errorf("scores for nodes are incorrect wanted: %v, got: %v", tc.wantedRes, nodeToScore)
+			}
+
+		})
+	}
+}
+
 // return the name of the node with the highest score
 func findMaxScoreNode(nodeToScore nodeToScoreMap) string {
 	max := int64(0)
@@ -251,4 +543,237 @@ func findMaxScoreNode(nodeToScore nodeToScoreMap) string {
 		}
 	}
 	return electedNode
+}
+
+func fourNUMANodes() []*topologyv1alpha2.NodeResourceTopology {
+	return []*topologyv1alpha2.NodeResourceTopology{
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "Node1"},
+			TopologyPolicies: []string{string(topologyv1alpha2.BestEffortContainerLevel)},
+			Zones: topologyv1alpha2.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "1", "1"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 10,
+						},
+						{
+							Name:  "node-1",
+							Value: 12,
+						},
+						{
+							Name:  "node-2",
+							Value: 20,
+						},
+						{
+							Name:  "node-3",
+							Value: 20,
+						},
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "1", "1"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 12,
+						},
+						{
+							Name:  "node-1",
+							Value: 10,
+						},
+						{
+							Name:  "node-2",
+							Value: 20,
+						},
+						{
+							Name:  "node-3",
+							Value: 20,
+						},
+					},
+				},
+				{
+					Name: "node-2",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "0", "0"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 20,
+						},
+						{
+							Name:  "node-1",
+							Value: 20,
+						},
+						{
+							Name:  "node-2",
+							Value: 10,
+						},
+						{
+							Name:  "node-3",
+							Value: 12,
+						},
+					},
+				},
+				{
+					Name: "node-3",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "0", "0"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 20,
+						},
+						{
+							Name:  "node-1",
+							Value: 20,
+						},
+						{
+							Name:  "node-2",
+							Value: 12,
+						},
+						{
+							Name:  "node-3",
+							Value: 10,
+						},
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta:       metav1.ObjectMeta{Name: "Node2"},
+			TopologyPolicies: []string{string(topologyv1alpha2.BestEffortContainerLevel)},
+			Zones: topologyv1alpha2.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "1", "1"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 10,
+						},
+						{
+							Name:  "node-1",
+							Value: 12,
+						},
+						{
+							Name:  "node-2",
+							Value: 20,
+						},
+						{
+							Name:  "node-3",
+							Value: 20,
+						},
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "0", "0"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 12,
+						},
+						{
+							Name:  "node-1",
+							Value: 10,
+						},
+						{
+							Name:  "node-2",
+							Value: 20,
+						},
+						{
+							Name:  "node-3",
+							Value: 20,
+						},
+					},
+				},
+				{
+					Name: "node-2",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "1", "1"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 20,
+						},
+						{
+							Name:  "node-1",
+							Value: 20,
+						},
+						{
+							Name:  "node-2",
+							Value: 10,
+						},
+						{
+							Name:  "node-3",
+							Value: 12,
+						},
+					},
+				},
+				{
+					Name: "node-3",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+						MakeTopologyResInfo(gpu, "0", "0"),
+					},
+					Costs: topologyv1alpha2.CostList{
+						{
+							Name:  "node-0",
+							Value: 20,
+						},
+						{
+							Name:  "node-1",
+							Value: 20,
+						},
+						{
+							Name:  "node-2",
+							Value: 12,
+						},
+						{
+							Name:  "node-3",
+							Value: 10,
+						},
+					},
+				},
+			},
+		},
+	}
 }

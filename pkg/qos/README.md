@@ -15,7 +15,7 @@ of Pods.
 
 ## QOS QueueSort Plugin
 
-Sorts pods by .spec.priority and breaks ties by the [quality of service class](https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/#qos-classes).
+Sort pods by .spec.priority and breaks ties by the [quality of service class](https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/#qos-classes).
 Specifically, this plugin enqueue the Pods with the following order:
 
 - Guaranteed (requests == limits)

@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2023 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,12 +23,15 @@ package topology
 import (
 	internalinterfaces "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions/internalinterfaces"
 	v1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions/topology/v1alpha1"
+	v1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions/topology/v1alpha2"
 )
 
 // Interface provides access to each of this group's versions.
 type Interface interface {
 	// V1alpha1 provides access to shared informers for resources in V1alpha1.
 	V1alpha1() v1alpha1.Interface
+	// V1alpha2 provides access to shared informers for resources in V1alpha2.
+	V1alpha2() v1alpha2.Interface
 }
 
 type group struct {
@@ -45,4 +48,9 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // V1alpha1 returns a new v1alpha1.Interface.
 func (g *group) V1alpha1() v1alpha1.Interface {
 	return v1alpha1.New(g.factory, g.namespace, g.tweakListOptions)
+}
+
+// V1alpha2 returns a new v1alpha2.Interface.
+func (g *group) V1alpha2() v1alpha2.Interface {
+	return v1alpha2.New(g.factory, g.namespace, g.tweakListOptions)
 }

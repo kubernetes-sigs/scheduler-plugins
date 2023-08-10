@@ -18,192 +18,194 @@ package noderesourcetopology
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
+	"strings"
+	"time"
 
-	"github.com/dustin/go-humanize"
-
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	restclient "k8s.io/client-go/rest"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	topoclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
-	listerv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
+
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 )
 
-func findNodeTopology(nodeName string, lister listerv1alpha1.NodeResourceTopologyLister) *topologyv1alpha1.NodeResourceTopology {
-	klog.V(5).InfoS("Lister for nodeResTopoPlugin", "lister", lister)
-	nodeTopology, err := lister.Get(nodeName)
-	if err != nil {
-		klog.V(5).ErrorS(err, "Cannot get NodeTopologies from NodeResourceTopologyLister")
-		return nil
-	}
-	return nodeTopology
-}
+const (
+	maxNUMAId = 64
+)
 
-func initNodeTopologyInformer(kubeConfig *restclient.Config) (listerv1alpha1.NodeResourceTopologyLister, error) {
-	topoClient, err := topoclientset.NewForConfig(kubeConfig)
+func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
+	topoClient, err := topoclientset.NewForConfig(handle.KubeConfig())
 	if err != nil {
-		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", kubeConfig)
+		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
 		return nil, err
 	}
 
 	topologyInformerFactory := topologyinformers.NewSharedInformerFactory(topoClient, 0)
-	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha1().NodeResourceTopologies()
-	nodeResourceTopologyLister := nodeTopologyInformer.Lister()
+	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha2().NodeResourceTopologies()
+	nodeTopologyLister := nodeTopologyInformer.Lister()
 
 	klog.V(5).InfoS("Start nodeTopologyInformer")
 	ctx := context.Background()
 	topologyInformerFactory.Start(ctx.Done())
 	topologyInformerFactory.WaitForCacheSync(ctx.Done())
 
-	return nodeResourceTopologyLister, nil
+	if tcfg.DiscardReservedNodes {
+		return nrtcache.NewDiscardReserved(nodeTopologyLister), nil
+	}
+
+	if tcfg.CacheResyncPeriodSeconds <= 0 {
+		return nrtcache.NewPassthrough(nodeTopologyLister), nil
+	}
+
+	podSharedInformer, podLister := nrtcache.InformerFromHandle(handle)
+
+	nrtCache, err := nrtcache.NewOverReserve(tcfg.Cache, nodeTopologyLister, podLister)
+	if err != nil {
+		return nil, err
+	}
+
+	initNodeTopologyForeignPodsDetection(tcfg.Cache, handle, podSharedInformer, nrtCache)
+
+	resyncPeriod := time.Duration(tcfg.CacheResyncPeriodSeconds) * time.Second
+	go wait.Forever(nrtCache.Resync, resyncPeriod)
+
+	klog.V(3).InfoS("enable NodeTopology cache (needs the Reserve plugin)", "resyncPeriod", resyncPeriod)
+
+	return nrtCache, nil
 }
 
-func createNUMANodeList(zones topologyv1alpha1.ZoneList) NUMANodeList {
-	nodes := make(NUMANodeList, 0)
-	for _, zone := range zones {
-		if zone.Type == "Node" {
-			var numaID int
-			_, err := fmt.Sscanf(zone.Name, "node-%d", &numaID)
-			if err != nil {
-				klog.ErrorS(nil, "Invalid zone format", "zone", zone.Name)
-				continue
-			}
-			if numaID > 63 || numaID < 0 {
-				klog.ErrorS(nil, "Invalid NUMA id range", "numaID", numaID)
-				continue
-			}
-			resources := extractResources(zone)
-			klog.V(6).InfoS("extracted NUMA resources", resourceListToLoggable(zone.Name, resources)...)
-			nodes = append(nodes, NUMANode{NUMAID: numaID, Resources: resources})
-		}
+func initNodeTopologyForeignPodsDetection(cfg *apiconfig.NodeResourceTopologyCache, handle framework.Handle, podSharedInformer k8scache.SharedInformer, nrtCache *nrtcache.OverReserve) {
+	foreignPodsDetect := getForeignPodsDetectMode(cfg)
+
+	if foreignPodsDetect == apiconfig.ForeignPodsDetectNone {
+		klog.InfoS("foreign pods detection disabled by configuration")
+		return
 	}
+	fwk, ok := handle.(framework.Framework)
+	if !ok {
+		klog.Warningf("cannot determine the scheduler profile names - no foreign pod detection enabled")
+		return
+	}
+
+	profileName := fwk.ProfileName()
+	klog.InfoS("setting up foreign pods detection", "name", profileName, "mode", foreignPodsDetect)
+
+	if foreignPodsDetect == apiconfig.ForeignPodsDetectOnlyExclusiveResources {
+		nrtcache.TrackOnlyForeignPodsWithExclusiveResources()
+	} else {
+		nrtcache.TrackAllForeignPods()
+	}
+	nrtcache.RegisterSchedulerProfileName(profileName)
+	nrtcache.SetupForeignPodsDetector(profileName, podSharedInformer, nrtCache)
+}
+
+func createNUMANodeList(zones topologyv1alpha2.ZoneList) NUMANodeList {
+	numaIDToZoneIDx := make([]int, maxNUMAId)
+	nodes := NUMANodeList{}
+	// filter non Node zones and create idToIdx lookup array
+	for i, zone := range zones {
+		if zone.Type != "Node" {
+			continue
+		}
+
+		numaID, err := getID(zone.Name)
+		if err != nil {
+			klog.Error(err)
+			continue
+		}
+
+		numaIDToZoneIDx[numaID] = i
+
+		resources := extractResources(zone)
+		klog.V(6).InfoS("extracted NUMA resources", stringify.ResourceListToLoggable(zone.Name, resources)...)
+		nodes = append(nodes, NUMANode{NUMAID: numaID, Resources: resources})
+	}
+
+	// iterate over nodes and fill them with Costs
+	for i, node := range nodes {
+		nodes[i] = *node.WithCosts(extractCosts(zones[numaIDToZoneIDx[node.NUMAID]].Costs))
+	}
+
 	return nodes
 }
 
-func makePodByResourceList(resources *v1.ResourceList) *v1.Pod {
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Resources: v1.ResourceRequirements{
-						Requests: *resources,
-						Limits:   *resources,
-					},
-				},
-			},
-		},
+func getID(name string) (int, error) {
+	splitted := strings.Split(name, "-")
+	if len(splitted) != 2 {
+		return -1, fmt.Errorf("invalid zone format zone: %s", name)
 	}
+
+	if splitted[0] != "node" {
+		return -1, fmt.Errorf("invalid zone format zone: %s", name)
+	}
+
+	numaID, err := strconv.Atoi(splitted[1])
+	if err != nil {
+		return -1, fmt.Errorf("invalid zone format zone: %s : %v", name, err)
+	}
+
+	if numaID > maxNUMAId-1 || numaID < 0 {
+		return -1, fmt.Errorf("invalid NUMA id range numaID: %d", numaID)
+	}
+
+	return numaID, nil
 }
 
-func makeResourceListFromZones(zones topologyv1alpha1.ZoneList) v1.ResourceList {
-	result := make(v1.ResourceList)
-	for _, zone := range zones {
-		for _, resInfo := range zone.Resources {
-			resQuantity := resInfo.Available
-			if quantity, ok := result[v1.ResourceName(resInfo.Name)]; ok {
-				resQuantity.Add(quantity)
-			}
-			result[v1.ResourceName(resInfo.Name)] = resQuantity
+func extractCosts(costs topologyv1alpha2.CostList) map[int]int {
+	nodeCosts := make(map[int]int)
+
+	// return early if CostList is missing
+	if len(costs) == 0 {
+		return nodeCosts
+	}
+
+	for _, cost := range costs {
+		numaID, err := getID(cost.Name)
+		if err != nil {
+			continue
 		}
+		nodeCosts[numaID] = int(cost.Value)
 	}
-	return result
+
+	return nodeCosts
 }
 
-func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha1.ResourceInfo {
-	return topologyv1alpha1.ResourceInfo{
-		Name:      name,
-		Capacity:  resource.MustParse(capacity),
-		Available: resource.MustParse(available),
-	}
-}
-
-func makePodByResourceListWithManyContainers(resources *v1.ResourceList, containerCount int) *v1.Pod {
-	var containers []v1.Container
-
-	for i := 0; i < containerCount; i++ {
-		containers = append(containers, v1.Container{
-			Resources: v1.ResourceRequirements{
-				Requests: *resources,
-				Limits:   *resources,
-			},
-		})
-	}
-	return &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: containers,
-		},
-	}
-}
-
-func extractResources(zone topologyv1alpha1.Zone) v1.ResourceList {
-	res := make(v1.ResourceList)
+func extractResources(zone topologyv1alpha2.Zone) corev1.ResourceList {
+	res := make(corev1.ResourceList)
 	for _, resInfo := range zone.Resources {
-		res[v1.ResourceName(resInfo.Name)] = resInfo.Available
+		res[corev1.ResourceName(resInfo.Name)] = resInfo.Available.DeepCopy()
 	}
 	return res
 }
 
-func logNumaNodes(desc, nodeName string, nodes NUMANodeList) {
-	for _, numaNode := range nodes {
-		numaLogKey := fmt.Sprintf("%s/node-%d", nodeName, numaNode.NUMAID)
-		klog.V(6).InfoS(desc, resourceListToLoggable(numaLogKey, numaNode.Resources)...)
-	}
-}
-
-func resourceListToLoggable(logKey string, resources v1.ResourceList) []interface{} {
-	items := []interface{}{"logKey", logKey}
-
-	resNames := []string{}
-	for resName := range resources {
-		resNames = append(resNames, string(resName))
-	}
-	sort.Strings(resNames)
-
-	for _, resName := range resNames {
-		qty := resources[v1.ResourceName(resName)]
-		items = append(items, resName)
-		resVal, _ := qty.AsInt64()
-		if needsHumanization(resName) {
-			items = append(items, humanize.IBytes(uint64(resVal)))
-		} else {
-			items = append(items, strconv.FormatInt(resVal, 10))
+func onlyNonNUMAResources(numaNodes NUMANodeList, resources corev1.ResourceList) bool {
+	for resourceName := range resources {
+		for _, node := range numaNodes {
+			if _, ok := node.Resources[resourceName]; ok {
+				return false
+			}
 		}
 	}
-	return items
+
+	return true
 }
 
-func needsHumanization(resName string) bool {
-	// memory-related resources may be expressed in KiB/Bytes, which makes
-	// for long numbers, harder to read and compare. To make it easier for
-	// the reader, we express them in a more compact form using go-humanize.
-	return resName == string(v1.ResourceMemory) || v1helper.IsHugePageResourceName(v1.ResourceName(resName))
-}
-
-func newPolicyHandlerMap() PolicyHandlerMap {
-	return PolicyHandlerMap{
-		topologyv1alpha1.SingleNUMANodePodLevel:       newPodScopedHandler(),
-		topologyv1alpha1.SingleNUMANodeContainerLevel: newContainerScopedHandler(),
+func getForeignPodsDetectMode(cfg *apiconfig.NodeResourceTopologyCache) apiconfig.ForeignPodsDetectMode {
+	var foreignPodsDetect apiconfig.ForeignPodsDetectMode
+	if cfg != nil && cfg.ForeignPodsDetect != nil {
+		foreignPodsDetect = *cfg.ForeignPodsDetect
+	} else { // explicitly set to nil?
+		foreignPodsDetect = apiconfig.ForeignPodsDetectAll
+		klog.InfoS("foreign pods detection value missing", "fallback", foreignPodsDetect)
 	}
-}
-
-func logNRT(desc string, nrtObj *topologyv1alpha1.NodeResourceTopology) {
-	if !klog.V(6).Enabled() {
-		// avoid the expensive marshal operation
-		return
-	}
-
-	ntrJson, err := json.MarshalIndent(nrtObj, "", " ")
-	if err != nil {
-		klog.V(6).ErrorS(err, "failed to marshal noderesourcetopology object")
-		return
-	}
-	klog.V(6).Info(desc, "noderesourcetopology", string(ntrJson))
+	return foreignPodsDetect
 }

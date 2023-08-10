@@ -1,21 +1,22 @@
 # Preemption Toleration <!-- omit in toc -->
 
-## Table of Contents <!-- omit in toc -->
+## Table of Contents
+
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-	- [Goals](#goals)
-	- [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Use Cases](#use-cases)
-	- [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority)
-	- [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time)
+  - [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority)
+  - [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time)
 - [Design Details](#design-details)
-	- [Preemption Toleration API](#preemption-toleration-api)
-	- [Implementing Typical Use Cases by Preemption Toleration APIs](#implementing-typical-use-cases-by-preemption-toleration-apis)
-		- [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority-1)
-		- [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time-1)
-	- [Plugin implementation](#plugin-implementation)
-		- [PostFilter](#postfilter)
+  - [Preemption Toleration API](#preemption-toleration-api)
+  - [Implementing Typical Use Cases by Preemption Toleration APIs](#implementing-typical-use-cases-by-preemption-toleration-apis)
+    - [Lower priority value but not-being-preempted priority](#lower-priority-value-but-not-being-preempted-priority-1)
+    - [Conditional preemption with guaranteed running time](#conditional-preemption-with-guaranteed-running-time-1)
+  - [Plugin implementation](#plugin-implementation)
+    - [PostFilter](#postfilter)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -104,15 +105,15 @@ type PreemptionToleration struct {
 }
 ```
 
-Users specifies the preemption toleration policy as an annotation with the key `preemption-toleration.scheduling.sigs.k8s.io/<property_name>` in `PriorityClass` as below:
+Users specifies the preemption toleration policy as an annotation with the key `preemption-toleration.scheduling.x-k8s.io/<property_name>` in `PriorityClass` as below:
 
 ```yaml
 kind: PriorityClass
 metadata:
   name: toleration-policy-sample
   annotation:
-    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
-    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
+    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
+    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "3600"
 value: 8000
 ```
 
@@ -153,9 +154,9 @@ metadata:
   name: low-non-preempted
   annotation:
     # This priority class can tolerate preemption by priority with p < 10000.
-    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
+    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
     # This priority class can tolerate preemption forever by priority with p < 10000(=minimum-preemptable-priority)
-    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "-1"
+    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "-1"
 value: 8000
 ```
 
@@ -186,10 +187,10 @@ metadata:
   name: low-non-preempted-10min
   annotation:
     # This priority class can tolerate preemption by priority with p < 10000.
-    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
+    preemption-toleration.scheduling.x-k8s.io/minimum-preemptable-priority: "10000"
     # This priority class can tolerate preemption for 10 minutes (600 seconds) 
     # by priority with p < 10000(=minimum-preemptable-priority)
-    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "600"
+    preemption-toleration.scheduling.x-k8s.io/toleration-seconds: "600"
 value: 8000
 ```
 

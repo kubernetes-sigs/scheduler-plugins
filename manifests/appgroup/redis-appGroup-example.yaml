@@ -1,0 +1,29 @@
+apiVersion: appgroup.diktyo.x-k8s.io/v1alpha1
+kind: AppGroup
+metadata:
+  name: redis-cluster
+spec:
+  numMembers: 2
+  topologySortingAlgorithm: AlternateKahn
+  workloads:
+    - workload:
+        kind: Deployment
+        name: redis-leader-deployment
+        selector: redis-leader
+        apiVersion: apps/v1
+        namespace: default
+      dependencies:
+        - workload:
+            kind: Deployment
+            name: redis-follower-deployment
+            selector: redis-follower
+            apiVersion: apps/v1
+            namespace: default
+          minBandwidth: "100Mi"
+          maxNetworkCost: 80
+    - workload:
+        kind: Deployment
+        name: redis-follower-deployment
+        selector: redis-follower
+        apiVersion: apps/v1
+        namespace: default

@@ -1,0 +1,802 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: adservice
+  template:
+    metadata:
+      labels: # Do not forget the needed labels for the networkAware plugins! All deployments need these labels.
+        app: adservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: adservice
+    spec:
+      schedulerName: network-aware-scheduler # Do not forget the scheduler name!
+      terminationGracePeriodSeconds: 5
+      initContainers:
+        - name: sfx-instrumentation
+          image: quay.io/signalfuse/sfx-zero-config-agent:latest
+          # image: sfx-zero-config-agent
+          # imagePullPolicy: Never
+          volumeMounts:
+            - mountPath: /opt/sfx/
+              name: sfx-instrumentation
+      containers:
+        - name: server
+          image: quay.io/signalfuse/microservices-demo-adservice:433c23881a
+          ports:
+            - containerPort: 9555
+          env:
+            - name: PORT
+              value: '9555'
+            - name: OTEL_EXPORTER_ZIPKIN_SERVICE_NAME
+              value: adservice
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER
+              value: zipkin
+            - name: JAVA_TOOL_OPTIONS
+              value: -javaagent:/opt/sfx/splunk-otel-javaagent-all.jar
+            - name: OTEL_EXPORTER_ZIPKIN_ENDPOINT
+              value: 'http://$(NODE_IP):9411/v1/trace'
+          volumeMounts:
+            - mountPath: /opt/sfx
+              name: sfx-instrumentation
+          resources:
+            requests:
+              cpu: 200m
+              memory: 180Mi
+            limits:
+              cpu: 300m
+              memory: 300Mi
+          readinessProbe:
+            initialDelaySeconds: 60
+            periodSeconds: 25
+            exec:
+              command: ['/bin/grpc_health_probe', '-addr=:9555']
+          livenessProbe:
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            exec:
+              command: ['/bin/grpc_health_probe', '-addr=:9555']
+      volumes:
+        - emptyDir: {}
+          name: sfx-instrumentation
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adservice
+spec:
+  type: ClusterIP
+  selector:
+    app: adservice
+  ports:
+    - name: grpc
+      port: 9555
+      targetPort: 9555
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cartservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cartservice
+  template:
+    metadata:
+      labels:
+        app: cartservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: cartservice
+    spec:
+      schedulerName: network-aware-scheduler
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: server
+        image: quay.io/signalfuse/microservices-demo-cartservice:433c23881a
+        ports:
+        - containerPort: 7070
+        env:
+        - name: REDIS_ADDR
+          value: "redis-cart:6379"
+        - name: PORT
+          value: "7070"
+        - name: LISTEN_ADDR
+          value: "0.0.0.0"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SIGNALFX_ENDPOINT_URL
+          # value: "http://zipkin.default:9411/api/v2/spans"
+          value: "http://$(NODE_IP):9411/api/v2/spans"
+        - name: SIGNALFX_SERVICE_NAME
+          value: "cartservice"
+        - name: SIGNALFX_SERVER_TIMING_CONTEXT
+          value: "true"
+        - name: SIGNALFX_TRACE_DEBUG
+          value: "true"
+        - name: SIGNALFX_ENV
+          value: "demo"
+        - name: EXTERNAL_DB_NAME
+          value: "Galactus.Postgres"
+        - name: EXTERNAL_DB_ACCESS_RATE
+          value: "0.75"
+        - name: EXTERNAL_DB_MAX_DURATION_MILLIS
+          value: "750"
+        - name: EXTERNAL_DB_ERROR_RATE
+          value: "0.0"
+        resources:
+          requests:
+            cpu: 200m
+            memory: 64Mi
+          limits:
+            cpu: 300m
+            memory: 128Mi
+        readinessProbe:
+          initialDelaySeconds: 15
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:7070", "-rpc-timeout=5s"]
+        livenessProbe:
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:7070", "-rpc-timeout=5s"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cartservice
+spec:
+  type: ClusterIP
+  selector:
+    app: cartservice
+  ports:
+  - name: grpc
+    port: 7070
+    targetPort: 7070
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkoutservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: checkoutservice
+  template:
+    metadata:
+      labels:
+        app: checkoutservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: checkoutservice
+    spec:
+      schedulerName: network-aware-scheduler
+      containers:
+        - name: server
+          image: quay.io/signalfuse/microservices-demo-checkoutservice:433c23881a
+          ports:
+          - containerPort: 5050
+          readinessProbe:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:5050"]
+          livenessProbe:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:5050"]
+          env:
+          - name: PORT
+            value: "5050"
+          - name: PRODUCT_CATALOG_SERVICE_ADDR
+            value: "productcatalogservice:3550"
+          - name: SHIPPING_SERVICE_ADDR
+            value: "shippingservice:50051"
+          - name: PAYMENT_SERVICE_ADDR
+            value: "paymentservice:50051"
+          - name: EMAIL_SERVICE_ADDR
+            value: "emailservice:5000"
+          - name: CURRENCY_SERVICE_ADDR
+            value: "currencyservice:7000"
+          - name: CART_SERVICE_ADDR
+            value: "cartservice:7070"
+          - name: NODE_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+          - name: SIGNALFX_ENDPOINT_URL
+            # value: "http://zipkin.default:9411/api/v2/spans"
+            value: "http://$(NODE_IP):9411/api/v2/spans"
+          - name: MAX_RETRY_ATTEMPTS
+            value: "20"
+          - name: RETRY_INITIAL_SLEEP_MILLIS
+            value: "25"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkoutservice
+spec:
+  type: ClusterIP
+  selector:
+    app: checkoutservice
+  ports:
+  - name: grpc
+    port: 5050
+    targetPort: 5050
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: currencyservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: currencyservice
+  template:
+    metadata:
+      labels:
+        app: currencyservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: currencyservice
+    spec:
+      schedulerName: network-aware-scheduler
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: server
+        image: quay.io/signalfuse/microservices-demo-currencyservice:433c23881a
+        ports:
+        - name: grpc
+          containerPort: 7000
+        env:
+        - name: PORT
+          value: "7000"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SIGNALFX_ENDPOINT_URL
+          # value: "http://zipkin.default:9411/api/v2/spans"
+          value: "http://$(NODE_IP):9411/api/v2/spans"
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:7000"]
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:7000"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: currencyservice
+spec:
+  type: ClusterIP
+  selector:
+    app: currencyservice
+  ports:
+  - name: grpc
+    port: 7000
+    targetPort: 7000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emailservice-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: emailservice
+  template:
+    metadata:
+      labels:
+        app: emailservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: emailservice
+    spec:
+      schedulerName: network-aware-scheduler
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: server
+        image: quay.io/signalfuse/microservices-demo-emailservice:433c23881a
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SIGNALFX_ENDPOINT_URL
+          # value: "http://zipkin.default:9411/api/v2/spans"
+          value: "http://$(NODE_IP):9411/api/v2/spans"
+        readinessProbe:
+          periodSeconds: 5
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:8080"]
+        livenessProbe:
+          periodSeconds: 5
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:8080"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: frontend
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+    spec:
+      schedulerName: network-aware-scheduler
+      containers:
+        - name: server
+          image: quay.io/signalfuse/microservices-demo-frontend:433c23881a
+          ports:
+          - containerPort: 8080
+          readinessProbe:
+            initialDelaySeconds: 10
+            httpGet:
+              path: "/_healthz"
+              port: 8080
+              httpHeaders:
+              - name: "Cookie"
+                value: "shop_session-id=x-readiness-probe"
+          livenessProbe:
+            initialDelaySeconds: 10
+            httpGet:
+              path: "/_healthz"
+              port: 8080
+              httpHeaders:
+              - name: "Cookie"
+                value: "shop_session-id=x-liveness-probe"
+          env:
+          - name: PORT
+            value: "8080"
+          - name: PRODUCT_CATALOG_SERVICE_ADDR
+            value: "productcatalogservice:3550"
+          - name: CURRENCY_SERVICE_ADDR
+            value: "currencyservice:7000"
+          - name: CART_SERVICE_ADDR
+            value: "cartservice:7070"
+          - name: RECOMMENDATION_SERVICE_ADDR
+            value: "recommendationservice:8080"
+          - name: SHIPPING_SERVICE_ADDR
+            value: "shippingservice:50051"
+          - name: CHECKOUT_SERVICE_ADDR
+            value: "checkoutservice:5050"
+          - name: AD_SERVICE_ADDR
+            value: "adservice:9555"
+          - name: RUM_REALM
+            value: ${REALM}
+          - name: RUM_AUTH
+            value: ${RUM_TOKEN}
+          - name: RUM_APP_NAME
+            value: ${INSTANCE}-rum-app
+          - name: RUM_ENVIRONMENT
+            value: ${INSTANCE}-rum-env
+          - name: RUM_DEBUG
+          - name: ENV_PLATFORM
+            value: "gcp"
+          - name: NODE_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+          - name: SIGNALFX_ENDPOINT_URL
+            #  value: "http://zipkin.default:9411/api/v2/spans"
+            value: "http://$(NODE_IP):9411/api/v2/spans"
+          - name: SIGNALFX_SERVER_TIMING_CONTEXT
+            value: "true"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-external
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-internal: 0.0.0.0/0
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "5"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "3"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+    external-dns.alpha.kubernetes.io/hostname: demo.
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 81
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paymentservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: paymentservice
+  template:
+    metadata:
+      labels:
+        app: paymentservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: paymentservice
+    spec:
+      schedulerName: network-aware-scheduler
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: server
+        image: quay.io/signalfuse/microservices-demo-paymentservice:433c23881a
+        ports:
+        - containerPort: 50051
+        env:
+        - name: PORT
+          value: "50051"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SIGNALFX_ENDPOINT_URL
+          # value: "http://zipkin.default:9411/api/v2/spans"
+          value: "http://$(NODE_IP):9411/api/v2/spans"
+        - name: API_TOKEN_FAILURE_RATE
+          value: "0.75"
+        - name: SERIALIZATION_FAILURE_RATE
+          value: "0.0"
+        - name: SUCCESS_PAYMENT_SERVICE_DURATION_MILLIS
+          value: "200"
+        - name: ERROR_PAYMENT_SERVICE_DURATION_MILLIS
+          value: "500"
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:50051"]
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:50051"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paymentservice
+spec:
+  type: ClusterIP
+  selector:
+    app: paymentservice
+  ports:
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadgenerator
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-internal: 0.0.0.0/0
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "5"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "3"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+    external-dns.alpha.kubernetes.io/hostname: demo-load.
+spec:
+  type: LoadBalancer
+  selector:
+    app: loadgenerator
+  ports:
+  - name: http
+    port: 82
+    targetPort: 8089
+---
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: productcatalogservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: productcatalogservice
+  template:
+    metadata:
+      labels:
+        app: productcatalogservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: productcatalogservice
+    spec:
+      schedulerName: network-aware-scheduler
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: server
+        image: quay.io/signalfuse/microservices-demo-productcatalogservice:433c23881a
+        ports:
+        - containerPort: 3550
+        env:
+        - name: PORT
+          value: "3550"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SIGNALFX_ENDPOINT_URL
+          value: "http://$(NODE_IP):9411/api/v2/spans"
+          # value: "http://zipkin.default:9411/api/v2/spans"
+        readinessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:3550"]
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:3550"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: productcatalogservice
+spec:
+  type: ClusterIP
+  selector:
+    app: productcatalogservice
+  ports:
+  - name: grpc
+    port: 3550
+    targetPort: 3550
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendationservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: recommendationservice
+  template:
+    metadata:
+      labels:
+        app: recommendationservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: recommendationservice
+    spec:
+      schedulerName: network-aware-scheduler
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: server
+        image: quay.io/signalfuse/microservices-demo-recommendationservice:433c23881a
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          periodSeconds: 5
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:8080"]
+        livenessProbe:
+          periodSeconds: 5
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:8080"]
+        env:
+        - name: PORT
+          value: "8080"
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "productcatalogservice:3550"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SIGNALFX_ENDPOINT_URL
+          value: "http://$(NODE_IP):9411/api/v2/spans"
+          # value: "http://zipkin.default:9411/api/v2/spans"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 220Mi
+          limits:
+            cpu: 200m
+            memory: 450Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommendationservice
+spec:
+  type: ClusterIP
+  selector:
+    app: recommendationservice
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cart
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-cart
+  template:
+    metadata:
+      labels:
+        app: redis-cart
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: redis-cart
+    spec:
+      schedulerName: network-aware-scheduler
+      containers:
+      - name: redis
+        image: redis:alpine
+        ports:
+        - containerPort: 6379
+        readinessProbe:
+          periodSeconds: 5
+          tcpSocket:
+            port: 6379
+        livenessProbe:
+          periodSeconds: 5
+          tcpSocket:
+            port: 6379
+        volumeMounts:
+        - mountPath: /data
+          name: redis-data
+        resources:
+          limits:
+            memory: 256Mi
+            cpu: 125m
+          requests:
+            cpu: 70m
+            memory: 200Mi
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cart
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-cart
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shippingservice
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: shippingservice
+  template:
+    metadata:
+      labels:
+        app: shippingservice
+        appgroup.diktyo.x-k8s.io: online-boutique
+        appgroup.diktyo.x-k8s.io.workload: shippingservice
+    spec:
+      schedulerName: network-aware-scheduler
+      containers:
+      - name: server
+        image: quay.io/signalfuse/microservices-demo-shippingservice:433c23881a
+        ports:
+        - containerPort: 50051
+        env:
+        - name: PORT
+          value: "50051"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: SIGNALFX_ENDPOINT_URL
+          value: "http://$(NODE_IP):9411/api/v2/spans"
+          # value: "http://zipkin.default:9411/api/v2/spans"
+        readinessProbe:
+          periodSeconds: 5
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:50051"]
+        livenessProbe:
+          exec:
+            command: ["/bin/grpc_health_probe", "-addr=:50051"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shippingservice
+spec:
+  type: ClusterIP
+  selector:
+    app: shippingservice
+  ports:
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+---
+
+        
+
+

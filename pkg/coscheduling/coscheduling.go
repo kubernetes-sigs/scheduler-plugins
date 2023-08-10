@@ -22,8 +22,8 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
@@ -43,6 +43,7 @@ type Coscheduling struct {
 	frameworkHandler framework.Handle
 	pgMgr            core.Manager
 	scheduleTimeout  *time.Duration
+	pgBackoff        *time.Duration
 }
 
 var _ framework.QueueSortPlugin = &Coscheduling{}
@@ -50,7 +51,7 @@ var _ framework.PreFilterPlugin = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
 var _ framework.ReservePlugin = &Coscheduling{}
-var _ framework.PostBindPlugin = &Coscheduling{}
+
 var _ framework.EnqueueExtensions = &Coscheduling{}
 
 const (
@@ -79,6 +80,14 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		frameworkHandler: handle,
 		pgMgr:            pgMgr,
 		scheduleTimeout:  &scheduleTimeDuration,
+	}
+	if args.PodGroupBackoffSeconds < 0 {
+		err := fmt.Errorf("Parse Arguments Failed")
+		klog.ErrorS(err, "PodGroupBackoffSeconds cannot be negative")
+		return nil, err
+	} else if args.PodGroupBackoffSeconds > 0 {
+		pgBackoff := time.Duration(args.PodGroupBackoffSeconds) * time.Second
+		plugin.pgBackoff = &pgBackoff
 	}
 	pgInformerFactory.Start(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), pgInformer.Informer().HasSynced) {
@@ -114,8 +123,8 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	if prio1 != prio2 {
 		return prio1 > prio2
 	}
-	creationTime1 := cs.pgMgr.GetCreationTimestamp(podInfo1.Pod, podInfo1.InitialAttemptTimestamp)
-	creationTime2 := cs.pgMgr.GetCreationTimestamp(podInfo2.Pod, podInfo2.InitialAttemptTimestamp)
+	creationTime1 := cs.pgMgr.GetCreationTimestamp(podInfo1.Pod, *podInfo1.InitialAttemptTimestamp)
+	creationTime2 := cs.pgMgr.GetCreationTimestamp(podInfo2.Pod, *podInfo2.InitialAttemptTimestamp)
 	if creationTime1.Equal(creationTime2) {
 		return core.GetNamespacedName(podInfo1.Pod) < core.GetNamespacedName(podInfo2.Pod)
 	}
@@ -163,11 +172,21 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	// It's based on an implicit assumption: if the nth Pod failed,
 	// it's inferrable other Pods belonging to the same PodGroup would be very likely to fail.
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[v1alpha1.PodGroupLabel] == pg.Name {
+		if waitingPod.GetPod().Namespace == pod.Namespace && util.GetPodGroupLabel(waitingPod.GetPod()) == pg.Name {
 			klog.V(3).InfoS("PostFilter rejects the pod", "podGroup", klog.KObj(pg), "pod", klog.KObj(waitingPod.GetPod()))
 			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
+
+	if cs.pgBackoff != nil {
+		pods, err := cs.frameworkHandler.SharedInformerFactory().Core().V1().Pods().Lister().Pods(pod.Namespace).List(
+			labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
+		)
+		if err == nil && len(pods) >= int(pg.Spec.MinMember) {
+			cs.pgMgr.BackoffPodGroup(pgName, *cs.pgBackoff)
+		}
+	}
+
 	cs.pgMgr.DeletePermittedPodGroup(pgName)
 	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 		fmt.Sprintf("PodGroup %v gets rejected due to Pod %v is unschedulable even after PostFilter", pgName, pod.Name))
@@ -225,25 +244,10 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 		return
 	}
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
-		if waitingPod.GetPod().Namespace == pod.Namespace && waitingPod.GetPod().Labels[v1alpha1.PodGroupLabel] == pg.Name {
+		if waitingPod.GetPod().Namespace == pod.Namespace && util.GetPodGroupLabel(waitingPod.GetPod()) == pg.Name {
 			klog.V(3).InfoS("Unreserve rejects", "pod", klog.KObj(waitingPod.GetPod()), "podGroup", klog.KObj(pg))
 			waitingPod.Reject(cs.Name(), "rejection in Unreserve")
 		}
 	})
 	cs.pgMgr.DeletePermittedPodGroup(pgName)
-}
-
-// PostBind is called after a pod is successfully bound. These plugins are used update PodGroup when pod is bound.
-func (cs *Coscheduling) PostBind(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, nodeName string) {
-	klog.V(5).InfoS("PostBind", "pod", klog.KObj(pod))
-	cs.pgMgr.PostBind(ctx, pod, nodeName)
-}
-
-// rejectPod rejects pod in cache
-func (cs *Coscheduling) rejectPod(uid types.UID) {
-	waitingPod := cs.frameworkHandler.GetWaitingPod(uid)
-	if waitingPod == nil {
-		return
-	}
-	waitingPod.Reject(Name, "")
 }

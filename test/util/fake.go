@@ -81,6 +81,10 @@ func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
 
+func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+	return nil
+}
+
 func (f *fakeSharedLister) List() ([]*framework.NodeInfo, error) {
 	return f.nodeInfos, nil
 }

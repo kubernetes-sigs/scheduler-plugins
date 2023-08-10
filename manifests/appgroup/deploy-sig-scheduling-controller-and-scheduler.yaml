@@ -1,0 +1,134 @@
+# First part
+# Apply extra privileges to system:kube-scheduler.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: system:kube-scheduler:plugins
+rules:
+  - apiGroups: ["scheduling.sigs.x-k8s.io"]
+    resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
+    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+  - apiGroups: ["appgroup.diktyo.x-k8s.io"]
+    resources: ["appgroups"]
+    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+  - apiGroups: ["networktopology.diktyo.x-k8s.io"]
+    resources: ["networktopologies"]
+    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: system:kube-scheduler:plugins
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-scheduler:plugins
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: system:kube-scheduler
+---
+# Second part
+# Install the controller
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scheduler-plugins
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scheduler-plugins-controller
+  namespace: scheduler-plugins
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: scheduler-plugins-controller
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["scheduling.x-k8s.io"]
+    resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
+    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: scheduler-plugins-controller
+subjects:
+  - kind: ServiceAccount
+    name: scheduler-plugins-controller
+    namespace: scheduler-plugins
+roleRef:
+  kind: ClusterRole
+  name: scheduler-plugins-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: scheduler-plugins-controller
+  namespace: scheduler-plugins
+  labels:
+    app: scheduler-plugins-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler-plugins-controller
+  template:
+    metadata:
+      labels:
+        app: scheduler-plugins-controller
+    spec:
+      serviceAccountName: scheduler-plugins-controller
+      containers:
+        - name: scheduler-plugins-controller
+          image: registry.k8s.io/scheduler-plugins/controller:v0.26.7
+          imagePullPolicy: IfNotPresent
+---
+# Install the scheduler
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler-plugins-scheduler
+  namespace: scheduler-plugins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  template:
+    metadata:
+      labels:
+        component: scheduler
+        tier: control-plane
+    spec:
+      nodeSelector: # To deploy in master node
+        node-role.kubernetes.io/master: ""
+      containers:
+        - image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.26.7
+          command: # For extra info, please add verbose level: e.g., - -v=9
+            - /bin/kube-scheduler
+            - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
+            - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
+            - --config=/etc/kubernetes/scheduler-config.yaml
+          name: scheduler-plugins
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /etc/kubernetes
+              name: etckubernetes
+      hostNetwork: false
+      hostPID: false
+      volumes:
+        - hostPath:
+            path: /etc/kubernetes/
+            type: Directory
+          name: etckubernetes

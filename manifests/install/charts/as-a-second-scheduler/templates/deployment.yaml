@@ -2,7 +2,7 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: {{ .Values.controller.name }}
-  namespace: {{ .Values.controller.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
     app: scheduler-plugins-controller
 spec:
@@ -15,7 +15,7 @@ spec:
       labels:
         app: scheduler-plugins-controller
     spec:
-      serviceAccountName: scheduler-plugins-controller
+      serviceAccountName: {{ .Values.controller.name }}
       containers:
       - name: scheduler-plugins-controller
         image: {{ .Values.controller.image }}
@@ -27,7 +27,7 @@ metadata:
   labels:
     component: scheduler
   name: {{ .Values.scheduler.name }}
-  namespace: {{ .Values.scheduler.namespace }}
+  namespace: {{ .Release.Namespace }}
 spec:
   selector:
     matchLabels:
@@ -38,12 +38,13 @@ spec:
       labels:
         component: scheduler
     spec:
-      serviceAccountName: scheduler-plugins-scheduler
+      serviceAccountName: {{ .Values.scheduler.name }}
       containers:
       - command:
         - /bin/kube-scheduler
         - --config=/etc/kubernetes/scheduler-config.yaml
         image: {{ .Values.scheduler.image }}
+        imagePullPolicy: IfNotPresent        
         livenessProbe:
           httpGet:
             path: /healthz
@@ -71,4 +72,3 @@ spec:
       - name: scheduler-config
         configMap:
           name: scheduler-config
-

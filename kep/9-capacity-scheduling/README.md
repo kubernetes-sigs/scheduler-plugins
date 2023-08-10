@@ -1,32 +1,45 @@
 # Capacity scheduling 
 
-<!-- toc -->
+## Table of Contents
 
-- [Capacity scheduling](#capacity-scheduling)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Relationship with ResourceQuota](#relationship-with-resourcequota)
-    - [User Stories (optional)](#user-stories-optional)
-      - [Story 1](#story-1)
-  - [Design Details](#design-details)
-    - [Extention point](#extention-point)
-      - [PreFilter](#prefilter)
-      - [PostFilter](#postfilter)
-      - [Cache](#cache)
-    - [Additional Preemption Details](#additional-preemption-details)
-    - [Known Limitations](#known-limitations)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks](#drawbacks)
-  - [Alternatives](#alternatives)
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Relationship with ResourceQuota](#relationship-with-resourcequota)
+  - [User Stories (optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+- [Design Details](#design-details)
+  - [Extention point](#extention-point)
+    - [PreFilter](#prefilter)
+    - [PostFilter](#postfilter)
+    - [Cache](#cache)
+  - [Additional Preemption Details](#additional-preemption-details)
+    - [⚠️ Cross-namespace vs. single-namespace preemption](#-cross-namespace-vs-single-namespace-preemption)
+      - [Elastic Quota Configuration for namespace 1](#elastic-quota-configuration-for-namespace-1)
+      - [Elastic Quota Configuration for namespace 2](#elastic-quota-configuration-for-namespace-2)
+      - [Elastic Quota Configuration for namespace 3](#elastic-quota-configuration-for-namespace-3)
+      - [Deployment on Namespace quota1](#deployment-on-namespace-quota1)
+      - [A sample Priority Class Deployment](#a-sample-priority-class-deployment)
+      - [Deployment on Namespace quota2](#deployment-on-namespace-quota2)
+  - [Known Limitations](#known-limitations)
+    - [⚠️ Cross Node Preemption is not supported](#-cross-node-preemption-is-not-supported)
+      - [Elastic Quota Configuration for namespace 1](#elastic-quota-configuration-for-namespace-1-1)
+      - [Elastic Quota Configuration for namespace 2](#elastic-quota-configuration-for-namespace-2-1)
+      - [Run Sample Deployment on namespace 1](#run-sample-deployment-on-namespace-1)
+      - [Run Sample Deployment on namespace 2](#run-sample-deployment-on-namespace-2)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -172,7 +185,7 @@ type ElasticQuotaStatus struct {
 sample yaml is listed below:
 
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: test
@@ -189,7 +202,8 @@ spec:
 ```
 
 The definitions of "min" and "max" have been explained above. Max is infinite
-by default, min is 0 by default. The sum of min in all ElasticQuota must be 
+(in particular `math.MaxInt64`) by default, min is 0 by default.
+The sum of min in all ElasticQuota must be 
 less than or equal to the total resource capacity of the cluster.The 
 ElasticQuota objects are created by a cluster administrator. One ElasticQuota
 object per namespace.
@@ -344,7 +358,7 @@ This is to adhere to the elastic quota's API semantics:
 Below is a simple example. 
 ##### Elastic Quota Configuration for namespace 1
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota1
@@ -357,7 +371,7 @@ spec:
 ```
 ##### Elastic Quota Configuration for namespace 2
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota2
@@ -370,7 +384,7 @@ spec:
 ```
 ##### Elastic Quota Configuration for namespace 3
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota3
@@ -468,7 +482,7 @@ Because of that, it's expected in some cases the scheduler is incapable to give 
 Below is a simple example. Suppossed that you have **exactly** 2 nodes in your cluster with the following configuration:
 ##### Elastic Quota Configuration for namespace 1
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota1
@@ -481,7 +495,7 @@ spec:
 ```
 ##### Elastic Quota Configuration for namespace 2
 ```yaml
-apiVersion: scheduling.sigs.k8s.io/v1alpha1
+apiVersion: scheduling.x-k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
   name: quota2

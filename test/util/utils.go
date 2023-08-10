@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
@@ -84,7 +85,18 @@ func MakePG(name, namespace string, min int32, creationTime *time.Time, minResou
 		pg.CreationTimestamp = metav1.Time{Time: *creationTime}
 	}
 	if minResource != nil {
-		pg.Spec.MinResources = minResource
+		pg.Spec.MinResources = *minResource
+	}
+	return pg
+}
+
+func UpdatePGStatus(pg *v1alpha1.PodGroup, phase v1alpha1.PodGroupPhase, occupiedBy string, scheduled int32, running int32, succeeded int32, failed int32) *v1alpha1.PodGroup {
+	pg.Status = v1alpha1.PodGroupStatus{
+		Phase:      phase,
+		OccupiedBy: occupiedBy,
+		Running:    running,
+		Succeeded:  succeeded,
+		Failed:     failed,
 	}
 	return pg
 }
@@ -106,4 +118,66 @@ func MakePod(podName string, namespace string, memReq int64, cpuReq int64, prior
 func PodNotExist(cs clientset.Interface, podNamespace, podName string) bool {
 	_, err := cs.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	return errors.IsNotFound(err)
+}
+
+// WithLimits adds a new app or init container to the inner pod with a given resource map.
+func WithLimits(p *st.PodWrapper, resMap map[string]string, initContainer bool) *st.PodWrapper {
+	if len(resMap) == 0 {
+		return p
+	}
+
+	containers, cntName := findContainerList(p, initContainer)
+
+	*containers = append(*containers, corev1.Container{
+		Name:  fmt.Sprintf("%s-%d", cntName, len(*containers)+1),
+		Image: imageutils.GetPauseImageName(),
+		Resources: corev1.ResourceRequirements{
+			Limits: makeResListMap(resMap),
+		},
+	})
+
+	return p
+}
+
+// WithRequests adds a new app or init container to the inner pod with a given resource map.
+func WithRequests(p *st.PodWrapper, resMap map[string]string, initContainer bool) *st.PodWrapper {
+	if len(resMap) == 0 {
+		return p
+	}
+
+	containers, cntName := findContainerList(p, initContainer)
+
+	*containers = append(*containers, corev1.Container{
+		Name:  fmt.Sprintf("%s-%d", cntName, len(*containers)+1),
+		Image: imageutils.GetPauseImageName(),
+		Resources: corev1.ResourceRequirements{
+			Requests: makeResListMap(resMap),
+		},
+	})
+
+	return p
+}
+
+func findContainerList(p *st.PodWrapper, initContainer bool) (*[]corev1.Container, string) {
+	if initContainer {
+		return &p.Obj().Spec.InitContainers, "initcnt"
+	}
+	return &p.Obj().Spec.Containers, "cnt"
+}
+
+func makeResListMap(resMap map[string]string) corev1.ResourceList {
+	res := corev1.ResourceList{}
+	for k, v := range resMap {
+		res[corev1.ResourceName(k)] = resource.MustParse(v)
+	}
+	return res
+}
+
+func MustNewPodInfo(t testing.TB, pod *corev1.Pod) *framework.PodInfo {
+	podInfo, err := framework.NewPodInfo(pod)
+	if err != nil {
+		t.Fatalf("expected err to be nil got: %v", err)
+	}
+
+	return podInfo
 }

@@ -19,8 +19,16 @@ const (
 	SingleNUMANodePodLevel TopologyManagerPolicy = "SingleNUMANodePodLevel"
 	// Restricted TopologyManager policy was set on the node
 	Restricted TopologyManagerPolicy = "Restricted"
+	// RestrictedContainerLevel TopologyManager policy was set on the node and TopologyManagerScope was set to pod
+	RestrictedContainerLevel TopologyManagerPolicy = "RestrictedContainerLevel"
+	// RestrictedPodLevel TopologyManager policy was set on the node and TopologyManagerScope was set to pod
+	RestrictedPodLevel TopologyManagerPolicy = "RestrictedPodLevel"
 	// BestEffort TopologyManager policy was set on the node
 	BestEffort TopologyManagerPolicy = "BestEffort"
+	// BestEffort TopologyManager policy was set on the node and TopologyManagerScope was set to container
+	BestEffortContainerLevel TopologyManagerPolicy = "BestEffortContainerLevel"
+	// BestEffort TopologyManager policy was set on the node and TopologyManagerScope was set to pod
+	BestEffortPodLevel TopologyManagerPolicy = "BestEffortPodLevel"
 	// None policy is the default policy and does not perform any topology alignment.
 	None TopologyManagerPolicy = "None"
 )
@@ -29,6 +37,7 @@ const (
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:scope=Cluster,shortName=node-res-topo
+// +kubebuilder:metadata:annotations="api-approved.kubernetes.io=https://github.com/kubernetes/enhancements/pull/1870"
 
 // NodeResourceTopology describes node resources and their topology.
 type NodeResourceTopology struct {

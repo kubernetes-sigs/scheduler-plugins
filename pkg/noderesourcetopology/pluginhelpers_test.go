@@ -1,5 +1,5 @@
 /*
-Copyright 2022 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,141 +17,208 @@ limitations under the License.
 package noderesourcetopology
 
 import (
-	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 )
 
-func TestResourceListToLoggable(t *testing.T) {
-	tests := []struct {
-		name      string
-		logKey    string
-		resources corev1.ResourceList
-		expected  string
+func TestGetID(t *testing.T) {
+	testCases := []struct {
+		description string
+		name        string
+		expectedID  int
+		expectedErr error
 	}{
 		{
-			name:      "empty",
-			logKey:    "",
-			resources: corev1.ResourceList{},
-			expected:  ` logKey=""`,
+			description: "id equals 1",
+			name:        "node-1",
+			expectedID:  1,
 		},
 		{
-			name:      "only logKey",
-			logKey:    "TEST1",
-			resources: corev1.ResourceList{},
-			expected:  ` logKey="TEST1"`,
+			description: "id equals 10",
+			name:        "node-10",
+			expectedID:  10,
 		},
 		{
-			name:   "only CPUs",
-			logKey: "TEST1",
-			resources: corev1.ResourceList{
-				corev1.ResourceCPU: resource.MustParse("16"),
-			},
-			expected: ` logKey="TEST1" cpu="16"`,
+			description: "invalid format of name, node name without hyphen",
+			name:        "node0",
+			expectedErr: fmt.Errorf("invalid zone format"),
 		},
 		{
-			name:   "only Memory",
-			logKey: "TEST2",
-			resources: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("16Gi"),
-			},
-			expected: ` logKey="TEST2" memory="16 GiB"`,
+			description: "invalid format of name, zone instead of node",
+			name:        "zone-10",
+			expectedErr: fmt.Errorf("invalid zone format"),
 		},
 		{
-			name:   "CPUs and Memory, no logKey",
-			logKey: "",
-			resources: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("24"),
-				corev1.ResourceMemory: resource.MustParse("16Gi"),
-			},
-			expected: ` logKey="" cpu="24" memory="16 GiB"`,
+			description: "invalid format of name, suffix is not an integer",
+			name:        "node-a10a",
+			expectedErr: fmt.Errorf("invalid zone format"),
 		},
 		{
-			name:   "CPUs and Memory",
-			logKey: "TEST3",
-			resources: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("24"),
-				corev1.ResourceMemory: resource.MustParse("16Gi"),
-			},
-			expected: ` logKey="TEST3" cpu="24" memory="16 GiB"`,
+			description: "invalid format of name, suffix is not an integer",
+			name:        "node-10a",
+			expectedErr: fmt.Errorf("invalid zone format"),
 		},
 		{
-			name:   "CPUs, Memory, hugepages-2Mi",
-			logKey: "TEST4",
-			resources: corev1.ResourceList{
-				corev1.ResourceCPU:                   resource.MustParse("24"),
-				corev1.ResourceMemory:                resource.MustParse("16Gi"),
-				corev1.ResourceName("hugepages-2Mi"): resource.MustParse("1Gi"),
-			},
-			expected: ` logKey="TEST4" cpu="24" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
-		},
-		{
-			name:   "CPUs, Memory, hugepages-2Mi, hugepages-1Gi",
-			logKey: "TEST4",
-			resources: corev1.ResourceList{
-				corev1.ResourceCPU:                   resource.MustParse("24"),
-				corev1.ResourceMemory:                resource.MustParse("16Gi"),
-				corev1.ResourceName("hugepages-2Mi"): resource.MustParse("1Gi"),
-				corev1.ResourceName("hugepages-1Gi"): resource.MustParse("2Gi"),
-			},
-			expected: ` logKey="TEST4" cpu="24" hugepages-1Gi="2.0 GiB" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
-		},
-		{
-			name:   "CPUs, Memory, hugepages-2Mi, devices",
-			logKey: "TEST4",
-			resources: corev1.ResourceList{
-				corev1.ResourceCPU:                           resource.MustParse("24"),
-				corev1.ResourceMemory:                        resource.MustParse("16Gi"),
-				corev1.ResourceName("hugepages-2Mi"):         resource.MustParse("1Gi"),
-				corev1.ResourceName("example.com/netdevice"): resource.MustParse("16"),
-				corev1.ResourceName("awesome.net/gpu"):       resource.MustParse("4"),
-			},
-			expected: ` logKey="TEST4" awesome.net/gpu="4" cpu="24" example.com/netdevice="16" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
+			description: "invalid numaID range",
+			name:        "node-10123412415115114",
+			expectedErr: fmt.Errorf("invalid NUMA id range"),
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			keysAndValues := resourceListToLoggable(tt.logKey, tt.resources)
-			kvListFormat(&buf, keysAndValues...)
-			got := buf.String()
-			if got != tt.expected {
-				t.Errorf("got=%q expected=%q", got, tt.expected)
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			id, err := getID(testCase.name)
+			if testCase.expectedErr == nil {
+				if err != nil {
+					t.Fatalf("expected err to be nil not %v", err)
+				}
+
+				if id != testCase.expectedID {
+					t.Fatalf("expected id to equal %d not %d", testCase.expectedID, id)
+				}
+			} else {
+				fmt.Println(id)
+				if !strings.Contains(err.Error(), testCase.expectedErr.Error()) {
+					t.Fatalf("expected err: %v to contain %s", err, testCase.expectedErr)
+				}
 			}
 		})
 	}
 }
 
-// taken from klog
-
-const missingValue = "(MISSING)"
-
-func kvListFormat(b *bytes.Buffer, keysAndValues ...interface{}) {
-	for i := 0; i < len(keysAndValues); i += 2 {
-		var v interface{}
-		k := keysAndValues[i]
-		if i+1 < len(keysAndValues) {
-			v = keysAndValues[i+1]
-		} else {
-			v = missingValue
-		}
-		b.WriteByte(' ')
-
-		switch v.(type) {
-		case string, error:
-			b.WriteString(fmt.Sprintf("%s=%q", k, v))
-		case []byte:
-			b.WriteString(fmt.Sprintf("%s=%+q", k, v))
-		default:
-			if _, ok := v.(fmt.Stringer); ok {
-				b.WriteString(fmt.Sprintf("%s=%q", k, v))
-			} else {
-				b.WriteString(fmt.Sprintf("%s=%+v", k, v))
+func TestOnlyNonNUMAResources(t *testing.T) {
+	numaNodes := NUMANodeList{
+		{
+			NUMAID: 0,
+			Resources: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(8, resource.DecimalSI),
+				corev1.ResourceMemory: resource.MustParse("10Gi"),
+				"gpu":                 resource.MustParse("1"),
+			},
+		},
+		{
+			NUMAID: 1,
+			Resources: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(8, resource.DecimalSI),
+				corev1.ResourceMemory: resource.MustParse("10Gi"),
+				"nic":                 resource.MustParse("1"),
+			},
+		},
+	}
+	testCases := []struct {
+		description string
+		resources   corev1.ResourceList
+		expected    bool
+	}{
+		{
+			description: "all resources missing in NUMANodeList",
+			resources: corev1.ResourceList{
+				"resource1": resource.MustParse("1"),
+				"resource2": resource.MustParse("1"),
+			},
+			expected: true,
+		},
+		{
+			description: "resource is present in both NUMA nodes",
+			resources: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+			expected: false,
+		},
+		{
+			description: "more than resource is present in both NUMA nodes",
+			resources: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1"),
+			},
+			expected: false,
+		},
+		{
+			description: "resource is present only in NUMA node 0",
+			resources: corev1.ResourceList{
+				"gpu": resource.MustParse("1"),
+			},
+			expected: false,
+		},
+		{
+			description: "resource is present only in NUMA node 1",
+			resources: corev1.ResourceList{
+				"nic": resource.MustParse("1"),
+			},
+			expected: false,
+		},
+		{
+			description: "two distinct resources from different NUMA nodes",
+			resources: corev1.ResourceList{
+				"nic": resource.MustParse("1"),
+				"gpu": resource.MustParse("1"),
+			},
+			expected: false,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			result := onlyNonNUMAResources(numaNodes, testCase.resources)
+			if result != testCase.expected {
+				t.Fatalf("expected %t to equal %t", result, testCase.expected)
 			}
-		}
+		})
+	}
+}
+
+func TestGetForeignPodsDetectMode(t *testing.T) {
+	detectAll := apiconfig.ForeignPodsDetectAll
+	detectNone := apiconfig.ForeignPodsDetectNone
+	detectOnlyExclusiveResources := apiconfig.ForeignPodsDetectOnlyExclusiveResources
+
+	testCases := []struct {
+		description string
+		cfg         *apiconfig.NodeResourceTopologyCache
+		expected    apiconfig.ForeignPodsDetectMode
+	}{
+		{
+			description: "nil config",
+			expected:    apiconfig.ForeignPodsDetectAll,
+		},
+		{
+			description: "empty config",
+			cfg:         &apiconfig.NodeResourceTopologyCache{},
+			expected:    apiconfig.ForeignPodsDetectAll,
+		},
+		{
+			description: "explicit all",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ForeignPodsDetect: &detectAll,
+			},
+			expected: apiconfig.ForeignPodsDetectAll,
+		},
+		{
+			description: "explicit disable",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ForeignPodsDetect: &detectNone,
+			},
+			expected: apiconfig.ForeignPodsDetectNone,
+		},
+		{
+			description: "explicit OnlyExclusiveResources",
+			cfg: &apiconfig.NodeResourceTopologyCache{
+				ForeignPodsDetect: &detectOnlyExclusiveResources,
+			},
+			expected: apiconfig.ForeignPodsDetectOnlyExclusiveResources,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			got := getForeignPodsDetectMode(testCase.cfg)
+			if got != testCase.expected {
+				t.Errorf("foreign pods detect mode got %v expected %v", got, testCase.expected)
+			}
+		})
 	}
 }

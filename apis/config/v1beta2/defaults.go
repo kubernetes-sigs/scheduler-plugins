@@ -27,6 +27,7 @@ import (
 
 var (
 	defaultPermitWaitingTimeSeconds      int64 = 60
+	defaultPodGroupBackoffSeconds        int64 = 0
 	defaultDeniedPGExpirationTimeSeconds int64 = 20
 
 	defaultNodeResourcesAllocatableMode = Least
@@ -71,6 +72,10 @@ var (
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
 	}
+
+	defaultForeignPodsDetect = ForeignPodsDetectAll
+
+	defaultResyncMethod = CacheResyncAutodetect
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -80,6 +85,9 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.DeniedPGExpirationTimeSeconds == nil {
 		obj.DeniedPGExpirationTimeSeconds = &defaultDeniedPGExpirationTimeSeconds
+	}
+	if obj.PodGroupBackoffSeconds == nil {
+		obj.PodGroupBackoffSeconds = &defaultPodGroupBackoffSeconds
 	}
 }
 
@@ -107,7 +115,7 @@ func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 		args.TargetUtilization = &DefaultTargetUtilizationPercent
 	}
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
-		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+		args.MetricProvider.Type = DefaultMetricProviderType
 	}
 	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
 		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
@@ -117,7 +125,7 @@ func SetDefaults_TargetLoadPackingArgs(args *TargetLoadPackingArgs) {
 // SetDefaults_LoadVariationRiskBalancingArgs sets the default parameters for LoadVariationRiskBalancing plugin
 func SetDefaults_LoadVariationRiskBalancingArgs(args *LoadVariationRiskBalancingArgs) {
 	if args.WatcherAddress == nil && args.MetricProvider.Type == "" {
-		args.MetricProvider.Type = MetricProviderType(DefaultMetricProviderType)
+		args.MetricProvider.Type = DefaultMetricProviderType
 	}
 	if args.SafeVarianceMargin == nil || *args.SafeVarianceMargin < 0 {
 		args.SafeVarianceMargin = &DefaultSafeVarianceMargin
@@ -148,6 +156,16 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 		if obj.ScoringStrategy.Resources[i].Weight == 0 {
 			obj.ScoringStrategy.Resources[i].Weight = 1
 		}
+	}
+
+	if obj.Cache == nil {
+		obj.Cache = &NodeResourceTopologyCache{}
+	}
+	if obj.Cache.ForeignPodsDetect == nil {
+		obj.Cache.ForeignPodsDetect = &defaultForeignPodsDetect
+	}
+	if obj.Cache.ResyncMethod == nil {
+		obj.Cache.ResyncMethod = &defaultResyncMethod
 	}
 }
 

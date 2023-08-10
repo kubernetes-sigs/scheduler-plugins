@@ -30,6 +30,8 @@ type CoschedulingArgs struct {
 
 	// PermitWaitingTimeSeconds is the waiting timeout in seconds.
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
+	// PodGroupBackoffSeconds is the backoff time in seconds before a pod group can be scheduled again.
+	PodGroupBackoffSeconds *int64 `json:"podGroupBackoffSeconds,omitempty"`
 	// DeniedPGExpirationTimeSeconds is the expiration time of the denied podgroup store.
 	DeniedPGExpirationTimeSeconds *int64 `json:"deniedPGExpirationTimeSeconds,omitempty"`
 }
@@ -126,11 +128,49 @@ const (
 	BalancedAllocation ScoringStrategyType = "BalancedAllocation"
 	// LeastAllocated strategy favors node with the most amount of available resource
 	LeastAllocated ScoringStrategyType = "LeastAllocated"
+	// LeastNUMANodes strategy favors nodes which requires least amount of NUMA nodes to satisfy resource requests for given pod
+	LeastNUMANodes ScoringStrategyType = "LeastNUMANodes"
 )
 
 type ScoringStrategy struct {
 	Type      ScoringStrategyType                   `json:"type,omitempty"`
 	Resources []schedulerconfigv1beta2.ResourceSpec `json:"resources,omitempty"`
+}
+
+// ForeignPodsDetectMode is a "string" type.
+type ForeignPodsDetectMode string
+
+const (
+	ForeignPodsDetectNone                   ForeignPodsDetectMode = "None"
+	ForeignPodsDetectAll                    ForeignPodsDetectMode = "All"
+	ForeignPodsDetectOnlyExclusiveResources ForeignPodsDetectMode = "OnlyExclusiveResources"
+)
+
+// CacheResyncMethod is a "string" type.
+type CacheResyncMethod string
+
+const (
+	CacheResyncAutodetect             CacheResyncMethod = "Autodetect"
+	CacheResyncAll                    CacheResyncMethod = "All"
+	CacheResyncOnlyExclusiveResources CacheResyncMethod = "OnlyExclusiveResources"
+)
+
+// NodeResourceTopologyCache define configuration details for the NodeResourceTopology cache.
+type NodeResourceTopologyCache struct {
+	// ForeignPodsDetect sets how foreign pods should be handled.
+	// Foreign pods are pods detected running on nodes managed by a NodeResourceTopologyMatch-enabled
+	// scheduler, but not scheduled by this scheduler instance, likely because this is running as
+	// secondary scheduler. To make sure the cache is consistent, foreign pods need to be handled.
+	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or if DiscardReservedNodes
+	// is enabled. If unspecified, default is "All". Use "None" to disable.
+	ForeignPodsDetect *ForeignPodsDetectMode `json:"foreignPodsDetect,omitempty"`
+	// ResyncMethod sets how the resync behaves to compute the expected node state.
+	// "All" consider all pods to compute the node state. "OnlyExclusiveResources" consider
+	// only pods regardless of their QoS which have exclusive resources assigned to their
+	// containers (CPUs, devices...).
+	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or if DiscardReservedNodes
+	// is enabled. "Autodetect" is the default, reads hint from NRT objects. Fallback is "All".
+	ResyncMethod *CacheResyncMethod `json:"resyncMethod,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -139,7 +179,19 @@ type ScoringStrategy struct {
 type NodeResourceTopologyMatchArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
+	// ScoringStrategy a scoring model that determine how the plugin will score the nodes.
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
+	// CacheResyncPeriodSeconds sets the resync period, in seconds, between the internal
+	// NodeResourceTopoology cache and the apiserver. If present and greater than zero,
+	// implicitely enables the caching. If zero, disables the caching entirely.
+	// If the cache is enabled, the Reserve plugin must be enabled.
+	CacheResyncPeriodSeconds *int64 `json:"cacheResyncPeriodSeconds,omitempty"`
+	// if set to true, exclude node from scheduling if there are any reserved pods for given node
+	// this option takes precedence over CacheResyncPeriodSeconds
+	// if DiscardReservedNodes is enabled, CacheResyncPeriodSeconds option is noop
+	DiscardReservedNodes bool `json:"discardReservedNodes,omitempty"`
+	// Cache enables to fine tune the caching behavior
+	Cache *NodeResourceTopologyCache `json:"cache,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

@@ -61,11 +61,18 @@ rules:
   verbs: ["get", "list", "watch"]
 - apiGroups: ["topology.node.k8s.io"]
   resources: ["noderesourcetopologies"]
-  verbs: ["*"]
+  verbs: ["get", "list", "watch"]
 # resources need to be updated with the scheduler plugins used
-- apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+- apiGroups: ["scheduling.x-k8s.io"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+# for network-aware plugins add the following lines (scheduler-plugins v0.26.7)
+#- apiGroups: [ "appgroup.diktyo.x-k8s.io" ]
+#  resources: [ "appgroups" ]
+#  verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
+#- apiGroups: [ "networktopology.diktyo.x-k8s.io" ]
+#  resources: [ "networktopologies" ]
+#  verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -78,7 +85,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: {{ .Values.scheduler.name }}
-  namespace: {{ .Values.scheduler.namespace }}
+  namespace: {{ .Release.Namespace }}
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
@@ -89,14 +96,17 @@ rules:
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch", "update"]
+- apiGroups: [""]
   resources: ["nodes"]
   verbs: ["get", "list", "watch", "patch"]
 - apiGroups: ["topology.node.k8s.io"]
   resources: ["noderesourcetopologies"]
-  verbs: ["*"]
+  verbs: ["get", "list", "watch"]
 # resources need to be updated with the scheduler plugins used
-- apiGroups: ["scheduling.sigs.k8s.io"]
-  resources: ["podgroups", "elasticquotas"]
+- apiGroups: ["scheduling.x-k8s.io"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 ---
 kind: ClusterRoleBinding
@@ -106,7 +116,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: {{ .Values.controller.name }}
-  namespace: {{ .Values.controller.namespace }}
+  namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: scheduler-plugins-controller
@@ -124,8 +134,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: {{ .Values.scheduler.name }}
-  namespace: {{ .Values.scheduler.namespace }}
+  namespace: {{ .Release.Namespace }}
 - kind: ServiceAccount
   name: {{ .Values.controller.name }}
-  namespace: {{ .Values.controller.namespace }}
-
+  namespace: {{ .Release.Namespace }}

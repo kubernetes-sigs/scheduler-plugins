@@ -1,5 +1,14 @@
 # Developer guide
 
+## Table of Contents
+
+<!-- toc -->
+- [How to build](#how-to-build)
+- [How to debug](#how-to-debug)
+- [How to start](#how-to-start)
+- [Before submitting](#before-submitting)
+<!-- /toc -->
+
 ## How to build
 
 This section is about building on the local host, e.g. for debug purpose.
@@ -27,12 +36,12 @@ make
 command.
 If you changed the branch or added new dependency you might need to regenerate vendor directory, for this you can use
 ```shell
-make autogen
+make update-vendor
 ```
 command.
 
 ## How to debug
-By default debug information is stripped, to keep it in the binary you need to remove -w command line option from
+By default, debug information is stripped, to keep it in the binary you need to remove -w command line option from
 ldflags in the Makefile.
 You can run all unit tests by **make unit-test** command or if you would like to run exact unit test
 ```shell
@@ -66,7 +75,7 @@ spec:
         tier: control-plane
     spec:
       nodeSelector:
-        node-role.kubernetes.io/master: ""
+        node-role.kubernetes.io/control-plane: ""
       containers:
         - image: localhost:5000/scheduler-plugins/kube-scheduler:latest
           imagePullPolicy: Never
@@ -96,5 +105,5 @@ Where example for scheduler-config.yaml, could be taken from manifests/*/schedul
 ## Before submitting
 In addition to starting integration and unit tests, check formatting
 ```shell
-make verify-gofmt
+make verify
 ```

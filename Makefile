@@ -15,14 +15,11 @@
 ARCHS = amd64 arm64
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
 BUILDENVVAR=CGO_ENABLED=0
-
-LOCAL_REGISTRY=localhost:5000/scheduler-plugins
-LOCAL_IMAGE=kube-scheduler:latest
-LOCAL_CONTROLLER_IMAGE=controller:latest
+INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
 # RELEASE_REGISTRY is the container registry to push
 # into. The default is to push to the staging
-# registry, not production(k8s.gcr.io).
+# registry, not production(registry.k8s.io).
 RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
@@ -34,6 +31,7 @@ RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 # v20201009-v0.18.800-46-g939c1c0 - automated build for a commit(not a tag) and also a local build
 # v20200521-v0.18.800             - automated build for a tag
 VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
+VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
 
 .PHONY: all
 all: build
@@ -57,7 +55,7 @@ build-controller.amd64:
 
 .PHONY: build-controller.arm64v8
 build-controller.arm64v8:
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:
@@ -69,22 +67,29 @@ build-scheduler.amd64:
 
 .PHONY: build-scheduler.arm64v8
 build-scheduler.arm64v8:
-	GOOS=linux $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: local-image
 local-image: clean
-	docker build -f ./build/scheduler/Dockerfile --build-arg ARCH="amd64" --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
-	docker build -f ./build/controller/Dockerfile --build-arg ARCH="amd64" -t $(LOCAL_REGISTRY)/$(LOCAL_CONTROLLER_IMAGE) .
+	RELEASE_VERSION=$(RELEASE_VERSION) hack/build-images.sh
 
 .PHONY: release-image.amd64
 release-image.amd64: clean
-	docker build -f ./build/scheduler/Dockerfile --build-arg ARCH="amd64" --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-amd64 .
-	docker build -f ./build/controller/Dockerfile --build-arg ARCH="amd64" -t $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-amd64 .
+	ARCH="amd64" \
+	RELEASE_VERSION=$(RELEASE_VERSION) \
+	REGISTRY=$(RELEASE_REGISTRY) \
+	IMAGE=$(RELEASE_IMAGE)-amd64 \
+	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-amd64 \
+	hack/build-images.sh
 
 .PHONY: release-image.arm64v8
 release-image.arm64v8: clean
-	docker build -f ./build/scheduler/Dockerfile --build-arg ARCH="arm64v8" --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-arm64 .
-	docker build -f ./build/controller/Dockerfile --build-arg ARCH="arm64v8" -t $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-arm64 .
+	ARCH="arm64" \
+	RELEASE_VERSION=$(RELEASE_VERSION) \
+	REGISTRY=$(RELEASE_REGISTRY) \
+	IMAGE=$(RELEASE_IMAGE)-arm64 \
+	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-arm64 \
+	hack/build-images.sh
 
 .PHONY: push-release-images
 push-release-images: release-image.amd64 release-image.arm64v8
@@ -116,13 +121,15 @@ install-envtest:
 
 .PHONY: integration-test
 integration-test: install-envtest
-	hack/integration-test.sh
+	$(INTEGTESTENVVAR) hack/integration-test.sh $(ARGS)
 
 .PHONY: verify
 verify:
+	hack/verify-gomod.sh
 	hack/verify-gofmt.sh
 	hack/verify-crdgen.sh
 	hack/verify-structured-logging.sh
+	hack/verify-toc.sh
 
 .PHONY: clean
 clean:

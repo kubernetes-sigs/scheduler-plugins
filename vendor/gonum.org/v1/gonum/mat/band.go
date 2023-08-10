@@ -5,7 +5,10 @@
 package mat
 
 import (
+	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
+	"gonum.org/v1/gonum/lapack"
+	"gonum.org/v1/gonum/lapack/lapack64"
 )
 
 var (
@@ -48,6 +51,9 @@ type RawBander interface {
 // A MutableBanded can set elements of a band matrix.
 type MutableBanded interface {
 	Banded
+
+	// SetBand sets the element at row i, column j to the value v.
+	// It panics if the location is outside the appropriate region of the matrix.
 	SetBand(i, j int, v float64)
 }
 
@@ -113,19 +119,22 @@ func (t TransposeBand) UntransposeBand() Banded {
 //
 // The data must be arranged in row-major order constructed by removing the zeros
 // from the rows outside the band and aligning the diagonals. For example, the matrix
-//    1  2  3  0  0  0
-//    4  5  6  7  0  0
-//    0  8  9 10 11  0
-//    0  0 12 13 14 15
-//    0  0  0 16 17 18
-//    0  0  0  0 19 20
+//
+//	1  2  3  0  0  0
+//	4  5  6  7  0  0
+//	0  8  9 10 11  0
+//	0  0 12 13 14 15
+//	0  0  0 16 17 18
+//	0  0  0  0 19 20
+//
 // becomes (* entries are never accessed)
-//     *  1  2  3
+//   - 1  2  3
 //     4  5  6  7
 //     8  9 10 11
-//    12 13 14 15
-//    16 17 18  *
-//    19 20  *  *
+//     12 13 14 15
+//     16 17 18  *
+//     19 20  *  *
+//
 // which is passed to NewBandDense as []float64{*, 1, 2, 3, 4, ...} with kl=1 and ku=2.
 // Only the values in the band portion of the matrix are used.
 func NewBandDense(r, c, kl, ku int, data []float64) *BandDense {
@@ -133,10 +142,10 @@ func NewBandDense(r, c, kl, ku int, data []float64) *BandDense {
 		if r == 0 || c == 0 {
 			panic(ErrZeroLength)
 		}
-		panic("mat: negative dimension")
+		panic(ErrNegativeDimension)
 	}
 	if kl+1 > r || ku+1 > c {
-		panic("mat: band out of range")
+		panic(ErrBandwidth)
 	}
 	bc := kl + ku + 1
 	if data != nil && len(data) != min(r, c+kl)*bc {
@@ -214,7 +223,7 @@ func (b *BandDense) Reset() {
 	b.mat.KL = 0
 	b.mat.KU = 0
 	b.mat.Stride = 0
-	b.mat.Data = b.mat.Data[:0:0]
+	b.mat.Data = b.mat.Data[:0]
 }
 
 // DiagView returns the diagonal as a matrix backed by the original data.
@@ -284,11 +293,36 @@ func (b *BandDense) Zero() {
 	}
 }
 
-// Trace computes the trace of the matrix.
+// Norm returns the specified norm of the receiver. Valid norms are:
+//
+//	1 - The maximum absolute column sum
+//	2 - The Frobenius norm, the square root of the sum of the squares of the elements
+//	Inf - The maximum absolute row sum
+//
+// Norm will panic with ErrNormOrder if an illegal norm is specified and with
+// ErrZeroLength if the matrix has zero size.
+func (b *BandDense) Norm(norm float64) float64 {
+	if b.IsEmpty() {
+		panic(ErrZeroLength)
+	}
+	lnorm := normLapack(norm, false)
+	if lnorm == lapack.MaxColumnSum || lnorm == lapack.MaxRowSum {
+		return lapack64.Langb(lnorm, b.mat)
+	}
+	return lapack64.Langb(lnorm, b.mat)
+}
+
+// Trace returns the trace of the matrix.
+//
+// Trace will panic with ErrSquare if the matrix is not square and with
+// ErrZeroLength if the matrix has zero size.
 func (b *BandDense) Trace() float64 {
 	r, c := b.Dims()
 	if r != c {
-		panic(ErrShape)
+		panic(ErrSquare)
+	}
+	if b.IsEmpty() {
+		panic(ErrZeroLength)
 	}
 	rb := b.RawBand()
 	var tr float64
@@ -296,4 +330,39 @@ func (b *BandDense) Trace() float64 {
 		tr += rb.Data[rb.KL+i*rb.Stride]
 	}
 	return tr
+}
+
+// MulVecTo computes B⋅x or Bᵀ⋅x storing the result into dst.
+func (b *BandDense) MulVecTo(dst *VecDense, trans bool, x Vector) {
+	m, n := b.Dims()
+	if trans {
+		m, n = n, m
+	}
+	if x.Len() != n {
+		panic(ErrShape)
+	}
+	dst.reuseAsNonZeroed(m)
+
+	t := blas.NoTrans
+	if trans {
+		t = blas.Trans
+	}
+
+	xMat, _ := untransposeExtract(x)
+	if xVec, ok := xMat.(*VecDense); ok {
+		if dst != xVec {
+			dst.checkOverlap(xVec.mat)
+			blas64.Gbmv(t, 1, b.mat, xVec.mat, 0, dst.mat)
+		} else {
+			xCopy := getVecDenseWorkspace(n, false)
+			xCopy.CloneFromVec(xVec)
+			blas64.Gbmv(t, 1, b.mat, xCopy.mat, 0, dst.mat)
+			putVecDenseWorkspace(xCopy)
+		}
+	} else {
+		xCopy := getVecDenseWorkspace(n, false)
+		xCopy.CloneFromVec(x)
+		blas64.Gbmv(t, 1, b.mat, xCopy.mat, 0, dst.mat)
+		putVecDenseWorkspace(xCopy)
+	}
 }

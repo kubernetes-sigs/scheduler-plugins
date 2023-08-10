@@ -3,28 +3,26 @@
 ## Table of Contents
 
 <!-- toc -->
-- [Lightweight coscheduling based on back-to-back queue sorting](#lightweight-coscheduling-based-on-back-to-back-queue-sorting)
-  - [Table of Contents](#table-of-contents)
-  - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-  - [Use Cases](#use-cases)
-  - [Terms](#terms)
-  - [Proposal](#proposal)
-  - [Design Details](#design-details)
-    - [PodGroup](#podgroup)
-    - [Coscheduling](#coscheduling)
-    - [Extension points](#extension-points)
-      - [QueueSort](#queuesort)
-      - [PreFilter](#prefilter)
-      - [Permit](#permit)
-      - [UnReserve](#unreserve)
-  - [Known Limitations](#known-limitations)
-  - [Alternatives considered](#alternatives-considered)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Testing Plan](#testing-plan)
-  - [Implementation History](#implementation-history)
-  - [References](#references)
+- [Motivation](#motivation)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
+- [Use Cases](#use-cases)
+- [Terms](#terms)
+- [Proposal](#proposal)
+- [Design Details](#design-details)
+  - [PodGroup](#podgroup)
+  - [Coscheduling](#coscheduling)
+  - [Extension points](#extension-points)
+    - [QueueSort](#queuesort)
+    - [PreFilter](#prefilter)
+    - [Permit](#permit)
+    - [UnReserve](#unreserve)
+- [Known Limitations](#known-limitations)
+- [Alternatives considered](#alternatives-considered)
+- [Graduation Criteria](#graduation-criteria)
+- [Testing Plan](#testing-plan)
+- [Implementation History](#implementation-history)
+- [References](#references)
 <!-- /toc -->
 
 ## Motivation
@@ -43,7 +41,7 @@ When running a Tensorflow/MPI job, all tasks must start before they can do any w
 ## Terms
 
 - **pgPod**: pod belongs to some `PodGroup`.
-- **regularPod**: a regular `Pod` (which doesn't have `PodGropuName` set).
+- **regularPod**: a regular `Pod` (which doesn't have `PodGroupName` set).
 
 ## Proposal
 
@@ -56,12 +54,12 @@ In order to implement coscheduling, we developed plugins in different extension 
 
 ### PodGroup
 
-We use a special label named ```pod-group.scheduling.sigs.k8s.io/name``` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. This is a short term solution, in the future if the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal. 
+We use a special label named ```pod-group.scheduling.x-k8s.io/name``` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. This is a short term solution, in the future if the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal. 
 
 ```yaml 
 labels:
-     pod-group.scheduling.sigs.k8s.io/name: nginx
-     pod-group.scheduling.sigs.k8s.io/min-available: "2"
+     pod-group.scheduling.x-k8s.io/name: nginx
+     pod-group.scheduling.x-k8s.io/min-available: "2"
 ``` 
 `Pods` in the same `PodGroup` with different priorities might lead to unintended behavior, so need to ensure `Pods` in the same `PodGroup` with the same priority.
 

@@ -85,7 +85,6 @@ func TestHandlerCacheCleanup(t *testing.T) {
 		expectedCache      map[string][]podInfo
 	}{
 		{
-			// 没有过期pod
 			name: "no expired pod",
 			scheduledPodsCache: map[string][]podInfo{
 				"node-1": {
@@ -105,7 +104,6 @@ func TestHandlerCacheCleanup(t *testing.T) {
 			//
 		},
 		{
-			// 一个过期node
 			name: "one expired pod",
 			scheduledPodsCache: map[string][]podInfo{
 				"node-1": {
@@ -121,7 +119,6 @@ func TestHandlerCacheCleanup(t *testing.T) {
 				},
 			},
 		}, {
-			// 全部过期
 			name: "all expired pod",
 			scheduledPodsCache: map[string][]podInfo{
 				"node-1": {

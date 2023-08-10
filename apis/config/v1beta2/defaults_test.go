@@ -41,6 +41,7 @@ func TestSchedulingDefaults(t *testing.T) {
 			expect: &CoschedulingArgs{
 				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
 				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(20),
+				PodGroupBackoffSeconds:        pointer.Int64Ptr(0),
 			},
 		},
 		{
@@ -48,10 +49,12 @@ func TestSchedulingDefaults(t *testing.T) {
 			config: &CoschedulingArgs{
 				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
 				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(10),
+				PodGroupBackoffSeconds:        pointer.Int64Ptr(20),
 			},
 			expect: &CoschedulingArgs{
 				PermitWaitingTimeSeconds:      pointer.Int64Ptr(60),
 				DeniedPGExpirationTimeSeconds: pointer.Int64Ptr(10),
+				PodGroupBackoffSeconds:        pointer.Int64Ptr(20),
 			},
 		},
 		{
@@ -143,6 +146,10 @@ func TestSchedulingDefaults(t *testing.T) {
 				ScoringStrategy: &ScoringStrategy{
 					Type:      LeastAllocated,
 					Resources: defaultResourceSpec,
+				},
+				Cache: &NodeResourceTopologyCache{
+					ForeignPodsDetect: &defaultForeignPodsDetect,
+					ResyncMethod:      &defaultResyncMethod,
 				},
 			},
 		},

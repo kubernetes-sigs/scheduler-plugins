@@ -9,8 +9,8 @@ Document capturing the NodeResourceTopology API Custom Resource Definition Stand
 <!-- Check one of the values: Sample, Alpha, Beta, GA -->
 
 - [ ] 💡 Sample (for demonstrating and inspiring purpose)
-- [x] 👶 Alpha (used in companies for pilot projects)
-- [ ] 👦 Beta (used in companies and developed actively)
+- [ ] 👶 Alpha (used in companies for pilot projects)
+- [x] 👦 Beta (used in companies and developed actively)
 - [ ] 👨 Stable (used in companies for production workloads)
 
 ## Tutorial
@@ -20,12 +20,34 @@ Document capturing the NodeResourceTopology API Custom Resource Definition Stand
 In case the cumulative count of node resource allocatable appear to be the same for both the nodes in the cluster, topology aware scheduler plugin uses the CRD instance corresponding to the nodes to obtain the resource topology information to make a topology-aware scheduling decision.
 
 **NOTE:**
-- [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12) onwards, CRD has been changed from namespace to cluster scoped. 
-Scheduler plugin version > v0.21.6 depends on NodeResourceTopology CRD v0.0.12 and the namespace field has been deprecated from the NodeResourceTopology scheduler config args.
+- [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12) onwards, CRD has been changed from namespace to cluster scoped.
+Scheduler plugin version > v0.21.6 depends on NodeResourceTopology CRD v0.0.12 or newer and the namespace field has been deprecated from the NodeResourceTopology scheduler config args.
 
-Dependency:
-- Scheduler plugin version <= v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.10](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.10).  
-- Scheduler plugin version > v0.21.6 depends on the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD version [v0.0.12](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api/tree/v0.0.12).
+### Compatibility Matrix
+
+NodeResourceTopologyMatch plugin to work properly requires specific version of NodeResourceTopology CRD:
+
+| Scheduler Plugins | NodeResourceTopology CRD version |
+|-------------------|----------------------------------|
+| master            | v0.1.0                           |
+| v0.24.9           | v0.0.12                          |
+| v0.23.10          | v0.0.12                          |
+| v0.22.6           | v0.0.12                          |
+| v0.21.6           | v0.0.10                          |
+| v0.20.10          | v0.0.10                          |
+| v0.19.9           | v0.0.10                          |
+
+In case NodeResourceTopology CRD is being installed and advertised by [NFD](https://github.com/kubernetes-sigs/node-feature-discovery), check compatibility matrix below:
+
+| Scheduler Plugins | NodeResourceTopology CRD version | NFD version |
+|-------------------|----------------------------------|-------------|
+| master            | v0.1.0                           | master      |
+| v0.24.9           | v0.0.12                          | > v0.10.0   |
+| v0.23.10          | v0.0.12                          | > v0.10.0   |
+| v0.22.6           | v0.0.12                          | > v0.10.0   |
+| v0.21.6           | v0.0.10                          | N/A         |
+| v0.20.10          | v0.0.10                          | N/A         |
+| v0.19.9           | v0.0.10                          | N/A         |
 
 ### Config
 
@@ -58,6 +80,65 @@ profiles:
         type: "LeastAllocated"
 ```
 
+#### Scheduler-side cache with the reserve plugin
+
+The quality of the scheduling decisions of the "NodeResourceTopologyMatch" filter and score plugins depends on the freshness of the resource allocation data.
+When deployed on large clusters, or when facing high pod churn, or both, it's often impractical or impossible to have frequent enough updates, and the scheduler plugins
+may run with stale data, leading to suboptimal scheduling decisions.
+Using the Reserve plugin, the "NodeResourceTopologyMatch" Filter and Score can use a pessimistic overreserving cache which prevents these suboptimal decisions at the cost
+of leaving pods pending longer. This cache is described in detail in [the docs/ directory](docs/).
+
+To enable the cache, you need to **both** enable the Reserve plugin and to set the `cacheResyncPeriodSeconds` config options. Values less than 5 seconds are not recommended
+for performance reasons.
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1beta2
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+clientConnection:
+  kubeconfig: "/etc/kubernetes/scheduler.conf"
+profiles:
+- schedulerName: topo-aware-scheduler
+  plugins:
+    filter:
+      enabled:
+      - name: NodeResourceTopologyMatch
+    reserve:
+      enabled:
+      - name: NodeResourceTopologyMatch
+    score:
+      enabled:
+      - name: NodeResourceTopologyMatch
+# optional plugin configs
+  pluginConfig:
+  - name: NodeResourceTopologyMatch
+    args:
+      # other strategies are MostAllocated and BalancedAllocation
+      scoringStrategy:
+        type: "LeastAllocated"
+      cacheResyncPeriodSeconds: 5
+```
+
+#### ScoringStrategy
+
+The topology-aware scheduler supports four scoring strategies. You can set a strategy via SchedulerConfigConfiguration, by setting the scoringStrategy option.
+There are four supported strategies:
+
+* MostAllocated
+* BalancedAllocation
+* LeastAllocated
+* LeastNUMANodes
+
+The MostAllocated, BalancedAllocation and LeastAllocated strategies only work with the single-numa-node Topology Manager policy and indicate how score of the worker
+node will be calculated based on current utilization:
+
+* MostAllocated - favors node with the least amount of available resources
+* BalancedAllocation - favors node with balanced resource usage rate
+* LeastAllocated - favors node with the most amount of available resource
+
+The LeastNUMANodes strategy works with all the Topology Manager policies and favors nodes which require the least amount of topology zones to satisfy the resource requests for a given pod.
+
 #### Cluster
 
 The Topology-aware scheduler performs its decision over a number of node-specific hardware details or configuration settings which have node granularity (not at cluster granularity).
@@ -67,13 +148,34 @@ In other words, it is a prerequisite that a set of nodes share the same NUMA top
 However, the scheduler has no means to enforce or even validate this prerequisite;
 for example the [NodeResourceTopology](https://github.com/k8stopologyawareschedwg/noderesourcetopology-api) CRD does not expose all the relevant fields, nor it should (it would be out of scope).
 
-Hence, proper cluster configuration is expected from the cluster admins, or to other software components, like controllers or operators, outside of the scope here.
+Hence, proper cluster configuration is expected from the cluster admins, or to other software components, like controllers or operators, outside the scope here.
 
 Should the cluster need to have different settings (e.g. topology manager) or NUMA topologies, we recommend to use the
 [standard kubernetes tools](https://kubernetes.io/blog/2017/03/advanced-scheduling-in-kubernetes/) to identify each set of nodes
 using [affinity](https://kubernetes.io/docs/user-guide/node-selection/#node-affinity-beta-feature) or also
 [taints](https://kubernetes.io/docs/user-guide/node-selection/#taints-and-toleations-beta-feature).
 
+#### Topology Manager configuration
+
+***Target audience: developers and operators of topology updaters (NodeResourceTopology producers)***
+
+In addition to logically partitioning a cluster like explained above, the topology-aware scheduler needs to know key node-specific configuration settings like Topology manager policy and scope.
+This data is expected to be provided as top-level `Attributes` of the NodeResourceTopology objects:
+
+NodeResourceTopology producers should add top-level `Attributes` in the following format
+- For `Name` and `Value` of attributes, words should be `snakeCase`
+- The `Name` of each attribute should be **the same of the corresponding kubelet configuration option**.
+  - example: `--topology-manager-scope` becomes `topologyManagerScope`
+  - example: `topologyManagerPolicy` becomes `topologyManagerPolicy`
+- The `Value` of each attribute should be **one of the value of the corresponding kubelet configuration option, VERBATIM**.
+  - example: `single-numa-node` becomes `single-numa-node`
+- Should `topologyManagerOptions` be exposed:
+  - they should be expanded in key-value pairs, using the `String()` representation
+  - each key-value pair should be preceded by the `topologyManagerOption` prefix
+  - every other provision described above applies
+  - example: the `prefer-closest-numa-nodes` option becomes `topologyManagerOptionPreferClosestNumaNodes`, accepting exactly one of either `true` and `false`.
+  - **RATIONALE**: this representation wants to guarantee all the Attribute Names are unique (no aliasing). It must be noted this is a stricter requirement with respect to the Attribute representation
+    in NRT objects, and this requirement could be lifted in the future (an upgrade path will be provided).
 
 ### Demo
 
@@ -87,7 +189,7 @@ For configuring your cluster with [NFD-topology updater](https://github.com/kube
 
 ```yaml
 # Worker Node A CRD spec
-apiVersion: topology.node.k8s.io/v1alpha1
+apiVersion: topology.node.k8s.io/v1alpha2
 kind: NodeResourceTopology
 metadata:
   name: worker-node-A
@@ -121,7 +223,7 @@ zones:
 
 ```yaml
 # Worker Node B CRD spec
-apiVersion: topology.node.k8s.io/v1alpha1
+apiVersion: topology.node.k8s.io/v1alpha2
 kind: NodeResourceTopology
 metadata:
   name: worker-node-B

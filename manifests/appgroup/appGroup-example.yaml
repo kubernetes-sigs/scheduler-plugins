@@ -1,0 +1,45 @@
+# Example App Group CRD spec
+apiVersion: appgroup.diktyo.x-k8s.io/v1alpha1
+kind: AppGroup
+metadata:
+  name: a1
+spec:
+  numMembers: 3
+  topologySortingAlgorithm: KahnSort
+  workloads:
+    - workload:
+        kind: Deployment
+        name: P1-deployment
+        selector: P1
+        apiVersion: apps/v1
+        namespace: default
+      dependencies:
+        - workload:
+            kind: Deployment
+            name: P2-deployment
+            selector: P2
+            apiVersion: apps/v1
+            namespace: default
+          minBandwidth: "100Mi"
+          maxNetworkCost: 30
+    - workload:
+        kind: Deployment
+        name: P2-deployment
+        selector: P2
+        apiVersion: apps/v1
+        namespace: default
+      dependencies:
+        - workload:
+            kind: Deployment
+            name: P3-deployment
+            selector: P3
+            apiVersion: apps/v1
+            namespace: default
+          minBandwidth: "250Mi"
+          maxNetworkCost: 20
+    - workload:
+        kind: Deployment
+        name: P3-deployment
+        selector: P3
+        apiVersion: apps/v1
+        namespace: default
