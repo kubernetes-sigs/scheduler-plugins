@@ -44,7 +44,7 @@ export PATH="${TMP_DIR}:${PATH}"
 cd "${ROOT}"
 
 # Update tables of contents if necessary.
-find . -name '*.md' -not -path "./vendor/*" -not -path "./pkg/*" \
+find . -name '*.md' -not -path "./vendor/*" -not -path "./pkg/*" -not -path "./site/*" \
     | grep -Fxvf hack/.notableofcontents \
     | xargs mdtoc --inplace --max-depth=5  || (
       echo "Failed generating TOC. If this failed silently and you are on mac, try 'brew install grep'"

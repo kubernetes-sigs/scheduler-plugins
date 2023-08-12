@@ -44,7 +44,7 @@ cd "${ROOT}"
 
 echo "Checking table of contents are up to date..."
 # Verify tables of contents are up-to-date
-find . -name '*.md' -not -path "./vendor/*" -not -path "./pkg/*" \
+find . -name '*.md' -not -path "./vendor/*" -not -path "./pkg/*" -not -path "./site/*" \
     | grep -Fxvf hack/.notableofcontents \
     | xargs mdtoc --inplace --max-depth=5 --dryrun || (
       echo "Table of content not up to date. If this failed silently and you are on mac, try 'brew install grep'"
