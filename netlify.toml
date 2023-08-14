@@ -1,0 +1,17 @@
+[build]
+  base = "site"
+  publish = "public"
+  command = "make build"
+
+[context.deploy-preview.environment]
+  HUGO_VERSION = "0.92.0"
+  NODE_VERSION = "16"
+
+[context.production.environment]
+  HUGO_VERSION = "0.92.0"
+  HUGO_ENV = "production"
+  NODE_VERSION = "16"
+
+[context.branch-deploy.environment]
+  HUGO_VERSION = "0.92.0"
+  NODE_VERSION = "16"

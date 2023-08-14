@@ -1,0 +1,15 @@
+title: SySched - System call Aware Scheduling
+kep-number: 398
+authors:
+  - "@mvle"
+  - "@salmanyam"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@ahg-g"
+  - "@alculquicondor"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2022-07-05
+last-updated: 2022-07-05
+status: implementable

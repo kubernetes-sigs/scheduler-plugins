@@ -1,0 +1,12 @@
+title: NUMA aware scoring.
+kep-number: 454
+authors:
+  - "@PiotrProkop"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2022-12-08
+last-updated: 2023-01-25
+status: implementable
