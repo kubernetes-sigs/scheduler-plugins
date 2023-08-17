@@ -87,6 +87,19 @@ func (ov *OverReserve) GetCachedNRTCopy(nodeName string, pod *corev1.Pod) (*topo
 	if nrt == nil {
 		return nil, true
 	}
+
+	if ov.ShouldUpdateCacheNow(nodeName, nrt) {
+		nrtActual, err := ov.nrtLister.Get(nodeName)
+		if err != nil || nrtActual == nil {
+			return nil, true
+		}
+		ov.nrts.UpdateAttributesAndTopologyPolicies(nrtActual)
+		nrt = ov.nrts.GetNRTCopyByNodeName(nodeName)
+		if nrt == nil {
+			return nil, true
+		}
+	}
+
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		return nrt, true
@@ -263,6 +276,23 @@ func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha2.NodeRe
 		ov.nodesMaybeOverreserved.Delete(nrt.Name)
 		ov.nodesWithForeignPods.Delete(nrt.Name)
 	}
+}
+
+func (ov *OverReserve) ShouldUpdateCacheNow(nodeName string, nrtCache *topologyv1alpha2.NodeResourceTopology) bool {
+	nrtActual, err := ov.nrtLister.Get(nodeName)
+	if err != nil || nrtActual == nil {
+		return false
+	}
+
+	if len(nrtActual.TopologyPolicies) == 0 || len(nrtCache.TopologyPolicies) == 0 {
+		return false
+	}
+
+	if nrtActual.TopologyPolicies[0] != nrtCache.TopologyPolicies[0] {
+		return true
+	}
+
+	return false
 }
 
 func InformerFromHandle(handle framework.Handle) (k8scache.SharedIndexInformer, podlisterv1.PodLister) {

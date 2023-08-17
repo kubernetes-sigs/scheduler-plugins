@@ -258,6 +258,71 @@ func TestNRTStoreUpdate(t *testing.T) {
 	}
 }
 
+func TestNRTStoreUpdateAttributesAndTopologyPolicies(t *testing.T) {
+	nrt := []*topologyv1alpha2.NodeResourceTopology{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node1",
+			},
+			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+			Zones: topologyv1alpha2.ZoneList{
+				{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "20", "4"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
+				},
+				{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "30", "8"),
+						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
+						MakeTopologyResInfo(nicResourceName, "30", "10"),
+					},
+				},
+			},
+		},
+	}
+	ns := newNrtStore(nrt)
+
+	nrtActual := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+		},
+		TopologyPolicies: []string{string(topologyv1alpha2.BestEffortContainerLevel)},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "20", "2"),
+					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+					MakeTopologyResInfo(nicResourceName, "30", "5"),
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "30", "4"),
+					MakeTopologyResInfo(memory, "8Gi", "4Gi"),
+					MakeTopologyResInfo(nicResourceName, "30", "10"),
+				},
+			},
+		},
+	}
+	ns.UpdateAttributesAndTopologyPolicies(nrtActual)
+
+	obj := ns.GetNRTCopyByNodeName("node1")
+	if obj.TopologyPolicies[0] != "BestEffortContainerLevel" { // original value when the object was first added to the store
+		t.Errorf("stored value are incorrect wanted: %v, got: %v", "BestEffortContainerLevel", obj.TopologyPolicies[0])
+	}
+}
+
 func TestNRTStoreGetMissing(t *testing.T) {
 	ns := newNrtStore(nil)
 	if ns.GetNRTCopyByNodeName("node-missing") != nil {

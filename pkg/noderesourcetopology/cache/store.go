@@ -76,6 +76,13 @@ func (nrs *nrtStore) Update(nrt *topologyv1alpha2.NodeResourceTopology) {
 	klog.V(5).InfoS("nrtcache: updated cached NodeTopology", "node", nrt.Name)
 }
 
+// UpdateAttributesAndTopologyPolicies adds or replace the Node Resource Topology attributes associated to a node. Always do a copy.
+func (nrs *nrtStore) UpdateAttributesAndTopologyPolicies(nrt *topologyv1alpha2.NodeResourceTopology) {
+	nrs.data[nrt.Name].Attributes = nrt.Attributes.DeepCopy()
+	nrs.data[nrt.Name].TopologyPolicies = nrt.TopologyPolicies
+	klog.V(5).InfoS("nrtcache: updated cached NodeTopology Attributes And TopologyPolicies", "node", nrt.Name)
+}
+
 // resourceStore maps the resource requested by pod by pod namespaed name. It is not thread safe and needs to be protected by a lock.
 type resourceStore struct {
 	// key: namespace + "/" name

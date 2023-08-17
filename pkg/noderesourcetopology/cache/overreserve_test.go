@@ -367,6 +367,76 @@ func TestGetCachedNRTCopyReserveRelease(t *testing.T) {
 	}
 }
 
+func TestGetCachedNRTCopyShouldUpdateCacheNow(t *testing.T) {
+	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
+	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakePodLister := &fakePodLister{}
+
+	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+
+	nodeTopologies := makeDefaultTestTopology()
+	for _, obj := range nodeTopologies {
+		nrtCache.Store().Update(obj)
+	}
+
+	actualNodeTopology := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
+		TopologyPolicies: []string{string(topologyv1alpha2.BestEffortContainerLevel)},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "20"),
+					MakeTopologyResInfo(memory, "64Gi", "40Gi"),
+					MakeTopologyResInfo(nicResourceName, "16", "10"),
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "22"),
+					MakeTopologyResInfo(memory, "64Gi", "44Gi"),
+					MakeTopologyResInfo(nicResourceName, "16", "10"),
+				},
+			},
+		},
+	}
+
+	expectedNodeTopology := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
+		TopologyPolicies: []string{string(topologyv1alpha2.BestEffortContainerLevel)},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "30"),
+					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+					MakeTopologyResInfo(nicResourceName, "16", "16"),
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "30"),
+					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+					MakeTopologyResInfo(nicResourceName, "16", "16"),
+				},
+			},
+		},
+	}
+
+	fakeInformer.Informer().GetStore().Add(actualNodeTopology)
+
+	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
+	if !reflect.DeepEqual(nrtObj, expectedNodeTopology) {
+		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
+	}
+}
+
 func TestFlush(t *testing.T) {
 	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
 	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
