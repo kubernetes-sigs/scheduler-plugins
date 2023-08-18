@@ -198,15 +198,12 @@ func GetNodeRequestsAndLimits(podInfosOnNode []*framework.PodInfo, node *v1.Node
 			// make sure limits not less than requests
 			SetMaxLimits(requested, limits)
 		}
-		reqCpu := requested.MilliCPU
-		reqMem := requested.Memory
-		limitCpu := limits.MilliCPU
-		limitMem := limits.Memory
+
 		// accumulate
-		nodeRequest.MilliCPU += reqCpu
-		nodeRequest.Memory += reqMem
-		nodeLimit.MilliCPU += limitCpu
-		nodeLimit.Memory += limitMem
+		nodeRequest.MilliCPU += requested.MilliCPU
+		nodeRequest.Memory += requested.Memory
+		nodeLimit.MilliCPU += limits.MilliCPU
+		nodeLimit.Memory += limits.Memory
 	}
 	// cap requests by node capacity
 	setMin(&nodeRequest.MilliCPU, capCpu)

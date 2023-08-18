@@ -123,7 +123,7 @@ func checkSpecs(trimaranSpec *pluginConfig.TrimaranSpec) error {
 			metricProviderType == string(pluginConfig.Prometheus) ||
 			metricProviderType == string(pluginConfig.SignalFx)
 		if !validMetricProviderType {
-			return fmt.Errorf("invalid MetricProvider.Type, got %T", trimaranSpec.MetricProvider.Type)
+			return fmt.Errorf("invalid MetricProvider.Type, got %v", trimaranSpec.MetricProvider.Type)
 		}
 	}
 	return nil

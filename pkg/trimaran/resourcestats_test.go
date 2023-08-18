@@ -17,6 +17,7 @@ limitations under the License.
 package trimaran
 
 import (
+	"math"
 	"reflect"
 	"strconv"
 	"testing"
@@ -375,6 +376,13 @@ func TestGetNodeRequestsAndLimits(t *testing.T) {
 
 	testNode := st.MakeNode().Name("test-node").Capacity(nr).Obj()
 
+	nr = map[v1.ResourceName]string{
+		v1.ResourceCPU:    "1600m",
+		v1.ResourceMemory: "6Ki",
+	}
+
+	testNodeWithLowNodeCapacity := st.MakeNode().Name("test-node").Capacity(nr).Obj()
+
 	var initCPUReq int64 = 100
 	var initMemReq int64 = 2048
 	contCPUReq := []int64{1000, 500}
@@ -405,6 +413,20 @@ func TestGetNodeRequestsAndLimits(t *testing.T) {
 
 	podRequests := GetResourceRequested(pod)
 	podLimits := GetResourceLimits(pod)
+
+	allocatableResources := testNodeWithLowNodeCapacity.Status.Allocatable
+	amCpu := allocatableResources[v1.ResourceCPU]
+	capCpu := amCpu.MilliValue()
+	amMem := allocatableResources[v1.ResourceMemory]
+	capMem := amMem.Value()
+
+	contCPULimit = []int64{1000, 400}
+
+	pod4 := getPodWithContainersAndOverhead(0, initCPUReq, initMemReq, contCPUReq, contMemReq)
+	pod4 = getPodWithLimits(pod4, initCPULimit, initMemLimit, contCPULimit, contMemLimit)
+
+	pod4Requests := GetResourceRequested(pod4)
+	pod4Limits := GetResourceLimits(pod4)
 
 	type args struct {
 		podsOnNode  []*framework.PodInfo
@@ -485,12 +507,91 @@ func TestGetNodeRequestsAndLimits(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "test-2",
+			// Test case for Node with low capacity than the requested Pod limits
+			args: args{
+				podsOnNode:  []*framework.PodInfo{},
+				node:        testNodeWithLowNodeCapacity,
+				pod:         pod,
+				podRequests: podRequests,
+				podLimits:   podLimits,
+			},
+			want: &NodeRequestsAndLimits{
+				NodeRequest: &framework.Resource{
+					MilliCPU: int64(math.Min(float64(GetResourceRequested(pod).MilliCPU), float64(capCpu))),
+					Memory:   int64(math.Min(float64(GetResourceRequested(pod).Memory), float64(capMem))),
+				},
+				NodeLimit: &framework.Resource{
+					MilliCPU: int64(math.Max(float64(GetResourceRequested(pod).MilliCPU), float64(GetResourceLimits(pod).MilliCPU))),
+					Memory:   int64(math.Max(float64(GetResourceRequested(pod).Memory), float64(GetResourceLimits(pod).Memory))),
+				},
+				NodeRequestMinusPod: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+				NodeLimitMinusPod: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+				Nodecapacity: &framework.Resource{
+					MilliCPU: capCpu,
+					Memory:   capMem,
+				},
+			},
+		},
+		{
+			name: "test-3",
+			// Test case for Pod with more Requests than Limits
+			args: args{
+				podsOnNode:  []*framework.PodInfo{},
+				node:        testNodeWithLowNodeCapacity,
+				pod:         pod4,
+				podRequests: pod4Requests,
+				podLimits:   pod4Limits,
+			},
+			want: &NodeRequestsAndLimits{
+				NodeRequest: &framework.Resource{
+					MilliCPU: int64(math.Min(float64(GetResourceRequested(pod4).MilliCPU), float64(capCpu))),
+					Memory:   int64(math.Min(float64(GetResourceRequested(pod4).Memory), float64(capMem))),
+				},
+				NodeLimit: &framework.Resource{
+					MilliCPU: int64(math.Min(
+						math.Max(float64(GetResourceRequested(pod4).MilliCPU), float64(GetResourceLimits(pod4).MilliCPU)),
+						float64(capCpu))),
+					Memory: int64(math.Min(
+						math.Max(float64(GetResourceRequested(pod4).Memory), float64(GetResourceLimits(pod4).Memory)),
+						float64(capMem))),
+				},
+				NodeRequestMinusPod: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+				NodeLimitMinusPod: &framework.Resource{
+					MilliCPU: 0,
+					Memory:   0,
+				},
+				Nodecapacity: &framework.Resource{
+					MilliCPU: capCpu,
+					Memory:   capMem,
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := GetNodeRequestsAndLimits(tt.args.podsOnNode, tt.args.node, tt.args.pod,
+			var got *NodeRequestsAndLimits
+			SetMaxLimits(tt.args.podRequests, tt.args.podLimits)
+			if got = GetNodeRequestsAndLimits(tt.args.podsOnNode, tt.args.node, tt.args.pod,
 				tt.args.podRequests, tt.args.podLimits); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetNodeRequestsAndLimits() = %v, want %v", got, tt.want)
+				t.Errorf("GetNodeRequestsAndLimits(): got = {%+v, %+v, %+v, %+v, %+v}, want = {%+v, %+v, %+v, %+v, %+v}",
+					*got.NodeRequest, *got.NodeLimit, *got.NodeRequestMinusPod, *got.NodeLimitMinusPod, *got.Nodecapacity,
+					*tt.want.NodeRequest, *tt.want.NodeLimit, *tt.want.NodeRequestMinusPod, *tt.want.NodeLimitMinusPod, *tt.want.Nodecapacity)
+			}
+			// The below asserts should hold good for all test cases, ideally; "test-3" exercises this by setting NodeLimit less than NodeRequest
+			if tt.name == "test-3" {
+				assert.LessOrEqual(t, (*got.NodeRequest).MilliCPU, (*got.NodeLimit).MilliCPU)
+				assert.LessOrEqual(t, (*got.NodeRequest).Memory, (*got.NodeLimit).Memory)
 			}
 		})
 	}
