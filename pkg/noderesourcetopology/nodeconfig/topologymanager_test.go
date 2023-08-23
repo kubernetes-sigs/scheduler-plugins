@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package noderesourcetopology
+package nodeconfig
 
 import (
 	"reflect"
@@ -119,21 +119,119 @@ func TestIsValidPolicy(t *testing.T) {
 	}
 }
 
+func TestTopologyManagerEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		tmA      TopologyManager
+		tmB      TopologyManager
+		expected bool
+	}{
+		{
+			name:     "empty",
+			tmA:      TopologyManager{},
+			tmB:      TopologyManager{},
+			expected: true,
+		},
+		{
+			name: "matching",
+			tmA: TopologyManager{
+				Scope:  "container",
+				Policy: "single-numa-node",
+			},
+			tmB: TopologyManager{
+				Scope:  "container",
+				Policy: "single-numa-node",
+			},
+			expected: true,
+		},
+		{
+			name: "policy diff vs nil",
+			tmA: TopologyManager{
+				Policy: "restricted",
+			},
+			tmB:      TopologyManager{},
+			expected: false,
+		},
+		{
+			name: "policy diff",
+			tmA: TopologyManager{
+				Policy: "restricted",
+			},
+			tmB: TopologyManager{
+				Policy: "best-effort",
+			},
+			expected: false,
+		},
+		{
+			name: "scope diff vs nil",
+			tmA: TopologyManager{
+				Scope: "container",
+			},
+			tmB:      TopologyManager{},
+			expected: false,
+		},
+		{
+			name: "scope diff",
+			tmA: TopologyManager{
+				Scope: "container",
+			},
+			tmB: TopologyManager{
+				Scope: "pod",
+			},
+			expected: false,
+		},
+		{
+			name: "scope diff, policy matching",
+			tmA: TopologyManager{
+				Scope:  "container",
+				Policy: "single-numa-node",
+			},
+			tmB: TopologyManager{
+				Scope:  "pod",
+				Policy: "single-numa-node",
+			},
+			expected: false,
+		},
+		{
+			name: "scope matching, policy diff",
+			tmA: TopologyManager{
+				Scope:  "container",
+				Policy: "single-numa-node",
+			},
+			tmB: TopologyManager{
+				Scope:  "container",
+				Policy: "best-effort",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.tmA.Equal(tt.tmB)
+			if got != tt.expected {
+				t.Errorf("<%s> vs <%s> got=%v expected=%v", tt.tmA.String(), tt.tmB.String(), got, tt.expected)
+			}
+		})
+	}
+
+}
+
 func TestConfigFromAttributes(t *testing.T) {
 	tests := []struct {
 		name     string
 		attrs    topologyv1alpha2.AttributeList
-		expected TopologyManagerConfig
+		expected TopologyManager
 	}{
 		{
 			name:     "nil",
 			attrs:    nil,
-			expected: TopologyManagerConfig{},
+			expected: TopologyManager{},
 		},
 		{
 			name:     "empty",
 			attrs:    topologyv1alpha2.AttributeList{},
-			expected: TopologyManagerConfig{},
+			expected: TopologyManager{},
 		},
 		{
 			name: "no-policy",
@@ -143,7 +241,7 @@ func TestConfigFromAttributes(t *testing.T) {
 					Value: "pod",
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Scope: kubeletconfig.PodTopologyManagerScope,
 			},
 		},
@@ -155,7 +253,7 @@ func TestConfigFromAttributes(t *testing.T) {
 					Value: "restricted",
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 			},
 		},
@@ -171,7 +269,7 @@ func TestConfigFromAttributes(t *testing.T) {
 					Value: "container",
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -188,7 +286,7 @@ func TestConfigFromAttributes(t *testing.T) {
 					Value: "single-numa-node",
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
 				Scope:  kubeletconfig.PodTopologyManagerScope,
 			},
@@ -205,7 +303,7 @@ func TestConfigFromAttributes(t *testing.T) {
 					Value: "single-numa-node",
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
 			},
 		},
@@ -221,7 +319,7 @@ func TestConfigFromAttributes(t *testing.T) {
 					Value: "restricted",
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 			},
 		},
@@ -229,8 +327,9 @@ func TestConfigFromAttributes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := TopologyManagerConfig{}
-			updateTopologyManagerConfigFromAttributes(&got, tt.attrs)
+			got := TopologyManager{}
+			cfg := &got // shortcut
+			cfg.updateFromAttributes(tt.attrs)
 			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("conf got=%+#v expected=%+#v", got, tt.expected)
 			}
@@ -242,22 +341,22 @@ func TestConfigFromPolicies(t *testing.T) {
 	tests := []struct {
 		name     string
 		policies []string
-		expected TopologyManagerConfig
+		expected TopologyManager
 	}{
 		{
 			name:     "nil",
 			policies: nil,
-			expected: TopologyManagerConfig{},
+			expected: TopologyManager{},
 		},
 		{
 			name:     "empty",
 			policies: []string{},
-			expected: TopologyManagerConfig{},
+			expected: TopologyManager{},
 		},
 		{
 			name:     "single-numa-pod",
 			policies: []string{string(topologyv1alpha2.SingleNUMANodePodLevel)},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
 				Scope:  kubeletconfig.PodTopologyManagerScope,
 			},
@@ -265,7 +364,7 @@ func TestConfigFromPolicies(t *testing.T) {
 		{
 			name:     "single-numa-container",
 			policies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -273,7 +372,7 @@ func TestConfigFromPolicies(t *testing.T) {
 		{
 			name:     "restricted-container",
 			policies: []string{string(topologyv1alpha2.RestrictedContainerLevel)},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -284,7 +383,7 @@ func TestConfigFromPolicies(t *testing.T) {
 				string(topologyv1alpha2.RestrictedContainerLevel),
 				string(topologyv1alpha2.SingleNUMANodePodLevel),
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -292,14 +391,15 @@ func TestConfigFromPolicies(t *testing.T) {
 		{
 			name:     "error-unknown-policy",
 			policies: []string{"foobar"},
-			expected: TopologyManagerConfig{},
+			expected: TopologyManager{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := TopologyManagerConfig{}
-			updateTopologyManagerConfigFromTopologyPolicies(&got, "", tt.policies)
+			got := TopologyManager{}
+			cfg := &got // shortcut\
+			cfg.updateFromPolicies("", tt.policies)
 			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("conf got=%+#v expected=%+#v", got, tt.expected)
 			}
@@ -311,12 +411,12 @@ func TestConfigFromNRT(t *testing.T) {
 	tests := []struct {
 		name     string
 		nrt      topologyv1alpha2.NodeResourceTopology
-		expected TopologyManagerConfig
+		expected TopologyManager
 	}{
 		{
 			name:     "nil",
 			nrt:      topologyv1alpha2.NodeResourceTopology{},
-			expected: makeTopologyManagerConfigDefaults(),
+			expected: TopologyManagerDefaults(),
 		},
 		{
 			name: "policies-single",
@@ -325,7 +425,7 @@ func TestConfigFromNRT(t *testing.T) {
 					string(topologyv1alpha2.BestEffortPodLevel),
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.BestEffortTopologyManagerPolicy,
 				Scope:  kubeletconfig.PodTopologyManagerScope,
 			},
@@ -338,7 +438,7 @@ func TestConfigFromNRT(t *testing.T) {
 					string(topologyv1alpha2.BestEffortPodLevel),
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -353,7 +453,7 @@ func TestConfigFromNRT(t *testing.T) {
 					},
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -371,7 +471,7 @@ func TestConfigFromNRT(t *testing.T) {
 					},
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.BestEffortTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -393,7 +493,7 @@ func TestConfigFromNRT(t *testing.T) {
 					},
 				},
 			},
-			expected: TopologyManagerConfig{
+			expected: TopologyManager{
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 				Scope:  kubeletconfig.ContainerTopologyManagerScope,
 			},
@@ -402,7 +502,7 @@ func TestConfigFromNRT(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := topologyManagerConfigFromNodeResourceTopology(&tt.nrt)
+			got := TopologyManagerFromNodeResourceTopology(&tt.nrt)
 			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("conf got=%+#v expected=%+#v", got, tt.expected)
 			}

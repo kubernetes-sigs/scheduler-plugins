@@ -49,6 +49,7 @@ import (
 
 	scheconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
@@ -244,11 +245,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -265,11 +266,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -295,11 +296,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -315,11 +316,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -343,11 +344,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -362,11 +363,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "none",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -391,11 +392,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -412,11 +413,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -443,11 +444,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -464,11 +465,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -495,11 +496,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -516,11 +517,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -576,11 +577,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -597,11 +598,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -634,11 +635,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -655,11 +656,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -689,11 +690,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -710,11 +711,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -744,11 +745,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -765,11 +766,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -799,11 +800,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -820,11 +821,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -854,11 +855,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -875,11 +876,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -909,11 +910,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -930,11 +931,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -961,11 +962,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -982,11 +983,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1076,11 +1077,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1097,11 +1098,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1131,11 +1132,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1152,11 +1153,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1187,11 +1188,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1208,11 +1209,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1243,11 +1244,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -1264,11 +1265,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -1299,11 +1300,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -1320,11 +1321,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -1354,11 +1355,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1375,11 +1376,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1409,11 +1410,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -1430,11 +1431,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -1464,11 +1465,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -1485,11 +1486,11 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				MakeNRT().Name("fake-node-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "best-effort",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "pod",
 						},
 					}).
@@ -2096,11 +2097,11 @@ func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 			MakeNRT().Name("fake-node-1").
 				Attributes(topologyv1alpha2.AttributeList{
 					{
-						Name:  noderesourcetopology.AttributePolicy,
+						Name:  nodeconfig.AttributePolicy,
 						Value: "single-numa-node",
 					},
 					{
-						Name:  noderesourcetopology.AttributeScope,
+						Name:  nodeconfig.AttributeScope,
 						Value: "container",
 					},
 				}).
@@ -2122,11 +2123,11 @@ func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 			MakeNRT().Name("fake-node-2").
 				Attributes(topologyv1alpha2.AttributeList{
 					{
-						Name:  noderesourcetopology.AttributePolicy,
+						Name:  nodeconfig.AttributePolicy,
 						Value: "single-numa-node",
 					},
 					{
-						Name:  noderesourcetopology.AttributeScope,
+						Name:  nodeconfig.AttributeScope,
 						Value: "container",
 					},
 				}).

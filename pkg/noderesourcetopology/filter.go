@@ -30,6 +30,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -215,7 +216,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 
 	klog.V(5).InfoS("Found NodeResourceTopology", "nodeTopology", klog.KObj(nodeTopology))
 
-	handler := filterHandlerFromTopologyManagerConfig(topologyManagerConfigFromNodeResourceTopology(nodeTopology))
+	handler := filterHandlerFromTopologyManager(nodeconfig.TopologyManagerFromNodeResourceTopology(nodeTopology))
 	if handler == nil {
 		return nil
 	}
@@ -248,7 +249,7 @@ func subtractFromNUMA(nodes NUMANodeList, numaID int, container v1.Container) {
 	}
 }
 
-func filterHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) filterFn {
+func filterHandlerFromTopologyManager(conf nodeconfig.TopologyManager) filterFn {
 	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
 		return nil
 	}
