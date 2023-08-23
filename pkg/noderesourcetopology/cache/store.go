@@ -72,6 +72,32 @@ func (nrs *nrtStore) Update(nrt *topologyv1alpha2.NodeResourceTopology) {
 	klog.V(5).InfoS("nrtcache: updated cached NodeTopology", "node", nrt.Name)
 }
 
+func (nrs *nrtStore) UpdateIfNeeded(nrt *topologyv1alpha2.NodeResourceTopology, isNeeded func(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool) {
+	cur, ok := nrs.data[nrt.Name]
+	// if we do NOT have previous data, we surely need an update.
+	if ok && !isNeeded(cur, nrt) {
+		return
+	}
+	nrs.Update(nrt)
+}
+
+func neverNeeded(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool {
+	return false
+}
+
+func alwaysNeeded(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool {
+	return true
+}
+
+// NodeNames return the names of all the NRTs present in the store with no ordering guarantee
+func (nrs *nrtStore) NodeNames() []string {
+	nodeNames := make([]string, 0, len(nrs.data))
+	for name := range nrs.data {
+		nodeNames = append(nodeNames, name)
+	}
+	return nodeNames
+}
+
 // resourceStore maps the resource requested by pod by pod namespaed name. It is not thread safe and needs to be protected by a lock.
 type resourceStore struct {
 	// key: namespace + "/" name

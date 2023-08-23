@@ -115,19 +115,19 @@ func TestInitEmptyLister(t *testing.T) {
 	}
 }
 
-func TestNodesMaybeOverReservedCount(t *testing.T) {
+func TestGetNodesOverReservationStatusCount(t *testing.T) {
 	fakeClient, err := tu.NewFakeClient()
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	fakePodLister := &fakePodLister{}
 
 	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ := nrtCache.GetNodesOverReservationStatus("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
+	// TODO: validate cleanNodes
 }
 
 func TestDirtyNodesMarkDiscarded(t *testing.T) {
@@ -149,7 +149,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ := nrtCache.GetNodesOverReservationStatus("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -158,7 +158,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.NodeMaybeOverReserved(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes = nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ = nrtCache.GetNodesOverReservationStatus("testing")
 	sort.Strings(dirtyNodes)
 
 	if !reflect.DeepEqual(dirtyNodes, expectedNodes) {
@@ -185,7 +185,7 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ := nrtCache.GetNodesOverReservationStatus("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -201,7 +201,7 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 		"node-1",
 	}
 
-	dirtyNodes = nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ = nrtCache.GetNodesOverReservationStatus("testing")
 
 	if !reflect.DeepEqual(dirtyNodes, expectedNodes) {
 		t.Errorf("got=%v expected=%v", dirtyNodes, expectedNodes)
@@ -433,9 +433,12 @@ func TestFlush(t *testing.T) {
 		},
 	}
 
-	nrtCache.FlushNodes(logID, expectedNodeTopology.DeepCopy())
+	updatesMap := map[string]*topologyv1alpha2.NodeResourceTopology{
+		expectedNodeTopology.Name: expectedNodeTopology.DeepCopy(),
+	}
+	nrtCache.FlushNodes(logID, updatesMap, nil)
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ := nrtCache.GetNodesOverReservationStatus("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes after flush: %v", dirtyNodes)
 	}
@@ -517,7 +520,7 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ := nrtCache.GetNodesOverReservationStatus("testing")
 
 	if len(dirtyNodes) != 1 || dirtyNodes[0] != "node1" {
 		t.Errorf("cleaned nodes after resyncing with bad data: %v", dirtyNodes)
@@ -611,7 +614,7 @@ func TestResyncMatchFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes, _ := nrtCache.GetNodesOverReservationStatus("testing")
 	if len(dirtyNodes) > 0 {
 		t.Errorf("node still dirty after resyncing with good data: %v", dirtyNodes)
 	}
@@ -641,7 +644,7 @@ func TestUnknownNodeWithForeignPods(t *testing.T) {
 
 	nrtCache.NodeHasForeignPods("node-bogus", &corev1.Pod{})
 
-	names := nrtCache.NodesMaybeOverReserved("testing")
+	names, _ := nrtCache.GetNodesOverReservationStatus("testing")
 	if len(names) != 0 {
 		t.Errorf("non-existent node has foreign pods!")
 	}
@@ -714,7 +717,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 	target := "node2"
 	nrtCache.NodeHasForeignPods(target, &corev1.Pod{})
 
-	names := nrtCache.NodesMaybeOverReserved("testing")
+	names, _ := nrtCache.GetNodesOverReservationStatus("testing")
 	if len(names) != 1 || names[0] != target {
 		t.Errorf("unexpected dirty nodes: %v", names)
 	}

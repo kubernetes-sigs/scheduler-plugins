@@ -29,12 +29,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
@@ -153,33 +155,43 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 	klog.V(5).InfoS("nrtcache post release", "logID", klog.KObj(pod), "node", nodeName, "assumedResources", nodeAssumedResources.String())
 }
 
-// NodesMaybeOverReserved returns a slice of all the node names which have been discarded previously,
-// so which are supposed to be `dirty` in the cache.
+// GetNodesOverReservationStatus returns a slice of all the node names which have been discarded previously,
+// so which are supposed to be `dirty` in the cache, and a slice with all the other known nodes, which are expected to be clean.
+// The union of the returned slices must be the total set of known nodes.
 // A node can be discarded for two reasons:
 // 1. it legitmately cannot fit containers because it has not enough free resources
 // 2. it was pessimistically overallocated, so the node is a candidate for resync
 // This function enables the caller to know the slice of nodes should be considered for resync,
 // avoiding the need to rescan the full node list.
-func (ov *OverReserve) NodesMaybeOverReserved(logID string) []string {
+func (ov *OverReserve) GetNodesOverReservationStatus(logID string) ([]string, []string) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+
+	allNodes := sets.New[string](ov.nrts.NodeNames()...)
 	// this is intentionally aggressive. We don't yet make any attempt to find out if the
 	// node was discarded because pessimistically overrserved (which should indeed trigger
 	// a resync) or if it was discarded because the actual resources on the node really were
 	// exhausted. We do like this because this is the safest approach. We will optimize
 	// the node selection logic later on to make the resync procedure less aggressive but
 	// still correct.
-	nodes := ov.nodesWithForeignPods.Clone()
-	foreignCount := nodes.Len()
+	dirtyNodes := ov.nodesWithForeignPods.Clone()
+	foreignCount := dirtyNodes.Len()
 
 	for _, node := range ov.nodesMaybeOverreserved.Keys() {
-		nodes.Incr(node)
+		dirtyNodes.Incr(node)
 	}
 
-	if nodes.Len() > 0 {
-		klog.V(4).InfoS("nrtcache: found dirty nodes", "logID", logID, "foreign", foreignCount, "discarded", nodes.Len()-foreignCount, "total", nodes.Len())
+	dirtyList := dirtyNodes.Keys()
+	if len(dirtyList) > 0 {
+		klog.V(4).InfoS("nrtcache: found dirty nodes", "logID", logID, "foreign", foreignCount, "discarded", len(dirtyList)-foreignCount, "total", len(dirtyList), "allNodes", len(allNodes))
 	}
-	return nodes.Keys()
+
+	cleanList := allNodes.Delete(dirtyList...).UnsortedList()
+	if len(cleanList) > 0 {
+		klog.V(4).InfoS("nrtcache: found clean nodes", "logID", logID, "dirtyCount", len(dirtyList), "total", len(cleanList), "allNodes", len(allNodes))
+	}
+
+	return dirtyList, cleanList
 }
 
 // Resync implements the cache resync loop step. This function checks if the latest available NRT information received matches the
@@ -194,24 +206,27 @@ func (ov *OverReserve) Resync() {
 	// we are not working with a specific pod, so we need a unique key to track this flow
 	logID := logIDFromTime()
 
-	nodeNames := ov.NodesMaybeOverReserved(logID)
-	// avoid as much as we can unnecessary work and logs.
-	if len(nodeNames) == 0 {
-		klog.V(6).InfoS("nrtcache: resync: no dirty nodes detected")
-		return
-	}
+	klog.V(6).InfoS("nrtcache: resync NodeTopology cache starting", "logID", logID)
+	defer klog.V(6).InfoS("nrtcache: resync NodeTopology cache complete", "logID", logID)
+
+	dirtyNodes, cleanNodes := ov.GetNodesOverReservationStatus(logID)
+	dirtyUpdates := ov.computeResyncByPods(logID, dirtyNodes)
+	cleanUpdates := ov.makeResyncMap(logID, cleanNodes)
+
+	ov.FlushNodes(logID, dirtyUpdates, cleanUpdates)
+}
+
+// computeResyncByPods must not require additiona locking for the `OverReserve` data structures
+func (ov *OverReserve) computeResyncByPods(logID string, nodeNames []string) map[string]*topologyv1alpha2.NodeResourceTopology {
+	nrtUpdatesMap := make(map[string]*topologyv1alpha2.NodeResourceTopology)
 
 	// node -> pod identifier (namespace, name)
 	nodeToObjsMap, err := makeNodeToPodDataMap(ov.podLister, ov.isPodRelevant, logID)
 	if err != nil {
 		klog.ErrorS(err, "cannot find the mapping between running pods and nodes")
-		return
+		return nrtUpdatesMap
 	}
 
-	klog.V(6).InfoS("nrtcache: resync NodeTopology cache starting", "logID", logID)
-	defer klog.V(6).InfoS("nrtcache: resync NodeTopology cache complete", "logID", logID)
-
-	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
 	for _, nodeName := range nodeNames {
 		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
 		if err := ov.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
@@ -251,23 +266,55 @@ func (ov *OverReserve) Resync() {
 		}
 
 		klog.V(4).InfoS("nrtcache: overriding cached info", "logID", logID, "node", nodeName)
-		nrtUpdates = append(nrtUpdates, nrtCandidate)
+		nrtUpdatesMap[nodeName] = nrtCandidate
 	}
 
-	ov.FlushNodes(logID, nrtUpdates...)
+	return nrtUpdatesMap
+}
+
+func (ov *OverReserve) makeResyncMap(logID string, nodeNames []string) map[string]*topologyv1alpha2.NodeResourceTopology {
+	nrtUpdatesMap := make(map[string]*topologyv1alpha2.NodeResourceTopology)
+
+	for _, nodeName := range nodeNames {
+		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
+		err := ov.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, nrtCandidate)
+		if err != nil {
+			klog.V(3).InfoS("nrtcache: failed to get NodeTopology", "logID", logID, "node", nodeName, "error", err)
+			continue
+		}
+		if nrtCandidate == nil {
+			klog.V(3).InfoS("nrtcache: missing NodeTopology", "logID", logID, "node", nodeName)
+			continue
+		}
+
+		klog.V(4).InfoS("nrtcache: overriding cached info", "logID", logID, "node", nodeName)
+		nrtUpdatesMap[nodeName] = nrtCandidate
+	}
+
+	return nrtUpdatesMap
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
-func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha2.NodeResourceTopology) {
+func (ov *OverReserve) FlushNodes(logID string, dirtyUpdates, cleanUpdates map[string]*topologyv1alpha2.NodeResourceTopology) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
-	for _, nrt := range nrts {
+	for _, nrt := range dirtyUpdates {
 		klog.V(4).InfoS("nrtcache: flushing", "logID", logID, "node", nrt.Name)
 		ov.nrts.Update(nrt)
 		delete(ov.assumedResources, nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrt.Name)
 		ov.nodesWithForeignPods.Delete(nrt.Name)
 	}
+	for _, nrt := range cleanUpdates {
+		klog.V(4).InfoS("nrtcache: refreshing", "logID", logID, "node", nrt.Name)
+		ov.nrts.UpdateIfNeeded(nrt, areAttrsChanged)
+	}
+}
+
+func areAttrsChanged(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool {
+	oldConf := nodeconfig.TopologyManagerFromNodeResourceTopology(oldNrt)
+	newConf := nodeconfig.TopologyManagerFromNodeResourceTopology(newNrt)
+	return !oldConf.Equal(newConf)
 }
 
 // to be used only in tests
