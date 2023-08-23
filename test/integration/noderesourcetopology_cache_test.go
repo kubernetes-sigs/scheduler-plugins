@@ -49,6 +49,7 @@ import (
 
 	schedconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -130,11 +131,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -151,11 +152,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -219,11 +220,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -240,11 +241,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -290,11 +291,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -311,11 +312,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -359,11 +360,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -380,11 +381,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -433,11 +434,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-1").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -454,11 +455,11 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				MakeNRT().Name("fake-node-cache-2").
 					Attributes(topologyv1alpha2.AttributeList{
 						{
-							Name:  noderesourcetopology.AttributePolicy,
+							Name:  nodeconfig.AttributePolicy,
 							Value: "single-numa-node",
 						},
 						{
-							Name:  noderesourcetopology.AttributeScope,
+							Name:  nodeconfig.AttributeScope,
 							Value: "container",
 						},
 					}).
@@ -777,11 +778,11 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 			MakeNRT().Name("fake-node-cache-1").
 				Attributes(topologyv1alpha2.AttributeList{
 					{
-						Name:  noderesourcetopology.AttributePolicy,
+						Name:  nodeconfig.AttributePolicy,
 						Value: "single-numa-node",
 					},
 					{
-						Name:  noderesourcetopology.AttributeScope,
+						Name:  nodeconfig.AttributeScope,
 						Value: "container",
 					},
 					{
@@ -823,11 +824,11 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 			MakeNRT().Name("fake-node-cache-1").
 				Attributes(topologyv1alpha2.AttributeList{
 					{
-						Name:  noderesourcetopology.AttributePolicy,
+						Name:  nodeconfig.AttributePolicy,
 						Value: "single-numa-node",
 					},
 					{
-						Name:  noderesourcetopology.AttributeScope,
+						Name:  nodeconfig.AttributeScope,
 						Value: "container",
 					},
 				}).

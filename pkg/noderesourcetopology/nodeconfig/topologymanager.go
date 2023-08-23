@@ -14,9 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package noderesourcetopology
+package nodeconfig
 
 import (
+	"fmt"
+
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
 	"github.com/go-logr/logr"
@@ -45,28 +47,43 @@ func IsValidPolicy(policy string) bool {
 	return false
 }
 
-type TopologyManagerConfig struct {
+type TopologyManager struct {
 	Scope  string
 	Policy string
 }
 
-func makeTopologyManagerConfigDefaults() TopologyManagerConfig {
-	return TopologyManagerConfig{
+func TopologyManagerDefaults() TopologyManager {
+	return TopologyManager{
 		Scope:  kubeletconfig.ContainerTopologyManagerScope,
 		Policy: kubeletconfig.NoneTopologyManagerPolicy,
 	}
 }
 
-func topologyManagerConfigFromNodeResourceTopology(lh logr.Logger, nodeTopology *topologyv1alpha2.NodeResourceTopology) TopologyManagerConfig {
-	conf := makeTopologyManagerConfigDefaults()
+func TopologyManagerFromNodeResourceTopology(lh logr.Logger, nodeTopology *topologyv1alpha2.NodeResourceTopology) TopologyManager {
+	conf := TopologyManagerDefaults()
+	cfg := &conf // shortcut
 	// Backward compatibility (v1alpha2 and previous). Deprecated, will be removed when the NRT API moves to v1beta1.
-	updateTopologyManagerConfigFromTopologyPolicies(lh, &conf, nodeTopology.Name, nodeTopology.TopologyPolicies)
+	cfg.updateFromPolicies(lh, nodeTopology.Name, nodeTopology.TopologyPolicies)
 	// preferred new configuration source (v1alpha2 and onwards)
-	updateTopologyManagerConfigFromAttributes(&conf, nodeTopology.Attributes)
+	cfg.updateFromAttributes(nodeTopology.Attributes)
 	return conf
 }
 
-func updateTopologyManagerConfigFromAttributes(conf *TopologyManagerConfig, attrs topologyv1alpha2.AttributeList) {
+func (conf TopologyManager) String() string {
+	return fmt.Sprintf("policy=%q scope=%q", conf.Policy, conf.Scope)
+}
+
+func (conf TopologyManager) Equal(other TopologyManager) bool {
+	if conf.Scope != other.Scope {
+		return false
+	}
+	if conf.Policy != other.Policy {
+		return false
+	}
+	return true
+}
+
+func (conf *TopologyManager) updateFromAttributes(attrs topologyv1alpha2.AttributeList) {
 	for _, attr := range attrs {
 		if attr.Name == AttributeScope && IsValidScope(attr.Value) {
 			conf.Scope = attr.Value
@@ -80,7 +97,7 @@ func updateTopologyManagerConfigFromAttributes(conf *TopologyManagerConfig, attr
 	}
 }
 
-func updateTopologyManagerConfigFromTopologyPolicies(lh logr.Logger, conf *TopologyManagerConfig, nodeName string, topologyPolicies []string) {
+func (conf *TopologyManager) updateFromPolicies(lh logr.Logger, nodeName string, topologyPolicies []string) {
 	if len(topologyPolicies) == 0 {
 		return
 	}
