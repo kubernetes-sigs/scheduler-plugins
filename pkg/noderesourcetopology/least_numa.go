@@ -197,7 +197,7 @@ func findSuitableCombination(identifier string, qos v1.PodQOSClass, numaNodes NU
 		minDistance float32 = 256
 	)
 	for _, combination := range numaNodesCombination {
-		if isInvalidCombineResources(numaNodes, resources, combination) {
+		if !isValidCombineResources(numaNodes, resources, combination) {
 			continue
 		}
 		combinationResources := combineResources(numaNodes, combination)
@@ -234,13 +234,13 @@ func checkResourcesFit(identifier string, qos v1.PodQOSClass, resources v1.Resou
 	return true
 }
 
-func isInvalidCombineResources(numaNodes NUMANodeList, resources v1.ResourceList, combination []int) bool {
+func isValidCombineResources(numaNodes NUMANodeList, resources v1.ResourceList, combination []int) bool {
 	for _, nodeIndex := range combination {
 		for resourceName := range resources {
 			if _, ok := numaNodes[nodeIndex].Resources[resourceName]; !ok {
-				return true
+				return false
 			}
 		}
 	}
-	return false
+	return true
 }
