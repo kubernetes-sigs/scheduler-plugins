@@ -374,6 +374,104 @@ func TestNUMANodesRequired(t *testing.T) {
 			expectedMinDistance: true,
 		},
 		{
+			description: "8 NUMA node non optimal distance, not sorted ids, odd digit NUMA node without memory",
+			numaNodes: NUMANodeList{
+				{
+					NUMAID: 0,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 10, 1: 20, 2: 40, 3: 30, 4: 20, 5: 30, 6: 50, 7: 40,
+					},
+				},
+				{
+					NUMAID: 3,
+					Resources: v1.ResourceList{
+						gpuResource:    resource.MustParse("1"),
+						v1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+					},
+					Costs: map[int]int{
+						0: 30, 1: 40, 2: 20, 3: 10, 4: 30, 5: 20, 6: 40, 7: 50,
+					},
+				},
+				{
+					NUMAID: 5,
+					Resources: v1.ResourceList{
+						gpuResource:    resource.MustParse("1"),
+						v1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+					},
+					Costs: map[int]int{
+						0: 30, 1: 20, 2: 50, 3: 20, 4: 50, 5: 10, 6: 50, 7: 40,
+					},
+				},
+				{
+					NUMAID: 7,
+					Resources: v1.ResourceList{
+						gpuResource:    resource.MustParse("1"),
+						v1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+					},
+					Costs: map[int]int{
+						0: 40, 1: 50, 2: 30, 3: 50, 4: 20, 5: 40, 6: 30, 7: 10,
+					},
+				},
+				{
+					NUMAID: 1,
+					Resources: v1.ResourceList{
+						gpuResource:    resource.MustParse("1"),
+						v1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+					},
+					Costs: map[int]int{
+						0: 20, 1: 10, 2: 30, 3: 40, 4: 50, 5: 20, 6: 40, 7: 50,
+					},
+				},
+				{
+					NUMAID: 6,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 50, 1: 40, 2: 20, 3: 40, 4: 30, 5: 50, 6: 10, 7: 30,
+					},
+				},
+				{
+					NUMAID: 2,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 40, 1: 30, 2: 10, 3: 20, 4: 40, 5: 50, 6: 20, 7: 30,
+					},
+				},
+				{
+					NUMAID: 4,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 20, 1: 50, 2: 40, 3: 30, 4: 10, 5: 50, 6: 30, 7: 20,
+					},
+				},
+			},
+			podResources: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(3, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				gpuResource:       resource.MustParse("3"),
+			},
+			node:                node,
+			expectedBitmask:     NewTestBitmask(2, 4, 6),
+			expectedErr:         nil,
+			expectedMinDistance: false,
+		},
+		{
 			description: "4 NUMA node optimal distance, non sequential ids",
 			numaNodes: NUMANodeList{
 				{
@@ -510,6 +608,74 @@ func TestNUMANodesRequired(t *testing.T) {
 			},
 			node:                node,
 			expectedBitmask:     NewTestBitmask(0, 6),
+			expectedErr:         nil,
+			expectedMinDistance: false,
+		},
+		{
+			description: "4 NUMA node non optimal distance, non sequential ids, NUMA node-2 and node-6 without memory",
+			numaNodes: NUMANodeList{
+				{
+					NUMAID: 0,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 10,
+						2: 12,
+						4: 20,
+						6: 20,
+					},
+				},
+				{
+					NUMAID: 2,
+					Resources: v1.ResourceList{
+						gpuResource:    resource.MustParse("1"),
+						v1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+					},
+					Costs: map[int]int{
+						0: 12,
+						2: 10,
+						4: 20,
+						6: 20,
+					},
+				},
+				{
+					NUMAID: 4,
+					Resources: v1.ResourceList{
+						gpuResource:       resource.MustParse("1"),
+						v1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						v1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+					Costs: map[int]int{
+						0: 20,
+						2: 20,
+						4: 10,
+						6: 12,
+					},
+				},
+				{
+					NUMAID: 6,
+					Resources: v1.ResourceList{
+						gpuResource:    resource.MustParse("1"),
+						v1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+					},
+					Costs: map[int]int{
+						0: 20,
+						2: 20,
+						4: 12,
+						6: 10,
+					},
+				},
+			},
+			podResources: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: resource.MustParse("2Gi"),
+				gpuResource:       resource.MustParse("2"),
+			},
+			node:                node,
+			expectedBitmask:     NewTestBitmask(0, 4),
 			expectedErr:         nil,
 			expectedMinDistance: false,
 		},
