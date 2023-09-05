@@ -64,12 +64,41 @@ var (
 			},
 		},
 	}
+
+	noWatcherResponseForNode = watcher.WatcherMetrics{
+		Window: watcher.Window{},
+		Data: watcher.Data{
+			NodeMetricsMap: map[string]watcher.NodeMetrics{},
+		},
+	}
 )
 
 func TestNewCollector(t *testing.T) {
 	col, err := NewCollector(&args)
 	assert.NotNil(t, col)
 	assert.Nil(t, err)
+}
+
+func TestNewCollectorSpecs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		bytes, err := json.Marshal(watcherResponse)
+		assert.Nil(t, err)
+		resp.Write(bytes)
+	}))
+	defer server.Close()
+
+	metricProvider := pluginConfig.MetricProviderSpec{
+		Type: "",
+	}
+	trimaranSpec := pluginConfig.TrimaranSpec{
+		WatcherAddress: "",
+		MetricProvider: metricProvider,
+	}
+
+	col, err := NewCollector(&trimaranSpec)
+	assert.Nil(t, col)
+	expectedErr := "invalid MetricProvider.Type, got " + string(metricProvider.Type)
+	assert.EqualError(t, err, expectedErr)
 }
 
 func TestGetAllMetrics(t *testing.T) {
@@ -127,7 +156,55 @@ func TestGetNodeMetrics(t *testing.T) {
 	assert.NotNil(t, collector)
 	assert.Nil(t, err)
 	nodeName := "node-1"
-	metrics, _ := collector.GetNodeMetrics(nodeName)
+	metrics, allMetrics := collector.GetNodeMetrics(nodeName)
 	expectedMetrics := watcherResponse.Data.NodeMetricsMap[nodeName].Metrics
 	assert.EqualValues(t, expectedMetrics, metrics)
+	expectedAllMetrics := &watcherResponse
+	assert.EqualValues(t, expectedAllMetrics, allMetrics)
+}
+
+func TestGetNodeMetricsNilForNode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		bytes, err := json.Marshal(noWatcherResponseForNode)
+		assert.Nil(t, err)
+		resp.Write(bytes)
+	}))
+	defer server.Close()
+
+	trimaranSpec := pluginConfig.TrimaranSpec{
+		WatcherAddress: server.URL,
+	}
+	collector, err := NewCollector(&trimaranSpec)
+	assert.NotNil(t, collector)
+	assert.Nil(t, err)
+	nodeName := "node-1"
+	metrics, allMetrics := collector.GetNodeMetrics(nodeName)
+	expectedMetrics := noWatcherResponseForNode.Data.NodeMetricsMap[nodeName].Metrics
+	assert.EqualValues(t, expectedMetrics, metrics)
+	assert.NotNil(t, allMetrics)
+	expectedAllMetrics := &noWatcherResponseForNode
+	assert.EqualValues(t, expectedAllMetrics, allMetrics)
+}
+
+func TestNewCollectorLoadWatcher(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		bytes, err := json.Marshal(watcherResponse)
+		assert.Nil(t, err)
+		resp.Write(bytes)
+	}))
+	defer server.Close()
+
+	metricProvider := pluginConfig.MetricProviderSpec{
+		Type:    watcher.SignalFxClientName,
+		Address: server.URL,
+		Token:   "PWNED",
+	}
+	trimaranSpec := pluginConfig.TrimaranSpec{
+		WatcherAddress: "",
+		MetricProvider: metricProvider,
+	}
+
+	col, err := NewCollector(&trimaranSpec)
+	assert.NotNil(t, col)
+	assert.Nil(t, err)
 }
