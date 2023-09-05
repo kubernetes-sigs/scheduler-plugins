@@ -25,14 +25,19 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	scheconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
@@ -41,19 +46,22 @@ import (
 
 	appgroupapi "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup"
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
-	agversioned "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned"
 	ntapi "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology"
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"
-	ntversioned "github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned"
 )
 
 func TestNetworkOverheadPlugin(t *testing.T) {
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(agv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(ntv1alpha1.AddToScheme(scheme))
+
+	client, err := ctrlclient.New(globalKubeConfig, ctrlclient.Options{Scheme: scheme})
+
 	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
-	agextClient := agversioned.NewForConfigOrDie(globalKubeConfig)
-	ntextClient := ntversioned.NewForConfigOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
@@ -241,19 +249,19 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start NetworkOverhead integration test %v ...", tt.name)
-			defer cleanupAppGroups(testCtx.Ctx, agextClient, tt.appGroups)
-			defer cleanupNetworkTopologies(testCtx.Ctx, ntextClient, tt.networkTopologies)
+			defer cleanupAppGroups(testCtx.Ctx, client, tt.appGroups)
+			defer cleanupNetworkTopologies(testCtx.Ctx, client, tt.networkTopologies)
 			defer cleanupPods(t, testCtx, tt.pods)
 
 			// create AppGroup
 			t.Logf("Step 1 - Start by creating the basic appGroup...")
-			if err := createAppGroups(testCtx.Ctx, agextClient, tt.appGroups); err != nil {
+			if err := createAppGroups(testCtx.Ctx, client, tt.appGroups); err != nil {
 				t.Fatal(err)
 			}
 
 			// create NetworkTopology
 			t.Logf("Step 2 - create the nt CR...")
-			if err := createNetworkTopologies(testCtx.Ctx, ntextClient, tt.networkTopologies); err != nil {
+			if err := createNetworkTopologies(testCtx.Ctx, client, tt.networkTopologies); err != nil {
 				t.Fatal(err)
 			}
 

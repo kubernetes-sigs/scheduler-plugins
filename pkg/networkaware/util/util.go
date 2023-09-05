@@ -212,7 +212,7 @@ func GetDependencyList(pod *v1.Pod, ag *agv1alpha1.AppGroup) []agv1alpha1.Depend
 }
 
 // GetScheduledList : get Pods already scheduled in the cluster for that specific AppGroup
-func GetScheduledList(pods []v1.Pod) ScheduledList {
+func GetScheduledList(pods []*v1.Pod) ScheduledList {
 	// scheduledList: Deployment name, replicaID, hostname
 	scheduledList := ScheduledList{}
 
@@ -220,7 +220,7 @@ func GetScheduledList(pods []v1.Pod) ScheduledList {
 		if len(p.Spec.NodeName) != 0 {
 			scheduledInfo := ScheduledInfo{
 				Name:      p.Name,
-				Selector:  GetPodAppGroupSelector(&p),
+				Selector:  GetPodAppGroupSelector(p),
 				ReplicaID: string(p.GetUID()),
 				Hostname:  p.Spec.NodeName,
 			}

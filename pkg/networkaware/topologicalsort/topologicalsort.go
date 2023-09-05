@@ -32,7 +32,7 @@ import (
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	networkawareutil "sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
 
-	appgroupv1a1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
+	agv1alpha "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
 )
 
 const (
@@ -76,7 +76,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	scheme := runtime.NewScheme()
 
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(appgroupv1a1.AddToScheme(scheme))
+	utilruntime.Must(agv1alpha.AddToScheme(scheme))
 
 	client, err := client.New(handle.KubeConfig(), client.Options{
 		Scheme: scheme,
@@ -117,8 +117,8 @@ func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	labelsP2 := pInfo2.Pod.GetLabels()
 
 	// Binary search to find both order index since topology list is ordered by Workload Name
-	orderP1 := networkawareutil.FindPodOrder(appGroup.Status.TopologyOrder, labelsP1[appgroupv1a1.AppGroupSelectorLabel])
-	orderP2 := networkawareutil.FindPodOrder(appGroup.Status.TopologyOrder, labelsP2[appgroupv1a1.AppGroupSelectorLabel])
+	orderP1 := networkawareutil.FindPodOrder(appGroup.Status.TopologyOrder, labelsP1[agv1alpha.AppGroupSelectorLabel])
+	orderP2 := networkawareutil.FindPodOrder(appGroup.Status.TopologyOrder, labelsP2[agv1alpha.AppGroupSelectorLabel])
 
 	klog.V(6).InfoS("Pod order values", "p1 order", orderP1, "p2 order", orderP2)
 
@@ -126,12 +126,12 @@ func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	return orderP1 <= orderP2
 }
 
-func (ts *TopologicalSort) findAppGroupTopologicalSort(agName string) *appgroupv1a1.AppGroup {
+func (ts *TopologicalSort) findAppGroupTopologicalSort(agName string) *agv1alpha.AppGroup {
 	klog.V(6).InfoS("namespaces: %s", ts.namespaces)
 	for _, namespace := range ts.namespaces {
 		klog.V(6).InfoS("appGroup CR", "namespace", namespace, "name", agName)
 		// AppGroup couldn't be placed in several namespaces simultaneously
-		appGroup := &appgroupv1a1.AppGroup{}
+		appGroup := &agv1alpha.AppGroup{}
 		err := ts.Get(context.TODO(), client.ObjectKey{
 			Namespace: namespace,
 			Name:      agName,
