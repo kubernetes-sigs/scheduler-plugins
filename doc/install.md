@@ -20,7 +20,7 @@ The Kubernetes version must equal to or greater than **v1.23.0**. To check the v
 
 If you do not have a cluster yet, create one by using one of the following provision tools:
 
-* [kind](https://kind.sigs.k8s.io/docs/)
+* [kind](https://kind.sigs.k8s.io/)
 * [kubeadm](https://kubernetes.io/docs/reference/setup-tools/kubeadm/)
 * [minikube](https://minikube.sigs.k8s.io/)
 
