@@ -29,7 +29,7 @@ The machines in a Kubernetes cluster are typically heterogeneous, with varying C
 
 ### Goals
 
-1. Delvelop a filter plugin to restrict the resource consumption on each unit for different workloads.
+1. Develop a filter plugin to restrict the resource consumption on each unit for different workloads.
 2. Develop a score plugin to favor nodes matched by a high priority unit.
 3. Automatically setting deletion costs on Pods to control the scaling in sequence of workloads through a controller.
 
@@ -110,12 +110,15 @@ and write this information into cycleState.
 Filter check if the node belongs to an available unit. If the node doesn't belong to any unit, we will return
 success if the strategy is `prefer`, otherwise we will return unschedulable.
 
+Besides, filter will check if the pods that was scheduled on the unit has already violated the quantity constraint.
+If the number of pods has reach the `maxCount`, all the nodes in unit will be marked unschedulable.
+
 ##### Score
-If `priority` and `weight` is set in resource policy, we will schedule pod based on `priority` first. For units with the same `priority`, we will spread pods based on `weight`.
+If `priority` is set in resource policy, we will schedule pod based on `priority`. Default priority is 1, and minimum priority is 1.
 
 Score calculation details: 
 
-1. calculate priority score, `scorePriority = priority * 20`
+1. calculate priority score, `scorePriority = (priority-1) * 20`, to make sure we give nodes without priority a minimum score.
 2. normalize score
 
 ##### PostFilter
