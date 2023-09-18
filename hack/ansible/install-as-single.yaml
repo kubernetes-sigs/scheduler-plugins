@@ -1,0 +1,203 @@
+---
+- hosts: kube-master
+  become: yes
+  remote_user: root
+  gather_facts: no
+  serial: 1
+  tasks:
+
+  - name: Create new scheduler config
+    copy:
+      dest: /etc/kubernetes/sched-cc.yaml
+      mode: 0600
+      owner: root
+      group: root
+      content: |
+        apiVersion: kubescheduler.config.k8s.io/v1beta3
+        kind: KubeSchedulerConfiguration
+        leaderElection:
+          leaderElect: true
+        clientConnection:
+          kubeconfig: /etc/kubernetes/scheduler.conf
+        profiles:
+        - schedulerName: most-allocated-scheduler
+          plugins:
+            queueSort:
+              enabled:
+              - name: ZoneResource
+              disabled:
+              - name: "*"
+            score:
+              enabled:
+              - name: NodeResourcesFit
+              disabled:
+              - name: NodeResourcesBalancedAllocation
+          pluginConfig:
+          - name: NodeResourcesFit
+            args:
+              scoringStrategy:
+                type: MostAllocated
+          - name: Coscheduling
+            args:
+              permitWaitingTimeSeconds: 240
+          - name: ZoneResource
+            args:
+              ResourceNamespace: 'habana.ai/gaudi'
+              ZoneLabel: 'habana.ai/zone'
+              PriorityZones: {{ priority_zones }}
+              CleanupInterval: 1
+        - schedulerName: default-scheduler
+          plugins:
+            queueSort:
+              enabled:
+              - name: ZoneResource
+              disabled:
+              - name: "*"
+            preFilter:
+              enabled:
+              - name: Coscheduling
+              - name: CapacityScheduling
+              - name: ZoneResource
+            filter:
+              enabled:
+              - name: ZoneResource
+            postFilter:
+              enabled:
+              - name: PreemptionToleration
+              - name: Coscheduling
+              disabled:
+              - name: DefaultPreemption
+            score:
+              enabled:
+              - name: ZoneResource
+              - name: NodeResourcesFit
+              disabled:
+              - name: NodeResourcesBalancedAllocation
+            permit:
+              enabled:
+              - name: Coscheduling
+            reserve:
+              enabled:
+              - name: Coscheduling
+              - name: CapacityScheduling
+            postBind:
+              enabled:
+              - name: Coscheduling
+              - name: ZoneResource
+          pluginConfig:
+          - name: Coscheduling
+            args:
+              permitWaitingTimeSeconds: 240
+          - name: ZoneResource
+            args:
+              ResourceNamespace: 'habana.ai/gaudi'
+              ZoneLabel: 'habana.ai/zone'
+              PriorityZones: {{ priority_zones }}
+              CleanupInterval: 1
+          - name: NodeResourcesFit
+            args:
+              scoringStrategy:
+                type: MostAllocated
+
+  - name: Copy coscheduling CRD
+    copy:
+      src: "{{ item.path }}"
+      dest: /tmp/{{item.name}}
+    loop:
+    - { name: "crd.yaml", path: "../../manifests/coscheduling/crd.yaml" }
+    - { name: "eq.yaml", path: "../../manifests/capacityscheduling/crd.yaml" }
+    - { name: "all-in-one.yaml", path: "../../manifests/install/all-in-one.yaml" }
+    when: inventory_hostname == groups['kube-master'][0]
+
+  - name: Apply cosched and all-in-one yamls
+    ansible.builtin.shell:
+      cmd: kubectl apply -f {{ item }}
+    loop:
+    - /tmp/crd.yaml
+    - /tmp/eq.yaml
+    - /tmp/all-in-one.yaml
+    when: inventory_hostname == groups['kube-master'][0]
+
+  - name: Modify kube-scheduler yaml
+    copy:
+      dest: /etc/kubernetes/manifests/kube-scheduler.yaml
+      mode: 0600
+      owner: root
+      group: root
+      content: |
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          creationTimestamp: null
+          labels:
+            component: kube-scheduler
+            tier: control-plane
+          name: kube-scheduler
+          namespace: kube-system
+        spec:
+          containers:
+          - command:
+            - kube-scheduler
+            - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
+            - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
+            - --bind-address=0.0.0.0
+            - --config=/etc/kubernetes/sched-cc.yaml
+            - -v=5
+            image: {{image}}
+            imagePullPolicy: Always
+            livenessProbe:
+              failureThreshold: 8
+              httpGet:
+                path: /healthz
+                port: 10259
+                scheme: HTTPS
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 15
+            name: kube-scheduler
+            resources:
+              requests:
+                cpu: 100m
+            startupProbe:
+              failureThreshold: 30
+              httpGet:
+                path: /healthz
+                port: 10259
+                scheme: HTTPS
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 15
+            volumeMounts:
+            - mountPath: /etc/kubernetes/scheduler.conf
+              name: kubeconfig
+              readOnly: true
+            - mountPath: /etc/kubernetes/kubescheduler-config.yaml
+              name: kubescheduler-config
+              readOnly: true
+            - mountPath: /etc/kubernetes/sched-cc.yaml
+              name: sched-cc
+              readOnly: true
+          hostNetwork: true
+          priorityClassName: system-node-critical
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+          - hostPath:
+              path: /etc/kubernetes/scheduler.conf
+              type: FileOrCreate
+            name: kubeconfig
+          - hostPath:
+              path: /etc/kubernetes/kubescheduler-config.yaml
+              type: ""
+            name: kubescheduler-config
+          - hostPath:
+              path: /etc/kubernetes/sched-cc.yaml
+              type: FileOrCreate
+            name: sched-cc
+        status: {}
+
+  # - name: Restart kubelet
+  #   ansible.builtin.service:
+  #     name: kubelet.service
+  #     state: restarted

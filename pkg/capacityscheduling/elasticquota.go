@@ -17,7 +17,7 @@ limitations under the License.
 package capacityscheduling
 
 import (
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -162,17 +162,13 @@ func cmp(x, y *framework.Resource) bool {
 	return cmp2(x, &framework.Resource{}, y)
 }
 
-func cmp2(x1, x2, y *framework.Resource) bool {
-	if x1.MilliCPU+x2.MilliCPU > y.MilliCPU {
-		return true
-	}
+// TODO: PR to main repo
+func cmp2(request, used, boundary *framework.Resource) bool {
 
-	if x1.Memory+x2.Memory > y.Memory {
-		return true
-	}
-
-	for rName, rQuant := range x1.ScalarResources {
-		if rQuant+x2.ScalarResources[rName] > y.ScalarResources[rName] {
+	// Loop through all the resources of the boundary (min/max) and check if the request +
+	// used > boundary
+	for resourceName, boundaryResourceQuantity := range boundary.ScalarResources {
+		if used.ScalarResources[resourceName]+request.ScalarResources[resourceName] > boundaryResourceQuantity {
 			return true
 		}
 	}

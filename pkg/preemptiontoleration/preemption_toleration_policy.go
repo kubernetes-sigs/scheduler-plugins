@@ -26,16 +26,19 @@ const (
 	AnnotationKeyPrefix                     = "preemption-toleration.scheduling.sigs.k8s.io/"
 	AnnotationKeyMinimumPreemptablePriority = AnnotationKeyPrefix + "minimum-preemptable-priority"
 	AnnotationKeyTolerationSeconds          = AnnotationKeyPrefix + "toleration-seconds"
+	AnnotationGroup                         = AnnotationKeyPrefix + "group"
+	AnnotationAttempsInSameGroup            = AnnotationKeyPrefix + "attempts-in-same-group"
 )
 
 // Policy holds preemption toleration policy configuration.  Each property values are annotated in the target PriorityClass resource.
 // Example:
-//   kind: PriorityClass
-//     metadata:
-//     name: toleration-policy-sample
-//     annotation:
-//       preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
-//       preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
+//
+//	kind: PriorityClass
+//	  metadata:
+//	  name: toleration-policy-sample
+//	  annotation:
+//	    preemption-toleration.scheduling.sigs.k8s.io/minimum-preemptable-priority: "10000"
+//	    preemption-toleration.scheduling.sigs.k8s.io/toleration-seconds: "3600"
 type Policy struct {
 	// MinimumPreemptablePriority specifies the minimum priority value that can preempt this priority class.
 	// It defaults to the PriorityClass's priority value + 1 if not set, which means pods that have a higher priority value can preempt it.
@@ -49,6 +52,16 @@ type Policy struct {
 	// lower than MinimumPreemptablePriority won't be able to preempt it.
 	// This value affects scheduled pods only (no effect on nominated pods).
 	TolerationSeconds int64
+
+	// Groups attach a priority to a group of priorities. The behaviour allows in-group preemption
+	// first, meaning pods that do not belong to the group are exempted for a number of times provided in
+	// the scheduler config args.
+	Group string
+
+	// Number of attempts to preempt pods belonging to the same priority group as configured
+	// by the annotation on the priority. If fails within the number of attempts, will try
+	// preemption from any other priority.
+	AttemptsInSameGroup int64
 }
 
 func parsePreemptionTolerationPolicy(
@@ -76,6 +89,19 @@ func parsePreemptionTolerationPolicy(
 			return nil, err
 		}
 		policy.TolerationSeconds = tolerationSeconds
+	}
+
+	policy.Group = pc.Annotations[AnnotationGroup]
+
+	attemptsInSameGroupStr, ok := pc.Annotations[AnnotationAttempsInSameGroup]
+	if !ok {
+		policy.AttemptsInSameGroup = 0 // default value
+	} else {
+		attempts, err := strconv.ParseInt(attemptsInSameGroupStr, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		policy.AttemptsInSameGroup = attempts
 	}
 
 	return policy, nil

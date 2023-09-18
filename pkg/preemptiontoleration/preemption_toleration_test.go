@@ -30,6 +30,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	versionedfake "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 )
 
 var (
@@ -227,6 +229,12 @@ func (tt testCase) run(t *testing.T) {
 	got, err := ExemptedFromPreemption(
 		tt.victimCandidate, tt.preemptor,
 		informersFactory.Scheduling().V1().PriorityClasses().Lister(),
+		versionedfake.NewSimpleClientset(&v1alpha1.ElasticQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-eq",
+				Namespace: "llm",
+			},
+		}),
 		now,
 	)
 

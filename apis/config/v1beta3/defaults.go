@@ -79,6 +79,16 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 }
 
+// SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
+func SetDefaults_ZoneResourceArgs(obj *ZoneResourceArgs) {
+	if obj.ZoneLabel == "" {
+		obj.ZoneLabel = "habana.ai/zone"
+	}
+	if obj.ResourceNamespace == "" {
+		obj.ResourceNamespace = "habana.ai/gaudi"
+	}
+}
+
 // SetDefaults_NodeResourcesAllocatableArgs sets the defaults parameters for NodeResourceAllocatable.
 func SetDefaults_NodeResourcesAllocatableArgs(obj *NodeResourcesAllocatableArgs) {
 	if len(obj.Resources) == 0 {

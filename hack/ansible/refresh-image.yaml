@@ -1,0 +1,19 @@
+- hosts: kube-master
+  become: yes
+  remote_user: root
+  tasks:
+  - name: Refresh Image
+    shell: 
+      cmd: |
+        crictl stop $(crictl ps --name kube-scheduler -q) && \
+        images=$(crictl image ls | grep artifactory-kfs.habana-labs.com/k8s-infra-docker-dev/habana/scheduler-plugins/kube-scheduler | awk '{printf "%s:%s\n",$1,$2}')
+        crictl rmi $images
+        crictl pull {{image}}
+        #systemctl restart kubelet
+      executable: /bin/bash
+    register: output
+
+  - name: Check output
+    ansible.builtin.debug:
+      var: output
+    

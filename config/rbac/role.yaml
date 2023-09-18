@@ -58,3 +58,10 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - watch
+  - list

@@ -101,6 +101,18 @@ func MakePod(podName string, namespace string, memReq int64, cpuReq int64, prior
 	}
 	return pod
 }
+func MakePodForPG(podName string, namespace string, memReq int64, cpuReq int64, priority int32, uid string, nodeName, pgName string) *corev1.Pod {
+	pause := imageutils.GetPauseImageName()
+	pod := st.MakePod().Namespace(namespace).Name(podName).Container(pause).
+		Label(v1alpha1.PodGroupLabel, pgName).Priority(priority).Node(nodeName).UID(uid).ZeroTerminationGracePeriod().Obj()
+	pod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: *resource.NewQuantity(memReq, resource.DecimalSI),
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(cpuReq, resource.DecimalSI),
+		},
+	}
+	return pod
+}
 
 // PodNotExist returns true if the given pod does not exist.
 func PodNotExist(cs clientset.Interface, podNamespace, podName string) bool {

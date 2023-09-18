@@ -127,6 +127,7 @@ func autoConvert_v1beta2_CoschedulingArgs_To_config_CoschedulingArgs(in *Cosched
 	if err := v1.Convert_Pointer_int64_To_int64(&in.PermitWaitingTimeSeconds, &out.PermitWaitingTimeSeconds, s); err != nil {
 		return err
 	}
+	// WARNING: in.DeniedPGExpirationTimeSeconds requires manual conversion: does not exist in peer-type
 	return nil
 }
 

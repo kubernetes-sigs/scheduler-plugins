@@ -41,6 +41,7 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	})
 	scheme.AddTypeDefaultingFunc(&PreemptionTolerationArgs{}, func(obj interface{}) { SetObjectDefaults_PreemptionTolerationArgs(obj.(*PreemptionTolerationArgs)) })
 	scheme.AddTypeDefaultingFunc(&TargetLoadPackingArgs{}, func(obj interface{}) { SetObjectDefaults_TargetLoadPackingArgs(obj.(*TargetLoadPackingArgs)) })
+	scheme.AddTypeDefaultingFunc(&ZoneResourceArgs{}, func(obj interface{}) { SetObjectDefaults_ZoneResourceArgs(obj.(*ZoneResourceArgs)) })
 	return nil
 }
 
@@ -66,4 +67,8 @@ func SetObjectDefaults_PreemptionTolerationArgs(in *PreemptionTolerationArgs) {
 
 func SetObjectDefaults_TargetLoadPackingArgs(in *TargetLoadPackingArgs) {
 	SetDefaults_TargetLoadPackingArgs(in)
+}
+
+func SetObjectDefaults_ZoneResourceArgs(in *ZoneResourceArgs) {
+	SetDefaults_ZoneResourceArgs(in)
 }

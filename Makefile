@@ -15,18 +15,22 @@
 ARCHS = amd64 arm64
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
 BUILDENVVAR=CGO_ENABLED=0
+INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
-LOCAL_REGISTRY=localhost:5000/scheduler-plugins
-LOCAL_IMAGE=kube-scheduler:latest
-LOCAL_CONTROLLER_IMAGE=controller:latest
+export DOCKER_BUILDKIT=1
 
 # RELEASE_REGISTRY is the container registry to push
 # into. The default is to push to the staging
 # registry, not production(k8s.gcr.io).
-RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
-RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
+RELEASE_REGISTRY?=artifactory-kfs.habana-labs.com/k8s-infra-docker-dev/habana/scheduler-plugins
+# RELEASE_VERSION?=v$(shell date +%Y%m%d)-v0.23.10
+RELEASE_VERSION?=v0.23.28
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
+
+LOCAL_REGISTRY=artifactory-kfs.habana-labs.com/k8s-infra-docker-dev/habana/scheduler-plugins
+LOCAL_IMAGE=kube-scheduler:$(RELEASE_VERSION)
+LOCAL_CONTROLLER_IMAGE=controller:$(RELEASE_VERSION)
 
 # VERSION is the scheduler's version
 #
@@ -73,8 +77,10 @@ build-scheduler.arm64v8:
 
 .PHONY: local-image
 local-image: clean
-	docker build -f ./build/scheduler/Dockerfile --build-arg ARCH="amd64" --build-arg RELEASE_VERSION="$(RELEASE_VERSION)" -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
+	docker build -f ./build/scheduler/Dockerfile --build-arg ARCH="amd64" --build-arg RELEASE_VERSION="v20201009-v0.18.800-46-g939c1c0" -t $(LOCAL_REGISTRY)/$(LOCAL_IMAGE) .
 	docker build -f ./build/controller/Dockerfile --build-arg ARCH="amd64" -t $(LOCAL_REGISTRY)/$(LOCAL_CONTROLLER_IMAGE) .
+	docker push $(LOCAL_REGISTRY)/$(LOCAL_CONTROLLER_IMAGE)
+	docker push $(LOCAL_REGISTRY)/$(LOCAL_IMAGE)
 
 .PHONY: release-image.amd64
 release-image.amd64: clean
@@ -116,7 +122,7 @@ install-envtest:
 
 .PHONY: integration-test
 integration-test: install-envtest
-	hack/integration-test.sh
+	$(INTEGTESTENVVAR) hack/integration-test.sh
 
 .PHONY: verify
 verify:
@@ -127,3 +133,65 @@ verify:
 .PHONY: clean
 clean:
 	rm -rf ./bin
+
+.PHONY: kind-load
+kind-load: local-image
+	kind load docker-image $(LOCAL_CONTROLLER_IMAGE) --nodes multi-control-plane,multi-worker,multi-worker2,multi-worker3 --name multi
+	kind load docker-image $(LOCAL_IMAGE) --nodes multi-control-plane,multi-worker,multi-worker2,multi-worker3 --name multi
+
+.PHONY: kind-down
+kind-down:
+	kind delete cluster --name multi
+
+.PHONY: kind-up
+kind-up:
+	kind create cluster --name multi --config ~/kind-config.yaml
+
+
+.PHONY: helm-install
+helm-install:
+	@cd manifests/install/charts/ && helm install scheduler-plugins as-a-second-scheduler/
+
+
+.PHONY: refresh-image
+refresh-image:
+	ansible-playbook hack/ansible/refresh-image.yaml \
+	-i $(INVENTORY) \
+	-e image="$(LOCAL_REGISTRY)/$(LOCAL_IMAGE)"
+
+.PHONY: refresh-image-dc01
+refresh-image-dc01:
+	@ansible-playbook hack/ansible/refresh-image.yaml \
+	-i $(INVENTORY) \
+	-e "image=$(LOCAL_REGISTRY)/$(LOCAL_IMAGE)"
+
+.PHONY: refresh-image-dc02
+refresh-image-dc02:
+	@ansible-playbook hack/ansible/refresh-image.yaml \
+	-i $(INVENTORY) \
+	-e "image=$(LOCAL_REGISTRY)/$(LOCAL_IMAGE)"
+
+## deploy-scheduler: deployes the scheduler to staging
+.PHONY: deploy-scheduler
+deploy-scheduler:
+	@ansible-playbook hack/ansible/install-as-single.yaml \
+	-i $(INVENTORY) \
+	-e '{"image": "$(LOCAL_REGISTRY)/$(LOCAL_IMAGE)", "priority_zones": ["a", "b", "c", "d", "e", "f", "g", "h"]}'
+
+.PHONY: deploy-scheduler-test
+deploy-scheduler-test:
+	@ansible-playbook hack/ansible/install-as-single.yaml \
+	-i $(INVENTORY) \
+	-e '{"image": "$(LOCAL_REGISTRY)/$(LOCAL_IMAGE)", "priority_zones": ["a", "b", "c", "d", "e", "f", "g", "h"]}'
+
+.PHONY: deploy-scheduler-dc01
+deploy-scheduler-dc01:
+	@ansible-playbook hack/ansible/install-as-single.yaml \
+	-i $(INVENTORY) \
+	-e '{"image": "$(LOCAL_REGISTRY)/$(LOCAL_IMAGE)", "priority_zones": ["d", "a", "b", "c", "e", "f", "g", "h"]}'
+
+.PHONY: deploy-scheduler-dc02
+deploy-scheduler-dc02:
+	@ansible-playbook hack/ansible/install-as-single.yaml \
+	-i $(INVENTORY) \
+	-e '{"image": "$(LOCAL_REGISTRY)/$(LOCAL_IMAGE)", "priority_zones": ["a", "b", "c", "d", "e", "f", "g", "h"]}'

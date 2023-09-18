@@ -78,7 +78,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
 1. Create `/etc/kubernetes/sched-cc.yaml`
 
     ```yaml
-    apiVersion: kubescheduler.config.k8s.io/v1beta3
+    apiVersion: kubescheduler.config.k8s.io/v1beta2
     kind: KubeSchedulerConfiguration
     leaderElection:
       # (Optional) Change true to false if you are not running a HA control-plane.
@@ -88,11 +88,26 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     profiles:
     - schedulerName: default-scheduler
       plugins:
-        multiPoint:
+        queueSort:
           enabled:
           - name: Coscheduling
           disabled:
-          - name: PrioritySort
+          - name: "*"
+        preFilter:
+          enabled:
+          - name: Coscheduling
+        postFilter:
+          enabled:
+          - name: Coscheduling
+        permit:
+          enabled:
+          - name: Coscheduling
+        reserve:
+          enabled:
+          - name: Coscheduling
+        postBind:
+          enabled:
+          - name: Coscheduling
     ```
 
 1. **❗IMPORTANT**❗ Starting with release v0.19, several plugins (e.g., coscheduling) introduced CRD
@@ -216,17 +231,17 @@ Now, we're able to verify how the coscheduling plugin works.
             image: k8s.gcr.io/pause:3.6
     ```
 
-    > **⚠️Note:️** If you are running scheduler-plugins as a second scheduler, you should explicitly
-    > specify `.spec.schedulerName` to match the secondary scheduler name:
-    > ```yaml
-    > # deploy.yaml
-    > ...
-    > spec:
-    >   ...
-    >   template:
-    >     spec:
-    >       schedulerName: scheduler-plugins-scheduler
-    > ```
+> **⚠️Note:️** If you are running scheduler-plugins as a second scheduler, you should explicitly
+> specify `.spec.schedulerName` to match the secondary scheduler name:
+> ```yaml
+> # deploy.yaml
+> ...
+> spec:
+>   ...
+>   template:
+>     spec:
+>       schedulerName: scheduler-plugins-scheduler
+> ```
 
 1. As PodGroup `pg1` requires at least 3 pods to be scheduled all-together, and there are only 2 Pods
    so far, so it's expected to observer they are pending:

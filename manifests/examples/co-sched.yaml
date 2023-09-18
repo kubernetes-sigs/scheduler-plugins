@@ -1,0 +1,33 @@
+# podgroup.yaml
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: PodGroup
+metadata:
+  name: pg1
+spec:
+  scheduleTimeoutSeconds: 10
+  minMember: 3
+---
+# deploy.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pause
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pause
+  template:
+    metadata:
+      labels:
+        app: pause
+        pod-group.scheduling.sigs.k8s.io: pg1
+    spec:
+      containers:
+      - name: pause
+        image: k8s.gcr.io/pause:3.6
+        resources:
+          limits:
+            habana.ai/gaudi: 1
+          requests:
+            habana.ai/gaudi: 1

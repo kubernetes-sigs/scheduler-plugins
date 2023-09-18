@@ -80,5 +80,5 @@ spec:
       serviceAccount: scheduler-plugins-controller
       containers:
       - name: scheduler-plugins-controller
-        image: k8s.gcr.io/scheduler-plugins/controller:v0.22.6
+        image: artifactory-kfs.habana-labs.com/k8s-infra-docker-dev/habana/scheduler-plugins/controller:v0.23.21
         imagePullPolicy: IfNotPresent

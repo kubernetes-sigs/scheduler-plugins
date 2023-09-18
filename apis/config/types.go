@@ -24,6 +24,18 @@ import (
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// ZoneResourceArgs defines the parameters for Coscheduling plugin.
+type ZoneResourceArgs struct {
+	metav1.TypeMeta
+
+	ZoneLabel         string
+	PriorityZones     []string
+	ResourceNamespace string
+	CleanupInterval   int
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 // CoschedulingArgs defines the parameters for Coscheduling plugin.
 type CoschedulingArgs struct {
 	metav1.TypeMeta
