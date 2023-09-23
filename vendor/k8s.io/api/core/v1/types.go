@@ -2622,6 +2622,12 @@ type ContainerStateRunning struct {
 	StartedAt metav1.Time `json:"startedAt,omitempty" protobuf:"bytes,1,opt,name=startedAt"`
 }
 
+type ContainerStatePaused struct {
+	// Time at which the container was last paused
+	// +optional
+	PausedAt metav1.Time
+}
+
 // ContainerStateTerminated is a terminated state of a container.
 type ContainerStateTerminated struct {
 	// Exit status from the last termination of the container
@@ -2656,6 +2662,8 @@ type ContainerState struct {
 	// Details about a running container
 	// +optional
 	Running *ContainerStateRunning `json:"running,omitempty" protobuf:"bytes,2,opt,name=running"`
+	// +optional
+	Paused *ContainerStatePaused
 	// Details about a terminated container
 	// +optional
 	Terminated *ContainerStateTerminated `json:"terminated,omitempty" protobuf:"bytes,3,opt,name=terminated"`
@@ -2738,6 +2746,8 @@ const (
 	// PodRunning means the pod has been bound to a node and all of the containers have been started.
 	// At least one container is still running or is in the process of being restarted.
 	PodRunning PodPhase = "Running"
+	// PodPaused means the pod has been paused and all container processes has been temprorily frozen.
+	PodPaused PodPhase = "Paused"
 	// PodSucceeded means that all containers in the pod have voluntarily terminated
 	// with a container exit code of 0, and the system is not going to restart any of these containers.
 	PodSucceeded PodPhase = "Succeeded"

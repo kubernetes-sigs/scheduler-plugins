@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
@@ -53,7 +54,7 @@ func (rp *EDFPreemptiveScheduling) Name() string {
 }
 
 // New initializes a new plugin and return it.
-func New(fh framework.Handle) (framework.Plugin, error) {
+func New(_ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	podLister := fh.SharedInformerFactory().Core().V1().Pods().Lister()
 	nodeLister := fh.SharedInformerFactory().Core().V1().Nodes().Lister()
 	return &EDFPreemptiveScheduling{
@@ -134,7 +135,7 @@ func (rp *EDFPreemptiveScheduling) PostFilter(ctx context.Context, state *framew
 			klog.InfoS("skipping unschedulable and unresolvable node", "node", klog.KObj(nodeInfo.Node()))
 			continue
 		}
-		candidate := rp.getPreemptiblePod(pod, nodeInfo)
+		candidate := rp.findCandidateOnNode(pod, nodeInfo)
 		if candidate != nil {
 			candidates = append(candidates, &preemption.Candidate{NodeName: nodeInfo.Node().Name, Pod: candidate})
 		}
@@ -149,7 +150,7 @@ func (rp *EDFPreemptiveScheduling) PostFilter(ctx context.Context, state *framew
 		klog.ErrorS(err, "failed to pause pod on node", "candidate", klog.KObj(candidate.Pod), "node", candidate.NodeName)
 		return nil, framework.AsStatus(err)
 	}
-	return framework.NewPostFilterResultWithNominatedNode(candidate.NodeName), framework.NewStatus(framework.Success, "")
+	return framework.NewPostFilterResultWithNominatedNode(candidate.NodeName), framework.NewStatus(framework.Success)
 }
 
 func (rp *EDFPreemptiveScheduling) selectCandidate(candidates []*preemption.Candidate) *preemption.Candidate {
@@ -168,13 +169,13 @@ func (rp *EDFPreemptiveScheduling) selectCandidate(candidates []*preemption.Cand
 	return bestCandidate
 }
 
-func (rp *EDFPreemptiveScheduling) getPreemptiblePod(pod *v1.Pod, nodeInfo *framework.NodeInfo) *v1.Pod {
+func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *framework.NodeInfo) *v1.Pod {
 	podDDL := rp.deadlineManager.GetPodDeadline(pod)
 	maxDDL := podDDL
 
-	var preemptiblePod *v1.Pod
+	var candidatePod *v1.Pod
 	var runningPods []*v1.Pod
-	// find latest deadline among all running pods and update preemptiblePod accordingly
+	// find latest deadline among all running pods and update candidate accordingly
 	for _, podInfo := range nodeInfo.Pods {
 		p, err := rp.podLister.Pods(podInfo.Pod.Namespace).Get(podInfo.Pod.Name)
 		if err != nil {
@@ -186,28 +187,28 @@ func (rp *EDFPreemptiveScheduling) getPreemptiblePod(pod *v1.Pod, nodeInfo *fram
 			ddl := rp.deadlineManager.GetPodDeadline(p)
 			if ddl.After(maxDDL) {
 				maxDDL = ddl
-				preemptiblePod = p
+				candidatePod = p
 			}
 		}
 	}
-	if preemptiblePod == nil {
-		klog.InfoS("found no pods on node with deadline later than current pod deadline", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
+	if candidatePod == nil {
+		klog.InfoS("found no candidate pods on node with deadline later than current pod deadline", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
 		return nil
 	}
 
 	// check if the preemptible pod is excluded it would yield enough resource to run the current pod
-	var nonePreemptiblePods []*v1.Pod
+	var podsExcludeCandidate []*v1.Pod
 	for _, p := range runningPods {
-		ddl := rp.deadlineManager.GetPodDeadline(p)
-		if ddl.Before(maxDDL) {
-			nonePreemptiblePods = append(nonePreemptiblePods, p)
+		if p.UID != candidatePod.UID {
+			podsExcludeCandidate = append(podsExcludeCandidate, p)
 		}
 	}
-	nodeAfterPreemption := framework.NewNodeInfo(nonePreemptiblePods...)
+	nodeAfterPreemption := framework.NewNodeInfo(podsExcludeCandidate...)
+	nodeAfterPreemption.SetNode(nodeInfo.Node())
 	insufficientResources := noderesources.Fits(pod, nodeAfterPreemption)
 	if len(insufficientResources) > 0 {
-		klog.InfoS("even after preemption, there is not enough resource to run pod on node", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
+		klog.InfoS("there is not enough resource to run pod on node even after preemption", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()), "candidate", klog.KObj(candidatePod))
 		return nil
 	}
-	return preemptiblePod
+	return candidatePod
 }

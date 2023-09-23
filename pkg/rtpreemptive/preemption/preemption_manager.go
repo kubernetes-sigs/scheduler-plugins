@@ -132,7 +132,6 @@ func (m *preemptionManager) ResumePausedPod(ctx context.Context, pod *v1.Pod) *C
 
 func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candidate) error {
 	latestPod, err := m.podLister.Pods(candidate.Pod.Namespace).Get(candidate.Pod.Name)
-
 	if err != nil {
 		klog.ErrorS(err, "failed to list pod", "pod", klog.KObj(latestPod))
 		return fmt.Errorf("failed to get latest pod: %w", err)
