@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -19,9 +18,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	imageutils "k8s.io/kubernetes/test/utils/image"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/deadline"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/preemption"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/util"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -146,7 +145,7 @@ func TestPreFiter(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			edfPreemptiveScheduling := &EDFPreemptiveScheduling{
-				preemptionManager: preemption.NewPreemptionManager(nil, nil, nil),
+				preemptionManager: preemption.NewPreemptionManager(nil, nil, nil, nil),
 				deadlineManager:   deadline.NewDeadlineManager(),
 			}
 			actualResult, actualStatus := edfPreemptiveScheduling.PreFilter(context.TODO(), nil, tt.pod)
@@ -171,11 +170,11 @@ func TestPostFilter(t *testing.T) {
 	}{
 		{
 			name: "found a paused pod with earlier deadline that should be resumed",
-			pod:  makePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", &now, v1.PodPending),
+			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", &now, v1.PodPending),
 			existPods: []*v1.Pod{
-				makePod("t1-p2", "ns1", 50, 1, "1m5s", "t1-p2", "node-a", &minuteAgo, v1.PodPaused),
-				makePod("t1-p3", "ns2", 50, 2, "10s", "t1-p3", "node-a", &now, v1.PodRunning),
-				makePod("t1-p4", "ns2", 50, 2, "10s", "t1-p4", "node-a", &now, v1.PodRunning),
+				util.MakePod("t1-p2", "ns1", 50, 1, "1m5s", "t1-p2", "node-a", &minuteAgo, v1.PodPaused),
+				util.MakePod("t1-p3", "ns2", 50, 2, "10s", "t1-p3", "node-a", &now, v1.PodRunning),
+				util.MakePod("t1-p4", "ns2", 50, 2, "10s", "t1-p4", "node-a", &now, v1.PodRunning),
 			},
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
@@ -188,11 +187,11 @@ func TestPostFilter(t *testing.T) {
 		},
 		{
 			name: "node is unschedulable and unresolvable",
-			pod:  makePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
+			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
 			existPods: []*v1.Pod{
-				makePod("t1-p2", "ns1", 50, 1, "1m5s", "t1-p2", "node-a", nil, v1.PodRunning),
-				makePod("t1-p3", "ns2", 50, 2, "10s", "t1-p3", "node-a", nil, v1.PodRunning),
-				makePod("t1-p4", "ns2", 50, 2, "10s", "t1-p4", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p2", "ns1", 50, 1, "1m5s", "t1-p2", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p3", "ns2", 50, 2, "10s", "t1-p3", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p4", "ns2", 50, 2, "10s", "t1-p4", "node-a", nil, v1.PodRunning),
 			},
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
@@ -205,11 +204,11 @@ func TestPostFilter(t *testing.T) {
 		},
 		{
 			name: "found a pod with later deadline but it cannot yield enough resource",
-			pod:  makePod("t1-p1", "ns1", 50, 4, "10s", "t1-p1", "", nil, v1.PodPending),
+			pod:  util.MakePod("t1-p1", "ns1", 50, 4, "10s", "t1-p1", "", nil, v1.PodPending),
 			existPods: []*v1.Pod{
-				makePod("t1-p2", "ns1", 50, 1, "10s", "t1-p2", "node-a", nil, v1.PodRunning),
-				makePod("t1-p3", "ns2", 50, 2, "20s", "t1-p3", "node-a", nil, v1.PodRunning),
-				makePod("t1-p4", "ns2", 50, 2, "30s", "t1-p4", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p2", "ns1", 50, 1, "10s", "t1-p2", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p3", "ns2", 50, 2, "20s", "t1-p3", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p4", "ns2", 50, 2, "30s", "t1-p4", "node-a", nil, v1.PodRunning),
 			},
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
@@ -222,11 +221,11 @@ func TestPostFilter(t *testing.T) {
 		},
 		{
 			name: "found a pod with later deadline that can yield enough resource",
-			pod:  makePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
+			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
 			existPods: []*v1.Pod{
-				makePod("t1-p2", "ns1", 50, 1, "10s", "t1-p2", "node-a", nil, v1.PodRunning),
-				makePod("t1-p3", "ns2", 50, 2, "20s", "t1-p3", "node-a", nil, v1.PodRunning),
-				makePod("t1-p4", "ns2", 50, 2, "30s", "t1-p4", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p2", "ns1", 50, 1, "10s", "t1-p2", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p3", "ns2", 50, 2, "20s", "t1-p3", "node-a", nil, v1.PodRunning),
+				util.MakePod("t1-p4", "ns2", 50, 2, "30s", "t1-p4", "node-a", nil, v1.PodRunning),
 			},
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
@@ -277,7 +276,8 @@ func TestPostFilter(t *testing.T) {
 
 			nodeLister := informerFactory.Core().V1().Nodes().Lister()
 			podLister := informerFactory.Core().V1().Pods().Lister()
-			preemptionMngr := preemption.NewPreemptionManager(podLister, nodeLister, cs)
+			nodeInfoLister := fwk.SnapshotSharedLister().NodeInfos()
+			preemptionMngr := preemption.NewPreemptionManager(podLister, nodeLister, nodeInfoLister, cs)
 			for _, existingPod := range tt.existPods {
 				if existingPod.Status.Phase == v1.PodPaused {
 					preemptionMngr.AddPausedPod(&preemption.Candidate{NodeName: existingPod.Spec.NodeName, Pod: existingPod})
@@ -307,23 +307,4 @@ func makeRegisteredPlugin() []st.RegisterPluginFunc {
 		}, "Filter", "PreFilter"),
 	}
 	return registeredPlugins
-}
-
-func makePod(podName string, namespace string, memReq int64, cpuReq int64, ddl string, uid string, nodeName string, createdAt *time.Time, phase v1.PodPhase) *v1.Pod {
-	now := time.Now()
-	if createdAt == nil {
-		createdAt = &now
-	}
-	pause := imageutils.GetPauseImageName()
-	pod := st.MakePod().Namespace(namespace).Name(podName).Container(pause).
-		Node(nodeName).UID(uid).ZeroTerminationGracePeriod().UID(podName).
-		CreationTimestamp(metav1.NewTime(*createdAt)).Phase(phase).
-		Annotations(map[string]string{deadline.AnnotationKeyDDL: ddl}).Obj()
-	pod.Spec.Containers[0].Resources = v1.ResourceRequirements{
-		Requests: v1.ResourceList{
-			v1.ResourceMemory: *resource.NewQuantity(memReq, resource.DecimalSI),
-			v1.ResourceCPU:    *resource.NewQuantity(cpuReq, resource.DecimalSI),
-		},
-	}
-	return pod
 }

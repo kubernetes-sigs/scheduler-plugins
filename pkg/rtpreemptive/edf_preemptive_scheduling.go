@@ -57,11 +57,12 @@ func (rp *EDFPreemptiveScheduling) Name() string {
 func New(_ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	podLister := fh.SharedInformerFactory().Core().V1().Pods().Lister()
 	nodeLister := fh.SharedInformerFactory().Core().V1().Nodes().Lister()
+	nodeInfoLister := fh.SnapshotSharedLister().NodeInfos()
 	return &EDFPreemptiveScheduling{
 		fh:                fh,
 		podLister:         podLister,
 		deadlineManager:   deadline.NewDeadlineManager(),
-		preemptionManager: preemption.NewPreemptionManager(podLister, nodeLister, fh.ClientSet()),
+		preemptionManager: preemption.NewPreemptionManager(podLister, nodeLister, nodeInfoLister, fh.ClientSet()),
 		clock:             clock.RealClock{},
 	}, nil
 }

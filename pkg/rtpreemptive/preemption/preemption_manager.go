@@ -13,6 +13,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/deadline"
 )
 
@@ -57,15 +59,17 @@ type preemptionManager struct {
 	deadlineManager deadline.Manager
 	podLister       corelisters.PodLister
 	nodeLister      corelisters.NodeLister
+	nodeInfoLister  framework.NodeInfoLister
 	clientSet       kubernetes.Interface
 }
 
-func NewPreemptionManager(podLister corelisters.PodLister, nodeLister corelisters.NodeLister, clientSet kubernetes.Interface) Manager {
+func NewPreemptionManager(podLister corelisters.PodLister, nodeLister corelisters.NodeLister, nodeInfoLister framework.NodeInfoLister, clientSet kubernetes.Interface) Manager {
 	return &preemptionManager{
 		pausedPods:      gocache.New(time.Second*5, time.Second*5),
 		deadlineManager: deadline.NewDeadlineManager(),
 		podLister:       podLister,
 		nodeLister:      nodeLister,
+		nodeInfoLister:  nodeInfoLister,
 		clientSet:       clientSet,
 	}
 }
@@ -102,11 +106,17 @@ func (m *preemptionManager) GetPausedPodNode(pod *v1.Pod) (*v1.Node, error) {
 }
 
 func (m *preemptionManager) ResumePausedPod(ctx context.Context, pod *v1.Pod) *Candidate {
+	var candidates []*Candidate
 	for key := range m.pausedPods.Items() {
 		namespace, name := parseCacheKey(key)
 		pausedPod, err := m.podLister.Pods(namespace).Get(name)
 		if err != nil {
 			klog.ErrorS(err, "failed to list pod", "pod", klog.KObj(pausedPod))
+			continue
+		}
+		if pausedPod.Status.Phase != v1.PodPaused {
+			klog.InfoS("pod is no longer paused", "pod", klog.KObj(pausedPod))
+			m.RemovePausedPod(pod)
 			continue
 		}
 		pausedPodDDL := m.deadlineManager.GetPodDeadline(pausedPod)
@@ -119,29 +129,70 @@ func (m *preemptionManager) ResumePausedPod(ctx context.Context, pod *v1.Pod) *C
 			klog.ErrorS(err, "failed to get node of paused pod", "pod", klog.KObj(pausedPod))
 			continue
 		}
-		markPodToResume(pausedPod)
-		if err := updatePod(ctx, m.clientSet, pausedPod); err != nil {
-			klog.ErrorS(err, "failed to resume pod", "pod", klog.KObj(pausedPod))
+		if err := m.dryRunResumePod(pod, node); err != nil {
+			klog.ErrorS(err, "failed to dry run resume pod", "pod", klog.KObj(pausedPod))
 			continue
 		}
-		m.RemovePausedPod(pausedPod)
-		return &Candidate{NodeName: node.Name, Pod: pausedPod}
+		candidates = append(candidates, &Candidate{NodeName: node.Name, Pod: pausedPod})
 	}
-	return nil
+
+	if len(candidates) == 0 {
+		return nil
+	}
+	candidate := candidates[0]
+	minDDL := m.deadlineManager.GetPodDeadline(candidates[0].Pod)
+	for _, c := range candidates {
+		ddl := m.deadlineManager.GetPodDeadline(c.Pod)
+		if ddl.Before(minDDL) {
+			minDDL = ddl
+			candidate = c
+		}
+	}
+	markPodToResume(candidate.Pod)
+	if err := updatePod(ctx, m.clientSet, candidate.Pod); err != nil {
+		klog.ErrorS(err, "failed to resume pod", "pod", klog.KObj(candidate.Pod))
+		return nil
+	}
+	m.RemovePausedPod(candidate.Pod)
+	return candidate
 }
 
 func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candidate) error {
 	latestPod, err := m.podLister.Pods(candidate.Pod.Namespace).Get(candidate.Pod.Name)
 	if err != nil {
-		klog.ErrorS(err, "failed to list pod", "pod", klog.KObj(latestPod))
-		return fmt.Errorf("failed to get latest pod: %w", err)
+		msg := "failed to list pod"
+		klog.ErrorS(err, msg, "pod", klog.KObj(latestPod))
+		return fmt.Errorf("%s: %w", msg, err)
 	}
 	markPodToPaused(latestPod)
 	if err := updatePod(ctx, m.clientSet, latestPod); err != nil {
-		klog.ErrorS(err, "failed to pause pod", "pod", klog.KObj(latestPod))
-		return fmt.Errorf("failed to pause pod: %w", err)
+		msg := "failed to pause pod"
+		klog.ErrorS(err, msg, "pod", klog.KObj(latestPod))
+		return fmt.Errorf("%s: %w", msg, err)
 	}
 	m.AddPausedPod(candidate)
+	return nil
+}
+
+func (m preemptionManager) dryRunResumePod(pod *v1.Pod, node *v1.Node) error {
+	nodeInfo, err := m.nodeInfoLister.Get(node.Name)
+	if err != nil {
+		klog.ErrorS(err, "failed to get node info", "node", klog.KObj(node))
+		return err
+	}
+	var runningPods []*v1.Pod
+	for _, podInfo := range nodeInfo.Pods {
+		if podInfo.Pod.Status.Phase == v1.PodRunning {
+			runningPods = append(runningPods, podInfo.Pod)
+		}
+	}
+	nodeInfoExcludePaused := framework.NewNodeInfo(runningPods...)
+	nodeInfoExcludePaused.SetNode(nodeInfo.Node())
+	if insufficientResources := noderesources.Fits(pod, nodeInfoExcludePaused); len(insufficientResources) > 0 {
+		err := errors.New("insufficient resources to resume pod on node")
+		klog.ErrorS(err, "cannot resume pod", "pod", klog.KObj(pod), "node", klog.KObj(node))
+		return err
+	}
 	return nil
 }
 
