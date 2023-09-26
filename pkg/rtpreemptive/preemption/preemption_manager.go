@@ -83,7 +83,7 @@ func (m *preemptionManager) IsPodMarkedPaused(pod *v1.Pod) bool {
 }
 
 func (m *preemptionManager) AddPausedPod(candidate *Candidate) {
-	m.pausedPods.Set(toCacheKey(candidate.Pod), candidate.NodeName, time.Hour)
+	m.pausedPods.Set(toCacheKey(candidate.Pod), candidate.NodeName, -1)
 	m.deadlineManager.AddPodDeadline(candidate.Pod)
 }
 
@@ -114,11 +114,12 @@ func (m *preemptionManager) ResumePausedPod(ctx context.Context, pod *v1.Pod) *C
 			klog.ErrorS(err, "failed to list pod", "pod", klog.KObj(pausedPod))
 			continue
 		}
-		if pausedPod.Status.Phase != v1.PodPaused {
-			klog.InfoS("pod is no longer paused", "pod", klog.KObj(pausedPod))
-			m.RemovePausedPod(pod)
-			continue
-		}
+		// // FIXME: pod might still be in pending state, which means it hasn't been paused yet
+		// if pausedPod.Status.Phase != v1.PodPaused {
+		// 	klog.InfoS("pod is no longer paused", "pod", klog.KObj(pausedPod))
+		// 	m.RemovePausedPod(pod)
+		// 	continue
+		// }
 		pausedPodDDL := m.deadlineManager.GetPodDeadline(pausedPod)
 		podDDL := m.deadlineManager.GetPodDeadline(pod)
 		if podDDL.Before(pausedPodDDL) {
@@ -129,7 +130,7 @@ func (m *preemptionManager) ResumePausedPod(ctx context.Context, pod *v1.Pod) *C
 			klog.ErrorS(err, "failed to get node of paused pod", "pod", klog.KObj(pausedPod))
 			continue
 		}
-		if err := m.dryRunResumePod(pod, node); err != nil {
+		if err := m.dryRunResumePod(pausedPod, node); err != nil {
 			klog.ErrorS(err, "failed to dry run resume pod", "pod", klog.KObj(pausedPod))
 			continue
 		}
@@ -164,6 +165,7 @@ func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candi
 		klog.ErrorS(err, msg, "pod", klog.KObj(latestPod))
 		return fmt.Errorf("%s: %w", msg, err)
 	}
+	// TODO: if pod is already paused, no need to send pause again
 	markPodToPaused(latestPod)
 	if err := updatePod(ctx, m.clientSet, latestPod); err != nil {
 		msg := "failed to pause pod"
@@ -180,13 +182,13 @@ func (m preemptionManager) dryRunResumePod(pod *v1.Pod, node *v1.Node) error {
 		klog.ErrorS(err, "failed to get node info", "node", klog.KObj(node))
 		return err
 	}
-	var runningPods []*v1.Pod
+	var unpausedPods []*v1.Pod
 	for _, podInfo := range nodeInfo.Pods {
-		if podInfo.Pod.Status.Phase == v1.PodRunning {
-			runningPods = append(runningPods, podInfo.Pod)
+		if podInfo.Pod.Status.Phase != v1.PodPaused {
+			unpausedPods = append(unpausedPods, podInfo.Pod)
 		}
 	}
-	nodeInfoExcludePaused := framework.NewNodeInfo(runningPods...)
+	nodeInfoExcludePaused := framework.NewNodeInfo(unpausedPods...)
 	nodeInfoExcludePaused.SetNode(nodeInfo.Node())
 	if insufficientResources := noderesources.Fits(pod, nodeInfoExcludePaused); len(insufficientResources) > 0 {
 		err := errors.New("insufficient resources to resume pod on node")
@@ -211,13 +213,21 @@ func parseCacheKey(key string) (namespace string, name string) {
 }
 
 func markPodToResume(pod *v1.Pod) {
-	annotations := pod.GetAnnotations()
+	annotations := pod.Annotations
+	if annotations == nil {
+		klog.InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
+		annotations = make(map[string]string)
+	}
 	annotations[AnnotationKeyPausePod] = "false"
 	pod.SetAnnotations(annotations)
 }
 
 func markPodToPaused(pod *v1.Pod) {
-	annotations := pod.GetAnnotations()
+	annotations := pod.Annotations
+	if annotations == nil {
+		klog.InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
+		annotations = make(map[string]string)
+	}
 	annotations[AnnotationKeyPausePod] = "true"
 	pod.SetAnnotations(annotations)
 }

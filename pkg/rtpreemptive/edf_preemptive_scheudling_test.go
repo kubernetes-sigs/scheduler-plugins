@@ -121,6 +121,7 @@ func TestLess(t *testing.T) {
 	}
 }
 
+// FIXME: adjust test after moving resume logic
 func TestPreFiter(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
@@ -128,17 +129,22 @@ func TestPreFiter(t *testing.T) {
 		expectedStatusCode framework.Code
 	}{
 		{
-			name:               "pod marked to be paused - unschedulable and unresolvable",
+			name:               "pod marked to be paused",
 			pod:                st.MakePod().UID("pod1").Annotations(map[string]string{preemption.AnnotationKeyPausePod: "true"}).Obj(),
 			expectedStatusCode: framework.UnschedulableAndUnresolvable,
 		},
 		{
-			name:               "pod marked not to be paused - success",
+			name:               "pod is already paused",
+			pod:                st.MakePod().UID("pod1").Annotations(map[string]string{preemption.AnnotationKeyPausePod: "true"}).Phase(v1.PodPaused).Obj(),
+			expectedStatusCode: framework.Success,
+		},
+		{
+			name:               "pod marked not to be paused",
 			pod:                st.MakePod().UID("pod2").Annotations(map[string]string{preemption.AnnotationKeyPausePod: "false"}).Obj(),
 			expectedStatusCode: framework.Success,
 		},
 		{
-			name:               "empty annotations - success",
+			name:               "empty annotations",
 			pod:                st.MakePod().UID("pod3").Obj(),
 			expectedStatusCode: framework.Success,
 		},
@@ -155,10 +161,104 @@ func TestPreFiter(t *testing.T) {
 	}
 }
 
-func TestPostFilter(t *testing.T) {
+// FIXME: adjust test after moving resume logic
+func TestFilter(t *testing.T) {
 	res := map[v1.ResourceName]string{v1.ResourceMemory: "150", v1.ResourceCPU: "5"}
 	now := time.Now()
 	minuteAgo := now.Add(-time.Minute)
+	tests := []struct {
+		name           string
+		pod            *v1.Pod
+		existPods      []*v1.Pod
+		node           *v1.Node
+		expectedStatus *framework.Status
+	}{
+		{
+			name: "found a paused pod with earlier deadline that should be resumed",
+			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", &now, v1.PodPending),
+			existPods: []*v1.Pod{
+				util.MakePod("t1-p2", "ns1", 50, 1, "1m5s", "t1-p2", "node-a", &minuteAgo, v1.PodPaused),
+			},
+			node:           st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			expectedStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, "a paused pod is resumed instead"),
+		},
+		{
+			name: "pod was paused and need to be resumed",
+			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "node-a", &minuteAgo, v1.PodPaused),
+			existPods: []*v1.Pod{
+				util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "node-a", &minuteAgo, v1.PodPaused),
+			},
+			node:           st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			expectedStatus: nil,
+		},
+		{
+			name: "insufficient resources",
+			pod:  util.MakePod("t1-p1", "ns1", 60, 2, "10s", "t1-p1", "", &now, v1.PodPending),
+			existPods: []*v1.Pod{
+				util.MakePod("t1-p2", "ns1", 100, 4, "20s", "t1-p2", "node-a", &minuteAgo, v1.PodRunning),
+			},
+			node:           st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			expectedStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu", "Insufficient memory"),
+		},
+		{
+			name: "enough resources",
+			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", &now, v1.PodPending),
+			existPods: []*v1.Pod{
+				util.MakePod("t1-p2", "ns1", 100, 4, "20s", "t1-p2", "node-a", &minuteAgo, v1.PodRunning),
+			},
+			node:           st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			expectedStatus: nil,
+		},
+		{
+			name:           "no other pods running",
+			pod:            util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", &now, v1.PodPending),
+			existPods:      []*v1.Pod{},
+			node:           st.MakeNode().Name("node-a").Capacity(res).Obj(),
+			expectedStatus: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			nodeInfo := framework.NewNodeInfo(tt.existPods...)
+			nodeInfo.SetNode(tt.node)
+
+			podItems := []v1.Pod{}
+			for _, pod := range tt.existPods {
+				podItems = append(podItems, *pod)
+			}
+			cs := clientsetfake.NewSimpleClientset(&v1.PodList{Items: podItems})
+			sharedLister := testutil.NewFakeSharedLister(tt.existPods, []*v1.Node{tt.node})
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			informerFactory.Core().V1().Nodes().Informer().GetStore().Add(tt.node)
+			podInformer := informerFactory.Core().V1().Pods().Informer()
+			podInformer.GetStore().Add(tt.pod)
+			for _, pod := range tt.existPods {
+				podInformer.GetStore().Add(pod)
+			}
+			nodeLister := informerFactory.Core().V1().Nodes().Lister()
+			podLister := informerFactory.Core().V1().Pods().Lister()
+			nodeInfoLister := sharedLister.NodeInfos()
+			preemptionMngr := preemption.NewPreemptionManager(podLister, nodeLister, nodeInfoLister, cs)
+			for _, existingPod := range tt.existPods {
+				if existingPod.Status.Phase == v1.PodPaused {
+					preemptionMngr.AddPausedPod(&preemption.Candidate{NodeName: existingPod.Spec.NodeName, Pod: existingPod})
+				}
+			}
+			scheduler := &EDFPreemptiveScheduling{
+				preemptionManager: preemptionMngr,
+			}
+			state := framework.NewCycleState()
+			actualStatus := scheduler.Filter(ctx, state, tt.pod, nodeInfo)
+			assert.Equal(t, tt.expectedStatus, actualStatus)
+		})
+	}
+}
+
+func TestPostFilter(t *testing.T) {
+	res := map[v1.ResourceName]string{v1.ResourceMemory: "150", v1.ResourceCPU: "5"}
 	tests := []struct {
 		name                  string
 		pod                   *v1.Pod
@@ -168,23 +268,6 @@ func TestPostFilter(t *testing.T) {
 		expectedResult        *framework.PostFilterResult
 		expectedStatus        *framework.Status
 	}{
-		{
-			name: "found a paused pod with earlier deadline that should be resumed",
-			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", &now, v1.PodPending),
-			existPods: []*v1.Pod{
-				util.MakePod("t1-p2", "ns1", 50, 1, "1m5s", "t1-p2", "node-a", &minuteAgo, v1.PodPaused),
-				util.MakePod("t1-p3", "ns2", 50, 2, "10s", "t1-p3", "node-a", &now, v1.PodRunning),
-				util.MakePod("t1-p4", "ns2", 50, 2, "10s", "t1-p4", "node-a", &now, v1.PodRunning),
-			},
-			nodes: []*v1.Node{
-				st.MakeNode().Name("node-a").Capacity(res).Obj(),
-			},
-			filteredNodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
-			expectedResult: nil,
-			expectedStatus: framework.NewStatus(framework.Unschedulable, "a paused pod is resumed instead"),
-		},
 		{
 			name: "node is unschedulable and unresolvable",
 			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
@@ -276,17 +359,10 @@ func TestPostFilter(t *testing.T) {
 
 			nodeLister := informerFactory.Core().V1().Nodes().Lister()
 			podLister := informerFactory.Core().V1().Pods().Lister()
-			nodeInfoLister := fwk.SnapshotSharedLister().NodeInfos()
-			preemptionMngr := preemption.NewPreemptionManager(podLister, nodeLister, nodeInfoLister, cs)
-			for _, existingPod := range tt.existPods {
-				if existingPod.Status.Phase == v1.PodPaused {
-					preemptionMngr.AddPausedPod(&preemption.Candidate{NodeName: existingPod.Spec.NodeName, Pod: existingPod})
-				}
-			}
 			scheduler := &EDFPreemptiveScheduling{
 				fh:                fwk,
 				deadlineManager:   deadline.NewDeadlineManager(),
-				preemptionManager: preemptionMngr,
+				preemptionManager: preemption.NewPreemptionManager(podLister, nodeLister, nil, cs),
 				podLister:         podLister,
 			}
 			state := framework.NewCycleState()

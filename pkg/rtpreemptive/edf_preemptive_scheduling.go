@@ -31,6 +31,8 @@ var (
 	_ framework.QueueSortPlugin = &EDFPreemptiveScheduling{}
 	// check if pod is marked as paused, set pod as pending
 	_ framework.PreFilterPlugin = &EDFPreemptiveScheduling{}
+	// check if pod is marked as paused, set pod as pending
+	_ framework.FilterPlugin = &EDFPreemptiveScheduling{}
 	// pause pod to be preempted or resume a paused pod and reject the current one
 	// TODO: for starting point, assume tasks have equal priority
 	_ framework.PostFilterPlugin = &EDFPreemptiveScheduling{}
@@ -92,7 +94,11 @@ func (rp *EDFPreemptiveScheduling) Less(podInfo1, podInfo2 *framework.QueuedPodI
 // checks if the pod to schedule is already marked as paused,
 // if so let it to fail scheduling
 func (rp *EDFPreemptiveScheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	if toPause := rp.preemptionManager.IsPodMarkedPaused(pod); toPause {
+	// FIXME, a pod marked to be paused may not have been paused yet
+	// we either make the assumption that we cannot pass this metadata from yaml
+	// or we need to find a way to find out this was marked by scheduler instead of a user
+	// or find a way to not differentiate those two and still make it work?
+	if toPause := rp.preemptionManager.IsPodMarkedPaused(pod); pod.Status.Phase != v1.PodPaused && toPause {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Pod %v/%v is rejected because pod is marked to be paused", pod.Namespace, pod.Name))
 	}
 	rp.deadlineManager.AddPodDeadline(pod)
@@ -116,24 +122,65 @@ func (rp *EDFPreemptiveScheduling) RemovePod(ctx context.Context, state *framewo
 	return framework.NewStatus(framework.Success, "")
 }
 
+func (rp *EDFPreemptiveScheduling) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	// TODO: resume pod should also take into consideration of the node
+	// when a pod need to be resumed is on another, then we could schedule the pod else where
+	// but we need handle the edge case when the pod to be scheduled is the paused pod itself which need to be resumed
+	// in this case, we might need to use preFilter to mark those nodes unschedulable and unresolvable
+	//
+	// So, if its the paused pod itself that need to be resumed, we skip the rest scheduling all together
+	// Otherwise, loop through all nodes, and find if there are pods on that node need to be resumed
+	// if so, we mark that node as unschedulable and unresolvable
+	//
+	// Perhaps we need to handle paused pod in pre-filter
+	if len(pod.Spec.NodeName) > 0 && pod.Spec.NodeName != nodeInfo.Node().Name {
+		// pod is already assigned to a node and it's not the same as given node
+		// this happens when a paused pod re-enters the scheduling queue
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable)
+	}
+	if candidate := rp.preemptionManager.ResumePausedPod(ctx, pod); candidate != nil {
+		if candidate.Pod.UID == pod.UID {
+			klog.InfoS("pod was paused and now is resumed", "pod", klog.KObj(pod), "node", candidate.NodeName)
+			return framework.NewStatus(framework.Success, "pod was paused and now is resumed")
+		}
+		klog.ErrorS(errors.New("pod unschedulable"), "a paused pod need to be resumed", "podToResume", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", candidate.NodeName)
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "a paused pod is resumed instead")
+	}
+	var unpausedPods []*v1.Pod
+	for _, pod := range nodeInfo.Pods {
+		if pod.Pod.Status.Phase != v1.PodPaused {
+			klog.InfoS(">>>> Filter: found unpaused pod", "pod", klog.KObj(pod.Pod), "node", klog.KObj(nodeInfo.Node()))
+			unpausedPods = append(unpausedPods, pod.Pod)
+		}
+	}
+	nodeWithExcludePausedPods := framework.NewNodeInfo(unpausedPods...)
+	nodeWithExcludePausedPods.SetNode(nodeInfo.Node())
+	insufficientResources := noderesources.Fits(pod, nodeWithExcludePausedPods)
+	if len(insufficientResources) != 0 {
+		// We will keep all failure reasons.
+		failureReasons := make([]string, 0, len(insufficientResources))
+		for i := range insufficientResources {
+			failureReasons = append(failureReasons, insufficientResources[i].Reason)
+		}
+		return framework.NewStatus(framework.Unschedulable, failureReasons...)
+	}
+	return nil
+}
+
 // PostFilter plugin is called when no node is found schedulable at Filter stage
 // here it attempt to preempt a pod on available nodes
 // if preemption is successful, return with nominated node and add pod to paused map
 func (rp *EDFPreemptiveScheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	allNode, err := rp.fh.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
-		klog.ErrorS(err, "failed to list all nodes")
+		klog.ErrorS(err, "failed to list all nodes", "pod", klog.KObj(pod))
 		return nil, framework.AsStatus(err)
-	}
-	if candidate := rp.preemptionManager.ResumePausedPod(ctx, pod); candidate != nil {
-		klog.ErrorS(errors.New("pod unschedulable"), "a paused pod need to be resumed", "podToSchedule", klog.KObj(pod), "podToResume", klog.KObj(candidate.Pod), "node", candidate.NodeName)
-		return nil, framework.NewStatus(framework.Unschedulable, "a paused pod is resumed instead")
 	}
 	var candidates []*preemption.Candidate
 	for _, nodeInfo := range allNode {
 		// skip node where preemption is not helpful
 		if filteredNodeStatusMap[nodeInfo.Node().Name].Code() == framework.UnschedulableAndUnresolvable {
-			klog.InfoS("skipping unschedulable and unresolvable node", "node", klog.KObj(nodeInfo.Node()))
+			klog.InfoS("skipping unschedulable and unresolvable node", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
 			continue
 		}
 		candidate := rp.findCandidateOnNode(pod, nodeInfo)
@@ -143,12 +190,12 @@ func (rp *EDFPreemptiveScheduling) PostFilter(ctx context.Context, state *framew
 	}
 	candidate := rp.selectCandidate(candidates)
 	if candidate == nil {
-		klog.ErrorS(errors.New("no preemptible candidates"), "select candidate failed")
+		klog.ErrorS(errors.New("no preemptible candidates"), "select candidate failed", "pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "no preemptible candidates found")
 	}
-	klog.InfoS("found candidate pod to pause on node", "candidate", klog.KObj(candidate.Pod), "node", candidate.NodeName)
+	klog.InfoS("found candidate pod to pause on node", "candidate", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", candidate.NodeName)
 	if err := rp.preemptionManager.PauseCandidate(ctx, candidate); err != nil {
-		klog.ErrorS(err, "failed to pause pod on node", "candidate", klog.KObj(candidate.Pod), "node", candidate.NodeName)
+		klog.ErrorS(err, "failed to pause pod on node", "candidate", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", candidate.NodeName)
 		return nil, framework.AsStatus(err)
 	}
 	return framework.NewPostFilterResultWithNominatedNode(candidate.NodeName), framework.NewStatus(framework.Success)
@@ -175,7 +222,7 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 	maxDDL := podDDL
 
 	var candidatePod *v1.Pod
-	var runningPods []*v1.Pod
+	var unpausedPods []*v1.Pod
 	// find latest deadline among all running pods and update candidate accordingly
 	for _, podInfo := range nodeInfo.Pods {
 		p, err := rp.podLister.Pods(podInfo.Pod.Namespace).Get(podInfo.Pod.Name)
@@ -183,8 +230,9 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 			klog.ErrorS(err, "Getting updated pod from node", "pod", klog.KRef(podInfo.Pod.Namespace, podInfo.Pod.Name), "node", nodeInfo.Node().Name)
 			p = podInfo.Pod // fallback to pod from nodeInfo
 		}
-		if p.Status.Phase == v1.PodRunning {
-			runningPods = append(runningPods, p)
+		klog.InfoS("checking pods", "pod", klog.KObj(p), "phase", p.Status.Phase, "node", klog.KObj(nodeInfo.Node()))
+		if p.Status.Phase != v1.PodPaused {
+			unpausedPods = append(unpausedPods, p)
 			ddl := rp.deadlineManager.GetPodDeadline(p)
 			if ddl.After(maxDDL) {
 				maxDDL = ddl
@@ -199,7 +247,7 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 
 	// check if the preemptible pod is excluded it would yield enough resource to run the current pod
 	var podsExcludeCandidate []*v1.Pod
-	for _, p := range runningPods {
+	for _, p := range unpausedPods {
 		if p.UID != candidatePod.UID {
 			podsExcludeCandidate = append(podsExcludeCandidate, p)
 		}
@@ -208,7 +256,7 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 	nodeAfterPreemption.SetNode(nodeInfo.Node())
 	insufficientResources := noderesources.Fits(pod, nodeAfterPreemption)
 	if len(insufficientResources) > 0 {
-		klog.InfoS("there is not enough resource to run pod on node even after preemption", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()), "candidate", klog.KObj(candidatePod))
+		klog.InfoS("there is not enough resource to run pod on node even after preemption", "candidate", klog.KObj(candidatePod), "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
 		return nil
 	}
 	return candidatePod

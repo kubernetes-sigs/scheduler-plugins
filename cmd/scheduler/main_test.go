@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
 	"sigs.k8s.io/scheduler-plugins/pkg/qos"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
@@ -451,6 +452,32 @@ profiles:
 		t.Fatal(err)
 	}
 
+	// edf preemptive schduler plugin config
+	edfPreemptiveConfigWithArgsFile := filepath.Join(tmpDir, "edfPreemptive.yaml")
+	if err := os.WriteFile(edfPreemptiveConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    preFilter:
+      enabled:
+      - name: EDFPreemptiveScheduling
+    postFilter:
+      enabled:
+      - name: EDFPreemptiveScheduling
+      disabled:
+      - name: "*"
+    queueSort:
+      enabled:
+      - name: EDFPreemptiveScheduling
+      disabled:
+      - name: "*"
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
 	if err := os.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
@@ -746,6 +773,31 @@ profiles:
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: networkoverhead.Name, Weight: 1}}},
 					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
 					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - EDFPreemptiveScheduling with args",
+			flags:           []string{"--config", edfPreemptiveConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(rtpreemptive.Name, rtpreemptive.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
+					QueueSort: config.PluginSet{
+						Enabled: []config.Plugin{{Name: rtpreemptive.Name}},
+					},
+					Bind: defaults.ExpandedPluginsV1.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: rtpreemptive.Name}),
+					},
+					Filter: defaults.ExpandedPluginsV1.Filter,
+					PostFilter: config.PluginSet{
+						Enabled: []config.Plugin{{Name: rtpreemptive.Name}},
+					},
+					PreScore: defaults.ExpandedPluginsV1.PreScore,
+					Score:    defaults.ExpandedPluginsV1.Score,
+					Reserve:  defaults.ExpandedPluginsV1.Reserve,
+					PreBind:  defaults.ExpandedPluginsV1.PreBind,
 				},
 			},
 		},

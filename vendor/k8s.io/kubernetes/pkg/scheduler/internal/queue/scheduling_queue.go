@@ -524,11 +524,13 @@ func (p *PriorityQueue) AddUnschedulableIfNotPresent(pInfo *framework.QueuedPodI
 		if err := p.podBackoffQ.Add(pInfo); err != nil {
 			return fmt.Errorf("error adding pod %v to the backoff queue: %v", klog.KObj(pod), err)
 		}
-		klog.V(5).InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pod), "event", ScheduleAttemptFailure, "queue", backoffQName)
+		// TODO: revert back to log level 5
+		klog.InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pod), "event", ScheduleAttemptFailure, "queue", backoffQName)
 		metrics.SchedulerQueueIncomingPods.WithLabelValues("backoff", ScheduleAttemptFailure).Inc()
 	} else {
 		p.unschedulablePods.addOrUpdate(pInfo)
-		klog.V(5).InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pod), "event", ScheduleAttemptFailure, "queue", unschedulablePods)
+		// TODO: revert back to log level 5
+		klog.InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pod), "event", ScheduleAttemptFailure, "queue", unschedulablePods)
 		metrics.SchedulerQueueIncomingPods.WithLabelValues("unschedulable", ScheduleAttemptFailure).Inc()
 
 	}
@@ -788,14 +790,16 @@ func (p *PriorityQueue) movePodsToActiveOrBackoffQueue(podInfoList []*framework.
 			if err := p.podBackoffQ.Add(pInfo); err != nil {
 				klog.ErrorS(err, "Error adding pod to the backoff queue", "pod", klog.KObj(pod))
 			} else {
-				klog.V(5).InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pInfo.Pod), "event", event, "queue", backoffQName)
+				// TODO: revert log level to 5
+				klog.InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pInfo.Pod), "event", event, "queue", backoffQName)
 				metrics.SchedulerQueueIncomingPods.WithLabelValues("backoff", event.Label).Inc()
 				p.unschedulablePods.delete(pod, pInfo.Gated)
 			}
 		} else {
 			gated := pInfo.Gated
 			if added, _ := p.addToActiveQ(pInfo); added {
-				klog.V(5).InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pInfo.Pod), "event", event, "queue", activeQName)
+				// TODO: revert log level to 5
+				klog.InfoS("Pod moved to an internal scheduling queue", "pod", klog.KObj(pInfo.Pod), "event", event, "queue", activeQName)
 				activated = true
 				metrics.SchedulerQueueIncomingPods.WithLabelValues("active", event.Label).Inc()
 				p.unschedulablePods.delete(pod, gated)

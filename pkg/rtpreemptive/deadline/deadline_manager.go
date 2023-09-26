@@ -14,7 +14,7 @@ const (
 	// AnnotationKeyDDL represents the relative deadline of a program
 	AnnotationKeyDDL = AnnotationKeyPrefix + "ddl"
 	// default relative deadline 1 month
-	defaultDDLRelative = time.Hour * 24 * 30
+	defaultDDLRelative = 0 * time.Second
 )
 
 type Manager interface {
@@ -39,22 +39,22 @@ func NewDeadlineManager() Manager {
 func (m *deadlineManager) ParsePodDeadline(pod *v1.Pod) time.Time {
 	creationTime := pod.CreationTimestamp
 	if creationTime.IsZero() {
-		klog.Warningf("invalid pod creation time, using current timestamp and default deadline %s", defaultDDLRelative)
+		klog.ErrorS(nil, "invalid pod creation time, using current timestamp and default deadline", "default", defaultDDLRelative, "pod", klog.KObj(pod))
 		return time.Now().Add(defaultDDLRelative)
 	}
 	defaultDDL := creationTime.Add(defaultDDLRelative)
 	ddlStr, ok := pod.Annotations[AnnotationKeyDDL]
 	if !ok {
-		klog.Warningf("deadline not defined in pod annotations, using default %v", defaultDDLRelative)
+		klog.ErrorS(nil, "deadline not defined in pod annotations, using default", "default", defaultDDLRelative, "pod", klog.KObj(pod))
 		return defaultDDL
 	}
 	ddl, err := time.ParseDuration(ddlStr)
 	if err != nil {
-		klog.Warningf("failed to parse deadline defined with key '%s', using default %v: %s", AnnotationKeyDDL, defaultDDLRelative, err.Error())
+		klog.ErrorS(err, "failed to parse deadline, using default", "default", defaultDDLRelative, "pod", klog.KObj(pod))
 		return defaultDDL
 	}
 	if ddl < 0 {
-		klog.Warningf("deadline defined with key '%s' is < 0, using default %v", AnnotationKeyDDL, defaultDDLRelative)
+		klog.ErrorS(nil, "deadline defined is < 0, using default", "default", defaultDDLRelative, "pod", klog.KObj(pod))
 		return defaultDDL
 	}
 	return creationTime.Add(ddl)
