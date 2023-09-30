@@ -2,107 +2,241 @@ package preemption
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
+	gocache "github.com/patrickmn/go-cache"
+	"github.com/stretchr/testify/suite"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/deadline"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/priorityqueue"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/util"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
-func TestResumePausedPod(t *testing.T) {
-	res := map[v1.ResourceName]string{v1.ResourceMemory: "150", v1.ResourceCPU: "5"}
+var (
+	deadlineManager = deadline.NewDeadlineManager()
+	priorityFuncEDF = func(pod *v1.Pod) int64 {
+		ddl := deadlineManager.GetPodDeadline(pod)
+		return -ddl.Unix()
+	}
+	res       = map[v1.ResourceName]string{v1.ResourceMemory: "100", v1.ResourceCPU: "2"}
+	pausedPod = []*v1.Pod{
+		util.MakePod("p1", "ns1", 50, 1, "30s", "ns1-p1", "node-1", nil, v1.PodPaused, "true"),
+		util.MakePod("p4", "ns2", 50, 1, "10s", "ns2-p4", "node-2", nil, v1.PodPaused, "true"),
+		util.MakePod("p5", "ns1", 50, 1, "30s", "ns1-p5", "node-2", nil, v1.PodPaused, "true"),
+	}
+	existPods = append([]*v1.Pod{
+		util.MakePod("p2", "ns1", 50, 2, "5s", "ns1-p2", "node-1", nil, v1.PodRunning, ""),
+		util.MakePod("p3", "ns1", 50, 1, "20s", "ns1-p3", "node-2", nil, v1.PodRunning, ""),
+	}, pausedPod...)
+	podsToSchedule = []*v1.Pod{
+		util.MakePod("p6", "ns1", 50, 1, "8s", "ns1-p6", "", nil, v1.PodPending, ""),       // pending pod to be scheduled
+		util.MakePod("p7", "ns1", 50, 1, "8s", "ns1-p7", "node-1", nil, v1.PodRunning, ""), // pod to be paused
+	}
+	existNodes = []*v1.Node{
+		st.MakeNode().Name("node-1").Capacity(res).Obj(),
+		st.MakeNode().Name("node-2").Capacity(res).Obj(),
+		st.MakeNode().Name("node-3").Capacity(res).Obj(),
+	}
+)
+
+type PreemptionManagerTestSuite struct {
+	suite.Suite
+	clientSet       *clientsetfake.Clientset
+	informerFactory informers.SharedInformerFactory
+	sharedLister    framework.SharedLister
+	manager         *preemptionManager
+}
+
+func TestPreemptionManagerTestSuite(t *testing.T) {
+	suite.Run(t, new(PreemptionManagerTestSuite))
+}
+
+func (s *PreemptionManagerTestSuite) SetupSuite() {
+	var podItems []v1.Pod
+
+	for _, pod := range append(existPods, podsToSchedule...) {
+		podItems = append(podItems, *pod)
+	}
+	cs := clientsetfake.NewSimpleClientset(&v1.PodList{Items: podItems})
+	s.sharedLister = testutil.NewFakeSharedLister(existPods, existNodes)
+	s.informerFactory = informers.NewSharedInformerFactory(cs, 0)
+	podInformer := s.informerFactory.Core().V1().Pods().Informer()
+	for _, pod := range append(existPods, podsToSchedule...) {
+		podInformer.GetStore().Add(pod)
+	}
+	nodeInformer := s.informerFactory.Core().V1().Nodes().Informer()
+	for _, node := range existNodes {
+		nodeInformer.GetStore().Add(node)
+	}
+	s.clientSet = cs
+}
+
+func (s *PreemptionManagerTestSuite) SetupTest() {
+	podLister := s.informerFactory.Core().V1().Pods().Lister()
+	nodeLister := s.informerFactory.Core().V1().Nodes().Lister()
+	nodeInfoLister := s.sharedLister.NodeInfos()
+	s.manager = &preemptionManager{
+		pausedPods:      gocache.New(time.Hour*5, time.Second*5),
+		deadlineManager: deadline.NewDeadlineManager(),
+		podLister:       podLister,
+		nodeLister:      nodeLister,
+		nodeInfoLister:  nodeInfoLister,
+		clientSet:       s.clientSet,
+		priorityFunc:    priorityFuncEDF,
+	}
+	for _, pod := range existPods {
+		if pod.Status.Phase == v1.PodPaused {
+			c := &Candidate{NodeName: pod.Spec.NodeName, Pod: pod}
+			s.manager.addCandidate(c)
+		}
+	}
+}
+
+func (s *PreemptionManagerTestSuite) TestIsPodMarkedPaused() {
+	pod1 := util.MakePod("p1", "ns1", 0, 0, "12s", "uid1", "node-1", nil, v1.PodRunning, "true")
+	pod2 := util.MakePod("p2", "ns1", 0, 0, "10s", "uid2", "node-2", nil, v1.PodRunning, "false")
+	pod3 := util.MakePod("p3", "ns1", 0, 0, "9s", "uid3", "node-3", nil, v1.PodRunning, "")
+	s.Equal(true, s.manager.IsPodMarkedPaused(pod1))
+	s.Equal(false, s.manager.IsPodMarkedPaused(pod2))
+	s.Equal(false, s.manager.IsPodMarkedPaused(pod3))
+}
+
+func (s *PreemptionManagerTestSuite) TestGetPausedCandidateOnNode() {
 	for _, tt := range []struct {
-		name                    string
-		pod                     *v1.Pod
-		existPods               []*v1.Pod
-		nodes                   []*v1.Node
-		expectedCandidateNil    bool
-		expectedCandidateNode   string
-		expectedCandidatePodUID types.UID
+		name              string
+		nodeName          string
+		expectedCandidate *Candidate
 	}{
 		{
-			name: "found candidate pod to resume",
-			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
-			existPods: []*v1.Pod{
-				util.MakePod("t1-p2", "ns1", 50, 1, "5s", "t1-p2", "node-a", nil, v1.PodPaused),
-				util.MakePod("t1-p3", "ns2", 50, 2, "20s", "t1-p3", "node-a", nil, v1.PodRunning),
-				util.MakePod("t1-p4", "ns2", 50, 2, "30s", "t1-p4", "node-a", nil, v1.PodRunning),
-			},
-			nodes: []*v1.Node{
-				st.MakeNode().Name("node-a").Capacity(res).Obj(),
-			},
-			expectedCandidateNode:   "node-a",
-			expectedCandidatePodUID: "t1-p2",
+			name:              "node not found",
+			nodeName:          "node-abc",
+			expectedCandidate: nil,
 		},
 		{
-			name: "found mutilple candidate pod to resume",
-			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
-			existPods: []*v1.Pod{
-				util.MakePod("t1-p2", "ns1", 50, 1, "10s", "t1-p2", "node-a", nil, v1.PodPaused),
-				util.MakePod("t1-p3", "ns2", 50, 2, "8s", "t1-p3", "node-b", nil, v1.PodPaused),
-				util.MakePod("t1-p4", "ns2", 50, 2, "6s", "t1-p4", "node-a", nil, v1.PodPaused),
-				util.MakePod("t1-p5", "ns2", 50, 2, "7s", "t1-p5", "node-a", nil, v1.PodRunning),
-			},
-			nodes: []*v1.Node{
-				st.MakeNode().Name("node-a").Capacity(res).Obj(),
-				st.MakeNode().Name("node-b").Capacity(res).Obj(),
-			},
-			expectedCandidateNode:   "node-a",
-			expectedCandidatePodUID: "t1-p4",
+			name:              "no paused pod on node",
+			nodeName:          "node-3",
+			expectedCandidate: nil,
 		},
 		{
-			name: "not enought resource to resume pod",
-			pod:  util.MakePod("t1-p1", "ns1", 50, 1, "10s", "t1-p1", "", nil, v1.PodPending),
-			existPods: []*v1.Pod{
-				util.MakePod("t1-p2", "ns1", 50, 1, "5s", "t1-p2", "node-a", nil, v1.PodPaused),
-				util.MakePod("t1-p3", "ns2", 50, 1, "6s", "t1-p3", "node-a", nil, v1.PodRunning),
-				util.MakePod("t1-p4", "ns2", 50, 2, "7s", "t1-p4", "node-a", nil, v1.PodRunning),
-				util.MakePod("t1-p5", "ns2", 50, 2, "7s", "t1-p5", "node-a", nil, v1.PodRunning),
-			},
-			nodes: []*v1.Node{
-				st.MakeNode().Name("node-a").Capacity(res).Obj(),
-			},
-			expectedCandidateNil: true,
+			name:              "get pod with highest priority correctly on node-2",
+			nodeName:          "node-2",
+			expectedCandidate: &Candidate{Pod: pausedPod[1], NodeName: "node-2"},
+		},
+		{
+			name:              "get pod with highest priority correctly on node-1",
+			nodeName:          "node-1",
+			expectedCandidate: &Candidate{Pod: pausedPod[0], NodeName: "node-1"},
 		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			podItems := []v1.Pod{}
-			for _, pod := range tt.existPods {
-				podItems = append(podItems, *pod)
-			}
-			cs := clientsetfake.NewSimpleClientset(&v1.PodList{Items: podItems})
-			informerFactory := informers.NewSharedInformerFactory(cs, 0)
-			podInformer := informerFactory.Core().V1().Pods().Informer()
-			podInformer.GetStore().Add(tt.pod)
-			for _, pod := range tt.existPods {
-				podInformer.GetStore().Add(pod)
-			}
-			nodeInformer := informerFactory.Core().V1().Nodes().Informer()
-			for _, node := range tt.nodes {
-				nodeInformer.GetStore().Add(node)
-			}
-			nodeLister := informerFactory.Core().V1().Nodes().Lister()
-			podLister := informerFactory.Core().V1().Pods().Lister()
-			sharedLister := testutil.NewFakeSharedLister(tt.existPods, tt.nodes)
-			nodeInfoLister := sharedLister.NodeInfos()
-			manager := NewPreemptionManager(podLister, nodeLister, nodeInfoLister, cs)
-			for _, existingPod := range tt.existPods {
-				if existingPod.Status.Phase == v1.PodPaused {
-					manager.AddPausedPod(&Candidate{NodeName: existingPod.Spec.NodeName, Pod: existingPod})
+		s.Run(tt.name, func() {
+			s.Equal(tt.expectedCandidate, s.manager.GetPausedCandidateOnNode(context.Background(), tt.nodeName))
+		})
+	}
+}
+
+func (s *PreemptionManagerTestSuite) TestResumePod() {
+	for _, tt := range []struct {
+		name              string
+		candidate         *Candidate
+		expectedErr       error
+		expectedCandidate *Candidate
+	}{
+		{
+			name:              "pod not bound to node",
+			candidate:         &Candidate{Pod: podsToSchedule[0], NodeName: "node-1"},
+			expectedErr:       ErrPodNotBoundToNode,
+			expectedCandidate: nil,
+		},
+		{
+			name:              "pod not paused",
+			candidate:         &Candidate{Pod: podsToSchedule[1], NodeName: "node-1"},
+			expectedErr:       ErrPodNotPaused,
+			expectedCandidate: nil,
+		},
+		{
+			name:              "insufficient resources to resume",
+			candidate:         &Candidate{Pod: pausedPod[0], NodeName: "node-1"},
+			expectedErr:       errors.New("failed to dry run resume pod: insufficient resources to resume pod on node"),
+			expectedCandidate: nil,
+		},
+		{
+			name:              "paused pod not found",
+			candidate:         &Candidate{Pod: pausedPod[0], NodeName: "node-3"},
+			expectedErr:       ErrPodNotFound,
+			expectedCandidate: nil,
+		},
+		{
+			name:              "paused pod resumed successfully",
+			candidate:         &Candidate{Pod: pausedPod[1], NodeName: "node-2"},
+			expectedErr:       nil,
+			expectedCandidate: &Candidate{Pod: pausedPod[1], NodeName: "node-2"},
+		},
+	} {
+		s.Run(tt.name, func() {
+			s.SetupTest()
+			c, err := s.manager.ResumeCandidate(context.Background(), tt.candidate)
+			if tt.expectedErr == nil {
+				s.NoError(err)
+			} else {
+				s.EqualError(err, tt.expectedErr.Error())
+				if tt.expectedCandidate == nil {
+					s.Nil(c)
+				} else {
+					s.Equal(tt.candidate, c)
+					q, _ := s.manager.pausedPods.Get(c.NodeName)
+					s.Nil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
 				}
 			}
+		})
+	}
+}
 
-			actualCondidate := manager.ResumePausedPod(context.TODO(), tt.pod)
-			if tt.expectedCandidateNil {
-				assert.Nil(t, actualCondidate)
+func (s *PreemptionManagerTestSuite) TestPauseCandidate() {
+	for _, tt := range []struct {
+		name              string
+		candidate         *Candidate
+		expectedErr       error
+		expectedCandidate *Candidate
+	}{
+		{
+			name:              "pod failed to be paused as it is already paused",
+			candidate:         &Candidate{Pod: pausedPod[0]},
+			expectedErr:       ErrPodAlreadyPaused,
+			expectedCandidate: nil,
+		},
+		{
+			name:              "pod failed to be paused as it is pending",
+			candidate:         &Candidate{Pod: podsToSchedule[0]},
+			expectedErr:       ErrPodNotBoundToNode,
+			expectedCandidate: nil,
+		},
+		{
+			name:              "pod paused successfully",
+			candidate:         &Candidate{Pod: podsToSchedule[1]},
+			expectedErr:       nil,
+			expectedCandidate: &Candidate{Pod: podsToSchedule[1]},
+		},
+	} {
+		s.Run(tt.name, func() {
+			c, err := s.manager.PauseCandidate(context.Background(), tt.candidate)
+			if tt.expectedErr == nil {
+				s.NoError(err)
 			} else {
-				assert.Equal(t, tt.expectedCandidateNode, actualCondidate.NodeName)
-				assert.Equal(t, tt.expectedCandidatePodUID, actualCondidate.Pod.UID)
+				s.EqualError(err, tt.expectedErr.Error())
+				if tt.expectedCandidate == nil {
+					s.Nil(c)
+				} else {
+					s.Equal(tt.candidate, c)
+					q, _ := s.manager.pausedPods.Get(c.NodeName)
+					s.NotNil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
+				}
 			}
 		})
 	}

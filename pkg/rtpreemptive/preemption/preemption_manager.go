@@ -15,18 +15,17 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/annotations"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/deadline"
-)
-
-const (
-	// AnnotationKeyPrefix is the prefix of the annotation key
-	AnnotationKeyPrefix = "rt-preemptive.scheduling.x-k8s.io/"
-	// AnnotationKeyPausePod represents whether or not a pod is marked to be paused
-	AnnotationKeyPausePod = AnnotationKeyPrefix + "pause-pod"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/priorityqueue"
 )
 
 var (
-	ErrPodNotFound = errors.New("pod not found in cache")
+	ErrPodNotFound        = errors.New("pod not found in cache")
+	ErrPodNotBoundToNode  = errors.New("pod is not bound to node")
+	ErrPodNotPaused       = errors.New("pod is not paused")
+	ErrPodAlreadyPaused   = errors.New("pod is already paused")
+	ErrPodCannotBeResumed = errors.New("pod cannot be resumed")
 )
 
 type Candidate struct {
@@ -37,21 +36,19 @@ type Candidate struct {
 type Manager interface {
 	// IsPodMarkedPaused checks if a pod is marked to be paused
 	IsPodMarkedPaused(pod *v1.Pod) bool
-	// AddPausedPod registers a candidate pod, candidate is assumed to be paused
-	AddPausedPod(candidate *Candidate)
-	// RemovePausedPod deregisters a paused pod
-	RemovePausedPod(pod *v1.Pod)
-	// GetPausedPodNode returns the node of a paused pod
-	GetPausedPodNode(pod *v1.Pod) (*v1.Node, error)
-	// PausePod checks if a currently paused pod should be resumed, then perform:
-	//	1. update it to be resumed
-	//	2. remove it from paused pod list
-	//	3. return candidate pod
-	// otherwise return nil
-	ResumePausedPod(ctx context.Context, pod *v1.Pod) *Candidate
-	// PauseCandidate set a candidate pod to paused
-	PauseCandidate(ctx context.Context, pod *Candidate) error
+	// GetPausedCandidateOnNode returns a paused candidate pod if found
+	// returns ErrPodNotFound if no candidate found
+	GetPausedCandidateOnNode(ctx context.Context, nodeName string) *Candidate
+	// ResumeCandidate sets a candidate pod to resumed if it passes the following checks
+	// 1. already bound to a node and status paused
+	// 2. managed by preemption manager
+	// 3. node has enough resources to resume pod
+	ResumeCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error)
+	// PauseCandidate sets a candidate pod to paused
+	PauseCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error)
 }
+
+type PriorityFunc func(*v1.Pod) int64
 
 // PreemptionManager maintains information related to current paused pods
 type preemptionManager struct {
@@ -61,122 +58,133 @@ type preemptionManager struct {
 	nodeLister      corelisters.NodeLister
 	nodeInfoLister  framework.NodeInfoLister
 	clientSet       kubernetes.Interface
+	priorityFunc    PriorityFunc
 }
 
-func NewPreemptionManager(podLister corelisters.PodLister, nodeLister corelisters.NodeLister, nodeInfoLister framework.NodeInfoLister, clientSet kubernetes.Interface) Manager {
+func NewPreemptionManager(podLister corelisters.PodLister, nodeLister corelisters.NodeLister, nodeInfoLister framework.NodeInfoLister,
+	clientSet kubernetes.Interface, priorityFunc PriorityFunc) Manager {
 	return &preemptionManager{
-		pausedPods:      gocache.New(time.Second*5, time.Second*5),
+		pausedPods:      gocache.New(time.Hour*5, time.Second*5),
 		deadlineManager: deadline.NewDeadlineManager(),
 		podLister:       podLister,
 		nodeLister:      nodeLister,
 		nodeInfoLister:  nodeInfoLister,
 		clientSet:       clientSet,
+		priorityFunc:    priorityFunc,
 	}
 }
 
 func (m *preemptionManager) IsPodMarkedPaused(pod *v1.Pod) bool {
-	val, ok := pod.Annotations[AnnotationKeyPausePod]
+	val, ok := pod.Annotations[annotations.AnnotationKeyPausePod]
 	if !ok {
 		return false
 	}
 	return val == "true"
 }
 
-func (m *preemptionManager) AddPausedPod(candidate *Candidate) {
-	m.pausedPods.Set(toCacheKey(candidate.Pod), candidate.NodeName, -1)
-	m.deadlineManager.AddPodDeadline(candidate.Pod)
-}
-
-func (m *preemptionManager) RemovePausedPod(pod *v1.Pod) {
-	m.pausedPods.Delete(toCacheKey(pod))
-	m.pausedPods.DeleteExpired()
-	m.deadlineManager.RemovePodDeadline(pod)
-}
-
-func (m *preemptionManager) GetPausedPodNode(pod *v1.Pod) (*v1.Node, error) {
-	nodeName, ok := m.pausedPods.Get(toCacheKey(pod))
+func (m *preemptionManager) addCandidate(candidate *Candidate) {
+	podQueue, ok := m.pausedPods.Get(candidate.NodeName)
 	if !ok {
-		return nil, ErrPodNotFound
+		podQueue = priorityqueue.New(0)
 	}
-	node, err := m.nodeLister.Get(nodeName.(string))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get node %s: %w", nodeName, err)
-	}
-	return node, nil
+	priority := m.priorityFunc(candidate.Pod)
+	item := priorityqueue.NewItem(toCacheKey(candidate.Pod), priority)
+	podQueue.(priorityqueue.PriorityQueue).PushItem(item)
+	m.pausedPods.Add(candidate.NodeName, podQueue, -1)
 }
 
-func (m *preemptionManager) ResumePausedPod(ctx context.Context, pod *v1.Pod) *Candidate {
-	var candidates []*Candidate
-	for key := range m.pausedPods.Items() {
-		namespace, name := parseCacheKey(key)
-		pausedPod, err := m.podLister.Pods(namespace).Get(name)
-		if err != nil {
-			klog.ErrorS(err, "failed to list pod", "pod", klog.KObj(pausedPod))
-			continue
-		}
-		// // FIXME: pod might still be in pending state, which means it hasn't been paused yet
-		// if pausedPod.Status.Phase != v1.PodPaused {
-		// 	klog.InfoS("pod is no longer paused", "pod", klog.KObj(pausedPod))
-		// 	m.RemovePausedPod(pod)
-		// 	continue
-		// }
-		pausedPodDDL := m.deadlineManager.GetPodDeadline(pausedPod)
-		podDDL := m.deadlineManager.GetPodDeadline(pod)
-		if podDDL.Before(pausedPodDDL) {
-			continue
-		}
-		node, err := m.GetPausedPodNode(pausedPod)
-		if err != nil {
-			klog.ErrorS(err, "failed to get node of paused pod", "pod", klog.KObj(pausedPod))
-			continue
-		}
-		if err := m.dryRunResumePod(pausedPod, node); err != nil {
-			klog.ErrorS(err, "failed to dry run resume pod", "pod", klog.KObj(pausedPod))
-			continue
-		}
-		candidates = append(candidates, &Candidate{NodeName: node.Name, Pod: pausedPod})
+func (m *preemptionManager) removeCandidate(candidate *Candidate) {
+	m.deadlineManager.RemovePodDeadline(candidate.Pod)
+	pq, ok := m.pausedPods.Get(candidate.NodeName)
+	if !ok {
+		return
 	}
-
-	if len(candidates) == 0 {
-		return nil
-	}
-	candidate := candidates[0]
-	minDDL := m.deadlineManager.GetPodDeadline(candidates[0].Pod)
-	for _, c := range candidates {
-		ddl := m.deadlineManager.GetPodDeadline(c.Pod)
-		if ddl.Before(minDDL) {
-			minDDL = ddl
-			candidate = c
-		}
-	}
-	markPodToResume(candidate.Pod)
-	if err := updatePod(ctx, m.clientSet, candidate.Pod); err != nil {
-		klog.ErrorS(err, "failed to resume pod", "pod", klog.KObj(candidate.Pod))
-		return nil
-	}
-	m.RemovePausedPod(candidate.Pod)
-	return candidate
+	pq.(priorityqueue.PriorityQueue).RemoveItem(toCacheKey(candidate.Pod))
 }
 
-func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candidate) error {
+func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error) {
 	latestPod, err := m.podLister.Pods(candidate.Pod.Namespace).Get(candidate.Pod.Name)
 	if err != nil {
 		msg := "failed to list pod"
 		klog.ErrorS(err, msg, "pod", klog.KObj(latestPod))
-		return fmt.Errorf("%s: %w", msg, err)
+		return nil, fmt.Errorf("%s: %w", msg, err)
 	}
-	// TODO: if pod is already paused, no need to send pause again
+	if len(latestPod.Spec.NodeName) <= 0 {
+		return nil, ErrPodNotBoundToNode
+	}
+	if latestPod.Status.Phase == v1.PodPaused {
+		return nil, ErrPodAlreadyPaused
+	}
 	markPodToPaused(latestPod)
 	if err := updatePod(ctx, m.clientSet, latestPod); err != nil {
 		msg := "failed to pause pod"
 		klog.ErrorS(err, msg, "pod", klog.KObj(latestPod))
-		return fmt.Errorf("%s: %w", msg, err)
+		return nil, fmt.Errorf("%s: %w", msg, err)
 	}
-	m.AddPausedPod(candidate)
-	return nil
+	c := &Candidate{Pod: latestPod, NodeName: latestPod.Spec.NodeName}
+	m.addCandidate(c)
+	return c, nil
 }
 
-func (m preemptionManager) dryRunResumePod(pod *v1.Pod, node *v1.Node) error {
+func (m *preemptionManager) GetPausedCandidateOnNode(ctx context.Context, nodeName string) *Candidate {
+	res, ok := m.pausedPods.Get(nodeName)
+	if !ok {
+		return nil
+	}
+	item := res.(priorityqueue.PriorityQueue).PopItem()
+	if item == nil {
+		return nil
+	}
+	namespace, name := parseCacheKey(item.Value())
+	p, err := m.podLister.Pods(namespace).Get(name)
+	if err != nil {
+		return nil
+	}
+	return &Candidate{Pod: p, NodeName: p.Spec.NodeName}
+}
+
+func (m *preemptionManager) ResumeCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error) {
+	candidatePod, err := m.podLister.Pods(candidate.Pod.Namespace).Get(candidate.Pod.Name)
+	if err != nil || candidatePod == nil {
+		return nil, fmt.Errorf("failed to list pod: %w", err)
+	}
+	// pod cannot be resumed if it's has no noed assigned
+	if len(candidate.NodeName) <= 0 || len(candidatePod.Spec.NodeName) <= 0 {
+		return nil, ErrPodNotBoundToNode
+	}
+	// pod cannot be resumed if it's not paused
+	if candidatePod.Status.Phase != v1.PodPaused {
+		return nil, ErrPodNotPaused
+	}
+	// pod cannot be resumed if it's not found in preemption manager's cache
+	res, ok := m.pausedPods.Get(candidate.NodeName)
+	if !ok {
+		return nil, ErrPodNotFound
+	}
+	podQueue := res.(priorityqueue.PriorityQueue)
+	item := podQueue.GetItem(toCacheKey(candidatePod))
+	if item == nil {
+		return nil, ErrPodNotFound
+	}
+	// get node information of pod and dry run resume
+	node, err := m.nodeLister.Get(candidatePod.Spec.NodeName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list node: %w", err)
+	}
+	if err := m.dryRunResumeCandidate(candidatePod, node); err != nil {
+		return nil, fmt.Errorf("failed to dry run resume pod: %w", err)
+	}
+	// resume pod
+	markPodToResume(candidatePod)
+	if err := updatePod(ctx, m.clientSet, candidatePod); err != nil {
+		return nil, fmt.Errorf("failed to resume pod: %w", err)
+	}
+	c := &Candidate{NodeName: candidatePod.Spec.NodeName, Pod: candidatePod}
+	m.removeCandidate(c)
+	return c, nil
+}
+
+func (m preemptionManager) dryRunResumeCandidate(pod *v1.Pod, node *v1.Node) error {
 	nodeInfo, err := m.nodeInfoLister.Get(node.Name)
 	if err != nil {
 		klog.ErrorS(err, "failed to get node info", "node", klog.KObj(node))
@@ -213,23 +221,23 @@ func parseCacheKey(key string) (namespace string, name string) {
 }
 
 func markPodToResume(pod *v1.Pod) {
-	annotations := pod.Annotations
-	if annotations == nil {
+	annot := pod.Annotations
+	if annot == nil {
 		klog.InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
-		annotations = make(map[string]string)
+		annot = make(map[string]string)
 	}
-	annotations[AnnotationKeyPausePod] = "false"
-	pod.SetAnnotations(annotations)
+	annot[annotations.AnnotationKeyPausePod] = "false"
+	pod.SetAnnotations(annot)
 }
 
 func markPodToPaused(pod *v1.Pod) {
-	annotations := pod.Annotations
-	if annotations == nil {
+	annot := pod.Annotations
+	if annot == nil {
 		klog.InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
-		annotations = make(map[string]string)
+		annot = make(map[string]string)
 	}
-	annotations[AnnotationKeyPausePod] = "true"
-	pod.SetAnnotations(annotations)
+	annot[annotations.AnnotationKeyPausePod] = "true"
+	pod.SetAnnotations(annot)
 }
 
 // updatePod deletes the given <pod> from API server

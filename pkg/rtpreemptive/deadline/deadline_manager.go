@@ -6,13 +6,11 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/annotations"
 )
 
 const (
-	// AnnotationKeyPrefix is the prefix of the annotation key
-	AnnotationKeyPrefix = "rt-preemptive.scheduling.x-k8s.io/"
-	// AnnotationKeyDDL represents the relative deadline of a program
-	AnnotationKeyDDL = AnnotationKeyPrefix + "ddl"
+
 	// default relative deadline 1 month
 	defaultDDLRelative = 0 * time.Second
 )
@@ -43,7 +41,7 @@ func (m *deadlineManager) ParsePodDeadline(pod *v1.Pod) time.Time {
 		return time.Now().Add(defaultDDLRelative)
 	}
 	defaultDDL := creationTime.Add(defaultDDLRelative)
-	ddlStr, ok := pod.Annotations[AnnotationKeyDDL]
+	ddlStr, ok := pod.Annotations[annotations.AnnotationKeyDDL]
 	if !ok {
 		klog.ErrorS(nil, "deadline not defined in pod annotations, using default", "default", defaultDDLRelative, "pod", klog.KObj(pod))
 		return defaultDDL
