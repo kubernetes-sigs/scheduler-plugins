@@ -90,7 +90,7 @@ func (m *preemptionManager) addCandidate(candidate *Candidate) {
 	priority := m.priorityFunc(candidate.Pod)
 	item := priorityqueue.NewItem(toCacheKey(candidate.Pod), priority)
 	podQueue.(priorityqueue.PriorityQueue).PushItem(item)
-	m.pausedPods.Add(candidate.NodeName, podQueue, -1)
+	m.pausedPods.Set(candidate.NodeName, podQueue, -1)
 }
 
 func (m *preemptionManager) removeCandidate(candidate *Candidate) {
@@ -127,14 +127,19 @@ func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candi
 }
 
 func (m *preemptionManager) GetPausedCandidateOnNode(ctx context.Context, nodeName string) *Candidate {
+	if len(nodeName) <= 0 {
+		return nil
+	}
 	res, ok := m.pausedPods.Get(nodeName)
 	if !ok {
 		return nil
 	}
-	item := res.(priorityqueue.PriorityQueue).PopItem()
+	q := res.(priorityqueue.PriorityQueue)
+	item := q.PopItem()
 	if item == nil {
 		return nil
 	}
+	defer q.PushItem(item)
 	namespace, name := parseCacheKey(item.Value())
 	p, err := m.podLister.Pods(namespace).Get(name)
 	if err != nil {
@@ -152,11 +157,6 @@ func (m *preemptionManager) ResumeCandidate(ctx context.Context, candidate *Cand
 	if len(candidate.NodeName) <= 0 || len(candidatePod.Spec.NodeName) <= 0 {
 		return nil, ErrPodNotBoundToNode
 	}
-	// pod cannot be resumed if it's not paused
-	if candidatePod.Status.Phase != v1.PodPaused {
-		return nil, ErrPodNotPaused
-	}
-	// pod cannot be resumed if it's not found in preemption manager's cache
 	res, ok := m.pausedPods.Get(candidate.NodeName)
 	if !ok {
 		return nil, ErrPodNotFound

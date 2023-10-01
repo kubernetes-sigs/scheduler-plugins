@@ -3,6 +3,7 @@ package preemption
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -99,6 +100,43 @@ func (s *PreemptionManagerTestSuite) SetupTest() {
 	}
 }
 
+func (s *PreemptionManagerTestSuite) TestAddRemoveCandidateConcurrent() {
+	s.Equal(len(pausedPod), countPods(s.manager.pausedPods.Items()))
+	var wg sync.WaitGroup
+	for _, p := range pausedPod {
+		wg.Add(1)
+		go func(p *v1.Pod) {
+			s.manager.removeCandidate(&Candidate{Pod: p, NodeName: p.Spec.NodeName})
+			wg.Done()
+		}(p)
+	}
+	wg.Wait()
+	s.Equal(0, countPods(s.manager.pausedPods.Items()))
+	for _, p := range pausedPod {
+		wg.Add(1)
+		go func(p *v1.Pod) {
+			s.manager.addCandidate(&Candidate{Pod: p, NodeName: p.Spec.NodeName})
+			wg.Done()
+		}(p)
+	}
+	wg.Wait()
+	s.Equal(len(pausedPod), countPods(s.manager.pausedPods.Items()))
+}
+
+func countPods(pausedPod map[string]gocache.Item) int {
+	size := 0
+	for _, v := range pausedPod {
+		q := v.Object.(priorityqueue.PriorityQueue)
+		for {
+			item := q.PopItem()
+			if item == nil {
+				break
+			}
+			size++
+		}
+	}
+	return size
+}
 func (s *PreemptionManagerTestSuite) TestIsPodMarkedPaused() {
 	pod1 := util.MakePod("p1", "ns1", 0, 0, "12s", "uid1", "node-1", nil, v1.PodRunning, "true")
 	pod2 := util.MakePod("p2", "ns1", 0, 0, "10s", "uid2", "node-2", nil, v1.PodRunning, "false")
@@ -115,13 +153,13 @@ func (s *PreemptionManagerTestSuite) TestGetPausedCandidateOnNode() {
 		expectedCandidate *Candidate
 	}{
 		{
-			name:              "node not found",
-			nodeName:          "node-abc",
+			name:              "empty node name",
+			nodeName:          "",
 			expectedCandidate: nil,
 		},
 		{
-			name:              "no paused pod on node",
-			nodeName:          "node-3",
+			name:              "node not found",
+			nodeName:          "node-abc",
 			expectedCandidate: nil,
 		},
 		{
@@ -136,7 +174,9 @@ func (s *PreemptionManagerTestSuite) TestGetPausedCandidateOnNode() {
 		},
 	} {
 		s.Run(tt.name, func() {
+			s.SetupTest()
 			s.Equal(tt.expectedCandidate, s.manager.GetPausedCandidateOnNode(context.Background(), tt.nodeName))
+			s.Equal(len(pausedPod), countPods(s.manager.pausedPods.Items()))
 		})
 	}
 }
@@ -155,9 +195,9 @@ func (s *PreemptionManagerTestSuite) TestResumePod() {
 			expectedCandidate: nil,
 		},
 		{
-			name:              "pod not paused",
+			name:              "pod not found",
 			candidate:         &Candidate{Pod: podsToSchedule[1], NodeName: "node-1"},
-			expectedErr:       ErrPodNotPaused,
+			expectedErr:       ErrPodNotFound,
 			expectedCandidate: nil,
 		},
 		{
@@ -186,13 +226,13 @@ func (s *PreemptionManagerTestSuite) TestResumePod() {
 				s.NoError(err)
 			} else {
 				s.EqualError(err, tt.expectedErr.Error())
-				if tt.expectedCandidate == nil {
-					s.Nil(c)
-				} else {
-					s.Equal(tt.candidate, c)
-					q, _ := s.manager.pausedPods.Get(c.NodeName)
-					s.Nil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
-				}
+			}
+			if tt.expectedCandidate == nil {
+				s.Nil(c)
+			} else {
+				s.Equal(tt.candidate, c)
+				q, _ := s.manager.pausedPods.Get(c.NodeName)
+				s.Nil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
 			}
 		})
 	}
@@ -230,13 +270,15 @@ func (s *PreemptionManagerTestSuite) TestPauseCandidate() {
 				s.NoError(err)
 			} else {
 				s.EqualError(err, tt.expectedErr.Error())
-				if tt.expectedCandidate == nil {
-					s.Nil(c)
-				} else {
-					s.Equal(tt.candidate, c)
-					q, _ := s.manager.pausedPods.Get(c.NodeName)
-					s.NotNil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
-				}
+			}
+			if tt.expectedCandidate == nil {
+				s.Nil(c)
+			} else {
+				s.Equal(tt.candidate.Pod.Spec.NodeName, c.NodeName)
+				s.Equal(tt.candidate.Pod, c.Pod)
+				q, _ := s.manager.pausedPods.Get(c.NodeName)
+				s.NotNil(q)
+				s.NotNil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
 			}
 		})
 	}
