@@ -214,11 +214,11 @@ func (sched *Scheduler) updatePodInCache(oldObj, newObj interface{}) {
 	if oldPod.Status.Phase != newPod.Status.Phase && newPod.Status.Phase == v1.PodPaused {
 		// if pod is paused, try to schedule pending pods
 		sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(queue.AssignedPodUpdate, nil)
-		// then add the paused pod back to scheduling queue
-		klog.InfoS("Pod is paused, adding it to scheduling queue", "pod", klog.KObj(newPod))
-		podInfo, _ := framework.NewPodInfo(newPod)
+		// then add the paused pod to internal scheduling queue
+		klog.InfoS("Pod is paused, adding it to internal scheduling queue", "pod", klog.KObj(newPod))
+		podInfo, _ := framework.NewPodInfo(newPod.DeepCopy())
 		queuePodInfo := &framework.QueuedPodInfo{PodInfo: podInfo, Timestamp: time.Now(), InitialAttemptTimestamp: nil}
-		sched.SchedulingQueue.AddUnschedulableIfNotPresent(queuePodInfo, sched.SchedulingQueue.SchedulingCycle())
+		sched.SchedulingQueue.AddUnschedulableIfNotPresent(queuePodInfo, sched.SchedulingQueue.SchedulingCycle()+1)
 	}
 
 	sched.SchedulingQueue.AssignedPodUpdated(newPod)

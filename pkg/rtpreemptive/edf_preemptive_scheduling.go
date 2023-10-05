@@ -112,8 +112,8 @@ func (rp *EDFPreemptiveScheduling) PreFilter(ctx context.Context, state *framewo
 		}
 		candidate := rp.preemptionManager.GetPausedCandidateOnNode(ctx, pod.Spec.NodeName)
 		if candidate == nil {
-			klog.InfoS("pod was marked to be paused but not found in preemption manager", "pod", klog.KObj(pod))
-			return nil, framework.NewStatus(framework.Skip)
+			klog.InfoS("pod was marked to be paused but not found in preemption manager, attempt to resume", "pod", klog.KObj(pod))
+			candidate = &preemption.Candidate{NodeName: pod.Spec.NodeName, Pod: pod}
 		}
 		if candidate.Pod.UID != latestPod.UID {
 			klog.InfoS("another pod on the node has higher priority", "pod", klog.KObj(pod), "candidate", klog.KObj(candidate.Pod), "node", candidate.NodeName)
@@ -132,24 +132,12 @@ func (rp *EDFPreemptiveScheduling) PreFilter(ctx context.Context, state *framewo
 		return nil, framework.NewStatus(framework.Skip, "skipped because pod is resumed successfully")
 	}
 	rp.deadlineManager.AddPodDeadline(pod)
-	return nil, framework.NewStatus(framework.Success, "")
+	return nil, nil
 }
 
 // PreFilterExtensions returns prefilter extensions, pod add and remove.
 func (rp *EDFPreemptiveScheduling) PreFilterExtensions() framework.PreFilterExtensions {
-	return rp
-}
-
-// AddPod implements PreFilterExtensions AddPod
-func (rp *EDFPreemptiveScheduling) AddPod(ctx context.Context, state *framework.CycleState, podToSchedule *v1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	rp.deadlineManager.AddPodDeadline(podInfoToAdd.Pod)
-	return framework.NewStatus(framework.Success, "")
-}
-
-// AddPod implements PreFilterExtensions RemovePod
-func (rp *EDFPreemptiveScheduling) RemovePod(ctx context.Context, state *framework.CycleState, podToSchedule *v1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	rp.deadlineManager.RemovePodDeadline(podInfoToRemove.Pod)
-	return framework.NewStatus(framework.Success, "")
+	return nil
 }
 
 func (rp *EDFPreemptiveScheduling) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
@@ -175,12 +163,7 @@ func (rp *EDFPreemptiveScheduling) Filter(ctx context.Context, state *framework.
 	var unpausedPods []*v1.Pod
 	for _, p := range nodeInfo.Pods {
 		if p.Pod.Status.Phase != v1.PodPaused {
-			// TODO: remove debug log
-			klog.InfoS("found unpaused pod, including in resource check", "unpaused pod", klog.KObj(p.Pod), "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
 			unpausedPods = append(unpausedPods, p.Pod)
-		} else {
-			// TODO: remove debug log
-			klog.InfoS("found paused pod, excluding from resource check", "paused pod", klog.KObj(p.Pod), "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
 		}
 	}
 	nodeExcludePausedPods := framework.NewNodeInfo(unpausedPods...)
@@ -194,7 +177,7 @@ func (rp *EDFPreemptiveScheduling) Filter(ctx context.Context, state *framework.
 		}
 		return framework.NewStatus(framework.Unschedulable, failureReasons...)
 	}
-	return framework.NewStatus(framework.Success)
+	return nil
 }
 
 // PostFilter plugin is called when no node is found schedulable at Filter stage
@@ -238,6 +221,9 @@ func (rp *EDFPreemptiveScheduling) selectCandidate(candidates []*preemption.Cand
 	maxDDL := rp.deadlineManager.GetPodDeadline(candidates[0].Pod)
 	bestCandidate := candidates[0]
 	for _, c := range candidates {
+		if len(c.Pod.Spec.NodeName) <= 0 {
+			klog.InfoS("selectCandidate: skipping candidate with no node assigned", "candidate", klog.KObj(c.Pod))
+		}
 		ddl := rp.deadlineManager.GetPodDeadline(c.Pod)
 		if ddl.After(maxDDL) {
 			maxDDL = ddl
@@ -260,7 +246,10 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 			klog.ErrorS(err, "Getting updated pod from node", "pod", klog.KRef(podInfo.Pod.Namespace, podInfo.Pod.Name), "node", nodeInfo.Node().Name)
 			p = podInfo.Pod // fallback to pod from nodeInfo
 		}
-		klog.InfoS("checking pods", "pod", klog.KObj(p), "phase", p.Status.Phase, "node", klog.KObj(nodeInfo.Node()))
+		if p.UID == pod.UID {
+			klog.InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			continue
+		}
 		if p.Status.Phase != v1.PodPaused {
 			unpausedPods = append(unpausedPods, p)
 			ddl := rp.deadlineManager.GetPodDeadline(p)
