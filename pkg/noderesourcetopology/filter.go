@@ -131,7 +131,9 @@ func resourcesAvailableInAnyNUMANodes(logID string, numaNodes NUMANodeList, reso
 			klog.V(6).InfoS("feasible", "logID", logID, "node", nodeName, "NUMA", numaNode.NUMAID, "resource", resource)
 		}
 
-		if !hasNUMAAffinity && !v1helper.IsNativeResource(resource) {
+		// non-native resources or ephemeral-storage may not expose NUMA affinity,
+		// but since they are available at node level, this is fine
+		if !hasNUMAAffinity && (!v1helper.IsNativeResource(resource) || resource == v1.ResourceEphemeralStorage) {
 			klog.V(6).InfoS("resource available at node level (no NUMA affinity)", "logID", logID, "node", nodeName, "resource", resource)
 			continue
 		}

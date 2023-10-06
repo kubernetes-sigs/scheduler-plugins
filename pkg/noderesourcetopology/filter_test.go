@@ -661,6 +661,16 @@ func TestNodeResourceTopology(t *testing.T) {
 			node:       nodes[1],
 			wantStatus: nil,
 		},
+		{
+			name: "Guaranteed QoS, ephemeral-storage (non-NUMA), pod fit",
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:              *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory:           resource.MustParse("2Gi"),
+				v1.ResourceEphemeralStorage: resource.MustParse("100Mi"),
+			}),
+			node:       nodes[1],
+			wantStatus: nil,
+		},
 	}
 
 	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
