@@ -61,7 +61,7 @@ func main() {
 		// app.WithPlugin(crossnodepreemption.Name, crossnodepreemption.New),
 		app.WithPlugin(podstate.Name, podstate.New),
 		app.WithPlugin(qos.Name, qos.New),
-		app.WithPlugin(rtpreemptive.Name, rtpreemptive.New),
+		app.WithPlugin(rtpreemptive.NameEDF, rtpreemptive.NewEDF),
 	)
 
 	code := cli.Run(command)

@@ -18,11 +18,8 @@ import (
 )
 
 const (
-	// Name of the plugin used in the plugin registry and configuration
-	Name = "EDFPreemptiveScheduling"
-	// used in cycle state
-	PodDeadlinesSnapshotKey = Name + "/PodDeadlinesSnapshot"
-	PreemptiblePodsKey      = Name + "/PreemptiblePods"
+	// NameEDF of the plugin used in the plugin registry and configuration
+	NameEDF = "EDFPreemptiveScheduling"
 )
 
 var (
@@ -48,11 +45,11 @@ type EDFPreemptiveScheduling struct {
 
 // Name returns name of the plugin, It is used in logs, etc.
 func (rp *EDFPreemptiveScheduling) Name() string {
-	return Name
+	return NameEDF
 }
 
-// New initializes a new plugin and return it.
-func New(_ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+// NewEDF initializes a new EDFPreemptiveScheduling plugin and return it.
+func NewEDF(_ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	podLister := fh.SharedInformerFactory().Core().V1().Pods().Lister()
 	nodeLister := fh.SharedInformerFactory().Core().V1().Nodes().Lister()
 	nodeInfoLister := fh.SnapshotSharedLister().NodeInfos()

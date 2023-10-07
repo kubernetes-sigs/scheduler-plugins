@@ -779,20 +779,20 @@ profiles:
 		{
 			name:            "single profile config - EDFPreemptiveScheduling with args",
 			flags:           []string{"--config", edfPreemptiveConfigWithArgsFile},
-			registryOptions: []app.Option{app.WithPlugin(rtpreemptive.Name, rtpreemptive.New)},
+			registryOptions: []app.Option{app.WithPlugin(rtpreemptive.NameEDF, rtpreemptive.NewEDF)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
 					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
 					QueueSort: config.PluginSet{
-						Enabled: []config.Plugin{{Name: rtpreemptive.Name}},
+						Enabled: []config.Plugin{{Name: rtpreemptive.NameEDF}},
 					},
 					Bind: defaults.ExpandedPluginsV1.Bind,
 					PreFilter: config.PluginSet{
-						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: rtpreemptive.Name}),
+						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: rtpreemptive.NameEDF}),
 					},
 					Filter: defaults.ExpandedPluginsV1.Filter,
 					PostFilter: config.PluginSet{
-						Enabled: []config.Plugin{{Name: rtpreemptive.Name}},
+						Enabled: []config.Plugin{{Name: rtpreemptive.NameEDF}},
 					},
 					PreScore: defaults.ExpandedPluginsV1.PreScore,
 					Score:    defaults.ExpandedPluginsV1.Score,
