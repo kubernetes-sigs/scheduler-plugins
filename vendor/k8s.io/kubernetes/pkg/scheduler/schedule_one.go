@@ -77,8 +77,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		return
 	}
 
-	// TODO: set log level back to 3
-	klog.InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
+	klog.V(3).InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
 
 	// Synchronously attempt to find a fit for the pod.
 	start := time.Now()
@@ -867,15 +866,14 @@ func (sched *Scheduler) handleSchedulingFailure(ctx context.Context, fwk framewo
 	err := status.AsError()
 	errMsg := status.Message()
 
-	// TODO: revert log level to 2
 	if err == ErrNoNodesAvailable {
-		klog.InfoS("Unable to schedule pod; no nodes are registered to the cluster; waiting", "pod", klog.KObj(pod), "err", err)
+		klog.V(2).InfoS("Unable to schedule pod; no nodes are registered to the cluster; waiting", "pod", klog.KObj(pod), "err", err)
 	} else if fitError, ok := err.(*framework.FitError); ok {
 		// Inject UnschedulablePlugins to PodInfo, which will be used later for moving Pods between queues efficiently.
 		podInfo.UnschedulablePlugins = fitError.Diagnosis.UnschedulablePlugins
-		klog.InfoS("Unable to schedule pod; no fit; waiting", "pod", klog.KObj(pod), "err", errMsg)
+		klog.V(2).InfoS("Unable to schedule pod; no fit; waiting", "pod", klog.KObj(pod), "err", errMsg)
 	} else if apierrors.IsNotFound(err) {
-		klog.InfoS("Unable to schedule pod, possibly due to node not found; waiting", "pod", klog.KObj(pod), "err", errMsg)
+		klog.V(2).InfoS("Unable to schedule pod, possibly due to node not found; waiting", "pod", klog.KObj(pod), "err", errMsg)
 		if errStatus, ok := err.(apierrors.APIStatus); ok && errStatus.Status().Details.Kind == "node" {
 			nodeName := errStatus.Status().Details.Name
 			// when node is not found, We do not remove the node right away. Trying again to get
@@ -909,8 +907,6 @@ func (sched *Scheduler) handleSchedulingFailure(ctx context.Context, fwk framewo
 			// ignore this err since apiserver doesn't properly validate affinity terms
 			// and we can't fix the validation for backwards compatibility.
 			podInfo.PodInfo, _ = framework.NewPodInfo(cachedPod.DeepCopy())
-			// TODO: remove debug log
-			klog.InfoS("Adding pod to unschedulable queue", "pod", klog.KObj(pod), "node", cachedPod.Spec.NodeName)
 			if err := sched.SchedulingQueue.AddUnschedulableIfNotPresent(podInfo, sched.SchedulingQueue.SchedulingCycle()); err != nil {
 				klog.ErrorS(err, "Error occurred")
 			}

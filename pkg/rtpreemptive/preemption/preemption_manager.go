@@ -223,7 +223,7 @@ func parseCacheKey(key string) (namespace string, name string) {
 func markPodToResume(pod *v1.Pod) {
 	annot := pod.Annotations
 	if annot == nil {
-		klog.InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
+		klog.V(5).InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
 		annot = make(map[string]string)
 	}
 	annot[annotations.AnnotationKeyPausePod] = "false"
@@ -233,7 +233,7 @@ func markPodToResume(pod *v1.Pod) {
 func markPodToPaused(pod *v1.Pod) {
 	annot := pod.Annotations
 	if annot == nil {
-		klog.InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
+		klog.V(5).InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
 		annot = make(map[string]string)
 	}
 	annot[annotations.AnnotationKeyPausePod] = "true"
