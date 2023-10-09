@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	// NameEDF of the plugin used in the plugin registry and configuration
+	// NameEDF is the name of the plugin used in the plugin registry and configuration
 	NameEDF = "EDFPreemptiveScheduling"
 )
 
@@ -34,7 +34,7 @@ var (
 )
 
 // EDFPreemptiveScheduling implements several plugins to perform soft real-time
-// (paused-/resume-based) preemptive scheduling
+// earliest deadline first scheduling
 type EDFPreemptiveScheduling struct {
 	fh                framework.Handle
 	podLister         corelisters.PodLister

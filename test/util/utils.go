@@ -32,6 +32,7 @@ import (
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/annotations"
 )
 
 func PrintPods(t *testing.T, cs clientset.Interface, ns string) {
@@ -104,6 +105,21 @@ func UpdatePGStatus(pg *v1alpha1.PodGroup, phase v1alpha1.PodGroupPhase, occupie
 func MakePod(podName string, namespace string, memReq int64, cpuReq int64, priority int32, uid string, nodeName string) *corev1.Pod {
 	pause := imageutils.GetPauseImageName()
 	pod := st.MakePod().Namespace(namespace).Name(podName).Container(pause).
+		Priority(priority).Node(nodeName).UID(uid).ZeroTerminationGracePeriod().Obj()
+	pod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: *resource.NewQuantity(memReq, resource.DecimalSI),
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(cpuReq, resource.DecimalSI),
+		},
+	}
+	return pod
+}
+
+func MakePodWithDeadline(podName string, namespace string, memReq int64, cpuReq int64, priority int32,
+	uid string, nodeName string, ddl string, execTime string) *corev1.Pod {
+	pause := imageutils.GetPauseImageName()
+	pod := st.MakePod().Namespace(namespace).Name(podName).Container(pause).
+		Annotation(annotations.AnnotationKeyDDL, ddl).Annotation(annotations.AnnotationKeyExecTime, execTime).
 		Priority(priority).Node(nodeName).UID(uid).ZeroTerminationGracePeriod().Obj()
 	pod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{

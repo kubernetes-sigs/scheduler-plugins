@@ -62,6 +62,7 @@ func main() {
 		app.WithPlugin(podstate.Name, podstate.New),
 		app.WithPlugin(qos.Name, qos.New),
 		app.WithPlugin(rtpreemptive.NameEDF, rtpreemptive.NewEDF),
+		app.WithPlugin(rtpreemptive.NameLLF, rtpreemptive.NewLLF),
 	)
 
 	code := cli.Run(command)

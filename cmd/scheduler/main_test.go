@@ -453,7 +453,7 @@ profiles:
 	}
 
 	// edf preemptive schduler plugin config
-	edfPreemptiveConfigWithArgsFile := filepath.Join(tmpDir, "edfPreemptive.yaml")
+	edfPreemptiveConfigWithArgsFile := filepath.Join(tmpDir, "edf-preemptive.yaml")
 	if err := os.WriteFile(edfPreemptiveConfigWithArgsFile, []byte(fmt.Sprintf(`
 apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
@@ -472,6 +472,24 @@ profiles:
     queueSort:
       enabled:
       - name: EDFPreemptiveScheduling
+      disabled:
+      - name: "*"
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+
+	// llf preemptive schduler plugin config
+	llfPreemptiveConfigWithArgsFile := filepath.Join(tmpDir, "llf-Preemptive.yaml")
+	if err := os.WriteFile(llfPreemptiveConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    queueSort:
+      enabled:
+      - name: LLFPreemptiveScheduling
       disabled:
       - name: "*"
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
@@ -798,6 +816,27 @@ profiles:
 					Score:    defaults.ExpandedPluginsV1.Score,
 					Reserve:  defaults.ExpandedPluginsV1.Reserve,
 					PreBind:  defaults.ExpandedPluginsV1.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - LLFPreemptiveScheduling with args",
+			flags:           []string{"--config", llfPreemptiveConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(rtpreemptive.NameLLF, rtpreemptive.NewLLF)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
+					QueueSort: config.PluginSet{
+						Enabled: []config.Plugin{{Name: rtpreemptive.NameLLF}},
+					},
+					Bind:       defaults.ExpandedPluginsV1.Bind,
+					PreFilter:  defaults.ExpandedPluginsV1.PreFilter,
+					Filter:     defaults.ExpandedPluginsV1.Filter,
+					PostFilter: defaults.ExpandedPluginsV1.PostFilter,
+					PreScore:   defaults.ExpandedPluginsV1.PreScore,
+					Score:      defaults.ExpandedPluginsV1.Score,
+					Reserve:    defaults.ExpandedPluginsV1.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1.PreBind,
 				},
 			},
 		},
