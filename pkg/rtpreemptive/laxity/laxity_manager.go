@@ -13,35 +13,16 @@ import (
 )
 
 var (
-	ErrOverdue          = errors.New("already passed deadline")
-	ErrBeyondEstimation = errors.New("actual execution time is beyond initial estimation")
-	ErrNotFound         = errors.New("pod execution not found in laxity manager")
+	ErrNotFound = errors.New("pod execution not found in laxity manager")
 )
 
-type podExecution struct {
-	deadline       time.Time
-	estExecTime    time.Duration
-	actualExecTime time.Duration
-}
-
-func (p *podExecution) laxity() (time.Duration, error) {
-	now := time.Now()
-	timeToDDL := p.deadline.Sub(now)
-	if timeToDDL < 0 {
-		return 0, ErrOverdue
-	}
-	remainingExecTime := p.estExecTime - p.actualExecTime
-	if remainingExecTime < 0 {
-		return 0, ErrBeyondEstimation
-	}
-	return timeToDDL - remainingExecTime, nil
-}
-
 type Manager interface {
+	// StartPodExecution starts the pod's execution
+	StartPodExecution(pod *v1.Pod)
+	// PausePodExecution pause the pod's execution
+	PausePodExecution(pod *v1.Pod)
 	// GetPodLaxity returns a pod's laxity
 	GetPodLaxity(pod *v1.Pod) (time.Duration, error)
-	// IncrPodExecution adds the given execTime to tracked actual execution time of a pod
-	IncrPodExecution(pod *v1.Pod, execTime time.Duration) error
 	// RemovePodExecution deletes the tracked execution of a pod
 	RemovePodExecution(pod *v1.Pod)
 }
@@ -60,7 +41,7 @@ func NewLaxityManager(deadlineManager deadline.Manager) Manager {
 	}
 }
 
-func (l *laxityManager) GetPodLaxity(pod *v1.Pod) (time.Duration, error) {
+func (l *laxityManager) createPodExecutionIfNotExist(pod *v1.Pod) *podExecution {
 	key := toCacheKey(pod)
 	podExec, ok := l.podExecutions.Get(key)
 	if !ok || podExec == nil {
@@ -77,17 +58,22 @@ func (l *laxityManager) GetPodLaxity(pod *v1.Pod) (time.Duration, error) {
 		}
 		l.podExecutions.Add(key, podExec, -1)
 	}
-	return podExec.(*podExecution).laxity()
+	return podExec.(*podExecution)
 }
 
-func (l *laxityManager) IncrPodExecution(pod *v1.Pod, execTime time.Duration) error {
-	key := toCacheKey(pod)
-	podExec, ok := l.podExecutions.Get(key)
-	if !ok || podExec == nil {
-		return ErrNotFound
-	}
-	podExec.(*podExecution).actualExecTime += execTime
-	return nil
+func (l *laxityManager) StartPodExecution(pod *v1.Pod) {
+	podExec := l.createPodExecutionIfNotExist(pod)
+	podExec.start()
+}
+
+func (l *laxityManager) PausePodExecution(pod *v1.Pod) {
+	podExec := l.createPodExecutionIfNotExist(pod)
+	podExec.pause()
+}
+
+func (l *laxityManager) GetPodLaxity(pod *v1.Pod) (time.Duration, error) {
+	podExec := l.createPodExecutionIfNotExist(pod)
+	return podExec.laxity()
 }
 
 func (l *laxityManager) RemovePodExecution(pod *v1.Pod) {
