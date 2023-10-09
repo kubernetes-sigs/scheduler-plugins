@@ -75,6 +75,7 @@ func (rp *LLFPreemptiveScheduling) handlePodAdd(obj interface{}) {
 		return
 	}
 	if pod.Status.Phase == v1.PodRunning {
+		klog.InfoS("Pod is already running, starting pod execution", "pod", klog.KObj(pod))
 		rp.laxityManager.StartPodExecution(pod)
 	}
 }
@@ -129,3 +130,12 @@ func (rp *LLFPreemptiveScheduling) Less(podInfo1, podInfo2 *framework.QueuedPodI
 	}
 	return l1 < l2
 }
+
+// func (rp *LLFPreemptiveScheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+// 	return nil, nil
+// }
+
+// // PreFilterExtensions returns prefilter extensions, pod add and remove.
+// func (rp *LLFPreemptiveScheduling) PreFilterExtensions() framework.PreFilterExtensions {
+// 	return nil
+// }
