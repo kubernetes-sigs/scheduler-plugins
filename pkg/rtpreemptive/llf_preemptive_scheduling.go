@@ -10,9 +10,9 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling/core"
-	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/deadline"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/laxity"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/preemption"
 )
@@ -26,7 +26,7 @@ var (
 	// sort pods based on laxity
 	_ framework.QueueSortPlugin = &LLFPreemptiveScheduling{}
 	_ framework.PreFilterPlugin = &LLFPreemptiveScheduling{}
-	// _ framework.FilterPlugin = &LLFPreemptiveScheduling{}
+	_ framework.FilterPlugin    = &LLFPreemptiveScheduling{}
 	// _ framework.PostFilterPlugin = &LLFPreemptiveScheduling{}
 )
 
@@ -34,7 +34,6 @@ var (
 // least laxity first scheduling
 type LLFPreemptiveScheduling struct {
 	fh                framework.Handle
-	deadlineManager   deadline.Manager
 	laxityManager     laxity.Manager
 	preemptionManager preemption.Manager
 	clock             clock.Clock
@@ -50,15 +49,13 @@ func NewLLF(_ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	podLister := fh.SharedInformerFactory().Core().V1().Pods().Lister()
 	nodeLister := fh.SharedInformerFactory().Core().V1().Nodes().Lister()
 	nodeInfoLister := fh.SnapshotSharedLister().NodeInfos()
-	deadlineManager := deadline.NewDeadlineManager()
-	laxityManager := laxity.NewLaxityManager(deadlineManager)
+	laxityManager := laxity.NewLaxityManager()
 	prioFunc := func(p *v1.Pod) int64 {
 		laxity, _ := laxityManager.GetPodLaxity(p)
 		return -int64(laxity)
 	}
 	llfSched := &LLFPreemptiveScheduling{
 		fh:                fh,
-		deadlineManager:   deadlineManager,
 		laxityManager:     laxityManager,
 		preemptionManager: preemption.NewPreemptionManager(podLister, nodeLister, nodeInfoLister, fh.ClientSet(), prioFunc),
 		clock:             clock.RealClock{},
@@ -102,6 +99,11 @@ func (rp *LLFPreemptiveScheduling) handlePodUpdate(oldObj, newObj interface{}) {
 	if oldPod.Status.Phase == v1.PodPaused && newPod.Status.Phase == v1.PodRunning {
 		klog.InfoS("Pod was paused but now resumed, starting pod execution again", "pod", klog.KObj(oldPod))
 		rp.laxityManager.StartPodExecution(newPod)
+		return
+	}
+	if newPod.Status.Phase == v1.PodSucceeded || newPod.Status.Phase == v1.PodFailed {
+		klog.InfoS("Pod has exited", "pod", klog.KObj(oldPod), "exitStatus", newPod.Status.Phase)
+		rp.laxityManager.RemovePodExecution(newPod)
 		return
 	}
 }
@@ -174,5 +176,47 @@ func (rp *LLFPreemptiveScheduling) PreFilter(ctx context.Context, state *framewo
 
 // PreFilterExtensions returns prefilter extensions, pod add and remove.
 func (rp *LLFPreemptiveScheduling) PreFilterExtensions() framework.PreFilterExtensions {
+	return nil
+}
+
+func (rp *LLFPreemptiveScheduling) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	if len(pod.Spec.NodeName) > 0 && pod.Spec.NodeName != nodeInfo.Node().Name {
+		// pod is already assigned to a node and it's not the same as given node
+		// this happens when a paused pod re-enters the scheduling queue
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable)
+	}
+
+	if candidate := rp.preemptionManager.GetPausedCandidateOnNode(ctx, nodeInfo.Node().Name); candidate != nil {
+		candidateLaxity, _ := rp.laxityManager.GetPodLaxity(candidate.Pod)
+		podLaxity, _ := rp.laxityManager.GetPodLaxity(pod)
+		if candidateLaxity < podLaxity {
+			msg := "found a paused pod on node that need to be resumed"
+			klog.V(4).InfoS(msg, "pausedPod", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
+			c, err := rp.preemptionManager.ResumeCandidate(ctx, candidate)
+			if err == nil {
+				klog.V(4).InfoS("resumed candidate successfully", "candidate", klog.KObj(c.Pod), "node", c.NodeName)
+				return framework.NewStatus(framework.UnschedulableAndUnresolvable, msg)
+			}
+			klog.V(4).InfoS("failed to resume paused pod, continue to schedule pod", "error", err, "candidate", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", candidate.NodeName)
+		}
+	}
+
+	var unpausedPods []*v1.Pod
+	for _, p := range nodeInfo.Pods {
+		if p.Pod.Status.Phase != v1.PodPaused {
+			unpausedPods = append(unpausedPods, p.Pod)
+		}
+	}
+	nodeExcludePausedPods := framework.NewNodeInfo(unpausedPods...)
+	nodeExcludePausedPods.SetNode(nodeInfo.Node())
+	insufficientResources := noderesources.Fits(pod, nodeExcludePausedPods)
+	if len(insufficientResources) != 0 {
+		// We will keep all failure reasons.
+		failureReasons := make([]string, 0, len(insufficientResources))
+		for i := range insufficientResources {
+			failureReasons = append(failureReasons, insufficientResources[i].Reason)
+		}
+		return framework.NewStatus(framework.Unschedulable, failureReasons...)
+	}
 	return nil
 }

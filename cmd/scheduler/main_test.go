@@ -490,6 +490,9 @@ profiles:
     preFilter:
       enabled:
       - name: LLFPreemptiveScheduling
+    filter:
+      enabled:
+      - name: LLFPreemptiveScheduling
     queueSort:
       enabled:
       - name: LLFPreemptiveScheduling
@@ -836,7 +839,9 @@ profiles:
 					PreFilter: config.PluginSet{
 						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: rtpreemptive.NameLLF}),
 					},
-					Filter:     defaults.ExpandedPluginsV1.Filter,
+					Filter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1.Filter.Enabled, config.Plugin{Name: rtpreemptive.NameLLF}),
+					},
 					PostFilter: defaults.ExpandedPluginsV1.PostFilter,
 					PreScore:   defaults.ExpandedPluginsV1.PreScore,
 					Score:      defaults.ExpandedPluginsV1.Score,

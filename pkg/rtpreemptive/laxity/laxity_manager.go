@@ -33,9 +33,9 @@ type laxityManager struct {
 	podExecutions   *gocache.Cache
 }
 
-func NewLaxityManager(deadlineManager deadline.Manager) Manager {
+func NewLaxityManager() Manager {
 	return &laxityManager{
-		deadlineManager: deadlineManager,
+		deadlineManager: deadline.NewDeadlineManager(),
 		atlas:           estimator.NewATLASEstimator(),
 		podExecutions:   gocache.New(time.Second, time.Second),
 	}
