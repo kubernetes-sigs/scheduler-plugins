@@ -1,6 +1,9 @@
 package rtpreemptive
 
 import (
+	"context"
+	"errors"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -22,7 +25,7 @@ const (
 var (
 	// sort pods based on laxity
 	_ framework.QueueSortPlugin = &LLFPreemptiveScheduling{}
-	// _ framework.PreFilterPlugin = &LLFPreemptiveScheduling{}
+	_ framework.PreFilterPlugin = &LLFPreemptiveScheduling{}
 	// _ framework.FilterPlugin = &LLFPreemptiveScheduling{}
 	// _ framework.PostFilterPlugin = &LLFPreemptiveScheduling{}
 )
@@ -131,11 +134,45 @@ func (rp *LLFPreemptiveScheduling) Less(podInfo1, podInfo2 *framework.QueuedPodI
 	return l1 < l2
 }
 
-// func (rp *LLFPreemptiveScheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-// 	return nil, nil
-// }
+func (rp *LLFPreemptiveScheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	paused := pod.Status.Phase == v1.PodPaused
+	markedPaused := rp.preemptionManager.IsPodMarkedPaused(pod)
 
-// // PreFilterExtensions returns prefilter extensions, pod add and remove.
-// func (rp *LLFPreemptiveScheduling) PreFilterExtensions() framework.PreFilterExtensions {
-// 	return nil
-// }
+	if markedPaused && !paused {
+		return nil, framework.NewStatus(framework.Skip, "skipped as pod cannot be resumed")
+	}
+	if !markedPaused && paused {
+		// resumed might be in progress but pod added back to scheduling queue
+		// should not happen, likely an unexpected error
+		err := errors.New("pod is not marked to be paused but currently at paused state")
+		klog.ErrorS(err, "unexpected error")
+		return nil, framework.AsStatus(err)
+	}
+	if markedPaused && paused {
+		klog.InfoS("pod is paused and attempt to resume it", "pod", klog.KObj(pod))
+		candidate := rp.preemptionManager.GetPausedCandidateOnNode(ctx, pod.Spec.NodeName)
+		if candidate == nil {
+			candidate = &preemption.Candidate{NodeName: pod.Spec.NodeName, Pod: pod}
+		}
+		if candidate.Pod.UID != pod.UID {
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "rejected as another paused pod has higher priority")
+		}
+		c, err := rp.preemptionManager.ResumeCandidate(ctx, candidate)
+		if err == preemption.ErrPodNotPaused {
+			klog.V(4).InfoS("pod was marked to be paused but is not paused", "pod", klog.KObj(pod))
+			return nil, framework.NewStatus(framework.Skip)
+		}
+		if err != nil {
+			klog.ErrorS(err, "failed to resume pod", "pod", klog.KObj(pod))
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable)
+		}
+		klog.V(4).InfoS("successfully resumed pod", "pod", klog.KObj(c.Pod))
+		return nil, framework.NewStatus(framework.Skip, "skipped because pod is resumed successfully")
+	}
+	return nil, nil
+}
+
+// PreFilterExtensions returns prefilter extensions, pod add and remove.
+func (rp *LLFPreemptiveScheduling) PreFilterExtensions() framework.PreFilterExtensions {
+	return nil
+}

@@ -487,6 +487,9 @@ clientConnection:
   kubeconfig: "%s"
 profiles:
 - plugins:
+    preFilter:
+      enabled:
+      - name: LLFPreemptiveScheduling
     queueSort:
       enabled:
       - name: LLFPreemptiveScheduling
@@ -829,8 +832,10 @@ profiles:
 					QueueSort: config.PluginSet{
 						Enabled: []config.Plugin{{Name: rtpreemptive.NameLLF}},
 					},
-					Bind:       defaults.ExpandedPluginsV1.Bind,
-					PreFilter:  defaults.ExpandedPluginsV1.PreFilter,
+					Bind: defaults.ExpandedPluginsV1.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: rtpreemptive.NameLLF}),
+					},
 					Filter:     defaults.ExpandedPluginsV1.Filter,
 					PostFilter: defaults.ExpandedPluginsV1.PostFilter,
 					PreScore:   defaults.ExpandedPluginsV1.PreScore,
