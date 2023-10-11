@@ -77,7 +77,9 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		return
 	}
 
-	klog.V(3).InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
+	// TODO: revert back to 3
+	klog.InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
+	// ENDTODO
 
 	// Synchronously attempt to find a fit for the pod.
 	start := time.Now()

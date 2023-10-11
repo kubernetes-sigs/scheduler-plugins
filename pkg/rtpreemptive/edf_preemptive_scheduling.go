@@ -15,6 +15,8 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling/core"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/deadline"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/preemption"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/priorityqueue"
+	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/util"
 )
 
 const (
@@ -234,9 +236,9 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 	podDDL := rp.deadlineManager.GetPodDeadline(pod)
 	maxDDL := podDDL
 
-	var candidatePod *v1.Pod
+	candidateDDLQ := priorityqueue.New(0)
+	candidatePods := make(map[string]*v1.Pod)
 	var unpausedPods []*v1.Pod
-	// find latest deadline among all running pods and update candidate accordingly
 	for _, podInfo := range append(nodeInfo.Pods, rp.fh.NominatedPodsForNode(nodeInfo.Node().Name)...) {
 		p, err := rp.podLister.Pods(podInfo.Pod.Namespace).Get(podInfo.Pod.Name)
 		if err != nil {
@@ -247,33 +249,45 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 			klog.V(4).InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
 			continue
 		}
-		if p.Status.Phase != v1.PodPaused {
-			unpausedPods = append(unpausedPods, p)
-			ddl := rp.deadlineManager.GetPodDeadline(p)
-			if ddl.After(maxDDL) {
-				maxDDL = ddl
-				candidatePod = p
-			}
+		if rp.preemptionManager.IsPodMarkedPaused(pod) || p.Status.Phase == v1.PodPaused {
+			klog.V(4).InfoS("skipping paused/to-be-paused pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			continue
+		}
+		if p.Namespace == util.NamespaceKubeSystem {
+			klog.V(4).InfoS("skipping kube system pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			continue
+		}
+		unpausedPods = append(unpausedPods, p)
+		ddl := rp.deadlineManager.GetPodDeadline(p)
+		if ddl.After(maxDDL) {
+			maxDDL = ddl
+			qItem := priorityqueue.NewItem(string(p.UID), int64(ddl.Unix()))
+			candidateDDLQ.PushItem(qItem)
+			candidatePods[qItem.Value()] = p
 		}
 	}
-	if candidatePod == nil {
+	if len(candidatePods) == 0 {
 		klog.V(4).InfoS("found no candidate pods on node with deadline later than current pod deadline", "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
 		return nil
 	}
 
-	// check if the preemptible pod is excluded it would yield enough resource to run the current pod
-	var podsExcludeCandidate []*v1.Pod
-	for _, p := range unpausedPods {
-		if p.UID != candidatePod.UID {
-			podsExcludeCandidate = append(podsExcludeCandidate, p)
+	for i := 0; i < candidateDDLQ.Size(); i++ {
+		candidatePod := candidatePods[candidateDDLQ.PopItem().Value()]
+		// check if the preemptible pod is excluded it would yield enough resource to run the current pod
+		var podsExcludeCandidate []*v1.Pod
+		for _, p := range unpausedPods {
+			if p.UID != candidatePod.UID {
+				podsExcludeCandidate = append(podsExcludeCandidate, p)
+			}
 		}
+		nodeAfterPreemption := framework.NewNodeInfo(podsExcludeCandidate...)
+		nodeAfterPreemption.SetNode(nodeInfo.Node())
+		insufficientResources := noderesources.Fits(pod, nodeAfterPreemption)
+		if len(insufficientResources) > 0 {
+			klog.V(4).InfoS("there is not enough resource to run pod on node even after preemption", "errors", insufficientResources, "candidate", klog.KObj(candidatePod), "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
+			continue
+		}
+		return candidatePod
 	}
-	nodeAfterPreemption := framework.NewNodeInfo(podsExcludeCandidate...)
-	nodeAfterPreemption.SetNode(nodeInfo.Node())
-	insufficientResources := noderesources.Fits(pod, nodeAfterPreemption)
-	if len(insufficientResources) > 0 {
-		klog.V(4).InfoS("there is not enough resource to run pod on node even after preemption", "candidate", klog.KObj(candidatePod), "pod", klog.KObj(pod), "node", klog.KObj(nodeInfo.Node()))
-		return nil
-	}
-	return candidatePod
+	return nil
 }
