@@ -55,5 +55,8 @@ func (p *podExecution) laxity() (time.Duration, error) {
 	if remainingExecTime < 0 {
 		return 0, ErrBeyondEstimation
 	}
-	return timeToDDL - remainingExecTime, nil
+	if laxity := timeToDDL - remainingExecTime; laxity >= 0 {
+		return laxity, nil
+	}
+	return 0, nil
 }
