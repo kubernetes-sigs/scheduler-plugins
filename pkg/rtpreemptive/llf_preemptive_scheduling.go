@@ -167,10 +167,6 @@ func (rp *LLFPreemptiveScheduling) PreFilter(ctx context.Context, state *framewo
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "rejected as another paused pod has higher priority")
 		}
 		c, err := rp.preemptionManager.ResumeCandidate(ctx, candidate)
-		if err == preemption.ErrPodNotPaused {
-			klog.V(4).InfoS("pod was marked to be paused but is not paused", "pod", klog.KObj(pod))
-			return nil, framework.NewStatus(framework.Skip)
-		}
 		if err != nil {
 			klog.ErrorS(err, "failed to resume pod", "pod", klog.KObj(pod))
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable)
@@ -199,8 +195,8 @@ func (rp *LLFPreemptiveScheduling) Filter(ctx context.Context, state *framework.
 		candidateLaxity, _ := rp.laxityManager.GetPodLaxity(candidate.Pod)
 		podLaxity, _ := rp.laxityManager.GetPodLaxity(pod)
 		// TODO: remove debug log
-		klog.InfoS("filter: candidate", "pod", klog.KObj(candidate.Pod), "laxity", candidateLaxity, "phase", candidate.Pod.Status.Phase)
-		klog.InfoS("filter: pod2sched", "pod", klog.KObj(pod), "laxity", podLaxity, "phase", pod.Status.Phase)
+		klog.InfoS("filter: candidate", "pod", klog.KObj(candidate.Pod), "laxity", candidateLaxity, "phase", candidate.Pod.Status.Phase, "node", candidate.NodeName)
+		klog.InfoS("filter: pod2sched", "pod", klog.KObj(pod), "laxity", podLaxity, "phase", pod.Status.Phase, "node", pod.Spec.NodeName)
 		// ENDTODO
 		if candidateLaxity < podLaxity {
 			msg := "found a paused pod on node that need to be resumed"
@@ -278,13 +274,11 @@ func (rp *LLFPreemptiveScheduling) selectCandidate(candidates []*preemption.Cand
 	}
 	maxLaxity, _ := rp.laxityManager.GetPodLaxity(candidates[0].Pod)
 	bestCandidate := candidates[0]
-	for _, c := range candidates {
-		if len(c.Pod.Spec.NodeName) <= 0 {
-			klog.V(4).InfoS("selectCandidate: skipping candidate with no node assigned", "candidate", klog.KObj(c.Pod))
-		}
+	for i := 1; i < len(candidates); i++ {
+		c := candidates[i]
 		laxity, _ := rp.laxityManager.GetPodLaxity(c.Pod)
 		// TODO: remove debug log
-		klog.InfoS("selectCandidate", "pod", klog.KObj(c.Pod), "laxity", laxity, "phase", c.Pod.Status.Phase)
+		klog.InfoS("selectCandidate", "pod", klog.KObj(c.Pod), "laxity", laxity, "phase", c.Pod.Status.Phase, "node", c.NodeName)
 		// ENDTODO
 		if laxity > maxLaxity {
 			maxLaxity = laxity
@@ -297,7 +291,7 @@ func (rp *LLFPreemptiveScheduling) selectCandidate(candidates []*preemption.Cand
 func (rp *LLFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *framework.NodeInfo) *v1.Pod {
 	maxLaxity, _ := rp.laxityManager.GetPodLaxity(pod)
 	// TODO: remove debug log
-	klog.InfoS("findCandidateOnNode", "pod2sched", klog.KObj(pod), "laxity", maxLaxity, "phase", pod.Status.Phase)
+	klog.InfoS("findCandidateOnNode", "pod2sched", klog.KObj(pod), "laxity", maxLaxity, "phase", pod.Status.Phase, "node", nodeInfo.Node().Name)
 	//ENDTODO
 
 	candidateLaxityQ := priorityqueue.New(0)
@@ -310,21 +304,22 @@ func (rp *LLFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 			p = podInfo.Pod // fallback to pod from nodeInfo
 		}
 		if p.UID == pod.UID {
-			klog.V(4).InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
-			continue
-		}
-		if rp.preemptionManager.IsPodMarkedPaused(pod) || p.Status.Phase == v1.PodPaused {
-			klog.V(4).InfoS("skipping paused/to-be-paused pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			klog.InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
 			continue
 		}
 		if p.Namespace == util.NamespaceKubeSystem {
-			klog.V(4).InfoS("skipping kube system pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			klog.InfoS("skipping kube system pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
 			continue
 		}
+		if rp.preemptionManager.IsPodMarkedPaused(pod) || p.Status.Phase == v1.PodPaused {
+			klog.InfoS("skipping paused/to-be-paused pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			continue
+		}
+
 		unpausedPods = append(unpausedPods, p)
 		laxity, _ := rp.laxityManager.GetPodLaxity(p)
 		// TODO: remove debug log
-		klog.InfoS("findCandidateOnNode", "candidate", klog.KObj(p), "laxity", laxity, "phase", p.Status.Phase)
+		klog.InfoS("findCandidateOnNode", "candidate", klog.KObj(p), "laxity", laxity, "phase", p.Status.Phase, "node", p.Spec.NodeName)
 		// ENDTODO
 		if laxity > maxLaxity {
 			maxLaxity = laxity

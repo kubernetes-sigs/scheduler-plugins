@@ -219,10 +219,8 @@ func (rp *EDFPreemptiveScheduling) selectCandidate(candidates []*preemption.Cand
 	}
 	maxDDL := rp.deadlineManager.GetPodDeadline(candidates[0].Pod)
 	bestCandidate := candidates[0]
-	for _, c := range candidates {
-		if len(c.Pod.Spec.NodeName) <= 0 {
-			klog.V(4).InfoS("selectCandidate: skipping candidate with no node assigned", "candidate", klog.KObj(c.Pod))
-		}
+	for i := 1; i < len(candidates); i++ {
+		c := candidates[i]
 		ddl := rp.deadlineManager.GetPodDeadline(c.Pod)
 		if ddl.After(maxDDL) {
 			maxDDL = ddl
@@ -249,12 +247,12 @@ func (rp *EDFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 			klog.V(4).InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
 			continue
 		}
-		if rp.preemptionManager.IsPodMarkedPaused(pod) || p.Status.Phase == v1.PodPaused {
-			klog.V(4).InfoS("skipping paused/to-be-paused pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
-			continue
-		}
 		if p.Namespace == util.NamespaceKubeSystem {
 			klog.V(4).InfoS("skipping kube system pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			continue
+		}
+		if rp.preemptionManager.IsPodMarkedPaused(pod) || p.Status.Phase == v1.PodPaused {
+			klog.V(4).InfoS("skipping paused/to-be-paused pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
 			continue
 		}
 		unpausedPods = append(unpausedPods, p)
