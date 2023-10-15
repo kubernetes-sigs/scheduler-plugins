@@ -137,6 +137,7 @@ func countPods(pausedPod map[string]gocache.Item) int {
 	}
 	return size
 }
+
 func (s *PreemptionManagerTestSuite) TestIsPodMarkedPaused() {
 	pod1 := util.MakePod("p1", "ns1", 0, 0, "12s", "uid1", "node-1", nil, v1.PodRunning, "true")
 	pod2 := util.MakePod("p2", "ns1", 0, 0, "10s", "uid2", "node-2", nil, v1.PodRunning, "false")
@@ -233,6 +234,7 @@ func (s *PreemptionManagerTestSuite) TestResumePod() {
 				s.Equal(tt.candidate, c)
 				q, _ := s.manager.pausedPods.Get(c.NodeName)
 				s.Nil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
+				s.False(s.manager.IsPodMarkedPaused(c.Pod))
 			}
 		})
 	}
@@ -279,6 +281,7 @@ func (s *PreemptionManagerTestSuite) TestPauseCandidate() {
 				q, _ := s.manager.pausedPods.Get(c.NodeName)
 				s.NotNil(q)
 				s.NotNil(q.(priorityqueue.PriorityQueue).GetItem(toCacheKey(c.Pod)))
+				s.True(s.manager.IsPodMarkedPaused(c.Pod))
 			}
 		})
 	}

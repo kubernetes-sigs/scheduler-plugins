@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -52,6 +53,7 @@ type PriorityFunc func(*v1.Pod) int64
 
 // PreemptionManager maintains information related to current paused pods
 type preemptionManager struct {
+	l               sync.RWMutex
 	pausedPods      *gocache.Cache
 	deadlineManager deadline.Manager
 	podLister       corelisters.PodLister
@@ -75,13 +77,17 @@ func NewPreemptionManager(podLister corelisters.PodLister, nodeLister corelister
 }
 
 func (m *preemptionManager) IsPodMarkedPaused(pod *v1.Pod) bool {
-	val, ok := pod.Annotations[annotations.AnnotationKeyPausePod]
-	if !ok {
-		return false
+	m.l.RLock()
+	defer m.l.RUnlock()
+	if podQueue, ok := m.pausedPods.Get(pod.Spec.NodeName); ok {
+		if item := podQueue.(priorityqueue.PriorityQueue).GetItem(toCacheKey(pod)); item != nil {
+			return true
+		}
 	}
-	return val == "true"
+	return false
 }
 
+// assume lock has been acquired
 func (m *preemptionManager) addCandidate(candidate *Candidate) {
 	podQueue, ok := m.pausedPods.Get(candidate.NodeName)
 	if !ok {
@@ -89,10 +95,15 @@ func (m *preemptionManager) addCandidate(candidate *Candidate) {
 	}
 	priority := m.priorityFunc(candidate.Pod)
 	item := priorityqueue.NewItem(toCacheKey(candidate.Pod), priority)
-	podQueue.(priorityqueue.PriorityQueue).PushItem(item)
+	q := podQueue.(priorityqueue.PriorityQueue)
+	if q.GetItem(item.Value()) != nil {
+		return
+	}
+	q.PushItem(item)
 	m.pausedPods.Set(candidate.NodeName, podQueue, -1)
 }
 
+// assume lock as been acquired
 func (m *preemptionManager) removeCandidate(candidate *Candidate) {
 	m.deadlineManager.RemovePodDeadline(candidate.Pod)
 	pq, ok := m.pausedPods.Get(candidate.NodeName)
@@ -103,6 +114,8 @@ func (m *preemptionManager) removeCandidate(candidate *Candidate) {
 }
 
 func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error) {
+	m.l.Lock()
+	defer m.l.Unlock()
 	latestPod, err := m.podLister.Pods(candidate.Pod.Namespace).Get(candidate.Pod.Name)
 	if err != nil {
 		msg := "failed to list pod"
@@ -127,6 +140,8 @@ func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candi
 }
 
 func (m *preemptionManager) GetPausedCandidateOnNode(ctx context.Context, nodeName string) *Candidate {
+	m.l.Lock()
+	defer m.l.Unlock()
 	if len(nodeName) <= 0 {
 		return nil
 	}
@@ -149,6 +164,8 @@ func (m *preemptionManager) GetPausedCandidateOnNode(ctx context.Context, nodeNa
 }
 
 func (m *preemptionManager) ResumeCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error) {
+	m.l.Lock()
+	defer m.l.Unlock()
 	candidatePod, err := m.podLister.Pods(candidate.Pod.Namespace).Get(candidate.Pod.Name)
 	if err != nil || candidatePod == nil {
 		return nil, fmt.Errorf("failed to list pod: %w", err)
@@ -184,7 +201,7 @@ func (m *preemptionManager) ResumeCandidate(ctx context.Context, candidate *Cand
 	return c, nil
 }
 
-func (m preemptionManager) dryRunResumeCandidate(pod *v1.Pod, node *v1.Node) error {
+func (m *preemptionManager) dryRunResumeCandidate(pod *v1.Pod, node *v1.Node) error {
 	nodeInfo, err := m.nodeInfoLister.Get(node.Name)
 	if err != nil {
 		klog.ErrorS(err, "failed to get node info", "node", klog.KObj(node))
@@ -226,7 +243,7 @@ func markPodToResume(pod *v1.Pod) {
 		klog.V(5).InfoS("pod annotations is nil, creating a new map", "pod", klog.KObj(pod))
 		annot = make(map[string]string)
 	}
-	annot[annotations.AnnotationKeyPausePod] = "false"
+	delete(annot, annotations.AnnotationKeyPausePod)
 	pod.SetAnnotations(annot)
 }
 
