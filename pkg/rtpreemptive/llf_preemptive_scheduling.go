@@ -150,10 +150,9 @@ func (rp *LLFPreemptiveScheduling) PreFilter(ctx context.Context, state *framewo
 	if latestPod != nil {
 		pod = latestPod
 	}
-
 	paused := pod.Status.Phase == v1.PodPaused
 	markedPaused := rp.preemptionManager.IsPodMarkedPaused(pod)
-
+	klog.InfoS("debug: preFilter", "pod", klog.KObj(pod), "paused", paused, "markedPaused", markedPaused)
 	if markedPaused && !paused {
 		return nil, framework.NewStatus(framework.Skip, "skipped as pod cannot be resumed")
 	}
@@ -161,10 +160,16 @@ func (rp *LLFPreemptiveScheduling) PreFilter(ctx context.Context, state *framewo
 		klog.V(4).InfoS("pod is paused and attempt to resume it", "pod", klog.KObj(pod))
 		candidate := rp.preemptionManager.GetPausedCandidateOnNode(ctx, pod.Spec.NodeName)
 		if candidate == nil {
+			klog.V(4).InfoS("pod was marked to be paused but not found in preemption manager, attempt to resume", "pod", klog.KObj(pod))
 			candidate = &preemption.Candidate{NodeName: pod.Spec.NodeName, Pod: pod}
 		}
 		if candidate.Pod.UID != pod.UID {
+			klog.V(4).InfoS("another pod on the node has higher priority", "pod", klog.KObj(pod), "candidate", klog.KObj(candidate.Pod), "node", candidate.NodeName)
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "rejected as another paused pod has higher priority")
+		}
+		if candidate.Preemptor != nil && candidate.Preemptor.Status.Phase == v1.PodPending {
+			klog.InfoS("pod was preempted by a different pod that is still pending", "preemptor", klog.KObj(candidate.Preemptor), "pod", klog.KObj(pod))
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "rejected as the preemptor is not yet scheduled")
 		}
 		c, err := rp.preemptionManager.ResumeCandidate(ctx, candidate)
 		if err != nil {
@@ -192,6 +197,10 @@ func (rp *LLFPreemptiveScheduling) Filter(ctx context.Context, state *framework.
 	}
 
 	if candidate := rp.preemptionManager.GetPausedCandidateOnNode(ctx, nodeInfo.Node().Name); candidate != nil {
+		if candidate.Preemptor != nil && candidate.Preemptor.Status.Phase == v1.PodPending && candidate.Preemptor.UID != pod.UID {
+			klog.InfoS("not eligible to resume, pod was preempted by a different pod that is still pending", "candidate", klog.KObj(candidate.Pod), "preemptor", klog.KObj(candidate.Preemptor), "pod", klog.KObj(pod))
+			goto skipResume
+		}
 		candidateLaxity, _ := rp.laxityManager.GetPodLaxity(candidate.Pod)
 		podLaxity, _ := rp.laxityManager.GetPodLaxity(pod)
 		// TODO: remove debug log
@@ -211,11 +220,12 @@ func (rp *LLFPreemptiveScheduling) Filter(ctx context.Context, state *framework.
 			klog.V(4).InfoS("failed to resume paused pod, continue to schedule pod", "error", err, "candidate", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", candidate.NodeName)
 		}
 	}
-
+skipResume:
 	var unpausedPods []*v1.Pod
 	for _, p := range nodeInfo.Pods {
 		if p.Pod.Status.Phase != v1.PodPaused {
 			unpausedPods = append(unpausedPods, p.Pod)
+			klog.InfoS("debug: filter adding unpaused pod", "pod", klog.KObj(p.Pod), "pod2Sched", klog.KObj(pod))
 		}
 	}
 	nodeExcludePausedPods := framework.NewNodeInfo(unpausedPods...)
@@ -261,10 +271,12 @@ func (rp *LLFPreemptiveScheduling) PostFilter(ctx context.Context, state *framew
 	// TODO: change to level 4
 	klog.InfoS("found candidate pod to pause on node", "candidate", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", candidate.NodeName)
 	// ENDTODO
+	candidate.Preemptor = pod
 	if _, err := rp.preemptionManager.PauseCandidate(ctx, candidate); err != nil {
 		klog.ErrorS(err, "failed to pause pod on node", "candidate", klog.KObj(candidate.Pod), "pod", klog.KObj(pod), "node", candidate.NodeName)
-		return nil, framework.AsStatus(err)
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "failed to preempt candidate")
 	}
+	klog.InfoS("debug: successfully paused candidate pod", "candidate", klog.KObj(candidate.Pod), "node", candidate.NodeName)
 	return framework.NewPostFilterResultWithNominatedNode(candidate.NodeName), framework.NewStatus(framework.Success)
 }
 
@@ -304,15 +316,19 @@ func (rp *LLFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 			p = podInfo.Pod // fallback to pod from nodeInfo
 		}
 		if p.UID == pod.UID {
-			klog.InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			klog.InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod))
 			continue
 		}
 		if p.Namespace == util.NamespaceKubeSystem {
-			klog.InfoS("skipping kube system pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			klog.InfoS("skipping kube system pod", "p", klog.KObj(p), "pod", klog.KObj(pod))
+			continue
+		}
+		if len(p.Spec.NodeName) == 0 {
+			klog.InfoS("skipping pod not yet bound to a node", "p", klog.KObj(p), "pod", klog.KObj(pod))
 			continue
 		}
 		if rp.preemptionManager.IsPodMarkedPaused(pod) || p.Status.Phase == v1.PodPaused {
-			klog.InfoS("skipping paused/to-be-paused pod", "p", klog.KObj(p), "pod", klog.KObj(pod), "uid", p.UID)
+			klog.InfoS("skipping paused/to-be-paused pod", "p", klog.KObj(p), "pod", klog.KObj(pod))
 			continue
 		}
 

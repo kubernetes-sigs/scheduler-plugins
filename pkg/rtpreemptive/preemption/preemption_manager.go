@@ -30,8 +30,9 @@ var (
 )
 
 type Candidate struct {
-	NodeName string
-	Pod      *v1.Pod
+	NodeName  string
+	Pod       *v1.Pod
+	Preemptor *v1.Pod
 }
 
 type Manager interface {
@@ -54,6 +55,7 @@ type PriorityFunc func(*v1.Pod) int64
 // PreemptionManager maintains information related to current paused pods
 type preemptionManager struct {
 	l               sync.RWMutex
+	preemptors      *gocache.Cache
 	pausedPods      *gocache.Cache
 	deadlineManager deadline.Manager
 	podLister       corelisters.PodLister
@@ -66,6 +68,7 @@ type preemptionManager struct {
 func NewPreemptionManager(podLister corelisters.PodLister, nodeLister corelisters.NodeLister, nodeInfoLister framework.NodeInfoLister,
 	clientSet kubernetes.Interface, priorityFunc PriorityFunc) Manager {
 	return &preemptionManager{
+		preemptors:      gocache.New(time.Hour*5, time.Second*5),
 		pausedPods:      gocache.New(time.Hour*5, time.Second*5),
 		deadlineManager: deadline.NewDeadlineManager(),
 		podLister:       podLister,
@@ -101,6 +104,9 @@ func (m *preemptionManager) addCandidate(candidate *Candidate) {
 	}
 	q.PushItem(item)
 	m.pausedPods.Set(candidate.NodeName, podQueue, -1)
+	if candidate.Preemptor != nil {
+		m.preemptors.Set(toCacheKey(candidate.Pod), toCacheKey(candidate.Preemptor), -1)
+	}
 }
 
 // assume lock as been acquired
@@ -111,11 +117,17 @@ func (m *preemptionManager) removeCandidate(candidate *Candidate) {
 		return
 	}
 	pq.(priorityqueue.PriorityQueue).RemoveItem(toCacheKey(candidate.Pod))
+	m.preemptors.Delete(toCacheKey(candidate.Pod))
 }
 
 func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error) {
 	m.l.Lock()
 	defer m.l.Unlock()
+	if val, ok := m.preemptors.Get(toCacheKey(candidate.Pod)); ok {
+		namespace, name := parseCacheKey(val.(string))
+		klog.Errorf("candidate was already paused by another pod: %s/%s", namespace, name)
+		return nil, ErrPodAlreadyPaused
+	}
 	latestPod, err := m.podLister.Pods(candidate.Pod.Namespace).Get(candidate.Pod.Name)
 	if err != nil {
 		msg := "failed to list pod"
@@ -134,7 +146,7 @@ func (m *preemptionManager) PauseCandidate(ctx context.Context, candidate *Candi
 		klog.ErrorS(err, msg, "pod", klog.KObj(latestPod))
 		return nil, fmt.Errorf("%s: %w", msg, err)
 	}
-	c := &Candidate{Pod: latestPod, NodeName: latestPod.Spec.NodeName}
+	c := &Candidate{Pod: latestPod, NodeName: latestPod.Spec.NodeName, Preemptor: candidate.Preemptor}
 	m.addCandidate(c)
 	return c, nil
 }
@@ -155,12 +167,23 @@ func (m *preemptionManager) GetPausedCandidateOnNode(ctx context.Context, nodeNa
 		return nil
 	}
 	defer q.PushItem(item)
+	c := &Candidate{NodeName: nodeName}
+	preemptor, ok := m.preemptors.Get(item.Value())
+	if ok {
+		namespace, name := parseCacheKey(preemptor.(string))
+		preemptorPod, err := m.podLister.Pods(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		c.Preemptor = preemptorPod
+	}
 	namespace, name := parseCacheKey(item.Value())
 	p, err := m.podLister.Pods(namespace).Get(name)
 	if err != nil {
 		return nil
 	}
-	return &Candidate{Pod: p, NodeName: p.Spec.NodeName}
+	c.Pod = p
+	return c
 }
 
 func (m *preemptionManager) ResumeCandidate(ctx context.Context, candidate *Candidate) (*Candidate, error) {

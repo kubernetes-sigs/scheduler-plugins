@@ -84,6 +84,7 @@ func (s *PreemptionManagerTestSuite) SetupTest() {
 	nodeLister := s.informerFactory.Core().V1().Nodes().Lister()
 	nodeInfoLister := s.sharedLister.NodeInfos()
 	s.manager = &preemptionManager{
+		preemptors:      gocache.New(time.Hour*5, time.Second*5),
 		pausedPods:      gocache.New(time.Hour*5, time.Second*5),
 		deadlineManager: deadline.NewDeadlineManager(),
 		podLister:       podLister,
@@ -93,8 +94,14 @@ func (s *PreemptionManagerTestSuite) SetupTest() {
 		priorityFunc:    priorityFuncEDF,
 	}
 	for _, pod := range existPods {
+		c := &Candidate{NodeName: pod.Spec.NodeName, Pod: pod}
+		if pod.Name == pausedPod[1].Name {
+			c.Preemptor = existPods[0]
+		}
+		if pod.Name == pausedPod[0].Name {
+			c.Preemptor = existPods[1]
+		}
 		if pod.Status.Phase == v1.PodPaused {
-			c := &Candidate{NodeName: pod.Spec.NodeName, Pod: pod}
 			s.manager.addCandidate(c)
 		}
 	}
@@ -166,12 +173,12 @@ func (s *PreemptionManagerTestSuite) TestGetPausedCandidateOnNode() {
 		{
 			name:              "get pod with highest priority correctly on node-2",
 			nodeName:          "node-2",
-			expectedCandidate: &Candidate{Pod: pausedPod[1], NodeName: "node-2"},
+			expectedCandidate: &Candidate{Pod: pausedPod[1], NodeName: "node-2", Preemptor: existPods[0]},
 		},
 		{
 			name:              "get pod with highest priority correctly on node-1",
 			nodeName:          "node-1",
-			expectedCandidate: &Candidate{Pod: pausedPod[0], NodeName: "node-1"},
+			expectedCandidate: &Candidate{Pod: pausedPod[0], NodeName: "node-1", Preemptor: existPods[1]},
 		},
 	} {
 		s.Run(tt.name, func() {
