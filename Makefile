@@ -14,6 +14,7 @@
 
 ARCHS = amd64 arm64
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
+BUILDENVVARCTRLR=CGO_ENABLED=0
 BUILDENVVAR=CGO_ENABLED=1
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
@@ -47,15 +48,15 @@ build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
 
 .PHONY: build-controller
 build-controller:
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(COMMONENVVAR) $(BUILDENVVARCTRLR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-controller.amd64
 build-controller.amd64:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(COMMONENVVAR) $(BUILDENVVARCTRLR) GOARCH=amd64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-controller.arm64v8
 build-controller.arm64v8:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(COMMONENVVAR) $(BUILDENVVARCTRLR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:

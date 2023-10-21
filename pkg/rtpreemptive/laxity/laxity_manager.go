@@ -7,9 +7,17 @@ import (
 
 	gocache "github.com/patrickmn/go-cache"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/annotations"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/deadline"
 	"sigs.k8s.io/scheduler-plugins/pkg/rtpreemptive/estimator"
+)
+
+const (
+	// EstimatorMetricSize describes the size of the metrics expected to be passed to ATLAS LLSP solver.
+	// When a metrics passed has more items, it will be truncated.
+	// If there are less items, 0 will be added for padding
+	EstimatorMetricSize = 5
 )
 
 var (
@@ -36,9 +44,25 @@ type laxityManager struct {
 func NewLaxityManager() Manager {
 	return &laxityManager{
 		deadlineManager: deadline.NewDeadlineManager(),
-		atlas:           estimator.NewATLASEstimator(),
+		atlas:           estimator.NewATLASEstimator(EstimatorMetricSize),
 		podExecutions:   gocache.New(time.Second, time.Second),
 	}
+}
+
+func getPodExecutionTime(pod *v1.Pod) time.Duration {
+	if execTime, err := time.ParseDuration(pod.Annotations[annotations.AnnotationKeyExecTime]); err == nil {
+		return execTime
+	}
+	return 0
+}
+
+func getPodMetrics(pod *v1.Pod) estimator.Metrics {
+	var metrics estimator.Metrics
+	if ddlRel, err := time.ParseDuration(pod.Annotations[annotations.AnnotationKeyDDL]); err == nil {
+		metrics = append(metrics, float64(ddlRel))
+	}
+	metrics = append(metrics, float64(getPodExecutionTime(pod)))
+	return metrics
 }
 
 func (l *laxityManager) createPodExecutionIfNotExist(pod *v1.Pod) *podExecution {
@@ -46,12 +70,14 @@ func (l *laxityManager) createPodExecutionIfNotExist(pod *v1.Pod) *podExecution 
 	podExec, ok := l.podExecutions.Get(key)
 	if !ok || podExec == nil {
 		ddl := l.deadlineManager.GetPodDeadline(pod)
-		// TODO: pass appropriate metrics to estimator
-		metrics := make(map[string]interface{})
-		metrics["ddl"], _ = time.ParseDuration(pod.Annotations[annotations.AnnotationKeyDDL])
-		metrics["exec_time"], _ = time.ParseDuration(pod.Annotations[annotations.AnnotationKeyExecTime])
-		// ENDTODO
+		execTime := getPodExecutionTime(pod)
+		metrics := getPodMetrics(pod)
 		estExecTime := l.atlas.EstimateExecTime(metrics)
+		if estExecTime == 0 {
+			l.atlas.Add(metrics, execTime)
+			estExecTime = l.atlas.EstimateExecTime(metrics)
+		}
+		klog.V(5).InfoS("laxityManager: EstimateExecTime", "estExecTime", estExecTime, "execTime", execTime, "metrics", metrics, "pod", klog.KObj(pod))
 		podExec = &podExecution{
 			deadline:    ddl,
 			estExecTime: estExecTime,
@@ -73,10 +99,21 @@ func (l *laxityManager) PausePodExecution(pod *v1.Pod) {
 
 func (l *laxityManager) GetPodLaxity(pod *v1.Pod) (time.Duration, error) {
 	podExec := l.createPodExecutionIfNotExist(pod)
-	return podExec.laxity()
+	laxity, err := podExec.laxity()
+	if err == ErrBeyondEstimation {
+		metrics := getPodMetrics(pod)
+		klog.V(5).ErrorS(ErrBeyondEstimation, "wrongly estimated execution time, updating estimator...", "metrics", metrics, "actualExecTime", podExec.actualExecTime, "pod", klog.KObj(pod))
+		l.atlas.Add(metrics, podExec.actualExecTime)
+	}
+	return laxity, err
 }
 
 func (l *laxityManager) RemovePodExecution(pod *v1.Pod) {
+	podExec := l.createPodExecutionIfNotExist(pod)
+	podExec.pause()
+	metrics := getPodMetrics(pod)
+	klog.V(5).InfoS("pod execution finished, updating estimator...", "metrics", metrics, "actualExecTime", podExec.actualExecTime, "pod", klog.KObj(pod))
+	l.atlas.Add(metrics, podExec.actualExecTime)
 	l.podExecutions.Delete(toCacheKey(pod))
 }
 

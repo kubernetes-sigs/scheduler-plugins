@@ -1,10 +1,7 @@
 package estimator
 
 import (
-	"math/rand"
 	"time"
-
-	"k8s.io/klog/v2"
 )
 
 /*
@@ -13,36 +10,47 @@ import (
 */
 import "C"
 
-type Metrics map[string]interface{}
+type Metrics []float64
 
 type Estimator interface {
+	Add(metrics Metrics, actualExecTime time.Duration)
 	EstimateExecTime(metrics Metrics) time.Duration
 }
 
 // TODO: integrate with ATLAS C lib
 type atlasEstimator struct {
+	msize  int
 	solver *C.llsp_t
 }
 
-func NewATLASEstimator() Estimator {
-	return &atlasEstimator{}
+func NewATLASEstimator(metricSize int) Estimator {
+	return &atlasEstimator{
+		msize:  metricSize,
+		solver: C.llsp_new(C.size_t(metricSize)),
+	}
+}
+
+func (a *atlasEstimator) padMetrics(metrics Metrics) Metrics {
+	maxSize := 4
+	if size := len(metrics); size < maxSize {
+		maxSize = size
+	}
+	var m []float64
+	m = append(m, metrics[:maxSize]...)
+	// add zeroes as padding
+	for i := len(metrics) - 1; i < a.msize; i++ {
+		m = append(m, 0)
+	}
+	return m
+}
+
+func (a *atlasEstimator) Add(metrics Metrics, actualExecTime time.Duration) {
+	C.llsp_add(a.solver, (*C.double)(&a.padMetrics(metrics)[0]), C.double(actualExecTime))
+	C.llsp_solve(a.solver)
 }
 
 // EstimateExecTime returns the estimated execution time based on a set of metrics
 func (a *atlasEstimator) EstimateExecTime(metrics Metrics) time.Duration {
-	// TODO: fix implementation
-	execTime, ok := metrics["exec_time"]
-	if ok {
-		return execTime.(time.Duration)
-	}
-	ddl, ok := metrics["ddl"]
-	if !ok {
-		return 0
-	}
-	max, min := 100, 70
-	factor := rand.Intn(max-min) + min
-	estExecTime := ddl.(time.Duration) * (100 - time.Duration(factor)) / 100
-	klog.InfoS("ATLAS Estimator", "factor", float32(factor)/100, "ddl", ddl, "estimated", estExecTime)
-	// ENDTODO
-	return estExecTime
+	prediction := C.llsp_predict(a.solver, (*C.double)(&a.padMetrics(metrics)[0]))
+	return time.Duration(prediction)
 }

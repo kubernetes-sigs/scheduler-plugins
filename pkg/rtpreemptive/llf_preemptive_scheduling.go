@@ -79,7 +79,6 @@ func (rp *LLFPreemptiveScheduling) handlePodAdd(obj interface{}) {
 		return
 	}
 	if pod.Status.Phase == v1.PodRunning {
-		klog.V(4).InfoS("Pod is already running, starting pod execution", "pod", klog.KObj(pod))
 		rp.laxityManager.StartPodExecution(pod)
 	}
 }
@@ -95,20 +94,17 @@ func (rp *LLFPreemptiveScheduling) handlePodUpdate(oldObj, newObj interface{}) {
 		klog.ErrorS(nil, "Cannot convert newObj to *v1.Pod", "newObj", newObj)
 		return
 	}
-	if oldPod.Status.Phase == v1.PodRunning && newPod.Status.Phase == v1.PodPaused {
-		klog.V(4).InfoS("Pod was running but now paused, pausing pod execution", "pod", klog.KObj(oldPod))
-		rp.laxityManager.PausePodExecution(newPod)
-		return
-	}
-	if oldPod.Status.Phase == v1.PodPaused && newPod.Status.Phase == v1.PodRunning {
-		klog.V(4).InfoS("Pod was paused but now resumed, starting pod execution again", "pod", klog.KObj(oldPod))
+	oldPhase := oldPod.Status.Phase
+	newPhase := newPod.Status.Phase
+	switch {
+	case oldPhase == v1.PodPending && newPhase == v1.PodRunning:
 		rp.laxityManager.StartPodExecution(newPod)
-		return
-	}
-	if newPod.Status.Phase == v1.PodSucceeded || newPod.Status.Phase == v1.PodFailed {
-		klog.V(4).InfoS("Pod has exited", "pod", klog.KObj(oldPod), "exitStatus", newPod.Status.Phase)
+	case oldPhase == v1.PodRunning && newPhase == v1.PodPaused:
+		rp.laxityManager.PausePodExecution(newPod)
+	case oldPhase == v1.PodPaused && newPhase == v1.PodRunning:
+		rp.laxityManager.StartPodExecution(newPod)
+	case (oldPhase == v1.PodRunning || oldPhase == v1.PodPaused || oldPhase == v1.PodPending) && (newPhase == v1.PodSucceeded || newPhase == v1.PodFailed):
 		rp.laxityManager.RemovePodExecution(newPod)
-		return
 	}
 }
 
