@@ -7,6 +7,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
+/*
+#cgo LDFLAGS: -lm
+#include "llsp.h"
+*/
+import "C"
+
 type Metrics map[string]interface{}
 
 type Estimator interface {
@@ -14,7 +20,9 @@ type Estimator interface {
 }
 
 // TODO: integrate with ATLAS C lib
-type atlasEstimator struct{}
+type atlasEstimator struct {
+	solver *C.llsp_t
+}
 
 func NewATLASEstimator() Estimator {
 	return &atlasEstimator{}
