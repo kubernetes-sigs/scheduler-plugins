@@ -24,17 +24,16 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/cache"
+	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling/core"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -66,16 +65,23 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		return nil, fmt.Errorf("want args to be of type CoschedulingArgs, got %T", obj)
 	}
 
-	pgClient := pgclientset.NewForConfigOrDie(handle.KubeConfig())
-	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
+	scheme := runtime.NewScheme()
+	_ = clientscheme.AddToScheme(scheme)
+	_ = v1.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+	client, err := client.New(handle.KubeConfig(), client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
 
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
-
-	ctx := context.TODO()
-
-	pgMgr := core.NewPodGroupManager(pgClient, handle.SnapshotSharedLister(), &scheduleTimeDuration, pgInformer, podInformer)
+	pgMgr := core.NewPodGroupManager(
+		client,
+		handle.SnapshotSharedLister(),
+		&scheduleTimeDuration,
+		// Keep the podInformer (from frameworkHandle) as the single source of Pods.
+		handle.SharedInformerFactory().Core().V1().Pods(),
+	)
 	plugin := &Coscheduling{
 		frameworkHandler: handle,
 		pgMgr:            pgMgr,
@@ -88,12 +94,6 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	} else if args.PodGroupBackoffSeconds > 0 {
 		pgBackoff := time.Duration(args.PodGroupBackoffSeconds) * time.Second
 		plugin.pgBackoff = &pgBackoff
-	}
-	pgInformerFactory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), pgInformer.Informer().HasSynced) {
-		err := fmt.Errorf("WaitForCacheSync failed")
-		klog.ErrorS(err, "Cannot sync caches")
-		return nil, err
 	}
 	return plugin, nil
 }

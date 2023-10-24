@@ -20,10 +20,16 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	listersv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
 var _ framework.SharedLister = &fakeSharedLister{}
@@ -244,4 +250,33 @@ func NewPodNominator(podLister listersv1.PodLister) framework.PodNominator {
 // NominatedNodeName returns nominated node name of a Pod.
 func NominatedNodeName(pod *v1.Pod) string {
 	return pod.Status.NominatedNodeName
+}
+
+// NewFakeClient returns a generic controller-runtime client with all given `objs` as internal runtime objects.
+// It also registers core v1 scheme and this repo's v1alpha1 scheme.
+// This function is used by unit tests.
+func NewFakeClient(objs ...runtime.Object) (client.Client, error) {
+	scheme := runtime.NewScheme()
+	if err := v1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	if err := v1alpha1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	return fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build(), nil
+}
+
+// NewClientOrDie returns a generic controller-runtime client or panic upon any error.
+// This function is used by integration tests.
+func NewClientOrDie(cfg *rest.Config) client.Client {
+	scheme := runtime.NewScheme()
+	_ = clientscheme.AddToScheme(scheme)
+	_ = v1.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+
+	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		panic(err)
+	}
+	return c
 }

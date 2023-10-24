@@ -32,11 +32,9 @@ import (
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pginformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions/scheduling/v1alpha1"
-	pglister "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -66,8 +64,8 @@ type Manager interface {
 
 // PodGroupManager defines the scheduling operation called
 type PodGroupManager struct {
-	// pgClient is a podGroup client
-	pgClient pgclientset.Interface
+	// client is a generic controller-runtime client to manipulate both core resources and PodGroups.
+	client client.Client
 	// snapshotSharedLister is pod shared list
 	snapshotSharedLister framework.SharedLister
 	// scheduleTimeout is the default timeout for podgroup scheduling.
@@ -77,21 +75,17 @@ type PodGroupManager struct {
 	permittedPG *gochache.Cache
 	// backedOffPG stores the podgorup name which failed scheudling recently.
 	backedOffPG *gochache.Cache
-	// pgLister is podgroup lister
-	pgLister pglister.PodGroupLister
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	sync.RWMutex
 }
 
 // NewPodGroupManager creates a new operation object.
-func NewPodGroupManager(pgClient pgclientset.Interface, snapshotSharedLister framework.SharedLister, scheduleTimeout *time.Duration,
-	pgInformer pginformer.PodGroupInformer, podInformer informerv1.PodInformer) *PodGroupManager {
+func NewPodGroupManager(client client.Client, snapshotSharedLister framework.SharedLister, scheduleTimeout *time.Duration, podInformer informerv1.PodInformer) *PodGroupManager {
 	pgMgr := &PodGroupManager{
-		pgClient:             pgClient,
+		client:               client,
 		snapshotSharedLister: snapshotSharedLister,
 		scheduleTimeout:      scheduleTimeout,
-		pgLister:             pgInformer.Lister(),
 		podLister:            podInformer.Lister(),
 		permittedPG:          gochache.New(3*time.Second, 3*time.Second),
 		backedOffPG:          gochache.New(10*time.Second, 10*time.Second),
@@ -224,8 +218,8 @@ func (pgMgr *PodGroupManager) GetCreationTimestamp(pod *corev1.Pod, ts time.Time
 	if len(pgName) == 0 {
 		return ts
 	}
-	pg, err := pgMgr.pgLister.PodGroups(pod.Namespace).Get(pgName)
-	if err != nil {
+	var pg v1alpha1.PodGroup
+	if err := pgMgr.client.Get(context.TODO(), types.NamespacedName{Namespace: pod.Namespace, Name: pgName}, &pg); err != nil {
 		return ts
 	}
 	return pg.CreationTimestamp.Time
@@ -236,27 +230,17 @@ func (pgMgr *PodGroupManager) DeletePermittedPodGroup(pgFullName string) {
 	pgMgr.permittedPG.Delete(pgFullName)
 }
 
-// PatchPodGroup patches a podGroup.
-func (pgMgr *PodGroupManager) PatchPodGroup(pgName string, namespace string, patch []byte) error {
-	if len(patch) == 0 {
-		return nil
-	}
-	_, err := pgMgr.pgClient.SchedulingV1alpha1().PodGroups(namespace).Patch(context.TODO(), pgName,
-		types.MergePatchType, patch, metav1.PatchOptions{})
-	return err
-}
-
 // GetPodGroup returns the PodGroup that a Pod belongs to in cache.
 func (pgMgr *PodGroupManager) GetPodGroup(pod *corev1.Pod) (string, *v1alpha1.PodGroup) {
 	pgName := util.GetPodGroupLabel(pod)
 	if len(pgName) == 0 {
 		return "", nil
 	}
-	pg, err := pgMgr.pgLister.PodGroups(pod.Namespace).Get(pgName)
-	if err != nil {
+	var pg v1alpha1.PodGroup
+	if err := pgMgr.client.Get(context.Background(), types.NamespacedName{Namespace: pod.Namespace, Name: pgName}, &pg); err != nil {
 		return fmt.Sprintf("%v/%v", pod.Namespace, pgName), nil
 	}
-	return fmt.Sprintf("%v/%v", pod.Namespace, pgName), pg
+	return fmt.Sprintf("%v/%v", pod.Namespace, pgName), &pg
 }
 
 // CalculateAssignedPods returns the number of pods that has been assigned nodes: assumed or bound.
