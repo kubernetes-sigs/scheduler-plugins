@@ -163,7 +163,7 @@ func TestPodGroupBackoffTime(t *testing.T) {
 				t.Errorf("expected %v, got %v", tt.want, code.Code())
 				return
 			}
-			pgFullName, _ := pgMgr.GetPodGroup(tt.pods[0])
+			pgFullName, _ := pgMgr.GetPodGroup(ctx, tt.pods[0])
 			if code.Reasons()[0] != fmt.Sprintf("podGroup %v failed recently", pgFullName) {
 				t.Errorf("expected %v, got %v", pgFullName, code.Reasons()[0])
 				return

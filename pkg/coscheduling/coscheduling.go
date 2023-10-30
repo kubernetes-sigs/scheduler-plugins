@@ -147,7 +147,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 // PostFilter is used to reject a group of pods if a pod does not pass PreFilter or Filter.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	pgName, pg := cs.pgMgr.GetPodGroup(pod)
+	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		klog.V(4).InfoS("Pod does not belong to any group", "pod", klog.KObj(pod))
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "can not find pod group")
@@ -209,7 +209,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		return framework.NewStatus(framework.Unschedulable, "PodGroup not found"), 0
 	case core.Wait:
 		klog.InfoS("Pod is waiting to be scheduled to node", "pod", klog.KObj(pod), "nodeName", nodeName)
-		_, pg := cs.pgMgr.GetPodGroup(pod)
+		_, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 		if wait := util.GetWaitTimeDuration(pg, cs.scheduleTimeout); wait != 0 {
 			waitTime = wait
 		}
@@ -239,7 +239,7 @@ func (cs *Coscheduling) Reserve(ctx context.Context, state *framework.CycleState
 
 // Unreserve rejects all other Pods in the PodGroup when one of the pods in the group times out.
 func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
-	pgName, pg := cs.pgMgr.GetPodGroup(pod)
+	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		return
 	}

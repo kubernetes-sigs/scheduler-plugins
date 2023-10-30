@@ -54,7 +54,7 @@ const (
 type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
 	Permit(context.Context, *corev1.Pod) Status
-	GetPodGroup(*corev1.Pod) (string, *v1alpha1.PodGroup)
+	GetPodGroup(context.Context, *corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
 	DeletePermittedPodGroup(string)
 	CalculateAssignedPods(string, string) int
@@ -143,7 +143,7 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 // that is required to be scheduled.
 func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) error {
 	klog.V(5).InfoS("Pre-filter", "pod", klog.KObj(pod))
-	pgFullName, pg := pgMgr.GetPodGroup(pod)
+	pgFullName, pg := pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		return nil
 	}
@@ -194,7 +194,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 
 // Permit permits a pod to run, if the minMember match, it would send a signal to chan.
 func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Status {
-	pgFullName, pg := pgMgr.GetPodGroup(pod)
+	pgFullName, pg := pgMgr.GetPodGroup(ctx, pod)
 	if pgFullName == "" {
 		return PodGroupNotSpecified
 	}
@@ -231,13 +231,13 @@ func (pgMgr *PodGroupManager) DeletePermittedPodGroup(pgFullName string) {
 }
 
 // GetPodGroup returns the PodGroup that a Pod belongs to in cache.
-func (pgMgr *PodGroupManager) GetPodGroup(pod *corev1.Pod) (string, *v1alpha1.PodGroup) {
+func (pgMgr *PodGroupManager) GetPodGroup(ctx context.Context, pod *corev1.Pod) (string, *v1alpha1.PodGroup) {
 	pgName := util.GetPodGroupLabel(pod)
 	if len(pgName) == 0 {
 		return "", nil
 	}
 	var pg v1alpha1.PodGroup
-	if err := pgMgr.client.Get(context.Background(), types.NamespacedName{Namespace: pod.Namespace, Name: pgName}, &pg); err != nil {
+	if err := pgMgr.client.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pgName}, &pg); err != nil {
 		return fmt.Sprintf("%v/%v", pod.Namespace, pgName), nil
 	}
 	return fmt.Sprintf("%v/%v", pod.Namespace, pgName), &pg
