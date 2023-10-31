@@ -26,14 +26,19 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	scheconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
@@ -42,15 +47,19 @@ import (
 
 	appgroupapi "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup"
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
-	agversioned "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned"
 )
 
 func TestTopologicalSortPlugin(t *testing.T) {
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(agv1alpha1.AddToScheme(scheme))
+
+	client, err := ctrlclient.New(globalKubeConfig, ctrlclient.Options{Scheme: scheme})
+
 	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
-	extClient := agversioned.NewForConfigOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
@@ -341,12 +350,12 @@ func TestTopologicalSortPlugin(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start topologicalSort integration test %v ...", tt.name)
-			defer cleanupAppGroups(testCtx.Ctx, extClient, tt.appGroup)
+			defer cleanupAppGroups(testCtx.Ctx, client, tt.appGroup)
 			defer cleanupPods(t, testCtx, tt.pods)
 
 			// create AppGroup
 			t.Logf("Step 1 - Start by creating the basic appGroup...")
-			if err := createAppGroups(testCtx.Ctx, extClient, tt.appGroup); err != nil {
+			if err := createAppGroups(testCtx.Ctx, client, tt.appGroup); err != nil {
 				t.Fatal(err)
 			}
 

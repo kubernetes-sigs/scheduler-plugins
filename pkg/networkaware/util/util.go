@@ -17,20 +17,10 @@ limitations under the License.
 package util
 
 import (
-	"context"
-
 	v1 "k8s.io/api/core/v1"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/klog/v2"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
-	agclientset "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned"
-	aginformers "github.com/diktyo-io/appgroup-api/pkg/generated/informers/externalversions"
-	agListers "github.com/diktyo-io/appgroup-api/pkg/generated/listers/appgroup/v1alpha1"
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"
-	ntclientset "github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned"
-	ntinformers "github.com/diktyo-io/networktopology-api/pkg/generated/informers/externalversions"
-	ntListers "github.com/diktyo-io/networktopology-api/pkg/generated/listers/networktopology/v1alpha1"
 )
 
 // CostKey : key for map concerning network costs (origin / destinations)
@@ -200,51 +190,6 @@ func FindTopologyKey(topologyList []ntv1alpha1.TopologyInfo, key ntv1alpha1.Topo
 	return ntv1alpha1.OriginList{}
 }
 
-// AssignedPod : selects pods that are assigned (scheduled and running).
-func AssignedPod(pod *v1.Pod) bool {
-	return len(pod.Spec.NodeName) != 0
-}
-
-// InitAppGroupInformer : starts AppGroup informer
-func InitAppGroupInformer(kubeConfig *restclient.Config) (agListers.AppGroupLister, error) {
-	agClient, err := agclientset.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Errorf("Cannot create clientset for AppGroup Informer: %s, %s", kubeConfig, err)
-		return nil, err
-	}
-
-	agInformerFactory := aginformers.NewSharedInformerFactory(agClient, 0)
-	agInformer := agInformerFactory.Appgroup().V1alpha1().AppGroups()
-	appGroupLister := agInformer.Lister()
-
-	klog.V(5).InfoS("start appGroupInformer")
-	ctx := context.Background()
-	agInformerFactory.Start(ctx.Done())
-	agInformerFactory.WaitForCacheSync(ctx.Done())
-
-	return appGroupLister, nil
-}
-
-// InitNetworkTopologyInformer : starts NetworkTopology informer
-func InitNetworkTopologyInformer(kubeConfig *restclient.Config) (ntListers.NetworkTopologyLister, error) {
-	ntClient, err := ntclientset.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Errorf("Cannot create clientset for NetworkTopology Informer: %s, %s", kubeConfig, err)
-		return nil, err
-	}
-
-	ntInformerFactory := ntinformers.NewSharedInformerFactory(ntClient, 0)
-	ntInformer := ntInformerFactory.Networktopology().V1alpha1().NetworkTopologies()
-	appGroupLister := ntInformer.Lister()
-
-	klog.V(5).InfoS("start networkTopology Informer")
-	ctx := context.Background()
-	ntInformerFactory.Start(ctx.Done())
-	ntInformerFactory.WaitForCacheSync(ctx.Done())
-
-	return appGroupLister, nil
-}
-
 // GetDependencyList : get workload dependencies established in the AppGroup CR
 func GetDependencyList(pod *v1.Pod, ag *agv1alpha1.AppGroup) []agv1alpha1.DependenciesInfo {
 
@@ -272,7 +217,7 @@ func GetScheduledList(pods []*v1.Pod) ScheduledList {
 	scheduledList := ScheduledList{}
 
 	for _, p := range pods {
-		if AssignedPod(p) {
+		if len(p.Spec.NodeName) != 0 {
 			scheduledInfo := ScheduledInfo{
 				Name:      p.Name,
 				Selector:  GetPodAppGroupSelector(p),
