@@ -88,7 +88,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		scheduleTimeout:  &scheduleTimeDuration,
 	}
 	if args.PodGroupBackoffSeconds < 0 {
-		err := fmt.Errorf("Parse Arguments Failed")
+		err := fmt.Errorf("parse arguments failed")
 		klog.ErrorS(err, "PodGroupBackoffSeconds cannot be negative")
 		return nil, err
 	} else if args.PodGroupBackoffSeconds > 0 {
