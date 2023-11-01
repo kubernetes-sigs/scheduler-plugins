@@ -21,18 +21,18 @@ import (
 	"reflect"
 	"testing"
 
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
-
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
-	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
-	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
+	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 const (
@@ -41,7 +41,7 @@ const (
 
 type nodeToScoreMap map[string]int64
 
-func initTest(policy topologyv1alpha2.TopologyManagerPolicy, nodes ...*topologyv1alpha2.NodeResourceTopology) (map[string]*v1.Node, v1alpha2.NodeResourceTopologyLister) {
+func initTest(policy topologyv1alpha2.TopologyManagerPolicy, nodes ...*topologyv1alpha2.NodeResourceTopology) (map[string]*v1.Node, ctrlclient.Client) {
 	nodeTopologies := make([]*topologyv1alpha2.NodeResourceTopology, 3)
 	nodesMap := make(map[string]*v1.Node)
 
@@ -128,13 +128,18 @@ func initTest(policy topologyv1alpha2.TopologyManagerPolicy, nodes ...*topologyv
 	}
 
 	// init topology lister
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
-	for _, obj := range nodeTopologies {
-		fakeInformer.Informer().GetStore().Add(obj)
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		panic(err)
 	}
 
-	return nodesMap, fakeInformer.Lister()
+	for _, obj := range nodeTopologies {
+		if err := fakeClient.Create(context.Background(), obj.DeepCopy()); err != nil {
+			panic(err)
+		}
+	}
+
+	return nodesMap, fakeClient
 }
 
 func TestNodeResourceScorePlugin(t *testing.T) {

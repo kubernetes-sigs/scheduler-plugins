@@ -30,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
 var _ framework.SharedLister = &fakeSharedLister{}
@@ -253,7 +255,7 @@ func NominatedNodeName(pod *v1.Pod) string {
 }
 
 // NewFakeClient returns a generic controller-runtime client with all given `objs` as internal runtime objects.
-// It also registers core v1 scheme and this repo's v1alpha1 scheme.
+// It also registers core v1 scheme, this repo's v1alpha1 scheme and topologyv1alpha2 scheme.
 // This function is used by unit tests.
 func NewFakeClient(objs ...runtime.Object) (client.Client, error) {
 	scheme := runtime.NewScheme()
@@ -261,6 +263,9 @@ func NewFakeClient(objs ...runtime.Object) (client.Client, error) {
 		return nil, err
 	}
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	if err := topologyv1alpha2.AddToScheme(scheme); err != nil {
 		return nil, err
 	}
 	return fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build(), nil

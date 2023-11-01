@@ -22,16 +22,15 @@ import (
 	"reflect"
 	"testing"
 
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
-
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
-	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 const (
@@ -673,14 +672,18 @@ func TestNodeResourceTopology(t *testing.T) {
 		},
 	}
 
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatalf("failed to create fake client: %v", err)
+	}
 	for _, desc := range nodeTopologyDescs {
-		fakeInformer.Informer().GetStore().Add(desc.nrt)
+		if err := fakeClient.Create(context.Background(), desc.nrt.DeepCopy()); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	tm := TopologyMatch{
-		nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
+		nrtCache: nrtcache.NewPassthrough(fakeClient),
 	}
 
 	for _, tt := range tests {
@@ -888,14 +891,18 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+			fakeClient, err := tu.NewFakeClient()
+			if err != nil {
+				t.Fatalf("failed to create fake client: %v", err)
+			}
 			for _, obj := range nodeTopologies {
-				fakeInformer.Informer().GetStore().Add(obj)
+				if err := fakeClient.Create(context.Background(), obj.DeepCopy()); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			tm := TopologyMatch{
-				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeClient),
 			}
 
 			nodeInfo := framework.NewNodeInfo()
@@ -1145,14 +1152,19 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-			fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+			fakeClient, err := tu.NewFakeClient()
+			if err != nil {
+				t.Fatalf("failed to create fake client: %v", err)
+			}
+
 			for _, obj := range nodeTopologies {
-				fakeInformer.Informer().GetStore().Add(obj)
+				if err := fakeClient.Create(context.Background(), obj.DeepCopy()); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			tm := TopologyMatch{
-				nrtCache: nrtcache.NewPassthrough(fakeInformer.Lister()),
+				nrtCache: nrtcache.NewPassthrough(fakeClient),
 			}
 
 			nodeInfo := framework.NewNodeInfo()

@@ -185,7 +185,7 @@ func TestFingerprintMethodFromNRT(t *testing.T) {
 }
 
 func TestNRTStoreGet(t *testing.T) {
-	nrts := []*topologyv1alpha2.NodeResourceTopology{
+	nrts := []topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "node-0",
@@ -221,7 +221,7 @@ func TestNRTStoreGet(t *testing.T) {
 }
 
 func TestNRTStoreUpdate(t *testing.T) {
-	nrts := []*topologyv1alpha2.NodeResourceTopology{
+	nrts := []topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "node-0",
@@ -271,7 +271,7 @@ func TestNRTStoreContains(t *testing.T) {
 		t.Errorf("unexpected node found")
 	}
 
-	nrts := []*topologyv1alpha2.NodeResourceTopology{
+	nrts := []topologyv1alpha2.NodeResourceTopology{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "node-0",
