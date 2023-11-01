@@ -17,14 +17,16 @@ limitations under the License.
 package cache
 
 import (
+	"context"
 	"sync"
+
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // DiscardReserved is intended to solve similiar problem as Overreserve Cache,
@@ -42,17 +44,17 @@ import (
 type DiscardReserved struct {
 	rMutex         sync.RWMutex
 	reservationMap map[string]map[types.UID]bool // Key is NodeName, value is Pod UID : reserved status
-	lister         listerv1alpha2.NodeResourceTopologyLister
+	client         ctrlclient.Client
 }
 
-func NewDiscardReserved(lister listerv1alpha2.NodeResourceTopologyLister) Interface {
+func NewDiscardReserved(client ctrlclient.Client) Interface {
 	return &DiscardReserved{
-		lister:         lister,
+		client:         client,
 		reservationMap: make(map[string]map[types.UID]bool),
 	}
 }
 
-func (pt *DiscardReserved) GetCachedNRTCopy(nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
+func (pt *DiscardReserved) GetCachedNRTCopy(ctx context.Context, nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
 	pt.rMutex.RLock()
 	defer pt.rMutex.RUnlock()
 	if t, ok := pt.reservationMap[nodeName]; ok {
@@ -61,8 +63,8 @@ func (pt *DiscardReserved) GetCachedNRTCopy(nodeName string, _ *corev1.Pod) (*to
 		}
 	}
 
-	nrt, err := pt.lister.Get(nodeName)
-	if err != nil {
+	nrt := &topologyv1alpha2.NodeResourceTopology{}
+	if err := pt.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrt); err != nil {
 		return nil, false
 	}
 	return nrt, true

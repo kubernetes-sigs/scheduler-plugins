@@ -27,13 +27,12 @@ import (
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	topologyv1alpha2attr "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/attribute"
+	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
-
-	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
 
 // nrtStore maps the NRT data by node name. It is not thread safe and needs to be protected by a lock.
@@ -43,7 +42,7 @@ type nrtStore struct {
 }
 
 // newNrtStore creates a new nrtStore and initializes it with copies of the provided Node Resource Topology data.
-func newNrtStore(nrts []*topologyv1alpha2.NodeResourceTopology) *nrtStore {
+func newNrtStore(nrts []topologyv1alpha2.NodeResourceTopology) *nrtStore {
 	data := make(map[string]*topologyv1alpha2.NodeResourceTopology, len(nrts))
 	for _, nrt := range nrts {
 		data[nrt.Name] = nrt.DeepCopy()

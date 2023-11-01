@@ -17,27 +17,31 @@ limitations under the License.
 package cache
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/klog/v2"
+	"context"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Passthrough struct {
-	lister listerv1alpha2.NodeResourceTopologyLister
+	client ctrlclient.Client
 }
 
-func NewPassthrough(lister listerv1alpha2.NodeResourceTopologyLister) Interface {
+func NewPassthrough(client ctrlclient.Client) Interface {
 	return Passthrough{
-		lister: lister,
+		client: client,
 	}
 }
 
-func (pt Passthrough) GetCachedNRTCopy(nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
-	klog.V(5).InfoS("Lister for nodeResTopoPlugin", "lister", pt.lister)
-	nrt, err := pt.lister.Get(nodeName)
-	if err != nil {
+func (pt Passthrough) GetCachedNRTCopy(ctx context.Context, nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
+	klog.V(5).InfoS("Lister for nodeResTopoPlugin")
+	nrt := &topologyv1alpha2.NodeResourceTopology{}
+	if err := pt.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrt); err != nil {
 		klog.V(5).ErrorS(err, "Cannot get NodeTopologies from NodeResourceTopologyLister")
 		return nil, true
 	}
