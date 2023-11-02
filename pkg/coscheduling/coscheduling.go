@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -74,6 +75,9 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		return nil, err
 	}
 
+	// Performance improvement when retrieving list of objects by namespace or we'll log 'index not exist' warning.
+	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddIndexers(cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
 	pgMgr := core.NewPodGroupManager(
 		client,
@@ -88,7 +92,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		scheduleTimeout:  &scheduleTimeDuration,
 	}
 	if args.PodGroupBackoffSeconds < 0 {
-		err := fmt.Errorf("Parse Arguments Failed")
+		err := fmt.Errorf("parse arguments failed")
 		klog.ErrorS(err, "PodGroupBackoffSeconds cannot be negative")
 		return nil, err
 	} else if args.PodGroupBackoffSeconds > 0 {
