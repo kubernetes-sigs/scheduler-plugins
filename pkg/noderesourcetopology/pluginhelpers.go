@@ -19,6 +19,7 @@ package noderesourcetopology
 import (
 	"context"
 	"fmt"
+	restclient "k8s.io/client-go/rest"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ import (
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	topoclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
@@ -42,10 +44,10 @@ const (
 	maxNUMAId = 64
 )
 
-func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
-	topoClient, err := topoclientset.NewForConfig(handle.KubeConfig())
+func initNodeTopologyInformer(kubeConfig *restclient.Config) (listerv1alpha2.NodeResourceTopologyLister, error) {
+	topoClient, err := topoclientset.NewForConfig(kubeConfig)
 	if err != nil {
-		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
+		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", kubeConfig)
 		return nil, err
 	}
 
@@ -57,6 +59,11 @@ func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, han
 	ctx := context.Background()
 	topologyInformerFactory.Start(ctx.Done())
 	topologyInformerFactory.WaitForCacheSync(ctx.Done())
+
+	return nodeTopologyLister, nil
+}
+
+func initNrtCache(tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle, nodeTopologyLister listerv1alpha2.NodeResourceTopologyLister) (nrtcache.Interface, error) {
 
 	if tcfg.DiscardReservedNodes {
 		return nrtcache.NewDiscardReserved(nodeTopologyLister), nil

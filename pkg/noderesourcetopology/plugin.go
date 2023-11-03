@@ -31,6 +31,8 @@ import (
 
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
+	"sync"
 )
 
 const (
@@ -106,6 +108,16 @@ func (tm *TopologyMatch) Name() string {
 	return Name
 }
 
+var (
+	// once guards singletonNodeTopologyLister to be initialized only once.
+	once sync.Once
+	// singletonNodeTopologyLister is a shared NRT lister across different NRT plugin instances.
+	// It could happen while NRT plugin is registered in multiple profiles.
+	singletonNodeTopologyLister listerv1alpha2.NodeResourceTopologyLister
+	// initializeListerErr indicates the error in the initialization singletonNodeTopologyLister.
+	initializeSingletonNodeTopologyListerErr error
+)
+
 // New initializes a new plugin and returns it.
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(5).InfoS("Creating new TopologyMatch plugin")
@@ -118,9 +130,26 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, err
 	}
 
-	nrtCache, err := initNodeTopologyInformer(tcfg, handle)
+	once.Do(func() {
+		// Initialize NodeTopologyLister once.
+		singletonNodeTopologyLister, initializeSingletonNodeTopologyListerErr = initNodeTopologyInformer(handle.KubeConfig())
+	})
+
+	if initializeSingletonNodeTopologyListerErr != nil {
+		klog.ErrorS(initializeSingletonNodeTopologyListerErr, "Cannot create lister for NodeResourceTopology", "kubeConfig", handle.KubeConfig())
+		return nil, initializeSingletonNodeTopologyListerErr
+	}
+
+	if singletonNodeTopologyLister == nil {
+		// Redundant check, it should never happen.
+		err := fmt.Errorf("unexpected nil lister for NodeResourceTopology")
+		klog.ErrorS(err, "Unexpected nil lister")
+		return nil, err
+	}
+
+	nrtCache, err := initNrtCache(tcfg, handle, singletonNodeTopologyLister)
 	if err != nil {
-		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
+		klog.ErrorS(err, "Cannot initialize nrt cache")
 		return nil, err
 	}
 
