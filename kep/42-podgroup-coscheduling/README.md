@@ -20,15 +20,20 @@
 <!-- /toc -->
 
 ## Motivation
+
 Currently, through the default scheduler of Kubernetes, we cannot ensure a group of pods can be scheduled altogether. Under some scenes, it would waste resources since the whole application cannot work with only partial Pods' running, like Spark jobs, TensorFlow jobs, and so on. This proposal is aimed at solving the issue, by introducing a PodGroup CRD to do the heavy lifting on wiring a group of Pods.
+
 ## Goals
+
 1. Base on the scheduling framework, implement the co-scheduling feature.
 2. Define a CRD name PodGroup to help pod scheduling.
- 
+
 ## Non-Goals
+
 Sort the job when we submit jobs to a cluster. Currently, we can only do this base on pods.
- 
+
 ## Use Cases
+
 Batch workloads such as Spark jobs, TensorFlow jobs that have to run altogether.
 
 ## Design Details
@@ -36,84 +41,86 @@ Batch workloads such as Spark jobs, TensorFlow jobs that have to run altogether.
 ### PodGroup
 
 We define a CRD name PodGroup to help schedule, its definition is as follows:
+
 ```go
 // PodGroupSpec represents the template of a pod group.
 type PodGroupSpec struct {
-	// MinMember defines the minimal number of members/tasks to run the pod group;
-	// if there's not enough resources to start all tasks, the scheduler
-	// will not start anyone.
-	MinMember uint32 `json:"minMember"`
+ // MinMember defines the minimal number of members/tasks to run the pod group;
+ // if there's not enough resources to start all tasks, the scheduler
+ // will not start anyone.
+ MinMember uint32 `json:"minMember"`
 
-	// MinResources defines the minimal resource of members/tasks to run the pod group;
-	// if there's not enough resources to start all tasks, the scheduler
-	// will not start anyone.
-	MinResources *v1.ResourceList `json:"minResources,omitempty"`
+ // MinResources defines the minimal resource of members/tasks to run the pod group;
+ // if there's not enough resources to start all tasks, the scheduler
+ // will not start anyone.
+ MinResources *v1.ResourceList `json:"minResources,omitempty"`
 
-	// ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
-	ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
+ // ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
+ ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
 }
 
 // PodGroupStatus represents the current state of a pod group.
 type PodGroupStatus struct {
-	// Current phase of PodGroup.
-	Phase PodGroupPhase `json:"phase"`
+ // Current phase of PodGroup.
+ Phase PodGroupPhase `json:"phase"`
 
-	// OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
-	// It is empty if not initialized.
-	OccupiedBy string `json:"occupiedBy,omitempty"`
+ // OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
+ // It is empty if not initialized.
+ OccupiedBy string `json:"occupiedBy,omitempty"`
 
-	// The number of actively running pods.
-	// +optional
-	Running uint32 `json:"running"`
+ // The number of actively running pods.
+ // +optional
+ Running uint32 `json:"running"`
 
-	// The number of pods which reached phase Succeeded.
-	// +optional
-	Succeeded uint32 `json:"succeeded"`
+ // The number of pods which reached phase Succeeded.
+ // +optional
+ Succeeded uint32 `json:"succeeded"`
 
-	// The number of pods which reached phase Failed.
-	// +optional
-	Failed uint32 `json:"failed"`
+ // The number of pods which reached phase Failed.
+ // +optional
+ Failed uint32 `json:"failed"`
 
-	// ScheduleStartTime of the group
-	ScheduleStartTime metav1.Time `json:"scheduleStartTime"`
+ // ScheduleStartTime of the group
+ ScheduleStartTime metav1.Time `json:"scheduleStartTime"`
 }
 ```
 
 #### PodGroupPhase
+
 `PodGroup` has the following states called `PodGroupStatus`.
 
 ```go
 // These are the valid phase of podGroups.
 const (
-	// PodGroupPending means the pod group has been accepted by the system, but scheduler can not allocate
-	// enough resources to it.
-	PodGroupPending PodGroupPhase = "Pending"
+ // PodGroupPending means the pod group has been accepted by the system, but scheduler can not allocate
+ // enough resources to it.
+ PodGroupPending PodGroupPhase = "Pending"
 
-	// PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
-	PodGroupRunning PodGroupPhase = "Running"
+ // PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
+ PodGroupRunning PodGroupPhase = "Running"
 
-	// PodGroupScheduling means the number of pods scheduled is bigger than `spec.minMember`
-	// but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
-	PodGroupScheduling PodGroupPhase = "Scheduling"
+ // PodGroupScheduling means the number of pods scheduled is bigger than `spec.minMember`
+ // but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
+ PodGroupScheduling PodGroupPhase = "Scheduling"
 
-	// PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
-	// be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
-	PodGroupUnknown PodGroupPhase = "Unknown"
+ // PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
+ // be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
+ PodGroupUnknown PodGroupPhase = "Unknown"
 
-	// PodGroupFinished means the `spec.minMember` pods of the pod group are successfully finished.
-	PodGroupFinished PodGroupPhase = "Finished"
+ // PodGroupFinished means the `spec.minMember` pods of the pod group are successfully finished.
+ PodGroupFinished PodGroupPhase = "Finished"
 
-	// PodGroupFailed means at least one of `spec.minMember` pods have failed.
-	PodGroupFailed PodGroupPhase = "Failed"
+ // PodGroupFailed means at least one of `spec.minMember` pods have failed.
+ PodGroupFailed PodGroupPhase = "Failed"
 
-	// PodGroupLabel is the default label of coscheduling
-	PodGroupLabel = scheduling.GroupName + "/pod-group"
+ // PodGroupLabel is the default label of coscheduling
+ PodGroupLabel = scheduling.GroupName + "/pod-group"
 )
 ```
 
 ```mermaid
 stateDiagram-v2
-	state if_minMember <<choice>>
+ state if_minMember <<choice>>
     [*] --> Pending
     Pending --> Scheduling: minMember pods are scheduling
     Scheduling --> Running: minMember pods are running
@@ -124,7 +131,6 @@ stateDiagram-v2
     Running --> Finished: all pods successfully finished
     Finished --> [*]
 ```
-
 
 ### Controller
 
