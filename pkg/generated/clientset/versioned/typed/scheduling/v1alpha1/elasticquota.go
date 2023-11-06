@@ -20,6 +20,8 @@ package v1alpha1
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 	"time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,6 +29,7 @@ import (
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
 	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/applyconfiguration/scheduling/v1alpha1"
 	scheme "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/scheme"
 )
 
@@ -47,6 +50,8 @@ type ElasticQuotaInterface interface {
 	List(ctx context.Context, opts v1.ListOptions) (*v1alpha1.ElasticQuotaList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ElasticQuota, err error)
+	Apply(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error)
+	ApplyStatus(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error)
 	ElasticQuotaExpansion
 }
 
@@ -188,6 +193,62 @@ func (c *elasticQuotas) Patch(ctx context.Context, name string, pt types.PatchTy
 		Name(name).
 		SubResource(subresources...).
 		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied elasticQuota.
+func (c *elasticQuotas) Apply(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error) {
+	if elasticQuota == nil {
+		return nil, fmt.Errorf("elasticQuota provided to Apply must not be nil")
+	}
+	patchOpts := opts.ToPatchOptions()
+	data, err := json.Marshal(elasticQuota)
+	if err != nil {
+		return nil, err
+	}
+	name := elasticQuota.Name
+	if name == nil {
+		return nil, fmt.Errorf("elasticQuota.Name must be provided to Apply")
+	}
+	result = &v1alpha1.ElasticQuota{}
+	err = c.client.Patch(types.ApplyPatchType).
+		Namespace(c.ns).
+		Resource("elasticquotas").
+		Name(*name).
+		VersionedParams(&patchOpts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result)
+	return
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *elasticQuotas) ApplyStatus(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error) {
+	if elasticQuota == nil {
+		return nil, fmt.Errorf("elasticQuota provided to Apply must not be nil")
+	}
+	patchOpts := opts.ToPatchOptions()
+	data, err := json.Marshal(elasticQuota)
+	if err != nil {
+		return nil, err
+	}
+
+	name := elasticQuota.Name
+	if name == nil {
+		return nil, fmt.Errorf("elasticQuota.Name must be provided to Apply")
+	}
+
+	result = &v1alpha1.ElasticQuota{}
+	err = c.client.Patch(types.ApplyPatchType).
+		Namespace(c.ns).
+		Resource("elasticquotas").
+		Name(*name).
+		SubResource("status").
+		VersionedParams(&patchOpts, scheme.ParameterCodec).
 		Body(data).
 		Do(ctx).
 		Into(result)
