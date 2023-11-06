@@ -25,16 +25,19 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/rand"
-	testClientSet "k8s.io/client-go/kubernetes/fake"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
-	agfake "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned/fake"
-	aginformers "github.com/diktyo-io/appgroup-api/pkg/generated/informers/externalversions"
+
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
 )
 
@@ -163,7 +166,6 @@ func TestTopologicalSortLess(t *testing.T) {
 	// Get AppGroup CRD: onlineboutique
 	onlineBoutiqueAppGroup := GetAppGroupCROnlineBoutique()
 
-	ctx := context.TODO()
 	tests := []struct {
 		name                     string
 		namespace                string
@@ -185,7 +187,7 @@ func TestTopologicalSortLess(t *testing.T) {
 		{
 			name:                     "basic, same AppGroup, p1 order lower than p2",
 			agName:                   "basic",
-			appGroup:                 basicAppGroup,
+			appGroup:                 basicAppGroup.DeepCopy(),
 			namespace:                "default",
 			numMembers:               3,
 			selectors:                []string{"p1", "p2", "p3"},
@@ -205,7 +207,7 @@ func TestTopologicalSortLess(t *testing.T) {
 		{
 			name:                     "onlineboutique, same AppGroup, p5 order higher than p1",
 			agName:                   "onlineboutique",
-			appGroup:                 onlineBoutiqueAppGroup,
+			appGroup:                 onlineBoutiqueAppGroup.DeepCopy(),
 			namespace:                "default",
 			numMembers:               11,
 			selectors:                []string{"p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10", "p11"},
@@ -225,7 +227,7 @@ func TestTopologicalSortLess(t *testing.T) {
 		{
 			name:                     "pods from different AppGroups... ",
 			agName:                   "basic",
-			appGroup:                 basicAppGroup,
+			appGroup:                 basicAppGroup.DeepCopy(),
 			namespace:                "default",
 			numMembers:               3,
 			selectors:                []string{"p1", "p2", "p3"},
@@ -247,31 +249,22 @@ func TestTopologicalSortLess(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pods := makePodsAppGroup(tt.deploymentNames, tt.agName, tt.podPhase)
 
-			// init listers
-			agClient := agfake.NewSimpleClientset()
-
-			fakeAgInformer := aginformers.NewSharedInformerFactory(agClient, 0).Appgroup().V1alpha1().AppGroups()
-
-			// add CRDs
-			_ = fakeAgInformer.Informer().GetStore().Add(tt.appGroup)
-
-			agLister := fakeAgInformer.Lister()
-
-			cs := testClientSet.NewSimpleClientset()
-
-			for _, p := range pods {
-				_, err := cs.CoreV1().Pods("default").Create(ctx, p, metav1.CreateOptions{})
-				if err != nil {
-					t.Fatalf("Failed to create Workload %q: %v", p.Name, err)
-				}
-				t.Logf("Workload %v created  \n", p.Name)
-			}
+			s := scheme.Scheme
+			utilruntime.Must(agv1alpha1.AddToScheme(s))
+			client := fake.NewClientBuilder().
+				WithScheme(s).
+				WithRuntimeObjects(pods...).
+				WithStatusSubresource(&agv1alpha1.AppGroup{}).
+				Build()
 
 			// Sort TopologyList by Selector
 			sort.Sort(util.ByWorkloadSelector(tt.appGroup.Status.TopologyOrder))
+			if err := client.Create(context.TODO(), tt.appGroup); err != nil {
+				t.Errorf("failed to create AppGroup CR: %v", err)
+			}
 
 			ts := &TopologicalSort{
-				agLister:   agLister,
+				Client:     client,
 				namespaces: []string{metav1.NamespaceDefault},
 			}
 
@@ -434,37 +427,24 @@ func BenchmarkTopologicalSortPlugin(b *testing.B) {
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
 
-			ps := makePodsAppGroup(tt.deploymentNames, tt.agName, tt.podPhase)
+			pods := makePodsAppGroup(tt.deploymentNames, tt.agName, tt.podPhase)
 
-			// init listers
-			agClient := agfake.NewSimpleClientset()
-
-			fakeAgInformer := aginformers.NewSharedInformerFactory(agClient, 0).Appgroup().V1alpha1().AppGroups()
-
-			// add CRDs
-			_ = fakeAgInformer.Informer().GetStore().Add(tt.appGroup)
-
-			agLister := fakeAgInformer.Lister()
-
-			cs := testClientSet.NewSimpleClientset()
-
-			for _, p := range ps {
-				_, err := cs.CoreV1().Pods("default").Create(ctx, p, metav1.CreateOptions{})
-				if err != nil {
-					b.Fatalf("Failed to create Workload %q: %v", p.Name, err)
-				}
-			}
+			s := scheme.Scheme
+			utilruntime.Must(agv1alpha1.AddToScheme(s))
+			client := fake.NewClientBuilder().
+				WithScheme(s).
+				WithObjects(tt.appGroup).
+				WithRuntimeObjects(pods...).
+				WithStatusSubresource(&agv1alpha1.AppGroup{}).
+				Build()
 
 			ts := &TopologicalSort{
-				agLister:   agLister,
+				Client:     client,
 				namespaces: []string{metav1.NamespaceDefault},
 			}
 
 			pInfo1 := getPodInfos(b, tt.podNum, tt.agName, tt.selectors, tt.deploymentNames)
 			pInfo2 := getPodInfos(b, tt.podNum, tt.agName, tt.selectors, tt.deploymentNames)
-
-			//b.Logf("len(pInfo1): %v", len(pInfo1))
-			//b.Logf("len(pInfo2): %v", len(pInfo2))
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -512,8 +492,8 @@ func Until(ctx context.Context, pieces int, doWorkPiece workqueue.DoWorkPieceFun
 	workqueue.ParallelizeUntil(ctx, parallelism, pieces, doWorkPiece, chunkSizeFor(pieces))
 }
 
-func makePodsAppGroup(podNames []string, agName string, phase v1.PodPhase) []*v1.Pod {
-	pds := make([]*v1.Pod, 0)
+func makePodsAppGroup(podNames []string, agName string, phase v1.PodPhase) []runtime.Object {
+	pds := make([]runtime.Object, 0)
 	for _, name := range podNames {
 		pod := st.MakePod().Namespace("default").Name(name).Obj()
 		pod.Labels = map[string]string{agv1alpha1.AppGroupLabel: agName}

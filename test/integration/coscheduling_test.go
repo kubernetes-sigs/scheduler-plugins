@@ -23,7 +23,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -35,12 +35,12 @@ import (
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	schedconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -49,7 +49,7 @@ func TestCoschedulingPlugin(t *testing.T) {
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
 	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
-	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
+	extClient := util.NewClientOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
@@ -382,7 +382,7 @@ func TestPodgroupBackoff(t *testing.T) {
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
 	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
-	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
+	extClient := util.NewClientOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
@@ -561,18 +561,17 @@ func WithContainer(pod *v1.Pod, image string) *v1.Pod {
 	return pod
 }
 
-func createPodGroups(ctx context.Context, client versioned.Interface, podGroups []*v1alpha1.PodGroup) error {
+func createPodGroups(ctx context.Context, c client.Client, podGroups []*v1alpha1.PodGroup) error {
 	for _, pg := range podGroups {
-		_, err := client.SchedulingV1alpha1().PodGroups(pg.Namespace).Create(ctx, pg, metav1.CreateOptions{})
-		if err != nil && !errors.IsAlreadyExists(err) {
+		if err := c.Create(ctx, pg); err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}
 	}
 	return nil
 }
 
-func cleanupPodGroups(ctx context.Context, client versioned.Interface, podGroups []*v1alpha1.PodGroup) {
+func cleanupPodGroups(ctx context.Context, c client.Client, podGroups []*v1alpha1.PodGroup) {
 	for _, pg := range podGroups {
-		_ = client.SchedulingV1alpha1().PodGroups(pg.Namespace).Delete(ctx, pg.Name, metav1.DeleteOptions{})
+		_ = c.Delete(ctx, pg)
 	}
 }

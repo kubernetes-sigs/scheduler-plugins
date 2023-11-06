@@ -24,17 +24,17 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling/core"
-	pgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -66,34 +66,38 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		return nil, fmt.Errorf("want args to be of type CoschedulingArgs, got %T", obj)
 	}
 
-	pgClient := pgclientset.NewForConfigOrDie(handle.KubeConfig())
-	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
+	scheme := runtime.NewScheme()
+	_ = clientscheme.AddToScheme(scheme)
+	_ = v1.AddToScheme(scheme)
+	_ = v1alpha1.AddToScheme(scheme)
+	client, err := client.New(handle.KubeConfig(), client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+
+	// Performance improvement when retrieving list of objects by namespace or we'll log 'index not exist' warning.
+	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddIndexers(cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
-
-	ctx := context.TODO()
-
-	pgMgr := core.NewPodGroupManager(pgClient, handle.SnapshotSharedLister(), &scheduleTimeDuration, pgInformer, podInformer)
+	pgMgr := core.NewPodGroupManager(
+		client,
+		handle.SnapshotSharedLister(),
+		&scheduleTimeDuration,
+		// Keep the podInformer (from frameworkHandle) as the single source of Pods.
+		handle.SharedInformerFactory().Core().V1().Pods(),
+	)
 	plugin := &Coscheduling{
 		frameworkHandler: handle,
 		pgMgr:            pgMgr,
 		scheduleTimeout:  &scheduleTimeDuration,
 	}
 	if args.PodGroupBackoffSeconds < 0 {
-		err := fmt.Errorf("Parse Arguments Failed")
+		err := fmt.Errorf("parse arguments failed")
 		klog.ErrorS(err, "PodGroupBackoffSeconds cannot be negative")
 		return nil, err
 	} else if args.PodGroupBackoffSeconds > 0 {
 		pgBackoff := time.Duration(args.PodGroupBackoffSeconds) * time.Second
 		plugin.pgBackoff = &pgBackoff
-	}
-	pgInformerFactory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), pgInformer.Informer().HasSynced) {
-		err := fmt.Errorf("WaitForCacheSync failed")
-		klog.ErrorS(err, "Cannot sync caches")
-		return nil, err
 	}
 	return plugin, nil
 }
@@ -147,7 +151,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 // PostFilter is used to reject a group of pods if a pod does not pass PreFilter or Filter.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	pgName, pg := cs.pgMgr.GetPodGroup(pod)
+	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		klog.V(4).InfoS("Pod does not belong to any group", "pod", klog.KObj(pod))
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "can not find pod group")
@@ -209,7 +213,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 		return framework.NewStatus(framework.Unschedulable, "PodGroup not found"), 0
 	case core.Wait:
 		klog.InfoS("Pod is waiting to be scheduled to node", "pod", klog.KObj(pod), "nodeName", nodeName)
-		_, pg := cs.pgMgr.GetPodGroup(pod)
+		_, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 		if wait := util.GetWaitTimeDuration(pg, cs.scheduleTimeout); wait != 0 {
 			waitTime = wait
 		}
@@ -239,7 +243,7 @@ func (cs *Coscheduling) Reserve(ctx context.Context, state *framework.CycleState
 
 // Unreserve rejects all other Pods in the PodGroup when one of the pods in the group times out.
 func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
-	pgName, pg := cs.pgMgr.GetPodGroup(pod)
+	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		return
 	}

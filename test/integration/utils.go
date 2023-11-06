@@ -39,10 +39,11 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
-	agversioned "github.com/diktyo-io/appgroup-api/pkg/generated/clientset/versioned"
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"
-	ntversioned "github.com/diktyo-io/networktopology-api/pkg/generated/clientset/versioned"
+
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
@@ -259,9 +260,9 @@ func createNamespace(t *testing.T, testCtx *testContext, ns string) {
 	}
 }
 
-func createAppGroups(ctx context.Context, client agversioned.Interface, appGroups []*agv1alpha1.AppGroup) error {
+func createAppGroups(ctx context.Context, client ctrlclient.Client, appGroups []*agv1alpha1.AppGroup) error {
 	for _, ag := range appGroups {
-		_, err := client.AppgroupV1alpha1().AppGroups(ag.Namespace).Create(ctx, ag, metav1.CreateOptions{})
+		err := client.Create(ctx, ag.DeepCopy())
 		if err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}
@@ -269,15 +270,15 @@ func createAppGroups(ctx context.Context, client agversioned.Interface, appGroup
 	return nil
 }
 
-func cleanupAppGroups(ctx context.Context, client agversioned.Interface, appGroups []*agv1alpha1.AppGroup) {
+func cleanupAppGroups(ctx context.Context, client ctrlclient.Client, appGroups []*agv1alpha1.AppGroup) {
 	for _, ag := range appGroups {
-		client.AppgroupV1alpha1().AppGroups(ag.Namespace).Delete(ctx, ag.Name, metav1.DeleteOptions{})
+		client.Delete(ctx, ag)
 	}
 }
 
-func createNetworkTopologies(ctx context.Context, client ntversioned.Interface, networkTopologies []*ntv1alpha1.NetworkTopology) error {
+func createNetworkTopologies(ctx context.Context, client ctrlclient.Client, networkTopologies []*ntv1alpha1.NetworkTopology) error {
 	for _, nt := range networkTopologies {
-		_, err := client.NetworktopologyV1alpha1().NetworkTopologies(nt.Namespace).Create(ctx, nt, metav1.CreateOptions{})
+		err := client.Create(ctx, nt.DeepCopy())
 		if err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}
@@ -285,9 +286,9 @@ func createNetworkTopologies(ctx context.Context, client ntversioned.Interface, 
 	return nil
 }
 
-func cleanupNetworkTopologies(ctx context.Context, client ntversioned.Interface, networkTopologies []*ntv1alpha1.NetworkTopology) {
+func cleanupNetworkTopologies(ctx context.Context, client ctrlclient.Client, networkTopologies []*ntv1alpha1.NetworkTopology) {
 	for _, nt := range networkTopologies {
-		client.NetworktopologyV1alpha1().NetworkTopologies(nt.Namespace).Delete(ctx, nt.Name, metav1.DeleteOptions{})
+		client.Delete(ctx, nt)
 	}
 }
 

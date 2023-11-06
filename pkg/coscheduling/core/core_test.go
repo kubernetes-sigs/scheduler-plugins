@@ -24,247 +24,336 @@ import (
 	gochache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clicache "k8s.io/client-go/tools/cache"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
-	fakepgclientset "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/fake"
-	pgformers "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	testutil "sigs.k8s.io/scheduler-plugins/test/util"
+	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestPreFilter(t *testing.T) {
-	ctx := context.Background()
-	cs := fakepgclientset.NewSimpleClientset()
-
-	pgInformerFactory := pgformers.NewSharedInformerFactory(cs, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-	pgInformerFactory.Start(ctx.Done())
 	scheduleTimeout := 10 * time.Second
-	pg := testutil.MakePG("pg", "ns1", 2, nil, nil)
-	pg1 := testutil.MakePG("pg1", "ns1", 2, nil, nil)
-	pg2 := testutil.MakePG("pg2", "ns1", 2, nil, &corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")})
-	pg3 := testutil.MakePG("pg3", "ns1", 2, nil, &corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("40")})
-	pgInformer.Informer().GetStore().Add(pg)
-	pgInformer.Informer().GetStore().Add(pg1)
-	pgInformer.Informer().GetStore().Add(pg2)
-	pgInformer.Informer().GetStore().Add(pg3)
-	pgLister := pgInformer.Lister()
+	capacity := map[corev1.ResourceName]string{
+		corev1.ResourceCPU: "4",
+	}
+	nodes := []*corev1.Node{
+		st.MakeNode().Name("node-a").Capacity(capacity).Obj(),
+		st.MakeNode().Name("node-b").Capacity(capacity).Obj(),
+	}
 
 	tests := []struct {
 		name            string
 		pod             *corev1.Pod
-		pods            []*corev1.Pod
+		pendingPods     []*corev1.Pod
+		pgs             []*v1alpha1.PodGroup
 		expectedSuccess bool
 	}{
 		{
 			name: "pod does not belong to any pg",
-			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
+			pod:  st.MakePod().Name("p").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1").Namespace("ns").UID("p1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+				st.MakePod().Name("p2").Namespace("ns").UID("p2").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(1).Obj(),
+				tu.MakePodGroup().Name("pg2").Namespace("ns").MinMember(1).Obj(),
 			},
 			expectedSuccess: true,
 		},
 		{
-			name:            "pod belongs to a non-existing pg",
-			pod:             st.MakePod().Name("p2").UID("p2").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg-notexisting").Obj(),
+			name: "pod belongs to a non-existent pg",
+			pod:  st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg-non-existent").Obj(),
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(1).Obj(),
+			},
 			expectedSuccess: true,
 		},
 		{
 			name: "pod count less than minMember",
-			pod:  st.MakePod().Name("p2").UID("p2").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
+			pod:  st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("pg2-1").Namespace("ns").UID("p2-1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+				tu.MakePodGroup().Name("pg2").Namespace("ns").MinMember(2).Obj(),
 			},
 			expectedSuccess: false,
 		},
 		{
 			name: "pod count equal minMember",
-			pod:  st.MakePod().Name("p2").UID("p2").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+				st.MakePod().Name("p1c").Namespace("ns").UID("p1c").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+				tu.MakePodGroup().Name("pg2").Namespace("ns").MinMember(2).Obj(),
 			},
 			expectedSuccess: true,
 		},
 		{
-			name: "pod count more minMember",
-			pod:  st.MakePod().Name("p2").UID("p2").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-				st.MakePod().Name("pg3-1").UID("pg3-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			name: "pod count more than minMember",
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+				st.MakePod().Name("p1c").Namespace("ns").UID("p1c").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+				tu.MakePodGroup().Name("pg2").Namespace("ns").MinMember(2).Obj(),
 			},
 			expectedSuccess: true,
 		},
 		{
-			name: "cluster resource enough, min Resource",
-			pod: st.MakePod().Name("p2-1").UID("p2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").
-				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1"}).Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg2").Obj(),
+			// Previously we defined 2 nodes, each with 4 cpus. Now the PodGroup's minResources req is 6 cpus.
+			name: "cluster's resource satisfies minResource", // Although it'd fail in Filter()
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+				st.MakePod().Name("p1c").Namespace("ns").UID("p1c").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).
+					MinResources(map[corev1.ResourceName]string{corev1.ResourceCPU: "6"}).Obj(),
 			},
 			expectedSuccess: true,
 		},
 		{
-			name: "cluster resource not enough, min Resource",
-			pod: st.MakePod().Name("p2-1").UID("p2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg3").
-				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "20"}).Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg3").Obj(),
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg3").Obj(),
+			// Previously we defined 2 nodes, each with 4 cpus. Now the PodGroup's minResources req is 10 cpus.
+			name: "cluster's resource cannot satisfy minResource",
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+				st.MakePod().Name("p1c").Namespace("ns").UID("p1c").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).
+					MinResources(map[corev1.ResourceName]string{corev1.ResourceCPU: "10"}).Obj(),
 			},
 			expectedSuccess: false,
 		},
-		{
-			name: "cluster resource enough not required",
-			pod:  st.MakePod().Name("p2-1").UID("p2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			pods: []*corev1.Pod{
-				st.MakePod().Name("pg1-1").UID("pg1-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-				st.MakePod().Name("pg2-1").UID("pg2-1").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			},
-			expectedSuccess: true,
-		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			// Compile all objects into `objs`.
+			var objs []runtime.Object
+			for _, pod := range append(tt.pendingPods, tt.pod) {
+				objs = append(objs, pod)
+			}
+			for _, pg := range tt.pgs {
+				objs = append(objs, pg)
+			}
+
+			client, err := tu.NewFakeClient(objs...)
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			cs := clientsetfake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
-			existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{"test": "a"}, 60, 30)
-			snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
-			pgMgr := &PodGroupManager{pgLister: pgLister, permittedPG: newCache(),
-				snapshotSharedLister: snapshot, podLister: podInformer.Lister(), scheduleTimeout: &scheduleTimeout, backedOffPG: gochache.New(10*time.Second, 10*time.Second)}
+
+			pgMgr := &PodGroupManager{
+				client:               client,
+				snapshotSharedLister: tu.NewFakeSharedLister(tt.pendingPods, nodes),
+				podLister:            podInformer.Lister(),
+				scheduleTimeout:      &scheduleTimeout,
+				permittedPG:          newCache(),
+				backedOffPG:          newCache(),
+			}
+
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
 			}
-			for _, p := range tt.pods {
+			for _, p := range tt.pendingPods {
 				podInformer.Informer().GetStore().Add(p)
 			}
-			err := pgMgr.PreFilter(ctx, tt.pod)
+
+			err = pgMgr.PreFilter(ctx, tt.pod)
 			if (err == nil) != tt.expectedSuccess {
-				t.Errorf("desire %v, get %v", tt.expectedSuccess, err == nil)
+				t.Errorf("Want %v, but got %v", tt.expectedSuccess, err == nil)
 			}
 		})
 	}
 }
 
 func TestPermit(t *testing.T) {
-	ctx := context.Background()
-	pg := testutil.MakePG("pg", "ns1", 2, nil, nil)
-	pg1 := testutil.MakePG("pg1", "ns1", 2, nil, nil)
-	fakeClient := fakepgclientset.NewSimpleClientset(pg, pg1)
+	scheduleTimeout := 10 * time.Second
+	capacity := map[corev1.ResourceName]string{
+		corev1.ResourceCPU: "4",
+	}
+	nodes := []*corev1.Node{
+		st.MakeNode().Name("node").Capacity(capacity).Obj(),
+	}
 
-	pgInformerFactory := pgformers.NewSharedInformerFactory(fakeClient, 0)
-	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
-	pgInformerFactory.Start(ctx.Done())
-
-	pgInformer.Informer().GetStore().Add(pg)
-	pgInformer.Informer().GetStore().Add(pg1)
-	pgLister := pgInformer.Lister()
-
-	existingPods, allNodes := testutil.MakeNodesAndPods(map[string]string{v1alpha1.PodGroupLabel: "pg1"}, 1, 1)
-	existingPods[0].Spec.NodeName = allNodes[0].Name
-	existingPods[0].Namespace = "ns1"
-	snapshot := testutil.NewFakeSharedLister(existingPods, allNodes)
-	timeout := 10 * time.Second
 	tests := []struct {
-		name     string
-		pod      *corev1.Pod
-		snapshot framework.SharedLister
-		want     Status
+		name         string
+		pod          *corev1.Pod
+		existingPods []*corev1.Pod
+		pgs          []*v1alpha1.PodGroup
+		want         Status
 	}{
 		{
-			name: "pod does not belong to any pg, allow",
-			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Obj(),
+			name: "pod does not belong to any pg",
+			pod:  st.MakePod().Name("p").Namespace("ns").UID("p").Obj(),
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
 			want: PodGroupNotSpecified,
 		},
 		{
-			name: "pod belongs to a non-existing pg",
-			pod:  st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg-noexist").Obj(),
+			name: "pod specifies a non-existent pg",
+			pod:  st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg-non-existent").Obj(),
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
 			want: PodGroupNotFound,
 		},
 		{
-			name:     "pod belongs to a pg that doesn't have enough pods",
-			pod:      st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			snapshot: testutil.NewFakeSharedLister([]*corev1.Pod{}, []*corev1.Node{}),
-			want:     Wait,
+			name: "pod belongs to a pg that doesn't have quorum",
+			pod:  st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
+			want: Wait,
 		},
 		{
-			name:     "pod belongs to a pg that has enough pods",
-			pod:      st.MakePod().Name("p").UID("p").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
-			snapshot: snapshot,
-			want:     Success,
+			name: "pod belongs to a pg that have quorum satisfied",
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			existingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").Node("node").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
+			want: Success,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pgMgr := &PodGroupManager{pgClient: fakeClient, pgLister: pgLister, scheduleTimeout: &timeout, snapshotSharedLister: tt.snapshot}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			// Compile all objects into `objs`.
+			var objs []runtime.Object
+			for _, pod := range append(tt.existingPods, tt.pod) {
+				objs = append(objs, pod)
+			}
+			for _, pg := range tt.pgs {
+				objs = append(objs, pg)
+			}
+
+			client, err := tu.NewFakeClient(objs...)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cs := clientsetfake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			podInformer := informerFactory.Core().V1().Pods()
+
+			pgMgr := &PodGroupManager{
+				client:               client,
+				snapshotSharedLister: tu.NewFakeSharedLister(tt.existingPods, nodes),
+				podLister:            podInformer.Lister(),
+				scheduleTimeout:      &scheduleTimeout,
+			}
+
+			informerFactory.Start(ctx.Done())
+			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
+				t.Fatal("WaitForCacheSync failed")
+			}
+			for _, p := range tt.existingPods {
+				podInformer.Informer().GetStore().Add(p)
+			}
+
 			if got := pgMgr.Permit(ctx, tt.pod); got != tt.want {
-				t.Errorf("Expect %v, but got %v", tt.want, got)
+				t.Errorf("Want %v, but got %v", tt.want, got)
 			}
 		})
 	}
 }
 
 func TestCheckClusterResource(t *testing.T) {
-	nodeRes := map[corev1.ResourceName]string{corev1.ResourceMemory: "300"}
-	node := st.MakeNode().Name("fake-node").Capacity(nodeRes).Obj()
-	snapshot := testutil.NewFakeSharedLister(nil, []*corev1.Node{node})
-	nodeInfo, _ := snapshot.NodeInfos().List()
+	capacity := map[corev1.ResourceName]string{
+		corev1.ResourceCPU: "3",
+	}
+	// In total, the cluster has 3*2 = 6 cpus.
+	nodes := []*corev1.Node{
+		st.MakeNode().Name("node-a").Capacity(capacity).Obj(),
+		st.MakeNode().Name("node-b").Capacity(capacity).Obj(),
+	}
 
-	pod := st.MakePod().Name("t1-p1-3").Req(map[corev1.ResourceName]string{corev1.ResourceMemory: "100"}).Label(v1alpha1.PodGroupLabel,
-		"pg1-1").ZeroTerminationGracePeriod().Obj()
-	snapshotWithAssumedPod := testutil.NewFakeSharedLister([]*corev1.Pod{pod}, []*corev1.Node{node})
-	scheduledNodeInfo, _ := snapshotWithAssumedPod.NodeInfos().List()
 	tests := []struct {
-		name                  string
-		resourceRequest       corev1.ResourceList
-		desiredPGName         string
-		nodeList              []*framework.NodeInfo
-		desiredResourceEnough bool
+		name         string
+		existingPods []*corev1.Pod
+		minResources corev1.ResourceList
+		pgName       string
+		want         bool
 	}{
 		{
 			name: "Cluster resource enough",
-			resourceRequest: corev1.ResourceList{
-				corev1.ResourceMemory: *resource.NewQuantity(10, resource.DecimalSI),
+			existingPods: []*corev1.Pod{
+				st.MakePod().Name("p1").Namespace("ns").UID("p1").Node("node-a").
+					Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "2"}).Obj(),
 			},
-			nodeList:              nodeInfo,
-			desiredResourceEnough: true,
+			minResources: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+			},
+			pgName: "ns/pg1",
+			want:   true,
 		},
 		{
 			name: "Cluster resource not enough",
-			resourceRequest: corev1.ResourceList{
-				corev1.ResourceMemory: *resource.NewQuantity(1000, resource.DecimalSI),
+			existingPods: []*corev1.Pod{
+				st.MakePod().Name("p1").Namespace("ns").UID("p1").Node("node-a").
+					Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "2"}).Obj(),
+				st.MakePod().Name("p2").Namespace("ns").UID("p2").Node("node-b").
+					Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1"}).Obj(),
 			},
-			nodeList:              nodeInfo,
-			desiredResourceEnough: false,
+			minResources: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+			},
+			pgName: "ns/pg1",
+			want:   false,
 		},
 		{
-			name: "Cluster resource enough, some resources of the pods belonging to the group have been included",
-			resourceRequest: corev1.ResourceList{
-				corev1.ResourceMemory: *resource.NewQuantity(250, resource.DecimalSI),
+			name: "Cluster resource enough as p1's resource needs to be excluded from minResources",
+			existingPods: []*corev1.Pod{
+				st.MakePod().Name("p1").Namespace("ns").UID("p1").Label(v1alpha1.PodGroupLabel, "pg1").Node("node-a").
+					Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "2"}).Obj(),
+				st.MakePod().Name("p2").Namespace("ns").UID("p2").Node("node-b").
+					Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1"}).Obj(),
 			},
-			nodeList:              scheduledNodeInfo,
-			desiredResourceEnough: true,
-			desiredPGName:         "pg1-1",
+			minResources: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+			},
+			pgName: "ns/pg1",
+			want:   true,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := CheckClusterResource(tt.nodeList, tt.resourceRequest, tt.desiredPGName)
-			if (err == nil) != tt.desiredResourceEnough {
-				t.Errorf("want resource enough %v, but got %v", tt.desiredResourceEnough, err != nil)
+			snapshotSharedLister := tu.NewFakeSharedLister(tt.existingPods, nodes)
+			nodeInfoList, _ := snapshotSharedLister.NodeInfos().List()
+			err := CheckClusterResource(nodeInfoList, tt.minResources, tt.pgName)
+			if (err == nil) != tt.want {
+				t.Errorf("Expect the cluster resource to be satified: %v, but got %v", tt.want, err == nil)
 			}
 		})
 	}
-
 }
 
 func newCache() *gochache.Cache {
