@@ -141,12 +141,75 @@ cluster upgrade.
 
 #### QueueSort
 
-To make sure a group of pods can be scheduled as soon as possible. We implemented this `extension point`. The main progress is as follows:
+For Pods belong to a same podGroup should be popped out of the scheduling queue one by one,
+which requires an efficient and wise algorithm. This is quite different with plain Pods,
+so we need to reimplement the QueueSort plugin.
 
-1. Sort based on Pod Priority
-2. Pod does not belong to any group
-3. PodGroup creation time
-4. Pod creation time
+Basically, we need to watch for all the podGroups and maintain a cache for them
+in coscheduling's core package:
+
+- when podGroup created, we'll create a `queuedPodGroup` in the cache
+- when podGroup updated, we'll do nothing right now
+- when podGroup deleted, we'll clean up the objet in the cache
+
+The structure looks like below:
+
+```golang
+type PodGroupManager struct {
+ // ...
+ // <new>
+ // key is the podGroup name, value is the queued podGroup info.
+ podGroups map[string]*queuedPodGroup
+}
+
+// queuedPodGroup's lifecycle is synchronized with the podGroup object.
+type queuedPodGroup struct {
+ // Timestamp is the podGroup's queued time.
+ // - timestamp will be initialized when the first pod enqueues
+ // - timestamp will be renewed when a pod re-enqueues for failing the scheduling
+ timestamp time.Time
+
+ // status indicated the podGroup's condition, it can be:
+ // - queueing: when the first pod starts scheduling
+ // - queueingFailed: when a pod fails the scheduling
+ // - queueingSucceeded: when the podGroup succeeds in scheduling
+ status string
+}
+```
+
+The workflow is (only works for pods have podGroup):
+
+1. When a new podGroup created, we'll create a queuedPodGroup in the cache.
+2. When the first pod of the podGroup creates, in queueing specifically, we'll initialize the timestamp of the queuedPodGroup,
+also set the status=queueing. This will happen in `Less()` function, and because we'll not change the timestamp, so pods belong
+to the same podGroup will be placed together as a unit.
+3. Schedule the pods of the podGroup one by one, if anyone fails in the scheduling cycle, we'll set the status=queueingFailed in PostFilter,
+and the podGroup will enter into the backoff queue if configured.
+4. When the failed Pod re-enqueues, we'll renew the queuedPodGroup timestamp based on the `queueingFailed` status and also set the status to `queueing`, the new timestamp should be `now+backoffTime` to avoid breaking the podGroup who starts scheduling
+during the backoff time.
+5. When backoff time passes, pods will be re-scheduled.
+6. If podGroup permitted successfully, we'll set the status=queueingSucceeded, and frozen the timestamp.
+7. When the podGroup deleted, we'll remove it from the cache as well.
+
+We refused to initialize the queuedPodGroup's timestamp in creation is because podGroup can be reused, so the creating time could be
+really old but will be queued in the front, that's not what we expect.
+
+One risk here is frozen the timestamp in Step6 sounds a little aggressive, but what we want to do here is trying to make the pods
+behaving as a unit, let's say we have successfully scheduled a podGroup, and we're scheduling another one, then a pod from
+the former podGroup was rebuilt, instead of waiting for the latter podGroup scheduling first, we hope the pod recover in prior,
+although this may lead to the latter podGroup failed in scheduling.
+
+Another risk is we'll initialize or renew the timestamp in the `Less()` function, which will lead to the performance degradation in queueing,
+but they're all in memory, so this sounds not a big problem.
+
+**One real problem** here is when the podGroup doesn't exist, we can only use the podInfo's timestamp for queueing,
+which may lead to Pods belong to the same podGroup have different queueing timestamp.
+One potential solution is we create queuedPodGroups whatever they exist or not, but when to GC
+these objects and what if we create error podGroups?
+
+Or we can reject the creation of workloads unless the referenced pogGroups created. Anyway, I'd
+like to leave this as a unresolved problem, if this is critical to end-users, they can have a
+admission controller to mitigate this as described above.
 
 #### PreFilter
 
@@ -166,10 +229,13 @@ For any pod that gets rejected, their pod group would be added to a backoff list
 
 If the gap to reach the quorum of a PodGroup is greater than 10%, we reject the whole PodGroup. Note that this plugin should be configured as the last one among PostFilter plugins.
 
+We'll set the corresponding `queuedPodGroup` status to `queueingFailed`.
+
 #### Permit
 
 1. When the number of waiting pods in a PodGroup is less than `minMember` (defined in the PodGroup), the status `Wait` is returned. They will be added to cache with TLL (equal to ScheduleTimeoutSeconds).
-2. When the number is equal or greater than `minMember`, send a signal to permit the waiting pods.
+2. When the number is equal or greater than `minMember`, send a signal to permit the waiting pods,
+we'll set the corresponding `queuedPodGroup` status to `queueingSucceed` the same time.
 
 We can define `MaxScheduleTime` for a PodGroup. If any pod times out, the whole group would be rejected.
 
