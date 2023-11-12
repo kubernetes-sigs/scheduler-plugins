@@ -40,6 +40,13 @@ const (
 	Name = "TopologicalSort"
 )
 
+var scheme = runtime.NewScheme()
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(agv1alpha.AddToScheme(scheme))
+}
+
 // TopologicalSort : Sort pods based on their AppGroup and corresponding microservice dependencies
 type TopologicalSort struct {
 	client.Client
@@ -72,11 +79,6 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	if err != nil {
 		return nil, err
 	}
-
-	scheme := runtime.NewScheme()
-
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(agv1alpha.AddToScheme(scheme))
 
 	client, err := client.New(handle.KubeConfig(), client.Options{
 		Scheme: scheme,

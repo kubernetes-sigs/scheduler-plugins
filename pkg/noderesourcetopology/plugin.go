@@ -22,6 +22,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -37,6 +39,13 @@ const (
 	// Name is the name of the plugin used in the plugin registry and configurations.
 	Name = "NodeResourceTopologyMatch"
 )
+
+var scheme = runtime.NewScheme()
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
+}
 
 type NUMANode struct {
 	NUMAID    int

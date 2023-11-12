@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/rand"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -249,7 +249,7 @@ func TestTopologicalSortLess(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pods := makePodsAppGroup(tt.deploymentNames, tt.agName, tt.podPhase)
 
-			s := scheme.Scheme
+			s := clientgoscheme.Scheme
 			utilruntime.Must(agv1alpha1.AddToScheme(s))
 			client := fake.NewClientBuilder().
 				WithScheme(s).
@@ -429,7 +429,7 @@ func BenchmarkTopologicalSortPlugin(b *testing.B) {
 
 			pods := makePodsAppGroup(tt.deploymentNames, tt.agName, tt.podPhase)
 
-			s := scheme.Scheme
+			s := clientgoscheme.Scheme
 			utilruntime.Must(agv1alpha1.AddToScheme(s))
 			client := fake.NewClientBuilder().
 				WithScheme(s).
