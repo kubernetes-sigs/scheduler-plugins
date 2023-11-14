@@ -17,7 +17,6 @@ limitations under the License.
 package noderesourcetopology
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -30,8 +29,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	topoclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
-	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
@@ -43,32 +42,23 @@ const (
 )
 
 func initNodeTopologyInformer(tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
-	topoClient, err := topoclientset.NewForConfig(handle.KubeConfig())
+	client, err := ctrlclient.New(handle.KubeConfig(), ctrlclient.Options{Scheme: scheme})
 	if err != nil {
-		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
+		klog.ErrorS(err, "Cannot create client for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
 		return nil, err
 	}
 
-	topologyInformerFactory := topologyinformers.NewSharedInformerFactory(topoClient, 0)
-	nodeTopologyInformer := topologyInformerFactory.Topology().V1alpha2().NodeResourceTopologies()
-	nodeTopologyLister := nodeTopologyInformer.Lister()
-
-	klog.V(5).InfoS("Start nodeTopologyInformer")
-	ctx := context.Background()
-	topologyInformerFactory.Start(ctx.Done())
-	topologyInformerFactory.WaitForCacheSync(ctx.Done())
-
 	if tcfg.DiscardReservedNodes {
-		return nrtcache.NewDiscardReserved(nodeTopologyLister), nil
+		return nrtcache.NewDiscardReserved(client), nil
 	}
 
 	if tcfg.CacheResyncPeriodSeconds <= 0 {
-		return nrtcache.NewPassthrough(nodeTopologyLister), nil
+		return nrtcache.NewPassthrough(client), nil
 	}
 
 	podSharedInformer, podLister := nrtcache.InformerFromHandle(handle)
 
-	nrtCache, err := nrtcache.NewOverReserve(tcfg.Cache, nodeTopologyLister, podLister)
+	nrtCache, err := nrtcache.NewOverReserve(tcfg.Cache, client, podLister)
 	if err != nil {
 		return nil, err
 	}

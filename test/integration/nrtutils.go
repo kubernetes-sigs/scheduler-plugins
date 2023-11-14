@@ -24,19 +24,21 @@ import (
 	"strings"
 	"time"
 
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	scheconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
-
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 )
 
 const (
@@ -91,20 +93,19 @@ func getNodeName(ctx context.Context, c clientset.Interface, podNamespace, podNa
 	return pod.Spec.NodeName, nil
 }
 
-func createNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) error {
+func createNodeResourceTopologies(ctx context.Context, client ctrlclient.Client, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) error {
 	for _, nrt := range noderesourcetopologies {
-		_, err := topologyClient.TopologyV1alpha2().NodeResourceTopologies().Create(ctx, nrt, metav1.CreateOptions{})
-		if err != nil {
+		if err := client.Create(ctx, nrt.DeepCopy()); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func updateNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) error {
+func updateNodeResourceTopologies(ctx context.Context, client ctrlclient.Client, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) error {
 	for _, nrt := range noderesourcetopologies {
-		updatedNrt, err := topologyClient.TopologyV1alpha2().NodeResourceTopologies().Get(ctx, nrt.Name, metav1.GetOptions{})
-		if err != nil {
+		updatedNrt := &topologyv1alpha2.NodeResourceTopology{}
+		if err := client.Get(ctx, types.NamespacedName{Name: nrt.Name}, updatedNrt); err != nil {
 			return err
 		}
 
@@ -120,19 +121,18 @@ func updateNodeResourceTopologies(ctx context.Context, topologyClient *versioned
 		obj.Attributes = nrt.Attributes.DeepCopy()
 		obj.Zones = nrt.Zones.DeepCopy()
 
-		_, err = topologyClient.TopologyV1alpha2().NodeResourceTopologies().Update(ctx, obj, metav1.UpdateOptions{})
-		if err != nil {
+		if err := client.Update(ctx, obj); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func cleanupNodeResourceTopologies(ctx context.Context, topologyClient *versioned.Clientset, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) {
+func cleanupNodeResourceTopologies(ctx context.Context, client ctrlclient.Client, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) {
 	for _, nrt := range noderesourcetopologies {
-		err := topologyClient.TopologyV1alpha2().NodeResourceTopologies().Delete(ctx, nrt.Name, metav1.DeleteOptions{})
-		if err != nil {
-			klog.ErrorS(err, "Failed to clean up NodeResourceTopology", "nodeResourceTopology", nrt)
+		if err := client.Delete(ctx, nrt); err != nil {
+			klog.ErrorS(err, "Failed to clean up NodeResourceTopology",
+				"nodeResourceTopology", nrt)
 		}
 	}
 	klog.Infof("cleaned up NRT %d objects", len(noderesourcetopologies))

@@ -26,11 +26,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	clientset "k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -42,12 +45,13 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	scheconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 )
 
 const (
@@ -127,7 +131,14 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
 	cs := clientset.NewForConfigOrDie(globalKubeConfig)
-	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
+
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
+	extClient, err := ctrlclient.New(globalKubeConfig, ctrlclient.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 

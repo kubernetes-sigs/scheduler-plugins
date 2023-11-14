@@ -26,11 +26,17 @@ import (
 	"testing"
 	"time"
 
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/podfingerprint"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -39,9 +45,7 @@ import (
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
-	"github.com/k8stopologyawareschedwg/podfingerprint"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	schedconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
@@ -477,7 +481,13 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
 			cs := clientset.NewForConfigOrDie(globalKubeConfig)
-			extClient := versioned.NewForConfigOrDie(globalKubeConfig)
+			scheme := runtime.NewScheme()
+			utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+			utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
+			extClient, err := ctrlclient.New(globalKubeConfig, ctrlclient.Options{Scheme: scheme})
+			if err != nil {
+				t.Fatalf("Failed to create client: %v", err)
+			}
 			testCtx.ClientSet = cs
 			testCtx.KubeConfig = globalKubeConfig
 
@@ -657,8 +667,14 @@ func TestTopologyCachePluginWithUpdates(t *testing.T) {
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
 	cs := clientset.NewForConfigOrDie(globalKubeConfig)
-	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
+	extClient, err := ctrlclient.New(globalKubeConfig, ctrlclient.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 

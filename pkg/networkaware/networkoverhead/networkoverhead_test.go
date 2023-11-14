@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	testClientSet "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/kubernetes/scheme"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -488,7 +488,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
-			s := scheme.Scheme
+			s := clientgoscheme.Scheme
 			utilruntime.Must(agv1alpha1.AddToScheme(s))
 			utilruntime.Must(ntv1alpha1.AddToScheme(s))
 
@@ -716,7 +716,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := scheme.Scheme
+			s := clientgoscheme.Scheme
 			utilruntime.Must(agv1alpha1.AddToScheme(s))
 			utilruntime.Must(ntv1alpha1.AddToScheme(s))
 
@@ -956,7 +956,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
-			s := scheme.Scheme
+			s := clientgoscheme.Scheme
 			utilruntime.Must(agv1alpha1.AddToScheme(s))
 			utilruntime.Must(ntv1alpha1.AddToScheme(s))
 
@@ -1189,7 +1189,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := scheme.Scheme
+			s := clientgoscheme.Scheme
 			utilruntime.Must(agv1alpha1.AddToScheme(s))
 			utilruntime.Must(ntv1alpha1.AddToScheme(s))
 
@@ -1413,7 +1413,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
-			s := scheme.Scheme
+			s := clientgoscheme.Scheme
 			utilruntime.Must(agv1alpha1.AddToScheme(s))
 			utilruntime.Must(ntv1alpha1.AddToScheme(s))
 

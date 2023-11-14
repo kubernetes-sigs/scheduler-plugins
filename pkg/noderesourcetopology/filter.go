@@ -204,7 +204,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	}
 
 	nodeName := nodeInfo.Node().Name
-	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(nodeName, pod)
+	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
 	if !ok {
 		klog.V(2).InfoS("invalid topology data", "node", nodeName)
 		return framework.NewStatus(framework.Unschedulable, "invalid node topology data")

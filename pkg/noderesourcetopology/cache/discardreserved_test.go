@@ -17,24 +17,28 @@ limitations under the License.
 package cache
 
 import (
-	"reflect"
+	"context"
 	"testing"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
-	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestDiscardReservedNodesGetNRTCopy(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	nrtCache := NewDiscardReserved(fakeInformer.Lister())
+	ctx := context.Background()
+	nrtCache := NewDiscardReserved(fakeClient)
 	var nrtObj *topologyv1alpha2.NodeResourceTopology
-	nrtObj, _ = nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
+	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
 	if nrtObj != nil {
 		t.Fatalf("non-empty object from empty cache")
 	}
@@ -66,12 +70,15 @@ func TestDiscardReservedNodesGetNRTCopy(t *testing.T) {
 		},
 	}
 	for _, obj := range nodeTopologies {
-		fakeInformer.Informer().GetStore().Update(obj)
+		if err := fakeClient.Create(ctx, obj.DeepCopy()); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	nrtObj, ok := nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
-	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
-		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
+	nrtObj, ok := nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
+	if !isNRTEqual(nrtObj, nodeTopologies[0]) {
+		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n",
+			dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
 
 	if !ok {
@@ -88,7 +95,7 @@ func TestDiscardReservedNodesGetNRTCopyFails(t *testing.T) {
 		},
 	}
 
-	nrtObj, ok := nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
+	nrtObj, ok := nrtCache.GetCachedNRTCopy(context.Background(), "node1", &corev1.Pod{})
 	if ok {
 		t.Fatal("expected false\ngot true\n")
 	}

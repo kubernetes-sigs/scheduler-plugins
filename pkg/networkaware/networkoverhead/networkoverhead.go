@@ -61,6 +61,15 @@ const (
 	preFilterStateKey = "PreFilter" + Name
 )
 
+var scheme = runtime.NewScheme()
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+
+	utilruntime.Must(agv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(ntv1alpha1.AddToScheme(scheme))
+}
+
 // NetworkOverhead : Filter and Score nodes based on Pod's AppGroup requirements: MaxNetworkCosts requirements among Pods with dependencies
 type NetworkOverhead struct {
 	client.Client
@@ -137,14 +146,6 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	if err != nil {
 		return nil, err
 	}
-
-	scheme := runtime.NewScheme()
-
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
-	utilruntime.Must(agv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(ntv1alpha1.AddToScheme(scheme))
-
 	client, err := client.New(handle.KubeConfig(), client.Options{
 		Scheme: scheme,
 	})

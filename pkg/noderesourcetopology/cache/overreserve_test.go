@@ -17,21 +17,25 @@ limitations under the License.
 package cache
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"sort"
 	"testing"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	faketopologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
-	topologyinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
-	listerv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 const (
@@ -92,28 +96,33 @@ func TestGetCacheResyncMethod(t *testing.T) {
 	}
 }
 func TestInitEmptyLister(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	var err error
 	_, err = NewOverReserve(nil, nil, fakePodLister)
 	if err == nil {
 		t.Fatalf("accepted nil lister")
 	}
 
-	_, err = NewOverReserve(nil, fakeInformer.Lister(), nil)
+	_, err = NewOverReserve(nil, fakeClient, nil)
 	if err == nil {
 		t.Fatalf("accepted nil indexer")
 	}
 }
 
 func TestNodesMaybeOverReservedCount(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
@@ -121,11 +130,14 @@ func TestNodesMaybeOverReservedCount(t *testing.T) {
 }
 
 func TestDirtyNodesMarkDiscarded(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	expectedNodes := []string{
 		"node-1",
@@ -154,11 +166,14 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 }
 
 func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	availNodes := []string{
 		"node-1",
@@ -193,14 +208,18 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 }
 
 func TestGetCachedNRTCopy(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
+	ctx := context.Background()
 	var nrtObj *topologyv1alpha2.NodeResourceTopology
-	nrtObj, _ = nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
+	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
 	if nrtObj != nil {
 		t.Fatalf("non-empty object from empty cache")
 	}
@@ -235,18 +254,21 @@ func TestGetCachedNRTCopy(t *testing.T) {
 		nrtCache.Store().Update(obj)
 	}
 
-	nrtObj, _ = nrtCache.GetCachedNRTCopy("node1", &corev1.Pod{})
+	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
 	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
 }
 
 func TestGetCachedNRTCopyReserve(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
@@ -273,7 +295,7 @@ func TestGetCachedNRTCopyReserve(t *testing.T) {
 	}
 	nrtCache.ReserveNodeResources("node1", testPod)
 
-	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(context.Background(), "node1", testPod)
 	for _, zone := range nrtObj.Zones {
 		for _, zoneRes := range zone.Resources {
 			switch zoneRes.Name {
@@ -291,11 +313,14 @@ func TestGetCachedNRTCopyReserve(t *testing.T) {
 }
 
 func TestGetCachedNRTCopyReleaseNone(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
@@ -322,18 +347,21 @@ func TestGetCachedNRTCopyReleaseNone(t *testing.T) {
 	}
 	nrtCache.UnreserveNodeResources("node1", testPod)
 
-	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(context.Background(), "node1", testPod)
 	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
 }
 
 func TestGetCachedNRTCopyReserveRelease(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
@@ -361,18 +389,21 @@ func TestGetCachedNRTCopyReserveRelease(t *testing.T) {
 	nrtCache.ReserveNodeResources("node1", testPod)
 	nrtCache.UnreserveNodeResources("node1", testPod)
 
-	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(context.Background(), "node1", testPod)
 	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
 }
 
 func TestFlush(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
@@ -435,18 +466,21 @@ func TestFlush(t *testing.T) {
 		t.Errorf("dirty nodes after flush: %v", dirtyNodes)
 	}
 
-	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(context.Background(), "node1", testPod)
 	if !reflect.DeepEqual(nrtObj, expectedNodeTopology) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
 }
 
 func TestResyncNoPodFingerprint(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
@@ -505,7 +539,7 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 		},
 	}
 
-	fakeInformer.Informer().GetStore().Add(expectedNodeTopology)
+	fakeClient.Create(context.Background(), expectedNodeTopology)
 
 	nrtCache.Resync()
 
@@ -517,11 +551,14 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 }
 
 func TestResyncMatchFingerprint(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
@@ -593,7 +630,9 @@ func TestResyncMatchFingerprint(t *testing.T) {
 	runningPod := testPod.DeepCopy()
 	runningPod.Status.Phase = corev1.PodRunning
 
-	fakeInformer.Informer().GetStore().Add(expectedNodeTopology)
+	if err := fakeClient.Create(context.Background(), expectedNodeTopology); err != nil {
+		t.Fatal(err)
+	}
 	fakePodLister.AddPod(runningPod)
 
 	nrtCache.Resync()
@@ -603,18 +642,28 @@ func TestResyncMatchFingerprint(t *testing.T) {
 		t.Errorf("node still dirty after resyncing with good data: %v", dirtyNodes)
 	}
 
-	nrtObj, _ := nrtCache.GetCachedNRTCopy("node1", testPod)
-	if !reflect.DeepEqual(nrtObj, expectedNodeTopology) {
-		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(context.Background(), "node1", testPod)
+	if !isNRTEqual(nrtObj, expectedNodeTopology) {
+		t.Fatalf("unexpected nrt from cache\ngot: %v\nexpected: %v\n",
+			dumpNRT(nrtObj), dumpNRT(expectedNodeTopology))
 	}
 }
 
+func isNRTEqual(a, b *topologyv1alpha2.NodeResourceTopology) bool {
+	return equality.Semantic.DeepDerivative(a.Zones, b.Zones) &&
+		equality.Semantic.DeepDerivative(a.TopologyPolicies, b.TopologyPolicies) &&
+		equality.Semantic.DeepDerivative(a.Attributes, b.Attributes)
+}
+
 func TestUnknownNodeWithForeignPods(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nrtCache.NodeHasForeignPods("node-bogus", &corev1.Pod{})
 
@@ -625,11 +674,14 @@ func TestUnknownNodeWithForeignPods(t *testing.T) {
 }
 
 func TestNodeWithForeignPods(t *testing.T) {
-	fakeClient := faketopologyv1alpha2.NewSimpleClientset()
-	fakeInformer := topologyinformers.NewSharedInformerFactory(fakeClient, 0).Topology().V1alpha2().NodeResourceTopologies()
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	fakePodLister := &fakePodLister{}
 
-	nrtCache := mustOverReserve(t, fakeInformer.Lister(), fakePodLister)
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
 
 	nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
 		{
@@ -693,7 +745,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 		t.Errorf("unexpected dirty nodes: %v", names)
 	}
 
-	_, ok := nrtCache.GetCachedNRTCopy(target, &corev1.Pod{})
+	_, ok := nrtCache.GetCachedNRTCopy(context.Background(), target, &corev1.Pod{})
 	if ok {
 		t.Errorf("succesfully got node with foreign pods!")
 	}
@@ -744,8 +796,8 @@ func makeDefaultTestTopology() []*topologyv1alpha2.NodeResourceTopology {
 	}
 }
 
-func mustOverReserve(t *testing.T, nrtLister listerv1alpha2.NodeResourceTopologyLister, podLister podlisterv1.PodLister) *OverReserve {
-	obj, err := NewOverReserve(nil, nrtLister, podLister)
+func mustOverReserve(t *testing.T, client ctrlclient.Client, podLister podlisterv1.PodLister) *OverReserve {
+	obj, err := NewOverReserve(nil, client, podLister)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
