@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,10 +27,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/testing/defaults"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
@@ -48,6 +48,19 @@ import (
 )
 
 func TestSetup(t *testing.T) {
+	testEnv := &envtest.Environment{
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "manifests", "crds"),
+		},
+	}
+
+	// start envtest cluster
+	cfg, err := testEnv.Start()
+	defer testEnv.Stop()
+	if err != nil {
+		panic(err)
+	}
+
 	// temp dir
 	tmpDir, err := os.MkdirTemp("", "scheduler-options")
 	if err != nil {
@@ -55,35 +68,27 @@ func TestSetup(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// https server
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"metadata": {"name": "test"}}`))
-	}))
-	defer server.Close()
+	clusters := make(map[string]*clientcmdapi.Cluster)
+	clusters["default-cluster"] = &clientcmdapi.Cluster{
+		Server:                   cfg.Host,
+		CertificateAuthorityData: cfg.CAData,
+	}
+	// https://github.com/kubernetes-sigs/controller-runtime/blob/v0.16.3/examples/scratch-env/main.go
+	user, err := testEnv.ControlPlane.AddUser(envtest.User{
+		Name:   "envtest-admin",
+		Groups: []string{"system:masters"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kubeConfig, err := user.KubeConfig()
+	if err != nil {
+		t.Fatalf("unable to create kubeconfig: %v", err)
+	}
 
 	configKubeconfig := filepath.Join(tmpDir, "config.kubeconfig")
-	if err := os.WriteFile(configKubeconfig, []byte(fmt.Sprintf(`
-apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    insecure-skip-tls-verify: true
-    server: %s
-  name: default
-contexts:
-- context:
-    cluster: default
-    user: default
-  name: default
-current-context: default
-users:
-- name: default
-  user:
-    username: config
-`, server.URL)), os.FileMode(0600)); err != nil {
-		t.Fatal(err)
+	if err := os.WriteFile(configKubeconfig, kubeConfig, os.FileMode(0600)); err != nil {
+		t.Fatalf("unable to create kubeconfig file: %v", err)
 	}
 
 	// PodState plugin config
