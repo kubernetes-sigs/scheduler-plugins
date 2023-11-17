@@ -89,7 +89,7 @@ spec:
       serviceAccountName: scheduler-plugins-controller
       containers:
         - name: scheduler-plugins-controller
-          image: registry.k8s.io/scheduler-plugins/controller:v0.26.7
+          image: registry.k8s.io/scheduler-plugins/controller:v0.27.8
           imagePullPolicy: IfNotPresent
 ---
 # Install the scheduler
@@ -113,7 +113,7 @@ spec:
       nodeSelector: # To deploy in master node
         node-role.kubernetes.io/master: ""
       containers:
-        - image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.26.7
+        - image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8
           command: # For extra info, please add verbose level: e.g., - -v=9
             - /bin/kube-scheduler
             - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
