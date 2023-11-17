@@ -163,13 +163,13 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 // NOTE: if in-place-update (KEP 1287) gets implemented, then PodUpdate event
 // should be registered for this plugin since a Pod update may free up resources
 // that make other Pods schedulable.
-func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEvent {
+func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	nrtGVK := fmt.Sprintf("noderesourcetopologies.v1alpha2.%v", topologyapi.GroupName)
-	return []framework.ClusterEvent{
-		{Resource: framework.Pod, ActionType: framework.Delete},
-		{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable},
-		{Resource: framework.GVK(nrtGVK), ActionType: framework.Add | framework.Update},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
+		{Event: framework.ClusterEvent{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable}},
+		{Event: framework.ClusterEvent{Resource: framework.GVK(nrtGVK), ActionType: framework.Add | framework.Update}},
 	}
 }
