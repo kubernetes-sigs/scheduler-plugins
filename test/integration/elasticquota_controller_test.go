@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quota "k8s.io/apiserver/pkg/quota/v1"
@@ -34,7 +35,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
@@ -42,7 +42,7 @@ import (
 	schedv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/controllers"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
+	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 func TestElasticController(t *testing.T) {
@@ -50,7 +50,7 @@ func TestElasticController(t *testing.T) {
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
 	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
-	extClient := versioned.NewForConfigOrDie(globalKubeConfig)
+	extClient := util.NewClientOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
@@ -311,8 +311,8 @@ func TestElasticController(t *testing.T) {
 
 			if err := wait.Poll(time.Millisecond*200, 10*time.Second, func() (bool, error) {
 				for _, v := range tt.used {
-					eq, err := extClient.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(testCtx.Ctx, v.Name, metav1.GetOptions{})
-					if err != nil {
+					var eq schedv1alpha1.ElasticQuota
+					if err := extClient.Get(testCtx.Ctx, types.NamespacedName{Namespace: v.Namespace, Name: v.Name}, &eq); err != nil {
 						// This could be a connection error so we want to retry.
 						klog.ErrorS(err, "Failed to obtain the elasticQuota clientSet")
 						return false, err
@@ -345,8 +345,8 @@ func TestElasticController(t *testing.T) {
 
 			if err := wait.Poll(time.Millisecond*200, 10*time.Second, func() (bool, error) {
 				for _, v := range tt.want {
-					eq, err := extClient.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(testCtx.Ctx, v.Name, metav1.GetOptions{})
-					if err != nil {
+					var eq schedv1alpha1.ElasticQuota
+					if err := extClient.Get(testCtx.Ctx, types.NamespacedName{Namespace: v.Namespace, Name: v.Name}, &eq); err != nil {
 						// This could be a connection error so we want to retry.
 						klog.ErrorS(err, "Failed to obtain the elasticQuota clientSet")
 						return false, err

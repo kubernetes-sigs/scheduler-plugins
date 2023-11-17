@@ -112,7 +112,7 @@ update-vendor:
 	hack/update-vendor.sh
 
 .PHONY: unit-test
-unit-test:
+unit-test: install-envtest
 	hack/unit-test.sh
 
 .PHONY: install-envtest

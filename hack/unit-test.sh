@@ -21,6 +21,10 @@ set -o pipefail
 SCRIPT_ROOT=$(dirname "${BASH_SOURCE}")/..
 source "${SCRIPT_ROOT}/hack/lib/init.sh"
 
+kube::log::status "Configuring envtest"
+TEMP_DIR=${TMPDIR-/tmp}
+source "${TEMP_DIR}/setup-envtest"
+
 # TODO: make args customizable.
 go test -mod=vendor \
   sigs.k8s.io/scheduler-plugins/cmd/... \

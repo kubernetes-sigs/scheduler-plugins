@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/informers"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	policylisters "k8s.io/client-go/listers/policy/v1"
 	"k8s.io/client-go/tools/cache"
@@ -39,23 +40,29 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
+	ctrlruntimecache "sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
-	"sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned"
-	schedinformer "sigs.k8s.io/scheduler-plugins/pkg/generated/informers/externalversions"
-	externalv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
+
+var scheme = runtime.NewScheme()
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+}
 
 // CapacityScheduling is a plugin that implements the mechanism of capacity scheduling.
 type CapacityScheduling struct {
 	sync.RWMutex
-	fh                 framework.Handle
-	podLister          corelisters.PodLister
-	pdbLister          policylisters.PodDisruptionBudgetLister
-	elasticQuotaLister externalv1alpha1.ElasticQuotaLister
-	elasticQuotaInfos  ElasticQuotaInfos
+	fh                framework.Handle
+	podLister         corelisters.PodLister
+	pdbLister         policylisters.PodDisruptionBudgetLister
+	client            client.Client
+	elasticQuotaInfos ElasticQuotaInfos
 }
 
 // PreFilterState computed at PreFilter and used at PostFilter or Reserve.
@@ -119,42 +126,43 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		pdbLister:         getPDBLister(handle.SharedInformerFactory()),
 	}
 
-	client, err := versioned.NewForConfig(handle.KubeConfig())
+	client, err := client.New(handle.KubeConfig(), client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, err
 	}
 
-	schedSharedInformerFactory := schedinformer.NewSharedInformerFactory(client, 0)
-	c.elasticQuotaLister = schedSharedInformerFactory.Scheduling().V1alpha1().ElasticQuotas().Lister()
-	elasticQuotaInformer := schedSharedInformerFactory.Scheduling().V1alpha1().ElasticQuotas().Informer()
-	elasticQuotaInformer.AddEventHandler(
-		cache.FilteringResourceEventHandler{
-			FilterFunc: func(obj interface{}) bool {
-				switch t := obj.(type) {
-				case *v1alpha1.ElasticQuota:
-					return true
-				case cache.DeletedFinalStateUnknown:
-					if _, ok := t.Obj.(*v1alpha1.ElasticQuota); ok {
-						return true
-					}
-					utilruntime.HandleError(fmt.Errorf("cannot convert to *v1alpha1.ElasticQuota: %v", obj))
-					return false
-				default:
-					utilruntime.HandleError(fmt.Errorf("unable to handle object in %T", obj))
-					return false
-				}
-			},
-			Handler: cache.ResourceEventHandlerFuncs{
-				AddFunc:    c.addElasticQuota,
-				UpdateFunc: c.updateElasticQuota,
-				DeleteFunc: c.deleteElasticQuota,
-			},
-		})
-
-	schedSharedInformerFactory.Start(nil)
-	if !cache.WaitForCacheSync(nil, elasticQuotaInformer.HasSynced) {
-		return nil, fmt.Errorf("timed out waiting for caches to sync %v", Name)
+	c.client = client
+	dynamicCache, err := ctrlruntimecache.New(handle.KubeConfig(), ctrlruntimecache.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
 	}
+	// TODO: pass in context.
+	elasticQuotaInformer, err := dynamicCache.GetInformer(context.Background(), &v1alpha1.ElasticQuota{})
+	if err != nil {
+		return nil, err
+	}
+	elasticQuotaInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: func(obj interface{}) bool {
+			switch t := obj.(type) {
+			case *v1alpha1.ElasticQuota:
+				return true
+			case cache.DeletedFinalStateUnknown:
+				if _, ok := t.Obj.(*v1alpha1.ElasticQuota); ok {
+					return true
+				}
+				utilruntime.HandleError(fmt.Errorf("cannot convert to *v1alpha1.ElasticQuota: %v", obj))
+				return false
+			default:
+				utilruntime.HandleError(fmt.Errorf("unable to handle object in %T", obj))
+				return false
+			}
+		},
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    c.addElasticQuota,
+			UpdateFunc: c.updateElasticQuota,
+			DeleteFunc: c.deleteElasticQuota,
+		},
+	})
 
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(
@@ -688,12 +696,13 @@ func (c *CapacityScheduling) addPod(obj interface{}) {
 	elasticQuotaInfo := c.elasticQuotaInfos[pod.Namespace]
 	// If elasticQuotaInfo is nil, try to list ElasticQuotas through elasticQuotaLister
 	if elasticQuotaInfo == nil {
-		eqs, err := c.elasticQuotaLister.ElasticQuotas(pod.Namespace).List(labels.NewSelector())
-		if err != nil {
+		var eqList v1alpha1.ElasticQuotaList
+		if err := c.client.List(context.Background(), &eqList, client.InNamespace(pod.Namespace)); err != nil {
 			klog.ErrorS(err, "Failed to get elasticQuota", "elasticQuota", pod.Namespace)
 			return
 		}
 
+		eqs := eqList.Items
 		// If the length of elasticQuotas is 0, return.
 		if len(eqs) == 0 {
 			return
