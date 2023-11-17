@@ -25,9 +25,11 @@ import (
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/ktesting"
+
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	fakeframework "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -73,6 +75,8 @@ func TestPodState(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			logger, ctx := ktesting.NewTestContext(t)
+
 			cs := clientsetfake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			registeredPlugins := []st.RegisterPluginFunc{
@@ -83,9 +87,9 @@ func TestPodState(t *testing.T) {
 			fakeSharedLister := &fakeSharedLister{nodes: test.nodeInfos}
 
 			fh, err := st.NewFramework(
+				ctx,
 				registeredPlugins,
 				"default-scheduler",
-				wait.NeverStop,
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(fakeSharedLister),
@@ -98,7 +102,7 @@ func TestPodState(t *testing.T) {
 			for _, n := range test.nodeInfos {
 				for _, pi := range n.Pods {
 					if pi.Pod.Status.NominatedNodeName != "" {
-						addNominatedPod(pi, n.Node().Name, fh)
+						addNominatedPod(logger, pi, n.Node().Name, fh)
 					}
 				}
 			}
@@ -183,8 +187,8 @@ func makeRegularPod(name string) *v1.Pod {
 	}
 }
 
-func addNominatedPod(pi *framework.PodInfo, nodeName string, fh framework.Handle) *framework.PodInfo {
-	fh.AddNominatedPod(pi, &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: nodeName})
+func addNominatedPod(logger klog.Logger, pi *framework.PodInfo, nodeName string, fh framework.Handle) *framework.PodInfo {
+	fh.AddNominatedPod(logger, pi, &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: nodeName})
 	return pi
 }
 

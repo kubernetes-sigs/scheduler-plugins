@@ -28,7 +28,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
@@ -141,6 +140,9 @@ func TestPreFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -149,7 +151,7 @@ func TestPreFilter(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -316,9 +318,9 @@ func TestPostFilter(t *testing.T) {
 			defer cancel()
 
 			fwk, err := st.NewFramework(
+				ctx,
 				registeredPlugins,
 				"default-scheduler",
-				ctx.Done(),
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithInformerFactory(informerFactory),
@@ -439,6 +441,9 @@ func TestReserve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -447,7 +452,7 @@ func TestReserve(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -558,6 +563,9 @@ func TestUnreserve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -566,7 +574,7 @@ func TestUnreserve(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -713,11 +721,12 @@ func TestDryRunPreemption(t *testing.T) {
 			registeredPlugins := makeRegisteredPlugin()
 
 			cs := clientsetfake.NewSimpleClientset()
-			ctx := context.Background()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			fwk, err := st.NewFramework(
+				ctx,
 				registeredPlugins,
 				"default-scheduler",
-				ctx.Done(),
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
@@ -960,12 +969,13 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			registeredPlugins := makeRegisteredPlugin()
 			cs := clientsetfake.NewSimpleClientset()
-			ctx := context.Background()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
 			fwk, err := st.NewFramework(
+				ctx,
 				registeredPlugins,
 				"default-scheduler",
-				ctx.Done(),
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithEventRecorder(&events.FakeRecorder{}),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
@@ -1116,6 +1126,9 @@ func TestAddElasticQuota(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -1124,7 +1137,7 @@ func TestAddElasticQuota(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -1186,6 +1199,9 @@ func TestUpdateElasticQuota(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -1194,7 +1210,7 @@ func TestUpdateElasticQuota(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -1235,6 +1251,9 @@ func TestDeleteElasticQuota(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -1243,7 +1262,7 @@ func TestDeleteElasticQuota(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -1310,6 +1329,9 @@ func TestAddPod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -1318,7 +1340,7 @@ func TestAddPod(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -1419,6 +1441,9 @@ func TestUpdatePod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -1427,7 +1452,7 @@ func TestUpdatePod(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)
@@ -1533,6 +1558,9 @@ func TestDeletePod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			var registerPlugins []st.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
@@ -1541,7 +1569,7 @@ func TestDeletePod(t *testing.T) {
 			)
 
 			fwk, err := st.NewFramework(
-				registeredPlugins, "", wait.NeverStop,
+				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
 			)

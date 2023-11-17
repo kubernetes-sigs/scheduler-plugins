@@ -84,6 +84,9 @@ func TestNew(t *testing.T) {
 	}))
 	defer server.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 		TrimaranSpec:            pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
 		SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
@@ -102,7 +105,7 @@ func TestNew(t *testing.T) {
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
-	fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
+	fh, err := testutil.NewFramework(ctx, registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
 		"default-scheduler", runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 	assert.Nil(t, err)
@@ -334,6 +337,9 @@ func TestScore(t *testing.T) {
 			}))
 			defer server.Close()
 
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			nodes := append([]*v1.Node{}, tt.nodes...)
 			state := framework.NewCycleState()
 
@@ -351,7 +357,7 @@ func TestScore(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			snapshot := newTestSharedLister(nil, nodes)
 
-			fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
+			fh, err := testutil.NewFramework(ctx, registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
 				"default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)

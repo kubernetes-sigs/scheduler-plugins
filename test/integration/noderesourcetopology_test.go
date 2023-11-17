@@ -104,14 +104,16 @@ func TestTopologyMatchPluginValidation(t *testing.T) {
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{
 		Interface: cs.EventsV1(),
 	})
-	done := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	_, err = scheduler.New(
+		ctx,
 		cs,
 		informer,
 		dynInformerFactory,
 		profile.NewRecorderFactory(eventBroadcaster),
-		done,
 		scheduler.WithProfiles(cfg.Profiles...),
 		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{noderesourcetopology.Name: noderesourcetopology.New}),
 	)

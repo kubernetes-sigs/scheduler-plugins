@@ -28,7 +28,6 @@ import (
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/util/wait"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 
 	v1 "k8s.io/api/core/v1"
@@ -81,6 +80,9 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 }
 
 func TestNew(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
 		TrimaranSpec:              pluginConfig.TrimaranSpec{WatcherAddress: "http://deadbeef:2020"},
 		TargetUtilization:         v1beta3.DefaultTargetUtilizationPercent,
@@ -99,7 +101,7 @@ func TestNew(t *testing.T) {
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
-	fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{targetLoadPackingConfig},
+	fh, err := testutil.NewFramework(ctx, registeredPlugins, []config.PluginConfig{targetLoadPackingConfig},
 		"kube-scheduler", runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 	assert.Nil(t, err)
@@ -237,8 +239,10 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				assert.Nil(t, err)
 				resp.Write(bytes)
 			}))
-
 			defer server.Close()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
 			nodes := append([]*v1.Node{}, tt.nodes...)
 			state := framework.NewCycleState()
@@ -246,7 +250,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 			cs := testClientSet.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			snapshot := newTestSharedLister(nil, nodes)
-			fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{targetLoadPackingConfig},
+			fh, err := testutil.NewFramework(ctx, registeredPlugins, []config.PluginConfig{targetLoadPackingConfig},
 				"default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)
@@ -341,7 +345,10 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			bfbpArgs.WatcherAddress = server.URL
 			defer server.Close()
 
-			fh, err := st.NewFramework(registeredPlugins, "default-scheduler", wait.NeverStop, runtime.WithClientSet(cs),
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			fh, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(b, err)
 			pl, err := New(&bfbpArgs, fh)
@@ -350,7 +357,6 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			informerFactory.Start(context.Background().Done())
 			informerFactory.WaitForCacheSync(context.Background().Done())
 
-			ctx := context.Background()
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
