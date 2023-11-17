@@ -90,5 +90,5 @@ spec:
       serviceAccountName: scheduler-plugins-controller
       containers:
       - name: scheduler-plugins-controller
-        image: registry.k8s.io/scheduler-plugins/controller:v0.26.7
+        image: registry.k8s.io/scheduler-plugins/controller:v0.27.8
         imagePullPolicy: IfNotPresent
