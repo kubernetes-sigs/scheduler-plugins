@@ -185,3 +185,40 @@ type PodGroupList struct {
 	// Items is the list of PodGroup
 	Items []PodGroup `json:"items"`
 }
+
+// +genclient
+// +genclient:nonNamespaced
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Cluster
+
+// ClusterScopedResource is a collection of cluster scoped resources
+type ClusterScopedResource struct {
+	metav1.TypeMeta `json:",inline"`
+	// Standard object's metadata.
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Specification of the desired behavior of the cluster scoped resource.
+	Spec ClusterScopedResourceSpec `json:"spec"`
+}
+
+// ClusterScopedResourceSpec specifies resources
+type ClusterScopedResourceSpec struct {
+	// +optional
+	ResourcesFilter map[v1.ResourceName]bool `json:"resourcesFilter,omitempty"`
+	// +optional
+	ResourcesScore map[v1.ResourceName]int64 `json:"resourcesScore,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ClusterScopedResourceList is a collection of ClusterScopedResource.
+type ClusterScopedResourceList struct {
+	metav1.TypeMeta `json:",inline"`
+	// Standard list metadata
+	// +optional
+	metav1.ListMeta `json:"metadata,omitempty"`
+
+	// Items is the list of ClusterScopedResource
+	Items []ClusterScopedResource `json:"items"`
+}

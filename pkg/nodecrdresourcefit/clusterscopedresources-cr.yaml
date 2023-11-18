@@ -1,0 +1,9 @@
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ClusterScopedResources
+metadata:
+  name: "REPLACE_ME_WITH_NODE_NAME"
+spec:
+  resourcesFilter:
+    "company.net/memory": true
+  resourcesScore:
+    "company.net/memory": 55

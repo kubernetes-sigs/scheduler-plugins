@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1alpha1
 
+// ClusterScopedResourceListerExpansion allows custom methods to be added to
+// ClusterScopedResourceLister.
+type ClusterScopedResourceListerExpansion interface{}
+
 // ElasticQuotaListerExpansion allows custom methods to be added to
 // ElasticQuotaLister.
 type ElasticQuotaListerExpansion interface{}

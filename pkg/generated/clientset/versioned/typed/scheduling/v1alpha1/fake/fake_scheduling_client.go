@@ -28,6 +28,10 @@ type FakeSchedulingV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeSchedulingV1alpha1) ClusterScopedResources() v1alpha1.ClusterScopedResourceInterface {
+	return &FakeClusterScopedResources{c}
+}
+
 func (c *FakeSchedulingV1alpha1) ElasticQuotas(namespace string) v1alpha1.ElasticQuotaInterface {
 	return &FakeElasticQuotas{c, namespace}
 }

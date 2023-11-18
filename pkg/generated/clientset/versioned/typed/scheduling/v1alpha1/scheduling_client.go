@@ -28,6 +28,7 @@ import (
 
 type SchedulingV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	ClusterScopedResourcesGetter
 	ElasticQuotasGetter
 	PodGroupsGetter
 }
@@ -35,6 +36,10 @@ type SchedulingV1alpha1Interface interface {
 // SchedulingV1alpha1Client is used to interact with features provided by the scheduling.x-k8s.io group.
 type SchedulingV1alpha1Client struct {
 	restClient rest.Interface
+}
+
+func (c *SchedulingV1alpha1Client) ClusterScopedResources() ClusterScopedResourceInterface {
+	return newClusterScopedResources(c)
 }
 
 func (c *SchedulingV1alpha1Client) ElasticQuotas(namespace string) ElasticQuotaInterface {
