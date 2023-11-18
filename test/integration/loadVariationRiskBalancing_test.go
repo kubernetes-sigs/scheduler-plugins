@@ -113,6 +113,10 @@ func TestLoadVariationRiskBalancingPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Work around https://github.com/kubernetes/kubernetes/issues/121630.
+	cfg.Profiles[0].Plugins.PreScore = schedapi.PluginSet{
+		Disabled: []schedapi.Plugin{{Name: "*"}},
+	}
 	cfg.Profiles[0].Plugins.Score = schedapi.PluginSet{
 		Enabled: []schedapi.Plugin{
 			{Name: loadvariationriskbalancing.Name},
