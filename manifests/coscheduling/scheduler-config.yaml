@@ -24,9 +24,6 @@ profiles:
     reserve:
       enabled:
       - name: Coscheduling
-    postBind:
-      enabled:
-      - name: Coscheduling
   pluginConfig:
   - name: Coscheduling
     args:
