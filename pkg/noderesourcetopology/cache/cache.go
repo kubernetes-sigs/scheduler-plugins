@@ -30,8 +30,10 @@ type Interface interface {
 	// Over-reserved resources are the resources consumed by pods scheduled to that node after the last update
 	// of NRT pertaining to the same node, pessimistically overallocated on ALL the NUMA zones of the node.
 	// The pod argument is used only for logging purposes.
-	// Returns a boolean to signal the caller if the NRT data is clean. If false, then the node has foreign
-	// Pods detected - so it should be ignored or handled differently by the caller.
+	// Returns nil if there is no NRT data available for the node named `nodeName`.
+	// Returns a boolean to signal the caller if the NRT data is fresh.
+	// If true, the data is fresh and ready to be consumed.
+	// If false, the data is stale and the caller need to wait for a future refresh.
 	GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool)
 
 	// NodeMaybeOverReserved declares a node was filtered out for not enough resources available.
