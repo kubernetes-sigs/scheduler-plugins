@@ -42,7 +42,7 @@ The plugin favors low indexes. Thus, depending on the two pods evaluated in the 
 For instance, consider the following scheduler config as an example to enable the `TopologicalSort` plugin:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false

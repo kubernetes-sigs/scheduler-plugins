@@ -94,7 +94,7 @@ func TestSetup(t *testing.T) {
 	// PodState plugin config
 	podStateConfigFile := filepath.Join(tmpDir, "podState.yaml")
 	if err := os.WriteFile(podStateConfigFile, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -208,9 +208,9 @@ profiles:
 	}
 
 	// CapacityScheduling plugin config with arguments
-	capacitySchedulingConfigv1beta2 := filepath.Join(tmpDir, "capacityScheduling-v1beta2.yaml")
-	if err := os.WriteFile(capacitySchedulingConfigv1beta2, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+	capacitySchedulingConfigv1beta3 := filepath.Join(tmpDir, "capacityScheduling-v1beta3.yaml")
+	if err := os.WriteFile(capacitySchedulingConfigv1beta3, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -231,9 +231,9 @@ profiles:
 `, configKubeconfig)), os.FileMode(0600)); err != nil {
 		t.Fatal(err)
 	}
-	capacitySchedulingConfigv1beta3 := filepath.Join(tmpDir, "capacityScheduling-v1beta3.yaml")
-	if err := os.WriteFile(capacitySchedulingConfigv1beta3, []byte(fmt.Sprintf(`
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+	capacitySchedulingConfigv1 := filepath.Join(tmpDir, "capacityScheduling-v1.yaml")
+	if err := os.WriteFile(capacitySchedulingConfigv1, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 clientConnection:
   kubeconfig: "%s"
@@ -497,18 +497,18 @@ profiles:
 			},
 		},
 		{
-			name:            "single profile config - PodState - v1beta2",
+			name:            "single profile config - PodState - v1beta3",
 			flags:           []string{"--config", podStateConfigFile},
 			registryOptions: []app.Option{app.WithPlugin(podstate.Name, podstate.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
-					PreEnqueue: defaults.PluginsV1beta2.PreEnqueue,
-					QueueSort:  defaults.PluginsV1beta2.QueueSort,
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PostFilter: defaults.PluginsV1beta2.PostFilter,
+					PreEnqueue: defaults.ExpandedPluginsV1beta3.PreEnqueue,
+					QueueSort:  defaults.ExpandedPluginsV1beta3.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1beta3.Bind,
+					PostFilter: defaults.ExpandedPluginsV1beta3.PostFilter,
 					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: podstate.Name, Weight: 1}}},
-					Reserve:    defaults.PluginsV1beta2.Reserve,
-					PreBind:    defaults.PluginsV1beta2.PreBind,
+					Reserve:    defaults.ExpandedPluginsV1beta3.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1beta3.PreBind,
 				},
 			},
 		},
@@ -573,29 +573,6 @@ profiles:
 			},
 		},
 		{
-			name:            "single profile config - Capacityscheduling - v1beta2",
-			flags:           []string{"--config", capacitySchedulingConfigv1beta2},
-			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
-			wantPlugins: map[string]*config.Plugins{
-				"default-scheduler": {
-					PreEnqueue: defaults.PluginsV1beta2.PreEnqueue,
-					QueueSort:  defaults.PluginsV1beta2.QueueSort,
-					Bind:       defaults.PluginsV1beta2.Bind,
-					PreFilter: config.PluginSet{
-						Enabled: append(defaults.PluginsV1beta2.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
-					},
-					Filter:     defaults.PluginsV1beta2.Filter,
-					PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: capacityscheduling.Name}}},
-					PreScore:   defaults.PluginsV1beta2.PreScore,
-					Score:      defaults.PluginsV1beta2.Score,
-					Reserve: config.PluginSet{
-						Enabled: append(defaults.PluginsV1beta2.Reserve.Enabled, config.Plugin{Name: capacityscheduling.Name}),
-					},
-					PreBind: defaults.PluginsV1beta2.PreBind,
-				},
-			},
-		},
-		{
 			name:            "single profile config - Capacityscheduling - v1beta3",
 			flags:           []string{"--config", capacitySchedulingConfigv1beta3},
 			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
@@ -615,6 +592,29 @@ profiles:
 						Enabled: append(defaults.ExpandedPluginsV1beta3.Reserve.Enabled, config.Plugin{Name: capacityscheduling.Name}),
 					},
 					PreBind: defaults.ExpandedPluginsV1beta3.PreBind,
+				},
+			},
+		},
+		{
+			name:            "single profile config - Capacityscheduling - v1",
+			flags:           []string{"--config", capacitySchedulingConfigv1},
+			registryOptions: []app.Option{app.WithPlugin(capacityscheduling.Name, capacityscheduling.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
+					QueueSort:  defaults.ExpandedPluginsV1.QueueSort,
+					Bind:       defaults.ExpandedPluginsV1.Bind,
+					PreFilter: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: capacityscheduling.Name}),
+					},
+					Filter:     defaults.ExpandedPluginsV1.Filter,
+					PostFilter: config.PluginSet{Enabled: []config.Plugin{{Name: capacityscheduling.Name}}},
+					PreScore:   defaults.ExpandedPluginsV1.PreScore,
+					Score:      defaults.ExpandedPluginsV1.Score,
+					Reserve: config.PluginSet{
+						Enabled: append(defaults.ExpandedPluginsV1.Reserve.Enabled, config.Plugin{Name: capacityscheduling.Name}),
+					},
+					PreBind: defaults.ExpandedPluginsV1.PreBind,
 				},
 			},
 		},

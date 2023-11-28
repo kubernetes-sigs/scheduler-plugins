@@ -511,7 +511,8 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			client := builder.Build()
 
 			// create plugin
-			ctx := context.Background()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
 			snapshot := newTestSharedLister(nil, nodes)
 
@@ -532,7 +533,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), schedruntime.WithClientSet(cs),
+			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory), schedruntime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -752,7 +753,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), schedruntime.WithClientSet(cs),
+			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory), schedruntime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -999,7 +1000,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), schedruntime.WithClientSet(cs),
+			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory), schedruntime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -1228,7 +1229,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(),
+			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler",
 				schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory),
 				schedruntime.WithSnapshotSharedLister(snapshot))
@@ -1454,7 +1455,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(),
+			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler",
 				schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory),
 				schedruntime.WithSnapshotSharedLister(snapshot))

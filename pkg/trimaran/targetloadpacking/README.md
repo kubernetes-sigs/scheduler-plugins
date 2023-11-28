@@ -44,7 +44,7 @@ Apart from `watcherAddress`, you can configure the following in `TargetLoadPacki
 The following is an example config to use `load-watcher` as a library to retrieve metrics from pre-installed prometheus, achieve around 80% CPU utilization, with default CPU requests as 2 cores and requests multiplier as 2.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -72,7 +72,7 @@ profiles:
 Alternatively, you can use the `load-watcher` as a service in the config below.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false

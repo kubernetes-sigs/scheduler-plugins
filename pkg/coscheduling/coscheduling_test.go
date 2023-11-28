@@ -101,7 +101,7 @@ func TestPodGroupBackoffTime(t *testing.T) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done(), fwkruntime.WithInformerFactory(informerFactory))
+			f, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler", fwkruntime.WithInformerFactory(informerFactory))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -494,7 +494,7 @@ func TestPermit(t *testing.T) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done())
+			f, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -597,7 +597,7 @@ func TestPostFilter(t *testing.T) {
 				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := st.NewFramework(registeredPlugins, "default-scheduler", ctx.Done())
+			f, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler")
 			if err != nil {
 				t.Fatal(err)
 			}

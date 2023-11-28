@@ -17,7 +17,8 @@ limitations under the License.
 package util
 
 import (
-	"k8s.io/apimachinery/pkg/util/wait"
+	"context"
+
 	"k8s.io/kube-scheduler/config/v1beta3"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/scheme"
@@ -27,7 +28,7 @@ import (
 )
 
 // NewFramework is a variant version of st.NewFramework - with extra PluginConfig slice as input.
-func NewFramework(fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profileName string, opts ...runtime.Option) (framework.Framework, error) {
+func NewFramework(ctx context.Context, fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profileName string, opts ...runtime.Option) (framework.Framework, error) {
 	registry := runtime.Registry{}
 	profile := &config.KubeSchedulerProfile{
 		SchedulerName: profileName,
@@ -37,7 +38,7 @@ func NewFramework(fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profi
 		f(&registry, profile)
 	}
 	profile.PluginConfig = cfgs
-	return runtime.NewFramework(registry, profile, wait.NeverStop, opts...)
+	return runtime.NewFramework(ctx, registry, profile, opts...)
 }
 
 // NewDefaultSchedulerComponentConfig returns a default scheduler cc object.

@@ -30,7 +30,6 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	v1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta2"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
@@ -55,11 +54,11 @@ func TestCodecsDecodePluginConfig(t *testing.T) {
 		wantErr      string
 		wantProfiles []schedconfig.KubeSchedulerProfile
 	}{
-		// v1beta2 tests
+		// v1beta3 tests
 		{
-			name: "v1beta2 all plugin args in default profile",
+			name: "v1beta3 all plugin args in default profile",
 			data: []byte(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 profiles:
 - schedulerName: scheduler-plugins
@@ -68,7 +67,6 @@ profiles:
     args:
       permitWaitingTimeSeconds: 10
       podGroupBackoffSeconds: 0
-      deniedPGExpirationTimeSeconds: 3
   - name: NodeResourcesAllocatable
     args:
       mode: Least
@@ -104,7 +102,7 @@ profiles:
 			wantProfiles: []schedconfig.KubeSchedulerProfile{
 				{
 					SchedulerName: "scheduler-plugins",
-					Plugins:       defaults.PluginsV1beta2,
+					Plugins:       defaults.PluginsV1beta3,
 					PluginConfig: []schedconfig.PluginConfig{
 						{
 							Name: coscheduling.Name,
@@ -149,8 +147,8 @@ profiles:
 										InsecureSkipVerify: false,
 									},
 									WatcherAddress: "http://deadbeef:2020"},
-								SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
-								SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+								SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
+								SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
 							},
 						},
 						{
@@ -195,9 +193,9 @@ profiles:
 			},
 		},
 		{
-			name: "v1beta2 plugin args unspecified to verify the default profile",
+			name: "v1beta3 plugin args unspecified to verify the default profile",
 			data: []byte(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 profiles:
 - schedulerName: scheduler-plugins
@@ -216,7 +214,7 @@ profiles:
 			wantProfiles: []schedconfig.KubeSchedulerProfile{
 				{
 					SchedulerName: "scheduler-plugins",
-					Plugins:       defaults.PluginsV1beta2,
+					Plugins:       defaults.PluginsV1beta3,
 					PluginConfig: []schedconfig.PluginConfig{
 						{
 							Name: coscheduling.Name,
@@ -261,8 +259,8 @@ profiles:
 										Token:   "",
 									},
 									WatcherAddress: ""},
-								SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
-								SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+								SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
+								SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
 							},
 						},
 						{
@@ -307,9 +305,9 @@ profiles:
 			},
 		},
 		{
-			name: "v1beta2 coscheduling plugin args illegal to get validation error",
+			name: "v1beta3 coscheduling plugin args illegal to get validation error",
 			data: []byte(`
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 profiles:
 - schedulerName: scheduler-plugins
@@ -649,10 +647,10 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 		version schema.GroupVersion
 		want    string
 	}{
-		// v1beta2 tests
+		// v1beta3 tests
 		{
-			name:    "v1beta2 plugins",
-			version: v1beta2.SchemeGroupVersion,
+			name:    "v1beta3 plugins",
+			version: v1beta3.SchemeGroupVersion,
 			obj: &schedconfig.KubeSchedulerConfiguration{
 				Profiles: []schedconfig.KubeSchedulerProfile{
 					{
@@ -700,15 +698,15 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 											InsecureSkipVerify: false,
 										},
 										WatcherAddress: "http://deadbeef:2020"},
-									SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
-									SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+									SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
+									SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
 								},
 							},
 						},
 					},
 				},
 			},
-			want: `apiVersion: kubescheduler.config.k8s.io/v1beta2
+			want: `apiVersion: kubescheduler.config.k8s.io/v1beta3
 clientConnection:
   acceptContentTypes: ""
   burst: 0
@@ -717,7 +715,6 @@ clientConnection:
   qps: 0
 enableContentionProfiling: false
 enableProfiling: false
-healthzBindAddress: ""
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -727,20 +724,19 @@ leaderElection:
   resourceName: ""
   resourceNamespace: ""
   retryPeriod: 0s
-metricsBindAddress: ""
 parallelism: 0
 podInitialBackoffSeconds: 0
 podMaxBackoffSeconds: 0
 profiles:
 - pluginConfig:
   - args:
-      apiVersion: kubescheduler.config.k8s.io/v1beta2
+      apiVersion: kubescheduler.config.k8s.io/v1beta3
       kind: CoschedulingArgs
       permitWaitingTimeSeconds: 10
       podGroupBackoffSeconds: 0
     name: Coscheduling
   - args:
-      apiVersion: kubescheduler.config.k8s.io/v1beta2
+      apiVersion: kubescheduler.config.k8s.io/v1beta3
       kind: NodeResourcesAllocatableArgs
       mode: Least
       resources:
@@ -750,7 +746,7 @@ profiles:
         weight: 1
     name: NodeResourcesAllocatable
   - args:
-      apiVersion: kubescheduler.config.k8s.io/v1beta2
+      apiVersion: kubescheduler.config.k8s.io/v1beta3
       defaultRequests:
         cpu: "1"
       defaultRequestsMultiplier: "1.8"
@@ -764,7 +760,7 @@ profiles:
       watcherAddress: http://deadbeef:2020
     name: TargetLoadPacking
   - args:
-      apiVersion: kubescheduler.config.k8s.io/v1beta2
+      apiVersion: kubescheduler.config.k8s.io/v1beta3
       kind: LoadVariationRiskBalancingArgs
       metricProvider:
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
@@ -830,8 +826,8 @@ profiles:
 											InsecureSkipVerify: false,
 										},
 										WatcherAddress: "http://deadbeef:2020"},
-									SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
-									SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+									SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
+									SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
 								},
 							},
 							{
@@ -1016,8 +1012,8 @@ profiles:
 											InsecureSkipVerify: false,
 										},
 										WatcherAddress: "http://deadbeef:2020"},
-									SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
-									SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+									SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
+									SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
 								},
 							},
 							{

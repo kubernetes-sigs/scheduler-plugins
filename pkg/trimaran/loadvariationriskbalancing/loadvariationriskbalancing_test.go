@@ -39,7 +39,7 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta2"
+	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -84,10 +84,13 @@ func TestNew(t *testing.T) {
 	}))
 	defer server.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 		TrimaranSpec:            pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
-		SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
-		SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+		SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
+		SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
 	}
 	loadVariationRiskBalancingConfig := config.PluginConfig{
 		Name: Name,
@@ -102,7 +105,7 @@ func TestNew(t *testing.T) {
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
-	fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
+	fh, err := testutil.NewFramework(ctx, registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
 		"default-scheduler", runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 	assert.Nil(t, err)
@@ -334,13 +337,16 @@ func TestScore(t *testing.T) {
 			}))
 			defer server.Close()
 
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			nodes := append([]*v1.Node{}, tt.nodes...)
 			state := framework.NewCycleState()
 
 			loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 				TrimaranSpec:            pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
-				SafeVarianceMargin:      v1beta2.DefaultSafeVarianceMargin,
-				SafeVarianceSensitivity: v1beta2.DefaultSafeVarianceSensitivity,
+				SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
+				SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
 			}
 			loadVariationRiskBalancingConfig := config.PluginConfig{
 				Name: Name,
@@ -351,7 +357,7 @@ func TestScore(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			snapshot := newTestSharedLister(nil, nodes)
 
-			fh, err := testutil.NewFramework(registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
+			fh, err := testutil.NewFramework(ctx, registeredPlugins, []config.PluginConfig{loadVariationRiskBalancingConfig},
 				"default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)

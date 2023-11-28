@@ -18,7 +18,7 @@ Resources are assigned weights based on the plugin args resources param. The bas
 Example config:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false

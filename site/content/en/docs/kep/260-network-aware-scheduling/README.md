@@ -1356,7 +1356,7 @@ We will attribute a higher weight to our plugin to prefer decisions focused on l
 For instance, consider the following scheduler config as an example:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false

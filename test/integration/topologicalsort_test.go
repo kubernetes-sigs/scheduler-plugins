@@ -385,7 +385,7 @@ func TestTopologicalSortPlugin(t *testing.T) {
 			// Expect Pods are popped as in the TopologyOrder defined by the AppGroup.
 			t.Logf("Step 4 -  Expect pods to be popped out according to the topologicalSort plugin...")
 			for i := 0; i < len(tt.podNames); i++ {
-				podInfo := testCtx.Scheduler.NextPod()
+				podInfo, _ := testCtx.Scheduler.NextPod()
 				if podInfo.Pod.Name != tt.podNames[i] {
 					t.Errorf("Expect Pod %q, but got %q", tt.podNames[i], podInfo.Pod.Name)
 				} else {
