@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
+	"sigs.k8s.io/scheduler-plugins/pkg/peaks"
 
 	// Ensure scheme package is initialized.
 	_ "sigs.k8s.io/scheduler-plugins/apis/config/scheme"
@@ -56,6 +57,7 @@ func main() {
 		app.WithPlugin(preemptiontoleration.Name, preemptiontoleration.New),
 		app.WithPlugin(targetloadpacking.Name, targetloadpacking.New),
 		app.WithPlugin(lowriskovercommitment.Name, lowriskovercommitment.New),
+		app.WithPlugin(peaks.Name, peaks.New),
 		// Sample plugins below.
 		// app.WithPlugin(crossnodepreemption.Name, crossnodepreemption.New),
 		app.WithPlugin(podstate.Name, podstate.New),
