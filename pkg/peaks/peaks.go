@@ -55,7 +55,7 @@ func (pl *Peaks) Name() string {
 }
 
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	fmt.Printf("Input config %+v\n", obj)
+	fmt.Printf("Peaks plugin Input config %+v\n", obj)
 
 	args, ok := obj.(*config.PeaksArgs)
 	if !ok {
