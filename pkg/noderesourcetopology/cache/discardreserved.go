@@ -65,7 +65,7 @@ func (pt *DiscardReserved) GetCachedNRTCopy(ctx context.Context, nodeName string
 
 	nrt := &topologyv1alpha2.NodeResourceTopology{}
 	if err := pt.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrt); err != nil {
-		return nil, false
+		return nil, true
 	}
 	return nrt, true
 }
