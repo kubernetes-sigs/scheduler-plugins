@@ -240,3 +240,10 @@ type NetworkOverheadArgs struct {
 	// The NetworkTopology CRD name
 	NetworkTopologyName string
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type PeaksArgs struct {
+	metav1.TypeMeta
+	WatcherAddress string
+}

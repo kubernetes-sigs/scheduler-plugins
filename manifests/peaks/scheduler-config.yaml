@@ -1,0 +1,19 @@
+apiVersion: kubescheduler.config.k8s.io/v1beta3
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+profiles:
+- schedulerName: Peaks
+  plugins:
+    preScore:
+      disabled:
+      - name: '*'
+    score:
+      enabled:
+      - name: Peaks
+      disabled:
+      - name: '*'
+  pluginConfig:
+    - name: Peaks
+      args:
+        watcherAddress: http://172.21.152.81:2020

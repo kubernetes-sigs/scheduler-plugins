@@ -22,6 +22,7 @@ RUN RELEASE_VERSION=${RELEASE_VERSION} make build-scheduler.$ARCH
 
 FROM $ARCH/alpine:3.16
 
+ADD ./manifests/peaks/scheduler-config.yaml /home/scheduler-config.yaml
 COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/kube-scheduler /bin/kube-scheduler
 
 WORKDIR /bin
