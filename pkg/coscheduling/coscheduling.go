@@ -200,7 +200,7 @@ func (cs *Coscheduling) PreFilterExtensions() framework.PreFilterExtensions {
 // Permit is the functions invoked by the framework at "Permit" extension point.
 func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (*framework.Status, time.Duration) {
 	waitTime := *cs.scheduleTimeout
-	s := cs.pgMgr.Permit(ctx, pod)
+	s := cs.pgMgr.Permit(ctx, state, pod)
 	var retStatus *framework.Status
 	switch s {
 	case core.PodGroupNotSpecified:

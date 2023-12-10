@@ -50,12 +50,22 @@ const (
 	PodGroupNotFound Status = "PodGroup not found"
 	Success          Status = "Success"
 	Wait             Status = "Wait"
+
+	preFilterStateKey = "PreFilterCoscheduling"
 )
+
+type PreFilterState struct {
+	Activate bool
+}
+
+func (s *PreFilterState) Clone() framework.StateData {
+	return &PreFilterState{Activate: s.Activate}
+}
 
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
-	Permit(context.Context, *corev1.Pod) Status
+	Permit(context.Context, *framework.CycleState, *corev1.Pod) Status
 	GetPodGroup(*corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
 	DeletePermittedPodGroup(string)
@@ -111,6 +121,13 @@ func (pgMgr *PodGroupManager) BackoffPodGroup(pgName string, backoff time.Durati
 func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework.CycleState) {
 	pgName := util.GetPodGroupLabel(pod)
 	if pgName == "" {
+		return
+	}
+
+	// Only proceed if it's explicitly requested to activate sibling pods.
+	if c, err := state.Read(preFilterStateKey); err != nil {
+		return
+	} else if s, ok := c.(*PreFilterState); !ok || !s.Activate {
 		return
 	}
 
@@ -199,7 +216,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 }
 
 // Permit permits a pod to run, if the minMember match, it would send a signal to chan.
-func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Status {
+func (pgMgr *PodGroupManager) Permit(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) Status {
 	pgFullName, pg := pgMgr.GetPodGroup(pod)
 	if pgFullName == "" {
 		return PodGroupNotSpecified
@@ -215,6 +232,19 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Statu
 	if int32(assigned)+1 >= pg.Spec.MinMember {
 		return Success
 	}
+
+	if assigned == 0 {
+		// Given we've reached Permit(), it's mean all PreFilter checks (minMember & minResource)
+		// already pass through, so if assigned == 0, it could be due to:
+		// - minResource get satisfied
+		// - new pods added
+		// In either case, we should and only should use this 0-th pod to trigger activating
+		// its siblings.
+		// It'd be in-efficient if we trigger activating siblings unconditionally.
+		// See https://github.com/kubernetes-sigs/scheduler-plugins/issues/682
+		state.Write(preFilterStateKey, &PreFilterState{Activate: true})
+	}
+
 	return Wait
 }
 
