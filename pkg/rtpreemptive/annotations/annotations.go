@@ -9,4 +9,6 @@ const (
 	AnnotationKeyExecTime = AnnotationKeyPrefix + "exec-time"
 	// AnnotationKeyPausePod represents whether or not a pod is marked to be paused
 	AnnotationKeyPausePod = AnnotationKeyPrefix + "pause-pod"
+	// AnnotationKeyPreemptible indicates a pod cannot be paused
+	AnnotationKeyPreemptible = AnnotationKeyPrefix + "preemptible"
 )

@@ -315,6 +315,10 @@ func (rp *LLFPreemptiveScheduling) findCandidateOnNode(pod *v1.Pod, nodeInfo *fr
 			klog.InfoS("skipping pod with the same uid", "p", klog.KObj(p), "pod", klog.KObj(pod))
 			continue
 		}
+		if !rp.preemptionManager.CanBePaused(p) {
+			klog.InfoS("skipping pod as pod cannot be paused", "p", klog.KObj(p), "pod", klog.KObj(pod))
+			continue
+		}
 		if p.Namespace == util.NamespaceKubeSystem {
 			klog.InfoS("skipping kube system pod", "p", klog.KObj(p), "pod", klog.KObj(pod))
 			continue

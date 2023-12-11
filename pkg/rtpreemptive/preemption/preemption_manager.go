@@ -36,6 +36,7 @@ type Candidate struct {
 }
 
 type Manager interface {
+	CanBePaused(pod *v1.Pod) bool
 	// IsPodMarkedPaused checks if a pod is marked to be paused
 	IsPodMarkedPaused(pod *v1.Pod) bool
 	// GetPausedCandidateOnNode returns a paused candidate pod if found
@@ -77,6 +78,15 @@ func NewPreemptionManager(podLister corelisters.PodLister, nodeLister corelister
 		clientSet:       clientSet,
 		priorityFunc:    priorityFunc,
 	}
+}
+
+func (m *preemptionManager) CanBePaused(pod *v1.Pod) bool {
+	// if explictly set to false then not preemptible (cannot be paused)
+	// otherwise assume preemptible (can be paused)
+	if val, ok := pod.Annotations[annotations.AnnotationKeyPreemptible]; ok && val == "false" {
+		return false
+	}
+	return true
 }
 
 func (m *preemptionManager) IsPodMarkedPaused(pod *v1.Pod) bool {
