@@ -41,7 +41,13 @@ const (
 
 type nodeToScoreMap map[string]int64
 
-func initTest(nodeTopologies []*topologyv1alpha2.NodeResourceTopology) (map[string]*v1.Node, ctrlclient.Client) {
+type nrtFilterFn func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology
+
+func nrtPassthrough(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+	return nrt
+}
+
+func initTest(nodeTopologies []*topologyv1alpha2.NodeResourceTopology, nrtFilter nrtFilterFn) (map[string]*v1.Node, ctrlclient.Client) {
 	nodesMap := make(map[string]*v1.Node)
 
 	// init node objects
@@ -62,7 +68,12 @@ func initTest(nodeTopologies []*topologyv1alpha2.NodeResourceTopology) (map[stri
 		panic(err)
 	}
 
-	for _, obj := range nodeTopologies {
+	for _, obj_ := range nodeTopologies {
+		obj := nrtFilter(obj_)
+		if obj == nil {
+			continue
+		}
+
 		if err := fakeClient.Create(context.Background(), obj.DeepCopy()); err != nil {
 			panic(err)
 		}
@@ -133,7 +144,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		nodesMap, lister := initTest(defaultNUMANodes(withPolicy(topologyv1alpha2.SingleNUMANodeContainerLevel)))
+		nodesMap, lister := initTest(defaultNUMANodes(withPolicy(topologyv1alpha2.SingleNUMANodeContainerLevel)), nrtPassthrough)
 		t.Run(test.name, func(t *testing.T) {
 			tm := &TopologyMatch{
 				scoreStrategyFunc: test.strategy,
@@ -170,7 +181,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 					}
 
 					if wantScore != gotScore {
-						t.Errorf("wrong score for node %q: wanted: %q, got: %d", gotNode, wantScore, gotScore)
+						t.Errorf("wrong score for node %q: wanted: %d, got: %d", gotNode, wantScore, gotScore)
 					}
 				}
 			}
@@ -428,7 +439,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodesMap, lister := initTest(tc.nodes)
+			nodesMap, lister := initTest(tc.nodes, nrtPassthrough)
 
 			tm := &TopologyMatch{
 				scoreStrategyType: apiconfig.LeastNUMANodes,
@@ -457,6 +468,144 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				t.Errorf("scores for nodes are incorrect wanted: %v, got: %v", tc.wantedRes, nodeToScore)
 			}
 
+		})
+	}
+}
+
+// when only a subset of nodes has NRT data available[1], prefer the nodes which have the NRT data over the other nodes;
+// IOW, a node without NRT data available should always have score == 0
+func TestNodeResourcePartialDataScorePlugin(t *testing.T) {
+	type podRequests struct {
+		pod        *v1.Pod
+		name       string
+		wantStatus *framework.Status
+	}
+	pRequests := []podRequests{
+		{
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(20*1024*1024, resource.DecimalSI)}),
+			name:       "Pod1",
+			wantStatus: nil,
+		},
+	}
+
+	type testScenario struct {
+		name      string
+		wantedRes nodeToScoreMap
+		requests  []podRequests
+		strategy  scoreStrategyFn
+		nrtFilter nrtFilterFn
+	}
+
+	tests := []testScenario{
+		{
+			name:      "No data at all, MostAllocated strategy",
+			wantedRes: nodeToScoreMap{},
+			requests:  pRequests,
+			strategy:  mostAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				return nil
+			},
+		},
+		{
+			name:      "No data at all, LeastAllocated strategy",
+			wantedRes: nodeToScoreMap{},
+			requests:  pRequests,
+			strategy:  leastAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				return nil
+			},
+		},
+		{
+			name:      "No data at all, BalancedAllocation strategy",
+			wantedRes: nodeToScoreMap{},
+			requests:  pRequests,
+			strategy:  balancedAllocationScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				return nil
+			},
+		},
+		{
+			name:      "One node with NRT data, MostAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node1": 27},
+			requests:  pRequests,
+			strategy:  mostAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				if nrt.Name != "Node1" {
+					return nil
+				}
+				return nrt
+			},
+		},
+		{
+			name:      "One node with NRT data, LeastAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node1": 73},
+			requests:  pRequests,
+			strategy:  leastAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				if nrt.Name != "Node1" {
+					return nil
+				}
+				return nrt
+			},
+		},
+		{
+			name:      "One node with NRT data, BalancedAllocation strategy",
+			wantedRes: nodeToScoreMap{"Node1": 89},
+			requests:  pRequests,
+			strategy:  balancedAllocationScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				if nrt.Name != "Node1" {
+					return nil
+				}
+				return nrt
+			},
+		},
+	}
+
+	for _, test := range tests {
+		nodesMap, lister := initTest(defaultNUMANodes(withPolicy(topologyv1alpha2.SingleNUMANodeContainerLevel)), test.nrtFilter)
+		t.Run(test.name, func(t *testing.T) {
+			tm := &TopologyMatch{
+				scoreStrategyFunc: test.strategy,
+				nrtCache:          nrtcache.NewPassthrough(lister),
+			}
+
+			for _, req := range test.requests {
+				nodeToScore := make(nodeToScoreMap, len(nodesMap))
+				for _, node := range nodesMap {
+					score, gotStatus := tm.Score(
+						context.Background(),
+						framework.NewCycleState(),
+						req.pod,
+						node.ObjectMeta.Name)
+
+					t.Logf("%v; %v; %v; score: %v; status: %v\n",
+						test.name,
+						req.name,
+						node.ObjectMeta.Name,
+						score,
+						gotStatus)
+
+					if !reflect.DeepEqual(gotStatus, req.wantStatus) {
+						t.Errorf("status does not match: %v, want: %v\n", gotStatus, req.wantStatus)
+					}
+					nodeToScore[node.ObjectMeta.Name] = score
+				}
+				gotNode := findMaxScoreNode(nodeToScore)
+				gotScore := nodeToScore[gotNode]
+				t.Logf("%q: got node %q with score %d\n", test.name, gotNode, gotScore)
+				for wantNode, wantScore := range test.wantedRes {
+					if wantNode != gotNode {
+						t.Errorf("failed to select the desired node: wanted: %q, got: %q", wantNode, gotNode)
+					}
+
+					if wantScore != gotScore {
+						t.Errorf("wrong score for node %q: wanted: %d, got: %d", gotNode, wantScore, gotScore)
+					}
+				}
+			}
 		})
 	}
 }
