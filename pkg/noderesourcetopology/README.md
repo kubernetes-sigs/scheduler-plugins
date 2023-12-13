@@ -15,6 +15,8 @@ Document capturing the NodeResourceTopology API Custom Resource Definition Stand
 
 ## Tutorial
 
+For more specific notes about how to deploy this plugin, please check [README.deploy.md](README.deploy.md)
+
 ### Expectation
 
 In case the cumulative count of node resource allocatable appear to be the same for both the nodes in the cluster, topology aware scheduler plugin uses the CRD instance corresponding to the nodes to obtain the resource topology information to make a topology-aware scheduling decision.
@@ -86,7 +88,7 @@ The quality of the scheduling decisions of the "NodeResourceTopologyMatch" filte
 When deployed on large clusters, or when facing high pod churn, or both, it's often impractical or impossible to have frequent enough updates, and the scheduler plugins
 may run with stale data, leading to suboptimal scheduling decisions.
 Using the Reserve plugin, the "NodeResourceTopologyMatch" Filter and Score can use a pessimistic overreserving cache which prevents these suboptimal decisions at the cost
-of leaving pods pending longer. This cache is described in detail in [the docs/ directory](docs/).
+of leaving pods pending longer. This cache is described in detail in [the cache/docs/ directory](cache/docs/).
 
 To enable the cache, you need to **both** enable the Reserve plugin and to set the `cacheResyncPeriodSeconds` config options. Values less than 5 seconds are not recommended
 for performance reasons.
