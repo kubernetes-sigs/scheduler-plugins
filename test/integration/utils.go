@@ -186,11 +186,11 @@ func initTestSchedulerWithOptions(t *testing.T, testCtx *testContext, opts ...sc
 
 	opts = append(opts, scheduler.WithKubeConfig(testCtx.KubeConfig))
 	testCtx.Scheduler, err = scheduler.New(
+		testCtx.Ctx,
 		testCtx.ClientSet,
 		testCtx.InformerFactory,
 		testCtx.DynInformerFactory,
 		profile.NewRecorderFactory(eventBroadcaster),
-		testCtx.Ctx.Done(),
 		opts...,
 	)
 

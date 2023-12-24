@@ -24,7 +24,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -238,6 +237,9 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			cs := clientsetfake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods().Informer()
@@ -252,9 +254,9 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			fakeSharedLister := &fakeSharedLister{nodes: test.nodeInfos}
 
 			fh, err := st.NewFramework(
+				ctx,
 				registeredPlugins,
 				"default-scheduler",
-				wait.NeverStop,
 				frameworkruntime.WithClientSet(cs),
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithSnapshotSharedLister(fakeSharedLister),

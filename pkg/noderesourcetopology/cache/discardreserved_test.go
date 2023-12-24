@@ -25,65 +25,35 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	podlisterv1 "k8s.io/client-go/listers/core/v1"
 
-	tu "sigs.k8s.io/scheduler-plugins/test/util"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestDiscardReservedNodesGetNRTCopy(t *testing.T) {
-	fakeClient, err := tu.NewFakeClient()
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestDiscardReservedNodesGetCachedNRTCopy(t *testing.T) {
+	testNodeName := "worker-node-1"
+	nrt := makeTestNRT(testNodeName)
 
-	ctx := context.Background()
-	nrtCache := NewDiscardReserved(fakeClient)
-	var nrtObj *topologyv1alpha2.NodeResourceTopology
-	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
-	if nrtObj != nil {
-		t.Fatalf("non-empty object from empty cache")
-	}
-
-	nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
+	testCases := []testCaseGetCachedNRTCopy{
 		{
-			ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
-			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha2.ZoneList{
-				{
-					Name: "node-0",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "20", "4"),
-						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						MakeTopologyResInfo(nicResourceName, "30", "10"),
-					},
-				},
-				{
-					Name: "node-1",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "30", "8"),
-						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						MakeTopologyResInfo(nicResourceName, "30", "10"),
-					},
-				},
+			name: "data present with foreign pods",
+			nodeTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				nrt,
 			},
+			nodeName:       testNodeName,
+			hasForeignPods: true,
+			expectedNRT:    nrt,
+			expectedOK:     true,
 		},
 	}
-	for _, obj := range nodeTopologies {
-		if err := fakeClient.Create(ctx, obj.DeepCopy()); err != nil {
-			t.Fatal(err)
-		}
-	}
 
-	nrtObj, ok := nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
-	if !isNRTEqual(nrtObj, nodeTopologies[0]) {
-		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n",
-			dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
-	}
-
-	if !ok {
-		t.Fatalf("expecting GetCachedNRTCopy to return true not false")
-	}
+	checkGetCachedNRTCopy(
+		t,
+		func(client ctrlclient.Client, _ podlisterv1.PodLister) (Interface, error) {
+			return NewDiscardReserved(client), nil
+		},
+		testCases...,
+	)
 }
 
 func TestDiscardReservedNodesGetNRTCopyFails(t *testing.T) {

@@ -24,7 +24,6 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta2"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
 )
 
@@ -44,6 +43,5 @@ func init() {
 func AddToScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(config.AddToScheme(scheme))
 	utilruntime.Must(v1.AddToScheme(scheme))
-	utilruntime.Must(v1beta2.AddToScheme(scheme))
 	utilruntime.Must(v1beta3.AddToScheme(scheme))
 }

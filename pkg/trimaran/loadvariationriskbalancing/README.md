@@ -28,7 +28,7 @@ In addition, we have the  `watcherAddress` or `metricProvider`configuration para
 Following is an example scheduler configuration with the `LoadVariationRiskBalancing` plugin enabled, and using the `load-watcher` in library mode, collecting measurements from the Prometheus server.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta2
+apiVersion: kubescheduler.config.k8s.io/v1beta3
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false

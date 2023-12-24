@@ -41,80 +41,15 @@ const (
 
 type nodeToScoreMap map[string]int64
 
-func initTest(policy topologyv1alpha2.TopologyManagerPolicy, nodes ...*topologyv1alpha2.NodeResourceTopology) (map[string]*v1.Node, ctrlclient.Client) {
-	nodeTopologies := make([]*topologyv1alpha2.NodeResourceTopology, 3)
+type nrtFilterFn func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology
+
+func nrtPassthrough(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+	return nrt
+}
+
+func initTest(nodeTopologies []*topologyv1alpha2.NodeResourceTopology, nrtFilter nrtFilterFn) (map[string]*v1.Node, ctrlclient.Client) {
 	nodesMap := make(map[string]*v1.Node)
 
-	if len(nodes) == 0 {
-		// noderesourcetopology objects
-		nodeTopologies[0] = &topologyv1alpha2.NodeResourceTopology{
-			ObjectMeta:       metav1.ObjectMeta{Name: "Node1"},
-			TopologyPolicies: []string{string(policy)},
-			Zones: topologyv1alpha2.ZoneList{
-				topologyv1alpha2.Zone{
-					Name: "node-0",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "4", "4"),
-						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
-					},
-				},
-				topologyv1alpha2.Zone{
-					Name: "node-1",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "4", "4"),
-						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
-					},
-				},
-			},
-		}
-
-		nodeTopologies[1] = &topologyv1alpha2.NodeResourceTopology{
-			ObjectMeta:       metav1.ObjectMeta{Name: "Node2"},
-			TopologyPolicies: []string{string(policy)},
-			Zones: topologyv1alpha2.ZoneList{
-				topologyv1alpha2.Zone{
-					Name: "node-0",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "2", "2"),
-						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
-					},
-				}, topologyv1alpha2.Zone{
-					Name: "node-1",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "2", "2"),
-						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
-					},
-				},
-			},
-		}
-		nodeTopologies[2] = &topologyv1alpha2.NodeResourceTopology{
-			ObjectMeta:       metav1.ObjectMeta{Name: "Node3"},
-			TopologyPolicies: []string{string(policy)},
-			Zones: topologyv1alpha2.ZoneList{
-				topologyv1alpha2.Zone{
-					Name: "node-0",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "6", "6"),
-						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
-					},
-				}, topologyv1alpha2.Zone{
-					Name: "node-1",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "6", "6"),
-						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
-					},
-				},
-			},
-		}
-	} else {
-		nodeTopologies = nodes
-	}
 	// init node objects
 	for _, nrt := range nodeTopologies {
 		res := makeResourceListFromZones(nrt.Zones)
@@ -133,7 +68,12 @@ func initTest(policy topologyv1alpha2.TopologyManagerPolicy, nodes ...*topologyv
 		panic(err)
 	}
 
-	for _, obj := range nodeTopologies {
+	for _, obj_ := range nodeTopologies {
+		obj := nrtFilter(obj_)
+		if obj == nil {
+			continue
+		}
+
 		if err := fakeClient.Create(context.Background(), obj.DeepCopy()); err != nil {
 			panic(err)
 		}
@@ -204,7 +144,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		nodesMap, lister := initTest(topologyv1alpha2.SingleNUMANodeContainerLevel)
+		nodesMap, lister := initTest(defaultNUMANodes(withPolicy(topologyv1alpha2.SingleNUMANodeContainerLevel)), nrtPassthrough)
 		t.Run(test.name, func(t *testing.T) {
 			tm := &TopologyMatch{
 				scoreStrategyFunc: test.strategy,
@@ -241,7 +181,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 					}
 
 					if wantScore != gotScore {
-						t.Errorf("wrong score for node %q: wanted: %q, got: %d", gotNode, wantScore, gotScore)
+						t.Errorf("wrong score for node %q: wanted: %d, got: %d", gotNode, wantScore, gotScore)
 					}
 				}
 			}
@@ -254,7 +194,6 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 		name        string
 		podRequests []v1.ResourceList
 		wantedRes   nodeToScoreMap
-		policy      topologyv1alpha2.TopologyManagerPolicy
 		nodes       []*topologyv1alpha2.NodeResourceTopology
 	}{
 		{
@@ -270,7 +209,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 94,
 				"Node3": 94,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortContainerLevel)),
 		},
 		{
 			name: "container scope, one container case 2",
@@ -285,7 +224,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 82,
 				"Node3": 94,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortContainerLevel)),
 		},
 		{
 			name: "container scope, one container case 3",
@@ -300,7 +239,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 0,
 				"Node3": 94,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortContainerLevel)),
 		},
 		{
 			name: "container scope, two containers case 1",
@@ -319,7 +258,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 94,
 				"Node3": 94,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortContainerLevel)),
 		},
 		{
 			name: "container scope, two containers case 2",
@@ -338,7 +277,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 82,
 				"Node3": 94,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortContainerLevel)),
 		},
 		{
 			name: "container scope, two containers case 3",
@@ -357,7 +296,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 0,
 				"Node3": 94,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortContainerLevel)),
 		},
 		{
 			name: "container scope, two containers non NUMA resource",
@@ -374,7 +313,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 100,
 				"Node3": 100,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortContainerLevel)),
 		},
 		{
 			name: "pod scope, two containers case 1",
@@ -393,7 +332,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 82,
 				"Node3": 82,
 			},
-			policy: topologyv1alpha2.BestEffortPodLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortPodLevel)),
 		},
 		{
 			name: "pod scope, two containers case 2",
@@ -412,7 +351,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 82,
 				"Node3": 82,
 			},
-			policy: topologyv1alpha2.BestEffortPodLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortPodLevel)),
 		},
 		{
 			name: "pod scope, two containers case 3",
@@ -431,7 +370,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 0,
 				"Node3": 82,
 			},
-			policy: topologyv1alpha2.BestEffortPodLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortPodLevel)),
 		},
 		{
 			name: "pod scope, one containers non NUMA resource",
@@ -445,7 +384,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node2": 100,
 				"Node3": 100,
 			},
-			policy: topologyv1alpha2.BestEffortPodLevel,
+			nodes: defaultNUMANodes(withPolicy(topologyv1alpha2.BestEffortPodLevel)),
 		},
 		{
 			name: "container scope, one container, 4 NUMA nodes, 1 gpu ",
@@ -460,8 +399,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node1": 94,
 				"Node2": 94,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
-			nodes:  fourNUMANodes(),
+			nodes: fourNUMANodes(),
 		},
 		{
 			name: "container scope, one container, 4 NUMA nodes, 2 gpu ",
@@ -476,8 +414,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node1": 82,
 				"Node2": 76,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
-			nodes:  fourNUMANodes(),
+			nodes: fourNUMANodes(),
 		},
 		{
 			name: "container scope, 2 containers, 4 NUMA nodes, 2 gpu in one container ",
@@ -496,14 +433,13 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 				"Node1": 82,
 				"Node2": 76,
 			},
-			policy: topologyv1alpha2.BestEffortContainerLevel,
-			nodes:  fourNUMANodes(),
+			nodes: fourNUMANodes(),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodesMap, lister := initTest(tc.policy, tc.nodes...)
+			nodesMap, lister := initTest(tc.nodes, nrtPassthrough)
 
 			tm := &TopologyMatch{
 				scoreStrategyType: apiconfig.LeastNUMANodes,
@@ -536,6 +472,144 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 	}
 }
 
+// when only a subset of nodes has NRT data available[1], prefer the nodes which have the NRT data over the other nodes;
+// IOW, a node without NRT data available should always have score == 0
+func TestNodeResourcePartialDataScorePlugin(t *testing.T) {
+	type podRequests struct {
+		pod        *v1.Pod
+		name       string
+		wantStatus *framework.Status
+	}
+	pRequests := []podRequests{
+		{
+			pod: makePodByResourceList(&v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(20*1024*1024, resource.DecimalSI)}),
+			name:       "Pod1",
+			wantStatus: nil,
+		},
+	}
+
+	type testScenario struct {
+		name      string
+		wantedRes nodeToScoreMap
+		requests  []podRequests
+		strategy  scoreStrategyFn
+		nrtFilter nrtFilterFn
+	}
+
+	tests := []testScenario{
+		{
+			name:      "No data at all, MostAllocated strategy",
+			wantedRes: nodeToScoreMap{},
+			requests:  pRequests,
+			strategy:  mostAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				return nil
+			},
+		},
+		{
+			name:      "No data at all, LeastAllocated strategy",
+			wantedRes: nodeToScoreMap{},
+			requests:  pRequests,
+			strategy:  leastAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				return nil
+			},
+		},
+		{
+			name:      "No data at all, BalancedAllocation strategy",
+			wantedRes: nodeToScoreMap{},
+			requests:  pRequests,
+			strategy:  balancedAllocationScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				return nil
+			},
+		},
+		{
+			name:      "One node with NRT data, MostAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node1": 27},
+			requests:  pRequests,
+			strategy:  mostAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				if nrt.Name != "Node1" {
+					return nil
+				}
+				return nrt
+			},
+		},
+		{
+			name:      "One node with NRT data, LeastAllocated strategy",
+			wantedRes: nodeToScoreMap{"Node1": 73},
+			requests:  pRequests,
+			strategy:  leastAllocatedScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				if nrt.Name != "Node1" {
+					return nil
+				}
+				return nrt
+			},
+		},
+		{
+			name:      "One node with NRT data, BalancedAllocation strategy",
+			wantedRes: nodeToScoreMap{"Node1": 89},
+			requests:  pRequests,
+			strategy:  balancedAllocationScoreStrategy,
+			nrtFilter: func(nrt *topologyv1alpha2.NodeResourceTopology) *topologyv1alpha2.NodeResourceTopology {
+				if nrt.Name != "Node1" {
+					return nil
+				}
+				return nrt
+			},
+		},
+	}
+
+	for _, test := range tests {
+		nodesMap, lister := initTest(defaultNUMANodes(withPolicy(topologyv1alpha2.SingleNUMANodeContainerLevel)), test.nrtFilter)
+		t.Run(test.name, func(t *testing.T) {
+			tm := &TopologyMatch{
+				scoreStrategyFunc: test.strategy,
+				nrtCache:          nrtcache.NewPassthrough(lister),
+			}
+
+			for _, req := range test.requests {
+				nodeToScore := make(nodeToScoreMap, len(nodesMap))
+				for _, node := range nodesMap {
+					score, gotStatus := tm.Score(
+						context.Background(),
+						framework.NewCycleState(),
+						req.pod,
+						node.ObjectMeta.Name)
+
+					t.Logf("%v; %v; %v; score: %v; status: %v\n",
+						test.name,
+						req.name,
+						node.ObjectMeta.Name,
+						score,
+						gotStatus)
+
+					if !reflect.DeepEqual(gotStatus, req.wantStatus) {
+						t.Errorf("status does not match: %v, want: %v\n", gotStatus, req.wantStatus)
+					}
+					nodeToScore[node.ObjectMeta.Name] = score
+				}
+				gotNode := findMaxScoreNode(nodeToScore)
+				gotScore := nodeToScore[gotNode]
+				t.Logf("%q: got node %q with score %d\n", test.name, gotNode, gotScore)
+				for wantNode, wantScore := range test.wantedRes {
+					if wantNode != gotNode {
+						t.Errorf("failed to select the desired node: wanted: %q, got: %q", wantNode, gotNode)
+					}
+
+					if wantScore != gotScore {
+						t.Errorf("wrong score for node %q: wanted: %d, got: %d", gotNode, wantScore, gotScore)
+					}
+				}
+			}
+		})
+	}
+}
+
 // return the name of the node with the highest score
 func findMaxScoreNode(nodeToScore nodeToScoreMap) string {
 	max := int64(0)
@@ -548,6 +622,87 @@ func findMaxScoreNode(nodeToScore nodeToScoreMap) string {
 		}
 	}
 	return electedNode
+}
+
+type nrtUpdater func(nrt *topologyv1alpha2.NodeResourceTopology)
+
+func withPolicy(policy topologyv1alpha2.TopologyManagerPolicy) nrtUpdater {
+	return func(nrt *topologyv1alpha2.NodeResourceTopology) {
+		nrt.TopologyPolicies = []string{string(policy)}
+	}
+}
+
+func defaultNUMANodes(upds ...nrtUpdater) []*topologyv1alpha2.NodeResourceTopology {
+	nrts := []*topologyv1alpha2.NodeResourceTopology{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "Node1"},
+			Zones: topologyv1alpha2.ZoneList{
+				topologyv1alpha2.Zone{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "4", "4"),
+						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
+					},
+				},
+				topologyv1alpha2.Zone{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "4", "4"),
+						MakeTopologyResInfo(memory, "500Mi", "500Mi"),
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "Node2"},
+			Zones: topologyv1alpha2.ZoneList{
+				topologyv1alpha2.Zone{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+					},
+				}, topologyv1alpha2.Zone{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "2", "2"),
+						MakeTopologyResInfo(memory, "50Mi", "50Mi"),
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "Node3"},
+			Zones: topologyv1alpha2.ZoneList{
+				topologyv1alpha2.Zone{
+					Name: "node-0",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "6", "6"),
+						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
+					},
+				}, topologyv1alpha2.Zone{
+					Name: "node-1",
+					Type: "Node",
+					Resources: topologyv1alpha2.ResourceInfoList{
+						MakeTopologyResInfo(cpu, "6", "6"),
+						MakeTopologyResInfo(memory, "60Mi", "60Mi"),
+					},
+				},
+			},
+		},
+	}
+	for _, upd := range upds {
+		for idx := range nrts {
+			// make sure to mutate the original object in the collection
+			upd(nrts[idx])
+		}
+	}
+	return nrts
 }
 
 func fourNUMANodes() []*topologyv1alpha2.NodeResourceTopology {

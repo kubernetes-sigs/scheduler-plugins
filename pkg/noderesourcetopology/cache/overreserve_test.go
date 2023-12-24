@@ -18,7 +18,6 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 	"sort"
 	"testing"
@@ -207,57 +206,30 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 	}
 }
 
-func TestGetCachedNRTCopy(t *testing.T) {
-	fakeClient, err := tu.NewFakeClient()
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestOverreserveGetCachedNRTCopy(t *testing.T) {
+	testNodeName := "worker-node-1"
+	nrt := makeTestNRT(testNodeName)
 
-	fakePodLister := &fakePodLister{}
-
-	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
-
-	ctx := context.Background()
-	var nrtObj *topologyv1alpha2.NodeResourceTopology
-	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
-	if nrtObj != nil {
-		t.Fatalf("non-empty object from empty cache")
-	}
-
-	nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
+	testCases := []testCaseGetCachedNRTCopy{
 		{
-			ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
-			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha2.ZoneList{
-				{
-					Name: "node-0",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "20", "4"),
-						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						MakeTopologyResInfo(nicResourceName, "30", "10"),
-					},
-				},
-				{
-					Name: "node-1",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "30", "8"),
-						MakeTopologyResInfo(memory, "8Gi", "8Gi"),
-						MakeTopologyResInfo(nicResourceName, "30", "10"),
-					},
-				},
+			name: "data present with foreign pods",
+			nodeTopologies: []*topologyv1alpha2.NodeResourceTopology{
+				nrt,
 			},
+			nodeName:       testNodeName,
+			hasForeignPods: true,
+			expectedNRT:    nil,
+			expectedOK:     false,
 		},
 	}
-	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
-	}
 
-	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, "node1", &corev1.Pod{})
-	if !reflect.DeepEqual(nrtObj, nodeTopologies[0]) {
-		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
-	}
+	checkGetCachedNRTCopy(
+		t,
+		func(client ctrlclient.Client, podLister podlisterv1.PodLister) (Interface, error) {
+			return NewOverReserve(nil, client, podLister)
+		},
+		testCases...,
+	)
 }
 
 func TestGetCachedNRTCopyReserve(t *testing.T) {
@@ -748,51 +720,6 @@ func TestNodeWithForeignPods(t *testing.T) {
 	_, ok := nrtCache.GetCachedNRTCopy(context.Background(), target, &corev1.Pod{})
 	if ok {
 		t.Errorf("succesfully got node with foreign pods!")
-	}
-}
-
-func dumpNRT(nrtObj *topologyv1alpha2.NodeResourceTopology) string {
-	nrtJson, err := json.MarshalIndent(nrtObj, "", " ")
-	if err != nil {
-		return "marshallingError"
-	}
-	return string(nrtJson)
-}
-
-func MakeTopologyResInfo(name, capacity, available string) topologyv1alpha2.ResourceInfo {
-	return topologyv1alpha2.ResourceInfo{
-		Name:      name,
-		Capacity:  resource.MustParse(capacity),
-		Available: resource.MustParse(available),
-	}
-}
-
-func makeDefaultTestTopology() []*topologyv1alpha2.NodeResourceTopology {
-	return []*topologyv1alpha2.NodeResourceTopology{
-		{
-			ObjectMeta:       metav1.ObjectMeta{Name: "node1"},
-			TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
-			Zones: topologyv1alpha2.ZoneList{
-				{
-					Name: "node-0",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "32", "30"),
-						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
-						MakeTopologyResInfo(nicResourceName, "16", "16"),
-					},
-				},
-				{
-					Name: "node-1",
-					Type: "Node",
-					Resources: topologyv1alpha2.ResourceInfoList{
-						MakeTopologyResInfo(cpu, "32", "30"),
-						MakeTopologyResInfo(memory, "64Gi", "60Gi"),
-						MakeTopologyResInfo(nicResourceName, "16", "16"),
-					},
-				},
-			},
-		},
 	}
 }
 

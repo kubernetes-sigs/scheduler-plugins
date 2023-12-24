@@ -80,6 +80,9 @@ func TestLowRiskOverCommitment_New(t *testing.T) {
 	}))
 	defer server.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	lowRiskOverCommitmentArgs := pluginConfig.LowRiskOverCommitmentArgs{
 		TrimaranSpec:        pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
 		SmoothingWindowSize: 5,
@@ -104,7 +107,7 @@ func TestLowRiskOverCommitment_New(t *testing.T) {
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
-	fh, err := testutil.NewFramework(registeredPlugins, []schedConfig.PluginConfig{lowRiskOverCommitmentConfig},
+	fh, err := testutil.NewFramework(ctx, registeredPlugins, []schedConfig.PluginConfig{lowRiskOverCommitmentConfig},
 		"default-scheduler", runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 	assert.Nil(t, err)
@@ -183,6 +186,9 @@ func TestLowRiskOverCommitment_Score(t *testing.T) {
 			}))
 			defer server.Close()
 
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
 			nodes := append([]*v1.Node{}, tt.nodes...)
 			state := framework.NewCycleState()
 
@@ -203,7 +209,7 @@ func TestLowRiskOverCommitment_Score(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			snapshot := newTestSharedLister(nil, nodes)
 
-			fh, err := testutil.NewFramework(registeredPlugins, []schedConfig.PluginConfig{LowRiskOverCommitmentConfig},
+			fh, err := testutil.NewFramework(ctx, registeredPlugins, []schedConfig.PluginConfig{LowRiskOverCommitmentConfig},
 				"default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(t, err)

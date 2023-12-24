@@ -191,13 +191,13 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	return c, nil
 }
 
-func (c *CapacityScheduling) EventsToRegister() []framework.ClusterEvent {
+func (c *CapacityScheduling) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	eqGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
-	return []framework.ClusterEvent{
-		{Resource: framework.Pod, ActionType: framework.Delete},
-		{Resource: framework.GVK(eqGVK), ActionType: framework.All},
+	return []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
+		{Event: framework.ClusterEvent{Resource: framework.GVK(eqGVK), ActionType: framework.All}},
 	}
 }
 

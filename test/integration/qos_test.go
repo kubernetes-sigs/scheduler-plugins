@@ -136,7 +136,7 @@ func TestQOSPlugin(t *testing.T) {
 
 	// Expect Pods are popped in the QoS class order.
 	for i := len(podNames) - 1; i >= 0; i-- {
-		podInfo := testCtx.Scheduler.NextPod()
+		podInfo, _ := testCtx.Scheduler.NextPod()
 		if podInfo.Pod.Name != podNames[i] {
 			t.Errorf("Expect Pod %q, but got %q", podNames[i], podInfo.Pod.Name)
 		} else {
