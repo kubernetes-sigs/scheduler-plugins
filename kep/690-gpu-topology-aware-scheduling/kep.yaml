@@ -1,0 +1,13 @@
+title: GPU Topology Aware Scheduling
+kep-number: 690
+authors:
+  - "@kerthcet"
+  - "@lengrongfu"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2023-12-26
+last-updated: 2023-12-26
+status: implementable
