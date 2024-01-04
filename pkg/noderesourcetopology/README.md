@@ -58,7 +58,7 @@ In case NodeResourceTopology CRD is being installed and advertised by [NFD](http
 Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerConfigConfiguration.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -67,11 +67,11 @@ clientConnection:
 profiles:
 - schedulerName: topo-aware-scheduler
   plugins:
-    filter:
+    multiPoint:
       enabled:
       - name: NodeResourceTopologyMatch
-    score:
-      enabled:
+    reserve:
+      disabled:
       - name: NodeResourceTopologyMatch
 # optional plugin configs
   pluginConfig:
@@ -94,7 +94,7 @@ To enable the cache, you need to **both** enable the Reserve plugin and to set t
 for performance reasons.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -103,13 +103,7 @@ clientConnection:
 profiles:
 - schedulerName: topo-aware-scheduler
   plugins:
-    filter:
-      enabled:
-      - name: NodeResourceTopologyMatch
-    reserve:
-      enabled:
-      - name: NodeResourceTopologyMatch
-    score:
+    multiPoint:
       enabled:
       - name: NodeResourceTopologyMatch
 # optional plugin configs

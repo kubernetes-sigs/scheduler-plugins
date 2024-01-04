@@ -233,7 +233,7 @@ We will attribute a higher weight to our plugin to prefer decisions focused on l
 For instance, consider the following scheduler config as an example to enable the `NetworkOverhead` plugin:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -242,17 +242,17 @@ clientConnection:
 profiles:
 - schedulerName: network-aware-scheduler
   plugins:
-    filter:
+    multiPoint:
       enabled:
       - name: NetworkOverhead
-    score:
-      disabled: # Preferably avoid the combination of NodeResourcesFit with NetworkOverhead
-      - name: NodeResourcesFit
-      enabled: # A higher weight is given to NetworkOverhead to favor allocation schemes with lower latency.
-      - name: NetworkOverhead
-        weight: 5
-      - name: BalancedAllocation
-        weight: 1
+        weight: 5 # A higher weight is given to NetworkOverhead to favor allocation schemes with lower latency.
+      disabled:
+      - name: NodeResourcesFit # Preferably avoid the combination of NodeResourcesFit with NetworkOverhead
+    queueSort:
+      enabled:
+      - name: TopologicalSort
+      disabled:
+      - name: "*"
   pluginConfig:
   - name: NetworkOverhead
     args:
