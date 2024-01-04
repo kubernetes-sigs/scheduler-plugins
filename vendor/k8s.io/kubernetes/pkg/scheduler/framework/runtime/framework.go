@@ -313,6 +313,13 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-cha
 		// Update ClusterEventMap in place.
 		fillEventToPluginMap(p, options.clusterEventMap)
 	}
+	if len(f.extenders) > 0 {
+		// Extender doesn't support any kind of requeueing feature like EnqueueExtensions in the scheduling framework.
+		// We register a defaultEnqueueExtension to framework.ExtenderName here.
+		// And, in the scheduling cycle, when Extenders reject some Nodes and the pod ends up being unschedulable,
+		// we put framework.ExtenderName to pInfo.UnschedulablePlugins.
+		registerClusterEvents(framework.ExtenderName, options.clusterEventMap, allClusterEvents)
+	}
 
 	// initialize plugins per individual extension points
 	for _, e := range f.getExtensionPoints(profile.Plugins) {
@@ -946,7 +953,7 @@ func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.Cy
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(metrics.Score, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
 	allNodePluginScores := make([]framework.NodePluginScores, len(nodes))
-	numPlugins := len(f.scorePlugins) - state.SkipScorePlugins.Len()
+	numPlugins := len(f.scorePlugins)
 	plugins := make([]framework.ScorePlugin, 0, numPlugins)
 	pluginToNodeScores := make(map[string]framework.NodeScoreList, numPlugins)
 	for _, pl := range f.scorePlugins {
