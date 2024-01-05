@@ -197,24 +197,30 @@ zones:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 1
         allocatable: 1
+        available: 1
       - name: example.com/deviceB
         capacity: 2
         allocatable: 2
+        available: 2
   - name: numa-node-1
     type: Node
     resources:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 2
         allocatable: 2
+        available: 2
       - name: example.com/deviceB
         capacity: 1
         allocatable: 1
+        available: 1
 ```
 
 ```yaml
@@ -231,18 +237,22 @@ zones:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 3
         allocatable: 3
+        available: 3
   - name: numa-node-1
     type: Node
     resources:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceB
         capacity: 3
         allocatable: 3
+        available: 3
 ```
 
 - Verify if the CRD has been created by running
