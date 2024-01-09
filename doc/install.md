@@ -141,23 +141,23 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     
     ```diff
     16d15
-    <     - --config=/etc/kubernetes/sched-cc.yaml
+    +     - --config=/etc/kubernetes/sched-cc.yaml
     17a17,18
-    >     - --kubeconfig=/etc/kubernetes/scheduler.conf
-    >     - --leader-elect=true
+    -     - --kubeconfig=/etc/kubernetes/scheduler.conf
+    -     - --leader-elect=true
     19,20c20
-    <     image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8
+    +     image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8
     ---
-    >     image: registry.k8s.io/kube-scheduler:v1.27.8
+    -     image: registry.k8s.io/kube-scheduler:v1.27.8
     50,52d49
-    <     - mountPath: /etc/kubernetes/sched-cc.yaml
-    <       name: sched-cc
-    <       readOnly: true
+    +     - mountPath: /etc/kubernetes/sched-cc.yaml
+    +       name: sched-cc
+    +       readOnly: true
     60,63d56
-    <   - hostPath:
-    <       path: /etc/kubernetes/sched-cc.yaml
-    <       type: FileOrCreate
-    <     name: sched-cc
+    +   - hostPath:
+    +       path: /etc/kubernetes/sched-cc.yaml
+    +       type: FileOrCreate
+    +     name: sched-cc
     ```
    
 1. Verify that kube-scheduler pod is running properly with a correct image: `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8`
