@@ -22,6 +22,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
@@ -34,6 +35,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -102,12 +104,12 @@ func TestInitEmptyLister(t *testing.T) {
 
 	fakePodLister := &fakePodLister{}
 
-	_, err = NewOverReserve(nil, nil, fakePodLister)
+	_, err = NewOverReserve(nil, nil, fakePodLister, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil lister")
 	}
 
-	_, err = NewOverReserve(nil, fakeClient, nil)
+	_, err = NewOverReserve(nil, fakeClient, nil, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil indexer")
 	}
@@ -226,7 +228,7 @@ func TestOverreserveGetCachedNRTCopy(t *testing.T) {
 	checkGetCachedNRTCopy(
 		t,
 		func(client ctrlclient.Client, podLister podlisterv1.PodLister) (Interface, error) {
-			return NewOverReserve(nil, client, podLister)
+			return NewOverReserve(nil, client, podLister, podprovider.IsPodRelevantAlways)
 		},
 		testCases...,
 	)
@@ -724,9 +726,247 @@ func TestNodeWithForeignPods(t *testing.T) {
 }
 
 func mustOverReserve(t *testing.T, client ctrlclient.Client, podLister podlisterv1.PodLister) *OverReserve {
-	obj, err := NewOverReserve(nil, client, podLister)
+	obj, err := NewOverReserve(nil, client, podLister, podprovider.IsPodRelevantAlways)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
 	return obj
+}
+
+func TestMakeNodeToPodDataMap(t *testing.T) {
+	tcases := []struct {
+		description   string
+		pods          []*corev1.Pod
+		isPodRelevant podprovider.PodFilterFunc
+		err           error
+		expected      map[string][]podData
+		expectedErr   error
+	}{
+		{
+			description:   "empty pod list - shared",
+			isPodRelevant: podprovider.IsPodRelevantShared,
+			expected:      make(map[string][]podData),
+		},
+		{
+			description:   "empty pod list - dedicated",
+			isPodRelevant: podprovider.IsPodRelevantDedicated,
+			expected:      make(map[string][]podData),
+		},
+		{
+			description: "single pod NOT running - succeeded (kubernetes jobs) - dedicated",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodSucceeded,
+					},
+				},
+			},
+			isPodRelevant: podprovider.IsPodRelevantDedicated,
+			expected: map[string][]podData{
+				"node1": {
+					{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+				},
+			},
+		},
+		{
+			description: "single pod NOT running - failed",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodFailed,
+					},
+				},
+			},
+			isPodRelevant: podprovider.IsPodRelevantDedicated,
+			expected: map[string][]podData{
+				"node1": {
+					{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+				},
+			},
+		},
+		{
+			description: "single pod NOT running - succeeded (kubernetes jobs) - shared",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodSucceeded,
+					},
+				},
+			},
+			isPodRelevant: podprovider.IsPodRelevantShared,
+			expected:      map[string][]podData{},
+		},
+		{
+			description: "single pod NOT running - failed - shared",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodFailed,
+					},
+				},
+			},
+			isPodRelevant: podprovider.IsPodRelevantShared,
+			expected:      map[string][]podData{},
+		},
+		{
+			description: "single pod running - dedicated",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+			},
+			isPodRelevant: podprovider.IsPodRelevantDedicated,
+			expected: map[string][]podData{
+				"node1": {
+					{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+				},
+			},
+		},
+		{
+			description: "single pod running - shared",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+			},
+			isPodRelevant: podprovider.IsPodRelevantDedicated,
+			expected: map[string][]podData{
+				"node1": {
+					{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+				},
+			},
+		},
+		{
+			description: "few pods, single node running - dedicated",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace2",
+						Name:      "pod2",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "namespace2",
+						Name:      "pod3",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node1",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+			},
+			isPodRelevant: podprovider.IsPodRelevantDedicated,
+			expected: map[string][]podData{
+				"node1": {
+					{
+						Namespace: "namespace1",
+						Name:      "pod1",
+					},
+					{
+						Namespace: "namespace2",
+						Name:      "pod2",
+					},
+					{
+						Namespace: "namespace2",
+						Name:      "pod3",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			podLister := &fakePodLister{
+				pods: tcase.pods,
+				err:  tcase.err,
+			}
+			got, err := makeNodeToPodDataMap(podLister, tcase.isPodRelevant, tcase.description)
+			if err != tcase.expectedErr {
+				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
+			}
+			if diff := cmp.Diff(got, tcase.expected); diff != "" {
+				t.Errorf("unexpected result: %v", diff)
+			}
+		})
+	}
 }

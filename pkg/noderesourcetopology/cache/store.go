@@ -21,8 +21,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
@@ -30,7 +28,6 @@ import (
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
@@ -244,26 +241,4 @@ func checkPodFingerprintForNode(logID string, objs []podData, nodeName, pfpExpec
 	err := pfp.Check(pfpExpected)
 	podfingerprint.MarkCompleted(st)
 	return err
-}
-
-func makeNodeToPodDataMap(podLister podlisterv1.PodLister, logID string) (map[string][]podData, error) {
-	nodeToObjsMap := make(map[string][]podData)
-	pods, err := podLister.List(labels.Everything())
-	if err != nil {
-		return nodeToObjsMap, err
-	}
-	for _, pod := range pods {
-		if pod.Status.Phase != corev1.PodRunning {
-			// we are interested only about nodes which consume resources
-			continue
-		}
-		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
-		nodeObjs = append(nodeObjs, podData{
-			Namespace:             pod.Namespace,
-			Name:                  pod.Name,
-			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
-		})
-		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
-	}
-	return nodeToObjsMap, nil
 }

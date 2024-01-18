@@ -220,6 +220,11 @@ func (in *NodeResourceTopologyCache) DeepCopyInto(out *NodeResourceTopologyCache
 		*out = new(CacheResyncMethod)
 		**out = **in
 	}
+	if in.InformerMode != nil {
+		in, out := &in.InformerMode, &out.InformerMode
+		*out = new(CacheInformerMode)
+		**out = **in
+	}
 	return
 }
 

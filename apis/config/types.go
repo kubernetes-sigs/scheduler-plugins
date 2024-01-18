@@ -176,6 +176,14 @@ const (
 	CacheResyncOnlyExclusiveResources CacheResyncMethod = "OnlyExclusiveResources"
 )
 
+// CacheInformerMode is a "string" type
+type CacheInformerMode string
+
+const (
+	CacheInformerShared    CacheInformerMode = "Shared"
+	CacheInformerDedicated CacheInformerMode = "Dedicated"
+)
+
 // NodeResourceTopologyCache define configuration details for the NodeResourceTopology cache.
 type NodeResourceTopologyCache struct {
 	// ForeignPodsDetect sets how foreign pods should be handled.
@@ -192,6 +200,11 @@ type NodeResourceTopologyCache struct {
 	// Has no effect if caching is disabled (CacheResyncPeriod is zero) or if DiscardReservedNodes
 	// is enabled. "Autodetect" is the default, reads hint from NRT objects. Fallback is "All".
 	ResyncMethod *CacheResyncMethod
+	// InformerMode controls the channel the cache uses to get updates about pods.
+	// "Shared" uses the default settings; "Dedicated" creates a specific subscription which is
+	// guaranteed to best suit the cache needs, at cost of one extra connection.
+	// If unspecified, default is "Dedicated"
+	InformerMode *CacheInformerMode
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
