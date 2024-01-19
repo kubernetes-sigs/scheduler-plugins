@@ -18,14 +18,21 @@
 - Implementation history
 
 ## Summary
-This proposal introduces a plugin to allow users to specify the priority of different resources and max resource consumption for workload on differnet resources.
+This proposal introduces a plugin to allow users to specify the priority of different resources and max resource 
+consumption for workload on differnet resources.
 
 ## Motivation
-The machines in a Kubernetes cluster are typically heterogeneous, with varying CPU, memory, GPU, and pricing. To efficiently utilize the different resources available in the cluster, users can set priorities for machines of different types and configure resource allocations for different workloads. Additionally, they may choose to delete pods running on low priority nodes instead of high priority ones. 
+The machines in a Kubernetes cluster are typically heterogeneous, with varying CPU, memory, GPU, and pricing. To 
+efficiently utilize the different resources available in the cluster, users can set priorities for machines of different 
+types and configure resource allocations for different workloads. Additionally, they may choose to delete pods running 
+on low priority nodes instead of high priority ones. 
 
 ### Use Cases
 
-1. As a user of cloud services, there are some stable but expensive ECS instances and some unstable but cheaper Spot instances in my cluster. I hope that my workload can be deployed first on stable ECS instances, and during business peak periods, the Pods that are scaled out are deployed on Spot instances. At the end of the business peak, the Pods on Spot instances are prioritized to be scaled in.
+1. As a user of cloud services, there are some stable but expensive ECS instances and some unstable but cheaper Spot 
+instances in my cluster. I hope that my workload can be deployed first on stable ECS instances, and during business peak 
+periods, the Pods that are scaled out are deployed on Spot instances. At the end of the business peak, the Pods on Spot 
+instances are prioritized to be scaled in.
 
 ### Goals
 
@@ -35,8 +42,10 @@ The machines in a Kubernetes cluster are typically heterogeneous, with varying C
 
 ### Non-Goals
 
-1. Modify the workload controller to support deletion costs. If the workload don't support deletion costs, scaling in sequence will be random.
-2. When creating a ResourcePolicy, if the number of Pods has already violated the quantity constraint of the ResourcePolicy, we will not attempt to delete the excess Pods.
+1. Modify the workload controller to support deletion costs. If the workload don't support deletion costs, scaling in 
+sequence will be random.
+2. When creating a ResourcePolicy, if the number of Pods has already violated the quantity constraint of the 
+ResourcePolicy, we will not attempt to delete the excess Pods.
 
 
 ## Proposal
@@ -49,6 +58,12 @@ metadata:
   name: xxx
   namespace: xxx
 spec:
+  matchLabelKeys:
+    - pod-template-hash
+  matchPolicy:
+    ignoreTerminatingPod: true
+    ignorePreviousPod: false
+  forceMaxNum: false
   podSelector:
     matchExpressions:
       - key: key1
@@ -94,8 +109,15 @@ If strategy is `prefer`, the pod can be scheduled on all nodes, these nodes not 
 considered after all nodes match the units. So if the strategy is `required`, we will return `unschedulable` 
 for those nodes not match the units.
 
-### Implementation Details
+`MatchLabelKeys` indicate how we group the pods matched by `podSelector` and `matchPolicy`, its behavior is like 
+`MatchLabelKeys` in `PodTopologySpread`.
 
+`matchPolicy` indicate if we should ignore some kind pods when calculate pods in certain unit.
+
+If `forceMaxNum` is set `true`, we will not try the next units when one unit is not full, this property have no effect
+when `max` is not set in units.
+
+### Implementation Details
 
 #### Scheduler Plugins
 
@@ -114,15 +136,14 @@ Besides, filter will check if the pods that was scheduled on the unit has alread
 If the number of pods has reach the `maxCount`, all the nodes in unit will be marked unschedulable.
 
 ##### Score
-If `priority` is set in resource policy, we will schedule pod based on `priority`. Default priority is 1, and minimum priority is 1.
+If `priority` is set in resource policy, we will schedule pod based on `priority`. Default priority is 1, and minimum 
+priority is 1.
 
 Score calculation details: 
 
-1. calculate priority score, `scorePriority = (priority-1) * 20`, to make sure we give nodes without priority a minimum score.
+1. calculate priority score, `scorePriority = (priority-1) * 20`, to make sure we give nodes without priority a minimum 
+score.
 2. normalize score
-
-##### PostFilter
-
 
 #### Resource Policy Controller
 Resource policy controller set deletion cost on pods when the related resource policies were updated or added.
@@ -138,10 +159,28 @@ Resource policy controller set deletion cost on pods when the related resource p
    
 ## Graduation criteria
 
-## Production Readiness Review Questionnaire
+This plugin will not be enabled only when users enable it in scheduler framework and create a resourcepolicy for pods.
+So it is safe to be beta.
+
+* Beta
+- [ ] Add node E2E tests.
+- [ ] Provide beta-level documentation.
 
 ## Feature enablement and rollback
 
-## Implementation history
+Enable resourcepolicy in MultiPointPlugin to enable this plugin, like this:
+
+```yaml
+piVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+profiles:
+- schedulerName: default-scheduler
+  plugins:
+    multiPoint:
+      enabled:
+      - name: resourcepolicy
+```
 
 
