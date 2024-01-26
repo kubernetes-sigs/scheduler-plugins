@@ -233,7 +233,7 @@ Now, we're able to verify how the coscheduling plugin works.
 1. As PodGroup `pg1` requires at least 3 pods to be scheduled all-together, and there are only 2 Pods
    so far, so it's expected to observer they are pending:
 
-    All nginx pods are expected to be `Pending` as they cannot be co-scheduled altogether.
+    All pods are expected to be `Pending` as they cannot be co-scheduled altogether.
 
     ```bash
     $ kubectl get pod
