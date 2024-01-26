@@ -7,11 +7,17 @@ scheduler:
   image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8
   replicaCount: 1
   leaderElect: false
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 controller:
   name: scheduler-plugins-controller
   image: registry.k8s.io/scheduler-plugins/controller:v0.27.8
   replicaCount: 1
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # LoadVariationRiskBalancing and TargetLoadPacking are not enabled by default
 # as they need extra RBAC privileges on metrics.k8s.io.
