@@ -34,7 +34,7 @@ api_paths="./apis/scheduling/v1alpha1/...;./vendor/github.com/k8stopologyawaresc
 
 ${CONTROLLER_GEN} ${CRD_OPTIONS} paths="${api_paths}" output:dir="./manifests/crds"
 
-if ! _out="$(git --no-pager diff -I"edited\smanually" --exit-code ./manifests)"; then
+if ! _out="$(git --no-pager diff --exit-code ./manifests)"; then
     echo "Generated output differs" >&2
     echo "${_out}" >&2
     echo "Verification for CRD generators failed."
