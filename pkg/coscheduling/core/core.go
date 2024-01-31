@@ -49,15 +49,15 @@ const (
 	Success          Status = "Success"
 	Wait             Status = "Wait"
 
-	preFilterStateKey = "PreFilterCoscheduling"
+	permitStateKey = "PermitCoscheduling"
 )
 
-type PreFilterState struct {
+type PermitState struct {
 	Activate bool
 }
 
-func (s *PreFilterState) Clone() framework.StateData {
-	return &PreFilterState{Activate: s.Activate}
+func (s *PermitState) Clone() framework.StateData {
+	return &PermitState{Activate: s.Activate}
 }
 
 // Manager defines the interfaces for PodGroup management.
@@ -119,9 +119,9 @@ func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework
 	}
 
 	// Only proceed if it's explicitly requested to activate sibling pods.
-	if c, err := state.Read(preFilterStateKey); err != nil {
+	if c, err := state.Read(permitStateKey); err != nil {
 		return
-	} else if s, ok := c.(*PreFilterState); !ok || !s.Activate {
+	} else if s, ok := c.(*PermitState); !ok || !s.Activate {
 		return
 	}
 
@@ -236,7 +236,7 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, state *framework.Cycle
 		// its siblings.
 		// It'd be in-efficient if we trigger activating siblings unconditionally.
 		// See https://github.com/kubernetes-sigs/scheduler-plugins/issues/682
-		state.Write(preFilterStateKey, &PreFilterState{Activate: true})
+		state.Write(permitStateKey, &PermitState{Activate: true})
 	}
 
 	return Wait
