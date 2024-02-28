@@ -24,7 +24,7 @@ Quick start instructions for the setup and configuration of as-a-second-schedule
 #### Install chart using Helm v3.0+
 
 ```bash
-$ git clone git@github.com:kubernetes-sigs/scheduler-plugins.git
+$ git clone https://github.com/kubernetes-sigs/scheduler-plugins.git
 $ cd scheduler-plugins/manifests/install/charts
 $ helm install scheduler-plugins as-a-second-scheduler/ --create-namespace --namespace scheduler-plugins
 ```
