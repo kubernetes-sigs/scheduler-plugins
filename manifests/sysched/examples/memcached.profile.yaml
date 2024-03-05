@@ -1,0 +1,66 @@
+---
+apiVersion: security-profiles-operator.x-k8s.io/v1beta1
+kind: SeccompProfile
+metadata:
+  name: memcached-seccomp
+  namespace: default
+spec:
+  defaultAction: SCMP_ACT_LOG
+  architectures:
+  - SCMP_ARCH_X86_64
+  syscalls:
+  - action: SCMP_ACT_ALLOW
+    names:
+    - write
+    - rt_sigprocmask
+    - listen
+    - exit_group
+    - clone
+    - sendto
+    - exit
+    - dup
+    - getpeername
+    - sendmsg
+    - rt_sigaction
+    - recvmsg
+    - epoll_pwait
+    - access
+    - execve
+    - getpid
+    - signaldeliver
+    - getuid
+    - prlimit
+    - futex
+    - read
+    - epoll_wait
+    - accept
+    - connect
+    - mmap
+    - epoll_create1
+    - bind
+    - socket
+    - getppid
+    - epoll_ctl
+    - madvise
+    - close
+    - fstat
+    - munmap
+    - pipe
+    - brk
+    - setsockopt
+    - set_robust_list
+    - arch_prctl
+    - clock_gettime
+    - getgid
+    - getegid
+    - nanosleep
+    - openat
+    - container
+    - geteuid
+    - fcntl
+    - mprotect
+    - getsockname
+    - gettimeofday
+    - set_tid_address
+    - procexit
+    - getcwd
