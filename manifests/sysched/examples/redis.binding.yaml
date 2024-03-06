@@ -1,0 +1,11 @@
+---
+apiVersion: security-profiles-operator.x-k8s.io/v1alpha1
+kind: ProfileBinding
+metadata:
+  name: redis-binding
+  namespace: default
+spec:
+  profileRef:
+    kind: SeccompProfile
+    name: redis-seccomp
+  image: redis

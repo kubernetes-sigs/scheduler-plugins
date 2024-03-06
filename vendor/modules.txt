@@ -26,6 +26,9 @@ github.com/cenkalti/backoff/v4
 # github.com/cespare/xxhash/v2 v2.2.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
+# github.com/containers/common v0.46.0
+## explicit; go 1.15
+github.com/containers/common/pkg/seccomp
 # github.com/coreos/go-semver v0.3.1
 ## explicit; go 1.8
 github.com/coreos/go-semver/semver
@@ -33,6 +36,9 @@ github.com/coreos/go-semver/semver
 ## explicit; go 1.12
 github.com/coreos/go-systemd/v22/daemon
 github.com/coreos/go-systemd/v22/journal
+# github.com/crossplane/crossplane-runtime v0.14.1-0.20210713194031-85b19c28ea88
+## explicit; go 1.13
+github.com/crossplane/crossplane-runtime/apis/common/v1
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
@@ -149,8 +155,8 @@ github.com/google/uuid
 # github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 ## explicit
 github.com/grpc-ecosystem/go-grpc-prometheus
-# github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0
-## explicit; go 1.14
+# github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3
+## explicit; go 1.17
 github.com/grpc-ecosystem/grpc-gateway/v2/internal/httprule
 github.com/grpc-ecosystem/grpc-gateway/v2/runtime
 github.com/grpc-ecosystem/grpc-gateway/v2/utilities
@@ -207,6 +213,9 @@ github.com/mwitkow/go-conntrack
 # github.com/opencontainers/go-digest v1.0.0
 ## explicit; go 1.13
 github.com/opencontainers/go-digest
+# github.com/opencontainers/runtime-spec v1.0.3-0.20220909204839-494a5a6aca78
+## explicit
+github.com/opencontainers/runtime-spec/specs-go
 # github.com/opencontainers/selinux v1.10.0
 ## explicit; go 1.13
 github.com/opencontainers/selinux/go-selinux
@@ -251,6 +260,9 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
+# github.com/seccomp/libseccomp-golang v0.10.0
+## explicit; go 1.14
+github.com/seccomp/libseccomp-golang
 # github.com/sirupsen/logrus v1.9.0
 ## explicit; go 1.13
 github.com/sirupsen/logrus
@@ -372,7 +384,7 @@ golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/nacl/secretbox
 golang.org/x/crypto/salsa20/salsa
-# golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
+# golang.org/x/exp v0.0.0-20220827204233-334a2380cb91
 ## explicit; go 1.18
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
@@ -535,6 +547,7 @@ google.golang.org/grpc/encoding
 google.golang.org/grpc/encoding/gzip
 google.golang.org/grpc/encoding/proto
 google.golang.org/grpc/grpclog
+google.golang.org/grpc/health/grpc_health_v1
 google.golang.org/grpc/internal
 google.golang.org/grpc/internal/backoff
 google.golang.org/grpc/internal/balancer/gracefulswitch
@@ -1556,6 +1569,16 @@ sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 ## explicit; go 1.18
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
+# sigs.k8s.io/release-utils v0.3.0
+## explicit; go 1.16
+sigs.k8s.io/release-utils/env
+sigs.k8s.io/release-utils/env/internal
+# sigs.k8s.io/security-profiles-operator v0.4.0
+## explicit; go 1.15
+sigs.k8s.io/security-profiles-operator/api/profilebase/v1alpha1
+sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1
+sigs.k8s.io/security-profiles-operator/api/secprofnodestatus/v1alpha1
+sigs.k8s.io/security-profiles-operator/internal/pkg/config
 # sigs.k8s.io/structured-merge-diff/v4 v4.2.3
 ## explicit; go 1.13
 sigs.k8s.io/structured-merge-diff/v4/fieldpath
@@ -1581,6 +1604,7 @@ sigs.k8s.io/yaml
 # k8s.io/cri-api => k8s.io/cri-api v0.28.4
 # k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.28.4
 # k8s.io/dynamic-resource-allocation => k8s.io/dynamic-resource-allocation v0.28.4
+# k8s.io/endpointslice => k8s.io/endpointslice v0.28.4
 # k8s.io/kms => k8s.io/kms v0.28.4
 # k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.28.4
 # k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.28.4

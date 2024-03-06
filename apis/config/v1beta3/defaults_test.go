@@ -255,6 +255,25 @@ func TestSchedulingDefaults(t *testing.T) {
 				NetworkTopologyName: pointer.StringPtr("nt-latency-costs"),
 			},
 		},
+		{
+			name:   "empty config SySchedArgs",
+			config: &SySchedArgs{},
+			expect: &SySchedArgs{
+				DefaultProfileNamespace: pointer.StringPtr("default"),
+				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
+			},
+		},
+		{
+			name: "set non default SySchedArgs",
+			config: &SySchedArgs{
+				DefaultProfileNamespace: pointer.StringPtr("default"),
+				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
+			},
+			expect: &SySchedArgs{
+				DefaultProfileNamespace: pointer.StringPtr("default"),
+				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
+			},
+		},
 	}
 
 	for _, tc := range tests {

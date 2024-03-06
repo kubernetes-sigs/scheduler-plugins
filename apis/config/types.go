@@ -253,3 +253,15 @@ type NetworkOverheadArgs struct {
 	// The NetworkTopology CRD name
 	NetworkTopologyName string
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type SySchedArgs struct {
+	metav1.TypeMeta
+
+	// CR namespace of the default profile for all system calls
+	DefaultProfileNamespace string
+
+	// CR name of the default profile for all system calls
+	DefaultProfileName string
+}
