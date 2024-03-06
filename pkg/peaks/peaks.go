@@ -195,7 +195,7 @@ func get_max_power() float64 {
 }
 
 func getPowerModel(nodeName string) PowerModel {
-	if cpu == "tantawi1"{
+	if nodeName == "tantawi1"{
 		return PowerModel{179.2110, -62.0149, -2.9070}
 	}
 	return PowerModel{257.4099, -117.0368, -2.8150}
