@@ -123,6 +123,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		jump_in_power := getPowerJumpForUtilisation(nodeCPUUtilPercent, predictedCPUUsage, getPowerModel(nodeName))
 		var score int64 = int64(get_max_power()/jump_in_power)
 		fmt.Println("Jump in power", jump_in_power, " score", score)
+
 		return int64(jump_in_power), framework.NewStatus(framework.Success, "")
 	}
 }
@@ -146,6 +147,7 @@ func (pl *Peaks) NormalizeScore(ctx context.Context,state  *framework.CycleState
 			scores[i].Score = framework.MaxNodeScore - int64(normCost)
 		}
 	}
+	fmt.Printf("Scores : %+v\n", scores)
 	return nil
 }
 
@@ -183,7 +185,7 @@ func get_max_power() float64 {
 	if max_power != 0.0 {
 		return max_power
 	}
-	power_models := []PowerModel{PowerModel{371.7412504314313, -91.50493019588365, -0.02186049052516228}, PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}}
+	power_models := []PowerModel{PowerModel{11493.4, -8560.1, -0.7608}, PowerModel{11310.9, -8890.1, -0.8681}}
 	for _, model := range power_models{
 		if max_power < model.K0 {
 			max_power = model.K0
@@ -193,8 +195,8 @@ func get_max_power() float64 {
 }
 
 func getPowerModel(nodeName string) PowerModel {
-	if nodeName == "10.242.64.10" {
-		return PowerModel{371.7412504314313, -91.50493019588365, -0.02186049052516228}
+	if cpu == "tantawi1"{
+		return PowerModel{179.2110, -62.0149, -2.9070}
 	}
-	return PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}
+	return PowerModel{257.4099, -117.0368, -2.8150}
 }
