@@ -16,4 +16,4 @@ profiles:
   pluginConfig:
     - name: Peaks
       args:
-        watcherAddress: http://172.21.152.81:2020
+        watcherAddress: http://10.102.184.89:2020
