@@ -20,15 +20,20 @@
 <!-- /toc -->
 
 ## Motivation
+
 Currently, through the default scheduler of Kubernetes, we cannot ensure a group of pods can be scheduled altogether. Under some scenes, it would waste resources since the whole application cannot work with only partial Pods' running, like Spark jobs, TensorFlow jobs, and so on. This proposal is aimed at solving the issue, by introducing a PodGroup CRD to do the heavy lifting on wiring a group of Pods.
+
 ## Goals
+
 1. Base on the scheduling framework, implement the co-scheduling feature.
 2. Define a CRD name PodGroup to help pod scheduling.
- 
+
 ## Non-Goals
+
 Sort the job when we submit jobs to a cluster. Currently, we can only do this base on pods.
- 
+
 ## Use Cases
+
 Batch workloads such as Spark jobs, TensorFlow jobs that have to run altogether.
 
 ## Design Details
@@ -36,84 +41,86 @@ Batch workloads such as Spark jobs, TensorFlow jobs that have to run altogether.
 ### PodGroup
 
 We define a CRD name PodGroup to help schedule, its definition is as follows:
+
 ```go
 // PodGroupSpec represents the template of a pod group.
 type PodGroupSpec struct {
-	// MinMember defines the minimal number of members/tasks to run the pod group;
-	// if there's not enough resources to start all tasks, the scheduler
-	// will not start anyone.
-	MinMember uint32 `json:"minMember"`
+ // MinMember defines the minimal number of members/tasks to run the pod group;
+ // if there's not enough resources to start all tasks, the scheduler
+ // will not start anyone.
+ MinMember uint32 `json:"minMember"`
 
-	// MinResources defines the minimal resource of members/tasks to run the pod group;
-	// if there's not enough resources to start all tasks, the scheduler
-	// will not start anyone.
-	MinResources *v1.ResourceList `json:"minResources,omitempty"`
+ // MinResources defines the minimal resource of members/tasks to run the pod group;
+ // if there's not enough resources to start all tasks, the scheduler
+ // will not start anyone.
+ MinResources *v1.ResourceList `json:"minResources,omitempty"`
 
-	// ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
-	ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
+ // ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
+ ScheduleTimeoutSeconds *int32 `json:"scheduleTimeoutSeconds,omitempty"`
 }
 
 // PodGroupStatus represents the current state of a pod group.
 type PodGroupStatus struct {
-	// Current phase of PodGroup.
-	Phase PodGroupPhase `json:"phase"`
+ // Current phase of PodGroup.
+ Phase PodGroupPhase `json:"phase"`
 
-	// OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
-	// It is empty if not initialized.
-	OccupiedBy string `json:"occupiedBy,omitempty"`
+ // OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
+ // It is empty if not initialized.
+ OccupiedBy string `json:"occupiedBy,omitempty"`
 
-	// The number of actively running pods.
-	// +optional
-	Running uint32 `json:"running"`
+ // The number of actively running pods.
+ // +optional
+ Running uint32 `json:"running"`
 
-	// The number of pods which reached phase Succeeded.
-	// +optional
-	Succeeded uint32 `json:"succeeded"`
+ // The number of pods which reached phase Succeeded.
+ // +optional
+ Succeeded uint32 `json:"succeeded"`
 
-	// The number of pods which reached phase Failed.
-	// +optional
-	Failed uint32 `json:"failed"`
+ // The number of pods which reached phase Failed.
+ // +optional
+ Failed uint32 `json:"failed"`
 
-	// ScheduleStartTime of the group
-	ScheduleStartTime metav1.Time `json:"scheduleStartTime"`
+ // ScheduleStartTime of the group
+ ScheduleStartTime metav1.Time `json:"scheduleStartTime"`
 }
 ```
 
 #### PodGroupPhase
+
 `PodGroup` has the following states called `PodGroupStatus`.
 
 ```go
 // These are the valid phase of podGroups.
 const (
-	// PodGroupPending means the pod group has been accepted by the system, but scheduler can not allocate
-	// enough resources to it.
-	PodGroupPending PodGroupPhase = "Pending"
+ // PodGroupPending means the pod group has been accepted by the system, but scheduler can not allocate
+ // enough resources to it.
+ PodGroupPending PodGroupPhase = "Pending"
 
-	// PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
-	PodGroupRunning PodGroupPhase = "Running"
+ // PodGroupRunning means the `spec.minMember` pods of the pod group are in running phase.
+ PodGroupRunning PodGroupPhase = "Running"
 
-	// PodGroupScheduling means the number of pods scheduled is bigger than `spec.minMember`
-	// but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
-	PodGroupScheduling PodGroupPhase = "Scheduling"
+ // PodGroupScheduling means the number of pods scheduled is bigger than `spec.minMember`
+ // but the number of running pods has not reached the `spec.minMember` pods of PodGroups.
+ PodGroupScheduling PodGroupPhase = "Scheduling"
 
-	// PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
-	// be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
-	PodGroupUnknown PodGroupPhase = "Unknown"
+ // PodGroupUnknown means a part of `spec.minMember` pods of the pod group have been scheduled but the others can not
+ // be scheduled due to, e.g. not enough resource; scheduler will wait for related controllers to recover them.
+ PodGroupUnknown PodGroupPhase = "Unknown"
 
-	// PodGroupFinished means the `spec.minMember` pods of the pod group are successfully finished.
-	PodGroupFinished PodGroupPhase = "Finished"
+ // PodGroupFinished means the `spec.minMember` pods of the pod group are successfully finished.
+ PodGroupFinished PodGroupPhase = "Finished"
 
-	// PodGroupFailed means at least one of `spec.minMember` pods have failed.
-	PodGroupFailed PodGroupPhase = "Failed"
+ // PodGroupFailed means at least one of `spec.minMember` pods have failed.
+ PodGroupFailed PodGroupPhase = "Failed"
 
-	// PodGroupLabel is the default label of coscheduling
-	PodGroupLabel = scheduling.GroupName + "/pod-group"
+ // PodGroupLabel is the default label of coscheduling
+ PodGroupLabel = scheduling.GroupName + "/pod-group"
 )
 ```
 
 ```mermaid
 stateDiagram-v2
-	state if_minMember <<choice>>
+ state if_minMember <<choice>>
     [*] --> Pending
     Pending --> Scheduling: minMember pods are scheduling
     Scheduling --> Running: minMember pods are running
@@ -125,7 +132,6 @@ stateDiagram-v2
     Finished --> [*]
 ```
 
-
 ### Controller
 
 We define a controller to reconcile PodGroup status, and we can query the job status through describing the PodGroup. Once a pod in a group failed, the Group Status is marked Failed. Controller would also help recover from abnormal cases, e.g. batch scheduling is interrupted due to
@@ -135,12 +141,75 @@ cluster upgrade.
 
 #### QueueSort
 
-To make sure a group of pods can be scheduled as soon as possible. We implemented this `extension point`. The main progress is as follows:
+For Pods belong to a same podGroup should be popped out of the scheduling queue one by one,
+which requires an efficient and wise algorithm. This is quite different with plain Pods,
+so we need to reimplement the QueueSort plugin.
 
-1. Sort based on Pod Priority
-2. Pod does not belong to any group
-3. PodGroup creation time
-4. Pod creation time
+Basically, we need to watch for all the podGroups and maintain a cache for them
+in coscheduling's core package:
+
+- when podGroup created, we'll create a `queuedPodGroup` in the cache
+- when podGroup updated, we'll do nothing right now
+- when podGroup deleted, we'll clean up the objet in the cache
+
+The structure looks like below:
+
+```golang
+type PodGroupManager struct {
+ // ...
+ // <new>
+ // key is the podGroup name, value is the queued podGroup info.
+ podGroups map[string]*queuedPodGroup
+}
+
+// queuedPodGroup's lifecycle is synchronized with the podGroup object.
+type queuedPodGroup struct {
+ // Timestamp is the podGroup's queued time.
+ // - timestamp will be initialized when the first pod enqueues
+ // - timestamp will be renewed when a pod re-enqueues for failing the scheduling
+ timestamp time.Time
+
+ // status indicated the podGroup's condition, it can be:
+ // - queueing: when the first pod starts scheduling
+ // - queueingFailed: when a pod fails the scheduling
+ // - queueingSucceeded: when the podGroup succeeds in scheduling
+ status string
+}
+```
+
+The workflow is (only works for pods have podGroup):
+
+1. When a new podGroup created, we'll create a queuedPodGroup in the cache.
+2. When the first pod of the podGroup creates, in queueing specifically, we'll initialize the timestamp of the queuedPodGroup,
+also set the status=queueing. This will happen in `Less()` function, and because we'll not change the timestamp, so pods belong
+to the same podGroup will be placed together as a unit.
+3. Schedule the pods of the podGroup one by one, if anyone fails in the scheduling cycle, we'll set the status=queueingFailed in PostFilter,
+and the podGroup will enter into the backoff queue if configured.
+4. When the failed Pod re-enqueues, we'll renew the queuedPodGroup timestamp based on the `queueingFailed` status and also set the status to `queueing`, the new timestamp should be `now+backoffTime` to avoid breaking the podGroup who starts scheduling
+during the backoff time.
+5. When backoff time passes, pods will be re-scheduled.
+6. If podGroup permitted successfully, we'll set the status=queueingSucceeded, and frozen the timestamp.
+7. When the podGroup deleted, we'll remove it from the cache as well.
+
+We refused to initialize the queuedPodGroup's timestamp in creation is because podGroup can be reused, so the creating time could be
+really old but will be queued in the front, that's not what we expect.
+
+One risk here is frozen the timestamp in Step6 sounds a little aggressive, but what we want to do here is trying to make the pods
+behaving as a unit, let's say we have successfully scheduled a podGroup, and we're scheduling another one, then a pod from
+the former podGroup was rebuilt, instead of waiting for the latter podGroup scheduling first, we hope the pod recover in prior,
+although this may lead to the latter podGroup failed in scheduling.
+
+Another risk is we'll initialize or renew the timestamp in the `Less()` function, which will lead to the performance degradation in queueing,
+but they're all in memory, so this sounds not a big problem.
+
+**One real problem** here is when the podGroup doesn't exist, we can only use the podInfo's timestamp for queueing,
+which may lead to Pods belong to the same podGroup have different queueing timestamp.
+One potential solution is we create queuedPodGroups whatever they exist or not, but when to GC
+these objects and what if we create error podGroups?
+
+Or we can reject the creation of workloads unless the referenced pogGroups created. Anyway, I'd
+like to leave this as a unresolved problem, if this is critical to end-users, they can have a
+admission controller to mitigate this as described above.
 
 #### PreFilter
 
@@ -160,10 +229,13 @@ For any pod that gets rejected, their pod group would be added to a backoff list
 
 If the gap to reach the quorum of a PodGroup is greater than 10%, we reject the whole PodGroup. Note that this plugin should be configured as the last one among PostFilter plugins.
 
+We'll set the corresponding `queuedPodGroup` status to `queueingFailed`.
+
 #### Permit
 
 1. When the number of waiting pods in a PodGroup is less than `minMember` (defined in the PodGroup), the status `Wait` is returned. They will be added to cache with TLL (equal to ScheduleTimeoutSeconds).
-2. When the number is equal or greater than `minMember`, send a signal to permit the waiting pods.
+2. When the number is equal or greater than `minMember`, send a signal to permit the waiting pods,
+we'll set the corresponding `queuedPodGroup` status to `queueingSucceed` the same time.
 
 We can define `MaxScheduleTime` for a PodGroup. If any pod times out, the whole group would be rejected.
 
