@@ -121,6 +121,9 @@ func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
 			copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
 			p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
 			p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]
+			if n == 1 {
+				delete(p.ScheduledPodsCache, nodeName)
+			}
 			break
 		}
 	}
@@ -144,9 +147,11 @@ func (p *PodAssignEventHandler) cleanupCache() {
 		cache := p.ScheduledPodsCache[nodeName]
 		curTime := time.Now()
 		idx := sort.Search(len(cache), func(i int) bool {
+			// expects cache entries to be in ascending order of their timestamps
 			return cache[i].Timestamp.Add(metricsAgentReportingIntervalSeconds * time.Second).After(curTime)
 		})
-		if idx == len(cache) {
+		if len(cache) != 0 && idx == 0 {
+			// cache is non-empty and there are no cache entries to delete
 			continue
 		}
 		n := copy(cache, cache[idx:])
