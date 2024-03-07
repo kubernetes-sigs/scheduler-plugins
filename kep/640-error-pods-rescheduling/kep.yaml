@@ -1,0 +1,14 @@
+title: Error Pods Rescheduling
+kep-number: 640
+authors:
+  - "@freelizhun"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@ffromani"
+  - "@PiotrProkop"
+approvers:
+  - "@Huang-Wei"
+creation-date: 2023-09-27
+last-updated: 2023-12-15
+status: implementable
