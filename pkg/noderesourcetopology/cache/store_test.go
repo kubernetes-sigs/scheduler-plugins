@@ -23,13 +23,15 @@ import (
 	"sort"
 	"testing"
 
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+
+	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	nrtv1alpha2attr "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/attribute"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
@@ -216,6 +218,290 @@ func TestNRTStoreGet(t *testing.T) {
 	obj2 = ns.GetNRTCopyByNodeName("node-0")
 	if obj2.TopologyPolicies[0] != "best-effort" { // original value when the object was first added to the store
 		t.Errorf("stored value is not an independent copy")
+	}
+}
+
+func TestNRTStoreNodeNames(t *testing.T) {
+	tcases := []struct {
+		description   string
+		nrts          []topologyv1alpha2.NodeResourceTopology
+		expectedNames []string
+	}{
+		{
+			description:   "empty",
+			expectedNames: []string{},
+		},
+		{
+			description: "simple names",
+			nrts: []topologyv1alpha2.NodeResourceTopology{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-0",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+					},
+				},
+			},
+			expectedNames: []string{"node-0", "node-1"},
+		},
+		{
+			description: "longish random name list",
+			nrts: []topologyv1alpha2.NodeResourceTopology{
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-0"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-9"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-8"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-3"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-4"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-5"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-7"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-6"}},
+			},
+			expectedNames: []string{"node-0", "node-1", "node-2", "node-3", "node-4", "node-5", "node-6", "node-7", "node-8", "node-9"},
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			ns := newNrtStore(tcase.nrts)
+			names := ns.NodeNames()
+			sort.Strings(names)
+			if !reflect.DeepEqual(names, tcase.expectedNames) {
+				t.Fatalf("mismatching names: got %v expected %v", names, tcase.expectedNames)
+			}
+		})
+	}
+}
+
+func TestNRTStoreUpdateIfNeeded(t *testing.T) {
+
+	tcases := []struct {
+		description string
+		nrts        []topologyv1alpha2.NodeResourceTopology
+		candidate   *topologyv1alpha2.NodeResourceTopology
+		isNeeded    func(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool
+		expected    *topologyv1alpha2.NodeResourceTopology
+	}{
+		{
+			description: "never needed when empty",
+			nrts: []topologyv1alpha2.NodeResourceTopology{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+					},
+				},
+			},
+			candidate: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+			isNeeded: neverNeeded,
+			expected: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+		},
+		{
+			description: "never needed",
+			nrts: []topologyv1alpha2.NodeResourceTopology{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-0",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+					},
+				},
+			},
+			candidate: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+			isNeeded: neverNeeded,
+			expected: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+			},
+		},
+		{
+			description: "always needed",
+			nrts: []topologyv1alpha2.NodeResourceTopology{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-0",
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+					},
+				},
+			},
+			candidate: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+			isNeeded: alwaysNeeded,
+			expected: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+		},
+		{
+			description: "triggers guard",
+			nrts: []topologyv1alpha2.NodeResourceTopology{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-0",
+					},
+					Attributes: []topologyv1alpha2.AttributeInfo{
+						{
+							Name:  "foo",
+							Value: "foo",
+						},
+					},
+				},
+			},
+			candidate: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+			isNeeded: func(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool {
+				if oldNrt == nil {
+					return true
+				}
+				if newNrt == nil {
+					return false
+				}
+				val, ok := nrtv1alpha2attr.Get(oldNrt.Attributes, "foo")
+				if !ok {
+					return true
+				}
+				return val.Value == "foo"
+			},
+			expected: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+		},
+		{
+			description: "failed guard",
+			nrts: []topologyv1alpha2.NodeResourceTopology{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-0",
+					},
+					Attributes: []topologyv1alpha2.AttributeInfo{
+						{
+							Name:  "foo",
+							Value: "bar",
+						},
+					},
+				},
+			},
+			candidate: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "zap",
+					},
+				},
+			},
+			isNeeded: func(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool {
+				if oldNrt == nil {
+					return true
+				}
+				if newNrt == nil {
+					return false
+				}
+				val, ok := nrtv1alpha2attr.Get(oldNrt.Attributes, "foo")
+				if !ok {
+					return true
+				}
+				return val.Value == "foo"
+			},
+			expected: &topologyv1alpha2.NodeResourceTopology{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-0",
+				},
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  "foo",
+						Value: "bar",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			ns := newNrtStore(tcase.nrts)
+			ns.UpdateIfNeeded(tcase.candidate, tcase.isNeeded)
+			got := ns.GetNRTCopyByNodeName(tcase.candidate.Name)
+			if !reflect.DeepEqual(got, tcase.expected) {
+				t.Fatalf("updateIfNeeded inconsistent result got %v expected %v", got, tcase.expected)
+			}
+		})
 	}
 }
 

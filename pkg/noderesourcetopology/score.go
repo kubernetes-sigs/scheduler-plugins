@@ -30,6 +30,7 @@ import (
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
@@ -76,7 +77,7 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 
 	logNRT("noderesourcetopology found", nodeTopology)
 
-	handler := tm.scoringHandlerFromTopologyManagerConfig(topologyManagerConfigFromNodeResourceTopology(nodeTopology))
+	handler := tm.scoringHandlerFromTopologyManagerConfig(nodeconfig.TopologyManagerFromNodeResourceTopology(nodeTopology))
 	if handler == nil {
 		return 0, nil
 	}
@@ -150,7 +151,7 @@ func containerScopeScore(pod *v1.Pod, zones topologyv1alpha2.ZoneList, scorerFn 
 	return finalScore, nil
 }
 
-func (tm *TopologyMatch) scoringHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) scoringFn {
+func (tm *TopologyMatch) scoringHandlerFromTopologyManagerConfig(conf nodeconfig.TopologyManager) scoringFn {
 	if tm.scoreStrategyType == apiconfig.LeastNUMANodes {
 		if conf.Scope == kubeletconfig.PodTopologyManagerScope {
 			return leastNUMAPodScopeScore
