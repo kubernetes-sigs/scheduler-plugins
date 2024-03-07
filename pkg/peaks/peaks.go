@@ -185,7 +185,7 @@ func get_max_power() float64 {
 	if max_power != 0.0 {
 		return max_power
 	}
-	power_models := []PowerModel{PowerModel{11493.4, -8560.1, -0.7608}, PowerModel{11310.9, -8890.1, -0.8681}}
+	power_models := []PowerModel{PowerModel{805.8497, -557.3219, -3.1735}, PowerModel{301.9559, -272.9715, -2.9613}}
 	for _, model := range power_models{
 		if max_power < model.K0 {
 			max_power = model.K0
@@ -196,7 +196,7 @@ func get_max_power() float64 {
 
 func getPowerModel(nodeName string) PowerModel {
 	if nodeName == "tantawi1"{
-		return PowerModel{179.2110, -62.0149, -2.9070}
+		return PowerModel{301.9559, -272.9715, -2.9613}
 	}
-	return PowerModel{257.4099, -117.0368, -2.8150}
+	return PowerModel{805.8497, -557.3219, -3.1735}
 }
