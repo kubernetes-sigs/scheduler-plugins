@@ -2,20 +2,25 @@
 
 ## Table of Contents
 
-- Summary
-- Motivation
-   - Goals
-   - Non-Goals
-- Proposal
-   - CRD API
-   - Implementation details
-- Use Cases
-- Known limitations
-- Test plans
-- Graduation criteria
-- Production Readiness Review Questionnaire
-   - Feature enablement and rollback
-- Implementation history
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Use Cases](#use-cases)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [CRD API](#crd-api)
+  - [Implementation Details](#implementation-details)
+    - [Scheduler Plugins](#scheduler-plugins)
+      - [PreFilter](#prefilter)
+      - [Filter](#filter)
+      - [Score](#score)
+    - [Resource Policy Controller](#resource-policy-controller)
+- [Known limitations](#known-limitations)
+- [Test plans](#test-plans)
+- [Graduation criteria](#graduation-criteria)
+- [Feature enablement and rollback](#feature-enablement-and-rollback)
+<!-- /toc -->
 
 ## Summary
 This proposal introduces a plugin to allow users to specify the priority of different resources and max resource 
