@@ -70,6 +70,24 @@ Even with 'homogeneous nodes,' if the CPU vs. Power relationship is non-linear (
 
 ## Design Details
 
+### PEAKS workflow
+![PEAKS workflow](./PEAKS_workflow.png)
+
+Here is a brief discription of some of the steps above:
+- Create a power model for each cluster node: If a power model suitable for the workload to be scheduled already exists, then the same can be used to avoid creating a new power model. Thus it is an option step.
+- Get the resource need for a pod to be scheduled: This step requires estimating the pod resource needs.
+  - Consider pod resource requirements (requests/limits) from its specification as an alternative.
+  - If there are one or more running pods with the same image (case of auto scaling), consider the average load or resource need across those pods.
+- Find the change in the utilization if the pod is to be scheduled on a node:
+  - This step requires the current utilization and the updated utilization after the pod placement on a node (so that the instantaneous power at both these utilizations can be found from the power model later)
+  - Current node utilization can be queried from Prometheus (with the metric source provider being a service like node-exporter or load-watcher).
+- Return the change in the node's instantaneous power:
+  - The power consumption at the current utilization can be either found from the node metrics or by referring to the power model
+- Normalize plugin score: The score range can be provided by the user (other consider the range [0, 100] as the default)
+- Choose a suitable weight for PEAKS plugin in kube-scheduler configuration:
+  - This is specific to the environment configuration
+  - If the K8s cluster nodes are running using non-renewable energy sources, then a high weightage for PEAKS plugin can result into reduced CO2 emissions
+
 [WIP]
 
 Benchmarks
