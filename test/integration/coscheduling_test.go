@@ -376,6 +376,138 @@ func TestCoschedulingPlugin(t *testing.T) {
 	}
 }
 
+func TestPodCompleted(t *testing.T) {
+	testCtx := &testContext{}
+	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
+
+	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
+	extClient := util.NewClientOrDie(globalKubeConfig)
+	testCtx.ClientSet = cs
+	testCtx.KubeConfig = globalKubeConfig
+
+	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+		groupList, _, err := cs.ServerGroupsAndResources()
+		if err != nil {
+			return false, nil
+		}
+		for _, group := range groupList {
+			if group.Name == scheduling.GroupName {
+				t.Log("The CRD is ready to serve")
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
+	}
+
+	cfg, err := util.NewDefaultSchedulerComponentConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Profiles[0].Plugins.QueueSort = schedapi.PluginSet{
+		Enabled:  []schedapi.Plugin{{Name: coscheduling.Name}},
+		Disabled: []schedapi.Plugin{{Name: "*"}},
+	}
+	cfg.Profiles[0].Plugins.PreFilter.Enabled = append(cfg.Profiles[0].Plugins.PreFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.PostFilter.Enabled = append(cfg.Profiles[0].Plugins.PostFilter.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].Plugins.Permit.Enabled = append(cfg.Profiles[0].Plugins.Permit.Enabled, schedapi.Plugin{Name: coscheduling.Name})
+	cfg.Profiles[0].PluginConfig = append(cfg.Profiles[0].PluginConfig, schedapi.PluginConfig{
+		Name: coscheduling.Name,
+		Args: &schedconfig.CoschedulingArgs{
+			PermitWaitingTimeSeconds: 3,
+			PodGroupBackoffSeconds:   1,
+		},
+	})
+
+	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
+	createNamespace(t, testCtx, ns)
+
+	testCtx = initTestSchedulerWithOptions(
+		t,
+		testCtx,
+		scheduler.WithProfiles(cfg.Profiles...),
+		scheduler.WithFrameworkOutOfTreeRegistry(fwkruntime.Registry{coscheduling.Name: coscheduling.New}),
+	)
+	syncInformerFactory(testCtx)
+	go testCtx.Scheduler.Run(testCtx.Ctx)
+	t.Log("Init scheduler success")
+	defer cleanupTest(t, testCtx)
+
+	// Create Nodes.
+	node1Name := "fake-node-1"
+	node1 := st.MakeNode().Name(node1Name).Label("node", node1Name).Obj()
+	node1.Status.Allocatable = v1.ResourceList{
+		v1.ResourceCPU:  *resource.NewQuantity(6, resource.DecimalSI),
+		v1.ResourcePods: *resource.NewQuantity(32, resource.DecimalSI),
+	}
+	node1.Status.Capacity = v1.ResourceList{
+		v1.ResourceCPU:  *resource.NewQuantity(6, resource.DecimalSI),
+		v1.ResourcePods: *resource.NewQuantity(32, resource.DecimalSI),
+	}
+	pause := imageutils.GetPauseImageName()
+	for _, tt := range []struct {
+		name      string
+		completed []*v1.Pod
+		pods      []*v1.Pod
+		podGroups []*v1alpha1.PodGroup
+	}{
+		{
+			name: "pg cannot be scheduled with completed pod",
+			completed: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-1").Req(map[v1.ResourceName]string{v1.ResourceCPU: "1"}).Priority(
+					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Node(node1Name).Phase(v1.PodSucceeded).Obj(), pause)},
+			pods: []*v1.Pod{
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-2").Req(map[v1.ResourceName]string{v1.ResourceCPU: "1"}).Priority(
+					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-3").Req(map[v1.ResourceName]string{v1.ResourceCPU: "1"}).Priority(
+					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-4").Req(map[v1.ResourceName]string{v1.ResourceCPU: "1"}).Priority(
+					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-5").Req(map[v1.ResourceName]string{v1.ResourceCPU: "1"}).Priority(
+					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
+				WithContainer(st.MakePod().Namespace(ns).Name("t1-p1-6").Req(map[v1.ResourceName]string{v1.ResourceCPU: "1"}).Priority(
+					midPriority).Label(v1alpha1.PodGroupLabel, "pg1-1").ZeroTerminationGracePeriod().Obj(), pause),
+			},
+			podGroups: []*v1alpha1.PodGroup{
+				util.MakePG("pg1-1", ns, 6, nil, nil),
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Logf("Start-coscheduling-test %v", tt.name)
+			defer cleanupPodGroups(testCtx.Ctx, extClient, tt.podGroups)
+			// create pod group
+			if err := createPodGroups(testCtx.Ctx, extClient, tt.podGroups); err != nil {
+				t.Fatal(err)
+			}
+			defer cleanupPods(t, testCtx, tt.pods)
+			// Create Pods, we will expect them to be scheduled in a reversed order.
+			for i := range tt.completed {
+				t.Logf("Creating pod %v", tt.completed[i].Name)
+				if _, err := cs.CoreV1().Pods(tt.completed[i].Namespace).Create(testCtx.Ctx, tt.completed[i], metav1.CreateOptions{}); err != nil {
+					t.Fatalf("Failed to create Pod %q: %v", tt.completed[i].Name, err)
+				}
+				t.Logf("Create pod %v success", tt.completed[i].Name)
+			}
+			for i := range tt.pods {
+				t.Logf("Creating pod %v", tt.pods[i].Name)
+				if _, err := cs.CoreV1().Pods(tt.pods[i].Namespace).Create(testCtx.Ctx, tt.pods[i], metav1.CreateOptions{}); err != nil {
+					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)
+				}
+				t.Logf("Create pod %v success", tt.pods[i].Name)
+			}
+			time.Sleep(10 * time.Second)
+			for _, v := range tt.pods {
+				if podScheduled(t, cs, ns, v.Name) {
+					t.Fatalf("%v should not be scheduled", v.Name)
+				}
+			}
+			t.Logf("Case %v finished", tt.name)
+		})
+	}
+}
+
 func TestPodgroupBackoff(t *testing.T) {
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
