@@ -73,7 +73,7 @@ Even with 'homogeneous nodes,' if the CPU vs. Power relationship is non-linear (
 ### PEAKS workflow
 ![PEAKS workflow](./PEAKS_workflow.png)
 
-Here is a brief discription of some of the steps above:
+Here is a brief discription of some of the steps in the above workflow:
 - Create a power model for each cluster node: If a power model suitable for the workload to be scheduled already exists, then the same can be used to avoid creating a new power model. Thus it is an option step.
 - Get the resource need for a pod to be scheduled: This step requires estimating the pod resource needs.
   - Consider pod resource requirements (requests/limits) from its specification as an alternative.
@@ -87,6 +87,18 @@ Here is a brief discription of some of the steps above:
 - Normalize plugin score: The score range can be provided by the user (otherwise consider the range [0, 100] as the default)
 - Choose a suitable weight for PEAKS plugin in kube-scheduler configuration: This is specific to the environment configuration.
   - If the K8s cluster nodes are running using non-renewable energy sources, then a high weightage for PEAKS plugin can result into reduced CO2 emissions
+
+### Use-cases (that save energy using PEAKS plugin)
+Below use-case scenarios demonstrate energy savings using PEAKS scheduler plugin over default kube-scheduler.
+- Scaling of a pod (via Horizontal Pod Autoscaler):
+  - On a K8s cluster with heterogeneous node configurations (resulting in the energy efficiency of the nodes not being the same), a deployment configured with HPA packs the pods on nodes using PEAKS scheduler plugin vs. spreads the pods on nodes using default kube-scheduler.
+    - Since energy savings decrease with the increased use of energy ineffecient nodes, PEAKS plugin favours pod placement on energy efficient nodes over pod placement on energy inefficient nodes.
+  - Below graph demonstrates energy saving while auto scaling pods with HPA controller ![PEAKS with HPA](./PEAKS_with_HPA.png)
+    - The graph in the left depicts spreading of pods on nodes using default kube-scheduler.
+    - The graph in the middle depicts packing of pods on energy efficient nodes before pod placement on energy (relatively) inefficient cluster nodes using PEAKS scheduler plugin.
+    - The graph in the right depicts the savings in energy across the cluster nodes over time (i.e., difference in the aggregate cluster energy consumed under PEAKS plugin placement vs. default scheduler placement) as the pods scale up.
+    - There is ~10\% of energy savings observed at the end of 15 minutes of workload execution in this experiment.
+    - Note that the difference in the aggregate energy consumption of the cluster nodes reduces (highlighted in red circle) as PEAKS plugin places pods on energy inefficient nodes.
 
 [WIP]
 
