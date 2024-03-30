@@ -75,6 +75,11 @@ Even with 'homogeneous nodes,' if the CPU vs. Power relationship is non-linear (
 
 Here is a brief discription of some of the steps in the above workflow:
 - Create a power model for each cluster node: If a power model suitable for the workload to be scheduled already exists, then the same can be used to avoid creating a new power model. Thus it is an option step.
+  - PEAKS plugin allows the cluster owners to bring their own power models that best represent both the node behavior and the workload characteristics.
+  - Training the power model is outside the scope of PEAKS plugin.
+  - PEAKS only does power model inferencing.
+  - Here is an example that models the "CPU utilization vs. Power" relationship for a two node cluster.
+    - This model changes corresponding to a change either in the node configuration or in the workload characteristics.![Power-models-of-nodes](./PowerModelsOfNodes.png)
 - Get the resource need for a pod to be scheduled: This step requires estimating the pod resource needs.
   - Consider pod resource requirements (requests/limits) from its specification as an alternative.
   - If there are one or more running pods with the same image (case of auto scaling), consider the average load or resource need across those pods.
@@ -88,9 +93,19 @@ Here is a brief discription of some of the steps in the above workflow:
 - Choose a suitable weight for PEAKS plugin in kube-scheduler configuration: This is specific to the environment configuration.
   - If the K8s cluster nodes are running using non-renewable energy sources, then a high weightage for PEAKS plugin can result into reduced CO2 emissions
 
+### Pre-requisite modules
+- Prometheus
+  - For energy metrics collection
+- Load-watcher
+  - For collecting node usage metrics exported after processing metrics received from source
+- Node-exporter
+  - Source of node usage metrics
+- Kepler
+  - Source of energy consumption metrics
+
 ### Use-cases (that save energy using PEAKS plugin)
 Below use-case scenarios demonstrate energy savings using PEAKS scheduler plugin over default kube-scheduler.
-- Scaling of a pod (via Horizontal Pod Autoscaler):
+- Scaling of a Pod (via Horizontal Pod Autoscaler):
   - On a K8s cluster with heterogeneous node configurations (resulting in the energy efficiency of the nodes not being the same), a deployment configured with HPA packs the pods on nodes using PEAKS scheduler plugin vs. spreads the pods on nodes using default kube-scheduler.
     - Since energy savings decrease with the increased use of energy ineffecient nodes, PEAKS plugin favours pod placement on energy efficient nodes over pod placement on energy inefficient nodes.
   - Below graph demonstrates energy saving while auto scaling pods with HPA controller ![PEAKS with HPA](./PEAKS_with_HPA.png)
@@ -99,6 +114,24 @@ Below use-case scenarios demonstrate energy savings using PEAKS scheduler plugin
     - The graph in the right depicts the savings in energy across the cluster nodes over time (i.e., difference in the aggregate cluster energy consumed under PEAKS plugin placement vs. default scheduler placement) as the pods scale up.
     - There is ~10\% of energy savings observed at the end of 15 minutes of workload execution in this experiment.
     - Note that the difference in the aggregate energy consumption of the cluster nodes reduces (highlighted in red circle) as PEAKS plugin places pods on energy inefficient nodes.
+- Migration of a Pod (via explicit eviction)
+  - An application pods might be placed on the energy ineffecient cluster nodes at the time of scheduling as other applications might be running on the energy effecient nodes. When one or more of those applications complete, resources become available on the energy efficient cluster nodes. Two options are available at this stage:
+    - Either the application pods continue to run on the nodes on which they were originally placed.
+    - Or, those pods may be migrated to energy efficient nodes to save energy.
+  - Periodically check the resource availability on energy efficient nodes via a script. When resources are available, the same script deletes the application pods running on energy inefficient nodes so that the scheduler (configured with PEAKS plugin) places them on the best possible energy efficient nodes.
+    - This mimics auto-migration of application pods from energy inefficient nodes to energy efficient nodes to save energy consumption.
+    - Identification of the target node for the migration of a pod from an energy inefficient node is carried out by the PEAKS plugin.
+    - A pod might need to be deleted more than once before finding the best energy efficient node for its placement by the scheduler.
+  - The experiment below demonstrates this use-case.
+    - The pods of a deployment "cpu-stress-test" were initially placed on the energy efficient node "tantawi1". As a result, only one of the pod of the deployment "php-apache" could be placed on the node "tantawi1" and its second pod is placed on the energy inefficient node "tantawi2". ![Pod-migration-stage-1](./Migration_InitialPlacement.png)
+    - Even after the completion of the deployment "cpu-stress-test", a pod of the deployment "php-apache" continues to run on "tantawi2".![Pod-migration-stage-2](./Migration_IntermediatePlacement.png)
+    - Deleting the pod from "tantawi2" triggers creation of a new pod by the deployment to meet the desired number of replicas and scheduler places the pod on the energy efficient node "tantawi1" now (In contrast, the default kube-scheduler would place the pod on the same node "tantawi2" as it spreads the pods across cluster nodes). ![Pod-migration-stage-3](./Migration_FinalPlacement.png)
+- Shutting down of a cluster node (via Cluster Autoscaler)
+  - Pod migration to a more energy efficient cluster node (demonstrated in the previous use-case) redcues the active power consumption on the less energy efficient nodes.
+  - Migrate each pod (irrespective of the deployment it belongs to) running on a less energy efficient node to (relatively) more energy efficient cluster nodes by repeated execution of individual pod migration (under assumption that there are enough resources on the more energy efficient cluster nodes).
+  - After all the pods are migrated, the utilization of the energy inefficient node becomes low which triggers the Cluster Autoscaler to delete that node.
+    - Node shutdown results in highest energy savings as it elimiates both the active and idle power consumption of a node.
+    - The graph below dipicts that the idle energy consumption of a node is a significant portion of the node's total power consumption.![NodeShutdown-IdleEnergySaving](./NodeShutdown_IdleEnergySaving.png)
 
 [WIP]
 
