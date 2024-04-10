@@ -21,6 +21,7 @@ import (
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -44,7 +45,7 @@ func TestPassthroughGetCachedNRTCopy(t *testing.T) {
 	checkGetCachedNRTCopy(
 		t,
 		func(client ctrlclient.Client, _ podlisterv1.PodLister) (Interface, error) {
-			return NewPassthrough(client), nil
+			return NewPassthrough(klog.Background(), client), nil
 		},
 		testCases...,
 	)

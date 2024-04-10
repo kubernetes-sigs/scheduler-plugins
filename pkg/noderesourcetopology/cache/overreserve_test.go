@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -89,7 +90,7 @@ func TestGetCacheResyncMethod(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
-			got := getCacheResyncMethod(testCase.cfg)
+			got := getCacheResyncMethod(klog.Background(), testCase.cfg)
 			if got != testCase.expected {
 				t.Errorf("cache resync method got %v expected %v", got, testCase.expected)
 			}
@@ -104,12 +105,12 @@ func TestInitEmptyLister(t *testing.T) {
 
 	fakePodLister := &fakePodLister{}
 
-	_, err = NewOverReserve(nil, nil, fakePodLister, podprovider.IsPodRelevantAlways)
+	_, err = NewOverReserve(klog.Background(), nil, nil, fakePodLister, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil lister")
 	}
 
-	_, err = NewOverReserve(nil, fakeClient, nil, podprovider.IsPodRelevantAlways)
+	_, err = NewOverReserve(klog.Background(), nil, fakeClient, nil, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil indexer")
 	}
@@ -124,7 +125,7 @@ func TestNodesMaybeOverReservedCount(t *testing.T) {
 	fakePodLister := &fakePodLister{}
 
 	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes := nrtCache.NodesMaybeOverReserved(klog.Background())
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -149,7 +150,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes := nrtCache.NodesMaybeOverReserved(klog.Background())
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -158,7 +159,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.NodeMaybeOverReserved(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes = nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes = nrtCache.NodesMaybeOverReserved(klog.Background())
 	sort.Strings(dirtyNodes)
 
 	if !reflect.DeepEqual(dirtyNodes, expectedNodes) {
@@ -185,7 +186,7 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes := nrtCache.NodesMaybeOverReserved(klog.Background())
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -201,7 +202,7 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 		"node-1",
 	}
 
-	dirtyNodes = nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes = nrtCache.NodesMaybeOverReserved(klog.Background())
 
 	if !reflect.DeepEqual(dirtyNodes, expectedNodes) {
 		t.Errorf("got=%v expected=%v", dirtyNodes, expectedNodes)
@@ -228,7 +229,7 @@ func TestOverreserveGetCachedNRTCopy(t *testing.T) {
 	checkGetCachedNRTCopy(
 		t,
 		func(client ctrlclient.Client, podLister podlisterv1.PodLister) (Interface, error) {
-			return NewOverReserve(nil, client, podLister, podprovider.IsPodRelevantAlways)
+			return NewOverReserve(klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
 		},
 		testCases...,
 	)
@@ -403,8 +404,6 @@ func TestFlush(t *testing.T) {
 		},
 	}
 
-	logID := "testFlush"
-
 	nrtCache.ReserveNodeResources("node1", testPod)
 	nrtCache.NodeMaybeOverReserved("node1", testPod)
 
@@ -433,9 +432,11 @@ func TestFlush(t *testing.T) {
 		},
 	}
 
-	nrtCache.FlushNodes(logID, expectedNodeTopology.DeepCopy())
+	lh := klog.Background()
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	nrtCache.FlushNodes(lh, expectedNodeTopology.DeepCopy())
+
+	dirtyNodes := nrtCache.NodesMaybeOverReserved(lh)
 	if len(dirtyNodes) != 0 {
 		t.Errorf("dirty nodes after flush: %v", dirtyNodes)
 	}
@@ -517,7 +518,7 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes := nrtCache.NodesMaybeOverReserved(klog.Background())
 
 	if len(dirtyNodes) != 1 || dirtyNodes[0] != "node1" {
 		t.Errorf("cleaned nodes after resyncing with bad data: %v", dirtyNodes)
@@ -611,7 +612,7 @@ func TestResyncMatchFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.NodesMaybeOverReserved("testing")
+	dirtyNodes := nrtCache.NodesMaybeOverReserved(klog.Background())
 	if len(dirtyNodes) > 0 {
 		t.Errorf("node still dirty after resyncing with good data: %v", dirtyNodes)
 	}
@@ -641,7 +642,7 @@ func TestUnknownNodeWithForeignPods(t *testing.T) {
 
 	nrtCache.NodeHasForeignPods("node-bogus", &corev1.Pod{})
 
-	names := nrtCache.NodesMaybeOverReserved("testing")
+	names := nrtCache.NodesMaybeOverReserved(klog.Background())
 	if len(names) != 0 {
 		t.Errorf("non-existent node has foreign pods!")
 	}
@@ -714,7 +715,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 	target := "node2"
 	nrtCache.NodeHasForeignPods(target, &corev1.Pod{})
 
-	names := nrtCache.NodesMaybeOverReserved("testing")
+	names := nrtCache.NodesMaybeOverReserved(klog.Background())
 	if len(names) != 1 || names[0] != target {
 		t.Errorf("unexpected dirty nodes: %v", names)
 	}
@@ -726,7 +727,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 }
 
 func mustOverReserve(t *testing.T, client ctrlclient.Client, podLister podlisterv1.PodLister) *OverReserve {
-	obj, err := NewOverReserve(nil, client, podLister, podprovider.IsPodRelevantAlways)
+	obj, err := NewOverReserve(klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
@@ -960,7 +961,7 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				pods: tcase.pods,
 				err:  tcase.err,
 			}
-			got, err := makeNodeToPodDataMap(podLister, tcase.isPodRelevant, tcase.description)
+			got, err := makeNodeToPodDataMap(klog.Background(), podLister, tcase.isPodRelevant)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}

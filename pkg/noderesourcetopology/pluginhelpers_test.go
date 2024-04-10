@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/klog/v2"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 )
 
@@ -148,7 +149,7 @@ func TestGetForeignPodsDetectMode(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
-			got := getForeignPodsDetectMode(testCase.cfg)
+			got := getForeignPodsDetectMode(klog.Background(), testCase.cfg)
 			if got != testCase.expected {
 				t.Errorf("foreign pods detect mode got %v expected %v", got, testCase.expected)
 			}

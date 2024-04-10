@@ -17,9 +17,9 @@ limitations under the License.
 package noderesourcetopology
 
 import (
-	"k8s.io/klog/v2"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
+	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
@@ -57,10 +57,10 @@ func makeTopologyManagerConfigDefaults() TopologyManagerConfig {
 	}
 }
 
-func topologyManagerConfigFromNodeResourceTopology(nodeTopology *topologyv1alpha2.NodeResourceTopology) TopologyManagerConfig {
+func topologyManagerConfigFromNodeResourceTopology(lh logr.Logger, nodeTopology *topologyv1alpha2.NodeResourceTopology) TopologyManagerConfig {
 	conf := makeTopologyManagerConfigDefaults()
 	// Backward compatibility (v1alpha2 and previous). Deprecated, will be removed when the NRT API moves to v1beta1.
-	updateTopologyManagerConfigFromTopologyPolicies(&conf, nodeTopology.Name, nodeTopology.TopologyPolicies)
+	updateTopologyManagerConfigFromTopologyPolicies(lh, &conf, nodeTopology.Name, nodeTopology.TopologyPolicies)
 	// preferred new configuration source (v1alpha2 and onwards)
 	updateTopologyManagerConfigFromAttributes(&conf, nodeTopology.Attributes)
 	return conf
@@ -80,18 +80,17 @@ func updateTopologyManagerConfigFromAttributes(conf *TopologyManagerConfig, attr
 	}
 }
 
-func updateTopologyManagerConfigFromTopologyPolicies(conf *TopologyManagerConfig, nodeName string, topologyPolicies []string) {
+func updateTopologyManagerConfigFromTopologyPolicies(lh logr.Logger, conf *TopologyManagerConfig, nodeName string, topologyPolicies []string) {
 	if len(topologyPolicies) == 0 {
-		klog.V(3).InfoS("Cannot determine policy", "node", nodeName)
 		return
 	}
 	if len(topologyPolicies) > 1 {
-		klog.V(4).InfoS("Ignoring extra policies", "node", nodeName, "policies count", len(topologyPolicies)-1)
+		lh.V(4).Info("ignoring extra policies", "node", nodeName, "policies count", len(topologyPolicies)-1)
 	}
 
 	policyName := topologyv1alpha2.TopologyManagerPolicy(topologyPolicies[0])
-	klog.Warning("The `topologyPolicies` field is deprecated and will be removed with the NRT API v1beta1.")
-	klog.Warning("The `topologyPolicies` field is deprecated, please use top-level Attributes field instead.")
+	lh.Info("the `topologyPolicies` field is deprecated and will be removed with the NRT API v1beta1.")
+	lh.Info("the `topologyPolicies` field is deprecated, please use top-level Attributes field instead.")
 
 	switch policyName {
 	case topologyv1alpha2.SingleNUMANodePodLevel:

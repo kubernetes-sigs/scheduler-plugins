@@ -26,6 +26,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -148,7 +149,7 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			tm := &TopologyMatch{
 				scoreStrategyFunc: test.strategy,
-				nrtCache:          nrtcache.NewPassthrough(lister),
+				nrtCache:          nrtcache.NewPassthrough(klog.Background(), lister),
 			}
 
 			for _, req := range test.requests {
@@ -443,7 +444,7 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 
 			tm := &TopologyMatch{
 				scoreStrategyType: apiconfig.LeastNUMANodes,
-				nrtCache:          nrtcache.NewPassthrough(lister),
+				nrtCache:          nrtcache.NewPassthrough(klog.Background(), lister),
 			}
 			nodeToScore := make(nodeToScoreMap, len(nodesMap))
 			pod := makePodByResourceLists(tc.podRequests...)
@@ -569,7 +570,7 @@ func TestNodeResourcePartialDataScorePlugin(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			tm := &TopologyMatch{
 				scoreStrategyFunc: test.strategy,
-				nrtCache:          nrtcache.NewPassthrough(lister),
+				nrtCache:          nrtcache.NewPassthrough(klog.Background(), lister),
 			}
 
 			for _, req := range test.requests {

@@ -31,7 +31,9 @@ import (
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 
+	"github.com/go-logr/logr"
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
@@ -94,8 +96,8 @@ func subtractFromNUMAs(resources v1.ResourceList, numaNodes NUMANodeList, nodes 
 	}
 }
 
-type filterFn func(pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
-type scoringFn func(*v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
+type filterFn func(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
+type scoringFn func(logr.Logger, *v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
@@ -118,7 +120,11 @@ func (tm *TopologyMatch) Name() string {
 
 // New initializes a new plugin and returns it.
 func New(_ context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	klog.V(5).InfoS("Creating new TopologyMatch plugin")
+	// we do this later to make sure klog is initialized. We don't need this anyway before this point
+	lh := klog.Background()
+	logging.SetLogger(lh)
+
+	lh.V(5).Info("creating new noderesourcetopology plugin")
 	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type NodeResourceTopologyMatchArgs, got %T", args)
@@ -128,9 +134,9 @@ func New(_ context.Context, args runtime.Object, handle framework.Handle) (frame
 		return nil, err
 	}
 
-	nrtCache, err := initNodeTopologyInformer(tcfg, handle)
+	nrtCache, err := initNodeTopologyInformer(lh, tcfg, handle)
 	if err != nil {
-		klog.ErrorS(err, "Cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
+		lh.Error(err, "cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
 		return nil, err
 	}
 

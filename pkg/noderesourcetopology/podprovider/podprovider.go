@@ -19,21 +19,21 @@ package podprovider
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	k8scache "k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 )
 
-type PodFilterFunc func(pod *corev1.Pod, logID string) bool
+type PodFilterFunc func(lh logr.Logger, pod *corev1.Pod) bool
 
-func NewFromHandle(handle framework.Handle, cacheConf *apiconfig.NodeResourceTopologyCache) (k8scache.SharedIndexInformer, podlisterv1.PodLister, PodFilterFunc) {
+func NewFromHandle(lh logr.Logger, handle framework.Handle, cacheConf *apiconfig.NodeResourceTopologyCache) (k8scache.SharedIndexInformer, podlisterv1.PodLister, PodFilterFunc) {
 	dedicated := wantsDedicatedInformer(cacheConf)
 	if !dedicated {
 		podHandle := handle.SharedInformerFactory().Core().V1().Pods() // shortcut
@@ -43,38 +43,38 @@ func NewFromHandle(handle framework.Handle, cacheConf *apiconfig.NodeResourceTop
 	podInformer := coreinformers.NewFilteredPodInformer(handle.ClientSet(), metav1.NamespaceAll, 0, cache.Indexers{}, nil)
 	podLister := podlisterv1.NewPodLister(podInformer.GetIndexer())
 
-	klog.V(5).InfoS("Start custom pod informer")
+	lh.V(5).Info("start custom pod informer")
 	ctx := context.Background()
 	go podInformer.Run(ctx.Done())
 
-	klog.V(5).InfoS("Syncing custom pod informer")
+	lh.V(5).Info("syncing custom pod informer")
 	cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced)
-	klog.V(5).InfoS("Synced custom pod informer")
+	lh.V(5).Info("synced custom pod informer")
 
 	return podInformer, podLister, IsPodRelevantDedicated
 }
 
 // IsPodRelevantAlways is meant to be used in test only
-func IsPodRelevantAlways(pod *corev1.Pod, logID string) bool {
+func IsPodRelevantAlways(lh logr.Logger, pod *corev1.Pod) bool {
 	return true
 }
 
-func IsPodRelevantShared(pod *corev1.Pod, logID string) bool {
+func IsPodRelevantShared(lh logr.Logger, pod *corev1.Pod) bool {
 	// we are interested only about nodes which consume resources
 	return pod.Status.Phase == corev1.PodRunning
 }
 
-func IsPodRelevantDedicated(pod *corev1.Pod, logID string) bool {
+func IsPodRelevantDedicated(lh logr.Logger, pod *corev1.Pod) bool {
 	// Every other phase we're interested into (see https://github.com/kubernetes-sigs/scheduler-plugins/pull/599).
 	// Note PodUnknown is deprecated and reportedly no longer set since 2015 (!!)
 	if pod.Status.Phase == corev1.PodPending {
 		// this is unexpected, so we're loud about it
-		klog.V(2).InfoS("nrtcache: Listed pod in Pending phase, ignored", "logID", logID, "podUID", pod.UID)
+		lh.V(2).Info("listed pod in Pending phase, ignored", "podUID", pod.GetUID())
 		return false
 	}
 	if pod.Spec.NodeName == "" {
 		// this is very unexpected, so we're louder about it
-		klog.InfoS("nrtcache: Listed pod unbound, ignored", "logID", logID, "podUID", pod.UID)
+		lh.Info("listed pod unbound, ignored", "podUID", pod.GetUID())
 		return false
 	}
 	return true
