@@ -21,9 +21,9 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2/klogr"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	schedulingv1a1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/controllers"
@@ -48,9 +48,10 @@ func Run(s *ServerRunOptions) error {
 	// Controller Runtime Controllers
 	ctrl.SetLogger(klogr.New())
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                  scheme,
-		MetricsBindAddress:      s.MetricsAddr,
-		Port:                    9443,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: s.MetricsAddr,
+		},
 		HealthProbeBindAddress:  s.ProbeAddr,
 		LeaderElection:          s.EnableLeaderElection,
 		LeaderElectionID:        "sched-plugins-controllers",

@@ -37,6 +37,7 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
@@ -62,8 +63,10 @@ func TestPodGroupController(t *testing.T) {
 	runtime.Must(v1alpha1.AddToScheme(s))
 
 	mgrOpts := manager.Options{
-		Scheme:             s,
-		MetricsBindAddress: "0", // disable metrics to avoid conflicts between packages.
+		Scheme: s,
+		Metrics: metricsserver.Options{
+			BindAddress: "0", // disable metrics to avoid conflicts between packages.
+		},
 	}
 
 	mgr, _ := ctrl.NewManager(globalKubeConfig, mgrOpts)
