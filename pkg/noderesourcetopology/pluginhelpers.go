@@ -17,9 +17,6 @@ limitations under the License.
 package noderesourcetopology
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/numanode"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -108,8 +106,8 @@ func createNUMANodeList(zones topologyv1alpha2.ZoneList) NUMANodeList {
 			continue
 		}
 
-		numaID, err := getID(zone.Name)
-		if err != nil {
+		numaID, err := numanode.NameToID(zone.Name)
+		if err != nil || numaID > maxNUMAId {
 			klog.Error(err)
 			continue
 		}
@@ -129,28 +127,6 @@ func createNUMANodeList(zones topologyv1alpha2.ZoneList) NUMANodeList {
 	return nodes
 }
 
-func getID(name string) (int, error) {
-	splitted := strings.Split(name, "-")
-	if len(splitted) != 2 {
-		return -1, fmt.Errorf("invalid zone format zone: %s", name)
-	}
-
-	if splitted[0] != "node" {
-		return -1, fmt.Errorf("invalid zone format zone: %s", name)
-	}
-
-	numaID, err := strconv.Atoi(splitted[1])
-	if err != nil {
-		return -1, fmt.Errorf("invalid zone format zone: %s : %v", name, err)
-	}
-
-	if numaID > maxNUMAId-1 || numaID < 0 {
-		return -1, fmt.Errorf("invalid NUMA id range numaID: %d", numaID)
-	}
-
-	return numaID, nil
-}
-
 func extractCosts(costs topologyv1alpha2.CostList) map[int]int {
 	nodeCosts := make(map[int]int)
 
@@ -160,8 +136,8 @@ func extractCosts(costs topologyv1alpha2.CostList) map[int]int {
 	}
 
 	for _, cost := range costs {
-		numaID, err := getID(cost.Name)
-		if err != nil {
+		numaID, err := numanode.NameToID(cost.Name)
+		if err != nil || numaID > maxNUMAId {
 			continue
 		}
 		nodeCosts[numaID] = int(cost.Value)

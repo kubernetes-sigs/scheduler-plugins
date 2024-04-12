@@ -1497,8 +1497,8 @@ github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7V
 github.com/julienschmidt/httprouter v1.3.0/go.mod h1:JR6WtHb+2LUe8TCKY3cZOxFyyO8IZAc4RVcycCCAKdM=
 github.com/jung-kurt/gofpdf v1.0.0/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
 github.com/jung-kurt/gofpdf v1.0.3-0.20190309125859-24315acbbda5/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
-github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.1 h1:BI3L7hNqRvXtB42FO4NI/0ZjDDVRPOMBDFLShhFtf28=
-github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.1/go.mod h1:AkACMQGiTgCt0lQw3m7TTU8PLH9lYKNK5e9DqFf5VuM=
+github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2 h1:uAwqOtyrFYggq3pVf3hs1XKkBxrQ8dkgjWz3LCLJsiY=
+github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2/go.mod h1:LBzS4n6GX1C69tzSd5EibZ9cGOXFuHP7GxEMDYVe1sM=
 github.com/k8stopologyawareschedwg/podfingerprint v0.2.2 h1:iFHPfZInM9pz2neye5RdmORMp1hPmte1EGJYpOOzZVg=
 github.com/k8stopologyawareschedwg/podfingerprint v0.2.2/go.mod h1:C23pM15t06dXg/OihGlqBvnYzLr+MXDXJ7zMfbNAyXI=
 github.com/karrick/godirwalk v1.17.0/go.mod h1:j4mkqPuvaLI8mp1DroR3P6ad7cyYd4c1qeJ3RV7ULlk=
