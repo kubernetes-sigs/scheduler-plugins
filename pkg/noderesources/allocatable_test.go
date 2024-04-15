@@ -28,11 +28,11 @@ import (
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	fakeframework "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 )
@@ -351,5 +351,5 @@ func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
 }
 
 func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
-	return fakeframework.NodeInfoLister(f.nodes)
+	return tf.NodeInfoLister(f.nodes)
 }

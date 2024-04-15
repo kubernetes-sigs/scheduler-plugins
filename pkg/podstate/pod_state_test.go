@@ -31,11 +31,11 @@ import (
 	"k8s.io/klog/v2/ktesting"
 
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	fakeframework "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -203,5 +203,5 @@ func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
 }
 
 func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
-	return fakeframework.NodeInfoLister(f.nodes)
+	return tf.NodeInfoLister(f.nodes)
 }
