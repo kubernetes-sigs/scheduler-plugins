@@ -39,7 +39,7 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
+	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -89,8 +89,8 @@ func TestNew(t *testing.T) {
 
 	loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 		TrimaranSpec:            pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
-		SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
-		SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
+		SafeVarianceMargin:      cfgv1.DefaultSafeVarianceMargin,
+		SafeVarianceSensitivity: cfgv1.DefaultSafeVarianceSensitivity,
 	}
 	loadVariationRiskBalancingConfig := config.PluginConfig{
 		Name: Name,
@@ -345,8 +345,8 @@ func TestScore(t *testing.T) {
 
 			loadVariationRiskBalancingArgs := pluginConfig.LoadVariationRiskBalancingArgs{
 				TrimaranSpec:            pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
-				SafeVarianceMargin:      v1beta3.DefaultSafeVarianceMargin,
-				SafeVarianceSensitivity: v1beta3.DefaultSafeVarianceSensitivity,
+				SafeVarianceMargin:      cfgv1.DefaultSafeVarianceMargin,
+				SafeVarianceSensitivity: cfgv1.DefaultSafeVarianceSensitivity,
 			}
 			loadVariationRiskBalancingConfig := config.PluginConfig{
 				Name: Name,

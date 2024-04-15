@@ -44,7 +44,7 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
+	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 )
 
 var _ framework.SharedLister = &testSharedLister{}
@@ -85,8 +85,8 @@ func TestNew(t *testing.T) {
 
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
 		TrimaranSpec:              pluginConfig.TrimaranSpec{WatcherAddress: "http://deadbeef:2020"},
-		TargetUtilization:         v1beta3.DefaultTargetUtilizationPercent,
-		DefaultRequestsMultiplier: v1beta3.DefaultRequestsMultiplier,
+		TargetUtilization:         cfgv1.DefaultTargetUtilizationPercent,
+		DefaultRequestsMultiplier: cfgv1.DefaultRequestsMultiplier,
 	}
 	targetLoadPackingConfig := config.PluginConfig{
 		Name: Name,
@@ -120,8 +120,8 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
 		TrimaranSpec:              pluginConfig.TrimaranSpec{WatcherAddress: "http://deadbeef:2020"},
-		TargetUtilization:         v1beta3.DefaultTargetUtilizationPercent,
-		DefaultRequestsMultiplier: v1beta3.DefaultRequestsMultiplier,
+		TargetUtilization:         cfgv1.DefaultTargetUtilizationPercent,
+		DefaultRequestsMultiplier: cfgv1.DefaultRequestsMultiplier,
 	}
 	targetLoadPackingConfig := config.PluginConfig{
 		Name: Name,
@@ -163,7 +163,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				},
 			},
 			expected: []framework.NodeScore{
-				{Name: "node-1", Score: v1beta3.DefaultTargetUtilizationPercent},
+				{Name: "node-1", Score: cfgv1.DefaultTargetUtilizationPercent},
 			},
 		},
 		{
@@ -181,7 +181,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 							Metrics: []watcher.Metric{
 								{
 									Type:     watcher.CPU,
-									Value:    float64(v1beta3.DefaultTargetUtilizationPercent + 10),
+									Value:    float64(cfgv1.DefaultTargetUtilizationPercent + 10),
 									Operator: watcher.Latest,
 								},
 							},
@@ -256,8 +256,8 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 			assert.Nil(t, err)
 			targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
 				TrimaranSpec:              pluginConfig.TrimaranSpec{WatcherAddress: server.URL},
-				TargetUtilization:         v1beta3.DefaultTargetUtilizationPercent,
-				DefaultRequestsMultiplier: v1beta3.DefaultRequestsMultiplier,
+				TargetUtilization:         cfgv1.DefaultTargetUtilizationPercent,
+				DefaultRequestsMultiplier: cfgv1.DefaultRequestsMultiplier,
 			}
 			p, _ := New(&targetLoadPackingArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)
