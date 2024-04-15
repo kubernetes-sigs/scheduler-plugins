@@ -33,7 +33,7 @@ GOBIN=${TOOLS_BIN_DIR} ${GO_INSTALL} sigs.k8s.io/controller-tools/cmd/controller
 
 CODEGEN_PKG=${CODEGEN_PKG:-$(cd "${SCRIPT_ROOT}"; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
 
-bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
+bash "${CODEGEN_PKG}"/kube_codegen.sh \
   "deepcopy,conversion,defaulter" \
   sigs.k8s.io/scheduler-plugins/pkg/generated \
   sigs.k8s.io/scheduler-plugins/apis \
@@ -43,7 +43,7 @@ bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
   --output-base "./" \
   --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
 
-bash "${CODEGEN_PKG}"/generate-groups.sh \
+bash "${CODEGEN_PKG}"/kube_codegen.sh \
   all \
   sigs.k8s.io/scheduler-plugins/pkg/generated \
   sigs.k8s.io/scheduler-plugins/apis \
