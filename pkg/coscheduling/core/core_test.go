@@ -349,7 +349,7 @@ func TestCheckClusterResource(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			snapshotSharedLister := tu.NewFakeSharedLister(tt.existingPods, nodes)
 			nodeInfoList, _ := snapshotSharedLister.NodeInfos().List()
-			err := CheckClusterResource(nodeInfoList, tt.minResources, tt.pgName)
+			err := CheckClusterResource(context.Background(), nodeInfoList, tt.minResources, tt.pgName)
 			if (err == nil) != tt.want {
 				t.Errorf("Expect the cluster resource to be satified: %v, but got %v", tt.want, err == nil)
 			}

@@ -200,7 +200,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	minResources := pg.Spec.MinResources.DeepCopy()
 	podQuantity := resource.NewQuantity(int64(pg.Spec.MinMember), resource.DecimalSI)
 	minResources[corev1.ResourcePods] = *podQuantity
-	err = CheckClusterResource(nodes, minResources, pgFullName)
+	err = CheckClusterResource(ctx, nodes, minResources, pgFullName)
 	if err != nil {
 		klog.ErrorS(err, "Failed to PreFilter", "podGroup", klog.KObj(pg))
 		return err
@@ -295,13 +295,13 @@ func (pgMgr *PodGroupManager) CalculateAssignedPods(podGroupName, namespace stri
 
 // CheckClusterResource checks if resource capacity of the cluster can satisfy <resourceRequest>.
 // It returns an error detailing the resource gap if not satisfied; otherwise returns nil.
-func CheckClusterResource(nodeList []*framework.NodeInfo, resourceRequest corev1.ResourceList, desiredPodGroupName string) error {
+func CheckClusterResource(ctx context.Context, nodeList []*framework.NodeInfo, resourceRequest corev1.ResourceList, desiredPodGroupName string) error {
 	for _, info := range nodeList {
 		if info == nil || info.Node() == nil {
 			continue
 		}
 
-		nodeResource := util.ResourceList(getNodeResource(info, desiredPodGroupName))
+		nodeResource := util.ResourceList(getNodeResource(ctx, info, desiredPodGroupName))
 		for name, quant := range resourceRequest {
 			quant.Sub(nodeResource[name])
 			if quant.Sign() <= 0 {
@@ -322,8 +322,9 @@ func GetNamespacedName(obj metav1.Object) string {
 	return fmt.Sprintf("%v/%v", obj.GetNamespace(), obj.GetName())
 }
 
-func getNodeResource(info *framework.NodeInfo, desiredPodGroupName string) *framework.Resource {
-	nodeClone := info.Clone()
+func getNodeResource(ctx context.Context, info *framework.NodeInfo, desiredPodGroupName string) *framework.Resource {
+	nodeClone := info.Snapshot()
+	logger := klog.FromContext(ctx)
 	for _, podInfo := range info.Pods {
 		if podInfo == nil || podInfo.Pod == nil {
 			continue
@@ -331,7 +332,7 @@ func getNodeResource(info *framework.NodeInfo, desiredPodGroupName string) *fram
 		if util.GetPodGroupFullName(podInfo.Pod) != desiredPodGroupName {
 			continue
 		}
-		nodeClone.RemovePod(podInfo.Pod)
+		nodeClone.RemovePod(logger, podInfo.Pod)
 	}
 
 	leftResource := framework.Resource{
