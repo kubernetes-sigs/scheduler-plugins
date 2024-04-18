@@ -75,7 +75,7 @@ func (pl *PreemptionToleration) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(rawArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, rawArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	args, ok := rawArgs.(*config.PreemptionTolerationArgs)
 	if !ok {
 		return nil, fmt.Errorf("got args of type %T, want *PreemptionTolerationArgs", args)

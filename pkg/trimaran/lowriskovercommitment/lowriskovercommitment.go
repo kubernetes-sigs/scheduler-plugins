@@ -58,7 +58,7 @@ type LowRiskOverCommitment struct {
 }
 
 // New : create an instance of a LowRiskOverCommitment plugin
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(4).InfoS("Creating new instance of the LowRiskOverCommitment plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LowRiskOverCommitmentArgs)

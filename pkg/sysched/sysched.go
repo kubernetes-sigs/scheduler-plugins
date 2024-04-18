@@ -397,11 +397,10 @@ func getArgs(obj runtime.Object) (*pluginconfig.SySchedArgs, error) {
 }
 
 // New initializes a new plugin and returns it.
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	sc := SySched{handle: handle}
 	sc.HostToPods = make(map[string][]*v1.Pod)
 	sc.HostSyscalls = make(map[string]sets.Set[string])
-	//sc.CritSyscalls = make(map[string][]string)
 	sc.ExSAvg = 0
 	sc.ExSAvgCount = 1
 

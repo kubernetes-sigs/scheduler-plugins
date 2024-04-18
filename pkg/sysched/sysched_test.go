@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	informers "k8s.io/client-go/informers"
+	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
@@ -18,7 +18,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1"
@@ -85,9 +87,9 @@ var (
 		},
 	}
 
-	registeredPlugins = []st.RegisterPluginFunc{
-		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+	registeredPlugins = []tf.RegisterPluginFunc{
+		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 	}
 )
 
@@ -170,10 +172,10 @@ func TestParseNameNS(t *testing.T) {
 }
 
 func mockSysched() (*SySched, error) {
-	//fake out the framework handle
+	// fake out the framework handle
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	fr, err := st.NewFramework(ctx, registeredPlugins, Name,
+	fr, err := tf.NewFramework(ctx, registeredPlugins, Name,
 		frameworkruntime.WithClientSet(clientsetfake.NewSimpleClientset()))
 	if err != nil {
 		return nil, err
@@ -337,18 +339,18 @@ func TestCalcScore(t *testing.T) {
 }
 
 func TestScore(t *testing.T) {
-	//create nodes and pods
+	// create nodes and pods
 	node := st.MakeNode()
 	node.Name("test")
 
-	//fake out an existing pod
+	// fake out an existing pod
 	pod := st.MakePod().Annotation("seccomp.security.alpha.kubernetes.io",
 		"localhost/operator/default/z-seccomp.json").Name("Existing pod").Node("test").Obj()
 
-	//fake out the framework handle
+	// fake out the framework handle
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	fr, err := st.NewFramework(ctx, registeredPlugins, Name,
+	fr, err := tf.NewFramework(ctx, registeredPlugins, Name,
 		frameworkruntime.WithClientSet(clientsetfake.NewSimpleClientset(node.Obj())))
 	if err != nil {
 		t.Error(err)
@@ -519,14 +521,14 @@ func TestUpdateHostSyscalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			//fake out the framework handle
+			// fake out the framework handle
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			nodeItems := []v1.Node{}
 			for _, node := range tt.nodes {
 				nodeItems = append(nodeItems, *node)
 			}
-			fr, err := st.NewFramework(ctx, registeredPlugins, Name,
+			fr, err := tf.NewFramework(ctx, registeredPlugins, Name,
 				frameworkruntime.WithClientSet(clientsetfake.NewSimpleClientset(&v1.NodeList{Items: nodeItems})))
 			if err != nil {
 				t.Error(err)
@@ -795,7 +797,7 @@ func TestNew(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	fakeclient := clientsetfake.NewSimpleClientset()
-	fr, err := st.NewFramework(ctx, registeredPlugins, Name,
+	fr, err := tf.NewFramework(ctx, registeredPlugins, Name,
 		frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(fakeclient, 0)),
 		frameworkruntime.WithKubeConfig(&restclient.Config{}),
 		frameworkruntime.WithClientSet(fakeclient))
@@ -808,7 +810,7 @@ func TestNew(t *testing.T) {
 		DefaultProfileName:      "x-seccomp.json",
 	}
 
-	sys, err := New(&args, fr)
+	sys, err := New(ctx, &args, fr)
 	assert.Nil(t, err)
 	assert.NotNil(t, sys)
 }

@@ -42,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
@@ -92,10 +93,10 @@ func TestNew(t *testing.T) {
 		Name: Name,
 		Args: &targetLoadPackingArgs,
 	}
-	registeredPlugins := []st.RegisterPluginFunc{
-		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		st.RegisterScorePlugin(Name, New, 1),
+	registeredPlugins := []tf.RegisterPluginFunc{
+		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		tf.RegisterScorePlugin(Name, New, 1),
 	}
 
 	cs := testClientSet.NewSimpleClientset()
@@ -105,17 +106,17 @@ func TestNew(t *testing.T) {
 		"kube-scheduler", runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 	assert.Nil(t, err)
-	p, err := New(&targetLoadPackingArgs, fh)
+	p, err := New(ctx, &targetLoadPackingArgs, fh)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 }
 
 func TestTargetLoadPackingScoring(t *testing.T) {
 
-	registeredPlugins := []st.RegisterPluginFunc{
-		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		st.RegisterScorePlugin(Name, New, 1),
+	registeredPlugins := []tf.RegisterPluginFunc{
+		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		tf.RegisterScorePlugin(Name, New, 1),
 	}
 
 	targetLoadPackingArgs := pluginConfig.TargetLoadPackingArgs{
@@ -259,7 +260,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				TargetUtilization:         cfgv1.DefaultTargetUtilizationPercent,
 				DefaultRequestsMultiplier: cfgv1.DefaultRequestsMultiplier,
 			}
-			p, _ := New(&targetLoadPackingArgs, fh)
+			p, _ := New(ctx, &targetLoadPackingArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)
 			var actualList framework.NodeScoreList
 			for _, n := range tt.nodes {
@@ -296,10 +297,10 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 		},
 	}
 
-	registeredPlugins := []st.RegisterPluginFunc{
-		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		st.RegisterScorePlugin(Name, New, 1),
+	registeredPlugins := []tf.RegisterPluginFunc{
+		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		tf.RegisterScorePlugin(Name, New, 1),
 	}
 
 	bfbpArgs := pluginConfig.TargetLoadPackingArgs{}
@@ -348,10 +349,10 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			fh, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
+			fh, err := tf.NewFramework(ctx, registeredPlugins, "default-scheduler", runtime.WithClientSet(cs),
 				runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
 			assert.Nil(b, err)
-			pl, err := New(&bfbpArgs, fh)
+			pl, err := New(ctx, &bfbpArgs, fh)
 			assert.Nil(b, err)
 			scorePlugin := pl.(framework.ScorePlugin)
 			informerFactory.Start(context.Background().Done())

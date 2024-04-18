@@ -61,7 +61,7 @@ type TargetLoadPacking struct {
 
 var _ framework.ScorePlugin = &TargetLoadPacking{}
 
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(4).InfoS("Creating new instance of the TargetLoadPacking plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.TargetLoadPackingArgs)

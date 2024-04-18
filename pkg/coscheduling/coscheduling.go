@@ -60,7 +60,7 @@ const (
 )
 
 // New initializes and returns a new Coscheduling plugin.
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	args, ok := obj.(*config.CoschedulingArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type CoschedulingArgs, got %T", obj)

@@ -118,7 +118,7 @@ func (c *CapacityScheduling) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	c := &CapacityScheduling{
 		fh:                handle,
 		elasticQuotaInfos: NewElasticQuotaInfos(),

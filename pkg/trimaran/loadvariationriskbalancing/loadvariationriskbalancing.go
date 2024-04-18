@@ -52,7 +52,7 @@ type LoadVariationRiskBalancing struct {
 var _ framework.ScorePlugin = &LoadVariationRiskBalancing{}
 
 // New : create an instance of a LoadVariationRiskBalancing plugin
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(4).InfoS("Creating new instance of the LoadVariationRiskBalancing plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LoadVariationRiskBalancingArgs)

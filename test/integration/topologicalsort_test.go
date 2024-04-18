@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -384,8 +385,9 @@ func TestTopologicalSortPlugin(t *testing.T) {
 
 			// Expect Pods are popped as in the TopologyOrder defined by the AppGroup.
 			t.Logf("Step 4 -  Expect pods to be popped out according to the topologicalSort plugin...")
+			logger := klog.FromContext(testCtx.Ctx)
 			for i := 0; i < len(tt.podNames); i++ {
-				podInfo, _ := testCtx.Scheduler.NextPod()
+				podInfo, _ := testCtx.Scheduler.NextPod(logger)
 				if podInfo.Pod.Name != tt.podNames[i] {
 					t.Errorf("Expect Pod %q, but got %q", tt.podNames[i], podInfo.Pod.Name)
 				} else {
