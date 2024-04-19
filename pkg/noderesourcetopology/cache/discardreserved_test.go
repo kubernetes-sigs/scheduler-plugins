@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -50,7 +51,7 @@ func TestDiscardReservedNodesGetCachedNRTCopy(t *testing.T) {
 	checkGetCachedNRTCopy(
 		t,
 		func(client ctrlclient.Client, _ podlisterv1.PodLister) (Interface, error) {
-			return NewDiscardReserved(client), nil
+			return NewDiscardReserved(klog.Background(), client), nil
 		},
 		testCases...,
 	)

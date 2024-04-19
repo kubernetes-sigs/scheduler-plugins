@@ -116,7 +116,7 @@ func TestResourceListToLoggable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			keysAndValues := ResourceListToLoggable(tt.logID, tt.resources)
+			keysAndValues := ResourceListToLoggableWithValues([]interface{}{"logID", tt.logID}, tt.resources)
 			kvListFormat(&buf, keysAndValues...)
 			got := buf.String()
 			if got != tt.expected {

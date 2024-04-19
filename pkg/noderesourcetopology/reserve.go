@@ -21,14 +21,23 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 )
 
 func (tm *TopologyMatch) Reserve(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+	lh := logging.Log().WithValues(logging.KeyLogID, logging.PodLogID(pod), logging.KeyPodUID, pod.GetUID(), logging.KeyNode, nodeName, logging.KeyFlow, logging.FlowReserve)
+	lh.V(4).Info(logging.FlowBegin)
+	defer lh.V(4).Info(logging.FlowEnd)
+
 	tm.nrtCache.ReserveNodeResources(nodeName, pod)
 	// can't fail
 	return framework.NewStatus(framework.Success, "")
 }
 
 func (tm *TopologyMatch) Unreserve(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) {
+	lh := logging.Log().WithValues(logging.KeyLogID, logging.PodLogID(pod), logging.KeyPodUID, pod.GetUID(), logging.KeyNode, nodeName, logging.KeyFlow, logging.FlowUnreserve)
+	lh.V(4).Info(logging.FlowBegin)
+	defer lh.V(4).Info(logging.FlowEnd)
+
 	tm.nrtCache.UnreserveNodeResources(nodeName, pod)
 }
