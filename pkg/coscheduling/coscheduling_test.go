@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/pointer"
 
 	_ "sigs.k8s.io/scheduler-plugins/apis/config/scheme"
@@ -97,11 +98,11 @@ func TestPodGroupBackoffTime(t *testing.T) {
 			cs := clientsetfake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler", fwkruntime.WithInformerFactory(informerFactory))
+			f, err := tf.NewFramework(ctx, registeredPlugins, "default-scheduler", fwkruntime.WithInformerFactory(informerFactory))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -490,11 +491,11 @@ func TestPermit(t *testing.T) {
 			}
 
 			// Compose a fake framework handle.
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler")
+			f, err := tf.NewFramework(ctx, registeredPlugins, "default-scheduler")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -593,11 +594,11 @@ func TestPostFilter(t *testing.T) {
 			}
 
 			// Compose a fake framework handle.
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := st.NewFramework(ctx, registeredPlugins, "default-scheduler")
+			f, err := tf.NewFramework(ctx, registeredPlugins, "default-scheduler")
 			if err != nil {
 				t.Fatal(err)
 			}

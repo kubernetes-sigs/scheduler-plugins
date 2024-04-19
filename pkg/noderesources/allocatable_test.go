@@ -28,11 +28,10 @@ import (
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	fakeframework "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 )
@@ -246,14 +245,14 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			for _, p := range test.pods {
 				podInformer.GetStore().Add(p)
 			}
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterPluginAsExtensions(AllocatableName, NewAllocatable, "Score"),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterScorePlugin(AllocatableName, NewAllocatable, 1),
 			}
 			fakeSharedLister := &fakeSharedLister{nodes: test.nodeInfos}
 
-			fh, err := st.NewFramework(
+			fh, err := tf.NewFramework(
 				ctx,
 				registeredPlugins,
 				"default-scheduler",
@@ -265,7 +264,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 				t.Fatalf("fail to create framework: %s", err)
 			}
 
-			alloc, err := NewAllocatable(&test.args, fh)
+			alloc, err := NewAllocatable(ctx, &test.args, fh)
 
 			if len(test.wantErr) != 0 {
 				if err != nil && test.wantErr != err.Error() {
@@ -351,5 +350,5 @@ func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
 }
 
 func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
-	return fakeframework.NodeInfoLister(f.nodes)
+	return tf.NodeInfoLister(f.nodes)
 }

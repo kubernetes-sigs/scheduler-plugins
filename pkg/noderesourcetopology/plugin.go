@@ -17,6 +17,7 @@ limitations under the License.
 package noderesourcetopology
 
 import (
+	"context"
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
@@ -116,7 +117,7 @@ func (tm *TopologyMatch) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(5).InfoS("Creating new TopologyMatch plugin")
 	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)
 	if !ok {

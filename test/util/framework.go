@@ -19,16 +19,16 @@ package util
 import (
 	"context"
 
-	"k8s.io/kube-scheduler/config/v1beta3"
+	"k8s.io/kube-scheduler/config/v1"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/scheme"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 )
 
 // NewFramework is a variant version of st.NewFramework - with extra PluginConfig slice as input.
-func NewFramework(ctx context.Context, fns []st.RegisterPluginFunc, cfgs []config.PluginConfig, profileName string, opts ...runtime.Option) (framework.Framework, error) {
+func NewFramework(ctx context.Context, fns []tf.RegisterPluginFunc, cfgs []config.PluginConfig, profileName string, opts ...runtime.Option) (framework.Framework, error) {
 	registry := runtime.Registry{}
 	profile := &config.KubeSchedulerProfile{
 		SchedulerName: profileName,
@@ -44,7 +44,7 @@ func NewFramework(ctx context.Context, fns []st.RegisterPluginFunc, cfgs []confi
 // NewDefaultSchedulerComponentConfig returns a default scheduler cc object.
 // We need this function due to k/k#102796 - default profile needs to built manually.
 func NewDefaultSchedulerComponentConfig() (config.KubeSchedulerConfiguration, error) {
-	var versionedCfg v1beta3.KubeSchedulerConfiguration
+	var versionedCfg v1.KubeSchedulerConfiguration
 	scheme.Scheme.Default(&versionedCfg)
 	cfg := config.KubeSchedulerConfiguration{}
 	if err := scheme.Scheme.Convert(&versionedCfg, &cfg, nil); err != nil {

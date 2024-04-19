@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -135,8 +136,9 @@ func TestQOSPlugin(t *testing.T) {
 	}
 
 	// Expect Pods are popped in the QoS class order.
+	logger := klog.FromContext(testCtx.Ctx)
 	for i := len(podNames) - 1; i >= 0; i-- {
-		podInfo, _ := testCtx.Scheduler.NextPod()
+		podInfo, _ := testCtx.Scheduler.NextPod(logger)
 		if podInfo.Pod.Name != podNames[i] {
 			t.Errorf("Expect Pod %q, but got %q", podNames[i], podInfo.Pod.Name)
 		} else {

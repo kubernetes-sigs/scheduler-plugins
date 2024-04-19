@@ -69,13 +69,17 @@ type PreemptionToleration struct {
 	curTime time.Time
 }
 
+func (pl *PreemptionToleration) OrderedScoreFuncs(ctx context.Context, nodesToVictims map[string]*extenderv1.Victims) []func(node string) int64 {
+	return nil
+}
+
 // Name returns name of the plugin. It is used in logs, etc.
 func (pl *PreemptionToleration) Name() string {
 	return Name
 }
 
 // New initializes a new plugin and returns it.
-func New(rawArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, rawArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	args, ok := rawArgs.(*config.PreemptionTolerationArgs)
 	if !ok {
 		return nil, fmt.Errorf("got args of type %T, want *PreemptionTolerationArgs", args)
@@ -184,8 +188,9 @@ func (pl *PreemptionToleration) SelectVictimsOnNode(
 	nodeInfo *framework.NodeInfo,
 	pdbs []*policy.PodDisruptionBudget) ([]*v1.Pod, int, *framework.Status) {
 	var potentialVictims []*framework.PodInfo
+	logger := klog.FromContext(ctx)
 	removePod := func(rpi *framework.PodInfo) error {
-		if err := nodeInfo.RemovePod(rpi.Pod); err != nil {
+		if err := nodeInfo.RemovePod(logger, rpi.Pod); err != nil {
 			return err
 		}
 		status := pl.fh.RunPreFilterExtensionRemovePod(ctx, state, preemptor, rpi, nodeInfo)

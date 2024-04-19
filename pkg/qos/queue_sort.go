@@ -17,6 +17,8 @@ limitations under the License.
 package qos
 
 import (
+	"context"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
@@ -58,6 +60,6 @@ func compQOS(p1, p2 *v1.Pod) bool {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, _ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
 	return &Sort{}, nil
 }

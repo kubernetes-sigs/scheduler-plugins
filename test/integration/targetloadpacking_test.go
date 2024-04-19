@@ -40,7 +40,7 @@ import (
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
+	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
@@ -114,8 +114,8 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 		Name: targetloadpacking.Name,
 		Args: &config.TargetLoadPackingArgs{
 			TrimaranSpec:              config.TrimaranSpec{WatcherAddress: server.URL},
-			TargetUtilization:         v1beta3.DefaultTargetUtilizationPercent,
-			DefaultRequestsMultiplier: v1beta3.DefaultRequestsMultiplier,
+			TargetUtilization:         cfgv1.DefaultTargetUtilizationPercent,
+			DefaultRequestsMultiplier: cfgv1.DefaultRequestsMultiplier,
 		},
 	})
 

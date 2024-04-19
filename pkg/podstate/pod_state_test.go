@@ -31,11 +31,10 @@ import (
 	"k8s.io/klog/v2/ktesting"
 
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	fakeframework "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -79,14 +78,14 @@ func TestPodState(t *testing.T) {
 
 			cs := clientsetfake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterPluginAsExtensions(Name, New, "Score"),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterScorePlugin(Name, New, 1),
 			}
 			fakeSharedLister := &fakeSharedLister{nodes: test.nodeInfos}
 
-			fh, err := st.NewFramework(
+			fh, err := tf.NewFramework(
 				ctx,
 				registeredPlugins,
 				"default-scheduler",
@@ -106,7 +105,7 @@ func TestPodState(t *testing.T) {
 					}
 				}
 			}
-			pe, _ := New(nil, fh)
+			pe, _ := New(nil, nil, fh)
 			var gotList framework.NodeScoreList
 			plugin := pe.(framework.ScorePlugin)
 			for i, n := range test.nodeInfos {
@@ -203,5 +202,5 @@ func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
 }
 
 func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
-	return fakeframework.NodeInfoLister(f.nodes)
+	return tf.NodeInfoLister(f.nodes)
 }
