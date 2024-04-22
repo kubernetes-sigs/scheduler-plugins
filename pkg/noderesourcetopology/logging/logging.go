@@ -18,21 +18,16 @@ package logging
 
 import (
 	"fmt"
+	"reflect"
 	"time"
-
-	"github.com/go-logr/logr"
 
 	corev1 "k8s.io/api/core/v1"
 )
 
-// before to replace with FromContext(), at least in filter and score,
-// we would need a way to inject a logger instance (preferably a
-// per-plugin logger instance) when we create the Scheduler
-// (with app.NewSchedulerCommand)
-
 // well-known structured log keys
 const (
 	KeyLogID  string = "logID"
+	KeyPod    string = "pod"
 	KeyPodUID string = "podUID"
 	KeyNode   string = "node"
 	KeyFlow   string = "flow"
@@ -44,32 +39,22 @@ const (
 )
 
 const (
-	FlowCacheSync string = "cachesync"
-	FlowFilter    string = "filter"
-	FlowPostBind  string = "postbind"
-	FlowReserve   string = "reserve"
-	FlowUnreserve string = "unreserve"
-	FlowScore     string = "score"
+	FlowCacheSync string = "resync"
 )
 
-var logh logr.Logger
+const (
+	SubsystemForeignPods string = "foreignpods"
+	SubsystemNRTCache    string = "nrtcache"
+)
 
-func SetLogger(lh logr.Logger) {
-	logh = lh
-}
-
-func Log() logr.Logger {
-	return logh
-}
-
-func PodLogID(pod *corev1.Pod) string {
+func PodUID(pod *corev1.Pod) string {
 	if pod == nil {
 		return "<nil>"
 	}
-	if pod.Namespace == "" {
-		return pod.Name
+	if val := reflect.ValueOf(pod); val.Kind() == reflect.Ptr && val.IsNil() {
+		return "<nil>"
 	}
-	return pod.Namespace + "/" + pod.Name
+	return string(pod.GetUID())
 }
 
 func TimeLogID() string {

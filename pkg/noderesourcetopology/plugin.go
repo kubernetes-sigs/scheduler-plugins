@@ -31,7 +31,6 @@ import (
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 
 	"github.com/go-logr/logr"
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
@@ -120,9 +119,7 @@ func (tm *TopologyMatch) Name() string {
 
 // New initializes a new plugin and returns it.
 func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	// we do this later to make sure klog is initialized. We don't need this anyway before this point
-	lh := klog.Background()
-	logging.SetLogger(lh)
+	lh := klog.FromContext(ctx)
 
 	lh.V(5).Info("creating new noderesourcetopology plugin")
 	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)
