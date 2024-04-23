@@ -105,7 +105,7 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	case "":
 		pgCopy.Status.Phase = schedv1alpha1.PodGroupPending
 	case schedv1alpha1.PodGroupPending:
-		if len(pods) >= int(pg.Spec.MinMember) {
+		if (int(pg.Spec.MinMember) > 0) && (len(pods) >= int(pg.Spec.MinMember)) {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduling
 			fillOccupiedObj(pgCopy, &pods[0])
 		}

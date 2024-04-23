@@ -155,6 +155,15 @@ func Test_Run(t *testing.T) {
 			previousPhase:     v1alpha1.PodGroupRunning,
 			desiredGroupPhase: v1alpha1.PodGroupPending,
 		},
+		{
+			name:              "Group with minMember 0 remains pending",
+			pgName:            "pg11",
+			minMember:         0,
+			podNames:          nil,
+			podPhase:          v1.PodPending,
+			previousPhase:     v1alpha1.PodGroupPending,
+			desiredGroupPhase: v1alpha1.PodGroupPending,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -311,6 +320,9 @@ func makePods(podNames []string, pgName string, phase v1.PodPhase, reference []m
 			pod.OwnerReferences = reference
 		}
 		pds = append(pds, pod)
+	}
+	if len(podNames) == 0 {
+		return nil
 	}
 	return pds
 }
