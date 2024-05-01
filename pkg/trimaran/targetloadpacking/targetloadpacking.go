@@ -193,13 +193,12 @@ func (pl *TargetLoadPacking) NormalizeScore(context.Context, *framework.CycleSta
 	return nil
 }
 
-// Predict utilization for a container based on its requests/limits
+// PredictUtilisation predict utilization for a container based on its requests/limits
 func PredictUtilisation(container *v1.Container) int64 {
 	if _, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
 		return container.Resources.Limits.Cpu().MilliValue()
 	} else if _, ok := container.Resources.Requests[v1.ResourceCPU]; ok {
 		return int64(math.Round(float64(container.Resources.Requests.Cpu().MilliValue()) * requestsMultiplier))
-	} else {
-		return requestsMilliCores
 	}
+	return requestsMilliCores
 }

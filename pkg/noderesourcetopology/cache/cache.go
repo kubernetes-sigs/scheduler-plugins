@@ -63,7 +63,7 @@ type Interface interface {
 
 	// PostBind is called after a pod is successfully bound. These plugins are
 	// informational. A common application of this extension point is for cleaning
-	// up. If a plugin needs to clean-up its state after a pod is scheduled and
+	// up. If a plugin needs to clean up its state after a pod is scheduled and
 	// bound, PostBind is the extension point that it should register.
 	PostBind(nodeName string, pod *corev1.Pod)
 }

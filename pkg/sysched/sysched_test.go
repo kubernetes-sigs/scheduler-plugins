@@ -2,6 +2,7 @@ package sysched
 
 import (
 	"context"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -492,8 +493,7 @@ func TestGetHostSyscalls(t *testing.T) {
 }
 
 func TestUpdateHostSyscalls(t *testing.T) {
-	v1beta1.AddToScheme(clientscheme.Scheme)
-
+	utilruntime.Must(v1beta1.AddToScheme(clientscheme.Scheme))
 	tests := []struct {
 		name     string
 		nodes    []*v1.Node

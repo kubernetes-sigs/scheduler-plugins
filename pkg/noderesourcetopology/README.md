@@ -262,7 +262,7 @@ zones:
          $ kubectl get noderesourcetopologies.topology.node.k8s.io
        ```
 
-    1. Alternatively, in case you are just interested in simply testing the scheduler plugin, use the manifest in the manifest directory to deploy the CRD and CRs as follows:
+    2. Alternatively, in case you are just interested in simply testing the scheduler plugin, use the manifest in the manifest directory to deploy the CRD and CRs as follows:
 
          1. Deploy the Custom Resource Definition manifest
 
@@ -270,14 +270,14 @@ zones:
             $ kubectl create -f crd.yaml
             ```
 
-         1. Check if the noderesourcetopologies.topology.node.k8s.io CRD is created
+         2. Check if the noderesourcetopologies.topology.node.k8s.io CRD is created
 
             ```bash
              $ kubectl get crd
              $ kubectl get noderesourcetopologies.topology.node.k8s.io
             ```
 
-         1. Deploy the CRs representative of the hardware topology of the worker-node-A and worker-node-B if CRs haven't been created using RTE or NFD as mentioned above:
+         3. Deploy the CRs representative of the hardware topology of the worker-node-A and worker-node-B if CRs haven't been created using RTE or NFD as mentioned above:
 
             ```bash
              $ kubectl create -f worker-node-A.yaml

@@ -82,7 +82,7 @@ func (ps *PodState) NormalizeScore(ctx context.Context, state *framework.CycleSt
 		}
 	}
 
-	// Transform the highest to lowest score range to fit the framework's min to max node score range.
+	// Transform the highest to the lowest score range to fit the framework's min to max node score range.
 	oldRange := highest - lowest
 	newRange := framework.MaxNodeScore - framework.MinNodeScore
 	for i, nodeScore := range scores {
