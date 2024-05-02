@@ -121,7 +121,7 @@ func GetResourceLimits(pod *v1.Pod) *framework.Resource {
 	})
 }
 
-// GetEffectiveResource : calculate effective resources of a pod (CPU and Memory)
+// GetEffectiveResource: calculate effective resources of a pod (CPU and Memory)
 func GetEffectiveResource(pod *v1.Pod, fn func(container *v1.Container) v1.ResourceList) *framework.Resource {
 	result := &framework.Resource{}
 	// add up resources of all containers

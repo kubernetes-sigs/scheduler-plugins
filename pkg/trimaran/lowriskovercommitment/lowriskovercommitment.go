@@ -112,7 +112,7 @@ func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState *framewor
 		klog.V(6).InfoS(err.Error()+"; recalculating", "pod", klog.KObj(pod))
 		podResources = CreatePodResourcesStateData(pod)
 	}
-	// exclude scoring for best effort pods; this plugin is not concerned about the best effort pods
+	// exclude scoring for best effort pods; this plugin is not concerned about best effort pods
 	podRequests := &podResources.podRequests
 	podLimits := &podResources.podLimits
 	if podRequests.MilliCPU == 0 && podRequests.Memory == 0 &&
