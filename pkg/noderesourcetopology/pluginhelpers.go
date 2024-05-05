@@ -17,6 +17,7 @@ limitations under the License.
 package noderesourcetopology
 
 import (
+	"context"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -40,7 +41,8 @@ const (
 	maxNUMAId = 64
 )
 
-func initNodeTopologyInformer(lh logr.Logger, tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
+func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
+	tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
 	client, err := ctrlclient.New(handle.KubeConfig(), ctrlclient.Options{Scheme: scheme})
 	if err != nil {
 		lh.Error(err, "cannot create client for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
@@ -57,7 +59,7 @@ func initNodeTopologyInformer(lh logr.Logger, tcfg *apiconfig.NodeResourceTopolo
 
 	podSharedInformer, podLister, isPodRelevant := podprovider.NewFromHandle(lh, handle, tcfg.Cache)
 
-	nrtCache, err := nrtcache.NewOverReserve(lh.WithName("nrtcache"), tcfg.Cache, client, podLister, isPodRelevant)
+	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName("nrtcache"), tcfg.Cache, client, podLister, isPodRelevant)
 	if err != nil {
 		return nil, err
 	}

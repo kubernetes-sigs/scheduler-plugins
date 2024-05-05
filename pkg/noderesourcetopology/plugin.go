@@ -119,7 +119,7 @@ func (tm *TopologyMatch) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	// we do this later to make sure klog is initialized. We don't need this anyway before this point
 	lh := klog.Background()
 	logging.SetLogger(lh)
@@ -134,7 +134,7 @@ func New(_ context.Context, args runtime.Object, handle framework.Handle) (frame
 		return nil, err
 	}
 
-	nrtCache, err := initNodeTopologyInformer(lh, tcfg, handle)
+	nrtCache, err := initNodeTopologyInformer(ctx, lh, tcfg, handle)
 	if err != nil {
 		lh.Error(err, "cannot create clientset for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
 		return nil, err
