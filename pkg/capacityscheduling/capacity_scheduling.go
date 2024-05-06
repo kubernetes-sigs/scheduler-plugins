@@ -118,7 +118,7 @@ func (c *CapacityScheduling) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	c := &CapacityScheduling{
 		fh:                handle,
 		elasticQuotaInfos: NewElasticQuotaInfos(),
@@ -136,8 +136,8 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 	if err != nil {
 		return nil, err
 	}
-	// TODO: pass in context.
-	elasticQuotaInformer, err := dynamicCache.GetInformer(context.Background(), &v1alpha1.ElasticQuota{})
+
+	elasticQuotaInformer, err := dynamicCache.GetInformer(ctx, &v1alpha1.ElasticQuota{})
 	if err != nil {
 		return nil, err
 	}

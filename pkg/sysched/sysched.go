@@ -230,8 +230,8 @@ func (sc *SySched) calcScore(syscalls sets.Set[string]) int {
 // Score invoked at the score extension point.
 func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	// Read directly from API server because cached state in SnapSharedLister not always up-to-date
-	// especially during intial scheduler start.
-	node, err := sc.handle.ClientSet().CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	// especially during initial scheduler start.
+	node, err := sc.handle.ClientSet().CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return 0, nil
 	}

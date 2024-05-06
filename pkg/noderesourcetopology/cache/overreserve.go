@@ -55,7 +55,8 @@ type OverReserve struct {
 	isPodRelevant          podprovider.PodFilterFunc
 }
 
-func NewOverReserve(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.Client, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (*OverReserve, error) {
+func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.Client,
+	podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (*OverReserve, error) {
 	if client == nil || podLister == nil {
 		return nil, fmt.Errorf("received nil references")
 	}
@@ -64,7 +65,7 @@ func NewOverReserve(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, cl
 
 	nrtObjs := &topologyv1alpha2.NodeResourceTopologyList{}
 	// TODO: we should pass-in a context in the future
-	if err := client.List(context.Background(), nrtObjs); err != nil {
+	if err := client.List(ctx, nrtObjs); err != nil {
 		return nil, err
 	}
 

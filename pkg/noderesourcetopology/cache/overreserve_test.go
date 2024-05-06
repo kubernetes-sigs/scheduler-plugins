@@ -104,13 +104,13 @@ func TestInitEmptyLister(t *testing.T) {
 	}
 
 	fakePodLister := &fakePodLister{}
-
-	_, err = NewOverReserve(klog.Background(), nil, nil, fakePodLister, podprovider.IsPodRelevantAlways)
+	ctx := context.Background()
+	_, err = NewOverReserve(ctx, klog.Background(), nil, nil, fakePodLister, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil lister")
 	}
 
-	_, err = NewOverReserve(klog.Background(), nil, fakeClient, nil, podprovider.IsPodRelevantAlways)
+	_, err = NewOverReserve(ctx, klog.Background(), nil, fakeClient, nil, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil indexer")
 	}
@@ -229,7 +229,7 @@ func TestOverreserveGetCachedNRTCopy(t *testing.T) {
 	checkGetCachedNRTCopy(
 		t,
 		func(client ctrlclient.Client, podLister podlisterv1.PodLister) (Interface, error) {
-			return NewOverReserve(klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
+			return NewOverReserve(context.Background(), klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
 		},
 		testCases...,
 	)
@@ -727,7 +727,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 }
 
 func mustOverReserve(t *testing.T, client ctrlclient.Client, podLister podlisterv1.PodLister) *OverReserve {
-	obj, err := NewOverReserve(klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
+	obj, err := NewOverReserve(context.Background(), klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
