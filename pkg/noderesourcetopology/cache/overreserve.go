@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -64,12 +65,11 @@ func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeReso
 	resyncMethod := getCacheResyncMethod(lh, cfg)
 
 	nrtObjs := &topologyv1alpha2.NodeResourceTopologyList{}
-	// TODO: we should pass-in a context in the future
 	if err := client.List(ctx, nrtObjs); err != nil {
 		return nil, err
 	}
 
-	lh.V(3).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod)
+	lh.V(2).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod)
 	obj := &OverReserve{
 		lh:                     lh,
 		client:                 client,
@@ -100,11 +100,11 @@ func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, po
 		return nrt, true
 	}
 
-	logID := logging.PodLogID(pod)
-	lh := ov.lh.WithValues("logID", logID, "podUID", pod.GetUID(), "node", nodeName)
+	logID := klog.KObj(pod)
+	lh := ov.lh.WithValues(logging.KeyPod, logID, logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 
 	lh.V(6).Info("NRT", "fromcache", stringify.NodeResourceTopologyResources(nrt))
-	nodeAssumedResources.UpdateNRT(logID, nrt)
+	nodeAssumedResources.UpdateNRT(nrt, logging.KeyPod, logID)
 
 	lh.V(5).Info("NRT", "withassumed", stringify.NodeResourceTopologyResources(nrt))
 	return nrt, true
@@ -114,11 +114,11 @@ func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	val := ov.nodesMaybeOverreserved.Incr(nodeName)
-	ov.lh.V(4).Info("mark discarded", "node", nodeName, "count", val)
+	ov.lh.V(4).Info("mark discarded", logging.KeyNode, nodeName, "count", val)
 }
 
 func (ov *OverReserve) NodeHasForeignPods(nodeName string, pod *corev1.Pod) {
-	lh := ov.lh.WithValues("logID", logging.PodLogID(pod), "podUID", pod.GetUID(), "node", nodeName)
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	if !ov.nrts.Contains(nodeName) {
@@ -126,11 +126,11 @@ func (ov *OverReserve) NodeHasForeignPods(nodeName string, pod *corev1.Pod) {
 		return
 	}
 	val := ov.nodesWithForeignPods.Incr(nodeName)
-	lh.V(4).Info("marked with foreign pods", "count", val)
+	lh.V(2).Info("marked with foreign pods", logging.KeyNode, nodeName, "count", val)
 }
 
 func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
-	lh := ov.lh.WithValues("logID", logging.PodLogID(pod), "podUID", pod.GetUID(), "node", nodeName)
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
@@ -140,26 +140,26 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 	}
 
 	nodeAssumedResources.AddPod(pod)
-	lh.V(5).Info("post reserve", "assumedResources", nodeAssumedResources.String())
+	lh.V(2).Info("post reserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
 
 	ov.nodesMaybeOverreserved.Delete(nodeName)
-	lh.V(6).Info("reset discard counter")
+	lh.V(6).Info("reset discard counter", logging.KeyNode, nodeName)
 }
 
 func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {
-	lh := ov.lh.WithValues("logID", logging.PodLogID(pod), "podUID", pod.GetUID(), "node", nodeName)
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		// this should not happen, so we're vocal about it
 		// we don't return error because not much to do to recover anyway
-		lh.V(3).Info("no resources tracked")
+		lh.V(2).Info("no resources tracked", logging.KeyNode, nodeName)
 		return
 	}
 
 	nodeAssumedResources.DeletePod(pod)
-	lh.V(5).Info("post release", "assumedResources", nodeAssumedResources.String())
+	lh.V(2).Info("post unreserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
 }
 
 // NodesMaybeOverReserved returns a slice of all the node names which have been discarded previously,
@@ -201,65 +201,62 @@ func (ov *OverReserve) NodesMaybeOverReserved(lh logr.Logger) []string {
 // too aggressive resync attempts, so to more, likely unnecessary, computation work on the scheduler side.
 func (ov *OverReserve) Resync() {
 	// we are not working with a specific pod, so we need a unique key to track this flow
-	lh := ov.lh.WithValues("logID", logging.TimeLogID(), "flow", logging.FlowCacheSync)
-	lh.V(4).Info(logging.FlowBegin)
-	defer lh.V(4).Info(logging.FlowEnd)
+	lh_ := ov.lh.WithName(logging.FlowCacheSync).WithValues(logging.KeyLogID, logging.TimeLogID())
+	lh_.V(4).Info(logging.FlowBegin)
+	defer lh_.V(4).Info(logging.FlowEnd)
 
-	nodeNames := ov.NodesMaybeOverReserved(lh)
+	nodeNames := ov.NodesMaybeOverReserved(lh_)
 	// avoid as much as we can unnecessary work and logs.
 	if len(nodeNames) == 0 {
-		lh.V(6).Info("no dirty nodes detected")
+		lh_.V(5).Info("no dirty nodes detected")
 		return
 	}
 
 	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToPodDataMap(lh, ov.podLister, ov.isPodRelevant)
+	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant)
 	if err != nil {
-		lh.Error(err, "cannot find the mapping between running pods and nodes")
+		lh_.Error(err, "cannot find the mapping between running pods and nodes")
 		return
 	}
 
-	lh.V(6).Info("resync NodeTopology cache starting")
-	defer lh.V(6).Info("resync NodeTopology cache complete")
-
 	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
 	for _, nodeName := range nodeNames {
-		lh = lh.WithValues("node", nodeName)
+		lh := lh_.WithValues(logging.KeyNode, nodeName)
 
 		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
 		if err := ov.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
-			lh.V(3).Info("failed to get NodeTopology", "error", err)
+			lh.V(2).Info("failed to get NodeTopology", "error", err)
 			continue
 		}
 		if nrtCandidate == nil {
-			lh.V(3).Info("missing NodeTopology")
+			lh.V(2).Info("missing NodeTopology")
 			continue
 		}
 
 		objs, ok := nodeToObjsMap[nodeName]
 		if !ok {
 			// this really should never happen
-			lh.V(3).Info("cannot find any pod for node")
+			lh.Info("cannot find any pod for node")
 			continue
 		}
 
 		pfpExpected, onlyExclRes := podFingerprintForNodeTopology(nrtCandidate, ov.resyncMethod)
 		if pfpExpected == "" {
-			lh.V(3).Info("missing NodeTopology podset fingerprint data")
+			lh.V(2).Info("missing NodeTopology podset fingerprint data")
 			continue
 		}
 
-		lh.V(6).Info("trying to sync NodeTopology", "fingerprint", pfpExpected, "onlyExclusiveResources", onlyExclRes)
+		lh.V(4).Info("trying to sync NodeTopology", "fingerprint", pfpExpected, "onlyExclusiveResources", onlyExclRes)
 
 		err = checkPodFingerprintForNode(lh, objs, nodeName, pfpExpected, onlyExclRes)
 		if errors.Is(err, podfingerprint.ErrSignatureMismatch) {
 			// can happen, not critical
-			lh.V(5).Info("NodeTopology podset fingerprint mismatch")
+			lh.V(4).Info("NodeTopology podset fingerprint mismatch")
 			continue
 		}
 		if err != nil {
 			// should never happen, let's be vocal
-			lh.V(3).Error(err, "checking NodeTopology podset fingerprint")
+			lh.Error(err, "checking NodeTopology podset fingerprint")
 			continue
 		}
 
@@ -267,7 +264,7 @@ func (ov *OverReserve) Resync() {
 		nrtUpdates = append(nrtUpdates, nrtCandidate)
 	}
 
-	ov.FlushNodes(lh, nrtUpdates...)
+	ov.FlushNodes(lh_, nrtUpdates...)
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
@@ -275,7 +272,7 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	for _, nrt := range nrts {
-		lh.V(4).Info("flushing", "node", nrt.Name)
+		lh.V(2).Info("flushing", logging.KeyNode, nrt.Name)
 		ov.nrts.Update(nrt)
 		delete(ov.assumedResources, nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrt.Name)

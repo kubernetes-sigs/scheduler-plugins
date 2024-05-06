@@ -33,6 +33,7 @@ import (
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 )
@@ -50,16 +51,16 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 	}
 
 	if tcfg.DiscardReservedNodes {
-		return nrtcache.NewDiscardReserved(lh.WithName("nrtcache"), client), nil
+		return nrtcache.NewDiscardReserved(lh.WithName(logging.SubsystemNRTCache), client), nil
 	}
 
 	if tcfg.CacheResyncPeriodSeconds <= 0 {
-		return nrtcache.NewPassthrough(lh.WithName("nrtcache"), client), nil
+		return nrtcache.NewPassthrough(lh.WithName(logging.SubsystemNRTCache), client), nil
 	}
 
 	podSharedInformer, podLister, isPodRelevant := podprovider.NewFromHandle(lh, handle, tcfg.Cache)
 
-	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName("nrtcache"), tcfg.Cache, client, podLister, isPodRelevant)
+	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName(logging.SubsystemNRTCache), tcfg.Cache, client, podLister, isPodRelevant)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +96,8 @@ func initNodeTopologyForeignPodsDetection(lh logr.Logger, cfg *apiconfig.NodeRes
 	} else {
 		nrtcache.TrackAllForeignPods()
 	}
-	nrtcache.RegisterSchedulerProfileName(lh.WithName("foreignpods"), profileName)
-	nrtcache.SetupForeignPodsDetector(lh.WithName("foreignpods"), profileName, podSharedInformer, nrtCache)
+	nrtcache.RegisterSchedulerProfileName(lh.WithName(logging.SubsystemForeignPods), profileName)
+	nrtcache.SetupForeignPodsDetector(lh.WithName(logging.SubsystemForeignPods), profileName, podSharedInformer, nrtCache)
 }
 
 func createNUMANodeList(lh logr.Logger, zones topologyv1alpha2.ZoneList) NUMANodeList {

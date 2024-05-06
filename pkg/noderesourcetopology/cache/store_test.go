@@ -516,7 +516,7 @@ func TestResourceStoreUpdate(t *testing.T) {
 	}
 
 	logID := "testResourceStoreUpdate"
-	rs.UpdateNRT(logID, nrt)
+	rs.UpdateNRT(nrt, "logID", logID)
 
 	cpuInfo0 := findResourceInfo(nrt.Zones[0].Resources, cpu)
 	if cpuInfo0.Capacity.Cmp(resource.MustParse("20")) != 0 {

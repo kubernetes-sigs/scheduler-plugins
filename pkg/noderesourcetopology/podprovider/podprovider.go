@@ -29,6 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 )
 
 type PodFilterFunc func(lh logr.Logger, pod *corev1.Pod) bool
@@ -69,12 +70,12 @@ func IsPodRelevantDedicated(lh logr.Logger, pod *corev1.Pod) bool {
 	// Note PodUnknown is deprecated and reportedly no longer set since 2015 (!!)
 	if pod.Status.Phase == corev1.PodPending {
 		// this is unexpected, so we're loud about it
-		lh.V(2).Info("listed pod in Pending phase, ignored", "podUID", pod.GetUID())
+		lh.V(2).Info("listed pod in Pending phase, ignored", logging.KeyPodUID, logging.PodUID(pod))
 		return false
 	}
 	if pod.Spec.NodeName == "" {
 		// this is very unexpected, so we're louder about it
-		lh.Info("listed pod unbound, ignored", "podUID", pod.GetUID())
+		lh.Info("listed pod unbound, ignored", logging.KeyPodUID, logging.PodUID(pod))
 		return false
 	}
 	return true

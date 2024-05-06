@@ -28,6 +28,7 @@ import (
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
@@ -91,7 +92,7 @@ func newResourceStore(lh logr.Logger) *resourceStore {
 func (rs *resourceStore) String() string {
 	var sb strings.Builder
 	for podKey, podRes := range rs.data {
-		sb.WriteString("  " + podKey + ": " + stringify.ResourceList(podRes) + "\n")
+		sb.WriteString(podKey + "::[" + stringify.ResourceList(podRes) + "];")
 	}
 	return sb.String()
 }
@@ -125,7 +126,7 @@ func (rs *resourceStore) DeletePod(pod *corev1.Pod) bool {
 
 // UpdateNRT updates the provided Node Resource Topology object with the resources tracked in this store,
 // performing pessimistic overallocation across all the NUMA zones.
-func (rs *resourceStore) UpdateNRT(logID string, nrt *topologyv1alpha2.NodeResourceTopology) {
+func (rs *resourceStore) UpdateNRT(nrt *topologyv1alpha2.NodeResourceTopology, logKeysAndValues ...any) {
 	for key, res := range rs.data {
 		// We cannot predict on which Zone the workload will be placed.
 		// And we should totally not guess. So the only safe (and conservative)
@@ -146,7 +147,8 @@ func (rs *resourceStore) UpdateNRT(logID string, nrt *topologyv1alpha2.NodeResou
 				if zr.Available.Cmp(qty) < 0 {
 					// this should happen rarely, and it is likely caused by
 					// a bug elsewhere.
-					rs.lh.V(3).Info("cannot decrement resource", "logID", logID, "zone", zr.Name, "node", nrt.Name, "available", zr.Available, "requestor", key, "quantity", qty.String())
+					logKeysAndValues = append(logKeysAndValues, "zone", zr.Name, logging.KeyNode, nrt.Name, "available", zr.Available, "requestor", key, "quantity", qty.String())
+					rs.lh.V(3).Info("cannot decrement resource", logKeysAndValues...)
 					zr.Available = resource.Quantity{}
 					continue
 				}
@@ -239,7 +241,7 @@ func checkPodFingerprintForNode(lh logr.Logger, objs []podData, nodeName, pfpExp
 	}
 	pfpComputed := pfp.Sign()
 
-	lh.V(5).Info("podset fingerprint check", "expected", pfpExpected, "computed", pfpComputed, "onlyExclusiveResources", onlyExclRes)
+	lh.V(4).Info("podset fingerprint check", "expected", pfpExpected, "computed", pfpComputed, "onlyExclusiveResources", onlyExclRes)
 	lh.V(6).Info("podset fingerprint debug", "status", st.Repr())
 
 	err := pfp.Check(pfpExpected)
