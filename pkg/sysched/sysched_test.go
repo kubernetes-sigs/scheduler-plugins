@@ -8,6 +8,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
@@ -492,8 +493,7 @@ func TestGetHostSyscalls(t *testing.T) {
 }
 
 func TestUpdateHostSyscalls(t *testing.T) {
-	v1beta1.AddToScheme(clientscheme.Scheme)
-
+	utilruntime.Must(v1beta1.AddToScheme(clientscheme.Scheme))
 	tests := []struct {
 		name     string
 		nodes    []*v1.Node

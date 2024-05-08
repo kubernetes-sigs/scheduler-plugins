@@ -406,7 +406,7 @@ func (p *preemptor) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus 
 
 	preFilterState, err := getPreFilterState(p.state)
 	if err != nil {
-		klog.ErrorS(err, "Failed to read preFilterState from cycleState", "preFilterStateKey", preFilterStateKey)
+		klog.V(5).InfoS("Failed to read preFilterState from cycleState, err: %s", err, "preFilterStateKey", preFilterStateKey)
 		return false, "not eligible due to failed to read from cycleState"
 	}
 
