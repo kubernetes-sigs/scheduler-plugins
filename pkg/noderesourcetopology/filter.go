@@ -132,8 +132,8 @@ func resourcesAvailableInAnyNUMANodes(lh logr.Logger, numaNodes NUMANodeList, re
 
 		// non-native resources or ephemeral-storage may not expose NUMA affinity,
 		// but since they are available at node level, this is fine
-		if !hasNUMAAffinity && (!v1helper.IsNativeResource(resource) || resource == v1.ResourceEphemeralStorage) {
-			lh.V(6).Info("resource available at node level (no NUMA affinity)", "resource", resource)
+		if !hasNUMAAffinity && isHostLevelResource(resource) {
+			lh.V(6).Info("resource available at host level (no NUMA affinity)", "resource", resource)
 			continue
 		}
 
