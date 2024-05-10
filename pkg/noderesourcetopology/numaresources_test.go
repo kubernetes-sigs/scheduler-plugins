@@ -65,3 +65,47 @@ func TestIsHostLevelResource(t *testing.T) {
 		})
 	}
 }
+
+func TestIsNUMAAffineResource(t *testing.T) {
+	testCases := []struct {
+		resource corev1.ResourceName
+		expected bool
+	}{
+		{
+			resource: corev1.ResourceCPU,
+			expected: true,
+		},
+		{
+			resource: corev1.ResourceMemory,
+			expected: true,
+		},
+		{
+			resource: corev1.ResourceName("hugepages-1Gi"),
+			expected: true,
+		},
+		{
+			resource: corev1.ResourceStorage,
+			expected: false,
+		},
+		{
+			resource: corev1.ResourceEphemeralStorage,
+			expected: false,
+		},
+		{
+			resource: corev1.ResourceName("vendor.io/fastest-nic"),
+			expected: false,
+		},
+		{
+			resource: corev1.ResourceName("awesome.com/gpu-for-ai"),
+			expected: false,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(string(testCase.resource), func(t *testing.T) {
+			got := isNUMAAffineResource(testCase.resource)
+			if got != testCase.expected {
+				t.Fatalf("expected %t to equal %t", got, testCase.expected)
+			}
+		})
+	}
+}

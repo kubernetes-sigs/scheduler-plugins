@@ -22,7 +22,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
-	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
@@ -156,21 +155,9 @@ func resourcesAvailableInAnyNUMANodes(lh logr.Logger, numaNodes NUMANodeList, re
 }
 
 func isResourceSetSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, numaQuantity resource.Quantity) bool {
-	// Check for the following:
-	if qos != v1.PodQOSGuaranteed {
-		// 1. set numa node as possible node if resource is memory or Hugepages
-		if resource == v1.ResourceMemory {
-			return true
-		}
-		if v1helper.IsHugePageResourceName(resource) {
-			return true
-		}
-		// 2. set numa node as possible node if resource is CPU
-		if resource == v1.ResourceCPU {
-			return true
-		}
+	if qos != v1.PodQOSGuaranteed && isNUMAAffineResource(resource) {
+		return true
 	}
-	// 3. otherwise check amount of resources
 	return numaQuantity.Cmp(quantity) >= 0
 }
 

@@ -35,3 +35,20 @@ func isHostLevelResource(resource corev1.ResourceName) bool {
 	}
 	return false
 }
+
+func isNUMAAffineResource(resource corev1.ResourceName) bool {
+	// NUMA-affine resources are resources which are required to be bound to NUMA nodes.
+	// A Key example is CPU and memory, which must expose NUMA affinity.
+	if resource == corev1.ResourceCPU {
+		return true
+	}
+	if resource == corev1.ResourceMemory {
+		return true
+	}
+	if v1helper.IsHugePageResourceName(resource) {
+		return true
+	}
+	// Devices are *expected* to expose NUMA Affinity, but they are not *required* to do so.
+	// We can't tell for sure, so we default to "no".
+	return false
+}
