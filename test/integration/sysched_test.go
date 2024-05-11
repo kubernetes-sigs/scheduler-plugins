@@ -143,7 +143,7 @@ func TestSyschedPlugin(t *testing.T) {
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
-	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(testCtx.Ctx, 100*time.Millisecond, 3*time.Second, false, func(ctx context.Context) (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
@@ -253,7 +253,7 @@ func TestSyschedPlugin(t *testing.T) {
 			t.Fatalf("Failed to create Pod %q: %v", pods[i].Name, err)
 		}
 		// Wait for all Pods to be scheduled.
-		err = wait.Poll(time.Millisecond*20, wait.ForeverTestTimeout, func() (bool, error) {
+		err = wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*20, wait.ForeverTestTimeout, false, func(ctx context.Context) (bool, error) {
 			if !podScheduled(cs, pods[i].Namespace, pods[i].Name) {
 				return false, nil
 			}

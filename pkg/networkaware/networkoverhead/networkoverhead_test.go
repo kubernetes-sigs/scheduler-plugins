@@ -549,7 +549,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			state := framework.NewCycleState()
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				b.Errorf("pods not scheduled yet: %v ", err)
@@ -767,7 +767,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 			}
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				t.Errorf("pods not scheduled yet: %v ", err)
@@ -1016,7 +1016,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			state := framework.NewCycleState()
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				b.Errorf("pods not scheduled yet: %v ", err)
@@ -1245,7 +1245,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			}
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				t.Errorf("pods not scheduled yet: %v ", err)
@@ -1471,7 +1471,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			}
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				b.Errorf("pods not scheduled yet: %v ", err)
