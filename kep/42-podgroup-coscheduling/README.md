@@ -41,12 +41,12 @@ We define a CRD name PodGroup to help schedule, its definition is as follows:
 type PodGroupSpec struct {
 	// MinMember defines the minimal number of members/tasks to run the pod group;
 	// if there's not enough resources to start all tasks, the scheduler
-	// will not start anyone.
+	// will not start any.
 	MinMember uint32 `json:"minMember"`
 
 	// MinResources defines the minimal resource of members/tasks to run the pod group;
 	// if there's not enough resources to start all tasks, the scheduler
-	// will not start anyone.
+	// will not start any.
 	MinResources *v1.ResourceList `json:"minResources,omitempty"`
 
 	// ScheduleTimeoutSeconds defines the maximal time of members/tasks to wait before run the pod group;
