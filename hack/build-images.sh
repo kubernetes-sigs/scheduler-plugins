@@ -26,7 +26,6 @@ CONTROLLER_DIR="${SCRIPT_ROOT}"/build/controller
 REGISTRY=${REGISTRY:-"localhost:5000/scheduler-plugins"}
 IMAGE=${IMAGE:-"kube-scheduler:latest"}
 CONTROLLER_IMAGE=${CONTROLLER_IMAGE:-"controller:latest"}
-
 RELEASE_VERSION=${RELEASE_VERSION:-"v0.0.0"}
 
 BUILDER=${BUILDER:-"docker"}
@@ -40,15 +39,22 @@ if [[ "${ARCH}" == "arm64" ]]; then
   ARCH="arm64v8"
 fi
 
+GO_BASE_IMAGE=${GO_BASE_IMAGE:-"golang"}
+ALPINE_BASE_IMAGE=${ALPINE_BASE_IMAGE:-"$ARCH/alpine"}
+
 cd "${SCRIPT_ROOT}"
 
 ${BUILDER} build \
            -f ${SCHEDULER_DIR}/Dockerfile \
            --build-arg ARCH=${ARCH} \
            --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
+           --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
+           --build-arg ALPINE_BASE_IMAGE=${ALPINE_BASE_IMAGE} \
            -t ${REGISTRY}/${IMAGE} .
 ${BUILDER} build \
            -f ${CONTROLLER_DIR}/Dockerfile \
            --build-arg ARCH=${ARCH} \
            --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
+           --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
+           --build-arg ALPINE_BASE_IMAGE=${ALPINE_BASE_IMAGE} \
            -t ${REGISTRY}/${CONTROLLER_IMAGE} .
