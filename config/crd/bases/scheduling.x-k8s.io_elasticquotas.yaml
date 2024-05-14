@@ -28,7 +28,7 @@ spec:
     - description: Max is the set of desired max limits for each named resource.
       jsonPath: .spec.max
       name: Max
-      type: integer
+      type: string
     - description: Age is the time ElasticQuota was created.
       jsonPath: .metadata.creationTimestamp
       name: Age

@@ -32,15 +32,15 @@ spec:
     - description: The number of actively running pods.
       jsonPath: .status.running
       name: Running
-      type: string
+      type: integer
     - description: The number of pods which reached phase Succeeded.
       jsonPath: .status.succeeded
       name: Succeeded
-      type: string
+      type: integer
     - description: The number of pods which reached phase Failed.
       jsonPath: .status.failed
       name: Failed
-      type: string
+      type: integer
     - description: Age is the time PodGroup was created.
       jsonPath: .metadata.creationTimestamp
       name: Age
