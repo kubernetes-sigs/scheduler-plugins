@@ -19,7 +19,21 @@ spec:
     singular: elasticquota
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - description: Used is the current observed total usage of the resource in the
+        namespace.
+      jsonPath: .status.used
+      name: Used
+      type: string
+    - description: Max is the set of desired max limits for each named resource.
+      jsonPath: .spec.max
+      name: Max
+      type: string
+    - description: Age is the time ElasticQuota was created.
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: ElasticQuota sets elastic quota restrictions per namespace
