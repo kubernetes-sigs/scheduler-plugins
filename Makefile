@@ -24,6 +24,7 @@ RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
+GO_BASE_IMAGE?=golang
 
 # VERSION is the scheduler's version
 #
@@ -80,6 +81,8 @@ release-image.amd64: clean
 	REGISTRY=$(RELEASE_REGISTRY) \
 	IMAGE=$(RELEASE_IMAGE)-amd64 \
 	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-amd64 \
+	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
+	ALPINE_BASE_IMAGE=$(ALPINE_BASE_IMAGE) \
 	hack/build-images.sh
 
 .PHONY: release-image.arm64v8
@@ -89,6 +92,8 @@ release-image.arm64v8: clean
 	REGISTRY=$(RELEASE_REGISTRY) \
 	IMAGE=$(RELEASE_IMAGE)-arm64 \
 	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-arm64 \
+	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
+	ALPINE_BASE_IMAGE=$(ALPINE_BASE_IMAGE) \
 	hack/build-images.sh
 
 .PHONY: push-release-images
