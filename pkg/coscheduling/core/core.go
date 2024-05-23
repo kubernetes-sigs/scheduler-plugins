@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	gochache "github.com/patrickmn/go-cache"
+	gocache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,9 +82,9 @@ type PodGroupManager struct {
 	// If podgroup's scheduleTimeoutSeconds is set, it will be used.
 	scheduleTimeout *time.Duration
 	// permittedPG stores the podgroup name which has passed the pre resource check.
-	permittedPG *gochache.Cache
+	permittedPG *gocache.Cache
 	// backedOffPG stores the podgorup name which failed scheudling recently.
-	backedOffPG *gochache.Cache
+	backedOffPG *gocache.Cache
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	sync.RWMutex
@@ -97,8 +97,8 @@ func NewPodGroupManager(client client.Client, snapshotSharedLister framework.Sha
 		snapshotSharedLister: snapshotSharedLister,
 		scheduleTimeout:      scheduleTimeout,
 		podLister:            podInformer.Lister(),
-		permittedPG:          gochache.New(3*time.Second, 3*time.Second),
-		backedOffPG:          gochache.New(10*time.Second, 10*time.Second),
+		permittedPG:          gocache.New(3*time.Second, 3*time.Second),
+		backedOffPG:          gocache.New(10*time.Second, 10*time.Second),
 	}
 	return pgMgr
 }

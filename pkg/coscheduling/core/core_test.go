@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	gochache "github.com/patrickmn/go-cache"
+	gocache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -357,6 +357,6 @@ func TestCheckClusterResource(t *testing.T) {
 	}
 }
 
-func newCache() *gochache.Cache {
-	return gochache.New(10*time.Second, 10*time.Second)
+func newCache() *gocache.Cache {
+	return gocache.New(10*time.Second, 10*time.Second)
 }
