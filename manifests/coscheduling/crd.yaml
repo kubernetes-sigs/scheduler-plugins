@@ -4,8 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     api-approved.kubernetes.io: https://github.com/kubernetes-sigs/scheduler-plugins/pull/50
-    controller-gen.kubebuilder.io/version: v0.11.1
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.14.0
   name: podgroups.scheduling.x-k8s.io
 spec:
   group: scheduling.x-k8s.io
@@ -51,14 +50,19 @@ spec:
         description: PodGroup is a collection of Pod; used for batch workload.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -66,9 +70,10 @@ spec:
             description: Specification of the desired behavior of the pod group.
             properties:
               minMember:
-                description: MinMember defines the minimal number of members/tasks
-                  to run the pod group; if there's not enough resources to start all
-                  tasks, the scheduler will not start any.
+                description: |-
+                  MinMember defines the minimal number of members/tasks to run the pod group;
+                  if there's not enough resources to start all tasks, the scheduler
+                  will not start any.
                 format: int32
                 type: integer
               minResources:
@@ -78,9 +83,10 @@ spec:
                   - type: string
                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                   x-kubernetes-int-or-string: true
-                description: MinResources defines the minimal resource of members/tasks
-                  to run the pod group; if there's not enough resources to start all
-                  tasks, the scheduler will not start any.
+                description: |-
+                  MinResources defines the minimal resource of members/tasks to run the pod group;
+                  if there's not enough resources to start all tasks, the scheduler
+                  will not start any.
                 type: object
               scheduleTimeoutSeconds:
                 description: ScheduleTimeoutSeconds defines the maximal time of members/tasks
@@ -89,7 +95,8 @@ spec:
                 type: integer
             type: object
           status:
-            description: Status represents the current information about a pod group.
+            description: |-
+              Status represents the current information about a pod group.
               This data may not be up to date.
             properties:
               failed:
@@ -97,8 +104,9 @@ spec:
                 format: int32
                 type: integer
               occupiedBy:
-                description: OccupiedBy marks the workload (e.g., deployment, statefulset)
-                  UID that occupy the podgroup. It is empty if not initialized.
+                description: |-
+                  OccupiedBy marks the workload (e.g., deployment, statefulset) UID that occupy the podgroup.
+                  It is empty if not initialized.
                 type: string
               phase:
                 description: Current phase of PodGroup.
