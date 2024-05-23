@@ -68,7 +68,7 @@ spec:
               minMember:
                 description: MinMember defines the minimal number of members/tasks
                   to run the pod group; if there's not enough resources to start all
-                  tasks, the scheduler will not start anyone.
+                  tasks, the scheduler will not start any.
                 format: int32
                 type: integer
               minResources:
@@ -80,7 +80,7 @@ spec:
                   x-kubernetes-int-or-string: true
                 description: MinResources defines the minimal resource of members/tasks
                   to run the pod group; if there's not enough resources to start all
-                  tasks, the scheduler will not start anyone.
+                  tasks, the scheduler will not start any.
                 type: object
               scheduleTimeoutSeconds:
                 description: ScheduleTimeoutSeconds defines the maximal time of members/tasks
