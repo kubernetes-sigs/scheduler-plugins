@@ -889,9 +889,9 @@ func waitForPodList(cs clientset.Interface, podDescs []podDesc, timeout time.Dur
 			defer wg.Done()
 
 			var updatedPod *corev1.Pod
-			err := wait.Poll(5*time.Second, timeout, func() (bool, error) {
+			err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, timeout, false, func(ctx context.Context) (bool, error) {
 				var nerr error
-				updatedPod, nerr = cs.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+				updatedPod, nerr = cs.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
 				if nerr != nil {
 					klog.ErrorS(nerr, "Failed to get pod", "pod", klog.KRef(pod.Namespace, pod.Name))
 					return false, nerr

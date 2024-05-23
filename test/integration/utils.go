@@ -226,16 +226,16 @@ func cleanupPods(t *testing.T, testCtx *testContext, pods []*v1.Pod) {
 		}
 	}
 	for _, p := range pods {
-		if err := wait.Poll(time.Millisecond, wait.ForeverTestTimeout,
+		if err := wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond, wait.ForeverTestTimeout, false,
 			podDeleted(testCtx.ClientSet, p.Namespace, p.Name)); err != nil {
 			t.Errorf("error while waiting for pod  %s/%s to get deleted: %v", p.Namespace, p.Name, err)
 		}
 	}
 }
 
-func podDeleted(c clientset.Interface, podNamespace, podName string) wait.ConditionFunc {
-	return func() (bool, error) {
-		_, err := c.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+func podDeleted(c clientset.Interface, podNamespace, podName string) wait.ConditionWithContextFunc {
+	return func(ctx context.Context) (bool, error) {
+		_, err := c.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			return true, nil
 		}

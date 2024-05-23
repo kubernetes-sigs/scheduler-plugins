@@ -64,7 +64,7 @@ func TestTopologicalSortPlugin(t *testing.T) {
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
-	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(testCtx.Ctx, 100*time.Millisecond, 3*time.Second, false, func(ctx context.Context) (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
@@ -372,7 +372,7 @@ func TestTopologicalSortPlugin(t *testing.T) {
 
 			// Wait for all Pods are in the scheduling queue.
 			t.Logf("Step 3 -  Wait for pods being in the scheduling queue....")
-			err = wait.Poll(time.Millisecond*200, wait.ForeverTestTimeout, func() (bool, error) {
+			err = wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*200, wait.ForeverTestTimeout, false, func(ctx context.Context) (bool, error) {
 				pendingPods, _ := testCtx.Scheduler.SchedulingQueue.PendingPods()
 				if len(pendingPods) == len(tt.pods) {
 					return true, nil
