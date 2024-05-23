@@ -55,32 +55,34 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 	// https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#understanding-init-containers
 	// therefore, we don't need to accumulate their resources together
 	for _, initContainer := range pod.Spec.InitContainers {
-		lh.V(6).Info("init container desired resources", stringify.ResourceListToLoggable(initContainer.Resources.Requests)...)
+		// TODO: handle sidecar explicitely (new kind)
+		clh := lh.WithValues(logging.KeyContainer, initContainer.Name, logging.KeyContainerKind, logging.KindContainerInit)
+		clh.V(6).Info("desired resources", stringify.ResourceListToLoggable(initContainer.Resources.Requests)...)
 
-		_, match := resourcesAvailableInAnyNUMANodes(lh, nodes, initContainer.Resources.Requests, qos, nodeInfo)
+		_, match := resourcesAvailableInAnyNUMANodes(clh, nodes, initContainer.Resources.Requests, qos, nodeInfo)
 		if !match {
 			// we can't align init container, so definitely we can't align a pod
-			lh.V(2).Info("cannot align container", "name", initContainer.Name, "kind", "init")
+			clh.V(2).Info("cannot align container")
 			return framework.NewStatus(framework.Unschedulable, "cannot align init container")
 		}
 	}
 
 	for _, container := range pod.Spec.Containers {
-		// TODO: add containerName
-		lh.V(6).Info("app container resources", stringify.ResourceListToLoggable(container.Resources.Requests)...)
+		clh := lh.WithValues(logging.KeyContainer, container.Name, logging.KeyContainerKind, logging.KindContainerApp)
+		clh.V(6).Info("app container resources", stringify.ResourceListToLoggable(container.Resources.Requests)...)
 
-		numaID, match := resourcesAvailableInAnyNUMANodes(lh, nodes, container.Resources.Requests, qos, nodeInfo)
+		numaID, match := resourcesAvailableInAnyNUMANodes(clh, nodes, container.Resources.Requests, qos, nodeInfo)
 		if !match {
 			// we can't align container, so definitely we can't align a pod
-			lh.V(2).Info("cannot align container", "name", container.Name, "kind", "app")
+			clh.V(2).Info("cannot align container")
 			return framework.NewStatus(framework.Unschedulable, "cannot align container")
 		}
 
 		// subtract the resources requested by the container from the given NUMA.
 		// this is necessary, so we won't allocate the same resources for the upcoming containers
-		subtractFromNUMA(lh, nodes, numaID, container)
+		subtractFromNUMA(clh, nodes, numaID, container)
+		clh.V(4).Info("app container placed", "numaCell", numaID)
 	}
-	lh.V(2).Info("can align all containers")
 	return nil
 }
 
@@ -150,7 +152,7 @@ func resourcesAvailableInAnyNUMANodes(lh logr.Logger, numaNodes NUMANodeList, re
 
 	// at least one NUMA node is available
 	ret := !bitmask.IsEmpty()
-	lh.V(2).Info("final verdict", "suitable", ret)
+	lh.V(2).Info("final verdict", "suitable", ret, "numaCell", numaID)
 	return numaID, ret
 }
 
@@ -172,11 +174,12 @@ func singleNUMAPodLevelHandler(lh logr.Logger, pod *v1.Pod, zones topologyv1alph
 	logNumaNodes(lh, "pod handler NUMA resources", nodeInfo.Node().Name, nodes)
 	lh.V(6).Info("pod desired resources", stringify.ResourceListToLoggable(resources)...)
 
-	if _, match := resourcesAvailableInAnyNUMANodes(lh, createNUMANodeList(lh, zones), resources, v1qos.GetPodQOS(pod), nodeInfo); !match {
+	numaID, match := resourcesAvailableInAnyNUMANodes(lh, createNUMANodeList(lh, zones), resources, v1qos.GetPodQOS(pod), nodeInfo)
+	if !match {
 		lh.V(2).Info("cannot align pod", "name", pod.Name)
 		return framework.NewStatus(framework.Unschedulable, "cannot align pod")
 	}
-	lh.V(2).Info("can align pod")
+	lh.V(4).Info("all container placed", "numaCell", numaID)
 	return nil
 }
 

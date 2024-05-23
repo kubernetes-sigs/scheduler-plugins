@@ -106,9 +106,16 @@ func nrtResourceInfo(resInfo topologyv1alpha2.ResourceInfo) string {
 	return resInfo.Name + "=" + humanize.IBytes(uint64(capVal)) + "/" + humanize.IBytes(uint64(allocVal)) + "/" + humanize.IBytes(uint64(availVal))
 }
 
-func needsHumanization(resName string) bool {
+func needsHumanization(rn string) bool {
+	resName := corev1.ResourceName(rn)
 	// memory-related resources may be expressed in KiB/Bytes, which makes
 	// for long numbers, harder to read and compare. To make it easier for
 	// the reader, we express them in a more compact form using go-humanize.
-	return resName == string(corev1.ResourceMemory) || v1helper.IsHugePageResourceName(corev1.ResourceName(resName))
+	if resName == corev1.ResourceMemory {
+		return true
+	}
+	if resName == corev1.ResourceStorage || resName == corev1.ResourceEphemeralStorage {
+		return true
+	}
+	return v1helper.IsHugePageResourceName(resName)
 }
