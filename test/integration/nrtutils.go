@@ -42,11 +42,12 @@ import (
 )
 
 const (
-	cpu             = string(corev1.ResourceCPU)
-	memory          = string(corev1.ResourceMemory)
-	gpuResourceName = "vendor/gpu"
-	hugepages2Mi    = "hugepages-2Mi"
-	nicResourceName = "vendor/nic1"
+	cpu              = string(corev1.ResourceCPU)
+	memory           = string(corev1.ResourceMemory)
+	gpuResourceName  = "vendor/gpu"
+	hugepages2Mi     = "hugepages-2Mi"
+	nicResourceName  = "vendor/nic1"
+	ephemeralStorage = string(corev1.ResourceEphemeralStorage)
 )
 
 func waitForNRT(cs *clientset.Clientset) error {
