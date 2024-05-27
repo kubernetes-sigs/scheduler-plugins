@@ -49,19 +49,6 @@ func init() {
 	utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
 }
 
-type NUMANode struct {
-	NUMAID    int
-	Resources v1.ResourceList
-	Costs     map[int]int
-}
-
-func (n *NUMANode) WithCosts(costs map[int]int) *NUMANode {
-	n.Costs = costs
-	return n
-}
-
-type NUMANodeList []NUMANode
-
 func subtractFromNUMAs(resources v1.ResourceList, numaNodes NUMANodeList, nodes ...int) {
 	for resName, quantity := range resources {
 		for _, node := range nodes {

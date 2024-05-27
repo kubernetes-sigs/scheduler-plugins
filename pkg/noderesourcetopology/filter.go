@@ -20,7 +20,6 @@ import (
 	"context"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
@@ -69,7 +68,7 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 
 	for _, container := range pod.Spec.Containers {
 		clh := lh.WithValues(logging.KeyContainer, container.Name, logging.KeyContainerKind, logging.KindContainerApp)
-		clh.V(6).Info("app container resources", stringify.ResourceListToLoggable(container.Resources.Requests)...)
+		clh.V(6).Info("container requests", stringify.ResourceListToLoggable(container.Resources.Requests)...)
 
 		numaID, match := resourcesAvailableInAnyNUMANodes(clh, nodes, container.Resources.Requests, qos, nodeInfo)
 		if !match {
@@ -80,8 +79,12 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 
 		// subtract the resources requested by the container from the given NUMA.
 		// this is necessary, so we won't allocate the same resources for the upcoming containers
-		subtractFromNUMA(clh, nodes, numaID, container)
-		clh.V(4).Info("app container placed", "numaCell", numaID)
+		err := subtractResourcesFromNUMANodeList(clh, nodes, numaID, qos, container.Resources.Requests)
+		if err != nil {
+			// this is an internal error which should never happen
+			return framework.NewStatus(framework.Error, "inconsistent resource accounting", err.Error())
+		}
+		clh.V(4).Info("container aligned", "numaCell", numaID)
 	}
 	return nil
 }
@@ -156,13 +159,6 @@ func resourcesAvailableInAnyNUMANodes(lh logr.Logger, numaNodes NUMANodeList, re
 	return numaID, ret
 }
 
-func isResourceSetSuitable(qos v1.PodQOSClass, resource v1.ResourceName, quantity, numaQuantity resource.Quantity) bool {
-	if qos != v1.PodQOSGuaranteed && isNUMAAffineResource(resource) {
-		return true
-	}
-	return numaQuantity.Cmp(quantity) >= 0
-}
-
 func singleNUMAPodLevelHandler(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
 	lh.V(5).Info("pod level single NUMA node handler")
 
@@ -219,28 +215,6 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
 	}
 	return status
-}
-
-// subtractFromNUMA finds the correct NUMA ID's resources and subtract them from `nodes`.
-func subtractFromNUMA(lh logr.Logger, nodes NUMANodeList, numaID int, container v1.Container) {
-	for i := 0; i < len(nodes); i++ {
-		if nodes[i].NUMAID != numaID {
-			continue
-		}
-
-		nRes := nodes[i].Resources
-		for resName, quan := range container.Resources.Requests {
-			nodeResQuan := nRes[resName]
-			nodeResQuan.Sub(quan)
-			// we do not expect a negative value here, since this function only called
-			// when resourcesAvailableInAnyNUMANodes function is passed
-			// but let's log here if such unlikely case will occur
-			if nodeResQuan.Sign() == -1 {
-				lh.V(4).Info("resource quantity should not be a negative value", "resource", resName, "quantity", nodeResQuan.String())
-			}
-			nRes[resName] = nodeResQuan
-		}
-	}
 }
 
 func filterHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) filterFn {
