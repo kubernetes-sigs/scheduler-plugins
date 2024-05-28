@@ -23,7 +23,7 @@ SCRIPT_ROOT=$(dirname "${BASH_SOURCE[@]}")/..
 TOOLS_DIR=$(realpath ./hack/tools)
 TOOLS_BIN_DIR="${TOOLS_DIR}/bin"
 GO_INSTALL=$(realpath ./hack/go-install.sh)
-CONTROLLER_GEN_VER=v0.11.1
+CONTROLLER_GEN_VER=v0.14.0
 CONTROLLER_GEN_BIN=controller-gen
 CONTROLLER_GEN=${TOOLS_BIN_DIR}/${CONTROLLER_GEN_BIN}-${CONTROLLER_GEN_VER}
 # Need v1 to support defaults in CRDs, unfortunately limiting us to k8s 1.16+

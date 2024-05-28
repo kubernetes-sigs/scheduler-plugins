@@ -1,0 +1,244 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: seccompprofiles.security-profiles-operator.x-k8s.io
+spec:
+  group: security-profiles-operator.x-k8s.io
+  names:
+    kind: SeccompProfile
+    listKind: SeccompProfileList
+    plural: seccompprofiles
+    shortNames:
+    - sp
+    singular: seccompprofile
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.status
+      name: Status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .status.localhostProfile
+      name: LocalhostProfile
+      priority: 10
+      type: string
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SeccompProfile is a cluster level specification for a seccomp profile.
+          See https://github.com/opencontainers/runtime-spec/blob/master/config-linux.md#seccomp
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SeccompProfileSpec defines the desired state of SeccompProfile.
+            properties:
+              architectures:
+                description: the architecture used for system calls
+                items:
+                  enum:
+                  - SCMP_ARCH_NATIVE
+                  - SCMP_ARCH_X86
+                  - SCMP_ARCH_X86_64
+                  - SCMP_ARCH_X32
+                  - SCMP_ARCH_ARM
+                  - SCMP_ARCH_AARCH64
+                  - SCMP_ARCH_MIPS
+                  - SCMP_ARCH_MIPS64
+                  - SCMP_ARCH_MIPS64N32
+                  - SCMP_ARCH_MIPSEL
+                  - SCMP_ARCH_MIPSEL64
+                  - SCMP_ARCH_MIPSEL64N32
+                  - SCMP_ARCH_PPC
+                  - SCMP_ARCH_PPC64
+                  - SCMP_ARCH_PPC64LE
+                  - SCMP_ARCH_S390
+                  - SCMP_ARCH_S390X
+                  - SCMP_ARCH_PARISC
+                  - SCMP_ARCH_PARISC64
+                  - SCMP_ARCH_RISCV64
+                  type: string
+                type: array
+              baseProfileName:
+                description: name of base profile (in the same namespace) what will
+                  be unioned into this profile
+                type: string
+              defaultAction:
+                description: the default action for seccomp
+                enum:
+                - SCMP_ACT_KILL
+                - SCMP_ACT_KILL_PROCESS
+                - SCMP_ACT_KILL_THREAD
+                - SCMP_ACT_TRAP
+                - SCMP_ACT_ERRNO
+                - SCMP_ACT_TRACE
+                - SCMP_ACT_ALLOW
+                - SCMP_ACT_LOG
+                type: string
+              flags:
+                description: list of flags to use with seccomp(2)
+                items:
+                  enum:
+                  - SECCOMP_FILTER_FLAG_TSYNC
+                  - SECCOMP_FILTER_FLAG_LOG
+                  - SECCOMP_FILTER_FLAG_SPEC_ALLOW
+                  type: string
+                type: array
+              syscalls:
+                description: |-
+                  match a syscall in seccomp. While this property is OPTIONAL, some values
+                  of defaultAction are not useful without syscalls entries. For example,
+                  if defaultAction is SCMP_ACT_KILL and syscalls is empty or unset, the
+                  kernel will kill the container process on its first syscall
+                items:
+                  description: Syscall defines a syscall in seccomp.
+                  properties:
+                    action:
+                      description: the action for seccomp rules
+                      enum:
+                      - SCMP_ACT_KILL
+                      - SCMP_ACT_KILL_PROCESS
+                      - SCMP_ACT_KILL_THREAD
+                      - SCMP_ACT_TRAP
+                      - SCMP_ACT_ERRNO
+                      - SCMP_ACT_TRACE
+                      - SCMP_ACT_ALLOW
+                      - SCMP_ACT_LOG
+                      type: string
+                    args:
+                      description: the specific syscall in seccomp
+                      items:
+                        description: Arg defines the specific syscall in seccomp.
+                        properties:
+                          index:
+                            description: the index for syscall arguments in seccomp
+                            minimum: 0
+                            type: integer
+                          op:
+                            description: the operator for syscall arguments in seccomp
+                            enum:
+                            - SCMP_CMP_NE
+                            - SCMP_CMP_LT
+                            - SCMP_CMP_LE
+                            - SCMP_CMP_EQ
+                            - SCMP_CMP_GE
+                            - SCMP_CMP_GT
+                            - SCMP_CMP_MASKED_EQ
+                            type: string
+                          value:
+                            description: the value for syscall arguments in seccomp
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          valueTwo:
+                            description: the value for syscall arguments in seccomp
+                            format: int64
+                            minimum: 0
+                            type: integer
+                        required:
+                        - index
+                        - op
+                        type: object
+                      maxItems: 6
+                      type: array
+                    errnoRet:
+                      description: |-
+                        the errno return code to use. Some actions like SCMP_ACT_ERRNO and
+                        SCMP_ACT_TRACE allow to specify the errno code to return
+                      type: string
+                    names:
+                      description: the names of the syscalls
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - action
+                  - names
+                  type: object
+                type: array
+            required:
+            - defaultAction
+            type: object
+          status:
+            description: SeccompProfileStatus contains status of the deployed SeccompProfile.
+            properties:
+              activeWorkloads:
+                items:
+                  type: string
+                type: array
+              conditions:
+                description: Conditions of the resource.
+                items:
+                  description: A Condition that may apply to a resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        LastTransitionTime is the last time this condition transitioned from one
+                        status to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        A Message containing details about this condition's last transition from
+                        one status to another, if any.
+                      type: string
+                    reason:
+                      description: A Reason for this condition's last transition from
+                        one status to another.
+                      type: string
+                    status:
+                      description: Status of this condition; is it currently True,
+                        False, or Unknown?
+                      type: string
+                    type:
+                      description: |-
+                        Type of this condition. At most one of each condition type may apply to
+                        a resource at any point in time.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              localhostProfile:
+                description: |-
+                  The path that should be provided to the `securityContext.seccompProfile.localhostProfile`
+                  field of a Pod or container spec
+                type: string
+              path:
+                type: string
+              status:
+                description: |-
+                  ProfileState defines the state that the profile is in. A profile in this context
+                  refers to a SeccompProfile or a SELinux profile, the states are shared between them
+                  as well as the management API.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
