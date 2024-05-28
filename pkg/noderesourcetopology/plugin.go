@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -47,39 +46,6 @@ var scheme = runtime.NewScheme()
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
-}
-
-func subtractFromNUMAs(resources v1.ResourceList, numaNodes NUMANodeList, nodes ...int) {
-	for resName, quantity := range resources {
-		for _, node := range nodes {
-			// quantity is zero no need to iterate through another NUMA node, go to another resource
-			if quantity.IsZero() {
-				break
-			}
-
-			nRes := numaNodes[node].Resources
-			if available, ok := nRes[resName]; ok {
-				switch quantity.Cmp(available) {
-				case 0: // the same
-					// basically zero container resources
-					quantity.Sub(available)
-					// zero NUMA quantity
-					nRes[resName] = resource.Quantity{}
-				case 1: // container wants more resources than available in this NUMA zone
-					// substract NUMA resources from container request, to calculate how much is missing
-					quantity.Sub(available)
-					// zero NUMA quantity
-					nRes[resName] = resource.Quantity{}
-				case -1: // there are more resources available in this NUMA zone than container requests
-					// substract container resources from resources available in this NUMA node
-					available.Sub(quantity)
-					// zero container quantity
-					quantity = resource.Quantity{}
-					nRes[resName] = available
-				}
-			}
-		}
-	}
 }
 
 type filterFn func(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status

@@ -21,9 +21,11 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
+
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 )
 
@@ -177,4 +179,37 @@ func subtractResourcesFromNUMANodeList(lh logr.Logger, nodes NUMANodeList, numaI
 		lh.V(5).Info("NUMA resources after", append(logEntries, stringify.ResourceListToLoggable(node.Resources)...)...)
 	}
 	return nil
+}
+
+func subtractFromNUMAs(resources corev1.ResourceList, numaNodes NUMANodeList, nodes ...int) {
+	for resName, quantity := range resources {
+		for _, node := range nodes {
+			// quantity is zero no need to iterate through another NUMA node, go to another resource
+			if quantity.IsZero() {
+				break
+			}
+
+			nRes := numaNodes[node].Resources
+			if available, ok := nRes[resName]; ok {
+				switch quantity.Cmp(available) {
+				case 0: // the same
+					// basically zero container resources
+					quantity.Sub(available)
+					// zero NUMA quantity
+					nRes[resName] = resource.Quantity{}
+				case 1: // container wants more resources than available in this NUMA zone
+					// substract NUMA resources from container request, to calculate how much is missing
+					quantity.Sub(available)
+					// zero NUMA quantity
+					nRes[resName] = resource.Quantity{}
+				case -1: // there are more resources available in this NUMA zone than container requests
+					// substract container resources from resources available in this NUMA node
+					available.Sub(quantity)
+					// zero container quantity
+					quantity = resource.Quantity{}
+					nRes[resName] = available
+				}
+			}
+		}
+	}
 }

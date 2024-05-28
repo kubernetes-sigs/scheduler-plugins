@@ -372,6 +372,96 @@ func TestSubtractResourcesFromNUMANodeList(t *testing.T) {
 	}
 }
 
+func TestSubstractNUMA(t *testing.T) {
+	tcases := []struct {
+		description string
+		numaNodes   NUMANodeList
+		nodes       []int
+		resources   corev1.ResourceList
+		expected    NUMANodeList
+	}{
+		{
+			description: "simple",
+			numaNodes: NUMANodeList{
+				{
+					NUMAID: 0,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(8, resource.DecimalSI),
+						corev1.ResourceMemory: resource.MustParse("10Gi"),
+					},
+				},
+			},
+			resources: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+			nodes: []int{0},
+			expected: NUMANodeList{
+				{
+					NUMAID: 0,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(6, resource.DecimalSI),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+		},
+		{
+			description: "substract resources from 2 NUMA nodes",
+			numaNodes: NUMANodeList{
+				{
+					NUMAID: 0,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(8, resource.DecimalSI),
+						corev1.ResourceMemory: resource.MustParse("10Gi"),
+					},
+				},
+				{
+					NUMAID: 1,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(8, resource.DecimalSI),
+						corev1.ResourceMemory: resource.MustParse("10Gi"),
+					},
+				},
+			},
+			resources: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(12, resource.DecimalSI),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			},
+			nodes: []int{0, 1},
+			expected: NUMANodeList{
+				{
+					NUMAID: 0,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+				{
+					NUMAID: 1,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+						corev1.ResourceMemory: resource.MustParse("10Gi"),
+					},
+				},
+			},
+		},
+	}
+
+	for _, tcase := range tcases {
+		t.Run(tcase.description, func(t *testing.T) {
+			subtractFromNUMAs(tcase.resources, tcase.numaNodes, tcase.nodes...)
+			for i, node := range tcase.numaNodes {
+				for resName, quantity := range node.Resources {
+					if !tcase.expected[i].Resources[resName].Equal(quantity) {
+						t.Errorf("Expected %s to equal %v instead of %v", resName, tcase.expected[i].Resources[resName], quantity)
+					}
+				}
+			}
+		})
+	}
+}
+
 func mustParseQuantity(t *testing.T, str string) resource.Quantity {
 	qty, err := resource.ParseQuantity(str)
 	if err != nil {
