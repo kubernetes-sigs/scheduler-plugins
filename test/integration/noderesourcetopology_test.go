@@ -74,6 +74,8 @@ type nrtTestUserEntry struct {
 	cntReq      []map[string]string
 	errMsg      string
 	// this testing batch is going to be run against the same node and NRT objects, hence we're not specifying them.
+	isBurstable   bool
+	expectedNodes []string
 }
 
 type nrtTestEntry struct {
@@ -211,11 +213,12 @@ func TestTopologyMatchPlugin(t *testing.T) {
 
 	// Create a Node.
 	resList := map[v1.ResourceName]string{
-		v1.ResourceCPU:    "64",
-		v1.ResourceMemory: "128Gi",
-		v1.ResourcePods:   "32",
-		hugepages2Mi:      "896Mi",
-		nicResourceName:   "48",
+		v1.ResourceCPU:              "64",
+		v1.ResourceMemory:           "128Gi",
+		v1.ResourcePods:             "32",
+		hugepages2Mi:                "896Mi",
+		nicResourceName:             "48",
+		v1.ResourceEphemeralStorage: "32Gi",
 	}
 	for _, nodeName := range []string{"fake-node-1", "fake-node-2"} {
 		newNode := st.MakeNode().Name(nodeName).Label("node", nodeName).Capacity(resList).Obj()
@@ -1959,6 +1962,75 @@ func TestTopologyMatchPlugin(t *testing.T) {
 			},
 			errMsg: "cannot align init container", // initcnt-2
 		},
+		// ephemeral storage
+		{
+			description: "[tier1] single containers one requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+			},
+		},
+		{
+			description: "[tier1] multi containers all requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "512Mi"},
+				{cpu: "4", memory: "8Gi", ephemeralStorage: "2Gi"},
+			},
+		},
+		{
+			description: "[tier1] multi containers some requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+				{cpu: "2", memory: "4Gi"},
+				{cpu: "4", memory: "8Gi", ephemeralStorage: "2Gi"},
+			},
+		},
+		{
+			description: "[tier1] multi containers one requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+				{cpu: "2", memory: "4Gi"},
+				{cpu: "4", memory: "8Gi"},
+			},
+		},
+		{
+			description: "[tier1][burstable] single containers one requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+			},
+			isBurstable:   true,
+			expectedNodes: []string{"fake-node-1", "fake-node-2"}, // any node
+		},
+		{
+			description: "[tier1][burstable] multi containers all requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "512Mi"},
+				{cpu: "4", memory: "8Gi", ephemeralStorage: "2Gi"},
+			},
+			isBurstable:   true,
+			expectedNodes: []string{"fake-node-1", "fake-node-2"}, // any node
+		},
+		{
+			description: "[tier1][burstable] multi containers some requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+				{cpu: "2", memory: "4Gi"},
+				{cpu: "4", memory: "8Gi", ephemeralStorage: "2Gi"},
+			},
+			isBurstable:   true,
+			expectedNodes: []string{"fake-node-1", "fake-node-2"}, // any node
+		},
+		{
+			description: "[tier1][burstable] multi containers one requiring ephemeral storage with good allocation - fit",
+			cntReq: []map[string]string{
+				{cpu: "2", memory: "4Gi", ephemeralStorage: "1Gi"},
+				{cpu: "2", memory: "4Gi"},
+				{cpu: "4", memory: "8Gi"},
+			},
+			isBurstable:   true,
+			expectedNodes: []string{"fake-node-1", "fake-node-2"}, // any node
+		},
 	}
 	tests = append(tests, parseTestUserEntry(scopeEqualsContainerTests, ns)...)
 
@@ -2084,13 +2156,26 @@ func makeProfileByPluginArgs(
 func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 	var teList []nrtTestEntry
 	for i, e := range entries {
+		desiredQoS := v1.PodQOSGuaranteed
+		if e.isBurstable {
+			desiredQoS = v1.PodQOSBurstable
+		}
+
 		p := st.MakePod().Name(fmt.Sprintf("%s-%d", testPodName, i+1)).Namespace(ns)
 		for _, req := range e.initCntReq {
-			p = util.WithLimits(p, req, true)
+			if desiredQoS == v1.PodQOSGuaranteed {
+				p = util.WithLimits(p, req, true)
+			} else {
+				p = util.WithRequests(p, req, true)
+			}
 		}
 
 		for _, req := range e.cntReq {
-			p = util.WithLimits(p, req, false)
+			if desiredQoS == v1.PodQOSGuaranteed {
+				p = util.WithLimits(p, req, false)
+			} else {
+				p = util.WithRequests(p, req, false)
+			}
 		}
 		nodeTopologies := []*topologyv1alpha2.NodeResourceTopology{
 			MakeNRT().Name("fake-node-1").
@@ -2146,9 +2231,11 @@ func parseTestUserEntry(entries []nrtTestUserEntry, ns string) []nrtTestEntry {
 					}).Obj(),
 		}
 		expectedNodes := []string{"fake-node-1"}
-		// if there's an error we expect the pod
-		// to not be found on any node
-		if len(e.errMsg) > 0 {
+		if len(e.expectedNodes) > 0 {
+			expectedNodes = e.expectedNodes
+		} else if len(e.errMsg) > 0 {
+			// if there's an error we expect the pod
+			// to not be found on any node
 			expectedNodes = []string{}
 		}
 		te := nrtTestEntry{

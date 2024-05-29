@@ -26,11 +26,13 @@ import (
 
 // well-known structured log keys
 const (
-	KeyLogID  string = "logID"
-	KeyPod    string = "pod"
-	KeyPodUID string = "podUID"
-	KeyNode   string = "node"
-	KeyFlow   string = "flow"
+	KeyLogID         string = "logID"
+	KeyPod           string = "pod"
+	KeyPodUID        string = "podUID"
+	KeyNode          string = "node"
+	KeyFlow          string = "flow"
+	KeyContainer     string = "container"
+	KeyContainerKind string = "kind"
 )
 
 const (
@@ -40,6 +42,11 @@ const (
 
 const (
 	FlowCacheSync string = "resync"
+)
+
+const (
+	KindContainerInit string = "init"
+	KindContainerApp  string = "app"
 )
 
 const (
