@@ -25,8 +25,10 @@ kube::log::status "Configuring envtest"
 TEMP_DIR=${TMPDIR-/tmp}
 source "${TEMP_DIR}/setup-envtest"
 
-# TODO: make args customizable.
-go test -mod=vendor \
+# get the args to pass to go test
+ARGS=("$@")
+
+go test "${ARGS[@]}" -mod=vendor \
   sigs.k8s.io/scheduler-plugins/cmd/... \
   sigs.k8s.io/scheduler-plugins/pkg/... \
   sigs.k8s.io/scheduler-plugins/apis/...
