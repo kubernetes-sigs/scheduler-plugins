@@ -43,7 +43,7 @@ import (
 
 type OverReserve struct {
 	lh               logr.Logger
-	client           ctrlclient.Client
+	client           ctrlclient.Reader
 	lock             sync.Mutex
 	nrts             *nrtStore
 	assumedResources map[string]*resourceStore // nodeName -> resourceStore
