@@ -44,7 +44,7 @@ const (
 
 func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 	tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
-	client, err := ctrlclient.New(handle.KubeConfig(), ctrlclient.Options{Scheme: scheme})
+	client, err := ctrlclient.NewWithWatch(handle.KubeConfig(), ctrlclient.Options{Scheme: scheme})
 	if err != nil {
 		lh.Error(err, "cannot create client for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
 		return nil, err

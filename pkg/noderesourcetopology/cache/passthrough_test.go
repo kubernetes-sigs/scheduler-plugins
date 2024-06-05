@@ -44,7 +44,7 @@ func TestPassthroughGetCachedNRTCopy(t *testing.T) {
 
 	checkGetCachedNRTCopy(
 		t,
-		func(client ctrlclient.Client, _ podlisterv1.PodLister) (Interface, error) {
+		func(client ctrlclient.WithWatch, _ podlisterv1.PodLister) (Interface, error) {
 			return NewPassthrough(klog.Background(), client), nil
 		},
 		testCases...,

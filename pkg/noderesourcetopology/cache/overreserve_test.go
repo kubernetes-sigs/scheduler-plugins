@@ -228,7 +228,7 @@ func TestOverreserveGetCachedNRTCopy(t *testing.T) {
 
 	checkGetCachedNRTCopy(
 		t,
-		func(client ctrlclient.Client, podLister podlisterv1.PodLister) (Interface, error) {
+		func(client ctrlclient.WithWatch, podLister podlisterv1.PodLister) (Interface, error) {
 			return NewOverReserve(context.Background(), klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
 		},
 		testCases...,
@@ -726,7 +726,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 	}
 }
 
-func mustOverReserve(t *testing.T, client ctrlclient.Client, podLister podlisterv1.PodLister) *OverReserve {
+func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podlisterv1.PodLister) *OverReserve {
 	obj, err := NewOverReserve(context.Background(), klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
