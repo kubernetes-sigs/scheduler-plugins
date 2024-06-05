@@ -205,9 +205,11 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		return nil
 	}
 
-	lh.V(4).Info("found nrt data", "object", stringify.NodeResourceTopologyResources(nodeTopology))
+	conf := nodeconfig.TopologyManagerFromNodeResourceTopology(lh, nodeTopology)
 
-	handler := filterHandlerFromTopologyManager(nodeconfig.TopologyManagerFromNodeResourceTopology(lh, nodeTopology))
+	lh.V(4).Info("found nrt data", "object", stringify.NodeResourceTopologyResources(nodeTopology), "conf", conf.String())
+
+	handler := filterHandlerFromTopologyManager(conf)
 	if handler == nil {
 		return nil
 	}
