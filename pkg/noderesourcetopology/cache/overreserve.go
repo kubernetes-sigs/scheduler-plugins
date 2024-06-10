@@ -383,7 +383,7 @@ func getCacheResyncScope(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCach
 	if cfg != nil && cfg.ResyncScope != nil {
 		resyncScope = *cfg.ResyncScope
 	} else { // explicitly set to nil?
-		resyncScope = apiconfig.CacheResyncScopeOnlyResources
+		resyncScope = apiconfig.CacheResyncScopeAll
 		lh.Info("cache resync scope missing", "fallback", resyncScope)
 	}
 	return resyncScope

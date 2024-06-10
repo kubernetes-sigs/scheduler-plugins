@@ -214,8 +214,8 @@ type NodeResourceTopologyCache struct {
 	// ResyncScope controls which changes the resync logic monitors to trigger an update.
 	// "All" consider both Attributes (metadata, node config details) and per-NUMA resources,
 	// while "OnlyResources" consider only per-NUMA resource values. The default is
-	// "OnlyResources" for backward compatibility. Use "All" to make the code react to
-	// node config changes avoiding reboots.
+	// "All" to make the code react to node config changes avoiding reboots.
+	// Use "OnlyResources" to restore the previous behavior.
 	ResyncScope *CacheResyncScope `json:"resyncScope,omitempty"`
 }
 
