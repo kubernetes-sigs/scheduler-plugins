@@ -146,6 +146,8 @@ type PodGroupSpec struct {
 	// MinMember defines the minimal number of members/tasks to run the pod group;
 	// if there's not enough resources to start all tasks, the scheduler
 	// will not start any.
+	// The minimum is 1
+	// +kubebuilder:validation:Minimum=1
 	MinMember int32 `json:"minMember,omitempty"`
 
 	// MinResources defines the minimal resource of members/tasks to run the pod group;
