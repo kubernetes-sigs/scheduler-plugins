@@ -124,7 +124,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		var score int64 = int64(get_max_power()/jump_in_power)
 		fmt.Println("Jump in power", jump_in_power, " score", score)
 
-		return int64(jump_in_power), framework.NewStatus(framework.Success, "")
+		return int64(jump_in_power * math.Pow(10, 15)), framework.NewStatus(framework.Success, "")
 	}
 }
 
