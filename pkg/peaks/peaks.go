@@ -17,14 +17,14 @@ limitations under the License.
 package peaks
 
 import (
+	"context"
 	"fmt"
 	"math"
-	"context"
 
+	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"github.com/paypal/load-watcher/pkg/watcher"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
@@ -35,9 +35,9 @@ const (
 )
 
 type Peaks struct {
-	handle         framework.Handle
-	collector      *Collector
-	args           *config.PeaksArgs
+	handle    framework.Handle
+	collector *Collector
+	args      *config.PeaksArgs
 }
 
 type PowerModel struct {
@@ -66,9 +66,9 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 		return nil, err
 	}
 	pl := &Peaks{
-		handle: handle,
+		handle:    handle,
 		collector: collector,
-		args: args,
+		args:      args,
 	}
 	return pl, nil
 }
@@ -119,9 +119,9 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 	if predictedCPUUsage > 100 {
 		return score, framework.NewStatus(framework.Success, "")
 	} else {
-		fmt.Println("Node :", nodeName,", Node cpu usage current :", nodeCPUUtilPercent, ", predicted :",predictedCPUUsage)
+		fmt.Println("Node :", nodeName, ", Node cpu usage current :", nodeCPUUtilPercent, ", predicted :", predictedCPUUsage)
 		jump_in_power := getPowerJumpForUtilisation(nodeCPUUtilPercent, predictedCPUUsage, getPowerModel(nodeName))
-		var score int64 = int64(get_max_power()/jump_in_power)
+		var score int64 = int64(get_max_power() / jump_in_power)
 		fmt.Println("Jump in power", jump_in_power, " score", score)
 
 		return int64(jump_in_power), framework.NewStatus(framework.Success, "")
@@ -132,10 +132,10 @@ func (pl *Peaks) ScoreExtensions() framework.ScoreExtensions {
 	return pl
 }
 
-func (pl *Peaks) NormalizeScore(ctx context.Context,state  *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
+func (pl *Peaks) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
 	minCost, maxCost := getMinMaxScores(scores)
 	if minCost == 0 && maxCost == 0 {
-		return nil
+		return framework.NewStatus(framework.Success, "")
 	}
 	var normCost float64
 	for i := range scores {
@@ -147,8 +147,7 @@ func (pl *Peaks) NormalizeScore(ctx context.Context,state  *framework.CycleState
 			scores[i].Score = framework.MaxNodeScore - int64(normCost)
 		}
 	}
-	fmt.Printf("Scores : %+v\n", scores)
-	return nil
+	return framework.NewStatus(framework.Success, "")
 }
 
 func getMinMaxScores(scores framework.NodeScoreList) (int64, int64) {
@@ -185,8 +184,8 @@ func get_max_power() float64 {
 	if max_power != 0.0 {
 		return max_power
 	}
-	power_models := []PowerModel{PowerModel{805.8497, -557.3219, -3.1735}, PowerModel{301.9559, -272.9715, -2.9613}}
-	for _, model := range power_models{
+	power_models := []PowerModel{PowerModel{371.7412504314313, -91.50493019588365, -0.02186049052516228}, PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}}
+	for _, model := range power_models {
 		if max_power < model.K0 {
 			max_power = model.K0
 		}
@@ -198,5 +197,5 @@ func getPowerModel(nodeName string) PowerModel {
 	if nodeName == "tantawi1"{
 		return PowerModel{301.9559, -272.9715, -2.9613}
 	}
-	return PowerModel{805.8497, -557.3219, -3.1735}
+	return PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}
 }
