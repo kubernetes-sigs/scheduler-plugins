@@ -30,9 +30,9 @@ const (
 )
 
 type Collector struct {
-	client loadwatcherapi.Client
+	client  loadwatcherapi.Client
 	metrics watcher.WatcherMetrics
-	mu sync.RWMutex
+	mu      sync.RWMutex
 }
 
 func NewCollector(peaksSpec *string) (*Collector, error) {
@@ -66,33 +66,14 @@ func (c *Collector) getAllMetrics() *watcher.WatcherMetrics {
 	return &metrics
 }
 
-func (collector *Collector) GetAllNodeCpuMetrics() map[string]float64 {
-	r := make(map[string]float64)
-
-	allMetrics := collector.getAllMetrics()
-	if allMetrics.Data.NodeMetricsMap == nil {
-		fmt.Println("Metrics not available from watcher")
-		return r
-	}
-
-	for node := range allMetrics.Data.NodeMetricsMap {
-		for _, metricsele := range allMetrics.Data.NodeMetricsMap[node].Metrics {
-			if metricsele.Type == "CPU" {
-				r[node] = metricsele.Value
-			}
-		}
-	}
-	return r
-}
-
 func (collector *Collector) GetNodeMetrics(nodeName string) ([]watcher.Metric, *watcher.WatcherMetrics) {
 	allMetrics := collector.getAllMetrics()
 	if allMetrics.Data.NodeMetricsMap == nil {
-		fmt.Println( "Metrics not available from watcher")
+		fmt.Println("Metrics not available from watcher.")
 		return nil, nil
 	}
 	if _, ok := allMetrics.Data.NodeMetricsMap[nodeName]; !ok {
-		fmt.Println( "Metrics not available from watcher")
+		fmt.Println("Metrics not available from watcher")
 		return nil, allMetrics
 	}
 	return allMetrics.Data.NodeMetricsMap[nodeName].Metrics, allMetrics

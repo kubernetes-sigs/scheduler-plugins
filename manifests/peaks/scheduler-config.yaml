@@ -16,4 +16,5 @@ profiles:
   pluginConfig:
     - name: Peaks
       args:
-        watcherAddress: http://10.102.184.89:2020
+        watcherAddress: http://replace_me_with_load-watcher-ip:2020
+        
