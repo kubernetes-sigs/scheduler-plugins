@@ -123,7 +123,8 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		jump_in_power := getPowerJumpForUtilisation(nodeCPUUtilPercent, predictedCPUUsage, getPowerModel(nodeName))
 		var score int64 = int64(get_max_power() / jump_in_power)
 		fmt.Println("Jump in power", jump_in_power, " score", score)
-		return int64(jump_in_power), framework.NewStatus(framework.Success, "")
+
+		return int64(jump_in_power * math.Pow(10, 15)), framework.NewStatus(framework.Success, "")
 	}
 }
 
@@ -193,8 +194,8 @@ func get_max_power() float64 {
 }
 
 func getPowerModel(nodeName string) PowerModel {
-	if nodeName == "10.242.64.10" {
-		return PowerModel{371.7412504314313, -91.50493019588365, -0.02186049052516228}
+	if nodeName == "tantawi1"{
+		return PowerModel{301.9559, -272.9715, -2.9613}
 	}
 	return PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}
 }

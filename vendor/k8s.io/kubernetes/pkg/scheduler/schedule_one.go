@@ -784,6 +784,7 @@ func prioritizeNodes(
 			loggerVTen.Info("Calculated node's final score for pod", "pod", klog.KObj(pod), "node", nodesScores[i].Name, "score", nodesScores[i].TotalScore)
 		}
 	}
+	fmt.Printf("Nodescores : %+v\n", nodesScores)
 	return nodesScores, nil
 }
 
