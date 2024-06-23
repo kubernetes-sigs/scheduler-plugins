@@ -37,14 +37,15 @@ source "${CODEGEN_PKG}/kube_codegen.sh"
 
 kube::codegen::gen_helpers \
   --input-pkg-root sigs.k8s.io/scheduler-plugins/apis \
-  --output-base "./" \
+  --output-base "../../" \
   --boilerplate "${SCRIPT_ROOT}/hack/boilerplate/boilerplate.generatego.txt"
 
 kube::codegen::gen_client \
   --with-watch \
+  --with-applyconfig \
   --input-pkg-root sigs.k8s.io/scheduler-plugins/apis \
+  --output-base "../../" \
   --output-pkg-root sigs.k8s.io/scheduler-plugins/pkg/generated \
-  --output-base "./" \
   --boilerplate "${SCRIPT_ROOT}/hack/boilerplate/boilerplate.generatego.txt"
 
 ${CONTROLLER_GEN} object:headerFile="hack/boilerplate/boilerplate.generatego.txt" \
