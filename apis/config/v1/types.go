@@ -182,6 +182,14 @@ const (
 	CacheInformerDedicated CacheInformerMode = "Dedicated"
 )
 
+// CacheResyncScope is a "string" type
+type CacheResyncScope string
+
+const (
+	CacheResyncScopeAll           CacheResyncScope = "All"
+	CacheResyncScopeOnlyResources CacheResyncScope = "OnlyResources"
+)
+
 // NodeResourceTopologyCache define configuration details for the NodeResourceTopology cache.
 type NodeResourceTopologyCache struct {
 	// ForeignPodsDetect sets how foreign pods should be handled.
@@ -203,6 +211,12 @@ type NodeResourceTopologyCache struct {
 	// guaranteed to best suit the cache needs, at cost of one extra connection.
 	// If unspecified, default is "Dedicated"
 	InformerMode *CacheInformerMode `json:"informerMode,omitempty"`
+	// ResyncScope controls which changes the resync logic monitors to trigger an update.
+	// "All" consider both Attributes (metadata, node config details) and per-NUMA resources,
+	// while "OnlyResources" consider only per-NUMA resource values. The default is
+	// "All" to make the code react to node config changes avoiding reboots.
+	// Use "OnlyResources" to restore the previous behavior.
+	ResyncScope *CacheResyncScope `json:"resyncScope,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

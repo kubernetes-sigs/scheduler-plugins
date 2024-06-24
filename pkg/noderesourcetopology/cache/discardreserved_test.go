@@ -50,7 +50,7 @@ func TestDiscardReservedNodesGetCachedNRTCopy(t *testing.T) {
 
 	checkGetCachedNRTCopy(
 		t,
-		func(client ctrlclient.Client, _ podlisterv1.PodLister) (Interface, error) {
+		func(client ctrlclient.WithWatch, _ podlisterv1.PodLister) (Interface, error) {
 			return NewDiscardReserved(klog.Background(), client), nil
 		},
 		testCases...,

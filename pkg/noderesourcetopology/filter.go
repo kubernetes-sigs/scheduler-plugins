@@ -29,6 +29,7 @@ import (
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -204,9 +205,11 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 		return nil
 	}
 
-	lh.V(4).Info("found nrt data", "object", stringify.NodeResourceTopologyResources(nodeTopology))
+	conf := nodeconfig.TopologyManagerFromNodeResourceTopology(lh, nodeTopology)
 
-	handler := filterHandlerFromTopologyManagerConfig(topologyManagerConfigFromNodeResourceTopology(lh, nodeTopology))
+	lh.V(4).Info("found nrt data", "object", stringify.NodeResourceTopologyResources(nodeTopology), "conf", conf.String())
+
+	handler := filterHandlerFromTopologyManager(conf)
 	if handler == nil {
 		return nil
 	}
@@ -217,7 +220,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	return status
 }
 
-func filterHandlerFromTopologyManagerConfig(conf TopologyManagerConfig) filterFn {
+func filterHandlerFromTopologyManager(conf nodeconfig.TopologyManager) filterFn {
 	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
 		return nil
 	}

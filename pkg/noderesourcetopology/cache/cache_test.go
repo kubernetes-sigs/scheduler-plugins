@@ -42,7 +42,7 @@ type testCaseGetCachedNRTCopy struct {
 	expectedOK     bool
 }
 
-func checkGetCachedNRTCopy(t *testing.T, makeCache func(client ctrlclient.Client, podLister podlisterv1.PodLister) (Interface, error), extraCases ...testCaseGetCachedNRTCopy) {
+func checkGetCachedNRTCopy(t *testing.T, makeCache func(client ctrlclient.WithWatch, podLister podlisterv1.PodLister) (Interface, error), extraCases ...testCaseGetCachedNRTCopy) {
 	t.Helper()
 
 	testNodeName := "worker-node-1"
