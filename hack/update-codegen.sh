@@ -33,22 +33,20 @@ GOBIN=${TOOLS_BIN_DIR} ${GO_INSTALL} sigs.k8s.io/controller-tools/cmd/controller
 
 CODEGEN_PKG=${CODEGEN_PKG:-$(cd "${SCRIPT_ROOT}"; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
 
-bash "${CODEGEN_PKG}"/generate-internal-groups.sh \
-  "deepcopy,conversion,defaulter" \
-  sigs.k8s.io/scheduler-plugins/pkg/generated \
-  sigs.k8s.io/scheduler-plugins/apis \
-  sigs.k8s.io/scheduler-plugins/apis \
-  "config:v1" \
-  --trim-path-prefix sigs.k8s.io/scheduler-plugins \
-  --output-base "./" \
-  --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
+source "${CODEGEN_PKG}/kube_codegen.sh"
 
-bash "${CODEGEN_PKG}"/generate-groups.sh \
-  all \
-  sigs.k8s.io/scheduler-plugins/pkg/generated \
-  sigs.k8s.io/scheduler-plugins/apis \
-  "scheduling:v1alpha1" \
-  --go-header-file "${SCRIPT_ROOT}"/hack/boilerplate/boilerplate.generatego.txt
+kube::codegen::gen_helpers \
+  --input-pkg-root sigs.k8s.io/scheduler-plugins/apis \
+  --output-base "../../" \
+  --boilerplate "${SCRIPT_ROOT}/hack/boilerplate/boilerplate.generatego.txt"
+
+kube::codegen::gen_client \
+  --with-watch \
+  --with-applyconfig \
+  --input-pkg-root sigs.k8s.io/scheduler-plugins/apis \
+  --output-base "../../" \
+  --output-pkg-root sigs.k8s.io/scheduler-plugins/pkg/generated \
+  --boilerplate "${SCRIPT_ROOT}/hack/boilerplate/boilerplate.generatego.txt"
 
 ${CONTROLLER_GEN} object:headerFile="hack/boilerplate/boilerplate.generatego.txt" \
   paths="./apis/scheduling/..."
