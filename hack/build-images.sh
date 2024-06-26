@@ -32,15 +32,15 @@ BUILDER=${BUILDER:-"docker"}
 
 if ! command -v ${BUILDER} && command -v nerdctl >/dev/null; then
   BUILDER=nerdctl
+elif ! command -v ${BUILDER} && command -v podman >/dev/null; then
+  BUILDER=podman
 fi
 
+# arm64 is used with distroless
 ARCH=${ARCH:-$(go env GOARCH)}
-if [[ "${ARCH}" == "arm64" ]]; then
-  ARCH="arm64v8"
-fi
 
 GO_BASE_IMAGE=${GO_BASE_IMAGE:-"golang"}
-ALPINE_BASE_IMAGE=${ALPINE_BASE_IMAGE:-"$ARCH/alpine"}
+DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE:-"gcr.io/distroless/static:nonroot-$ARCH"}
 
 cd "${SCRIPT_ROOT}"
 
@@ -49,12 +49,12 @@ ${BUILDER} build \
            --build-arg ARCH=${ARCH} \
            --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
            --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
-           --build-arg ALPINE_BASE_IMAGE=${ALPINE_BASE_IMAGE} \
+           --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
            -t ${REGISTRY}/${IMAGE} .
 ${BUILDER} build \
            -f ${CONTROLLER_DIR}/Dockerfile \
            --build-arg ARCH=${ARCH} \
            --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
            --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
-           --build-arg ALPINE_BASE_IMAGE=${ALPINE_BASE_IMAGE} \
+           --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
            -t ${REGISTRY}/${CONTROLLER_IMAGE} .

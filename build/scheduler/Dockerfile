@@ -13,7 +13,7 @@
 # limitations under the License.
 ARG ARCH
 ARG GO_BASE_IMAGE=golang
-ARG ALPINE_BASE_IMAGE=$ARCH/alpine
+ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot-$ARCH
 FROM $GO_BASE_IMAGE:1.21
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
@@ -22,9 +22,11 @@ ARG ARCH
 ARG RELEASE_VERSION
 RUN RELEASE_VERSION=${RELEASE_VERSION} make build-scheduler.$ARCH
 
-FROM $ALPINE_BASE_IMAGE:3.16
+FROM $DISTROLESS_BASE_IMAGE
 
 COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/kube-scheduler /bin/kube-scheduler
 
 WORKDIR /bin
+# Use uid of nonroot user (65532) because kubernetes expects numeric user when applying pod security policies
+USER 65532
 CMD ["kube-scheduler"]
