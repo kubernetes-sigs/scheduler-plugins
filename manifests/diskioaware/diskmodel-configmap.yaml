@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "ioi-system"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: normalization-func
+  namespace: ioi-system
+data:
+  diskVendors: '[{"vendor":"Intel","model":"P4510","url":"http://localhost:8080/foo/foo.so"}]'

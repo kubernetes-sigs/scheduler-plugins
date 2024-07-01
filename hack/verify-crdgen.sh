@@ -30,7 +30,7 @@ CONTROLLER_GEN="${GOPATH}/bin/controller-gen"
 go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0
 
 # Generate CRD
-api_paths="./apis/scheduling/v1alpha1/...;./vendor/github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/...;./vendor/github.com/diktyo-io/appgroup-api/pkg/apis/...;./vendor/github.com/diktyo-io/networktopology-api/pkg/apis/...;./vendor/sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1/..."
+api_paths="./apis/scheduling/v1alpha1/...;./vendor/github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/...;./vendor/github.com/diktyo-io/appgroup-api/pkg/apis/...;./vendor/github.com/diktyo-io/networktopology-api/pkg/apis/...;./vendor/sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1/...;./vendor/github.com/intel/cloud-resource-scheduling-and-isolation/pkg/api/diskio/v1alpha1/..."
 
 ${CONTROLLER_GEN} ${CRD_OPTIONS} paths="${api_paths}" output:dir="./manifests/crds"
 
