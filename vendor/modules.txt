@@ -170,6 +170,21 @@ github.com/imdario/mergo
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
+# github.com/intel/cloud-resource-scheduling-and-isolation v0.1.0
+## explicit; go 1.21
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/api/diskio
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/api/diskio/v1alpha1
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/clientset/versioned
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/clientset/versioned/fake
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/clientset/versioned/scheme
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/clientset/versioned/typed/diskio/v1alpha1
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/clientset/versioned/typed/diskio/v1alpha1/fake
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/informers/externalversions
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/informers/externalversions/diskio
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/informers/externalversions/diskio/v1alpha1
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/informers/externalversions/internalinterfaces
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/generated/listers/diskio/v1alpha1
+github.com/intel/cloud-resource-scheduling-and-isolation/pkg/iodriver
 # github.com/josharian/intern v1.0.0
 ## explicit; go 1.5
 github.com/josharian/intern
@@ -1471,6 +1486,7 @@ k8s.io/kubernetes/pkg/scheduler/testing/framework
 k8s.io/kubernetes/pkg/scheduler/util
 k8s.io/kubernetes/pkg/securitycontext
 k8s.io/kubernetes/pkg/util/filesystem
+k8s.io/kubernetes/pkg/util/hash
 k8s.io/kubernetes/pkg/util/parsers
 k8s.io/kubernetes/pkg/util/slice
 k8s.io/kubernetes/pkg/volume
