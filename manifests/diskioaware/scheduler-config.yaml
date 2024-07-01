@@ -1,0 +1,25 @@
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+profiles:
+- schedulerName: diskio-aware-scheduler
+  plugins:
+    multiPoint:
+      enabled:
+      - name: DiskIO
+  pluginConfig:
+  - name: DiskIO
+    args:
+      # other strategies are MostAllocated
+      scoreStrategy: "LeastAllocated"
+      nsWhiteList: 
+      - ioi-system
+      - kube-system
+      - kube-flannel
+      - calico-apiserver
+      - calico-system
+      - tigera-operator
+
+
+      

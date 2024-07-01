@@ -1,0 +1,17 @@
+apiVersion: diskio.x-k8s.io/v1alpha1
+kind: NodeDiskDevice
+metadata:
+  name: node1-nodediskdevice
+  namespace: ioi-system
+spec:
+  nodeName: node1
+  devices:
+    fakeDevice:
+      capacity:
+        read: 1000Mi
+        total: 2000Mi
+        write: 1000Mi
+      model: P4510
+      name: fakeDevice
+      type: emptyDir
+      vendor: Intel

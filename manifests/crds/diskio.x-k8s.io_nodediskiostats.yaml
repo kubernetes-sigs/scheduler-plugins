@@ -1,0 +1,91 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: nodediskiostats.diskio.x-k8s.io
+spec:
+  group: diskio.x-k8s.io
+  names:
+    kind: NodeDiskIOStats
+    listKind: NodeDiskIOStatsList
+    plural: nodediskiostats
+    singular: nodediskiostats
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              nodeName:
+                type: string
+              reservedPods:
+                description: a slice of reserved pod uids
+                items:
+                  type: string
+                type: array
+            required:
+            - nodeName
+            type: object
+          status:
+            description: NodeDiskIOStatsStatus defines the observed state of node
+              disks
+            properties:
+              allocableBandwidth:
+                additionalProperties:
+                  properties:
+                    read:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Normalized read IO throughput capacity
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    total:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Normalized total IO throughput capacity
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    write:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      description: Normalized write IO throughput capacity
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                  type: object
+                description: the key of the map is the device id
+                type: object
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by this IO Driver.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
