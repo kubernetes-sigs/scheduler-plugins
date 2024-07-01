@@ -102,6 +102,12 @@ var (
 	DefaultSySchedProfileNamespace = "default"
 	// DefaultSySchedProfileName is the name of the default syscall profile CR for SySched plugin
 	DefaultSySchedProfileName = "all-syscalls"
+
+	// Defaults for DiskIO aware
+	// defaultDiskIOScoreStrategy is the default score strategy for disk io aware plugin
+	defaultDiskIOScoreStrategy string = "LeastAllocated"
+	// defaultDiskIOModelConfig is the default file path for model plugin configurations
+	defaultDiskIOModelConfig string = "/etc/kubernetes/disk-config/diskVendors"
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -248,5 +254,20 @@ func SetDefaults_SySchedArgs(obj *SySchedArgs) {
 
 	if obj.DefaultProfileName == nil {
 		obj.DefaultProfileName = &DefaultSySchedProfileName
+	}
+}
+
+// SetDefaults_ResourceIOArgs sets the default parameters for ResourceIO plugin.
+func SetDefaults_DiskIOArgs(obj *DiskIOArgs) {
+	if obj.ScoreStrategy == nil {
+		obj.ScoreStrategy = &defaultDiskIOScoreStrategy
+	}
+
+	if obj.DiskIOModelConfig == nil {
+		obj.DiskIOModelConfig = &defaultDiskIOModelConfig
+	}
+
+	if obj.NSWhiteList == nil {
+		obj.NSWhiteList = []string{}
 	}
 }
