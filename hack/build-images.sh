@@ -37,30 +37,33 @@ DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE:-"gcr.io/distroless/static:nonroot
 # -t is the Docker engine default
 TAG_FLAG="-t"
 
-# nerdctl doesn't seem to have buildx
+# If docker is not present, fall back to nerdctl
+# TODO: nerdctl doesn't seem to have buildx.
 if ! command -v ${BUILDER} && command -v nerdctl >/dev/null; then
   BUILDER=nerdctl
 fi
 
 # podman needs the manifest flag in order to create a single image.
-if [[ "${BUILDER}" == "podman" ]]
-then
+if [[ "${BUILDER}" == "podman" ]]; then
   TAG_FLAG="--manifest"
 fi
 
 cd "${SCRIPT_ROOT}"
-${BUILDER} buildx build \
-            --platform=${PLATFORMS} \
-            -f ${SCHEDULER_DIR}/Dockerfile \
-            --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
-            --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
-            --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
-            ${TAG_FLAG} ${REGISTRY}/${IMAGE} .
 
-${BUILDER} buildx build \
-            --platform=${PLATFORMS} \
-            -f ${CONTROLLER_DIR}/Dockerfile \
-            --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
-            --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
-            --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
-            ${TAG_FLAG} ${REGISTRY}/${CONTROLLER_IMAGE} .
+# DOCKER_BUILDX_CMD is an env variable set in CI (valued as "/buildx-entrypoint")
+# If it's set, use it; otherwise use "$BUILDER buildx"
+${DOCKER_BUILDX_CMD:-${BUILDER} buildx} build \
+  --platform=${PLATFORMS} \
+  -f ${SCHEDULER_DIR}/Dockerfile \
+  --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
+  --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
+  --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
+  ${TAG_FLAG} ${REGISTRY}/${IMAGE} .
+
+${DOCKER_BUILDX_CMD:-${BUILDER} buildx} build \
+  --platform=${PLATFORMS} \
+  -f ${CONTROLLER_DIR}/Dockerfile \
+  --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
+  --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
+  --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
+  {TAG_FLAG} ${REGISTRY}/${CONTROLLER_IMAGE} .
