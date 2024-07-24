@@ -104,7 +104,8 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 
 func (cs *Coscheduling) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
-	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
+	// https://github.com/kubernetes/kubernetes/pull/101394
+	// Please follow: eventhandlers.go#L403-L410
 	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
 	return []framework.ClusterEventWithHint{
 		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add}},

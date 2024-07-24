@@ -122,7 +122,8 @@ func New(ctx context.Context, args runtime.Object, handle framework.Handle) (fra
 // that make other Pods schedulable.
 func (tm *TopologyMatch) EventsToRegister() []framework.ClusterEventWithHint {
 	// To register a custom event, follow the naming convention at:
-	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
+	// https://github.com/kubernetes/kubernetes/pull/101394
+	// Please follow: eventhandlers.go#L403-L410
 	nrtGVK := fmt.Sprintf("noderesourcetopologies.v1alpha2.%v", topologyapi.GroupName)
 	return []framework.ClusterEventWithHint{
 		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
