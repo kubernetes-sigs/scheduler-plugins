@@ -11,18 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG ARCH
 ARG GO_BASE_IMAGE=golang
-ARG ALPINE_BASE_IMAGE=$ARCH/alpine
+ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
 FROM $GO_BASE_IMAGE:1.21
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
-ARG ARCH
 ARG RELEASE_VERSION
-RUN RELEASE_VERSION=${RELEASE_VERSION} make build-scheduler.$ARCH
+RUN RELEASE_VERSION=${RELEASE_VERSION} make build-scheduler
 
-FROM $ALPINE_BASE_IMAGE:3.16
+FROM $DISTROLESS_BASE_IMAGE
 
 COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/kube-scheduler /bin/kube-scheduler
 
