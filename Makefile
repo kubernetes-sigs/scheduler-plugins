@@ -12,10 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARCHS = amd64 arm64
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
 BUILDENVVAR=CGO_ENABLED=0
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
+
+# Manage platform and builders
+PLATFORMS ?= linux/amd64,linux/arm64,linux/s390x,linux/ppc64le
+BUILDER ?= docker
+ifeq ($(BUILDER),podman)
+	ALL_FLAG=--all
+else
+	ALL_FLAG=
+endif
 
 # RELEASE_REGISTRY is the container registry to push
 # into. The default is to push to the staging
@@ -25,6 +33,7 @@ RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*"
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang
+DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
 
 # VERSION is the scheduler's version
 #
@@ -40,77 +49,35 @@ all: build
 .PHONY: build
 build: build-controller build-scheduler
 
-.PHONY: build.amd64
-build.amd64: build-controller.amd64 build-scheduler.amd64
-
-.PHONY: build.arm64v8
-build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
-
 .PHONY: build-controller
 build-controller:
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
-
-.PHONY: build-controller.amd64
-build-controller.amd64:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
-
-.PHONY: build-controller.arm64v8
-build-controller.arm64v8:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
-.PHONY: build-scheduler.amd64
-build-scheduler.amd64:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
-
-.PHONY: build-scheduler.arm64v8
-build-scheduler.arm64v8:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
-
 .PHONY: local-image
 local-image: clean
 	RELEASE_VERSION=$(RELEASE_VERSION) hack/build-images.sh
 
-.PHONY: release-image.amd64
-release-image.amd64: clean
-	ARCH="amd64" \
+.PHONY: release-image
+release-image:
+	BUILDER=$(BUILDER) \
+	PLATFORMS=$(PLATFORMS) \
 	RELEASE_VERSION=$(RELEASE_VERSION) \
 	REGISTRY=$(RELEASE_REGISTRY) \
-	IMAGE=$(RELEASE_IMAGE)-amd64 \
-	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-amd64 \
+	IMAGE=$(RELEASE_IMAGE) \
+	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE) \
 	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
-	ALPINE_BASE_IMAGE=$(ALPINE_BASE_IMAGE) \
-	hack/build-images.sh
-
-.PHONY: release-image.arm64v8
-release-image.arm64v8: clean
-	ARCH="arm64" \
-	RELEASE_VERSION=$(RELEASE_VERSION) \
-	REGISTRY=$(RELEASE_REGISTRY) \
-	IMAGE=$(RELEASE_IMAGE)-arm64 \
-	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-arm64 \
-	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
-	ALPINE_BASE_IMAGE=$(ALPINE_BASE_IMAGE) \
+	DISTROLESS_BASE_IMAGE=$(DISTROLESS_BASE_IMAGE) \
 	hack/build-images.sh
 
 .PHONY: push-release-images
-push-release-images: release-image.amd64 release-image.arm64v8
+push-release-images: release-image
 	gcloud auth configure-docker
-	for arch in $(ARCHS); do \
-		docker push $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-$${arch} ;\
-		docker push $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-$${arch} ;\
-	done
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) $(addprefix --amend $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-, $(ARCHS))
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) $(addprefix --amend $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-, $(ARCHS))
-	for arch in $(ARCHS); do \
-		DOCKER_CLI_EXPERIMENTAL=enabled docker manifest annotate --arch $${arch} $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-$${arch} ;\
-		DOCKER_CLI_EXPERIMENTAL=enabled docker manifest annotate --arch $${arch} $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-$${arch} ;\
-	done
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) ;\
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) ;\
+	DOCKER_CLI_EXPERIMENTAL=enabled $(BUILDER) manifest push $(ALL_FLAG) $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) ;\
+	DOCKER_CLI_EXPERIMENTAL=enabled $(BUILDER) manifest push $(ALL_FLAG) $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) ;\
 
 .PHONY: update-vendor
 update-vendor:
