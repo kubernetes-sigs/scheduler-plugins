@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG GO_BASE_IMAGE=golang
+ARG GO_BASE_IMAGE
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
-FROM $GO_BASE_IMAGE:1.21
+FROM $GO_BASE_IMAGE as go-builder
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
@@ -22,7 +22,7 @@ RUN RELEASE_VERSION=${RELEASE_VERSION} make build-scheduler
 
 FROM $DISTROLESS_BASE_IMAGE
 
-COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/kube-scheduler /bin/kube-scheduler
+COPY --from=go-builder /go/src/sigs.k8s.io/scheduler-plugins/bin/kube-scheduler /bin/kube-scheduler
 
 WORKDIR /bin
 CMD ["kube-scheduler"]
