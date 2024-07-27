@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
 COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
 BUILDENVVAR=CGO_ENABLED=0
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
@@ -32,8 +33,9 @@ RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
-GO_BASE_IMAGE?=golang
+GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
+EXTRA_ARGS=""
 
 # VERSION is the scheduler's version
 #
@@ -57,12 +59,8 @@ build-controller:
 build-scheduler:
 	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
-.PHONY: local-image
-local-image: clean
-	RELEASE_VERSION=$(RELEASE_VERSION) hack/build-images.sh
-
-.PHONY: release-image
-release-image:
+.PHONY: build-images
+build-images:
 	BUILDER=$(BUILDER) \
 	PLATFORMS=$(PLATFORMS) \
 	RELEASE_VERSION=$(RELEASE_VERSION) \
@@ -71,13 +69,20 @@ release-image:
 	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE) \
 	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
 	DISTROLESS_BASE_IMAGE=$(DISTROLESS_BASE_IMAGE) \
-	hack/build-images.sh
+	DOCKER_BUILDX_CMD=$(DOCKER_BUILDX_CMD) \
+	EXTRA_ARGS=$(EXTRA_ARGS) hack/build-images.sh
 
-.PHONY: push-release-images
-push-release-images: release-image
-	gcloud auth configure-docker
-	DOCKER_CLI_EXPERIMENTAL=enabled $(BUILDER) manifest push $(ALL_FLAG) $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) ;\
-	DOCKER_CLI_EXPERIMENTAL=enabled $(BUILDER) manifest push $(ALL_FLAG) $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) ;\
+.PHONY: local-image
+local-image: PLATFORMS="linux/$$(uname -m)"
+local-image: RELEASE_VERSION="v0.0.0"
+local-image: IMAGE="kube-scheduler:latest"
+local-image: CONTROLLER_IMAGE="controller:latest"
+local-image: REGISTRY="localhost:5000/scheduler-plugins"
+local-image: clean build-images
+
+.PHONY: release-images
+push-images: EXTRA_ARGS="--push"
+push-images: build-images
 
 .PHONY: update-vendor
 update-vendor:

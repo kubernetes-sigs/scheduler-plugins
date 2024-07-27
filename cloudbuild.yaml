@@ -12,12 +12,11 @@ steps:
   - name: 'gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20240718-5ef92b5c36'
     entrypoint: make
     env:
-    - DOCKER_CLI_EXPERIMENTAL=enabled
     - RELEASE_VERSION=$_GIT_TAG
     - BASE_REF=$_PULL_BASE_REF
     - DOCKER_BUILDX_CMD=/buildx-entrypoint
     args:
-    - push-release-images
+    - push-images
 substitutions:
   # _GIT_TAG will be filled with a git-based tag for the image, of the form vYYYYMMDD-hash, and
   # can be used as a substitution

@@ -23,17 +23,6 @@ SCRIPT_ROOT=$(realpath $(dirname "${BASH_SOURCE[@]}")/..)
 SCHEDULER_DIR="${SCRIPT_ROOT}"/build/scheduler
 CONTROLLER_DIR="${SCRIPT_ROOT}"/build/controller
 
-REGISTRY=${REGISTRY:-"localhost:5000/scheduler-plugins"}
-IMAGE=${IMAGE:-"kube-scheduler:latest"}
-CONTROLLER_IMAGE=${CONTROLLER_IMAGE:-"controller:latest"}
-
-RELEASE_VERSION=${RELEASE_VERSION:-"v0.0.0"}
-
-BUILDER=${BUILDER:-"docker"}
-
-GO_BASE_IMAGE=${GO_BASE_IMAGE:-"golang"}
-DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE:-"gcr.io/distroless/static:nonroot"}
-
 # -t is the Docker engine default
 TAG_FLAG="-t"
 
@@ -58,7 +47,8 @@ ${DOCKER_BUILDX_CMD:-${BUILDER} buildx} build \
   --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
   --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
   --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
-  ${TAG_FLAG} ${REGISTRY}/${IMAGE} .
+  --build-arg CGO_ENABLED=0 \
+  ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/${IMAGE} .
 
 ${DOCKER_BUILDX_CMD:-${BUILDER} buildx} build \
   --platform=${PLATFORMS} \
@@ -66,4 +56,5 @@ ${DOCKER_BUILDX_CMD:-${BUILDER} buildx} build \
   --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
   --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
   --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
-  {TAG_FLAG} ${REGISTRY}/${CONTROLLER_IMAGE} .
+  --build-arg CGO_ENABLED=0 \
+  ${EXTRA_ARGS:-} ${TAG_FLAG:-} ${REGISTRY}/${CONTROLLER_IMAGE} .
