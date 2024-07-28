@@ -13,8 +13,6 @@
 # limitations under the License.
 
 GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
-COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
-BUILDENVVAR=CGO_ENABLED=0
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
 # Manage platform and builders
@@ -26,10 +24,10 @@ else
 	ALL_FLAG=
 endif
 
-# RELEASE_REGISTRY is the container registry to push
+# REGISTRY is the container registry to push
 # into. The default is to push to the staging
 # registry, not production(registry.k8s.io).
-RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
+REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
@@ -53,18 +51,18 @@ build: build-controller build-scheduler
 
 .PHONY: build-controller
 build-controller:
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+	go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: build-images
 build-images:
 	BUILDER=$(BUILDER) \
 	PLATFORMS=$(PLATFORMS) \
 	RELEASE_VERSION=$(RELEASE_VERSION) \
-	REGISTRY=$(RELEASE_REGISTRY) \
+	REGISTRY=$(REGISTRY) \
 	IMAGE=$(RELEASE_IMAGE) \
 	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE) \
 	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
@@ -78,6 +76,7 @@ local-image: RELEASE_VERSION="v0.0.0"
 local-image: IMAGE="kube-scheduler:latest"
 local-image: CONTROLLER_IMAGE="controller:latest"
 local-image: REGISTRY="localhost:5000/scheduler-plugins"
+local-image: EXTRA_ARGS="--load"
 local-image: clean build-images
 
 .PHONY: release-images
