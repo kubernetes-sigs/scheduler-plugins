@@ -13,13 +13,14 @@
 # limitations under the License.
 ARG GO_BASE_IMAGE
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
-FROM $GO_BASE_IMAGE as go_builder
+FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE as go_builder
 
 WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
 COPY . .
-RUN make build-controller
+ARG TARGETARCH
+RUN make build-controller GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
 
-FROM $DISTROLESS_BASE_IMAGE
+FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 
 COPY --from=go_builder /go/src/sigs.k8s.io/scheduler-plugins/bin/controller /bin/controller
 
