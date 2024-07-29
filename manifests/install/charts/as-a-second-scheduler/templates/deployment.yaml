@@ -50,8 +50,7 @@ spec:
     spec:
       serviceAccountName: {{ .Values.scheduler.name }}
       containers:
-      - command:
-        - /bin/kube-scheduler
+      - args:
         - --config=/etc/kubernetes/scheduler-config.yaml
         image: {{ .Values.scheduler.image }}
         imagePullPolicy: IfNotPresent
