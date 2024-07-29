@@ -50,11 +50,11 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | Parameter                 | Description                 | Default                                                                                         |
 |---------------------------|-----------------------------|-------------------------------------------------------------------------------------------------|
 | `scheduler.name`          | Scheduler name              | `scheduler-plugins-scheduler`                                                                   |
-| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.28.9`                                      |
+| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7`                                      |
 | `scheduler.leaderElect`   | Scheduler leaderElection    | `false`                                                                                         |
 | `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
 | `controller.name`         | Controller name             | `scheduler-plugins-controller`                                                                  |
-| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.28.9`                                          |
+| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.29.7`                                          |
 | `controller.replicaCount` | Controller replicaCount     | `1`                                                                                             |
 | `plugins.enabled`         | Plugins enabled by default  | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
 | `plugins.disabled`        | Plugins disabled by default | `["PrioritySort"]`                                                                              |
