@@ -79,8 +79,7 @@ spec:
       containers:
         - image: localhost:5000/scheduler-plugins/kube-scheduler:latest
           imagePullPolicy: Never
-          command:
-          - /bin/kube-scheduler
+          args:
           - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
           - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
           - --config=/etc/kubernetes/configs/scheduler-config.yaml
