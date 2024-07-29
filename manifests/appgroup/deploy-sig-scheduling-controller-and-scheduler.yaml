@@ -114,8 +114,7 @@ spec:
         node-role.kubernetes.io/master: ""
       containers:
         - image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7
-          command: # For extra info, please add verbose level: e.g., - -v=9
-            - /bin/kube-scheduler
+          args: # For extra info, please add verbose level: e.g., - -v=9
             - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
             - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
             - --config=/etc/kubernetes/scheduler-config.yaml
