@@ -51,11 +51,11 @@ build: build-controller build-scheduler
 
 .PHONY: build-controller
 build-controller:
-	go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:
-	go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
 .PHONY: build-images
 build-images:
@@ -73,8 +73,6 @@ build-images:
 .PHONY: local-image
 local-image: PLATFORMS="linux/$$(uname -m)"
 local-image: RELEASE_VERSION="v0.0.0"
-local-image: IMAGE="kube-scheduler:latest"
-local-image: CONTROLLER_IMAGE="controller:latest"
 local-image: REGISTRY="localhost:5000/scheduler-plugins"
 local-image: EXTRA_ARGS="--load"
 local-image: clean build-images
