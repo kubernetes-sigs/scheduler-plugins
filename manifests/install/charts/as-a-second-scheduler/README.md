@@ -23,10 +23,12 @@ Quick start instructions for the setup and configuration of as-a-second-schedule
 
 #### Install chart using Helm v3.0+
 
+> 🆕 Starting v0.28, Helm charts are hosted on https://scheduler-plugins.sigs.k8s.io
+
 ```bash
 $ git clone git@github.com:kubernetes-sigs/scheduler-plugins.git
 $ cd scheduler-plugins/manifests/install/charts
-$ helm install scheduler-plugins as-a-second-scheduler/ --create-namespace --namespace scheduler-plugins
+$ helm install --repo https://scheduler-plugins.sigs.k8s.io scheduler-plugins scheduler-plugins
 ```
 
 #### Verify that scheduler and plugin-controller pod are running properly.
