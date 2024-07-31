@@ -1,0 +1,15 @@
+title: Power Efficiency Aware Kubernetes Scheduling (PEAKS)
+status: provisional
+authors:
+  - "@knarayan"
+  - "@husky-parul"
+  - "@fali007"
+owning-sig: sig-scheduling
+reviewers:
+  - "@Huang-Wei"
+  - "@ahg-g"
+  - "@alculquicondor"
+approvers:
+  - "@Huang-Wei"
+editor: TBD
+creation-date: 2024-07-04
