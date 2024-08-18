@@ -355,6 +355,7 @@ func autoConvert_v1_NodeResourceTopologyCache_To_config_NodeResourceTopologyCach
 	out.ForeignPodsDetect = (*config.ForeignPodsDetectMode)(unsafe.Pointer(in.ForeignPodsDetect))
 	out.ResyncMethod = (*config.CacheResyncMethod)(unsafe.Pointer(in.ResyncMethod))
 	out.InformerMode = (*config.CacheInformerMode)(unsafe.Pointer(in.InformerMode))
+	out.ResyncScope = (*config.CacheResyncScope)(unsafe.Pointer(in.ResyncScope))
 	return nil
 }
 
@@ -367,6 +368,7 @@ func autoConvert_config_NodeResourceTopologyCache_To_v1_NodeResourceTopologyCach
 	out.ForeignPodsDetect = (*ForeignPodsDetectMode)(unsafe.Pointer(in.ForeignPodsDetect))
 	out.ResyncMethod = (*CacheResyncMethod)(unsafe.Pointer(in.ResyncMethod))
 	out.InformerMode = (*CacheInformerMode)(unsafe.Pointer(in.InformerMode))
+	out.ResyncScope = (*CacheResyncScope)(unsafe.Pointer(in.ResyncScope))
 	return nil
 }
 
