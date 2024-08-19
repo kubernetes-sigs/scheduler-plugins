@@ -217,7 +217,7 @@ func TestLowRiskOverCommitment_Score(t *testing.T) {
 			p, _ := New(ctx, &lowRiskOverCommitmentArgs, fh)
 
 			preScorePlugin := p.(framework.PreScorePlugin)
-			status := preScorePlugin.PreScore(context.Background(), state, tt.pod, tt.nodes)
+			status := preScorePlugin.PreScore(context.Background(), state, tt.pod, tf.BuildNodeInfos(tt.nodes))
 			assert.True(t, status.IsSuccess())
 
 			scorePlugin := p.(framework.ScorePlugin)

@@ -89,7 +89,7 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 }
 
 // PreScore : calculate pod requests and limits and store as plugin state data to be used during scoring
-func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
 	klog.V(6).InfoS("PreScore: Calculating pod resource requests and limits", "pod", klog.KObj(pod))
 	podResourcesStateData := CreatePodResourcesStateData(pod)
 	cycleState.Write(PodResourcesKey, podResourcesStateData)

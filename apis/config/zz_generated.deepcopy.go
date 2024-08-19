@@ -175,6 +175,11 @@ func (in *NodeResourceTopologyCache) DeepCopyInto(out *NodeResourceTopologyCache
 		*out = new(CacheInformerMode)
 		**out = **in
 	}
+	if in.ResyncScope != nil {
+		in, out := &in.ResyncScope, &out.ResyncScope
+		*out = new(CacheResyncScope)
+		**out = **in
+	}
 	return
 }
 
