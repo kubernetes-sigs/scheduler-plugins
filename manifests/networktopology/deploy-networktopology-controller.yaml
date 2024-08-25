@@ -69,6 +69,4 @@ spec:
       containers:
         - name: networktopology-controller
           image: localhost:5000/networktopology-controller/controller:latest
-          command:
-            - /bin/controller
           imagePullPolicy: IfNotPresent
