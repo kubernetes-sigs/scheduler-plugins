@@ -60,6 +60,4 @@ spec:
       containers:
         - name: appgroup-controller
           image: localhost:5000/appgroup-controller/controller:latest
-          command:
-            - /bin/controller
           imagePullPolicy: IfNotPresent

@@ -22,8 +22,8 @@ RUN make build-controller GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGET
 
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 
-WORKDIR /
+WORKDIR /bin
 COPY --from=builder /workspace/bin/controller .
 USER 65532:65532
 
-ENTRYPOINT ["/controller"]
+ENTRYPOINT ["/bin/controller"]
