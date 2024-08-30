@@ -181,8 +181,9 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 			},
 		},
 	).Status(agv1alpha1.AppGroupStatus{
-		RunningWorkloads:  3,
-		ScheduleStartTime: metav1.Time{time.Now()}, TopologyCalculationTime: metav1.Time{time.Now()},
+		RunningWorkloads:        3,
+		ScheduleStartTime:       metav1.Now(),
+		TopologyCalculationTime: metav1.Now(),
 		TopologyOrder: agv1alpha1.AppGroupTopologyList{
 			agv1alpha1.AppGroupTopologyInfo{
 				Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p1", Selector: "p1", APIVersion: "apps/v1", Namespace: "default"}, Index: 1},
