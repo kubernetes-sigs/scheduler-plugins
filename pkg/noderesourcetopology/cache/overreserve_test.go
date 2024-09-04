@@ -720,8 +720,8 @@ func TestNodeWithForeignPods(t *testing.T) {
 		t.Errorf("unexpected dirty nodes: %v", nodes.MaybeOverReserved)
 	}
 
-	_, ok := nrtCache.GetCachedNRTCopy(context.Background(), target, &corev1.Pod{})
-	if ok {
+	_, info := nrtCache.GetCachedNRTCopy(context.Background(), target, &corev1.Pod{})
+	if info.Fresh {
 		t.Errorf("succesfully got node with foreign pods!")
 	}
 }
