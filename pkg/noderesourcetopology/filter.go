@@ -196,8 +196,9 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	lh.V(4).Info(logging.FlowBegin)
 	defer lh.V(4).Info(logging.FlowEnd)
 
-	nodeTopology, ok := tm.nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
-	if !ok {
+	nodeTopology, info := tm.nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
+	lh = lh.WithValues(logging.KeyGeneration, info.Generation)
+	if !info.Fresh {
 		lh.V(2).Info("invalid topology data")
 		return framework.NewStatus(framework.Unschedulable, "invalid node topology data")
 	}

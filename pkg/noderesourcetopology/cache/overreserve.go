@@ -45,6 +45,7 @@ type OverReserve struct {
 	lh               logr.Logger
 	client           ctrlclient.Reader
 	lock             sync.Mutex
+	generation       uint64
 	nrts             *nrtStore
 	assumedResources map[string]*resourceStore // nodeName -> resourceStore
 	// nodesMaybeOverreserved counts how many times a node is filtered out. This is used as trigger condition to try
@@ -97,30 +98,33 @@ func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeReso
 	return obj, nil
 }
 
-func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
+func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, CachedNRTInfo) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	if ov.nodesWithForeignPods.IsSet(nodeName) {
-		return nil, false
+		return nil, CachedNRTInfo{}
 	}
 
+	info := CachedNRTInfo{Fresh: true}
 	nrt := ov.nrts.GetNRTCopyByNodeName(nodeName)
 	if nrt == nil {
-		return nil, true
+		return nil, info
 	}
+
+	info.Generation = ov.generation
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
-		return nrt, true
+		return nrt, info
 	}
 
 	logID := klog.KObj(pod)
-	lh := ov.lh.WithValues(logging.KeyPod, logID, logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
+	lh := ov.lh.WithValues(logging.KeyPod, logID, logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName, logging.KeyGeneration, ov.generation)
 
 	lh.V(6).Info("NRT", "fromcache", stringify.NodeResourceTopologyResources(nrt))
 	nodeAssumedResources.UpdateNRT(nrt, logging.KeyPod, logID)
 
 	lh.V(5).Info("NRT", "withassumed", stringify.NodeResourceTopologyResources(nrt))
-	return nrt, true
+	return nrt, info
 }
 
 func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {
@@ -176,6 +180,7 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 }
 
 type DesyncedNodes struct {
+	Generation        uint64
 	MaybeOverReserved []string
 	ConfigChanged     []string
 }
@@ -207,6 +212,10 @@ func (rn DesyncedNodes) DirtyCount() int {
 func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+
+	// make sure to log the generation to be able to crosscorrelate with later logs
+	lh = lh.WithValues(logging.KeyGeneration, ov.generation)
+
 	// this is intentionally aggressive. We don't yet make any attempt to find out if the
 	// node was discarded because pessimistically overrserved (which should indeed trigger
 	// a resync) or if it was discarded because the actual resources on the node really were
@@ -229,6 +238,7 @@ func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 		lh.V(4).Info("found dirty nodes", "foreign", foreignCount, "discarded", overreservedCount, "configChange", configChangeCount, "total", nodes.Len())
 	}
 	return DesyncedNodes{
+		Generation:        ov.generation,
 		MaybeOverReserved: nodes.Keys(),
 		ConfigChanged:     configChangeNodes.Keys(),
 	}
@@ -244,11 +254,14 @@ func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 // too aggressive resync attempts, so to more, likely unnecessary, computation work on the scheduler side.
 func (ov *OverReserve) Resync() {
 	// we are not working with a specific pod, so we need a unique key to track this flow
-	lh_ := ov.lh.WithName(logging.FlowCacheSync).WithValues(logging.KeyLogID, logging.TimeLogID())
+	lh_ := ov.lh.WithName(logging.FlowCacheSync)
 	lh_.V(4).Info(logging.FlowBegin)
 	defer lh_.V(4).Info(logging.FlowEnd)
 
 	nodes := ov.GetDesyncedNodes(lh_)
+	// we start without because chicken/egg problem. This is the earliest we can use the generation value.
+	lh_ = lh_.WithValues(logging.KeyGeneration, nodes.Generation)
+
 	// avoid as much as we can unnecessary work and logs.
 	if nodes.Len() == 0 {
 		lh_.V(5).Info("no dirty nodes detected")
@@ -331,6 +344,7 @@ func (ov *OverReserve) Resync() {
 func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.NodeResourceTopology) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+
 	for _, nrt := range nrts {
 		lh.V(2).Info("flushing", logging.KeyNode, nrt.Name)
 		ov.nrts.Update(nrt)
@@ -339,6 +353,14 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 		ov.nodesWithForeignPods.Delete(nrt.Name)
 		ov.nodesWithAttrUpdate.Delete(nrt.Name)
 	}
+
+	if len(nrts) == 0 {
+		return
+	}
+
+	// increase only if we mutated the internal state
+	ov.generation += 1
+	lh.V(2).Info("generation", "new", ov.generation)
 }
 
 // to be used only in tests

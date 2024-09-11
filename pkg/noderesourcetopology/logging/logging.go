@@ -17,9 +17,7 @@ limitations under the License.
 package logging
 
 import (
-	"fmt"
 	"reflect"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -33,6 +31,7 @@ const (
 	KeyFlow          string = "flow"
 	KeyContainer     string = "container"
 	KeyContainerKind string = "kind"
+	KeyGeneration    string = "generation"
 )
 
 const (
@@ -62,8 +61,4 @@ func PodUID(pod *corev1.Pod) string {
 		return "<nil>"
 	}
 	return string(pod.GetUID())
-}
-
-func TimeLogID() string {
-	return fmt.Sprintf("uts/%v", time.Now().UnixMilli())
 }

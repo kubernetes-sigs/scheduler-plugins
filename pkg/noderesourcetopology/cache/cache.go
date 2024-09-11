@@ -24,6 +24,20 @@ import (
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
+type CachedNRTInfo struct {
+	// Generation is akin to the object resourceVersion and represents
+	// the observed state in the cache. It's an opaque monotonically increasing number which can only compared for equality
+	// and which is only increased in the resync loop. It is used to cross correlate resync attempts with observed state
+	// with cache content. Used only in logging. If the cache implementation has no concept of caching nor generation,
+	// it should always return 0 (zero).
+	Generation uint64
+
+	// Fresh signals the caller if the NRT data is fresh.
+	// If true, the data is fresh and ready to be consumed.
+	// If false, the data is stale and the caller need to wait for a future refresh.
+	Fresh bool
+}
+
 type Interface interface {
 	// GetCachedNRTCopy retrieves a NRT copy from cache, and then deducts over-reserved resources if necessary.
 	// It will be used as the source of truth across the Pod's scheduling cycle.
@@ -31,10 +45,8 @@ type Interface interface {
 	// of NRT pertaining to the same node, pessimistically overallocated on ALL the NUMA zones of the node.
 	// The pod argument is used only for logging purposes.
 	// Returns nil if there is no NRT data available for the node named `nodeName`.
-	// Returns a boolean to signal the caller if the NRT data is fresh.
-	// If true, the data is fresh and ready to be consumed.
-	// If false, the data is stale and the caller need to wait for a future refresh.
-	GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool)
+	// Returns a CachedNRTInfo describing the NRT data returned. Meaningful only if `nrt` != nil.
+	GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, CachedNRTInfo)
 
 	// NodeMaybeOverReserved declares a node was filtered out for not enough resources available.
 	// This means this node is eligible for a resync. When a node is marked discarded (dirty), it matters not

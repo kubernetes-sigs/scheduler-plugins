@@ -100,10 +100,10 @@ func checkGetCachedNRTCopy(t *testing.T, makeCache func(client ctrlclient.WithWa
 				nrtCache.NodeHasForeignPods(tc.nodeName, pod)
 			}
 
-			gotNRT, gotOK := nrtCache.GetCachedNRTCopy(ctx, tc.nodeName, pod)
+			gotNRT, gotInfo := nrtCache.GetCachedNRTCopy(ctx, tc.nodeName, pod)
 
-			if gotOK != tc.expectedOK {
-				t.Fatalf("unexpected object status from cache: got: %v expected: %v", gotOK, tc.expectedOK)
+			if gotInfo.Fresh != tc.expectedOK {
+				t.Fatalf("unexpected object status from cache: got: %v expected: %v", gotInfo.Fresh, tc.expectedOK)
 			}
 			if gotNRT != nil && tc.expectedNRT == nil {
 				t.Fatalf("object from cache not nil but expected nil")

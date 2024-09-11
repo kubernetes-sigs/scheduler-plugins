@@ -58,20 +58,21 @@ func NewDiscardReserved(lh logr.Logger, client ctrlclient.Client) Interface {
 	}
 }
 
-func (pt *DiscardReserved) GetCachedNRTCopy(ctx context.Context, nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
+func (pt *DiscardReserved) GetCachedNRTCopy(ctx context.Context, nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, CachedNRTInfo) {
 	pt.rMutex.RLock()
 	defer pt.rMutex.RUnlock()
 	if t, ok := pt.reservationMap[nodeName]; ok {
 		if len(t) > 0 {
-			return nil, false
+			return nil, CachedNRTInfo{}
 		}
 	}
 
+	info := CachedNRTInfo{Fresh: true}
 	nrt := &topologyv1alpha2.NodeResourceTopology{}
 	if err := pt.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrt); err != nil {
-		return nil, true
+		return nil, info
 	}
-	return nrt, true
+	return nrt, info
 }
 
 func (pt *DiscardReserved) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {}

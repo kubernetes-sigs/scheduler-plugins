@@ -40,14 +40,15 @@ func NewPassthrough(lh logr.Logger, client ctrlclient.Client) Interface {
 	}
 }
 
-func (pt Passthrough) GetCachedNRTCopy(ctx context.Context, nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
+func (pt Passthrough) GetCachedNRTCopy(ctx context.Context, nodeName string, _ *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, CachedNRTInfo) {
 	pt.lh.V(5).Info("lister for NRT plugin")
+	info := CachedNRTInfo{Fresh: true}
 	nrt := &topologyv1alpha2.NodeResourceTopology{}
 	if err := pt.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrt); err != nil {
 		pt.lh.V(5).Error(err, "cannot get nrts from lister")
-		return nil, true
+		return nil, info
 	}
-	return nrt, true
+	return nrt, info
 }
 
 func (pt Passthrough) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod)  {}
