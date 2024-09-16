@@ -13,7 +13,7 @@
 # limitations under the License.
 ARG GO_BASE_IMAGE
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
-FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE as builder
+FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 
 WORKDIR /workspace
 COPY . .
