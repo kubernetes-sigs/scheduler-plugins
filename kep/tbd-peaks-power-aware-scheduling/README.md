@@ -83,7 +83,7 @@ A new plugin addresses this gap by incorporating power efficiency as a schedulin
 1. De-scheduling resulting from unexpected outcomes (such as hot nodes or fragmentation) due to past scoring by plugins is not addressed in the initial design.
 2. Memory, network, and disk utilization are not considered in the initial design.
 3. The migration of already scheduled pods running on less power-efficient nodes to more power-efficient nodes is out of scope in the initial design.
-4. Shutting down nodes to optimize power by migrating already running pods to other cluster nodes is out of scope in the initial design."
+4. Shutting down nodes to optimize power by migrating already running pods to other cluster nodes is out of scope in the initial design.
 
 ## Proposal
 
@@ -118,12 +118,17 @@ Even with 'homogeneous nodes,' if the CPU vs. Power relationship is non-linear (
 ![PEAKS workflow](./figs/PEAKS_workflow.png)
 
 Here is a brief discription of some of the steps in the above workflow:
-- Create a power model for each cluster node: If a power model suitable for the workload to be scheduled already exists, then the same can be used to avoid creating a new power model. Thus it is an optional step.
+- Create a power model for each cluster node (or, a power model for each nodepool if nodepools can be created): If a power model suitable for the workload to be scheduled already exists, then the same can be used to avoid creating a new power model. Thus it is an optional step.
   - PEAKS plugin allows the cluster owners to bring their own power models that best represent both the node behavior and the workload characteristics.
   - Training the power model is outside the scope of PEAKS plugin.
   - PEAKS plugin only does power model inferencing.
   - Here is an example that models the "CPU utilization vs. Power" relationship for a two node cluster.
-    - This model changes corresponding to a change either in the node configuration or in the workload characteristics.![Power-models-of-nodes](./figs/PowerModelsOfNodes.png)
+    - This power model changes corresponding to a change either in the node configuration or in the workload characteristics.![Power-models-of-nodes](./figs/PowerModelsOfNodes.png)
+  - The power model typically is a mathematical expression (e.g., `NodePower = K0 + K1 * e^(K2 * x)`, where `x` is node utilisation and each `K` is a constant).
+    - Training the power model implies learning the values of the parameters of the corresponding mathematical expression (e.g., learning the values of `K0`, `K1` and `K2` above).
+    - Inferencing the power model implies computing the value of the expression representing the node power by supplying the value of the node utilization (e.g., evaluating the function `NodePower` by supplying the value of the parameter `x`).
+    - Kubernetes API object `ConfigMap` can be used as a mechanism to pass the power model parameters of any cluster node seamlessly
+  - Power model inferencing is part of the function that implements the [ScorePlugin](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/interface.go#L612) interface function `Score` of the PEAKS plugin.
 - Get the resource need for a pod to be scheduled: This step requires estimating the pod resource needs.
   - Consider pod resource requirements (requests/limits) from its specification as an alternative.
   - If there are one or more running pods with the same image (case of auto scaling), consider the average load or resource need across those pods.
@@ -133,7 +138,7 @@ Here is a brief discription of some of the steps in the above workflow:
 - Return the change in the node's instantaneous power:
   - The power consumption at the current utilization can be either found from the node metrics or by referring to the power model
   - The power consumption at the updated utilization can be found by referring to the power model
-- Normalize plugin score: The score range can be provided by the user (otherwise consider the range [0, 100] as the default)
+- Normalize plugin score: The scores provided by different score plugins (which are in the range [framework.MinNodeScore, framework.MaxNodeScore]) are normalized to the range [0, 100] by the PEAKS plugin implementation of the `ScoreExtensions` interface function [NormalizeScore](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/interface.go#L602).
 - Choose a suitable weight for PEAKS plugin in kube-scheduler configuration: This is specific to the environment configuration.
   - If the K8s cluster nodes are running using non-renewable energy sources, then a high weightage for PEAKS plugin can result into reduced CO2 emissions
 
@@ -152,27 +157,28 @@ Below use-case scenarios demonstrate energy savings using PEAKS scheduler plugin
 - Deployment of a Pod (via kube-scheduler):
   - On a K8s cluster with heterogeneous node configurations (resulting in the energy efficiency of the nodes not being the same), while deploying a pod, the `kube-scheduler` prefers energy efficient nodes for pod placement using PEAKS scheduler plugin vs. randomly selects a node for pod placement using default scheduler plugin.
     - Since energy savings decrease with the increased use of energy ineffecient nodes, PEAKS plugin favours pod placement on energy efficient nodes over pod placement on energy inefficient nodes.
-  - Below graph demonstrates energy saving while kube-scheduler deploys a pod ![PEAKS with Kube-scheduler](./figs/PEAKS_with_Kube-scheduler.png)
+  - Below graph demonstrates energy saving while kube-scheduler deploys a pod (In the below graph, `n1` refers to the `Node 1` introduced above which is part of the two node cluster; this is the more energy efficient node `tantawi1`. Similarly, `n2` refers to the `Node 2` introduced above which is part of the two node cluster; this is the less energy efficient node `tantawi2`). ![PEAKS with Kube-scheduler](./figs/PEAKS_with_Kube-scheduler.png)
     - The graph in the left depicts pod placement on the less energy effecient node which was randomly selected by default kube-scheduler.
     - The graph in the middle depicts pod placement on the more energy efficient node which was the preferred choice by PEAKS scheduler plugin.
     - The graph in the right depicts the savings in energy consumption across the cluster nodes over time (i.e., difference in the aggregate cluster energy consumed under PEAKS plugin placement vs. default scheduler placement) increas as the pods continue execution.
     - The energy savings will grow, when the node utilizations increase and/or pods run for longer duration (node utilizations were ~12% during this experiment which ran for 10 minutes).
-- Scaling of a Pod (via Horizontal Pod Autoscaler):
-  - On a K8s cluster with heterogeneous node configurations (resulting in the energy efficiency of the nodes not being the same), a deployment configured with HPA packs the pods on nodes using PEAKS scheduler plugin vs. spreads the pods on nodes using default kube-scheduler.
-    - Since energy savings decrease with the increased use of energy ineffecient nodes, PEAKS plugin favours pod placement on energy efficient nodes over pod placement on energy inefficient nodes.
+- Scaling of a Pod:
+  - On a K8s cluster with heterogeneous node configurations (resulting in the energy efficiency of the nodes not being the same), the `k8s schedular using PEAKS plugin` packs the pods on nodes vs. the `default kube-scheduler` spreads the pods on nodes.
+  - Since energy savings decrease with the increased use of energy ineffecient nodes, PEAKS plugin favours pod placement on energy efficient nodes over pod placement on energy inefficient nodes.
+  - Two experiments were conducted:
+    - using HPA controller, and
+    - using `kubectl scale` command.
   - Below graph demonstrates energy saving while auto scaling pods with HPA controller ![PEAKS with HPA](./figs/PEAKS_with_HPA.png)
     - The graph in the left depicts spreading of pods on nodes using default kube-scheduler.
     - The graph in the middle depicts packing of pods on energy efficient nodes before pod placement on energy (relatively) inefficient cluster nodes using PEAKS scheduler plugin.
     - The graph in the right depicts the savings in energy across the cluster nodes over time (i.e., difference in the aggregate cluster energy consumed under PEAKS plugin placement vs. default scheduler placement) as the pods scale up.
     - There is ~10\% of energy savings observed at the end of 15 minutes of workload execution in this experiment.
     - Note that the difference in the aggregate energy consumption of the cluster nodes reduces (highlighted in red circle) as PEAKS plugin places pods on energy inefficient nodes.
-- Kubectl scale command (while resizing of a deployment, replica set, replication controller, or stateful set):
-  - On a K8s cluster with heterogeneous node configurations (resulting in the energy efficiency of the nodes not being the same), scaling a pod of a deployment, replica set, replication controller, or stateful set with `kubectl scale` command packs the pods on nodes using PEAKS scheduler plugin vs. spreads the pods on nodes using default kube-scheduler.
-    - Since energy savings decrease with the increased use of energy ineffecient nodes, PEAKS plugin favours pod placement on energy efficient nodes over pod placement on energy inefficient nodes.
-  - The experiment below demonstrates energy savings while scaling pods with `kubectl scale` command.
-    - The pods of a deployment "cpu-stress-test" were initially placed on the energy efficient node "tantawi1". Exercising `kubectl scale` to increase the number of pods from 2 to 5 spreads the newly created pods across the nodes "tantawi1" and "tantawi2" irrespective of their energy effeciency with default kube-scheduler. ![Kubectl-scale_Default](./figs/Kubectl-scale_Default.png)
-    - The pods of a deployment "cpu-stress-test" were initially placed on the energy efficient node "tantawi1". Exercising `kubectl scale` to increase the number of pods from 2 to 5 packs the newly created pods on the energy efficient node "tantawi1" with PEAKS scheduler plugin. ![Kubectl-scale_PEAKS](./figs/Kubectl-scale_PEAKS.png)
-    - While `kubectl scale` is used to decrease the number of pods, scheduler (PEAKS plugin) doesn't have any role to play. Hence, pods running on on more energy efficient nodes may get evicted. One may use pod priority and preemption to evict pods from less energy efficient nodes as a workaround.
+  - `Kubectl scale` command allows resizing of a deployment, replica set, replication controller, or stateful set.
+    - Here is an illustation of how the `kubectl scale` command was used in the experiments to `realize energy savings for all these types of k8s objects` using PEAKS plugin .
+    ![Kubectl-scale_Default](./figs/Kubectl-scale_Default.png)
+    ![Kubectl-scale_PEAKS](./figs/Kubectl-scale_PEAKS.png)
+    - While `kubectl scale` can also be used to decrease the number of pods, scheduler (PEAKS plugin) doesn't have any role to play. Hence, pods running on on more energy efficient nodes may get evicted. One may use pod priority and preemption to evict pods from less energy efficient nodes as a workaround. Or, it may be possible to configure the [Descheduler](https://github.com/kubernetes-sigs/descheduler) to evict pods from less energy efficient nodes.
 - Migration of a Pod (via explicit eviction)
   - An application pods might be placed on the energy ineffecient cluster nodes at the time of scheduling as other applications might be running on the energy effecient nodes. When one or more of those applications complete, resources become available on the energy efficient cluster nodes. Two options are available at this stage:
     - Either the application pods continue to run on the nodes on which they were originally placed.
