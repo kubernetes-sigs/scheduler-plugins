@@ -4,12 +4,11 @@
 ## Table of Contents
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
-  - [Non-Goals](#non-goals)
+  - [Non Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
@@ -17,13 +16,13 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [PEAKS Workflow](#peaks-workflow)
-    - [Pre-requisite modules](#pre-requisite-modules)
-    - [Use-cases (that save energy using PEAKS plugin)](#use-cases-that-save-energy-using-peaks-plugin)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
+  - [PEAKS workflow](#peaks-workflow)
+  - [Pre-requisite modules](#pre-requisite-modules)
+  - [Use-cases (that save energy using PEAKS plugin)](#use-cases-that-save-energy-using-peaks-plugin)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -35,7 +34,6 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
-  
 <!-- /toc -->
 
 ## Release Signoff Checklist
