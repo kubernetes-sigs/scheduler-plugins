@@ -85,8 +85,12 @@ push-images: build-images
 update-vendor:
 	hack/update-vendor.sh
 
+.PHONY: build-diskioplugin
+build-diskioplugin:
+	$(COMMONENVVAR) CGO_ENABLED=1 go build -buildmode=plugin -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o pkg/diskioaware/sampleplugin/foo/foo.so ./pkg/diskioaware/sampleplugin/foo/foo.go
+
 .PHONY: unit-test
-unit-test: install-envtest
+unit-test: install-envtest build-diskioplugin
 	hack/unit-test.sh $(ARGS)
 
 .PHONY: install-envtest
@@ -94,7 +98,7 @@ install-envtest:
 	hack/install-envtest.sh
 
 .PHONY: integration-test
-integration-test: install-envtest
+integration-test: install-envtest build-diskioplugin
 	$(INTEGTESTENVVAR) hack/integration-test.sh $(ARGS)
 
 .PHONY: verify
@@ -108,3 +112,4 @@ verify:
 .PHONY: clean
 clean:
 	rm -rf ./bin
+	rm -f ./pkg/diskioaware/sampleplugin/foo/foo.so
