@@ -46,6 +46,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&TopologicalSortArgs{},
 		&NetworkOverheadArgs{},
 		&SySchedArgs{},
+		&NetworkTrafficArgs{},
 	)
 	return nil
 }

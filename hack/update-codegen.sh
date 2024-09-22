@@ -20,6 +20,7 @@ set -o pipefail
 
 SCRIPT_ROOT=$(dirname "${BASH_SOURCE[@]}")/..
 
+mkdir -p "${SCRIPT_ROOT}/hack/tools/bin"
 TOOLS_DIR=$(realpath ./hack/tools)
 TOOLS_BIN_DIR="${TOOLS_DIR}/bin"
 GO_INSTALL=$(realpath ./hack/go-install.sh)
