@@ -4,4 +4,4 @@ metadata:
   name: peaks-node-power-model
   namespace: kube-system
 data:
-  power_model: '{"kube-worker-171":{"k0":300,"k1":-270,"k2":-3},"kube-worker-68":{"k0":300,"k1":-250,"k2":-2.6}}'
+  power_model.json: {"kube-worker-171":{"k0":300,"k1":-270,"k2":-3},"kube-worker-68":{"k0":300,"k1":-250,"k2":-2.6}}

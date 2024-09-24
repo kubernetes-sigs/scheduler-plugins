@@ -51,7 +51,7 @@ type PowerModel struct {
 
 var _ framework.ScorePlugin = &Peaks{}
 var max_power = 0.0
-var cluster_power_model *map[string]PowerModel
+var cluster_power_model map[string]PowerModel
 
 func (pl *Peaks) Name() string {
 	return Name
@@ -62,7 +62,8 @@ func init_power_node_models() {
 	if err != nil {
 		panic(err)
 	}
-	if err = json.Unmarshal(data, cluster_power_model); err != nil {
+	fmt.Println("Configmap string : ", string(data))
+	if err = json.Unmarshal(data, &cluster_power_model); err != nil {
         panic(err)
     }
 	fmt.Println("Power model configuration :",cluster_power_model)
