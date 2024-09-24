@@ -65,7 +65,7 @@ func init_power_node_models() {
 	if err = json.Unmarshal(data, cluster_power_model); err != nil {
         panic(err)
     }
-	fmt.Println(cluster_power_model)
+	fmt.Println("Power model configuration :",cluster_power_model)
 }
 
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -79,6 +79,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	if err != nil {
 		return nil, err
 	}
+	init_power_node_models()
 	pl := &Peaks{
 		handle:    handle,
 		collector: collector,
