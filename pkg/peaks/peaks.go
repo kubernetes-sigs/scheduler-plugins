@@ -58,7 +58,7 @@ func (pl *Peaks) Name() string {
 }
 
 func init_power_node_models() {
-	data, err := os.ReadFile("/power_model")
+	data, err := os.ReadFile("/power_model/node_power_model")
 	if err != nil {
 		panic(err)
 	}

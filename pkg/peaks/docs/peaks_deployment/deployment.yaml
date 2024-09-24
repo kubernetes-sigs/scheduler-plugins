@@ -49,3 +49,6 @@ spec:
       - name: powermodel
         configMap:
           name: peaks-node-power-model
+          items:
+          - key: power_model
+            path: node_power_model
