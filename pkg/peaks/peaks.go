@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"encoding/json"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
@@ -41,17 +42,29 @@ type Peaks struct {
 }
 
 type PowerModel struct {
-	K0 float64
-	K1 float64
-	K2 float64
+	K0 float64 `json:"k0"`
+	K1 float64 `json:"k1"`
+	K2 float64 `json:"k2"`
 	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
 }
 
 var _ framework.ScorePlugin = &Peaks{}
 var max_power = 0.0
+var cluster_power_model *map[string]PowerModel
 
 func (pl *Peaks) Name() string {
 	return Name
+}
+
+func init_power_node_models() {
+	data, err := os.ReadFile("/power_model")
+	if err != nil {
+		panic(err)
+	}
+	if err = json.Unmarshal(data, cluster_power_model); err != nil {
+        panic(err)
+    }
+	fmt.Println(cluster_power_model)
 }
 
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {

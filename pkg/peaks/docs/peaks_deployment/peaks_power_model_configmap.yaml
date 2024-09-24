@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: peaks-node-power-model
+  namespace: kube-system
+data:
+  power_model: '{"node1":{"k0":300,"k1":-270,"k2":-3},"node2":{"k0":300,"k1":-250,"k2":-2.6}}'

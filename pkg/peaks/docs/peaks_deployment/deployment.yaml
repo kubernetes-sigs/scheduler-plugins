@@ -39,8 +39,13 @@ spec:
         volumeMounts:
         - mountPath: /shared
           name: shared
+        - mountPath: /power_model
+          name: power_model
       volumes:
       - name: shared
         hostPath:
           path: /tmp
           type: Directory
+      - name: power_model
+        configMap:
+          name: peaks-node-power-model
