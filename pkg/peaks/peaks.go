@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"encoding/json"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
