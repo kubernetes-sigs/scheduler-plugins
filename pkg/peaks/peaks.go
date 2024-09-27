@@ -62,7 +62,6 @@ func init_power_node_models() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Configmap string : ", string(data))
 	if err = json.Unmarshal(data, &cluster_power_model); err != nil {
         panic(err)
     }
