@@ -210,8 +210,9 @@ func get_max_power() float64 {
 }
 
 func getPowerModel(nodeName string) PowerModel {
-	if nodeName == "tantawi1"{
-		return PowerModel{301.9559, -272.9715, -2.9613}
+	power_model, ok := cluster_power_model[nodeName]
+	if ok {
+		return power_model
 	}
-	return PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}
+	return PowerModel{0, 0, 0}
 }
