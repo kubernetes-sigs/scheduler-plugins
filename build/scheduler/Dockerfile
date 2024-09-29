@@ -18,6 +18,7 @@ FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 WORKDIR /workspace
 COPY . .
 ARG TARGETARCH
+RUN go mod download
 RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
 
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
