@@ -1,0 +1,8 @@
+apiVersion: v1
+data:
+  power_model.json: |
+    {"node_1":{"k0":<replace with node 1 k0>,"k1":<replace with node 1 k1>,"k2":<replace with node 1 k2>},"node_2":{"k0":<replace with node 2 k0>,"k1":<replace with node 2 k1>,"k2":<replace with node 2 k2>}}
+kind: ConfigMap
+metadata:
+  name: peaks-node-power-model
+  namespace: kube-system

@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"encoding/json"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
@@ -41,17 +43,29 @@ type Peaks struct {
 }
 
 type PowerModel struct {
-	K0 float64
-	K1 float64
-	K2 float64
+	K0 float64 `json:"k0"`
+	K1 float64 `json:"k1"`
+	K2 float64 `json:"k2"`
 	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
 }
 
 var _ framework.ScorePlugin = &Peaks{}
 var max_power = 0.0
+var cluster_power_model map[string]PowerModel
 
 func (pl *Peaks) Name() string {
 	return Name
+}
+
+func init_power_node_models() {
+	data, err := os.ReadFile("/power_model/node_power_model")
+	if err != nil {
+		panic(err)
+	}
+	if err = json.Unmarshal(data, &cluster_power_model); err != nil {
+        panic(err)
+    }
+	fmt.Println("Power model configuration :",cluster_power_model)
 }
 
 func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -65,6 +79,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 	if err != nil {
 		return nil, err
 	}
+	init_power_node_models()
 	pl := &Peaks{
 		handle:    handle,
 		collector: collector,
@@ -194,8 +209,9 @@ func get_max_power() float64 {
 }
 
 func getPowerModel(nodeName string) PowerModel {
-	if nodeName == "tantawi1"{
-		return PowerModel{301.9559, -272.9715, -2.9613}
+	power_model, ok := cluster_power_model[nodeName]
+	if ok {
+		return power_model
 	}
-	return PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}
+	return PowerModel{0, 0, 0}
 }
