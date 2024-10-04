@@ -16,5 +16,5 @@ profiles:
   pluginConfig:
     - name: Peaks
       args:
-        watcherAddress: http://load-watcher.loadwatcher.svc.cluster.local:2020/watcher
+        watcherAddress: http://load-watcher.loadwatcher.svc.cluster.local:2020
         
