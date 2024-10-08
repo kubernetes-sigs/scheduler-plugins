@@ -42,15 +42,16 @@ import (
 )
 
 const (
-	cpu             = string(corev1.ResourceCPU)
-	memory          = string(corev1.ResourceMemory)
-	gpuResourceName = "vendor/gpu"
-	hugepages2Mi    = "hugepages-2Mi"
-	nicResourceName = "vendor/nic1"
+	cpu              = string(corev1.ResourceCPU)
+	memory           = string(corev1.ResourceMemory)
+	gpuResourceName  = "vendor/gpu"
+	hugepages2Mi     = "hugepages-2Mi"
+	nicResourceName  = "vendor/nic1"
+	ephemeralStorage = string(corev1.ResourceEphemeralStorage)
 )
 
 func waitForNRT(cs *clientset.Clientset) error {
-	return wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	return wait.PollUntilContextTimeout(context.TODO(), 100*time.Millisecond, 3*time.Second, false, func(ctx context.Context) (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
@@ -205,8 +206,8 @@ func (n *nrtWrapper) Obj() *topologyv1alpha2.NodeResourceTopology {
 func podIsScheduled(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
 	var err error
 	var pod *corev1.Pod
-	waitErr := wait.Poll(interval, time.Duration(times)*interval, func() (bool, error) {
-		pod, err = cs.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	waitErr := wait.PollUntilContextTimeout(context.TODO(), interval, time.Duration(times)*interval, false, func(ctx context.Context) (bool, error) {
+		pod, err = cs.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
 		if err != nil {
 			// This could be a connection error so we want to retry.
 			klog.ErrorS(err, "Failed to get pod", "pod", klog.KRef(podNamespace, podName))

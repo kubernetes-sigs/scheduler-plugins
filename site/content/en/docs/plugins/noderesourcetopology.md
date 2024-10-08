@@ -56,7 +56,7 @@ In case NodeResourceTopology CRD is being installed and advertised by [NFD](http
 Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerConfigConfiguration.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -65,11 +65,11 @@ clientConnection:
 profiles:
 - schedulerName: topo-aware-scheduler
   plugins:
-    filter:
+    multiPoint:
       enabled:
       - name: NodeResourceTopologyMatch
-    score:
-      enabled:
+    reserve:
+      disabled:
       - name: NodeResourceTopologyMatch
 # optional plugin configs
   pluginConfig:
@@ -92,7 +92,7 @@ To enable the cache, you need to **both** enable the Reserve plugin and to set t
 for performance reasons.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -101,13 +101,7 @@ clientConnection:
 profiles:
 - schedulerName: topo-aware-scheduler
   plugins:
-    filter:
-      enabled:
-      - name: NodeResourceTopologyMatch
-    reserve:
-      enabled:
-      - name: NodeResourceTopologyMatch
-    score:
+    multiPoint:
       enabled:
       - name: NodeResourceTopologyMatch
 # optional plugin configs
@@ -201,24 +195,30 @@ zones:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 1
         allocatable: 1
+        available: 1
       - name: example.com/deviceB
         capacity: 2
         allocatable: 2
+        available: 2
   - name: numa-node-1
     type: Node
     resources:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 2
         allocatable: 2
+        available: 2
       - name: example.com/deviceB
         capacity: 1
         allocatable: 1
+        available: 1
 ```
 
 ```yaml
@@ -235,18 +235,22 @@ zones:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 3
         allocatable: 3
+        available: 3
   - name: numa-node-1
     type: Node
     resources:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceB
         capacity: 3
         allocatable: 3
+        available: 3
 ```
 
 - Verify if the CRD has been created by running

@@ -89,11 +89,19 @@ var (
 
 	defaultResyncMethod = CacheResyncAutodetect
 
+	defaultInformerMode = CacheInformerDedicated
+
 	// Defaults for NetworkOverhead
 	// DefaultWeightsName contains the default costs to be used by networkAware plugins
 	DefaultWeightsName = "UserDefined"
 	// DefaultNetworkTopologyName contains the networkTopology CR name to be used by networkAware plugins
 	DefaultNetworkTopologyName = "nt-default"
+
+	// Defaults for SySched
+	// DefaultSySchedProfileNamespace is the namesapce of the default syscall profile CR for SySched plugin
+	DefaultSySchedProfileNamespace = "default"
+	// DefaultSySchedProfileName is the name of the default syscall profile CR for SySched plugin
+	DefaultSySchedProfileName = "all-syscalls"
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -200,6 +208,9 @@ func SetDefaults_NodeResourceTopologyMatchArgs(obj *NodeResourceTopologyMatchArg
 	if obj.Cache.ResyncMethod == nil {
 		obj.Cache.ResyncMethod = &defaultResyncMethod
 	}
+	if obj.Cache.InformerMode == nil {
+		obj.Cache.InformerMode = &defaultInformerMode
+	}
 }
 
 // SetDefaults_PreemptionTolerationArgs reuses SetDefaults_DefaultPreemptionArgs
@@ -226,5 +237,16 @@ func SetDefaults_NetworkOverheadArgs(obj *NetworkOverheadArgs) {
 
 	if obj.NetworkTopologyName == nil {
 		obj.NetworkTopologyName = &DefaultNetworkTopologyName
+	}
+}
+
+// SetDefaults_SySchedArgs sets the default parameters for SySchedArgs plugin.
+func SetDefaults_SySchedArgs(obj *SySchedArgs) {
+	if obj.DefaultProfileNamespace == nil {
+		obj.DefaultProfileNamespace = &DefaultSySchedProfileNamespace
+	}
+
+	if obj.DefaultProfileName == nil {
+		obj.DefaultProfileName = &DefaultSySchedProfileName
 	}
 }

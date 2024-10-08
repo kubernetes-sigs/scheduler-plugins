@@ -40,7 +40,7 @@ import (
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
+	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
@@ -114,8 +114,8 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 		Name: targetloadpacking.Name,
 		Args: &config.TargetLoadPackingArgs{
 			TrimaranSpec:              config.TrimaranSpec{WatcherAddress: server.URL},
-			TargetUtilization:         v1beta3.DefaultTargetUtilizationPercent,
-			DefaultRequestsMultiplier: v1beta3.DefaultRequestsMultiplier,
+			TargetUtilization:         cfgv1.DefaultTargetUtilizationPercent,
+			DefaultRequestsMultiplier: cfgv1.DefaultRequestsMultiplier,
 		},
 	})
 
@@ -176,7 +176,7 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 
 	expected := [2]string{nodeNames[0], nodeNames[0]}
 	for i := range newPods {
-		err := wait.Poll(1*time.Second, 10*time.Second, func() (bool, error) {
+		err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 10*time.Second, false, func(ctx context.Context) (bool, error) {
 			return podScheduled(cs, newPods[i].Namespace, newPods[i].Name), nil
 		})
 		assert.Nil(t, err)

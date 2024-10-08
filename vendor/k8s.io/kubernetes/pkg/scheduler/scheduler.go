@@ -23,6 +23,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
@@ -71,7 +72,7 @@ type Scheduler struct {
 	// is available. We don't use a channel for this, because scheduling
 	// a pod may take some amount of time and we don't want pods to get
 	// stale while they sit in a channel.
-	NextPod func() (*framework.QueuedPodInfo, error)
+	NextPod func(logger klog.Logger) (*framework.QueuedPodInfo, error)
 
 	// FailureHandler is called upon a scheduling failure.
 	FailureHandler FailureHandlerFn
@@ -138,6 +139,7 @@ type ScheduleResult struct {
 	SuggestedHost string
 	// The number of nodes the scheduler evaluated the pod against in the filtering
 	// phase and beyond.
+	// Note that it contains the number of nodes that filtered out by PreFilterResult.
 	EvaluatedNodes int
 	// The number of nodes out of the evaluated ones that fit the pod.
 	FeasibleNodes int
@@ -362,9 +364,9 @@ func New(ctx context.Context,
 }
 
 // defaultQueueingHintFn is the default queueing hint function.
-// It always returns QueueAfterBackoff as the queueing hint.
-var defaultQueueingHintFn = func(_ klog.Logger, _ *v1.Pod, _, _ interface{}) framework.QueueingHint {
-	return framework.QueueAfterBackoff
+// It always returns Queue as the queueing hint.
+var defaultQueueingHintFn = func(_ klog.Logger, _ *v1.Pod, _, _ interface{}) (framework.QueueingHint, error) {
+	return framework.Queue, nil
 }
 
 func buildQueueingHintMap(es []framework.EnqueueExtensions) internalqueue.QueueingHintMap {
@@ -372,21 +374,58 @@ func buildQueueingHintMap(es []framework.EnqueueExtensions) internalqueue.Queuei
 	for _, e := range es {
 		events := e.EventsToRegister()
 
+		// This will happen when plugin registers with empty events, it's usually the case a pod
+		// will become reschedulable only for self-update, e.g. schedulingGates plugin, the pod
+		// will enter into the activeQ via priorityQueue.Update().
+		if len(events) == 0 {
+			continue
+		}
+
 		// Note: Rarely, a plugin implements EnqueueExtensions but returns nil.
 		// We treat it as: the plugin is not interested in any event, and hence pod failed by that plugin
 		// cannot be moved by any regular cluster event.
 		// So, we can just ignore such EventsToRegister here.
 
+		registerNodeAdded := false
+		registerNodeTaintUpdated := false
 		for _, event := range events {
 			fn := event.QueueingHintFn
 			if fn == nil || !utilfeature.DefaultFeatureGate.Enabled(features.SchedulerQueueingHints) {
 				fn = defaultQueueingHintFn
 			}
 
+			if event.Event.Resource == framework.Node {
+				if event.Event.ActionType&framework.Add != 0 {
+					registerNodeAdded = true
+				}
+				if event.Event.ActionType&framework.UpdateNodeTaint != 0 {
+					registerNodeTaintUpdated = true
+				}
+			}
+
 			queueingHintMap[event.Event] = append(queueingHintMap[event.Event], &internalqueue.QueueingHintFunction{
 				PluginName:     e.Name(),
 				QueueingHintFn: fn,
 			})
+		}
+		if registerNodeAdded && !registerNodeTaintUpdated {
+			// Temporally fix for the issue https://github.com/kubernetes/kubernetes/issues/109437
+			// NodeAdded QueueingHint isn't always called because of preCheck.
+			// It's definitely not something expected for plugin developers,
+			// and registering UpdateNodeTaint event is the only mitigation for now.
+			//
+			// So, here registers UpdateNodeTaint event for plugins that has NodeAdded event, but don't have UpdateNodeTaint event.
+			// It has a bad impact for the requeuing efficiency though, a lot better than some Pods being stuch in the
+			// unschedulable pod pool.
+			// This behavior will be removed when we remove the preCheck feature.
+			// See: https://github.com/kubernetes/kubernetes/issues/110175
+			queueingHintMap[framework.ClusterEvent{Resource: framework.Node, ActionType: framework.UpdateNodeTaint}] =
+				append(queueingHintMap[framework.ClusterEvent{Resource: framework.Node, ActionType: framework.UpdateNodeTaint}],
+					&internalqueue.QueueingHintFunction{
+						PluginName:     e.Name(),
+						QueueingHintFn: defaultQueueingHintFn,
+					},
+				)
 		}
 	}
 	return queueingHintMap
@@ -403,10 +442,16 @@ func (sched *Scheduler) Run(ctx context.Context) {
 	// If there are no new pods to schedule, it will be hanging there
 	// and if done in this goroutine it will be blocking closing
 	// SchedulingQueue, in effect causing a deadlock on shutdown.
-	go wait.UntilWithContext(ctx, sched.scheduleOne, 0)
+	go wait.UntilWithContext(ctx, sched.ScheduleOne, 0)
 
 	<-ctx.Done()
 	sched.SchedulingQueue.Close()
+
+	// If the plugins satisfy the io.Closer interface, they are closed.
+	err := sched.Profiles.Close()
+	if err != nil {
+		logger.Error(err, "Failed to close plugins")
+	}
 }
 
 // NewInformerFactory creates a SharedInformerFactory and initializes a scheduler specific
@@ -498,5 +543,18 @@ func newPodInformer(cs clientset.Interface, resyncPeriod time.Duration) cache.Sh
 	tweakListOptions := func(options *metav1.ListOptions) {
 		options.FieldSelector = selector
 	}
-	return coreinformers.NewFilteredPodInformer(cs, metav1.NamespaceAll, resyncPeriod, cache.Indexers{}, tweakListOptions)
+	informer := coreinformers.NewFilteredPodInformer(cs, metav1.NamespaceAll, resyncPeriod, cache.Indexers{}, tweakListOptions)
+
+	// Dropping `.metadata.managedFields` to improve memory usage.
+	// The Extract workflow (i.e. `ExtractPod`) should be unused.
+	trim := func(obj interface{}) (interface{}, error) {
+		if accessor, err := meta.Accessor(obj); err == nil {
+			if accessor.GetManagedFields() != nil {
+				accessor.SetManagedFields(nil)
+			}
+		}
+		return obj, nil
+	}
+	informer.SetTransform(trim)
+	return informer
 }

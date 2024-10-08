@@ -96,7 +96,7 @@ func getAllTolerationPreferNoSchedule(tolerations []v1.Toleration) (tolerationLi
 }
 
 // PreScore builds and writes cycle state used by Score and NormalizeScore.
-func (pl *TaintToleration) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (pl *TaintToleration) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
 	if len(nodes) == 0 {
 		return nil
 	}
@@ -164,6 +164,6 @@ func (pl *TaintToleration) ScoreExtensions() framework.ScoreExtensions {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, h framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &TaintToleration{handle: h}, nil
 }

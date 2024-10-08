@@ -15,6 +15,8 @@ Document capturing the NodeResourceTopology API Custom Resource Definition Stand
 
 ## Tutorial
 
+For more specific notes about how to deploy this plugin, please check [README.deploy.md](README.deploy.md)
+
 ### Expectation
 
 In case the cumulative count of node resource allocatable appear to be the same for both the nodes in the cluster, topology aware scheduler plugin uses the CRD instance corresponding to the nodes to obtain the resource topology information to make a topology-aware scheduling decision.
@@ -56,7 +58,7 @@ In case NodeResourceTopology CRD is being installed and advertised by [NFD](http
 Enable the "NodeResourceTopologyMatch" Filter and Score plugins via SchedulerConfigConfiguration.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -65,11 +67,11 @@ clientConnection:
 profiles:
 - schedulerName: topo-aware-scheduler
   plugins:
-    filter:
+    multiPoint:
       enabled:
       - name: NodeResourceTopologyMatch
-    score:
-      enabled:
+    reserve:
+      disabled:
       - name: NodeResourceTopologyMatch
 # optional plugin configs
   pluginConfig:
@@ -86,13 +88,13 @@ The quality of the scheduling decisions of the "NodeResourceTopologyMatch" filte
 When deployed on large clusters, or when facing high pod churn, or both, it's often impractical or impossible to have frequent enough updates, and the scheduler plugins
 may run with stale data, leading to suboptimal scheduling decisions.
 Using the Reserve plugin, the "NodeResourceTopologyMatch" Filter and Score can use a pessimistic overreserving cache which prevents these suboptimal decisions at the cost
-of leaving pods pending longer. This cache is described in detail in [the docs/ directory](docs/).
+of leaving pods pending longer. This cache is described in detail in [the cache/docs/ directory](cache/docs/).
 
 To enable the cache, you need to **both** enable the Reserve plugin and to set the `cacheResyncPeriodSeconds` config options. Values less than 5 seconds are not recommended
 for performance reasons.
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -101,13 +103,7 @@ clientConnection:
 profiles:
 - schedulerName: topo-aware-scheduler
   plugins:
-    filter:
-      enabled:
-      - name: NodeResourceTopologyMatch
-    reserve:
-      enabled:
-      - name: NodeResourceTopologyMatch
-    score:
+    multiPoint:
       enabled:
       - name: NodeResourceTopologyMatch
 # optional plugin configs
@@ -201,24 +197,30 @@ zones:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 1
         allocatable: 1
+        available: 1
       - name: example.com/deviceB
         capacity: 2
         allocatable: 2
+        available: 2
   - name: numa-node-1
     type: Node
     resources:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 2
         allocatable: 2
+        available: 2
       - name: example.com/deviceB
         capacity: 1
         allocatable: 1
+        available: 1
 ```
 
 ```yaml
@@ -235,18 +237,22 @@ zones:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceA
         capacity: 3
         allocatable: 3
+        available: 3
   - name: numa-node-1
     type: Node
     resources:
       - name: cpu
         capacity: 4
         allocatable: 3
+        available: 3
       - name: example.com/deviceB
         capacity: 3
         allocatable: 3
+        available: 3
 ```
 
 - Verify if the CRD has been created by running

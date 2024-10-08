@@ -32,6 +32,6 @@ version=$(cat ${SCRIPT_ROOT}/go.mod | grep 'k8s.io/kubernetes' | grep -v '=>' | 
 
 GOPATH=$(go env GOPATH)
 TEMP_DIR=${TMPDIR-/tmp}
-go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.16
 "${GOPATH}"/bin/setup-envtest use -p env "${version}" > "${TEMP_DIR}/setup-envtest"
 

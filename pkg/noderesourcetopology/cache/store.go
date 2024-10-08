@@ -21,16 +21,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog/v2"
 
+	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	topologyv1alpha2attr "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/attribute"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
@@ -39,17 +37,19 @@ import (
 // data is intentionally copied each time it enters and exists the store. E.g, no pointer sharing.
 type nrtStore struct {
 	data map[string]*topologyv1alpha2.NodeResourceTopology
+	lh   logr.Logger
 }
 
 // newNrtStore creates a new nrtStore and initializes it with copies of the provided Node Resource Topology data.
-func newNrtStore(nrts []topologyv1alpha2.NodeResourceTopology) *nrtStore {
+func newNrtStore(lh logr.Logger, nrts []topologyv1alpha2.NodeResourceTopology) *nrtStore {
 	data := make(map[string]*topologyv1alpha2.NodeResourceTopology, len(nrts))
 	for _, nrt := range nrts {
 		data[nrt.Name] = nrt.DeepCopy()
 	}
-	klog.V(6).InfoS("nrtcache: initialized nrtStore", "objects", len(data))
+	lh.V(6).Info("initialized nrtStore", "objects", len(data))
 	return &nrtStore{
 		data: data,
+		lh:   lh,
 	}
 }
 
@@ -63,7 +63,7 @@ func (nrs nrtStore) Contains(nodeName string) bool {
 func (nrs *nrtStore) GetNRTCopyByNodeName(nodeName string) *topologyv1alpha2.NodeResourceTopology {
 	obj, ok := nrs.data[nodeName]
 	if !ok {
-		klog.V(3).InfoS("nrtcache: missing cached NodeTopology", "node", nodeName)
+		nrs.lh.V(3).Info("missing cached NodeTopology", "node", nodeName)
 		return nil
 	}
 	return obj.DeepCopy()
@@ -72,59 +72,61 @@ func (nrs *nrtStore) GetNRTCopyByNodeName(nodeName string) *topologyv1alpha2.Nod
 // Update adds or replace the Node Resource Topology associated to a node. Always do a copy.
 func (nrs *nrtStore) Update(nrt *topologyv1alpha2.NodeResourceTopology) {
 	nrs.data[nrt.Name] = nrt.DeepCopy()
-	klog.V(5).InfoS("nrtcache: updated cached NodeTopology", "node", nrt.Name)
+	nrs.lh.V(5).Info("updated cached NodeTopology", "node", nrt.Name)
 }
 
 // resourceStore maps the resource requested by pod by pod namespaed name. It is not thread safe and needs to be protected by a lock.
 type resourceStore struct {
 	// key: namespace + "/" name
 	data map[string]corev1.ResourceList
+	lh   logr.Logger
 }
 
-func newResourceStore() *resourceStore {
+func newResourceStore(lh logr.Logger) *resourceStore {
 	return &resourceStore{
 		data: make(map[string]corev1.ResourceList),
+		lh:   lh,
 	}
 }
 
 func (rs *resourceStore) String() string {
 	var sb strings.Builder
 	for podKey, podRes := range rs.data {
-		sb.WriteString("  " + podKey + ": " + stringify.ResourceList(podRes) + "\n")
+		sb.WriteString(podKey + "::[" + stringify.ResourceList(podRes) + "];")
 	}
 	return sb.String()
 }
 
 // AddPod returns true if updating existing pod, false if adding for the first time
 func (rs *resourceStore) AddPod(pod *corev1.Pod) bool {
-	key := pod.Namespace + "/" + pod.Name // this is also a valid logID
+	key := pod.Namespace + "/" + pod.Name
 	_, ok := rs.data[key]
 	if ok {
 		// should not happen, so we log with a low level
-		klog.V(4).InfoS("updating existing entry", "key", key)
+		rs.lh.V(4).Info("updating existing entry", "key", key)
 	}
 	resData := util.GetPodEffectiveRequest(pod)
-	klog.V(5).InfoS("nrtcache: resourcestore ADD", stringify.ResourceListToLoggable(key, resData)...)
+	rs.lh.V(5).Info("resourcestore ADD", stringify.ResourceListToLoggable(resData)...)
 	rs.data[key] = resData
 	return ok
 }
 
 // DeletePod returns true if deleted an existing pod, false otherwise
 func (rs *resourceStore) DeletePod(pod *corev1.Pod) bool {
-	key := pod.Namespace + "/" + pod.Name // this is also a valid logID
+	key := pod.Namespace + "/" + pod.Name
 	_, ok := rs.data[key]
 	if ok {
 		// should not happen, so we log with a low level
-		klog.V(4).InfoS("removing missing entry", "key", key)
+		rs.lh.V(4).Info("removing missing entry", "key", key)
 	}
-	klog.V(5).InfoS("nrtcache: resourcestore DEL", stringify.ResourceListToLoggable(key, rs.data[key])...)
+	rs.lh.V(5).Info("resourcestore DEL", stringify.ResourceListToLoggable(rs.data[key])...)
 	delete(rs.data, key)
 	return ok
 }
 
 // UpdateNRT updates the provided Node Resource Topology object with the resources tracked in this store,
 // performing pessimistic overallocation across all the NUMA zones.
-func (rs *resourceStore) UpdateNRT(logID string, nrt *topologyv1alpha2.NodeResourceTopology) {
+func (rs *resourceStore) UpdateNRT(nrt *topologyv1alpha2.NodeResourceTopology, logKeysAndValues ...any) {
 	for key, res := range rs.data {
 		// We cannot predict on which Zone the workload will be placed.
 		// And we should totally not guess. So the only safe (and conservative)
@@ -145,7 +147,8 @@ func (rs *resourceStore) UpdateNRT(logID string, nrt *topologyv1alpha2.NodeResou
 				if zr.Available.Cmp(qty) < 0 {
 					// this should happen rarely, and it is likely caused by
 					// a bug elsewhere.
-					klog.V(3).InfoS("nrtcache: cannot decrement resource", "logID", logID, "zone", zr.Name, "node", nrt.Name, "available", zr.Available, "requestor", key, "quantity", qty)
+					logKeysAndValues = append(logKeysAndValues, "zone", zr.Name, logging.KeyNode, nrt.Name, "available", zr.Available, "requestor", key, "quantity", qty.String())
+					rs.lh.V(3).Info("cannot decrement resource", logKeysAndValues...)
 					zr.Available = resource.Quantity{}
 					continue
 				}
@@ -227,7 +230,7 @@ type podData struct {
 // checkPodFingerprintForNode verifies if the given pods fingeprint (usually from NRT update) matches the
 // computed one using the stored data about pods running on nodes. Returns nil on success, or an error
 // describing the failure
-func checkPodFingerprintForNode(logID string, objs []podData, nodeName, pfpExpected string, onlyExclRes bool) error {
+func checkPodFingerprintForNode(lh logr.Logger, objs []podData, nodeName, pfpExpected string, onlyExclRes bool) error {
 	st := podfingerprint.MakeStatus(nodeName)
 	pfp := podfingerprint.NewTracingFingerprint(len(objs), &st)
 	for _, obj := range objs {
@@ -238,32 +241,10 @@ func checkPodFingerprintForNode(logID string, objs []podData, nodeName, pfpExpec
 	}
 	pfpComputed := pfp.Sign()
 
-	klog.V(5).InfoS("nrtcache: podset fingerprint check", "logID", logID, "node", nodeName, "expected", pfpExpected, "computed", pfpComputed, "onlyExclusiveResources", onlyExclRes)
-	klog.V(6).InfoS("nrtcache: podset fingerprint debug", "logID", logID, "node", nodeName, "status", st.Repr())
+	lh.V(4).Info("podset fingerprint check", "expected", pfpExpected, "computed", pfpComputed, "onlyExclusiveResources", onlyExclRes)
+	lh.V(6).Info("podset fingerprint debug", "status", st.Repr())
 
 	err := pfp.Check(pfpExpected)
 	podfingerprint.MarkCompleted(st)
 	return err
-}
-
-func makeNodeToPodDataMap(podLister podlisterv1.PodLister, logID string) (map[string][]podData, error) {
-	nodeToObjsMap := make(map[string][]podData)
-	pods, err := podLister.List(labels.Everything())
-	if err != nil {
-		return nodeToObjsMap, err
-	}
-	for _, pod := range pods {
-		if pod.Status.Phase != corev1.PodRunning {
-			// we are interested only about nodes which consume resources
-			continue
-		}
-		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
-		nodeObjs = append(nodeObjs, podData{
-			Namespace:             pod.Namespace,
-			Name:                  pod.Name,
-			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
-		})
-		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
-	}
-	return nodeToObjsMap, nil
 }

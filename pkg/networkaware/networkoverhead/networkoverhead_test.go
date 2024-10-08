@@ -39,6 +39,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	schedruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -285,8 +286,8 @@ func GetAppGroupCROnlineBoutique() *agv1alpha1.AppGroup {
 			},
 		},
 		Status: agv1alpha1.AppGroupStatus{
-			ScheduleStartTime:       metav1.Time{time.Now()},
-			TopologyCalculationTime: metav1.Time{time.Now()},
+			ScheduleStartTime:       metav1.Now(),
+			TopologyCalculationTime: metav1.Now(),
 			TopologyOrder: agv1alpha1.AppGroupTopologyList{
 				agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p1-deployment", Selector: "p1", APIVersion: "apps/v1", Namespace: "default"}, Index: 1},
 				agv1alpha1.AppGroupTopologyInfo{Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p10-deployment", Selector: "p10", APIVersion: "apps/v1", Namespace: "default"}, Index: 2},
@@ -329,8 +330,9 @@ func GetAppGroupCRBasic() *agv1alpha1.AppGroup {
 			},
 		},
 		Status: agv1alpha1.AppGroupStatus{
-			RunningWorkloads:  3,
-			ScheduleStartTime: metav1.Time{time.Now()}, TopologyCalculationTime: metav1.Time{time.Now()},
+			RunningWorkloads:        3,
+			ScheduleStartTime:       metav1.Now(),
+			TopologyCalculationTime: metav1.Now(),
 			TopologyOrder: agv1alpha1.AppGroupTopologyList{
 				agv1alpha1.AppGroupTopologyInfo{
 					Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p1-deployment", Selector: "p1", APIVersion: "apps/v1", Namespace: "default"}, Index: 1},
@@ -528,12 +530,12 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 				}
 			}
 
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
+			fh, _ := tf.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory), schedruntime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -548,7 +550,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			state := framework.NewCycleState()
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				b.Errorf("pods not scheduled yet: %v ", err)
@@ -748,12 +750,12 @@ func TestNetworkOverheadScore(t *testing.T) {
 				}
 			}
 
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
+			fh, _ := tf.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory), schedruntime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -766,7 +768,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 			}
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				t.Errorf("pods not scheduled yet: %v ", err)
@@ -995,12 +997,12 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 				}
 			}
 
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
+			fh, _ := tf.NewFramework(ctx, registeredPlugins, "default-scheduler", schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory), schedruntime.WithSnapshotSharedLister(snapshot))
 
 			pl := &NetworkOverhead{
@@ -1015,7 +1017,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			state := framework.NewCycleState()
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				b.Errorf("pods not scheduled yet: %v ", err)
@@ -1224,12 +1226,12 @@ func TestNetworkOverheadFilter(t *testing.T) {
 				}
 			}
 
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler",
+			fh, _ := tf.NewFramework(ctx, registeredPlugins, "default-scheduler",
 				schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory),
 				schedruntime.WithSnapshotSharedLister(snapshot))
@@ -1244,7 +1246,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			}
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				t.Errorf("pods not scheduled yet: %v ", err)
@@ -1450,12 +1452,12 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 				}
 			}
 
-			registeredPlugins := []st.RegisterPluginFunc{
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
 
-			fh, _ := st.NewFramework(ctx, registeredPlugins, "default-scheduler",
+			fh, _ := tf.NewFramework(ctx, registeredPlugins, "default-scheduler",
 				schedruntime.WithClientSet(cs),
 				schedruntime.WithInformerFactory(informerFactory),
 				schedruntime.WithSnapshotSharedLister(snapshot))
@@ -1470,7 +1472,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			}
 
 			// Wait for the pods to be scheduled.
-			if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 				return true, nil
 			}); err != nil {
 				b.Errorf("pods not scheduled yet: %v ", err)

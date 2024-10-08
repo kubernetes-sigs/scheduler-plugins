@@ -38,25 +38,19 @@ clientConnection:
 profiles:
   - schedulerName: network-aware-scheduler
     plugins:
+      multiPoint:
+        enabled:
+          - name: NetworkOverhead
+            weight: 5 # A higher weight is given to NetworkOverhead to favor allocation schemes with lower latency.
+          - name: BalancedAllocation
+            weight: 1
+        disabled:
+          - name: NodeResourcesFit # Preferably avoid the combination of NodeResourcesFit with NetworkOverhead
       queueSort:
         enabled:
           - name: TopologicalSort
         disabled:
           - name: "*"
-      preFilter:
-        enabled:
-          - name: NetworkOverhead
-      filter:
-        enabled:
-          - name: NetworkOverhead
-      score:
-        disabled: # Preferably avoid the combination of NodeResourcesFit with NetworkOverhead
-          - name: NodeResourcesFit
-        enabled: # A higher weight is given to NetworkOverhead to favor allocation schemes with lower latency.
-          - name: NetworkOverhead
-            weight: 5
-          - name: BalancedAllocation
-            weight: 1
     pluginConfig:
       - name: TopologicalSort
         args:

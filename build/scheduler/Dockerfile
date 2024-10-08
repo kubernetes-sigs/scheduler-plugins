@@ -11,19 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG ARCH
-FROM golang:1.20
+ARG GO_BASE_IMAGE
+ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
+FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 
-WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
+WORKDIR /workspace
 COPY . .
-ARG ARCH
-ARG RELEASE_VERSION
-RUN RELEASE_VERSION=${RELEASE_VERSION} make build-scheduler.$ARCH
+ARG TARGETARCH
+RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
 
-FROM $ARCH/alpine:3.16
-
-ADD ./manifests/peaks/scheduler-config.yaml /home/scheduler-config.yaml
-COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/kube-scheduler /bin/kube-scheduler
+FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 
 WORKDIR /bin
-CMD ["kube-scheduler"]
+COPY --from=builder /workspace/bin/kube-scheduler .
+USER 65532:65532
+
+ENTRYPOINT ["/bin/kube-scheduler"]

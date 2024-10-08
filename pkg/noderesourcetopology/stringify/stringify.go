@@ -17,7 +17,6 @@ limitations under the License.
 package stringify
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,11 +27,14 @@ import (
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/numanode"
 )
 
-func ResourceListToLoggable(logID string, resources corev1.ResourceList) []interface{} {
-	items := []interface{}{"logID", logID}
+func ResourceListToLoggable(resources corev1.ResourceList) []interface{} {
+	return ResourceListToLoggableWithValues([]interface{}{}, resources)
+}
 
+func ResourceListToLoggableWithValues(items []interface{}, resources corev1.ResourceList) []interface{} {
 	resNames := []string{}
 	for resName := range resources {
 		resNames = append(resNames, string(resName))
@@ -75,6 +77,12 @@ func ResourceList(resources corev1.ResourceList) string {
 func NodeResourceTopologyResources(nrtObj *topologyv1alpha2.NodeResourceTopology) string {
 	zones := []string{}
 	for _, zoneInfo := range nrtObj.Zones {
+		numaItems := []interface{}{"numaCell"}
+		if numaID, err := numanode.NameToID(zoneInfo.Name); err == nil {
+			numaItems = append(numaItems, numaID)
+		} else {
+			numaItems = append(numaItems, zoneInfo.Name)
+		}
 		zones = append(zones, zoneInfo.Name+"=<"+nrtResourceInfoListToString(zoneInfo.Resources)+">")
 	}
 	return nrtObj.Name + "={" + strings.Join(zones, ",") + "}"
@@ -83,13 +91,31 @@ func NodeResourceTopologyResources(nrtObj *topologyv1alpha2.NodeResourceTopology
 func nrtResourceInfoListToString(resInfoList []topologyv1alpha2.ResourceInfo) string {
 	items := []string{}
 	for _, resInfo := range resInfoList {
-		items = append(items, fmt.Sprintf("%s=%s/%s/%s", resInfo.Name, resInfo.Capacity.String(), resInfo.Allocatable.String(), resInfo.Available.String()))
+		items = append(items, nrtResourceInfo(resInfo))
 	}
 	return strings.Join(items, ",")
 }
-func needsHumanization(resName string) bool {
+
+func nrtResourceInfo(resInfo topologyv1alpha2.ResourceInfo) string {
+	capVal, _ := resInfo.Capacity.AsInt64()
+	allocVal, _ := resInfo.Allocatable.AsInt64()
+	availVal, _ := resInfo.Available.AsInt64()
+	if !needsHumanization(resInfo.Name) {
+		return resInfo.Name + "=" + strconv.FormatInt(capVal, 10) + "/" + strconv.FormatInt(allocVal, 10) + "/" + strconv.FormatInt(availVal, 10)
+	}
+	return resInfo.Name + "=" + humanize.IBytes(uint64(capVal)) + "/" + humanize.IBytes(uint64(allocVal)) + "/" + humanize.IBytes(uint64(availVal))
+}
+
+func needsHumanization(rn string) bool {
+	resName := corev1.ResourceName(rn)
 	// memory-related resources may be expressed in KiB/Bytes, which makes
 	// for long numbers, harder to read and compare. To make it easier for
 	// the reader, we express them in a more compact form using go-humanize.
-	return resName == string(corev1.ResourceMemory) || v1helper.IsHugePageResourceName(corev1.ResourceName(resName))
+	if resName == corev1.ResourceMemory {
+		return true
+	}
+	if resName == corev1.ResourceStorage || resName == corev1.ResourceEphemeralStorage {
+		return true
+	}
+	return v1helper.IsHugePageResourceName(resName)
 }

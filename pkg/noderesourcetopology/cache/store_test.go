@@ -23,13 +23,13 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
@@ -203,7 +203,7 @@ func TestNRTStoreGet(t *testing.T) {
 			},
 		},
 	}
-	ns := newNrtStore(nrts)
+	ns := newNrtStore(klog.Background(), nrts)
 
 	obj := ns.GetNRTCopyByNodeName("node-0")
 	obj.TopologyPolicies[0] = "single-numa-node"
@@ -239,7 +239,7 @@ func TestNRTStoreUpdate(t *testing.T) {
 			},
 		},
 	}
-	ns := newNrtStore(nrts)
+	ns := newNrtStore(klog.Background(), nrts)
 
 	nrt3 := &topologyv1alpha2.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
@@ -259,14 +259,14 @@ func TestNRTStoreUpdate(t *testing.T) {
 }
 
 func TestNRTStoreGetMissing(t *testing.T) {
-	ns := newNrtStore(nil)
+	ns := newNrtStore(klog.Background(), nil)
 	if ns.GetNRTCopyByNodeName("node-missing") != nil {
 		t.Errorf("missing node returned non-nil data")
 	}
 }
 
 func TestNRTStoreContains(t *testing.T) {
-	ns := newNrtStore(nil)
+	ns := newNrtStore(klog.Background(), nil)
 	if ns.Contains("node-0") {
 		t.Errorf("unexpected node found")
 	}
@@ -289,7 +289,7 @@ func TestNRTStoreContains(t *testing.T) {
 			},
 		},
 	}
-	ns = newNrtStore(nrts)
+	ns = newNrtStore(klog.Background(), nrts)
 	if !ns.Contains("node-0") {
 		t.Errorf("missing node")
 	}
@@ -410,7 +410,7 @@ func TestResourceStoreAddPod(t *testing.T) {
 		},
 	}
 
-	rs := newResourceStore()
+	rs := newResourceStore(klog.Background())
 	existed := rs.AddPod(&pod)
 	if existed {
 		t.Fatalf("replaced a pod into a empty resourceStore")
@@ -442,7 +442,7 @@ func TestResourceStoreDeletePod(t *testing.T) {
 		},
 	}
 
-	rs := newResourceStore()
+	rs := newResourceStore(klog.Background())
 	existed := rs.DeletePod(&pod)
 	if existed {
 		t.Fatalf("deleted a pod into a empty resourceStore")
@@ -509,14 +509,14 @@ func TestResourceStoreUpdate(t *testing.T) {
 		},
 	}
 
-	rs := newResourceStore()
+	rs := newResourceStore(klog.Background())
 	existed := rs.AddPod(&pod)
 	if existed {
 		t.Fatalf("replacing a pod into a empty resourceStore")
 	}
 
 	logID := "testResourceStoreUpdate"
-	rs.UpdateNRT(logID, nrt)
+	rs.UpdateNRT(nrt, "logID", logID)
 
 	cpuInfo0 := findResourceInfo(nrt.Zones[0].Resources, cpu)
 	if cpuInfo0.Capacity.Cmp(resource.MustParse("20")) != 0 {
@@ -565,134 +565,6 @@ func TestResourceStoreUpdate(t *testing.T) {
 	}
 }
 
-func TestMakeNodeToPodDataMap(t *testing.T) {
-	tcases := []struct {
-		description string
-		pods        []*corev1.Pod
-		err         error
-		expected    map[string][]podData
-		expectedErr error
-	}{
-		{
-			description: "empty pod list",
-			expected:    make(map[string][]podData),
-		},
-		{
-			description: "single pod NOT running",
-			pods: []*corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "namespace1",
-						Name:      "pod1",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "node1",
-					},
-				},
-			},
-			expected: make(map[string][]podData),
-		},
-		{
-			description: "single pod running",
-			pods: []*corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "namespace1",
-						Name:      "pod1",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "node1",
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
-					},
-				},
-			},
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace: "namespace1",
-						Name:      "pod1",
-					},
-				},
-			},
-		},
-		{
-			description: "few pods, single node running",
-			pods: []*corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "namespace1",
-						Name:      "pod1",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "node1",
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "namespace2",
-						Name:      "pod2",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "node1",
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "namespace2",
-						Name:      "pod3",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "node1",
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
-					},
-				},
-			},
-			expected: map[string][]podData{
-				"node1": {
-					{
-						Namespace: "namespace1",
-						Name:      "pod1",
-					},
-					{
-						Namespace: "namespace2",
-						Name:      "pod2",
-					},
-					{
-						Namespace: "namespace2",
-						Name:      "pod3",
-					},
-				},
-			},
-		},
-	}
-
-	for _, tcase := range tcases {
-		t.Run(tcase.description, func(t *testing.T) {
-			podLister := &fakePodLister{
-				pods: tcase.pods,
-				err:  tcase.err,
-			}
-			got, err := makeNodeToPodDataMap(podLister, tcase.description)
-			if err != tcase.expectedErr {
-				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
-			}
-			if diff := cmp.Diff(got, tcase.expected); diff != "" {
-				t.Errorf("unexpected result: %v", diff)
-			}
-		})
-	}
-}
-
 func TestCheckPodFingerprintForNode(t *testing.T) {
 	tcases := []struct {
 		description string
@@ -710,7 +582,7 @@ func TestCheckPodFingerprintForNode(t *testing.T) {
 
 	for _, tcase := range tcases {
 		t.Run(tcase.description, func(t *testing.T) {
-			gotErr := checkPodFingerprintForNode("testing", tcase.objs, "test-node", tcase.pfp, tcase.onlyExclRes)
+			gotErr := checkPodFingerprintForNode(klog.Background(), tcase.objs, "test-node", tcase.pfp, tcase.onlyExclRes)
 			if !errors.Is(gotErr, tcase.expectedErr) {
 				t.Errorf("got error %v expected %v", gotErr, tcase.expectedErr)
 			}

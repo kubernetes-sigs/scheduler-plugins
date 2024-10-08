@@ -203,8 +203,7 @@ func TestElasticQuotaController_Run(t *testing.T) {
 					t.Errorf("reconcile: (%v)", err)
 				}
 			}
-
-			err := wait.Poll(200*time.Millisecond, 1*time.Second, func() (done bool, err error) {
+			err := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, 1*time.Second, false, func(ctx context.Context) (done bool, err error) {
 				for _, v := range c.want {
 					eq := &v1alpha1.ElasticQuota{
 						ObjectMeta: metav1.ObjectMeta{

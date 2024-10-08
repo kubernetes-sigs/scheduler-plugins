@@ -1,4 +1,4 @@
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -7,23 +7,14 @@ clientConnection:
 profiles:
 - schedulerName: default-scheduler
   plugins:
+    multiPoint:
+      enabled:
+      - name: Coscheduling
     queueSort:
       enabled:
       - name: Coscheduling
       disabled:
       - name: "*"
-    preFilter:
-      enabled:
-      - name: Coscheduling
-    postFilter:
-      enabled:
-      - name: Coscheduling
-    permit:
-      enabled:
-      - name: Coscheduling
-    reserve:
-      enabled:
-      - name: Coscheduling
   pluginConfig:
   - name: Coscheduling
     args:

@@ -12,18 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARCHS = amd64 arm64
-COMMONENVVAR=GOOS=$(shell uname -s | tr A-Z a-z)
-BUILDENVVAR=CGO_ENABLED=0
+GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
-# RELEASE_REGISTRY is the container registry to push
+# Manage platform and builders
+PLATFORMS ?= linux/amd64,linux/arm64,linux/s390x,linux/ppc64le
+BUILDER ?= docker
+ifeq ($(BUILDER),podman)
+	ALL_FLAG=--all
+else
+	ALL_FLAG=
+endif
+
+# REGISTRY is the container registry to push
 # into. The default is to push to the staging
 # registry, not production(registry.k8s.io).
-RELEASE_REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
+REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
 RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
+GO_BASE_IMAGE?=golang:$(GO_VERSION)
+DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
+EXTRA_ARGS=""
 
 # VERSION is the scheduler's version
 #
@@ -39,73 +49,37 @@ all: build
 .PHONY: build
 build: build-controller build-scheduler
 
-.PHONY: build.amd64
-build.amd64: build-controller.amd64 build-scheduler.amd64
-
-.PHONY: build.arm64v8
-build.arm64v8: build-controller.arm64v8 build-scheduler.arm64v8
-
 .PHONY: build-controller
 build-controller:
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
-
-.PHONY: build-controller.amd64
-build-controller.amd64:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
-
-.PHONY: build-controller.arm64v8
-build-controller.arm64v8:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-w' -o bin/controller cmd/controller/controller.go
+	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/controller cmd/controller/controller.go
 
 .PHONY: build-scheduler
 build-scheduler:
-	$(COMMONENVVAR) $(BUILDENVVAR) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
-.PHONY: build-scheduler.amd64
-build-scheduler.amd64:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=amd64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
-
-.PHONY: build-scheduler.arm64v8
-build-scheduler.arm64v8:
-	$(COMMONENVVAR) $(BUILDENVVAR) GOARCH=arm64 go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
+.PHONY: build-images
+build-images:
+	BUILDER=$(BUILDER) \
+	PLATFORMS=$(PLATFORMS) \
+	RELEASE_VERSION=$(RELEASE_VERSION) \
+	REGISTRY=$(REGISTRY) \
+	IMAGE=$(RELEASE_IMAGE) \
+	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE) \
+	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
+	DISTROLESS_BASE_IMAGE=$(DISTROLESS_BASE_IMAGE) \
+	DOCKER_BUILDX_CMD=$(DOCKER_BUILDX_CMD) \
+	EXTRA_ARGS=$(EXTRA_ARGS) hack/build-images.sh
 
 .PHONY: local-image
-local-image: clean
-	RELEASE_VERSION=$(RELEASE_VERSION) hack/build-images.sh
+local-image: PLATFORMS="linux/$$(uname -m)"
+local-image: RELEASE_VERSION="v0.0.0"
+local-image: REGISTRY="localhost:5000/scheduler-plugins"
+local-image: EXTRA_ARGS="--load"
+local-image: clean build-images
 
-.PHONY: release-image.amd64
-release-image.amd64: clean
-	ARCH="amd64" \
-	RELEASE_VERSION=$(RELEASE_VERSION) \
-	REGISTRY=$(RELEASE_REGISTRY) \
-	IMAGE=$(RELEASE_IMAGE)-amd64 \
-	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-amd64 \
-	hack/build-images.sh
-
-.PHONY: release-image.arm64v8
-release-image.arm64v8: clean
-	ARCH="arm64" \
-	RELEASE_VERSION=$(RELEASE_VERSION) \
-	REGISTRY=$(RELEASE_REGISTRY) \
-	IMAGE=$(RELEASE_IMAGE)-arm64 \
-	CONTROLLER_IMAGE=$(RELEASE_CONTROLLER_IMAGE)-arm64 \
-	hack/build-images.sh
-
-.PHONY: push-release-images
-push-release-images: release-image.amd64 release-image.arm64v8
-	gcloud auth configure-docker
-	for arch in $(ARCHS); do \
-		docker push $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-$${arch} ;\
-		docker push $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-$${arch} ;\
-	done
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) $(addprefix --amend $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-, $(ARCHS))
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) $(addprefix --amend $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-, $(ARCHS))
-	for arch in $(ARCHS); do \
-		DOCKER_CLI_EXPERIMENTAL=enabled docker manifest annotate --arch $${arch} $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) $(RELEASE_REGISTRY)/$(RELEASE_IMAGE)-$${arch} ;\
-		DOCKER_CLI_EXPERIMENTAL=enabled docker manifest annotate --arch $${arch} $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE)-$${arch} ;\
-	done
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push $(RELEASE_REGISTRY)/$(RELEASE_IMAGE) ;\
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push $(RELEASE_REGISTRY)/$(RELEASE_CONTROLLER_IMAGE) ;\
+.PHONY: release-images
+push-images: EXTRA_ARGS="--push"
+push-images: build-images
 
 .PHONY: update-vendor
 update-vendor:
@@ -113,7 +87,7 @@ update-vendor:
 
 .PHONY: unit-test
 unit-test: install-envtest
-	hack/unit-test.sh
+	hack/unit-test.sh $(ARGS)
 
 .PHONY: install-envtest
 install-envtest:

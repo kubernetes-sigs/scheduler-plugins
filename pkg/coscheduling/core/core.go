@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	gochache "github.com/patrickmn/go-cache"
+	gocache "github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,12 +48,22 @@ const (
 	PodGroupNotFound Status = "PodGroup not found"
 	Success          Status = "Success"
 	Wait             Status = "Wait"
+
+	permitStateKey = "PermitCoscheduling"
 )
+
+type PermitState struct {
+	Activate bool
+}
+
+func (s *PermitState) Clone() framework.StateData {
+	return &PermitState{Activate: s.Activate}
+}
 
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
-	Permit(context.Context, *corev1.Pod) Status
+	Permit(context.Context, *framework.CycleState, *corev1.Pod) Status
 	GetPodGroup(context.Context, *corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetCreationTimestamp(*corev1.Pod, time.Time) time.Time
 	DeletePermittedPodGroup(string)
@@ -72,9 +82,9 @@ type PodGroupManager struct {
 	// If podgroup's scheduleTimeoutSeconds is set, it will be used.
 	scheduleTimeout *time.Duration
 	// permittedPG stores the podgroup name which has passed the pre resource check.
-	permittedPG *gochache.Cache
+	permittedPG *gocache.Cache
 	// backedOffPG stores the podgorup name which failed scheudling recently.
-	backedOffPG *gochache.Cache
+	backedOffPG *gocache.Cache
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	sync.RWMutex
@@ -87,8 +97,8 @@ func NewPodGroupManager(client client.Client, snapshotSharedLister framework.Sha
 		snapshotSharedLister: snapshotSharedLister,
 		scheduleTimeout:      scheduleTimeout,
 		podLister:            podInformer.Lister(),
-		permittedPG:          gochache.New(3*time.Second, 3*time.Second),
-		backedOffPG:          gochache.New(10*time.Second, 10*time.Second),
+		permittedPG:          gocache.New(3*time.Second, 3*time.Second),
+		backedOffPG:          gocache.New(10*time.Second, 10*time.Second),
 	}
 	return pgMgr
 }
@@ -105,6 +115,13 @@ func (pgMgr *PodGroupManager) BackoffPodGroup(pgName string, backoff time.Durati
 func (pgMgr *PodGroupManager) ActivateSiblings(pod *corev1.Pod, state *framework.CycleState) {
 	pgName := util.GetPodGroupLabel(pod)
 	if pgName == "" {
+		return
+	}
+
+	// Only proceed if it's explicitly requested to activate sibling pods.
+	if c, err := state.Read(permitStateKey); err != nil {
+		return
+	} else if s, ok := c.(*PermitState); !ok || !s.Activate {
 		return
 	}
 
@@ -183,7 +200,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	minResources := pg.Spec.MinResources.DeepCopy()
 	podQuantity := resource.NewQuantity(int64(pg.Spec.MinMember), resource.DecimalSI)
 	minResources[corev1.ResourcePods] = *podQuantity
-	err = CheckClusterResource(nodes, minResources, pgFullName)
+	err = CheckClusterResource(ctx, nodes, minResources, pgFullName)
 	if err != nil {
 		klog.ErrorS(err, "Failed to PreFilter", "podGroup", klog.KObj(pg))
 		return err
@@ -193,7 +210,7 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 }
 
 // Permit permits a pod to run, if the minMember match, it would send a signal to chan.
-func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Status {
+func (pgMgr *PodGroupManager) Permit(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) Status {
 	pgFullName, pg := pgMgr.GetPodGroup(ctx, pod)
 	if pgFullName == "" {
 		return PodGroupNotSpecified
@@ -209,6 +226,19 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) Statu
 	if int32(assigned)+1 >= pg.Spec.MinMember {
 		return Success
 	}
+
+	if assigned == 0 {
+		// Given we've reached Permit(), it's mean all PreFilter checks (minMember & minResource)
+		// already pass through, so if assigned == 0, it could be due to:
+		// - minResource get satisfied
+		// - new pods added
+		// In either case, we should and only should use this 0-th pod to trigger activating
+		// its siblings.
+		// It'd be in-efficient if we trigger activating siblings unconditionally.
+		// See https://github.com/kubernetes-sigs/scheduler-plugins/issues/682
+		state.Write(permitStateKey, &PermitState{Activate: true})
+	}
+
 	return Wait
 }
 
@@ -265,13 +295,13 @@ func (pgMgr *PodGroupManager) CalculateAssignedPods(podGroupName, namespace stri
 
 // CheckClusterResource checks if resource capacity of the cluster can satisfy <resourceRequest>.
 // It returns an error detailing the resource gap if not satisfied; otherwise returns nil.
-func CheckClusterResource(nodeList []*framework.NodeInfo, resourceRequest corev1.ResourceList, desiredPodGroupName string) error {
+func CheckClusterResource(ctx context.Context, nodeList []*framework.NodeInfo, resourceRequest corev1.ResourceList, desiredPodGroupName string) error {
 	for _, info := range nodeList {
 		if info == nil || info.Node() == nil {
 			continue
 		}
 
-		nodeResource := util.ResourceList(getNodeResource(info, desiredPodGroupName))
+		nodeResource := util.ResourceList(getNodeResource(ctx, info, desiredPodGroupName))
 		for name, quant := range resourceRequest {
 			quant.Sub(nodeResource[name])
 			if quant.Sign() <= 0 {
@@ -292,8 +322,9 @@ func GetNamespacedName(obj metav1.Object) string {
 	return fmt.Sprintf("%v/%v", obj.GetNamespace(), obj.GetName())
 }
 
-func getNodeResource(info *framework.NodeInfo, desiredPodGroupName string) *framework.Resource {
-	nodeClone := info.Clone()
+func getNodeResource(ctx context.Context, info *framework.NodeInfo, desiredPodGroupName string) *framework.Resource {
+	nodeClone := info.Snapshot()
+	logger := klog.FromContext(ctx)
 	for _, podInfo := range info.Pods {
 		if podInfo == nil || podInfo.Pod == nil {
 			continue
@@ -301,7 +332,7 @@ func getNodeResource(info *framework.NodeInfo, desiredPodGroupName string) *fram
 		if util.GetPodGroupFullName(podInfo.Pod) != desiredPodGroupName {
 			continue
 		}
-		nodeClone.RemovePod(podInfo.Pod)
+		nodeClone.RemovePod(logger, podInfo.Pod)
 	}
 
 	leftResource := framework.Resource{

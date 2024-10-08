@@ -139,7 +139,7 @@ func (no *NetworkOverhead) ScoreExtensions() framework.ScoreExtensions {
 }
 
 // New : create an instance of a NetworkOverhead plugin
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(4).InfoS("Creating new instance of the NetworkOverhead plugin")
 
 	args, err := getArgs(obj)

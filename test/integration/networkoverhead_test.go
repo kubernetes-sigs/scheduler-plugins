@@ -65,7 +65,7 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 
-	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(testCtx.Ctx, 100*time.Millisecond, 3*time.Second, false, func(ctx context.Context) (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
@@ -81,7 +81,7 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 		t.Fatalf("Timed out waiting for AppGroup CRD to be ready: %v", err)
 	}
 
-	if err := wait.Poll(100*time.Millisecond, 3*time.Second, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(testCtx.Ctx, 100*time.Millisecond, 3*time.Second, false, func(ctx context.Context) (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil
@@ -181,8 +181,9 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 			},
 		},
 	).Status(agv1alpha1.AppGroupStatus{
-		RunningWorkloads:  3,
-		ScheduleStartTime: metav1.Time{time.Now()}, TopologyCalculationTime: metav1.Time{time.Now()},
+		RunningWorkloads:        3,
+		ScheduleStartTime:       metav1.Now(),
+		TopologyCalculationTime: metav1.Now(),
 		TopologyOrder: agv1alpha1.AppGroupTopologyList{
 			agv1alpha1.AppGroupTopologyInfo{
 				Workload: agv1alpha1.AppGroupWorkloadInfo{Kind: "Deployment", Name: "p1", Selector: "p1", APIVersion: "apps/v1", Namespace: "default"}, Index: 1},
@@ -279,7 +280,7 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 			for _, p := range tt.pods {
 				if len(tt.expectedNodes) > 0 {
 					// Wait for the pod to be scheduled.
-					if err := wait.Poll(1*time.Second, 20*time.Second, func() (bool, error) {
+					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
 						return podScheduled(cs, ns, p.Name), nil
 
 					}); err != nil {

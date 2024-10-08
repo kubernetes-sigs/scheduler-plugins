@@ -88,6 +88,11 @@ type KubeletConfiguration struct {
 	// staticPodPath is the path to the directory containing local (static) pods to
 	// run, or the path to a single static pod file.
 	StaticPodPath string
+	// podLogsDir is a custom root directory path kubelet will use to place pod's log files.
+	// Default: "/var/log/pods/"
+	// Note: it is not recommended to use the temp folder as a log directory as it may cause
+	// unexpected behavior in many places.
+	PodLogsDir string
 	// syncFrequency is the max period between synchronizing running
 	// containers and config
 	SyncFrequency metav1.Duration
@@ -192,9 +197,13 @@ type KubeletConfiguration struct {
 	NodeStatusReportFrequency metav1.Duration
 	// nodeLeaseDurationSeconds is the duration the Kubelet will set on its corresponding Lease.
 	NodeLeaseDurationSeconds int32
-	// imageMinimumGCAge is the minimum age for an unused image before it is
+	// ImageMinimumGCAge is the minimum age for an unused image before it is
 	// garbage collected.
 	ImageMinimumGCAge metav1.Duration
+	// ImageMaximumGCAge is the maximum age an image can be unused before it is garbage collected.
+	// The default of this field is "0s", which disables this field--meaning images won't be garbage
+	// collected based on being unused for too long.
+	ImageMaximumGCAge metav1.Duration
 	// imageGCHighThresholdPercent is the percent of disk usage after which
 	// image garbage collection is always run. The percent is calculated as
 	// this field value out of 100.
@@ -343,6 +352,11 @@ type KubeletConfiguration struct {
 	ContainerLogMaxSize string
 	// Maximum number of container log files that can be present for a container.
 	ContainerLogMaxFiles int32
+	// Maximum number of concurrent log rotation workers to spawn for processing the log rotation
+	// requests
+	ContainerLogMaxWorkers int32
+	// Interval at which the container logs are monitored for rotation
+	ContainerLogMonitorInterval metav1.Duration
 	// ConfigMapAndSecretChangeDetectionStrategy is a mode in which config map and secret managers are running.
 	ConfigMapAndSecretChangeDetectionStrategy ResourceChangeDetectionStrategy
 	// A comma separated allowlist of unsafe sysctls or sysctl patterns (ending in `*`).
@@ -652,8 +666,8 @@ type ShutdownGracePeriodByPodPriority struct {
 
 type MemorySwapConfiguration struct {
 	// swapBehavior configures swap memory available to container workloads. May be one of
-	// "", "LimitedSwap": workload combined memory and swap usage cannot exceed pod memory limit
-	// "UnlimitedSwap": workloads can use unlimited swap, up to the allocatable limit.
+	// "", "NoSwap": workloads can not use swap, default option.
+	// "LimitedSwap": workload swap usage is limited. The swap limit is proportionate to the container's memory request.
 	// +featureGate=NodeSwap
 	// +optional
 	SwapBehavior string

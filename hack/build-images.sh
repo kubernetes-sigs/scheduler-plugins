@@ -23,32 +23,49 @@ SCRIPT_ROOT=$(realpath $(dirname "${BASH_SOURCE[@]}")/..)
 SCHEDULER_DIR="${SCRIPT_ROOT}"/build/scheduler
 CONTROLLER_DIR="${SCRIPT_ROOT}"/build/controller
 
-REGISTRY=${REGISTRY:-"localhost:5000/scheduler-plugins"}
-IMAGE=${IMAGE:-"kube-scheduler:latest"}
-CONTROLLER_IMAGE=${CONTROLLER_IMAGE:-"controller:latest"}
+# -t is the Docker engine default
+TAG_FLAG="-t"
 
-RELEASE_VERSION=${RELEASE_VERSION:-"v0.0.0"}
-
-BUILDER=${BUILDER:-"docker"}
-
+# If docker is not present, fall back to nerdctl
+# TODO: nerdctl doesn't seem to have buildx.
 if ! command -v ${BUILDER} && command -v nerdctl >/dev/null; then
   BUILDER=nerdctl
 fi
 
-ARCH=${ARCH:-$(go env GOARCH)}
-if [[ "${ARCH}" == "arm64" ]]; then
-  ARCH="arm64v8"
+# podman needs the manifest flag in order to create a single image.
+if [[ "${BUILDER}" == "podman" ]]; then
+  TAG_FLAG="--manifest"
 fi
 
 cd "${SCRIPT_ROOT}"
+IMAGE_BUILD_CMD=${DOCKER_BUILDX_CMD:-${BUILDER} buildx}
 
-${BUILDER} build \
-           -f ${SCHEDULER_DIR}/Dockerfile \
-           --build-arg ARCH=${ARCH} \
-           --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
-           -t ${REGISTRY}/${IMAGE} .
-${BUILDER} build \
-           -f ${CONTROLLER_DIR}/Dockerfile \
-           --build-arg ARCH=${ARCH} \
-           --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
-           -t ${REGISTRY}/${CONTROLLER_IMAGE} .
+# use RELEASE_VERSION==v0.0.0 to tell if it's a local image build.
+BLD_INSTANCE=""
+if [[ "${RELEASE_VERSION}" == "v0.0.0" ]]; then
+  BLD_INSTANCE=$($IMAGE_BUILD_CMD create --use)
+fi
+
+# DOCKER_BUILDX_CMD is an env variable set in CI (valued as "/buildx-entrypoint")
+# If it's set, use it; otherwise use "$BUILDER buildx"
+${IMAGE_BUILD_CMD} build \
+  --platform=${PLATFORMS} \
+  -f ${SCHEDULER_DIR}/Dockerfile \
+  --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
+  --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
+  --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
+  --build-arg CGO_ENABLED=0 \
+  ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/${IMAGE} .
+
+${IMAGE_BUILD_CMD} build \
+  --platform=${PLATFORMS} \
+  -f ${CONTROLLER_DIR}/Dockerfile \
+  --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
+  --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
+  --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
+  --build-arg CGO_ENABLED=0 \
+  ${EXTRA_ARGS:-} ${TAG_FLAG:-} ${REGISTRY}/${CONTROLLER_IMAGE} .
+
+if [[ ! -z $BLD_INSTANCE ]]; then
+  ${DOCKER_BUILDX_CMD:-${BUILDER} buildx} rm $BLD_INSTANCE
+fi

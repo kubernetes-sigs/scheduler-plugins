@@ -49,7 +49,7 @@ Pods in the same PodGroup with different priorities might lead to unintended beh
 2. preFilter is enhanced feature to reduce the overall scheduling time for the whole group. It will check the total number of pods belonging to the same `PodGroup`. If the total number is less than minMember, the pod will reject in preFilter, then the scheduling cycle will interrupt. And the preFilter is user selectable according to the actual situation of users. If the minMember of PodGroup is relatively small, for example less than 5, you can disable this plugin. But if the minMember of PodGroup is relatively large, please enable this plugin to reduce the overall scheduling time.
 
 ```
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -58,23 +58,14 @@ clientConnection:
 profiles:
 - schedulerName: default-scheduler
   plugins:
+    multiPoint:
+      enabled:
+      - name: Coscheduling
     queueSort:
       enabled:
       - name: Coscheduling
       disabled:
       - name: "*"
-    preFilter:
-      enabled:
-      - name: Coscheduling
-    postFilter:
-      enabled:
-      - name: Coscheduling
-    permit:
-      enabled:
-      - name: Coscheduling
-    reserve:
-      enabled:
-      - name: Coscheduling
 ```
 
 ### Demo

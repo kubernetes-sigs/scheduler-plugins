@@ -78,6 +78,7 @@ import (
 	"k8s.io/component-base/tracing"
 	"k8s.io/klog/v2"
 	openapicommon "k8s.io/kube-openapi/pkg/common"
+	"k8s.io/kube-openapi/pkg/spec3"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/utils/clock"
 	utilsnet "k8s.io/utils/net"
@@ -194,7 +195,7 @@ type Config struct {
 	// OpenAPIConfig will be used in generating OpenAPI spec. This is nil by default. Use DefaultOpenAPIConfig for "working" defaults.
 	OpenAPIConfig *openapicommon.Config
 	// OpenAPIV3Config will be used in generating OpenAPI V3 spec. This is nil by default. Use DefaultOpenAPIV3Config for "working" defaults.
-	OpenAPIV3Config *openapicommon.Config
+	OpenAPIV3Config *openapicommon.OpenAPIV3Config
 	// SkipOpenAPIInstallation avoids installing the OpenAPI handler if set to true.
 	SkipOpenAPIInstallation bool
 
@@ -482,8 +483,23 @@ func DefaultOpenAPIConfig(getDefinitions openapicommon.GetOpenAPIDefinitions, de
 }
 
 // DefaultOpenAPIV3Config provides the default OpenAPIV3Config used to build the OpenAPI V3 spec
-func DefaultOpenAPIV3Config(getDefinitions openapicommon.GetOpenAPIDefinitions, defNamer *apiopenapi.DefinitionNamer) *openapicommon.Config {
-	defaultConfig := DefaultOpenAPIConfig(getDefinitions, defNamer)
+func DefaultOpenAPIV3Config(getDefinitions openapicommon.GetOpenAPIDefinitions, defNamer *apiopenapi.DefinitionNamer) *openapicommon.OpenAPIV3Config {
+	defaultConfig := &openapicommon.OpenAPIV3Config{
+		IgnorePrefixes: []string{},
+		Info: &spec.Info{
+			InfoProps: spec.InfoProps{
+				Title: "Generic API Server",
+			},
+		},
+		DefaultResponse: &spec3.Response{
+			ResponseProps: spec3.ResponseProps{
+				Description: "Default Response.",
+			},
+		},
+		GetOperationIDAndTags: apiopenapi.GetOperationIDAndTags,
+		GetDefinitionName:     defNamer.GetDefinitionName,
+		GetDefinitions:        getDefinitions,
+	}
 	defaultConfig.Definitions = getDefinitions(func(name string) spec.Ref {
 		defName, _ := defaultConfig.GetDefinitionName(name)
 		return spec.MustCreateRef("#/components/schemas/" + openapicommon.EscapeJsonPointer(defName))
@@ -608,9 +624,53 @@ func completeOpenAPI(config *openapicommon.Config, version *version.Info) {
 	}
 }
 
+func completeOpenAPIV3(config *openapicommon.OpenAPIV3Config, version *version.Info) {
+	if config == nil {
+		return
+	}
+	if config.SecuritySchemes != nil {
+		// Setup OpenAPI security: all APIs will have the same authentication for now.
+		config.DefaultSecurity = []map[string][]string{}
+		keys := []string{}
+		for k := range config.SecuritySchemes {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			config.DefaultSecurity = append(config.DefaultSecurity, map[string][]string{k: {}})
+		}
+		if config.CommonResponses == nil {
+			config.CommonResponses = map[int]*spec3.Response{}
+		}
+		if _, exists := config.CommonResponses[http.StatusUnauthorized]; !exists {
+			config.CommonResponses[http.StatusUnauthorized] = &spec3.Response{
+				ResponseProps: spec3.ResponseProps{
+					Description: "Unauthorized",
+				},
+			}
+		}
+	}
+	// make sure we populate info, and info.version, if not manually set
+	if config.Info == nil {
+		config.Info = &spec.Info{}
+	}
+	if config.Info.Version == "" {
+		if version != nil {
+			config.Info.Version = strings.Split(version.String(), "-")[0]
+		} else {
+			config.Info.Version = "unversioned"
+		}
+	}
+}
+
 // DrainedNotify returns a lifecycle signal of genericapiserver already drained while shutting down.
 func (c *Config) DrainedNotify() <-chan struct{} {
 	return c.lifecycleSignals.InFlightRequestsDrained.Signaled()
+}
+
+// ShutdownInitiated returns a lifecycle signal of apiserver shutdown having been initiated.
+func (c *Config) ShutdownInitiatedNotify() <-chan struct{} {
+	return c.lifecycleSignals.ShutdownInitiated.Signaled()
 }
 
 // Complete fills in any fields not set that are required to have valid data and can be derived
@@ -633,7 +693,7 @@ func (c *Config) Complete(informers informers.SharedInformerFactory) CompletedCo
 	}
 
 	completeOpenAPI(c.OpenAPIConfig, c.Version)
-	completeOpenAPI(c.OpenAPIV3Config, c.Version)
+	completeOpenAPIV3(c.OpenAPIV3Config, c.Version)
 
 	if c.DiscoveryAddresses == nil {
 		c.DiscoveryAddresses = discovery.DefaultAddresses{DefaultAddress: c.ExternalAddress}
@@ -669,12 +729,30 @@ func (c *RecommendedConfig) Complete() CompletedConfig {
 	return c.Config.Complete(c.SharedInformerFactory)
 }
 
+var allowedMediaTypes = []string{
+	runtime.ContentTypeJSON,
+	runtime.ContentTypeYAML,
+	runtime.ContentTypeProtobuf,
+}
+
 // New creates a new server which logically combines the handling chain with the passed server.
 // name is used to differentiate for logging. The handler chain in particular can be difficult as it starts delegating.
 // delegationTarget may not be nil.
 func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*GenericAPIServer, error) {
 	if c.Serializer == nil {
 		return nil, fmt.Errorf("Genericapiserver.New() called with config.Serializer == nil")
+	}
+	for _, info := range c.Serializer.SupportedMediaTypes() {
+		var ok bool
+		for _, mt := range allowedMediaTypes {
+			if info.MediaType == mt {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return nil, fmt.Errorf("refusing to create new apiserver %q with support for media type %q (allowed media types are: %s)", name, info.MediaType, strings.Join(allowedMediaTypes, ", "))
+		}
 	}
 	if c.LoopbackClientConfig == nil {
 		return nil, fmt.Errorf("Genericapiserver.New() called with config.LoopbackClientConfig == nil")
@@ -726,15 +804,14 @@ func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*G
 		preShutdownHooks:       map[string]preShutdownHookEntry{},
 		disabledPostStartHooks: c.DisabledPostStartHooks,
 
-		healthzChecks:    c.HealthzChecks,
-		livezChecks:      c.LivezChecks,
-		readyzChecks:     c.ReadyzChecks,
+		healthzRegistry:  healthCheckRegistry{path: "/healthz", checks: c.HealthzChecks},
+		livezRegistry:    healthCheckRegistry{path: "/livez", checks: c.LivezChecks, clock: clock.RealClock{}},
+		readyzRegistry:   healthCheckRegistry{path: "/readyz", checks: c.ReadyzChecks},
 		livezGracePeriod: c.LivezGracePeriod,
 
 		DiscoveryGroupManager: discovery.NewRootAPIsHandler(c.DiscoveryAddresses, c.Serializer),
 
 		maxRequestBodyBytes: c.MaxRequestBodyBytes,
-		livezClock:          clock.RealClock{},
 
 		lifecycleSignals:       c.lifecycleSignals,
 		ShutdownSendRetryAfter: c.ShutdownSendRetryAfter,
@@ -915,7 +992,7 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 		requestWorkEstimator := flowcontrolrequest.NewWorkEstimator(
 			c.StorageObjectCountTracker.Get, c.FlowControl.GetInterestedWatchCount, workEstimatorCfg, c.FlowControl.GetMaxSeats)
 		handler = filterlatency.TrackCompleted(handler)
-		handler = genericfilters.WithPriorityAndFairness(handler, c.LongRunningFunc, c.FlowControl, requestWorkEstimator)
+		handler = genericfilters.WithPriorityAndFairness(handler, c.LongRunningFunc, c.FlowControl, requestWorkEstimator, c.RequestTimeout/4)
 		handler = filterlatency.TrackStarted(handler, c.TracerProvider, "priorityandfairness")
 	} else {
 		handler = genericfilters.WithMaxInFlightLimit(handler, c.MaxRequestsInFlight, c.MaxMutatingRequestsInFlight, c.LongRunningFunc)
@@ -939,6 +1016,10 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 
 	handler = genericfilters.WithCORS(handler, c.CorsAllowedOriginList, nil, nil, nil, "true")
 
+	// WithWarningRecorder must be wrapped by the timeout handler
+	// to make the addition of warning headers threadsafe
+	handler = genericapifilters.WithWarningRecorder(handler)
+
 	// WithTimeoutForNonLongRunningRequests will call the rest of the request handling in a go-routine with the
 	// context with deadline. The go-routine can keep running, while the timeout logic will return a timeout to the client.
 	handler = genericfilters.WithTimeoutForNonLongRunningRequests(handler, c.LongRunningFunc)
@@ -952,7 +1033,6 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 	if c.SecureServing != nil && !c.SecureServing.DisableHTTP2 && c.GoawayChance > 0 {
 		handler = genericfilters.WithProbabilisticGoaway(handler, c.GoawayChance)
 	}
-	handler = genericapifilters.WithWarningRecorder(handler)
 	handler = genericapifilters.WithCacheControl(handler)
 	handler = genericfilters.WithHSTS(handler, c.HSTSDirectives)
 	if c.ShutdownSendRetryAfter {
@@ -963,6 +1043,12 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 		handler = genericapifilters.WithTracing(handler, c.TracerProvider)
 	}
 	handler = genericapifilters.WithLatencyTrackers(handler)
+	// WithRoutine will execute future handlers in a separate goroutine and serving
+	// handler in current goroutine to minimize the stack memory usage. It must be
+	// after WithPanicRecover() to be protected from panics.
+	if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIServingWithRoutine) {
+		handler = genericfilters.WithRoutine(handler, c.LongRunningFunc)
+	}
 	handler = genericapifilters.WithRequestInfo(handler, c.RequestInfoResolver)
 	handler = genericapifilters.WithRequestReceivedTimestamp(handler)
 	handler = genericapifilters.WithMuxAndDiscoveryComplete(handler, c.lifecycleSignals.MuxAndDiscoveryComplete.Signaled())
@@ -994,14 +1080,10 @@ func installAPI(s *GenericAPIServer, c *Config) {
 	if c.EnableMetrics {
 		if c.EnableProfiling {
 			routes.MetricsWithReset{}.Install(s.Handler.NonGoRestfulMux)
-			if utilfeature.DefaultFeatureGate.Enabled(features.ComponentSLIs) {
-				slis.SLIMetricsWithReset{}.Install(s.Handler.NonGoRestfulMux)
-			}
+			slis.SLIMetricsWithReset{}.Install(s.Handler.NonGoRestfulMux)
 		} else {
 			routes.DefaultMetrics{}.Install(s.Handler.NonGoRestfulMux)
-			if utilfeature.DefaultFeatureGate.Enabled(features.ComponentSLIs) {
-				slis.SLIMetrics{}.Install(s.Handler.NonGoRestfulMux)
-			}
+			slis.SLIMetrics{}.Install(s.Handler.NonGoRestfulMux)
 		}
 	}
 
@@ -1015,7 +1097,7 @@ func installAPI(s *GenericAPIServer, c *Config) {
 			s.Handler.GoRestfulContainer.Add(s.DiscoveryGroupManager.WebService())
 		}
 	}
-	if c.FlowControl != nil && utilfeature.DefaultFeatureGate.Enabled(genericfeatures.APIPriorityAndFairness) {
+	if c.FlowControl != nil {
 		c.FlowControl.Install(s.Handler.NonGoRestfulMux)
 	}
 }

@@ -17,11 +17,15 @@ limitations under the License.
 package cache
 
 import (
+	"fmt"
+
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 )
 
@@ -35,11 +39,11 @@ var (
 	onlyExclusiveResources = false
 )
 
-func SetupForeignPodsDetector(schedProfileName string, podInformer k8scache.SharedInformer, cc Interface) {
+func SetupForeignPodsDetector(lh logr.Logger, schedProfileName string, podInformer k8scache.SharedInformer, cc Interface) {
 	foreignCache := func(obj interface{}) {
 		pod, ok := obj.(*corev1.Pod)
 		if !ok {
-			klog.V(3).InfoS("nrtcache: foreign: unsupported object %T", obj)
+			lh.V(3).Info("unsupported object", "kind", fmt.Sprintf("%T", obj))
 			return
 		}
 		if !IsForeignPod(pod) {
@@ -47,7 +51,7 @@ func SetupForeignPodsDetector(schedProfileName string, podInformer k8scache.Shar
 		}
 
 		cc.NodeHasForeignPods(pod.Spec.NodeName, pod)
-		klog.V(6).InfoS("nrtcache: has foreign pods", "logID", klog.KObj(pod), "node", pod.Spec.NodeName, "podUID", pod.UID)
+		lh.V(6).Info("detected foreign pods", logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, pod.Spec.NodeName)
 	}
 
 	podInformer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
@@ -67,11 +71,11 @@ func TrackAllForeignPods() {
 	onlyExclusiveResources = false
 }
 
-func RegisterSchedulerProfileName(schedProfileName string) {
-	klog.InfoS("nrtcache: setting up foreign pod detection", "profile", schedProfileName)
+func RegisterSchedulerProfileName(lh logr.Logger, schedProfileName string) {
+	lh.Info("setting up detection", "profile", schedProfileName)
 	schedProfileNames.Insert(schedProfileName)
 
-	klog.V(5).InfoS("nrtcache: registered scheduler profiles", "names", schedProfileNames.List())
+	lh.V(5).Info("registered scheduler profiles", "names", schedProfileNames.List())
 }
 
 func IsForeignPod(pod *corev1.Pod) bool {

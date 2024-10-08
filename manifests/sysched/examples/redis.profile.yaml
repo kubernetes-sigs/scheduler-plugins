@@ -1,0 +1,99 @@
+---
+apiVersion: security-profiles-operator.x-k8s.io/v1beta1
+kind: SeccompProfile
+metadata:
+  name: redis-seccomp
+  namespace: default
+spec:
+  defaultAction: SCMP_ACT_LOG
+  architectures:
+  - SCMP_ARCH_X86_64
+  syscalls:
+  - action: SCMP_ACT_ALLOW
+    names:
+    - pivot_root
+    - listen
+    - statfs
+    - clone
+    - setuid
+    - unlinkat
+    - readlink
+    - umask
+    - wait4
+    - accept
+    - sethostname
+    - symlinkat
+    - sigreturn
+    - bind
+    - stat
+    - close
+    - setgid
+    - pipe
+    - brk
+    - openat
+    - geteuid
+    - fcntl
+    - sched_getaffinity
+    - umount
+    - capset
+    - prlimit
+    - gettid
+    - rt_sigprocmask
+    - open
+    - exit_group
+    - dup
+    - getpid
+    - mknodat
+    - getuid
+    - sysinfo
+    - seccomp
+    - prctl
+    - futex
+    - epoll_wait
+    - connect
+    - mmap
+    - epoll_ctl
+    - uname
+    - setsockopt
+    - clock_gettime
+    - setgroups
+    - getgid
+    - fchdir
+    - fchown
+    - fchownat
+    - procexit
+    - getcwd
+    - chdir
+    - mount
+    - rt_sigaction
+    - epoll_pwait
+    - access
+    - execve
+    - epoll_create1
+    - getrandom
+    - madvise
+    - lseek
+    - arch_prctl
+    - mkdirat
+    - getegid
+    - nanosleep
+    - mprotect
+    - readlinkat
+    - gettimeofday
+    - write
+    - ioctl
+    - sched_yield
+    - sigaltstack
+    - signaldeliver
+    - fstatfs
+    - read
+    - getdents64
+    - socket
+    - getppid
+    - newfstatat
+    - fstat
+    - munmap
+    - set_robust_list
+    - epoll_create
+    - capget
+    - set_tid_address

@@ -111,12 +111,33 @@ func TestResourceListToLoggable(t *testing.T) {
 			},
 			expected: ` logID="TEST4" awesome.net/gpu="4" cpu="24" example.com/netdevice="16" hugepages-2Mi="1.0 GiB" memory="16 GiB"`,
 		},
+		{
+			name:  "CPUs, Memory, EphemeralStorage",
+			logID: "TEST5",
+			resources: corev1.ResourceList{
+				corev1.ResourceCPU:              resource.MustParse("24"),
+				corev1.ResourceMemory:           resource.MustParse("16Gi"),
+				corev1.ResourceEphemeralStorage: resource.MustParse("4Gi"),
+			},
+			expected: ` logID="TEST5" cpu="24" ephemeral-storage="4.0 GiB" memory="16 GiB"`,
+		},
+		{
+			name:  "CPUs, Memory, EphemeralStorage, hugepages-1Gi",
+			logID: "TEST6",
+			resources: corev1.ResourceList{
+				corev1.ResourceCPU:                   resource.MustParse("24"),
+				corev1.ResourceMemory:                resource.MustParse("16Gi"),
+				corev1.ResourceName("hugepages-1Gi"): resource.MustParse("4Gi"),
+				corev1.ResourceEphemeralStorage:      resource.MustParse("6Gi"),
+			},
+			expected: ` logID="TEST6" cpu="24" ephemeral-storage="6.0 GiB" hugepages-1Gi="4.0 GiB" memory="16 GiB"`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			keysAndValues := ResourceListToLoggable(tt.logID, tt.resources)
+			keysAndValues := ResourceListToLoggableWithValues([]interface{}{"logID", tt.logID}, tt.resources)
 			kvListFormat(&buf, keysAndValues...)
 			got := buf.String()
 			if got != tt.expected {

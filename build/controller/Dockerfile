@@ -11,17 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG ARCH
-FROM golang:1.20
+ARG GO_BASE_IMAGE
+ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
+FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 
-WORKDIR /go/src/sigs.k8s.io/scheduler-plugins
+WORKDIR /workspace
 COPY . .
-ARG ARCH
-RUN make build-controller.$ARCH
+ARG TARGETARCH
+RUN make build-controller GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
 
-FROM $ARCH/alpine:3.16
-
-COPY --from=0 /go/src/sigs.k8s.io/scheduler-plugins/bin/controller /bin/controller
+FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 
 WORKDIR /bin
-CMD ["controller"]
+COPY --from=builder /workspace/bin/controller .
+USER 65532:65532
+
+ENTRYPOINT ["/bin/controller"]

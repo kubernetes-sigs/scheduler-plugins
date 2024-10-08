@@ -7,7 +7,7 @@ Currently, the collection consists of the following plugins.
 
 - `TargetLoadPacking`: Implements a packing policy up to a configured CPU utilization, then switches to a spreading policy among the hot nodes. (Supports CPU resource.)
 - `LoadVariationRiskBalancing`: Equalizes the risk, defined as a combined measure of average utilization and variation in utilization, among nodes. (Supports CPU and memory resources.)
-- `LowRiskOverCommitment`: Evaluates the performance risk of overcommitment and selects the node with lowest risk by taking into consideration (1) the resource limit values of pods (limit-aware) and (2) the actual load (utilization) on the nodes (load-aware). Thus, it provides a low risk environment for pods and alleviate issues with overcommitment, while allowing pods to use their limits.
+- `LowRiskOverCommitment`: Evaluates the performance risk of overcommitment and selects the node with the lowest risk by taking into consideration (1) the resource limit values of pods (limit-aware) and (2) the actual load (utilization) on the nodes (load-aware). Thus, it provides a low risk environment for pods and alleviate issues with overcommitment, while allowing pods to use their limits.
 
 The Trimaran plugins utilize a [load-watcher](https://github.com/paypal/load-watcher) to access resource utilization data via metrics providers. Currently, the `load-watcher` supports three metrics providers: [Kubernetes Metrics Server](https://github.com/kubernetes-sigs/metrics-server), [Prometheus Server](https://prometheus.io/), and [SignalFx](https://docs.signalfx.com/en/latest/integrations/agent/index.html).
 

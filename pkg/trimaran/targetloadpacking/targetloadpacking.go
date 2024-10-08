@@ -36,7 +36,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
+	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
@@ -47,8 +47,8 @@ const (
 )
 
 var (
-	requestsMilliCores           = v1beta3.DefaultRequestsMilliCores
-	hostTargetUtilizationPercent = v1beta3.DefaultTargetUtilizationPercent
+	requestsMilliCores           = cfgv1.DefaultRequestsMilliCores
+	hostTargetUtilizationPercent = cfgv1.DefaultTargetUtilizationPercent
 	requestsMultiplier           float64
 )
 
@@ -61,7 +61,7 @@ type TargetLoadPacking struct {
 
 var _ framework.ScorePlugin = &TargetLoadPacking{}
 
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(4).InfoS("Creating new instance of the TargetLoadPacking plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.TargetLoadPackingArgs)
@@ -193,13 +193,12 @@ func (pl *TargetLoadPacking) NormalizeScore(context.Context, *framework.CycleSta
 	return nil
 }
 
-// Predict utilization for a container based on its requests/limits
+// PredictUtilisation predict utilization for a container based on its requests/limits
 func PredictUtilisation(container *v1.Container) int64 {
 	if _, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
 		return container.Resources.Limits.Cpu().MilliValue()
 	} else if _, ok := container.Resources.Requests[v1.ResourceCPU]; ok {
 		return int64(math.Round(float64(container.Resources.Requests.Cpu().MilliValue()) * requestsMultiplier))
-	} else {
-		return requestsMilliCores
 	}
+	return requestsMilliCores
 }

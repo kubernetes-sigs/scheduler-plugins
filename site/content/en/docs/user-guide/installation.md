@@ -8,7 +8,7 @@ weight: 1
 
 <!-- toc -->
 - [Create a Kubernetes Cluster](#create-a-kubernetes-cluster)
-- [Install release v0.27.8 and use Coscheduling](#install-release-v0278-and-use-coscheduling)
+- [Install release v0.29.7 and use Coscheduling](#install-release-v0297-and-use-coscheduling)
   - [As a second scheduler](#as-a-second-scheduler)
   - [As a single scheduler (replacing the vanilla default-scheduler)](#as-a-single-scheduler-replacing-the-vanilla-default-scheduler)
 - [Test Coscheduling](#test-coscheduling)
@@ -28,7 +28,7 @@ If you do not have a cluster yet, create one by using one of the following provi
 * [kubeadm](https://kubernetes.io/docs/reference/setup-tools/kubeadm/)
 * [minikube](https://minikube.sigs.k8s.io/)
 
-## Install release v0.27.8 and use Coscheduling
+## Install release v0.29.7 and use Coscheduling
 
 Note: we provide two ways to install the scheduler-plugin artifacts: as a second scheduler
 and as a single scheduler. Their pros and cons are as below:
@@ -150,9 +150,9 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     >     - --kubeconfig=/etc/kubernetes/scheduler.conf
     >     - --leader-elect=true
     19,20c20
-    <     image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8
+    <     image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7
     ---
-    >     image: registry.k8s.io/kube-scheduler:v1.27.8
+    >     image: registry.k8s.io/kube-scheduler:v1.28.9
     50,52d49
     <     - mountPath: /etc/kubernetes/sched-cc.yaml
     <       name: sched-cc
@@ -164,14 +164,14 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     <     name: sched-cc
     ```
 
-1. Verify that kube-scheduler pod is running properly with a correct image: `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8`
+1. Verify that kube-scheduler pod is running properly with a correct image: `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7`
 
     ```bash
     $ kubectl get pod -n kube-system | grep kube-scheduler
     kube-scheduler-kind-control-plane            1/1     Running   0          3m27s
 
     $ kubectl get pods -l component=kube-scheduler -n kube-system -o=jsonpath="{.items[0].spec.containers[0].image}{'\n'}"
-    registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8
+    registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7
     ```
 
     > **⚠️Troubleshooting:** If the kube-scheudler is not up, you may need to restart kubelet service inside the kind control plane (`systemctl restart kubelet.service`)

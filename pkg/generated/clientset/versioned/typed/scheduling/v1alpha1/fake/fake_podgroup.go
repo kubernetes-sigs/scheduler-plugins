@@ -20,14 +20,16 @@ package fake
 
 import (
 	"context"
+	json "encoding/json"
+	"fmt"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
 	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/applyconfiguration/scheduling/v1alpha1"
 )
 
 // FakePodGroups implements PodGroupInterface
@@ -36,9 +38,9 @@ type FakePodGroups struct {
 	ns   string
 }
 
-var podgroupsResource = schema.GroupVersionResource{Group: "scheduling.x-k8s.io", Version: "v1alpha1", Resource: "podgroups"}
+var podgroupsResource = v1alpha1.SchemeGroupVersion.WithResource("podgroups")
 
-var podgroupsKind = schema.GroupVersionKind{Group: "scheduling.x-k8s.io", Version: "v1alpha1", Kind: "PodGroup"}
+var podgroupsKind = v1alpha1.SchemeGroupVersion.WithKind("PodGroup")
 
 // Get takes name of the podGroup, and returns the corresponding podGroup object, and an error if there is any.
 func (c *FakePodGroups) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.PodGroup, err error) {
@@ -134,6 +136,51 @@ func (c *FakePodGroups) DeleteCollection(ctx context.Context, opts v1.DeleteOpti
 func (c *FakePodGroups) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.PodGroup, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewPatchSubresourceAction(podgroupsResource, c.ns, name, pt, data, subresources...), &v1alpha1.PodGroup{})
+
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1alpha1.PodGroup), err
+}
+
+// Apply takes the given apply declarative configuration, applies it and returns the applied podGroup.
+func (c *FakePodGroups) Apply(ctx context.Context, podGroup *schedulingv1alpha1.PodGroupApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.PodGroup, err error) {
+	if podGroup == nil {
+		return nil, fmt.Errorf("podGroup provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(podGroup)
+	if err != nil {
+		return nil, err
+	}
+	name := podGroup.Name
+	if name == nil {
+		return nil, fmt.Errorf("podGroup.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewPatchSubresourceAction(podgroupsResource, c.ns, *name, types.ApplyPatchType, data), &v1alpha1.PodGroup{})
+
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1alpha1.PodGroup), err
+}
+
+// ApplyStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+func (c *FakePodGroups) ApplyStatus(ctx context.Context, podGroup *schedulingv1alpha1.PodGroupApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.PodGroup, err error) {
+	if podGroup == nil {
+		return nil, fmt.Errorf("podGroup provided to Apply must not be nil")
+	}
+	data, err := json.Marshal(podGroup)
+	if err != nil {
+		return nil, err
+	}
+	name := podGroup.Name
+	if name == nil {
+		return nil, fmt.Errorf("podGroup.Name must be provided to Apply")
+	}
+	obj, err := c.Fake.
+		Invokes(testing.NewPatchSubresourceAction(podgroupsResource, c.ns, *name, types.ApplyPatchType, data, "status"), &v1alpha1.PodGroup{})
 
 	if obj == nil {
 		return nil, err

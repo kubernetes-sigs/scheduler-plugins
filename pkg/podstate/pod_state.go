@@ -82,7 +82,7 @@ func (ps *PodState) NormalizeScore(ctx context.Context, state *framework.CycleSt
 		}
 	}
 
-	// Transform the highest to lowest score range to fit the framework's min to max node score range.
+	// Transform the highest to the lowest score range to fit the framework's min to max node score range.
 	oldRange := highest - lowest
 	newRange := framework.MaxNodeScore - framework.MinNodeScore
 	for i, nodeScore := range scores {
@@ -97,6 +97,6 @@ func (ps *PodState) NormalizeScore(ctx context.Context, state *framework.CycleSt
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, h framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &PodState{handle: h}, nil
 }

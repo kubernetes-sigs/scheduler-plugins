@@ -16,7 +16,7 @@ This folder holds the capacity scheduling plugin implementations based on [Capac
 Example config:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false
@@ -25,7 +25,7 @@ clientConnection:
 profiles:
 - schedulerName: default-scheduler
   plugins:
-    preFilter:
+    multiPoint:
       enabled:
       - name: CapacityScheduling
     postFilter:
@@ -33,9 +33,6 @@ profiles:
       - name: CapacityScheduling
       disabled:
       - name: "*"
-    reserve:
-      enabled:
-      - name: CapacityScheduling
 ```
 
 ### ElasticQuota

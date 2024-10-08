@@ -274,7 +274,7 @@ func NominatedNodeName(pod *v1.Pod) string {
 // NewFakeClient returns a generic controller-runtime client with all given `objs` as internal runtime objects.
 // It also registers core v1 scheme, this repo's v1alpha1 scheme and topologyv1alpha2 scheme.
 // This function is used by unit tests.
-func NewFakeClient(objs ...runtime.Object) (client.Client, error) {
+func NewFakeClient(objs ...runtime.Object) (client.WithWatch, error) {
 	scheme := runtime.NewScheme()
 	if err := v1.AddToScheme(scheme); err != nil {
 		return nil, err

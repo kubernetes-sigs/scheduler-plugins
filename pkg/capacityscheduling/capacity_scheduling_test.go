@@ -41,6 +41,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -143,14 +144,14 @@ func TestPreFilter(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -317,7 +318,7 @@ func TestPostFilter(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx,
 				registeredPlugins,
 				"default-scheduler",
@@ -444,14 +445,14 @@ func TestReserve(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -566,14 +567,14 @@ func TestUnreserve(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -723,7 +724,7 @@ func TestDryRunPreemption(t *testing.T) {
 			cs := clientsetfake.NewSimpleClientset()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx,
 				registeredPlugins,
 				"default-scheduler",
@@ -972,7 +973,7 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx,
 				registeredPlugins,
 				"default-scheduler",
@@ -1129,14 +1130,14 @@ func TestAddElasticQuota(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -1202,14 +1203,14 @@ func TestUpdateElasticQuota(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -1254,14 +1255,14 @@ func TestDeleteElasticQuota(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -1332,14 +1333,14 @@ func TestAddPod(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -1444,14 +1445,14 @@ func TestUpdatePod(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -1561,14 +1562,14 @@ func TestDeletePod(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			var registerPlugins []st.RegisterPluginFunc
+			var registerPlugins []tf.RegisterPluginFunc
 			registeredPlugins := append(
 				registerPlugins,
-				st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			)
 
-			fwk, err := st.NewFramework(
+			fwk, err := tf.NewFramework(
 				ctx, registeredPlugins, "",
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(nil)),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(make([]*v1.Pod, 0), make([]*v1.Node, 0))),
@@ -1637,12 +1638,12 @@ func makeResourceList(cpu, mem int64) v1.ResourceList {
 	}
 }
 
-func makeRegisteredPlugin() []st.RegisterPluginFunc {
-	registeredPlugins := []st.RegisterPluginFunc{
-		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		st.RegisterPluginAsExtensions(noderesources.Name, func(plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
-			return noderesources.NewFit(plArgs, fh, plfeature.Features{})
+func makeRegisteredPlugin() []tf.RegisterPluginFunc {
+	registeredPlugins := []tf.RegisterPluginFunc{
+		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		tf.RegisterPluginAsExtensions(noderesources.Name, func(ctx context.Context, plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+			return noderesources.NewFit(ctx, plArgs, fh, plfeature.Features{})
 		}, "Filter", "PreFilter"),
 	}
 	return registeredPlugins

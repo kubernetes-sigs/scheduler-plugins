@@ -14,7 +14,7 @@ This folder holds the preemption toleration plugin implemented as discussed in [
 ## Example scheduler config:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 leaderElection:
   leaderElect: false

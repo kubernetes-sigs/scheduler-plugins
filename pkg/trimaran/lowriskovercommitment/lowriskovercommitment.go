@@ -58,7 +58,7 @@ type LowRiskOverCommitment struct {
 }
 
 // New : create an instance of a LowRiskOverCommitment plugin
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	klog.V(4).InfoS("Creating new instance of the LowRiskOverCommitment plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LowRiskOverCommitmentArgs)
@@ -89,7 +89,7 @@ func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) 
 }
 
 // PreScore : calculate pod requests and limits and store as plugin state data to be used during scoring
-func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
 	klog.V(6).InfoS("PreScore: Calculating pod resource requests and limits", "pod", klog.KObj(pod))
 	podResourcesStateData := CreatePodResourcesStateData(pod)
 	cycleState.Write(PodResourcesKey, podResourcesStateData)

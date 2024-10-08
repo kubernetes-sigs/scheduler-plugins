@@ -5,7 +5,7 @@ metadata:
   namespace: kube-system
 data:
   scheduler-config.yaml: |
-      apiVersion: kubescheduler.config.k8s.io/v1beta3
+      apiVersion: kubescheduler.config.k8s.io/v1
       kind: KubeSchedulerConfiguration
       leaderElection:
         leaderElect: false
@@ -14,12 +14,12 @@ data:
       profiles:
         - schedulerName: topo-aware-scheduler
           plugins:
-            filter:
+            multiPoint:
               enabled:
-                - name: NodeResourceTopologyMatch
-            score:
-              enabled:
-                - name: NodeResourceTopologyMatch
+              - name: NodeResourceTopologyMatch
+            reserve:
+              disabled:
+              - name: NodeResourceTopologyMatch
           # optional plugin configs
           pluginConfig:
           - name: NodeResourceTopologyMatch

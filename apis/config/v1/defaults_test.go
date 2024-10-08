@@ -205,6 +205,7 @@ func TestSchedulingDefaults(t *testing.T) {
 				Cache: &NodeResourceTopologyCache{
 					ForeignPodsDetect: &defaultForeignPodsDetect,
 					ResyncMethod:      &defaultResyncMethod,
+					InformerMode:      &defaultInformerMode,
 				},
 			},
 		},
@@ -252,6 +253,25 @@ func TestSchedulingDefaults(t *testing.T) {
 				Namespaces:          []string{"n2"},
 				WeightsName:         pointer.StringPtr("latency"),
 				NetworkTopologyName: pointer.StringPtr("nt-latency-costs"),
+			},
+		},
+		{
+			name:   "empty config SySchedArgs",
+			config: &SySchedArgs{},
+			expect: &SySchedArgs{
+				DefaultProfileNamespace: pointer.StringPtr("default"),
+				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
+			},
+		},
+		{
+			name: "set non default SySchedArgs",
+			config: &SySchedArgs{
+				DefaultProfileNamespace: pointer.StringPtr("default"),
+				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
+			},
+			expect: &SySchedArgs{
+				DefaultProfileNamespace: pointer.StringPtr("default"),
+				DefaultProfileName:      pointer.StringPtr("all-syscalls"),
 			},
 		},
 	}

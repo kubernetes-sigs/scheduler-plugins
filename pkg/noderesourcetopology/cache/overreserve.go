@@ -21,145 +21,201 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
+	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
-	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 )
 
 type OverReserve struct {
-	client           ctrlclient.Client
+	lh               logr.Logger
+	client           ctrlclient.Reader
 	lock             sync.Mutex
+	generation       uint64
 	nrts             *nrtStore
 	assumedResources map[string]*resourceStore // nodeName -> resourceStore
 	// nodesMaybeOverreserved counts how many times a node is filtered out. This is used as trigger condition to try
 	// to resync nodes. See The documentation of Resync() below for more details.
 	nodesMaybeOverreserved counter
 	nodesWithForeignPods   counter
+	nodesWithAttrUpdate    counter
 	podLister              podlisterv1.PodLister
 	resyncMethod           apiconfig.CacheResyncMethod
+	resyncScope            apiconfig.CacheResyncScope
+	isPodRelevant          podprovider.PodFilterFunc
 }
 
-func NewOverReserve(cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.Client, podLister podlisterv1.PodLister) (*OverReserve, error) {
+func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.WithWatch, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (*OverReserve, error) {
 	if client == nil || podLister == nil {
-		return nil, fmt.Errorf("nrtcache: received nil references")
+		return nil, fmt.Errorf("received nil references")
 	}
 
-	resyncMethod := getCacheResyncMethod(cfg)
-
 	nrtObjs := &topologyv1alpha2.NodeResourceTopologyList{}
-	// TODO: we should pass-in a context in the future
-	if err := client.List(context.Background(), nrtObjs); err != nil {
+	if err := client.List(ctx, nrtObjs); err != nil {
 		return nil, err
 	}
 
-	klog.V(3).InfoS("nrtcache: initializing", "objects", len(nrtObjs.Items), "method", resyncMethod)
+	resyncMethod := getCacheResyncMethod(lh, cfg)
+	resyncScope := getCacheResyncScope(lh, cfg)
+
+	lh.V(2).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod, "scope", resyncScope)
 	obj := &OverReserve{
+		lh:                     lh,
 		client:                 client,
-		nrts:                   newNrtStore(nrtObjs.Items),
+		nrts:                   newNrtStore(lh, nrtObjs.Items),
 		assumedResources:       make(map[string]*resourceStore),
 		nodesMaybeOverreserved: newCounter(),
 		nodesWithForeignPods:   newCounter(),
+		nodesWithAttrUpdate:    newCounter(),
 		podLister:              podLister,
 		resyncMethod:           resyncMethod,
+		isPodRelevant:          isPodRelevant,
 	}
+
+	if resyncScope == apiconfig.CacheResyncScopeAll {
+		wt := Watcher{
+			lh:    obj.lh,
+			nrts:  obj.nrts,
+			nodes: obj.nodesWithAttrUpdate,
+		}
+		go wt.NodeResourceTopologies(ctx, client)
+	}
+
 	return obj, nil
 }
 
-func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, bool) {
+func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, CachedNRTInfo) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	if ov.nodesWithForeignPods.IsSet(nodeName) {
-		return nil, false
+		return nil, CachedNRTInfo{}
 	}
 
+	info := CachedNRTInfo{Fresh: true}
 	nrt := ov.nrts.GetNRTCopyByNodeName(nodeName)
 	if nrt == nil {
-		return nil, true
+		return nil, info
 	}
+
+	info.Generation = ov.generation
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
-		return nrt, true
+		return nrt, info
 	}
 
-	klog.V(6).InfoS("nrtcache NRT", "logID", klog.KObj(pod), "vanilla", stringify.NodeResourceTopologyResources(nrt))
-	nodeAssumedResources.UpdateNRT(klog.KObj(pod).String(), nrt)
+	logID := klog.KObj(pod)
+	lh := ov.lh.WithValues(logging.KeyPod, logID, logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName, logging.KeyGeneration, ov.generation)
 
-	klog.V(5).InfoS("nrtcache NRT", "logID", klog.KObj(pod), "updated", stringify.NodeResourceTopologyResources(nrt))
-	return nrt, true
+	lh.V(6).Info("NRT", "fromcache", stringify.NodeResourceTopologyResources(nrt))
+	nodeAssumedResources.UpdateNRT(nrt, logging.KeyPod, logID)
+
+	lh.V(5).Info("NRT", "withassumed", stringify.NodeResourceTopologyResources(nrt))
+	return nrt, info
 }
 
 func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	val := ov.nodesMaybeOverreserved.Incr(nodeName)
-	klog.V(4).InfoS("nrtcache: mark discarded", "logID", klog.KObj(pod), "node", nodeName, "count", val)
+	ov.lh.V(4).Info("mark discarded", logging.KeyNode, nodeName, "count", val)
 }
 
 func (ov *OverReserve) NodeHasForeignPods(nodeName string, pod *corev1.Pod) {
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	if !ov.nrts.Contains(nodeName) {
-		klog.V(5).InfoS("nrtcache: ignoring foreign pods", "logID", klog.KObj(pod), "node", nodeName, "nrtinfo", "missing")
+		lh.V(5).Info("ignoring foreign pods", "nrtinfo", "missing")
 		return
 	}
 	val := ov.nodesWithForeignPods.Incr(nodeName)
-	klog.V(4).InfoS("nrtcache: marked with foreign pods", "logID", klog.KObj(pod), "node", nodeName, "count", val)
+	lh.V(2).Info("marked with foreign pods", logging.KeyNode, nodeName, "count", val)
 }
 
 func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
-		nodeAssumedResources = newResourceStore()
+		nodeAssumedResources = newResourceStore(ov.lh)
 		ov.assumedResources[nodeName] = nodeAssumedResources
 	}
 
 	nodeAssumedResources.AddPod(pod)
-	klog.V(5).InfoS("nrtcache post reserve", "logID", klog.KObj(pod), "node", nodeName, "assumedResources", nodeAssumedResources.String())
+	lh.V(2).Info("post reserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
 
 	ov.nodesMaybeOverreserved.Delete(nodeName)
-	klog.V(6).InfoS("nrtcache: reset discard counter", "logID", klog.KObj(pod), "node", nodeName)
+	lh.V(6).Info("reset discard counter", logging.KeyNode, nodeName)
 }
 
 func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {
+	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		// this should not happen, so we're vocal about it
 		// we don't return error because not much to do to recover anyway
-		klog.V(3).InfoS("nrtcache: no resources tracked", "logID", klog.KObj(pod), "node", nodeName)
+		lh.V(2).Info("no resources tracked", logging.KeyNode, nodeName)
 		return
 	}
 
 	nodeAssumedResources.DeletePod(pod)
-	klog.V(5).InfoS("nrtcache post release", "logID", klog.KObj(pod), "node", nodeName, "assumedResources", nodeAssumedResources.String())
+	lh.V(2).Info("post unreserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
 }
 
-// NodesMaybeOverReserved returns a slice of all the node names which have been discarded previously,
+type DesyncedNodes struct {
+	Generation        uint64
+	MaybeOverReserved []string
+	ConfigChanged     []string
+}
+
+func (rn DesyncedNodes) String() string {
+	return fmt.Sprintf("desyncedNodes{MaybeOverReserved: %v, ConfigChanged: %v}", rn.MaybeOverReserved, rn.ConfigChanged)
+}
+
+func (rn DesyncedNodes) Len() int {
+	return len(rn.MaybeOverReserved) + len(rn.ConfigChanged)
+}
+
+func (rn DesyncedNodes) DirtyCount() int {
+	return len(rn.MaybeOverReserved)
+}
+
+// GetDesyncNodes returns info with all the node names which have been discarded previously,
 // so which are supposed to be `dirty` in the cache.
 // A node can be discarded for two reasons:
-// 1. it legitmately cannot fit containers because it has not enough free resources
-// 2. it was pessimistically overallocated, so the node is a candidate for resync
+//  1. it legitimately cannot fit containers because it has not enough free resources
+//  2. it was pessimistically overallocated, so the node is a candidate for resync
+//
+// or
+//  3. it received a metadata update while at steady state (resource allocation didn't change),
+//     typically at idle time (unloaded node)
+//
 // This function enables the caller to know the slice of nodes should be considered for resync,
 // avoiding the need to rescan the full node list.
-func (ov *OverReserve) NodesMaybeOverReserved(logID string) []string {
+func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+
+	// make sure to log the generation to be able to crosscorrelate with later logs
+	lh = lh.WithValues(logging.KeyGeneration, ov.generation)
+
 	// this is intentionally aggressive. We don't yet make any attempt to find out if the
 	// node was discarded because pessimistically overrserved (which should indeed trigger
 	// a resync) or if it was discarded because the actual resources on the node really were
@@ -169,14 +225,23 @@ func (ov *OverReserve) NodesMaybeOverReserved(logID string) []string {
 	nodes := ov.nodesWithForeignPods.Clone()
 	foreignCount := nodes.Len()
 
+	overreservedCount := ov.nodesMaybeOverreserved.Len()
 	for _, node := range ov.nodesMaybeOverreserved.Keys() {
 		nodes.Incr(node)
 	}
 
+	// always use local copies
+	configChangeNodes := ov.nodesWithAttrUpdate.Clone()
+	configChangeCount := configChangeNodes.Len()
+
 	if nodes.Len() > 0 {
-		klog.V(4).InfoS("nrtcache: found dirty nodes", "logID", logID, "foreign", foreignCount, "discarded", nodes.Len()-foreignCount, "total", nodes.Len())
+		lh.V(4).Info("found dirty nodes", "foreign", foreignCount, "discarded", overreservedCount, "configChange", configChangeCount, "total", nodes.Len())
 	}
-	return nodes.Keys()
+	return DesyncedNodes{
+		Generation:        ov.generation,
+		MaybeOverReserved: nodes.Keys(),
+		ConfigChanged:     configChangeNodes.Keys(),
+	}
 }
 
 // Resync implements the cache resync loop step. This function checks if the latest available NRT information received matches the
@@ -189,87 +254,113 @@ func (ov *OverReserve) NodesMaybeOverReserved(logID string) []string {
 // too aggressive resync attempts, so to more, likely unnecessary, computation work on the scheduler side.
 func (ov *OverReserve) Resync() {
 	// we are not working with a specific pod, so we need a unique key to track this flow
-	logID := logIDFromTime()
+	lh_ := ov.lh.WithName(logging.FlowCacheSync)
+	lh_.V(4).Info(logging.FlowBegin)
+	defer lh_.V(4).Info(logging.FlowEnd)
 
-	nodeNames := ov.NodesMaybeOverReserved(logID)
+	nodes := ov.GetDesyncedNodes(lh_)
+	// we start without because chicken/egg problem. This is the earliest we can use the generation value.
+	lh_ = lh_.WithValues(logging.KeyGeneration, nodes.Generation)
+
 	// avoid as much as we can unnecessary work and logs.
-	if len(nodeNames) == 0 {
-		klog.V(6).InfoS("nrtcache: resync: no dirty nodes detected")
+	if nodes.Len() == 0 {
+		lh_.V(5).Info("no dirty nodes detected")
 		return
 	}
 
 	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToPodDataMap(ov.podLister, logID)
+	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant)
 	if err != nil {
-		klog.ErrorS(err, "cannot find the mapping between running pods and nodes")
+		lh_.Error(err, "cannot find the mapping between running pods and nodes")
 		return
 	}
 
-	klog.V(6).InfoS("nrtcache: resync NodeTopology cache starting", "logID", logID)
-	defer klog.V(6).InfoS("nrtcache: resync NodeTopology cache complete", "logID", logID)
-
 	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
-	for _, nodeName := range nodeNames {
+	for _, nodeName := range nodes.MaybeOverReserved {
+		lh := lh_.WithValues(logging.KeyNode, nodeName)
+
 		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
 		if err := ov.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
-			klog.V(3).InfoS("nrtcache: failed to get NodeTopology", "logID", logID, "node", nodeName, "error", err)
+			lh.V(2).Info("failed to get NodeTopology", "error", err)
 			continue
 		}
 		if nrtCandidate == nil {
-			klog.V(3).InfoS("nrtcache: missing NodeTopology", "logID", logID, "node", nodeName)
+			lh.V(2).Info("missing NodeTopology")
 			continue
 		}
 
 		objs, ok := nodeToObjsMap[nodeName]
 		if !ok {
 			// this really should never happen
-			klog.V(3).InfoS("nrtcache: cannot find any pod for node", "logID", logID, "node", nodeName)
+			lh.Info("cannot find any pod for node")
 			continue
 		}
 
 		pfpExpected, onlyExclRes := podFingerprintForNodeTopology(nrtCandidate, ov.resyncMethod)
 		if pfpExpected == "" {
-			klog.V(3).InfoS("nrtcache: missing NodeTopology podset fingerprint data", "logID", logID, "node", nodeName)
+			lh.V(2).Info("missing NodeTopology podset fingerprint data")
 			continue
 		}
 
-		klog.V(6).InfoS("nrtcache: trying to resync NodeTopology", "logID", logID, "node", nodeName, "fingerprint", pfpExpected, "onlyExclusiveResources", onlyExclRes)
+		lh.V(4).Info("trying to sync NodeTopology", "fingerprint", pfpExpected, "onlyExclusiveResources", onlyExclRes)
 
-		err = checkPodFingerprintForNode(logID, objs, nodeName, pfpExpected, onlyExclRes)
+		err = checkPodFingerprintForNode(lh, objs, nodeName, pfpExpected, onlyExclRes)
 		if errors.Is(err, podfingerprint.ErrSignatureMismatch) {
 			// can happen, not critical
-			klog.V(5).InfoS("nrtcache: NodeTopology podset fingerprint mismatch", "logID", logID, "node", nodeName)
+			lh.V(4).Info("NodeTopology podset fingerprint mismatch")
 			continue
 		}
 		if err != nil {
 			// should never happen, let's be vocal
-			klog.V(3).ErrorS(err, "nrtcache: checking NodeTopology podset fingerprint", "logID", logID, "node", nodeName)
+			lh.Error(err, "checking NodeTopology podset fingerprint")
 			continue
 		}
 
-		klog.V(4).InfoS("nrtcache: overriding cached info", "logID", logID, "node", nodeName)
+		lh.V(4).Info("overriding cached info", "reason", "resynced")
 		nrtUpdates = append(nrtUpdates, nrtCandidate)
 	}
 
-	ov.FlushNodes(logID, nrtUpdates...)
+	for _, nodeName := range nodes.ConfigChanged {
+		lh := lh_.WithValues(logging.KeyNode, nodeName)
+
+		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
+		if err := ov.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
+			lh.V(2).Info("failed to get NodeTopology", "error", err)
+			continue
+		}
+		if nrtCandidate == nil {
+			lh.V(2).Info("missing NodeTopology")
+			continue
+		}
+
+		lh.V(4).Info("overriding cached info", "reason", "configChanged")
+		nrtUpdates = append(nrtUpdates, nrtCandidate)
+	}
+
+	ov.FlushNodes(lh_, nrtUpdates...)
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
-func (ov *OverReserve) FlushNodes(logID string, nrts ...*topologyv1alpha2.NodeResourceTopology) {
+func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.NodeResourceTopology) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+
 	for _, nrt := range nrts {
-		klog.V(4).InfoS("nrtcache: flushing", "logID", logID, "node", nrt.Name)
+		lh.V(2).Info("flushing", logging.KeyNode, nrt.Name)
 		ov.nrts.Update(nrt)
 		delete(ov.assumedResources, nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrt.Name)
 		ov.nodesWithForeignPods.Delete(nrt.Name)
+		ov.nodesWithAttrUpdate.Delete(nrt.Name)
 	}
-}
 
-func InformerFromHandle(handle framework.Handle) (k8scache.SharedIndexInformer, podlisterv1.PodLister) {
-	podHandle := handle.SharedInformerFactory().Core().V1().Pods() // shortcut
-	return podHandle.Informer(), podHandle.Lister()
+	if len(nrts) == 0 {
+		return
+	}
+
+	// increase only if we mutated the internal state
+	ov.generation += 1
+	lh.V(2).Info("generation", "new", ov.generation)
 }
 
 // to be used only in tests
@@ -277,19 +368,47 @@ func (ov *OverReserve) Store() *nrtStore {
 	return ov.nrts
 }
 
-func logIDFromTime() string {
-	return fmt.Sprintf("resync%v", time.Now().UnixMilli())
+func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (map[string][]podData, error) {
+	nodeToObjsMap := make(map[string][]podData)
+	pods, err := podLister.List(labels.Everything())
+	if err != nil {
+		return nodeToObjsMap, err
+	}
+	for _, pod := range pods {
+		if !isPodRelevant(lh, pod) {
+			continue
+		}
+		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
+		nodeObjs = append(nodeObjs, podData{
+			Namespace:             pod.Namespace,
+			Name:                  pod.Name,
+			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
+		})
+		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
+	}
+	return nodeToObjsMap, nil
 }
 
-func getCacheResyncMethod(cfg *apiconfig.NodeResourceTopologyCache) apiconfig.CacheResyncMethod {
+func getCacheResyncMethod(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache) apiconfig.CacheResyncMethod {
 	var resyncMethod apiconfig.CacheResyncMethod
 	if cfg != nil && cfg.ResyncMethod != nil {
 		resyncMethod = *cfg.ResyncMethod
 	} else { // explicitly set to nil?
 		resyncMethod = apiconfig.CacheResyncAutodetect
-		klog.InfoS("cache resync method missing", "fallback", resyncMethod)
+		lh.Info("cache resync method missing", "fallback", resyncMethod)
 	}
 	return resyncMethod
+}
+
+func getCacheResyncScope(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache) apiconfig.CacheResyncScope {
+	var resyncScope apiconfig.CacheResyncScope
+	if cfg != nil && cfg.ResyncScope != nil {
+		resyncScope = *cfg.ResyncScope
+	} else { // explicitly set to nil?
+		resyncScope = apiconfig.CacheResyncScopeAll
+		lh.Info("cache resync scope missing", "fallback", resyncScope)
+	}
+	return resyncScope
 }
 
 func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}
