@@ -267,6 +267,13 @@ type NetworkOverheadArgs struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// PeaksArgs holds arguments used to configure Peaks plugin
+type PeaksArgs struct {
+	metav1.TypeMeta `json:",inline"`
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
+}
 
 type SySchedArgs struct {
 	metav1.TypeMeta `json:",inline"`

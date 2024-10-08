@@ -1,5 +1,5 @@
 /*
-Copyright 2022 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,21 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1
+package v1beta3
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	schedschemev1 "k8s.io/kube-scheduler/config/v1"
+	schedschemev1beta3 "k8s.io/kube-scheduler/config/v1beta3"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 )
 
 // SchemeGroupVersion is group version used to register these objects
-var SchemeGroupVersion = schema.GroupVersion{Group: schedconfig.GroupName, Version: "v1"}
+var SchemeGroupVersion = schema.GroupVersion{Group: schedconfig.GroupName, Version: "v1beta3"}
 
 var (
 	// localSchemeBuilder and AddToScheme will stay in k8s.io/kubernetes.
-	localSchemeBuilder = &schedschemev1.SchemeBuilder
+	localSchemeBuilder = &schedschemev1beta3.SchemeBuilder
 	// AddToScheme is a global function that registers this API group & version to a scheme
 	AddToScheme = localSchemeBuilder.AddToScheme
 )
@@ -46,7 +46,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&TopologicalSortArgs{},
 		&NetworkOverheadArgs{},
 		&PeaksArgs{},
-		&SySchedArgs{},
 	)
 	return nil
 }
