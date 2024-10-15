@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2024 The Kubernetes Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -15,18 +15,20 @@ package peaks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
-	"encoding/json"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/apis/config/v1beta3"
+	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
 const (
@@ -35,7 +37,7 @@ const (
 
 type Peaks struct {
 	handle    framework.Handle
-	collector *Collector
+	collector *trimaran.Collector
 	args      *config.PeaksArgs
 }
 
@@ -47,36 +49,42 @@ type PowerModel struct {
 }
 
 var _ framework.ScorePlugin = &Peaks{}
-var max_power = 0.0
-var cluster_power_model map[string]PowerModel
+var maxPower = 0.0
+var clusterPowerModel map[string]PowerModel
 
 func (pl *Peaks) Name() string {
 	return Name
 }
 
-func init_power_node_models() {
+func initNodePowerModels() error {
 	data, err := os.ReadFile("/power_model/node_power_model")
 	if err != nil {
-		panic(err)
+		klog.ErrorS(err, "Unable to read power model from configMap")
+		return err
 	}
-	if err = json.Unmarshal(data, &cluster_power_model); err != nil {
-        panic(err)
-    }
-	fmt.Println("Power model configuration :",cluster_power_model)
+	if err = json.Unmarshal(data, &clusterPowerModel); err != nil {
+		klog.ErrorS(err, "Unable to unmarshal power model from configMap value")
+		return err
+	}
+	klog.V(4).InfoS("Power model configuration :", clusterPowerModel)
+	return nil
 }
 
-func New(obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	fmt.Printf("Peaks plugin Input config %+v\n", obj)
+func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	klog.V(4).InfoS("Peaks plugin Input config %+v\n", obj)
 
 	args, ok := obj.(*config.PeaksArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type PeaksArgs, got %T", obj)
 	}
-	collector, err := NewCollector(&args.WatcherAddress)
+	collector, err := trimaran.NewCollector(&config.TrimaranSpec{WatcherAddress: args.WatcherAddress})
 	if err != nil {
 		return nil, err
 	}
-	init_power_node_models()
+	err = initNodePowerModels()
+	if err != nil {
+		return nil, err
+	}
 	pl := &Peaks{
 		handle:    handle,
 		collector: collector,
@@ -95,7 +103,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 
 	metrics, _ := pl.collector.GetNodeMetrics(nodeName)
 	if metrics == nil {
-		fmt.Println("Failed to get metrics for node; using minimum score", "nodeName", nodeName)
+		klog.ErrorS(nil, "Failed to get metrics for node; using minimum score", "nodeName", nodeName)
 		return score, nil
 	}
 
@@ -118,7 +126,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		}
 	}
 	if !cpuMetricFound {
-		fmt.Println("Cpu metric not found in node metrics for nodeName", nodeName)
+		klog.ErrorS(nil, "Cpu metric not found in node metrics for nodeName", nodeName)
 		return score, nil
 	}
 	nodeCPUCapMillis := float64(nodeInfo.Node().Status.Capacity.Cpu().MilliValue())
@@ -131,12 +139,12 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 	if predictedCPUUsage > 100 {
 		return score, framework.NewStatus(framework.Success, "")
 	} else {
-		fmt.Println("Node :", nodeName, ", Node cpu usage current :", nodeCPUUtilPercent, ", predicted :", predictedCPUUsage)
-		jump_in_power := getPowerJumpForUtilisation(nodeCPUUtilPercent, predictedCPUUsage, getPowerModel(nodeName))
-		var score int64 = int64(get_max_power() / jump_in_power)
-		fmt.Println("Jump in power", jump_in_power, " score", score)
+		klog.InfoS("Node :", nodeName, ", Node cpu usage current :", nodeCPUUtilPercent, ", predicted :", predictedCPUUsage)
+		jumpInPower := getPowerJumpForUtilisation(nodeCPUUtilPercent, predictedCPUUsage, getPowerModel(nodeName))
+		var score int64 = int64(getMaxPower() / jumpInPower)
+		klog.InfoS("Jump in power", jumpInPower, " score", score)
 
-		return int64(jump_in_power * math.Pow(10, 15)), framework.NewStatus(framework.Success, "")
+		return int64(jumpInPower * math.Pow(10, 15)), framework.NewStatus(framework.Success, "")
 	}
 }
 
@@ -184,7 +192,7 @@ func PredictUtilisation(container *v1.Container) int64 {
 	} else if _, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
 		return container.Resources.Limits.Cpu().MilliValue()
 	} else {
-		return v1beta3.DefaultRequestsMilliCores
+		return cfgv1.DefaultRequestsMilliCores
 	}
 }
 
@@ -192,21 +200,20 @@ func getPowerJumpForUtilisation(x, p float64, m PowerModel) float64 {
 	return m.K1 * (math.Exp(m.K2*p) - math.Exp(m.K2*x))
 }
 
-func get_max_power() float64 {
-	if max_power != 0.0 {
-		return max_power
+func getMaxPower() float64 {
+	if maxPower != 0.0 {
+		return maxPower
 	}
-	power_models := []PowerModel{PowerModel{371.7412504314313, -91.50493019588365, -0.02186049052516228}, PowerModel{471.7412504314313, -91.50493019588365, -0.07186049052516228}}
-	for _, model := range power_models {
-		if max_power < model.K0 {
-			max_power = model.K0
+	for _, model := range clusterPowerModel {
+		if maxPower < model.K0 {
+			maxPower = model.K0
 		}
 	}
-	return max_power
+	return maxPower
 }
 
 func getPowerModel(nodeName string) PowerModel {
-	power_model, ok := cluster_power_model[nodeName]
+	power_model, ok := clusterPowerModel[nodeName]
 	if ok {
 		return power_model
 	}

@@ -282,5 +282,5 @@ type SySchedArgs struct {
 
 type PeaksArgs struct {
 	metav1.TypeMeta `json:",inline"`
-	WatcherAddress *string `json:"watcherAddress,omitempty"`
+	WatcherAddress  *string `json:"watcherAddress,omitempty"`
 }
