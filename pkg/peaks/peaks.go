@@ -66,7 +66,6 @@ func initNodePowerModels() error {
 		klog.ErrorS(err, "Unable to unmarshal power model from configMap value")
 		return err
 	}
-	klog.V(4).InfoS("Power model configuration :", clusterPowerModel)
 	return nil
 }
 
