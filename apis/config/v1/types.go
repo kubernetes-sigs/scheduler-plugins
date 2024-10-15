@@ -277,3 +277,10 @@ type SySchedArgs struct {
 	// CR name of the default profile for all system calls
 	DefaultProfileName *string `json:"defaultProfileName,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type PeaksArgs struct {
+	metav1.TypeMeta `json:",inline"`
+	WatcherAddress *string `json:"watcherAddress,omitempty"`
+}
