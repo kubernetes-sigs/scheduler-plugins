@@ -19,13 +19,38 @@ docker push <replace_with_image_registry>/loadwatcher:latest
 ```
 
 Deploy load-watcher
+Follow https://github.com/paypal/load-watcher?tab=readme-ov-file#deploy-load-watcher-as-a-service
 
 ## Configure PEAKS scheduler plugin
 
 Building image
 
+```bash
+make release-image.amd64
+docker tag <image tag> <new image tag>
+docker push <new image tag>
+```
+
 Configuring power model
+
+```bash
+kubectl create configmap peaks-node-power-model --from-file=peaks-power-model-config.json -n kube-system
+```
 
 Deploy crds
 
-Deploy pod
+```bash
+kubectl apply -f peaks-crd.yaml
+```
+
+Deploy peaks plugin
+
+```bash
+kubectl apply -f deployment.yaml
+```
+
+Test peaks plugin
+
+```bash
+kubectl apply -f test-po.yaml
+```
