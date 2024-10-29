@@ -17,10 +17,13 @@ limitations under the License.
 package loadvariationriskbalancing
 
 import (
+	"context"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"k8s.io/klog/v2"
+
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
@@ -156,7 +159,8 @@ func TestComputeScore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			response := int64(math.Round(computeScore(tt.rs, tt.margin, tt.sensitivity)))
+			logger := klog.FromContext(context.TODO())
+			response := int64(math.Round(computeScore(logger, tt.rs, tt.margin, tt.sensitivity)))
 			assert.Equal(t, tt.expected, response)
 		})
 	}

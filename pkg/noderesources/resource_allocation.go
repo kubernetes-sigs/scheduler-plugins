@@ -47,6 +47,7 @@ type resourceToValueMap map[v1.ResourceName]int64
 
 // score will use `scorer` function to calculate the score.
 func (r *resourceAllocationScorer) score(
+	logger klog.Logger,
 	pod *v1.Pod,
 	nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
 	node := nodeInfo.Node()
@@ -59,13 +60,13 @@ func (r *resourceAllocationScorer) score(
 	requested := make(resourceToValueMap, len(r.resourceToWeightMap))
 	allocatable := make(resourceToValueMap, len(r.resourceToWeightMap))
 	for resource := range r.resourceToWeightMap {
-		allocatable[resource], requested[resource] = calculateResourceAllocatableRequest(nodeInfo, pod, resource)
+		allocatable[resource], requested[resource] = calculateResourceAllocatableRequest(logger, nodeInfo, pod, resource)
 	}
 
 	score := r.scorer(requested, allocatable)
 
-	if klog.V(10).Enabled() {
-		klog.InfoS("Resources and score",
+	if logger.V(10).Enabled() {
+		logger.Info("Resources and score",
 			"podName", pod.Name, "nodeName", node.Name, "scorer", r.Name,
 			"allocatableResources", allocatable, "requestedResources", requested,
 			"score", score)
@@ -75,7 +76,7 @@ func (r *resourceAllocationScorer) score(
 }
 
 // calculateResourceAllocatableRequest returns resources Allocatable and Requested values
-func calculateResourceAllocatableRequest(nodeInfo *framework.NodeInfo, pod *v1.Pod, resource v1.ResourceName) (int64, int64) {
+func calculateResourceAllocatableRequest(logger klog.Logger, nodeInfo *framework.NodeInfo, pod *v1.Pod, resource v1.ResourceName) (int64, int64) {
 	podRequest := calculatePodResourceRequest(pod, resource)
 	switch resource {
 	case v1.ResourceCPU:
@@ -90,8 +91,8 @@ func calculateResourceAllocatableRequest(nodeInfo *framework.NodeInfo, pod *v1.P
 			return nodeInfo.Allocatable.ScalarResources[resource], (nodeInfo.Requested.ScalarResources[resource] + podRequest)
 		}
 	}
-	if klog.V(10).Enabled() {
-		klog.InfoS("Requested resource not considered for node score calculation",
+	if logger.V(10).Enabled() {
+		logger.Info("Requested resource not considered for node score calculation",
 			"resource", resource,
 		)
 	}
