@@ -50,7 +50,8 @@ spec:
     spec:
       serviceAccountName: {{ .Values.scheduler.name }}
       containers:
-      - args:
+      - command: {{- toYaml .Values.scheduler.command | nindent 8 }}
+        args:
         - --config=/etc/kubernetes/scheduler-config.yaml
         image: {{ .Values.scheduler.image }}
         imagePullPolicy: IfNotPresent
