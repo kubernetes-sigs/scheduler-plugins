@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,6 +15,7 @@ import (
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
@@ -311,7 +313,8 @@ func TestGetSyscalls(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			syscalls := sys.getSyscalls(tt.pod)
+			logger := klog.FromContext(context.TODO())
+			syscalls := sys.getSyscalls(logger, tt.pod)
 			assert.NotNil(t, syscalls)
 			assert.EqualValues(t, tt.expected, syscalls.Len())
 		})
@@ -333,7 +336,8 @@ func TestCalcScore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score := sys.calcScore(tt.syscalls)
+			logger := klog.FromContext(context.TODO())
+			score := sys.calcScore(logger, tt.syscalls)
 			assert.EqualValues(t, tt.expected, score)
 		})
 	}
@@ -351,6 +355,7 @@ func TestScore(t *testing.T) {
 	// fake out the framework handle
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	logger := klog.FromContext(ctx)
 	fr, err := tf.NewFramework(ctx, registeredPlugins, Name,
 		frameworkruntime.WithClientSet(clientsetfake.NewSimpleClientset(node.Obj())))
 	if err != nil {
@@ -381,7 +386,7 @@ func TestScore(t *testing.T) {
 	sys.ExSAvg = 0
 	sys.ExSAvgCount = 0
 
-	sys.addPod(pod)
+	sys.addPod(logger, pod)
 
 	tests := []struct {
 		name     string
@@ -479,14 +484,15 @@ func TestGetHostSyscalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logger := klog.FromContext(context.TODO())
 			sys, _ := mockSysched()
 			sys.ExSAvgCount = 0
 
 			for i := range tt.pods {
-				sys.addPod(tt.pods[i])
+				sys.addPod(logger, tt.pods[i])
 			}
 
-			cnt, _ := sys.getHostSyscalls(tt.nodeName)
+			cnt, _ := sys.getHostSyscalls(logger, tt.nodeName)
 			assert.EqualValues(t, tt.expected, cnt)
 		})
 	}
@@ -524,6 +530,7 @@ func TestUpdateHostSyscalls(t *testing.T) {
 			// fake out the framework handle
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			logger := klog.FromContext(ctx)
 			nodeItems := []v1.Node{}
 			for _, node := range tt.nodes {
 				nodeItems = append(nodeItems, *node)
@@ -559,13 +566,13 @@ func TestUpdateHostSyscalls(t *testing.T) {
 			sys.ExSAvgCount = 0
 
 			for i := range tt.basePods {
-				sys.addPod(tt.basePods[i])
+				sys.addPod(logger, tt.basePods[i])
 			}
 
 			for i := range tt.newPods {
-				sys.updateHostSyscalls(tt.newPods[i])
+				sys.updateHostSyscalls(logger, tt.newPods[i])
 			}
-			sc, _ := sys.getHostSyscalls("test")
+			sc, _ := sys.getHostSyscalls(logger, "test")
 			assert.EqualValues(t, tt.expected, sc)
 		})
 	}
@@ -591,8 +598,9 @@ func TestAddPod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logger := klog.FromContext(context.TODO())
 			for i := range tt.pods {
-				sys.addPod(tt.pods[i])
+				sys.addPod(logger, tt.pods[i])
 			}
 			for i := range sys.HostToPods["test"] {
 				assert.EqualValues(t, tt.pods[i], sys.HostToPods["test"][i])
@@ -623,7 +631,8 @@ func TestRecomputeHostSyscalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			syscalls := sys.recomputeHostSyscalls(tt.pods)
+			logger := klog.FromContext(context.TODO())
+			syscalls := sys.recomputeHostSyscalls(logger, tt.pods)
 			assert.EqualValues(t, tt.expected, len(syscalls))
 		})
 	}
@@ -655,12 +664,13 @@ func TestRemovePod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logger := klog.FromContext(context.TODO())
 			for i := range tt.pods {
-				sys.addPod(tt.pods[i])
+				sys.addPod(logger, tt.pods[i])
 			}
 
 			for i := range tt.removePods {
-				sys.removePod(tt.removePods[i])
+				sys.removePod(logger, tt.removePods[i])
 			}
 
 			assert.EqualValues(t, tt.expectedPodNum, len(sys.HostToPods["test"]))
@@ -729,8 +739,9 @@ func TestPodUpdated(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logger := klog.FromContext(context.TODO())
 			for i := range tt.basePods {
-				sys.addPod(tt.basePods[i])
+				sys.addPod(logger, tt.basePods[i])
 			}
 
 			for i := range tt.updatedPods {
@@ -769,8 +780,9 @@ func TestPodDeleted(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logger := klog.FromContext(context.TODO())
 			for i := range tt.basePods {
-				sys.addPod(tt.basePods[i])
+				sys.addPod(logger, tt.basePods[i])
 			}
 
 			for i := range tt.deletedPods {

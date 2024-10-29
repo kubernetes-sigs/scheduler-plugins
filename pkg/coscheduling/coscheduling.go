@@ -60,7 +60,11 @@ const (
 )
 
 // New initializes and returns a new Coscheduling plugin.
-func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+
+	lh := klog.FromContext(ctx)
+	lh.V(5).Info("creating new coscheduling plugin")
+
 	args, ok := obj.(*config.CoschedulingArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type CoschedulingArgs, got %T", obj)
@@ -93,7 +97,7 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 	}
 	if args.PodGroupBackoffSeconds < 0 {
 		err := fmt.Errorf("parse arguments failed")
-		klog.ErrorS(err, "PodGroupBackoffSeconds cannot be negative")
+		lh.Error(err, "PodGroupBackoffSeconds cannot be negative")
 		return nil, err
 	} else if args.PodGroupBackoffSeconds > 0 {
 		pgBackoff := time.Duration(args.PodGroupBackoffSeconds) * time.Second
@@ -128,8 +132,8 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	if prio1 != prio2 {
 		return prio1 > prio2
 	}
-	creationTime1 := cs.pgMgr.GetCreationTimestamp(podInfo1.Pod, *podInfo1.InitialAttemptTimestamp)
-	creationTime2 := cs.pgMgr.GetCreationTimestamp(podInfo2.Pod, *podInfo2.InitialAttemptTimestamp)
+	creationTime1 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo1.Pod, *podInfo1.InitialAttemptTimestamp)
+	creationTime2 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo2.Pod, *podInfo2.InitialAttemptTimestamp)
 	if creationTime1.Equal(creationTime2) {
 		return core.GetNamespacedName(podInfo1.Pod) < core.GetNamespacedName(podInfo2.Pod)
 	}
@@ -140,10 +144,11 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 // 1. Whether the PodGroup that the Pod belongs to is on the deny list.
 // 2. Whether the total number of pods in a PodGroup is less than its `minMember`.
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	lh := klog.FromContext(ctx)
 	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid
 	// any preemption attempts.
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
-		klog.ErrorS(err, "PreFilter failed", "pod", klog.KObj(pod))
+		lh.Error(err, "PreFilter failed", "pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	return nil, framework.NewStatus(framework.Success, "")
@@ -152,17 +157,18 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 // PostFilter is used to reject a group of pods if a pod does not pass PreFilter or Filter.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+	lh := klog.FromContext(ctx)
 	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
-		klog.V(4).InfoS("Pod does not belong to any group", "pod", klog.KObj(pod))
+		lh.V(4).Info("Pod does not belong to any group", "pod", klog.KObj(pod))
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable, "can not find pod group")
 	}
 
 	// This indicates there are already enough Pods satisfying the PodGroup,
 	// so don't bother to reject the whole PodGroup.
-	assigned := cs.pgMgr.CalculateAssignedPods(pg.Name, pod.Namespace)
+	assigned := cs.pgMgr.CalculateAssignedPods(ctx, pg.Name, pod.Namespace)
 	if assigned >= int(pg.Spec.MinMember) {
-		klog.V(4).InfoS("Assigned pods", "podGroup", klog.KObj(pg), "assigned", assigned)
+		lh.V(4).Info("Assigned pods", "podGroup", klog.KObj(pg), "assigned", assigned)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
@@ -170,7 +176,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	// to see they can satisfy the PodGroup
 	notAssignedPercentage := float32(int(pg.Spec.MinMember)-assigned) / float32(pg.Spec.MinMember)
 	if notAssignedPercentage <= 0.1 {
-		klog.V(4).InfoS("A small gap of pods to reach the quorum", "podGroup", klog.KObj(pg), "percentage", notAssignedPercentage)
+		lh.V(4).Info("A small gap of pods to reach the quorum", "podGroup", klog.KObj(pg), "percentage", notAssignedPercentage)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
 	}
 
@@ -178,7 +184,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 	// it's inferrable other Pods belonging to the same PodGroup would be very likely to fail.
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && util.GetPodGroupLabel(waitingPod.GetPod()) == pg.Name {
-			klog.V(3).InfoS("PostFilter rejects the pod", "podGroup", klog.KObj(pg), "pod", klog.KObj(waitingPod.GetPod()))
+			lh.V(3).Info("PostFilter rejects the pod", "podGroup", klog.KObj(pg), "pod", klog.KObj(waitingPod.GetPod()))
 			waitingPod.Reject(cs.Name(), "optimistic rejection in PostFilter")
 		}
 	})
@@ -192,7 +198,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 		}
 	}
 
-	cs.pgMgr.DeletePermittedPodGroup(pgName)
+	cs.pgMgr.DeletePermittedPodGroup(ctx, pgName)
 	return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable,
 		fmt.Sprintf("PodGroup %v gets rejected due to Pod %v is unschedulable even after PostFilter", pgName, pod.Name))
 }
@@ -204,6 +210,7 @@ func (cs *Coscheduling) PreFilterExtensions() framework.PreFilterExtensions {
 
 // Permit is the functions invoked by the framework at "Permit" extension point.
 func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (*framework.Status, time.Duration) {
+	lh := klog.FromContext(ctx)
 	waitTime := *cs.scheduleTimeout
 	s := cs.pgMgr.Permit(ctx, state, pod)
 	var retStatus *framework.Status
@@ -213,23 +220,23 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 	case core.PodGroupNotFound:
 		return framework.NewStatus(framework.Unschedulable, "PodGroup not found"), 0
 	case core.Wait:
-		klog.InfoS("Pod is waiting to be scheduled to node", "pod", klog.KObj(pod), "nodeName", nodeName)
+		lh.Info("Pod is waiting to be scheduled to node", "pod", klog.KObj(pod), "nodeName", nodeName)
 		_, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 		if wait := util.GetWaitTimeDuration(pg, cs.scheduleTimeout); wait != 0 {
 			waitTime = wait
 		}
 		retStatus = framework.NewStatus(framework.Wait)
 		// We will also request to move the sibling pods back to activeQ.
-		cs.pgMgr.ActivateSiblings(pod, state)
+		cs.pgMgr.ActivateSiblings(ctx, pod, state)
 	case core.Success:
 		pgFullName := util.GetPodGroupFullName(pod)
 		cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 			if util.GetPodGroupFullName(waitingPod.GetPod()) == pgFullName {
-				klog.V(3).InfoS("Permit allows", "pod", klog.KObj(waitingPod.GetPod()))
+				lh.V(3).Info("Permit allows", "pod", klog.KObj(waitingPod.GetPod()))
 				waitingPod.Allow(cs.Name())
 			}
 		})
-		klog.V(3).InfoS("Permit allows", "pod", klog.KObj(pod))
+		lh.V(3).Info("Permit allows", "pod", klog.KObj(pod))
 		retStatus = framework.NewStatus(framework.Success)
 		waitTime = 0
 	}
@@ -244,15 +251,16 @@ func (cs *Coscheduling) Reserve(ctx context.Context, state *framework.CycleState
 
 // Unreserve rejects all other Pods in the PodGroup when one of the pods in the group times out.
 func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
+	lh := klog.FromContext(ctx)
 	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		return
 	}
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && util.GetPodGroupLabel(waitingPod.GetPod()) == pg.Name {
-			klog.V(3).InfoS("Unreserve rejects", "pod", klog.KObj(waitingPod.GetPod()), "podGroup", klog.KObj(pg))
+			lh.V(3).Info("Unreserve rejects", "pod", klog.KObj(waitingPod.GetPod()), "podGroup", klog.KObj(pg))
 			waitingPod.Reject(cs.Name(), "rejection in Unreserve")
 		}
 	})
-	cs.pgMgr.DeletePermittedPodGroup(pgName)
+	cs.pgMgr.DeletePermittedPodGroup(ctx, pgName)
 }
