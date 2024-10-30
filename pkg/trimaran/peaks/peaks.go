@@ -42,10 +42,11 @@ type Peaks struct {
 }
 
 type PowerModel struct {
-	K0 float64 `json:"k0"`
-	K1 float64 `json:"k1"`
+	K0 float64 `json:"k0"`  
+	K1 float64 `json:"k1"`   
 	K2 float64 `json:"k2"`
 	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
+	// Idle power od node will be K0 - K1
 }
 
 var _ framework.ScorePlugin = &Peaks{}
