@@ -36,8 +36,8 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/sysched"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
-	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/peaks"
+	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
 
 	// Ensure scheme package is initialized.
 	_ "sigs.k8s.io/scheduler-plugins/apis/config/scheme"
