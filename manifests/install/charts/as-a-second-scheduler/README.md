@@ -45,9 +45,10 @@ scheduler-plugins-scheduler    1/1     1            1           7s
 The following table lists the configurable parameters of the as-a-second-scheduler chart and their default values.
 
 | Parameter                 | Description                 | Default                                                                                         |
-|---------------------------|-----------------------------|-------------------------------------------------------------------------------------------------|
+| ------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------- |
 | `scheduler.name`          | Scheduler name              | `scheduler-plugins-scheduler`                                                                   |
 | `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7`                                      |
+| `scheduler.command`       | Scheduler command           | `["/bin/kube-scheduler"]`                                                                       |
 | `scheduler.leaderElect`   | Scheduler leaderElection    | `false`                                                                                         |
 | `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
 | `scheduler.nodeSelector`  | Scheduler nodeSelector      | `{}`                                                                                            |

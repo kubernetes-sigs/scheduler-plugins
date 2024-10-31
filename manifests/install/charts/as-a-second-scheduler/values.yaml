@@ -5,6 +5,8 @@
 scheduler:
   name: scheduler-plugins-scheduler
   image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7
+  command:
+  - /bin/kube-scheduler
   replicaCount: 1
   leaderElect: false
   nodeSelector: {}
