@@ -9,6 +9,7 @@ scheduler:
   - /bin/kube-scheduler
   replicaCount: 1
   leaderElect: false
+  resources: {}
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -17,6 +18,7 @@ controller:
   name: scheduler-plugins-controller
   image: registry.k8s.io/scheduler-plugins/controller:v0.29.7
   replicaCount: 1
+  resources: {}
   nodeSelector: {}
   affinity: {}
   tolerations: []
