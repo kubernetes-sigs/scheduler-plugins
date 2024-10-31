@@ -23,6 +23,7 @@ RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETA
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 
 WORKDIR /bin
+
 COPY --from=builder /workspace/bin/kube-scheduler .
 USER 65532:65532
 
