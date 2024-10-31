@@ -17,9 +17,9 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
@@ -120,7 +120,7 @@ func (sc *SySched) readSPOProfileCR(name string, namespace string) (sets.Set[str
 // SPO is used to generate and input the seccomp profile to a pod
 // If a pod does not have a SPO seccomp profile, then an unconfined
 // system call set is return for the pod
-func (sc *SySched) getSyscalls(pod *v1.Pod) sets.Set[string] {
+func (sc *SySched) getSyscalls(logger klog.Logger, pod *v1.Pod) sets.Set[string] {
 	r := sets.New[string]()
 
 	// read the seccomp profile from the security context of a pod
@@ -134,7 +134,7 @@ func (sc *SySched) getSyscalls(pod *v1.Pod) sets.Set[string] {
 			if len(ns) > 0 && len(name) > 0 {
 				syscalls, err := sc.readSPOProfileCR(name, ns)
 				if err != nil {
-					klog.ErrorS(err, "Failed to read syscall CR by parsing pod security context")
+					logger.Error(err, "Failed to read syscall CR by parsing pod security context")
 				}
 
 				if len(syscalls) > 0 {
@@ -155,7 +155,7 @@ func (sc *SySched) getSyscalls(pod *v1.Pod) sets.Set[string] {
 				if len(ns) > 0 && len(name) > 0 {
 					syscalls, err := sc.readSPOProfileCR(name, ns)
 					if err != nil {
-						klog.ErrorS(err, "Failed to read syscall CR by parsing container security context")
+						logger.Error(err, "Failed to read syscall CR by parsing container security context")
 					}
 
 					if len(syscalls) > 0 {
@@ -179,7 +179,7 @@ func (sc *SySched) getSyscalls(pod *v1.Pod) sets.Set[string] {
 					syscalls, err := sc.readSPOProfileCR(name, ns)
 
 					if err != nil {
-						klog.ErrorS(err, "Failed to read syscall CR by parsing pod annotation")
+						logger.Error(err, "Failed to read syscall CR by parsing pod annotation")
 						continue
 					}
 
@@ -196,7 +196,7 @@ func (sc *SySched) getSyscalls(pod *v1.Pod) sets.Set[string] {
 	if len(r) == 0 {
 		syscalls, err := sc.readSPOProfileCR(sc.DefaultProfileName, sc.DefaultProfileNamespace)
 		if err != nil {
-			klog.ErrorS(err, "Failed to read the CR of all syscalls")
+			logger.Error(err, "Failed to read the CR of all syscalls")
 		}
 
 		if syscalls.Len() > 0 {
@@ -212,7 +212,7 @@ func (sc *SySched) Name() string {
 	return Name
 }
 
-func (sc *SySched) calcScore(syscalls sets.Set[string]) int {
+func (sc *SySched) calcScore(logger klog.Logger, syscalls sets.Set[string]) int {
 	// Currently, score is not adjusted based on critical/cve syscalls.
 	// NOTE: weight W is hardcoded for now
 	// TODO: add critical/cve syscalls
@@ -222,13 +222,14 @@ func (sc *SySched) calcScore(syscalls sets.Set[string]) int {
 
 	score := syscalls.Len() - totCrit
 	score = score + W*totCrit
-	klog.V(10).InfoS("Score: ", "score", score, "tot_crit", totCrit)
+	logger.V(10).Info("Score: ", "score", score, "tot_crit", totCrit)
 
 	return score
 }
 
 // Score invoked at the score extension point.
 func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+	logger := klog.FromContext(ctx)
 	// Read directly from API server because cached state in SnapSharedLister not always up-to-date
 	// especially during initial scheduler start.
 	node, err := sc.handle.ClientSet().CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
@@ -236,7 +237,7 @@ func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.
 		return 0, nil
 	}
 
-	podSyscalls := sc.getSyscalls(pod)
+	podSyscalls := sc.getSyscalls(logger, pod)
 
 	// NOTE: this condition is true only when a pod does not
 	// have a syscall profile, or the unconfined syscall is
@@ -245,7 +246,7 @@ func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.
 		return math.MaxInt64, nil
 	}
 
-	_, hostSyscalls := sc.getHostSyscalls(node.Name)
+	_, hostSyscalls := sc.getHostSyscalls(logger, node.Name)
 
 	// when a host or node does not have any pods
 	// running, the extraneous syscall score is zero
@@ -254,30 +255,31 @@ func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.
 	}
 
 	diffSyscalls := hostSyscalls.Difference(podSyscalls)
-	totalDiffs := sc.calcScore(diffSyscalls)
+	totalDiffs := sc.calcScore(logger, diffSyscalls)
 
 	// add the difference existing pods will see if new Pod is added into this host
 	newHostSyscalls := hostSyscalls.Clone()
 	newHostSyscalls = newHostSyscalls.Union(podSyscalls)
 	for _, p := range sc.HostToPods[node.Name] {
-		podSyscalls = sc.getSyscalls(p)
+		podSyscalls = sc.getSyscalls(logger, p)
 		diffSyscalls = newHostSyscalls.Difference(podSyscalls)
-		totalDiffs += sc.calcScore(diffSyscalls)
+		totalDiffs += sc.calcScore(logger, diffSyscalls)
 	}
 
 	sc.ExSAvg = sc.ExSAvg + (float64(totalDiffs)-sc.ExSAvg)/float64(sc.ExSAvgCount)
 	sc.ExSAvgCount += 1
 
-	klog.V(10).Info("ExSAvg: ", sc.ExSAvg)
-	klog.V(10).InfoS("Score: ", "totalDiffs", totalDiffs, "pod", pod.Name, "node", nodeName)
+	logger.V(10).Info("ExSAvg: ", sc.ExSAvg)
+	logger.V(10).Info("Score: ", "totalDiffs", totalDiffs, "pod", pod.Name, "node", nodeName)
 
 	return int64(totalDiffs), nil
 }
 
 func (sc *SySched) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
-	klog.V(10).InfoS("Original: ", "scores", scores, "pod", pod.Name)
+	logger := klog.FromContext(ctx)
+	logger.V(10).Info("Original: ", "scores", scores, "pod", pod.Name)
 	ret := helper.DefaultNormalizeScore(framework.MaxNodeScore, true, scores)
-	klog.V(10).InfoS("Normalized: ", "scores", scores, "pod", pod.Name)
+	logger.V(10).Info("Normalized: ", "scores", scores, "pod", pod.Name)
 
 	return ret
 }
@@ -287,22 +289,22 @@ func (sc *SySched) ScoreExtensions() framework.ScoreExtensions {
 	return sc
 }
 
-func (sc *SySched) getHostSyscalls(nodeName string) (int, sets.Set[string]) {
+func (sc *SySched) getHostSyscalls(logger klog.Logger, nodeName string) (int, sets.Set[string]) {
 	count := 0
 	h, ok := sc.HostSyscalls[nodeName]
 	if !ok {
-		klog.V(5).Infof("getHostSyscalls: no nodeName %s", nodeName)
+		logger.V(5).Info(fmt.Sprintf("getHostSyscalls: no nodeName %s", nodeName))
 		return count, nil
 	}
 	return h.Len(), h
 }
 
-func (sc *SySched) updateHostSyscalls(pod *v1.Pod) {
-	syscall := sc.getSyscalls(pod)
+func (sc *SySched) updateHostSyscalls(logger klog.Logger, pod *v1.Pod) {
+	syscall := sc.getSyscalls(logger, pod)
 	sc.HostSyscalls[pod.Spec.NodeName] = sc.HostSyscalls[pod.Spec.NodeName].Union(syscall)
 }
 
-func (sc *SySched) addPod(pod *v1.Pod) {
+func (sc *SySched) addPod(logger klog.Logger, pod *v1.Pod) {
 	nodeName := pod.Spec.NodeName
 	name := pod.Name
 
@@ -311,7 +313,7 @@ func (sc *SySched) addPod(pod *v1.Pod) {
 		sc.HostToPods[nodeName] = make([]*v1.Pod, 0)
 		sc.HostToPods[nodeName] = append(sc.HostToPods[nodeName], pod)
 		sc.HostSyscalls[nodeName] = sets.New[string]()
-		sc.updateHostSyscalls(pod)
+		sc.updateHostSyscalls(logger, pod)
 		return
 	}
 
@@ -322,36 +324,36 @@ func (sc *SySched) addPod(pod *v1.Pod) {
 	}
 
 	sc.HostToPods[nodeName] = append(sc.HostToPods[nodeName], pod)
-	sc.updateHostSyscalls(pod)
+	sc.updateHostSyscalls(logger, pod)
 
 	return
 }
 
-func (sc *SySched) recomputeHostSyscalls(pods []*v1.Pod) sets.Set[string] {
+func (sc *SySched) recomputeHostSyscalls(logger klog.Logger, pods []*v1.Pod) sets.Set[string] {
 	syscalls := sets.New[string]()
 
 	for _, p := range pods {
-		syscall := sc.getSyscalls(p)
+		syscall := sc.getSyscalls(logger, p)
 		syscalls = syscalls.Union(syscall)
 	}
 
 	return syscalls
 }
 
-func (sc *SySched) removePod(pod *v1.Pod) {
+func (sc *SySched) removePod(logger klog.Logger, pod *v1.Pod) {
 	nodeName := pod.Spec.NodeName
 
 	_, ok := sc.HostToPods[nodeName]
 	if !ok {
-		klog.V(5).Infof("removePod: Host %s not yet cached", nodeName)
+		logger.V(5).Info(fmt.Sprintf("removePod: Host %s not yet cached", nodeName))
 		return
 	}
 	for i, p := range sc.HostToPods[nodeName] {
 		if p.Name == pod.Name {
 			sc.HostToPods[nodeName] = remove(sc.HostToPods[nodeName], i)
-			sc.HostSyscalls[nodeName] = sc.recomputeHostSyscalls(sc.HostToPods[nodeName])
-			c, _ := sc.getHostSyscalls(nodeName)
-			klog.V(5).InfoS("remaining ", "syscalls", c, "node", nodeName)
+			sc.HostSyscalls[nodeName] = sc.recomputeHostSyscalls(logger, sc.HostToPods[nodeName])
+			c, _ := sc.getHostSyscalls(logger, nodeName)
+			logger.V(5).Info("remaining ", "syscalls", c, "node", nodeName)
 			return
 		}
 	}
@@ -360,30 +362,33 @@ func (sc *SySched) removePod(pod *v1.Pod) {
 }
 
 func (sc *SySched) podAdded(obj interface{}) {
+	logger := klog.FromContext(context.TODO())
 	pod := obj.(*v1.Pod)
 
 	// Add already running pod to map
 	// This is for when our scheduler comes up after other pods
 	if pod.Status.Phase == v1.PodRunning {
-		klog.V(10).Infof("POD ADDED: %s/%s phase: %s", pod.Namespace, pod.Name, pod.Status.Phase)
-		sc.addPod(pod)
+		logger.V(10).Info(fmt.Sprintf("POD ADDED: %s/%s phase: %s", pod.Namespace, pod.Name, pod.Status.Phase))
+		sc.addPod(logger, pod)
 	}
 }
 
 func (sc *SySched) podUpdated(old, new interface{}) {
+	logger := klog.FromContext(context.TODO())
 	pod := old.(*v1.Pod)
 
 	// Pod has been assigned to node, now can add to our map
 	if pod.Status.Phase == v1.PodPending && pod.Status.HostIP != "" {
-		klog.V(10).Infof("POD UPDATED. %s/%s", pod.Namespace, pod.Name)
-		sc.addPod(pod)
+		logger.V(10).Info(fmt.Sprintf("POD UPDATED. %s/%s", pod.Namespace, pod.Name))
+		sc.addPod(logger, pod)
 	}
 }
 
 func (sc *SySched) podDeleted(obj interface{}) {
+	logger := klog.FromContext(context.TODO())
 	pod := obj.(*v1.Pod)
-	klog.V(10).Infof("POD DELETED: %s/%s", pod.Namespace, pod.Name)
-	sc.removePod(pod)
+	logger.V(10).Info(fmt.Sprintf("POD DELETED: %s/%s", pod.Namespace, pod.Name))
+	sc.removePod(logger, pod)
 }
 
 // getArgs : returns the arguments for the SySchedArg plugin.
