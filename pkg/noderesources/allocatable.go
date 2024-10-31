@@ -120,22 +120,21 @@ func NewAllocatable(_ context.Context, allocArgs runtime.Object, h framework.Han
 func resourceScorer(resToWeightMap resourceToWeightMap, mode config.ModeType) func(resourceToValueMap, resourceToValueMap) int64 {
 	return func(requested, allocable resourceToValueMap) int64 {
 		// TODO: consider volumes in scoring.
-		var nodeScore, weightSum int64
+		var nodeScore int64
 		for resource, weight := range resToWeightMap {
-			resourceScore := score(allocable[resource], mode)
+			resourceScore := score(allocable[resource], requested[resource], mode)
 			nodeScore += resourceScore * weight
-			weightSum += weight
 		}
-		return nodeScore / weightSum
+		return nodeScore
 	}
 }
 
-func score(capacity int64, mode config.ModeType) int64 {
+func score(allocable int64, requested int64, mode config.ModeType) int64 {
 	switch mode {
 	case config.Least:
-		return -1 * capacity
+		return (allocable - requested + 1) * -1
 	case config.Most:
-		return capacity
+		return allocable - requested + 1
 	}
 
 	klog.V(10).InfoS("No match for mode", "mode", mode)
