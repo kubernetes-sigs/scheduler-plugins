@@ -51,12 +51,14 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | `scheduler.command`       | Scheduler command           | `["/bin/kube-scheduler"]`                                                                       |
 | `scheduler.leaderElect`   | Scheduler leaderElection    | `false`                                                                                         |
 | `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
+| `scheduler.resources`     | Scheduler resources         | `{}`                                                                                            |
 | `scheduler.nodeSelector`  | Scheduler nodeSelector      | `{}`                                                                                            |
 | `scheduler.affinity`      | Scheduler affinity          | `{}`                                                                                            |
 | `scheduler.tolerations`   | Scheduler tolerations       | `[]`                                                                                            |
 | `controller.name`         | Controller name             | `scheduler-plugins-controller`                                                                  |
 | `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.29.7`                                          |
 | `controller.replicaCount` | Controller replicaCount     | `1`                                                                                             |
+| `controller.resources`    | Controller resources        | `{}`                                                                                            |
 | `controller.nodeSelector` | Controller nodeSelector     | `{}`                                                                                            |
 | `controller.affinity`     | Controller affinity         | `{}`                                                                                            |
 | `controller.tolerations`  | Controller tolerations      | `[]`                                                                                            |
