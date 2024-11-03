@@ -21,6 +21,7 @@ Package Trimaran provides common code for plugins developed for real load aware 
 package trimaran
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -56,7 +57,7 @@ type podInfo struct {
 	Pod       *v1.Pod
 }
 
-// Returns a new instance of PodAssignEventHandler, after starting a background go routine for cache cleanup
+// New returns a new instance of PodAssignEventHandler, after starting a background go routine for cache cleanup
 func New() *PodAssignEventHandler {
 	p := PodAssignEventHandler{ScheduledPodsCache: make(map[string][]podInfo)}
 	go func() {
@@ -107,6 +108,7 @@ func (p *PodAssignEventHandler) OnUpdate(oldObj, newObj interface{}) {
 }
 
 func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
+	logger := klog.FromContext(context.TODO())
 	pod := obj.(*v1.Pod)
 	nodeName := pod.Spec.NodeName
 	p.Lock()
@@ -117,7 +119,7 @@ func (p *PodAssignEventHandler) OnDelete(obj interface{}) {
 	for i, v := range p.ScheduledPodsCache[nodeName] {
 		n := len(p.ScheduledPodsCache[nodeName])
 		if pod.ObjectMeta.UID == v.Pod.ObjectMeta.UID {
-			klog.V(10).InfoS("Deleting pod", "pod", klog.KObj(v.Pod))
+			logger.V(10).Info("Deleting pod", "pod", klog.KObj(v.Pod))
 			copy(p.ScheduledPodsCache[nodeName][i:], p.ScheduledPodsCache[nodeName][i+1:])
 			p.ScheduledPodsCache[nodeName][n-1] = podInfo{}
 			p.ScheduledPodsCache[nodeName] = p.ScheduledPodsCache[nodeName][:n-1]

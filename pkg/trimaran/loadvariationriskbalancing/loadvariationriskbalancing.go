@@ -52,18 +52,19 @@ type LoadVariationRiskBalancing struct {
 var _ framework.ScorePlugin = &LoadVariationRiskBalancing{}
 
 // New : create an instance of a LoadVariationRiskBalancing plugin
-func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	klog.V(4).InfoS("Creating new instance of the LoadVariationRiskBalancing plugin")
+func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Creating new instance of the LoadVariationRiskBalancing plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LoadVariationRiskBalancingArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type LoadVariationRiskBalancingArgs, got %T", obj)
 	}
-	collector, err := trimaran.NewCollector(&args.TrimaranSpec)
+	collector, err := trimaran.NewCollector(logger, &args.TrimaranSpec)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(4).InfoS("Using LoadVariationRiskBalancingArgs", "margin", args.SafeVarianceMargin, "sensitivity", args.SafeVarianceSensitivity)
+	logger.V(4).Info("Using LoadVariationRiskBalancingArgs", "margin", args.SafeVarianceMargin, "sensitivity", args.SafeVarianceSensitivity)
 
 	podAssignEventHandler := trimaran.New()
 	podAssignEventHandler.AddToHandle(handle)
@@ -79,16 +80,17 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 
 // Score : evaluate score for a node
 func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	klog.V(6).InfoS("Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
+	logger := klog.FromContext(ctx)
+	logger.V(6).Info("Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
 	score := framework.MinNodeScore
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return score, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	// get node metrics
-	metrics, _ := pl.collector.GetNodeMetrics(nodeName)
+	metrics, _ := pl.collector.GetNodeMetrics(logger, nodeName)
 	if metrics == nil {
-		klog.InfoS("Failed to get metrics for node; using minimum score", "nodeName", nodeName)
+		logger.Info("Failed to get metrics for node; using minimum score", "nodeName", nodeName)
 		return score, nil
 	}
 	podRequest := trimaran.GetResourceRequested(pod)
@@ -96,18 +98,18 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 
 	// calculate CPU score
 	var cpuScore float64 = 0
-	cpuStats, cpuOK := trimaran.CreateResourceStats(metrics, node, podRequest, v1.ResourceCPU, watcher.CPU)
+	cpuStats, cpuOK := trimaran.CreateResourceStats(logger, metrics, node, podRequest, v1.ResourceCPU, watcher.CPU)
 	if cpuOK {
-		cpuScore = computeScore(cpuStats, pl.args.SafeVarianceMargin, pl.args.SafeVarianceSensitivity)
+		cpuScore = computeScore(logger, cpuStats, pl.args.SafeVarianceMargin, pl.args.SafeVarianceSensitivity)
 	}
-	klog.V(6).InfoS("Calculating CPUScore", "pod", klog.KObj(pod), "nodeName", nodeName, "cpuScore", cpuScore)
+	logger.V(6).Info("Calculating CPUScore", "pod", klog.KObj(pod), "nodeName", nodeName, "cpuScore", cpuScore)
 	// calculate Memory score
 	var memoryScore float64 = 0
-	memoryStats, memoryOK := trimaran.CreateResourceStats(metrics, node, podRequest, v1.ResourceMemory, watcher.Memory)
+	memoryStats, memoryOK := trimaran.CreateResourceStats(logger, metrics, node, podRequest, v1.ResourceMemory, watcher.Memory)
 	if memoryOK {
-		memoryScore = computeScore(memoryStats, pl.args.SafeVarianceMargin, pl.args.SafeVarianceSensitivity)
+		memoryScore = computeScore(logger, memoryStats, pl.args.SafeVarianceMargin, pl.args.SafeVarianceSensitivity)
 	}
-	klog.V(6).InfoS("Calculating MemoryScore", "pod", klog.KObj(pod), "nodeName", nodeName, "memoryScore", memoryScore)
+	logger.V(6).Info("Calculating MemoryScore", "pod", klog.KObj(pod), "nodeName", nodeName, "memoryScore", memoryScore)
 	// calculate total score
 	var totalScore float64 = 0
 	if memoryOK && cpuOK {
@@ -116,7 +118,7 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 		totalScore = math.Max(memoryScore, cpuScore)
 	}
 	score = int64(math.Round(totalScore))
-	klog.V(6).InfoS("Calculating totalScore", "pod", klog.KObj(pod), "nodeName", nodeName, "totalScore", score)
+	logger.V(6).Info("Calculating totalScore", "pod", klog.KObj(pod), "nodeName", nodeName, "totalScore", score)
 	return score, framework.NewStatus(framework.Success, "")
 }
 

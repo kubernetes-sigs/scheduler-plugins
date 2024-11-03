@@ -27,6 +27,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	testClientSet "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/klog/v2"
 	schedConfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -376,7 +377,8 @@ func TestLowRiskOverCommitment_computeRisk(t *testing.T) {
 	metrics := watcherData_A.NodeMetricsMap[node_A.Name].Metrics
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := pl.computeRisk(metrics, tt.resourceName, tt.resourceType, node_A, tt.nodeRequestsAndLimits); got != tt.want {
+			logger := klog.FromContext(context.TODO())
+			if got := pl.computeRisk(logger, metrics, tt.resourceName, tt.resourceType, node_A, tt.nodeRequestsAndLimits); got != tt.want {
 				t.Errorf("LowRiskOverCommitment.computeRisk() = %v, want %v", got, tt.want)
 			}
 		})

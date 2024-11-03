@@ -49,11 +49,11 @@ type Collector struct {
 }
 
 // NewCollector : create an instance of a data collector
-func NewCollector(trimaranSpec *pluginConfig.TrimaranSpec) (*Collector, error) {
+func NewCollector(logger klog.Logger, trimaranSpec *pluginConfig.TrimaranSpec) (*Collector, error) {
 	if err := checkSpecs(trimaranSpec); err != nil {
 		return nil, err
 	}
-	klog.V(4).InfoS("Using TrimaranSpec", "type", trimaranSpec.MetricProvider.Type,
+	logger.V(4).Info("Using TrimaranSpec", "type", trimaranSpec.MetricProvider.Type,
 		"address", trimaranSpec.MetricProvider.Address, "watcher", trimaranSpec.WatcherAddress)
 
 	var client loadwatcherapi.Client
@@ -74,17 +74,17 @@ func NewCollector(trimaranSpec *pluginConfig.TrimaranSpec) (*Collector, error) {
 	}
 
 	// populate metrics before returning
-	err := collector.updateMetrics()
+	err := collector.updateMetrics(logger)
 	if err != nil {
-		klog.ErrorS(err, "Unable to populate metrics initially")
+		logger.Error(err, "Unable to populate metrics initially")
 	}
 	// start periodic updates
 	go func() {
 		metricsUpdaterTicker := time.NewTicker(time.Second * metricsUpdateIntervalSeconds)
 		for range metricsUpdaterTicker.C {
-			err = collector.updateMetrics()
+			err = collector.updateMetrics(logger)
 			if err != nil {
-				klog.ErrorS(err, "Unable to update metrics")
+				logger.Error(err, "Unable to update metrics")
 			}
 		}
 	}()
@@ -100,16 +100,16 @@ func (collector *Collector) getAllMetrics() *watcher.WatcherMetrics {
 }
 
 // GetNodeMetrics : get metrics for a node from watcher
-func (collector *Collector) GetNodeMetrics(nodeName string) ([]watcher.Metric, *watcher.WatcherMetrics) {
+func (collector *Collector) GetNodeMetrics(logger klog.Logger, nodeName string) ([]watcher.Metric, *watcher.WatcherMetrics) {
 	allMetrics := collector.getAllMetrics()
 	// This happens if metrics were never populated since scheduler started
 	if allMetrics.Data.NodeMetricsMap == nil {
-		klog.ErrorS(nil, "Metrics not available from watcher")
+		logger.Error(nil, "Metrics not available from watcher")
 		return nil, nil
 	}
 	// Check if node is new (no metrics yet) or metrics are unavailable due to 404 or 500
 	if _, ok := allMetrics.Data.NodeMetricsMap[nodeName]; !ok {
-		klog.ErrorS(nil, "Unable to find metrics for node", "nodeName", nodeName)
+		logger.Error(nil, "Unable to find metrics for node", "nodeName", nodeName)
 		return nil, allMetrics
 	}
 	return allMetrics.Data.NodeMetricsMap[nodeName].Metrics, allMetrics
@@ -130,10 +130,10 @@ func checkSpecs(trimaranSpec *pluginConfig.TrimaranSpec) error {
 }
 
 // updateMetrics : request to load watcher to update all metrics
-func (collector *Collector) updateMetrics() error {
+func (collector *Collector) updateMetrics(logger klog.Logger) error {
 	metrics, err := collector.client.GetLatestWatcherMetrics()
 	if err != nil {
-		klog.ErrorS(err, "Load watcher client failed")
+		logger.Error(err, "Load watcher client failed")
 		return err
 	}
 	collector.mu.Lock()

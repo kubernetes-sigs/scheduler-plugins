@@ -45,7 +45,7 @@ const (
 	// MaxVarianceAllowance : allowed value from the maximum variance (to avoid zero divisions)
 	MaxVarianceAllowance = 0.99
 
-	// State key used in CycleState
+	// PodResourcesKey State key used in CycleState
 	PodResourcesKey = Name + ".PodResources"
 )
 
@@ -58,14 +58,15 @@ type LowRiskOverCommitment struct {
 }
 
 // New : create an instance of a LowRiskOverCommitment plugin
-func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	klog.V(4).InfoS("Creating new instance of the LowRiskOverCommitment plugin")
+func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Creating new instance of the LowRiskOverCommitment plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LowRiskOverCommitmentArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type LowRiskOverCommitmentArgs, got %T", obj)
 	}
-	collector, err := trimaran.NewCollector(&args.TrimaranSpec)
+	collector, err := trimaran.NewCollector(logger, &args.TrimaranSpec)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +77,7 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 	for r, w := range args.RiskLimitWeights {
 		m[r] = w
 	}
-	klog.V(4).InfoS("Using LowRiskOverCommitmentArgs", "smoothingWindowSize", args.SmoothingWindowSize,
+	logger.V(4).Info("Using LowRiskOverCommitmentArgs", "smoothingWindowSize", args.SmoothingWindowSize,
 		"riskLimitWeights", m)
 
 	pl := &LowRiskOverCommitment{
@@ -90,7 +91,8 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 
 // PreScore : calculate pod requests and limits and store as plugin state data to be used during scoring
 func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
-	klog.V(6).InfoS("PreScore: Calculating pod resource requests and limits", "pod", klog.KObj(pod))
+	logger := klog.FromContext(ctx)
+	logger.V(6).Info("PreScore: Calculating pod resource requests and limits", "pod", klog.KObj(pod))
 	podResourcesStateData := CreatePodResourcesStateData(pod)
 	cycleState.Write(PodResourcesKey, podResourcesStateData)
 	return nil
@@ -98,18 +100,19 @@ func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *frame
 
 // Score : evaluate score for a node
 func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	klog.V(6).InfoS("Score: Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
+	logger := klog.FromContext(ctx)
+	logger.V(6).Info("Score: Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
 	score := framework.MinNodeScore
 
 	defer func() {
-		klog.V(6).InfoS("Calculating totalScore", "pod", klog.KObj(pod), "nodeName", nodeName, "totalScore", score)
+		logger.V(6).Info("Calculating totalScore", "pod", klog.KObj(pod), "nodeName", nodeName, "totalScore", score)
 	}()
 
 	// get pod requests and limits
 	podResources, err := getPreScoreState(cycleState)
 	if err != nil {
 		// calculate pod requests and limits, if missing
-		klog.V(6).InfoS(err.Error()+"; recalculating", "pod", klog.KObj(pod))
+		logger.V(6).Info(err.Error()+"; recalculating", "pod", klog.KObj(pod))
 		podResources = CreatePodResourcesStateData(pod)
 	}
 	// exclude scoring for best effort pods; this plugin is not concerned about best effort pods
@@ -117,7 +120,7 @@ func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState *framewor
 	podLimits := &podResources.podLimits
 	if podRequests.MilliCPU == 0 && podRequests.Memory == 0 &&
 		podLimits.MilliCPU == 0 && podLimits.Memory == 0 {
-		klog.V(6).InfoS("Skipping scoring best effort pod; using minimum score", "nodeName", nodeName, "pod", klog.KObj(pod))
+		logger.V(6).Info("Skipping scoring best effort pod; using minimum score", "nodeName", nodeName, "pod", klog.KObj(pod))
 		return score, nil
 	}
 	// get node info
@@ -126,13 +129,13 @@ func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState *framewor
 		return score, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	// get node metrics
-	metrics, _ := pl.collector.GetNodeMetrics(nodeName)
+	metrics, _ := pl.collector.GetNodeMetrics(logger, nodeName)
 	if metrics == nil {
-		klog.InfoS("Failed to get metrics for node; using minimum score", "nodeName", nodeName)
+		logger.Info("Failed to get metrics for node; using minimum score", "nodeName", nodeName)
 		return score, nil
 	}
 	// calculate score
-	totalScore := pl.computeRank(metrics, nodeInfo, pod, podRequests, podLimits) * float64(framework.MaxNodeScore)
+	totalScore := pl.computeRank(logger, metrics, nodeInfo, pod, podRequests, podLimits) * float64(framework.MaxNodeScore)
 	score = int64(math.Round(totalScore))
 	return score, framework.NewStatus(framework.Success, "")
 }
@@ -153,27 +156,27 @@ func (pl *LowRiskOverCommitment) NormalizeScore(context.Context, *framework.Cycl
 }
 
 // computeRank : rank function for the LowRiskOverCommitment
-func (pl *LowRiskOverCommitment) computeRank(metrics []watcher.Metric, nodeInfo *framework.NodeInfo, pod *v1.Pod,
+func (pl *LowRiskOverCommitment) computeRank(logger klog.Logger, metrics []watcher.Metric, nodeInfo *framework.NodeInfo, pod *v1.Pod,
 	podRequests *framework.Resource, podLimits *framework.Resource) float64 {
 	node := nodeInfo.Node()
 	// calculate risk based on requests and limits
-	nodeRequestsAndLimits := trimaran.GetNodeRequestsAndLimits(nodeInfo.Pods, node, pod, podRequests, podLimits)
-	riskCPU := pl.computeRisk(metrics, v1.ResourceCPU, watcher.CPU, node, nodeRequestsAndLimits)
-	riskMemory := pl.computeRisk(metrics, v1.ResourceMemory, watcher.Memory, node, nodeRequestsAndLimits)
+	nodeRequestsAndLimits := trimaran.GetNodeRequestsAndLimits(logger, nodeInfo.Pods, node, pod, podRequests, podLimits)
+	riskCPU := pl.computeRisk(logger, metrics, v1.ResourceCPU, watcher.CPU, node, nodeRequestsAndLimits)
+	riskMemory := pl.computeRisk(logger, metrics, v1.ResourceMemory, watcher.Memory, node, nodeRequestsAndLimits)
 	rank := 1 - math.Max(riskCPU, riskMemory)
 
-	klog.V(6).InfoS("Node rank", "nodeName", node.GetName(), "riskCPU", riskCPU, "riskMemory", riskMemory, "rank", rank)
+	logger.V(6).Info("Node rank", "nodeName", node.GetName(), "riskCPU", riskCPU, "riskMemory", riskMemory, "rank", rank)
 
 	return rank
 }
 
 // computeRisk : calculate the risk of scheduling on node for a given resource
-func (pl *LowRiskOverCommitment) computeRisk(metrics []watcher.Metric, resourceName v1.ResourceName,
+func (pl *LowRiskOverCommitment) computeRisk(logger klog.Logger, metrics []watcher.Metric, resourceName v1.ResourceName,
 	resourceType string, node *v1.Node, nodeRequestsAndLimits *trimaran.NodeRequestsAndLimits) float64 {
 	var riskLimit, riskLoad, totalRisk float64
 
 	defer func() {
-		klog.V(6).InfoS("Calculated risk", "node", klog.KObj(node), "resource", resourceName,
+		logger.V(6).Info("Calculated risk", "node", klog.KObj(node), "resource", resourceName,
 			"riskLimit", riskLimit, "riskLoad", riskLoad, "totalRisk", totalRisk)
 	}()
 
@@ -198,7 +201,7 @@ func (pl *LowRiskOverCommitment) computeRisk(metrics []watcher.Metric, resourceN
 		capacity = nodeCapacity.Memory
 	} else {
 		// invalid resource
-		klog.V(6).InfoS("Unexpected resource", "resourceName", resourceName)
+		logger.V(6).Info("Unexpected resource", "resourceName", resourceName)
 		return 0
 	}
 
@@ -206,11 +209,11 @@ func (pl *LowRiskOverCommitment) computeRisk(metrics []watcher.Metric, resourceN
 	if limit > capacity {
 		riskLimit = float64(limit-capacity) / float64(limit-request)
 	}
-	klog.V(6).InfoS("RiskLimit", "node", klog.KObj(node), "resource", resourceName, "riskLimit", riskLimit)
+	logger.V(6).Info("RiskLimit", "node", klog.KObj(node), "resource", resourceName, "riskLimit", riskLimit)
 
 	// (2) riskLoad : calculate measured overcommitment
 	zeroRequest := &framework.Resource{}
-	stats, ok := trimaran.CreateResourceStats(metrics, node, zeroRequest, resourceName, resourceType)
+	stats, ok := trimaran.CreateResourceStats(logger, metrics, node, zeroRequest, resourceName, resourceType)
 	if ok {
 		// fit a beta distribution to the measured load stats
 		mu, sigma := trimaran.GetMuSigma(stats)
@@ -242,7 +245,7 @@ func (pl *LowRiskOverCommitment) computeRisk(metrics []watcher.Metric, resourceN
 
 		// calculate risk
 		riskLoad = 1 - allocProb
-		klog.V(6).InfoS("RiskLoad", "node", klog.KObj(node), "resource", resourceName,
+		logger.V(6).Info("RiskLoad", "node", klog.KObj(node), "resource", resourceName,
 			"allocThreshold", allocThreshold, "allocProb", allocProb, "riskLoad", riskLoad)
 	}
 
