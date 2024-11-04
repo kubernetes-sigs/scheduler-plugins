@@ -34,7 +34,7 @@ The kube-scheduler binary includes the below list of plugins. They can be config
 * [Node Resources](docs/plugins/noderesources.md)
 * [Node Resource Topology](docs/plugins/noderesourcetopology.md)
 * [Preemption Toleration](docs/plugins/preemptiontoleration.md)
-* [Trimaran](docs/plugins/trimaran.md)
+* [Trimaran (Load-Aware Scheduling)](docs/plugins/trimaran.md)
 * [Network-Aware Scheduling](docs/plugins/networkaware.md)
 
 Additionally, the kube-scheduler binary includes the below list of sample plugins. These plugins are not intended for use in production
@@ -60,17 +60,19 @@ on demand, (e.g., `v0.18.800`) are used to indicated that the k8s client package
 changed since the previous release, and that only scheduler plugins code (features or bug fixes) was
 changed.
 
-| Scheduler Plugins | Compiled With k8s Version | Container Image                                           | Arch                                                       |
-|-------------------|---------------------------|-----------------------------------------------------------|------------------------------------------------------------|
-| v0.29.7           | v1.29.7                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
-| v0.28.9           | v1.28.9                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.28.9  | linux/amd64<br>linux/arm64                                 |
-| v0.27.8           | v1.27.8                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8  | linux/amd64<br>linux/arm64                                 |
+| Scheduler Plugins | Compiled With k8s Version | Container Image                                          | Arch                                                       |
+|-------------------|---------------------------|----------------------------------------------------------|------------------------------------------------------------|
+| v0.30.6           | v1.30.6                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.6 | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
+| v0.29.7           | v1.29.7                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.29.7 | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
+| v0.28.9           | v1.28.9                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.28.9 | linux/amd64<br>linux/arm64                                 |
+| v0.27.8           | v1.27.8                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.27.8 | linux/amd64<br>linux/arm64                                 |
 
-| Controller | Compiled With k8s Version | Container Image                                       | Arch                                                       |
-|------------|---------------------------|-------------------------------------------------------|------------------------------------------------------------|
-| v0.29.7    | v1.29.7                   | registry.k8s.io/scheduler-plugins/controller:v0.29.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
-| v0.28.9    | v1.28.9                   | registry.k8s.io/scheduler-plugins/controller:v0.28.9  | linux/amd64<br>linux/arm64                                 |
-| v0.27.8    | v1.27.8                   | registry.k8s.io/scheduler-plugins/controller:v0.27.8  | linux/amd64<br>linux/arm64                                 |
+| Controller | Compiled With k8s Version | Container Image                                      | Arch                                                       |
+|------------|---------------------------|------------------------------------------------------|------------------------------------------------------------|
+| v0.30.6    | v1.30.6                   | registry.k8s.io/scheduler-plugins/controller:v0.30.6 | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
+| v0.29.7    | v1.29.7                   | registry.k8s.io/scheduler-plugins/controller:v0.29.7 | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
+| v0.28.9    | v1.28.9                   | registry.k8s.io/scheduler-plugins/controller:v0.28.9 | linux/amd64<br>linux/arm64                                 |
+| v0.27.8    | v1.27.8                   | registry.k8s.io/scheduler-plugins/controller:v0.27.8 | linux/amd64<br>linux/arm64                                 |
 
 <details>
 <summary>Older releases</summary>
