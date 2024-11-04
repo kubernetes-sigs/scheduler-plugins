@@ -58,7 +58,7 @@ func (pl *Peaks) Name() string {
 }
 
 func initNodePowerModels() error {
-	data, err := os.ReadFile("/power_model/node_power_model")
+	data, err := os.ReadFile(os.Getenv("NODE_POWER_MODEL"))
 	if err != nil {
 		klog.ErrorS(err, "Unable to read power model from configMap")
 		return err
@@ -142,7 +142,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		klog.InfoS("Node :", nodeName, ", Node cpu usage current :", nodeCPUUtilPercent, ", predicted :", predictedCPUUsage)
 		jumpInPower := getPowerJumpForUtilisation(nodeCPUUtilPercent, predictedCPUUsage, getPowerModel(nodeName))
 		var score int64 = int64(getMaxPower() / jumpInPower)
-		klog.InfoS("Jump in power", jumpInPower, " score", score)
+		klog.InfoS("Node: ", nodeName, " Jump in power: ", int64(jumpInPower * math.Pow(10, 15)), " score: ", score)
 
 		return int64(jumpInPower * math.Pow(10, 15)), framework.NewStatus(framework.Success, "")
 	}

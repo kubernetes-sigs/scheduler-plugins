@@ -54,3 +54,9 @@ Test peaks plugin
 ```bash
 kubectl apply -f test-po.yaml
 ```
+
+## Running the unit test cases
+To run the `go` unit test cases, set the environment variable `NODE_POWER_MODEL` appropriately, as below example.
+```bash
+export NODE_POWER_MODEL=./power_model/node_power_model
+```
