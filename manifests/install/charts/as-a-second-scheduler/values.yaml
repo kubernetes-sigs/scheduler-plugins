@@ -9,6 +9,7 @@ scheduler:
   - /bin/kube-scheduler
   replicaCount: 1
   leaderElect: false
+  priorityClassName: ""
   resources: {}
   nodeSelector: {}
   affinity: {}
@@ -18,6 +19,7 @@ controller:
   name: scheduler-plugins-controller
   image: registry.k8s.io/scheduler-plugins/controller:v0.30.6
   replicaCount: 1
+  priorityClassName: ""
   resources: {}
   nodeSelector: {}
   affinity: {}

@@ -15,6 +15,9 @@ spec:
       labels:
         app: scheduler-plugins-controller
     spec:
+      {{- with .Values.controller.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       serviceAccountName: {{ .Values.controller.name }}
       containers:
       - name: scheduler-plugins-controller
@@ -51,6 +54,9 @@ spec:
       labels:
         component: scheduler
     spec:
+      {{- with .Values.scheduler.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       serviceAccountName: {{ .Values.scheduler.name }}
       containers:
       - command: {{- toYaml .Values.scheduler.command | nindent 8 }}
