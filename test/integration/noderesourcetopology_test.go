@@ -35,7 +35,6 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -2038,7 +2037,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Start-topology-match-test %v", tt.name)
-			defer cleanupNodeResourceTopologies(testCtx.Ctx, extClient, tt.nodeResourceTopologies)
+			defer cleanupNodeResourceTopologies(t, testCtx.Ctx, extClient, tt.nodeResourceTopologies)
 			defer cleanupPods(t, testCtx, tt.pods)
 
 			if err := createNodeResourceTopologies(testCtx.Ctx, extClient, tt.nodeResourceTopologies); err != nil {
@@ -2058,7 +2057,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 				if len(tt.expectedNodes) > 0 {
 					// Wait for the pod to be scheduled.
 					if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
-						return podScheduled(cs, ns, p.Name), nil
+						return podScheduled(t, cs, ns, p.Name), nil
 
 					}); err != nil {
 						t.Errorf("pod %q to be scheduled, error: %v", p.Name, err)
@@ -2085,7 +2084,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 						events, err = getPodEvents(cs, ns, p.Name)
 						if err != nil {
 							// This could be a connection error, so we want to retry.
-							klog.ErrorS(err, "Failed check pod scheduling status for pod", "pod", klog.KRef(ns, p.Name))
+							t.Errorf("Failed check pod scheduling status for pod %s/%s: %s ", ns, p.Name, err)
 							return false, nil
 						}
 						candidateEvents := filterPodFailedSchedulingEvents(events)
@@ -2093,7 +2092,7 @@ func TestTopologyMatchPlugin(t *testing.T) {
 							if strings.Contains(ce.Message, tt.errMsg) {
 								return true, nil
 							}
-							klog.Warningf("Pod failed but error message does not contain substring: %q; got %q instead", tt.errMsg, ce.Message)
+							t.Logf("Pod failed but error message does not contain substring: %q; got %q instead", tt.errMsg, ce.Message)
 						}
 						return false, nil
 					}); err != nil {

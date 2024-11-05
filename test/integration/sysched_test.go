@@ -254,7 +254,7 @@ func TestSyschedPlugin(t *testing.T) {
 		}
 		// Wait for all Pods to be scheduled.
 		err = wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*20, wait.ForeverTestTimeout, false, func(ctx context.Context) (bool, error) {
-			if !podScheduled(cs, pods[i].Namespace, pods[i].Name) {
+			if !podScheduled(t, cs, pods[i].Namespace, pods[i].Name) {
 				return false, nil
 			}
 			return true, nil

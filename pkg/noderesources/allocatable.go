@@ -78,7 +78,8 @@ func (alloc *Allocatable) ScoreExtensions() framework.ScoreExtensions {
 }
 
 // NewAllocatable initializes a new plugin and returns it.
-func NewAllocatable(_ context.Context, allocArgs runtime.Object, h framework.Handle) (framework.Plugin, error) {
+func NewAllocatable(ctx context.Context, allocArgs runtime.Object, h framework.Handle) (framework.Plugin, error) {
+	logger := klog.FromContext(ctx)
 	// Start with default values.
 	mode := config.Least
 	resToWeightMap := defaultResourcesToWeightMap
@@ -112,18 +113,18 @@ func NewAllocatable(_ context.Context, allocArgs runtime.Object, h framework.Han
 		handle: h,
 		resourceAllocationScorer: resourceAllocationScorer{
 			Name:                AllocatableName,
-			scorer:              resourceScorer(resToWeightMap, mode),
+			scorer:              resourceScorer(logger, resToWeightMap, mode),
 			resourceToWeightMap: resToWeightMap,
 		},
 	}, nil
 }
 
-func resourceScorer(resToWeightMap resourceToWeightMap, mode config.ModeType) func(resourceToValueMap, resourceToValueMap) int64 {
+func resourceScorer(logger klog.Logger, resToWeightMap resourceToWeightMap, mode config.ModeType) func(resourceToValueMap, resourceToValueMap) int64 {
 	return func(requested, allocable resourceToValueMap) int64 {
 		// TODO: consider volumes in scoring.
 		var nodeScore, weightSum int64
 		for resource, weight := range resToWeightMap {
-			resourceScore := score(allocable[resource], mode)
+			resourceScore := score(logger, allocable[resource], mode)
 			nodeScore += resourceScore * weight
 			weightSum += weight
 		}
@@ -131,7 +132,7 @@ func resourceScorer(resToWeightMap resourceToWeightMap, mode config.ModeType) fu
 	}
 }
 
-func score(capacity int64, mode config.ModeType) int64 {
+func score(logger klog.Logger, capacity int64, mode config.ModeType) int64 {
 	switch mode {
 	case config.Least:
 		return -1 * capacity
@@ -139,7 +140,7 @@ func score(capacity int64, mode config.ModeType) int64 {
 		return capacity
 	}
 
-	klog.V(10).InfoS("No match for mode", "mode", mode)
+	logger.V(10).Info("No match for mode", "mode", mode)
 	return 0
 }
 

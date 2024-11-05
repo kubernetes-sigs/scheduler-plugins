@@ -198,7 +198,7 @@ func TestLowRiskOverCommitmentPlugin(t *testing.T) {
 	expectedNodes := []string{"node-1"}
 	for i := numExistingPods; i < numPods; i++ {
 		err = wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 10*time.Second, false, func(ctx context.Context) (bool, error) {
-			return podScheduled(cs, pods[i].Namespace, pods[i].Name), nil
+			return podScheduled(t, cs, pods[i].Namespace, pods[i].Name), nil
 		})
 		assert.Nil(t, err)
 

@@ -524,7 +524,7 @@ func TestCapacityScheduling(t *testing.T) {
 
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*200, 10*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, pod := range tt.existPods {
-					if !podScheduled(cs, pod.Namespace, pod.Name) {
+					if !podScheduled(t, cs, pod.Namespace, pod.Name) {
 						return false, nil
 					}
 				}
@@ -543,7 +543,7 @@ func TestCapacityScheduling(t *testing.T) {
 
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*200, 10*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, v := range tt.expectedPods {
-					if !podScheduled(cs, v.Namespace, v.Name) {
+					if !podScheduled(t, cs, v.Namespace, v.Name) {
 						return false, nil
 					}
 				}

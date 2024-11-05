@@ -52,11 +52,11 @@ var lowPriority, midPriority, highPriority = int32(0), int32(100), int32(1000)
 var signalHandler = ctrl.SetupSignalHandler()
 
 // podScheduled returns true if a node is assigned to the given pod.
-func podScheduled(c clientset.Interface, podNamespace, podName string) bool {
+func podScheduled(t *testing.T, c clientset.Interface, podNamespace, podName string) bool {
 	pod, err := c.CoreV1().Pods(podNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
 		// This could be a connection error so we want to retry.
-		klog.ErrorS(err, "Failed to get pod", "pod", klog.KRef(podNamespace, podName))
+		t.Logf("Failed to get pod %s: %s", klog.KRef(podNamespace, podName), err)
 		return false
 	}
 	return pod.Spec.NodeName != ""

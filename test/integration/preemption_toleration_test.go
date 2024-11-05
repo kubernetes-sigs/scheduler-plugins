@@ -217,7 +217,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 				t.Fatalf("failed to create victim candidate pod %q: %v", victimCandidate.Name, err)
 			}
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 60*time.Second, false, func(ctx context.Context) (bool, error) {
-				return podScheduled(cs, ns, victimCandidate.Name), nil
+				return podScheduled(t, cs, ns, victimCandidate.Name), nil
 			}); err != nil {
 				t.Fatalf("victim candidate pod %q failed to be scheduled: %v", victimCandidate.Name, err)
 			}
@@ -256,8 +256,8 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 				// - the victim candidate pod keeps being scheduled, and
 				// - the preemptor pod is not scheduled
 				if err := consistently(1*time.Second, 15*time.Second, func() (bool, error) {
-					a := podScheduled(cs, ns, victimCandidate.Name)
-					b := podScheduled(cs, ns, tt.preemptor.Name)
+					a := podScheduled(t, cs, ns, victimCandidate.Name)
+					b := podScheduled(t, cs, ns, tt.preemptor.Name)
 					t.Logf("%s scheduled=%v, %s scheduled = %v", victimCandidate.Name, a, tt.preemptor.Name, b)
 					return a && !b, nil
 				}); err != nil {
@@ -267,7 +267,7 @@ func TestPreemptionTolerationPlugin(t *testing.T) {
 				// - the preemptor pod got scheduled successfully
 				// - the victim pod does not exist (preempted)
 				if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 30*time.Second, false, func(ctx context.Context) (bool, error) {
-					return podScheduled(cs, ns, tt.preemptor.Name) && util.PodNotExist(cs, ns, victimCandidate.Name), nil
+					return podScheduled(t, cs, ns, tt.preemptor.Name) && util.PodNotExist(cs, ns, victimCandidate.Name), nil
 				}); err != nil {
 					t.Fatalf("preemptor pod %q failed to be scheduled: %v", tt.preemptor.Name, err)
 				}

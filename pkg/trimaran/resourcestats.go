@@ -211,7 +211,7 @@ func GetNodeRequestsAndLimits(logger klog.Logger, podInfosOnNode []*framework.Po
 	setMin(&nodeRequestMinusPod.MilliCPU, capCpu)
 	setMin(&nodeRequestMinusPod.Memory, capMem)
 
-	klog.V(6).InfoS("Total node resources:", "node", klog.KObj(node),
+	logger.V(6).Info("Total node resources:", "node", klog.KObj(node),
 		"CPU-req", nodeRequest.MilliCPU, "Memory-req", nodeRequest.Memory,
 		"CPU-limit", nodeLimit.MilliCPU, "Memory-limit", nodeLimit.Memory,
 		"CPU-cap", nodeCapacity.MilliCPU, "Memory-cap", nodeCapacity.Memory)

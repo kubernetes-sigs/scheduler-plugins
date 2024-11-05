@@ -528,7 +528,7 @@ func checkMaxNetworkCostRequirements(
 				// If Nodes are not the same, get NodeInfo from pod Hostname
 				podNodeInfo, err := no.handle.SnapshotSharedLister().NodeInfos().Get(podAllocated.Hostname)
 				if err != nil {
-					logger.Error(nil, "getting pod nodeInfo %q from Snapshot: %v", podNodeInfo, err)
+					logger.Error(err, "getting pod's NodeInfo from snapshot", "nodeInfo", podNodeInfo)
 					return satisfied, violated, err
 				}
 
@@ -599,7 +599,7 @@ func (no *NetworkOverhead) getAccumulatedCost(
 				// Get NodeInfo from pod Hostname
 				podNodeInfo, err := no.handle.SnapshotSharedLister().NodeInfos().Get(podAllocated.Hostname)
 				if err != nil {
-					logger.Error(nil, "getting pod hostname %q from Snapshot: %v", podNodeInfo, err)
+					logger.Error(err, "getting pod hostname from Snapshot", "nodeInfo", podNodeInfo)
 					return cost, err
 				}
 				// Get zone and region from Pod Hostname
@@ -654,7 +654,7 @@ func getPreFilterState(cycleState *framework.CycleState) (*PreFilterState, error
 }
 
 func (no *NetworkOverhead) findAppGroupNetworkOverhead(ctx context.Context, logger klog.Logger, agName string) *agv1alpha1.AppGroup {
-	logger.V(6).Info("namespaces: %s", no.namespaces)
+	logger.V(6).Info("Debugging namespaces", "namespaces", no.namespaces)
 	for _, namespace := range no.namespaces {
 		logger.V(6).Info("appGroup CR", "namespace", namespace, "name", agName)
 		// AppGroup could not be placed in several namespaces simultaneously
@@ -675,7 +675,7 @@ func (no *NetworkOverhead) findAppGroupNetworkOverhead(ctx context.Context, logg
 }
 
 func (no *NetworkOverhead) findNetworkTopologyNetworkOverhead(ctx context.Context, logger klog.Logger) *ntv1alpha1.NetworkTopology {
-	logger.V(6).Info("namespaces: %s", no.namespaces)
+	logger.V(6).Info("Debugging namespaces", "namespaces", no.namespaces)
 	for _, namespace := range no.namespaces {
 		logger.V(6).Info("networkTopology CR:", "namespace", namespace, "name", no.ntName)
 		// NetworkTopology could not be placed in several namespaces simultaneously

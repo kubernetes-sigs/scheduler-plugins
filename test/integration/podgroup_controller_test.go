@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -281,7 +280,7 @@ func TestPodGroupController(t *testing.T) {
 
 			// create Pods
 			for _, pod := range tt.existingPods {
-				klog.InfoS("Creating pod ", "podName", pod.Name)
+				t.Log("Creating pod", "podName", pod.Name)
 				if _, err := cs.CoreV1().Pods(pod.Namespace).Create(testCtx.Ctx, pod, metav1.CreateOptions{}); err != nil {
 					t.Fatalf("Failed to create Pod %q: %v", pod.Name, err)
 				}
@@ -293,7 +292,7 @@ func TestPodGroupController(t *testing.T) {
 			}
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*200, 10*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, pod := range tt.incomingPods {
-					if !podScheduled(cs, ns, pod.Name) {
+					if !podScheduled(t, cs, ns, pod.Name) {
 						return false, nil
 					}
 				}
@@ -307,7 +306,7 @@ func TestPodGroupController(t *testing.T) {
 					var pg v1alpha1.PodGroup
 					if err := extClient.Get(ctx, types.NamespacedName{Namespace: v.Namespace, Name: v.Name}, &pg); err != nil {
 						// This could be a connection error so we want to retry.
-						klog.ErrorS(err, "Failed to obtain the PodGroup clientSet")
+						t.Error("Failed to obtain the PodGroup clientSet: ", err)
 						return false, err
 					}
 					if diff := gocmp.Diff(pg.Status, v.Status, ignoreOpts); diff != "" {
@@ -329,7 +328,7 @@ func TestPodGroupController(t *testing.T) {
 			// wait for all incomingPods to be scheduled
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*200, 10*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, pod := range tt.incomingPods {
-					if !podScheduled(cs, pod.Namespace, pod.Name) {
+					if !podScheduled(t, cs, pod.Namespace, pod.Name) {
 						return false, nil
 					}
 				}
@@ -343,7 +342,7 @@ func TestPodGroupController(t *testing.T) {
 					var pg v1alpha1.PodGroup
 					if err := extClient.Get(ctx, types.NamespacedName{Namespace: v.Namespace, Name: v.Name}, &pg); err != nil {
 						// This could be a connection error so we want to retry.
-						klog.ErrorS(err, "Failed to obtain the PodGroup clientSet")
+						t.Error("Failed to obtain the PodGroup clientSet: ", err)
 						return false, err
 					}
 

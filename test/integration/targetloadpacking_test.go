@@ -177,7 +177,7 @@ func TestTargetNodePackingPlugin(t *testing.T) {
 	expected := [2]string{nodeNames[0], nodeNames[0]}
 	for i := range newPods {
 		err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 10*time.Second, false, func(ctx context.Context) (bool, error) {
-			return podScheduled(cs, newPods[i].Namespace, newPods[i].Name), nil
+			return podScheduled(t, cs, newPods[i].Namespace, newPods[i].Name), nil
 		})
 		assert.Nil(t, err)
 

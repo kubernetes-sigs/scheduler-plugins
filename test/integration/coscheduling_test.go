@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	schedapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -356,14 +355,14 @@ func TestCoschedulingPlugin(t *testing.T) {
 			defer cleanupPods(t, testCtx, tt.pods)
 			// Create Pods, we will expect them to be scheduled in a reversed order.
 			for i := range tt.pods {
-				klog.InfoS("Creating pod ", "podName", tt.pods[i].Name)
+				t.Logf("Creating pod: %s", tt.pods[i].Name)
 				if _, err := cs.CoreV1().Pods(tt.pods[i].Namespace).Create(testCtx.Ctx, tt.pods[i], metav1.CreateOptions{}); err != nil {
 					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)
 				}
 			}
 			err = wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 120*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, v := range tt.expectedPods {
-					if !podScheduled(cs, ns, v) {
+					if !podScheduled(t, cs, ns, v) {
 						return false, nil
 					}
 				}
@@ -534,14 +533,14 @@ func TestPodgroupBackoff(t *testing.T) {
 			defer cleanupPods(t, testCtx, tt.pods)
 			// Create Pods, we will expect them to be scheduled in a reversed order.
 			for i := range tt.pods {
-				klog.InfoS("Creating pod ", "podName", tt.pods[i].Name)
+				t.Logf("Creating pod %s", tt.pods[i].Name)
 				if _, err := cs.CoreV1().Pods(tt.pods[i].Namespace).Create(testCtx.Ctx, tt.pods[i], metav1.CreateOptions{}); err != nil {
 					t.Fatalf("Failed to create Pod %q: %v", tt.pods[i].Name, err)
 				}
 			}
 			err = wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 120*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, v := range tt.expectedPods {
-					if !podScheduled(cs, ns, v) {
+					if !podScheduled(t, cs, ns, v) {
 						return false, nil
 					}
 				}
