@@ -72,8 +72,9 @@ func getArgs(obj runtime.Object) (*pluginconfig.TopologicalSortArgs, error) {
 }
 
 // New : create an instance of a TopologicalSort plugin
-func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	klog.V(4).InfoS("Creating new instance of the TopologicalSort plugin")
+func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	logger := klog.FromContext(ctx)
+	logger.V(4).Info("Creating new instance of the TopologicalSort plugin")
 
 	args, err := getArgs(obj)
 	if err != nil {
@@ -101,18 +102,20 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	p1AppGroup := networkawareutil.GetPodAppGroupLabel(pInfo1.Pod)
 	p2AppGroup := networkawareutil.GetPodAppGroupLabel(pInfo2.Pod)
+	ctx := context.TODO()
+	logger := klog.FromContext(ctx)
 
 	// If pods do not belong to an AppGroup, or being to different AppGroups, follow vanilla QoS Sort
 	if p1AppGroup != p2AppGroup || len(p1AppGroup) == 0 {
-		klog.V(4).InfoS("Pods do not belong to the same AppGroup CR", "p1AppGroup", p1AppGroup, "p2AppGroup", p2AppGroup)
+		logger.V(4).Info("Pods do not belong to the same AppGroup CR", "p1AppGroup", p1AppGroup, "p2AppGroup", p2AppGroup)
 		s := &queuesort.PrioritySort{}
 		return s.Less(pInfo1, pInfo2)
 	}
 
 	// Pods belong to the same appGroup, get the CR
-	klog.V(6).InfoS("Pods belong to the same AppGroup CR", "p1 name", pInfo1.Pod.Name, "p2 name", pInfo2.Pod.Name, "appGroup", p1AppGroup)
+	logger.V(6).Info("Pods belong to the same AppGroup CR", "p1 name", pInfo1.Pod.Name, "p2 name", pInfo2.Pod.Name, "appGroup", p1AppGroup)
 	agName := p1AppGroup
-	appGroup := ts.findAppGroupTopologicalSort(agName)
+	appGroup := ts.findAppGroupTopologicalSort(ctx, logger, agName)
 
 	// Get labels from both pods
 	labelsP1 := pInfo1.Pod.GetLabels()
@@ -122,24 +125,23 @@ func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	orderP1 := networkawareutil.FindPodOrder(appGroup.Status.TopologyOrder, labelsP1[agv1alpha.AppGroupSelectorLabel])
 	orderP2 := networkawareutil.FindPodOrder(appGroup.Status.TopologyOrder, labelsP2[agv1alpha.AppGroupSelectorLabel])
 
-	klog.V(6).InfoS("Pod order values", "p1 order", orderP1, "p2 order", orderP2)
+	logger.V(6).Info("Pod order values", "p1 order", orderP1, "p2 order", orderP2)
 
 	// Lower is better
 	return orderP1 <= orderP2
 }
 
-func (ts *TopologicalSort) findAppGroupTopologicalSort(agName string) *agv1alpha.AppGroup {
-	klog.V(6).InfoS("namespaces: %s", ts.namespaces)
+func (ts *TopologicalSort) findAppGroupTopologicalSort(ctx context.Context, logger klog.Logger, agName string) *agv1alpha.AppGroup {
 	for _, namespace := range ts.namespaces {
-		klog.V(6).InfoS("appGroup CR", "namespace", namespace, "name", agName)
+		logger.V(6).Info("appGroup CR", "namespace", namespace, "name", agName)
 		// AppGroup couldn't be placed in several namespaces simultaneously
 		appGroup := &agv1alpha.AppGroup{}
-		err := ts.Get(context.TODO(), client.ObjectKey{
+		err := ts.Get(ctx, client.ObjectKey{
 			Namespace: namespace,
 			Name:      agName,
 		}, appGroup)
 		if err != nil {
-			klog.V(4).InfoS("Cannot get AppGroup from AppGroupNamespaceLister:", "error", err)
+			logger.V(4).Info("Cannot get AppGroup from AppGroupNamespaceLister:", "error", err)
 			continue
 		}
 		if appGroup != nil {

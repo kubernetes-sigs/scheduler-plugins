@@ -59,6 +59,7 @@ func validateResources(resources []schedulerconfig.ResourceSpec) error {
 
 // Score invoked at the score extension point.
 func (alloc *Allocatable) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+	logger := klog.FromContext(ctx)
 	nodeInfo, err := alloc.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
@@ -68,7 +69,7 @@ func (alloc *Allocatable) Score(ctx context.Context, state *framework.CycleState
 	// It calculates the sum of the node's weighted allocatable resources.
 	//
 	// Note: the returned "score" is negative for least allocatable, and positive for most allocatable.
-	return alloc.score(pod, nodeInfo)
+	return alloc.score(logger, pod, nodeInfo)
 }
 
 // ScoreExtensions of the Score plugin.
