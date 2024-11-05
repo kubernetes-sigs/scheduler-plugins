@@ -1,14 +1,22 @@
 /*
 Copyright 2024 The Kubernetes Authors.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+*/
+
+/*
+peaks package provides K8s scheduler plugin for best-fit variant of bin packing based on CPU utilization around a target load
+It contains plugin for Score extension point.
 */
 
 package peaks
@@ -46,7 +54,7 @@ type PowerModel struct {
 	K1 float64 `json:"k1"`
 	K2 float64 `json:"k2"`
 	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
-	// Idle power od node will be K0 - K1
+	// Idle power of node will be K0 + K1
 }
 
 var _ framework.ScorePlugin = &Peaks{}
@@ -60,24 +68,25 @@ func (pl *Peaks) Name() string {
 func initNodePowerModels() error {
 	data, err := os.ReadFile(os.Getenv("NODE_POWER_MODEL"))
 	if err != nil {
-		klog.ErrorS(err, "Unable to read power model from configMap")
+		klog.ErrorS(err, "Unable to read power model from the input configuration")
 		return err
 	}
 	if err = json.Unmarshal(data, &clusterPowerModel); err != nil {
-		klog.ErrorS(err, "Unable to unmarshal power model from configMap value")
+		klog.ErrorS(err, "Unable to unmarshal power model from the input configuration")
 		return err
 	}
 	return nil
 }
 
-func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	klog.V(4).InfoS("Peaks plugin Input config %+v\n", obj)
+func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	logger := klog.FromContext(ctx)
+	klog.V(4).InfoS("Peaks plugin Input config %+v", obj)
 
 	args, ok := obj.(*config.PeaksArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type PeaksArgs, got %T", obj)
 	}
-	collector, err := trimaran.NewCollector(&config.TrimaranSpec{WatcherAddress: args.WatcherAddress})
+	collector, err := trimaran.NewCollector(logger, &config.TrimaranSpec{WatcherAddress: args.WatcherAddress})
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +103,7 @@ func New(_ context.Context, obj runtime.Object, handle framework.Handle) (framew
 }
 
 func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+	logger := klog.FromContext(ctx)
 	score := framework.MinNodeScore
 
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
@@ -101,7 +111,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return score, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 
-	metrics, _ := pl.collector.GetNodeMetrics(nodeName)
+	metrics, _ := pl.collector.GetNodeMetrics(logger, nodeName)
 	if metrics == nil {
 		klog.ErrorS(nil, "Failed to get metrics for node; using minimum score", "nodeName", nodeName)
 		return score, nil

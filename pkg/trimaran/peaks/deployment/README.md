@@ -4,7 +4,7 @@
 
 #### Clone repository.
 
-We use the available manifest file to create load-watcher deployment and service CRDs.
+We use the available manifest file to create load-watcher pod and service.
 
 ```bash
 git clone https://github.com/paypal/load-watcher.git
@@ -60,3 +60,6 @@ To run the `go` unit test cases, set the environment variable `NODE_POWER_MODEL`
 ```bash
 export NODE_POWER_MODEL=./power_model/node_power_model
 ```
+
+## Peaks Power Model JSON schema
+The power model typically is a mathematical expression (e.g., `NodePower = K0 + K1 * e^(K2 * x)`, where `x` is node utilisation and each `K` is a constant)
