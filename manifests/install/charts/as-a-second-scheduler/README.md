@@ -44,23 +44,25 @@ scheduler-plugins-scheduler    1/1     1            1           7s
 
 The following table lists the configurable parameters of the as-a-second-scheduler chart and their default values.
 
-| Parameter                 | Description                 | Default                                                                                         |
-|---------------------------|-----------------------------|-------------------------------------------------------------------------------------------------|
-| `scheduler.name`          | Scheduler name              | `scheduler-plugins-scheduler`                                                                   |
-| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.6`                                      |
-| `scheduler.command`       | Scheduler command           | `["/bin/kube-scheduler"]`                                                                       |
-| `scheduler.leaderElect`   | Scheduler leaderElection    | `false`                                                                                         |
-| `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
-| `scheduler.resources`     | Scheduler resources         | `{}`                                                                                            |
-| `scheduler.nodeSelector`  | Scheduler nodeSelector      | `{}`                                                                                            |
-| `scheduler.affinity`      | Scheduler affinity          | `{}`                                                                                            |
-| `scheduler.tolerations`   | Scheduler tolerations       | `[]`                                                                                            |
-| `controller.name`         | Controller name             | `scheduler-plugins-controller`                                                                  |
-| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.29.7`                                          |
-| `controller.replicaCount` | Controller replicaCount     | `1`                                                                                             |
-s| `controller.resources`    | Controller resources        | `{}`                                                                                            |
-| `controller.nodeSelector` | Controller nodeSelector     | `{}`                                                                                            |
-| `controller.affinity`     | Controller affinity         | `{}`                                                                                            |
-| `controller.tolerations`  | Controller tolerations      | `[]`                                                                                            |
-| `plugins.enabled`         | Plugins enabled by default  | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
-| `plugins.disabled`        | Plugins disabled by default | `["PrioritySort"]`                                                                              |
+| Parameter                      | Description                  | Default                                                                                         |
+|--------------------------------|------------------------------|-------------------------------------------------------------------------------------------------|
+| `scheduler.name`               | Scheduler name               | `scheduler-plugins-scheduler`                                                                   |
+| `scheduler.image`              | Scheduler image              | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.6`                                      |
+| `scheduler.command`            | Scheduler command            | `["/bin/kube-scheduler"]`                                                                       |
+| `scheduler.leaderElect`        | Scheduler leaderElection     | `false`                                                                                         |
+| `scheduler.replicaCount`       | Scheduler replicaCount       | `1`                                                                                             |
+| `scheduler.priorityClassName`  | Scheduler priorityClassName  | `""`                                                                                            |
+| `scheduler.resources`          | Scheduler resources          | `{}`                                                                                            |
+| `scheduler.nodeSelector`       | Scheduler nodeSelector       | `{}`                                                                                            |
+| `scheduler.affinity`           | Scheduler affinity           | `{}`                                                                                            |
+| `scheduler.tolerations`        | Scheduler tolerations        | `[]`                                                                                            |
+| `controller.name`              | Controller name              | `scheduler-plugins-controller`                                                                  |
+| `controller.image`             | Controller image             | `registry.k8s.io/scheduler-plugins/controller:v0.29.7`                                          |
+| `controller.replicaCount`      | Controller replicaCount      | `1`                                                                                             |
+| `controller.priorityClassName` | Controller priorityClassName | `""`                                                                                            |
+| `controller.resources`         | Controller resources         | `{}`                                                                                            |
+| `controller.nodeSelector`      | Controller nodeSelector      | `{}`                                                                                            |
+| `controller.affinity`          | Controller affinity          | `{}`                                                                                            |
+| `controller.tolerations`       | Controller tolerations       | `[]`                                                                                            |
+| `plugins.enabled`              | Plugins enabled by default   | `["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch", "NodeResourcesAllocatable"]` |
+| `plugins.disabled`             | Plugins disabled by default  | `["PrioritySort"]`                                                                              |
