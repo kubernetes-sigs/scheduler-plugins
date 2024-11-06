@@ -10,6 +10,8 @@ data:
     kind: KubeSchedulerConfiguration
     leaderElection:
       leaderElect: {{ .Values.scheduler.leaderElect }}
+      resourceNamespace: {{ .Release.Namespace }}
+      resourceName: {{ .Values.scheduler.name }}
     profiles:
     # Compose all plugins in one profile
     - schedulerName: {{ .Values.scheduler.name }}

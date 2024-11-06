@@ -43,12 +43,12 @@ type ResourceStats struct {
 }
 
 // CreateResourceStats : get resource statistics data from measurements for a node
-func CreateResourceStats(metrics []watcher.Metric, node *v1.Node, podRequest *framework.Resource,
+func CreateResourceStats(logger klog.Logger, metrics []watcher.Metric, node *v1.Node, podRequest *framework.Resource,
 	resourceName v1.ResourceName, watcherType string) (rs *ResourceStats, isValid bool) {
 	// get resource usage statistics
 	nodeUtil, nodeStd, metricFound := GetResourceData(metrics, watcherType)
 	if !metricFound {
-		klog.V(6).InfoS("Resource usage statistics for node : no valid data", "node", klog.KObj(node))
+		logger.V(6).Info("Resource usage statistics for node : no valid data", "node", klog.KObj(node))
 		return nil, false
 	}
 	// get resource capacity
@@ -69,7 +69,7 @@ func CreateResourceStats(metrics []watcher.Metric, node *v1.Node, podRequest *fr
 	rs.UsedAvg = nodeUtil * rs.Capacity / 100
 	rs.UsedStdev = nodeStd * rs.Capacity / 100
 
-	klog.V(6).InfoS("Resource usage statistics for node", "node", klog.KObj(node), "resource", resourceName,
+	logger.V(6).Info("Resource usage statistics for node", "node", klog.KObj(node), "resource", resourceName,
 		"capacity", rs.Capacity, "required", rs.Req, "usedAvg", rs.UsedAvg, "usedStdev", rs.UsedStdev)
 	return rs, true
 }
@@ -121,7 +121,7 @@ func GetResourceLimits(pod *v1.Pod) *framework.Resource {
 	})
 }
 
-// GetEffectiveResource: calculate effective resources of a pod (CPU and Memory)
+// GetEffectiveResource : calculate effective resources of a pod (CPU and Memory)
 func GetEffectiveResource(pod *v1.Pod, fn func(container *v1.Container) v1.ResourceList) *framework.Resource {
 	result := &framework.Resource{}
 	// add up resources of all containers
@@ -161,7 +161,7 @@ type NodeRequestsAndLimits struct {
 }
 
 // GetNodeRequestsAndLimits : total requested and limits of resources on a given node plus a pod
-func GetNodeRequestsAndLimits(podInfosOnNode []*framework.PodInfo, node *v1.Node, pod *v1.Pod,
+func GetNodeRequestsAndLimits(logger klog.Logger, podInfosOnNode []*framework.PodInfo, node *v1.Node, pod *v1.Pod,
 	podRequests *framework.Resource, podLimits *framework.Resource) *NodeRequestsAndLimits {
 	// initialization
 	nodeRequest := &framework.Resource{}

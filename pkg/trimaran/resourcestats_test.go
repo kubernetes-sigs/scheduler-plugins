@@ -17,6 +17,7 @@ limitations under the License.
 package trimaran
 
 import (
+	"context"
 	"math"
 	"reflect"
 	"strconv"
@@ -26,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 )
@@ -147,7 +149,8 @@ func TestCreateResourceStats(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRs, gotIsValid := CreateResourceStats(tt.args.metrics, tt.args.node, tt.args.podRequest, tt.args.resourceName, tt.args.watcherType)
+			logger := klog.FromContext(context.TODO())
+			gotRs, gotIsValid := CreateResourceStats(logger, tt.args.metrics, tt.args.node, tt.args.podRequest, tt.args.resourceName, tt.args.watcherType)
 			if !reflect.DeepEqual(gotRs, tt.wantRs) {
 				t.Errorf("createResourceStats() gotRs = %v, want %v", gotRs, tt.wantRs)
 			}
@@ -580,9 +583,10 @@ func TestGetNodeRequestsAndLimits(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logger := klog.FromContext(context.TODO())
 			var got *NodeRequestsAndLimits
 			SetMaxLimits(tt.args.podRequests, tt.args.podLimits)
-			if got = GetNodeRequestsAndLimits(tt.args.podsOnNode, tt.args.node, tt.args.pod,
+			if got = GetNodeRequestsAndLimits(logger, tt.args.podsOnNode, tt.args.node, tt.args.pod,
 				tt.args.podRequests, tt.args.podLimits); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GetNodeRequestsAndLimits(): got = {%+v, %+v, %+v, %+v, %+v}, want = {%+v, %+v, %+v, %+v, %+v}",
 					*got.NodeRequest, *got.NodeLimit, *got.NodeRequestMinusPod, *got.NodeLimitMinusPod, *got.Nodecapacity,

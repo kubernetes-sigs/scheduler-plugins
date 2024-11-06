@@ -469,7 +469,7 @@ func TestReserve(t *testing.T) {
 
 			state := framework.NewCycleState()
 			for i, pod := range tt.pods {
-				got := cs.Reserve(nil, state, pod, "node-a")
+				got := cs.Reserve(context.TODO(), state, pod, "node-a")
 				if got.Code() != tt.expectedCodes[i] {
 					t.Errorf("expected %v, got %v : %v", tt.expected[i], got.Code(), got.Message())
 				}
@@ -591,7 +591,7 @@ func TestUnreserve(t *testing.T) {
 
 			state := framework.NewCycleState()
 			for i, pod := range tt.pods {
-				cs.Unreserve(nil, state, pod, "node-a")
+				cs.Unreserve(context.TODO(), state, pod, "node-a")
 				if !reflect.DeepEqual(cs.elasticQuotaInfos["ns1"], tt.expected[i]["ns1"]) {
 					t.Errorf("expected %#v, got %#v", tt.expected[i]["ns1"].Used, cs.elasticQuotaInfos["ns1"].Used)
 				}

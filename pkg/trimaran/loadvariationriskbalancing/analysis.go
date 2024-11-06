@@ -31,9 +31,9 @@ Calculation of risk score for resources given measured data
 // computeScore : compute score given usage statistics
 // - risk = [ average + margin * stDev^{1/sensitivity} ] / 2
 // - score = ( 1 - risk ) * maxScore
-func computeScore(rs *trimaran.ResourceStats, margin float64, sensitivity float64) float64 {
+func computeScore(logger klog.Logger, rs *trimaran.ResourceStats, margin float64, sensitivity float64) float64 {
 	if rs.Capacity <= 0 {
-		klog.ErrorS(nil, "Invalid resource capacity", "capacity", rs.Capacity)
+		logger.Error(nil, "Invalid resource capacity", "capacity", rs.Capacity)
 		return 0
 	}
 
@@ -55,6 +55,6 @@ func computeScore(rs *trimaran.ResourceStats, margin float64, sensitivity float6
 
 	// evaluate overall risk factor
 	risk := (mu + sigma) / 2
-	klog.V(6).InfoS("Evaluating risk factor", "mu", mu, "sigma", sigma, "margin", margin, "sensitivity", sensitivity, "risk", risk)
+	logger.V(6).Info("Evaluating risk factor", "mu", mu, "sigma", sigma, "margin", margin, "sensitivity", sensitivity, "risk", risk)
 	return (1. - risk) * float64(framework.MaxNodeScore)
 }
