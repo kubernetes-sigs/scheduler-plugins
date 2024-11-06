@@ -30,6 +30,9 @@ spec:
         - --config=/home/scheduler-config.yaml
         - -v=6
         image: <REPLACE_ME_WITH_PEAKS_IMAGE>
+        env:
+        - name: NODE_POWER_MODEL
+          value: /power_model/node_power_model
         imagePullPolicy: Always
         resources:
           requests:
