@@ -279,3 +279,13 @@ type SySchedArgs struct {
 	// CR name of the default profile for all system calls
 	DefaultProfileName string
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PeaksArgs holds arguments used to configure the Peaks plugin
+type PeaksArgs struct {
+	metav1.TypeMeta
+
+	// Address of load watcher service
+	WatcherAddress string
+}
