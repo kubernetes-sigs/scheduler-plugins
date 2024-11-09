@@ -96,7 +96,7 @@ func createSamplePowerModel() {
 	}
 
 	if len(os.Getenv("NODE_POWER_MODEL")) == 0 {
-		os.Setenv("NODE_POWER_MODEL", "/tmp/power_model/node_power_model")
+		os.Setenv("NODE_POWER_MODEL", "./power_model/node_power_model")
 	}
 	fmt.Println("NODE_POWER_MODEL: ", os.Getenv("NODE_POWER_MODEL"))
 	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))

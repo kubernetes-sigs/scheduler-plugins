@@ -73,7 +73,7 @@ func createSamplePowerModel() {
 	}
 
 	if len(os.Getenv("NODE_POWER_MODEL")) == 0 {
-		os.Setenv("NODE_POWER_MODEL", "/tmp/power_model/node_power_model")
+		os.Setenv("NODE_POWER_MODEL", "./power_model/node_power_model")
 	}
 	fmt.Println("NODE_POWER_MODEL: ", os.Getenv("NODE_POWER_MODEL"))
 	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))
@@ -233,7 +233,7 @@ func TestPeaksPlugin(t *testing.T) {
 	expected := [2]string{nodeNames[0], nodeNames[1]}
 	for i := range newPods {
 		err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 10*time.Second, false, func(ctx context.Context) (bool, error) {
-			return podScheduled(cs, newPods[i].Namespace, newPods[i].Name), nil
+			return podScheduled(t, cs, newPods[i].Namespace, newPods[i].Name), nil
 		})
 		assert.Nil(t, err)
 
