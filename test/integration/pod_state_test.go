@@ -129,7 +129,7 @@ func TestPodStatePlugin(t *testing.T) {
 
 				// Ensure the existing Pods are scheduled successfully except for the nominated pods.
 				if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 20*time.Second, false, func(ctx context.Context) (bool, error) {
-					return podScheduled(cs, ns, pod.Name), nil
+					return podScheduled(t, cs, ns, pod.Name), nil
 				}); err != nil {
 					t.Logf("pod %q failed to be scheduled", pod.Name)
 				}
@@ -152,7 +152,7 @@ func TestPodStatePlugin(t *testing.T) {
 
 			// Ensure the Pod is scheduled successfully.
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 60*time.Second, false, func(ctx context.Context) (bool, error) {
-				return podScheduled(cs, ns, tt.pod.Name), nil
+				return podScheduled(t, cs, ns, tt.pod.Name), nil
 			}); err != nil {
 				t.Errorf("pod %q failed to be scheduled: %v", tt.pod.Name, err)
 			}

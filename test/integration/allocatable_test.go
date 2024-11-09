@@ -135,7 +135,7 @@ func TestAllocatablePlugin(t *testing.T) {
 	for i := range pods {
 		// Wait for the pod to be scheduled.
 		err := wait.PollUntilContextTimeout(testCtx.Ctx, 1*time.Second, 60*time.Second, false, func(ctx context.Context) (bool, error) {
-			return podScheduled(cs, pods[i].Namespace, pods[i].Name), nil
+			return podScheduled(t, cs, pods[i].Namespace, pods[i].Name), nil
 		})
 		if err != nil {
 			t.Fatalf("Waiting for pod %q to be scheduled, error: %v", pods[i].Name, err.Error())

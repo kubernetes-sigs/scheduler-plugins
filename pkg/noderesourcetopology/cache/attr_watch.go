@@ -18,7 +18,7 @@ package cache
 
 import (
 	"context"
-
+	"fmt"
 	"github.com/go-logr/logr"
 
 	"k8s.io/apimachinery/pkg/watch"
@@ -72,7 +72,7 @@ func (wt Watcher) ProcessEvent(ev watch.Event) bool {
 
 	nrtObj, ok := ev.Object.(*topologyv1alpha2.NodeResourceTopology)
 	if !ok {
-		wt.lh.Info("unexpected object %T", ev.Object)
+		wt.lh.Info("unexpected object", "kind", fmt.Sprintf("%T", ev.Object))
 		return false
 	}
 

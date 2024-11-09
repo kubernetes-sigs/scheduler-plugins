@@ -31,7 +31,6 @@ import (
 	quota "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -303,7 +302,7 @@ func TestElasticController(t *testing.T) {
 			}
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*200, 10*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, pod := range tt.incomingPods {
-					if !podScheduled(cs, pod.Namespace, pod.Name) {
+					if !podScheduled(t, cs, pod.Namespace, pod.Name) {
 						return false, nil
 					}
 				}
@@ -317,7 +316,7 @@ func TestElasticController(t *testing.T) {
 					var eq schedv1alpha1.ElasticQuota
 					if err := extClient.Get(ctx, types.NamespacedName{Namespace: v.Namespace, Name: v.Name}, &eq); err != nil {
 						// This could be a connection error so we want to retry.
-						klog.ErrorS(err, "Failed to obtain the elasticQuota clientSet")
+						t.Logf("Failed to obtain the elasticQuota clientSet: %s", err)
 						return false, err
 					}
 					if !quota.Equals(eq.Status.Used, v.Status.Used) {
@@ -337,7 +336,7 @@ func TestElasticController(t *testing.T) {
 			}
 			if err := wait.PollUntilContextTimeout(testCtx.Ctx, time.Millisecond*200, 10*time.Second, false, func(ctx context.Context) (bool, error) {
 				for _, pod := range tt.incomingPods {
-					if !podScheduled(cs, pod.Namespace, pod.Name) {
+					if !podScheduled(t, cs, pod.Namespace, pod.Name) {
 						return false, nil
 					}
 				}
@@ -351,7 +350,7 @@ func TestElasticController(t *testing.T) {
 					var eq schedv1alpha1.ElasticQuota
 					if err := extClient.Get(ctx, types.NamespacedName{Namespace: v.Namespace, Name: v.Name}, &eq); err != nil {
 						// This could be a connection error so we want to retry.
-						klog.ErrorS(err, "Failed to obtain the elasticQuota clientSet")
+						t.Errorf("Failed to obtain the elasticQuota clientSet: %s", err)
 						return false, err
 					}
 					if !quota.Equals(eq.Status.Used, v.Status.Used) {

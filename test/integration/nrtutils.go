@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
@@ -50,7 +51,7 @@ const (
 	ephemeralStorage = string(corev1.ResourceEphemeralStorage)
 )
 
-func waitForNRT(cs *clientset.Clientset) error {
+func waitForNRT(t *testing.T, cs *clientset.Clientset) error {
 	return wait.PollUntilContextTimeout(context.TODO(), 100*time.Millisecond, 3*time.Second, false, func(ctx context.Context) (done bool, err error) {
 		groupList, _, err := cs.ServerGroupsAndResources()
 		if err != nil {
@@ -58,7 +59,7 @@ func waitForNRT(cs *clientset.Clientset) error {
 		}
 		for _, group := range groupList {
 			if group.Name == "topology.node.k8s.io" {
-				klog.Infof("The CRD is ready to serve")
+				t.Log("The CRD is ready to serve")
 				return true, nil
 			}
 		}
@@ -66,13 +67,13 @@ func waitForNRT(cs *clientset.Clientset) error {
 	})
 }
 
-func createNodesFromNodeResourceTopologies(cs clientset.Interface, ctx context.Context, nodeResourceTopologies []*topologyv1alpha2.NodeResourceTopology) error {
+func createNodesFromNodeResourceTopologies(t *testing.T, cs clientset.Interface, ctx context.Context, nodeResourceTopologies []*topologyv1alpha2.NodeResourceTopology) error {
 	for _, nrt := range nodeResourceTopologies {
 		nodeName := nrt.Name
 		resMap := toResMap(accumulateResourcesToCapacity(*nrt))
 		resMap[corev1.ResourcePods] = "128"
 
-		klog.Infof(" Creating node %q: %s", nodeName, resMapToString(resMap))
+		t.Logf(" Creating node %q: %s", nodeName, resMapToString(resMap))
 
 		newNode := st.MakeNode().Name(nodeName).Label("node", nodeName).Capacity(resMap).Obj()
 		n, err := cs.CoreV1().Nodes().Create(ctx, newNode, metav1.CreateOptions{})
@@ -80,7 +81,7 @@ func createNodesFromNodeResourceTopologies(cs clientset.Interface, ctx context.C
 			return fmt.Errorf("Failed to create Node %q: %w", nodeName, err)
 		}
 
-		klog.Infof(" Node %s created: (%s | %s)", nodeName, stringify.ResourceList(n.Status.Capacity), stringify.ResourceList(n.Status.Allocatable))
+		t.Logf(" Node %s created: (%s | %s)", nodeName, stringify.ResourceList(n.Status.Capacity), stringify.ResourceList(n.Status.Allocatable))
 	}
 	return nil
 }
@@ -129,14 +130,13 @@ func updateNodeResourceTopologies(ctx context.Context, client ctrlclient.Client,
 	return nil
 }
 
-func cleanupNodeResourceTopologies(ctx context.Context, client ctrlclient.Client, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) {
+func cleanupNodeResourceTopologies(t *testing.T, ctx context.Context, client ctrlclient.Client, noderesourcetopologies []*topologyv1alpha2.NodeResourceTopology) {
 	for _, nrt := range noderesourcetopologies {
 		if err := client.Delete(ctx, nrt); err != nil {
-			klog.ErrorS(err, "Failed to clean up NodeResourceTopology",
-				"nodeResourceTopology", nrt)
+			t.Errorf("Failed to clean up NodeResourceTopology %s: %s", klog.KObj(nrt), err)
 		}
 	}
-	klog.Infof("cleaned up NRT %d objects", len(noderesourcetopologies))
+	t.Logf("cleaned up NRT %d objects", len(noderesourcetopologies))
 }
 
 func makeResourceAllocationScoreArgs(strategy *scheconfig.ScoringStrategy) *scheconfig.NodeResourceTopologyMatchArgs {
@@ -203,14 +203,14 @@ func (n *nrtWrapper) Obj() *topologyv1alpha2.NodeResourceTopology {
 	return &n.nrt
 }
 
-func podIsScheduled(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
+func podIsScheduled(t *testing.T, interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
 	var err error
 	var pod *corev1.Pod
 	waitErr := wait.PollUntilContextTimeout(context.TODO(), interval, time.Duration(times)*interval, false, func(ctx context.Context) (bool, error) {
 		pod, err = cs.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
 		if err != nil {
 			// This could be a connection error so we want to retry.
-			klog.ErrorS(err, "Failed to get pod", "pod", klog.KRef(podNamespace, podName))
+			t.Errorf("Failed to get pod %s: %s", klog.KRef(podNamespace, podName), err)
 			return false, err
 		}
 		return pod.Spec.NodeName != "", nil
@@ -218,7 +218,7 @@ func podIsScheduled(interval time.Duration, times int, cs clientset.Interface, p
 	return pod, waitErr
 }
 
-func podIsPending(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
+func podIsPending(_ *testing.T, interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) {
 	var err error
 	var pod *corev1.Pod
 	for attempt := 0; attempt < times; attempt++ {

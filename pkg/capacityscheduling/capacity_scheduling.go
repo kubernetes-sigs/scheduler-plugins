@@ -418,7 +418,7 @@ func (p *preemptor) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus 
 
 	preFilterState, err := getPreFilterState(p.state)
 	if err != nil {
-		logger.V(5).Info("Failed to read preFilterState from cycleState, err: %s", err, "preFilterStateKey", preFilterStateKey)
+		logger.V(5).Error(err, "Failed to read preFilterState from cycleState", "preFilterStateKey", preFilterStateKey)
 		return false, "not eligible due to failed to read from cycleState"
 	}
 

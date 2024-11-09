@@ -111,7 +111,7 @@ func init() {
 func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 
 	os.Args = []string{"unused", "-logtostderr", "-v", schedVerbose}
-	klog.Infof("args = %v", os.Args[1:])
+	t.Logf("args = %v", os.Args[1:])
 	flag.Parse()
 
 	// key: BE: Best Effort QoS; BU: BUrstable QoS; GU: GUaranteed QoS
@@ -504,7 +504,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			testCtx.ClientSet = cs
 			testCtx.KubeConfig = globalKubeConfig
 
-			if err := waitForNRT(cs); err != nil {
+			if err := waitForNRT(t, cs); err != nil {
 				t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
 			}
 
@@ -530,10 +530,10 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 
 			defer func() {
 				cleanupTest(t, testCtx)
-				klog.Infof("test environment %q cleaned up", tt.name)
+				t.Logf("test environment %q cleaned up", tt.name)
 			}()
 
-			if err := createNodesFromNodeResourceTopologies(cs, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
+			if err := createNodesFromNodeResourceTopologies(t, cs, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
 				t.Fatalf("%v", err)
 			}
 
@@ -546,17 +546,17 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 
 				p.SetupPod(ns, false)
 				pods = append(pods, p.pod)
-				klog.Infof("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
+				t.Logf("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
 			}
 
 			t.Logf("Start-topology-match-cache-pfp-test %q", tt.name)
-			defer cleanupNodeResourceTopologies(testCtx.Ctx, extClient, tt.nodeResourceTopologies)
+			defer cleanupNodeResourceTopologies(t, testCtx.Ctx, extClient, tt.nodeResourceTopologies)
 			defer func() {
 				cleanupPods(t, testCtx, pods)
-				klog.Infof("Pods cleaned up")
+				t.Log("Pods cleaned up")
 			}()
 
-			klog.Infof("Creating %d NRT objects", len(tt.nodeResourceTopologies))
+			t.Logf("Creating %d NRT objects", len(tt.nodeResourceTopologies))
 			if err := createNodeResourceTopologies(testCtx.Ctx, extClient, tt.nodeResourceTopologies); err != nil {
 				t.Fatal(err)
 			}
@@ -571,27 +571,27 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 			)
 			syncInformerFactory(testCtx)
 			go testCtx.Scheduler.Run(testCtx.Ctx)
-			klog.Infof("init scheduler success")
+			t.Log("init scheduler success")
 
 			for idx := range tt.podDescs {
 				p := &tt.podDescs[idx]
 				if p.isDelete {
 					var err error
-					klog.Infof("Waiting before to delete Pod %q", p.podName)
-					updatedPod, err := podIsScheduled(1*time.Second, 20, cs, ns, p.podName)
+					t.Logf("Waiting before to delete Pod %q", p.podName)
+					updatedPod, err := podIsScheduled(t, 1*time.Second, 20, cs, ns, p.podName)
 					if err != nil {
 						// we need more context, but we don't want to clutter the logs
 						t.Logf("%s: pod %s/%s to be scheduled, error: %v\nstatus=%s", tt.name, p.pod.Namespace, p.pod.Name, err, formatObject(updatedPod.Status))
 						t.Errorf("Pod %q to be scheduled, error: %v", p.pod.Name, err)
 					}
 
-					klog.Infof("Deleting Pod %q", p.podName)
+					t.Logf("Deleting Pod %q", p.podName)
 					err = cs.CoreV1().Pods(ns).Delete(testCtx.Ctx, p.podName, metav1.DeleteOptions{})
 					if err != nil {
 						t.Fatalf("Failed to delete Pod %q: %v", p.podName, err)
 					}
 				} else {
-					klog.Infof("Creating Pod %q: scheduler: %q", p.pod.Name, p.pod.Spec.SchedulerName)
+					t.Logf("Creating Pod %q: scheduler: %q", p.pod.Name, p.pod.Spec.SchedulerName)
 					_, err := cs.CoreV1().Pods(ns).Create(testCtx.Ctx, p.pod, metav1.CreateOptions{})
 					if err != nil {
 						t.Fatalf("Failed to create Pod %q: %v", p.pod.Name, err)
@@ -605,7 +605,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				}
 
 				var action string = "scheduled"
-				var checkPod func(interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) = podIsScheduled
+				var checkPod func(t *testing.T, interval time.Duration, times int, cs clientset.Interface, podNamespace, podName string) (*corev1.Pod, error) = podIsScheduled
 				if p.expectedNode == "" {
 					action = "kept pending"
 					checkPod = podIsPending
@@ -613,13 +613,13 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 
 				// set timeout to 50s, flushUnschedulableQLeftover is running every 30 seconds + 10 seconds for podMaxInUnschedulablePodsDuration + 10 seconds just to be sure
 				// we need to make sure scheduler will move failed pod from Unschedulable queue to Active queue at least once
-				updatedPod, err := checkPod(1*time.Second, 50, cs, p.pod.Namespace, p.pod.Name)
+				updatedPod, err := checkPod(t, 1*time.Second, 50, cs, p.pod.Namespace, p.pod.Name)
 				if err != nil {
 					// we need more context, but we don't want to clutter the logs
 					t.Logf("%s: pod %s/%s to be %s, error: %v\nstatus=%s", tt.name, p.pod.Namespace, p.pod.Name, action, err, formatObject(updatedPod.Status))
 					t.Errorf("Pod %s/%s to be %s, error: %v", p.pod.Namespace, p.pod.Name, action, err)
 				}
-				klog.Infof("Pod %v %s", p.pod.Name, action)
+				t.Logf("Pod %v %s", p.pod.Name, action)
 			}
 
 			for _, p := range tt.podDescs {
@@ -628,12 +628,12 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 				}
 
 				nodeName, err := getNodeName(testCtx.Ctx, cs, ns, p.pod.Name)
-				klog.Infof("Pod %s scheduled on node %q (expected %q)", p.pod.Name, nodeName, p.expectedNode)
+				t.Logf("Pod %s scheduled on node %q (expected %q)", p.pod.Name, nodeName, p.expectedNode)
 				if err != nil {
-					klog.Infof("%v", err)
+					t.Logf("%v", err)
 				}
 
-				if !podMatchesExpectedNode(p.pod.Namespace, p.pod.Name, nodeName, p.expectedNode) {
+				if !podMatchesExpectedNode(t, p.pod.Namespace, p.pod.Name, nodeName, p.expectedNode) {
 					t.Errorf("misplaced pod: %q got %q expected %q", p.pod.Name, nodeName, p.expectedNode)
 				}
 			}
@@ -646,7 +646,7 @@ func TestTopologyCachePluginWithoutUpdates(t *testing.T) {
 func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 
 	os.Args = []string{"unused", "-logtostderr", "-v", schedVerbose}
-	klog.Infof("args = %v", os.Args[1:])
+	t.Logf("args = %v", os.Args[1:])
 	flag.Parse()
 
 	tt := testCase{
@@ -682,17 +682,17 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 
 	defer func() {
 		cleanupTest(t, testCtx)
-		klog.Infof("test environment cleaned up")
+		t.Log("test environment cleaned up")
 	}()
 
-	if err := waitForNRT(extTestCtx.cli); err != nil {
+	if err := waitForNRT(t, extTestCtx.cli); err != nil {
 		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
 	}
 
 	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
 	createNamespace(t, testCtx, ns)
 
-	if err := createNodesFromNodeResourceTopologies(extTestCtx.cli, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
+	if err := createNodesFromNodeResourceTopologies(t, extTestCtx.cli, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -705,17 +705,17 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 
 		p.SetupPod(ns, false)
 		pods = append(pods, p.pod)
-		klog.Infof("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
+		t.Logf("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
 	}
 
 	t.Logf("Start-topology-match-cache-pfp-test %q", tt.name)
-	defer cleanupNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, tt.nodeResourceTopologies)
+	defer cleanupNodeResourceTopologies(t, testCtx.Ctx, extTestCtx.extCli, tt.nodeResourceTopologies)
 	defer func() {
 		cleanupPods(t, testCtx, pods)
-		klog.Infof("Pods cleaned up")
+		t.Log("Pods cleaned up")
 	}()
 
-	klog.Infof("Creating %d NRT objects", len(tt.nodeResourceTopologies))
+	t.Logf("Creating %d NRT objects", len(tt.nodeResourceTopologies))
 	if err := createNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, tt.nodeResourceTopologies); err != nil {
 		t.Fatal(err)
 	}
@@ -728,18 +728,18 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 	)
 	syncInformerFactory(testCtx)
 	go testCtx.Scheduler.Run(testCtx.Ctx)
-	klog.Infof("init scheduler success")
+	t.Log("init scheduler success")
 
 	for idx := range tt.podDescs {
 		p := &tt.podDescs[idx]
-		klog.Infof("Creating Pod %q", p.pod.Name)
+		t.Logf("Creating Pod %q", p.pod.Name)
 		_, err := extTestCtx.cli.CoreV1().Pods(ns).Create(testCtx.Ctx, p.pod, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create Pod %q: %v", p.pod.Name, err)
 		}
 	}
 
-	scheduledPods, _, _ := waitForPodList(extTestCtx.cli, tt.podDescs, 1*time.Minute)
+	scheduledPods, _, _ := waitForPodList(t, extTestCtx.cli, tt.podDescs, 1*time.Minute)
 	expectedScheduled := 1
 	if len(scheduledPods) != expectedScheduled {
 		t.Fatalf("pods scheduled %d expected %d", len(scheduledPods), expectedScheduled)
@@ -753,10 +753,10 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 		_, err := extTestCtx.cli.CoreV1().Pods(runningPod.Namespace).UpdateStatus(testCtx.Ctx, runningPod, metav1.UpdateOptions{})
 		if err != nil {
 			// we can call t.Fatalf only on the main goroutine, so we just log
-			klog.ErrorS(err, "cannot update status of %s/%s", runningPod.Namespace, runningPod.Name)
+			t.Logf("cannot update status of %s/%s: %s", runningPod.Namespace, runningPod.Name, err)
 		}
 
-		pfpSign := mkPFP("fake-node-cache-1", tt.podDescs[0].pod)
+		pfpSign := mkPFP(t, "fake-node-cache-1", tt.podDescs[0].pod)
 		updatedNRTs := []*topologyv1alpha2.NodeResourceTopology{
 			MakeNRT().Name("fake-node-cache-1").
 				Attributes(topologyv1alpha2.AttributeList{
@@ -792,13 +792,13 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 		time.Sleep(extTestCtx.CacheResyncPeriodSeconds(3))
 
 		// first update: this is supposed to trigger the cache update because PFP are expected to match
-		klog.Infof("updating %d NRTs", len(updatedNRTs))
+		t.Logf("updating %d NRTs", len(updatedNRTs))
 		err = updateNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, updatedNRTs)
 		if err != nil {
 			// we can call t.Fatalf only on the main goroutine, so we just log
-			klog.ErrorS(err, "cannot update NRTs")
+			t.Logf("cannot update NRTs: %s", err)
 		}
-		klog.Infof("updated %d NRTs", len(updatedNRTs))
+		t.Logf("updated %d NRTs", len(updatedNRTs))
 
 		// When will the resync loop trigger? we can't predict. So we wait "long enough" before to send the trigger event
 		time.Sleep(extTestCtx.CacheResyncPeriodSeconds(5))
@@ -828,18 +828,18 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 		}
 
 		// second update. This will trigger the reschedule attempt, cache content won't change.
-		klog.Infof("updating %d NRTs", len(updatedNRTs))
+		t.Logf("updating %d NRTs", len(updatedNRTs))
 		err = updateNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, updatedNRTs)
 		if err != nil {
 			// we can call t.Fatalf only on the main goroutine, so we just log
-			klog.ErrorS(err, "cannot update NRTs")
+			t.Logf("cannot update NRTs: %s", err)
 		}
-		klog.Infof("updated %d NRTs", len(updatedNRTs))
+		t.Logf("updated %d NRTs", len(updatedNRTs))
 
 	}()
 
 	// we need a very generous timeout here to make sure the resync code in the scheduler plugin catches up
-	scheduledPods, pendingPods, failedPods := waitForPodList(extTestCtx.cli, tt.podDescs, 5*time.Minute)
+	scheduledPods, pendingPods, failedPods := waitForPodList(t, extTestCtx.cli, tt.podDescs, 5*time.Minute)
 
 	if len(failedPods) > 0 {
 		var sb strings.Builder
@@ -863,7 +863,7 @@ func TestTopologyCachePluginWithPodFingerprintUpdates(t *testing.T) {
 func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 
 	os.Args = []string{"unused", "-logtostderr", "-v", schedVerbose}
-	klog.Infof("args = %v", os.Args[1:])
+	t.Logf("args = %v", os.Args[1:])
 	flag.Parse()
 
 	tt := testCase{
@@ -922,17 +922,17 @@ func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 
 	defer func() {
 		cleanupTest(t, testCtx)
-		klog.Infof("test environment cleaned up")
+		t.Log("test environment cleaned up")
 	}()
 
-	if err := waitForNRT(extTestCtx.cli); err != nil {
+	if err := waitForNRT(t, extTestCtx.cli); err != nil {
 		t.Fatalf("Timed out waiting for CRD to be ready: %v", err)
 	}
 
 	ns := fmt.Sprintf("integration-test-%v", string(uuid.NewUUID()))
 	createNamespace(t, testCtx, ns)
 
-	if err := createNodesFromNodeResourceTopologies(testCtx.ClientSet, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
+	if err := createNodesFromNodeResourceTopologies(t, testCtx.ClientSet, testCtx.Ctx, tt.nodeResourceTopologies); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -945,17 +945,17 @@ func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 
 		p.SetupPod(ns, false)
 		pods = append(pods, p.pod)
-		klog.Infof("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
+		t.Logf("Prepared pod: %s (phase=%s)", p.pod.Name, p.pod.Status.Phase)
 	}
 
 	t.Logf("Start-topology-match-cache-attr-test %q", tt.name)
-	defer cleanupNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, tt.nodeResourceTopologies)
+	defer cleanupNodeResourceTopologies(t, testCtx.Ctx, extTestCtx.extCli, tt.nodeResourceTopologies)
 	defer func() {
 		cleanupPods(t, testCtx, pods)
-		klog.Infof("Pods cleaned up")
+		t.Log("Pods cleaned up")
 	}()
 
-	klog.Infof("Creating %d NRT objects", len(tt.nodeResourceTopologies))
+	t.Logf("Creating %d NRT objects", len(tt.nodeResourceTopologies))
 	if err := createNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, tt.nodeResourceTopologies); err != nil {
 		t.Fatal(err)
 	}
@@ -968,18 +968,18 @@ func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 	)
 	syncInformerFactory(testCtx)
 	go testCtx.Scheduler.Run(testCtx.Ctx)
-	klog.Infof("init scheduler success")
+	t.Log("init scheduler success")
 
 	for idx := range tt.podDescs {
 		p := &tt.podDescs[idx]
-		klog.Infof("Creating Pod %q", p.pod.Name)
+		t.Logf("Creating Pod %q", p.pod.Name)
 		_, err := extTestCtx.cli.CoreV1().Pods(ns).Create(testCtx.Ctx, p.pod, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatalf("Failed to create Pod %q: %v", p.pod.Name, err)
 		}
 	}
 
-	scheduledPods, _, _ := waitForPodList(extTestCtx.cli, tt.podDescs, 1*time.Minute)
+	scheduledPods, _, _ := waitForPodList(t, extTestCtx.cli, tt.podDescs, 1*time.Minute)
 	expectedScheduled := 0
 	if len(scheduledPods) != expectedScheduled {
 		t.Fatalf("pods scheduled %d expected %d", len(scheduledPods), expectedScheduled)
@@ -992,7 +992,7 @@ func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 		time.Sleep(extTestCtx.CacheResyncPeriodSeconds(3))
 
 		// first update: this is supposed to trigger the cache update because PFP are expected to match
-		klog.Infof("updating %d NRTs", 1)
+		t.Logf("updating %d NRTs", 1)
 		err := updateNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, []*topologyv1alpha2.NodeResourceTopology{
 			MakeNRT().Name("fake-node-cache-attr-1").
 				Attributes(topologyv1alpha2.AttributeList{
@@ -1019,15 +1019,15 @@ func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 
 		if err != nil {
 			// we can call t.Fatalf only on the main goroutine, so we just log
-			klog.ErrorS(err, "cannot update NRTs")
+			t.Logf("cannot update NRTs: %v", err)
 		}
-		klog.Infof("updated %d NRTs", 1)
+		t.Logf("updated %d NRTs", 1)
 
 		// When will the resync loop trigger? we can't predict. So we wait "long enough" before to send the trigger event
 		time.Sleep(extTestCtx.CacheResyncPeriodSeconds(5))
 
 		// second update. This will trigger the reschedule attempt, cache content won't change.
-		klog.Infof("updating %d NRTs", 1)
+		t.Logf("updating %d NRTs", 1)
 		err = updateNodeResourceTopologies(testCtx.Ctx, extTestCtx.extCli, []*topologyv1alpha2.NodeResourceTopology{
 			MakeNRT().Name("fake-node-cache-attr-1").
 				Attributes(topologyv1alpha2.AttributeList{
@@ -1062,14 +1062,14 @@ func TestTopologyCachePluginWithAttributeUpdates(t *testing.T) {
 
 		if err != nil {
 			// we can call t.Fatalf only on the main goroutine, so we just log
-			klog.ErrorS(err, "cannot update NRTs")
+			t.Logf("cannot update NRTs: %v", err)
 		}
-		klog.Infof("updated %d NRTs", 1)
+		t.Logf("updated %d NRTs", 1)
 
 	}()
 
 	// we need a very generous timeout here to make sure the resync code in the scheduler plugin catches up
-	scheduledPods, pendingPods, failedPods := waitForPodList(extTestCtx.cli, tt.podDescs, 5*time.Minute)
+	scheduledPods, pendingPods, failedPods := waitForPodList(t, extTestCtx.cli, tt.podDescs, 5*time.Minute)
 
 	if len(failedPods) > 0 {
 		var sb strings.Builder
@@ -1147,7 +1147,7 @@ func makeNRTSchedTestContext(t *testing.T, cacheArgs *schedconfig.NodeResourceTo
 	}
 }
 
-func waitForPodList(cs clientset.Interface, podDescs []podDesc, timeout time.Duration) ([]*corev1.Pod, []*corev1.Pod, map[string]error) {
+func waitForPodList(t *testing.T, cs clientset.Interface, podDescs []podDesc, timeout time.Duration) ([]*corev1.Pod, []*corev1.Pod, map[string]error) {
 	var lock sync.Mutex
 	var scheduled []*corev1.Pod
 	var pending []*corev1.Pod
@@ -1164,11 +1164,11 @@ func waitForPodList(cs clientset.Interface, podDescs []podDesc, timeout time.Dur
 				var nerr error
 				updatedPod, nerr = cs.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
 				if nerr != nil {
-					klog.ErrorS(nerr, "Failed to get pod", "pod", klog.KRef(pod.Namespace, pod.Name))
+					t.Logf("Failed to get pod %s/%s: %v", pod.Namespace, pod.Name, nerr)
 					return false, nerr
 				}
 
-				return podMatchesExpectedNode(updatedPod.Namespace, updatedPod.Name, updatedPod.Spec.NodeName, expectedNode), nil
+				return podMatchesExpectedNode(t, updatedPod.Namespace, updatedPod.Name, updatedPod.Spec.NodeName, expectedNode), nil
 			})
 
 			// TODO: channels would be nicer
@@ -1187,32 +1187,32 @@ func waitForPodList(cs clientset.Interface, podDescs []podDesc, timeout time.Dur
 	return scheduled, pending, failed
 }
 
-func podMatchesExpectedNode(podNamespace, podName, nodeName, expectedNode string) bool {
+func podMatchesExpectedNode(t *testing.T, podNamespace, podName, nodeName, expectedNode string) bool {
 	if expectedNode == nodeName {
-		klog.Infof("Pod %s/%s is on node %q as expected.", podNamespace, podName, nodeName)
+		t.Logf("Pod %s/%s is on node %q as expected.", podNamespace, podName, nodeName)
 		return true
 	} else if expectedNode == anyNode {
 		if nodeName != "" {
-			klog.Infof("Pod %s/%s is running, any node is fine (currently on %q)", podNamespace, podName, nodeName)
+			t.Logf("Pod %s/%s is running, any node is fine (currently on %q)", podNamespace, podName, nodeName)
 			return true
 		}
-		klog.Infof("Pod %s/%s is expected to be bound to any node, but still pending", podNamespace, podName)
+		t.Logf("Pod %s/%s is expected to be bound to any node, but still pending", podNamespace, podName)
 	} else if expectedNode == "" {
-		klog.Infof("Pod %s/%s is expected to be pending, but found on node %q", podNamespace, podName, nodeName)
+		t.Logf("Pod %s/%s is expected to be pending, but found on node %q", podNamespace, podName, nodeName)
 	} else {
-		klog.Infof("Pod %s/%s is expected on node %q, but found on node %q", podNamespace, podName, expectedNode, nodeName)
+		t.Logf("Pod %s/%s is expected on node %q, but found on node %q", podNamespace, podName, expectedNode, nodeName)
 	}
 	return false
 }
 
-func mkPFP(nodeName string, pods ...*corev1.Pod) string {
+func mkPFP(t *testing.T, nodeName string, pods ...*corev1.Pod) string {
 	st := podfingerprint.MakeStatus(nodeName)
 	fp := podfingerprint.NewTracingFingerprint(len(pods), &st)
 	for _, pod := range pods {
 		fp.AddPod(pod)
 	}
 	pfp := fp.Sign()
-	klog.Infof("PFP for %q: %s", nodeName, st.Repr())
+	t.Logf("PFP for %q: %s", nodeName, st.Repr())
 	return pfp
 }
 
