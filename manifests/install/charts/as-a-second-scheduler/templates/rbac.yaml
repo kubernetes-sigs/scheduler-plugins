@@ -74,6 +74,11 @@ rules:
   resources: [ "networktopologies" ]
   verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
 {{- end }}
+{{- if has "PreemptionToleration" .Values.plugins.enabled }}
+- apiGroups: ["scheduling.k8s.io"]
+  resources: ["priorityclasses"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
 {{- if has "SySched" .Values.plugins.enabled }}
 - apiGroups: ["security-profiles-operator.x-k8s.io"]
   resources: ["seccompprofiles", "profilebindings"]
@@ -114,11 +119,6 @@ rules:
   resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
   verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
 {{- /* resources need to be updated with the scheduler plugins used */}}
-{{- if has "PreemptionToleration" .Values.plugins.enabled }}
-- apiGroups: ["scheduling.k8s.io"]
-  resources: ["priorityclasses"]
-  verbs: ["get", "list", "watch"]
-{{- end }}
 {{- if has "SySched" .Values.plugins.enabled }}
 - apiGroups: ["security-profiles-operator.x-k8s.io"]
   resources: ["seccompprofiles", "profilebindings"]
