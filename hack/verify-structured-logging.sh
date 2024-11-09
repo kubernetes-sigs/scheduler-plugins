@@ -46,9 +46,33 @@ done < <(echo "${all_packages[@]}" | tr " " "\n")
 
 ret=0
 echo -e "\nRunning structured logging static check on all packages"
-GOOS=linux    logcheck "${packages[@]}" || ret=$?
-GOOS=windows  logcheck "${packages[@]}" || ret=$?
+
+# Function to run logcheck and capture output
+run_logcheck() {
+  local os="$1"
+  shift
+  local output
+  output=$(GOOS="$os" logcheck "$@" 2>&1)
+  # TODO: Add more checks as needed
+  # Currently, we only check for unstructured logging
+  # more detail: https://github.com/kubernetes-sigs/scheduler-plugins/pull/831#discussion_r1835553079
+  errors=$(echo "$output" | grep 'unstructured logging function')
+  if [[ $? -eq 0 ]]; then
+      echo "Error: Unstructured logging detected. Please fix the issues."
+      echo "$errors"
+      return 1
+  fi
+}
+
+# Run logcheck for Linux
+echo "Running logcheck for Linux..."
+if ! run_logcheck linux "${packages[@]}"; then
+  ret=1
+fi
 
 if [ $ret -eq 0 ]; then
   echo "Structured logging static check passed on all packages :)"
+else
+  echo "Structured logging static check failed. Please fix the issues."
+  exit 1
 fi
