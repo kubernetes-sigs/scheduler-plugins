@@ -22,13 +22,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// ElasticQuotaStatusApplyConfiguration represents an declarative configuration of the ElasticQuotaStatus type for use
+// ElasticQuotaStatusApplyConfiguration represents a declarative configuration of the ElasticQuotaStatus type for use
 // with apply.
 type ElasticQuotaStatusApplyConfiguration struct {
 	Used *v1.ResourceList `json:"used,omitempty"`
 }
 
-// ElasticQuotaStatusApplyConfiguration constructs an declarative configuration of the ElasticQuotaStatus type for use with
+// ElasticQuotaStatusApplyConfiguration constructs a declarative configuration of the ElasticQuotaStatus type for use with
 // apply.
 func ElasticQuotaStatus() *ElasticQuotaStatusApplyConfiguration {
 	return &ElasticQuotaStatusApplyConfiguration{}

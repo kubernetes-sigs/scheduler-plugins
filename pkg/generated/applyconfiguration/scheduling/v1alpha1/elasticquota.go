@@ -24,7 +24,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// ElasticQuotaApplyConfiguration represents an declarative configuration of the ElasticQuota type for use
+// ElasticQuotaApplyConfiguration represents a declarative configuration of the ElasticQuota type for use
 // with apply.
 type ElasticQuotaApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -33,7 +33,7 @@ type ElasticQuotaApplyConfiguration struct {
 	Status                           *ElasticQuotaStatusApplyConfiguration `json:"status,omitempty"`
 }
 
-// ElasticQuota constructs an declarative configuration of the ElasticQuota type for use with
+// ElasticQuota constructs a declarative configuration of the ElasticQuota type for use with
 // apply.
 func ElasticQuota(name, namespace string) *ElasticQuotaApplyConfiguration {
 	b := &ElasticQuotaApplyConfiguration{}
@@ -216,4 +216,10 @@ func (b *ElasticQuotaApplyConfiguration) WithSpec(value *ElasticQuotaSpecApplyCo
 func (b *ElasticQuotaApplyConfiguration) WithStatus(value *ElasticQuotaStatusApplyConfiguration) *ElasticQuotaApplyConfiguration {
 	b.Status = value
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *ElasticQuotaApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.Name
 }

@@ -22,14 +22,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// ElasticQuotaSpecApplyConfiguration represents an declarative configuration of the ElasticQuotaSpec type for use
+// ElasticQuotaSpecApplyConfiguration represents a declarative configuration of the ElasticQuotaSpec type for use
 // with apply.
 type ElasticQuotaSpecApplyConfiguration struct {
 	Min *v1.ResourceList `json:"min,omitempty"`
 	Max *v1.ResourceList `json:"max,omitempty"`
 }
 
-// ElasticQuotaSpecApplyConfiguration constructs an declarative configuration of the ElasticQuotaSpec type for use with
+// ElasticQuotaSpecApplyConfiguration constructs a declarative configuration of the ElasticQuotaSpec type for use with
 // apply.
 func ElasticQuotaSpec() *ElasticQuotaSpecApplyConfiguration {
 	return &ElasticQuotaSpecApplyConfiguration{}

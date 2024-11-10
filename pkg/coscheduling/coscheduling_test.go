@@ -102,7 +102,13 @@ func TestPodGroupBackoffTime(t *testing.T) {
 				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := tf.NewFramework(ctx, registeredPlugins, "default-scheduler", fwkruntime.WithInformerFactory(informerFactory))
+			f, err := tf.NewFramework(
+				ctx,
+				registeredPlugins,
+				"default-scheduler",
+				fwkruntime.WithInformerFactory(informerFactory),
+				fwkruntime.WithWaitingPods(fwkruntime.NewWaitingPodsMap()),
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -495,7 +501,12 @@ func TestPermit(t *testing.T) {
 				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := tf.NewFramework(ctx, registeredPlugins, "default-scheduler")
+			f, err := tf.NewFramework(
+				ctx,
+				registeredPlugins,
+				"default-scheduler",
+				fwkruntime.WithWaitingPods(fwkruntime.NewWaitingPodsMap()),
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -598,7 +609,12 @@ func TestPostFilter(t *testing.T) {
 				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			}
-			f, err := tf.NewFramework(ctx, registeredPlugins, "default-scheduler")
+			f, err := tf.NewFramework(
+				ctx,
+				registeredPlugins,
+				"default-scheduler",
+				fwkruntime.WithWaitingPods(fwkruntime.NewWaitingPodsMap()),
+			)
 			if err != nil {
 				t.Fatal(err)
 			}

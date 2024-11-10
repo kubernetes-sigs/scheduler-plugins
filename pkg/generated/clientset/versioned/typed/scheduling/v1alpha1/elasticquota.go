@@ -20,14 +20,11 @@ package v1alpha1
 
 import (
 	"context"
-	json "encoding/json"
-	"fmt"
-	"time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/applyconfiguration/scheduling/v1alpha1"
 	scheme "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/scheme"
@@ -43,6 +40,7 @@ type ElasticQuotasGetter interface {
 type ElasticQuotaInterface interface {
 	Create(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.CreateOptions) (*v1alpha1.ElasticQuota, error)
 	Update(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (*v1alpha1.ElasticQuota, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
 	UpdateStatus(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (*v1alpha1.ElasticQuota, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
@@ -51,206 +49,25 @@ type ElasticQuotaInterface interface {
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ElasticQuota, err error)
 	Apply(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error)
+	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
 	ApplyStatus(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error)
 	ElasticQuotaExpansion
 }
 
 // elasticQuotas implements ElasticQuotaInterface
 type elasticQuotas struct {
-	client rest.Interface
-	ns     string
+	*gentype.ClientWithListAndApply[*v1alpha1.ElasticQuota, *v1alpha1.ElasticQuotaList, *schedulingv1alpha1.ElasticQuotaApplyConfiguration]
 }
 
 // newElasticQuotas returns a ElasticQuotas
 func newElasticQuotas(c *SchedulingV1alpha1Client, namespace string) *elasticQuotas {
 	return &elasticQuotas{
-		client: c.RESTClient(),
-		ns:     namespace,
+		gentype.NewClientWithListAndApply[*v1alpha1.ElasticQuota, *v1alpha1.ElasticQuotaList, *schedulingv1alpha1.ElasticQuotaApplyConfiguration](
+			"elasticquotas",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			namespace,
+			func() *v1alpha1.ElasticQuota { return &v1alpha1.ElasticQuota{} },
+			func() *v1alpha1.ElasticQuotaList { return &v1alpha1.ElasticQuotaList{} }),
 	}
-}
-
-// Get takes name of the elasticQuota, and returns the corresponding elasticQuota object, and an error if there is any.
-func (c *elasticQuotas) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ElasticQuota, err error) {
-	result = &v1alpha1.ElasticQuota{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of ElasticQuotas that match those selectors.
-func (c *elasticQuotas) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ElasticQuotaList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1alpha1.ElasticQuotaList{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested elasticQuotas.
-func (c *elasticQuotas) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a elasticQuota and creates it.  Returns the server's representation of the elasticQuota, and an error, if there is any.
-func (c *elasticQuotas) Create(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.CreateOptions) (result *v1alpha1.ElasticQuota, err error) {
-	result = &v1alpha1.ElasticQuota{}
-	err = c.client.Post().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(elasticQuota).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a elasticQuota and updates it. Returns the server's representation of the elasticQuota, and an error, if there is any.
-func (c *elasticQuotas) Update(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (result *v1alpha1.ElasticQuota, err error) {
-	result = &v1alpha1.ElasticQuota{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		Name(elasticQuota.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(elasticQuota).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *elasticQuotas) UpdateStatus(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (result *v1alpha1.ElasticQuota, err error) {
-	result = &v1alpha1.ElasticQuota{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		Name(elasticQuota.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(elasticQuota).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the elasticQuota and deletes it. Returns an error if one occurs.
-func (c *elasticQuotas) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *elasticQuotas) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched elasticQuota.
-func (c *elasticQuotas) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ElasticQuota, err error) {
-	result = &v1alpha1.ElasticQuota{}
-	err = c.client.Patch(pt).
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied elasticQuota.
-func (c *elasticQuotas) Apply(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error) {
-	if elasticQuota == nil {
-		return nil, fmt.Errorf("elasticQuota provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(elasticQuota)
-	if err != nil {
-		return nil, err
-	}
-	name := elasticQuota.Name
-	if name == nil {
-		return nil, fmt.Errorf("elasticQuota.Name must be provided to Apply")
-	}
-	result = &v1alpha1.ElasticQuota{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		Name(*name).
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *elasticQuotas) ApplyStatus(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error) {
-	if elasticQuota == nil {
-		return nil, fmt.Errorf("elasticQuota provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(elasticQuota)
-	if err != nil {
-		return nil, err
-	}
-
-	name := elasticQuota.Name
-	if name == nil {
-		return nil, fmt.Errorf("elasticQuota.Name must be provided to Apply")
-	}
-
-	result = &v1alpha1.ElasticQuota{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("elasticquotas").
-		Name(*name).
-		SubResource("status").
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }
