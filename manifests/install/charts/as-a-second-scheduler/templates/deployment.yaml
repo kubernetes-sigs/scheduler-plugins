@@ -21,6 +21,10 @@ spec:
       serviceAccountName: {{ .Values.controller.name }}
       containers:
       - name: scheduler-plugins-controller
+        args:
+        {{- if .Values.controller.leaderElect }}
+        - --enableLeaderElection
+        {{- end }}
         image: {{ .Values.controller.image }}
         imagePullPolicy: IfNotPresent
         {{- with .Values.controller.resources }}
