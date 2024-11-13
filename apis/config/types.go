@@ -279,3 +279,13 @@ type SySchedArgs struct {
 	// CR name of the default profile for all system calls
 	DefaultProfileName string
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type DiskIOArgs struct {
+	metav1.TypeMeta
+
+	ScoreStrategy     string
+	DiskIOModelConfig string   // the path to the config file for the disk IO models
+	NSWhiteList       []string // the whitelisted pod namespaces
+}

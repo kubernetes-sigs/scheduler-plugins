@@ -54,7 +54,7 @@ The mathematical relationship between the disk’s IO BW capacity and the runnin
 
 ## Proposal
 
-The disk IO aware scheduler plugin would implement the filter, score and reserve hook points of the scheduler framework. At startup, it obtains each node’s available disk IO capacity from the API server by listing and watching the [NodeDiskIOInfo](#crd) CR when it is created by the IO Driver, and updates the info in its local cache. At the filter stage, it filters out nodes which do not have enough IO capacity from the node candidate list. At the score stage, it would prioritize the node candidates based on a scoring policy, such as most allocated policy. At the reserve stage it will update the API server with a new reserved pod list. Since the node IO Driver is watching update of the reserved pod list, it will be informed of the newly created pod and start collecting the disk IO metrics of this new pod.
+The disk IO aware scheduler plugin would implement the filter, score and reserve hook points of the scheduler framework. At startup, it obtains each node’s available disk IO capacity from the API server by listing and watching the [NodeDiskDevice](#crd) CR when it is created by the IO Driver, create the [NodeDiskIOStats](#crd) CR, and updates the info in its local cache. At the filter stage, it filters out nodes which do not have enough IO capacity from the node candidate list. At the score stage, it would prioritize the node candidates based on a scoring policy, such as most allocated policy. At the reserve stage it will update the API server with a new reserved pod list through [NodeDiskIOStats](#crd) CR. Since the node IO Driver is watching update of the reserved pod list, it will be informed of the newly created pod and start collecting the disk IO metrics of this new pod.
 
 ## Design Details
 
@@ -66,32 +66,56 @@ The IO Driver, which is to be implemented by disk IO vendors, comprises three co
 
 ### CRD
 
-A new Custom Resource Definition (CRD) will be created. This new CRD has two key fields. One is the `ReservedPods` in its spec and the other is `AllocatableBandwidth` in its status. The `ReservedPods` holds the reserved pod list on one node and the `AllocatableBandwidth` holds the available disk IO capacity on one node. The IO Driver is responsible for updating the available disk IO capacity at runtime and watching the reserved pod list. Concurrently, the scheduler plugin would manage the reserved pod list, keep track of the available disk IO capacity and update it in its local cache. `NodeDiskIOInfo` is namespace scoped. 
+Two new Custom Resource Definitions (CRD) will be created. Both CRs are namespace scoped. 
+- Within `NodeDiskDevice`'s spec, there are two key fields: `NodeName` and `Devices`. The `NodeName` field contains the name of the node that has been profiled. Meanwhile, the `Devices` field stores information about the devices that have been profiled on the node.
+``` go
+type NodeDiskDevice struct {
+	Spec   NodeDiskDeviceSpec
+	Status NodeDiskDeviceStatus
+}
+
+type NodeDiskDeviceSpec struct {
+	NodeName string 
+	Devices  map[string]DiskDevice
+}
+
+type DiskDevice struct {
+	// Device name
+	Name string
+	// Device vendor
+	Vendor string
+	// Device model
+	Model string
+	// system device or not
+	Type string
+	// Profile result of io bandwidth capacity
+	Capacity IOBandwidth
+}
+
+type NodeDiskDeviceStatus struct {
+}
+```
+- The `NodeDiskIOStats` CR has two key fields. One is the `ReservedPods` in its spec and the other is `AllocatableBandwidth` in its status. The `ReservedPods` holds the reserved pod list on one node and the `AllocatableBandwidth` holds the available disk IO capacity on one node. The IO Driver is responsible for updating the available disk IO capacity at runtime and watching the reserved pod list. Concurrently, the scheduler plugin would manage the reserved pod list, keep track of the available disk IO capacity and update it in its local cache. 
 
 ``` go
-type NodeDiskIOInfo struct {
+type NodeDiskIOStats struct {
 	metav1.TypeMeta   
 	metav1.ObjectMeta 
 
-	Spec   NodeDiskIOInfoSpec   
-	Status NodeDiskIOInfoStatus 
+	Spec   NodeDiskIOStatsSpec   
+	Status NodeDiskIOStatsStatus 
 }
-type NodeDiskIOInfoSpec struct {
+type NodeDiskIOStatsSpec struct {
 	NodeName     string                
 	ReservedPods []string // a slice of reserved pod uids
 }
 // NodeDiskIOStatusInfoStatus defines the observed state of NodeDiskIOStatusInfo
-type NodeDiskIOInfoStatus struct {
+type NodeDiskIOStatsStatus struct {
 	ObservedGeneration   int64                                 
-	AllocatableBandwidth map[string]DeviceAllocatableBandwidth // the key of the map the device id
+	AllocatableBandwidth map[string]IOBandwidth // the key of the map the device id
 }
-type DeviceAllocatableBandwidth struct {
-	// Device's name
-	Name string 
-	// Device's IO status
-	Status BlockIOStatus
-}
-type BlockIOStatus struct {
+
+type IOBandwidth struct {
 	// Normalized total IO throughput capacity 
 	Total float64 
 	// Normalized read IO throughput capacity 
@@ -100,12 +124,34 @@ type BlockIOStatus struct {
 	Write float64 
 }
 ```
-A sample CR is listed below:
+Sample CRs are listed below:
 ``` yaml
-apiVersion: ioi.intel.com/v1
-kind: NodeDiskIOInfo
+apiVersion: diskio.x-k8s.io/v1alpha1
+kind: NodeDiskDevice
+metadata:
+  creationTimestamp: "2024-06-06T05:43:02Z"
+  generation: 1
+  name: workerNode-nodediskdevice
+  namespace: ioi-system
+spec:
+  nodeName: workerNode
+  devices:
+    fakeDevice:
+      capacity:
+        read: 1000Mi
+        total: 2000Mi
+        write: 1000Mi
+      model: P4510
+      name: fakeDevice
+      type: emptyDir # use system device
+      vendor: Intel
+---
+apiVersion: diskio.x-k8s.io/v1alpha1
+kind: NodeDiskIOStats
 metadata:
   generation: 3
+  name: workerNode-nodediskiostats
+  namespace: ioi-system
 spec: # scheduler updates spec
   nodeName: workerNode
   reservedPods:
@@ -115,10 +161,9 @@ status: # IO Driver updates status
   observedGeneration: 3
   allocatableBandwidth:
     INT_PHYF922500U3480BGN: # device id
-      name: /dev/sda 
-      total: 2200 
-      read: 1100 
-      write: 1100 
+      total: 2200Mi 
+      read: 1100Mi
+      write: 1100Mi
     INT_PHYF822500U3480BGN: ...
 ```
 
@@ -143,10 +188,10 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: normalization-func
-  namespace: default
+  namespace: kube-system
 data:
   diskVendors:|
-  [{"vendorName":"Intel", "model":"P4510", "url": "https://access-to-io-driver"}]
+  [{"vendor":"Intel", "model":"P4510", "url": "https://access-to-io-driver"}]
 ```
 The normalization functions must implement the interface below to customize their own normalization methods.
 ```
