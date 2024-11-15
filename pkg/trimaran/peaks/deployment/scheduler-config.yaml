@@ -16,4 +16,5 @@ profiles:
   pluginConfig:
     - name: Peaks
       args:
-        watcherAddress: http://replace_me_with_load-watcher-ip:2020
+        WatcherAddress: http://10.97.6.9:2020
+        NodePowerModel: {"kube-worker-171":{"k0":300,"k1":-270,"k2":-3},"kube-worker-68":{"k0":300,"k1":-250,"k2":-2.6}}
