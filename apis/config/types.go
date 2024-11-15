@@ -288,4 +288,14 @@ type PeaksArgs struct {
 
 	// Address of load watcher service
 	WatcherAddress string
+	NodePowerModel map[string]PowerModel // Node power model where key is node name and value is power model
+	PowerModelEnvVar string // Power model can be configured by env variable.
+}
+
+type PowerModel struct {
+	K0 float64 `json:"k0"`
+	K1 float64 `json:"k1"`
+	K2 float64 `json:"k2"`
+	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
+	// Idle power of node will be K0 + K1
 }

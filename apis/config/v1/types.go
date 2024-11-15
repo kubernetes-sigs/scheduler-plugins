@@ -285,5 +285,15 @@ type PeaksArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// Address of load watcher service
-	WatcherAddress string
+	WatcherAddress string `json:watcherAddress",inline"`
+	NodePowerModel map[string]PowerModel `json:nodePowerModel",inline"`
+	PowerModelEnvVar string `json:powerModelEnvVar",inline"`
+}
+
+type PowerModel struct {
+	K0 float64 `json:"k0"`
+	K1 float64 `json:"k1"`
+	K2 float64 `json:"k2"`
+	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
+	// Idle power of node will be K0 + K1
 }
