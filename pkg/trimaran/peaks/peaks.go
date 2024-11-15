@@ -35,9 +35,10 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
+	res "k8s.io/apimachinery/pkg/api/resource"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
-	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
@@ -116,16 +117,22 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return score, nil
 	}
 
-	// reqs :=  resource.PodRequests(pod, resource.PodResourcesOptions{})
-	// fmt.Printf("requests : %+v\n", reqs)
+	opts := resource.PodResourcesOptions{
+		NonMissingContainerRequests: v1.ResourceList{
+			v1.ResourceCPU: *res.NewMilliQuantity(
+				schedutil.DefaultMilliCPURequest, 
+				res.DecimalSI,
+			),
+		},
+	}
 
-	var curPodCPUUsage int64
-	for _, container := range pod.Spec.Containers {
-		curPodCPUUsage += PredictUtilisation(&container)
-	}
-	if pod.Spec.Overhead != nil {
-		curPodCPUUsage += pod.Spec.Overhead.Cpu().MilliValue()
-	}
+	reqs :=  resource.PodRequests(
+		pod, 
+		opts,
+	)
+	
+	quantity := reqs[v1.ResourceCPU]
+	curPodCPUUsage := quantity.MilliValue()
 
 	var nodeCPUUtilPercent float64
 	var cpuMetricFound bool
@@ -193,16 +200,6 @@ func getMinMaxScores(scores framework.NodeScoreList) (int64, int64) {
 	}
 	// return min and max scores
 	return min, max
-}
-
-func PredictUtilisation(container *v1.Container) int64 {
-	if _, ok := container.Resources.Requests[v1.ResourceCPU]; ok {
-		return int64(math.Round(float64(container.Resources.Requests.Cpu().MilliValue())))
-	} else if _, ok := container.Resources.Limits[v1.ResourceCPU]; ok {
-		return container.Resources.Limits.Cpu().MilliValue()
-	} else {
-		return cfgv1.DefaultRequestsMilliCores
-	}
 }
 
 func getPowerJumpForUtilisation(x, p float64, m config.PowerModel) float64 {
