@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,11 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -47,7 +44,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/test/util"
 )
 
-func createSamplePowerModel() {
+func TestPeaksPlugin(t *testing.T) {
 	data := map[string]interface{}{
 		"node-1": map[string]float64{
 			"k0": 471.7412504314313,
@@ -65,44 +62,8 @@ func createSamplePowerModel() {
 			"k2": -0.07186049052516228,
 		},
 	}
-	fmt.Println("Power model json data: ", data)
-	powerModelData, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("Json marshal error: ", err)
-		return
-	}
-
-	if len(os.Getenv("NODE_POWER_MODEL")) == 0 {
-		os.Setenv("NODE_POWER_MODEL", "./power_model/node_power_model")
-	}
-	fmt.Println("NODE_POWER_MODEL: ", os.Getenv("NODE_POWER_MODEL"))
-	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))
-	fmt.Println("fileDir: ", fileDir, "\nfileName: ", fileName)
-	err = os.MkdirAll(fileDir, 0777)
-	if err != nil {
-		fmt.Println("Json file directory create error: ", err)
-		return
-	}
-	err = ioutil.WriteFile(os.Getenv("NODE_POWER_MODEL"), powerModelData, 0644)
-	if err != nil {
-		fmt.Println("Json file write error: ", err)
-		return
-	}
-}
-
-func deleteSamplePowerModel() {
-	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))
-	fmt.Println("fileDir: ", fileDir, "\nfileName: ", fileName)
-	err := os.RemoveAll(fileDir)
-	if err != nil {
-		fmt.Println("Delete file error: ", err)
-		return
-	}
-}
-
-func TestPeaksPlugin(t *testing.T) {
 	// Create a sample power model
-	createSamplePowerModel()
+	util.CreateSamplePowerModel(t, data)
 
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
@@ -172,6 +133,7 @@ func TestPeaksPlugin(t *testing.T) {
 		Name: peaks.Name,
 		Args: &config.PeaksArgs{
 			WatcherAddress: server.URL,
+			NodePowerModel: map[string]config.PowerModel{},
 		},
 	})
 
@@ -243,5 +205,5 @@ func TestPeaksPlugin(t *testing.T) {
 	}
 
 	// Delete the sample power model
-	deleteSamplePowerModel()
+	defer util.DeleteSamplePowerModel(t)
 }

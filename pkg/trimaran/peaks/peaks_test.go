@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2024 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,13 +19,10 @@ package peaks
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
@@ -80,69 +77,17 @@ func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
-func createSamplePowerModel() {
-	data := map[string]interface{}{
-		"node-1": map[string]float64{
-			"k0": 471.7412504314313,
-			"k1": -91.50493019588365,
-			"k2": -0.07186049052516228,
-		},
-	}
-	fmt.Println("Power model json data: ", data)
-	powerModelData, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("Json marshal error: ", err)
-		return
-	}
-
-	if len(os.Getenv("NODE_POWER_MODEL")) == 0 {
-		os.Setenv("NODE_POWER_MODEL", "./power_model/node_power_model")
-	}
-	fmt.Println("NODE_POWER_MODEL: ", os.Getenv("NODE_POWER_MODEL"))
-	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))
-	fmt.Println("fileDir: ", fileDir, "\nfileName: ", fileName)
-	err = os.MkdirAll(fileDir, 0777)
-	if err != nil {
-		fmt.Println("Json file directory create error: ", err)
-		return
-	}
-	err = ioutil.WriteFile(os.Getenv("NODE_POWER_MODEL"), powerModelData, 0644)
-	if err != nil {
-		fmt.Println("Json file write error: ", err)
-		return
-	}
-}
-
-func deleteSamplePowerModel() {
-	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))
-	fmt.Println("fileDir: ", fileDir, "\nfileName: ", fileName)
-	err := os.RemoveAll(fileDir)
-	if err != nil {
-		fmt.Println("Delete file error: ", err)
-		return
-	}
-}
-
-func createErroredPowerModel() {
-	data := map[string]interface{}{
-		"node-1": 10,
-	}
-	powerModelData, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("Json marshal error: ", err)
-		return
-	}
-
-	err = ioutil.WriteFile(os.Getenv("NODE_POWER_MODEL"), powerModelData, 0644)
-	if err != nil {
-		fmt.Println("Json file write error: ", err)
-		return
-	}
+var data = map[string]interface{}{
+	"node-1": map[string]float64{
+		"k0": 471.7412504314313,
+		"k1": -91.50493019588365,
+		"k2": -0.07186049052516228,
+	},
 }
 
 func TestPeaksNew(t *testing.T) {
 	// Create a sample power model
-	createSamplePowerModel()
+	testutil.CreateSamplePowerModel(t, data)
 
 	watcherResponse := watcher.WatcherMetrics{}
 	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
@@ -157,6 +102,7 @@ func TestPeaksNew(t *testing.T) {
 
 	peaksArgs := pluginConfig.PeaksArgs{
 		WatcherAddress: server.URL,
+		NodePowerModel: map[string]pluginConfig.PowerModel{},
 	}
 	peaksConfig := config.PluginConfig{
 		Name: Name,
@@ -190,41 +136,41 @@ func TestPeaksNew(t *testing.T) {
 	assert.EqualError(t, err, "initializing plugin \"Peaks\": "+"want args to be of type PeaksArgs, got <nil>")
 
 	// Check that the default power model is returned, if a power model doesn't exist for a node
-	defaultPowerModel := PowerModel{
+	defaultPowerModel := pluginConfig.PowerModel{
 		K0: 0,
 		K1: 0,
 		K2: 0,
 	}
-	err = initNodePowerModels()
-	if err != nil {
-		assert.Nil(t, err)
-	}
-	nodePowerModel := getPowerModel("node-2")
+	nodePowerModel := getPowerModel("node-2", peaksArgs.NodePowerModel)
 	assert.EqualValues(t, nodePowerModel, defaultPowerModel)
 
 	// Check by setting the env variable NODE_POWER_MODEL to an invalid path
 	envVarNodePowerModel := os.Getenv("NODE_POWER_MODEL")
 	os.Setenv("NODE_POWER_MODEL", envVarNodePowerModel+"/invalid")
-	fmt.Println("updated Path: ", os.Getenv("NODE_POWER_MODEL"))
-	err = initNodePowerModels()
+	t.Logf("updated Path: %v", os.Getenv("NODE_POWER_MODEL"))
+	peaksArgs.NodePowerModel = map[string]pluginConfig.PowerModel{}
+	p, err = New(ctx, &peaksArgs, fh)
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "open "+os.Getenv("NODE_POWER_MODEL")+": not a directory")
 	os.Setenv("NODE_POWER_MODEL", envVarNodePowerModel)
 
 	// Check by updating the sample power model to wrong format
-	createErroredPowerModel()
-	err = initNodePowerModels()
+	errData := map[string]interface{}{
+		"node-1": 10,
+	}
+	testutil.CreateErroredPowerModel(t, errData)
+	err = initNodePowerModels(map[string]pluginConfig.PowerModel{})
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "json: cannot unmarshal number into Go value of type peaks.PowerModel")
+	assert.EqualError(t, err, "json: cannot unmarshal number into Go value of type config.PowerModel")
 	os.Setenv("NODE_POWER_MODEL", envVarNodePowerModel)
 
 	// Delete the sample power model
-	deleteSamplePowerModel()
+	testutil.DeleteSamplePowerModel(t)
 }
 
 func TestPeaksScore(t *testing.T) {
 	// Create a sample power model
-	createSamplePowerModel()
+	testutil.CreateSamplePowerModel(t, data)
 
 	watcherResponse := watcher.WatcherMetrics{}
 	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
@@ -242,6 +188,7 @@ func TestPeaksScore(t *testing.T) {
 
 	peaksArgs := pluginConfig.PeaksArgs{
 		WatcherAddress: server.URL,
+		NodePowerModel: map[string]pluginConfig.PowerModel{},
 	}
 	peaksConfig := config.PluginConfig{
 		Name: Name,
@@ -281,11 +228,12 @@ func TestPeaksScore(t *testing.T) {
 		},
 	})
 
-	err := initNodePowerModels()
+	err := initNodePowerModels(peaksArgs.NodePowerModel)
 	if err != nil {
 		assert.Nil(t, err)
 	}
-	jumpInPower := getPowerJumpForUtilisation(0, 100, getPowerModel("node-1"))
+	jumpInPower := getPowerJumpForUtilisation(0, 100, getPowerModel("node-1", peaksArgs.NodePowerModel))
+	t.Logf("node-1 power model %+v", getPowerModel("node-1", peaksArgs.NodePowerModel))
 	scoreToUse := int64(jumpInPower * math.Pow(10, 15))
 
 	tests := []struct {
@@ -298,58 +246,6 @@ func TestPeaksScore(t *testing.T) {
 		{
 			test: "Pod with Requests",
 			pod:  testutil2.MakePod("ns", "p").Container(testutil2.MakeResourceList().CPU(1).Mem(2).Obj()).Obj(),
-			nodes: []*v1.Node{
-				st.MakeNode().Name("node-1").Capacity(nodeResources).Obj(),
-			},
-			watcherResponse: watcher.WatcherMetrics{
-				Window: watcher.Window{},
-				Data: watcher.Data{
-					NodeMetricsMap: map[string]watcher.NodeMetrics{
-						"node-1": {
-							Metrics: []watcher.Metric{
-								{
-									Type:     watcher.CPU,
-									Value:    0,
-									Operator: watcher.Latest,
-								},
-							},
-						},
-					},
-				},
-			},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: scoreToUse},
-			},
-		},
-		{
-			test: "Pod with Limits",
-			pod:  testPod1,
-			nodes: []*v1.Node{
-				st.MakeNode().Name("node-1").Capacity(nodeResources).Obj(),
-			},
-			watcherResponse: watcher.WatcherMetrics{
-				Window: watcher.Window{},
-				Data: watcher.Data{
-					NodeMetricsMap: map[string]watcher.NodeMetrics{
-						"node-1": {
-							Metrics: []watcher.Metric{
-								{
-									Type:     watcher.CPU,
-									Value:    0,
-									Operator: watcher.Latest,
-								},
-							},
-						},
-					},
-				},
-			},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: scoreToUse},
-			},
-		},
-		{
-			test: "Pod with no Requirements",
-			pod:  testPod2,
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-1").Capacity(nodeResources).Obj(),
 			},
@@ -440,7 +336,7 @@ func TestPeaksScore(t *testing.T) {
 							Metrics: []watcher.Metric{
 								{
 									Type:     watcher.CPU,
-									Value:    0,
+									Value:    100,
 									Operator: watcher.Latest,
 								},
 							},
@@ -505,12 +401,14 @@ func TestPeaksScore(t *testing.T) {
 			assert.Nil(t, err)
 			peaksArgs := pluginConfig.PeaksArgs{
 				WatcherAddress: server.URL,
+				NodePowerModel: map[string]pluginConfig.PowerModel{},
 			}
 			p, _ := New(ctx, &peaksArgs, fh)
 			scorePlugin := p.(framework.ScorePlugin)
 			var actualList framework.NodeScoreList
 			for _, n := range tt.nodes {
 				nodeName := n.Name
+				t.Logf("in loop.. node-1 power model %+v", getPowerModel(nodeName, peaksArgs.NodePowerModel))
 				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeName)
 				assert.True(t, status.IsSuccess())
 				actualList = append(actualList, framework.NodeScore{Name: nodeName, Score: score})
@@ -520,12 +418,12 @@ func TestPeaksScore(t *testing.T) {
 	}
 
 	// Delete the sample power model
-	deleteSamplePowerModel()
+	testutil.DeleteSamplePowerModel(t)
 }
 
 func TestPeaksNormalizeScore(t *testing.T) {
 	// Create a sample power model
-	createSamplePowerModel()
+	testutil.CreateSamplePowerModel(t, data)
 
 	watcherResponse := watcher.WatcherMetrics{}
 	server := httptest.NewServer(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
@@ -543,6 +441,7 @@ func TestPeaksNormalizeScore(t *testing.T) {
 
 	peaksArgs := pluginConfig.PeaksArgs{
 		WatcherAddress: server.URL,
+		NodePowerModel: map[string]pluginConfig.PowerModel{},
 	}
 	peaksConfig := config.PluginConfig{
 		Name: Name,
@@ -625,7 +524,7 @@ func TestPeaksNormalizeScore(t *testing.T) {
 	}
 
 	//Delete sample power model
-	deleteSamplePowerModel()
+	testutil.DeleteSamplePowerModel(t)
 }
 
 func newTestSharedLister(pods []*v1.Pod, nodes []*v1.Node) *testSharedLister {

@@ -31,11 +31,11 @@ import (
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
+	res "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
-	res "k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
@@ -47,9 +47,9 @@ const (
 )
 
 type Peaks struct {
-	handle        framework.Handle
-	collector     *trimaran.Collector
-	args          *config.PeaksArgs
+	handle    framework.Handle
+	collector *trimaran.Collector
+	args      *config.PeaksArgs
 }
 
 var _ framework.ScorePlugin = &Peaks{}
@@ -70,7 +70,6 @@ func initNodePowerModels(powerModel map[string]config.PowerModel) error {
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&powerModel); err != nil {
-	// if err = json.Unmarshal(data, &powerModel); err != nil {
 		return err
 	}
 	return nil
@@ -95,9 +94,9 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 		return nil, err
 	}
 	pl := &Peaks{
-		handle:        handle,
-		collector:     collector,
-		args:          args,
+		handle:    handle,
+		collector: collector,
+		args:      args,
 	}
 	return pl, nil
 }
@@ -120,17 +119,17 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 	opts := resource.PodResourcesOptions{
 		NonMissingContainerRequests: v1.ResourceList{
 			v1.ResourceCPU: *res.NewMilliQuantity(
-				schedutil.DefaultMilliCPURequest, 
+				schedutil.DefaultMilliCPURequest,
 				res.DecimalSI,
 			),
 		},
 	}
 
-	reqs :=  resource.PodRequests(
-		pod, 
+	reqs := resource.PodRequests(
+		pod,
 		opts,
 	)
-	
+
 	quantity := reqs[v1.ResourceCPU]
 	curPodCPUUsage := quantity.MilliValue()
 
