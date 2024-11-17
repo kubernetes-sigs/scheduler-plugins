@@ -287,9 +287,9 @@ type PeaksArgs struct {
 	metav1.TypeMeta
 
 	// Address of load watcher service
-	WatcherAddress string
-	NodePowerModel map[string]PowerModel // Node power model where key is node name and value is power model
-	PowerModelEnvVar string // Power model can be configured by env variable.
+	WatcherAddress   string
+	NodePowerModel   map[string]PowerModel // Node power model where key is node name and value is power model
+	PowerModelEnvVar string                // Power model can be configured by env variable.
 }
 
 type PowerModel struct {
