@@ -285,7 +285,7 @@ type PeaksArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// Address of load watcher service
-	WatcherAddress string `json:watcherAddress",inline"`
+	WatcherAddress string                `json:watcherAddress",inline"`
 	NodePowerModel map[string]PowerModel `json:nodePowerModel",inline"`
 }
 
