@@ -442,7 +442,6 @@ func Convert_config_NodeResourcesAllocatableArgs_To_v1_NodeResourcesAllocatableA
 func autoConvert_v1_PeaksArgs_To_config_PeaksArgs(in *PeaksArgs, out *config.PeaksArgs, s conversion.Scope) error {
 	out.WatcherAddress = in.WatcherAddress
 	out.NodePowerModel = *(*map[string]config.PowerModel)(unsafe.Pointer(&in.NodePowerModel))
-	out.PowerModelEnvVar = in.PowerModelEnvVar
 	return nil
 }
 
@@ -454,7 +453,6 @@ func Convert_v1_PeaksArgs_To_config_PeaksArgs(in *PeaksArgs, out *config.PeaksAr
 func autoConvert_config_PeaksArgs_To_v1_PeaksArgs(in *config.PeaksArgs, out *PeaksArgs, s conversion.Scope) error {
 	out.WatcherAddress = in.WatcherAddress
 	out.NodePowerModel = *(*map[string]PowerModel)(unsafe.Pointer(&in.NodePowerModel))
-	out.PowerModelEnvVar = in.PowerModelEnvVar
 	return nil
 }
 
