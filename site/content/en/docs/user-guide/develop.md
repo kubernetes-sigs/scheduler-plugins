@@ -38,9 +38,9 @@ If you would like to build just the binaries you can do it by
 make
 ```
 command.
-If you changed the branch or added new dependency you might need to regenerate vendor directory, for this you can use
+If you changed the branch or added new dependency you might need to update the go.mod, for this you can use
 ```shell
-make update-vendor
+make update-gomod
 ```
 command.
 

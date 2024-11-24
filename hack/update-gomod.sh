@@ -24,4 +24,4 @@ source "${SCIPRT_ROOT}/hack/lib/init.sh"
 kube::golang::verify_go_version
 
 go mod tidy
-go mod vendor
+go mod download

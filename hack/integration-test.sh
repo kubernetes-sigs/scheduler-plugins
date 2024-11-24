@@ -33,7 +33,7 @@ runTests() {
 
   kube::log::status "Running integration test cases"
 
-  go test -timeout=40m -mod=vendor sigs.k8s.io/scheduler-plugins/test/integration/... ${ARGS:-}
+  go test -timeout=40m sigs.k8s.io/scheduler-plugins/test/integration/... ${ARGS:-}
 }
 
 trap cleanup EXIT
