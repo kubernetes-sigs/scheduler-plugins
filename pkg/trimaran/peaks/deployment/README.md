@@ -40,7 +40,7 @@ kubectl create configmap peaks-node-power-model --from-file=peaks-power-model-co
 Deploy crds
 
 ```bash
-kubectl apply -f peaks-crd.yaml
+kubectl apply -f peaks.yaml
 ```
 
 Deploy peaks plugin

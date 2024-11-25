@@ -140,6 +140,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 			if metric.Operator == watcher.Average || metric.Operator == watcher.Latest {
 				nodeCPUUtilPercent = metric.Value
 				cpuMetricFound = true
+				break
 			}
 		}
 	}

@@ -27,8 +27,6 @@ import (
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
-	testutil "sigs.k8s.io/scheduler-plugins/test/util"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/informers"
@@ -40,9 +38,10 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
-	testutil2 "sigs.k8s.io/scheduler-plugins/test/integration"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	testutil2 "sigs.k8s.io/scheduler-plugins/test/integration"
+	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
 var _ framework.SharedLister = &testSharedLister{}
