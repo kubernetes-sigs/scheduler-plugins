@@ -31,7 +31,7 @@ CRD_OPTIONS="crd:crdVersions=v1"
 
 GOBIN=${TOOLS_BIN_DIR} ${GO_INSTALL} sigs.k8s.io/controller-tools/cmd/controller-gen ${CONTROLLER_GEN_BIN} ${CONTROLLER_GEN_VER}
 
-CODEGEN_PKG=${CODEGEN_PKG:-$(cd "${SCRIPT_ROOT}"; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
+CODEGEN_PKG=${CODEGEN_PKG:-$(go list -f '{{.Dir}}' k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
 
 source "${CODEGEN_PKG}/kube_codegen.sh"
 
