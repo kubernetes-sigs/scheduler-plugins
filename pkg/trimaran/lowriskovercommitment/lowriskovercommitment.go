@@ -163,7 +163,7 @@ func (pl *LowRiskOverCommitment) computeRank(logger klog.Logger, metrics []watch
 	nodeRequestsAndLimits := trimaran.GetNodeRequestsAndLimits(logger, nodeInfo.Pods, node, pod, podRequests, podLimits)
 	riskCPU := pl.computeRisk(logger, metrics, v1.ResourceCPU, watcher.CPU, node, nodeRequestsAndLimits)
 	riskMemory := pl.computeRisk(logger, metrics, v1.ResourceMemory, watcher.Memory, node, nodeRequestsAndLimits)
-	rank := 1 - math.Max(riskCPU, riskMemory)
+	rank := 1 - max(riskCPU, riskMemory)
 
 	logger.V(6).Info("Node rank", "nodeName", node.GetName(), "riskCPU", riskCPU, "riskMemory", riskMemory, "rank", rank)
 
@@ -220,11 +220,11 @@ func (pl *LowRiskOverCommitment) computeRisk(logger klog.Logger, metrics []watch
 		// adjust standard deviation due to data smoothing
 		sigma *= math.Pow(float64(pl.args.SmoothingWindowSize), 0.5)
 		// limit the standard deviation close to the allowed maximum for the beta distribution
-		sigma = math.Min(sigma, math.Sqrt(GetMaxVariance(mu)*MaxVarianceAllowance))
+		sigma = min(sigma, math.Sqrt(GetMaxVariance(mu)*MaxVarianceAllowance))
 
 		// calculate area under beta probability curve beyond total allocated, as overuse risk measure
 		allocThreshold := float64(requestMinusPod) / float64(capacity)
-		allocThreshold = math.Min(math.Max(allocThreshold, 0), 1)
+		allocThreshold = min(max(allocThreshold, 0), 1)
 		allocProb, fitDistribution := ComputeProbability(mu, sigma, allocThreshold)
 		if fitDistribution != nil {
 			klog.V(6).InfoS("FitDistribution", "node", klog.KObj(node), "resource", resourceName, "dist", fitDistribution.Print())
@@ -238,7 +238,7 @@ func (pl *LowRiskOverCommitment) computeRisk(logger klog.Logger, metrics []watch
 				limitProb := fitDistribution.DistributionFunction(limitThreshold)
 				if limitProb > 0 {
 					allocProb /= limitProb
-					allocProb = math.Min(math.Max(allocProb, 0), 1)
+					allocProb = min(max(allocProb, 0), 1)
 				}
 			}
 		}
@@ -252,7 +252,7 @@ func (pl *LowRiskOverCommitment) computeRisk(logger klog.Logger, metrics []watch
 	// combine two components of risk into a total risk as a weighted sum
 	w := pl.riskLimitWeightsMap[resourceName]
 	totalRisk = w*riskLimit + (1-w)*riskLoad
-	totalRisk = math.Min(math.Max(totalRisk, 0), 1)
+	totalRisk = min(max(totalRisk, 0), 1)
 	return totalRisk
 }
 

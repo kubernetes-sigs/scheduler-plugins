@@ -18,7 +18,6 @@ package trimaran
 
 import (
 	"context"
-	"math"
 	"reflect"
 	"strconv"
 	"testing"
@@ -522,12 +521,12 @@ func TestGetNodeRequestsAndLimits(t *testing.T) {
 			},
 			want: &NodeRequestsAndLimits{
 				NodeRequest: &framework.Resource{
-					MilliCPU: int64(math.Min(float64(GetResourceRequested(pod).MilliCPU), float64(capCpu))),
-					Memory:   int64(math.Min(float64(GetResourceRequested(pod).Memory), float64(capMem))),
+					MilliCPU: min(GetResourceRequested(pod).MilliCPU, capCpu),
+					Memory:   min(GetResourceRequested(pod).Memory, capMem),
 				},
 				NodeLimit: &framework.Resource{
-					MilliCPU: int64(math.Max(float64(GetResourceRequested(pod).MilliCPU), float64(GetResourceLimits(pod).MilliCPU))),
-					Memory:   int64(math.Max(float64(GetResourceRequested(pod).Memory), float64(GetResourceLimits(pod).Memory))),
+					MilliCPU: max(GetResourceRequested(pod).MilliCPU, GetResourceLimits(pod).MilliCPU),
+					Memory:   max(GetResourceRequested(pod).Memory, GetResourceLimits(pod).Memory),
 				},
 				NodeRequestMinusPod: &framework.Resource{
 					MilliCPU: 0,
@@ -555,16 +554,16 @@ func TestGetNodeRequestsAndLimits(t *testing.T) {
 			},
 			want: &NodeRequestsAndLimits{
 				NodeRequest: &framework.Resource{
-					MilliCPU: int64(math.Min(float64(GetResourceRequested(pod4).MilliCPU), float64(capCpu))),
-					Memory:   int64(math.Min(float64(GetResourceRequested(pod4).Memory), float64(capMem))),
+					MilliCPU: min(GetResourceRequested(pod4).MilliCPU, capCpu),
+					Memory:   min(GetResourceRequested(pod4).Memory, capMem),
 				},
 				NodeLimit: &framework.Resource{
-					MilliCPU: int64(math.Min(
-						math.Max(float64(GetResourceRequested(pod4).MilliCPU), float64(GetResourceLimits(pod4).MilliCPU)),
-						float64(capCpu))),
-					Memory: int64(math.Min(
-						math.Max(float64(GetResourceRequested(pod4).Memory), float64(GetResourceLimits(pod4).Memory)),
-						float64(capMem))),
+					MilliCPU: min(
+						max(GetResourceRequested(pod4).MilliCPU, GetResourceLimits(pod4).MilliCPU),
+						capCpu),
+					Memory: min(
+						max(GetResourceRequested(pod4).Memory, GetResourceLimits(pod4).Memory),
+						capMem),
 				},
 				NodeRequestMinusPod: &framework.Resource{
 					MilliCPU: 0,

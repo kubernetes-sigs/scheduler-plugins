@@ -17,8 +17,6 @@ limitations under the License.
 package trimaran
 
 import (
-	"math"
-
 	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -80,9 +78,9 @@ func GetMuSigma(rs *ResourceStats) (float64, float64) {
 		return 0, 0
 	}
 	mu := (rs.UsedAvg + rs.Req) / rs.Capacity
-	mu = math.Max(math.Min(mu, 1), 0)
+	mu = max(min(mu, 1), 0)
 	sigma := rs.UsedStdev / rs.Capacity
-	sigma = math.Max(math.Min(sigma, 1), 0)
+	sigma = max(min(sigma, 1), 0)
 	return mu, sigma
 }
 

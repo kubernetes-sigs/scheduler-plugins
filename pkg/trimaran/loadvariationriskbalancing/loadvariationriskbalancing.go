@@ -113,9 +113,9 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 	// calculate total score
 	var totalScore float64 = 0
 	if memoryOK && cpuOK {
-		totalScore = math.Min(memoryScore, cpuScore)
+		totalScore = min(memoryScore, cpuScore)
 	} else {
-		totalScore = math.Max(memoryScore, cpuScore)
+		totalScore = max(memoryScore, cpuScore)
 	}
 	score = int64(math.Round(totalScore))
 	logger.V(6).Info("Calculating totalScore", "pod", klog.KObj(pod), "nodeName", nodeName, "totalScore", score)

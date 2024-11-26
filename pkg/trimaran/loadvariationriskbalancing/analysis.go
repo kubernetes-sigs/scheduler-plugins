@@ -38,9 +38,9 @@ func computeScore(logger klog.Logger, rs *trimaran.ResourceStats, margin float64
 	}
 
 	// make sure values are within bounds
-	rs.Req = math.Max(rs.Req, 0)
-	rs.UsedAvg = math.Max(math.Min(rs.UsedAvg, rs.Capacity), 0)
-	rs.UsedStdev = math.Max(math.Min(rs.UsedStdev, rs.Capacity), 0)
+	rs.Req = max(rs.Req, 0)
+	rs.UsedAvg = max(min(rs.UsedAvg, rs.Capacity), 0)
+	rs.UsedStdev = max(min(rs.UsedStdev, rs.Capacity), 0)
 
 	// calculate average and deviation factors
 	mu, sigma := trimaran.GetMuSigma(rs)
@@ -51,7 +51,7 @@ func computeScore(logger klog.Logger, rs *trimaran.ResourceStats, margin float64
 	}
 	// apply multiplier
 	sigma *= margin
-	sigma = math.Max(math.Min(sigma, 1), 0)
+	sigma = max(min(sigma, 1), 0)
 
 	// evaluate overall risk factor
 	risk := (mu + sigma) / 2

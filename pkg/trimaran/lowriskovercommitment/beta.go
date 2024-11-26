@@ -110,7 +110,7 @@ func (b *BetaDistribution) MatchMoments(m1, m2 float64) bool {
 		return false
 	}
 	temp := (m1 * (1 - m1) / variance) - 1
-	temp = math.Max(temp, math.SmallestNonzeroFloat64)
+	temp = max(temp, math.SmallestNonzeroFloat64)
 	b.alpha = m1 * temp
 	b.beta = (1 - m1) * temp
 	return b.computeMoments()
