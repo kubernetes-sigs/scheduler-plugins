@@ -81,9 +81,9 @@ local-image: clean build-images
 push-images: EXTRA_ARGS="--push"
 push-images: build-images
 
-.PHONY: update-vendor
-update-vendor:
-	hack/update-vendor.sh
+.PHONY: update-gomod
+update-gomod:
+	hack/update-gomod.sh
 
 .PHONY: unit-test
 unit-test: install-envtest

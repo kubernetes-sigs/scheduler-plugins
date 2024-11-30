@@ -18,24 +18,10 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_ROOT=$(dirname "${BASH_SOURCE}")/..
-source "${SCRIPT_ROOT}/hack/lib/init.sh"
+SCIPRT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
+source "${SCIPRT_ROOT}/hack/lib/init.sh"
 
-TEMP_DIR=${TMPDIR-/tmp}
+kube::golang::verify_go_version
 
-cleanup() {
-  rm -rf "${TEMP_DIR}/setup-envtest"
-}
-
-runTests() {
-  kube::log::status "Configuring envtest"
-  source "${TEMP_DIR}/setup-envtest"
-
-  kube::log::status "Running integration test cases"
-
-  go test -timeout=40m sigs.k8s.io/scheduler-plugins/test/integration/... ${ARGS:-}
-}
-
-trap cleanup EXIT
-
-runTests
+go mod tidy
+go mod download

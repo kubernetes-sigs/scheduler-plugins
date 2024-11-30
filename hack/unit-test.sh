@@ -28,7 +28,7 @@ source "${TEMP_DIR}/setup-envtest"
 # get the args to pass to go test
 ARGS=("$@")
 
-go test "${ARGS[@]}" -mod=vendor \
+go test "${ARGS[@]}" \
   sigs.k8s.io/scheduler-plugins/cmd/... \
   sigs.k8s.io/scheduler-plugins/pkg/... \
   sigs.k8s.io/scheduler-plugins/apis/...
