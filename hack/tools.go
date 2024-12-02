@@ -21,5 +21,5 @@ package tools
 
 import (
 	_ "k8s.io/code-generator"
-	_ "k8s.io/klog/hack/tools/logcheck"
+	_ "sigs.k8s.io/logtools/logcheck"
 )

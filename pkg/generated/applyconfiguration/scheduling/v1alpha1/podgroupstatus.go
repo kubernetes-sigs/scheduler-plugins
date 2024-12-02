@@ -23,7 +23,7 @@ import (
 	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
 
-// PodGroupStatusApplyConfiguration represents an declarative configuration of the PodGroupStatus type for use
+// PodGroupStatusApplyConfiguration represents a declarative configuration of the PodGroupStatus type for use
 // with apply.
 type PodGroupStatusApplyConfiguration struct {
 	Phase             *v1alpha1.PodGroupPhase `json:"phase,omitempty"`
@@ -34,7 +34,7 @@ type PodGroupStatusApplyConfiguration struct {
 	ScheduleStartTime *v1.Time                `json:"scheduleStartTime,omitempty"`
 }
 
-// PodGroupStatusApplyConfiguration constructs an declarative configuration of the PodGroupStatus type for use with
+// PodGroupStatusApplyConfiguration constructs a declarative configuration of the PodGroupStatus type for use with
 // apply.
 func PodGroupStatus() *PodGroupStatusApplyConfiguration {
 	return &PodGroupStatusApplyConfiguration{}

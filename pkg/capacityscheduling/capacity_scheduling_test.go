@@ -327,13 +327,14 @@ func TestPostFilter(t *testing.T) {
 				frameworkruntime.WithInformerFactory(informerFactory),
 				frameworkruntime.WithPodNominator(testutil.NewPodNominator(informerFactory.Core().V1().Pods().Lister())),
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(tt.existPods, tt.nodes)),
+				frameworkruntime.WithWaitingPods(frameworkruntime.NewWaitingPodsMap()),
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			state := framework.NewCycleState()
-			_, preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
+			_, preFilterStatus, _ := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
 			if !preFilterStatus.IsSuccess() {
 				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
 			}
@@ -741,7 +742,7 @@ func TestDryRunPreemption(t *testing.T) {
 			state := framework.NewCycleState()
 
 			// Some tests rely on PreFilter plugin to compute its CycleState.
-			_, preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
+			_, preFilterStatus, _ := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
 			if !preFilterStatus.IsSuccess() {
 				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
 			}
@@ -988,7 +989,7 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 			}
 
 			state := framework.NewCycleState()
-			_, preFilterStatus := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
+			_, preFilterStatus, _ := fwk.RunPreFilterPlugins(ctx, state, tt.pod)
 			if !preFilterStatus.IsSuccess() {
 				t.Errorf("Unexpected preFilterStatus: %v", preFilterStatus)
 			}

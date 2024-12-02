@@ -28,7 +28,7 @@ source "${KUBE_ROOT}/hack/lib/util.sh"
 
 kube::golang::verify_go_version
 
-GO111MODULE=on go install k8s.io/klog/hack/tools/logcheck@latest
+GO111MODULE=on go install sigs.k8s.io/logtools/logcheck@latest
 
 all_packages=()
 # shellcheck disable=SC2010

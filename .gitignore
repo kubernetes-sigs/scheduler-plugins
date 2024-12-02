@@ -18,3 +18,6 @@ hack/tools/bin/*
 *.sublime-project
 *.sublime-workspace
 *~
+
+# Ignore vendor/
+vendor

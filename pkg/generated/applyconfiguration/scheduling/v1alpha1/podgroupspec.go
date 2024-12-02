@@ -22,7 +22,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// PodGroupSpecApplyConfiguration represents an declarative configuration of the PodGroupSpec type for use
+// PodGroupSpecApplyConfiguration represents a declarative configuration of the PodGroupSpec type for use
 // with apply.
 type PodGroupSpecApplyConfiguration struct {
 	MinMember              *int32           `json:"minMember,omitempty"`
@@ -30,7 +30,7 @@ type PodGroupSpecApplyConfiguration struct {
 	ScheduleTimeoutSeconds *int32           `json:"scheduleTimeoutSeconds,omitempty"`
 }
 
-// PodGroupSpecApplyConfiguration constructs an declarative configuration of the PodGroupSpec type for use with
+// PodGroupSpecApplyConfiguration constructs a declarative configuration of the PodGroupSpec type for use with
 // apply.
 func PodGroupSpec() *PodGroupSpecApplyConfiguration {
 	return &PodGroupSpecApplyConfiguration{}

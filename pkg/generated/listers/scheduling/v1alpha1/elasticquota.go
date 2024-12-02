@@ -19,8 +19,8 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/listers"
 	"k8s.io/client-go/tools/cache"
 	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 )
@@ -38,25 +38,17 @@ type ElasticQuotaLister interface {
 
 // elasticQuotaLister implements the ElasticQuotaLister interface.
 type elasticQuotaLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*v1alpha1.ElasticQuota]
 }
 
 // NewElasticQuotaLister returns a new ElasticQuotaLister.
 func NewElasticQuotaLister(indexer cache.Indexer) ElasticQuotaLister {
-	return &elasticQuotaLister{indexer: indexer}
-}
-
-// List lists all ElasticQuotas in the indexer.
-func (s *elasticQuotaLister) List(selector labels.Selector) (ret []*v1alpha1.ElasticQuota, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.ElasticQuota))
-	})
-	return ret, err
+	return &elasticQuotaLister{listers.New[*v1alpha1.ElasticQuota](indexer, v1alpha1.Resource("elasticquota"))}
 }
 
 // ElasticQuotas returns an object that can list and get ElasticQuotas.
 func (s *elasticQuotaLister) ElasticQuotas(namespace string) ElasticQuotaNamespaceLister {
-	return elasticQuotaNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return elasticQuotaNamespaceLister{listers.NewNamespaced[*v1alpha1.ElasticQuota](s.ResourceIndexer, namespace)}
 }
 
 // ElasticQuotaNamespaceLister helps list and get ElasticQuotas.
@@ -74,26 +66,5 @@ type ElasticQuotaNamespaceLister interface {
 // elasticQuotaNamespaceLister implements the ElasticQuotaNamespaceLister
 // interface.
 type elasticQuotaNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ElasticQuotas in the indexer for a given namespace.
-func (s elasticQuotaNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.ElasticQuota, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.ElasticQuota))
-	})
-	return ret, err
-}
-
-// Get retrieves the ElasticQuota from the indexer for a given namespace and name.
-func (s elasticQuotaNamespaceLister) Get(name string) (*v1alpha1.ElasticQuota, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("elasticquota"), name)
-	}
-	return obj.(*v1alpha1.ElasticQuota), nil
+	listers.ResourceIndexer[*v1alpha1.ElasticQuota]
 }
