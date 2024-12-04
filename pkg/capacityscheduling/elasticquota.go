@@ -62,7 +62,7 @@ func (e ElasticQuotaInfos) aggregatedUsedOverMinWith(podRequest framework.Resour
 // Each namespace can only have one ElasticQuota.
 type ElasticQuotaInfo struct {
 	Namespace string
-	pods      sets.String
+	pods      sets.Set[string]
 	Min       *framework.Resource
 	Max       *framework.Resource
 	Used      *framework.Resource
@@ -78,7 +78,7 @@ func newElasticQuotaInfo(namespace string, min, max, used v1.ResourceList) *Elas
 
 	elasticQuotaInfo := &ElasticQuotaInfo{
 		Namespace: namespace,
-		pods:      sets.NewString(),
+		pods:      sets.New[string](),
 		Min:       framework.NewResource(min),
 		Max:       framework.NewResource(max),
 		Used:      framework.NewResource(used),
@@ -133,7 +133,7 @@ func (e *ElasticQuotaInfo) usedOverMin() bool {
 func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
 	newEQInfo := &ElasticQuotaInfo{
 		Namespace: e.Namespace,
-		pods:      sets.NewString(),
+		pods:      sets.New[string](),
 	}
 
 	if e.Min != nil {
@@ -145,11 +145,8 @@ func (e *ElasticQuotaInfo) clone() *ElasticQuotaInfo {
 	if e.Used != nil {
 		newEQInfo.Used = e.Used.Clone()
 	}
-	if len(e.pods) > 0 {
-		pods := e.pods.List()
-		for _, pod := range pods {
-			newEQInfo.pods.Insert(pod)
-		}
+	for pod := range e.pods {
+		newEQInfo.pods.Insert(pod)
 	}
 
 	return newEQInfo

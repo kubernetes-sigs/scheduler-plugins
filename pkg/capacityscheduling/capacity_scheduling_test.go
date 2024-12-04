@@ -385,7 +385,7 @@ func TestReserve(t *testing.T) {
 			elasticQuotas: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.String{},
+					pods:      sets.Set[string]{},
 					Min: &framework.Resource{
 						Memory: 1000,
 					},
@@ -405,7 +405,7 @@ func TestReserve(t *testing.T) {
 				{
 					"ns1": {
 						Namespace: "ns1",
-						pods:      sets.NewString("t1-p1"),
+						pods:      sets.New("t1-p1"),
 						Min: &framework.Resource{
 							Memory: 1000,
 						},
@@ -423,7 +423,7 @@ func TestReserve(t *testing.T) {
 				{
 					"ns1": {
 						Namespace: "ns1",
-						pods:      sets.NewString("t1-p1"),
+						pods:      sets.New("t1-p1"),
 						Min: &framework.Resource{
 							Memory: 1000,
 						},
@@ -499,7 +499,7 @@ func TestUnreserve(t *testing.T) {
 			elasticQuotas: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.NewString("t1-p3", "t1-p4"),
+					pods:      sets.New("t1-p3", "t1-p4"),
 					Min: &framework.Resource{
 						Memory: 1000,
 					},
@@ -515,7 +515,7 @@ func TestUnreserve(t *testing.T) {
 				{
 					"ns1": {
 						Namespace: "ns1",
-						pods:      sets.NewString("t1-p3", "t1-p4"),
+						pods:      sets.New("t1-p3", "t1-p4"),
 						Min: &framework.Resource{
 							Memory: 1000,
 						},
@@ -530,7 +530,7 @@ func TestUnreserve(t *testing.T) {
 				{
 					"ns1": {
 						Namespace: "ns1",
-						pods:      sets.NewString("t1-p3", "t1-p4"),
+						pods:      sets.New("t1-p3", "t1-p4"),
 						Min: &framework.Resource{
 							Memory: 1000,
 						},
@@ -545,7 +545,7 @@ func TestUnreserve(t *testing.T) {
 				{
 					"ns1": {
 						Namespace: "ns1",
-						pods:      sets.NewString("t1-p4"),
+						pods:      sets.New("t1-p4"),
 						Min: &framework.Resource{
 							Memory: 1000,
 						},
@@ -1030,7 +1030,7 @@ func TestAddElasticQuota(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.String{},
+					pods:      sets.Set[string]{},
 					Max: &framework.Resource{
 						MilliCPU: 100,
 						Memory:   1000,
@@ -1055,7 +1055,7 @@ func TestAddElasticQuota(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.String{},
+					pods:      sets.Set[string]{},
 					Max: &framework.Resource{
 						MilliCPU:         UpperBoundOfMax,
 						Memory:           UpperBoundOfMax,
@@ -1081,7 +1081,7 @@ func TestAddElasticQuota(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.String{},
+					pods:      sets.Set[string]{},
 					Max: &framework.Resource{
 						MilliCPU: 100,
 						Memory:   1000,
@@ -1107,7 +1107,7 @@ func TestAddElasticQuota(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.String{},
+					pods:      sets.Set[string]{},
 					Max: &framework.Resource{
 						MilliCPU:         UpperBoundOfMax,
 						Memory:           UpperBoundOfMax,
@@ -1182,7 +1182,7 @@ func TestUpdateElasticQuota(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.String{},
+					pods:      sets.Set[string]{},
 					Max: &framework.Resource{
 						MilliCPU: 300,
 						Memory:   1000,
@@ -1309,7 +1309,7 @@ func TestAddPod(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.NewString("t1-p1", "t1-p2", "t1-p3"),
+					pods:      sets.New("t1-p1", "t1-p2", "t1-p3"),
 					Max: &framework.Resource{
 						MilliCPU: 100,
 						Memory:   1000,
@@ -1389,7 +1389,7 @@ func TestUpdatePod(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.NewString("t1-p1"),
+					pods:      sets.New("t1-p1"),
 					Max: &framework.Resource{
 						MilliCPU: 100,
 						Memory:   1000,
@@ -1421,7 +1421,7 @@ func TestUpdatePod(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.String{},
+					pods:      sets.Set[string]{},
 					Max: &framework.Resource{
 						MilliCPU: 100,
 						Memory:   1000,
@@ -1505,7 +1505,7 @@ func TestDeletePod(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.NewString(),
+					pods:      sets.New[string](),
 					Max: &framework.Resource{
 						MilliCPU: 100,
 						Memory:   1000,
@@ -1538,7 +1538,7 @@ func TestDeletePod(t *testing.T) {
 			expected: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
-					pods:      sets.NewString("t1-p2"),
+					pods:      sets.New("t1-p2"),
 					Max: &framework.Resource{
 						MilliCPU: 100,
 						Memory:   1000,
