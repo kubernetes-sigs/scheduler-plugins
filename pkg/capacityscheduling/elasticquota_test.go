@@ -526,7 +526,7 @@ func TestNewElasticQuotaInfo(t *testing.T) {
 			},
 			expected: &ElasticQuotaInfo{
 				Namespace: "ns1",
-				pods:      sets.String{},
+				pods:      sets.Set[string]{},
 				Max: &framework.Resource{
 					MilliCPU: 100,
 					Memory:   1000,
@@ -551,7 +551,7 @@ func TestNewElasticQuotaInfo(t *testing.T) {
 			},
 			expected: &ElasticQuotaInfo{
 				Namespace: "ns1",
-				pods:      sets.String{},
+				pods:      sets.Set[string]{},
 				Max: &framework.Resource{
 					MilliCPU:         UpperBoundOfMax,
 					Memory:           UpperBoundOfMax,
@@ -577,7 +577,7 @@ func TestNewElasticQuotaInfo(t *testing.T) {
 			},
 			expected: &ElasticQuotaInfo{
 				Namespace: "ns1",
-				pods:      sets.String{},
+				pods:      sets.Set[string]{},
 				Max: &framework.Resource{
 					MilliCPU: 100,
 					Memory:   1000,
@@ -603,7 +603,7 @@ func TestNewElasticQuotaInfo(t *testing.T) {
 			},
 			expected: &ElasticQuotaInfo{
 				Namespace: "ns1",
-				pods:      sets.String{},
+				pods:      sets.Set[string]{},
 				Max: &framework.Resource{
 					MilliCPU:         UpperBoundOfMax,
 					Memory:           UpperBoundOfMax,

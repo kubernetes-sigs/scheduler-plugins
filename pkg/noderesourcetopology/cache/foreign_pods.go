@@ -35,7 +35,7 @@ import (
 // Note this is NOT lock-protected because the scheduling framework calls New() sequentially,
 // and plugin instances are meant to register their name using SetupForeignPodsDetector inside their New()
 var (
-	schedProfileNames      = sets.String{}
+	schedProfileNames      = sets.Set[string]{}
 	onlyExclusiveResources = false
 )
 
@@ -75,7 +75,7 @@ func RegisterSchedulerProfileName(lh logr.Logger, schedProfileName string) {
 	lh.Info("setting up detection", "profile", schedProfileName)
 	schedProfileNames.Insert(schedProfileName)
 
-	lh.V(5).Info("registered scheduler profiles", "names", schedProfileNames.List())
+	lh.V(5).Info("registered scheduler profiles", "names", schedProfileNames.UnsortedList())
 }
 
 func IsForeignPod(pod *corev1.Pod) bool {
@@ -95,5 +95,5 @@ func IsForeignPod(pod *corev1.Pod) bool {
 
 // for testing only; NOT thread safe
 func CleanRegisteredSchedulerProfileNames() {
-	schedProfileNames = sets.String{}
+	schedProfileNames = sets.Set[string]{}
 }
