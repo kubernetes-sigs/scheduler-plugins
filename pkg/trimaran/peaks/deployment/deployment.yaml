@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    component: scheduler
+    tier: control-plane
+  name: peaks
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        component: scheduler
+        tier: control-plane
+        version: second
+    spec:
+      serviceAccountName: peaks
+      hostNetwork: true
+      containers:
+      - name: peaks
+        command:
+        - /bin/kube-scheduler
+        - --bind-address=0.0.0.0
+        - --leader-elect=false
+        - --config=/home/scheduler-config.yaml
+        - -v=6
+        image: <REPLACE_ME_WITH_PEAKS_IMAGE>
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: '0.1'

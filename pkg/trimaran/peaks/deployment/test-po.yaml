@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sleep-pod
+  namespace: kube-system
+spec:
+  schedulerName: Peaks
+  containers:
+  - name: busybox-container
+    image: quay.io/husky_parul/alpine:latest 
+    command: ["sleep", "3000"]

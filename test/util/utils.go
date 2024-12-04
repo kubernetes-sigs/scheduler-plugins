@@ -18,7 +18,11 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -180,4 +184,55 @@ func MustNewPodInfo(t testing.TB, pod *corev1.Pod) *framework.PodInfo {
 	}
 
 	return podInfo
+}
+
+func CreateSamplePowerModel(t *testing.T, data map[string]interface{}) {
+	t.Logf("Power model json data: %v", data)
+	powerModelData, err := json.Marshal(data)
+	if err != nil {
+		t.Logf("Json marshal error: %v", err)
+		return
+	}
+
+	if len(os.Getenv("NODE_POWER_MODEL")) == 0 {
+		os.Setenv("NODE_POWER_MODEL", "./power_model/node_power_model")
+	}
+	t.Logf("NODE_POWER_MODEL: %v", os.Getenv("NODE_POWER_MODEL"))
+	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))
+	t.Logf("fileDir: %v fileName: %v", fileDir, fileName)
+	err = os.MkdirAll(fileDir, 0777)
+	if err != nil {
+		t.Logf("Json file directory create error: %v", err)
+		return
+	}
+	err = ioutil.WriteFile(os.Getenv("NODE_POWER_MODEL"), powerModelData, 0644)
+	if err != nil {
+		t.Logf("Json file write error: %v", err)
+		return
+	}
+}
+
+func DeleteSamplePowerModel(t *testing.T) {
+	fileDir, fileName := filepath.Split(os.Getenv("NODE_POWER_MODEL"))
+	t.Logf("fileDir: %v fileName: %v", fileDir, fileName)
+	err := os.RemoveAll(fileDir)
+	if err != nil {
+		t.Logf("Delete file error: %v", err)
+		return
+	}
+}
+
+func CreateErroredPowerModel(t *testing.T, data map[string]interface{}) {
+	t.Logf("Power model json data: %v", data)
+	powerModelData, err := json.Marshal(data)
+	if err != nil {
+		t.Logf("Json marshal error: %v", err)
+		return
+	}
+
+	err = ioutil.WriteFile(os.Getenv("NODE_POWER_MODEL"), powerModelData, 0644)
+	if err != nil {
+		t.Logf("Json file write error: %v", err)
+		return
+	}
 }
