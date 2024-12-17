@@ -620,6 +620,8 @@ func (p *preemptor) SelectVictimsOnNode(
 
 	var victims []*v1.Pod
 	numViolatingVictim := 0
+	// Sort potentialVictims by pod priority from high to low, which ensures to
+	// reprieve higher priority pods first.
 	sort.Slice(potentialVictims, func(i, j int) bool {
 		return schedutil.MoreImportantPod(potentialVictims[i].Pod, potentialVictims[j].Pod)
 	})
@@ -665,6 +667,11 @@ func (p *preemptor) SelectVictimsOnNode(
 			logger.Error(err, "Failed to reprieve pod", "pod", klog.KObj(pi.Pod))
 			return nil, 0, framework.AsStatus(err)
 		}
+	}
+
+	// Sort victims after reprieving pods to keep the pods in the victims sorted in order of priority from high to low.
+	if len(violatingVictims) != 0 && len(nonViolatingVictims) != 0 {
+		sort.Slice(victims, func(i, j int) bool { return schedutil.MoreImportantPod(victims[i], victims[j]) })
 	}
 	return victims, numViolatingVictim, framework.NewStatus(framework.Success)
 }
