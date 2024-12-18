@@ -32,6 +32,8 @@ import (
 	v1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
+	"sigs.k8s.io/scheduler-plugins/pkg/network-cost-aware/networkcost"//Amira
+	"sigs.k8s.io/scheduler-plugins/pkg/network-cost-aware/topologicalcnsort"//Amira
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
@@ -84,6 +86,12 @@ profiles:
       - "networkAware"
       weightsName: "netCosts"
       networkTopologyName: "net-topology-v1"
+  - name: NetworkCost
+    args:
+      namespaces:
+      - "networkcostAware"
+      weightsName: "netCosts"
+      networkTopologyName: "net-topology-v1"
 `),
 			wantProfiles: []schedconfig.KubeSchedulerProfile{
 				{
@@ -106,6 +114,14 @@ profiles:
 							Name: networkoverhead.Name,
 							Args: &config.NetworkOverheadArgs{
 								Namespaces:          []string{"networkAware"},
+								WeightsName:         "netCosts",
+								NetworkTopologyName: "net-topology-v1",
+							},
+						},
+						{//Amira
+							Name: networkcost.Name,
+							Args: &config.NetworkCostArgs{
+								Namespaces:          []string{"networkCostAware"},
 								WeightsName:         "netCosts",
 								NetworkTopologyName: "net-topology-v1",
 							},
@@ -155,9 +171,9 @@ kind: KubeSchedulerConfiguration
 profiles:
 - schedulerName: scheduler-plugins
   pluginConfig:
-  - name: TopologicalSort
+  - name: TopologicalcnSort
     args:
-  - name: NetworkOverhead
+  - name: NetworkCostAware
     args:
 `),
 			wantProfiles: []schedconfig.KubeSchedulerProfile{
@@ -166,14 +182,14 @@ profiles:
 					Plugins:       defaults.PluginsV1,
 					PluginConfig: []schedconfig.PluginConfig{
 						{
-							Name: topologicalsort.Name,
-							Args: &config.TopologicalSortArgs{
+							Name: topologicalcnsort.Name,
+							Args: &config.TopologicalcnSortArgs{
 								Namespaces: []string{"default"},
 							},
 						},
 						{
-							Name: networkoverhead.Name,
-							Args: &config.NetworkOverheadArgs{
+							Name: networkcost.Name,
+							Args: &config.NetworkCostArgs{//Amira
 								Namespaces:          []string{"default"},
 								WeightsName:         "UserDefined",
 								NetworkTopologyName: "nt-default",
@@ -320,14 +336,14 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 								},
 							},
 							{
-								Name: topologicalsort.Name,
-								Args: &config.TopologicalSortArgs{
+								Name: topologicalcnsort.Name,
+								Args: &config.TopologicalcnSortArgs{
 									Namespaces: []string{"default"},
 								},
 							},
 							{
-								Name: networkoverhead.Name,
-								Args: &config.NetworkOverheadArgs{
+								Name: networkcost.Name,
+								Args: &config.NetworkCostArgs{
 									Namespaces:          []string{"default"},
 									WeightsName:         "netCosts",
 									NetworkTopologyName: "net-topology-v1",
@@ -418,18 +434,18 @@ profiles:
     name: LowRiskOverCommitment
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1
-      kind: TopologicalSortArgs
+      kind: TopologicalcnSortArgs
       namespaces:
       - default
-    name: TopologicalSort
+    name: TopologicalcnSort
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1
-      kind: NetworkOverheadArgs
+      kind: NetworkCostArgs
       namespaces:
       - default
       networkTopologyName: net-topology-v1
       weightsName: netCosts
-    name: NetworkOverhead
+    name: NetworkCostAware
   schedulerName: scheduler-plugins
 `,
 		},

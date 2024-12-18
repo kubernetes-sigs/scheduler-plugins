@@ -38,6 +38,8 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
+	"sigs.k8s.io/scheduler-plugins/pkg/network-cost-aware/networkcost"//Amira
+	"sigs.k8s.io/scheduler-plugins/pkg/network-cost-aware/topologicalcnsort"//Amira
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/podstate"
@@ -428,6 +430,62 @@ profiles:
 		t.Fatal(err)
 	}
 
+	// networkCostAware plugin config
+	//Amira
+	// topologicalSort plugin config
+	topologicalcnSortConfigFile := filepath.Join(tmpDir, "topologicalcnSort.yaml")
+	if err := os.WriteFile(topologicalcnSortConfigFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    queueSort:
+      enabled:
+      - name: TopologicalcnSort
+      disabled:
+      - name: "*"
+    preFilter:
+      disabled:
+      - name: "*"
+    filter:
+      disabled:
+      - name: "*"
+    preScore:
+      disabled:
+      - name: "*"
+    score:
+      disabled:
+      - name: "*"
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}
+	networkCostAwareConfigWithArgsFile := filepath.Join(tmpDir, "networkCostAware.yaml")
+	if err := os.WriteFile(networkCostAwareConfigWithArgsFile, []byte(fmt.Sprintf(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+clientConnection:
+  kubeconfig: "%s"
+profiles:
+- plugins:
+    preFilter:
+      enabled:
+      - name: NetworkCostAware
+    filter:
+      enabled:
+      - name: NetworkCostAware
+      disabled:
+      - name: "*"
+    score:
+      enabled:
+      - name: NetworkCostAware
+      disabled:
+      - name: "*"
+`, configKubeconfig)), os.FileMode(0600)); err != nil {
+		t.Fatal(err)
+	}//---------------------
+
 	// multiple profiles config
 	multiProfilesConfig := filepath.Join(tmpDir, "multi-profiles.yaml")
 	if err := os.WriteFile(multiProfilesConfig, []byte(fmt.Sprintf(`
@@ -705,22 +763,37 @@ profiles:
 				},
 			},
 		},
-		{
-			name:            "single profile config - NetworkOverhead with args",
-			flags:           []string{"--config", networkOverheadConfigWithArgsFile},
-			registryOptions: []app.Option{app.WithPlugin(networkoverhead.Name, networkoverhead.New)},
+		{//Amira
+			name:            "single profile config - topologicalcnSort",
+			flags:           []string{"--config", topologicalcnSortConfigFile},
+			registryOptions: []app.Option{app.WithPlugin(topologicalcnsort.Name, topologicalcnsort.New)},
+			wantPlugins: map[string]*config.Plugins{
+				"default-scheduler": {
+					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
+					QueueSort:  config.PluginSet{Enabled: []config.Plugin{{Name: topologicalcnsort.Name}}},
+					Bind:       defaults.ExpandedPluginsV1.Bind,
+					PostFilter: defaults.ExpandedPluginsV1.PostFilter,
+					Reserve:    defaults.ExpandedPluginsV1.Reserve,
+					PreBind:    defaults.ExpandedPluginsV1.PreBind,
+				},
+			},
+		},
+		{//Amira
+			name:            "single profile config - NetworkCostAware with args", 
+			flags:           []string{"--config", networkCostAwareConfigWithArgsFile},
+			registryOptions: []app.Option{app.WithPlugin(networkcost.Name, networkcost.New)},
 			wantPlugins: map[string]*config.Plugins{
 				"default-scheduler": {
 					PreEnqueue: defaults.ExpandedPluginsV1.PreEnqueue,
 					QueueSort:  defaults.ExpandedPluginsV1.QueueSort,
 					Bind:       defaults.ExpandedPluginsV1.Bind,
 					PreFilter: config.PluginSet{
-						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: networkoverhead.Name}),
+						Enabled: append(defaults.ExpandedPluginsV1.PreFilter.Enabled, config.Plugin{Name: networkcost.Name}),
 					},
-					Filter:     config.PluginSet{Enabled: []config.Plugin{{Name: networkoverhead.Name}}},
+					Filter:     config.PluginSet{Enabled: []config.Plugin{{Name: networkcost.Name}}},
 					PostFilter: defaults.ExpandedPluginsV1.PostFilter,
 					PreScore:   defaults.ExpandedPluginsV1.PreScore,
-					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: networkoverhead.Name, Weight: 1}}},
+					Score:      config.PluginSet{Enabled: []config.Plugin{{Name: networkcost.Name, Weight: 1}}},
 					Reserve:    defaults.ExpandedPluginsV1.Reserve,
 					PreBind:    defaults.ExpandedPluginsV1.PreBind,
 				},

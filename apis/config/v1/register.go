@@ -45,6 +45,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&PreemptionTolerationArgs{},
 		&TopologicalSortArgs{},
 		&NetworkOverheadArgs{},
+		&NetworkCostArgs{},//Amira
+		&TopologicalcnSortArgs{},//Amira
 		&SySchedArgs{},
 		&PeaksArgs{},
 	)

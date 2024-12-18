@@ -266,6 +266,26 @@ type NetworkOverheadArgs struct {
 	NetworkTopologyName *string `json:"networkTopologyName,omitempty"`
 }
 
+//Amira
+type TopologicalcnSortArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Namespaces to be considered by TopologySort plugin
+	Namespaces []string `json:"namespaces,omitempty"`
+}
+type NetworkCostArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Namespaces to be considered by NetworkMinCost plugin
+	Namespaces []string `json:"namespaces,omitempty"`
+
+	// Preferred weights (Default: UserDefined)
+	WeightsName *string `json:"weightsName,omitempty"`
+
+	// The NetworkTopology CRD name
+	NetworkTopologyName *string `json:"networkTopologyName,omitempty"`
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type SySchedArgs struct {

@@ -268,6 +268,26 @@ type NetworkOverheadArgs struct {
 	NetworkTopologyName string
 }
 
+//Amira
+type TopologicalcnSortArgs struct {
+	metav1.TypeMeta
+
+	// Namespaces to be considered by TopologySort plugin
+	Namespaces []string
+}
+type NetworkCostArgs struct {
+	metav1.TypeMeta
+
+	// Namespaces to be considered by NetworkMinCost plugin
+	Namespaces []string
+
+	// Preferred weights (Default: UserDefined)
+	WeightsName string
+
+	// The NetworkTopology CRD name
+	NetworkTopologyName string
+}
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type SySchedArgs struct {

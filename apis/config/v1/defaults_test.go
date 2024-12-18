@@ -254,7 +254,29 @@ func TestSchedulingDefaults(t *testing.T) {
 				WeightsName:         pointer.StringPtr("latency"),
 				NetworkTopologyName: pointer.StringPtr("nt-latency-costs"),
 			},
+		},//Amira
+		{
+			name:   "empty config Network Cost Args",
+			config: &NetworkCostArgs{},
+			expect: &NetworkCostArgs{
+				Namespaces:          []string{"default"},
+				WeightsName:         pointer.StringPtr("UserDefined"),
+				NetworkTopologyName: pointer.StringPtr("nt-default"),
+			},
 		},
+		{
+			name: "set non default TopologySortArgs",
+			config: &NetworkCostArgs{
+				Namespaces:          []string{"nc2"},
+				WeightsName:         pointer.StringPtr("latency"),
+				NetworkTopologyName: pointer.StringPtr("ntc-latency-costs"),
+			},
+			expect: &NetworkCostArgs{
+				Namespaces:          []string{"nc2"},
+				WeightsName:         pointer.StringPtr("latency"),
+				NetworkTopologyName: pointer.StringPtr("ntc-latency-costs"),
+			},
+		},//------
 		{
 			name:   "empty config SySchedArgs",
 			config: &SySchedArgs{},
