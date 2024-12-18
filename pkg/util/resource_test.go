@@ -36,6 +36,7 @@ func TestGetPodEffectiveRequest(t *testing.T) {
 		name                 string
 		containerRequest     []v1.ResourceList
 		initContainerRequest []v1.ResourceList
+		podOverheadRequest   v1.ResourceList
 		want                 v1.ResourceList
 	}{
 		{
@@ -101,6 +102,27 @@ func TestGetPodEffectiveRequest(t *testing.T) {
 			},
 			want: makeResourceList(10, 4),
 		},
+		{
+			name: "1 container with pod overhead",
+			containerRequest: []v1.ResourceList{
+				makeResourceList(1, 1),
+			},
+			initContainerRequest: nil,
+			podOverheadRequest:   makeResourceList(1, 1),
+			want:                 makeResourceList(2, 2),
+		},
+		{
+			name: "2 containers and 1 init container with pod overhead",
+			containerRequest: []v1.ResourceList{
+				makeResourceList(1, 1),
+				makeResourceList(2, 3),
+			},
+			initContainerRequest: []v1.ResourceList{
+				makeResourceList(1, 1),
+			},
+			podOverheadRequest: makeResourceList(1, 1),
+			want:               makeResourceList(4, 5),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,6 +141,7 @@ func TestGetPodEffectiveRequest(t *testing.T) {
 					},
 				})
 			}
+			pod.Spec.Overhead = tt.podOverheadRequest
 			if got := GetPodEffectiveRequest(pod); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GetPodEffectiveRequest() = %v, want %v", got, tt.want)
 			}

@@ -47,6 +47,7 @@ func ResourceList(r *framework.Resource) v1.ResourceList {
 // - the sum of all app containers(spec.Containers) request for a resource.
 // - the effective init containers(spec.InitContainers) request for a resource.
 // The effective init containers request is the highest request on all init containers.
+// Additionally, if the Pod specifies overhead, it will also be included in the final calculation.
 func GetPodEffectiveRequest(pod *v1.Pod) v1.ResourceList {
 	initResources := make(v1.ResourceList)
 	resources := make(v1.ResourceList)
@@ -70,6 +71,13 @@ func GetPodEffectiveRequest(pod *v1.Pod) v1.ResourceList {
 	for name, quantity := range initResources {
 		if q, ok := resources[name]; ok && quantity.Cmp(q) <= 0 {
 			continue
+		}
+		resources[name] = quantity
+	}
+	// Add pod overhead if present
+	for name, quantity := range pod.Spec.Overhead {
+		if q, ok := resources[name]; ok {
+			quantity.Add(q)
 		}
 		resources[name] = quantity
 	}
