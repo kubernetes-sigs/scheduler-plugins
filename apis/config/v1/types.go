@@ -277,3 +277,23 @@ type SySchedArgs struct {
 	// CR name of the default profile for all system calls
 	DefaultProfileName *string `json:"defaultProfileName,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PeaksArgs holds arguments used to configure the Peaks plugin
+type PeaksArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Address of load watcher service
+	WatcherAddress string `json:watcherAddress",inline"`
+	// Associating power models to nodes using node labels will be added as a functionality in a future PR.
+	NodePowerModel map[string]PowerModel `json:nodePowerModel",inline"`
+}
+
+type PowerModel struct {
+	K0 float64 `json:"k0"`
+	K1 float64 `json:"k1"`
+	K2 float64 `json:"k2"`
+	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
+	// Idle power of node will be K0 + K1
+}
