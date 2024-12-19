@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG GO_BASE_IMAGE
+ARG GO_BASE_IMAGE=golang:1.22.0
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
 FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 
 WORKDIR /workspace
 COPY . .
 ARG TARGETARCH
-RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
-
+#RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
+RUN make build-controller GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 
 WORKDIR /bin

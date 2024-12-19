@@ -55,7 +55,7 @@ func main() {
 		app.WithPlugin(loadvariationriskbalancing.Name, loadvariationriskbalancing.New),
 		app.WithPlugin(networkoverhead.Name, networkoverhead.New),
 		app.WithPlugin(topologicalsort.Name, topologicalsort.New),
-		app.WithPlugin(networkoverhead.Name, networkcost.New),//Amira
+		app.WithPlugin(networkcost.Name, networkcost.New),//Amira
 		app.WithPlugin(topologicalcnsort.Name, topologicalcnsort.New),//Amira
 		app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable),
 		app.WithPlugin(noderesourcetopology.Name, noderesourcetopology.New),
