@@ -46,7 +46,7 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&SySchedArgs{}, func(obj interface{}) { SetObjectDefaults_SySchedArgs(obj.(*SySchedArgs)) })
 	scheme.AddTypeDefaultingFunc(&TargetLoadPackingArgs{}, func(obj interface{}) { SetObjectDefaults_TargetLoadPackingArgs(obj.(*TargetLoadPackingArgs)) })
 	scheme.AddTypeDefaultingFunc(&TopologicalSortArgs{}, func(obj interface{}) { SetObjectDefaults_TopologicalSortArgs(obj.(*TopologicalSortArgs)) })
-	scheme.AddTypeDefaultingFunc(&TopologicalcnSortArgs, func(obj interface{}) { SetObjectDefaults_TopologicalcnSortArgs(obj.(*TopologicalcnSortArgs)) })//Amira
+	scheme.AddTypeDefaultingFunc(&TopologicalcnSortArgs{}, func(obj interface{}) { SetObjectDefaults_TopologicalcnSortArgs(obj.(*TopologicalcnSortArgs)) })//Amira
 	return nil
 }
 

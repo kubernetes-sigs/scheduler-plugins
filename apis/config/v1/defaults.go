@@ -226,7 +226,20 @@ func SetDefaults_TopologicalSortArgs(obj *TopologicalSortArgs) {
 }
 
 
+// SetDefaults_NetworkOverheadArgs sets the default parameters for NetworkMinCostArgs plugin.
+func SetDefaults_NetworkOverheadArgs(obj *NetworkOverheadArgs) {
+	if len(obj.Namespaces) == 0 {
+		obj.Namespaces = []string{metav1.NamespaceDefault}
+	}
 
+	if obj.WeightsName == nil {
+		obj.WeightsName = &DefaultWeightsName
+	}
+
+	if obj.NetworkTopologyName == nil {
+		obj.NetworkTopologyName = &DefaultNetworkTopologyName
+	}
+}
 //Amira
 // SetDefaults_TopologicalSortArgs sets the default parameters for TopologicalSortArgs plugin.
 func SetDefaults_TopologicalcnSortArgs(obj *TopologicalcnSortArgs) {
@@ -249,20 +262,7 @@ func SetDefaults_NetworkCostArgs(obj *NetworkCostArgs) {
 	}
 }
 
-// SetDefaults_NetworkCostArgs sets the default parameters for NetworkMinCostArgs plugin.
-func SetDefaults_NetworkCostArgs(obj *NetworkCostArgs) {
-	if len(obj.Namespaces) == 0 {
-		obj.Namespaces = []string{metav1.NamespaceDefault}
-	}
 
-	if obj.WeightsName == nil {
-		obj.WeightsName = &DefaultWeightsName
-	}
-
-	if obj.NetworkTopologyName == nil {
-		obj.NetworkTopologyName = &DefaultNetworkTopologyName
-	}
-}
 
 // SetDefaults_SySchedArgs sets the default parameters for SySchedArgs plugin.
 func SetDefaults_SySchedArgs(obj *SySchedArgs) {
