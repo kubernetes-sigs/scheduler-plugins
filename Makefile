@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
+GO_VERSION := 1.22.0#$(shell awk '/^go /{print $$2}' go.mod|head -n1)
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
 # Manage platform and builders
