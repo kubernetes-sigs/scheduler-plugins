@@ -298,3 +298,24 @@ type PowerModel struct {
 	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
 	// Idle power of node will be K0 + K1
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ScarceResourceAvoidanceArgs defines the parameters for ScarceResourceAvoidance plugin.
+type ScarceResourceAvoidanceArgs struct {
+	metav1.TypeMeta
+	Resources []v1.ResourceName `json:"resources,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// NodeResourcesFitPlusArgs defines the parameters for NodeResourcesFitPlus plugin.
+type NodeResourcesFitPlusArgs struct {
+	metav1.TypeMeta
+	Resources map[v1.ResourceName]ResourcesType `json:"resources"`
+}
+
+type ResourcesType struct {
+	Type   schedconfig.ScoringStrategyType `json:"type"`
+	Weight int64                           `json:"weight"`
+}

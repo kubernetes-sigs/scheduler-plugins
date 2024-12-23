@@ -18,6 +18,8 @@ package main
 
 import (
 	"os"
+	noderesourcesfitplus "sigs.k8s.io/scheduler-plugins/pkg/noderesourcefitplus"
+	"sigs.k8s.io/scheduler-plugins/pkg/scarceresourceavoidance"
 
 	"k8s.io/component-base/cli"
 	_ "k8s.io/component-base/metrics/prometheus/clientgo" // for rest client metric registration
@@ -64,6 +66,8 @@ func main() {
 		// app.WithPlugin(crossnodepreemption.Name, crossnodepreemption.New),
 		app.WithPlugin(podstate.Name, podstate.New),
 		app.WithPlugin(qos.Name, qos.New),
+		app.WithPlugin(noderesourcesfitplus.Name, noderesourcesfitplus.New),
+		app.WithPlugin(scarceresourceavoidance.Name, scarceresourceavoidance.New),
 	)
 
 	code := cli.Run(command)
