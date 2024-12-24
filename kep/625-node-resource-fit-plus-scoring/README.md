@@ -94,9 +94,7 @@ finalScoreNode = (allocatablesResourcesNum - requestsResourcesNum) * framework.M
 
 ### Test Plan
 
-Comprehensive unit tests will be added to ensure that each functionality works as expected. Additionally, detailed integration tests will be implemented to verify that the scheduler plugin and IO Driver interact without any issue.
-
-Finally, a basic e2e test will be included to ensure that all components can work together properly.
+Comprehensive unit tests will be added to ensure that each functionality works as expected.
 
 ### Graduation Criteria
 
