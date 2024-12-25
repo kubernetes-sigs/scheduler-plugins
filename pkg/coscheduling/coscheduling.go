@@ -29,6 +29,7 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
@@ -112,7 +113,7 @@ func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]framework.Cluster
 	// Please follow: eventhandlers.go#L403-L410
 	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
 	return []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add}},
+		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add}, QueueingHintFn: cs.isSchedulableAfterPodChange},
 		{Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update}},
 	}, nil
 }
@@ -263,4 +264,25 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 		}
 	})
 	cs.pgMgr.DeletePermittedPodGroup(ctx, pgName)
+}
+
+// isSchedulableAfterPodChange is invoked for update pod events reported by an informer.
+func (cs *Coscheduling) isSchedulableAfterPodChange(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) (framework.QueueingHint, error) {
+	_, modifiedPod, err := schedutil.As[*v1.Pod](nil, newObj)
+	if err != nil {
+		return framework.Queue, fmt.Errorf("unexpected object in isSchedulableAfterClaimChange: %w", err)
+	}
+
+	if pod.UID != modifiedPod.UID {
+		logger.V(7).Info("pod is not schedulable after change in other pod", "pod", klog.KObj(pod), "modifiedPod", klog.KObj(modifiedPod))
+		return framework.QueueSkip, nil
+	}
+
+	_, pg := cs.pgMgr.GetPodGroup(context.TODO(), pod)
+	if pg == nil {
+		logger.V(7).Info("pod is not part of a PodGroup and thus not schedulable",
+			"pod", klog.KObj(pod))
+		return framework.QueueSkip, nil
+	}
+	return framework.Queue, nil
 }

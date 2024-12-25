@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clicache "k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
@@ -645,6 +646,108 @@ func TestPostFilter(t *testing.T) {
 			_, got := pl.PostFilter(ctx, framework.NewCycleState(), tt.pod, nodeStatusMap)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Want %v, but got %v", tt.want, got)
+			}
+		})
+	}
+}
+
+func Test_isSchedulableAfterPodChange(t *testing.T) {
+	scheduleTimeout := 10 * time.Second
+	capacity := map[v1.ResourceName]string{
+		v1.ResourceCPU: "4",
+	}
+	nodes := []*v1.Node{
+		st.MakeNode().Name("node").Capacity(capacity).Obj(),
+	}
+
+	testcases := map[string]struct {
+		pod      *v1.Pod
+		pgs      []*v1alpha1.PodGroup
+		obj      interface{}
+		wantHint framework.QueueingHint
+		wantErr  bool
+	}{
+		"backoff-with-wrong-new-object": {
+			pod: st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			obj: "not a pod",
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
+			wantErr: true,
+		},
+		"backoff-with-correct-case": {
+			pod: st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			obj: st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
+			wantHint: framework.Queue,
+		},
+		"backoff-with-wrong-uid-case": {
+			pod: st.MakePod().Name("p").Namespace("ns").UID("p").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			obj: st.MakePod().Name("p").Namespace("ns").UID("failed").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
+			wantHint: framework.QueueSkip,
+		},
+		"backoff-with-no-podgroup-case": {
+			pod:      st.MakePod().Name("p").Namespace("ns").UID("p").Obj(),
+			obj:      st.MakePod().Name("p").Namespace("ns").UID("p").Obj(),
+			pgs:      []*v1alpha1.PodGroup{},
+			wantHint: framework.QueueSkip,
+		},
+	}
+
+	for name, tt := range testcases {
+		t.Run(name, func(t *testing.T) {
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			// Compile all objects into `objs`.
+			var objs []runtime.Object
+			for _, pg := range tt.pgs {
+				objs = append(objs, pg)
+			}
+
+			client, err := tu.NewFakeClient(objs...)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cs := clientsetfake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			podInformer := informerFactory.Core().V1().Pods()
+
+			pl := &Coscheduling{
+				pgMgr: core.NewPodGroupManager(
+					client,
+					tu.NewFakeSharedLister(nil, nodes),
+					&scheduleTimeout,
+					podInformer,
+				),
+				scheduleTimeout: &scheduleTimeout,
+			}
+
+			informerFactory.Start(ctx.Done())
+			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
+				t.Fatal("WaitForCacheSync failed")
+			}
+
+			gotHint, err := pl.isSchedulableAfterPodChange(klog.FromContext(ctx), tt.pod, nil, tt.obj)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("want an error, got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("want no error, got: %v", err)
+			}
+			if tt.wantHint != gotHint {
+				t.Fatalf("want %#v, got %#v", tt.wantHint.String(), gotHint.String())
 			}
 		})
 	}
