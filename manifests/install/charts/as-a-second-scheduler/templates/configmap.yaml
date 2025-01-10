@@ -1,33 +1,44 @@
-{{- if .Values.plugins.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: scheduler-config
-  namespace: {{ .Release.Namespace }}
+  name: network-cost-scheduler-config
+  namespace: customized-ks
 data:
-  scheduler-config.yaml: |
-    apiVersion: kubescheduler.config.k8s.io/v1
+  nc-scheduler-config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1 
     kind: KubeSchedulerConfiguration
-    leaderElection:
+    leaderElection: 
       leaderElect: {{ .Values.scheduler.leaderElect }}
-      resourceNamespace: {{ .Release.Namespace }}
-      resourceName: {{ .Values.scheduler.name }}
+    clientConnection:
+      kubeconfig: "/etc/kubernetes/cred/my-scheduler.kubeconfig"
     profiles:
-    # Compose all plugins in one profile
-    - schedulerName: {{ .Values.scheduler.name }}
-      plugins:
-        multiPoint:
-          enabled:
-          {{- range $.Values.plugins.enabled }}
-          - name: {{ title . }}
-          {{- end }}
-          disabled:
-          {{- range $.Values.plugins.disabled }}
-          - name: {{ title . }}
-          {{- end }}
-      {{- if $.Values.pluginConfig }}
-      pluginConfig: {{ toYaml $.Values.pluginConfig | nindent 6 }}
-      {{- end }}
-
-  {{- /* TODO: wire CRD installation with enabled plugins. */}}
-{{- end }}
+      - schedulerName: network-cost-aware-scheduler
+        plugins:
+          queueSort:
+            enabled:
+              - name: TopologicalSort
+            disabled:
+              - name: "*"
+          preFilter:
+            enabled:
+              - name: NetworkCostAware
+          filter:
+            enabled:
+              - name: NetworkCostAware
+          score:
+            disabled:
+              - name: NodeResourcesFit
+            enabled:
+              - name: NetworkCostAware
+                weight: 5
+        pluginConfig:
+          - name: TopologicalSort
+            args:
+              namespaces:
+                - "default"
+          - name: NetworkCostAware
+            args:
+              namespaces:
+                - "default"
+              weightsName: "NetperfCosts" # or Dijkstra
+              networkTopologyName: "net-topology-test"

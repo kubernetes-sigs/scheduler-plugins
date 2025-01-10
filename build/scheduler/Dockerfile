@@ -19,7 +19,7 @@ WORKDIR /workspace
 COPY . .
 ARG TARGETARCH
 #RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
-RUN make build-controller GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
+RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 
 WORKDIR /bin

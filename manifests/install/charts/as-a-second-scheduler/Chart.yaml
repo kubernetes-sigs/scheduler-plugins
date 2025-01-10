@@ -1,5 +1,7 @@
 apiVersion: v2
-name: scheduler-plugins
+# name: scheduler-plugins
+#amira
+name: customized-ks
 description: deploy scheduler plugin as a second scheduler in cluster
 
 # A chart can be either an 'application' or a 'library' chart.
