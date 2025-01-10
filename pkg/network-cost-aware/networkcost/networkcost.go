@@ -34,7 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	networkcostawareutil "sigs.k8s.io/scheduler-plugins/pkg/network-cost-aware/util" //Amira
+
+	networkawareutil "sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"

@@ -16,7 +16,7 @@ data:
         plugins:
           queueSort:
             enabled:
-              - name: TopologicalSort
+              - name: TopologicalcnSort
             disabled:
               - name: "*"
           preFilter:
@@ -32,7 +32,7 @@ data:
               - name: NetworkCostAware
                 weight: 5
         pluginConfig:
-          - name: TopologicalSort
+          - name: TopologicalcnSort
             args:
               namespaces:
                 - "default"
