@@ -166,7 +166,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 
 	// This indicates there are already enough Pods satisfying the PodGroup,
 	// so don't bother to reject the whole PodGroup.
-	assigned := cs.pgMgr.CalculateAssignedPods(ctx, pg.Name, pod.Namespace)
+	assigned := cs.pgMgr.GetAssignedPodCount(pgName)
 	if assigned >= int(pg.Spec.MinMember) {
 		lh.V(4).Info("Assigned pods", "podGroup", klog.KObj(pg), "assigned", assigned)
 		return &framework.PostFilterResult{}, framework.NewStatus(framework.Unschedulable)
@@ -256,6 +256,7 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 	if pg == nil {
 		return
 	}
+	cs.pgMgr.Unreserve(ctx, pod)
 	cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == pod.Namespace && util.GetPodGroupLabel(waitingPod.GetPod()) == pg.Name {
 			lh.V(3).Info("Unreserve rejects", "pod", klog.KObj(waitingPod.GetPod()), "podGroup", klog.KObj(pg))

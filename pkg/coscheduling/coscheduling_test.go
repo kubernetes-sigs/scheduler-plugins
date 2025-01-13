@@ -622,24 +622,27 @@ func TestPostFilter(t *testing.T) {
 			cs := clientsetfake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
-
+			pgMgr := core.NewPodGroupManager(
+				client,
+				tu.NewFakeSharedLister(tt.existingPods, nodes),
+				&scheduleTimeout,
+				podInformer,
+			)
 			pl := &Coscheduling{
 				frameworkHandler: f,
-				pgMgr: core.NewPodGroupManager(
-					client,
-					tu.NewFakeSharedLister(tt.existingPods, nodes),
-					&scheduleTimeout,
-					podInformer,
-				),
-				scheduleTimeout: &scheduleTimeout,
+				pgMgr:            pgMgr,
+				scheduleTimeout:  &scheduleTimeout,
 			}
 
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
 			}
+			addFunc := core.AddPodFactory(pgMgr)
 			for _, p := range tt.existingPods {
 				podInformer.Informer().GetStore().Add(p)
+				// we call add func here because we can not ensure existing pods are added before premit are called
+				addFunc(p)
 			}
 
 			_, got := pl.PostFilter(ctx, framework.NewCycleState(), tt.pod, nodeStatusMap)

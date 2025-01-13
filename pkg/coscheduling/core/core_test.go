@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clicache "k8s.io/client-go/tools/cache"
@@ -170,6 +171,7 @@ func TestPreFilter(t *testing.T) {
 				scheduleTimeout:      &scheduleTimeout,
 				permittedPG:          newCache(),
 				backedOffPG:          newCache(),
+				assignedPodsByPG:     make(map[string]sets.Set[string]),
 			}
 
 			informerFactory.Start(ctx.Done())
@@ -264,19 +266,17 @@ func TestPermit(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
 
-			pgMgr := &PodGroupManager{
-				client:               client,
-				snapshotSharedLister: tu.NewFakeSharedLister(tt.existingPods, nodes),
-				podLister:            podInformer.Lister(),
-				scheduleTimeout:      &scheduleTimeout,
-			}
+			pgMgr := NewPodGroupManager(client, tu.NewFakeSharedLister(tt.existingPods, nodes), &scheduleTimeout, podInformer)
 
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
 			}
+			addFunc := AddPodFactory(pgMgr)
 			for _, p := range tt.existingPods {
 				podInformer.Informer().GetStore().Add(p)
+				// we call add func here because we can not ensure existing pods are added before premit are called
+				addFunc(p)
 			}
 
 			if got := pgMgr.Permit(ctx, &framework.CycleState{}, tt.pod); got != tt.want {
