@@ -18,6 +18,7 @@ package qos
 
 import (
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -31,6 +32,8 @@ func createPodInfo(pod *v1.Pod) *framework.PodInfo {
 }
 
 func TestSortLess(t *testing.T) {
+	earlierTime := time.Now()
+	laterTime := earlierTime.Add(time.Second)
 	tests := []struct {
 		name   string
 		pInfo1 *framework.QueuedPodInfo
@@ -58,14 +61,16 @@ func TestSortLess(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "p1 and p2 are both BestEfforts",
+			name: "p1 and p2 are both BestEfforts, but p2 is added to schedulingQ earlier than p1",
 			pInfo1: &framework.QueuedPodInfo{
-				PodInfo: createPodInfo(makePod("p1", 0, nil, nil)),
+				PodInfo:   createPodInfo(makePod("p1", 0, nil, nil)),
+				Timestamp: laterTime,
 			},
 			pInfo2: &framework.QueuedPodInfo{
-				PodInfo: createPodInfo(makePod("p2", 0, nil, nil)),
+				PodInfo:   createPodInfo(makePod("p2", 0, nil, nil)),
+				Timestamp: earlierTime,
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "p1 is BestEfforts, p2 is Guaranteed",
@@ -88,14 +93,16 @@ func TestSortLess(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "both p1 and p2 are Burstable",
+			name: "both p1 and p2 are Burstable, but p2 is added to schedulingQ earlier than p1",
 			pInfo1: &framework.QueuedPodInfo{
-				PodInfo: createPodInfo(makePod("p1", 0, getResList("100m", "100Mi"), getResList("200m", "200Mi"))),
+				PodInfo:   createPodInfo(makePod("p1", 0, getResList("100m", "100Mi"), getResList("200m", "200Mi"))),
+				Timestamp: laterTime,
 			},
 			pInfo2: &framework.QueuedPodInfo{
-				PodInfo: createPodInfo(makePod("p2", 0, getResList("100m", "100Mi"), getResList("200m", "200Mi"))),
+				PodInfo:   createPodInfo(makePod("p2", 0, getResList("100m", "100Mi"), getResList("200m", "200Mi"))),
+				Timestamp: earlierTime,
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "p1 is Guaranteed, p2 is Burstable",
@@ -108,12 +115,26 @@ func TestSortLess(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "both p1 and p2 are Guaranteed",
+			name: "both p1 and p2 are Guaranteed, but p1 is added to schedulingQ earlier than p2",
 			pInfo1: &framework.QueuedPodInfo{
-				PodInfo: createPodInfo(makePod("p1", 0, getResList("100m", "100Mi"), getResList("100m", "100Mi"))),
+				PodInfo:   createPodInfo(makePod("p1", 0, getResList("100m", "100Mi"), getResList("100m", "100Mi"))),
+				Timestamp: earlierTime,
 			},
 			pInfo2: &framework.QueuedPodInfo{
-				PodInfo: createPodInfo(makePod("p2", 0, getResList("100m", "100Mi"), getResList("100m", "100Mi"))),
+				PodInfo:   createPodInfo(makePod("p2", 0, getResList("100m", "100Mi"), getResList("100m", "100Mi"))),
+				Timestamp: laterTime,
+			},
+			want: true,
+		},
+		{
+			name: "both p1 and p2 are Guaranteed, but p1 is added to schedulingQ earlier than p2",
+			pInfo1: &framework.QueuedPodInfo{
+				PodInfo:   createPodInfo(makePod("p1", 0, getResList("100m", "100Mi"), getResList("100m", "100Mi"))),
+				Timestamp: earlierTime,
+			},
+			pInfo2: &framework.QueuedPodInfo{
+				PodInfo:   createPodInfo(makePod("p2", 0, getResList("100m", "100Mi"), getResList("100m", "100Mi"))),
+				Timestamp: laterTime,
 			},
 			want: true,
 		},
