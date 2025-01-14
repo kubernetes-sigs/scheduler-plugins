@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +42,7 @@ import (
 )
 
 func TestQOSPlugin(t *testing.T) {
+	// ci test
 	testCtx := &testContext{}
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
@@ -118,20 +118,14 @@ func TestQOSPlugin(t *testing.T) {
 	// We will expect them to be scheduled in a reversed order.
 	t.Logf("Start to create 3 Pods.")
 	// Concurrently create all Pods.
-	var wg sync.WaitGroup
 	for _, pod := range pods {
-		wg.Add(1)
-		go func(p *v1.Pod) {
-			defer wg.Done()
-			_, err = cs.CoreV1().Pods(ns).Create(testCtx.Ctx, p, metav1.CreateOptions{})
-			if err != nil {
-				t.Errorf("Failed to create Pod %q: %v", p.Name, err)
-			} else {
-				t.Logf("Created Pod %q", p.Name)
-			}
-		}(pod)
+		_, err = cs.CoreV1().Pods(ns).Create(testCtx.Ctx, pod, metav1.CreateOptions{})
+		if err != nil {
+			t.Errorf("Failed to create Pod %q: %v", pod.Name, err)
+		} else {
+			t.Logf("Created Pod %q", pod.Name)
+		}
 	}
-	wg.Wait()
 	defer cleanupPods(t, testCtx, pods)
 
 	// Wait for all Pods are in the scheduling queue.
