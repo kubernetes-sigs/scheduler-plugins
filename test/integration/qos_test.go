@@ -98,18 +98,22 @@ func TestQOSPlugin(t *testing.T) {
 	// Make pods[1] Burstable.
 	pods[1].Spec.Containers[0].Resources = v1.ResourceRequirements{
 		Requests: v1.ResourceList{
+			v1.ResourceCPU:    *resource.NewMilliQuantity(50, resource.DecimalSI),
 			v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
 		},
 		Limits: v1.ResourceList{
+			v1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
 			v1.ResourceMemory: *resource.NewQuantity(200, resource.DecimalSI),
 		},
 	}
 	// Make pods[2] Guaranteed.
 	pods[2].Spec.Containers[0].Resources = v1.ResourceRequirements{
 		Requests: v1.ResourceList{
+			v1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
 			v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
 		},
 		Limits: v1.ResourceList{
+			v1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
 			v1.ResourceMemory: *resource.NewQuantity(100, resource.DecimalSI),
 		},
 	}
@@ -161,7 +165,6 @@ func TestQOSPlugin(t *testing.T) {
 		actualOrder[i] = podInfo.Pod.Name
 		t.Logf("Popped Pod %q", podInfo.Pod.Name)
 	}
-
 	if !reflect.DeepEqual(actualOrder, expectedOrder) {
 		t.Errorf("Expected Pod order %v, but got %v", expectedOrder, actualOrder)
 	} else {
