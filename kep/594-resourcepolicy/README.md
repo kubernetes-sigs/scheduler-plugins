@@ -23,39 +23,34 @@
 <!-- /toc -->
 
 ## Summary
-This proposal introduces a plugin to allow users to specify the priority of different resources and max resource 
-consumption for workload on differnet resources.
+This proposal introduces a plugin that enables users to set priorities for various resources and define maximum resource consumption limits for workloads across different resources.
 
 ## Motivation
-The machines in a Kubernetes cluster are typically heterogeneous, with varying CPU, memory, GPU, and pricing. To 
+A Kubernetes cluster typically consists of heterogeneous machines, with varying SKUs on CPU, memory, GPU, and pricing. To
 efficiently utilize the different resources available in the cluster, users can set priorities for machines of different 
 types and configure resource allocations for different workloads. Additionally, they may choose to delete pods running 
 on low priority nodes instead of high priority ones. 
 
 ### Use Cases
 
-1. As a user of cloud services, there are some stable but expensive ECS instances and some unstable but cheaper Spot 
-instances in my cluster. I hope that my workload can be deployed first on stable ECS instances, and during business peak 
-periods, the Pods that are scaled out are deployed on Spot instances. At the end of the business peak, the Pods on Spot 
-instances are prioritized to be scaled in.
+1. As a administrator of kubernetes cluster, there are some static but expensive VM instances and some dynamic but cheaper Spot 
+instances in my cluster. I hope to restrict the resource consumption on each kind of resource for different workloads to limit the cost. 
+I hope that important workloads in my cluster can be deployed first on static VM instances so that they will not worry about been preempted. And during business peak periods, the Pods that are scaled up are deployed on cheap, spot instances. At the end of the business peak, the Pods on Spot 
+instances are prioritized to be scaled down.
 
 ### Goals
 
-1. Develop a filter plugin to restrict the resource consumption on each unit for different workloads.
-2. Develop a score plugin to favor nodes matched by a high priority unit.
+1. Develop a filter plugin to restrict the resource consumption on each kind of resource for different workloads.
+2. Develop a score plugin to favor nodes matched by a high priority kind of resource.
 3. Automatically setting deletion costs on Pods to control the scaling in sequence of workloads through a controller.
 
 ### Non-Goals
 
-1. Modify the workload controller to support deletion costs. If the workload don't support deletion costs, scaling in 
-sequence will be random.
-2. When creating a ResourcePolicy, if the number of Pods has already violated the quantity constraint of the 
-ResourcePolicy, we will not attempt to delete the excess Pods.
-
+1. Scheduler will not delete the pods.
 
 ## Proposal
 
-### CRD API
+### API
 ```yaml
 apiVersion: scheduling.sigs.x-k8s.io/v1alpha1
 kind: ResourcePolicy
@@ -67,8 +62,6 @@ spec:
     - pod-template-hash
   matchPolicy:
     ignoreTerminatingPod: true
-    ignorePreviousPod: false
-  forceMaxNum: false
   podSelector:
     matchExpressions:
       - key: key1
@@ -105,49 +98,70 @@ spec:
         key1: value3
 ```
 
-`Priority` define the priority of each unit. Pods will be scheduled on units with a higher priority. 
-If all units have the same priority, resourcepolicy will only limit the max pod on these units.
+```go
+type ResourcePolicy struct {
+  ObjectMeta
+  TypeMeta
 
-`Strategy` indicate how we treat the nodes doesn't match any unit. 
+  Spec ResourcePolicySpec
+}
+type ResourcePolicySpec struct {
+  MatchLabelKeys []string
+  MatchPolicy MatchPolicy
+  Strategy string
+  PodSelector metav1.LabelSelector
+  Units []Unit
+}
+type MatchPolicy struct {
+  IgnoreTerminatingPod bool
+}
+type Unit struct {
+  Priority *int32
+  MaxCount *int32
+  NodeSelector metav1.LabelSelector
+}
+```
+
+Pods will be matched by the ResourcePolicy in same namespace when the `.spec.podSelector`. And if `.spec.matchPolicy.ignoreTerminatingPod` is `true`, pods with Non-Zero `.spec.deletionTimestamp` will be ignored.
+ResourcePolicies will never match pods in different namesapces. One pod can not be matched by more than one Resource Policies.
+
+Pods can only be scheduled on units defined in `.spec.units` and this behavior can be changed by `.spec.strategy`. Each item in `.spec.units` contains a set of nodes that match the `NodeSelector` which describes a kind of resource in the cluster.
+
+`.spec.units[].priority` define the priority of each unit. Units with higher priority will get higher score in the score plugin.
+If all units have the same priority, resourcepolicy will only limit the max pod on these units.
+If the `.spec.units[].priority` is not set, the default value is 0.
+`.spec.units[].maxCount` define the maximum number of pods that can be scheduled on each unit. If `.spec.units[].maxCount` is not set, pods can always be scheduled on the units except there is no enough resource.
+
+`.spec.strategy` indicate how we treat the nodes doesn't match any unit. 
 If strategy is `required`, the pod can only be scheduled on nodes that match the units in resource policy. 
 If strategy is `prefer`, the pod can be scheduled on all nodes, these nodes not match the units will be 
 considered after all nodes match the units. So if the strategy is `required`, we will return `unschedulable` 
 for those nodes not match the units.
 
-`MatchLabelKeys` indicate how we group the pods matched by `podSelector` and `matchPolicy`, its behavior is like 
-`MatchLabelKeys` in `PodTopologySpread`.
-
-`matchPolicy` indicate if we should ignore some kind pods when calculate pods in certain unit.
-
-If `forceMaxNum` is set `true`, we will not try the next units when one unit is not full, this property have no effect
-when `max` is not set in units.
+`.spec.matchLabelKeys` indicate how we group the pods matched by `podSelector` and `matchPolicy`, its behavior is like 
+`.spec.matchLabelKeys` in `PodTopologySpread`.
 
 ### Implementation Details
 
-#### Scheduler Plugins
-
-For each unit, we will record which pods were scheduled on it to prevent too many pods scheduled on it.
-
-##### PreFilter
+#### PreFilter
 PreFilter check if the current pods match only one resource policy. If not, PreFilter will reject the pod.
 If yes, PreFilter will get the number of pods on each unit to determine which units are available for the pod
 and write this information into cycleState.
 
-##### Filter
+#### Filter
 Filter check if the node belongs to an available unit. If the node doesn't belong to any unit, we will return
-success if the strategy is `prefer`, otherwise we will return unschedulable.
+success if the `.spec.strategy` is `prefer`, otherwise we will return unschedulable.
 
 Besides, filter will check if the pods that was scheduled on the unit has already violated the quantity constraint.
-If the number of pods has reach the `maxCount`, all the nodes in unit will be marked unschedulable.
+If the number of pods has reach the `.spec.unit[].maxCount`, all the nodes in unit will be marked unschedulable.
 
-##### Score
-If `priority` is set in resource policy, we will schedule pod based on `priority`. Default priority is 1, and minimum 
-priority is 1.
+#### Score
+If `.spec.unit[].priority` is set in resource policy, we will schedule pod based on `.spec.unit[].priority`. Default priority is 0, and minimum 
+priority is 0.
 
 Score calculation details: 
 
-1. calculate priority score, `scorePriority = (priority-1) * 20`, to make sure we give nodes without priority a minimum 
-score.
+1. calculate priority score, `scorePriority = (priority) * 20`, to make sure we give nodes without priority a minimum score.
 2. normalize score
 
 #### Resource Policy Controller
