@@ -128,14 +128,7 @@ func GetEffectiveResource(pod *v1.Pod, fn func(container *v1.Container) v1.Resou
 	}
 	// take max(sum_pod, any_init_container)
 	for _, container := range pod.Spec.InitContainers {
-		for rName, rQuantity := range fn(&container) {
-			switch rName {
-			case v1.ResourceCPU:
-				setMax(&result.MilliCPU, rQuantity.MilliValue())
-			case v1.ResourceMemory:
-				setMax(&result.Memory, rQuantity.Value())
-			}
-		}
+		result.SetMaxResource(fn(&container))
 	}
 	// add any pod overhead
 	if pod.Spec.Overhead != nil {

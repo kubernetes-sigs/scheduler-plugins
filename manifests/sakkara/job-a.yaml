@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: default
+  generateName: job-a-
+spec:
+  parallelism: 8
+  template:
+    metadata:
+      labels:
+        sakkara.group.name: "group-a"
+    spec:
+      schedulerName: sakkara-scheduler
+      containers:
+      - name: main
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        command: ["sh", "-c", "sleep 10"]
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+            nvidia.com/gpu: "1"
+      restartPolicy: OnFailure

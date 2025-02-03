@@ -1,0 +1,22 @@
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: false
+clientConnection:
+  kubeconfig: "REPLACE_ME_WITH_KUBE_CONFIG_PATH"
+profiles:
+- schedulerName: sakkara-scheduler
+  plugins:
+    multiPoint:
+      enabled:
+      - name: ClusterTopologyPlacementGroup
+        weight: 10
+    queueSort:
+      enabled:
+      - name: ClusterTopologyPlacementGroup
+      disabled:
+      - name: "*"
+  pluginConfig:
+  - name: ClusterTopologyPlacementGroup
+    args:
+      topologyConfigMapNameSpace: sakkara-scheduler
