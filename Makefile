@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
+GO_VERSION := 1.22.0
 INTEGTESTENVVAR=SCHED_PLUGINS_TEST_VERBOSE=1
 
 # Manage platform and builders
-PLATFORMS ?= linux/amd64,linux/arm64,linux/s390x,linux/ppc64le
+PLATFORMS ?= linux/amd64#,linux/arm64,linux/s390x,linux/ppc64le
 BUILDER ?= docker
 ifeq ($(BUILDER),podman)
 	ALL_FLAG=--all
@@ -25,23 +25,22 @@ else
 endif
 
 # REGISTRY is the container registry to push
-# into. The default is to push to the staging
-# registry, not production(registry.k8s.io).
-REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
-RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
-RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
-RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
+REGISTRY?=audhub
+
+# Set a valid RELEASE_VERSION for testing
+RELEASE_VERSION := v0.30.6 # <-- Hardcoded version for testing
+RELEASE_IMAGE := fspaas:kube-scheduler-$(RELEASE_VERSION)
+RELEASE_CONTROLLER_IMAGE := controller-$(RELEASE_VERSION)
+
 GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
 EXTRA_ARGS=""
 
 # VERSION is the scheduler's version
-#
-# The RELEASE_VERSION variable can have one of two formats:
-# v20201009-v0.18.800-46-g939c1c0 - automated build for a commit(not a tag) and also a local build
-# v20200521-v0.18.800             - automated build for a tag
-VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
-VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
+VERSION := $(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
+VERSION := $(or $(VERSION),v0.0.$(shell date +%Y%m%d))
+
+@echo "Using version: $(VERSION)" # <-- Debug output to ensure version is set correctly
 
 .PHONY: all
 all: build

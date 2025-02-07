@@ -3,10 +3,16 @@
 # Declare variables to be passed into your templates.
 
 scheduler:
-  name: scheduler-plugins-scheduler
-  image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.6
+  #name: scheduler-plugins-scheduler
+  name: network-cost-aware-scheduler   #amira
+  #image: registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.6
+  image: audhub/fspaas:kube-scheduler-v0.30.6 #amira
   command:
   - /bin/kube-scheduler
+  - --authentication-kubeconfig=/etc/kubernetes/cred/my-scheduler.kubeconfig
+  - --authorization-kubeconfig=/etc/kubernetes/cred/my-scheduler.kubeconfig
+  - --config=/etc/kubernetes/nc-scheduler-config.yaml
+  - -v=9
   replicaCount: 1
   leaderElect: false
   priorityClassName: ""
@@ -16,8 +22,10 @@ scheduler:
   tolerations: []
 
 controller:
-  name: scheduler-plugins-controller
-  image: registry.k8s.io/scheduler-plugins/controller:v0.30.6
+  #name: scheduler-plugins-controller
+  name: network-cost-aware-controller #amira
+  #image: registry.k8s.io/scheduler-plugins/controller:v0.30.6
+  image: audhub/controller-v0.30.6:latest #amira
   replicaCount: 1
   leaderElect: false
   priorityClassName: ""
@@ -30,14 +38,16 @@ controller:
 # as they need extra RBAC privileges on metrics.k8s.io.
 
 plugins:
-  enabled: ["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch","NodeResourcesAllocatable"]
+  #enabled: ["Coscheduling","CapacityScheduling","NodeResourceTopologyMatch","NodeResourcesAllocatable"]
+  #amira
+  enabled: ["NetworkCostAware"]
   disabled: ["PrioritySort"] # only in-tree plugins need to be defined here
 
 # Customize the enabled plugins' config.
 # Refer to the "pluginConfig" section of manifests/<plugin>/scheduler-config.yaml.
 # For example, for Coscheduling plugin, you want to customize the permit waiting timeout to 10 seconds:
 pluginConfig:
-- name: Coscheduling
+- name: NetworkCostAware #Coscheduling
   args:
     permitWaitingTimeSeconds: 10 # default is 60
 # Or, customize the other plugins
