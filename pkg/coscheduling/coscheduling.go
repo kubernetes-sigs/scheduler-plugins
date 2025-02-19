@@ -84,6 +84,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
 	pgMgr := core.NewPodGroupManager(
+		ctx,
 		client,
 		handle.SnapshotSharedLister(),
 		&scheduleTimeDuration,
@@ -246,6 +247,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState,
 
 // Reserve is the functions invoked by the framework at "reserve" extension point.
 func (cs *Coscheduling) Reserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
+	cs.pgMgr.Reserve(ctx, pod)
 	return nil
 }
 
