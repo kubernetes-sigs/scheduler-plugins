@@ -26,11 +26,11 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	networkawareutil "sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 
 	agv1alpha "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
 )
@@ -81,15 +81,13 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 		return nil, err
 	}
 
-	client, err := client.New(handle.KubeConfig(), client.Options{
-		Scheme: scheme,
-	})
+	c, _, err := util.NewClientWithCachedReader(ctx, handle.KubeConfig(), scheme)
 	if err != nil {
 		return nil, err
 	}
 
 	pl := &TopologicalSort{
-		Client:     client,
+		Client:     c,
 		handle:     handle,
 		namespaces: args.Namespaces,
 	}

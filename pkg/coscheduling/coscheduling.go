@@ -29,7 +29,6 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
@@ -74,7 +73,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	_ = clientscheme.AddToScheme(scheme)
 	_ = v1.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
-	client, err := client.New(handle.KubeConfig(), client.Options{Scheme: scheme})
+	c, _, err := util.NewClientWithCachedReader(ctx, handle.KubeConfig(), scheme)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +83,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
 	pgMgr := core.NewPodGroupManager(
-		client,
+		c,
 		handle.SnapshotSharedLister(),
 		&scheduleTimeDuration,
 		// Keep the podInformer (from frameworkHandle) as the single source of Pods.

@@ -17,6 +17,7 @@ limitations under the License.
 package util
 
 import (
+	"context"
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
@@ -30,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
@@ -290,13 +292,13 @@ func NewFakeClient(objs ...runtime.Object) (client.WithWatch, error) {
 
 // NewClientOrDie returns a generic controller-runtime client or panic upon any error.
 // This function is used by integration tests.
-func NewClientOrDie(cfg *rest.Config) client.Client {
+func NewClientOrDie(ctx context.Context, cfg *rest.Config) client.Client {
 	scheme := runtime.NewScheme()
 	_ = clientscheme.AddToScheme(scheme)
 	_ = v1.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
 
-	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	c, _, err := util.NewClientWithCachedReader(ctx, cfg, scheme)
 	if err != nil {
 		panic(err)
 	}
