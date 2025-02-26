@@ -37,11 +37,10 @@ import (
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	scheconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
 	networkawareutil "sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
+	clientutil "sigs.k8s.io/scheduler-plugins/pkg/util"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 
 	appgroupapi "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup"
@@ -59,7 +58,7 @@ func TestNetworkOverheadPlugin(t *testing.T) {
 	utilruntime.Must(agv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(ntv1alpha1.AddToScheme(scheme))
 
-	client, err := ctrlclient.New(globalKubeConfig, ctrlclient.Options{Scheme: scheme})
+	client, _, err := clientutil.NewClientWithCachedReader(testCtx.Ctx, globalKubeConfig, scheme)
 
 	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
 	testCtx.ClientSet = cs

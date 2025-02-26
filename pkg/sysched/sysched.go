@@ -22,6 +22,7 @@ import (
 
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 type SySched struct {
@@ -429,12 +430,12 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 
 	v1beta1.AddToScheme(scheme)
 
-	client, err := client.New(handle.KubeConfig(), client.Options{Scheme: scheme})
+	c, _, err := util.NewClientWithCachedReader(ctx, handle.KubeConfig(), scheme)
 	if err != nil {
 		return nil, err
 	}
 
-	sc.client = client
+	sc.client = c
 
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods()
 

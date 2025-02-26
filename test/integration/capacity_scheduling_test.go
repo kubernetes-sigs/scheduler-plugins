@@ -44,7 +44,7 @@ func TestCapacityScheduling(t *testing.T) {
 	testCtx.Ctx, testCtx.CancelFn = context.WithCancel(context.Background())
 
 	cs := kubernetes.NewForConfigOrDie(globalKubeConfig)
-	extClient := util.NewClientOrDie(globalKubeConfig)
+	extClient := util.NewClientOrDie(testCtx.Ctx, globalKubeConfig)
 	testCtx.ClientSet = cs
 	testCtx.KubeConfig = globalKubeConfig
 

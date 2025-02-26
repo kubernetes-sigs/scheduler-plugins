@@ -34,10 +34,10 @@ import (
 	fwkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	imageutils "k8s.io/kubernetes/test/utils/image"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	schedconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	"sigs.k8s.io/scheduler-plugins/pkg/sysched"
+	clientutil "sigs.k8s.io/scheduler-plugins/pkg/util"
 	"sigs.k8s.io/scheduler-plugins/test/util"
 	spo "sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1"
 )
@@ -136,7 +136,7 @@ func TestSyschedPlugin(t *testing.T) {
 	_ = v1alpha1.AddToScheme(scheme)
 	_ = spo.AddToScheme(scheme)
 
-	extClient, err := client.New(globalKubeConfig, client.Options{Scheme: scheme})
+	extClient, _, err := clientutil.NewClientWithCachedReader(testCtx.Ctx, globalKubeConfig, scheme)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestSyschedPlugin(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		nodeName := fmt.Sprintf("fake-node-%d", i)
 		node := st.MakeNode().Name(nodeName).Label("node", nodeName).Obj()
-		//node.Spec.PodCIDR = "192.168.0.1/24"
+		// node.Spec.PodCIDR = "192.168.0.1/24"
 		node.Status.Addresses = make([]v1.NodeAddress, 1)
 		ip := fmt.Sprintf("192.168.1.%v", 1+i)
 		node.Status.Addresses[0] = v1.NodeAddress{

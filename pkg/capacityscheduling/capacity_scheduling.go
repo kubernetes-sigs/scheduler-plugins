@@ -40,7 +40,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
-	ctrlruntimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
@@ -130,18 +129,14 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	}
 	logger := klog.FromContext(ctx)
 
-	client, err := client.New(handle.KubeConfig(), client.Options{Scheme: scheme})
+	client, ccache, err := util.NewClientWithCachedReader(ctx, handle.KubeConfig(), scheme)
 	if err != nil {
 		return nil, err
 	}
 
 	c.client = client
-	dynamicCache, err := ctrlruntimecache.New(handle.KubeConfig(), ctrlruntimecache.Options{Scheme: scheme})
-	if err != nil {
-		return nil, err
-	}
 
-	elasticQuotaInformer, err := dynamicCache.GetInformer(ctx, &v1alpha1.ElasticQuota{})
+	elasticQuotaInformer, err := ccache.GetInformer(ctx, &v1alpha1.ElasticQuota{})
 	if err != nil {
 		return nil, err
 	}
