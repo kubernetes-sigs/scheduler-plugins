@@ -29,6 +29,7 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
@@ -74,7 +75,17 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	_ = clientscheme.AddToScheme(scheme)
 	_ = v1.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
-	client, err := client.New(handle.KubeConfig(), client.Options{Scheme: scheme})
+	ccache, err := ctrlcache.New(handle.KubeConfig(), ctrlcache.Options{
+		Scheme: scheme,
+	})
+	if err != nil {
+		return nil, err
+	}
+	go ccache.Start(ctx)
+	ccache.WaitForCacheSync(ctx)
+	client, err := client.New(handle.KubeConfig(), client.Options{
+		Scheme: scheme,
+		Cache:  &client.CacheOptions{Reader: ccache}})
 	if err != nil {
 		return nil, err
 	}
