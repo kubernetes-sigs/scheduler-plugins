@@ -19,6 +19,7 @@ package preemptiontoleration
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"strings"
 	"testing"
 	"time"
@@ -225,6 +226,7 @@ func (tt testCase) run(t *testing.T) {
 		now = time.Now()
 	}
 	got, err := ExemptedFromPreemption(
+		klog.FromContext(context.Background()),
 		tt.victimCandidate, tt.preemptor,
 		informersFactory.Scheduling().V1().PriorityClasses().Lister(),
 		now,

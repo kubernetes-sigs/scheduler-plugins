@@ -53,6 +53,7 @@ var (
 )
 
 type TargetLoadPacking struct {
+	logger       klog.Logger
 	handle       framework.Handle
 	eventHandler *trimaran.PodAssignEventHandler
 	collector    *trimaran.Collector
@@ -62,7 +63,7 @@ type TargetLoadPacking struct {
 var _ framework.ScorePlugin = &TargetLoadPacking{}
 
 func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the TargetLoadPacking plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.TargetLoadPackingArgs)
@@ -90,6 +91,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	podAssignEventHandler.AddToHandle(handle)
 
 	pl := &TargetLoadPacking{
+		logger:       logger,
 		handle:       handle,
 		eventHandler: podAssignEventHandler,
 		collector:    collector,
@@ -103,7 +105,7 @@ func (pl *TargetLoadPacking) Name() string {
 }
 
 func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	score := framework.MinNodeScore
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
