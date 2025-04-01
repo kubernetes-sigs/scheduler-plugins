@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
+	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -124,14 +125,26 @@ func (cs *Coscheduling) Name() string {
 
 // Less is used to sort pods in the scheduling queue in the following order.
 // 1. Compare the priorities of Pods.
-// 2. Compare the initialization timestamps of PodGroups or Pods.
-// 3. Compare the keys of PodGroups/Pods: <namespace>/<podname>.
+// 2. Compare the Qos of Pods.
+// 3. Compare the initialization timestamps of PodGroups or Pods.
+// 4. Compare the keys of PodGroups/Pods: <namespace>/<podname>.
 func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 	prio1 := corev1helpers.PodPriority(podInfo1.Pod)
 	prio2 := corev1helpers.PodPriority(podInfo2.Pod)
 	if prio1 != prio2 {
 		return prio1 > prio2
 	}
+
+	if v1qos.GetPodQOS(podInfo1.Pod) != v1qos.GetPodQOS(podInfo2.Pod) {
+		if v1qos.GetPodQOS(podInfo1.Pod) == v1.PodQOSBestEffort {
+			return false
+		}
+		if v1qos.GetPodQOS(podInfo1.Pod) == v1.PodQOSBurstable && v1qos.GetPodQOS(podInfo2.Pod) == v1.PodQOSGuaranteed {
+			return false
+		}
+		return true
+	}
+
 	creationTime1 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo1.Pod, *podInfo1.InitialAttemptTimestamp)
 	creationTime2 := cs.pgMgr.GetCreationTimestamp(context.TODO(), podInfo2.Pod, *podInfo2.InitialAttemptTimestamp)
 	if creationTime1.Equal(creationTime2) {
