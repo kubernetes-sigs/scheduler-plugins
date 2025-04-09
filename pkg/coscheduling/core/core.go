@@ -66,6 +66,7 @@ func (s *PermitState) Clone() framework.StateData {
 type Manager interface {
 	PreFilter(context.Context, *corev1.Pod) error
 	Permit(context.Context, *framework.CycleState, *corev1.Pod) Status
+	Reserve(context.Context, *corev1.Pod)
 	Unreserve(context.Context, *corev1.Pod)
 	GetPodGroup(context.Context, *corev1.Pod) (string, *v1alpha1.PodGroup)
 	GetAssignedPodCount(string) int
@@ -95,7 +96,7 @@ type PodGroupManager struct {
 	sync.RWMutex
 }
 
-func AddPodFactory(pgMgr *PodGroupManager) func(obj interface{}) {
+func AddPodFactory(ctx context.Context, pgMgr *PodGroupManager) func(obj interface{}) {
 	return func(obj interface{}) {
 		p, ok := obj.(*corev1.Pod)
 		if !ok {
@@ -104,22 +105,52 @@ func AddPodFactory(pgMgr *PodGroupManager) func(obj interface{}) {
 		if p.Spec.NodeName == "" {
 			return
 		}
-		pgFullName, _ := pgMgr.GetPodGroup(context.Background(), p)
-		if pgFullName == "" {
+		pgMgr.Reserve(ctx, p)
+	}
+}
+
+func UpdatePodFactory(ctx context.Context, pgMgr *PodGroupManager) func(oldObj interface{}, newObj interface{}) {
+	return func(oldObj interface{}, newObj interface{}) {
+		oldPod, ok := oldObj.(*corev1.Pod)
+		if !ok {
 			return
 		}
-		pgMgr.RWMutex.Lock()
-		defer pgMgr.RWMutex.Unlock()
-		if assigned, exist := pgMgr.assignedPodsByPG[pgFullName]; exist {
-			assigned.Insert(p.Name)
-		} else {
-			pgMgr.assignedPodsByPG[pgFullName] = sets.New(p.Name)
+		newPod, ok := newObj.(*corev1.Pod)
+		if !ok {
+			return
+		}
+		// If the pod is assumed or bound, it should be reserved.
+		if oldPod.Spec.NodeName == "" && newPod.Spec.NodeName != "" {
+			pgMgr.Reserve(ctx, newPod)
 		}
 	}
 }
 
+func DelPodFactory(ctx context.Context, pgMgr *PodGroupManager) func(obj interface{}) {
+	return func(obj interface{}) {
+		var pod *corev1.Pod
+		switch t := obj.(type) {
+		case *corev1.Pod:
+			pod = t
+		case cache.DeletedFinalStateUnknown:
+			var ok bool
+			if pod, ok = t.Obj.(*corev1.Pod); !ok {
+				return
+			}
+		default:
+			return
+		}
+		if pod.Spec.NodeName == "" {
+			return
+		}
+		pgMgr.Unreserve(ctx, pod)
+	}
+}
+
 // NewPodGroupManager creates a new operation object.
-func NewPodGroupManager(client client.Client, snapshotSharedLister framework.SharedLister, scheduleTimeout *time.Duration, podInformer informerv1.PodInformer) *PodGroupManager {
+func NewPodGroupManager(
+	ctx context.Context, client client.Client, snapshotSharedLister framework.SharedLister,
+	scheduleTimeout *time.Duration, podInformer informerv1.PodInformer) *PodGroupManager {
 	pgMgr := &PodGroupManager{
 		client:               client,
 		snapshotSharedLister: snapshotSharedLister,
@@ -130,30 +161,9 @@ func NewPodGroupManager(client client.Client, snapshotSharedLister framework.Sha
 		assignedPodsByPG:     map[string]sets.Set[string]{},
 	}
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: AddPodFactory(pgMgr),
-		DeleteFunc: func(obj interface{}) {
-			switch t := obj.(type) {
-			case *corev1.Pod:
-				pod := t
-				if pod.Spec.NodeName == "" {
-					return
-				}
-				pgMgr.Unreserve(context.Background(), pod)
-				return
-			case cache.DeletedFinalStateUnknown:
-				pod, ok := t.Obj.(*corev1.Pod)
-				if !ok {
-					return
-				}
-				if pod.Spec.NodeName == "" {
-					return
-				}
-				pgMgr.Unreserve(context.Background(), pod)
-				return
-			default:
-				return
-			}
-		},
+		AddFunc:    AddPodFactory(ctx, pgMgr),
+		UpdateFunc: UpdatePodFactory(ctx, pgMgr),
+		DeleteFunc: DelPodFactory(ctx, pgMgr),
 	})
 	return pgMgr
 }
@@ -310,6 +320,21 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, state *framework.Cycle
 	}
 
 	return Wait
+}
+
+// Reserve adds Pod to the assignedPodsByPG map when it is scheduled
+func (pgMgr *PodGroupManager) Reserve(ctx context.Context, pod *corev1.Pod) {
+	pgFullName, _ := pgMgr.GetPodGroup(ctx, pod)
+	if pgFullName == "" {
+		return
+	}
+	pgMgr.RWMutex.Lock()
+	defer pgMgr.RWMutex.Unlock()
+	if assigned, exist := pgMgr.assignedPodsByPG[pgFullName]; exist {
+		assigned.Insert(pod.Name)
+	} else {
+		pgMgr.assignedPodsByPG[pgFullName] = sets.New(pod.Name)
+	}
 }
 
 // Unreserve invalidates assigned pod from assignedPodsByPG when schedule or bind failed.
