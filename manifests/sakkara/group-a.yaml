@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: group-a
+  namespace: default
+  labels:
+    "sakkara.group": ""
+data:
+  "name": "group-a"
+  "size": "8"
+  "priority": "0"
+  "constraints": |
+    {
+      "rack": {
+        "type": "pack"
+      },
+      "node": {
+        "type": "spread"
+      }
+    }
