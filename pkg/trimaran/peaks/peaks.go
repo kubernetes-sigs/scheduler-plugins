@@ -47,6 +47,7 @@ const (
 )
 
 type Peaks struct {
+	logger    klog.Logger
 	handle    framework.Handle
 	collector *trimaran.Collector
 	args      *config.PeaksArgs
@@ -76,7 +77,7 @@ func initNodePowerModels(powerModel map[string]config.PowerModel) error {
 }
 
 func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Peaks plugin Input config %+v", obj)
 
 	args, ok := obj.(*config.PeaksArgs)
@@ -94,6 +95,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 		return nil, err
 	}
 	pl := &Peaks{
+		logger:    logger,
 		handle:    handle,
 		collector: collector,
 		args:      args,
@@ -102,7 +104,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 }
 
 func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	score := framework.MinNodeScore
 
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)

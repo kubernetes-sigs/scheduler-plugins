@@ -23,9 +23,8 @@ package loadvariationriskbalancing
 import (
 	"context"
 	"fmt"
-	"math"
-
 	"github.com/paypal/load-watcher/pkg/watcher"
+	"math"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,6 +42,7 @@ const (
 
 // LoadVariationRiskBalancing : scheduler plugin
 type LoadVariationRiskBalancing struct {
+	logger       klog.Logger
 	handle       framework.Handle
 	eventHandler *trimaran.PodAssignEventHandler
 	collector    *trimaran.Collector
@@ -53,7 +53,7 @@ var _ framework.ScorePlugin = &LoadVariationRiskBalancing{}
 
 // New : create an instance of a LoadVariationRiskBalancing plugin
 func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the LoadVariationRiskBalancing plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LoadVariationRiskBalancingArgs)
@@ -70,6 +70,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	podAssignEventHandler.AddToHandle(handle)
 
 	pl := &LoadVariationRiskBalancing{
+		logger:       logger,
 		handle:       handle,
 		eventHandler: podAssignEventHandler,
 		collector:    collector,
@@ -80,7 +81,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 
 // Score : evaluate score for a node
 func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	logger.V(6).Info("Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
 	score := framework.MinNodeScore
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)

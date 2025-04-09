@@ -40,6 +40,7 @@ import (
 
 // Coscheduling is a plugin that schedules pods in a group.
 type Coscheduling struct {
+	logger           klog.Logger
 	frameworkHandler framework.Handle
 	pgMgr            core.Manager
 	scheduleTimeout  *time.Duration
@@ -62,7 +63,7 @@ const (
 // New initializes and returns a new Coscheduling plugin.
 func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 
-	lh := klog.FromContext(ctx)
+	lh := klog.FromContext(ctx).WithValues("plugin", Name)
 	lh.V(5).Info("creating new coscheduling plugin")
 
 	args, ok := obj.(*config.CoschedulingArgs)
@@ -91,6 +92,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 		handle.SharedInformerFactory().Core().V1().Pods(),
 	)
 	plugin := &Coscheduling{
+		logger:           lh,
 		frameworkHandler: handle,
 		pgMgr:            pgMgr,
 		scheduleTimeout:  &scheduleTimeDuration,
@@ -144,7 +146,7 @@ func (cs *Coscheduling) Less(podInfo1, podInfo2 *framework.QueuedPodInfo) bool {
 // 1. Whether the PodGroup that the Pod belongs to is on the deny list.
 // 2. Whether the total number of pods in a PodGroup is less than its `minMember`.
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	lh := klog.FromContext(ctx)
+	lh := klog.FromContext(klog.NewContext(ctx, cs.logger)).WithValues("ExtensionPoint", "PreFilter")
 	// If PreFilter fails, return framework.UnschedulableAndUnresolvable to avoid
 	// any preemption attempts.
 	if err := cs.pgMgr.PreFilter(ctx, pod); err != nil {
@@ -157,7 +159,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 // PostFilter is used to reject a group of pods if a pod does not pass PreFilter or Filter.
 func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod,
 	filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	lh := klog.FromContext(ctx)
+	lh := klog.FromContext(klog.NewContext(ctx, cs.logger)).WithValues("ExtensionPoint", "PostFilter")
 	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		lh.V(4).Info("Pod does not belong to any group", "pod", klog.KObj(pod))
@@ -210,7 +212,7 @@ func (cs *Coscheduling) PreFilterExtensions() framework.PreFilterExtensions {
 
 // Permit is the functions invoked by the framework at "Permit" extension point.
 func (cs *Coscheduling) Permit(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (*framework.Status, time.Duration) {
-	lh := klog.FromContext(ctx)
+	lh := klog.FromContext(klog.NewContext(ctx, cs.logger)).WithValues("ExtensionPoint", "Permit")
 	waitTime := *cs.scheduleTimeout
 	s := cs.pgMgr.Permit(ctx, state, pod)
 	var retStatus *framework.Status
@@ -251,7 +253,7 @@ func (cs *Coscheduling) Reserve(ctx context.Context, state *framework.CycleState
 
 // Unreserve rejects all other Pods in the PodGroup when one of the pods in the group times out.
 func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
-	lh := klog.FromContext(ctx)
+	lh := klog.FromContext(klog.NewContext(ctx, cs.logger)).WithValues("ExtensionPoint", "Unreserve")
 	pgName, pg := cs.pgMgr.GetPodGroup(ctx, pod)
 	if pg == nil {
 		return

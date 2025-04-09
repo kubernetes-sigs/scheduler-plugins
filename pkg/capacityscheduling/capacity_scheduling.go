@@ -58,6 +58,7 @@ func init() {
 // CapacityScheduling is a plugin that implements the mechanism of capacity scheduling.
 type CapacityScheduling struct {
 	sync.RWMutex
+	logger            klog.Logger
 	fh                framework.Handle
 	podLister         corelisters.PodLister
 	pdbLister         policylisters.PodDisruptionBudgetLister
@@ -119,7 +120,9 @@ func (c *CapacityScheduling) Name() string {
 
 // New initializes a new plugin and returns it.
 func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	lh := klog.FromContext(ctx).WithValues("plugin", Name)
 	c := &CapacityScheduling{
+		logger:            lh,
 		fh:                handle,
 		elasticQuotaInfos: NewElasticQuotaInfos(),
 		podLister:         handle.SharedInformerFactory().Core().V1().Pods().Lister(),
@@ -289,7 +292,7 @@ func (c *CapacityScheduling) PreFilterExtensions() framework.PreFilterExtensions
 
 // AddPod from pre-computed data in cycleState.
 func (c *CapacityScheduling) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *v1.Pod, podToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, c.logger))
 
 	elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(cycleState)
 	if err != nil {
@@ -310,7 +313,7 @@ func (c *CapacityScheduling) AddPod(ctx context.Context, cycleState *framework.C
 
 // RemovePod from pre-computed data in cycleState.
 func (c *CapacityScheduling) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *v1.Pod, podToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, c.logger))
 
 	elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(cycleState)
 	if err != nil {
@@ -341,8 +344,9 @@ func (c *CapacityScheduling) PostFilter(ctx context.Context, state *framework.Cy
 		PdbLister:  c.pdbLister,
 		State:      state,
 		Interface: &preemptor{
-			fh:    c.fh,
-			state: state,
+			logger: c.logger,
+			fh:     c.fh,
+			state:  state,
 		},
 	}
 
@@ -352,8 +356,7 @@ func (c *CapacityScheduling) PostFilter(ctx context.Context, state *framework.Cy
 func (c *CapacityScheduling) Reserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
 	c.Lock()
 	defer c.Unlock()
-
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, c.logger)).WithValues("ExtensionPoint", "Reserve")
 
 	elasticQuotaInfo := c.elasticQuotaInfos[pod.Namespace]
 	if elasticQuotaInfo != nil {
@@ -382,8 +385,9 @@ func (c *CapacityScheduling) Unreserve(ctx context.Context, state *framework.Cyc
 }
 
 type preemptor struct {
-	fh    framework.Handle
-	state *framework.CycleState
+	logger klog.Logger
+	fh     framework.Handle
+	state  *framework.CycleState
 }
 
 func (p *preemptor) OrderedScoreFuncs(ctx context.Context, nodesToVictims map[string]*extenderv1.Victims) []func(node string) int64 {
@@ -409,7 +413,7 @@ func (p *preemptor) CandidatesToVictimsMap(candidates []preemption.Candidate) ma
 // We look at the node that is nominated for this pod and as long as there are
 // terminating pods on the node, we don't consider this for preempting more pods.
 func (p *preemptor) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
-	logger := klog.FromContext(context.TODO())
+	logger := p.logger
 
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
 		logger.V(5).Info("Pod is not eligible for preemption because of its preemptionPolicy", "pod", klog.KObj(pod), "preemptionPolicy", v1.PreemptNever)
@@ -492,7 +496,7 @@ func (p *preemptor) SelectVictimsOnNode(
 	nodeInfo *framework.NodeInfo,
 	pdbs []*policy.PodDisruptionBudget) ([]*v1.Pod, int, *framework.Status) {
 
-	logger := klog.FromContext(ctx)
+	logger := p.logger
 
 	elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(state)
 	if err != nil {

@@ -33,6 +33,7 @@ import (
 // Allocatable is a score plugin that favors nodes based on their allocatable
 // resources.
 type Allocatable struct {
+	logger klog.Logger
 	handle framework.Handle
 	resourceAllocationScorer
 }
@@ -59,7 +60,7 @@ func validateResources(resources []schedulerconfig.ResourceSpec) error {
 
 // Score invoked at the score extension point.
 func (alloc *Allocatable) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, alloc.logger)).WithValues("ExtensionPoint", "Score")
 	nodeInfo, err := alloc.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
@@ -79,7 +80,7 @@ func (alloc *Allocatable) ScoreExtensions() framework.ScoreExtensions {
 
 // NewAllocatable initializes a new plugin and returns it.
 func NewAllocatable(ctx context.Context, allocArgs runtime.Object, h framework.Handle) (framework.Plugin, error) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("plugin", AllocatableName)
 	// Start with default values.
 	mode := config.Least
 	resToWeightMap := defaultResourcesToWeightMap
@@ -110,6 +111,7 @@ func NewAllocatable(ctx context.Context, allocArgs runtime.Object, h framework.H
 	}
 
 	return &Allocatable{
+		logger: logger,
 		handle: h,
 		resourceAllocationScorer: resourceAllocationScorer{
 			Name:                AllocatableName,

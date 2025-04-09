@@ -44,6 +44,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/util"
 	"k8s.io/utils/clock"
+
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 )
 
@@ -59,6 +60,7 @@ var (
 
 // PreemptionToleration is a PostFilter plugin implements the preemption logic.
 type PreemptionToleration struct {
+	logger              klog.Logger
 	fh                  framework.Handle
 	args                config.PreemptionTolerationArgs
 	podLister           corelisters.PodLister
@@ -79,17 +81,19 @@ func (pl *PreemptionToleration) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ context.Context, rawArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, rawArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	args, ok := rawArgs.(*config.PreemptionTolerationArgs)
 	if !ok {
 		return nil, fmt.Errorf("got args of type %T, want *PreemptionTolerationArgs", args)
 	}
+	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 
 	if err := validation.ValidateDefaultPreemptionArgs(field.NewPath(""), (*schedulerapisconfig.DefaultPreemptionArgs)(args)); err != nil {
 		return nil, err
 	}
 
 	pl := PreemptionToleration{
+		logger:              logger,
 		fh:                  fh,
 		args:                *args,
 		podLister:           fh.SharedInformerFactory().Core().V1().Pods().Lister(),
@@ -125,11 +129,11 @@ func (pl *PreemptionToleration) PostFilter(ctx context.Context, state *framework
 // The function is public because other plugin can evaluate preemption toleration policy
 // This would be useful other PostFilter plugin depends on the preemption toleration feature.
 func ExemptedFromPreemption(
+	logger klog.Logger,
 	victimCandidate, preemptor *v1.Pod,
 	pcLister schedulinglisters.PriorityClassLister,
 	now time.Time,
 ) (bool, error) {
-	logger := klog.FromContext(context.TODO())
 
 	if victimCandidate.Spec.PriorityClassName == "" {
 		return false, nil
@@ -190,7 +194,7 @@ func (pl *PreemptionToleration) SelectVictimsOnNode(
 	nodeInfo *framework.NodeInfo,
 	pdbs []*policy.PodDisruptionBudget) ([]*v1.Pod, int, *framework.Status) {
 	var potentialVictims []*framework.PodInfo
-	logger := klog.FromContext(ctx)
+	logger := pl.logger
 	removePod := func(rpi *framework.PodInfo) error {
 		if err := nodeInfo.RemovePod(logger, rpi.Pod); err != nil {
 			return err
@@ -219,7 +223,7 @@ func (pl *PreemptionToleration) SelectVictimsOnNode(
 		}
 
 		// For a pod with lower priority, check if it can be exempted from the preemption.
-		exempted, err := ExemptedFromPreemption(pi.Pod, preemptor, pl.priorityClassLister, pl.curTime)
+		exempted, err := ExemptedFromPreemption(logger, pi.Pod, preemptor, pl.priorityClassLister, pl.curTime)
 		if err != nil {
 			logger.Error(err, "Encountered error while selecting victims on node", "Node", nodeInfo.Node().Name)
 			return nil, 0, framework.AsStatus(err)
@@ -333,7 +337,7 @@ func (pl *PreemptionToleration) calculateNumCandidates(numNodes int32) int32 {
 // We look at the node that is nominated for this pod and as long as there are
 // terminating pods on the node, we don't consider this for preempting more pods.
 func (pl *PreemptionToleration) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
-	logger := klog.FromContext(context.TODO())
+	logger := pl.logger
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
 		logger.V(5).Info("Pod is not eligible for preemption because it has a preemptionPolicy of Never", "pod", klog.KObj(pod))
 		return false, "not eligible due to preemptionPolicy=Never."

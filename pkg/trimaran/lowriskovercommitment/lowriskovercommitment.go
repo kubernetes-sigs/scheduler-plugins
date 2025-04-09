@@ -51,6 +51,7 @@ const (
 
 // LowRiskOverCommitment : scheduler plugin
 type LowRiskOverCommitment struct {
+	logger              klog.Logger
 	handle              framework.Handle
 	collector           *trimaran.Collector
 	args                *pluginConfig.LowRiskOverCommitmentArgs
@@ -59,7 +60,7 @@ type LowRiskOverCommitment struct {
 
 // New : create an instance of a LowRiskOverCommitment plugin
 func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the LowRiskOverCommitment plugin")
 	// cast object into plugin arguments object
 	args, ok := obj.(*pluginConfig.LowRiskOverCommitmentArgs)
@@ -81,6 +82,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 		"riskLimitWeights", m)
 
 	pl := &LowRiskOverCommitment{
+		logger:              logger,
 		handle:              handle,
 		collector:           collector,
 		args:                args,
@@ -91,7 +93,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 
 // PreScore : calculate pod requests and limits and store as plugin state data to be used during scoring
 func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "PreScore")
 	logger.V(6).Info("PreScore: Calculating pod resource requests and limits", "pod", klog.KObj(pod))
 	podResourcesStateData := CreatePodResourcesStateData(pod)
 	cycleState.Write(PodResourcesKey, podResourcesStateData)
@@ -100,7 +102,7 @@ func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *frame
 
 // Score : evaluate score for a node
 func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	logger := klog.FromContext(ctx)
+	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	logger.V(6).Info("Score: Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
 	score := framework.MinNodeScore
 

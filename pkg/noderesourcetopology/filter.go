@@ -191,7 +191,8 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 
 	nodeName := nodeInfo.Node().Name
 
-	lh := klog.FromContext(ctx).WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
+	lh := klog.FromContext(klog.NewContext(ctx, tm.logger)).WithValues("ExtensionPoint", "Filter").
+		WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 
 	lh.V(4).Info(logging.FlowBegin)
 	defer lh.V(4).Info(logging.FlowEnd)
