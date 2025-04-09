@@ -1,106 +1,78 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: {{ .Values.controller.name }}
-  namespace: {{ .Release.Namespace }}
+  name: network-cost-aware-controller
+  namespace: customized-ks
   labels:
-    app: scheduler-plugins-controller
+    app: network-cost-aware-controller
 spec:
-  replicas: {{ .Values.controller.replicaCount }}
+  replicas: 1
   selector:
     matchLabels:
-      app: scheduler-plugins-controller
+      app: network-cost-aware-controller
   template:
     metadata:
       labels:
-        app: scheduler-plugins-controller
+        app: network-cost-aware-controller
     spec:
-      {{- with .Values.controller.priorityClassName }}
-      priorityClassName: {{ . }}
-      {{- end }}
-      serviceAccountName: {{ .Values.controller.name }}
+      serviceAccountName: network-cost-aware-controller
       containers:
-      - name: scheduler-plugins-controller
-        args:
-        {{- if .Values.controller.leaderElect }}
-        - --enableLeaderElection
-        {{- end }}
-        image: {{ .Values.controller.image }}
-        imagePullPolicy: IfNotPresent
-        {{- with .Values.controller.resources }}
-        resources: {{- toYaml . | nindent 10 }}
-        {{- end }}
-      {{- with .Values.controller.nodeSelector }}
-      nodeSelector: {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.controller.affinity }}
-      affinity: {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.controller.tolerations }}
-      tolerations: {{- toYaml . | nindent 8 }}
-      {{- end }}
-
+        - name: network-cost-aware-controller
+          image: audhub/controller-v0.30.6:latest
+          imagePullPolicy: IfNotPresent
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels:
-    component: scheduler
-  name: {{ .Values.scheduler.name }}
-  namespace: {{ .Release.Namespace }}
+  name: network-cost-aware-scheduler
+  namespace: customized-ks
 spec:
+  replicas: 1
   selector:
     matchLabels:
-      component: scheduler
-  replicas: {{ .Values.scheduler.replicaCount }}
+      component: ns-scheduler
+      tier: ns-control-plane
   template:
     metadata:
       labels:
-        component: scheduler
+        component: ns-scheduler
+        tier: ns-control-plane
     spec:
-      {{- with .Values.scheduler.priorityClassName }}
-      priorityClassName: {{ . }}
-      {{- end }}
-      serviceAccountName: {{ .Values.scheduler.name }}
+      nodeSelector:
+        kubernetes.io/hostname: "masternodecluster1"
       containers:
-      - command: {{- toYaml .Values.scheduler.command | nindent 8 }}
-        args:
-        - --config=/etc/kubernetes/scheduler-config.yaml
-        image: {{ .Values.scheduler.image }}
-        imagePullPolicy: IfNotPresent
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 10259
-            scheme: HTTPS
-          initialDelaySeconds: 15
-        name: scheduler-plugins-scheduler
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 10259
-            scheme: HTTPS
-        {{- with .Values.scheduler.resources }}
-        resources: {{- toYaml . | nindent 10 }}
-        {{- end }}
-        securityContext:
-          privileged: false
-        volumeMounts:
-        - name: scheduler-config
-          mountPath: /etc/kubernetes
-          readOnly: true
+        - image: audhub/fspaas:kube-scheduler-v0.30.6
+          command:
+            - /bin/kube-scheduler
+            - --authentication-kubeconfig=/etc/kubernetes/cred/my-scheduler.kubeconfig
+            - --authorization-kubeconfig=/etc/kubernetes/cred/my-scheduler.kubeconfig
+            - --config=/etc/kubernetes/nc-scheduler-config.yaml
+            - -v=9
+          name: network-cost-aware-scheduler
+          securityContext:
+            #privileged: true
+            runAsUser: 0  # Run as root to ensure it can access the file
+            runAsGroup: 0 # Ensure it has the correct group permissions
+          volumeMounts:
+            - mountPath: /etc/kubernetes/
+              name: ns-scheduler-config-volume
+            - mountPath: /etc/kubernetes/cred/
+              name: ns-scheduler-kubeconfig-volume
+            - mountPath: /var/lib/rancher/k3s/server/tls
+              name: ns-scheduler-tls-volume
+              readOnly: true
+              
       hostNetwork: false
       hostPID: false
       volumes:
-      - name: scheduler-config
-        configMap:
-          name: scheduler-config
-      {{- with .Values.scheduler.nodeSelector }}
-      nodeSelector: {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.scheduler.affinity }}
-      affinity: {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.scheduler.tolerations }}
-      tolerations: {{- toYaml . | nindent 8 }}
-      {{- end }}
+        - name: ns-scheduler-config-volume
+          configMap:
+            name: network-cost-scheduler-config
+        - name: ns-scheduler-kubeconfig-volume
+          hostPath:
+            path: /var/lib/rancher/k3s/server/cred  # Path on the host machine
+            type: Directory
+        - name: ns-scheduler-tls-volume
+          hostPath:
+            path: /var/lib/rancher/k3s/server/tls  # Path on the host machine
+            type: Directory

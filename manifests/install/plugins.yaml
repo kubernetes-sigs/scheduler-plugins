@@ -1,0 +1,104 @@
+# First part
+# Apply extra privileges to system:kube-scheduler.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: system:kube-scheduler:plugins
+rules:
+- apiGroups: ["scheduling.x-k8s.io"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+# for network-aware plugins add the following lines (scheduler-plugins v.0.24.9)
+- apiGroups: [ "appgroup.diktyo.k8s.io" ]
+ resources: [ "appgroups" ]
+ verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
+- apiGroups: [ "networktopology.diktyo.k8s.io" ]
+ resources: [ "networktopologies" ]
+ verbs: [ "get", "list", "watch", "create", "delete", "update", "patch" ]
+#- apiGroups: ["security-profiles-operator.x-k8s.io"]
+#  resources: ["seccompprofiles", "profilebindings"]
+#  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: system:kube-scheduler:plugins
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-scheduler:plugins
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: system:kube-scheduler
+  #amira modif
+- kind: ServiceAccount
+  name: default
+  namespace: customized-ks
+# ---
+# # Second part
+# # Install the controller image.
+# apiVersion: v1
+# kind: Namespace
+# metadata:
+#   name: scheduler-plugins-customized
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scheduler-plugins-controller
+  namespace: customized-ks
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: scheduler-plugins-controller
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["scheduling.x-k8s.io"]
+  resources: ["podgroups", "elasticquotas", "podgroups/status", "elasticquotas/status"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch", "update"]
+#- apiGroups: ["security-profiles-operator.x-k8s.io"]
+#  resources: ["seccompprofiles", "profilebindings"]
+#  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: scheduler-plugins-controller
+subjects:
+- kind: ServiceAccount
+  name: scheduler-plugins-controller
+  namespace: customized-ks
+roleRef:
+  kind: ClusterRole
+  name: scheduler-plugins-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: scheduler-plugins-controller
+  namespace: customized-ks
+  labels:
+    app: scheduler-plugins-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler-plugins-controller
+  template:
+    metadata:
+      labels:
+        app: scheduler-plugins-controller
+    spec:
+      serviceAccountName: scheduler-plugins-controller
+      containers:
+      - name: scheduler-plugins-controller
+        image: registry.k8s.io/scheduler-plugins/controller:v0.30.6
+        imagePullPolicy: IfNotPresent
