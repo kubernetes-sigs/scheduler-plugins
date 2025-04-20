@@ -28,6 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
 )
 
 // Allocatable is a score plugin that favors nodes based on their allocatable
@@ -82,7 +83,7 @@ func (alloc *Allocatable) ScoreExtensions() framework.ScoreExtensions {
 func NewAllocatable(ctx context.Context, allocArgs runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", AllocatableName)
 	// Start with default values.
-	mode := config.Least
+	var mode config.ModeType
 	resToWeightMap := defaultResourcesToWeightMap
 
 	// Update values from args, if specified.
@@ -91,23 +92,19 @@ func NewAllocatable(ctx context.Context, allocArgs runtime.Object, h framework.H
 		if !ok {
 			return nil, fmt.Errorf("want args to be of type NodeResourcesAllocatableArgs, got %T", allocArgs)
 		}
-		if args.Mode != "" {
-			mode = args.Mode
-			if mode != config.Least && mode != config.Most {
-				return nil, fmt.Errorf("invalid mode, got %s", mode)
-			}
+		if args.Mode == "" {
+			args.Mode = config.Least
 		}
-
+		if err := validation.ValidateNodeResourcesAllocatableArgs(args, nil); err != nil {
+			return nil, err
+		}
 		if len(args.Resources) > 0 {
-			if err := validateResources(args.Resources); err != nil {
-				return nil, err
-			}
-
 			resToWeightMap = make(resourceToWeightMap)
 			for _, resource := range args.Resources {
 				resToWeightMap[v1.ResourceName(resource.Name)] = resource.Weight
 			}
 		}
+		mode = args.Mode
 	}
 
 	return &Allocatable{
