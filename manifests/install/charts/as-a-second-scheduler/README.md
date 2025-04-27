@@ -26,8 +26,6 @@ Quick start instructions for the setup and configuration of as-a-second-schedule
 > 🆕 Starting v0.28, Helm charts are hosted on https://scheduler-plugins.sigs.k8s.io
 
 ```bash
-$ git clone git@github.com:kubernetes-sigs/scheduler-plugins.git
-$ cd scheduler-plugins/manifests/install/charts
 $ helm install --repo https://scheduler-plugins.sigs.k8s.io scheduler-plugins scheduler-plugins
 ```
 
@@ -47,7 +45,7 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | Parameter                 | Description                 | Default                                                                                         |
 |---------------------------|-----------------------------|-------------------------------------------------------------------------------------------------|
 | `scheduler.name`          | Scheduler name              | `scheduler-plugins-scheduler`                                                                   |
-| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.6`                                      |
+| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.12`                                     |
 | `scheduler.command`       | Scheduler command           | `["/bin/kube-scheduler"]`                                                                       |
 | `scheduler.leaderElect`   | Scheduler leaderElection    | `false`                                                                                         |
 | `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
@@ -56,9 +54,9 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | `scheduler.affinity`      | Scheduler affinity          | `{}`                                                                                            |
 | `scheduler.tolerations`   | Scheduler tolerations       | `[]`                                                                                            |
 | `controller.name`         | Controller name             | `scheduler-plugins-controller`                                                                  |
-| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.29.7`                                          |
+| `controller.image`        | Controller image            | `registry.k8s.io/scheduler-plugins/controller:v0.30.12`                                          |
 | `controller.replicaCount` | Controller replicaCount     | `1`                                                                                             |
-s| `controller.resources`    | Controller resources        | `{}`                                                                                            |
+s| `controller.resources`    | Controller resources                                                                            | `{}`                                                                                            |
 | `controller.nodeSelector` | Controller nodeSelector     | `{}`                                                                                            |
 | `controller.affinity`     | Controller affinity         | `{}`                                                                                            |
 | `controller.tolerations`  | Controller tolerations      | `[]`                                                                                            |

@@ -52,7 +52,7 @@ The following table lists the configurable parameters of the as-a-second-schedul
 | Parameter                 | Description                 | Default                                                                                         |
 |---------------------------|-----------------------------|-------------------------------------------------------------------------------------------------|
 | `scheduler.name`          | Scheduler name              | `scheduler-plugins-scheduler`                                                                   |
-| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.6`                                      |
+| `scheduler.image`         | Scheduler image             | `registry.k8s.io/scheduler-plugins/kube-scheduler:v0.30.12`                                      |
 | `scheduler.command`       | Scheduler command           | `["/bin/kube-scheduler"]`                                                                       |
 | `scheduler.leaderElect`   | Scheduler leaderElection    | `false`                                                                                         |
 | `scheduler.replicaCount`  | Scheduler replicaCount      | `1`                                                                                             |
