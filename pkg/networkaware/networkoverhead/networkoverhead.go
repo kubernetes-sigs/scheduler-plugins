@@ -30,11 +30,11 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	networkawareutil "sigs.k8s.io/scheduler-plugins/pkg/networkaware/util"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 
 	agv1alpha1 "github.com/diktyo-io/appgroup-api/pkg/apis/appgroup/v1alpha1"
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"
@@ -147,16 +147,13 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	if err != nil {
 		return nil, err
 	}
-	client, err := client.New(handle.KubeConfig(), client.Options{
-		Scheme: scheme,
-	})
+	c, _, err := util.NewClientWithCachedReader(ctx, handle.KubeConfig(), scheme)
 	if err != nil {
 		return nil, err
 	}
 
 	no := &NetworkOverhead{
-		Client: client,
-
+		Client:      c,
 		podLister:   handle.SharedInformerFactory().Core().V1().Pods().Lister(),
 		handle:      handle,
 		namespaces:  args.Namespaces,
