@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -19,6 +20,9 @@ func NewClientWithCachedReader(ctx context.Context, config *rest.Config, scheme 
 	}
 	go ccache.Start(ctx)
 	ccache.WaitForCacheSync(ctx)
+	if !ccache.WaitForCacheSync(ctx) {
+		return nil, nil, fmt.Errorf("failed to sync cache")
+	}
 	c, err := client.New(config, client.Options{
 		Scheme: scheme,
 		Cache: &client.CacheOptions{
