@@ -114,6 +114,7 @@ func TestPodGroupBackoffTime(t *testing.T) {
 			}
 
 			pgMgr := core.NewPodGroupManager(
+				ctx,
 				client,
 				tu.NewFakeSharedLister(tt.pods, nodes),
 				// In this UT, 5 seconds should suffice to test the PreFilter's return code.
@@ -421,7 +422,7 @@ func TestLess(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
 
-			pl := &Coscheduling{pgMgr: core.NewPodGroupManager(client, nil, nil, podInformer)}
+			pl := &Coscheduling{pgMgr: core.NewPodGroupManager(ctx, client, nil, nil, podInformer)}
 
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
@@ -516,7 +517,7 @@ func TestPermit(t *testing.T) {
 
 			pl := &Coscheduling{
 				frameworkHandler: f,
-				pgMgr:            core.NewPodGroupManager(client, tu.NewFakeSharedLister(nil, nodes), nil, podInformer),
+				pgMgr:            core.NewPodGroupManager(ctx, client, tu.NewFakeSharedLister(nil, nodes), nil, podInformer),
 				scheduleTimeout:  &scheduleTimeout,
 			}
 
@@ -623,6 +624,7 @@ func TestPostFilter(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
 			pgMgr := core.NewPodGroupManager(
+				ctx,
 				client,
 				tu.NewFakeSharedLister(tt.existingPods, nodes),
 				&scheduleTimeout,
@@ -638,7 +640,7 @@ func TestPostFilter(t *testing.T) {
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
 			}
-			addFunc := core.AddPodFactory(pgMgr)
+			addFunc := core.AddPodFactory(ctx, pgMgr)
 			for _, p := range tt.existingPods {
 				podInformer.Informer().GetStore().Add(p)
 				// we call add func here because we can not ensure existing pods are added before premit are called

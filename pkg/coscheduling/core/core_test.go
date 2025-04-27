@@ -266,13 +266,13 @@ func TestPermit(t *testing.T) {
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			podInformer := informerFactory.Core().V1().Pods()
 
-			pgMgr := NewPodGroupManager(client, tu.NewFakeSharedLister(tt.existingPods, nodes), &scheduleTimeout, podInformer)
+			pgMgr := NewPodGroupManager(ctx, client, tu.NewFakeSharedLister(tt.existingPods, nodes), &scheduleTimeout, podInformer)
 
 			informerFactory.Start(ctx.Done())
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
 			}
-			addFunc := AddPodFactory(pgMgr)
+			addFunc := AddPodFactory(ctx, pgMgr)
 			for _, p := range tt.existingPods {
 				podInformer.Informer().GetStore().Add(p)
 				// we call add func here because we can not ensure existing pods are added before premit are called
