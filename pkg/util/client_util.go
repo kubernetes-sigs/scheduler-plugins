@@ -19,7 +19,6 @@ func NewClientWithCachedReader(ctx context.Context, config *rest.Config, scheme 
 		return nil, nil, err
 	}
 	go ccache.Start(ctx)
-	ccache.WaitForCacheSync(ctx)
 	if !ccache.WaitForCacheSync(ctx) {
 		return nil, nil, fmt.Errorf("failed to sync cache")
 	}
