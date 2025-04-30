@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-topology
+  namespace: sakkara-scheduler
+  labels:
+    "sakkara.topology": ""
+data:
+  name: "cluster-tree"
+  resource-names: |
+    [ "cpu", "memory", "nvidia.com/gpu" ]
+  level-names: |
+    [ "rack", "node" ]
+  tree: |
+    {
+      "rack-0": {
+        "node-0": {},
+        "node-1": {},
+        "node-2": {}
+      },
+      "rack-1": {
+        "node-3": {},
+        "node-4": {},
+        "node-5": {}
+      }
+    }

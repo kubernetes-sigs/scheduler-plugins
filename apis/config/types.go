@@ -298,3 +298,13 @@ type PowerModel struct {
 	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
 	// Idle power of node will be K0 + K1
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ClusterTopologyPlacementGroupArgs holds arguments used to configure ClusterTopologyPlacementGroup plugin.
+type ClusterTopologyPlacementGroupArgs struct {
+	metav1.TypeMeta
+
+	// Namespace where the cluster topology configmap is deployed
+	TopologyConfigMapNameSpace string
+}
