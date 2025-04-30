@@ -9,7 +9,7 @@
 5. Publish a draft release using the tag you just created
 6. Perform the [image promotion process](https://github.com/kubernetes/k8s.io/tree/main/k8s.gcr.io#image-promoter)
 7. Publish release
-8. Email `kubernetes-sig-scheduling@googlegroups.com` to announce the release
+8. Email `sig-scheduling@kubernetes.io` to announce the release
 
 ## Manual
 
