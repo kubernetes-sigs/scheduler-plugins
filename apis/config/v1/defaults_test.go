@@ -86,7 +86,9 @@ func TestSchedulingDefaults(t *testing.T) {
 				TrimaranSpec: TrimaranSpec{
 					MetricProvider: MetricProviderSpec{
 						Type: "KubernetesMetricsServer",
-					}},
+					},
+					MetricsUpdateIntervalSeconds: pointer.Int32(30),
+				},
 				DefaultRequests: v1.ResourceList{v1.ResourceCPU: resource.MustParse(
 					strconv.FormatInt(DefaultRequestsMilliCores, 10) + "m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("1.5"),
@@ -104,7 +106,9 @@ func TestSchedulingDefaults(t *testing.T) {
 			},
 			expect: &TargetLoadPackingArgs{
 				TrimaranSpec: TrimaranSpec{
-					WatcherAddress: pointer.StringPtr("http://localhost:2020")},
+					WatcherAddress:               pointer.StringPtr("http://localhost:2020"),
+					MetricsUpdateIntervalSeconds: pointer.Int32(30),
+				},
 				DefaultRequests:           v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
 				DefaultRequestsMultiplier: pointer.StringPtr("2.5"),
 				TargetUtilization:         pointer.Int64Ptr(50),
@@ -117,7 +121,9 @@ func TestSchedulingDefaults(t *testing.T) {
 				TrimaranSpec: TrimaranSpec{
 					MetricProvider: MetricProviderSpec{
 						Type: "KubernetesMetricsServer",
-					}},
+					},
+					MetricsUpdateIntervalSeconds: pointer.Int32(30),
+				},
 				SafeVarianceMargin:      pointer.Float64Ptr(1.0),
 				SafeVarianceSensitivity: pointer.Float64Ptr(1.0),
 			},
@@ -132,7 +138,9 @@ func TestSchedulingDefaults(t *testing.T) {
 				TrimaranSpec: TrimaranSpec{
 					MetricProvider: MetricProviderSpec{
 						Type: "KubernetesMetricsServer",
-					}},
+					},
+					MetricsUpdateIntervalSeconds: pointer.Int32(30),
+				},
 				SafeVarianceMargin:      pointer.Float64Ptr(2.0),
 				SafeVarianceSensitivity: pointer.Float64Ptr(2.0),
 			},
@@ -144,7 +152,9 @@ func TestSchedulingDefaults(t *testing.T) {
 				TrimaranSpec: TrimaranSpec{
 					MetricProvider: MetricProviderSpec{
 						Type: "KubernetesMetricsServer",
-					}},
+					},
+					MetricsUpdateIntervalSeconds: pointer.Int32(30),
+				},
 				SmoothingWindowSize: pointer.Int64Ptr(5),
 				RiskLimitWeights: map[v1.ResourceName]float64{
 					v1.ResourceCPU:    0.5,
@@ -165,7 +175,9 @@ func TestSchedulingDefaults(t *testing.T) {
 				TrimaranSpec: TrimaranSpec{
 					MetricProvider: MetricProviderSpec{
 						Type: "KubernetesMetricsServer",
-					}},
+					},
+					MetricsUpdateIntervalSeconds: pointer.Int32(30),
+				},
 				SmoothingWindowSize: pointer.Int64Ptr(10),
 				RiskLimitWeights: map[v1.ResourceName]float64{
 					v1.ResourceCPU:    0.2,
@@ -186,7 +198,9 @@ func TestSchedulingDefaults(t *testing.T) {
 				TrimaranSpec: TrimaranSpec{
 					MetricProvider: MetricProviderSpec{
 						Type: "KubernetesMetricsServer",
-					}},
+					},
+					MetricsUpdateIntervalSeconds: pointer.Int32(30),
+				},
 				SmoothingWindowSize: pointer.Int64Ptr(10),
 				RiskLimitWeights: map[v1.ResourceName]float64{
 					v1.ResourceCPU:    0.5,

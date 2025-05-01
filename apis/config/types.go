@@ -88,6 +88,8 @@ type TrimaranSpec struct {
 	MetricProvider MetricProviderSpec
 	// Address of load watcher service
 	WatcherAddress string
+	// Interval in seconds for periodic metrics updates. Default is 30 seconds if not set.
+	MetricsUpdateIntervalSeconds int32
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

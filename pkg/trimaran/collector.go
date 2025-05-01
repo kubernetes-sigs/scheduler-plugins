@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	metricsUpdateIntervalSeconds = 30
+	defaultMetricsUpdateIntervalSeconds = 30
 )
 
 // Collector : get data from load watcher, encapsulating the load watcher and its operations
@@ -69,6 +69,11 @@ func NewCollector(logger klog.Logger, trimaranSpec *pluginConfig.TrimaranSpec) (
 		client, _ = loadwatcherapi.NewLibraryClient(opts)
 	}
 
+	metricsUpdateIntervalSeconds := trimaranSpec.MetricsUpdateIntervalSeconds
+	if metricsUpdateIntervalSeconds == 0 {
+		metricsUpdateIntervalSeconds = defaultMetricsUpdateIntervalSeconds
+	}
+
 	collector := &Collector{
 		client: client,
 	}
@@ -80,7 +85,7 @@ func NewCollector(logger klog.Logger, trimaranSpec *pluginConfig.TrimaranSpec) (
 	}
 	// start periodic updates
 	go func() {
-		metricsUpdaterTicker := time.NewTicker(time.Second * metricsUpdateIntervalSeconds)
+		metricsUpdaterTicker := time.NewTicker(time.Second * time.Duration(metricsUpdateIntervalSeconds))
 		for range metricsUpdaterTicker.C {
 			err = collector.updateMetrics(logger)
 			if err != nil {

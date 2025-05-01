@@ -632,6 +632,9 @@ func autoConvert_v1_TrimaranSpec_To_config_TrimaranSpec(in *TrimaranSpec, out *c
 	if err := metav1.Convert_Pointer_string_To_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
 		return err
 	}
+	if err := metav1.Convert_Pointer_int32_To_int32(&in.MetricsUpdateIntervalSeconds, &out.MetricsUpdateIntervalSeconds, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -645,6 +648,9 @@ func autoConvert_config_TrimaranSpec_To_v1_TrimaranSpec(in *config.TrimaranSpec,
 		return err
 	}
 	if err := metav1.Convert_string_To_Pointer_string(&in.WatcherAddress, &out.WatcherAddress, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_int32_To_Pointer_int32(&in.MetricsUpdateIntervalSeconds, &out.MetricsUpdateIntervalSeconds, s); err != nil {
 		return err
 	}
 	return nil

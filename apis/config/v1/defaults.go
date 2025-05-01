@@ -80,6 +80,8 @@ var (
 	// DefaultInsecureSkipVerify is whether to skip the certificate verification
 	DefaultInsecureSkipVerify = true
 
+	DefaultMetricsUpdateIntervalSeconds int32 = 30
+
 	defaultResourceSpec = []schedulerconfigv1.ResourceSpec{
 		{Name: string(v1.ResourceCPU), Weight: 1},
 		{Name: string(v1.ResourceMemory), Weight: 1},
@@ -132,6 +134,9 @@ func SetDefaultTrimaranSpec(args *TrimaranSpec) {
 	}
 	if args.MetricProvider.Type == Prometheus && args.MetricProvider.InsecureSkipVerify == nil {
 		args.MetricProvider.InsecureSkipVerify = &DefaultInsecureSkipVerify
+	}
+	if args.MetricsUpdateIntervalSeconds == nil {
+		args.MetricsUpdateIntervalSeconds = &DefaultMetricsUpdateIntervalSeconds
 	}
 }
 
