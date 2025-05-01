@@ -534,6 +534,11 @@ func (in *TrimaranSpec) DeepCopyInto(out *TrimaranSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.MetricsUpdateIntervalSeconds != nil {
+		in, out := &in.MetricsUpdateIntervalSeconds, &out.MetricsUpdateIntervalSeconds
+		*out = new(int32)
+		**out = **in
+	}
 	return
 }
 
