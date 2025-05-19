@@ -101,17 +101,16 @@ func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeReso
 func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, CachedNRTInfo) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+	info := CachedNRTInfo{Generation: ov.generation}
 	if ov.nodesWithForeignPods.IsSet(nodeName) {
-		return nil, CachedNRTInfo{}
+		return nil, info
 	}
 
-	info := CachedNRTInfo{Fresh: true}
+	info.Fresh = true
 	nrt := ov.nrts.GetNRTCopyByNodeName(nodeName)
 	if nrt == nil {
 		return nil, info
 	}
-
-	info.Generation = ov.generation
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		return nrt, info
