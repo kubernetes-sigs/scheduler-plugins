@@ -56,9 +56,12 @@ func NewCollector(logger klog.Logger, trimaranSpec *pluginConfig.TrimaranSpec) (
 	logger.V(4).Info("Using TrimaranSpec", "type", trimaranSpec.MetricProvider.Type,
 		"address", trimaranSpec.MetricProvider.Address, "watcher", trimaranSpec.WatcherAddress)
 
-	var client loadwatcherapi.Client
+	var (
+		client loadwatcherapi.Client
+		err    error
+	)
 	if trimaranSpec.WatcherAddress != "" {
-		client, _ = loadwatcherapi.NewServiceClient(trimaranSpec.WatcherAddress)
+		client, err = loadwatcherapi.NewServiceClient(trimaranSpec.WatcherAddress)
 	} else {
 		opts := watcher.MetricsProviderOpts{
 			Name:               string(trimaranSpec.MetricProvider.Type),
@@ -66,7 +69,11 @@ func NewCollector(logger klog.Logger, trimaranSpec *pluginConfig.TrimaranSpec) (
 			AuthToken:          trimaranSpec.MetricProvider.Token,
 			InsecureSkipVerify: trimaranSpec.MetricProvider.InsecureSkipVerify,
 		}
-		client, _ = loadwatcherapi.NewLibraryClient(opts)
+		client, err = loadwatcherapi.NewLibraryClient(opts)
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	collector := &Collector{
@@ -74,7 +81,7 @@ func NewCollector(logger klog.Logger, trimaranSpec *pluginConfig.TrimaranSpec) (
 	}
 
 	// populate metrics before returning
-	err := collector.updateMetrics(logger)
+	err = collector.updateMetrics(logger)
 	if err != nil {
 		logger.Error(err, "Unable to populate metrics initially")
 	}
