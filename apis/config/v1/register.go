@@ -47,6 +47,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&NetworkOverheadArgs{},
 		&SySchedArgs{},
 		&PeaksArgs{},
+		&ClusterTopologyPlacementGroupArgs{},
 	)
 	return nil
 }

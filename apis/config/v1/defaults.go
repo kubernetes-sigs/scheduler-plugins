@@ -102,6 +102,9 @@ var (
 	DefaultSySchedProfileNamespace = "default"
 	// DefaultSySchedProfileName is the name of the default syscall profile CR for SySched plugin
 	DefaultSySchedProfileName = "all-syscalls"
+
+	// DefaultTopologyConfigMapNameSpace is the default namespace for the cluster topology configmap
+	DefaultTopologyConfigMapNameSpace = "default"
 )
 
 // SetDefaults_CoschedulingArgs sets the default parameters for Coscheduling plugin.
@@ -248,5 +251,12 @@ func SetDefaults_SySchedArgs(obj *SySchedArgs) {
 
 	if obj.DefaultProfileName == nil {
 		obj.DefaultProfileName = &DefaultSySchedProfileName
+	}
+}
+
+// SetDefaults_ClusterTopologyPlacementGroupArgs sets the default parameters for ClusterTopologyPlacementGroup plugin
+func SetDefaults_ClusterTopologyPlacementGroupArgs(args *ClusterTopologyPlacementGroupArgs) {
+	if args.TopologyConfigMapNameSpace == nil {
+		args.TopologyConfigMapNameSpace = &DefaultTopologyConfigMapNameSpace
 	}
 }
