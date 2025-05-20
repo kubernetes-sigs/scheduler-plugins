@@ -340,7 +340,7 @@ func (ov *OverReserve) Resync() {
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
-func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.NodeResourceTopology) {
+func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.NodeResourceTopology) uint64 {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 
@@ -354,12 +354,14 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 	}
 
 	if len(nrts) == 0 {
-		return
+		return ov.generation
 	}
 
 	// increase only if we mutated the internal state
 	ov.generation += 1
 	lh.V(2).Info("generation", "new", ov.generation)
+	return ov.generation
+
 }
 
 // to be used only in tests
