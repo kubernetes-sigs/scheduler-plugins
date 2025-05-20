@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 
@@ -434,16 +435,34 @@ func TestFlush(t *testing.T) {
 
 	lh := klog.Background()
 
-	nrtCache.FlushNodes(lh, expectedNodeTopology.DeepCopy())
+	expectedGen := nrtCache.generation + 1
+	gen1 := nrtCache.FlushNodes(lh, expectedNodeTopology.DeepCopy())
+	if gen1 != expectedGen {
+		t.Fatalf("generation is expected to increase once after flushing a dirty node\ngot %d expected %d", gen1, expectedGen)
+	}
 
 	dirtyNodes := nrtCache.GetDesyncedNodes(lh)
 	if dirtyNodes.Len() != 0 {
 		t.Errorf("dirty nodes after flush: %v", dirtyNodes)
 	}
 
-	nrtObj, _ := nrtCache.GetCachedNRTCopy(context.Background(), "node1", testPod)
+	nrtObj, nrtInfo := nrtCache.GetCachedNRTCopy(context.Background(), "node1", testPod)
 	if !reflect.DeepEqual(nrtObj, expectedNodeTopology) {
 		t.Fatalf("unexpected object from cache\ngot: %s\nexpected: %s\n", dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
+	}
+
+	expectedNrtInfo := CachedNRTInfo{
+		Fresh:      true,
+		Generation: expectedGen,
+	}
+	if !reflect.DeepEqual(nrtInfo, expectedNrtInfo) {
+		t.Fatalf("unexpected NRT info from cache\ngot: %+v\nexpected: %+v\n", nrtInfo, expectedNrtInfo)
+	}
+
+	// flush again without dirty nodes
+	gen2 := nrtCache.FlushNodes(lh)
+	if gen2 != expectedGen {
+		t.Fatalf("generation shouldn't change with no dirty nodes\ngot %d expected %d", gen2, expectedGen)
 	}
 }
 
@@ -969,5 +988,51 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				t.Errorf("unexpected result: %v", diff)
 			}
 		})
+	}
+}
+
+func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
+	testNodeName := "worker-node-G"
+	nrt := makeTestNRT(testNodeName)
+	pod := &corev1.Pod{} // API placeholder
+	fakePodLister := &fakePodLister{}
+
+	objs := []runtime.Object{nrt}
+	fakeClient, err := tu.NewFakeClient(objs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	lh := klog.Background()
+	nrtCache, err := NewOverReserve(ctx, lh, nil, fakeClient, fakePodLister, podprovider.IsPodRelevantAlways)
+	if err != nil {
+		t.Fatalf("unexpected error creating cache: %v", err)
+	}
+
+	expectedNrtInfo := CachedNRTInfo{
+		Generation: 0,
+		Fresh:      true,
+	}
+	_, gotInfo := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if !reflect.DeepEqual(gotInfo, expectedNrtInfo) {
+		t.Errorf("mismatched nrt info from cache, got %+v expected %+v", gotInfo, expectedNrtInfo)
+	}
+
+	// pointless, but will force a generation increase
+	gen := nrtCache.FlushNodes(lh, nrt)
+	if gen == 0 {
+		t.Fatalf("FlushNodes didn't increase the generation")
+	}
+
+	// expected to mark cached data as stale (!fresh)
+	nrtCache.NodeHasForeignPods(testNodeName, pod)
+
+	_, gotInfo = nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if gotInfo.Generation != gen {
+		t.Errorf("mismatched generation, got %v expected %v", gotInfo.Generation, gen)
+	}
+	if gotInfo.Fresh {
+		t.Errorf("cached data reported fresh when node has foreign pods")
 	}
 }
