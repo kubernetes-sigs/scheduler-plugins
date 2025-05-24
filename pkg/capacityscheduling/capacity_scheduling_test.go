@@ -965,6 +965,8 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
 			registeredPlugins := makeRegisteredPlugin()
 			cs := clientsetfake.NewSimpleClientset()
 			ctx, cancel := context.WithCancel(context.Background())
