@@ -27,7 +27,7 @@ CRD_OPTIONS="crd"
 
 # Download controller-gen locally
 CONTROLLER_GEN="${GOPATH}/bin/controller-gen"
-go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.5
+go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0
 
 # Generate CRD
 api_paths="./apis/scheduling/v1alpha1/...;github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2;github.com/diktyo-io/appgroup-api/pkg/apis/...;github.com/diktyo-io/networktopology-api/pkg/apis/...;sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1/..."
