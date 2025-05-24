@@ -332,17 +332,16 @@ func (c *CapacityScheduling) PostFilter(ctx context.Context, state *framework.Cy
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.Evaluator{
-		PluginName: c.Name(),
-		Handler:    c.fh,
-		PodLister:  c.podLister,
-		PdbLister:  c.pdbLister,
-		Interface: &preemptor{
+	pe := preemption.NewEvaluator(
+		c.Name(),
+		c.fh,
+		&preemptor{
 			logger: c.logger,
 			fh:     c.fh,
 			state:  state,
 		},
-	}
+		false, // enableAsyncPreemption
+	)
 
 	return pe.Preempt(ctx, state, pod, m)
 }

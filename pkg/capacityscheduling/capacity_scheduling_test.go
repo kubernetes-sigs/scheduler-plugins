@@ -756,16 +756,15 @@ func TestDryRunPreemption(t *testing.T) {
 			state.Write(preFilterStateKey, prefilterState)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
 
-			pe := preemption.Evaluator{
-				PluginName: Name,
-				Handler:    fwk,
-				PodLister:  fwk.SharedInformerFactory().Core().V1().Pods().Lister(),
-				PdbLister:  getPDBLister(fwk.SharedInformerFactory()),
-				Interface: &preemptor{
+			pe := preemption.NewEvaluator(
+				Name,
+				fwk,
+				&preemptor{
 					fh:    fwk,
 					state: state,
 				},
-			}
+				false, // enableAsyncPreemption
+			)
 
 			nodeInfos, _ := fwk.SnapshotSharedLister().NodeInfos().List()
 			got, _, err := pe.DryRunPreemption(ctx, state, tt.pod, nodeInfos, nil, 0, int32(len(nodeInfos)))

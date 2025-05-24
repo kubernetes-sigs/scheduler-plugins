@@ -110,13 +110,12 @@ func (pl *PreemptionToleration) PostFilter(ctx context.Context, state *framework
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.Evaluator{
-		PluginName: pl.Name(),
-		Handler:    pl.fh,
-		PodLister:  pl.podLister,
-		PdbLister:  pl.pdbLister,
-		Interface:  pl,
-	}
+	pe := preemption.NewEvaluator(
+		pl.Name(),
+		pl.fh,
+		pl,
+		false, // enableAsyncPreemption
+	)
 
 	pl.curTime = pl.clock.Now()
 	return pe.Preempt(ctx, state, pod, m)
