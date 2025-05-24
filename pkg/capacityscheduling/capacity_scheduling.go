@@ -385,7 +385,7 @@ type preemptor struct {
 }
 
 func (p *preemptor) OrderedScoreFuncs(ctx context.Context, nodesToVictims map[string]*extenderv1.Victims) []func(node string) int64 {
-	return nil
+	return []func(node string) int64{}
 }
 
 func (p *preemptor) GetOffsetAndNumCandidates(n int32) (int32, int32) {
