@@ -19,14 +19,14 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	gentype "k8s.io/client-go/gentype"
-	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
-	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/applyconfiguration/scheduling/v1alpha1"
+	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
+	applyconfigurationschedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/applyconfiguration/scheduling/v1alpha1"
 	scheme "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/scheme"
 )
 
@@ -38,36 +38,37 @@ type ElasticQuotasGetter interface {
 
 // ElasticQuotaInterface has methods to work with ElasticQuota resources.
 type ElasticQuotaInterface interface {
-	Create(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.CreateOptions) (*v1alpha1.ElasticQuota, error)
-	Update(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (*v1alpha1.ElasticQuota, error)
+	Create(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuota, opts v1.CreateOptions) (*schedulingv1alpha1.ElasticQuota, error)
+	Update(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuota, opts v1.UpdateOptions) (*schedulingv1alpha1.ElasticQuota, error)
 	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-	UpdateStatus(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (*v1alpha1.ElasticQuota, error)
+	UpdateStatus(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuota, opts v1.UpdateOptions) (*schedulingv1alpha1.ElasticQuota, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1alpha1.ElasticQuota, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1alpha1.ElasticQuotaList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*schedulingv1alpha1.ElasticQuota, error)
+	List(ctx context.Context, opts v1.ListOptions) (*schedulingv1alpha1.ElasticQuotaList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ElasticQuota, err error)
-	Apply(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *schedulingv1alpha1.ElasticQuota, err error)
+	Apply(ctx context.Context, elasticQuota *applyconfigurationschedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *schedulingv1alpha1.ElasticQuota, err error)
 	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-	ApplyStatus(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error)
+	ApplyStatus(ctx context.Context, elasticQuota *applyconfigurationschedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *schedulingv1alpha1.ElasticQuota, err error)
 	ElasticQuotaExpansion
 }
 
 // elasticQuotas implements ElasticQuotaInterface
 type elasticQuotas struct {
-	*gentype.ClientWithListAndApply[*v1alpha1.ElasticQuota, *v1alpha1.ElasticQuotaList, *schedulingv1alpha1.ElasticQuotaApplyConfiguration]
+	*gentype.ClientWithListAndApply[*schedulingv1alpha1.ElasticQuota, *schedulingv1alpha1.ElasticQuotaList, *applyconfigurationschedulingv1alpha1.ElasticQuotaApplyConfiguration]
 }
 
 // newElasticQuotas returns a ElasticQuotas
 func newElasticQuotas(c *SchedulingV1alpha1Client, namespace string) *elasticQuotas {
 	return &elasticQuotas{
-		gentype.NewClientWithListAndApply[*v1alpha1.ElasticQuota, *v1alpha1.ElasticQuotaList, *schedulingv1alpha1.ElasticQuotaApplyConfiguration](
+		gentype.NewClientWithListAndApply[*schedulingv1alpha1.ElasticQuota, *schedulingv1alpha1.ElasticQuotaList, *applyconfigurationschedulingv1alpha1.ElasticQuotaApplyConfiguration](
 			"elasticquotas",
 			c.RESTClient(),
 			scheme.ParameterCodec,
 			namespace,
-			func() *v1alpha1.ElasticQuota { return &v1alpha1.ElasticQuota{} },
-			func() *v1alpha1.ElasticQuotaList { return &v1alpha1.ElasticQuotaList{} }),
+			func() *schedulingv1alpha1.ElasticQuota { return &schedulingv1alpha1.ElasticQuota{} },
+			func() *schedulingv1alpha1.ElasticQuotaList { return &schedulingv1alpha1.ElasticQuotaList{} },
+		),
 	}
 }
