@@ -31,13 +31,10 @@ import (
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
-	res "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
-
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
@@ -118,21 +115,7 @@ func (pl *Peaks) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return score, nil
 	}
 
-	opts := resource.PodResourcesOptions{
-		NonMissingContainerRequests: v1.ResourceList{
-			v1.ResourceCPU: *res.NewMilliQuantity(
-				schedutil.DefaultMilliCPURequest,
-				res.DecimalSI,
-			),
-		},
-	}
-
-	reqs := resource.PodRequests(
-		pod,
-		opts,
-	)
-
-	quantity := reqs[v1.ResourceCPU]
+	quantity := resource.GetResourceRequestQuantity(pod, v1.ResourceCPU)
 	curPodCPUUsage := quantity.MilliValue()
 
 	var nodeCPUUtilPercent float64

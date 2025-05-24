@@ -197,7 +197,7 @@ func (c *CapacityScheduling) EventsToRegister(_ context.Context) ([]framework.Cl
 	eqGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
 	return []framework.ClusterEventWithHint{
 		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(eqGVK), ActionType: framework.All}},
+		{Event: framework.ClusterEvent{Resource: framework.EventResource(eqGVK), ActionType: framework.All}},
 	}, nil
 }
 
@@ -332,20 +332,18 @@ func (c *CapacityScheduling) PostFilter(ctx context.Context, state *framework.Cy
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.Evaluator{
-		PluginName: c.Name(),
-		Handler:    c.fh,
-		PodLister:  c.podLister,
-		PdbLister:  c.pdbLister,
-		State:      state,
-		Interface: &preemptor{
+	pe := preemption.NewEvaluator(
+		c.Name(),
+		c.fh,
+		&preemptor{
 			logger: c.logger,
 			fh:     c.fh,
 			state:  state,
 		},
-	}
+		false, // enableAsyncPreemption
+	)
 
-	return pe.Preempt(ctx, pod, m)
+	return pe.Preempt(ctx, state, pod, m)
 }
 
 func (c *CapacityScheduling) Reserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
@@ -407,7 +405,7 @@ func (p *preemptor) CandidatesToVictimsMap(candidates []preemption.Candidate) ma
 // considered for preemption.
 // We look at the node that is nominated for this pod and as long as there are
 // terminating pods on the node, we don't consider this for preempting more pods.
-func (p *preemptor) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
+func (p *preemptor) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
 	logger := p.logger
 
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {

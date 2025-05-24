@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,6 +28,7 @@ import (
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -74,6 +74,8 @@ func TestPodState(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
 			logger, ctx := ktesting.NewTestContext(t)
 
 			cs := clientsetfake.NewSimpleClientset()

@@ -130,6 +130,6 @@ func (tm *TopologyMatch) EventsToRegister(_ context.Context) ([]framework.Cluste
 	return []framework.ClusterEventWithHint{
 		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
 		{Event: framework.ClusterEvent{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeAllocatable}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(nrtGVK), ActionType: framework.Add | framework.Update}},
+		{Event: framework.ClusterEvent{Resource: framework.EventResource(nrtGVK), ActionType: framework.Add | framework.Update}},
 	}, nil
 }

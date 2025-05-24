@@ -541,7 +541,9 @@ func TestPostFilter(t *testing.T) {
 	nodes := []*v1.Node{
 		st.MakeNode().Name("node").Capacity(capacity).Obj(),
 	}
-	nodeStatusMap := framework.NodeToStatusMap{"node": framework.NewStatus(framework.Success, "")}
+
+	nodeStatusReader := framework.NewDefaultNodeToStatus()
+	nodeStatusReader.Set("node", framework.NewStatus(framework.Success, ""))
 
 	tests := []struct {
 		name         string
@@ -645,7 +647,7 @@ func TestPostFilter(t *testing.T) {
 				addFunc(p)
 			}
 
-			_, got := pl.PostFilter(ctx, framework.NewCycleState(), tt.pod, nodeStatusMap)
+			_, got := pl.PostFilter(ctx, framework.NewCycleState(), tt.pod, nodeStatusReader)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Want %v, but got %v", tt.want, got)
 			}

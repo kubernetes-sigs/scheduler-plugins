@@ -19,179 +19,35 @@ limitations under the License.
 package fake
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	gentype "k8s.io/client-go/gentype"
 	v1alpha1 "sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	schedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/applyconfiguration/scheduling/v1alpha1"
+	typedschedulingv1alpha1 "sigs.k8s.io/scheduler-plugins/pkg/generated/clientset/versioned/typed/scheduling/v1alpha1"
 )
 
-// FakeElasticQuotas implements ElasticQuotaInterface
-type FakeElasticQuotas struct {
+// fakeElasticQuotas implements ElasticQuotaInterface
+type fakeElasticQuotas struct {
+	*gentype.FakeClientWithListAndApply[*v1alpha1.ElasticQuota, *v1alpha1.ElasticQuotaList, *schedulingv1alpha1.ElasticQuotaApplyConfiguration]
 	Fake *FakeSchedulingV1alpha1
-	ns   string
 }
 
-var elasticquotasResource = v1alpha1.SchemeGroupVersion.WithResource("elasticquotas")
-
-var elasticquotasKind = v1alpha1.SchemeGroupVersion.WithKind("ElasticQuota")
-
-// Get takes name of the elasticQuota, and returns the corresponding elasticQuota object, and an error if there is any.
-func (c *FakeElasticQuotas) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ElasticQuota, err error) {
-	emptyResult := &v1alpha1.ElasticQuota{}
-	obj, err := c.Fake.
-		Invokes(testing.NewGetActionWithOptions(elasticquotasResource, c.ns, name, options), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
+func newFakeElasticQuotas(fake *FakeSchedulingV1alpha1, namespace string) typedschedulingv1alpha1.ElasticQuotaInterface {
+	return &fakeElasticQuotas{
+		gentype.NewFakeClientWithListAndApply[*v1alpha1.ElasticQuota, *v1alpha1.ElasticQuotaList, *schedulingv1alpha1.ElasticQuotaApplyConfiguration](
+			fake.Fake,
+			namespace,
+			v1alpha1.SchemeGroupVersion.WithResource("elasticquotas"),
+			v1alpha1.SchemeGroupVersion.WithKind("ElasticQuota"),
+			func() *v1alpha1.ElasticQuota { return &v1alpha1.ElasticQuota{} },
+			func() *v1alpha1.ElasticQuotaList { return &v1alpha1.ElasticQuotaList{} },
+			func(dst, src *v1alpha1.ElasticQuotaList) { dst.ListMeta = src.ListMeta },
+			func(list *v1alpha1.ElasticQuotaList) []*v1alpha1.ElasticQuota {
+				return gentype.ToPointerSlice(list.Items)
+			},
+			func(list *v1alpha1.ElasticQuotaList, items []*v1alpha1.ElasticQuota) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1alpha1.ElasticQuota), err
-}
-
-// List takes label and field selectors, and returns the list of ElasticQuotas that match those selectors.
-func (c *FakeElasticQuotas) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ElasticQuotaList, err error) {
-	emptyResult := &v1alpha1.ElasticQuotaList{}
-	obj, err := c.Fake.
-		Invokes(testing.NewListActionWithOptions(elasticquotasResource, elasticquotasKind, c.ns, opts), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1alpha1.ElasticQuotaList{ListMeta: obj.(*v1alpha1.ElasticQuotaList).ListMeta}
-	for _, item := range obj.(*v1alpha1.ElasticQuotaList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested elasticQuotas.
-func (c *FakeElasticQuotas) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewWatchActionWithOptions(elasticquotasResource, c.ns, opts))
-
-}
-
-// Create takes the representation of a elasticQuota and creates it.  Returns the server's representation of the elasticQuota, and an error, if there is any.
-func (c *FakeElasticQuotas) Create(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.CreateOptions) (result *v1alpha1.ElasticQuota, err error) {
-	emptyResult := &v1alpha1.ElasticQuota{}
-	obj, err := c.Fake.
-		Invokes(testing.NewCreateActionWithOptions(elasticquotasResource, c.ns, elasticQuota, opts), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ElasticQuota), err
-}
-
-// Update takes the representation of a elasticQuota and updates it. Returns the server's representation of the elasticQuota, and an error, if there is any.
-func (c *FakeElasticQuotas) Update(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (result *v1alpha1.ElasticQuota, err error) {
-	emptyResult := &v1alpha1.ElasticQuota{}
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateActionWithOptions(elasticquotasResource, c.ns, elasticQuota, opts), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ElasticQuota), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeElasticQuotas) UpdateStatus(ctx context.Context, elasticQuota *v1alpha1.ElasticQuota, opts v1.UpdateOptions) (result *v1alpha1.ElasticQuota, err error) {
-	emptyResult := &v1alpha1.ElasticQuota{}
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceActionWithOptions(elasticquotasResource, "status", c.ns, elasticQuota, opts), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ElasticQuota), err
-}
-
-// Delete takes name of the elasticQuota and deletes it. Returns an error if one occurs.
-func (c *FakeElasticQuotas) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(elasticquotasResource, c.ns, name, opts), &v1alpha1.ElasticQuota{})
-
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeElasticQuotas) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionActionWithOptions(elasticquotasResource, c.ns, opts, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1alpha1.ElasticQuotaList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched elasticQuota.
-func (c *FakeElasticQuotas) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ElasticQuota, err error) {
-	emptyResult := &v1alpha1.ElasticQuota{}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceActionWithOptions(elasticquotasResource, c.ns, name, pt, data, opts, subresources...), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ElasticQuota), err
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied elasticQuota.
-func (c *FakeElasticQuotas) Apply(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error) {
-	if elasticQuota == nil {
-		return nil, fmt.Errorf("elasticQuota provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(elasticQuota)
-	if err != nil {
-		return nil, err
-	}
-	name := elasticQuota.Name
-	if name == nil {
-		return nil, fmt.Errorf("elasticQuota.Name must be provided to Apply")
-	}
-	emptyResult := &v1alpha1.ElasticQuota{}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceActionWithOptions(elasticquotasResource, c.ns, *name, types.ApplyPatchType, data, opts.ToPatchOptions()), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ElasticQuota), err
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *FakeElasticQuotas) ApplyStatus(ctx context.Context, elasticQuota *schedulingv1alpha1.ElasticQuotaApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ElasticQuota, err error) {
-	if elasticQuota == nil {
-		return nil, fmt.Errorf("elasticQuota provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(elasticQuota)
-	if err != nil {
-		return nil, err
-	}
-	name := elasticQuota.Name
-	if name == nil {
-		return nil, fmt.Errorf("elasticQuota.Name must be provided to Apply")
-	}
-	emptyResult := &v1alpha1.ElasticQuota{}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceActionWithOptions(elasticquotasResource, c.ns, *name, types.ApplyPatchType, data, opts.ToPatchOptions(), "status"), emptyResult)
-
-	if obj == nil {
-		return emptyResult, err
-	}
-	return obj.(*v1alpha1.ElasticQuota), err
 }
