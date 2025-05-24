@@ -19,12 +19,6 @@ package peaks
 import (
 	"context"
 	"encoding/json"
-	"math"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"testing"
-
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -36,8 +30,14 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	testutil2 "sigs.k8s.io/scheduler-plugins/test/integration"
@@ -113,6 +113,8 @@ func TestPeaksNew(t *testing.T) {
 		tf.RegisterScorePlugin(Name, New, 1),
 	}
 
+	// Initialize scheduler metrics
+	metrics.Register()
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
