@@ -115,12 +115,11 @@ func (pl *PreemptionToleration) PostFilter(ctx context.Context, state *framework
 		Handler:    pl.fh,
 		PodLister:  pl.podLister,
 		PdbLister:  pl.pdbLister,
-		State:      state,
 		Interface:  pl,
 	}
 
 	pl.curTime = pl.clock.Now()
-	return pe.Preempt(ctx, pod, m)
+	return pe.Preempt(ctx, state, pod, m)
 }
 
 // ExemptedFromPreemption evaluates whether the victimCandidate
@@ -336,7 +335,7 @@ func (pl *PreemptionToleration) calculateNumCandidates(numNodes int32) int32 {
 // considered for preemption.
 // We look at the node that is nominated for this pod and as long as there are
 // terminating pods on the node, we don't consider this for preempting more pods.
-func (pl *PreemptionToleration) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
+func (pl *PreemptionToleration) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
 	logger := pl.logger
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
 		logger.V(5).Info("Pod is not eligible for preemption because it has a preemptionPolicy of Never", "pod", klog.KObj(pod))
