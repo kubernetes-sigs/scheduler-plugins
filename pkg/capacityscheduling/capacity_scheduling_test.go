@@ -40,6 +40,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	imageutils "k8s.io/kubernetes/test/utils/image"
@@ -296,6 +297,9 @@ func TestPostFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
+
 			registeredPlugins := makeRegisteredPlugin()
 
 			podItems := []v1.Pod{}
@@ -710,6 +714,9 @@ func TestDryRunPreemption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
+
 			registeredPlugins := makeRegisteredPlugin()
 
 			cs := clientsetfake.NewSimpleClientset()
