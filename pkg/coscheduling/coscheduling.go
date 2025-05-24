@@ -114,7 +114,7 @@ func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]framework.Cluster
 	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
 	return []framework.ClusterEventWithHint{
 		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Add}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(pgGVK), ActionType: framework.Add | framework.Update}},
+		{Event: framework.ClusterEvent{Resource: framework.EventResource(pgGVK), ActionType: framework.Add | framework.Update}},
 	}, nil
 }
 
