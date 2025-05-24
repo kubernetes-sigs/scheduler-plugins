@@ -27,7 +27,7 @@ require (
 	k8s.io/kube-scheduler v0.32.5
 	k8s.io/kubernetes v1.32.5
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
-	sigs.k8s.io/controller-runtime v0.20.0
+	sigs.k8s.io/controller-runtime v0.20.4
 	sigs.k8s.io/logtools v0.9.0
 	sigs.k8s.io/security-profiles-operator v0.4.0
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2
@@ -52,7 +52,7 @@ require (
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
-	github.com/evanphx/json-patch/v5 v5.9.0 // indirect
+	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -128,7 +128,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.32.0 // indirect
+	k8s.io/apiextensions-apiserver v0.32.1 // indirect
 	k8s.io/cloud-provider v0.32.5 // indirect
 	k8s.io/controller-manager v0.32.5 // indirect
 	k8s.io/csi-translation-lib v0.32.5 // indirect

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/env/bin bash
 # Copied from https://github.com/kubernetes/kubernetes/issues/79384#issuecomment-521493597
 set -vx
 set -euo pipefail
