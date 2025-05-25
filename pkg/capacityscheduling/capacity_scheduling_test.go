@@ -40,6 +40,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	imageutils "k8s.io/kubernetes/test/utils/image"
@@ -185,14 +186,14 @@ func TestPreFilter(t *testing.T) {
 func TestPostFilter(t *testing.T) {
 	res := map[v1.ResourceName]string{v1.ResourceMemory: "150"}
 	tests := []struct {
-		name                  string
-		pod                   *v1.Pod
-		existPods             []*v1.Pod
-		nodes                 []*v1.Node
-		filteredNodesStatuses framework.NodeToStatusMap
-		elasticQuotas         map[string]*ElasticQuotaInfo
-		wantResult            *framework.PostFilterResult
-		wantStatus            *framework.Status
+		name                string
+		pod                 *v1.Pod
+		existPods           []*v1.Pod
+		nodes               []*v1.Node
+		filteredNodesReader framework.NodeToStatusReader
+		elasticQuotas       map[string]*ElasticQuotaInfo
+		wantResult          *framework.PostFilterResult
+		wantStatus          *framework.Status
 	}{
 		{
 			name: "in-namespace preemption",
@@ -205,9 +206,7 @@ func TestPostFilter(t *testing.T) {
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
 			},
-			filteredNodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
+			filteredNodesReader: makeUnschedulableNodeStatusReader(),
 			elasticQuotas: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
@@ -248,9 +247,7 @@ func TestPostFilter(t *testing.T) {
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
 			},
-			filteredNodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
+			filteredNodesReader: makeUnschedulableNodeStatusReader(),
 			elasticQuotas: map[string]*ElasticQuotaInfo{
 				"ns1": {
 					Namespace: "ns1",
@@ -291,17 +288,18 @@ func TestPostFilter(t *testing.T) {
 			nodes: []*v1.Node{
 				st.MakeNode().Name("node-a").Capacity(res).Obj(),
 			},
-			filteredNodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
-			elasticQuotas: map[string]*ElasticQuotaInfo{},
-			wantResult:    framework.NewPostFilterResultWithNominatedNode("node-a"),
-			wantStatus:    framework.NewStatus(framework.Success),
+			filteredNodesReader: makeUnschedulableNodeStatusReader(),
+			elasticQuotas:       map[string]*ElasticQuotaInfo{},
+			wantResult:          framework.NewPostFilterResultWithNominatedNode("node-a"),
+			wantStatus:          framework.NewStatus(framework.Success),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
+
 			registeredPlugins := makeRegisteredPlugin()
 
 			podItems := []v1.Pod{}
@@ -357,7 +355,7 @@ func TestPostFilter(t *testing.T) {
 				podLister:         informerFactory.Core().V1().Pods().Lister(),
 				pdbLister:         getPDBLister(informerFactory),
 			}
-			gotResult, gotStatus := c.PostFilter(ctx, state, tt.pod, tt.filteredNodesStatuses)
+			gotResult, gotStatus := c.PostFilter(ctx, state, tt.pod, tt.filteredNodesReader)
 			if diff := gocmp.Diff(tt.wantStatus, gotStatus); diff != "" {
 				t.Errorf("Unexpected status (-want, +got):\n%s", diff)
 			}
@@ -608,7 +606,7 @@ func TestDryRunPreemption(t *testing.T) {
 		pod           *v1.Pod
 		pods          []*v1.Pod
 		nodes         []*v1.Node
-		nodesStatuses framework.NodeToStatusMap
+		nodeReader    framework.NodeToStatusReader
 		elasticQuotas map[string]*ElasticQuotaInfo
 		want          []preemption.Candidate
 	}{
@@ -649,9 +647,7 @@ func TestDryRunPreemption(t *testing.T) {
 					},
 				},
 			},
-			nodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
+			nodeReader: makeUnschedulableNodeStatusReader(),
 			want: []preemption.Candidate{
 				&candidate{
 					victims: &extenderv1.Victims{
@@ -701,9 +697,7 @@ func TestDryRunPreemption(t *testing.T) {
 					},
 				},
 			},
-			nodesStatuses: framework.NodeToStatusMap{
-				"node-a": framework.NewStatus(framework.Unschedulable),
-			},
+			nodeReader: makeUnschedulableNodeStatusReader(),
 			want: []preemption.Candidate{
 				&candidate{
 					victims: &extenderv1.Victims{
@@ -720,6 +714,9 @@ func TestDryRunPreemption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
+
 			registeredPlugins := makeRegisteredPlugin()
 
 			cs := clientsetfake.NewSimpleClientset()
@@ -759,20 +756,18 @@ func TestDryRunPreemption(t *testing.T) {
 			state.Write(preFilterStateKey, prefilterState)
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
 
-			pe := preemption.Evaluator{
-				PluginName: Name,
-				Handler:    fwk,
-				PodLister:  fwk.SharedInformerFactory().Core().V1().Pods().Lister(),
-				PdbLister:  getPDBLister(fwk.SharedInformerFactory()),
-				State:      state,
-				Interface: &preemptor{
+			pe := preemption.NewEvaluator(
+				Name,
+				fwk,
+				&preemptor{
 					fh:    fwk,
 					state: state,
 				},
-			}
+				false, // enableAsyncPreemption
+			)
 
 			nodeInfos, _ := fwk.SnapshotSharedLister().NodeInfos().List()
-			got, _, err := pe.DryRunPreemption(ctx, tt.pod, nodeInfos, nil, 0, int32(len(nodeInfos)))
+			got, _, err := pe.DryRunPreemption(ctx, state, tt.pod, nodeInfos, nil, 0, int32(len(nodeInfos)))
 			if err != nil {
 				t.Fatalf("unexpected error during DryRunPreemption(): %v", err)
 			}
@@ -969,6 +964,8 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
 			registeredPlugins := makeRegisteredPlugin()
 			cs := clientsetfake.NewSimpleClientset()
 			ctx, cancel := context.WithCancel(context.Background())
@@ -1007,7 +1004,7 @@ func TestPodEligibleToPreemptOthers(t *testing.T) {
 			state.Write(ElasticQuotaSnapshotKey, elasticQuotaSnapshotState)
 
 			p := preemptor{fh: fwk, state: state}
-			if got, _ := p.PodEligibleToPreemptOthers(tt.pod, tt.nominatedNodeStatus); got != tt.expected {
+			if got, _ := p.PodEligibleToPreemptOthers(ctx, tt.pod, tt.nominatedNodeStatus); got != tt.expected {
 				t.Errorf("expected %t, got %t for pod: %s", tt.expected, got, tt.pod.Name)
 			}
 		})
@@ -1598,6 +1595,12 @@ func TestDeletePod(t *testing.T) {
 			}
 		})
 	}
+}
+
+func makeUnschedulableNodeStatusReader() *framework.NodeToStatus {
+	nodeStatusReader := framework.NewDefaultNodeToStatus()
+	nodeStatusReader.Set("node-a", framework.NewStatus(framework.Unschedulable))
+	return nodeStatusReader
 }
 
 func makePod(podName string, namespace string, memReq int64, cpuReq int64, gpuReq int64, priority int32, uid string, nodeName string) *v1.Pod {

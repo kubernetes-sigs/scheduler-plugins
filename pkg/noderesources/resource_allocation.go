@@ -106,15 +106,17 @@ func calculatePodResourceRequest(pod *v1.Pod, resource v1.ResourceName) int64 {
 	var podRequest int64
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
-		qty := schedutil.GetRequestForResource(resource, &container.Resources.Requests, true)
-		podRequest += qty.Value()
+		if qty, found := container.Resources.Requests[resource]; found {
+			podRequest += qty.Value()
+		}
 	}
 
 	for i := range pod.Spec.InitContainers {
 		initContainer := &pod.Spec.InitContainers[i]
-		qty := schedutil.GetRequestForResource(resource, &initContainer.Resources.Requests, true)
-		if value := qty.Value(); podRequest < value {
-			podRequest = value
+		if qty, found := initContainer.Resources.Requests[resource]; found {
+			if value := qty.Value(); podRequest < value {
+				podRequest = value
+			}
 		}
 	}
 

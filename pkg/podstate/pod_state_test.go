@@ -34,7 +34,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
+
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
@@ -74,6 +76,8 @@ func TestPodState(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			// Initialize scheduler metrics
+			metrics.Register()
 			logger, ctx := ktesting.NewTestContext(t)
 
 			cs := clientsetfake.NewSimpleClientset()

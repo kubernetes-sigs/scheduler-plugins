@@ -28,6 +28,7 @@ import (
 
 	"github.com/paypal/load-watcher/pkg/watcher"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 
 	v1 "k8s.io/api/core/v1"
@@ -99,6 +100,8 @@ func TestNew(t *testing.T) {
 		tf.RegisterScorePlugin(Name, New, 1),
 	}
 
+	// Initialize scheduler metrics
+	metrics.Register()
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(nil, nil)
