@@ -163,22 +163,31 @@ func subResources(res1, res2 *framework.Resource) {
 	}
 }
 
-func lessThan(res1, res2 *framework.Resource) (bool, string) {
-	if res1.MilliCPU > 0 && res1.MilliCPU >= res2.MilliCPU {
-		return false, "cpu"
+func largeThan(res1, res2 *framework.Resource) (bool, string) {
+	if res1 == nil && res2 == nil {
+		return false, ""
 	}
-	if res1.Memory > 0 && res1.Memory >= res2.Memory {
-		return false, "memory"
+	if res1 == nil {
+		return false, ""
 	}
-	if res1.EphemeralStorage > 0 && res1.EphemeralStorage >= res2.EphemeralStorage {
-		return false, "ephemeral-storage"
+	if res2 == nil {
+		return true, ""
+	}
+	if res1.MilliCPU > 0 && res1.MilliCPU > res2.MilliCPU {
+		return true, "cpu"
+	}
+	if res1.Memory > 0 && res1.Memory > res2.Memory {
+		return true, "memory"
+	}
+	if res1.EphemeralStorage > 0 && res1.EphemeralStorage > res2.EphemeralStorage {
+		return true, "ephemeral-storage"
 	}
 	for k, v := range res1.ScalarResources {
-		if v2, ok := res2.ScalarResources[k]; !ok || ok && v > 0 && v >= v2 {
-			return false, string(k)
+		if v2, ok := res2.ScalarResources[k]; !ok || ok && v > 0 && v > v2 {
+			return true, string(k)
 		}
 	}
-	return true, ""
+	return false, ""
 }
 
 func SliceCopyInt(src []int) []int {

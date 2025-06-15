@@ -23,11 +23,10 @@ import (
 	"github.com/KunWuLuan/resourcepolicyapi/pkg/apis/scheduling/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/sets"
 	listersv1 "k8s.io/client-go/listers/core/v1"
+	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -36,6 +35,7 @@ type resourcePolicyInfo struct {
 	// when processing is ture, means cache of the rspinfo is waiting for reconcile
 	// do not schedule pod in this rsp.
 	processing bool
+	cond       *sync.Cond
 
 	ks keyStr
 	rv string
@@ -61,19 +61,21 @@ type resourcePolicyInfo struct {
 	//
 	// key: pod.Namespace/pod.Name
 	podResourceDetails    map[keyStr]*framework.Resource
-	maxPodResources       []framework.Resource
+	maxPodResources       []*framework.Resource
 	assumedPodConsumption []map[labelKeysValue]*framework.Resource
 }
 
 func newResourcePolicyInfo() *resourcePolicyInfo {
-	return &resourcePolicyInfo{
+	rspinfo := &resourcePolicyInfo{
 		assumedPods:           make(multiLevelPodSet, 0),
 		boundPods:             make(multiLevelPodSet, 0),
 		assumedPodCount:       make([]map[labelKeysValue]int, 0),
 		podResourceDetails:    make(map[keyStr]*framework.Resource),
-		maxPodResources:       make([]framework.Resource, 0),
+		maxPodResources:       make([]*framework.Resource, 0),
 		assumedPodConsumption: make([]map[labelKeysValue]*framework.Resource, 0),
 	}
+	rspinfo.cond = sync.NewCond(&rspinfo.processingLock)
+	return rspinfo
 }
 
 func (rspi *resourcePolicyInfo) complete(pl listersv1.PodLister, nl listersv1.NodeLister, ss framework.NodeInfoLister,
@@ -91,22 +93,21 @@ func (rspi *resourcePolicyInfo) complete(pl listersv1.PodLister, nl listersv1.No
 		// resourcepolicy has been initialized, pods can be scheduled again
 		rspi.processing = false
 		rspi.processingLock.Unlock()
+		rspi.cond.Broadcast()
 	}()
 
 	rspi.nodeSelectors = make([]labels.Selector, len(rspi.policy.Spec.Units))
+	rspi.assumedPods = make(multiLevelPodSet, len(rspi.policy.Spec.Units))
+	rspi.assumedPodConsumption = make([]map[labelKeysValue]*framework.Resource, len(rspi.policy.Spec.Units))
+	rspi.maxPodResources = make([]*framework.Resource, len(rspi.policy.Spec.Units))
+	rspi.boundPods = make(multiLevelPodSet, len(rspi.policy.Spec.Units))
+	rspi.assumedPodCount = make([]map[labelKeysValue]int, len(rspi.policy.Spec.Units))
 	for idx, unit := range rspi.policy.Spec.Units {
-		selector := labels.NewSelector()
-		reqs, _ := labels.SelectorFromSet(unit.NodeSelector.MatchLabels).Requirements()
-		selector.Add(reqs...)
-		for _, exp := range unit.NodeSelector.MatchExpressions {
-			req, err := labels.NewRequirement(exp.Key, selection.Operator(exp.Operator), exp.Values)
-			if err != nil {
-				continue
-			}
-			selector.Add(*req)
-		}
+		selector := labels.SelectorFromSet(unit.NodeSelector)
 		rspi.nodeSelectors[idx] = selector
-
+		if len(unit.MaxResources) > 0 {
+			rspi.maxPodResources[idx] = framework.NewResource(unit.MaxResources)
+		}
 		nodes, err := nl.List(selector)
 		if err != nil {
 			continue
@@ -125,7 +126,8 @@ func (rspi *resourcePolicyInfo) complete(pl listersv1.PodLister, nl listersv1.No
 				if !ok {
 					continue
 				}
-				res := resource.PodRequests(po.Pod, resource.PodResourcesOptions{})
+
+				res := resourcehelper.PodRequests(po.Pod, resourcehelper.PodResourcesOptions{})
 				rspi.addPodToBoundOrAssumedPods(rspi.boundPods, idx, labelKeyValue, no.Name, GetKeyStr(po.Pod.ObjectMeta), framework.NewResource(res))
 			}
 		}
@@ -135,6 +137,9 @@ func (rspi *resourcePolicyInfo) complete(pl listersv1.PodLister, nl listersv1.No
 // lock should be get outside
 // TODO: when pod resource is chanaged, assumedPodConsumption maybe wrong
 func (r *resourcePolicyInfo) addPodToBoundOrAssumedPods(ps multiLevelPodSet, index int, labelValues labelKeysValue, nodename string, podKey keyStr, res *framework.Resource) bool {
+	if len(ps[index]) == 0 {
+		ps[index] = make(map[string]map[labelKeysValue]sets.Set[keyStr])
+	}
 	podsetByValue := ps[index][nodename]
 	if podsetByValue == nil {
 		podsetByValue = make(map[labelKeysValue]sets.Set[keyStr])
@@ -176,7 +181,7 @@ func (r *resourcePolicyInfo) removePod(podKeyStr keyStr, labelKeyValue labelKeys
 	podRes := r.podResourceDetails[podKeyStr]
 	if podRes != nil {
 		for idx := range r.assumedPodConsumption {
-			r.updateAssumedPodResource(idx, labelKeyValue, false, podRes)
+			r.updateAssumedPodCount(idx, labelKeyValue, -1, podRes)
 		}
 		delete(r.podResourceDetails, podKeyStr)
 	}

@@ -27,8 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	v1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/util/workqueue"
+	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -56,7 +56,7 @@ func NewResourcePolicyCache(
 	pl v1.PodLister,
 	ss framework.NodeInfoLister,
 ) *resourcePolicyCache {
-	return &resourcePolicyCache{
+	cache := &resourcePolicyCache{
 		rps:    make(map[string]map[keyStr]*resourcePolicyInfo),
 		pd2Rps: make(map[keyStr]keyStr),
 
@@ -68,6 +68,8 @@ func NewResourcePolicyCache(
 		pl: pl,
 		ss: ss,
 	}
+	go cache.updateLoop()
+	return cache
 }
 
 // get the lock outside
@@ -96,6 +98,7 @@ func (rspc *resourcePolicyCache) Assume(cycleState *framework.CycleState, pod *c
 	if node, ok := rspc.assumedPd2Node[podKey]; ok {
 		return fmt.Errorf("PodAlreadyAssumed assumed node: %v", node)
 	}
+	rspc.pd2Rps[podKey] = preFilterState.matchedInfo.ks
 
 	rspi := preFilterState.matchedInfo
 	for idx, sel := range rspi.nodeSelectors {
@@ -132,14 +135,12 @@ func (rspc *resourcePolicyCache) Forget(cycleState *framework.CycleState, pod *c
 	}
 }
 
+// need to obtain lock outside
 func (rspc *resourcePolicyCache) AddOrUpdateBoundPod(p *corev1.Pod) {
-	rspc.processingLock.Lock()
-	defer rspc.processingLock.Unlock()
-
 	podKey := GetKeyStr(p.ObjectMeta)
 	rspkey := GetManagedResourcePolicy(p)
-	assumedRspKey := rspc.pd2Rps[podKey]
-	if assumedRspKey != rspkey {
+	assumedRspKey, ok := rspc.pd2Rps[podKey]
+	if ok && assumedRspKey != rspkey {
 		klog.ErrorS(fmt.Errorf("AssignedResourcePolicyNotMatch"), "bound pod is managed by another resourcepolicy", "assumed", assumedRspKey, "bound", rspkey)
 		delete(rspc.pd2Rps, podKey)
 
@@ -169,7 +170,7 @@ func (rspc *resourcePolicyCache) AddOrUpdateBoundPod(p *corev1.Pod) {
 		return
 	}
 
-	node, err := rspc.ss.Get(nodeName)
+	node, err := rspc.nl.Get(nodeName)
 	if err != nil {
 		klog.ErrorS(err, "failed to get node", "node", nodeName)
 		return
@@ -181,14 +182,14 @@ func (rspc *resourcePolicyCache) AddOrUpdateBoundPod(p *corev1.Pod) {
 	}
 	boundRsp.processingLock.Lock()
 	defer boundRsp.processingLock.Unlock()
-	podRes := resource.PodRequests(p, resource.PodResourcesOptions{})
+	podRes := resourcehelper.PodRequests(p, resourcehelper.PodResourcesOptions{})
 	for idx, sel := range boundRsp.nodeSelectors {
-		if !sel.Matches(labels.Set(node.Node().Labels)) {
+		if !sel.Matches(labels.Set(node.Labels)) {
 			// TODO: remove pod from this count
 			// do not remove node from unit by update node values
 			continue
 		}
-		boundRsp.removePodFromBoundOrAssumedPods(boundRsp.assumedPods, idx, labelKeyValue, node.Node().Name, podKey)
+		boundRsp.removePodFromBoundOrAssumedPods(boundRsp.assumedPods, idx, labelKeyValue, node.Name, podKey)
 		boundRsp.addPodToBoundOrAssumedPods(boundRsp.boundPods, idx, labelKeyValue, nodeName, podKey, framework.NewResource(podRes))
 	}
 }
@@ -209,7 +210,7 @@ func (rspc *resourcePolicyCache) DeleteBoundPod(p *corev1.Pod) {
 
 	assumedRspKey := rspc.pd2Rps[podKey]
 	assumedRsp := rspc.getResourcePolicyInfoByKey(assumedRspKey, p.Namespace)
-	if rsp != nil {
+	if assumedRsp != nil {
 		valid, labelKeyValue := genLabelKeyValueForPod(assumedRsp.policy, p)
 		if valid {
 			assumedRsp.removePod(podKey, labelKeyValue)
@@ -221,7 +222,7 @@ func (rspc *resourcePolicyCache) DeleteBoundPod(p *corev1.Pod) {
 
 func (rspc *resourcePolicyCache) DeleteResourcePolicy(rsp *v1alpha1.ResourcePolicy) {
 	rspc.processingLock.Lock()
-	defer rspc.processingLock.Lock()
+	defer rspc.processingLock.Unlock()
 
 	ns := rsp.Namespace
 	rspKey := GetKeyStr(rsp.ObjectMeta)
@@ -238,7 +239,7 @@ func (rspc *resourcePolicyCache) DeleteResourcePolicy(rsp *v1alpha1.ResourcePoli
 
 func (rspc *resourcePolicyCache) AddOrUpdateResPolicy(rsp *v1alpha1.ResourcePolicy) {
 	rspc.processingLock.Lock()
-	defer rspc.processingLock.Lock()
+	defer rspc.processingLock.Unlock()
 
 	ns := rsp.Namespace
 	rspKey := GetKeyStr(rsp.ObjectMeta)
@@ -278,7 +279,7 @@ func (rspc *resourcePolicyCache) AddOrUpdateResPolicy(rsp *v1alpha1.ResourcePoli
 	rspc.wq.AddRateLimited(types.NamespacedName{Namespace: rsp.Namespace, Name: rsp.Name})
 }
 
-func (rspc *resourcePolicyCache) UpdateLoop() {
+func (rspc *resourcePolicyCache) updateLoop() {
 	for {
 		item, shutdown := rspc.wq.Get()
 		if shutdown {

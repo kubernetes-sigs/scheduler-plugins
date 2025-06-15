@@ -1,0 +1,12 @@
+apiVersion: scheduling.x-k8s.io/v1alpha1
+kind: ResourcePolicy
+metadata:
+  name: resourcepolicy-sample
+  namespace: default
+spec: 
+  selector:
+    app: nginx
+  units:
+  - max: 1
+    nodeSelector: 
+      unit: first

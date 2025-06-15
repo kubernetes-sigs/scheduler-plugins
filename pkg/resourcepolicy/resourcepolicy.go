@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/KunWuLuan/resourcepolicyapi/pkg/apis/scheduling/v1alpha1"
 
@@ -29,9 +30,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
+	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -59,7 +62,7 @@ func (rspp *resourcePolicyPlugin) Name() string {
 
 func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	lh := klog.FromContext(ctx).WithValues("plugin", Name)
-	lh.V(5).Info("creating new coscheduling plugin")
+	lh.V(2).Info("creating new resourcepolicy plugin")
 
 	podLister := handle.SharedInformerFactory().Core().V1().Pods().Lister()
 	nodeLister := handle.SharedInformerFactory().Core().V1().Nodes().Lister()
@@ -77,8 +80,16 @@ func New(ctx context.Context, args runtime.Object, handle framework.Handle) (fra
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		ccache.Start(ctx)
+		ccache.WaitForCacheSync(ctx)
+		lh.V(2).Info("ResourcePolicyCache synced.")
+	}()
 
-	rspInformer, _ := ccache.GetInformerForKind(ctx, v1alpha1.SchemeGroupVersion.WithKind("ResourcePolicy"))
+	rspInformer, err := ccache.GetInformerForKind(ctx, v1alpha1.SchemeGroupVersion.WithKind("ResourcePolicy"))
+	if err != nil {
+		return nil, err
+	}
 	rspInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			rsp, ok := obj.(*v1alpha1.ResourcePolicy)
@@ -109,11 +120,41 @@ func New(ctx context.Context, args runtime.Object, handle framework.Handle) (fra
 		},
 	})
 
-	handle.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{})
+	handle.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			switch t := obj.(type) {
+			case *v1.Node:
+				node := t
+				pods, err := handle.SharedInformerFactory().Core().V1().Pods().Informer().GetIndexer().ByIndex("spec.nodeName", node.Name)
+				if err != nil {
+					klog.Error(err, "get node pods failed")
+					return
+				}
+				rspCache.processingLock.Lock()
+				defer rspCache.processingLock.Unlock()
+
+				podKeys := []string{}
+				for _, i := range pods {
+					pod := i.(*v1.Pod)
+					rsp := GetManagedResourcePolicy(pod)
+					if rsp == "" {
+						continue
+					}
+					podKeys = append(podKeys, string(klog.KObj(pod).String()))
+					rspCache.AddOrUpdateBoundPod(pod)
+				}
+				klog.InfoS("add node event", "processedPod", strings.Join(podKeys, ","))
+			}
+		},
+	})
 
 	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddIndexers(cache.Indexers{
 		ManagedByResourcePolicyIndexKey: func(obj interface{}) ([]string, error) {
 			return []string{string(GetManagedResourcePolicy(obj.(*v1.Pod)))}, nil
+		},
+		"spec.nodeName": func(obj interface{}) ([]string, error) {
+			p := obj.(*v1.Pod)
+			return []string{p.Spec.NodeName}, nil
 		},
 	})
 	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
@@ -136,14 +177,20 @@ func New(ctx context.Context, args runtime.Object, handle framework.Handle) (fra
 				if !ok {
 					return
 				}
+				rspCache.processingLock.Lock()
+				defer rspCache.processingLock.Unlock()
 				rspCache.AddOrUpdateBoundPod(pd)
+				klog.Info("add event for scheduled pod", "pod", klog.KObj(pd))
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				pd, ok := newObj.(*v1.Pod)
 				if !ok {
 					return
 				}
+				rspCache.processingLock.Lock()
+				defer rspCache.processingLock.Unlock()
 				rspCache.AddOrUpdateBoundPod(pd)
+				klog.Info("update event for scheduled pod", "pod", klog.KObj(pd))
 			},
 			DeleteFunc: func(obj interface{}) {
 				var pd *v1.Pod
@@ -163,12 +210,10 @@ func New(ctx context.Context, args runtime.Object, handle framework.Handle) (fra
 	})
 
 	plg := &resourcePolicyPlugin{
-		cache: &resourcePolicyCache{
-			pd2Rps: make(map[keyStr]keyStr),
-			rps:    make(map[string]map[keyStr]*resourcePolicyInfo),
-		},
-		client: c,
-		handle: handle,
+		cache:         rspCache,
+		client:        c,
+		handle:        handle,
+		schedulingCtx: map[keyStr]*schedulingContext{},
 	}
 	return plg, nil
 }
@@ -184,6 +229,7 @@ func (rspp *resourcePolicyPlugin) PreFilter(ctx context.Context, state *framewor
 	var matched *resourcePolicyInfo
 	var schedCtx *schedulingContext
 	var ok bool
+	logger := klog.FromContext(ctx).WithValues("pod", klog.KObj(pod))
 	rspp.cache.processingLock.RLock()
 	podKey := GetKeyStr(pod.ObjectMeta)
 	if schedCtx, ok = rspp.schedulingCtx[podKey]; ok && schedCtx.matched != "" {
@@ -193,13 +239,15 @@ func (rspp *resourcePolicyPlugin) PreFilter(ctx context.Context, state *framewor
 			matched = nil
 		}
 	} else {
-		rspp.schedulingCtx[podKey] = &schedulingContext{}
+		schedCtx = &schedulingContext{}
+		rspp.schedulingCtx[podKey] = schedCtx
 	}
 
 	if matched == nil {
 		resourcePoliciesInNamespace := rspp.cache.rps[pod.Namespace]
 		if len(resourcePoliciesInNamespace) == 0 {
 			rspp.cache.processingLock.RUnlock()
+			logger.V(2).Info("no resourcePolicy matches pod")
 			return nil, framework.NewStatus(framework.Skip)
 		}
 
@@ -216,12 +264,19 @@ func (rspp *resourcePolicyPlugin) PreFilter(ctx context.Context, state *framewor
 	rspp.cache.processingLock.RUnlock()
 
 	if matched == nil {
+		logger.V(2).Info("no resourcePolicy matches pod")
 		return nil, framework.NewStatus(framework.Skip, "no resourcePolicy matches pod")
 	} else {
+		logger = logger.WithValues("resourcePolicy", matched.ks)
 		schedCtx.matched = matched.ks
 		schedCtx.resourceVersion = matched.rv
 		schedCtx.unitIdx = 0
 	}
+	matched.processingLock.Lock()
+	for matched.processing {
+		matched.cond.Wait()
+	}
+	matched.processingLock.Unlock()
 
 	valid, labelKeyValue := genLabelKeyValueForPod(matched.policy, pod)
 	if !valid {
@@ -229,7 +284,7 @@ func (rspp *resourcePolicyPlugin) PreFilter(ctx context.Context, state *framewor
 	}
 	preFilterState := &ResourcePolicyPreFilterState{
 		matchedInfo:   matched,
-		podRes:        framework.NewResource(resource.PodRequests(pod, resource.PodResourcesOptions{})),
+		podRes:        framework.NewResource(resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{})),
 		labelKeyValue: labelKeyValue,
 
 		currentCount:   make([]int, len(matched.nodeSelectors)),
@@ -246,6 +301,9 @@ func (rspp *resourcePolicyPlugin) PreFilter(ctx context.Context, state *framewor
 		preFilterState.resConsumption[idx] = consumption[labelKeyValue]
 	}
 	for idx, max := range matched.maxPodResources {
+		if max == nil {
+			continue
+		}
 		preFilterState.maxConsumption[idx] = max.Clone()
 	}
 	copy(preFilterState.nodeSelectos, matched.nodeSelectors)
@@ -257,7 +315,33 @@ func (rspp *resourcePolicyPlugin) PreFilter(ctx context.Context, state *framewor
 		}
 	}
 	state.Write(ResourcePolicyPreFilterStateKey, preFilterState)
+	logger.V(2).Info("details of matched resource policy", "maxCount", preFilterState.maxCount, "currentCount", preFilterState.currentCount,
+		"maxConsumption", resourceListToStr(preFilterState.maxConsumption), "resConsumption", resourceListToStr(preFilterState.resConsumption),
+		"nodeSelectors", nodeSelectorsToStr(preFilterState.nodeSelectos))
 	return nil, nil
+}
+
+func nodeSelectorsToStr(selectors []labels.Selector) string {
+	res := []string{}
+	for _, selector := range selectors {
+		if selector == nil {
+			continue
+		}
+		res = append(res, selector.String())
+	}
+	return strings.Join(res, "|")
+}
+
+func resourceListToStr(list []*framework.Resource) string {
+	res := []string{}
+	for _, r := range list {
+		if r == nil {
+			res = append(res, "nil")
+			continue
+		}
+		res = append(res, fmt.Sprintf("cpu:%v,memory:%v,scalar:%+v", r.MilliCPU, r.Memory, r.ScalarResources))
+	}
+	return strings.Join(res, "|")
 }
 
 func (rspp *resourcePolicyPlugin) PreFilterExtensions() framework.PreFilterExtensions {
@@ -283,12 +367,20 @@ func findAvailableUnitForNode(nodeInfo *framework.NodeInfo, state *ResourcePolic
 			})
 			continue
 		}
-		if lt, res := lessThan(state.resConsumption[idx], state.maxConsumption[idx]); lt {
-			notValidIdx = append(notValidIdx, unitNotAvaiInfo{
-				idx: idx,
-				res: res,
-			})
-			continue
+		if state.maxConsumption[idx] != nil && state.resConsumption[idx] != nil {
+			res := state.resConsumption[idx].Clone()
+			res.MilliCPU += state.podRes.MilliCPU
+			res.Memory += state.podRes.Memory
+			for k, v := range state.podRes.ScalarResources {
+				res.AddScalar(k, v)
+			}
+			if gt, res := largeThan(res, state.maxConsumption[idx]); gt {
+				notValidIdx = append(notValidIdx, unitNotAvaiInfo{
+					idx: idx,
+					res: res,
+				})
+				continue
+			}
 		}
 		found = idx
 		break
@@ -306,6 +398,9 @@ func (rspp *resourcePolicyPlugin) Filter(ctx context.Context, state *framework.C
 		return framework.AsStatus(fmt.Errorf("cannot convert %T to ResourcePolicyPreFilterState", obj))
 	}
 	if avai, info := findAvailableUnitForNode(nodeInfo, preFilterState); avai == -1 {
+		if len(info) == 0 {
+			return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("not match any unit"))
+		}
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("unit not available: %v", info))
 	}
 	return nil
@@ -356,5 +451,28 @@ func (rspp *resourcePolicyPlugin) Unreserve(ctx context.Context, state *framewor
 }
 
 func (rspp *resourcePolicyPlugin) PreBind(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) *framework.Status {
+	obj, err := state.Read(ResourcePolicyPreFilterStateKey)
+	if err != nil {
+		return nil
+	}
+	preFilterState, ok := obj.(*ResourcePolicyPreFilterState)
+	if !ok {
+		return framework.AsStatus(fmt.Errorf("unable to convert state to ResourcePolicyPreFilterState"))
+	}
+	newPod := v1.Pod{}
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		err := rspp.client.Get(ctx, types.NamespacedName{Namespace: p.Namespace, Name: p.Name}, &newPod)
+		if err != nil {
+			return err
+		}
+		if len(newPod.Annotations) == 0 {
+			newPod.Annotations = make(map[string]string)
+		}
+		newPod.Annotations[ManagedByResourcePolicyAnnoKey] = string(preFilterState.matchedInfo.ks)
+		return rspp.client.Update(ctx, &newPod)
+	})
+	if err != nil {
+		return framework.AsStatus(fmt.Errorf("unable to get pod %v/%v", p.Namespace, p.Name))
+	}
 	return nil
 }
