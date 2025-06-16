@@ -97,10 +97,10 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
           - name: PrioritySort
     ```
 
-1. Set the file permissions of `sched-cc.yaml` to 0644
+1. Set the file permissions of `scheduler.conf` to 0644
 
     ```bash
-    chmod 0644 /etc/kubernetes/sched-cc.yaml
+    chmod 0644 /etc/kubernetes/scheduler.conf
     ```
 
 1. **❗IMPORTANT**❗ Starting with release v0.19, several plugins (e.g., coscheduling) introduced CRD
