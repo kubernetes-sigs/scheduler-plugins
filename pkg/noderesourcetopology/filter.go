@@ -180,6 +180,11 @@ func singleNUMAPodLevelHandler(lh logr.Logger, pod *v1.Pod, zones topologyv1alph
 	return nil
 }
 
+func rejectNonSingleNUMANodeHandler(lh logr.Logger, _ *v1.Pod, _ topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
+	lh.Info("Rejecting node because it is not configured with Single NUMA Node policy", "node", klog.KObj(nodeInfo.Node()))
+	return framework.NewStatus(framework.Unschedulable, "Node does not have Single NUMA Node policy")
+}
+
 // Filter Now only single-numa-node supported
 func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	if nodeInfo.Node() == nil {
@@ -223,14 +228,17 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 }
 
 func filterHandlerFromTopologyManager(conf nodeconfig.TopologyManager) filterFn {
-	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
+	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy &&
+		conf.Policy != kubeletconfig.BestEffortTopologyManagerPolicy &&
+		conf.Policy != kubeletconfig.RestrictedTopologyManagerPolicy {
+		return rejectNonSingleNUMANodeHandler
+	}
+	switch conf.Scope {
+	case kubeletconfig.PodTopologyManagerScope:
+		return singleNUMAPodLevelHandler
+	case kubeletconfig.ContainerTopologyManagerScope:
+		return singleNUMAContainerLevelHandler
+	default:
 		return nil
 	}
-	if conf.Scope == kubeletconfig.PodTopologyManagerScope {
-		return singleNUMAPodLevelHandler
-	}
-	if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
-		return singleNUMAContainerLevelHandler
-	}
-	return nil // cannot happen
 }
