@@ -97,6 +97,12 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
           - name: PrioritySort
     ```
 
+1. Set the file permissions of `scheduler.conf` to 0644
+
+    ```bash
+    chmod 0644 /etc/kubernetes/scheduler.conf
+    ```
+
 1. **❗IMPORTANT**❗ Starting with release v0.19, several plugins (e.g., coscheduling) introduced CRD
    to optimize their design and implementation. And hence we need an extra step to:
 
@@ -125,7 +131,7 @@ any vanilla Kubernetes scheduling capability. Instead, a lot of extra out-of-box
     plugin. Here we install coscheduling CRD:
 
     ```bash
-    $ kubectl apply -f manifests/crds/scheduling.x-k8s.io_podgroups.yaml
+    $ kubectl apply -f manifests/crds/
     ```
 
 1. Modify `/etc/kubernetes/manifests/kube-scheduler.yaml` to run scheduler-plugins with coscheduling
