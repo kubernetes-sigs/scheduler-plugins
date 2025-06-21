@@ -187,6 +187,11 @@ func TestLess(t *testing.T) {
 	lowPriority, highPriority := int32(10), int32(100)
 	now := time.Now()
 
+	capacity := map[v1.ResourceName]string{
+		v1.ResourceCPU:    "25m",
+		v1.ResourceMemory: "100Mi",
+	}
+
 	tests := []struct {
 		name string
 		p1   *framework.QueuedPodInfo
@@ -398,6 +403,56 @@ func TestLess(t *testing.T) {
 			pgs: []*v1alpha1.PodGroup{
 				tu.MakePodGroup().Name("pg2").Namespace("ns2").Time(now.Add(time.Second * 2)).Obj(),
 			},
+			want: true,
+		},
+		{
+			name: "equal priority, p1.Qos greater than p2.Qos and p2 belong to pg2",
+			p1: &framework.QueuedPodInfo{
+				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).
+					Containers(
+						[]v1.Container{
+							st.MakeContainer().Name("p1").ResourceRequests(capacity).ResourceLimits(capacity).Obj(),
+						},
+					).Obj()),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+			},
+			p2: &framework.QueuedPodInfo{
+				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).
+					Label(v1alpha1.PodGroupLabel, "pg2").Containers(
+					[]v1.Container{
+						st.MakeContainer().Name("p1").ResourceRequests(capacity).Obj(),
+					},
+				).Obj()),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg2").Namespace("ns2").Time(now.Add(time.Second * 2)).Obj(),
+			},
+			want: true,
+		},
+		{
+			name: "equal priority, p1.Qos greater than p2.Qos and p1 belongs pg1 and p2 belong to pg2",
+			p1: &framework.QueuedPodInfo{
+				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns1").Priority(highPriority).
+					Label(v1alpha1.PodGroupLabel, "pg1").Containers(
+					[]v1.Container{
+						st.MakeContainer().Name("p1").ResourceRequests(capacity).ResourceLimits(capacity).Obj(),
+					},
+				).Obj()),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+			},
+			p2: &framework.QueuedPodInfo{
+				PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns2").Priority(highPriority).
+					Label(v1alpha1.PodGroupLabel, "pg2").Containers(
+					[]v1.Container{
+						st.MakeContainer().Name("p2").Obj(),
+					},
+				).Obj()),
+				InitialAttemptTimestamp: ptrTime(now.Add(time.Second * 1)),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns1").Time(now.Add(time.Second * 1)).Obj(),
+				tu.MakePodGroup().Name("pg2").Namespace("ns2").Time(now.Add(time.Second * 2)).Obj()},
 			want: true,
 		},
 	}
