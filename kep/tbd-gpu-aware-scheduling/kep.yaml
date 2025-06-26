@@ -1,0 +1,13 @@
+title: GPU Aware Kubernetes Scheduling
+kep-number: TBD
+authors:
+  - "@zeel-patel_UBER"
+  - "@gauravk_UBER"
+  - "@amitkr_UBER"
+owning-sig: sig-scheduling
+status: provisional
+creation-date: 2024-09-28
+reviewers:
+  - TBD
+approvers:
+  - TBD
