@@ -784,10 +784,12 @@ func TestNetworkOverheadScore(t *testing.T) {
 				}
 
 				// Score
+				nodeInfo := framework.NewNodeInfo()
+				nodeInfo.SetNode(n)
 				score, gotStatus := pl.Score(
 					ctx,
 					state,
-					tt.pod, n.Name)
+					tt.pod, nodeInfo)
 				t.Logf("Workload: %v; Node: %v; score: %v; status: %v; message: %v \n", tt.pod.Name, n.Name, score, gotStatus.Code().String(), gotStatus.Message())
 
 				nodeScore := framework.NodeScore{
@@ -1035,7 +1037,9 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 
 				scoreNode := func(i int) {
 					n := nodes[i]
-					score, _ := pl.Score(ctx, state, tt.pod, n.Name)
+					nodeInfo := framework.NewNodeInfo()
+					nodeInfo.SetNode(n)
+					score, _ := pl.Score(ctx, state, tt.pod, nodeInfo)
 					gotList[i] = framework.NodeScore{Name: n.Name, Score: score}
 				}
 				Until(ctx, len(nodes), scoreNode)

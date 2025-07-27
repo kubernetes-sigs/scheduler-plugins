@@ -60,12 +60,8 @@ func validateResources(resources []schedulerconfig.ResourceSpec) error {
 }
 
 // Score invoked at the score extension point.
-func (alloc *Allocatable) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+func (alloc *Allocatable) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
 	logger := klog.FromContext(klog.NewContext(ctx, alloc.logger)).WithValues("ExtensionPoint", "Score")
-	nodeInfo, err := alloc.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
-	}
 
 	// alloc.score favors nodes with least allocatable or most allocatable resources.
 	// It calculates the sum of the node's weighted allocatable resources.

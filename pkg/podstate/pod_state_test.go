@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
@@ -113,7 +113,7 @@ func TestPodState(t *testing.T) {
 			var gotList framework.NodeScoreList
 			plugin := pe.(framework.ScorePlugin)
 			for i, n := range test.nodeInfos {
-				score, err := plugin.Score(context.Background(), nil, nil, n.Node().Name)
+				score, err := plugin.Score(context.Background(), nil, nil, n)
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}

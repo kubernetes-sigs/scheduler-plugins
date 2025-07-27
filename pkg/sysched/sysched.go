@@ -9,7 +9,6 @@ import (
 
 	"github.com/containers/common/pkg/seccomp"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
@@ -232,14 +231,15 @@ func (sc *SySched) calcScore(syscalls sets.Set[string]) int {
 }
 
 // Score invoked at the score extension point.
-func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+func (sc *SySched) Score(ctx context.Context, cs *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
 	logger := klog.FromContext(klog.NewContext(ctx, sc.logger)).WithValues("ExtensionPoint", "Score")
 	// Read directly from API server because cached state in SnapSharedLister not always up-to-date
 	// especially during initial scheduler start.
-	node, err := sc.handle.ClientSet().CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
-	if err != nil {
+	node := nodeInfo.Node()
+	if node == nil {
 		return 0, nil
 	}
+	nodeName := node.Name
 
 	podSyscalls := sc.getSyscalls(pod)
 

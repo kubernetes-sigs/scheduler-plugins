@@ -155,11 +155,13 @@ func TestNodeResourceScorePlugin(t *testing.T) {
 			for _, req := range test.requests {
 				nodeToScore := make(nodeToScoreMap, len(nodesMap))
 				for _, node := range nodesMap {
+					nodeInfo := framework.NewNodeInfo()
+					nodeInfo.SetNode(node)
 					score, gotStatus := tm.Score(
 						context.Background(),
 						framework.NewCycleState(),
 						req.pod,
-						node.ObjectMeta.Name)
+						nodeInfo)
 
 					t.Logf("%v; %v; %v; score: %v; status: %v\n",
 						test.name,
@@ -450,11 +452,13 @@ func TestNodeResourceScorePluginLeastNUMA(t *testing.T) {
 			pod := makePodByResourceLists(tc.podRequests...)
 
 			for _, node := range nodesMap {
+				nodeInfo := framework.NewNodeInfo()
+				nodeInfo.SetNode(node)
 				score, gotStatus := tm.Score(
 					context.Background(),
 					framework.NewCycleState(),
 					pod,
-					node.Name)
+					nodeInfo)
 
 				t.Logf("%v; %v; %v; score: %v; status: %v\n",
 					tc.name,
@@ -576,11 +580,13 @@ func TestNodeResourcePartialDataScorePlugin(t *testing.T) {
 			for _, req := range test.requests {
 				nodeToScore := make(nodeToScoreMap, len(nodesMap))
 				for _, node := range nodesMap {
+					nodeInfo := framework.NewNodeInfo()
+					nodeInfo.SetNode(node)
 					score, gotStatus := tm.Score(
 						context.Background(),
 						framework.NewCycleState(),
 						req.pod,
-						node.ObjectMeta.Name)
+						nodeInfo)
 
 					t.Logf("%v; %v; %v; score: %v; status: %v\n",
 						test.name,
