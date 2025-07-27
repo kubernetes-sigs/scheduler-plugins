@@ -60,7 +60,8 @@ func (rw resourceToWeightMap) weight(r v1.ResourceName) int64 {
 	return w
 }
 
-func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
+	nodeName := nodeInfo.Node().Name
 	// the scheduler framework will add the node/name key/value pair
 	lh := klog.FromContext(klog.NewContext(ctx, tm.logger)).WithValues("ExtensionPoint", "Score").
 		WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
