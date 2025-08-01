@@ -67,7 +67,7 @@ func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) 
 		return framework.MaxNodeScore, nil
 	}
 
-	return normalizeScore(maxNUMANodesCount, allContainersMinAvgDistance), nil
+	return normalizeScore(maxNUMANodesCount, allContainersMinAvgDistance, info.topologyManager.MaxNUMANodes), nil
 }
 
 func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *framework.Status) {
@@ -85,11 +85,11 @@ func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64
 		return framework.MinNodeScore, nil
 	}
 
-	return normalizeScore(numaNodes.Count(), isMinAvgDistance), nil
+	return normalizeScore(numaNodes.Count(), isMinAvgDistance, info.topologyManager.MaxNUMANodes), nil
 }
 
-func normalizeScore(numaNodesCount int, isMinAvgDistance bool) int64 {
-	numaNodeScore := framework.MaxNodeScore / highestNUMAID
+func normalizeScore(numaNodesCount int, isMinAvgDistance bool, highestNUMAID int) int64 {
+	numaNodeScore := framework.MaxNodeScore / int64(highestNUMAID)
 	score := framework.MaxNodeScore - int64(numaNodesCount)*numaNodeScore
 	if isMinAvgDistance {
 		// if distance between NUMA domains is optimal add half of numaNodeScore to make this node more favorable
