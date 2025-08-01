@@ -18,12 +18,10 @@ package noderesourcetopology
 
 import (
 	v1 "k8s.io/api/core/v1"
-	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/go-logr/logr"
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"gonum.org/v1/gonum/stat/combin"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -34,20 +32,17 @@ const (
 	maxDistanceValue = 255
 )
 
-func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
-	nodes := createNUMANodeList(lh, zones)
-	qos := v1qos.GetPodQOS(pod)
-
+func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *framework.Status) {
 	maxNUMANodesCount := 0
 	allContainersMinAvgDistance := true
 	// the order how TopologyManager asks for hint is important so doing it in the same order
 	// https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/topologymanager/scope_container.go#L52
 	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
 		// if a container requests only non NUMA just continue
-		if onlyNonNUMAResources(nodes, container.Resources.Requests) {
+		if onlyNonNUMAResources(info.numaNodes, container.Resources.Requests) {
 			continue
 		}
-		numaNodes, isMinAvgDistance := numaNodesRequired(lh, qos, nodes, container.Resources.Requests)
+		numaNodes, isMinAvgDistance := numaNodesRequired(lh, info.qos, info.numaNodes, container.Resources.Requests)
 		// container's resources can't fit onto node, return MinNodeScore for whole pod
 		if numaNodes == nil {
 			// score plugin should be running after resource filter plugin so we should always find sufficient amount of NUMA nodes
@@ -65,7 +60,7 @@ func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, zones topologyv1a
 
 		// subtract the resources requested by the container from the given NUMA.
 		// this is necessary, so we won't allocate the same resources for the upcoming containers
-		subtractFromNUMAs(container.Resources.Requests, nodes, numaNodes.GetBits()...)
+		subtractFromNUMAs(container.Resources.Requests, info.numaNodes, numaNodes.GetBits()...)
 	}
 
 	if maxNUMANodesCount == 0 {
@@ -75,17 +70,14 @@ func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, zones topologyv1a
 	return normalizeScore(maxNUMANodesCount, allContainersMinAvgDistance), nil
 }
 
-func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
-	nodes := createNUMANodeList(lh, zones)
-	qos := v1qos.GetPodQOS(pod)
-
+func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *framework.Status) {
 	resources := util.GetPodEffectiveRequest(pod)
 	// if a pod requests only non NUMA resources return max score
-	if onlyNonNUMAResources(nodes, resources) {
+	if onlyNonNUMAResources(info.numaNodes, resources) {
 		return framework.MaxNodeScore, nil
 	}
 
-	numaNodes, isMinAvgDistance := numaNodesRequired(lh, qos, nodes, resources)
+	numaNodes, isMinAvgDistance := numaNodesRequired(lh, info.qos, info.numaNodes, resources)
 	// pod's resources can't fit onto node, return MinNodeScore
 	if numaNodes == nil {
 		// score plugin should be running after resource filter plugin so we should always find sufficient amount of NUMA nodes

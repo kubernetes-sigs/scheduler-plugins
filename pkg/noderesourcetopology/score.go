@@ -30,7 +30,6 @@ import (
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
 	"github.com/go-logr/logr"
-	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
@@ -70,7 +69,8 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 
 	lh.V(6).Info("scoring node")
 	// if it's a non-guaranteed pod, every node is considered to be a good fit
-	if v1qos.GetPodQOS(pod) != v1.PodQOSGuaranteed {
+	qos := v1qos.GetPodQOS(pod)
+	if qos != v1.PodQOSGuaranteed {
 		return framework.MaxNodeScore, nil
 	}
 
@@ -87,11 +87,18 @@ func (tm *TopologyMatch) Score(ctx context.Context, state *framework.CycleState,
 
 	lh.V(6).Info("found object", "noderesourcetopology", stringify.NodeResourceTopologyResources(nodeTopology))
 
-	handler := tm.scoringHandlerFromTopologyManagerConfig(nodeconfig.TopologyManagerFromNodeResourceTopology(lh, nodeTopology))
+	conf := nodeconfig.TopologyManagerFromNodeResourceTopology(lh, nodeTopology)
+	handler := tm.scoringHandlerFromTopologyManagerConfig(conf)
 	if handler == nil {
 		return 0, nil
 	}
-	return handler(lh, pod, nodeTopology.Zones)
+	numaNodes := createNUMANodeList(lh, nodeTopology.Zones)
+	si := scoreInfo{
+		topologyManager: conf,
+		qos:             qos,
+		numaNodes:       numaNodes,
+	}
+	return handler(lh, pod, &si)
 }
 
 func (tm *TopologyMatch) ScoreExtensions() framework.ScoreExtensions {
@@ -132,27 +139,24 @@ func getScoringStrategyFunction(strategy apiconfig.ScoringStrategyType) (scoreSt
 	}
 }
 
-func podScopeScore(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
+func podScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
 	// This code is in Admit implementation of pod scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_pod.go#L52
 	// but it works with HintProviders, takes into account all possible allocations.
 	resources := util.GetPodEffectiveRequest(pod)
-
-	allocatablePerNUMA := createNUMANodeList(lh, zones)
-	finalScore := scoreForEachNUMANode(lh, resources, allocatablePerNUMA, scorerFn, resourceToWeightMap)
+	finalScore := scoreForEachNUMANode(lh, resources, info.numaNodes, scorerFn, resourceToWeightMap)
 	lh.V(2).Info("pod scope scoring final node score", "finalScore", finalScore)
 	return finalScore, nil
 }
 
-func containerScopeScore(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
+func containerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo, scorerFn scoreStrategyFn, resourceToWeightMap resourceToWeightMap) (int64, *framework.Status) {
 	// This code is in Admit implementation of container scope
 	// https://github.com/kubernetes/kubernetes/blob/9ff3b7e744b34c099c1405d9add192adbef0b6b1/pkg/kubelet/cm/topologymanager/scope_container.go#L52
 	containers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
 	contScore := make([]float64, len(containers))
-	allocatablePerNUMA := createNUMANodeList(lh, zones)
 
 	for i, container := range containers {
-		contScore[i] = float64(scoreForEachNUMANode(lh, container.Resources.Requests, allocatablePerNUMA, scorerFn, resourceToWeightMap))
+		contScore[i] = float64(scoreForEachNUMANode(lh, container.Resources.Requests, info.numaNodes, scorerFn, resourceToWeightMap))
 		lh.V(6).Info("container scope scoring", "container", container.Name, "score", contScore[i])
 	}
 	finalScore := int64(stat.Mean(contScore, nil))
@@ -174,13 +178,13 @@ func (tm *TopologyMatch) scoringHandlerFromTopologyManagerConfig(conf nodeconfig
 		return nil
 	}
 	if conf.Scope == kubeletconfig.PodTopologyManagerScope {
-		return func(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
-			return podScopeScore(lh, pod, zones, tm.scoreStrategyFunc, tm.resourceToWeightMap)
+		return func(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *framework.Status) {
+			return podScopeScore(lh, pod, info, tm.scoreStrategyFunc, tm.resourceToWeightMap)
 		}
 	}
 	if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
-		return func(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList) (int64, *framework.Status) {
-			return containerScopeScore(lh, pod, zones, tm.scoreStrategyFunc, tm.resourceToWeightMap)
+		return func(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *framework.Status) {
+			return containerScopeScore(lh, pod, info, tm.scoreStrategyFunc, tm.resourceToWeightMap)
 		}
 	}
 	return nil // cannot happen

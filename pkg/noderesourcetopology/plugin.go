@@ -58,7 +58,14 @@ type filterInfo struct {
 }
 
 type filterFn func(logr.Logger, *v1.Pod, *filterInfo) *framework.Status
-type scoringFn func(logr.Logger, *v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
+
+type scoreInfo struct {
+	topologyManager nodeconfig.TopologyManager
+	qos             v1.PodQOSClass
+	numaNodes       NUMANodeList
+}
+
+type scoringFn func(logr.Logger, *v1.Pod, *scoreInfo) (int64, *framework.Status)
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
