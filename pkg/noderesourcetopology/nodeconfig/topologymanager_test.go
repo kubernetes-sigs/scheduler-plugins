@@ -136,12 +136,14 @@ func TestTopologyManagerEqual(t *testing.T) {
 		{
 			name: "matching",
 			tmA: TopologyManager{
-				Scope:  "container",
-				Policy: "single-numa-node",
+				Scope:        "container",
+				Policy:       "single-numa-node",
+				MaxNUMANodes: 9, // gracehopper
 			},
 			tmB: TopologyManager{
-				Scope:  "container",
-				Policy: "single-numa-node",
+				Scope:        "container",
+				Policy:       "single-numa-node",
+				MaxNUMANodes: 9, // gracehopper
 			},
 			expected: true,
 		},
@@ -182,6 +184,25 @@ func TestTopologyManagerEqual(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "nodes diff vs nil",
+			tmA: TopologyManager{
+				MaxNUMANodes: 16,
+			},
+			tmB:      TopologyManager{},
+			expected: false,
+		},
+		{
+			name: "nodes diff",
+			tmA: TopologyManager{
+				MaxNUMANodes: 16,
+			},
+			tmB: TopologyManager{
+				MaxNUMANodes: 9, // gracehopper
+			},
+			expected: false,
+		},
+
+		{
 			name: "scope diff, policy matching",
 			tmA: TopologyManager{
 				Scope:  "container",
@@ -198,6 +219,19 @@ func TestTopologyManagerEqual(t *testing.T) {
 			tmA: TopologyManager{
 				Scope:  "container",
 				Policy: "single-numa-node",
+			},
+			tmB: TopologyManager{
+				Scope:  "container",
+				Policy: "best-effort",
+			},
+			expected: false,
+		},
+		{
+			name: "scope, policy matching, nodes diff",
+			tmA: TopologyManager{
+				Scope:        "container",
+				Policy:       "single-numa-node",
+				MaxNUMANodes: 9,
 			},
 			tmB: TopologyManager{
 				Scope:  "container",
@@ -324,13 +358,67 @@ func TestConfigFromAttributes(t *testing.T) {
 				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
 			},
 		},
+		{
+			name: "invalid-nodes-string",
+			attrs: topologyv1alpha2.AttributeList{
+				{
+					Name:  "topologyManagerMaxNUMANodes",
+					Value: "A",
+				},
+			},
+			expected: TopologyManager{},
+		},
+		{
+			name: "invalid-nodes-zero",
+			attrs: topologyv1alpha2.AttributeList{
+				{
+					Name:  "topologyManagerMaxNUMANodes",
+					Value: "0",
+				},
+			},
+			expected: TopologyManager{},
+		},
+		{
+			name: "invalid-nodes-negative",
+			attrs: topologyv1alpha2.AttributeList{
+				{
+					Name:  "topologyManagerMaxNUMANodes",
+					Value: "-2",
+				},
+			},
+			expected: TopologyManager{},
+		},
+		{
+			name: "valid-nodes",
+			attrs: topologyv1alpha2.AttributeList{
+				{
+					Name:  "topologyManagerMaxNUMANodes",
+					Value: "16",
+				},
+			},
+			expected: TopologyManager{
+				MaxNUMANodes: 16,
+			},
+		},
+		{
+			name: "valid-nodes-upper-bound",
+			attrs: topologyv1alpha2.AttributeList{
+				{
+					Name:  "topologyManagerMaxNUMANodes",
+					Value: "65535",
+				},
+			},
+			expected: TopologyManager{
+				MaxNUMANodes: LimitNUMANodes,
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := TopologyManager{}
 			cfg := &got // shortcut
-			cfg.updateFromAttributes(tt.attrs)
+			cfg.updateFromAttributes(klog.Background(), tt.attrs)
 			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("conf got=%+#v expected=%+#v", got, tt.expected)
 			}
@@ -427,8 +515,9 @@ func TestConfigFromNRT(t *testing.T) {
 				},
 			},
 			expected: TopologyManager{
-				Policy: kubeletconfig.BestEffortTopologyManagerPolicy,
-				Scope:  kubeletconfig.PodTopologyManagerScope,
+				Policy:       kubeletconfig.BestEffortTopologyManagerPolicy,
+				Scope:        kubeletconfig.PodTopologyManagerScope,
+				MaxNUMANodes: DefaultMaxNUMANodes,
 			},
 		},
 		{
@@ -440,8 +529,9 @@ func TestConfigFromNRT(t *testing.T) {
 				},
 			},
 			expected: TopologyManager{
-				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
-				Scope:  kubeletconfig.ContainerTopologyManagerScope,
+				Policy:       kubeletconfig.RestrictedTopologyManagerPolicy,
+				Scope:        kubeletconfig.ContainerTopologyManagerScope,
+				MaxNUMANodes: DefaultMaxNUMANodes,
 			},
 		},
 		{
@@ -455,8 +545,9 @@ func TestConfigFromNRT(t *testing.T) {
 				},
 			},
 			expected: TopologyManager{
-				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
-				Scope:  kubeletconfig.ContainerTopologyManagerScope,
+				Policy:       kubeletconfig.RestrictedTopologyManagerPolicy,
+				Scope:        kubeletconfig.ContainerTopologyManagerScope,
+				MaxNUMANodes: DefaultMaxNUMANodes,
 			},
 		},
 		{
@@ -473,8 +564,9 @@ func TestConfigFromNRT(t *testing.T) {
 				},
 			},
 			expected: TopologyManager{
-				Policy: kubeletconfig.BestEffortTopologyManagerPolicy,
-				Scope:  kubeletconfig.ContainerTopologyManagerScope,
+				Policy:       kubeletconfig.BestEffortTopologyManagerPolicy,
+				Scope:        kubeletconfig.ContainerTopologyManagerScope,
+				MaxNUMANodes: DefaultMaxNUMANodes,
 			},
 		},
 		{
@@ -495,8 +587,9 @@ func TestConfigFromNRT(t *testing.T) {
 				},
 			},
 			expected: TopologyManager{
-				Policy: kubeletconfig.RestrictedTopologyManagerPolicy,
-				Scope:  kubeletconfig.ContainerTopologyManagerScope,
+				Policy:       kubeletconfig.RestrictedTopologyManagerPolicy,
+				Scope:        kubeletconfig.ContainerTopologyManagerScope,
+				MaxNUMANodes: DefaultMaxNUMANodes,
 			},
 		},
 	}
