@@ -41,15 +41,8 @@ const highestNUMAID = 8
 
 type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha2.ZoneList) *framework.Status
 
-func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
+func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, info *filterInfo) *framework.Status {
 	lh.V(5).Info("container level single NUMA node handler")
-
-	// prepare NUMANodes list from zoneMap
-	nodes := createNUMANodeList(lh, zones)
-	qos := v1qos.GetPodQOS(pod)
-
-	// Node() != nil already verified in Filter(), which is the only public entry point
-	logNumaNodes(lh, "container handler NUMA resources", nodeInfo.Node().Name, nodes)
 
 	// the init containers are running SERIALLY and BEFORE the normal containers.
 	// https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#understanding-init-containers
@@ -59,7 +52,7 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 		clh := lh.WithValues(logging.KeyContainer, initContainer.Name, logging.KeyContainerKind, cntKind)
 		clh.V(6).Info("desired resources", stringify.ResourceListToLoggable(initContainer.Resources.Requests)...)
 
-		_, match := resourcesAvailableInAnyNUMANodes(clh, nodes, initContainer.Resources.Requests, qos, nodeInfo)
+		_, match := resourcesAvailableInAnyNUMANodes(clh, info, initContainer.Resources.Requests)
 		if !match {
 			msg := "cannot align " + cntKind + " container"
 			// we can't align init container, so definitely we can't align a pod
@@ -72,7 +65,7 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 		clh := lh.WithValues(logging.KeyContainer, container.Name, logging.KeyContainerKind, logging.KindContainerApp)
 		clh.V(6).Info("container requests", stringify.ResourceListToLoggable(container.Resources.Requests)...)
 
-		numaID, match := resourcesAvailableInAnyNUMANodes(clh, nodes, container.Resources.Requests, qos, nodeInfo)
+		numaID, match := resourcesAvailableInAnyNUMANodes(clh, info, container.Resources.Requests)
 		if !match {
 			// we can't align container, so definitely we can't align a pod
 			clh.V(2).Info("cannot align container")
@@ -81,7 +74,7 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 
 		// subtract the resources requested by the container from the given NUMA.
 		// this is necessary, so we won't allocate the same resources for the upcoming containers
-		err := subtractResourcesFromNUMANodeList(clh, nodes, numaID, qos, container.Resources.Requests)
+		err := subtractResourcesFromNUMANodeList(clh, info.numaNodes, numaID, info.qos, container.Resources.Requests)
 		if err != nil {
 			// this is an internal error which should never happen
 			return framework.NewStatus(framework.Error, "inconsistent resource accounting", err.Error())
@@ -93,14 +86,14 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 
 // resourcesAvailableInAnyNUMANodes checks for sufficient resource and return the NUMAID that would be selected by Kubelet.
 // this function requires NUMANodeList with properly populated NUMANode, NUMAID should be in range 0-63
-func resourcesAvailableInAnyNUMANodes(lh logr.Logger, numaNodes NUMANodeList, resources v1.ResourceList, qos v1.PodQOSClass, nodeInfo *framework.NodeInfo) (int, bool) {
+func resourcesAvailableInAnyNUMANodes(lh logr.Logger, info *filterInfo, resources v1.ResourceList) (int, bool) {
 	numaID := highestNUMAID
 	bitmask := bm.NewEmptyBitMask()
 	// set all bits, each bit is a NUMA node, if resources couldn't be aligned
 	// on the NUMA node, bit should be unset
 	bitmask.Fill()
 
-	nodeResources := util.ResourceList(nodeInfo.Allocatable)
+	nodeResources := util.ResourceList(info.node.Allocatable)
 
 	for resource, quantity := range resources {
 		if quantity.IsZero() {
@@ -121,14 +114,14 @@ func resourcesAvailableInAnyNUMANodes(lh logr.Logger, numaNodes NUMANodeList, re
 		// obvious, bits which are not in the NUMA id's range would be unset
 		hasNUMAAffinity := false
 		resourceBitmask := bm.NewEmptyBitMask()
-		for _, numaNode := range numaNodes {
+		for _, numaNode := range info.numaNodes {
 			numaQuantity, ok := numaNode.Resources[resource]
 			if !ok {
 				continue
 			}
 
 			hasNUMAAffinity = true
-			if !isResourceSetSuitable(qos, resource, quantity, numaQuantity) {
+			if !isResourceSetSuitable(info.qos, resource, quantity, numaQuantity) {
 				continue
 			}
 
@@ -161,18 +154,13 @@ func resourcesAvailableInAnyNUMANodes(lh logr.Logger, numaNodes NUMANodeList, re
 	return numaID, ret
 }
 
-func singleNUMAPodLevelHandler(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status {
+func singleNUMAPodLevelHandler(lh logr.Logger, pod *v1.Pod, info *filterInfo) *framework.Status {
 	lh.V(5).Info("pod level single NUMA node handler")
 
 	resources := util.GetPodEffectiveRequest(pod)
-
-	nodes := createNUMANodeList(lh, zones)
-
-	// Node() != nil already verified in Filter(), which is the only public entry point
-	logNumaNodes(lh, "pod handler NUMA resources", nodeInfo.Node().Name, nodes)
 	lh.V(6).Info("pod desired resources", stringify.ResourceListToLoggable(resources)...)
 
-	numaID, match := resourcesAvailableInAnyNUMANodes(lh, createNUMANodeList(lh, zones), resources, v1qos.GetPodQOS(pod), nodeInfo)
+	numaID, match := resourcesAvailableInAnyNUMANodes(lh, info, resources)
 	if !match {
 		lh.V(2).Info("cannot align pod", "name", pod.Name)
 		return framework.NewStatus(framework.Unschedulable, "cannot align pod")
@@ -186,7 +174,8 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 	if nodeInfo.Node() == nil {
 		return framework.NewStatus(framework.Error, "node not found")
 	}
-	if v1qos.GetPodQOS(pod) == v1.PodQOSBestEffort && !resourcerequests.IncludeNonNative(pod) {
+	qos := v1qos.GetPodQOS(pod)
+	if qos == v1.PodQOSBestEffort && !resourcerequests.IncludeNonNative(pod) {
 		return nil
 	}
 
@@ -212,26 +201,36 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState *framework.Cycle
 
 	lh.V(4).Info("found nrt data", "object", stringify.NodeResourceTopologyResources(nodeTopology), "conf", conf.String())
 
-	handler := filterHandlerFromTopologyManager(conf)
+	handler, boundary := filterHandlerFromTopologyManager(conf)
 	if handler == nil {
 		return nil
 	}
-	status := handler(lh, pod, nodeTopology.Zones, nodeInfo)
+
+	numaNodes := createNUMANodeList(lh, nodeTopology.Zones)
+	lh.V(4).Info("aligning resources", "boundary", boundary, "numaCells", len(numaNodes))
+	fi := filterInfo{
+		nodeName:        nodeName,
+		node:            nodeInfo,
+		topologyManager: conf,
+		qos:             qos,
+		numaNodes:       numaNodes,
+	}
+	status := handler(lh, pod, &fi)
 	if status != nil {
 		tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
 	}
 	return status
 }
 
-func filterHandlerFromTopologyManager(conf nodeconfig.TopologyManager) filterFn {
+func filterHandlerFromTopologyManager(conf nodeconfig.TopologyManager) (filterFn, string) {
 	if conf.Policy != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
-		return nil
+		return nil, ""
 	}
 	if conf.Scope == kubeletconfig.PodTopologyManagerScope {
-		return singleNUMAPodLevelHandler
+		return singleNUMAPodLevelHandler, "pod"
 	}
 	if conf.Scope == kubeletconfig.ContainerTopologyManagerScope {
-		return singleNUMAContainerLevelHandler
+		return singleNUMAContainerLevelHandler, "container"
 	}
-	return nil // cannot happen
+	return nil, "" // cannot happen
 }
