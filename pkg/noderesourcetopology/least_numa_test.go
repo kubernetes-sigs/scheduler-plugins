@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 )
 
 const (
@@ -746,7 +747,7 @@ func TestNormalizeScore(t *testing.T) {
 
 	for _, tc := range tcases {
 		t.Run(tc.description, func(t *testing.T) {
-			normalizedScore := normalizeScore(tc.score, tc.optimalDistance)
+			normalizedScore := normalizeScore(tc.score, tc.optimalDistance, nodeconfig.DefaultMaxNUMANodes)
 			if normalizedScore != tc.expectedScore {
 				t.Errorf("Expected normalizedScore to be %d not %d", tc.expectedScore, normalizedScore)
 			}
