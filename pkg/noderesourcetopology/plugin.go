@@ -30,6 +30,7 @@ import (
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 
 	"github.com/go-logr/logr"
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
@@ -48,7 +49,15 @@ func init() {
 	utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
 }
 
-type filterFn func(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
+type filterInfo struct {
+	nodeName        string // shortcut, used very often
+	node            *framework.NodeInfo
+	topologyManager nodeconfig.TopologyManager
+	numaNodes       NUMANodeList
+	qos             v1.PodQOSClass
+}
+
+type filterFn func(logr.Logger, *v1.Pod, *filterInfo) *framework.Status
 type scoringFn func(logr.Logger, *v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
