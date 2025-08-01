@@ -55,15 +55,16 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, zones topology
 	// https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#understanding-init-containers
 	// therefore, we don't need to accumulate their resources together
 	for _, initContainer := range pod.Spec.InitContainers {
-		// TODO: handle sidecar explicitely (new kind)
-		clh := lh.WithValues(logging.KeyContainer, initContainer.Name, logging.KeyContainerKind, logging.KindContainerInit)
+		cntKind := logging.GetInitContainerKind(&initContainer)
+		clh := lh.WithValues(logging.KeyContainer, initContainer.Name, logging.KeyContainerKind, cntKind)
 		clh.V(6).Info("desired resources", stringify.ResourceListToLoggable(initContainer.Resources.Requests)...)
 
 		_, match := resourcesAvailableInAnyNUMANodes(clh, nodes, initContainer.Resources.Requests, qos, nodeInfo)
 		if !match {
+			msg := "cannot align " + cntKind + " container"
 			// we can't align init container, so definitely we can't align a pod
-			clh.V(2).Info("cannot align container")
-			return framework.NewStatus(framework.Unschedulable, "cannot align init container")
+			clh.V(2).Info(msg)
+			return framework.NewStatus(framework.Unschedulable, msg)
 		}
 	}
 
