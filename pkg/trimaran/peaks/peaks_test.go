@@ -409,13 +409,14 @@ func TestPeaksScore(t *testing.T) {
 			scorePlugin := p.(framework.ScorePlugin)
 			var actualList framework.NodeScoreList
 			for _, n := range tt.nodes {
-				nodeName := n.Name
-				t.Logf("in loop.. node-1 power model %+v", getPowerModel(nodeName, peaksArgs.NodePowerModel))
-				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeName)
+				nodeInfo, err := snapshot.NodeInfos().Get(n.Name)
+				assert.Nil(t, err)
+				t.Logf("in loop.. node-1 power model %+v", getPowerModel(n.Name, peaksArgs.NodePowerModel))
+				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
 				assert.True(t, status.IsSuccess())
-				actualList = append(actualList, framework.NodeScore{Name: nodeName, Score: score})
+				actualList = append(actualList, framework.NodeScore{Name: n.Name, Score: score})
+				assert.ElementsMatch(t, tt.expected, actualList)
 			}
-			assert.ElementsMatch(t, tt.expected, actualList)
 		})
 	}
 
