@@ -35,10 +35,6 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
-// The maximum number of NUMA nodes that Topology Manager allows is 8
-// https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#known-limitations
-const highestNUMAID = 8
-
 type PolicyHandler func(pod *v1.Pod, zoneMap topologyv1alpha2.ZoneList) *framework.Status
 
 func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, info *filterInfo) *framework.Status {
@@ -87,7 +83,7 @@ func singleNUMAContainerLevelHandler(lh logr.Logger, pod *v1.Pod, info *filterIn
 // resourcesAvailableInAnyNUMANodes checks for sufficient resource and return the NUMAID that would be selected by Kubelet.
 // this function requires NUMANodeList with properly populated NUMANode, NUMAID should be in range 0-63
 func resourcesAvailableInAnyNUMANodes(lh logr.Logger, info *filterInfo, resources v1.ResourceList) (int, bool, string) {
-	numaID := highestNUMAID
+	numaID := info.topologyManager.MaxNUMANodes // highest NUMA ID
 	bitmask := bm.NewEmptyBitMask()
 	// set all bits, each bit is a NUMA node, if resources couldn't be aligned
 	// on the NUMA node, bit should be unset
