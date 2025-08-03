@@ -19,6 +19,7 @@ package noderesources
 import (
 	"context"
 	"reflect"
+	"sort"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -222,7 +223,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			pod:       cpuAndMemory,
 			nodeInfos: []*framework.NodeInfo{makeNodeInfo("machine", 4000, 10000)},
 			args:      config.NodeResourcesAllocatableArgs{Resources: []schedulerconfig.ResourceSpec{{Name: "memory", Weight: -1}, {Name: "cpu", Weight: 1}}},
-			wantErr:   "resource Weight of memory should be a positive value, got -1",
+			wantErr:   "resources[0].weight: Invalid value: -1: resource weight of memory should be a positive value, got :-1",
 			name:      "resource with negative weight",
 		},
 		{
@@ -230,7 +231,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			pod:       cpuAndMemory,
 			nodeInfos: []*framework.NodeInfo{makeNodeInfo("machine", 4000, 10000)},
 			args:      config.NodeResourcesAllocatableArgs{Resources: []schedulerconfig.ResourceSpec{{Name: "memory", Weight: 1}, {Name: "cpu", Weight: 0}}},
-			wantErr:   "resource Weight of cpu should be a positive value, got 0",
+			wantErr:   "resources[1].weight: Invalid value: 0: resource weight of cpu should be a positive value, got :0",
 			name:      "resource with zero weight",
 		},
 	}
@@ -296,9 +297,13 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			if !status.IsSuccess() {
 				t.Errorf("unexpected error: %v", status)
 			}
+			sort.Slice(gotList, func(i, j int) bool {
+				return gotList[i].Name < gotList[j].Name
+			})
 
 			for i := range gotList {
 				if !reflect.DeepEqual(test.expectedList[i].Score, gotList[i].Score) {
+					t.Errorf("expected %#v, got %#v", test.expectedList[i].Name, gotList[i].Name)
 					t.Errorf("expected %#v, got %#v", test.expectedList[i].Score, gotList[i].Score)
 				}
 			}
