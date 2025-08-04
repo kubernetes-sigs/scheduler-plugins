@@ -89,7 +89,7 @@ func (tm *TopologyMatch) Name() string {
 
 // New initializes a new plugin and returns it.
 func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	lh := klog.FromContext(ctx).WithValues("plugin", Name)
+	lh := klog.FromContext(ctx)
 
 	lh.V(5).Info("creating new noderesourcetopology plugin")
 	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)
