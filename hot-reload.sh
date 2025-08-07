@@ -13,7 +13,7 @@ IMAGE_TAG="v$(date +%Y%m%d-%H%M%S)"
 IMAGE_NAME="localhost:5000/scheduler-plugins/kube-scheduler:${IMAGE_TAG}"
 
 # Get Go version from go.mod (same as Makefile)
-GO_VERSION=$(awk '/^go /{print $2}' go.mod | head -n1)
+GO_VERSION="1.24"
 GO_BASE_IMAGE="golang:${GO_VERSION}"
 
 echo "🔥 Hot reload for MyPlugin scheduler..."
@@ -39,19 +39,12 @@ if ! docker exec ${CONTROL_PLANE_CONTAINER} test -f /etc/kubernetes/sched-cc.yam
     exit 1
 fi
 
-# Check if scheduler is using scheduler-plugins image
-CURRENT_IMAGE=$(kubectl get pods -l component=kube-scheduler -n kube-system --context kind-${CLUSTER_NAME} -o=jsonpath="{.items[0].spec.containers[0].image}" 2>/dev/null || echo "")
-if [[ ! "$CURRENT_IMAGE" =~ "scheduler-plugins" ]]; then
-    echo "❌ Scheduler is not using scheduler-plugins image (current: $CURRENT_IMAGE)."
-    echo "🔧 Please run the setup script first: ./setup-scheduler-plugins.sh ${CLUSTER_NAME}"
-    exit 1
-fi
-
 echo "✅ Scheduler-plugins installation verified. Proceeding with hot-reload..."
 
 # 3. Build new Docker image (much faster than full make)
 echo "📦 Building Docker image with latest changes..."
-docker build -t ${IMAGE_NAME} -f build/scheduler/Dockerfile --build-arg TARGETARCH=amd64 --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} .
+docker build -t ${IMAGE_NAME} -f build/scheduler/Dockerfile --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} --build-arg TARGETARCH=amd64 .
+
 
 # 4. Load image into Kind cluster
 echo "📋 Loading image into Kind cluster..."

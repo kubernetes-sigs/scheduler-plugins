@@ -59,7 +59,7 @@ func (pl *MyPlugin) Filter(ctx context.Context, state *framework.CycleState, pod
 
 // Score is called during the scoring phase to rank nodes
 func (pl *MyPlugin) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
-	pl.logger.Info("� MyPlugin Score: HOT RELOAD V3 TESTED! - Node evaluation in progress", "pod", pod.Name, "node", nodeName)
+	pl.logger.Info("🏆 MyPlugin Score: HOT RELOAD V3", "pod", pod.Name, "node", nodeName)
 
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {

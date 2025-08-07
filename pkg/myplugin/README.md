@@ -25,6 +25,13 @@ This setup **replaces** the default Kubernetes scheduler with MyPlugin scheduler
 wsl ./setup-cluster.sh mycluster
 ```
 
+NOTE: Can be necessary to convert to Unix line endings. Use `dos2unix` or similar tools.
+
+```bash
+# Convert to Unix line endings
+dos2unix setup-cluster.sh
+```
+
 ### 🔥 Hot Reload Development
 
 The biggest advantage of our setup is **hot reload** functionality, which reduces development time.
@@ -49,7 +56,29 @@ Hot reload updates the plugin code and restarts the scheduler pod.
 
 #### How to use Hot Reload?
 
+1. Make some change in `pkg/myplugin/myplugin.go`
+2. Run the hot reload script:
+
 ```bash
 # Run hot reload script
 ./hot-reload.sh mycluster
+```
+
+3. Run a test pod to trigger MyPlugin:
+
+```bash
+kubectl run test-v5 --image=nginx --context kind-mycluster
+```
+
+4. Check MyPlugin logs of the scheduler pod:
+
+```bash
+kubectl logs -n kube-system -l component=kube-scheduler --context kind-mycluster --tail=20 | grep "MyPlugin"
+```
+
+NOTE: Can be necessary to convert to Unix line endings. Use `dos2unix` or similar tools.
+
+```bash
+# Convert to Unix line endings
+dos2unix hot-reload.sh
 ```
