@@ -21,6 +21,72 @@ docker pull registry.k8s.io/scheduler-plugins/controller:$TAG
 
 You can find [how to install release image](doc/install.md) here.
 
+## Quick Start Development
+
+For local development and testing with custom scheduler plugins, this repository includes two convenient scripts:
+
+### 1. Initial Setup: `setup-scheduler-plugins.sh`
+
+Sets up a complete Kind cluster with scheduler-plugins for development:
+
+```bash
+# Create and configure a new Kind cluster with scheduler-plugins
+./setup-scheduler-plugins.sh [cluster-name]
+
+# Default cluster name is 'mycluster' if not specified
+./setup-scheduler-plugins.sh
+```
+
+This script:
+
+- Creates a Kind cluster with local container registry
+- Configures the default scheduler to use scheduler-plugins v0.32.7 as base
+- Adds MyPlugin (sample custom plugin) to the scheduler configuration
+- Automatically runs the hot-reload script to build and deploy your custom plugins
+
+### 2. Development Workflow: `hot-reload.sh`
+
+For fast iterative development of custom plugins:
+
+```bash
+# Apply your code changes and hot-reload them into the cluster
+./hot-reload.sh [cluster-name]
+
+# Test with a sample pod
+kubectl apply -f test-myplugin-pod.yaml
+```
+
+This script:
+
+- Builds a new Docker image with your latest code changes
+- Updates the running scheduler with the new image (typically 1-2 minutes)
+- Provides instant feedback for plugin development
+
+### Example Development Cycle
+
+```bash
+# 1. Initial setup (one-time)
+./setup-scheduler-plugins.sh mycluster
+
+# 2. Edit your plugin code (e.g., pkg/myplugin/myplugin.go)
+vim pkg/myplugin/myplugin.go
+
+# 3. Hot-reload your changes
+./hot-reload.sh mycluster
+
+# 4. Test your plugin
+kubectl apply -f test-myplugin-pod.yaml
+
+# 5. Check scheduler logs
+kubectl logs -n kube-system -l component=kube-scheduler -f
+```
+
+**Prerequisites:**
+
+- Docker and Kind installed
+- kubectl configured
+- Go toolchain (for building custom plugins)
+
 ## Plugins
 
 The kube-scheduler binary includes the below list of plugins. They can be configured by creating one or more
