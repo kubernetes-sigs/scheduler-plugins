@@ -8,8 +8,6 @@ metadata:
 spec:
   priorityClassName: high-priority
   schedulerName: default-scheduler
-  nodeSelector:
-    kubernetes.io/hostname: mycluster-worker2  # This should trigger cross-node optimization
   containers:
   - name: cpu-consumer
     image: busybox:1.35
@@ -24,9 +22,9 @@ spec:
       done
     resources:
       requests:
-        cpu: 24000m
+        cpu: 23000m
         memory: 100Mi
       limits:
-        cpu: 24000m
+        cpu: 23000m
         memory: 100Mi
   restartPolicy: Never
