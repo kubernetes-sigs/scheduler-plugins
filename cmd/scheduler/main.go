@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/mycrossnodepreemption"
+	"sigs.k8s.io/scheduler-plugins/pkg/mycrossnodepreemptionbinpacking"
 	"sigs.k8s.io/scheduler-plugins/pkg/myplugin"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
@@ -54,6 +55,7 @@ func main() {
 		app.WithPlugin(coscheduling.Name, coscheduling.New),
 		app.WithPlugin(loadvariationriskbalancing.Name, loadvariationriskbalancing.New),
 		app.WithPlugin(mycrossnodepreemption.Name, mycrossnodepreemption.New),
+		app.WithPlugin(mycrossnodepreemptionbinpacking.Name, mycrossnodepreemptionbinpacking.New),
 		app.WithPlugin(myplugin.Name, myplugin.New),
 		app.WithPlugin(networkoverhead.Name, networkoverhead.New),
 		app.WithPlugin(topologicalsort.Name, topologicalsort.New),

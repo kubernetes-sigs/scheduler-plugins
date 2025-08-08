@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: high-priority-pod
+  namespace: binpacking-test
+  labels:
+    pod-type: "high-priority"
+spec:
+  priorityClassName: high-priority
+  schedulerName: default-scheduler
+  nodeSelector:
+    kubernetes.io/hostname: mycluster-worker2  # This should trigger cross-node optimization
+  containers:
+  - name: cpu-consumer
+    image: busybox:1.35
+    command: 
+    - /bin/sh
+    - -c
+    - |
+      echo "High-priority pod starting on node $(hostname)"
+      while true; do
+        echo "High-priority pod consuming 24 CPUs on $(hostname)"
+        sleep 30
+      done
+    resources:
+      requests:
+        cpu: 24000m
+        memory: 100Mi
+      limits:
+        cpu: 24000m
+        memory: 100Mi
+  restartPolicy: Never
