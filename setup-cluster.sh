@@ -43,7 +43,7 @@ echo "⏳ Waiting for scheduler to be ready..."
 SCHED_POD="$(kubectl --context "$CONTEXT" -n kube-system get pods -o name | grep -m1 '^pod/kube-scheduler-')"
 kubectl --context "$CONTEXT" wait --for=condition=Ready -n kube-system "$SCHED_POD" --timeout=60s
 
-# Create cluster role binding for scheduler
+# Create cluster role binding for scheduler (TODO: only add roles needed)
 echo "🔧 Creating cluster role binding for scheduler..."
 kubectl --context "$CONTEXT" create clusterrolebinding scheduler-admin --clusterrole=cluster-admin --user=system:kube-scheduler
 
