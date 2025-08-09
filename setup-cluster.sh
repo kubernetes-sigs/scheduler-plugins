@@ -34,11 +34,19 @@ CONTEXT="kind-${CLUSTER_NAME}"
 
 echo "🔍 Control plane container ID: ${CONTROL_PLANE_CONTAINER}"
 
-# 2. Set scheduler.conf permissions for future use
+# Set scheduler.conf permissions for future use
 echo "🔒 Setting scheduler.conf permissions..."
 docker exec ${CONTROL_PLANE_CONTAINER} bash -c "chmod 0644 /etc/kubernetes/scheduler.conf"
 
-# 3. Keep default scheduler running (no plugin deployment)
+# Wait for scheduler to be ready
+echo "⏳ Waiting for scheduler to be ready..."
+kubectl wait --for=condition=ready pod -l app=kube-scheduler -n kube-system --timeout=60s
+
+# Create cluster role binding for scheduler
+echo "🔧 Creating cluster role binding for scheduler..."
+kubectl create clusterrolebinding scheduler-admin --clusterrole=cluster-admin --user=system:kube-scheduler
+
+# Default scheduler running (no plugin deployment)
 echo "✅ Cluster setup complete! Default scheduler is running."
 echo "📋 To deploy custom scheduler plugins, use: ./load-plugins.sh [cluster-name] [plugin1,plugin2,...]"
 echo "📋 Check cluster with: kubectl get nodes --context kind-${CLUSTER_NAME}"
