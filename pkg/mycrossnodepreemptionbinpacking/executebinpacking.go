@@ -17,7 +17,7 @@ func (pl *MyCrossNodePreemptionBinpacking) executeBinPackingSolution(ctx context
 		"movements", len(solution.PodMovements),
 		"evictions", len(solution.VictimsToEvict))
 
-	// Phase 1: Execute pod movements (relocations)
+	// 1: Execute pod movements (relocations)
 	for i, movement := range solution.PodMovements {
 		klog.V(3).InfoS("Executing pod movement",
 			"step", fmt.Sprintf("%d/%d", i+1, len(solution.PodMovements)),
@@ -45,13 +45,13 @@ func (pl *MyCrossNodePreemptionBinpacking) executeBinPackingSolution(ctx context
 		}
 	}
 
-	// Phase 2: Wait briefly for movements to take effect
+	// 2: Wait briefly for movements to take effect
 	if len(solution.PodMovements) > 0 {
 		klog.V(3).InfoS("Waiting for pod movements to take effect")
 		time.Sleep(2 * time.Second)
 	}
 
-	// Phase 3: Execute pod evictions (deletions)
+	// 3: Execute pod evictions (deletions)
 	for i, victim := range solution.VictimsToEvict {
 		klog.V(3).InfoS("Executing pod eviction",
 			"step", fmt.Sprintf("%d/%d", i+1, len(solution.VictimsToEvict)),
@@ -151,7 +151,8 @@ func (pl *MyCrossNodePreemptionBinpacking) evictPod(ctx context.Context, pod *v1
 	return nil
 }
 
-// validatePodMovement validates that a pod movement is safe and feasible
+// validatePodMovement validates that a pod movement is safe and feasible.
+// By safe and feasible, we mean that the target node must be ready, schedulable, and have enough resources.
 func (pl *MyCrossNodePreemptionBinpacking) validatePodMovement(ctx context.Context, pod *v1.Pod, targetNode string) error {
 	// Check if target node exists and is ready
 	node, err := pl.client.CoreV1().Nodes().Get(ctx, targetNode, metav1.GetOptions{})
