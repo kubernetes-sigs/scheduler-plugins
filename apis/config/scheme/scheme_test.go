@@ -280,7 +280,8 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 											Type:    config.Prometheus,
 											Address: "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
 										},
-										WatcherAddress: "http://deadbeef:2020"},
+										MetricsUpdateIntervalSeconds: 30,
+										WatcherAddress:               "http://deadbeef:2020"},
 									TargetUtilization: 60,
 									DefaultRequests: corev1.ResourceList{
 										corev1.ResourceCPU: testCPUQuantity,
@@ -297,7 +298,8 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 											Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
 											InsecureSkipVerify: false,
 										},
-										WatcherAddress: "http://deadbeef:2020"},
+										MetricsUpdateIntervalSeconds: 30,
+										WatcherAddress:               "http://deadbeef:2020"},
 									SafeVarianceMargin:      v1.DefaultSafeVarianceMargin,
 									SafeVarianceSensitivity: v1.DefaultSafeVarianceSensitivity,
 								},
@@ -311,7 +313,8 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 											Address:            "http://prometheus-k8s.monitoring.svc.cluster.local:9090",
 											InsecureSkipVerify: false,
 										},
-										WatcherAddress: "http://deadbeef:2020"},
+										MetricsUpdateIntervalSeconds: 30,
+										WatcherAddress:               "http://deadbeef:2020"},
 									SmoothingWindowSize: v1.DefaultSmoothingWindowSize,
 									RiskLimitWeights: map[corev1.ResourceName]float64{
 										corev1.ResourceCPU:    v1.DefaultRiskLimitWeight,
@@ -387,6 +390,7 @@ profiles:
         insecureSkipVerify: false
         token: ""
         type: Prometheus
+      metricsUpdateIntervalSeconds: 30
       targetUtilization: 60
       watcherAddress: http://deadbeef:2020
     name: TargetLoadPacking
@@ -398,6 +402,7 @@ profiles:
         insecureSkipVerify: false
         token: ""
         type: Prometheus
+      metricsUpdateIntervalSeconds: 30
       safeVarianceMargin: 1
       safeVarianceSensitivity: 1
       watcherAddress: http://deadbeef:2020
@@ -410,6 +415,7 @@ profiles:
         insecureSkipVerify: false
         token: ""
         type: Prometheus
+      metricsUpdateIntervalSeconds: 30
       riskLimitWeights:
         cpu: 0.5
         memory: 0.5
