@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,16 +32,12 @@ const (
 
 type Config struct {
 	MaxMovesPerPod int           `json:"maxMovesPerPod,omitempty"` // total move budget (incl. helpers)
-	Timeout        time.Duration `json:"timeoutDuration,omitempty"`
 }
 
 func (pl *MyCrossNodePreemptionBinpacking) Name() string { return Name }
 
 func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
-	cfg := &Config{
-		MaxMovesPerPod: 5,
-		Timeout:        5 * time.Second,
-	}
+	cfg := &Config{ MaxMovesPerPod: 5 }
 	if obj != nil {
 		klog.V(2).InfoS("Plugin configuration", "config", obj)
 	}
