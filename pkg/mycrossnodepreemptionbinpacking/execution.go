@@ -91,14 +91,12 @@ func (pl *MyCrossNodePreemptionBinpacking) movePodToNode(ctx context.Context, po
 	moved.CreationTimestamp = metav1.Time{}
 
 	// Remove scheduling hints that could fight our pinning
-	moved.Spec.SchedulerName = ""                  // let kubelet accept NodeName assignment
-	moved.Spec.NodeSelector = map[string]string{}  // clear selectors
-	moved.Spec.Affinity = nil                      // clear any node/pod affinity constraints
+	moved.Spec.SchedulerName = ""                 // let kubelet accept NodeName assignment
+	moved.Spec.NodeSelector = map[string]string{} // clear selectors
+	moved.Spec.Affinity = nil                     // clear any node/pod affinity constraints
 
 	// Hard pin to destination node so the default scheduler won't re-place it
 	moved.Spec.NodeName = destNode
-
-	// Carry tolerations as-is (safe), volumes, etc. remain unchanged.
 
 	// Mark it as a moved pod (debugging/traceability)
 	if moved.Annotations == nil {
@@ -176,47 +174,65 @@ func (pl *MyCrossNodePreemptionBinpacking) validatePodMovement(ctx context.Conte
 	return nil
 }
 
-// calculateUtilizationImprovement calculates how much the bin-packing solution improves overall utilization
+// calculateUtilizationImprovement computes average CPU utilization change across nodes,
+// based on the provided solution and the current nodeStates snapshot (no cached fields).
+// Note: This function does NOT add the pending pod's CPU to the target node because the
+// pending pod object isn't available here. If you want that included, pass its CPU in and add it.
 func (pl *MyCrossNodePreemptionBinpacking) calculateUtilizationImprovement(
 	solution *BinPackingSolution,
 	nodeStates map[string]*NodeResourceState,
 ) float64 {
-	// Calculate utilization before and after the solution
-	var totalBeforeUtilization, totalAfterUtilization float64
-	nodeCount := float64(len(nodeStates))
+	var totalBefore, totalAfter float64
+	var counted int
 
-	for nodeName, state := range nodeStates {
-		// Before utilization
-		totalBeforeUtilization += state.UtilizationCPU
+	for nodeName, st := range nodeStates {
+		alloc := st.AllocatableCPU
+		if alloc <= 0 {
+			continue
+		}
 
-		// After utilization (simulate the changes)
-		afterUtilization := state.UtilizationCPU
+		usedBefore := st.AllocatableCPU - st.AvailableCPU
+		if usedBefore < 0 {
+			usedBefore = 0
+		}
+		utilBefore := float64(usedBefore) / float64(alloc)
 
-		// Account for moved pods
-		for _, movement := range solution.PodMovements {
-			if movement.FromNode == nodeName {
-				afterUtilization -= float64(movement.CPURequest) / float64(state.AllocatableCPU)
-			} else if movement.ToNode == nodeName {
-				afterUtilization += float64(movement.CPURequest) / float64(state.AllocatableCPU)
+		// simulate after
+		usedAfter := usedBefore
+
+		// apply movements
+		for _, mv := range solution.PodMovements {
+			if mv.FromNode == nodeName {
+				usedAfter -= mv.CPURequest
+			}
+			if mv.ToNode == nodeName {
+				usedAfter += mv.CPURequest
 			}
 		}
 
-		// If the target node gets the pending pod, its utilization increases accordingly.
-		if nodeName == solution.TargetNode && len(solution.VictimsToEvict) > 0 {
-			afterUtilization = min(1.0, afterUtilization) // guard
+		// apply evictions (only relevant where victims currently run)
+		for _, vic := range solution.VictimsToEvict {
+			if vic.Spec.NodeName == nodeName {
+				usedAfter -= getPodCPURequest(vic)
+			}
 		}
 
-		totalAfterUtilization += afterUtilization
+		// clamp
+		if usedAfter < 0 {
+			usedAfter = 0
+		}
+		if usedAfter > alloc {
+			usedAfter = alloc
+		}
+		utilAfter := float64(usedAfter) / float64(alloc)
+
+		totalBefore += utilBefore
+		totalAfter += utilAfter
+		counted++
 	}
 
-	avgBefore := totalBeforeUtilization / nodeCount
-	avgAfter := totalAfterUtilization / nodeCount
-	return avgAfter - avgBefore
-}
-
-func min(a, b float64) float64 {
-	if a < b {
-		return a
+	if counted == 0 {
+		return 0
 	}
-	return b
+	return (totalAfter / float64(counted)) - (totalBefore / float64(counted))
 }
