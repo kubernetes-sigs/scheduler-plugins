@@ -268,7 +268,9 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 			var actualList framework.NodeScoreList
 			for _, n := range tt.nodes {
 				nodeName := n.Name
-				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeName)
+				nodeInfo := framework.NewNodeInfo()
+				nodeInfo.SetNode(n)
+				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
 				assert.True(t, status.IsSuccess())
 				actualList = append(actualList, framework.NodeScore{Name: nodeName, Score: score})
 			}
@@ -367,7 +369,9 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 				gotList := make(framework.NodeScoreList, len(nodes))
 				scoreNode := func(i int) {
 					n := nodes[i]
-					score, _ := scorePlugin.Score(ctx, state, pod, n.Name)
+					nodeInfo := framework.NewNodeInfo()
+					nodeInfo.SetNode(n)
+					score, _ := scorePlugin.Score(ctx, state, pod, nodeInfo)
 					gotList[i] = framework.NodeScore{Name: n.Name, Score: score}
 				}
 				Until(ctx, len(nodes), scoreNode)

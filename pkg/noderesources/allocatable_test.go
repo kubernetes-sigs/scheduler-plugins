@@ -286,7 +286,7 @@ func TestNodeResourcesAllocatable(t *testing.T) {
 			var gotList framework.NodeScoreList
 			plugin := alloc.(framework.ScorePlugin)
 			for i := range test.nodeInfos {
-				score, err := plugin.Score(context.Background(), nil, test.pod, test.nodeInfos[i].Node().Name)
+				score, err := plugin.Score(context.Background(), nil, test.pod, test.nodeInfos[i])
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
