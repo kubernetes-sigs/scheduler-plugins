@@ -180,10 +180,3 @@ func getForeignPodsDetectMode(lh logr.Logger, cfg *apiconfig.NodeResourceTopolog
 	}
 	return foreignPodsDetect
 }
-
-func logNumaNodes(lh logr.Logger, desc, nodeName string, nodes NUMANodeList) {
-	for _, numaNode := range nodes {
-		numaItems := []interface{}{"numaCell", numaNode.NUMAID}
-		lh.V(6).Info(desc, stringify.ResourceListToLoggableWithValues(numaItems, numaNode.Resources)...)
-	}
-}
