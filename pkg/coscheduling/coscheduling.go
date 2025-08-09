@@ -24,7 +24,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/cache"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
@@ -76,8 +75,6 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	}
 
 	scheme := runtime.NewScheme()
-	_ = clientscheme.AddToScheme(scheme)
-	_ = v1.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
 	c, _, err := util.NewClientWithCachedReader(ctx, handle.KubeConfig(), scheme)
 	if err != nil {
