@@ -40,11 +40,12 @@ docker exec ${CONTROL_PLANE_CONTAINER} bash -c "chmod 0644 /etc/kubernetes/sched
 
 # Wait for scheduler to be ready
 echo "⏳ Waiting for scheduler to be ready..."
-kubectl wait --for=condition=ready pod -l app=kube-scheduler -n kube-system --timeout=60s
+SCHED_POD="$(kubectl --context "$CONTEXT" -n kube-system get pods -o name | grep -m1 '^pod/kube-scheduler-')"
+kubectl --context "$CONTEXT" wait --for=condition=Ready -n kube-system "$SCHED_POD" --timeout=60s
 
 # Create cluster role binding for scheduler
 echo "🔧 Creating cluster role binding for scheduler..."
-kubectl create clusterrolebinding scheduler-admin --clusterrole=cluster-admin --user=system:kube-scheduler
+kubectl --context "$CONTEXT" create clusterrolebinding scheduler-admin --clusterrole=cluster-admin --user=system:kube-scheduler
 
 # Default scheduler running (no plugin deployment)
 echo "✅ Cluster setup complete! Default scheduler is running."
