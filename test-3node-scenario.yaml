@@ -1,12 +1,12 @@
 ---
 # Test scenario to demonstrate default scheduler limitations with cross-node bin-packing
 # This creates the exact scenario described:
-# - Node A (worker) pods: a1 (9 CPU) + a2 (9 CPU) = 18/24 CPUs
-# - Node B (worker2) pods: b1 (3 CPU) + b2 (9 CPU) = 12/24 CPUs
-# - Node C (worker3): c1(3 CPU) + c2(15 CPU) = 18/24 CPUs used
+# - Node A (worker) pods: a1 (10 CPU) + a2 (9 CPU) = 19/24 CPUs
+# - Node B (worker2) pods: b1 (2 CPU) + b2 (8 CPU) = 10/24 CPUs
+# - Node C (worker3): c1(2 CPU) + c2(15 CPU) = 17/24 CPUs used
 # - High-priority pod needs 24 CPUs
 #
-# Optimal solution: move c1 to to Node A; move b2 to Node C; move b1 to Node A; schedule new pod on Node B
+# Optimal solution: move b1 to to Node A; move c1 to Node A; move b2 to Node C; schedule new pod on Node B
 # Default scheduler will likely evict all pods from one node instead
 
 apiVersion: v1
@@ -31,7 +31,7 @@ value: 1000
 globalDefault: false
 description: "High priority class that should trigger preemption"
 ---
-# Node A (worker) pods: a1 (9 CPU) + a2 (9 CPU) = 18/24 CPUs
+# Node A (worker) pods: a1 (10 CPU) + a2 (9 CPU) = 19/24 CPUs
 apiVersion: v1
 kind: Pod
 metadata:
@@ -54,15 +54,15 @@ spec:
     - |
       echo "Pod a1 starting on node $(hostname)"
       while true; do
-        echo "Pod a1 consuming 9 CPUs on $(hostname)"
+        echo "Pod a1 consuming 10 CPUs on $(hostname)"
         sleep 30
       done
     resources:
       requests:
-        cpu: 9000m
+        cpu: 10000m
         memory: 100Mi
       limits:
-        cpu: 9000m
+        cpu: 10000m
         memory: 100Mi
   restartPolicy: Never
 ---
@@ -100,7 +100,7 @@ spec:
         memory: 100Mi
   restartPolicy: Never
 ---
-# Node B (worker2) pods: b1 (3 CPU) + b2 (9 CPU) = 12/24 CPUs
+# Node B (worker2) pods: b1 (2 CPU) + b2 (8 CPU) = 10/24 CPUs
 apiVersion: v1
 kind: Pod
 metadata:
@@ -123,15 +123,15 @@ spec:
     - |
       echo "Pod b1 starting on node $(hostname)"
       while true; do
-        echo "Pod b1 consuming 3 CPUs on $(hostname)"
+        echo "Pod b1 consuming 2 CPUs on $(hostname)"
         sleep 30
       done
     resources:
       requests:
-        cpu: 3000m
+        cpu: 2000m
         memory: 100Mi
       limits:
-        cpu: 3000m
+        cpu: 2000m
         memory: 100Mi
   restartPolicy: Never
 ---
@@ -157,19 +157,19 @@ spec:
     - |
       echo "Pod b2 starting on node $(hostname)"
       while true; do
-        echo "Pod b2 consuming 9 CPUs on $(hostname)"
+        echo "Pod b2 consuming 8 CPUs on $(hostname)"
         sleep 30
       done
     resources:
       requests:
-        cpu: 9000m
+        cpu: 8000m
         memory: 100Mi
       limits:
-        cpu: 9000m
+        cpu: 8000m
         memory: 100Mi
   restartPolicy: Never
 ---
-# Node C (worker3) pods: c1 (3 CPU) + c2 (15 CPU) = 18/24 CPUs
+# Node C (worker3) pods: c1 (2 CPU) + c2 (15 CPU) = 17/24 CPUs
 apiVersion: v1
 kind: Pod
 metadata:
@@ -192,15 +192,15 @@ spec:
     - |
       echo "Pod c1 starting on node $(hostname)"
       while true; do
-        echo "Pod c1 consuming 3 CPUs on $(hostname)"
+        echo "Pod c1 consuming 2 CPUs on $(hostname)"
         sleep 30
       done
     resources:
       requests:
-        cpu: 3000m
+        cpu: 2000m
         memory: 100Mi
       limits:
-        cpu: 3000m
+        cpu: 2000m
         memory: 100Mi
   restartPolicy: Never
 ---
