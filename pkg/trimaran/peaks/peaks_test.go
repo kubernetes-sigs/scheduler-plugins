@@ -415,8 +415,8 @@ func TestPeaksScore(t *testing.T) {
 				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
 				assert.True(t, status.IsSuccess())
 				actualList = append(actualList, framework.NodeScore{Name: n.Name, Score: score})
-				assert.ElementsMatch(t, tt.expected, actualList)
 			}
+			assert.ElementsMatch(t, tt.expected, actualList)
 		})
 	}
 
