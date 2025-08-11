@@ -34,7 +34,7 @@ type Config struct {
 }
 
 // ---------------------------- Initialization ----------------------------
-// Fucntions used by main scheduler to identify the plugin.
+// Functions used by main scheduler to identify the plugin.
 
 // Name returns the name of the plugin.
 func (pl *MyCrossNodePreemptionBinpacking) Name() string { return Name }
@@ -63,8 +63,8 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 // ---------------------------- PostFilter ----------------------------
 
 // Implements the PostFilter interface for the plugin.
-func (pl *MyCrossNodePreemptionBinpacking) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-    klog.InfoS("PostFilter start", "pod", klog.KObj(pod))
+func (pl *MyCrossNodePreemptionBinpacking) PostFilter(ctx context.Context, state *framework.CycleState, pendingPod *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+    klog.InfoS("PostFilter start", "pod", klog.KObj(pendingPod))
 
 	// Get all nodes incl. resource stats
     nodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
@@ -73,27 +73,27 @@ func (pl *MyCrossNodePreemptionBinpacking) PostFilter(ctx context.Context, state
         return nil, framework.NewStatus(framework.Unschedulable, "no nodes")
     }
 
-    candidates := pl.buildCandidates(nodes, pod) // candidates for possible preemption
-    solution := pl.findBestPlan(candidates, pod) // find the best bin-packing solution
+    candidateNodes := pl.buildPreemptionCandidates(nodes, pendingPod) // candidates for possible preemption
+    plan := pl.findPlan(candidateNodes, pendingPod) // find the best bin-packing solution
 
-	// If no solution found the PostFilter will return unschedulable status.
-	if solution == nil { return nil, framework.NewStatus(framework.Unschedulable, "no preemption candidates found") }
-    
+	// If no plan found the PostFilter will return unschedulable status.
+	if plan == nil { return nil, framework.NewStatus(framework.Unschedulable, "no preemption candidates found") }
+
 	// Execute the bin-packing solution
-	if err := pl.executeBinPackingSolution(ctx, solution); err != nil {
+	if err := pl.executeBinPackingPlan(ctx, plan); err != nil {
         klog.ErrorS(err, "plan execution failed")
         return nil, framework.NewStatus(framework.Error, err.Error())
     }
 	
 	// Update the nominated node (i.e. target node where the new pod will be scheduled)
     return &framework.PostFilterResult{
-        NominatingInfo: &framework.NominatingInfo{NominatedNodeName: solution.TargetNode},
+        NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.TargetNode},
     }, framework.NewStatus(framework.Success, "")
 }
 
 // ---------------------------- Modeling ----------------------------
 
-type Candidate struct {
+type CandidateNode struct {
 	NodeName  string
 	State     *NodeResourceState
 	Victims   []*v1.Pod
@@ -101,43 +101,47 @@ type Candidate struct {
 
 type NodeResourceState struct {
 	Name              string
-	AvailableCPU      int64
-	AvailableMemory   int64
-	AllocatableCPU    int64
-	AllocatableMemory int64
+	AvailableCPU      int64 // milliCPU
+	AvailableMemory   int64 // bytes
+	AllocatableCPU    int64 // milliCPU
+	AllocatableMemory int64 // bytes
 	Pods              []*v1.Pod
 }
 
-type BinPackingSolution struct {
+type BinPackingPlan struct {
 	TargetNode     string
 	PodMovements   []PodMovement
 	VictimsToEvict []*v1.Pod
 }
 
 type PodMovement struct {
-	Pod        *v1.Pod
-	FromNode   string
-	ToNode     string
-	CPURequest int64
+	Pod           *v1.Pod
+	FromNode      string
+	ToNode     	  string
+	CPURequest 	  int64 // milliCPU
+	MemoryRequest int64 // bytes
 }
 
-// buildCandidates creates a list of candidate nodes for preemption based on resource availability
-func (pl *MyCrossNodePreemptionBinpacking) buildCandidates(nodes []*framework.NodeInfo, pod *v1.Pod,) []*Candidate {
+// buildPreemptionCandidates creates a list of candidate nodes that has pods that can be preempted to make the
+// pending pod schedulable.
+func (pl *MyCrossNodePreemptionBinpacking) buildPreemptionCandidates(nodes []*framework.NodeInfo, pendingPod *v1.Pod) []*CandidateNode {
+
+	var candidateNodes []*CandidateNode
 	
-	var candidates []*Candidate
+	// Loop through all nodes
 	for _, nodeInfo := range nodes {
-		if isControlPlaneNode(nodeInfo.Node().Name) {
-			continue
-		}
+		
+		// Skip control plane nodes
+		if isControlPlaneNode(nodeInfo.Node().Name) { continue }
+
+		// Calculate available resources
 		availCPU := nodeInfo.Allocatable.MilliCPU - nodeInfo.Requested.MilliCPU
-		if availCPU < 0 {
-			availCPU = 0
-		}
 		availMem := nodeInfo.Allocatable.Memory - nodeInfo.Requested.Memory
-		if availMem < 0 {
-			availMem = 0
-		}
-		st := &NodeResourceState{
+		if availCPU < 0 { availCPU = 0 }
+		if availMem < 0 { availMem = 0 }
+
+		// Create node resource state of this node
+		nodeState := &NodeResourceState{
 			Name:              nodeInfo.Node().Name,
 			AvailableCPU:      availCPU,
 			AvailableMemory:   availMem,
@@ -145,87 +149,82 @@ func (pl *MyCrossNodePreemptionBinpacking) buildCandidates(nodes []*framework.No
 			AllocatableMemory: nodeInfo.Allocatable.Memory,
 			Pods:              []*v1.Pod{},
 		}
+
+		// Identify low-priority pods that can be preempted of this node
 		var lowPriorityPods []*v1.Pod
-		for _, pi := range nodeInfo.Pods {
-			st.Pods = append(st.Pods, pi.Pod)
-			if pi.Pod.DeletionTimestamp == nil && getPodPriority(pi.Pod) < getPodPriority(pod) {
-				lowPriorityPods = append(lowPriorityPods, pi.Pod)
+		for _, podInfo := range nodeInfo.Pods {
+			nodeState.Pods = append(nodeState.Pods, podInfo.Pod)
+			if podInfo.Pod.DeletionTimestamp == nil && getPodPriority(podInfo.Pod) < getPodPriority(pendingPod) {
+				lowPriorityPods = append(lowPriorityPods, podInfo.Pod)
 			}
 		}
-		candidates = append(candidates, &Candidate{NodeName: nodeInfo.Node().Name, State: st, Victims: lowPriorityPods})
+
+		candidateNodes = append(candidateNodes, &CandidateNode{NodeName: nodeInfo.Node().Name, State: nodeState, Victims: lowPriorityPods})
 	}
-	return candidates
+
+	return candidateNodes
 }
 
 // ---------------------------- Planner ----------------------------
 
-// findBestPlan identifies the best bin-packing plan from the available candidates by evaluating their resource states and potential pod movements.
-func (pl *MyCrossNodePreemptionBinpacking) findBestPlan(cands []*Candidate, pending *v1.Pod) *BinPackingSolution {
-	all := map[string]*NodeResourceState{}
-	for _, c := range cands {
-		all[c.NodeName] = c.State
+// findPlan identifies the best bin-packing plan from the available candidate nodes by evaluating their resource states and potential pod movements.
+func (pl *MyCrossNodePreemptionBinpacking) findPlan(candidateNodes []*CandidateNode, pendingPod *v1.Pod) *BinPackingPlan {
+	allNodeStates := map[string]*NodeResourceState{}
+	for _, candidate := range candidateNodes {
+		allNodeStates[candidate.NodeName] = candidate.State
 	}
 
-	var bestSolution *BinPackingSolution
-	bestEvict := int(1 << 30)
-	bestMoves := int(1 << 30)
+	var bestPlan *BinPackingPlan
+	bestEvict := int(1 << 30) // largest int value
+	bestMoves := int(1 << 30) // largest int value
 
-	for _, c := range cands {
-		if isControlPlaneNode(c.NodeName) { continue }
-		cpuDef := getPodCPURequest(pending) - c.State.AvailableCPU
-		memDef := getPodMemoryRequest(pending) - c.State.AvailableMemory
+	for _, candidateNode := range candidateNodes {
+		if isControlPlaneNode(candidateNode.NodeName) { continue }
+		cpuDef := getPodCPURequest(pendingPod) - candidateNode.State.AvailableCPU
+		memDef := getPodMemoryRequest(pendingPod) - candidateNode.State.AvailableMemory
 		if cpuDef < 0 { cpuDef = 0 }
 		if memDef < 0 { memDef = 0 }
 
-		plan := pl.findPlanForTarget(pending, c.NodeName, cpuDef, memDef, all)
+		candidateState := allNodeStates[candidateNode.NodeName]
+		if candidateState == nil {
+			return nil
+		}
+
+		movablePodsOfCandidateNode := pl.getMovablePods(candidateState.Pods, pendingPod)
+
+		// Largest first tends to minimize #moves/evictions
+		// sort movable pods by their CPU requests in descending order
+		sort.Slice(movablePodsOfCandidateNode, func(i, j int) bool {
+			return getPodCPURequest(movablePodsOfCandidateNode[i]) > getPodCPURequest(movablePodsOfCandidateNode[j])
+		})
+
+		// Try to move pods first, then evict if necessary
+		plan := pl.moveThenEvict(pendingPod, candidateNode.NodeName, cpuDef, memDef, movablePodsOfCandidateNode, allNodeStates)
 		if plan == nil { continue }
-		ev, mv := len(plan.VictimsToEvict), len(plan.PodMovements)
-		if ev < bestEvict || (ev == bestEvict && mv < bestMoves) {
-			bestSolution, bestEvict, bestMoves = plan, ev, mv
+
+		// Check if this plan is better than the best found so far by evaluating the number of evictions and movements.
+		// Fewer evictions are preferred first, then fewer movements.
+		numOfEvictions, numOfMovements := len(plan.VictimsToEvict), len(plan.PodMovements)
+		if numOfEvictions < bestEvict || (numOfEvictions == bestEvict && numOfMovements < bestMoves) {
+			bestPlan, bestEvict, bestMoves = plan, numOfEvictions, numOfMovements
 		}
 	}
-	return bestSolution
-}
-
-// findPlanForTarget attempts to find a bin-packing plan for a specific target node by evaluating its resource state and potential pod movements.
-// The strategy is to first try to move pods to free up space, and if that is not enough, it will consider evicting lower-priority pods.
-func (pl *MyCrossNodePreemptionBinpacking) findPlanForTarget(
-	pending *v1.Pod, target string, cpuDef, memDef int64,
-	nodeStates map[string]*NodeResourceState,
-) *BinPackingSolution {
-	state := nodeStates[target]
-	if state == nil {
-		return nil
-	}
-	movable := pl.getMovablePods(state.Pods, pending)
-
-	// Largest first tends to minimize #moves/evictions
-	// sort movable pods by their CPU requests in descending order
-	sort.Slice(movable, func(i, j int) bool {
-		return getPodCPURequest(movable[i]) > getPodCPURequest(movable[j])
-	})
-
-	// Try to move pods first, then evict if necessary
-	return pl.moveThenEvict(pending, target, cpuDef, memDef, movable, nodeStates)
+	return bestPlan
 }
 
 // Try moves first, then evict if necessary
-func (pl *MyCrossNodePreemptionBinpacking) moveThenEvict(
-	pending *v1.Pod, target string, cpuDef, memDef int64,
-	movable []*v1.Pod, global map[string]*NodeResourceState,
-) *BinPackingSolution {
-
+func (pl *MyCrossNodePreemptionBinpacking) moveThenEvict(pendingPod *v1.Pod, targetNode string, cpuDef, memDef int64, movablePodsOfTargetNode []*v1.Pod, global map[string]*NodeResourceState) *BinPackingPlan {
 	sim := pl.copyNodeStates(global) // create a copy of the global node states to avoid mutating the original
-	solution := &BinPackingSolution{TargetNode: target} // initialize the solution
+	plan := &BinPackingPlan{TargetNode: targetNode}
 
 	var freedCPU, freedMem int64
 	moveBudget := pl.args.MaxMovesPerPod
 	var notMovablePods []*v1.Pod
 
-	for _, pod := range movable {
-		
+	for _, pod := range movablePodsOfTargetNode {
+
 		// Skip pods not on the target node
-		if pod.Spec.NodeName != target {
+		if pod.Spec.NodeName != targetNode {
 			continue
 		}
 		if moveBudget <= 0 { // no more moves allowed since the limit for this pod has been reached
@@ -233,30 +232,30 @@ func (pl *MyCrossNodePreemptionBinpacking) moveThenEvict(
 			continue
 		}
 
-		dest := pl.bestDestExcluding(pod, sim, map[string]bool{target: true}) // find the best destination for the pod
-		helpers := []PodMovement{} // initialize the helpers slice. A helper is a pod movement that frees up space on the target node
+		destinationNode := pl.bestDestinationNode(pod, sim, map[string]bool{targetNode: true}) // find best destination for the pod
+		helperPods := []PodMovement{} // a helper is a pod movement that frees up space on the target node
 		
 		// Try to find a destination with one helper layer
-		if dest == "" && moveBudget > 1 {
-			dest, helpers = pl.freeDestWithOneHelperLayer(pod, pending, target, sim, moveBudget-1)
+		if destinationNode == "" && moveBudget > 1 {
+			destinationNode, helperPods = pl.freeDestWithOneHelperLayer(pod, pendingPod, targetNode, sim, moveBudget-1)
 		}
 		// If no destination found, add to notMovablePods
-		if dest == "" {
+		if destinationNode == "" {
 			notMovablePods = append(notMovablePods, pod)
 			continue
 		}
 
 		// Apply helper moves to free up space at the target node
-		for _, mv := range helpers {
+		for _, mv := range helperPods {
 			applyMove(sim, mv)
-			solution.PodMovements = append(solution.PodMovements, mv)
+			plan.PodMovements = append(plan.PodMovements, mv)
 			moveBudget--
 		}
 
-		// Move the pod to the destination
-		mv := PodMovement{Pod: pod, FromNode: target, ToNode: dest, CPURequest: getPodCPURequest(pod)}
+		// Move pod to destination
+		mv := PodMovement{Pod: pod, FromNode: targetNode, ToNode: destinationNode, CPURequest: getPodCPURequest(pod)}
 		applyMove(sim, mv)
-		solution.PodMovements = append(solution.PodMovements, mv)
+		plan.PodMovements = append(plan.PodMovements, mv)
 		moveBudget--
 
 		// Track freed resources. If we have freed enough resources, we can stop
@@ -272,23 +271,20 @@ func (pl *MyCrossNodePreemptionBinpacking) moveThenEvict(
 		sort.Slice(notMovablePods, func(i, j int) bool {
 			return getPodCPURequest(notMovablePods[i]) < getPodCPURequest(notMovablePods[j])
 		})
-		for _, p := range notMovablePods {
+		for _, pod := range notMovablePods {
 			if freedCPU >= cpuDef && freedMem >= memDef { break }
-			solution.VictimsToEvict = append(solution.VictimsToEvict, p)
-			freedCPU += getPodCPURequest(p)
-			freedMem += getPodMemoryRequest(p)
+			plan.VictimsToEvict = append(plan.VictimsToEvict, pod)
+			freedCPU += getPodCPURequest(pod)
+			freedMem += getPodMemoryRequest(pod)
 		}
 		if freedCPU < cpuDef || freedMem < memDef { return nil }
 	}
 
-	return solution
+	return plan
 }
 
 // freeDestWithOneHelperLayer frees a destination node by moving a single chain of pods off it.
-func (pl *MyCrossNodePreemptionBinpacking) freeDestWithOneHelperLayer(
-	relocating, pending *v1.Pod, target string,
-	sim map[string]*NodeResourceState, moveBudget int,
-) (string, []PodMovement) {
+func (pl *MyCrossNodePreemptionBinpacking) freeDestWithOneHelperLayer(relocating, pendingPod *v1.Pod, target string, sim map[string]*NodeResourceState, moveBudget int) (string, []PodMovement) {
 	needCPU := getPodCPURequest(relocating)
 	needMem := getPodMemoryRequest(relocating)
 
@@ -315,7 +311,7 @@ func (pl *MyCrossNodePreemptionBinpacking) freeDestWithOneHelperLayer(
 		var destPods []*v1.Pod
 		for _, p := range loc[dc.name].Pods {
 			if p.Namespace == "kube-system" { continue }
-			if getPodPriority(p) >= getPodPriority(pending) { continue }
+			if getPodPriority(p) >= getPodPriority(pendingPod) { continue }
 			if p.Spec.NodeName == dc.name { destPods = append(destPods, p) }
 		}
 		sort.Slice(destPods, func(i, j int) bool { return getPodCPURequest(destPods[i]) > getPodCPURequest(destPods[j]) })
@@ -323,7 +319,7 @@ func (pl *MyCrossNodePreemptionBinpacking) freeDestWithOneHelperLayer(
 		for _, dp := range destPods {
 			if moveBudget <= 0 { break }
 			excl := map[string]bool{dc.name: true, target: true}
-			tgt := pl.bestDestExcluding(dp, loc, excl)
+			tgt := pl.bestDestinationNode(dp, loc, excl)
 			if tgt == "" { continue }
 			mv := PodMovement{Pod: dp, FromNode: dc.name, ToNode: tgt, CPURequest: getPodCPURequest(dp)}
 			applyMove(loc, mv)
@@ -338,30 +334,26 @@ func (pl *MyCrossNodePreemptionBinpacking) freeDestWithOneHelperLayer(
 	return "", nil
 }
 
-// bestDestExcluding finds the best destination node for a pod, excluding certain nodes
-func (pl *MyCrossNodePreemptionBinpacking) bestDestExcluding(
-	pod *v1.Pod,
-	nodeStates map[string]*NodeResourceState,
-	exclude map[string]bool,
-) string {
+// bestDestinationNode finds the best destination node for a pod, excluding certain nodes
+func (pl *MyCrossNodePreemptionBinpacking) bestDestinationNode(pod *v1.Pod, nodeStates map[string]*NodeResourceState, exclude map[string]bool,) string {
 	podCPU := getPodCPURequest(pod)
 	podMem := getPodMemoryRequest(pod)
-	var bestDestNode string // best destination node
+	var bestDestinationNode string
 	bestUtil := 2.0 // min utilization after placing the pod.
 	
-	for name, state := range nodeStates {
-		if exclude[name] || isControlPlaneNode(name) || !isNodeSchedulable(state) {
+	for podName, podState := range nodeStates {
+		if exclude[podName] || isControlPlaneNode(podName) || !isNodeSchedulable(podState) {
 			continue
 		}
-		if state.AvailableCPU >= podCPU && state.AvailableMemory >= podMem {
-			newUsed := (state.AllocatableCPU - state.AvailableCPU) + podCPU
-			util := float64(newUsed) / float64(state.AllocatableCPU)
+		if podState.AvailableCPU >= podCPU && podState.AvailableMemory >= podMem {
+			newUsed := (podState.AllocatableCPU - podState.AvailableCPU) + podCPU
+			util := float64(newUsed) / float64(podState.AllocatableCPU)
 			if util < bestUtil {
-				bestDestNode, bestUtil = name, util
+				bestDestinationNode, bestUtil = podName, util
 			}
 		}
 	}
-	return bestDestNode
+	return bestDestinationNode
 }
 
 // ---------------------------- Utilities ----------------------------
@@ -391,20 +383,20 @@ func applyMove(sim map[string]*NodeResourceState, mv PodMovement) {
 }
 
 // getMovablePods returns a list of pods that can be moved to accommodate the target pod
-func (pl *MyCrossNodePreemptionBinpacking) getMovablePods(pods []*v1.Pod, target *v1.Pod) []*v1.Pod {
+func (pl *MyCrossNodePreemptionBinpacking) getMovablePods(pods []*v1.Pod, targetPod *v1.Pod) []*v1.Pod {
 	var movablePods []*v1.Pod
-	for _, p := range pods {
+	for _, pod := range pods {
 		// Skip the target pod itself
-		if p.Namespace == target.Namespace && p.Name == target.Name {
+		if pod.Namespace == targetPod.Namespace && pod.Name == targetPod.Name {
 			continue
 		}
 		// Skip kube-system namespace pods
-		if p.Namespace == "kube-system" {
+		if pod.Namespace == "kube-system" {
 			continue
 		}
 		// Only consider pods with lower priority than the target pod
-		if getPodPriority(p) < getPodPriority(target) {
-			movablePods = append(movablePods, p)
+		if getPodPriority(pod) < getPodPriority(targetPod) {
+			movablePods = append(movablePods, pod)
 		}
 	}
 	return movablePods

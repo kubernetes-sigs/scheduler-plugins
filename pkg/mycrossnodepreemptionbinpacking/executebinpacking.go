@@ -10,8 +10,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// executeBinPackingSolution executes the optimal bin-packing solution
-func (pl *MyCrossNodePreemptionBinpacking) executeBinPackingSolution(ctx context.Context, solution *BinPackingSolution) error {
+// executeBinPackingPlan executes the optimal bin-packing solution
+func (pl *MyCrossNodePreemptionBinpacking) executeBinPackingPlan(ctx context.Context, solution *BinPackingPlan) error {
 	klog.V(2).InfoS("Executing bin-packing solution",
 		"targetNode", solution.TargetNode,
 		"movements", len(solution.PodMovements),
