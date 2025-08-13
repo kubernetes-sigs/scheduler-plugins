@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper"
 	"github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/numanode"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,7 +106,7 @@ func createNUMANodeList(lh logr.Logger, zones topologyv1alpha2.ZoneList) NUMANod
 	nodes := NUMANodeList{}
 	// filter non Node zones and create idToIdx lookup array
 	for i, zone := range zones {
-		if zone.Type != "Node" {
+		if zone.Type != helper.ZoneTypeNUMANode {
 			continue
 		}
 
