@@ -53,7 +53,7 @@ mc_to_qty(){ echo "${1}m"; }
 mi_to_qty(){ echo "${1}Mi"; }
 
 render_pod() {
-  local name="$1" node="$2" qcpu="$3" qmem="$4"
+  local name="$1" node="$2" qcpu="$3" qmem="$4" prio_class="$5"
   cat <<EOF
 apiVersion: v1
 kind: Pod
@@ -64,6 +64,7 @@ metadata:
     node: "${node}"
 spec:
   restartPolicy: Never
+  priorityClassName: ${prio_class}
   nodeSelector:
     kubernetes.io/hostname: "${node}"
   containers:
@@ -82,6 +83,26 @@ EOF
 ensure_namespace() {
   kubectl --context "$CLUSTER_CONTEXT" get ns "$NAMESPACE" >/dev/null 2>&1 || \
     kubectl --context "$CLUSTER_CONTEXT" create ns "$NAMESPACE" >/dev/null
+}
+
+ensure_priority_classes() {
+  # Create p1..p4 if they don't exist. Highest priority is p4
+  for v in 1 2 3 4; do
+    local pc="p${v}"
+    if ! kubectl --context "$CLUSTER_CONTEXT" get priorityclass "$pc" >/dev/null 2>&1; then
+      log "Creating PriorityClass ${pc} (value=${v})"
+      cat <<EOF | kubectl --context "$CLUSTER_CONTEXT" apply -f -
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ${pc}
+value: ${v}
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+description: "pod priority ${v}"
+EOF
+    fi
+  done
 }
 
 check_context() {
@@ -105,47 +126,29 @@ pick_nodes() {
         if (unsched!="true" && !nosched) print name
       }'
   )
-
   (( ${#WORKERS[@]} > 0 )) || die "No eligible worker nodes found (all excluded or tainted with NoSchedule)."
-
   if (( NUM_NODES > ${#WORKERS[@]} )); then
     die "Requested NUM_NODES=$NUM_NODES but only ${#WORKERS[@]} worker nodes are eligible: ${WORKERS[*]}"
   fi
-
   NODES=("${WORKERS[@]:0:$NUM_NODES}")
 }
 
 # ---- Random partitioner that guarantees exact totals ----
-# Partitions TOTAL (int) into K positive integers >= MIN, returns space-separated list.
 partition_int() {
   local TOTAL="$1" K="$2" MIN="$3"
   local -a w parts
-  local i sumw=0 rem base
-  # Reserve MIN per part first
+  local i sumw=0 rem
   rem=$(( TOTAL - K*MIN ))
-  if (( rem < 0 )); then
-    # not enough budget: fall back to MIN=1 and clamp
-    MIN=1
-    rem=$(( TOTAL - K*MIN ))
-    (( rem < 0 )) && rem=0
-  fi
-
-  # Generate random weights 1..(VARIANCE)
+  if (( rem < 0 )); then MIN=1; rem=$(( TOTAL - K*MIN )); (( rem < 0 )) && rem=0; fi
   for ((i=0;i<K;i++)); do
-    w[i]=$(( (RANDOM % VARIANCE) + 1 ))
-    sumw=$(( sumw + w[i] ))
+    w[i]=$(( (RANDOM % VARIANCE) + 1 )); sumw=$(( sumw + w[i] ))
   done
-
-  # Distribute remainder proportionally by weights
   local allocated=0 share
   for ((i=0;i<K-1;i++)); do
-    # floor(rem * w[i] / sumw)
     share=$(awk -v r="$rem" -v wi="${w[i]}" -v sw="$sumw" 'BEGIN{printf("%d", (r*wi)/sw)}')
-    parts[i]=$(( MIN + share ))
-    allocated=$(( allocated + share ))
+    parts[i]=$(( MIN + share )); allocated=$(( allocated + share ))
   done
   parts[K-1]=$(( MIN + rem - allocated ))
-
   echo "${parts[*]}"
 }
 
@@ -160,42 +163,45 @@ apply_fill() {
   TARGET_MC=$(awk -v a="$NODE_MC" -v u="$TARGET_UTIL" 'BEGIN{printf("%d", a*u)}')
   TARGET_MI=$(awk -v a="$NODE_MI" -v u="$TARGET_UTIL" 'BEGIN{printf("%d", a*u)}')
 
-  echo "Context=${CLUSTER_CONTEXT} Namespace=${NAMESPACE}"
-  echo "Per-node allocatable (assumed): CPU=${NODE_CPU_IN} (${NODE_MC}m), MEM=${NODE_MEM_IN} (${NODE_MI}Mi)"
-  echo "Target per node: CPU=${TARGET_MC}m, MEM=${TARGET_MI}Mi (~${TARGET_UTIL}) with ${PODS_PER_NODE} pods"
+  log "Context=${CLUSTER_CONTEXT} Namespace=${NAMESPACE}"
+  log "Per-node allocatable (assumed): CPU=${NODE_CPU_IN} (${NODE_MC}m), MEM=${NODE_MEM_IN} (${NODE_MI}Mi)"
+  log "Target per node: CPU=${TARGET_MC}m, MEM=${TARGET_MI}Mi (~${TARGET_UTIL}) with ${PODS_PER_NODE} pods"
 
   check_context
   ensure_namespace
+  ensure_priority_classes
   pick_nodes
-  echo "Selected worker nodes: ${NODES[*]}"
-
-  # For uniqueness across reruns
-  suffix="$(date +%s | tail -c 5)"
+  log "Selected worker nodes: ${NODES[*]}"
 
   for node in "${NODES[@]}"; do
-    # Randomly partition CPU and MEM across the K pods (>=1m / >=1Mi each)
     IFS=' ' read -r -a cpu_parts <<< "$(partition_int "$TARGET_MC" "$PODS_PER_NODE" 1)"
     IFS=' ' read -r -a mem_parts <<< "$(partition_int "$TARGET_MI" "$PODS_PER_NODE" 1)"
 
-    # (Sanity) recompute sums to show effective util
     sum_mc=$(IFS=+; echo "$(( ${cpu_parts[*]} ))")
     sum_mi=$(IFS=+; echo "$(( ${mem_parts[*]} ))")
     eff_cpu_util=$(awk -v s="$sum_mc" -v cap="$NODE_MC" 'BEGIN{printf("%.3f", s/cap)}')
     eff_mem_util=$(awk -v s="$sum_mi" -v cap="$NODE_MI" 'BEGIN{printf("%.3f", s/cap)}')
-    echo "Node ${node}: effective CPU util=${eff_cpu_util}, MEM util=${eff_mem_util}"
+    log "Node ${node}: effective CPU util=${eff_cpu_util}, MEM util=${eff_mem_util}"
 
     for i in $(seq 1 "$PODS_PER_NODE"); do
       idx=$(( i-1 ))
       qcpu="$(mc_to_qty "${cpu_parts[$idx]}")"
       qmem="$(mi_to_qty "${mem_parts[$idx]}")"
+
+      # Random priority 1..4
+      prio=$(( (RANDOM % 4) + 1 ))
+      prio_class="p${prio}"
+
       safe_node="${node//./-}"
-      name="${safe_node}-${i}-${suffix}"
-      echo "  - Pod $i: ${qcpu}/${qmem}"
-      render_pod "$name" "$node" "$qcpu" "$qmem" | kubectl --context "$CLUSTER_CONTEXT" apply -f -
+      name="${safe_node}-${i}-${prio_class}"
+      log "  - Pod $i: ${qcpu}/${qmem}, priority=${prio} (${prio_class})"
+
+      render_pod "$name" "$node" "$qcpu" "$qmem" "$prio_class" \
+        | kubectl --context "$CLUSTER_CONTEXT" apply -f -
     done
   done
 
-  echo "✅ Done. Check: kubectl --context ${CLUSTER_CONTEXT} -n ${NAMESPACE} get pods -o wide"
+  log "✅ Done. Check: kubectl --context ${CLUSTER_CONTEXT} -n ${NAMESPACE} get pods -o wide"
 }
 
 apply_fill

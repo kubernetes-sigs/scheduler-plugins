@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: high-priority-pod2
+  namespace: crossnode-test
+spec:
+  priorityClassName: p4
+  restartPolicy: Never
+  containers:
+  - name: hp
+    image: busybox
+    command: ["sh", "-c", "sleep 3600"]
+    resources:
+      requests:
+        cpu: 4000m
+        memory: 2Gi
+      limits:
+        cpu: 4000m
+        memory: 2Gi
