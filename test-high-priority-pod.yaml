@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: high-priority-pod
-  namespace: binpacking-test
+  namespace: crossnode-test
   labels:
     pod-type: "high-priority"
 spec:

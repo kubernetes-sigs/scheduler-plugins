@@ -12,7 +12,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: binpacking-test
+  name: crossnode-test
 ---
 # Priority classes for the test
 apiVersion: scheduling.k8s.io/v1
@@ -36,7 +36,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-a1
-  namespace: binpacking-test
+  namespace: crossnode-test
   labels:
     node-group: "node-a"
     pod-type: "victim"
@@ -70,7 +70,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-a2
-  namespace: binpacking-test
+  namespace: crossnode-test
   labels:
     node-group: "node-a"
     pod-type: "victim"
@@ -105,7 +105,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-b1
-  namespace: binpacking-test
+  namespace: crossnode-test
   labels:
     node-group: "node-b"
     pod-type: "victim"
@@ -139,7 +139,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-b2
-  namespace: binpacking-test
+  namespace: crossnode-test
   labels:
     node-group: "node-b"
     pod-type: "victim"
@@ -174,7 +174,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-c1
-  namespace: binpacking-test
+  namespace: crossnode-test
   labels:
     node-group: "node-c"
     pod-type: "victim"
@@ -208,7 +208,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-c2
-  namespace: binpacking-test
+  namespace: crossnode-test
   labels:
     node-group: "node-c"
     pod-type: "victim"

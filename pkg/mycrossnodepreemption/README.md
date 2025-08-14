@@ -8,8 +8,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ### TODOs
 
-- Log the plan gotten from the script in kube-scheduler.
-- Check that the scheduling plan take into account that the movements should be ordered such that the node where a pod is moved to is freed before the pod is moved there.
+- Check that the scheduler runs the plan correctly.
 - Add a script to deploy many pods.
 - Add KWOK for making large tests.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
@@ -44,13 +43,13 @@ An improved cross-node preemption plugin that addresses the limitations of the o
 kubectl apply -f test-3node-scenario.yaml
 
 # Verify deployment
-kubectl get pods -o wide -n binpacking-test
+kubectl get pods -o wide -n crossnode-test
 
 # Deploy high-priority pod
 kubectl apply -f test-high-priority-pod.yaml
 
 # Verify preemption
-kubectl get pods -o wide -n binpacking-test
+kubectl get pods -o wide -n crossnode-test
 ```
 
 ## Implementation Details

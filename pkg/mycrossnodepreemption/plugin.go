@@ -243,7 +243,7 @@ func toSolverPod(p *v1.Pod, where string) solverPod {
 
 // ---------------------------- Bridge: Python -> Go plan ----------------------------
 
-type BinPackingPlan struct {
+type PodAssignmentPlan struct {
 	TargetNode     string
 	PodMovements   []PodMovement
 	VictimsToEvict []*v1.Pod
@@ -261,7 +261,7 @@ func (pl *MyCrossNodePreemption) planFromSolver(
 	ctx context.Context,
 	out *solverOutput,
 	pending *v1.Pod,
-) (*BinPackingPlan, error) {
+) (*PodAssignmentPlan, error) {
 
 	if out.NominatedNode == "" {
 		return nil, fmt.Errorf("no nominated node for pending pod")
@@ -281,7 +281,7 @@ func (pl *MyCrossNodePreemption) planFromSolver(
 	// include pending pod
 	podsByUID[string(pending.UID)] = pending
 
-	plan := &BinPackingPlan{TargetNode: out.NominatedNode}
+	plan := &PodAssignmentPlan{TargetNode: out.NominatedNode}
 
 	// evictions
 	for _, e := range out.Evictions {
@@ -410,7 +410,7 @@ func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }
 
-func (pl *MyCrossNodePreemption) logPlan(plan *BinPackingPlan) {
+func (pl *MyCrossNodePreemption) logPlan(plan *PodAssignmentPlan) {
 	klog.InfoS("Execution plan",
 		"targetNode", plan.TargetNode,
 		"movements", len(plan.PodMovements),
