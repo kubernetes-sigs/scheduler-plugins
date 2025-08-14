@@ -2,13 +2,13 @@
 
 # Hot reload script for scheduler plugins with custom plugin selection
 # This script builds and deploys a custom scheduler with specified plugins
-# Usage: ./hot-reload-binpacking.sh [cluster-name] [plugin1,plugin2,...]
-# Example: ./hot-reload-binpacking.sh mycluster "MyCrossNodePreemption,MyPlugin"
+# Usage: ./load-plugins.sh [cluster-name] [plugin1,plugin2,...]
+# Example: ./load-plugins.sh mycluster "MyCrossNodePreemption, ..."
 
 set -e
 
 CLUSTER_NAME=${1:-mycluster}
-PLUGINS=${2:-"MyPlugin"}
+PLUGINS=${2:-"MyCrossNodePreemption"}
 SCHEDULER_NAME="kube-scheduler"
 IMAGE_TAG="v$(date +%Y%m%d-%H%M%S)"
 IMAGE_NAME="localhost:5000/scheduler-plugins/kube-scheduler:${IMAGE_TAG}"
@@ -17,7 +17,7 @@ IMAGE_NAME="localhost:5000/scheduler-plugins/kube-scheduler:${IMAGE_TAG}"
 GO_VERSION="1.24"
 GO_BASE_IMAGE="golang:${GO_VERSION}"
 
-echo "🔥 Hot reload for custom scheduler with plugins: ${PLUGINS}"
+echo "🔥 Load plugins: '${PLUGINS}' into scheduler"
 echo "📋 Building image: ${IMAGE_NAME}"
 echo "📋 Using Go base image: ${GO_BASE_IMAGE}"
 
@@ -57,14 +57,6 @@ profiles:
       - name: DefaultPreemption
       enabled:
 ${PLUGIN_CONFIG}
-  pluginConfig:
-  - name: MyCrossNodePreemption
-    args:
-      maxCandidates: 100
-      enableBinPacking: true
-      considerPDBs: true
-      minUtilizationGain: 0.1
-      maxMovesPerPod: 5
 EOF"
 
 echo "✅ Scheduler configuration created with plugins: ${PLUGINS}"
