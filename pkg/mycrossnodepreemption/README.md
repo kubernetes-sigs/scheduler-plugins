@@ -30,6 +30,27 @@ An improved cross-node preemption plugin that addresses the limitations of the o
 - Dockerfile for kube-scheduler
 - python script to generate optimal scheduling plan
 
+## Install Metrics API in kind cluster
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+```
+
+## Kubectl commands
+
+Read CPUs and memory capacity of the nodes:
+
+```bash
+kubectl get nodes -o jsonpath="{range .items[*]}{.metadata.name}{'\t'}{.status.capacity.cpu}{'\t'}{.status.capacity.memory}{'\n'}{end}"
+```
+
+Read CPUs and memory allocatable of the nodes:
+
+```bash
+kubectl get nodes -o jsonpath="{range .items[*]}{.metadata.name}{'\t'}{.status.allocatable.cpu}{'\t'}{.status.allocatable.memory}{'\n'}{end}"
+```
+
 ## Test
 
 ```bash
