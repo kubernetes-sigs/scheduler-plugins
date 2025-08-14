@@ -174,7 +174,10 @@ func (pl *MyCrossNodePreemption) movePodToNodeDeleteFirst(ctx context.Context, p
     // Log movement details in pod annotations
     moved.Annotations["scheduler.alpha.kubernetes.io/moved-from"] = pod.Spec.NodeName
     moved.Annotations["scheduler.alpha.kubernetes.io/moved-to"] = destNode
-    moved.Annotations["scheduler.alpha.kubernetes.io/moved-by"] = Name
+    moved.Annotations["scheduler.alpha.kubernetes.io/moved-timestamp"] = time.Now().Format(time.RFC3339)
+	if _, ok := moved.Annotations["scheduler.alpha.kubernetes.io/original-node"]; !ok {
+		moved.Annotations["scheduler.alpha.kubernetes.io/original-node"] = pod.Spec.NodeName
+	}
     // Log number of movements
     moveCountStr := moved.Annotations["scheduler.alpha.kubernetes.io/move-count"]
     moveCount, _ := strconv.Atoi(moveCountStr)
