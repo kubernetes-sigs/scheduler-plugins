@@ -15,12 +15,12 @@ The plugin will call this script in PostFilter with the current cluster state an
 - Maybe consider to not do a fully optimal placement only such so the pending pod can be scheduled. Otherwise, think about what it gives in the long run to optimize all nodes.
 - Check that the scheduler runs the plan correctly.
 - Add a script to deploy many pods.
-- Add KWOK for making large tests.
+- Add KWOK for making large tests. It seems to be possible to define a custom binary for the kube-scheduler.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
 
 ## Later
 
-- Fix Neri's way of doing cross-node preemption by making several scheduling improvements.
+- Fix Neri's way of doing cross-node preemption by making several scheduling improvements. I think he uses Prefilters to only schedule the missing pods not scheduled yet in the stop-world timeframe. Actually, I think most of my code can be used for this case. the only difference is that we have to ensure that there is not coming any race conditions since other pods can be changed in the meantime.
 
 ## Overview
 
