@@ -21,6 +21,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 ## Later
 
 - Fix Neri's way of doing cross-node preemption by making several scheduling improvements. I think he uses Prefilters to only schedule the missing pods not scheduled yet in the stop-world timeframe. Actually, I think most of my code can be used for this case. the only difference is that we have to ensure that there is not coming any race conditions since other pods can be changed in the meantime.
+- Make my own heuristic based optimization plan.
 
 ## Overview
 
