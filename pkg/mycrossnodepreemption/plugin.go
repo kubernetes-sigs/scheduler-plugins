@@ -94,6 +94,9 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		return nil, framework.NewStatus(framework.Unschedulable, "no actionable plan")
 	}
 
+	// NEW: log the plan we're about to run
+	pl.logPlan(plan)
+
 	// Execute plan: moves and evictions
 	if err := pl.executePlan(ctx, plan); err != nil {
 		klog.ErrorS(err, "plan execution failed")
@@ -197,6 +200,7 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 	in.Pods = append(in.Pods, toSolverPod(pending, ""))
 
 	raw, err := json.Marshal(in)
+	klog.V(5).InfoS("Solver input detail", "raw", string(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +223,9 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 	if out.Status != "OK" {
 		return &out, fmt.Errorf("solver status: %s", out.Status)
 	}
+
+	// NEW: log what came back from the script
+	pl.logSolverOutput(&out)
 	return &out, nil
 }
 
@@ -377,4 +384,59 @@ func getPodPriority(p *v1.Pod) int32 {
 
 func isControlPlaneNode(name string) bool {
 	return strings.Contains(name, "control-plane") || strings.Contains(name, "master")
+}
+
+// prettyPrint returns a compact JSON string (best-effort) for debug logging.
+func prettyPrint(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("<json-marshal-error: %v>", err)
+	}
+	return string(b)
+}
+
+func (pl *MyCrossNodePreemption) logSolverOutput(out *solverOutput) {
+	klog.InfoS("Solver output summary",
+		"status", out.Status,
+		"nominatedNode", out.NominatedNode,
+		"placements", len(out.Placements),
+		"evictions", len(out.Evictions),
+	)
+	// Full details at higher verbosity (e.g. --v=4)
+	klog.V(4).InfoS("Solver output detail", "raw", prettyPrint(out))
+}
+
+func podRef(p *v1.Pod) string {
+	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
+}
+
+func (pl *MyCrossNodePreemption) logPlan(plan *BinPackingPlan) {
+	klog.InfoS("Execution plan",
+		"targetNode", plan.TargetNode,
+		"movements", len(plan.PodMovements),
+		"evictions", len(plan.VictimsToEvict),
+	)
+	if len(plan.PodMovements) > 0 {
+		for i, mv := range plan.PodMovements {
+			klog.V(2).InfoS("Plan movement",
+				"idx", i+1,
+				"pod", podRef(mv.Pod),
+				"from", mv.FromNode,
+				"to", mv.ToNode,
+				"cpu(m)", mv.CPURequest,
+				"mem(bytes)", mv.MemoryRequest,
+			)
+		}
+	}
+	if len(plan.VictimsToEvict) > 0 {
+		for i, v := range plan.VictimsToEvict {
+			klog.V(2).InfoS("Plan eviction",
+				"idx", i+1,
+				"pod", podRef(v),
+				"node", v.Spec.NodeName,
+				"cpu(m)", getPodCPURequest(v),
+				"mem(bytes)", getPodMemoryRequest(v),
+			)
+		}
+	}
 }

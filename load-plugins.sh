@@ -89,7 +89,7 @@ spec:
     - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
     - --bind-address=127.0.0.1
     - --leader-elect=true
-    - --v=2
+    - --v=2           # verbosity level, 2 for summary, 4 for solver step details, and 5 for raw input to solver
     image: ${IMAGE_NAME}
     imagePullPolicy: IfNotPresent
     livenessProbe:
