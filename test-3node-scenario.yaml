@@ -1,10 +1,10 @@
 ---
 # Test scenario to demonstrate default scheduler limitations with cross-node bin-packing
 # This creates the exact scenario described:
-# - Node A (worker) pods: a1 (10 CPU) + a2 (9 CPU) = 19/24 CPUs
-# - Node B (worker2) pods: b1 (2 CPU) + b2 (8 CPU) = 10/24 CPUs
-# - Node C (worker3): c1(2 CPU) + c2(15 CPU) = 17/24 CPUs used
-# - High-priority pod needs 24 CPUs
+# - Node A (worker) pods: a1 (10 CPU) + a2 (9 CPU) = 19/23 CPUs
+# - Node B (worker2) pods: b1 (2 CPU) + b2 (8 CPU) = 10/23 CPUs
+# - Node C (worker3): c1(2 CPU) + c2(15 CPU) = 17/23 CPUs used
+# - High-priority pod needs 23 CPUs
 #
 # Optimal solution: move b1 to to Node A; move c1 to Node A; move b2 to Node C; schedule new pod on Node B
 # Default scheduler will likely evict all pods from one node instead
@@ -31,7 +31,7 @@ value: 1000
 globalDefault: false
 description: "High priority class that should trigger preemption"
 ---
-# Node A (worker) pods: a1 (10 CPU) + a2 (9 CPU) = 19/24 CPUs
+# Node A (worker) pods: a1 (10 CPU) + a2 (9 CPU) = 19/23 CPUs
 apiVersion: v1
 kind: Pod
 metadata:
@@ -100,7 +100,7 @@ spec:
         memory: 100Mi
   restartPolicy: Never
 ---
-# Node B (worker2) pods: b1 (2 CPU) + b2 (8 CPU) = 10/24 CPUs
+# Node B (worker2) pods: b1 (2 CPU) + b2 (8 CPU) = 10/23 CPUs
 apiVersion: v1
 kind: Pod
 metadata:
@@ -169,7 +169,7 @@ spec:
         memory: 100Mi
   restartPolicy: Never
 ---
-# Node C (worker3) pods: c1 (2 CPU) + c2 (15 CPU) = 17/24 CPUs
+# Node C (worker3) pods: c1 (2 CPU) + c2 (15 CPU) = 17/23 CPUs
 apiVersion: v1
 kind: Pod
 metadata:

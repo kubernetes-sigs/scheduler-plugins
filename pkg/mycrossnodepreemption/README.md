@@ -1,10 +1,38 @@
 # MyCrossNodePreemption Plugin
 
+## The cross-node preemption plan
+
+The python script should provide the optimal pod placement plan as output, including all necessary moves and evictions. That means, it must consider the current state of the cluster, including resource availability and pod priorities, to generate a valid scheduling plan including the new pending pod. The optimization should prefer higher priorities first, that means it should place as many high priority pods first on the nodes as possible, then next priority level should be considered. The optimization is that it should place as many high priority pods as possible before considering lower priority ones, then it should try to minimize the number of evictions and moves required to achieve the desired state and minimize the number of nodes used.
+
+The plugin will call this script in PostFilter with the current cluster state and the pending pod's requirements, and it will receive the proposed plan as output.
+
+### TODOs
+
+- Use the same strategy as done in Mauro's paper.
+- Log the plan gotten from the script in kube-scheduler.
+- Check that the scheduling plan take into account that the movements should be ordered such that the node where a pod is moved to is freed before the pod is moved there.
+- Add a script to deploy many pods.
+- Add KWOK for making large tests.
+- Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
+
+## Later
+
+- Fix Neri's way of doing cross-node preemption by making several scheduling improvements.
+
 ## Overview
 
 An improved cross-node preemption plugin that addresses the limitations of the original CrossNodePreemption plugin. This plugin implements efficient algorithms for cross-node preemption with advanced optimization strategies.
 
-## Test case
+## Developed
+
+- setup-cluster.sh
+- load-plugins.sh
+- test-3node-scenario.yaml
+- test-high-priority-pod.yaml
+- Dockerfile for kube-scheduler
+- python script to generate optimal scheduling plan
+
+## Test
 
 ```bash
 # Create cluster
@@ -213,3 +241,4 @@ EXECUTE_PLAN(PLAN):
 - Eviction: delete a lower-priority pod (last resort)
 - Bounded DFS: explore short chains of moves (depth ≤ 2) with pruning to avoid explosion
 - Branch-and-bound: cut branches that cannot possibly free enough capacity (upper-bound test), and stop exploring once a strictly better plan isn’t possible.
+

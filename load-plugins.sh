@@ -3,7 +3,7 @@
 # Hot reload script for scheduler plugins with custom plugin selection
 # This script builds and deploys a custom scheduler with specified plugins
 # Usage: ./hot-reload-binpacking.sh [cluster-name] [plugin1,plugin2,...]
-# Example: ./hot-reload-binpacking.sh mycluster "MyCrossNodePreemptionBinpacking,MyPlugin"
+# Example: ./hot-reload-binpacking.sh mycluster "MyCrossNodePreemption,MyPlugin"
 
 set -e
 
@@ -42,7 +42,7 @@ for plugin in "${PLUGIN_ARRAY[@]}"; do
     PLUGIN_CONFIG+="      - name: $plugin"$'\n'
 done
 
-# TODO: Only disable DefaultPreemption if MyCrossNodePreemptionBinpacking is enabled
+# TODO: Only disable DefaultPreemption if MyCrossNodePreemption is enabled
 docker exec ${CONTROL_PLANE_CONTAINER} bash -c "cat > /etc/kubernetes/sched-cc.yaml << 'EOF'
 apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
@@ -58,7 +58,7 @@ profiles:
       enabled:
 ${PLUGIN_CONFIG}
   pluginConfig:
-  - name: MyCrossNodePreemptionBinpacking
+  - name: MyCrossNodePreemption
     args:
       maxCandidates: 100
       enableBinPacking: true
