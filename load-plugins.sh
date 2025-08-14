@@ -1,11 +1,10 @@
 #!/bin/bash
 
-# Hot reload script for scheduler plugins with custom plugin selection
-# This script builds and deploys a custom scheduler with specified plugins
+# This script loads scheduler plugins into a running Kind cluster
 # Usage: ./load-plugins.sh [cluster-name] [plugin1,plugin2,...]
 # Example: ./load-plugins.sh mycluster "MyCrossNodePreemption, ..."
 
-set -e
+set -e  # exit immediately if a command exits with a non-zero status
 
 CLUSTER_NAME=${1:-mycluster}
 PLUGINS=${2:-"MyCrossNodePreemption"}
@@ -161,11 +160,11 @@ kubectl wait --for=condition=Ready pod -l component=kube-scheduler -n kube-syste
 SCHEDULER_POD=$(kubectl get pods -n kube-system -l component=kube-scheduler --context kind-${CLUSTER_NAME} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 echo ""
-echo "✅ Hot reload complete! Custom scheduler is now active with plugins: ${PLUGINS}"
+echo "✅ Load complete! Scheduler is now running with plugins: ${PLUGINS}"
 echo "🎯 Scheduler pod: $SCHEDULER_POD"
-echo "📋 Check logs with: kubectl logs -n kube-system $SCHEDULER_POD -f --context kind-${CLUSTER_NAME}"
-echo "📋 Image used: ${IMAGE_NAME}"
-echo "🧪 Test with your plugin-specific test scenarios"
+echo "🔍 Check the status with: kubectl get pod -n kube-system $SCHEDULER_POD -o wide --context kind-${CLUSTER_NAME}"
+echo "🔍 Check logs with: kubectl logs -n kube-system $SCHEDULER_POD -f --context kind-${CLUSTER_NAME}"
+echo "🔍 Check all pods are running with: kubectl get pods -A --context kind-${CLUSTER_NAME}"
 
 # 8. Show plugin configuration
 echo ""

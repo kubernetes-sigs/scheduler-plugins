@@ -8,7 +8,6 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ### TODOs
 
-- Use the same strategy as done in Mauro's paper.
 - Log the plan gotten from the script in kube-scheduler.
 - Check that the scheduling plan take into account that the movements should be ordered such that the node where a pod is moved to is freed before the pod is moved there.
 - Add a script to deploy many pods.

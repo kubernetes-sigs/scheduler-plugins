@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# Setup script for scheduler-plugins cluster (Default Scheduler Only)
-# This script creates a Kind cluster with default scheduler ready for plugin deployment
-# Usage: ./setup-cluster.sh [cluster-name]
+# This script creates a Kind cluster with the default scheduler.
+# To make it ready for pod placements, it sets up the necessary configurations incl. cluster role bindings.
+# Usage: ./setup-cluster.sh [cluster-name] [num-workers]
+# Example: ./setup-cluster.sh mycluster 3
 
-set -e
+set -e # exit immediately if a command exits with a non-zero status
 
 CLUSTER_NAME=${1:-mycluster}
 NUM_WORKERS=${2:-3}
@@ -48,6 +49,6 @@ echo "🔧 Creating cluster role binding for scheduler..."
 kubectl --context "$CONTEXT" create clusterrolebinding scheduler-admin --clusterrole=cluster-admin --user=system:kube-scheduler
 
 # Default scheduler running (no plugin deployment)
-echo "✅ Cluster setup complete! Default scheduler is running."
-echo "📋 To deploy custom scheduler plugins, use: ./load-plugins.sh [cluster-name] [plugin1,plugin2,...]"
-echo "📋 Check cluster with: kubectl get nodes --context kind-${CLUSTER_NAME}"
+echo "✅ Cluster '${CLUSTER_NAME}' is ready with default scheduler"
+echo "📋 To deploy scheduler plugins, use: ./load-plugins.sh [cluster-name] [plugin1,plugin2,...]"
+echo "📋 Check cluster nodes with: kubectl get nodes --context kind-${CLUSTER_NAME}"
