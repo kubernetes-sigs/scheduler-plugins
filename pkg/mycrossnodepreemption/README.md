@@ -11,7 +11,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 - Add checks if the pending pod can even be scheduled in terms if e.g. amount of free space and priorities of current pods.
 - Only sent the needed changes from python to go.
 - Check constraints, maybe different order of constraints should be considered.
-- Note: Think about limitations of stop-the-world assumption. Also I think it is fair to let the plugin run for some time since other pods to be scheduled also likely dont have space.
+- Note: Think about limitations of stop-the-world assumption. Actually, I dont think we use stop the world in my case, as it is done in one cycle, however doing the execution of plan, something of course could happen. Also I think it is fair to let the plugin run for some time since other pods to be scheduled also likely dont have space.
 - Maybe consider to not do a fully optimal placement only such so the pending pod can be scheduled. Otherwise, think about what it gives in the long run to optimize all nodes.
 - Check that the scheduler runs the plan correctly.
 - Add a script to deploy many pods.
