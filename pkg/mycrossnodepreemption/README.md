@@ -8,14 +8,27 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ### TODOs
 
+- Add checks if the pending pod can even be scheduled in terms if e.g. amount of free space and priorities of current pods.
+- Only sent the needed changes from python to go.
+- Check constraints, maybe different order of constraints should be considered.
+- Note: Think about limitations of stop-the-world assumption. Actually, I dont think we use stop the world in my case, as it is done in one cycle, however doing the execution of plan, something of course could happen. Also I think it is fair to let the plugin run for some time since other pods to be scheduled also likely dont have space.
+- Maybe consider to not do a fully optimal placement only such so the pending pod can be scheduled. Otherwise, think about what it gives in the long run to optimize all nodes.
 - Check that the scheduler runs the plan correctly.
 - Add a script to deploy many pods.
-- Add KWOK for making large tests.
+- Add KWOK for making large tests. It seems to be possible to define a custom binary for the kube-scheduler.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
 
 ## Later
 
-- Fix Neri's way of doing cross-node preemption by making several scheduling improvements.
+- Fix Neri's way of doing cross-node preemption by making several scheduling improvements. I think he uses Prefilters to only schedule the missing pods not scheduled yet in the stop-world timeframe. Actually, I think most of my code can be used for this case. the only difference is that we have to ensure that there is not coming any race conditions since other pods can be changed in the meantime.
+- Make my own heuristic based optimization plan.
+
+## Testing plan
+
+Paired replay (sequential) on a clean slate
+- Run the same workload twice on a clean cluster (or after a full reset): once with default, once with yours.
+- Fix all randomness: same pod count, priorities, affinities, creation timestamps, and random seed if your generator uses one.
+- Advantages: isolates each scheduler; best for measuring packing efficiency and disruption without interference.
 
 ## Overview
 
