@@ -3,11 +3,11 @@ package mycrossnodepreemption
 import (
 	"bytes"
 	"context"
-	"strings"
-	"sync"
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -73,7 +73,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	_ framework.NodeToStatusMap,
 ) (*framework.PostFilterResult, *framework.Status) {
 
-	klog.InfoS("PostFilter start (python CP-SAT)", "pod", klog.KObj(pending))
+	klog.InfoS("PostFilter start", "pod", klog.KObj(pending))
 
 	// give the external solver a bounded time
 	solveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -121,10 +121,10 @@ type solverPod struct {
 	UID       string `json:"uid"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
-	CPU       int64  `json:"cpu"`     // milliCPU request
-	RAM       int64  `json:"ram"`     // bytes request
+	CPU       int64  `json:"cpu"` // milliCPU request
+	RAM       int64  `json:"ram"` // bytes request
 	Priority  int32  `json:"priority"`
-	Where     string `json:"where"`   // node name or ""
+	Where     string `json:"where"` // node name or ""
 	Protected bool   `json:"protected,omitempty"`
 }
 
@@ -173,7 +173,9 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 	// nodes first
 	usable := map[string]bool{}
 	for _, ni := range nodes {
-		if !isNodeUsableFor(pending, ni) { continue }
+		if !isNodeUsableFor(pending, ni) {
+			continue
+		}
 		in.Nodes = append(in.Nodes, solverNode{
 			Name: ni.Node().Name,
 			CPU:  ni.Allocatable.MilliCPU,
@@ -184,10 +186,14 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 
 	// existing pods only if they’re on a usable node
 	for _, ni := range nodes {
-		if !isNodeUsableFor(pending, ni) { continue }
+		if !isNodeUsableFor(pending, ni) {
+			continue
+		}
 		for _, pi := range ni.Pods {
 			where := pi.Pod.Spec.NodeName
-			if where != "" && !usable[where] { continue }
+			if where != "" && !usable[where] {
+				continue
+			}
 			sp := toSolverPod(pi.Pod, where)
 			if pi.Pod.Namespace == "kube-system" {
 				sp.Protected = true
@@ -316,7 +322,6 @@ func (pl *MyCrossNodePreemption) planFromSolver(
 	return plan, nil
 }
 
-
 func toleratesNoScheduleTaints(pod *v1.Pod, taints []v1.Taint) bool {
 	for _, t := range taints {
 		if t.Effect != v1.TaintEffectNoSchedule {
@@ -351,7 +356,6 @@ func isNodeUsableFor(pod *v1.Pod, ni *framework.NodeInfo) bool {
 	}
 	return true
 }
-
 
 // ---------------------------- Utilities used by both files ----------------------------
 
@@ -428,6 +432,7 @@ func (pl *MyCrossNodePreemption) logPlan(plan *PodAssignmentPlan) {
 			)
 		}
 	}
+	// Write the pods
 	if len(plan.VictimsToEvict) > 0 {
 		for i, v := range plan.VictimsToEvict {
 			klog.V(2).InfoS("Plan eviction",

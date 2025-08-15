@@ -4,50 +4,57 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 )
 
 type nodeCap struct {
-    allocCPU int64
-    allocMem int64
-    freeCPU  int64
-    freeMem  int64
+	allocCPU int64
+	allocMem int64
+	freeCPU  int64
+	freeMem  int64
 }
 
 // executePlan executes the optimal pod-assignment plan
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan) error {
-    klog.V(2).InfoS("Executing pod-assignment plan",
-        "targetNode", plan.TargetNode,
-        "movements", len(plan.PodMovements),
-        "evictions", len(plan.VictimsToEvict))
-    
-    // Counters for success/failure
+	klog.V(2).InfoS("Executing pod-assignment plan",
+		"targetNode", plan.TargetNode,
+		"movements", len(plan.PodMovements),
+		"evictions", len(plan.VictimsToEvict))
+
+	// Counters for success/failure
 	var (
 		evictOK, evictFail int
 		moveOK, moveFail   int
 	)
 
-    // 0) Build live per-node capacity ledger
-    niList, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
-    if err != nil {
-        return fmt.Errorf("list nodes: %w", err)
-    }
-    caps := map[string]*nodeCap{}
-    for _, ni := range niList {
-        freeCPU := ni.Allocatable.MilliCPU - ni.Requested.MilliCPU
-        freeMem := ni.Allocatable.Memory - ni.Requested.Memory
-        if freeCPU < 0 { freeCPU = 0 }
-        if freeMem < 0 { freeMem = 0 }
-        caps[ni.Node().Name] = &nodeCap{
-            allocCPU: ni.Allocatable.MilliCPU,
-            allocMem: ni.Allocatable.Memory,
-            freeCPU:  freeCPU,
-            freeMem:  freeMem,
-        }
-    }
+	// 0) Build live per-node capacity ledger
+	niList, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
+	if err != nil {
+		return fmt.Errorf("list nodes: %w", err)
+	}
+	caps := map[string]*nodeCap{}
+	for _, ni := range niList {
+		freeCPU := ni.Allocatable.MilliCPU - ni.Requested.MilliCPU
+		freeMem := ni.Allocatable.Memory - ni.Requested.Memory
+		if freeCPU < 0 {
+			freeCPU = 0
+		}
+		if freeMem < 0 {
+			freeMem = 0
+		}
+		caps[ni.Node().Name] = &nodeCap{
+			allocCPU: ni.Allocatable.MilliCPU,
+			allocMem: ni.Allocatable.Memory,
+			freeCPU:  freeCPU,
+			freeMem:  freeMem,
+		}
+	}
 
 	// 1) Evict first
 	for i, v := range plan.VictimsToEvict {
@@ -92,7 +99,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 					continue
 				}
 				// Update ledgers
-				if sc := caps[ mv.FromNode ]; sc != nil {
+				if sc := caps[mv.FromNode]; sc != nil {
 					sc.freeCPU += needCPU
 					sc.freeMem += needMem
 				}
@@ -108,86 +115,158 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		remaining = next
 	}
 
+	// deadlock breaker: pick a move that frees a blocked destination
 	if len(remaining) > 0 {
-		// Deadlock breaker: one delete-first to create space, then recurse
-		klog.InfoS("Move deadlock detected; breaking with delete-first", "remainingMoves", len(remaining))
+		// Build set of currently-blocked destinations
+		blockedDst := map[string]bool{}
+		for _, mv := range remaining {
+			dst := caps[mv.ToNode]
+			needCPU, needMem := mv.CPURequest, mv.MemoryRequest
+			if dst == nil || dst.freeCPU < needCPU || dst.freeMem < needMem {
+				blockedDst[mv.ToNode] = true
+			}
+		}
+
+		// Prefer a move whose FromNode is a blocked destination (frees space there)
+		pickIdx := -1
+		for i, mv := range remaining {
+			if blockedDst[mv.FromNode] {
+				pickIdx = i
+				break
+			}
+		}
+		// Fallback: free from the most overloaded node (by memory deficit, then CPU)
+		if pickIdx == -1 {
+			type deficit struct {
+				idx      int
+				mem, cpu int64
+			}
+			var best *deficit
+			for i, mv := range remaining {
+				src := caps[mv.FromNode]
+				if src == nil {
+					continue
+				}
+				d := &deficit{i, src.allocMem - src.freeMem, src.allocCPU - src.freeCPU}
+				if best == nil || d.mem > best.mem || (d.mem == best.mem && d.cpu > best.cpu) {
+					best = d
+				}
+			}
+			if best != nil {
+				pickIdx = best.idx
+			}
+		}
+
 		mv := remaining[0]
+		if pickIdx != -1 {
+			mv = remaining[pickIdx]
+		}
+
+		klog.V(2).InfoS("Move deadlock detected; breaking by freeing bottleneck",
+			"chosenPod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
+
+		// Perform the freeing move first (delete-first recreate on its destination)
 		if err := pl.movePodToNodeDeleteFirst(ctx, mv.Pod, mv.ToNode); err != nil {
 			moveFail++
 			klog.ErrorS(err, "Deadlock break move failed", "pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
 			return fmt.Errorf("failed to break deadlock by moving %s: %w", podRef(mv.Pod), err)
 		}
-		moveOK++
-		klog.V(2).InfoS("Deadlock break move succeeded", "pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-
-		// Re-run for remaining
-		subPlan := &PodAssignmentPlan{TargetNode: plan.TargetNode, PodMovements: remaining[1:]}
-		if err := pl.executePlan(ctx, subPlan); err != nil {
-			// Bubble up but log a summary first
-			klog.ErrorS(err, "Plan execution failed after deadlock break",
-				"movesOK", moveOK, "movesFailed", moveFail, "evictionsOK", evictOK, "evictionsFailed", evictFail)
-			return err
+		// Update ledgers
+		if sc := caps[mv.FromNode]; sc != nil {
+			sc.freeCPU += mv.CPURequest
+			sc.freeMem += mv.MemoryRequest
 		}
+		if dc := caps[mv.ToNode]; dc != nil {
+			dc.freeCPU -= mv.CPURequest
+			dc.freeMem -= mv.MemoryRequest
+		}
+		moveOK++
+
+		// Re-run greedy phase for the rest
+		if pickIdx == -1 {
+			// we used remaining[0]
+			remaining = remaining[1:]
+		} else {
+			remaining = append(remaining[:pickIdx], remaining[pickIdx+1:]...)
+		}
+		subPlan := &PodAssignmentPlan{TargetNode: plan.TargetNode, PodMovements: remaining}
+		return pl.executePlan(ctx, subPlan)
 	}
 
-	klog.InfoS("Bin-packing execution summary",
-		"targetNode", plan.TargetNode,
-		"movesOK", moveOK, "movesFailed", moveFail,
-		"evictionsOK", evictOK, "evictionsFailed", evictFail)
-
+	// ---- All moves done (no deadlock outstanding). Log a single summary and return. ----
+	klog.InfoS("Plan execution summary", "targetNode", plan.TargetNode, "movesOK", moveOK, "movesFailed", moveFail, "evictionsOK", evictOK, "evictionsFailed", evictFail)
 	if moveFail == 0 && evictFail == 0 {
 		klog.InfoS("Plan executed successfully")
 	} else {
 		klog.ErrorS(nil, "Plan executed with failures",
 			"movesFailed", moveFail, "evictionsFailed", evictFail)
 	}
-
 	return nil
 }
 
 // delete-first: free capacity before recreating
 func (pl *MyCrossNodePreemption) movePodToNodeDeleteFirst(ctx context.Context, pod *v1.Pod, destNode string) error {
-    if destNode == pod.Spec.NodeName {
-        klog.V(4).InfoS("Skip no-op move", "pod", klog.KObj(pod), "node", destNode)
-        return nil
-    }
-    if err := pl.validatePodMovement(ctx, pod, destNode); err != nil {
-        return err
-    }
+	if destNode == pod.Spec.NodeName {
+		klog.V(4).InfoS("Skip no-op move", "pod", klog.KObj(pod), "node", destNode)
+		return nil
+	}
+	if err := pl.validatePodMovement(ctx, pod, destNode); err != nil {
+		return err
+	}
 
-    // 1) Delete original (grace 0)
-    grace := int64(0)
-    if err := pl.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
-        GracePeriodSeconds: &grace,
-    }); err != nil {
-        return fmt.Errorf("delete original before move: %w", err)
-    }
+	// 1) Delete original (grace 0)
+	grace := int64(0)
+	if err := pl.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
+		GracePeriodSeconds: &grace,
+		// PropagationPolicy: &metav1.DeletePropagationForeground, // optional: ensure children first
+	}); err != nil {
+		return fmt.Errorf("delete original before move: %w", err)
+	}
 
-    // 2) Recreate pinned at destination
-    moved := pod.DeepCopy()
-    moved.ResourceVersion = ""
-    moved.Status = v1.PodStatus{}
-    moved.Spec.NodeSelector = map[string]string{} // TODO_HC: clear selectors, however, see if can keep them
-    moved.Spec.Affinity = nil // TODO_HC: clear affinity, however, see if can keep them
-    moved.Spec.NodeName = destNode
+	// 2) Wait until it’s actually gone so we can reuse the same name
+	//    (tune timeout if your cluster can take longer to GC)
+	if err := pl.waitForPodGone(ctx, pod.Namespace, pod.Name, 30*time.Second); err != nil {
+		return fmt.Errorf("wait for old pod to disappear: %w", err)
+	}
 
-    // Log movement details in pod annotations
-    moved.Annotations["scheduler.alpha.kubernetes.io/moved-from"] = pod.Spec.NodeName
-    moved.Annotations["scheduler.alpha.kubernetes.io/moved-to"] = destNode
-    moved.Annotations["scheduler.alpha.kubernetes.io/moved-timestamp"] = time.Now().Format(time.RFC3339)
+	// 3) Recreate pinned at destination with the SAME name
+	moved := pod.DeepCopy()
+	moved.ResourceVersion = ""    // must be empty on create
+	moved.UID = ""                // new object
+	moved.Status = v1.PodStatus{} // clear runtime status
+	// Don’t carry Node selectors/affinity from old placement (optional, your call)
+	moved.Spec.NodeSelector = map[string]string{}
+	moved.Spec.Affinity = nil
+	moved.Spec.SchedulerName = "" // allow NodeName take effect
+	moved.Spec.NodeName = destNode
+
+	// Keep the EXACT same name
+	moved.GenerateName = ""
+	moved.Name = pod.Name
+
+	// Movement annotations
+	if moved.Annotations == nil {
+		moved.Annotations = map[string]string{}
+	}
+	moved.Annotations["scheduler.alpha.kubernetes.io/moved-from"] = pod.Spec.NodeName
+	moved.Annotations["scheduler.alpha.kubernetes.io/moved-to"] = destNode
+	moved.Annotations["scheduler.alpha.kubernetes.io/moved-timestamp"] = time.Now().Format(time.RFC3339)
 	if _, ok := moved.Annotations["scheduler.alpha.kubernetes.io/original-node"]; !ok {
 		moved.Annotations["scheduler.alpha.kubernetes.io/original-node"] = pod.Spec.NodeName
 	}
-    // Log number of movements
-    moveCountStr := moved.Annotations["scheduler.alpha.kubernetes.io/move-count"]
-    moveCount, _ := strconv.Atoi(moveCountStr)
-    moveCount++
-    moved.Annotations["scheduler.alpha.kubernetes.io/move-count"] = fmt.Sprintf("%d", moveCount)
+	moveCount, _ := strconv.Atoi(moved.Annotations["scheduler.alpha.kubernetes.io/move-count"])
+	moved.Annotations["scheduler.alpha.kubernetes.io/move-count"] = fmt.Sprintf("%d", moveCount+1)
 
-    if _, err := pl.client.CoreV1().Pods(pod.Namespace).Create(ctx, moved, metav1.CreateOptions{}); err != nil {
-        return fmt.Errorf("create moved pod: %w", err)
-    }
-    return nil
+	// 4) Live capacity check before create
+	if err := pl.verifyNodeHasRoomFor(ctx, destNode, moved); err != nil {
+		return fmt.Errorf("destination check failed on %s for %s: %w", destNode, podRef(pod), err)
+	}
+
+	// 5) Create
+	if _, err := pl.client.CoreV1().Pods(pod.Namespace).Create(ctx, moved, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create moved pod: %w", err)
+	}
+	return nil
 }
 
 // evictPod evicts (deletes) a victim pod
@@ -227,4 +306,41 @@ func (pl *MyCrossNodePreemption) validatePodMovement(ctx context.Context, pod *v
 	}
 
 	return nil
+}
+
+func (pl *MyCrossNodePreemption) verifyNodeHasRoomFor(ctx context.Context, nodeName string, pod *v1.Pod) error {
+	node, err := pl.client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	allocCPU := node.Status.Allocatable.Cpu().MilliValue()
+	allocMem := node.Status.Allocatable.Memory().Value()
+
+	pods, err := pl.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{FieldSelector: "spec.nodeName=" + nodeName})
+	if err != nil {
+		return err
+	}
+	var usedCPU, usedMem int64
+	for i := range pods.Items {
+		usedCPU += getPodCPURequest(&pods.Items[i])
+		usedMem += getPodMemoryRequest(&pods.Items[i])
+	}
+	needCPU := getPodCPURequest(pod)
+	needMem := getPodMemoryRequest(pod)
+	if usedCPU+needCPU > allocCPU || usedMem+needMem > allocMem {
+		return fmt.Errorf("would overcommit: used %dm/%dm + need %dm, used %d/%d + need %d",
+			usedCPU, allocCPU, needCPU, usedMem, allocMem, needMem)
+	}
+	return nil
+}
+
+func (pl *MyCrossNodePreemption) waitForPodGone(ctx context.Context, ns, name string, timeout time.Duration) error {
+	// Poll every 300ms until the pod is NotFound
+	return wait.PollUntilContextTimeout(ctx, 300*time.Millisecond, timeout, true, func(ctx context.Context) (done bool, err error) {
+		_, err = pl.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil // fully gone
+		}
+		return false, err // keep waiting (or bubble up unexpected errors)
+	})
 }

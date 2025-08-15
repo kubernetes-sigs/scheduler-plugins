@@ -14,7 +14,7 @@ NODE_MEM_IN=${5:-32Gi}
 PODS_PER_NODE=${6:-4}
 TARGET_UTIL=${7:-0.9}
 
-IMAGE="${IMAGE:-registry.k8s.io/pause:3.9}"
+IMAGE="registry.k8s.io/pause:3.9"
 
 # Tuning: how uneven sizes should be (1..100). Higher = more variance.
 VARIANCE="${VARIANCE:-50}"
