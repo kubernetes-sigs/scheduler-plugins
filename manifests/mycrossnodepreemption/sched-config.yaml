@@ -1,0 +1,11 @@
+# sched-config.yaml
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: default-scheduler
+  plugins:
+    postFilter:
+      enabled:
+      - name: MyCrossNodePreemption
+      disabled:
+      - name: DefaultPreemption
