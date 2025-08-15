@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Args: <CLUSTER_CONTEXT> <NAMESPACE> <NUM_NODES> <NODE_CPU> <NODE_MEM> <PODS_PER_NODE> <TARGET_UTIL>
+# Args: <CLUSTER_NAME> <NAMESPACE> <NUM_NODES> <NODE_CPU> <NODE_MEM> <PODS_PER_NODE> <TARGET_UTIL>
 # Example:
-#   ./fill-nodes.sh kind-mycluster crossnode-test 3 4 16Gi 6 0.9
+#   ./fill-nodes.sh mycluster crossnode-test 3 4 16Gi 6 0.9
 
-CLUSTER_CONTEXT=${1:-kind-mycluster}
+CLUSTER_NAME=${1:-mycluster}
+CLUSTER_CONTEXT="kind-${CLUSTER_NAME}"
 NAMESPACE=${2:-crossnode-test}
 NUM_NODES=${3:-3}
 NODE_CPU_IN=${4:-24}

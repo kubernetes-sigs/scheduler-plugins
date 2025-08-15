@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-set -e # exit immediately if a command exits with a non-zero status.
-
-CLUSTER_CONTEXT=${1:-mycluster}
+CLUSTER_NAME=${1:-mycluster}
+CLUSTER_CONTEXT="kind-${CLUSTER_NAME}"
 NAMESPACE=${2:-crossnode-test}
 
 # Check if namespace exists, then delete

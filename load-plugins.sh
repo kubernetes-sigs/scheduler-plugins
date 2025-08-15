@@ -28,7 +28,7 @@ if ! kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
     exit 1
 fi
 
-CONTROL_PLANE_CONTAINER=$(docker ps | grep ${CLUSTER_NAME}-control-plane | awk '{print $1}')
+CONTROL_PLANE_CONTAINER=$(docker ps | grep control-plane | awk '{print $1}')
 
 # 2. Create scheduler configuration with specified plugins and disable default preemption
 echo "📝 Creating scheduler configuration with plugins: ${PLUGINS} (DefaultPreemption disabled)"
