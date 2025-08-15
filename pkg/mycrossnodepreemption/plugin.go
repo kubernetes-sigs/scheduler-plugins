@@ -19,7 +19,6 @@ import (
 type MyCrossNodePreemption struct {
 	handle        framework.Handle
 	client        kubernetes.Interface
-	args          *Config
 	mu            sync.Mutex
 	processedPods map[string]int
 }
@@ -31,10 +30,6 @@ const (
 	Version = "v1.15.0"
 )
 
-type Config struct {
-	MaxMovesPerPod int `json:"maxMovesPerPod,omitempty"`
-}
-
 // path to your Python script inside the image
 const pythonSolverPath = "/opt/solver/main.py"
 
@@ -43,7 +38,6 @@ const pythonSolverPath = "/opt/solver/main.py"
 func (pl *MyCrossNodePreemption) Name() string { return Name }
 
 func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
-	cfg := &Config{MaxMovesPerPod: 5}
 	if obj != nil {
 		klog.V(2).InfoS("Plugin configuration", "config", obj)
 	}
@@ -53,11 +47,10 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, err
 	}
 
-	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "moveBudget", cfg.MaxMovesPerPod)
+	klog.InfoS("Plugin initialized", "name", Name, "version", Version)
 	return &MyCrossNodePreemption{
 		handle:        h,
 		client:        client,
-		args:          cfg,
 		processedPods: make(map[string]int),
 	}, nil
 }
