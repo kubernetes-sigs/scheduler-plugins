@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,9 +27,8 @@ type MyCrossNodePreemption struct {
 // ---------------------------- Plugin wiring ----------------------------
 
 const (
-	Name               = "MyCrossNodePreemption"
-	Version            = "v1.15.0"
-	maxPostFilterTries = 3
+	Name    = "MyCrossNodePreemption"
+	Version = "v1.15.0"
 )
 
 type Config struct {
@@ -73,7 +71,10 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	_ framework.NodeToStatusMap,
 ) (*framework.PostFilterResult, *framework.Status) {
 
-	klog.InfoS("PostFilter start", "pod", klog.KObj(pending))
+	klog.InfoS("PostFilter start", "pending pod", klog.KObj(pending),
+		"cpu(m)", getPodCPURequest(pending),
+		"mem(bytes)", getPodMemoryRequest(pending),
+	)
 
 	// give the external solver a bounded time
 	solveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -84,8 +85,9 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		klog.ErrorS(err, "optimizer error")
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
+	klog.InfoS("Solver executed successfully", "status", out.Status)
 
-	plan, err := pl.planFromSolver(ctx, out, pending)
+	plan, err := pl.translatePlanFromSolver(ctx, out, pending)
 	if err != nil {
 		klog.ErrorS(err, "build plan error")
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
@@ -146,6 +148,7 @@ type solverOutput struct {
 	Status        string            `json:"status"`
 	NominatedNode string            `json:"nominatedNode"`
 	Placements    map[string]string `json:"placements"` // uid -> node
+	Movements     map[string]string `json:"movements"`  // uid -> node
 	Evictions     []solverEviction  `json:"evictions"`
 }
 
@@ -229,9 +232,6 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 	if out.Status != "OK" {
 		return &out, fmt.Errorf("solver status: %s", out.Status)
 	}
-
-	// NEW: log what came back from the script
-	pl.logSolverOutput(&out)
 	return &out, nil
 }
 
@@ -263,7 +263,7 @@ type PodMovement struct {
 	MemoryRequest int64 // bytes
 }
 
-func (pl *MyCrossNodePreemption) planFromSolver(
+func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 	ctx context.Context,
 	out *solverOutput,
 	pending *v1.Pod,
@@ -386,30 +386,6 @@ func getPodPriority(p *v1.Pod) int32 {
 	return 0
 }
 
-func isControlPlaneNode(name string) bool {
-	return strings.Contains(name, "control-plane") || strings.Contains(name, "master")
-}
-
-// prettyPrint returns a compact JSON string (best-effort) for debug logging.
-func prettyPrint(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprintf("<json-marshal-error: %v>", err)
-	}
-	return string(b)
-}
-
-func (pl *MyCrossNodePreemption) logSolverOutput(out *solverOutput) {
-	klog.InfoS("Solver output summary",
-		"status", out.Status,
-		"nominatedNode", out.NominatedNode,
-		"placements", len(out.Placements),
-		"evictions", len(out.Evictions),
-	)
-	// Full details at higher verbosity (e.g. --v=4)
-	klog.V(4).InfoS("Solver output detail", "raw", prettyPrint(out))
-}
-
 func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }
@@ -422,8 +398,8 @@ func (pl *MyCrossNodePreemption) logPlan(plan *PodAssignmentPlan) {
 	)
 	if len(plan.PodMovements) > 0 {
 		for i, mv := range plan.PodMovements {
-			klog.V(2).InfoS("Plan movement",
-				"idx", i+1,
+			klog.V(2).InfoS("Movement plan",
+				"idx_move", i+1,
 				"pod", podRef(mv.Pod),
 				"from", mv.FromNode,
 				"to", mv.ToNode,
@@ -432,11 +408,10 @@ func (pl *MyCrossNodePreemption) logPlan(plan *PodAssignmentPlan) {
 			)
 		}
 	}
-	// Write the pods
 	if len(plan.VictimsToEvict) > 0 {
 		for i, v := range plan.VictimsToEvict {
-			klog.V(2).InfoS("Plan eviction",
-				"idx", i+1,
+			klog.V(2).InfoS("Eviction plan",
+				"idx_evict", i+1,
 				"pod", podRef(v),
 				"node", v.Spec.NodeName,
 				"cpu(m)", getPodCPURequest(v),

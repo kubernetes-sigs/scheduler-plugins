@@ -31,8 +31,7 @@ def solve(instance: dict) -> dict:
     def p_eligible(i, j):
         if ignore_affinity:
             return True
-        # TODO: If you want to honor affinity/anti-affinity,
-        # read constraints from pods[i] and restrict x[i][j] here.
+        # TODO: honor affinity/anti-affinity if desired
         return True
 
     if pre["uid"] not in pod_idx:
@@ -75,7 +74,6 @@ def solve(instance: dict) -> dict:
             m.Add(kept[i] <= x[i][orig])
             m.Add(kept[i] >= placed[i] + x[i][orig] - 1)
             # move[i] is 1 if placed and NOT kept
-            # Equivalent linearization:
             m.Add(move[i] >= placed[i] - x[i][orig])
             m.Add(move[i] <= placed[i])
             m.Add(move[i] <= 1 - x[i][orig])
@@ -84,7 +82,14 @@ def solve(instance: dict) -> dict:
     m.Add(placed[i_pre] == 1)
     m.Add(evict[i_pre] == 0)
 
-    # Eviction policy: only strictly-lower priority and not protected can be evicted.
+    # Forbid moving pods with priority HIGHER than preemptor (equal/lower can move)
+    for i in range(P):
+        if i == i_pre:
+            continue
+        if p_pri(i) > pre_pr:
+            m.Add(move[i] == 0)
+
+    # Eviction policy: only strictly-lower priority can be evicted.
     for i in range(P):
         if i == i_pre:
             continue
@@ -107,10 +112,7 @@ def solve(instance: dict) -> dict:
                     sum(x[i][j2] * p_ram(i) for i in range(P))
                 )
 
-    # 2) For pods with identical (cpu, ram, priority), earlier pod index must go to
-    #    node with index <= later pod’s node index (tie-breaking on node order).
-    #    Implemented via expected-node-index <= relation.
-    #    (Keeps search tight.)
+    # 2) For identical pods (cpu, ram, priority), enforce node index monotonicity
     if P > 0:
         node_indices = list(range(J))
         for i1 in range(P - 1):
@@ -120,53 +122,45 @@ def solve(instance: dict) -> dict:
                     rhs = sum(node_indices[j] * x[i2][j] for j in range(J))
                     m.Add(lhs <= rhs)
 
-    # ---------------- Lexicographic optimization by priority ----------------
-    # Priorities (high->low)
-    priorities = sorted({p_pri(i) for i in range(P)}, reverse=True)
+    # ---------------- Lexicographic optimization ----------------
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(0.1, timeout_ms / 1000.0)
     solver.parameters.num_search_workers = 8
 
-    feasible_any = False
-    last_status = None
-
-    # Incrementally add equality constraints to “freeze” the optimum for each stage
+    # Stage 1: for each priority (high->low), maximize placed at that priority, freeze each optimum
+    priorities = sorted({p_pri(i) for i in range(P)}, reverse=True)
     for pr in priorities:
         idxs = [i for i in range(P) if p_pri(i) == pr]
-
-        # Stage 1: maximize number of placed pods at this priority
         placed_count = m.NewIntVar(0, len(idxs), f"placed_count_pr{pr}")
         m.Add(placed_count == sum(placed[i] for i in idxs))
-
         m.Maximize(placed_count)
-        st1 = solver.Solve(m)
-        last_status = st1
-        if st1 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            # If we can’t even find a feasible placement respecting higher-priority freezes,
-            # return best-so-far (if any).
-            break
 
-        feasible_any = True
+        st = solver.Solve(m)
+        if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
+
         best_placed = int(solver.Value(placed_count))
-        # Freeze optimum for this stage
-        m.Add(placed_count == best_placed)
+        m.Add(placed_count == best_placed)  # freeze for this tier
 
-        # Stage 2: minimize moves for THIS priority (keep pods where they were)
-        moves_count = m.NewIntVar(0, len(idxs), f"moves_count_pr{pr}")
-        m.Add(moves_count == sum(move[i] for i in idxs))
-        m.Minimize(moves_count)
-        st2 = solver.Solve(m)
-        last_status = st2
-        if st2 in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            best_moves = int(solver.Value(moves_count))
-            # Freeze minimal moves for this stage
-            m.Add(moves_count == best_moves)
-        else:
-            # If we fail here, we keep the placed_count freeze and proceed.
-            pass
+    # Stage 2: minimize total evictions, freeze
+    total_evict = m.NewIntVar(0, P, "total_evict")
+    m.Add(total_evict == sum(evict[i] for i in range(P)))
+    m.Minimize(total_evict)
 
-    if not feasible_any or last_status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return {"status": "INFEASIBLE" if last_status == cp_model.INFEASIBLE else "TIMEOUT"}
+    st = solver.Solve(m)
+    if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
+    m.Add(total_evict == int(solver.Value(total_evict)))  # freeze
+
+    # Stage 3: minimize total pod moves among pods allowed to move (prio <= pre_pr)
+    move_idxs = [i for i in range(P) if p_pri(i) <= pre_pr]
+    total_moves = m.NewIntVar(0, len(move_idxs), "total_moves_allowed")
+    m.Add(total_moves == sum(move[i] for i in move_idxs))
+    m.Minimize(total_moves)
+
+    st = solver.Solve(m)
+    if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
 
     # --------------- Extract final plan ---------------
     placements = {}

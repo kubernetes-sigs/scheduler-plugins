@@ -22,184 +22,97 @@ type nodeCap struct {
 
 // executePlan executes the optimal pod-assignment plan
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan) error {
-	klog.V(2).InfoS("Executing pod-assignment plan",
-		"targetNode", plan.TargetNode,
-		"movements", len(plan.PodMovements),
-		"evictions", len(plan.VictimsToEvict))
+	pl.logActionablePlanCompact(plan)
 
-	// Counters for success/failure
-	var (
-		evictOK, evictFail int
-		moveOK, moveFail   int
-	)
+	var evictOK, evictFail, moveOK, moveFail int
 
-	// 0) Build live per-node capacity ledger
-	niList, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return fmt.Errorf("list nodes: %w", err)
-	}
-	caps := map[string]*nodeCap{}
-	for _, ni := range niList {
-		freeCPU := ni.Allocatable.MilliCPU - ni.Requested.MilliCPU
-		freeMem := ni.Allocatable.Memory - ni.Requested.Memory
-		if freeCPU < 0 {
-			freeCPU = 0
-		}
-		if freeMem < 0 {
-			freeMem = 0
-		}
-		caps[ni.Node().Name] = &nodeCap{
-			allocCPU: ni.Allocatable.MilliCPU,
-			allocMem: ni.Allocatable.Memory,
-			freeCPU:  freeCPU,
-			freeMem:  freeMem,
-		}
-	}
-
-	// 1) Evict first
+	// Evict planned victims first (free space)
 	for i, v := range plan.VictimsToEvict {
 		klog.V(2).InfoS("Evicting victim",
 			"step", fmt.Sprintf("%d/%d", i+1, len(plan.VictimsToEvict)),
-			"pod", podRef(v),
-			"node", v.Spec.NodeName)
+			"pod", podRef(v), "node", v.Spec.NodeName)
 		if err := pl.evictPod(ctx, v); err != nil {
 			klog.ErrorS(err, "Eviction failed", "pod", podRef(v))
 			evictFail++
-			// keep going
 		} else {
-			n := v.Spec.NodeName
-			if c := caps[n]; c != nil {
-				c.freeCPU += getPodCPURequest(v)
-				c.freeMem += getPodMemoryRequest(v)
-			}
 			evictOK++
-			klog.V(2).InfoS("Eviction succeeded", "pod", podRef(v))
 		}
 	}
 
-	// 2) Order & execute moves greedily
-	remaining := append([]PodMovement(nil), plan.PodMovements...)
-	madeProgress := true
+	// Perform moves exactly as the solver planned (trust the plan)
+	for i, mv := range plan.PodMovements {
+		klog.V(2).InfoS("Moving pod",
+			"step", fmt.Sprintf("%d/%d", i+1, len(plan.PodMovements)),
+			"pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
 
-	for len(remaining) > 0 && madeProgress {
-		madeProgress = false
-		next := remaining[:0]
-
-		for _, mv := range remaining {
-			needCPU := mv.CPURequest
-			needMem := mv.MemoryRequest
-			dst := caps[mv.ToNode]
-			if dst != nil && dst.freeCPU >= needCPU && dst.freeMem >= needMem {
-				klog.V(2).InfoS("Attempting move",
-					"pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-				if err := pl.movePodToNodeDeleteFirst(ctx, mv.Pod, mv.ToNode); err != nil {
-					klog.ErrorS(err, "Move failed", "pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-					moveFail++
-					next = append(next, mv) // try later or deadlock-breaker
-					continue
-				}
-				// Update ledgers
-				if sc := caps[mv.FromNode]; sc != nil {
-					sc.freeCPU += needCPU
-					sc.freeMem += needMem
-				}
-				dst.freeCPU -= needCPU
-				dst.freeMem -= needMem
-				moveOK++
-				madeProgress = true
-				klog.V(2).InfoS("Move succeeded", "pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-			} else {
-				next = append(next, mv)
-			}
-		}
-		remaining = next
-	}
-
-	// deadlock breaker: pick a move that frees a blocked destination
-	if len(remaining) > 0 {
-		// Build set of currently-blocked destinations
-		blockedDst := map[string]bool{}
-		for _, mv := range remaining {
-			dst := caps[mv.ToNode]
-			needCPU, needMem := mv.CPURequest, mv.MemoryRequest
-			if dst == nil || dst.freeCPU < needCPU || dst.freeMem < needMem {
-				blockedDst[mv.ToNode] = true
-			}
-		}
-
-		// Prefer a move whose FromNode is a blocked destination (frees space there)
-		pickIdx := -1
-		for i, mv := range remaining {
-			if blockedDst[mv.FromNode] {
-				pickIdx = i
-				break
-			}
-		}
-		// Fallback: free from the most overloaded node (by memory deficit, then CPU)
-		if pickIdx == -1 {
-			type deficit struct {
-				idx      int
-				mem, cpu int64
-			}
-			var best *deficit
-			for i, mv := range remaining {
-				src := caps[mv.FromNode]
-				if src == nil {
-					continue
-				}
-				d := &deficit{i, src.allocMem - src.freeMem, src.allocCPU - src.freeCPU}
-				if best == nil || d.mem > best.mem || (d.mem == best.mem && d.cpu > best.cpu) {
-					best = d
-				}
-			}
-			if best != nil {
-				pickIdx = best.idx
-			}
-		}
-
-		mv := remaining[0]
-		if pickIdx != -1 {
-			mv = remaining[pickIdx]
-		}
-
-		klog.V(2).InfoS("Move deadlock detected; breaking by freeing bottleneck",
-			"chosenPod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-
-		// Perform the freeing move first (delete-first recreate on its destination)
-		if err := pl.movePodToNodeDeleteFirst(ctx, mv.Pod, mv.ToNode); err != nil {
+		// Use "fast" move (skips capacity check)
+		if err := pl.movePodFast(ctx, mv.Pod, mv.ToNode); err != nil {
 			moveFail++
-			klog.ErrorS(err, "Deadlock break move failed", "pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-			return fmt.Errorf("failed to break deadlock by moving %s: %w", podRef(mv.Pod), err)
-		}
-		// Update ledgers
-		if sc := caps[mv.FromNode]; sc != nil {
-			sc.freeCPU += mv.CPURequest
-			sc.freeMem += mv.MemoryRequest
-		}
-		if dc := caps[mv.ToNode]; dc != nil {
-			dc.freeCPU -= mv.CPURequest
-			dc.freeMem -= mv.MemoryRequest
+			klog.ErrorS(err, "Move failed", "pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
+			// optional: continue trying the remaining moves instead of returning
+			// continue
+			return fmt.Errorf("move failed for %s: %w", podRef(mv.Pod), err)
 		}
 		moveOK++
-
-		// Re-run greedy phase for the rest
-		if pickIdx == -1 {
-			// we used remaining[0]
-			remaining = remaining[1:]
-		} else {
-			remaining = append(remaining[:pickIdx], remaining[pickIdx+1:]...)
-		}
-		subPlan := &PodAssignmentPlan{TargetNode: plan.TargetNode, PodMovements: remaining}
-		return pl.executePlan(ctx, subPlan)
 	}
 
-	// ---- All moves done (no deadlock outstanding). Log a single summary and return. ----
-	klog.InfoS("Plan execution summary", "targetNode", plan.TargetNode, "movesOK", moveOK, "movesFailed", moveFail, "evictionsOK", evictOK, "evictionsFailed", evictFail)
+	klog.InfoS("Plan execution summary",
+		"targetNode", plan.TargetNode,
+		"movesOK", moveOK, "movesFailed", moveFail,
+		"evictionsOK", evictOK, "evictionsFailed", evictFail)
+
 	if moveFail == 0 && evictFail == 0 {
 		klog.InfoS("Plan executed successfully")
 	} else {
 		klog.ErrorS(nil, "Plan executed with failures",
 			"movesFailed", moveFail, "evictionsFailed", evictFail)
+	}
+	return nil
+}
+
+func (pl *MyCrossNodePreemption) movePodFast(ctx context.Context, pod *v1.Pod, destNode string) error {
+	if destNode == pod.Spec.NodeName {
+		klog.V(4).InfoS("Skip no-op move", "pod", klog.KObj(pod), "node", destNode)
+		return nil
+	}
+	// Keep this: prevents moving to NotReady/unschedulable nodes
+	if err := pl.validatePodMovement(ctx, pod, destNode); err != nil {
+		return err
+	}
+
+	// Delete original (grace 0)
+	grace := int64(0)
+	if err := pl.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
+		GracePeriodSeconds: &grace,
+	}); err != nil {
+		return fmt.Errorf("delete original before move: %w", err)
+	}
+
+	// Wait until the old object is fully gone so we can reuse the same name
+	if err := pl.waitForPodGone(ctx, pod.Namespace, pod.Name, 30*time.Second); err != nil {
+		return fmt.Errorf("wait for old pod to disappear: %w", err)
+	}
+
+	// Recreate pinned at destination with the SAME name
+	moved := pod.DeepCopy()
+	moved.ResourceVersion = ""
+	moved.UID = ""
+	moved.Status = v1.PodStatus{}
+	moved.Spec.SchedulerName = "" // let kube-scheduler skip; NodeName will pin it
+	moved.Spec.NodeName = destNode
+	// Optionally drop selectors/affinity that would fight the pin:
+	moved.Spec.NodeSelector = map[string]string{}
+	moved.Spec.Affinity = nil
+
+	if moved.Annotations == nil {
+		moved.Annotations = map[string]string{}
+	}
+	moved.Annotations["scheduler.alpha.kubernetes.io/moved-from"] = pod.Spec.NodeName
+	moved.Annotations["scheduler.alpha.kubernetes.io/moved-to"] = destNode
+	moved.Annotations["scheduler.alpha.kubernetes.io/moved-timestamp"] = time.Now().Format(time.RFC3339)
+
+	if _, err := pl.client.CoreV1().Pods(pod.Namespace).Create(ctx, moved, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create moved pod: %w", err)
 	}
 	return nil
 }
@@ -269,15 +182,29 @@ func (pl *MyCrossNodePreemption) movePodToNodeDeleteFirst(ctx context.Context, p
 	return nil
 }
 
-// evictPod evicts (deletes) a victim pod
+// evictPod deletes a victim pod; if it's standalone (no controller), recreate a Pending copy
+// so it can be scheduled later when capacity appears.
 func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) error {
 	klog.V(4).InfoS("Evicting victim pod", "pod", klog.KObj(pod))
 
 	grace := int64(0)
 	if err := pl.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
-		GracePeriodSeconds: &grace, // Immediate deletion
+		GracePeriodSeconds: &grace,
 	}); err != nil {
 		return fmt.Errorf("failed to delete victim pod: %v", err)
+	}
+
+	// If a controller owns this pod, it’ll recreate it automatically.
+	// If it's a naked pod, recreate a Pending copy ourselves so it can be scheduled later.
+	if !hasController(pod) {
+		// Wait for resource name to be fully released to reuse the same name
+		if err := pl.waitForPodGone(ctx, pod.Namespace, pod.Name, 30*time.Second); err != nil {
+			return fmt.Errorf("wait for evicted pod to disappear: %w", err)
+		}
+		if err := pl.recreatePendingCopy(ctx, pod); err != nil {
+			return fmt.Errorf("recreate pending copy: %w", err)
+		}
+		klog.V(3).InfoS("Recreated pending copy for standalone pod", "pod", klog.KObj(pod))
 	}
 
 	klog.V(3).InfoS("Successfully evicted pod", "pod", klog.KObj(pod))
@@ -343,4 +270,68 @@ func (pl *MyCrossNodePreemption) waitForPodGone(ctx context.Context, ns, name st
 		}
 		return false, err // keep waiting (or bubble up unexpected errors)
 	})
+}
+
+// logActionablePlanCompact logs only the pods that will be moved or evicted.
+func (pl *MyCrossNodePreemption) logActionablePlanCompact(plan *PodAssignmentPlan) {
+	klog.InfoS("Actionable plan",
+		"targetNode", plan.TargetNode,
+		"moves", len(plan.PodMovements),
+		"evictions", len(plan.VictimsToEvict),
+	)
+
+	for _, mv := range plan.PodMovements {
+		klog.InfoS("Plan MOVE",
+			"pod", podRef(mv.Pod),
+			"from", mv.FromNode,
+			"to", mv.ToNode,
+			"cpu(m)", mv.CPURequest,
+			"mem(bytes)", mv.MemoryRequest,
+		)
+	}
+	for _, v := range plan.VictimsToEvict {
+		klog.InfoS("Plan EVICT",
+			"pod", podRef(v),
+			"node", v.Spec.NodeName,
+			"cpu(m)", getPodCPURequest(v),
+			"mem(bytes)", getPodMemoryRequest(v),
+		)
+	}
+}
+
+// hasController returns true if the pod has a controlling owner (e.g., ReplicaSet).
+func hasController(p *v1.Pod) bool {
+	for _, o := range p.OwnerReferences {
+		if o.Controller != nil && *o.Controller {
+			return true
+		}
+	}
+	return false
+}
+
+// recreatePendingCopy recreates a fresh Pending pod (same name) so it can be scheduled later.
+func (pl *MyCrossNodePreemption) recreatePendingCopy(ctx context.Context, orig *v1.Pod) error {
+	newp := orig.DeepCopy()
+	newp.ResourceVersion = ""
+	newp.UID = ""
+	newp.Status = v1.PodStatus{}
+	newp.Spec.SchedulerName = "" // let normal scheduler bind it
+	newp.Spec.NodeName = ""      // ensure it's Pending
+	// DO NOT carry over any NodeSelector/Affinity that would pin it back where it was unless you want that:
+	// newp.Spec.NodeSelector = map[string]string{}
+	// newp.Spec.Affinity = nil
+
+	// Optional breadcrumb:
+	if newp.Annotations == nil {
+		newp.Annotations = map[string]string{}
+	}
+	newp.Annotations["scheduler.alpha.kubernetes.io/evicted-by"] = Name
+	newp.Annotations["scheduler.alpha.kubernetes.io/evicted-timestamp"] = time.Now().Format(time.RFC3339)
+
+	// Keep the exact same name so it’s easy to track
+	newp.GenerateName = ""
+	newp.Name = orig.Name
+
+	_, err := pl.client.CoreV1().Pods(orig.Namespace).Create(ctx, newp, metav1.CreateOptions{})
+	return err
 }
