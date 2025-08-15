@@ -102,7 +102,8 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	// Execute plan: moves and evictions
 	if err := pl.executePlan(ctx, plan); err != nil {
 		klog.ErrorS(err, "plan execution failed")
-		return nil, framework.NewStatus(framework.Error, err.Error())
+		// Don’t return framework.Error; use Unschedulable so the scheduler retries.
+		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 
 	return &framework.PostFilterResult{

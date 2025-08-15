@@ -2,8 +2,8 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -20,10 +20,10 @@ type nodeCap struct {
 	freeMem  int64
 }
 
+var ErrNoRoom = fmt.Errorf("destination has no room")
+
 // executePlan executes the optimal pod-assignment plan
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan) error {
-	pl.logActionablePlanCompact(plan)
-
 	var evictOK, evictFail, moveOK, moveFail int
 
 	// Evict planned victims first (free space)
@@ -40,20 +40,39 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 	}
 
 	// Perform moves exactly as the solver planned (trust the plan)
-	for i, mv := range plan.PodMovements {
-		klog.V(2).InfoS("Moving pod",
-			"step", fmt.Sprintf("%d/%d", i+1, len(plan.PodMovements)),
-			"pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-
-		// Use "fast" move (skips capacity check)
-		if err := pl.movePodFast(ctx, mv.Pod, mv.ToNode); err != nil {
-			moveFail++
-			klog.ErrorS(err, "Move failed", "pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-			// optional: continue trying the remaining moves instead of returning
-			// continue
-			return fmt.Errorf("move failed for %s: %w", podRef(mv.Pod), err)
+	var pending []PodMovement
+	// group by dest
+	// Two concurrent moves to the same node can both pass the pre‑check and then collectively overcommit. Do them sequentially per destination:
+	byDest := map[string][]PodMovement{}
+	for _, mv := range plan.PodMovements {
+		byDest[mv.ToNode] = append(byDest[mv.ToNode], mv)
+	}
+	for dest, mvs := range byDest {
+		for i, mv := range mvs {
+			klog.V(2).InfoS("Moving pod", "dest", dest, "step", fmt.Sprintf("%d/%d", i+1, len(mvs)), "pod", podRef(mv.Pod))
+			if err := pl.movePodFast(ctx, mv.Pod, dest); err != nil {
+				if errors.Is(err, ErrNoRoom) {
+					pending = append(pending, mv)
+					continue
+				}
+				moveFail++
+				return fmt.Errorf("move failed for %s: %w", podRef(mv.Pod), err)
+			}
+			moveOK++
 		}
-		moveOK++
+	}
+
+	if len(pending) > 0 {
+		// One retry pass
+		made := 0
+		for _, mv := range pending {
+			if err := pl.movePodFast(ctx, mv.Pod, mv.ToNode); err != nil {
+				// Still no room → stop early with an explicit reason
+				return fmt.Errorf("cannot place %s on %s yet: %w", podRef(mv.Pod), mv.ToNode, err)
+			}
+			made++
+		}
+		moveOK += made
 	}
 
 	klog.InfoS("Plan execution summary",
@@ -75,9 +94,18 @@ func (pl *MyCrossNodePreemption) movePodFast(ctx context.Context, pod *v1.Pod, d
 		klog.V(4).InfoS("Skip no-op move", "pod", klog.KObj(pod), "node", destNode)
 		return nil
 	}
-	// Keep this: prevents moving to NotReady/unschedulable nodes
+	// Basic safety: node exists, Ready, schedulable
 	if err := pl.validatePodMovement(ctx, pod, destNode); err != nil {
 		return err
+	}
+
+	// We check *before* deleting the source pod to avoid needless disruption.
+	probe := pod.DeepCopy()
+	probe.Spec.NodeName = destNode
+	probe.Spec.NodeSelector = map[string]string{} // avoid conflicts
+	probe.Spec.Affinity = nil
+	if err := pl.verifyNodeHasRoomFor(ctx, destNode, probe); err != nil {
+		return fmt.Errorf("dest %s has no room for %s: %w", destNode, podRef(pod), err)
 	}
 
 	// Delete original (grace 0)
@@ -87,23 +115,18 @@ func (pl *MyCrossNodePreemption) movePodFast(ctx context.Context, pod *v1.Pod, d
 	}); err != nil {
 		return fmt.Errorf("delete original before move: %w", err)
 	}
-
-	// Wait until the old object is fully gone so we can reuse the same name
 	if err := pl.waitForPodGone(ctx, pod.Namespace, pod.Name, 30*time.Second); err != nil {
 		return fmt.Errorf("wait for old pod to disappear: %w", err)
 	}
 
-	// Recreate pinned at destination with the SAME name
 	moved := pod.DeepCopy()
 	moved.ResourceVersion = ""
 	moved.UID = ""
 	moved.Status = v1.PodStatus{}
-	moved.Spec.SchedulerName = "" // let kube-scheduler skip; NodeName will pin it
+	moved.Spec.SchedulerName = ""
 	moved.Spec.NodeName = destNode
-	// Optionally drop selectors/affinity that would fight the pin:
 	moved.Spec.NodeSelector = map[string]string{}
 	moved.Spec.Affinity = nil
-
 	if moved.Annotations == nil {
 		moved.Annotations = map[string]string{}
 	}
@@ -111,71 +134,6 @@ func (pl *MyCrossNodePreemption) movePodFast(ctx context.Context, pod *v1.Pod, d
 	moved.Annotations["scheduler.alpha.kubernetes.io/moved-to"] = destNode
 	moved.Annotations["scheduler.alpha.kubernetes.io/moved-timestamp"] = time.Now().Format(time.RFC3339)
 
-	if _, err := pl.client.CoreV1().Pods(pod.Namespace).Create(ctx, moved, metav1.CreateOptions{}); err != nil {
-		return fmt.Errorf("create moved pod: %w", err)
-	}
-	return nil
-}
-
-// delete-first: free capacity before recreating
-func (pl *MyCrossNodePreemption) movePodToNodeDeleteFirst(ctx context.Context, pod *v1.Pod, destNode string) error {
-	if destNode == pod.Spec.NodeName {
-		klog.V(4).InfoS("Skip no-op move", "pod", klog.KObj(pod), "node", destNode)
-		return nil
-	}
-	if err := pl.validatePodMovement(ctx, pod, destNode); err != nil {
-		return err
-	}
-
-	// 1) Delete original (grace 0)
-	grace := int64(0)
-	if err := pl.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
-		GracePeriodSeconds: &grace,
-		// PropagationPolicy: &metav1.DeletePropagationForeground, // optional: ensure children first
-	}); err != nil {
-		return fmt.Errorf("delete original before move: %w", err)
-	}
-
-	// 2) Wait until it’s actually gone so we can reuse the same name
-	//    (tune timeout if your cluster can take longer to GC)
-	if err := pl.waitForPodGone(ctx, pod.Namespace, pod.Name, 30*time.Second); err != nil {
-		return fmt.Errorf("wait for old pod to disappear: %w", err)
-	}
-
-	// 3) Recreate pinned at destination with the SAME name
-	moved := pod.DeepCopy()
-	moved.ResourceVersion = ""    // must be empty on create
-	moved.UID = ""                // new object
-	moved.Status = v1.PodStatus{} // clear runtime status
-	// Don’t carry Node selectors/affinity from old placement (optional, your call)
-	moved.Spec.NodeSelector = map[string]string{}
-	moved.Spec.Affinity = nil
-	moved.Spec.SchedulerName = "" // allow NodeName take effect
-	moved.Spec.NodeName = destNode
-
-	// Keep the EXACT same name
-	moved.GenerateName = ""
-	moved.Name = pod.Name
-
-	// Movement annotations
-	if moved.Annotations == nil {
-		moved.Annotations = map[string]string{}
-	}
-	moved.Annotations["scheduler.alpha.kubernetes.io/moved-from"] = pod.Spec.NodeName
-	moved.Annotations["scheduler.alpha.kubernetes.io/moved-to"] = destNode
-	moved.Annotations["scheduler.alpha.kubernetes.io/moved-timestamp"] = time.Now().Format(time.RFC3339)
-	if _, ok := moved.Annotations["scheduler.alpha.kubernetes.io/original-node"]; !ok {
-		moved.Annotations["scheduler.alpha.kubernetes.io/original-node"] = pod.Spec.NodeName
-	}
-	moveCount, _ := strconv.Atoi(moved.Annotations["scheduler.alpha.kubernetes.io/move-count"])
-	moved.Annotations["scheduler.alpha.kubernetes.io/move-count"] = fmt.Sprintf("%d", moveCount+1)
-
-	// 4) Live capacity check before create
-	if err := pl.verifyNodeHasRoomFor(ctx, destNode, moved); err != nil {
-		return fmt.Errorf("destination check failed on %s for %s: %w", destNode, podRef(pod), err)
-	}
-
-	// 5) Create
 	if _, err := pl.client.CoreV1().Pods(pod.Namespace).Create(ctx, moved, metav1.CreateOptions{}); err != nil {
 		return fmt.Errorf("create moved pod: %w", err)
 	}
@@ -255,8 +213,8 @@ func (pl *MyCrossNodePreemption) verifyNodeHasRoomFor(ctx context.Context, nodeN
 	needCPU := getPodCPURequest(pod)
 	needMem := getPodMemoryRequest(pod)
 	if usedCPU+needCPU > allocCPU || usedMem+needMem > allocMem {
-		return fmt.Errorf("would overcommit: used %dm/%dm + need %dm, used %d/%d + need %d",
-			usedCPU, allocCPU, needCPU, usedMem, allocMem, needMem)
+		return fmt.Errorf("%w: would overcommit: used %dm/%dm + need %dm, used %d/%d + need %d",
+			ErrNoRoom, usedCPU, allocCPU, needCPU, usedMem, allocMem, needMem)
 	}
 	return nil
 }
@@ -270,33 +228,6 @@ func (pl *MyCrossNodePreemption) waitForPodGone(ctx context.Context, ns, name st
 		}
 		return false, err // keep waiting (or bubble up unexpected errors)
 	})
-}
-
-// logActionablePlanCompact logs only the pods that will be moved or evicted.
-func (pl *MyCrossNodePreemption) logActionablePlanCompact(plan *PodAssignmentPlan) {
-	klog.InfoS("Actionable plan",
-		"targetNode", plan.TargetNode,
-		"moves", len(plan.PodMovements),
-		"evictions", len(plan.VictimsToEvict),
-	)
-
-	for _, mv := range plan.PodMovements {
-		klog.InfoS("Plan MOVE",
-			"pod", podRef(mv.Pod),
-			"from", mv.FromNode,
-			"to", mv.ToNode,
-			"cpu(m)", mv.CPURequest,
-			"mem(bytes)", mv.MemoryRequest,
-		)
-	}
-	for _, v := range plan.VictimsToEvict {
-		klog.InfoS("Plan EVICT",
-			"pod", podRef(v),
-			"node", v.Spec.NodeName,
-			"cpu(m)", getPodCPURequest(v),
-			"mem(bytes)", getPodMemoryRequest(v),
-		)
-	}
 }
 
 // hasController returns true if the pod has a controlling owner (e.g., ReplicaSet).
