@@ -55,10 +55,18 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// 3) Wait for the preemptor to bind on the nominated node (use Watch, not tight polling)
+	// 3) Wait for the preemptor to bind on the nominated node
 	if pending != nil && plan.TargetNode != "" {
-		klog.V(2).InfoS("Waiting for preemptor to bind",
+		klog.V(2).InfoS("Binding preemptor to nominated node",
 			"pod", podRef(pending), "targetNode", plan.TargetNode)
+
+		// Best-effort bind (idempotent across retries thanks to UID)
+		if err := pl.bindPodToNode(ctx, pending, plan.TargetNode); err != nil {
+			// If the pod was already bound or disappears, we’ll detect below.
+			klog.ErrorS(err, "Direct bind attempt failed; will still wait/verify",
+				"pod", podRef(pending), "targetNode", plan.TargetNode)
+		}
+
 		// A small delay before checking the binding status
 		time.Sleep(5000 * time.Millisecond)
 		if err := pl.waitForPodBound(ctx, pending.Namespace, pending.Name, plan.TargetNode, 30*time.Second); err != nil {
@@ -97,7 +105,26 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 	return nil
 }
 
-// waitForPodBound polls until the pod is bound to the specified node or times out.
+// bindPodToNode performs a direct Bind to the given node.
+// It’s safe to call even if the scheduler would eventually bind; this just removes the race.
+func (pl *MyCrossNodePreemption) bindPodToNode(ctx context.Context, pod *v1.Pod, node string) error {
+	b := &v1.Binding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            pod.Name,
+			Namespace:       pod.Namespace,
+			UID:             pod.UID, // protects from binding a different generation
+			ResourceVersion: "",      // not required for Binding
+		},
+		Target: v1.ObjectReference{
+			Kind: "Node",
+			Name: node,
+		},
+	}
+	// NOTE: Pods().Bind is a subresource call that sets spec.nodeName server-side.
+	return pl.client.CoreV1().Pods(pod.Namespace).Bind(ctx, b, metav1.CreateOptions{})
+}
+
+// waitForPodBound uses a slow poll (rarely used now).
 func (pl *MyCrossNodePreemption) waitForPodBound(ctx context.Context, ns, name, node string, timeout time.Duration) error {
 	return wait.PollUntilContextTimeout(ctx, 5000*time.Millisecond, timeout, true, func(ctx context.Context) (done bool, err error) {
 		pod, err := pl.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})

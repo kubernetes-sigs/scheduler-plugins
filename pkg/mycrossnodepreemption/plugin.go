@@ -75,7 +75,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 
 	out, err := pl.runPythonOptimizer(solveCtx, pending, 4*time.Second)
 	if err != nil {
-		klog.ErrorS(err, "optimizer error")
+		klog.ErrorS(err, "optimizer error") // TODO: handle errors better (maybe provide more errors from the python script). Right now it says optimizer error also when lower priority pods can be scheduled due to insufficient resources
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 	klog.InfoS("Solver executed successfully", "status", out.Status)
