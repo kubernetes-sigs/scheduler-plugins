@@ -82,14 +82,14 @@ def solve(instance: dict) -> dict:
     m.Add(placed[i_pre] == 1)
     m.Add(evict[i_pre] == 0)
 
-    # Forbid moving pods with priority HIGHER than preemptor (equal/lower can move)
+    # (Optional) Forbid moving pods with priority HIGHER than preemptor (equal/lower than preemptor can move)
     for i in range(P):
         if i == i_pre:
             continue
         if p_pri(i) > pre_pr:
             m.Add(move[i] == 0)
 
-    # Eviction policy: only strictly-lower priority can be evicted.
+    # Eviction policy: only strictly-lower priority pods than preemptor can be evicted.
     for i in range(P):
         if i == i_pre:
             continue

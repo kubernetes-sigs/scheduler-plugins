@@ -27,7 +27,7 @@ type MyCrossNodePreemption struct {
 
 const (
 	Name    = "MyCrossNodePreemption"
-	Version = "v1.15.0"
+	Version = "v1.0.0"
 )
 
 // path to your Python script inside the image
@@ -92,8 +92,8 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	// NEW: log the plan we're about to run
 	pl.logPlan(plan)
 
-	// Execute plan: moves and evictions
-	if err := pl.executePlan(ctx, plan); err != nil {
+	// Execute plan with the simpler "delete → bind preemptor → recreate moves" strategy
+	if err := pl.executePlan(ctx, plan, pending); err != nil {
 		klog.ErrorS(err, "plan execution failed")
 		// Don’t return framework.Error; use Unschedulable so the scheduler retries.
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())

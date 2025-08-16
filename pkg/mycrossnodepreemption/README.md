@@ -8,7 +8,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ## TODOs
 
-- Add KWOK for making large tests. It seems to be possible to define a custom binary for the kube-scheduler.
+- Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
 - Check that the scheduler runs the plan correctly.
 - Add a script to deploy many high priority pods.
 - Maybe consider to not do a fully optimal placement only such so the pending pod can be scheduled. Otherwise, think about what it gives in the long run to optimize all nodes.
