@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: high-priority-pod3
+  name: high-priority-pod2
   namespace: crossnode-test
 spec:
   priorityClassName: p4

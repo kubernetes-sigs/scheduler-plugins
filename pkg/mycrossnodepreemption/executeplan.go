@@ -59,7 +59,11 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 	if pending != nil && plan.TargetNode != "" {
 		klog.V(2).InfoS("Waiting for preemptor to bind",
 			"pod", podRef(pending), "targetNode", plan.TargetNode)
-		// TODO: Give kube-scheduler a reasonable window to bind
+		// A small delay before checking the binding status
+		time.Sleep(5000 * time.Millisecond)
+		if err := pl.waitForPodBound(ctx, pending.Namespace, pending.Name, plan.TargetNode, 30*time.Second); err != nil {
+			klog.ErrorS(err, "Preemptor failed to bind", "pod", podRef(pending), "targetNode", plan.TargetNode)
+		}
 	}
 
 	// 4) Recreate moved pods directly on their solver-chosen destination nodes
@@ -91,6 +95,23 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 			"movesFailed", moveFail, "evictionsFailed", evictFail)
 	}
 	return nil
+}
+
+// waitForPodBound polls until the pod is bound to the specified node or times out.
+func (pl *MyCrossNodePreemption) waitForPodBound(ctx context.Context, ns, name, node string, timeout time.Duration) error {
+	return wait.PollUntilContextTimeout(ctx, 5000*time.Millisecond, timeout, true, func(ctx context.Context) (done bool, err error) {
+		pod, err := pl.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return false, err
+		}
+		if err != nil {
+			return false, err
+		}
+		if pod.Spec.NodeName == node {
+			return true, nil
+		}
+		return false, nil
+	})
 }
 
 // deletePodsWaitGone deletes pods (grace 0) and waits until each disappears.

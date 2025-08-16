@@ -8,6 +8,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ## TODOs
 
+- Fix the problem when waiting for pending pod to bind.
 - Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
 - Check that the scheduler runs the plan correctly.
 - Add a script to deploy many high priority pods.
