@@ -12,19 +12,17 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var ErrNoRoom = fmt.Errorf("destination has no room")
-
-// executePlan (simple strategy):
+// executePlan:
 //  1. Delete all pods that must MOVE.
 //  2. Delete all EVICTIONS (for standalone victims, recreate a Pending copy).
-//  3. Wait for the preemptor to bind to the solver's nominated node (via Watch; low API pressure).
+//  3. Wait for the preemptor to bind to the solver's nominated node.
 //  4. Recreate all moved pods on their final destination nodes.
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan, pending *v1.Pod) error {
 	var moveOK, moveFail, evictOK, evictFail int
 
 	// 1) Delete all pods that will be moved
 	if len(plan.PodMovements) > 0 {
-		klog.V(2).InfoS("Deleting pods to be moved first", "count", len(plan.PodMovements))
+		klog.V(2).InfoS("Deleting pods to be moved", "count", len(plan.PodMovements))
 		var toDelete []*v1.Pod
 		seen := map[string]bool{}
 		for _, mv := range plan.PodMovements {
@@ -39,7 +37,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// 2) Apply evictions (delete), and if naked pod, recreate a Pending copy
+	// 2) Apply evictions (delete), and if naked pod, recreate a copy (when space becomes available it would eventually be scheduled)
 	if len(plan.VictimsToEvict) > 0 {
 		klog.V(2).InfoS("Evicting victims", "count", len(plan.VictimsToEvict))
 		for i, v := range plan.VictimsToEvict {
@@ -68,7 +66,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 
 		// A small delay before checking the binding status
-		time.Sleep(5000 * time.Millisecond)
+		time.Sleep(2000 * time.Millisecond)
 		if err := pl.waitForPodBound(ctx, pending.Namespace, pending.Name, plan.TargetNode, 30*time.Second); err != nil {
 			klog.ErrorS(err, "Preemptor failed to bind", "pod", podRef(pending), "targetNode", plan.TargetNode)
 		}
@@ -120,11 +118,9 @@ func (pl *MyCrossNodePreemption) bindPodToNode(ctx context.Context, pod *v1.Pod,
 			Name: node,
 		},
 	}
-	// NOTE: Pods().Bind is a subresource call that sets spec.nodeName server-side.
 	return pl.client.CoreV1().Pods(pod.Namespace).Bind(ctx, b, metav1.CreateOptions{})
 }
 
-// waitForPodBound uses a slow poll (rarely used now).
 func (pl *MyCrossNodePreemption) waitForPodBound(ctx context.Context, ns, name, node string, timeout time.Duration) error {
 	return wait.PollUntilContextTimeout(ctx, 5000*time.Millisecond, timeout, true, func(ctx context.Context) (done bool, err error) {
 		pod, err := pl.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
@@ -167,8 +163,6 @@ func (pl *MyCrossNodePreemption) recreateMovedPodOn(ctx context.Context, orig *v
 	newp.ResourceVersion = ""
 	newp.UID = ""
 	newp.Status = v1.PodStatus{}
-
-	// Important: let default scheduler handle it (not this plugin)
 	newp.Spec.SchedulerName = ""
 	newp.Spec.NodeName = destNode
 	newp.Spec.NodeSelector = map[string]string{}
@@ -245,8 +239,8 @@ func (pl *MyCrossNodePreemption) recreatePendingCopy(ctx context.Context, orig *
 	newp.ResourceVersion = ""
 	newp.UID = ""
 	newp.Status = v1.PodStatus{}
-	newp.Spec.SchedulerName = "" // let normal scheduler bind it
-	newp.Spec.NodeName = ""      // ensure it's Pending
+	newp.Spec.SchedulerName = ""
+	newp.Spec.NodeName = ""
 
 	if newp.Annotations == nil {
 		newp.Annotations = map[string]string{}
