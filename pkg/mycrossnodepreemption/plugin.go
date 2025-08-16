@@ -334,17 +334,48 @@ func toleratesNoScheduleTaints(pod *v1.Pod, taints []v1.Taint) bool {
 	}
 	return true
 }
+
+// helper: detect control-plane / master nodes
+func isControlPlane(n *v1.Node) bool {
+	if n == nil {
+		return false
+	}
+	labels := n.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	// Standard roles
+	if _, ok := labels["node-role.kubernetes.io/control-plane"]; ok {
+		return true
+	}
+	if _, ok := labels["node-role.kubernetes.io/master"]; ok {
+		return true
+	}
+	// Some local clusters name it literally
+	if n.Name == "control-plane" || n.Name == "kind-control-plane" {
+		return true
+	}
+	return false
+}
+
 func isNodeUsableFor(pod *v1.Pod, ni *framework.NodeInfo) bool {
 	n := ni.Node()
 	if n == nil {
 		return false
 	}
+	// 1) never use control-plane/master nodes
+	if isControlPlane(n) {
+		return false
+	}
+	// 2) must be schedulable
 	if n.Spec.Unschedulable {
 		return false
 	}
+	// 3) pod must tolerate NoSchedule taints
 	if !toleratesNoScheduleTaints(pod, n.Spec.Taints) {
 		return false
 	}
+	// 4) must have positive allocatable
 	if ni.Allocatable.MilliCPU <= 0 || ni.Allocatable.Memory <= 0 {
 		return false
 	}

@@ -1,4 +1,3 @@
-# sched-config.yaml
 apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 profiles:
@@ -6,6 +5,7 @@ profiles:
   plugins:
     postFilter:
       enabled:
-      - name: MyCrossNodePreemption
+        - name: MyCrossNodePreemption
+    multiPoint:
       disabled:
-      - name: DefaultPreemption
+        - name: DefaultPreemption

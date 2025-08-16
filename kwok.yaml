@@ -1,0 +1,68 @@
+apiVersion: config.kwok.x-k8s.io/v1alpha1
+kind: KwokctlConfiguration
+metadata:
+  creationTimestamp: null
+options:
+  bindAddress: 0.0.0.0
+  cacheDir: /home/henrik/.kwok/cache
+  components:
+  - etcd
+  - kube-apiserver
+  - kube-controller-manager
+  - kube-scheduler
+  - kwok-controller
+  dashboardImage: docker.io/kubernetesui/dashboard:v2.7.0
+  dashboardMetricsScraperImage: docker.io/kubernetesui/metrics-scraper:v1.0.9
+  dashboardMetricsScraperVersion: v1.0.9
+  dashboardVersion: v2.7.0
+  disableKubeControllerManager: false
+  disableKubeScheduler: false
+  disableQPSLimits: false
+  enableMetricsServer: false
+  etcdBinary: https://github.com/etcd-io/etcd/releases/download/v3.5.21/etcd-v3.5.21-linux-amd64.tar.gz#etcd
+  etcdImage: registry.k8s.io/etcd:3.5.21-0
+  etcdPrefix: /registry
+  etcdQuotaBackendSize: 8Gi
+  etcdVersion: 3.5.21-0
+  etcdctlBinary: https://github.com/etcd-io/etcd/releases/download/v3.5.21/etcd-v3.5.21-linux-amd64.tar.gz#etcdctl
+  heartbeatFactor: 5
+  jaegerBinary: https://github.com/jaegertracing/jaeger/releases/download/v1.69.0/jaeger-1.69.0-linux-amd64.tar.gz#jaeger-all-in-one
+  jaegerImage: docker.io/jaegertracing/all-in-one:1.69.0
+  jaegerVersion: v1.69.0
+  kectlBinary: https://github.com/kwok-ci/kectl/releases/download/v0.0.8/kectl_linux_amd64
+  kectlVersion: 0.0.8
+  kindBinary: https://github.com/kubernetes-sigs/kind/releases/download/v0.27.0/kind-linux-amd64
+  kindNodeImage: docker.io/kindest/node:v1.33.0
+  kindVersion: v0.27.0
+  kubeAdmission: true
+  kubeApiserverBinary: https://dl.k8s.io/release/v1.33.0/bin/linux/amd64/kube-apiserver
+  kubeApiserverImage: registry.k8s.io/kube-apiserver:v1.33.0
+  kubeAuthorization: true
+  kubeControllerManagerBinary: https://dl.k8s.io/release/v1.33.0/bin/linux/amd64/kube-controller-manager
+  kubeControllerManagerImage: registry.k8s.io/kube-controller-manager:v1.33.0
+  kubeControllerManagerNodeMonitorGracePeriodMilliseconds: 40000
+  kubeControllerManagerNodeMonitorPeriodMilliseconds: 5000
+  kubeSchedulerBinary: https://dl.k8s.io/release/v1.33.0/bin/linux/amd64/kube-scheduler
+  kubeSchedulerImage: registry.k8s.io/kube-scheduler:v1.33.0
+  kubeVersion: v1.33.0
+  kubectlBinary: https://dl.k8s.io/release/v1.33.0/bin/linux/amd64/kubectl
+  kubectlImage: registry.k8s.io/kubectl:v1.33.0
+  kwokControllerBinary: https://github.com/kubernetes-sigs/kwok/releases/download/v0.7.0/kwok-linux-amd64
+  kwokControllerImage: registry.k8s.io/kwok/kwok:v0.7.0
+  kwokVersion: v0.7.0
+  metricsServerBinary: https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/metrics-server-linux-amd64
+  metricsServerImage: registry.k8s.io/metrics-server/metrics-server:v0.7.2
+  metricsServerVersion: v0.7.2
+  nodeLeaseDurationSeconds: 40
+  nodeStatusUpdateFrequencyMilliseconds: 10000
+  prometheusBinary: https://github.com/prometheus/prometheus/releases/download/v3.3.1/prometheus-3.3.1.linux-amd64.tar.gz#prometheus
+  prometheusImage: docker.io/prom/prometheus:v3.3.1
+  prometheusVersion: v3.3.1
+  quietPull: false
+  runtimes:
+  - docker
+  - podman
+  - nerdctl
+  - binary
+  securePort: true
+status: {}
