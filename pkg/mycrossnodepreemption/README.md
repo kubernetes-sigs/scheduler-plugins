@@ -15,6 +15,8 @@ The plugin will call this script in PostFilter with the current cluster state an
 - Add a script to deploy many high priority pods.
 - Maybe consider to not do a fully optimal placement only such so the pending pod can be scheduled. Otherwise, think about what it gives in the long run to optimize all nodes.
 - Consider to evict lower priority pods first, instead of just evicting the lowest amount of pods.
+- Simplify code and update readme.
+- Demo: Next week.
 
 ## Later
 
