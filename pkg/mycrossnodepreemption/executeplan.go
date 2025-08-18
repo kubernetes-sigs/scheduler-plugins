@@ -357,6 +357,7 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 	}
 	newp.Annotations["scheduler.alpha.kubernetes.io/previous-node"] = orig.Spec.NodeName
 	newp.Annotations["scheduler.alpha.kubernetes.io/last-modified"] = time.Now().Format(time.RFC3339)
+	newp.Annotations[deletionCostAnnotation] = fmt.Sprintf("%d", deletionCostKeep) // set high to prevent replicationController take our created pods after increasing replica count
 
 	newp.GenerateName = ""
 	newp.Name = orig.Name

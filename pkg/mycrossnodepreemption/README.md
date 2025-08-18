@@ -6,8 +6,25 @@ The python script should provide the optimal pod placement plan as output, inclu
 
 The plugin will call this script in PostFilter with the current cluster state and the pending pod's requirements, and it will receive the proposed plan as output.
 
+## Good commands
+
+### Getting saved solver plan from kube-scheduler
+
+kubectl -n kube-system get cm -l scheduler.x/crossnode-plan=true
+
+kubectl -n kube-system get cm <CM> -o jsonpath='{.data.plan\.json}' | jq .
+
+### Build kwok cluster with custom image and random pods
+
+docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile .
+
+kwokctl create cluster --name kwok --config kwok-cluster.yaml
+
+./fill-nodes-kwok.sh kwok 3 4 4
+
 ## TODOs
 
+- Test more.
 - Make solver depend on deployment and replicaset, that is if a pod belongs to a deployment or replicaset, the other pods in the same deployment/replicaset should also be evicted/deleted and so on.
 - Consider to protect pods that have node-selectors and other rules
 - Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
