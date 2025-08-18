@@ -8,6 +8,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 )
@@ -23,7 +24,29 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 	var moveOK, moveFail int
 	var evictionsFailed bool
 
-	// 1) Delete all pods that will be moved or evicted
+	// 1) Scale down replicasets before deletion, only necessary for pods owned by a replicaset
+	rsDeltas := map[types.NamespacedName]int32{}
+	for _, v := range plan.VictimsToEvict {
+		if rs, ok := owningReplicaSet(v); ok {
+			key := types.NamespacedName{Namespace: v.Namespace, Name: rs}
+			rsDeltas[key] -= 1 // scale down by 1 per deleted pod
+		}
+	}
+	for _, mv := range plan.PodMovements {
+		if rs, ok := owningReplicaSet(mv.Pod); ok {
+			key := types.NamespacedName{Namespace: mv.Pod.Namespace, Name: rs}
+			rsDeltas[key] -= 1 // scale down by 1 per deleted pod
+		}
+	}
+	for k, d := range rsDeltas {
+		if d != 0 {
+			if err := pl.bumpRS(ctx, k.Namespace, k.Name, d); err != nil {
+				klog.ErrorS(err, "Failed to scale RS before deletion", "rs", k)
+			}
+		}
+	}
+
+	// 2) Delete all pods that will be moved or evicted
 	if len(plan.PodMovements) > 0 {
 		klog.V(2).InfoS("Deleting pods to be moved/evicted first", "count", len(plan.PodMovements)+len(plan.VictimsToEvict))
 		var toDelete []*v1.Pod
@@ -48,7 +71,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// 2) Wait for the preemptor to bind on the nominated node
+	// 3) Wait for the preemptor to bind on the nominated node
 	if pending != nil && plan.TargetNode != "" {
 		klog.V(2).InfoS("Binding preemptor to nominated node",
 			"pod", podRef(pending), "targetNode", plan.TargetNode)
@@ -67,37 +90,34 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// 3) Recreate moved pods directly on their solver-chosen destination nodes
+	// 4) Recreate moved pods directly on their solver-chosen destination nodes
 	for i, mv := range plan.PodMovements {
 		klog.V(2).InfoS("Recreating moved pod",
 			"idx", fmt.Sprintf("%d/%d", i+1, len(plan.PodMovements)),
 			"pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
 		if err := pl.recreatePod(ctx, mv.Pod, mv.ToNode); err != nil {
-			// If a controller recreated it already, treat as success.
-			if apierrors.IsAlreadyExists(err) {
-				klog.V(3).InfoS("Moved pod already exists after controller recreation; treating as success", "pod", podRef(mv.Pod))
-			} else {
-				moveFail++
-				return fmt.Errorf("recreate moved pod %s on %s: %w", podRef(mv.Pod), mv.ToNode, err)
-			}
+			moveFail++
+			return fmt.Errorf("recreate moved pod %s on %s: %w", podRef(mv.Pod), mv.ToNode, err)
 		}
 		moveOK++
 	}
 
-	// 4) Recreate evicted pods, with no target node.
+	// 5) Recreate evicted pods, with no target node.
 	for _, v := range plan.VictimsToEvict {
 		klog.V(2).InfoS("Recreating evicted pod",
 			"pod", podRef(v))
 		if err := pl.recreatePod(ctx, v, ""); err != nil {
-			// If a controller recreated it already, treat as success.
-			if apierrors.IsAlreadyExists(err) {
-				klog.V(3).InfoS("Evicted pod already exists after controller recreation; treating as success", "pod", podRef(v))
-			} else {
-				moveFail++
-				return fmt.Errorf("recreate evicted pod %s: %w", podRef(v), err)
-			}
+			moveFail++
+			return fmt.Errorf("recreate evicted pod %s: %w", podRef(v), err)
 		}
 		moveOK++
+	}
+
+	// Reapply replica set scales
+	for k, d := range rsDeltas {
+		if d != 0 {
+			_ = pl.bumpRS(ctx, k.Namespace, k.Name, -d)
+		}
 	}
 
 	klog.InfoS("Plan execution summary",
@@ -202,4 +222,24 @@ func (pl *MyCrossNodePreemption) waitForPodGone(ctx context.Context, ns, name st
 		}
 		return false, err
 	})
+}
+
+// returns (rsName, ok)
+func owningReplicaSet(p *v1.Pod) (string, bool) {
+	for _, o := range p.OwnerReferences {
+		if o.Controller != nil && *o.Controller && o.Kind == "ReplicaSet" {
+			return o.Name, true
+		}
+	}
+	return "", false
+}
+
+func (pl *MyCrossNodePreemption) bumpRS(ctx context.Context, ns, rs string, delta int32) error {
+	sc, err := pl.client.AppsV1().ReplicaSets(ns).GetScale(ctx, rs, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	sc.Spec.Replicas = sc.Spec.Replicas + delta
+	_, err = pl.client.AppsV1().ReplicaSets(ns).UpdateScale(ctx, rs, sc, metav1.UpdateOptions{})
+	return err
 }
