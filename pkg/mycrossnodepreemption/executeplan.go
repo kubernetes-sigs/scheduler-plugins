@@ -14,17 +14,18 @@ import (
 
 var ErrNoRoom = fmt.Errorf("destination has no room")
 
-// executePlan (simple strategy):
-//  1. Delete all pods that must MOVE.
-//  2. Delete all EVICTIONS (for standalone victims, recreate a Pending copy).
-//  3. Wait for the preemptor to bind to the solver's nominated node (via Watch; low API pressure).
-//  4. Recreate all moved pods on their final destination nodes.
+// executePlan:
+//  1. Delete all pods that must move or evict.
+//  2. Wait for the preemptor to bind to the solver's nominated node.
+//  3. Recreate all moved pods on their destination nodes.
+//  4. Recreate all evicted pods, without a target node.
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan, pending *v1.Pod) error {
-	var moveOK, moveFail, evictOK, evictFail int
+	var moveOK, moveFail int
+	var evictionsFailed bool
 
-	// 1) Delete all pods that will be moved
+	// 1) Delete all pods that will be moved or evicted
 	if len(plan.PodMovements) > 0 {
-		klog.V(2).InfoS("Deleting pods to be moved first", "count", len(plan.PodMovements))
+		klog.V(2).InfoS("Deleting pods to be moved/evicted first", "count", len(plan.PodMovements)+len(plan.VictimsToEvict))
 		var toDelete []*v1.Pod
 		seen := map[string]bool{}
 		for _, mv := range plan.PodMovements {
@@ -34,28 +35,20 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 				toDelete = append(toDelete, mv.Pod)
 			}
 		}
-		if err := pl.deletePodsWaitGone(ctx, toDelete); err != nil {
-			return fmt.Errorf("delete moved pods: %w", err)
-		}
-	}
-
-	// 2) Apply evictions (delete), and if naked pod, recreate a Pending copy
-	if len(plan.VictimsToEvict) > 0 {
-		klog.V(2).InfoS("Evicting victims", "count", len(plan.VictimsToEvict))
-		for i, v := range plan.VictimsToEvict {
-			klog.V(2).InfoS("Evicting victim",
-				"idx", fmt.Sprintf("%d/%d", i+1, len(plan.VictimsToEvict)),
-				"pod", podRef(v), "node", v.Spec.NodeName)
-			if err := pl.evictPod(ctx, v); err != nil {
-				klog.ErrorS(err, "Eviction failed", "pod", podRef(v))
-				evictFail++
-			} else {
-				evictOK++
+		for _, v := range plan.VictimsToEvict {
+			key := v.Namespace + "/" + v.Name
+			if !seen[key] {
+				seen[key] = true
+				toDelete = append(toDelete, v)
 			}
 		}
+		if err := pl.deletePodsWaitGone(ctx, toDelete); err != nil {
+			evictionsFailed = true
+			return fmt.Errorf("delete moved/evicted pods: %w", err)
+		}
 	}
 
-	// 3) Wait for the preemptor to bind on the nominated node
+	// 2) Wait for the preemptor to bind on the nominated node
 	if pending != nil && plan.TargetNode != "" {
 		klog.V(2).InfoS("Binding preemptor to nominated node",
 			"pod", podRef(pending), "targetNode", plan.TargetNode)
@@ -68,18 +61,18 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 
 		// A small delay before checking the binding status
-		time.Sleep(5000 * time.Millisecond)
+		time.Sleep(2000 * time.Millisecond)
 		if err := pl.waitForPodBound(ctx, pending.Namespace, pending.Name, plan.TargetNode, 30*time.Second); err != nil {
 			klog.ErrorS(err, "Preemptor failed to bind", "pod", podRef(pending), "targetNode", plan.TargetNode)
 		}
 	}
 
-	// 4) Recreate moved pods directly on their solver-chosen destination nodes
+	// 3) Recreate moved pods directly on their solver-chosen destination nodes
 	for i, mv := range plan.PodMovements {
 		klog.V(2).InfoS("Recreating moved pod",
 			"idx", fmt.Sprintf("%d/%d", i+1, len(plan.PodMovements)),
 			"pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
-		if err := pl.recreateMovedPodOn(ctx, mv.Pod, mv.ToNode); err != nil {
+		if err := pl.recreatePod(ctx, mv.Pod, mv.ToNode); err != nil {
 			// If a controller recreated it already, treat as success.
 			if apierrors.IsAlreadyExists(err) {
 				klog.V(3).InfoS("Moved pod already exists after controller recreation; treating as success", "pod", podRef(mv.Pod))
@@ -91,16 +84,32 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		moveOK++
 	}
 
+	// 4) Recreate evicted pods, with no target node.
+	for _, v := range plan.VictimsToEvict {
+		klog.V(2).InfoS("Recreating evicted pod",
+			"pod", podRef(v))
+		if err := pl.recreatePod(ctx, v, ""); err != nil {
+			// If a controller recreated it already, treat as success.
+			if apierrors.IsAlreadyExists(err) {
+				klog.V(3).InfoS("Evicted pod already exists after controller recreation; treating as success", "pod", podRef(v))
+			} else {
+				moveFail++
+				return fmt.Errorf("recreate evicted pod %s: %w", podRef(v), err)
+			}
+		}
+		moveOK++
+	}
+
 	klog.InfoS("Plan execution summary",
 		"targetNode", plan.TargetNode,
 		"movesOK", moveOK, "movesFailed", moveFail,
-		"evictionsOK", evictOK, "evictionsFailed", evictFail)
+		"evictions", len(plan.VictimsToEvict), "evictionsFailed", evictionsFailed)
 
-	if moveFail == 0 && evictFail == 0 {
+	if moveFail == 0 && !evictionsFailed {
 		klog.InfoS("Plan executed successfully")
 	} else {
 		klog.ErrorS(nil, "Plan executed with failures",
-			"movesFailed", moveFail, "evictionsFailed", evictFail)
+			"movesFailed", moveFail, "evictionsFailed", evictionsFailed)
 	}
 	return nil
 }
@@ -160,9 +169,9 @@ func (pl *MyCrossNodePreemption) deletePodsWaitGone(ctx context.Context, pods []
 	return nil
 }
 
-// recreateMovedPodOn recreates a pod object pinned to destNode.
+// recreatePod recreates a pod object pinned to destNode.
 // It resets volatile fields and neutralizes NodeSelector/Affinity to avoid conflicts.
-func (pl *MyCrossNodePreemption) recreateMovedPodOn(ctx context.Context, orig *v1.Pod, destNode string) error {
+func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, destNode string) error {
 	newp := orig.DeepCopy()
 	newp.ResourceVersion = ""
 	newp.UID = ""
@@ -177,9 +186,8 @@ func (pl *MyCrossNodePreemption) recreateMovedPodOn(ctx context.Context, orig *v
 	if newp.Annotations == nil {
 		newp.Annotations = map[string]string{}
 	}
-	newp.Annotations["scheduler.alpha.kubernetes.io/moved-from"] = orig.Spec.NodeName
-	newp.Annotations["scheduler.alpha.kubernetes.io/moved-to"] = destNode
-	newp.Annotations["scheduler.alpha.kubernetes.io/moved-timestamp"] = time.Now().Format(time.RFC3339)
+	newp.Annotations["scheduler.alpha.kubernetes.io/previous-node"] = orig.Spec.NodeName
+	newp.Annotations["scheduler.alpha.kubernetes.io/last-modified"] = time.Now().Format(time.RFC3339)
 
 	// Keep exact same pod name for traceability
 	newp.GenerateName = ""
@@ -187,35 +195,6 @@ func (pl *MyCrossNodePreemption) recreateMovedPodOn(ctx context.Context, orig *v
 
 	_, err := pl.client.CoreV1().Pods(orig.Namespace).Create(ctx, newp, metav1.CreateOptions{})
 	return err
-}
-
-// evictPod deletes a victim pod; if naked (no controller), recreate a Pending copy
-// so it can be scheduled later when capacity appears.
-func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) error {
-	klog.V(4).InfoS("Evicting victim pod", "pod", klog.KObj(pod))
-
-	grace := int64(0)
-	if err := pl.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
-		GracePeriodSeconds: &grace,
-	}); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete victim pod: %v", err)
-	}
-
-	// If a controller owns this pod, it’ll recreate it automatically.
-	// If it's a naked pod, recreate a Pending copy ourselves so it can be scheduled later.
-	if !hasController(pod) {
-		// Wait for resource name to be fully released to reuse the same name
-		if err := pl.waitForPodGone(ctx, pod.Namespace, pod.Name, 30*time.Second); err != nil {
-			return fmt.Errorf("wait for evicted pod to disappear: %w", err)
-		}
-		if err := pl.recreatePendingCopy(ctx, pod); err != nil {
-			return fmt.Errorf("recreate pending copy: %w", err)
-		}
-		klog.V(3).InfoS("Recreated pending copy for standalone pod", "pod", klog.KObj(pod))
-	}
-
-	klog.V(3).InfoS("Successfully evicted pod", "pod", klog.KObj(pod))
-	return nil
 }
 
 // waitForPodGone polls until the pod disappears (NotFound) or times out.
@@ -227,36 +206,4 @@ func (pl *MyCrossNodePreemption) waitForPodGone(ctx context.Context, ns, name st
 		}
 		return false, err
 	})
-}
-
-// hasController returns true if the pod has a controlling owner (e.g., ReplicaSet).
-func hasController(p *v1.Pod) bool {
-	for _, o := range p.OwnerReferences {
-		if o.Controller != nil && *o.Controller {
-			return true
-		}
-	}
-	return false
-}
-
-// recreatePendingCopy recreates a fresh Pending pod (same name) so it can be scheduled later.
-func (pl *MyCrossNodePreemption) recreatePendingCopy(ctx context.Context, orig *v1.Pod) error {
-	newp := orig.DeepCopy()
-	newp.ResourceVersion = ""
-	newp.UID = ""
-	newp.Status = v1.PodStatus{}
-	newp.Spec.SchedulerName = "" // let normal scheduler bind it
-	newp.Spec.NodeName = ""      // ensure it's Pending
-
-	if newp.Annotations == nil {
-		newp.Annotations = map[string]string{}
-	}
-	newp.Annotations["scheduler.alpha.kubernetes.io/evicted-by"] = Name
-	newp.Annotations["scheduler.alpha.kubernetes.io/evicted-timestamp"] = time.Now().Format(time.RFC3339)
-
-	newp.GenerateName = ""
-	newp.Name = orig.Name
-
-	_, err := pl.client.CoreV1().Pods(orig.Namespace).Create(ctx, newp, metav1.CreateOptions{})
-	return err
 }

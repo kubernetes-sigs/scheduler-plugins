@@ -10,6 +10,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
@@ -32,6 +33,139 @@ const (
 
 // path to your Python script inside the image
 const pythonSolverPath = "/opt/solver/main.py"
+
+// ---------------------------- Plan export (ConfigMap) ----------------------------
+
+// Minimal JSON persisted (no observed results).
+type StoredPlan struct {
+	SchemaVersion string    `json:"schemaVersion"`
+	GeneratedAt   time.Time `json:"generatedAt"`
+	Plugin        string    `json:"plugin"`
+	Version       string    `json:"pluginVersion"`
+
+	PendingPod string `json:"pendingPod"` // ns/name
+	PendingUID string `json:"pendingUID"`
+	TargetNode string `json:"targetNode"`
+
+	SolverOutput *solverOutput         `json:"solverOutput,omitempty"`
+	Plan         PodAssignmentPlanLite `json:"plan"`
+
+	// NEW: mirror of solverOutput.placements but keyed by pod *name*.
+	PlacementsByName map[string]string `json:"placementsByName,omitempty"`
+}
+
+type PodAssignmentPlanLite struct {
+	TargetNode string         `json:"targetNode"`
+	Movements  []MovementLite `json:"movements"`
+	Evictions  []PodRefLite   `json:"evictions"`
+}
+
+type MovementLite struct {
+	Pod      PodRefLite `json:"pod"`
+	FromNode string     `json:"fromNode"`
+	ToNode   string     `json:"toNode"`
+	CPUm     int64      `json:"cpu_m"`
+	MemBytes int64      `json:"mem_bytes"`
+}
+
+type PodRefLite struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	UID       string `json:"uid"`
+}
+
+const (
+	exportNamespace  = "kube-system"
+	exportCMLabelKey = "scheduler.x/crossnode-plan"
+	exportCMLabelVal = "true"
+)
+
+// exportPlanToConfigMap writes plan.json to kube-system/<generated-name> and returns that name.
+func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
+	ctx context.Context,
+	plan *PodAssignmentPlan,
+	out *solverOutput,
+	pending *v1.Pod,
+) (string, error) {
+
+	// Convert to lite
+	lite := PodAssignmentPlanLite{
+		TargetNode: plan.TargetNode,
+	}
+	for _, mv := range plan.PodMovements {
+		lite.Movements = append(lite.Movements, MovementLite{
+			Pod:      PodRefLite{Namespace: mv.Pod.Namespace, Name: mv.Pod.Name, UID: string(mv.Pod.UID)},
+			FromNode: mv.FromNode,
+			ToNode:   mv.ToNode,
+			CPUm:     mv.CPURequest,
+			MemBytes: mv.MemoryRequest,
+		})
+	}
+	for _, v := range plan.VictimsToEvict {
+		lite.Evictions = append(lite.Evictions, PodRefLite{
+			Namespace: v.Namespace, Name: v.Name, UID: string(v.UID),
+		})
+	}
+
+	// build placements-by-name
+	podsByUID := map[string]*v1.Pod{}
+	if all, err := pl.handle.SnapshotSharedLister().NodeInfos().List(); err == nil {
+		for _, ni := range all {
+			for _, pi := range ni.Pods {
+				podsByUID[string(pi.Pod.UID)] = pi.Pod
+			}
+		}
+	}
+	podsByUID[string(pending.UID)] = pending
+
+	byName := make(map[string]string, len(out.Placements))
+	for uid, node := range out.Placements {
+		if p, ok := podsByUID[uid]; ok && p != nil {
+			byName[p.Name] = node
+		}
+	}
+
+	doc := &StoredPlan{
+		SchemaVersion: "1",
+		GeneratedAt:   time.Now().UTC(),
+		Plugin:        Name,
+		Version:       Version,
+
+		PendingPod: fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+		PendingUID: string(pending.UID),
+		TargetNode: plan.TargetNode,
+
+		SolverOutput:     out,
+		Plan:             lite,
+		PlacementsByName: byName,
+	}
+
+	raw, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	name := fmt.Sprintf("crossnode-plan-%s-%d", pending.UID, time.Now().Unix())
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: exportNamespace,
+			Labels: map[string]string{
+				exportCMLabelKey: exportCMLabelVal,
+				"pendingPod":     pending.Name,
+				"pendingNS":      pending.Namespace,
+			},
+		},
+		Data: map[string]string{
+			"plan.json": string(raw),
+		},
+	}
+
+	if _, err := pl.client.CoreV1().ConfigMaps(exportNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		return "", err
+	}
+	return name, nil
+}
 
 // ---------------------------- Initialization ----------------------------
 
@@ -69,13 +203,13 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		"mem(bytes)", getPodMemoryRequest(pending),
 	)
 
-	// give the external solver a bounded time
+	// bounded-time solver exec
 	solveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	out, err := pl.runPythonOptimizer(solveCtx, pending, 4*time.Second)
 	if err != nil {
-		klog.ErrorS(err, "optimizer error") // TODO: handle errors better (maybe provide more errors from the python script). Right now it says optimizer error also when lower priority pods can be scheduled due to insufficient resources
+		klog.ErrorS(err, "optimizer error")
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 	klog.InfoS("Solver executed successfully", "status", out.Status)
@@ -89,13 +223,18 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		return nil, framework.NewStatus(framework.Unschedulable, "no actionable plan")
 	}
 
-	// NEW: log the plan we're about to run
 	pl.logPlan(plan)
 
-	// Execute plan with the simpler "delete → bind preemptor → recreate moves" strategy
+	// Export ONLY the plan (no observed section)
+	if cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending); err != nil {
+		klog.ErrorS(err, "Failed to export plan to ConfigMap (continuing)")
+	} else {
+		klog.V(2).InfoS("Exported plan", "configMap", fmt.Sprintf("%s/%s", exportNamespace, cmName))
+	}
+
+	// Execute your existing strategy (unchanged)
 	if err := pl.executePlan(ctx, plan, pending); err != nil {
 		klog.ErrorS(err, "plan execution failed")
-		// Don’t return framework.Error; use Unschedulable so the scheduler retries.
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 
@@ -142,7 +281,7 @@ type solverOutput struct {
 	Status        string            `json:"status"`
 	NominatedNode string            `json:"nominatedNode"`
 	Placements    map[string]string `json:"placements"` // uid -> node
-	Movements     map[string]string `json:"movements"`  // uid -> node
+	Movements     map[string]string `json:"movements"`  // optional
 	Evictions     []solverEviction  `json:"evictions"`
 }
 
@@ -290,14 +429,14 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 		}
 	}
 
-	// movements for existing pods
+	// movements for existing pods (infer from placements map)
 	for uid, dest := range out.Placements {
 		p, ok := podsByUID[uid]
 		if !ok {
 			continue
 		}
 		if uid == string(pending.UID) {
-			continue // pending will be scheduled by kube-scheduler on TargetNode
+			continue // pending will be scheduled on TargetNode
 		}
 		from := p.Spec.NodeName
 		if from == dest || dest == "" {
@@ -344,14 +483,12 @@ func isControlPlane(n *v1.Node) bool {
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	// Standard roles
 	if _, ok := labels["node-role.kubernetes.io/control-plane"]; ok {
 		return true
 	}
 	if _, ok := labels["node-role.kubernetes.io/master"]; ok {
 		return true
 	}
-	// Some local clusters name it literally
 	if n.Name == "control-plane" || n.Name == "kind-control-plane" {
 		return true
 	}
@@ -363,19 +500,15 @@ func isNodeUsableFor(pod *v1.Pod, ni *framework.NodeInfo) bool {
 	if n == nil {
 		return false
 	}
-	// 1) never use control-plane/master nodes
 	if isControlPlane(n) {
 		return false
 	}
-	// 2) must be schedulable
 	if n.Spec.Unschedulable {
 		return false
 	}
-	// 3) pod must tolerate NoSchedule taints
 	if !toleratesNoScheduleTaints(pod, n.Spec.Taints) {
 		return false
 	}
-	// 4) must have positive allocatable
 	if ni.Allocatable.MilliCPU <= 0 || ni.Allocatable.Memory <= 0 {
 		return false
 	}
