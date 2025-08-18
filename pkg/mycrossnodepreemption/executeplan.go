@@ -16,10 +16,12 @@ import (
 var ErrNoRoom = fmt.Errorf("destination has no room")
 
 // executePlan:
-//  1. Delete all pods that must move or evict.
-//  2. Wait for the preemptor to bind to the solver's nominated node.
-//  3. Recreate all moved pods on their destination nodes.
-//  4. Recreate all evicted pods, without a target node.
+//  1. Scale down all relevant replica sets.
+//  2. Delete all pods that must move or evict.
+//  3. Wait for the preemptor to bind to the solver's nominated node.
+//  4. Recreate all moved pods on their destination nodes.
+//  5. Recreate all evicted pods, without a target node.
+//  6. Reapply all replica set scales.
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan, pending *v1.Pod) error {
 	var moveOK, moveFail int
 	var evictionsFailed bool
@@ -113,7 +115,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		moveOK++
 	}
 
-	// Reapply replica set scales
+	// 6) Reapply replica set scales
 	for k, d := range rsDeltas {
 		if d != 0 {
 			_ = pl.bumpRS(ctx, k.Namespace, k.Name, -d)
