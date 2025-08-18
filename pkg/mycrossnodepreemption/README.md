@@ -8,6 +8,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ## TODOs
 
+- Consider to protect pods that have node-selectors and other rules
 - Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
 - Add a diff in python code, so only needed changes are sent to plugin.
 - Check that the scheduler runs the plan correctly.

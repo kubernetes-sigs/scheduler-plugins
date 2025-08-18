@@ -129,11 +129,9 @@ func (pl *MyCrossNodePreemption) bindPodToNode(ctx context.Context, pod *v1.Pod,
 			Name: node,
 		},
 	}
-	// NOTE: Pods().Bind is a subresource call that sets spec.nodeName server-side.
 	return pl.client.CoreV1().Pods(pod.Namespace).Bind(ctx, b, metav1.CreateOptions{})
 }
 
-// waitForPodBound uses a slow poll (rarely used now).
 func (pl *MyCrossNodePreemption) waitForPodBound(ctx context.Context, ns, name, node string, timeout time.Duration) error {
 	return wait.PollUntilContextTimeout(ctx, 5000*time.Millisecond, timeout, true, func(ctx context.Context) (done bool, err error) {
 		pod, err := pl.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
@@ -176,8 +174,6 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 	newp.ResourceVersion = ""
 	newp.UID = ""
 	newp.Status = v1.PodStatus{}
-
-	// Important: let default scheduler handle it (not this plugin)
 	newp.Spec.SchedulerName = ""
 	newp.Spec.NodeName = destNode
 	newp.Spec.NodeSelector = map[string]string{}
