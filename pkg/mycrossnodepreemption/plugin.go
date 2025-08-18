@@ -33,6 +33,7 @@ const (
 
 // path to your Python script inside the image
 const pythonSolverPath = "/opt/solver/main.py"
+const pythonSolverTimeout = 60 * time.Second
 
 // ---------------------------- Plan export (ConfigMap) ----------------------------
 
@@ -204,15 +205,16 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	)
 
 	// bounded-time solver exec
-	solveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	solveCtx, cancel := context.WithTimeout(ctx, pythonSolverTimeout+5*time.Second)
 	defer cancel()
 
-	out, err := pl.runPythonOptimizer(solveCtx, pending, 4*time.Second)
+	startTime := time.Now()
+	out, err := pl.runPythonOptimizer(solveCtx, pending, pythonSolverTimeout)
 	if err != nil {
-		klog.ErrorS(err, "optimizer error")
+		klog.ErrorS(err, "optimizer error", "took", time.Since(startTime))
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
-	klog.InfoS("Solver executed successfully", "status", out.Status)
+	klog.InfoS("Solver executed successfully", "status", out.Status, "took", time.Since(startTime))
 
 	plan, err := pl.translatePlanFromSolver(ctx, out, pending)
 	if err != nil {

@@ -8,6 +8,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ## TODOs
 
+- Make solver depend on deployment and replicaset, that is if a pod belongs to a deployment or replicaset, the other pods in the same deployment/replicaset should also be evicted/deleted and so on.
 - Consider to protect pods that have node-selectors and other rules
 - Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
 - Add a diff in python code, so only needed changes are sent to plugin.
@@ -17,6 +18,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 - Consider to evict lower priority pods first, instead of just evicting the lowest amount of pods.
 - Simplify code and update readme.
 - Demo: Next week.
+- Test if python solver timing depends heavily on 
 
 ## Later
 

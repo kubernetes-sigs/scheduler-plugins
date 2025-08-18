@@ -13,8 +13,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var ErrNoRoom = fmt.Errorf("destination has no room")
-
 // executePlan:
 //  1. Scale down all relevant replica sets.
 //  2. Delete all pods that must move or evict.
