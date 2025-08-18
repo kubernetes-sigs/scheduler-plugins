@@ -24,7 +24,7 @@ kwokctl create cluster --name kwok --config kwok-cluster.yaml
 
 ## TODOs
 
-- Test more.
+- Cleanup code (incl. python) and write proper readme.
 - Make solver depend on deployment and replicaset, that is if a pod belongs to a deployment or replicaset, the other pods in the same deployment/replicaset should also be evicted/deleted and so on.
 - Consider to protect pods that have node-selectors and other rules
 - Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
