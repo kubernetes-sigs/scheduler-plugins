@@ -24,6 +24,7 @@ kwokctl create cluster --name kwok --config kwok-cluster.yaml
 
 ## TODOs
 
+- Do the postbind code prettier
 - Write something about the snapshotlister that it lags one scheduling cycle.
 - Do not bind pending pod in postfilter. Use postbind to make sure pods are binded correctly.
 - Early exit if pending pod request more than can be freed by lower priority pods.
