@@ -89,6 +89,7 @@ def solve(instance: dict) -> dict:
     # This also prevents a potential race condition, if a replica set is being scaled up, then this new pending pod
     # will be deleted immediately if the execution plan needs to move some of the same replica sets, as pending pods
     # are always deleted first, no matter what pod-deletion-cost is, see https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/#scaling-a-replicaset.
+    # It also reduces the search space (number of combinations the solver has to consider).
     for i in range(P):
         if i == i_pre:
             continue

@@ -1,3 +1,5 @@
+// common.go
+
 package mycrossnodepreemption
 
 import (
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -59,6 +62,7 @@ type StoredPlan struct {
 	Plan             PodAssignmentPlanLite     `json:"plan"`
 	PlacementsByName map[string]string         `json:"placementsByName,omitempty"` // standalone pods -> node
 	RSDesiredPerNode map[string]map[string]int `json:"rsDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
+	Progress         *PlanProgress             `json:"progress,omitempty"`
 }
 
 type PodAssignmentPlanLite struct {
@@ -90,6 +94,12 @@ type PodMovement struct {
 	ToNode        string
 	CPURequest    int64 // milliCPU
 	MemoryRequest int64 // bytes
+}
+
+type PlanProgress struct {
+	PendingBound bool                      `json:"pendingBound"`
+	StandaloneOK map[string]bool           `json:"standaloneOK"` // key: "ns/name" (or just name if you prefer); true when satisfied
+	RSRemaining  map[string]map[string]int `json:"rsRemaining"`  // "<ns>/<rs>" -> node -> remaining binds to observe
 }
 
 // ---------------------------- ConfigMap labels / constants (shared) -----------
@@ -186,57 +196,83 @@ func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName s
 
 // ---------------------------- Completion check (shared) ----------------------
 
-func (pl *MyCrossNodePreemption) planLooksComplete(sp *StoredPlan) bool {
-	lister := pl.handle.SnapshotSharedLister()
+// planLooksCompleteLive checks the *live cluster* (client-go) instead of the snapshot.
+// It also ensures the pending preemptor is bound to TargetNode.
+func (pl *MyCrossNodePreemption) planLooksCompleteLive(ctx context.Context, sp *StoredPlan) (bool, error) {
+	// A) Preemptor must be bound to TargetNode
+	pns, pname := splitNSName(sp.PendingPod)
+	preemptor, err := pl.client.CoreV1().Pods(pns).Get(ctx, pname, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get pending pod: %w", err)
+	}
+	if preemptor.Spec.NodeName != sp.TargetNode {
+		return false, nil
+	}
 
-	// (1) Standalone/name-addressed
+	// B) Standalone/name-addressed pods placed on their target node
 	for name, node := range sp.PlacementsByName {
-		ns := nsOf(sp.PendingPod) // default ns -> pending's ns; use "ns/name" to override
+		ns := nsOf(sp.PendingPod)
 		if strings.Contains(name, "/") {
-			parts := strings.SplitN(name, "/", 2)
-			if len(parts) == 2 {
-				ns, name = parts[0], parts[1]
-			}
+			ns, name = splitNSName(name)
 		}
-		found := false
-		nodes, _ := lister.NodeInfos().List()
-		for _, ni := range nodes {
-			for _, pi := range ni.Pods {
-				if pi.Pod.Namespace == ns && pi.Pod.Name == name && ni.Node().Name == node {
-					found = true
-				}
+		pod, err := pl.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
 			}
+			return false, fmt.Errorf("get pod %s/%s: %w", ns, name, err)
 		}
-		if !found {
-			return false
+		if pod.DeletionTimestamp != nil || pod.Spec.NodeName != node {
+			return false, nil
 		}
 	}
 
-	// (2) RS targets
+	// C) RS per-node quotas satisfied
 	for rsKeyStr, perNode := range sp.RSDesiredPerNode {
-		ns, rs := splitNSName(rsKeyStr)
-		nodeCounts := map[string]int{}
-		nodes, _ := lister.NodeInfos().List()
-		for _, ni := range nodes {
-			c := 0
-			for _, pi := range ni.Pods {
-				if pi.Pod.Namespace == ns {
-					if r, ok := owningReplicaSet(pi.Pod); ok && r == rs {
-						c++
-					}
-				}
+		ns, rsName := splitNSName(rsKeyStr)
+
+		rs, err := pl.client.AppsV1().ReplicaSets(ns).Get(ctx, rsName, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
 			}
-			if c > 0 {
-				nodeCounts[ni.Node().Name] = c
-			}
+			return false, fmt.Errorf("get rs %s/%s: %w", ns, rsName, err)
 		}
+		sel, err := metav1.LabelSelectorAsSelector(rs.Spec.Selector)
+		if err != nil {
+			return false, fmt.Errorf("selector for rs %s/%s: %w", ns, rsName, err)
+		}
+		podList, err := pl.client.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
+		if err != nil {
+			return false, fmt.Errorf("list rs pods %s/%s: %w", ns, rsName, err)
+		}
+
+		counts := map[string]int{}
+		for i := range podList.Items {
+			pod := &podList.Items[i]
+			if pod.DeletionTimestamp != nil {
+				continue // ignore terminating
+			}
+			if r, ok := owningReplicaSet(pod); !ok || r != rsName {
+				continue // make sure it's this RS
+			}
+			if pod.Spec.NodeName == "" {
+				continue // not yet scheduled; don't count
+			}
+			counts[pod.Spec.NodeName]++
+		}
+
 		for node, want := range perNode {
-			if nodeCounts[node] < want {
-				return false
+			if counts[node] < want {
+				return false, nil
 			}
 		}
 	}
-	return true
+
+	return true, nil
 }
 
 // ---------------------------- Utilities (shared) -----------------------------
@@ -365,3 +401,5 @@ func isNodeUsableFor(pod *v1.Pod, ni *framework.NodeInfo) bool {
 	}
 	return true
 }
+
+func nsNameKey(ns, name string) string { return ns + "/" + name }

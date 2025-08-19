@@ -1,3 +1,5 @@
+// postfilter_plugin.go
+
 package mycrossnodepreemption
 
 import (
@@ -6,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -268,6 +271,74 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		}
 	}
 
+	progress := &PlanProgress{
+		PendingBound: false,
+		StandaloneOK: map[string]bool{},
+		RSRemaining:  map[string]map[string]int{},
+	}
+
+	// Seed RSRemaining = RSDesiredPerNode
+	for rsKey, perNode := range rsDesired {
+		progress.RSRemaining[rsKey] = map[string]int{}
+		for node, want := range perNode {
+			progress.RSRemaining[rsKey][node] = want
+		}
+	}
+
+	// Pre-satisfy based on current snapshot to avoid waiting for binds we already have.
+	if all, err := pl.handle.SnapshotSharedLister().NodeInfos().List(); err == nil {
+		// Standalone placements present already?
+		for name, node := range byName {
+			ns := nsOf(pending.Namespace + "/" + pending.Name)
+			tgtName := name
+			if strings.Contains(name, "/") {
+				ns, tgtName = splitNSName(name)
+			}
+			for _, ni := range all {
+				if ni.Node() == nil || ni.Node().Name != node {
+					continue
+				}
+				for _, pi := range ni.Pods {
+					if pi.Pod.Namespace == ns && pi.Pod.Name == tgtName && pi.Pod.DeletionTimestamp == nil {
+						progress.StandaloneOK[nsNameKey(ns, tgtName)] = true
+					}
+				}
+			}
+			if _, ok := progress.StandaloneOK[nsNameKey(ns, tgtName)]; !ok {
+				progress.StandaloneOK[nsNameKey(ns, tgtName)] = false
+			}
+		}
+
+		// RS counts already present?
+		for rsKey, perNode := range progress.RSRemaining {
+			ns, rsName := splitNSName(rsKey)
+			for _, ni := range all {
+				nodeName := ni.Node().Name
+				have := 0
+				for _, pi := range ni.Pods {
+					if pi.Pod.Namespace == ns {
+						if r, ok := owningReplicaSet(pi.Pod); ok && r == rsName && pi.Pod.DeletionTimestamp == nil {
+							have++
+						}
+					}
+				}
+				if want, ok := perNode[nodeName]; ok {
+					// remaining = max(want - have, 0)
+					if have >= want {
+						perNode[nodeName] = 0
+					} else {
+						perNode[nodeName] = want - have
+					}
+				}
+			}
+		}
+	}
+
+	// Pending preemptor already bound?
+	if pending.Spec.NodeName == plan.TargetNode {
+		progress.PendingBound = true
+	}
+
 	doc := &StoredPlan{
 		SchemaVersion:    "3",
 		GeneratedAt:      time.Now().UTC(),
@@ -282,6 +353,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		Plan:             lite,
 		PlacementsByName: byName,
 		RSDesiredPerNode: rsDesired,
+		Progress:         progress,
 	}
 
 	raw, err := json.MarshalIndent(doc, "", "  ")

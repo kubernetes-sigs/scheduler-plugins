@@ -1,3 +1,5 @@
+// filter_plugin.go
+
 package mycrossnodepreemption
 
 import (
@@ -20,19 +22,12 @@ func (pl *MyCrossNodePreemption) Filter(
 	nodeInfo *framework.NodeInfo,
 ) *framework.Status {
 
-	sp, cmName, err := pl.loadActivePlan(ctx)
+	sp, _, err := pl.loadActivePlan(ctx)
 	if err != nil {
 		klog.ErrorS(err, "Failed to load active plan")
 		return framework.NewStatus(framework.Error, err.Error())
 	}
 	if sp == nil || !sp.StopTheWorld || sp.Completed {
-		return framework.NewStatus(framework.Success, "")
-	}
-
-	// Lift immediately if plan looks complete.
-	if pl.planLooksComplete(sp) {
-		pl.markPlanCompleted(ctx, cmName)
-		klog.V(2).InfoS("Filter: Plan completed", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success, "")
 	}
 
