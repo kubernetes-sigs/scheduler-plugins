@@ -48,7 +48,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	}
 	klog.InfoS("Solver executed", "status", out.Status, "took", time.Since(start))
 
-	plan, err := pl.translatePlanFromSolver(ctx, out, pending)
+	plan, err := pl.translatePlanFromSolver(out, pending)
 	if err != nil {
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
@@ -66,7 +66,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	}
 
 	// Execute (standalone pods are recreated but NOT bound; RS via controllers)
-	if err := pl.executePlan(ctx, plan, pending); err != nil {
+	if err := pl.executePlan(ctx, plan); err != nil {
 		klog.ErrorS(err, "plan execution failed")
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
@@ -169,7 +169,6 @@ func toSolverPod(p *v1.Pod, where string) solverPod {
 // ---------------------------- Plan translation / export / logging -----------
 
 func (pl *MyCrossNodePreemption) translatePlanFromSolver(
-	ctx context.Context,
 	out *solverOutput,
 	pending *v1.Pod,
 ) (*PodAssignmentPlan, error) {

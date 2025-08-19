@@ -191,14 +191,22 @@ func (pl *MyCrossNodePreemption) loadActivePlan(ctx context.Context) (*StoredPla
 }
 
 func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName string) {
-	_ = pl.client.CoreV1().ConfigMaps(exportNamespace).Delete(ctx, cmName, metav1.DeleteOptions{})
+	// TODO: Update the config map "Completed" flag and mark config map inactive. Do not delete it.
+	if err := pl.client.CoreV1().ConfigMaps(exportNamespace).Delete(ctx, cmName, metav1.DeleteOptions{}); err != nil {
+		// If the ConfigMap is not found, it may have been deleted already
+		if apierrors.IsNotFound(err) {
+			klog.V(2).InfoS("ConfigMap not found; it may have been deleted already", "cmName", cmName)
+		} else {
+			klog.ErrorS(err, "Failed to delete completed plan ConfigMap", "cmName", cmName)
+		}
+	}
 }
 
 // ---------------------------- Completion check (shared) ----------------------
 
-// planLooksCompleteLive checks the *live cluster* (client-go) instead of the snapshot.
+// isPlanCompleted checks the *live cluster* (client-go) instead of the snapshot.
 // It also ensures the pending preemptor is bound to TargetNode.
-func (pl *MyCrossNodePreemption) planLooksCompleteLive(ctx context.Context, sp *StoredPlan) (bool, error) {
+func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan) (bool, error) {
 	// A) Preemptor must be bound to TargetNode
 	pns, pname := splitNSName(sp.PendingPod)
 	preemptor, err := pl.client.CoreV1().Pods(pns).Get(ctx, pname, metav1.GetOptions{})

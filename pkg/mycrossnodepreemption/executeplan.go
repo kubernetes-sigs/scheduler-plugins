@@ -33,7 +33,7 @@ type prevDeletionCosts map[string]*string
 // RS pods are recreated by their controllers after scale restore.
 // Pending pod is *not* bound here; Filter constrains it to the target node
 // and the default scheduler performs the bind.
-func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan, pending *v1.Pod) error {
+func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan) error {
 	// Collect unique target pods (moves + evictions).
 	var targets []*v1.Pod
 	seen := map[string]bool{}
