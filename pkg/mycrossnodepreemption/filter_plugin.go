@@ -8,10 +8,11 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// Enforces the active plan during stop-the-world:
-//   - RS pods: allow only where the RS still has a free slot on that node
-//   - Standalone pods: allow only on their planned node (by name)
-//   - All other pods: blocked until plan completes
+// During an active plan (“stop-the-world”):
+// - Pending (preemptor) pod: only allowed on TargetNode (scheduler binds it).
+// - RS pods: only allowed up to their per-node quota (RSDesiredPerNode).
+// - Standalone pods named in PlacementsByName: only on their planned node.
+// - Everyone else: blocked until plan completes.
 func (pl *MyCrossNodePreemption) Filter(
 	ctx context.Context,
 	state *framework.CycleState,
@@ -28,9 +29,10 @@ func (pl *MyCrossNodePreemption) Filter(
 		return framework.NewStatus(framework.Success, "")
 	}
 
-	// Early exit if plan completed
+	// Lift immediately if plan looks complete.
 	if pl.planLooksComplete(sp) {
 		pl.markPlanCompleted(ctx, cmName)
+		klog.V(2).InfoS("Filter: Plan completed", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success, "")
 	}
 
@@ -39,7 +41,16 @@ func (pl *MyCrossNodePreemption) Filter(
 	}
 	nodeName := nodeInfo.Node().Name
 
-	// RS-owned pods
+	// 0) Pending preemptor: gate to the nominated node only.
+	if string(pod.UID) == sp.PendingUID {
+		if nodeName == sp.TargetNode {
+			klog.V(2).InfoS("Filter", "pod", klog.KObj(pod), "target node", nodeName)
+			return framework.NewStatus(framework.Success, "")
+		}
+		return framework.NewStatus(framework.Unschedulable, "stop-the-world: pending pod only allowed on target node")
+	}
+
+	// 1) RS-owned pods: enforce per-node slots
 	if rsName, ok := owningReplicaSet(pod); ok {
 		key := rsKey(pod.Namespace, rsName)
 		targets, ok := sp.RSDesiredPerNode[key]
@@ -61,17 +72,19 @@ func (pl *MyCrossNodePreemption) Filter(
 		if current >= desired {
 			return framework.NewStatus(framework.Unschedulable, "stop-the-world: RS node quota reached")
 		}
+		klog.V(2).InfoS("Filter", "pod", klog.KObj(pod), "target node", nodeName)
 		return framework.NewStatus(framework.Success, "")
 	}
 
-	// Standalone pods by name
+	// 2) Standalone pods by name
 	if tgt, ok := sp.PlacementsByName[pod.Name]; ok {
 		if tgt == nodeName {
+			klog.V(2).InfoS("Filter", "pod", klog.KObj(pod), "target node", nodeName)
 			return framework.NewStatus(framework.Success, "")
 		}
 		return framework.NewStatus(framework.Unschedulable, "stop-the-world: only planned node allowed")
 	}
 
-	// Everything else is held during stop-the-world
+	// 3) Everyone else waits
 	return framework.NewStatus(framework.Unschedulable, "stop-the-world: pod not in active plan")
 }

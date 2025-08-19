@@ -68,6 +68,8 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 
+	klog.V(2).InfoS("PostFilter completed")
+
 	return &framework.PostFilterResult{
 		NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.TargetNode},
 	}, framework.NewStatus(framework.Success, "")

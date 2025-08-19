@@ -11,6 +11,9 @@ profiles:
     postFilter:
       enabled:
         - name: MyCrossNodePreemption
+    postBind:
+      enabled:
+        - name: MyCrossNodePreemption
     multiPoint:
       disabled:
         - name: DefaultPreemption

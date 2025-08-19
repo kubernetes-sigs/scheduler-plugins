@@ -19,8 +19,9 @@ import (
 // ---------------------------- Plugin wiring ----------------------------
 
 const (
-	Name    = "MyCrossNodePreemption"
-	Version = "v1.0.4"
+	Name                   = "MyCrossNodePreemption"
+	Version                = "v1.0.4"
+	DeletionCostAnnotation = "controller.kubernetes.io/pod-deletion-cost"
 )
 
 type MyCrossNodePreemption struct {

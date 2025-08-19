@@ -85,11 +85,14 @@ def solve(instance: dict) -> dict:
     m.Add(placed[i_pre] == 1)
     m.Add(evict[i_pre] == 0)
 
-    # (Optional) Forbid moving pods with priority HIGHER than preemptor (equal/lower than preemptor can move)
+    # Moving policy: Only pods with strictly lower priority than preemptor can be moved (pods with equal/higher priority cannot be moved)
+    # This also prevents a potential race condition, if a replica set is being scaled up, then this new pending pod
+    # will be deleted immediately if the execution plan needs to move some of the same replica sets, as pending pods
+    # are always deleted first, no matter what pod-deletion-cost is, see https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/#scaling-a-replicaset.
     for i in range(P):
         if i == i_pre:
             continue
-        if p_pri(i) > pre_pr:
+        if p_prot(i) or p_pri(i) > pre_pr:
             m.Add(move[i] == 0)
 
     # Eviction policy: only strictly-lower priority pods than preemptor can be evicted.
