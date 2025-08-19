@@ -1,3 +1,4 @@
+// executeplan.go
 package mycrossnodepreemption
 
 import (
@@ -28,13 +29,16 @@ const (
 )
 
 // executePlan (with deletion-cost bias + owner scale-down):
+// In this variant we *do not* recreate RS-owned pods here. We rely on the controller
+// to recreate them after scale restore, and the Filter phase will force them onto
+// the solver-assigned node. Standalone pods are recreated here immediately.
+//
 //  1. Mark chosen pods (to move/evict) with low deletion-cost; mark siblings with high cost.
 //  2. Scale down owning Deployment (preferred) or ReplicaSet by targets-per-RS.
 //  3. Wait for controller deletions / explicit deletion for non-RS pods.
 //  4. Bind the preemptor to nominated node.
-//  5. Recreate moved pods on destination nodes.
-//  6. Recreate evicted pods without target node.
-//  7. Restore scales reduced in step 2.
+//  5. Restore owner scales.
+//  6. Recreate moved/evicted standalone (non-RS) pods only (RS-owned are handled by controller).
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan, pending *v1.Pod) error {
 	// Collect target pods (moves + evictions).
 	var targets []*v1.Pod
@@ -82,22 +86,23 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 	if len(targets) > 0 {
 		klog.V(2).InfoS("Deleting/awaiting deletion of targeted pods", "count", len(targets))
 		for _, pod := range targets {
-			// Check if rs-owned or not
 			if _, isRS := owningReplicaSet(pod); isRS {
 				// Wait for controller to delete (because we scaled down the owner).
 				if err := pl.waitPodGone(ctx, pod, waitControllerDeleteTimeout); err != nil {
-					return fmt.Errorf("wait for pod deletion: %w", err)
+					return fmt.Errorf("wait for RS pod deletion: %w", err)
 				}
 			} else {
-				// Non-RS pod: Evict first (respects PDB).
+				// Non-RS pod: hard-delete (you can swap to eviction if you prefer PDB)
 				if err := pl.deleteAndWaitPodGone(ctx, pod, waitControllerDeleteTimeout); err != nil {
-					return fmt.Errorf("evict non-RS pod: %w", err)
+					return fmt.Errorf("delete non-RS pod: %w", err)
 				}
 			}
 		}
 	}
 
-	// Step 4: bind the preemptor (unchanged)
+	// TODO: Restore old pod-deletion-cost
+
+	// Step 4: bind the preemptor
 	if pending != nil && plan.TargetNode != "" {
 		klog.V(2).InfoS("Binding preemptor to nominated node",
 			"pod", podRef(pending), "targetNode", plan.TargetNode)
@@ -110,7 +115,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// Step 7: restore owner scales
+	// Step 5: restore owner scales (so controllers can recreate RS-owned pods)
 	if len(rsDeltas) > 0 {
 		klog.V(2).InfoS("Restoring owner scales", "sets", len(rsDeltas))
 		for k, d := range rsDeltas {
@@ -123,19 +128,27 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// Step 5: recreate moved pods on destination
+	// Step 6: recreate *standalone* pods only.
+	// Movements
 	for i, mv := range plan.PodMovements {
-		klog.V(2).InfoS("Recreating moved pod",
+		if _, isRS := owningReplicaSet(mv.Pod); isRS {
+			klog.V(2).InfoS("Skipping RS-owned move (controller will recreate)", "pod", podRef(mv.Pod), "to", mv.ToNode)
+			continue
+		}
+		klog.V(2).InfoS("Recreating moved standalone pod",
 			"idx", fmt.Sprintf("%d/%d", i+1, len(plan.PodMovements)),
 			"pod", podRef(mv.Pod), "from", mv.FromNode, "to", mv.ToNode)
 		if err := pl.recreatePod(ctx, mv.Pod, mv.ToNode); err != nil {
 			return fmt.Errorf("recreate moved pod %s on %s: %w", podRef(mv.Pod), mv.ToNode, err)
 		}
 	}
-
-	// Step 6: recreate evicted pods (no target node)
+	// Evictions (no target node)
 	for _, v := range plan.VictimsToEvict {
-		klog.V(2).InfoS("Recreating evicted pod", "pod", podRef(v))
+		if _, isRS := owningReplicaSet(v); isRS {
+			klog.V(2).InfoS("Skipping RS-owned eviction recreate (controller will recreate)", "pod", podRef(v))
+			continue
+		}
+		klog.V(2).InfoS("Recreating evicted standalone pod", "pod", podRef(v))
 		if err := pl.recreatePod(ctx, v, ""); err != nil {
 			return fmt.Errorf("recreate evicted pod %s: %w", podRef(v), err)
 		}
@@ -157,16 +170,13 @@ func (pl *MyCrossNodePreemption) waitPodGone(ctx context.Context, pod *v1.Pod, t
 			return true, nil
 		}
 		if err != nil {
-			// transient API error; keep polling
 			return false, nil
 		}
 		return false, nil
 	})
 }
 
-// deletePod:
-// - If RS-owned: just wait (poll) for controller deletion; no raw delete.
-// - If NOT RS-owned: try Eviction; if still present or eviction fails, force delete with UID preconditions; then wait gone.
+// Non-RS: delete + wait gone
 func (pl *MyCrossNodePreemption) deleteAndWaitPodGone(
 	ctx context.Context,
 	pod *v1.Pod,
@@ -180,8 +190,6 @@ func (pl *MyCrossNodePreemption) deleteAndWaitPodGone(
 	}); derr != nil && !apierrors.IsNotFound(derr) {
 		return fmt.Errorf("delete pod %s: %w", podRef(pod), derr)
 	}
-
-	// Wait for deletion to complete.
 	if err := pl.waitForPodGone(ctx, pod.Namespace, pod.Name, timeout); err != nil {
 		return fmt.Errorf("wait for pod deletion: %w", err)
 	}
@@ -190,8 +198,6 @@ func (pl *MyCrossNodePreemption) deleteAndWaitPodGone(
 
 // ---------------------------- Deletion-cost helpers ----------------------------
 
-// annotateDeletionCosts sets low deletion-cost on target pods and high deletion-cost on their
-// RS siblings; it also fills rsDeltas with negative counts for initial scale-down.
 func (pl *MyCrossNodePreemption) annotateDeletionCosts(
 	ctx context.Context,
 	targets []*v1.Pod,
@@ -264,8 +270,6 @@ func (pl *MyCrossNodePreemption) setDeletionCost(ctx context.Context, ns, podNam
 
 // ---------------------------- Owner scale helpers ----------------------------
 
-// bumpOwnerScale updates the scale of the owning Deployment if present, else the RS.
-// delta is typically negative for initial scale-down, positive for restore.
 func (pl *MyCrossNodePreemption) bumpOwnerScale(ctx context.Context, ns, rsName string, delta int32) error {
 	rs, err := pl.client.AppsV1().ReplicaSets(ns).Get(ctx, rsName, metav1.GetOptions{})
 	if err != nil {
@@ -300,15 +304,15 @@ func (pl *MyCrossNodePreemption) bumpOwnerScale(ctx context.Context, ns, rsName 
 	})
 }
 
-// ---------------------------- Bind / Wait / Recreate (your originals) ----------------------------
+// ---------------------------- Bind / Wait / Recreate ----------------------------
 
 func (pl *MyCrossNodePreemption) bindPodToNode(ctx context.Context, pod *v1.Pod, node string) error {
 	b := &v1.Binding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            pod.Name,
 			Namespace:       pod.Namespace,
-			UID:             pod.UID, // protects from binding a different generation
-			ResourceVersion: "",      // not required for Binding
+			UID:             pod.UID,
+			ResourceVersion: "",
 		},
 		Target: v1.ObjectReference{
 			Kind: "Node",
@@ -341,7 +345,7 @@ func (pl *MyCrossNodePreemption) waitForPodBound(ctx context.Context, ns, name, 
 	})
 }
 
-// recreatePod recreates a pod object pinned to destNode.
+// recreatePod recreates a pod object pinned to destNode (standalone only).
 func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, destNode string) error {
 	newp := orig.DeepCopy()
 	newp.ResourceVersion = ""
@@ -357,7 +361,6 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 	}
 	newp.Annotations["scheduler.alpha.kubernetes.io/previous-node"] = orig.Spec.NodeName
 	newp.Annotations["scheduler.alpha.kubernetes.io/last-modified"] = time.Now().Format(time.RFC3339)
-	newp.Annotations[deletionCostAnnotation] = fmt.Sprintf("%d", deletionCostKeep) // set high to prevent replicationController take our created pods after increasing replica count
 
 	newp.GenerateName = ""
 	newp.Name = orig.Name
@@ -365,10 +368,12 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 	if _, err := pl.client.CoreV1().Pods(orig.Namespace).Create(ctx, newp, metav1.CreateOptions{}); err != nil {
 		return fmt.Errorf("failed to create pod %s: %w", podRef(newp), err)
 	}
-	// Bind the new pod to the destination node
-	if err := pl.waitForPodBound(ctx, newp.Namespace, newp.Name, destNode, 30*time.Second); err != nil {
-		klog.ErrorS(err, "Failed to bind pod to node", "pod", podRef(newp), "node", destNode)
-		return fmt.Errorf("wait for pod %s to be bound to node %s: %w", podRef(newp), destNode, err)
+	// Bind the new pod to the destination node if specified
+	if destNode != "" {
+		if err := pl.waitForPodBound(ctx, newp.Namespace, newp.Name, destNode, 30*time.Second); err != nil {
+			klog.ErrorS(err, "Failed to bind pod to node", "pod", podRef(newp), "node", destNode)
+			return fmt.Errorf("wait for pod %s to be bound to node %s: %w", podRef(newp), destNode, err)
+		}
 	}
 	return nil
 }
