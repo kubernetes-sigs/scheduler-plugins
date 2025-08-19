@@ -24,6 +24,10 @@ kwokctl create cluster --name kwok --config kwok-cluster.yaml
 
 ## TODOs
 
+- Use postbind to make sure pod was binded correctly.
+- In every cycle make sure the plan is followed correctly.
+- In saved plan store also the new pod names.
+- Think about what happens if ReplicaSets are scaled up/down during execution.
 - Cleanup code (incl. python) and write proper readme.
 - Make solver depend on deployment and replicaset, that is if a pod belongs to a deployment or replicaset, the other pods in the same deployment/replicaset should also be evicted/deleted and so on.
 - Consider to protect pods that have node-selectors and other rules
