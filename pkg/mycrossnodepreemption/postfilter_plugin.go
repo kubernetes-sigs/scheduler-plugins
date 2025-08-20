@@ -269,7 +269,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		if !ok || p == nil {
 			continue
 		}
-		if rsName, okRS := owningReplicaSet(p); okRS {
+		if rsName, okRS := owningRS(p); okRS {
 			k := rsKey(p.Namespace, rsName)
 			if _, ok := rsDesired[k]; !ok {
 				rsDesired[k] = map[string]int{}
@@ -327,7 +327,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 				have := 0
 				for _, pi := range ni.Pods {
 					if pi.Pod.Namespace == ns {
-						if r, ok := owningReplicaSet(pi.Pod); ok && r == rsName && pi.Pod.DeletionTimestamp == nil {
+						if r, ok := owningRS(pi.Pod); ok && r == rsName && pi.Pod.DeletionTimestamp == nil {
 							have++
 						}
 					}
@@ -350,12 +350,13 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	}
 
 	doc := &StoredPlan{
+		Completed:        false,
+		CompletedAt:      nil,
 		GeneratedAt:      time.Now().UTC(),
 		PluginVersion:    Version,
 		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
 		PendingUID:       string(pending.UID),
 		TargetNode:       plan.TargetNode,
-		Completed:        false,
 		SolverOutput:     out,
 		Plan:             litePlan,
 		PlacementsByName: byName,
@@ -368,46 +369,39 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		return "", err
 	}
 
-	// ensure one active
-	if err := pl.deactivateOldPlans(ctx); err != nil {
-		klog.ErrorS(err, "deactivate old plans")
-	}
-
-	name := fmt.Sprintf("crossnode-plan-%s-%d", pending.UID, time.Now().Unix())
+	name := fmt.Sprintf("%s%s-%d", planCMNamePrefix, pending.UID, time.Now().Unix())
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ExportNamespace,
-			Labels: map[string]string{
-				ExportCMLabelKey:       ExportCMLabelVal,
-				ExportCMLabelActiveKey: ExportCMLabelActiveTrue,
-				"pendingPod":           pending.Name,
-				"pendingNS":            pending.Namespace,
-			},
 		},
 		Data: map[string]string{"plan.json": string(raw)},
 	}
 	if _, err := pl.client.CoreV1().ConfigMaps(ExportNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 		return "", err
 	}
+
+	// Maintain history (no labels to “deactivate” anymore)
+	_ = pl.pruneOldPlans(ctx, 20)
+
 	return name, nil
 }
 
 func (pl *MyCrossNodePreemption) logPlan(plan *PodAssignmentPlan) {
-	klog.InfoS("Execution plan",
+	klog.InfoS("PostFilter: execution plan",
 		"targetNode", plan.TargetNode,
 		"movements", len(plan.PodMovements),
 		"evictions", len(plan.VictimsToEvict),
 	)
 	for i, mv := range plan.PodMovements {
-		klog.V(2).InfoS("Movement plan",
+		klog.V(2).InfoS("PostFilter: movement plan",
 			"idx_move", i+1, "pod", podRef(mv.Pod),
 			"from", mv.FromNode, "to", mv.ToNode,
 			"cpu(m)", mv.CPURequest, "mem(bytes)", mv.MemoryRequest,
 		)
 	}
 	for i, v := range plan.VictimsToEvict {
-		klog.V(2).InfoS("Eviction plan",
+		klog.V(2).InfoS("PostFilter: eviction plan",
 			"idx_evict", i+1, "pod", podRef(v),
 			"node", v.Spec.NodeName,
 			"cpu(m)", getPodCPURequest(v), "mem(bytes)", getPodMemoryRequest(v),
@@ -474,7 +468,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		klog.V(2).InfoS("Deleting/awaiting deletion of targeted pods", "count", len(targets))
 		for _, pod := range targets {
 			// RS pods are deleted by their controllers
-			if _, isRS := owningReplicaSet(pod); isRS {
+			if _, isRS := owningRS(pod); isRS {
 				if err := pl.waitPodGone(ctx, pod, DeleteTimeout); err != nil {
 					return fmt.Errorf("wait for RS pod deletion %s: %w", podRef(pod), err)
 				}
@@ -507,7 +501,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 
 	// 5) recreate standalone pods (no bind)
 	for _, mv := range plan.PodMovements {
-		if _, isRS := owningReplicaSet(mv.Pod); isRS {
+		if _, isRS := owningRS(mv.Pod); isRS {
 			klog.V(2).InfoS("Skipping RS-owned move (controller will recreate)", "pod", podRef(mv.Pod), "to", mv.ToNode)
 			continue
 		}
@@ -517,7 +511,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 	for _, v := range plan.VictimsToEvict {
-		if _, isRS := owningReplicaSet(v); isRS {
+		if _, isRS := owningRS(v); isRS {
 			klog.V(2).InfoS("Skipping RS-owned eviction recreate (controller will recreate)", "pod", podRef(v))
 			continue
 		}
@@ -580,7 +574,7 @@ func (pl *MyCrossNodePreemption) annotateDeletionCosts(
 
 	// Group targets per RS and populate rsDeltas
 	for _, p := range targets {
-		if rsName, ok := owningReplicaSet(p); ok {
+		if rsName, ok := owningRS(p); ok {
 			k := key{ns: p.Namespace, name: rsName}
 			group[k] = append(group[k], p)
 			rsDeltas[k] -= 1
@@ -666,7 +660,7 @@ func (pl *MyCrossNodePreemption) setDeletionCost(ctx context.Context, ns, podNam
 }
 
 // restoreDeletionCosts tries to put back each pod's original value.
-// If prev is nil => delete the annotation. If not found => ignore.
+// If prev is nil => delete annotation. If not found => ignore.
 func (pl *MyCrossNodePreemption) restoreDeletionCosts(ctx context.Context, prev prevDeletionCosts) {
 	for key, old := range prev {
 		ns, name := splitNSName(key) // key is "ns/name"
@@ -687,8 +681,6 @@ func (pl *MyCrossNodePreemption) restoreDeletionCosts(ctx context.Context, prev 
 		}
 	}
 }
-
-// ---------------------------- Owner scale helpers ----------------------------
 
 func (pl *MyCrossNodePreemption) bumpOwnerScale(ctx context.Context, ns, rsName string, delta int32) error {
 	rs, err := pl.client.AppsV1().ReplicaSets(ns).Get(ctx, rsName, metav1.GetOptions{})
@@ -724,9 +716,7 @@ func (pl *MyCrossNodePreemption) bumpOwnerScale(ctx context.Context, ns, rsName 
 	})
 }
 
-// ---------------------------- Bind / Wait / Recreate ----------------------------
-
-// Recreate a standalone pod WITHOUT binding (Filter steers placement)
+// Recreate a standalone pod without direct binding
 func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, _ string) error {
 	newp := orig.DeepCopy()
 	newp.Name = orig.Name
@@ -734,14 +724,8 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 	newp.ResourceVersion = ""
 	newp.UID = ""
 	newp.Status = v1.PodStatus{}
-	newp.Spec.SchedulerName = "" // default scheduler
-	newp.Spec.NodeName = ""      // no direct binding
+	newp.Spec.NodeName = "" // no direct binding
 	newp.Spec.NodeSelector = map[string]string{}
-	newp.Spec.Affinity = nil
-
-	if newp.Annotations == nil {
-		newp.Annotations = map[string]string{}
-	}
 
 	if _, err := pl.client.CoreV1().Pods(orig.Namespace).Create(ctx, newp, metav1.CreateOptions{}); err != nil {
 		return fmt.Errorf("failed to create pod %s: %w", podRef(newp), err)

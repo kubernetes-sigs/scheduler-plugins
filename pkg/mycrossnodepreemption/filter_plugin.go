@@ -46,7 +46,7 @@ func (pl *MyCrossNodePreemption) Filter(
 	}
 
 	// 1) RS-owned pods: enforce per-node slots
-	if rsName, ok := owningReplicaSet(pod); ok {
+	if rsName, ok := owningRS(pod); ok {
 		key := rsKey(pod.Namespace, rsName)
 		targets, ok := sp.RSDesiredPerNode[key]
 		if !ok {
@@ -59,7 +59,7 @@ func (pl *MyCrossNodePreemption) Filter(
 		current := 0
 		for _, pi := range nodeInfo.Pods {
 			if pi.Pod.Namespace == pod.Namespace {
-				if r, ok := owningReplicaSet(pi.Pod); ok && r == rsName {
+				if r, ok := owningRS(pi.Pod); ok && r == rsName {
 					current++
 				}
 			}

@@ -47,7 +47,7 @@ func (pl *MyCrossNodePreemption) PostBind(
 			return
 		}
 		// 3) RS pods: ensure this bind does not exceed per-node target
-	} else if rsName, ok := owningReplicaSet(pod); ok {
+	} else if rsName, ok := owningRS(pod); ok {
 		key := rsKey(pod.Namespace, rsName)
 		if perNode, ok := sp.RSDesiredPerNode[key]; ok {
 			want := perNode[nodeName]
@@ -63,7 +63,7 @@ func (pl *MyCrossNodePreemption) PostBind(
 			cur := 0
 			for _, pi := range ni.Pods {
 				if pi.Pod.Namespace == pod.Namespace {
-					if r, ok := owningReplicaSet(pi.Pod); ok && r == rsName {
+					if r, ok := owningRS(pi.Pod); ok && r == rsName {
 						cur++
 					}
 				}
