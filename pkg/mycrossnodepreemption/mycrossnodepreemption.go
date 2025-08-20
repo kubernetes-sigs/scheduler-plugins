@@ -25,6 +25,12 @@ const (
 	Name                   = "MyCrossNodePreemption"
 	Version                = "v1.0.4"
 	DeletionCostAnnotation = "controller.kubernetes.io/pod-deletion-cost"
+
+	ExportNamespace         = "kube-system"
+	ExportCMLabelKey        = "scheduler.x/crossnode-plan"
+	ExportCMLabelVal        = "true"
+	ExportCMLabelActiveKey  = "scheduler.x/crossnode-plan-active"
+	ExportCMLabelActiveTrue = "true"
 )
 
 type MyCrossNodePreemption struct {
@@ -52,13 +58,12 @@ type StoredPlan struct {
 	SchemaVersion    string                    `json:"schemaVersion"`
 	GeneratedAt      time.Time                 `json:"generatedAt"`
 	Plugin           string                    `json:"plugin"`
-	Version          string                    `json:"pluginVersion"`
+	PluginVersion    string                    `json:"pluginVersion"`
 	PendingPod       string                    `json:"pendingPod"` // ns/name
 	PendingUID       string                    `json:"pendingUID"`
 	TargetNode       string                    `json:"targetNode"`
-	StopTheWorld     bool                      `json:"stopTheWorld"`
 	Completed        bool                      `json:"completed"`
-	SolverOutput     *solverOutput             `json:"solverOutput,omitempty"`
+	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
 	Plan             PodAssignmentPlanLite     `json:"plan"`
 	PlacementsByName map[string]string         `json:"placementsByName,omitempty"` // standalone pods -> node
 	RSDesiredPerNode map[string]map[string]int `json:"rsDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
@@ -102,25 +107,15 @@ type PlanProgress struct {
 	RSRemaining  map[string]map[string]int `json:"rsRemaining"`  // "<ns>/<rs>" -> node -> remaining binds to observe
 }
 
-// ---------------------------- ConfigMap labels / constants (shared) -----------
-
-const (
-	exportNamespace         = "kube-system"
-	exportCMLabelKey        = "scheduler.x/crossnode-plan"
-	exportCMLabelVal        = "true"
-	exportCMLabelActiveKey  = "scheduler.x/crossnode-plan-active"
-	exportCMLabelActiveTrue = "true"
-)
-
 // ---------------------------- Solver I/O (shared types) ----------------------
 
-type solverNode struct {
+type SolverNode struct {
 	Name   string            `json:"name"`
 	CPU    int64             `json:"cpu"` // milliCPU
 	RAM    int64             `json:"ram"` // bytes
 	Labels map[string]string `json:"labels,omitempty"`
 }
-type solverPod struct {
+type SolverPod struct {
 	UID       string `json:"uid"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
@@ -130,44 +125,44 @@ type solverPod struct {
 	Where     string `json:"where"`
 	Protected bool   `json:"protected,omitempty"`
 }
-type solverInput struct {
+type SolverInput struct {
 	TimeoutMs      int64        `json:"timeout_ms"`
 	IgnoreAffinity bool         `json:"ignore_affinity"`
-	Preemptor      solverPod    `json:"preemptor"`
-	Nodes          []solverNode `json:"nodes"`
-	Pods           []solverPod  `json:"pods"`
+	Preemptor      SolverPod    `json:"preemptor"`
+	Nodes          []SolverNode `json:"nodes"`
+	Pods           []SolverPod  `json:"pods"`
 }
-type solverEviction struct {
+type SolverEviction struct {
 	UID       string `json:"uid"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 }
-type solverOutput struct {
+type SolverOutput struct {
 	Status        string            `json:"status"`
 	NominatedNode string            `json:"nominatedNode"`
 	Placements    map[string]string `json:"placements"` // uid -> node
 	Movements     map[string]string `json:"movements"`  // optional
-	Evictions     []solverEviction  `json:"evictions"`
+	Evictions     []SolverEviction  `json:"evictions"`
 }
 
 // ---------------------------- Plan CM helpers (shared) -----------------------
 
 func (pl *MyCrossNodePreemption) deactivateOldPlans(ctx context.Context) error {
-	list, err := pl.client.CoreV1().ConfigMaps(exportNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", exportCMLabelActiveKey, exportCMLabelActiveTrue),
+	list, err := pl.client.CoreV1().ConfigMaps(ExportNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", ExportCMLabelActiveKey, ExportCMLabelActiveTrue),
 	})
 	if err != nil {
 		return err
 	}
 	for i := range list.Items {
-		_ = pl.client.CoreV1().ConfigMaps(exportNamespace).Delete(ctx, list.Items[i].Name, metav1.DeleteOptions{})
+		_ = pl.client.CoreV1().ConfigMaps(ExportNamespace).Delete(ctx, list.Items[i].Name, metav1.DeleteOptions{})
 	}
 	return nil
 }
 
 func (pl *MyCrossNodePreemption) loadActivePlan(ctx context.Context) (*StoredPlan, string, error) {
-	list, err := pl.client.CoreV1().ConfigMaps(exportNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", exportCMLabelActiveKey, exportCMLabelActiveTrue),
+	list, err := pl.client.CoreV1().ConfigMaps(ExportNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", ExportCMLabelActiveKey, ExportCMLabelActiveTrue),
 	})
 	if err != nil {
 		return nil, "", err
@@ -192,7 +187,7 @@ func (pl *MyCrossNodePreemption) loadActivePlan(ctx context.Context) (*StoredPla
 
 func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName string) {
 	// TODO: Update the config map "Completed" flag and mark config map inactive. Do not delete it.
-	if err := pl.client.CoreV1().ConfigMaps(exportNamespace).Delete(ctx, cmName, metav1.DeleteOptions{}); err != nil {
+	if err := pl.client.CoreV1().ConfigMaps(ExportNamespace).Delete(ctx, cmName, metav1.DeleteOptions{}); err != nil {
 		// If the ConfigMap is not found, it may have been deleted already
 		if apierrors.IsNotFound(err) {
 			klog.V(2).InfoS("ConfigMap not found; it may have been deleted already", "cmName", cmName)

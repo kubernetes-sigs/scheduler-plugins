@@ -24,12 +24,12 @@ func (pl *MyCrossNodePreemption) PostBind(
 	nodeName string,
 ) {
 	sp, cmName, err := pl.loadActivePlan(ctx)
-	if err != nil || sp == nil || !sp.StopTheWorld || sp.Completed {
+	if err != nil || sp == nil || sp.Completed {
 		return
 	}
 
 	fail := func(reason string) {
-		klog.ErrorS(nil, "PostBind plan violation; deactivating active plan",
+		klog.ErrorS(nil, "PostBind: plan violation; deactivating active plan",
 			"pod", podRef(pod), "node", nodeName, "reason", reason)
 		pl.markPlanCompleted(ctx, cmName)
 	}
@@ -40,21 +40,14 @@ func (pl *MyCrossNodePreemption) PostBind(
 			fail("pending pod bound to non-target node")
 			return // violation -> stop
 		}
-		// ✅ Correct bind: do NOT return here.
-		// Fall through to the completion check below.
-	}
-
-	// 2) Standalone planned-by-name must bind to its planned node
-	if tgt, ok := sp.PlacementsByName[pod.Name]; ok {
+		// 2) Standalone planned-by-name must bind to its planned node
+	} else if tgt, ok := sp.PlacementsByName[pod.Name]; ok {
 		if nodeName != tgt {
 			fail("standalone pod bound to wrong node")
 			return
 		}
-		// fall through to completion check
-	}
-
-	// 3) RS pods: ensure this bind does not exceed per-node target
-	if rsName, ok := owningReplicaSet(pod); ok {
+		// 3) RS pods: ensure this bind does not exceed per-node target
+	} else if rsName, ok := owningReplicaSet(pod); ok {
 		key := rsKey(pod.Namespace, rsName)
 		if perNode, ok := sp.RSDesiredPerNode[key]; ok {
 			want := perNode[nodeName]
@@ -86,7 +79,7 @@ func (pl *MyCrossNodePreemption) PostBind(
 	if ok, err := pl.isPlanCompleted(ctx, sp); err != nil {
 		klog.ErrorS(err, "PostBind: completion check failed")
 	} else if ok {
-		klog.InfoS("PostBind: plan completed; lifting stop-the-world")
+		klog.InfoS("PostBind: plan completed")
 		pl.markPlanCompleted(ctx, cmName)
 	} else {
 		klog.V(2).InfoS("PostBind: plan still active")

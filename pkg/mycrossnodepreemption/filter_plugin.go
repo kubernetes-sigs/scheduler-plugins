@@ -27,7 +27,7 @@ func (pl *MyCrossNodePreemption) Filter(
 		klog.ErrorS(err, "Failed to load active plan")
 		return framework.NewStatus(framework.Error, err.Error())
 	}
-	if sp == nil || !sp.StopTheWorld || sp.Completed {
+	if sp == nil || sp.Completed {
 		return framework.NewStatus(framework.Success, "")
 	}
 
