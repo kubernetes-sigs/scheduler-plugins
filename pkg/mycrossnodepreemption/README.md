@@ -22,6 +22,10 @@ kwokctl create cluster --name kwok --config kwok-cluster.yaml
 
 ./fill-nodes-kwok.sh kwok 3 4 4
 
+Combined:
+
+docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile . && kwokctl create cluster --name kwok --config kwok-cluster.yaml &&  ./fill-nodes-kwok.sh kwok 13 4 5 && ./cluster-usage.sh
+
 ## TODOs
 
 - Use atomic to guard plan execution, e.g. concurrent workers that was in the meantime we hit postfilter with our pending pod
