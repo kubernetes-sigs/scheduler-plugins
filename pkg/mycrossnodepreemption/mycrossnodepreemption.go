@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -27,8 +28,18 @@ const (
 	Version                = "v1.0.4"
 	DeletionCostAnnotation = "controller.kubernetes.io/pod-deletion-cost"
 
-	ExportNamespace  = "kube-system"
-	planCMNamePrefix = "crossnode-plan-" // used to find plan CMs
+	ConfigMapNamespace  = "kube-system"
+	ConfigMapLabelKey   = "crossnode-plan"
+	ConfigMapNamePrefix = "crossnode-plan-" // used to find plan CMs
+
+	PollTimeout  = 10 * time.Second
+	PollInterval = 250 * time.Millisecond
+
+	PythonSolverPath    = "/opt/solver/main.py"
+	PythonSolverTimeout = 60 * time.Second
+
+	DeletionCostTarget = math.MinInt32
+	DeletionCostKeep   = math.MaxInt32
 )
 
 type MyCrossNodePreemption struct {
@@ -141,22 +152,22 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 // ---------------------------- Plan helpers (shared) -----------------------
 
-// listPlans returns newest-first CMs
+// listPlans returns newest-first plan ConfigMaps found by label.
 func (pl *MyCrossNodePreemption) listPlans(ctx context.Context) ([]v1.ConfigMap, error) {
-	lst, err := pl.client.CoreV1().ConfigMaps(ExportNamespace).List(ctx, metav1.ListOptions{})
+	lst, err := pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).List(
+		ctx,
+		metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("%s=%s", ConfigMapLabelKey, "true"),
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
-	var out []v1.ConfigMap
-	for i := range lst.Items {
-		if strings.HasPrefix(lst.Items[i].Name, planCMNamePrefix) {
-			out = append(out, lst.Items[i])
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreationTimestamp.Time.After(out[j].CreationTimestamp.Time)
+	// Sort newest first
+	sort.Slice(lst.Items, func(i, j int) bool {
+		return lst.Items[i].CreationTimestamp.Time.After(lst.Items[j].CreationTimestamp.Time)
 	})
-	return out, nil
+	return lst.Items, nil
 }
 
 // loadActivePlan loads the active plan from the list of plans
@@ -185,7 +196,7 @@ func (pl *MyCrossNodePreemption) loadActivePlan(ctx context.Context) (*StoredPla
 // Keeps the CM but prunes old history.
 func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName string) {
 	_ = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cm, err := pl.client.CoreV1().ConfigMaps(ExportNamespace).Get(ctx, cmName, metav1.GetOptions{})
+		cm, err := pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).Get(ctx, cmName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) || cm == nil {
 			return nil // already gone
 		}
@@ -207,7 +218,7 @@ func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName s
 			sp.CompletedAt = &now
 			b, _ := json.MarshalIndent(&sp, "", "  ")
 			patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
-			_, err = pl.client.CoreV1().ConfigMaps(ExportNamespace).
+			_, err = pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).
 				Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
 			return err
 		}
@@ -215,9 +226,9 @@ func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName s
 	})
 
 	// Wait until Completed flag is set.
-	_ = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Second, true,
+	_ = wait.PollUntilContextTimeout(ctx, PollInterval, PollTimeout, true,
 		func(ctx context.Context) (bool, error) {
-			cm, err := pl.client.CoreV1().ConfigMaps(ExportNamespace).Get(ctx, cmName, metav1.GetOptions{})
+			cm, err := pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).Get(ctx, cmName, metav1.GetOptions{})
 			if apierrors.IsNotFound(err) || cm == nil {
 				return true, nil
 			}
@@ -288,7 +299,7 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 		if _, ok := keepSet[name]; ok {
 			continue
 		}
-		if err := pl.client.CoreV1().ConfigMaps(ExportNamespace).
+		if err := pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).
 			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			klog.ErrorS(err, "Failed to delete old plan ConfigMap", "configMap", name)
 		}
@@ -438,22 +449,16 @@ func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }
 
-func isControlPlane(n *v1.Node) bool {
-	if n == nil {
-		return false
-	}
-	return n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
-		n.Labels["node-role.kubernetes.io/master"] != "" ||
-		n.Name == "control-plane" ||
-		n.Name == "kind-control-plane"
-}
-
-func isNodeUsableFor(pod *v1.Pod, ni *framework.NodeInfo) bool {
+func isNodeUsable(ni *framework.NodeInfo) bool {
 	if ni == nil || ni.Node() == nil {
 		return false
 	}
 	n := ni.Node()
-	return !isControlPlane(n) &&
+	isCP := n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
+		n.Labels["node-role.kubernetes.io/master"] != "" ||
+		n.Name == "control-plane" || n.Name == "kind-control-plane"
+
+	return !isCP &&
 		!n.Spec.Unschedulable &&
 		ni.Allocatable.MilliCPU > 0 &&
 		ni.Allocatable.Memory > 0

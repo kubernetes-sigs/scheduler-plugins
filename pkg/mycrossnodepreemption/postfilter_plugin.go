@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os/exec"
 	"strings"
 	"time"
@@ -21,17 +20,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-)
-
-const (
-	PythonSolverPath    = "/opt/solver/main.py"
-	PythonSolverTimeout = 60 * time.Second
-
-	DeletionCostTarget = math.MinInt32
-	DeletionCostKeep   = math.MaxInt32
-
-	DeleteTimeout     = 10 * time.Second
-	DeletePollTimeout = 1 * time.Second
 )
 
 // ---------------------------- PostFilter ----------------------------
@@ -74,7 +62,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	if cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending); err != nil {
 		klog.ErrorS(err, "PostFilter: Failed to export plan to ConfigMap (continuing)")
 	} else {
-		klog.V(2).InfoS("PostFilter: Exported active plan", "configMap", fmt.Sprintf("%s/%s", ExportNamespace, cmName))
+		klog.V(2).InfoS("PostFilter: Exported active plan", "configMap", fmt.Sprintf("%s/%s", ConfigMapNamespace, cmName))
 	}
 
 	// Execute (standalone pods are recreated but NOT bound; RS via controllers)
@@ -111,7 +99,7 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 
 	usable := map[string]bool{}
 	for _, ni := range nodes {
-		if !isNodeUsableFor(pending, ni) {
+		if !isNodeUsable(ni) {
 			continue
 		}
 		in.Nodes = append(in.Nodes, SolverNode{
@@ -123,7 +111,7 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 	}
 
 	for _, ni := range nodes {
-		if !isNodeUsableFor(pending, ni) {
+		if !isNodeUsable(ni) {
 			continue
 		}
 		for _, pi := range ni.Pods {
@@ -369,19 +357,20 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		return "", err
 	}
 
-	name := fmt.Sprintf("%s%s-%d", planCMNamePrefix, pending.UID, time.Now().Unix())
+	name := fmt.Sprintf("%s%s-%d", ConfigMapNamePrefix, pending.UID, time.Now().Unix())
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: ExportNamespace,
+			Namespace: ConfigMapNamespace,
+			Labels:    map[string]string{ConfigMapLabelKey: "true"},
 		},
 		Data: map[string]string{"plan.json": string(raw)},
 	}
-	if _, err := pl.client.CoreV1().ConfigMaps(ExportNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+	if _, err := pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 		return "", err
 	}
 
-	// Maintain history (no labels to “deactivate” anymore)
+	// Maintain history
 	_ = pl.pruneOldPlans(ctx, 20)
 
 	return name, nil
@@ -469,14 +458,14 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		for _, pod := range targets {
 			// RS pods are deleted by their controllers
 			if _, isRS := owningRS(pod); isRS {
-				if err := pl.waitPodGone(ctx, pod, DeleteTimeout); err != nil {
+				if err := pl.waitPodGone(ctx, pod); err != nil {
 					return fmt.Errorf("wait for RS pod deletion %s: %w", podRef(pod), err)
 				}
 			} else { // standalone pod, will be deleted directly here
 				if err := pl.deletePod(ctx, pod); err != nil {
 					return fmt.Errorf("delete non-RS pod %s: %w", podRef(pod), err)
 				}
-				if err := pl.waitPodGone(ctx, pod, DeleteTimeout); err != nil {
+				if err := pl.waitPodGone(ctx, pod); err != nil {
 					return fmt.Errorf("wait for non-RS pod deletion %s: %w", podRef(pod), err)
 				}
 			}
@@ -532,8 +521,8 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 
 // ---------------------------- Deletion helpers ----------------------------
 
-func (pl *MyCrossNodePreemption) waitPodGone(ctx context.Context, pod *v1.Pod, timeout time.Duration) error {
-	return wait.PollUntilContextTimeout(ctx, DeletePollTimeout, timeout, true, func(ctx context.Context) (bool, error) {
+func (pl *MyCrossNodePreemption) waitPodGone(ctx context.Context, pod *v1.Pod) error {
+	return wait.PollUntilContextTimeout(ctx, PollInterval, PollTimeout, true, func(ctx context.Context) (bool, error) {
 		_, err := pl.client.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			return true, nil
@@ -719,7 +708,6 @@ func (pl *MyCrossNodePreemption) bumpOwnerScale(ctx context.Context, ns, rsName 
 // Recreate a standalone pod without direct binding
 func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, _ string) error {
 	newp := orig.DeepCopy()
-	newp.Name = orig.Name
 	newp.GenerateName = ""
 	newp.ResourceVersion = ""
 	newp.UID = ""

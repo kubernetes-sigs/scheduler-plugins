@@ -10,13 +10,11 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// PostBind runs after a pod is bound by the scheduler. We double-check
-// that the binding is consistent with the active plan. If not, we
+// PostBind runs after a pod is bound by the scheduler.
+// A single kube‑scheduler runs several parallel workers.
+// Each successful bind runs PostBind independently. So 10 pods can hit PostBind at nearly the same time.
+// We double-check that the binding is consistent with the active plan. If not, we
 // deactivate the plan immediately and log an error.
-//
-// NOTE: PostBind has no return status; to “stop our plugin” we lift
-// the stop-the-world by deleting the active plan ConfigMap so the
-// Filter no longer holds the cluster.
 func (pl *MyCrossNodePreemption) PostBind(
 	ctx context.Context,
 	state *framework.CycleState,

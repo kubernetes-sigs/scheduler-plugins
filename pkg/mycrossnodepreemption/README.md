@@ -24,11 +24,8 @@ kwokctl create cluster --name kwok --config kwok-cluster.yaml
 
 ## TODOs
 
-- Do the postbind code prettier and fix the completion check
-- Only store x number of config maps, retention for either last 20.
 - Write something about the snapshotlister that it lags one scheduling cycle.
-- Do not bind pending pod in postfilter. Use postbind to make sure pods are binded correctly.
-- Early exit if pending pod request more than can be freed by lower priority pods.
+- Early exit (before solver) if pending pod request more than can be freed by lower priority pods.
 - Think about what happens if ReplicaSets are scaled up/down during execution.
 - Cleanup code (incl. python) and write proper readme.
 - Make solver depend on deployment and replicaset, that is if a pod belongs to a deployment or replicaset, the other pods in the same deployment/replicaset should also be evicted/deleted and so on.
