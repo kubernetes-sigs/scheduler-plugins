@@ -9,6 +9,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -16,7 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -32,8 +32,8 @@ const (
 	ConfigMapLabelKey   = "crossnode-plan"
 	ConfigMapNamePrefix = "crossnode-plan-" // used to find plan CMs
 
-	PollTimeout  = 10 * time.Second
-	PollInterval = 250 * time.Millisecond
+	PollTimeout  = 30 * time.Second
+	PollInterval = 1 * time.Second
 
 	PythonSolverPath    = "/opt/solver/main.py"
 	PythonSolverTimeout = 60 * time.Second
@@ -43,8 +43,10 @@ const (
 )
 
 type MyCrossNodePreemption struct {
-	handle framework.Handle
-	client kubernetes.Interface
+	handle       framework.Handle
+	client       kubernetes.Interface
+	activePlan   atomic.Value // stores *StoredPlan or nil
+	activePlanID atomic.Value // string (e.g., cmName or a UUID)
 }
 
 type StoredPlan struct {
@@ -59,7 +61,6 @@ type StoredPlan struct {
 	Plan             PodAssignmentPlanLite     `json:"plan"`
 	PlacementsByName map[string]string         `json:"placementsByName,omitempty"` // standalone pods -> node
 	RSDesiredPerNode map[string]map[string]int `json:"rsDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
-	Progress         *PlanProgress             `json:"progress,omitempty"`
 }
 
 type PodAssignmentPlanLite struct {
@@ -91,12 +92,6 @@ type PodMovement struct {
 	ToNode        string
 	CPURequest    int64 // milliCPU
 	MemoryRequest int64 // bytes
-}
-
-type PlanProgress struct {
-	PendingBound bool                      `json:"pendingBound"`
-	StandaloneOK map[string]bool           `json:"standaloneOK"` // key: "ns/name" (or just name if you prefer); true when satisfied
-	RSRemaining  map[string]map[string]int `json:"rsRemaining"`  // "<ns>/<rs>" -> node -> remaining binds to observe
 }
 
 type SolverNode struct {
@@ -152,6 +147,25 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 // ---------------------------- Plan helpers (shared) -----------------------
 
+// TODO: Only store needed ones in atomic plan
+func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
+	pl.activePlan.Store(sp)
+	pl.activePlanID.Store(id)
+}
+
+func (pl *MyCrossNodePreemption) clearActivePlan() {
+	pl.activePlan.Store((*StoredPlan)(nil))
+	pl.activePlanID.Store("")
+}
+
+func (pl *MyCrossNodePreemption) getActivePlan() (*StoredPlan, string) {
+	v := pl.activePlan.Load()
+	if v == nil {
+		return nil, ""
+	}
+	return v.(*StoredPlan), pl.activePlanID.Load().(string)
+}
+
 // listPlans returns newest-first plan ConfigMaps found by label.
 func (pl *MyCrossNodePreemption) listPlans(ctx context.Context) ([]v1.ConfigMap, error) {
 	lst, err := pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).List(
@@ -168,28 +182,6 @@ func (pl *MyCrossNodePreemption) listPlans(ctx context.Context) ([]v1.ConfigMap,
 		return lst.Items[i].CreationTimestamp.Time.After(lst.Items[j].CreationTimestamp.Time)
 	})
 	return lst.Items, nil
-}
-
-// loadActivePlan loads the active plan from the list of plans
-func (pl *MyCrossNodePreemption) loadActivePlan(ctx context.Context) (*StoredPlan, string, error) {
-	items, err := pl.listPlans(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	for i := range items {
-		raw := items[i].Data["plan.json"]
-		if raw == "" {
-			continue
-		}
-		var sp StoredPlan
-		if err := json.Unmarshal([]byte(raw), &sp); err != nil {
-			continue
-		}
-		if !sp.Completed {
-			return &sp, items[i].Name, nil
-		}
-	}
-	return nil, "", nil
 }
 
 // markPlanCompleted sets Completed=true in json (i.e. not active plan).
@@ -224,23 +216,6 @@ func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName s
 		}
 		return nil
 	})
-
-	// Wait until Completed flag is set.
-	_ = wait.PollUntilContextTimeout(ctx, PollInterval, PollTimeout, true,
-		func(ctx context.Context) (bool, error) {
-			cm, err := pl.client.CoreV1().ConfigMaps(ConfigMapNamespace).Get(ctx, cmName, metav1.GetOptions{})
-			if apierrors.IsNotFound(err) || cm == nil {
-				return true, nil
-			}
-			if err != nil {
-				return false, nil
-			}
-			var sp StoredPlan
-			if err := json.Unmarshal([]byte(cm.Data["plan.json"]), &sp); err != nil {
-				return false, nil
-			}
-			return sp.Completed, nil
-		})
 
 	// Prune history (JSON-only semantics)
 	if err := pl.pruneOldPlans(ctx, 20); err != nil {
@@ -464,4 +439,62 @@ func isNodeUsable(ni *framework.NodeInfo) bool {
 		ni.Allocatable.Memory > 0
 }
 
-func nsNameKey(ns, name string) string { return ns + "/" + name }
+func (pl *MyCrossNodePreemption) materializePlanDocs(
+	plan *PodAssignmentPlan,
+	out *SolverOutput,
+	pending *v1.Pod,
+) (PodAssignmentPlanLite, map[string]string, map[string]map[string]int, error) {
+
+	// 1) Build the lite plan from the concrete plan we execute.
+	lite := PodAssignmentPlanLite{TargetNode: plan.TargetNode}
+	for _, mv := range plan.PodMovements {
+		lite.Movements = append(lite.Movements, MovementLite{
+			Pod:      PodRefLite{Namespace: mv.Pod.Namespace, Name: mv.Pod.Name, UID: string(mv.Pod.UID)},
+			FromNode: mv.FromNode,
+			ToNode:   mv.ToNode,
+			CPUm:     mv.CPURequest,
+			MemBytes: mv.MemoryRequest,
+		})
+	}
+	for _, v := range plan.VictimsToEvict {
+		lite.Evictions = append(lite.Evictions, PodRefLite{
+			Namespace: v.Namespace, Name: v.Name, UID: string(v.UID),
+		})
+	}
+
+	// 2) Map uid -> *Pod from current snapshot (+ pending)
+	podsByUID := map[string]*v1.Pod{}
+	all, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
+	if err != nil {
+		return PodAssignmentPlanLite{}, nil, nil, err
+	}
+	for _, ni := range all {
+		for _, pi := range ni.Pods {
+			podsByUID[string(pi.Pod.UID)] = pi.Pod
+		}
+	}
+	podsByUID[string(pending.UID)] = pending
+
+	// 3) From solver placements: build byName + rsDesired
+	byName := make(map[string]string)
+	rsDesired := map[string]map[string]int{}
+
+	for uid, node := range out.Placements {
+		p, ok := podsByUID[uid]
+		if !ok || p == nil {
+			continue
+		}
+		if rsName, okRS := owningRS(p); okRS {
+			k := rsKey(p.Namespace, rsName)
+			if _, ok := rsDesired[k]; !ok {
+				rsDesired[k] = map[string]int{}
+			}
+			rsDesired[k][node]++
+		} else {
+			// Standalone: enforce placement by pod *name* (Filter checks name -> node).
+			byName[p.Name] = node
+		}
+	}
+
+	return lite, byName, rsDesired, nil
+}

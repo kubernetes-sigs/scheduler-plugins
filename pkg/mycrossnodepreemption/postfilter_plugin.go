@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -59,19 +58,38 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	pl.logPlan(plan)
 
 	// Export ACTIVE plan for Filter
-	if cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending); err != nil {
-		klog.ErrorS(err, "PostFilter: Failed to export plan to ConfigMap (continuing)")
-	} else {
-		klog.V(2).InfoS("PostFilter: Exported active plan", "configMap", fmt.Sprintf("%s/%s", ConfigMapNamespace, cmName))
+	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending)
+	if err != nil {
+		klog.ErrorS(err, "PostFilter: Failed to export plan to ConfigMap (continuing with in-memory only)")
 	}
 
-	// Execute (standalone pods are recreated but NOT bound; RS via controllers)
+	// Build the StoredPlan in-memory (same data you put into CM)
+	lite, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
+	if err != nil {
+		klog.ErrorS(err, "PostFilter: failed to materialize plan docs")
+		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+	}
+
+	inMem := &StoredPlan{
+		Completed:        false,
+		GeneratedAt:      time.Now().UTC(),
+		PluginVersion:    Version,
+		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+		PendingUID:       string(pending.UID),
+		TargetNode:       plan.TargetNode,
+		SolverOutput:     out,
+		Plan:             lite,
+		PlacementsByName: byName,
+		RSDesiredPerNode: rsDesired,
+	}
+
+	pl.setActivePlan(inMem, cmName)
+
+	// Execute the plan (evictions/recreates)
 	if err := pl.executePlan(ctx, plan); err != nil {
 		klog.ErrorS(err, "PostFilter: plan execution failed")
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
-
-	klog.V(2).InfoS("PostFilter completed")
 
 	return &framework.PostFilterResult{
 		NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.TargetNode},
@@ -269,72 +287,9 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		}
 	}
 
-	progress := &PlanProgress{
-		PendingBound: false,
-		StandaloneOK: map[string]bool{},
-		RSRemaining:  map[string]map[string]int{},
-	}
-
-	// Seed RSRemaining = RSDesiredPerNode
-	for rsKey, perNode := range rsDesired {
-		progress.RSRemaining[rsKey] = map[string]int{}
-		for node, want := range perNode {
-			progress.RSRemaining[rsKey][node] = want
-		}
-	}
-
-	// Pre-satisfy based on current snapshot to avoid waiting for binds we already have.
-	if all, err := pl.handle.SnapshotSharedLister().NodeInfos().List(); err == nil {
-		// Standalone placements present already?
-		for name, node := range byName {
-			ns := nsOf(pending.Namespace + "/" + pending.Name)
-			tgtName := name
-			if strings.Contains(name, "/") {
-				ns, tgtName = splitNSName(name)
-			}
-			for _, ni := range all {
-				if ni.Node() == nil || ni.Node().Name != node {
-					continue
-				}
-				for _, pi := range ni.Pods {
-					if pi.Pod.Namespace == ns && pi.Pod.Name == tgtName && pi.Pod.DeletionTimestamp == nil {
-						progress.StandaloneOK[nsNameKey(ns, tgtName)] = true
-					}
-				}
-			}
-			if _, ok := progress.StandaloneOK[nsNameKey(ns, tgtName)]; !ok {
-				progress.StandaloneOK[nsNameKey(ns, tgtName)] = false
-			}
-		}
-
-		// RS counts already present?
-		for rsKey, perNode := range progress.RSRemaining {
-			ns, rsName := splitNSName(rsKey)
-			for _, ni := range all {
-				nodeName := ni.Node().Name
-				have := 0
-				for _, pi := range ni.Pods {
-					if pi.Pod.Namespace == ns {
-						if r, ok := owningRS(pi.Pod); ok && r == rsName && pi.Pod.DeletionTimestamp == nil {
-							have++
-						}
-					}
-				}
-				if want, ok := perNode[nodeName]; ok {
-					// remaining = max(want - have, 0)
-					if have >= want {
-						perNode[nodeName] = 0
-					} else {
-						perNode[nodeName] = want - have
-					}
-				}
-			}
-		}
-	}
-
-	// Pending preemptor already bound?
-	if pending.Spec.NodeName == plan.TargetNode {
-		progress.PendingBound = true
+	litePlan, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
+	if err != nil {
+		return "", err
 	}
 
 	doc := &StoredPlan{
@@ -349,7 +304,6 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		Plan:             litePlan,
 		PlacementsByName: byName,
 		RSDesiredPerNode: rsDesired,
-		Progress:         progress,
 	}
 
 	raw, err := json.MarshalIndent(doc, "", "  ")
@@ -452,23 +406,33 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// 3) wait/delete pods
+	// 3) delete/wait pods (batched)
 	if len(targets) > 0 {
 		klog.V(2).InfoS("Deleting/awaiting deletion of targeted pods", "count", len(targets))
-		for _, pod := range targets {
-			// RS pods are deleted by their controllers
-			if _, isRS := owningRS(pod); isRS {
-				if err := pl.waitPodGone(ctx, pod); err != nil {
-					return fmt.Errorf("wait for RS pod deletion %s: %w", podRef(pod), err)
-				}
-			} else { // standalone pod, will be deleted directly here
-				if err := pl.deletePod(ctx, pod); err != nil {
-					return fmt.Errorf("delete non-RS pod %s: %w", podRef(pod), err)
-				}
-				if err := pl.waitPodGone(ctx, pod); err != nil {
-					return fmt.Errorf("wait for non-RS pod deletion %s: %w", podRef(pod), err)
-				}
+
+		// Split: RS-owned (controller deletes) vs standalone (we delete)
+		var rsOwned, standalone []*v1.Pod
+		for _, p := range targets {
+			if _, isRS := owningRS(p); isRS {
+				rsOwned = append(rsOwned, p)
+			} else {
+				standalone = append(standalone, p)
 			}
+		}
+
+		// Issue deletes for all standalone first
+		for _, p := range standalone {
+			if err := pl.deletePod(ctx, p); err != nil {
+				return fmt.Errorf("delete non-RS pod %s: %w", podRef(p), err)
+			}
+		}
+
+		// Now wait once for all (RS-owned + standalone we just deleted)
+		var waitAll []*v1.Pod
+		waitAll = append(waitAll, rsOwned...)
+		waitAll = append(waitAll, standalone...)
+		if err := pl.waitPodsGone(ctx, waitAll); err != nil {
+			return fmt.Errorf("wait for targeted pods gone: %w", err)
 		}
 	}
 
@@ -521,15 +485,46 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 
 // ---------------------------- Deletion helpers ----------------------------
 
-func (pl *MyCrossNodePreemption) waitPodGone(ctx context.Context, pod *v1.Pod) error {
+func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
+	if len(pods) == 0 {
+		return nil
+	}
+
+	type key struct{ ns, name, uid string }
+	remaining := make(map[key]struct{}, len(pods))
+	for _, p := range pods {
+		remaining[key{ns: p.Namespace, name: p.Name, uid: string(p.UID)}] = struct{}{}
+	}
+
 	return wait.PollUntilContextTimeout(ctx, PollInterval, PollTimeout, true, func(ctx context.Context) (bool, error) {
-		_, err := pl.client.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
+		if len(remaining) == 0 {
 			return true, nil
 		}
-		if err != nil {
-			return false, nil
+
+		// iterate over a snapshot of keys so we can delete while iterating
+		for k := range remaining {
+			got, err := pl.client.CoreV1().Pods(k.ns).Get(ctx, k.name, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				delete(remaining, k) // gone
+				continue
+			}
+			if err != nil {
+				// transient error: ignore and retry
+				return false, nil
+			}
+			if string(got.UID) != k.uid {
+				// replacement/new instance => original is gone
+				delete(remaining, k)
+				continue
+			}
+			// else: original still present; keep it in the set
 		}
+
+		if len(remaining) == 0 {
+			return true, nil
+		}
+		klog.V(2).InfoS("Waiting for targeted pods to disappear",
+			"remaining", len(remaining))
 		return false, nil
 	})
 }

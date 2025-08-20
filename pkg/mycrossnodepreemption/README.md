@@ -10,7 +10,7 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ### Getting saved solver plan from kube-scheduler
 
-kubectl -n kube-system get cm -l scheduler.x/crossnode-plan=true
+kubectl -n kube-system get cm -l crossnode-plan
 
 kubectl -n kube-system get cm <CM> -o jsonpath='{.data.plan\.json}' | jq .
 
@@ -24,12 +24,12 @@ kwokctl create cluster --name kwok --config kwok-cluster.yaml
 
 ## TODOs
 
+- Use atomic to guard plan execution, e.g. concurrent workers that was in the meantime we hit postfilter with our pending pod
 - Write something about the snapshotlister that it lags one scheduling cycle.
 - Early exit (before solver) if pending pod request more than can be freed by lower priority pods.
 - Think about what happens if ReplicaSets are scaled up/down during execution.
 - Cleanup code (incl. python) and write proper readme.
-- Make solver depend on deployment and replicaset, that is if a pod belongs to a deployment or replicaset, the other pods in the same deployment/replicaset should also be evicted/deleted and so on.
-- Consider to protect pods that have node-selectors and other rules
+- Consider to protect pods that have node-selectors, PDBs, and other rules
 - Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
 - Add a diff in python code, so only needed changes are sent to plugin.
 - Check that the scheduler runs the plan correctly.

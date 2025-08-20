@@ -22,11 +22,7 @@ func (pl *MyCrossNodePreemption) Filter(
 	nodeInfo *framework.NodeInfo,
 ) *framework.Status {
 
-	sp, _, err := pl.loadActivePlan(ctx)
-	if err != nil {
-		klog.ErrorS(err, "Failed to load active plan")
-		return framework.NewStatus(framework.Error, err.Error())
-	}
+	sp, _ := pl.getActivePlan()
 	if sp == nil || sp.Completed {
 		return framework.NewStatus(framework.Success, "")
 	}

@@ -21,15 +21,16 @@ func (pl *MyCrossNodePreemption) PostBind(
 	pod *v1.Pod,
 	nodeName string,
 ) {
-	sp, cmName, err := pl.loadActivePlan(ctx)
-	if err != nil || sp == nil || sp.Completed {
+	sp, cmName := pl.getActivePlan()
+	if sp == nil || sp.Completed {
 		return
 	}
 
 	fail := func(reason string) {
 		klog.ErrorS(nil, "PostBind: plan violation; deactivating active plan",
 			"pod", podRef(pod), "node", nodeName, "reason", reason)
-		pl.markPlanCompleted(ctx, cmName)
+		pl.clearActivePlan()              // stop gating immediately
+		pl.markPlanCompleted(ctx, cmName) // patch CM with Completed/CompletedAt
 	}
 
 	// 1) Pending preemptor must bind to TargetNode
@@ -78,7 +79,8 @@ func (pl *MyCrossNodePreemption) PostBind(
 		klog.ErrorS(err, "PostBind: completion check failed")
 	} else if ok {
 		klog.InfoS("PostBind: plan completed")
-		pl.markPlanCompleted(ctx, cmName)
+		pl.clearActivePlan()              // clear fast path first
+		pl.markPlanCompleted(ctx, cmName) // persist Completed/CompletedAt in CM (audit)
 	} else {
 		klog.V(2).InfoS("PostBind: plan still active")
 	}
