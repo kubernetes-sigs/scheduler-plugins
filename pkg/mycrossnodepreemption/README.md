@@ -28,25 +28,22 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## TODOs
 
-- Use atomic to guard plan execution, e.g. concurrent workers that was in the meantime we hit postfilter with our pending pod
+- Use atomic to guard plan execution and use other extension points to guard against pods currently trying to be scheduled since we took the snapshot.
+- Double check that we are not looking at only running pods but rather all pods assigned to a node (allocated)
+- Look how to put pods in correct queue for faster plan execution and other pods not to be scheduled.
 - Write something about the snapshotlister that it lags one scheduling cycle.
-- Early exit (before solver) if pending pod request more than can be freed by lower priority pods.
-- Think about what happens if ReplicaSets are scaled up/down during execution.
 - Cleanup code (incl. python) and write proper readme.
 - Consider to protect pods that have node-selectors, PDBs, and other rules
-- Test that deleted controller-owned pods (ReplicaSets) aren't created after we have recreated them.
 - Add a diff in python code, so only needed changes are sent to plugin.
 - Check that the scheduler runs the plan correctly.
-- Add a script to deploy many high priority pods.
-- Maybe consider to not do a fully optimal placement only such so the pending pod can be scheduled. Otherwise, think about what it gives in the long run to optimize all nodes.
 - Consider to evict lower priority pods first, instead of just evicting the lowest amount of pods.
 - Simplify code and update readme.
 - Demo: Next week.
-- Test if python solver timing depends heavily on 
+- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
 
 ## Later
 
-- Fix Neri's way of doing cross-node preemption by making several scheduling improvements. I think he uses Prefilters to only schedule the missing pods not scheduled yet in the stop-world timeframe. Actually, I think most of my code can be used for this case. the only difference is that we have to ensure that there is not coming any race conditions since other pods can be changed in the meantime. Note: Think about limitations of stop-the-world assumption. Actually, I don' think we use stop the world in my case, as it is done in one cycle, however doing the execution of plan, something of course could happen. Also I think it is fair to let the plugin run for some time since other pods to be scheduled also likely dont have space.
+- Fix Neri's code or know what has been done.
 - Make my own heuristic based optimization plan.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
 
