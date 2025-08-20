@@ -35,6 +35,15 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		"mem(bytes)", getPodMemoryRequest(pending),
 	)
 
+	// ---- Early cluster-sum upper-bound check ----
+	if ok, reason, err := pl.earlyClusterCapacityCheck(pending); err != nil {
+		klog.ErrorS(err, "Early cluster capacity check failed")
+		return nil, framework.NewStatus(framework.Error, "capacity check failed")
+	} else if !ok {
+		klog.InfoS("Early capacity check: unschedulable regardless of solver", "reason", reason)
+		return nil, framework.NewStatus(framework.Unschedulable, reason)
+	}
+
 	// Run solver
 	solveCtx, cancel := context.WithTimeout(ctx, PythonSolverTimeout+5*time.Second)
 	defer cancel()
@@ -714,4 +723,69 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 		return fmt.Errorf("failed to create pod %s: %w", podRef(newp), err)
 	}
 	return nil
+}
+
+// earlyClusterCapacityCheck returns true if, cluster-wide, the sum of current
+// free headroom + reclaimable from strictly lower-priority pods is enough to
+// satisfy the pending pod's CPU AND memory requests. If not, we can bail out
+// before the solver, since we know no solution can exist.
+func (pl *MyCrossNodePreemption) earlyClusterCapacityCheck(pending *v1.Pod) (bool, string, error) {
+	nodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
+	if err != nil {
+		return false, "snapshot error", err
+	}
+
+	wantCPU := getPodCPURequest(pending)
+	wantMem := getPodMemoryRequest(pending)
+	pPri := getPodPriority(pending)
+
+	var totalCPU, totalMem int64
+
+	for _, ni := range nodes {
+		if !isNodeUsable(ni) {
+			continue
+		}
+
+		// 1) current free headroom on the node
+		freeCPU := ni.Allocatable.MilliCPU - ni.Requested.MilliCPU
+		freeMem := ni.Allocatable.Memory - ni.Requested.Memory
+		if freeCPU < 0 {
+			freeCPU = 0
+		}
+		if freeMem < 0 {
+			freeMem = 0
+		}
+
+		// 2) reclaimable from strictly lower-priority pods on this node
+		var recCPU, recMem int64
+		for _, pi := range ni.Pods {
+			p := pi.Pod
+
+			// strictly lower priority than the pending pod
+			if getPodPriority(p) >= pPri {
+				continue
+			}
+			// avoid counting system/static pods as reclaimable
+			if p.Namespace == "kube-system" {
+				continue
+			}
+			if _, isMirror := p.Annotations["kubernetes.io/config.mirror"]; isMirror {
+				continue
+			}
+
+			recCPU += getPodCPURequest(p)
+			recMem += getPodMemoryRequest(p)
+		}
+
+		totalCPU += freeCPU + recCPU
+		totalMem += freeMem + recMem
+	}
+
+	if totalCPU >= wantCPU && totalMem >= wantMem {
+		return true, "", nil
+	}
+
+	reason := fmt.Sprintf("insufficient cluster capacity upper bound: need cpu=%dm mem=%dB; have at most cpu=%dm mem=%dB (free+reclaimable from lower-priority pods)",
+		wantCPU, wantMem, totalCPU, totalMem)
+	return false, reason, nil
 }
