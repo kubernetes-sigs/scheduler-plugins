@@ -424,6 +424,10 @@ func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }
 
+func bytesToMiB(b int64) int64 {
+	return b / (1024 * 1024)
+}
+
 func isNodeUsable(ni *framework.NodeInfo) bool {
 	if ni == nil || ni.Node() == nil {
 		return false

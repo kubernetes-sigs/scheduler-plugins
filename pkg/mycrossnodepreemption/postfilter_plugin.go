@@ -785,7 +785,10 @@ func (pl *MyCrossNodePreemption) earlyClusterCapacityCheck(pending *v1.Pod) (boo
 		return true, "", nil
 	}
 
-	reason := fmt.Sprintf("insufficient cluster capacity upper bound: need cpu=%dm mem=%dB; have at most cpu=%dm mem=%dB (free+reclaimable from lower-priority pods)",
-		wantCPU, wantMem, totalCPU, totalMem)
+	reason := fmt.Sprintf(
+		"insufficient cluster capacity: need cpu=%.1fm mem=%dMiB; have cpu=%.1fm mem=%dMiB",
+		wantCPU, bytesToMiB(wantMem),
+		totalCPU, bytesToMiB(totalMem),
+	)
 	return false, reason, nil
 }
