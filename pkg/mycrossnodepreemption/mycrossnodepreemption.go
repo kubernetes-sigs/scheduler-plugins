@@ -25,19 +25,18 @@ import (
 )
 
 const (
-	Name                   = "MyCrossNodePreemption"
-	Version                = "v1.0.4"
-	DeletionCostAnnotation = "controller.kubernetes.io/pod-deletion-cost"
+	Name    = "MyCrossNodePreemption"
+	Version = "v1.0.0"
 
 	ConfigMapNamespace  = "kube-system"
 	ConfigMapLabelKey   = "crossnode-plan"
 	ConfigMapNamePrefix = "crossnode-plan-" // used to find plan CMs
 
-	PollTimeout  = 60 * time.Second
-	PollInterval = 1 * time.Second
+	EvictionPollTimeout  = 30 * time.Second
+	EvictionPollInterval = 1 * time.Second
 
 	PythonSolverPath    = "/opt/solver/main.py"
-	PythonSolverTimeout = 80 * time.Second
+	PythonSolverTimeout = 120 * time.Second
 
 	DeletionCostTarget = math.MinInt32
 	DeletionCostKeep   = math.MaxInt32
@@ -59,6 +58,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 }
 
 // ---------------------------- Types -----------------------
+
 type MyCrossNodePreemption struct {
 	handle       framework.Handle
 	client       kubernetes.Interface
@@ -68,18 +68,35 @@ type MyCrossNodePreemption struct {
 	blocked      *blockedSet
 }
 
+type WorkloadKind int
+
+// Deployment -> ReplicaSet
+// CronJob -> Job
+const (
+	wkReplicaSet WorkloadKind = iota
+	wkStatefulSet
+	wkDaemonSet
+	wkJob
+)
+
+type WorkloadKey struct {
+	kind WorkloadKind
+	ns   string
+	name string
+}
+
 type StoredPlan struct {
-	Completed        bool                      `json:"completed"`
-	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
-	GeneratedAt      time.Time                 `json:"generatedAt"`
-	PluginVersion    string                    `json:"pluginVersion"`
-	PendingPod       string                    `json:"pendingPod"` // ns/name
-	PendingUID       string                    `json:"pendingUID"`
-	TargetNode       string                    `json:"targetNode"`
-	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
-	Plan             PodAssignmentPlanLite     `json:"plan"`
-	PlacementsByName map[string]string         `json:"placementsByName,omitempty"` // standalone pods -> node
-	RSDesiredPerNode map[string]map[string]int `json:"rsDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
+	Completed              bool                      `json:"completed"`
+	CompletedAt            *time.Time                `json:"completedAt,omitempty"`
+	GeneratedAt            time.Time                 `json:"generatedAt"`
+	PluginVersion          string                    `json:"pluginVersion"`
+	PendingPod             string                    `json:"pendingPod"` // ns/name
+	PendingUID             string                    `json:"pendingUID"`
+	TargetNode             string                    `json:"targetNode"`
+	SolverOutput           *SolverOutput             `json:"solverOutput,omitempty"`
+	Plan                   PodAssignmentPlanLite     `json:"plan"`
+	PlacementsByName       map[string]string         `json:"placementsByName,omitempty"`       // standalone pods -> node
+	WorkloadDesiredPerNode map[string]map[string]int `json:"workloadDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
 }
 
 type PodAssignmentPlanLite struct {
@@ -165,7 +182,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 
 	// 1) Start from desired per-node targets
 	desired := map[string]map[string]int{}
-	for rs, perNode := range sp.RSDesiredPerNode {
+	for rs, perNode := range sp.WorkloadDesiredPerNode {
 		desired[rs] = map[string]int{}
 		for n, want := range perNode {
 			desired[rs][n] = want
@@ -184,13 +201,13 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 				for _, pi := range ni.Pods {
 					p := pi.Pod
 					podsByUID[string(p.UID)] = p
-					if rsName, ok := owningRS(p); ok && p.Spec.NodeName != "" {
-						rk := rsKey(p.Namespace, rsName)
-						if _, tracked := desired[rk]; tracked {
-							if _, ok := cur[rk]; !ok {
-								cur[rk] = map[string]int{}
+					if wk, ok := topWorkload(p); ok && p.Spec.NodeName != "" {
+						key := wk.String()
+						if _, tracked := desired[key]; tracked {
+							if _, ok := cur[key]; !ok {
+								cur[key] = map[string]int{}
 							}
-							cur[rk][p.Spec.NodeName]++
+							cur[key][p.Spec.NodeName]++
 						}
 					}
 				}
@@ -204,15 +221,15 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 	plannedOut := map[string]map[string]int{} // rsKey -> node -> count
 	addOut := func(uid string) {
 		if p := podsByUID[uid]; p != nil {
-			if rsName, ok := owningRS(p); ok && p.Spec.NodeName != "" {
-				rk := rsKey(p.Namespace, rsName)
-				if _, tracked := desired[rk]; !tracked {
+			if wk, ok := topWorkload(p); ok && p.Spec.NodeName != "" {
+				key := wk.String()
+				if _, tracked := desired[key]; !tracked {
 					return // we don't steer this RS via quotas
 				}
-				if _, ok := plannedOut[rk]; !ok {
-					plannedOut[rk] = map[string]int{}
+				if _, ok := plannedOut[key]; !ok {
+					plannedOut[key] = map[string]int{}
 				}
-				plannedOut[rk][p.Spec.NodeName]++
+				plannedOut[key][p.Spec.NodeName]++
 			}
 		}
 	}
@@ -392,8 +409,7 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan) (bool, error) {
-	// A) If the preemptor Pod (by the recorded name) still exists, it must be bound to TargetNode.
-	//    This applies whether it's RS-owned or not. If NotFound, continue with B/C.
+	// A) Pending/preemptor pod must be bound to the target node if it still exists.
 	pns, pname := splitNSName(sp.PendingPod)
 	preemptor, err := pl.client.CoreV1().Pods(pns).Get(ctx, pname, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -405,7 +421,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 		}
 	}
 
-	// B) Standalone/name-addressed pods placed on their target node
+	// B) Standalone/name-addressed pods must sit on their specified node.
 	for name, node := range sp.PlacementsByName {
 		ns := nsOf(sp.PendingPod)
 		if strings.Contains(name, "/") {
@@ -423,41 +439,54 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 		}
 	}
 
-	// C) RS per-node quotas satisfied
-	for rsKeyStr, perNode := range sp.RSDesiredPerNode {
-		ns, rsName := splitNSName(rsKeyStr)
-
-		rs, err := pl.client.AppsV1().ReplicaSets(ns).Get(ctx, rsName, metav1.GetOptions{})
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil
-			}
-			return false, fmt.Errorf("get rs %s/%s: %w", ns, rsName, err)
-		}
-		sel, err := metav1.LabelSelectorAsSelector(rs.Spec.Selector)
-		if err != nil {
-			return false, fmt.Errorf("selector for rs %s/%s: %w", ns, rsName, err)
-		}
-		podList, err := pl.client.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
-		if err != nil {
-			return false, fmt.Errorf("list rs pods %s/%s: %w", ns, rsName, err)
+	// C) Per-workload per-node quotas satisfied (works for RS/SS/DS/Job).
+	//
+	// sp.WorkloadDesiredPerNode is expected to be keyed by a stable workload key string
+	// (e.g., the same format returned by WorkloadKey.String()), and values are the
+	// desired replica counts per node for that workload.
+	for wkStr, perNode := range sp.WorkloadDesiredPerNode {
+		wk, ok := parseWorkloadKey(wkStr) // parser that mirrors WorkloadKey.String()
+		if !ok {
+			// If we cannot parse the workload key, we can't assert completion.
+			return false, nil
 		}
 
+		// Build a label selector for this workload (controller-agnostic).
+		lblSel, err := selectorForWorkload(ctx, pl.client, wk)
+		if err != nil {
+			return false, fmt.Errorf("selector for %s: %w", wk.String(), err)
+		}
+		selector, err := metav1.LabelSelectorAsSelector(&lblSel)
+		if err != nil {
+			return false, fmt.Errorf("build selector for %s: %w", wk.String(), err)
+		}
+
+		// List all pods that belong to the workload in its namespace.
+		podList, err := pl.client.CoreV1().Pods(wk.ns).List(ctx, metav1.ListOptions{
+			LabelSelector: selector.String(),
+		})
+		if err != nil {
+			return false, fmt.Errorf("list pods for %s: %w", wk.String(), err)
+		}
+
+		// Count scheduled, non-terminating pods that truly belong to this workload.
 		counts := map[string]int{}
 		for i := range podList.Items {
-			pod := &podList.Items[i]
-			if pod.DeletionTimestamp != nil {
-				continue // ignore terminating
+			p := &podList.Items[i]
+			if p.DeletionTimestamp != nil {
+				continue // ignore terminating instances
 			}
-			if r, ok := owningRS(pod); !ok || r != rsName {
-				continue // make sure it's this RS
-			}
-			if pod.Spec.NodeName == "" {
+			if p.Spec.NodeName == "" {
 				continue // not yet scheduled; don't count
 			}
-			counts[pod.Spec.NodeName]++
+			if twk, ok := topWorkload(p); !ok || !workloadEqual(twk, wk) {
+				// Defensive: label match but not the same controller at runtime.
+				continue
+			}
+			counts[p.Spec.NodeName]++
 		}
 
+		// Verify per-node desired counts for the workload.
 		for node, want := range perNode {
 			if counts[node] != want {
 				return false, nil
@@ -469,8 +498,6 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 }
 
 // ---------------------------- Utilities (shared) -----------------------------
-
-func rsKey(ns, rs string) string { return ns + "/" + rs }
 
 func nsOf(nsSlashName string) string {
 	if i := strings.IndexByte(nsSlashName, '/'); i >= 0 {
@@ -484,25 +511,6 @@ func splitNSName(s string) (ns, name string) {
 		return s[:i], s[i+1:]
 	}
 	return "default", s
-}
-
-func owningRS(p *v1.Pod) (string, bool) {
-	for _, o := range p.OwnerReferences {
-		if o.Controller != nil && *o.Controller && o.Kind == "ReplicaSet" {
-			return o.Name, true
-		}
-	}
-	return "", false
-}
-
-func isControlledByRS(p *v1.Pod, rsName string) bool {
-	for _, o := range p.OwnerReferences {
-		if o.Controller != nil && *o.Controller &&
-			o.Kind == "ReplicaSet" && o.Name == rsName {
-			return true
-		}
-	}
-	return false
 }
 
 func getPodCPURequest(p *v1.Pod) int64 {
@@ -650,16 +658,125 @@ func (pl *MyCrossNodePreemption) materializePlanDocs(
 			continue
 		}
 
-		if rsName, okRS := owningRS(p); okRS {
-			k := rsKey(p.Namespace, rsName)
-			if _, ok := rsDesired[k]; !ok {
-				rsDesired[k] = map[string]int{}
+		if wk, ok := topWorkload(p); ok {
+			key := wk.String()
+			if _, ok := rsDesired[key]; !ok {
+				rsDesired[key] = map[string]int{}
 			}
-			rsDesired[k][node]++
+			rsDesired[key][node]++
 		} else {
 			byName[p.Namespace+"/"+p.Name] = node // use ns/name (see below)
 		}
 	}
 
 	return lite, byName, rsDesired, nil
+}
+
+func (wk WorkloadKey) String() string {
+	switch wk.kind {
+	case wkReplicaSet:
+		return "rs:" + wk.ns + "/" + wk.name
+	case wkStatefulSet:
+		return "ss:" + wk.ns + "/" + wk.name
+	case wkDaemonSet:
+		return "ds:" + wk.ns + "/" + wk.name
+	case wkJob:
+		return "job:" + wk.ns + "/" + wk.name
+	default:
+		return wk.ns + "/" + wk.name
+	}
+}
+
+// topWorkload returns the controlling workload for a Pod.
+// Deployment is represented by its current ReplicaSet; CronJob is represented by the Job.
+func topWorkload(p *v1.Pod) (WorkloadKey, bool) {
+	for _, o := range p.OwnerReferences {
+		if o.Controller == nil || !*o.Controller {
+			continue
+		}
+		switch o.Kind {
+		case "ReplicaSet":
+			return WorkloadKey{kind: wkReplicaSet, ns: p.Namespace, name: o.Name}, true
+		case "StatefulSet":
+			return WorkloadKey{kind: wkStatefulSet, ns: p.Namespace, name: o.Name}, true
+		case "DaemonSet":
+			return WorkloadKey{kind: wkDaemonSet, ns: p.Namespace, name: o.Name}, true
+		case "Job":
+			return WorkloadKey{kind: wkJob, ns: p.Namespace, name: o.Name}, true
+		}
+	}
+	return WorkloadKey{}, false
+}
+
+func workloadEqual(a, b WorkloadKey) bool {
+	return a.kind == b.kind && a.ns == b.ns && a.name == b.name
+}
+
+// selectorForWorkload returns a LabelSelector for all Pods that belong to the workload.
+func selectorForWorkload(ctx context.Context, cli kubernetes.Interface, wk WorkloadKey) (metav1.LabelSelector, error) {
+	switch wk.kind {
+	case wkReplicaSet:
+		rs, err := cli.AppsV1().ReplicaSets(wk.ns).Get(ctx, wk.name, metav1.GetOptions{})
+		if err != nil {
+			return metav1.LabelSelector{}, err
+		}
+		return *rs.Spec.Selector, nil
+
+	case wkStatefulSet:
+		ss, err := cli.AppsV1().StatefulSets(wk.ns).Get(ctx, wk.name, metav1.GetOptions{})
+		if err != nil {
+			return metav1.LabelSelector{}, err
+		}
+		return *ss.Spec.Selector, nil
+
+	case wkDaemonSet:
+		ds, err := cli.AppsV1().DaemonSets(wk.ns).Get(ctx, wk.name, metav1.GetOptions{})
+		if err != nil {
+			return metav1.LabelSelector{}, err
+		}
+		return *ds.Spec.Selector, nil
+
+	case wkJob:
+		job, err := cli.BatchV1().Jobs(wk.ns).Get(ctx, wk.name, metav1.GetOptions{})
+		if err != nil {
+			return metav1.LabelSelector{}, err
+		}
+		// Prefer explicit selector if present; otherwise use template labels.
+		if job.Spec.Selector != nil {
+			return *job.Spec.Selector, nil
+		}
+		return metav1.LabelSelector{MatchLabels: job.Spec.Template.Labels}, nil
+
+	default:
+		return metav1.LabelSelector{}, fmt.Errorf("unsupported workload kind for selector: %v", wk.kind)
+	}
+}
+
+// parseWorkloadKey parses the string form produced by WorkloadKey.String().
+// Example formats you might use:
+//
+//	"rs:ns/name", "ss:ns/name", "ds:ns/name", "job:ns/name"
+func parseWorkloadKey(s string) (WorkloadKey, bool) {
+	// kind:ns/name
+	colon := strings.IndexByte(s, ':')
+	if colon <= 0 || colon == len(s)-1 {
+		return WorkloadKey{}, false
+	}
+	kindStr, rest := s[:colon], s[colon+1:]
+	ns, name := splitNSName(rest)
+
+	var k WorkloadKind
+	switch kindStr {
+	case "rs":
+		k = wkReplicaSet
+	case "ss":
+		k = wkStatefulSet
+	case "ds":
+		k = wkDaemonSet
+	case "job":
+		k = wkJob
+	default:
+		return WorkloadKey{}, false
+	}
+	return WorkloadKey{kind: k, ns: ns, name: name}, true
 }

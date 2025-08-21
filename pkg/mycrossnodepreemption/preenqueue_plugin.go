@@ -38,10 +38,10 @@ func (pl *MyCrossNodePreemption) PreEnqueue(
 		return framework.NewStatus(framework.Success)
 	}
 
-	// Allow RS-owned pods only if their ReplicaSet is part of the plan.
-	if rsName, ok := owningRS(pod); ok {
-		key := rsKey(pod.Namespace, rsName)
-		if _, inPlan := sp.RSDesiredPerNode[key]; inPlan {
+	// Allow workload-owned pods only if their ReplicaSet is part of the plan.
+	if wk, ok := topWorkload(pod); ok {
+		key := wk.String()
+		if _, inPlan := sp.WorkloadDesiredPerNode[key]; inPlan {
 			return framework.NewStatus(framework.Success)
 		}
 		pl.blocked.add(pod.UID, pod.Namespace, pod.Name)

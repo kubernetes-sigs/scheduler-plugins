@@ -12,12 +12,11 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -42,7 +41,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 
 	// Early cluster-sum to avoid running solver if we already know that
 	// moving/rejecting lower priority pods won't fit the preemptor.
-	if ok, reason, err := pl.clusterCapacityCheck(pending); err != nil {
+	if ok, reason, err := pl.clusterTotalCapacity(pending); err != nil {
 		klog.ErrorS(err, "Early cluster capacity check failed")
 		return nil, framework.NewStatus(framework.Error, "capacity check failed")
 	} else if !ok {
@@ -82,16 +81,16 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	}
 
 	inMem := &StoredPlan{
-		Completed:        false,
-		GeneratedAt:      time.Now().UTC(),
-		PluginVersion:    Version,
-		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
-		PendingUID:       string(pending.UID),
-		TargetNode:       plan.TargetNode,
-		SolverOutput:     out,
-		Plan:             lite,
-		PlacementsByName: byName,
-		RSDesiredPerNode: rsDesired,
+		Completed:              false,
+		GeneratedAt:            time.Now().UTC(),
+		PluginVersion:          Version,
+		PendingPod:             fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+		PendingUID:             string(pending.UID),
+		TargetNode:             plan.TargetNode,
+		SolverOutput:           out,
+		Plan:                   lite,
+		PlacementsByName:       byName,
+		WorkloadDesiredPerNode: rsDesired,
 	}
 
 	pl.setActivePlan(inMem, cmName)
@@ -298,17 +297,17 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	}
 
 	doc := &StoredPlan{
-		Completed:        false,
-		CompletedAt:      nil,
-		GeneratedAt:      time.Now().UTC(),
-		PluginVersion:    Version,
-		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
-		PendingUID:       string(pending.UID),
-		TargetNode:       plan.TargetNode,
-		SolverOutput:     out,
-		Plan:             litePlan,
-		PlacementsByName: byName,    // keys are "ns/name"
-		RSDesiredPerNode: rsDesired, // pending pod excluded
+		Completed:              false,
+		CompletedAt:            nil,
+		GeneratedAt:            time.Now().UTC(),
+		PluginVersion:          Version,
+		PendingPod:             fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+		PendingUID:             string(pending.UID),
+		TargetNode:             plan.TargetNode,
+		SolverOutput:           out,
+		Plan:                   litePlan,
+		PlacementsByName:       byName,    // keys are "ns/name"
+		WorkloadDesiredPerNode: rsDesired, // pending pod excluded
 	}
 
 	raw, err := json.MarshalIndent(doc, "", "  ")
@@ -333,14 +332,8 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	return name, nil
 }
 
-// prevDeletionCosts maps "ns/name" -> original value pointer.
-// nil => annotation absent; non-nil => original string value.
-type prevDeletionCosts map[string]*string
-
 // Standalone pods are recreated without binding (Filter steers placement).
-// RS pods are recreated by their controllers after scale restore.
-// Pending pod is *not* bound here; Filter constrains it to the target node
-// and the default scheduler performs the bind.
+// RS pods are recreated by their controllers.
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan) error {
 	// Collect unique target pods (moves + evictions).
 	var targets []*v1.Pod
@@ -360,81 +353,28 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// Per-ReplicaSet deltas (negative for initial scale down).
-	rsDeltas := map[struct{ ns, name string }]int32{}
-
-	// 1) deletion-cost annotations (remember previous values)
-	var prevCosts prevDeletionCosts
+	// 1) evict/wait pods (batched)  --->  **NEW**
 	if len(targets) > 0 {
-		klog.V(2).InfoS("Setting deletion-cost annotations for targets and siblings", "targets", len(targets))
-		var err error
-		prevCosts, err = pl.annotateDeletionCosts(ctx, targets, DeletionCostTarget, DeletionCostKeep, rsDeltas)
-		if err != nil {
-			return fmt.Errorf("annotate deletion-cost: %w", err)
-		}
-	}
+		klog.V(2).InfoS("Evicting/awaiting eviction of targeted pods", "count", len(targets))
 
-	// 2) scale down owners
-	if len(rsDeltas) > 0 {
-		klog.V(2).InfoS("Scaling down owners for targeted ReplicaSets", "sets", len(rsDeltas))
-		for k, d := range rsDeltas {
-			if d == 0 {
-				continue
-			}
-			if err := pl.bumpOwnerScale(ctx, k.ns, k.name, d); err != nil {
-				return fmt.Errorf("scale down %s/%s by %d: %w", k.ns, k.name, d, err)
-			}
-		}
-	}
-
-	// 3) delete/wait pods (batched)
-	if len(targets) > 0 {
-		klog.V(2).InfoS("Deleting/awaiting deletion of targeted pods", "count", len(targets))
-
-		// Split: RS-owned (controller deletes) vs standalone (we delete)
-		var rsOwned, standalone []*v1.Pod
+		// We now evict *all* targets, regardless of owner.
+		// (Controller-owned will be recreated by their controller.)
 		for _, p := range targets {
-			if _, isRS := owningRS(p); isRS {
-				rsOwned = append(rsOwned, p)
-			} else {
-				standalone = append(standalone, p)
+			if err := pl.evictPod(ctx, p); err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("evict pod %s: %w", podRef(p), err)
 			}
 		}
 
-		// Issue deletes for all standalone first
-		for _, p := range standalone {
-			if err := pl.deletePod(ctx, p); err != nil {
-				return fmt.Errorf("delete non-RS pod %s: %w", podRef(p), err)
-			}
-		}
-
-		// Now wait once for all (RS-owned + standalone we just deleted)
-		var waitAll []*v1.Pod
-		waitAll = append(waitAll, rsOwned...)
-		waitAll = append(waitAll, standalone...)
-		if err := pl.waitPodsGone(ctx, waitAll); err != nil {
+		// Wait for all targeted pods to actually disappear
+		if err := pl.waitPodsGone(ctx, targets); err != nil {
 			return fmt.Errorf("wait for targeted pods gone: %w", err)
 		}
 	}
 
-	// 4) restore owner scales (no bind)
-	if len(rsDeltas) > 0 {
-		klog.V(2).InfoS("Restoring owner scales", "sets", len(rsDeltas))
-		for k, d := range rsDeltas {
-			if d == 0 {
-				continue
-			}
-			if err := pl.bumpOwnerScale(ctx, k.ns, k.name, -d); err != nil {
-				klog.ErrorS(err, "Failed to restore owner scale", "rs", fmt.Sprintf("%s/%s", k.ns, k.name), "delta", -d)
-			}
-		}
-		// Wait for RS-owned pods to be
-	}
-
-	// 5) recreate standalone pods (no bind)
+	// 2) recreate standalone pods (no bind)
 	for _, mv := range plan.PodMovements {
-		if _, isRS := owningRS(mv.Pod); isRS {
-			klog.V(2).InfoS("Skipping RS-owned move (controller will recreate)", "pod", podRef(mv.Pod), "to", mv.ToNode)
+		if _, ok := topWorkload(mv.Pod); ok {
+			klog.V(2).InfoS("Skipping workload-owned move recreate (controller will recreate)", "pod", podRef(mv.Pod), "to", mv.ToNode)
 			continue
 		}
 		klog.V(2).InfoS("Recreating moved standalone pod (no bind)", "pod", podRef(mv.Pod))
@@ -443,20 +383,14 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 	for _, v := range plan.VictimsToEvict {
-		if _, isRS := owningRS(v); isRS {
-			klog.V(2).InfoS("Skipping RS-owned eviction recreate (controller will recreate)", "pod", podRef(v))
+		if _, ok := topWorkload(v); ok {
+			klog.V(2).InfoS("Skipping workload-owned eviction recreate (controller will recreate)", "pod", podRef(v))
 			continue
 		}
 		klog.V(2).InfoS("Recreating evicted standalone pod (no bind)", "pod", podRef(v))
 		if err := pl.recreatePod(ctx, v, ""); err != nil {
 			return fmt.Errorf("recreate evicted pod %s: %w", podRef(v), err)
 		}
-	}
-
-	// 6) restore original deletion-costs
-	if len(prevCosts) > 0 {
-		klog.V(2).InfoS("Restoring previous pod-deletion-cost annotations", "count", len(prevCosts))
-		pl.restoreDeletionCosts(ctx, prevCosts)
 	}
 
 	return nil
@@ -475,7 +409,7 @@ func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Po
 		remaining[key{ns: p.Namespace, name: p.Name, uid: string(p.UID)}] = struct{}{}
 	}
 
-	return wait.PollUntilContextTimeout(ctx, PollInterval, PollTimeout, true, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, EvictionPollInterval, EvictionPollTimeout, true, func(ctx context.Context) (bool, error) {
 		if len(remaining) == 0 {
 			return true, nil
 		}
@@ -508,177 +442,6 @@ func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Po
 	})
 }
 
-func (pl *MyCrossNodePreemption) deletePod(ctx context.Context, pod *v1.Pod) error {
-	grace := int64(0)
-	pre := &metav1.Preconditions{UID: &pod.UID}
-	if derr := pl.client.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{
-		GracePeriodSeconds: &grace,
-		Preconditions:      pre,
-	}); derr != nil && !apierrors.IsNotFound(derr) {
-		return fmt.Errorf("delete pod %s: %w", podRef(pod), derr)
-	}
-	return nil
-}
-
-// ---------------------------- Deletion-cost helpers ----------------------------
-
-// annotateDeletionCosts sets low deletion-cost on target pods and high deletion-cost on their
-// RS siblings; it also fills rsDeltas with negative counts for initial scale-down.
-// It RETURNS the *previous* values of the annotation for every pod it touched.
-func (pl *MyCrossNodePreemption) annotateDeletionCosts(
-	ctx context.Context,
-	targets []*v1.Pod,
-	targetCost, siblingCost int,
-	rsDeltas map[struct{ ns, name string }]int32,
-) (prevDeletionCosts, error) {
-	type key struct{ ns, name string }
-	group := map[key][]*v1.Pod{}
-	prev := prevDeletionCosts{}
-
-	// Group targets per RS and populate rsDeltas
-	for _, p := range targets {
-		if rsName, ok := owningRS(p); ok {
-			k := key{ns: p.Namespace, name: rsName}
-			group[k] = append(group[k], p)
-			rsDeltas[k] -= 1
-		}
-	}
-
-	// For each RS: set target (low) and sibling (high); record previous for all touched
-	for k, pods := range group {
-		rs, err := pl.client.AppsV1().ReplicaSets(k.ns).Get(ctx, k.name, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get rs %s/%s: %w", k.ns, k.name, err)
-		}
-		selector, err := metav1.LabelSelectorAsSelector(rs.Spec.Selector)
-		if err != nil {
-			return nil, fmt.Errorf("selector for rs %s/%s: %w", k.ns, k.name, err)
-		}
-		podList, err := pl.client.CoreV1().Pods(k.ns).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
-		if err != nil {
-			return nil, fmt.Errorf("list rs pods %s/%s: %w", k.ns, k.name, err)
-		}
-
-		targetSet := map[string]struct{}{}
-		for _, p := range pods {
-			targetSet[p.Name] = struct{}{}
-		}
-
-		// Low cost on targets — record previous and patch
-		for _, p := range pods {
-			key := p.Namespace + "/" + p.Name
-			if _, seen := prev[key]; !seen {
-				if p.Annotations != nil {
-					if v, ok := p.Annotations[DeletionCostAnnotation]; ok {
-						vv := v
-						prev[key] = &vv
-					} else {
-						prev[key] = nil
-					}
-				} else {
-					prev[key] = nil
-				}
-			}
-			if err := pl.setDeletionCost(ctx, p.Namespace, p.Name, targetCost); err != nil && !apierrors.IsNotFound(err) {
-				return nil, fmt.Errorf("set deletion-cost target %s/%s: %w", p.Namespace, p.Name, err)
-			}
-		}
-
-		// High cost on siblings — record previous and patch
-		for i := range podList.Items {
-			sib := &podList.Items[i]
-			if !isControlledByRS(sib, k.name) {
-				continue
-			}
-			if _, isTarget := targetSet[sib.Name]; isTarget {
-				continue
-			}
-			key := sib.Namespace + "/" + sib.Name
-			if _, seen := prev[key]; !seen {
-				if sib.Annotations != nil {
-					if v, ok := sib.Annotations[DeletionCostAnnotation]; ok {
-						vv := v
-						prev[key] = &vv
-					} else {
-						prev[key] = nil
-					}
-				} else {
-					prev[key] = nil
-				}
-			}
-			if err := pl.setDeletionCost(ctx, sib.Namespace, sib.Name, siblingCost); err != nil && !apierrors.IsNotFound(err) {
-				return nil, fmt.Errorf("set deletion-cost keep %s/%s: %w", sib.Namespace, sib.Name, err)
-			}
-		}
-	}
-	return prev, nil
-}
-
-func (pl *MyCrossNodePreemption) setDeletionCost(ctx context.Context, ns, podName string, cost int) error {
-	patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%d"}}}`, DeletionCostAnnotation, cost))
-	_, err := pl.client.CoreV1().Pods(ns).Patch(ctx, podName, types.StrategicMergePatchType, patch, metav1.PatchOptions{
-		FieldManager: "my-crossnode-plugin",
-	})
-	return err
-}
-
-// restoreDeletionCosts tries to put back each pod's original value.
-// If prev is nil => delete annotation. If not found => ignore.
-func (pl *MyCrossNodePreemption) restoreDeletionCosts(ctx context.Context, prev prevDeletionCosts) {
-	for key, old := range prev {
-		ns, name := splitNSName(key) // key is "ns/name"
-		var patch []byte
-		if old == nil {
-			// remove annotation
-			patch = []byte(fmt.Sprintf(`{"metadata":{"annotations":{"%s":null}}}`, DeletionCostAnnotation))
-		} else {
-			// restore exact prior value
-			patch = []byte(fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, DeletionCostAnnotation, *old))
-		}
-		if _, err := pl.client.CoreV1().Pods(ns).Patch(ctx, name, types.StrategicMergePatchType, patch, metav1.PatchOptions{
-			FieldManager: "my-crossnode-plugin",
-		}); err != nil && !apierrors.IsNotFound(err) {
-			klog.ErrorS(err, "Failed to restore deletion-cost", "pod", key)
-		} else {
-			klog.V(2).InfoS("Restored deletion-cost", "pod", key)
-		}
-	}
-}
-
-func (pl *MyCrossNodePreemption) bumpOwnerScale(ctx context.Context, ns, rsName string, delta int32) error {
-	rs, err := pl.client.AppsV1().ReplicaSets(ns).Get(ctx, rsName, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	var depName string
-	for _, o := range rs.OwnerReferences {
-		if o.Controller != nil && *o.Controller && o.Kind == "Deployment" {
-			depName = o.Name
-			break
-		}
-	}
-	if depName != "" {
-		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			sc, err := pl.client.AppsV1().Deployments(ns).GetScale(ctx, depName, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			sc.Spec.Replicas += delta
-			_, err = pl.client.AppsV1().Deployments(ns).UpdateScale(ctx, depName, sc, metav1.UpdateOptions{})
-			return err
-		})
-	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		sc, err := pl.client.AppsV1().ReplicaSets(ns).GetScale(ctx, rsName, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		sc.Spec.Replicas += delta
-		_, err = pl.client.AppsV1().ReplicaSets(ns).UpdateScale(ctx, rsName, sc, metav1.UpdateOptions{})
-		return err
-	})
-}
-
 // Recreate a standalone pod without direct binding
 func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, _ string) error {
 	newp := orig.DeepCopy()
@@ -695,11 +458,11 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 	return nil
 }
 
-// clusterCapacityCheck returns true if, cluster-wide, the sum of current
+// clusterTotalCapacity returns true if, cluster-wide, the sum of current
 // free headroom + reclaimable from strictly lower-priority pods is enough to
 // satisfy the pending pod's CPU AND memory requests. If not, we can bail out
 // before the solver, since we know no solution can exist.
-func (pl *MyCrossNodePreemption) clusterCapacityCheck(pending *v1.Pod) (bool, string, error) {
+func (pl *MyCrossNodePreemption) clusterTotalCapacity(pending *v1.Pod) (bool, string, error) {
 	nodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return false, "snapshot error", err
@@ -730,7 +493,6 @@ func (pl *MyCrossNodePreemption) clusterCapacityCheck(pending *v1.Pod) (bool, st
 		var recCPU, recMem int64
 		for _, pi := range ni.Pods {
 			p := pi.Pod
-
 			// strictly lower priority than the pending pod
 			if getPodPriority(p) >= pPri {
 				continue
@@ -739,26 +501,36 @@ func (pl *MyCrossNodePreemption) clusterCapacityCheck(pending *v1.Pod) (bool, st
 			if p.Namespace == "kube-system" {
 				continue
 			}
-			if _, isMirror := p.Annotations["kubernetes.io/config.mirror"]; isMirror {
-				continue
-			}
-
 			recCPU += getPodCPURequest(p)
 			recMem += getPodMemoryRequest(p)
 		}
-
 		totalCPU += freeCPU + recCPU
 		totalMem += freeMem + recMem
 	}
-
 	if totalCPU >= wantCPU && totalMem >= wantMem {
 		return true, "", nil
 	}
-
 	reason := fmt.Sprintf(
 		"insufficient cluster capacity: need cpu=%dm mem=%dMiB; have cpu=%dm mem=%dMiB",
 		wantCPU, bytesToMiB(wantMem),
 		totalCPU, bytesToMiB(totalMem),
 	)
 	return false, reason, nil
+}
+
+func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) error {
+	grace := int64(0)
+	ev := &policyv1.Eviction{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			// Preconditions ensure we evict the exact instance we planned for.
+			UID: pod.UID,
+		},
+		DeleteOptions: &metav1.DeleteOptions{
+			GracePeriodSeconds: &grace,
+			Preconditions:      &metav1.Preconditions{UID: &pod.UID},
+		},
+	}
+	return pl.client.CoreV1().Pods(pod.Namespace).EvictV1(ctx, ev)
 }

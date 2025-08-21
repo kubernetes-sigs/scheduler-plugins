@@ -28,7 +28,6 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## TODOs
 
-- Make plugin work for DaemonSet, StatefulSet, Job, etc.
 - Consider to protect pods that have node-selectors, PDBs, and other rules.
 - Add batch scheduling.
 - Add a global timer, if plan is not completed within a certain timeframe, deactivate the plan.
@@ -36,31 +35,30 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 - Demo: Next week.
 
 ## Later TODOs
+
 - Faster algorithm using simple heuristics.
 - Fix Neri's code or know what has been done.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
 
 ## Optional TODOs
+
 - Consider to evict lower priority pods first, instead of just evicting the lowest amount of pods.
 
 ## Test
+
 - Double check that we are not looking at only running pods but rather all pods assigned to a node (allocated)
 - Check that the scheduler runs the plan correctly.
 - Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
 - Large scale test
+- Test that it works across workload type
 
 ## Write
+
 - Write something about the snapshotlister that it lags one scheduling cycle.
+- Write about deletion-cost and that it is hard to evict the right workload-owned pods, therefore I found the new eviction API.
 - Write about QueuingHints that it is new and we use it for reschedule queued pods.
 - Write about atomics and we only use configmap for debugging.
 - Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
-
-## Testing plan
-
-Paired replay (sequential) on a clean slate
-- Run the same workload twice on a clean cluster (or after a full reset): once with default, once with yours.
-- Fix all randomness: same pod count, priorities, affinities, creation timestamps, and random seed if your generator uses one.
-- Advantages: isolates each scheduler; best for measuring packing efficiency and disruption without interference.
 
 ## Overview
 

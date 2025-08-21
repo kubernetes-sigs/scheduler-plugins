@@ -26,9 +26,9 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	}
 
 	// RS pods: allow nodes with remaining > 0
-	if rs, ok := owningRS(pod); ok {
-		key := rsKey(pod.Namespace, rs)
-		if _, inPlan := sp.RSDesiredPerNode[key]; !inPlan {
+	if wk, ok := topWorkload(pod); ok {
+		key := wk.String()
+		if _, inPlan := sp.WorkloadDesiredPerNode[key]; !inPlan {
 			pl.blocked.add(pod.UID, pod.Namespace, pod.Name)
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: RS not in active plan")
 		}

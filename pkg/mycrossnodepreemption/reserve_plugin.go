@@ -38,15 +38,15 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 		return framework.NewStatus(framework.Success)
 	}
 
-	rs, ok := owningRS(pod)
+	wk, ok := topWorkload(pod)
 
 	// If not RS-pod, allow reservation
 	if !ok {
 		return framework.NewStatus(framework.Success)
 	}
 
-	key := rsKey(pod.Namespace, rs)
-	perNode, ok := sp.RSDesiredPerNode[key]
+	key := wk.String()
+	perNode, ok := sp.WorkloadDesiredPerNode[key]
 	if !ok || perNode[node] == 0 {
 		return framework.NewStatus(framework.Unschedulable, "stop-the-world: RS not allowed on node")
 	}
