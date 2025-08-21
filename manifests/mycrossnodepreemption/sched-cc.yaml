@@ -5,10 +5,16 @@ kind: KubeSchedulerConfiguration
 profiles:
 - schedulerName: default-scheduler
   plugins:
-    filter:
+    preEnqueue:
+      enabled:
+        - name: MyCrossNodePreemption
+    preFilter:
       enabled:
         - name: MyCrossNodePreemption
     postFilter:
+      enabled:
+        - name: MyCrossNodePreemption
+    reserve:
       enabled:
         - name: MyCrossNodePreemption
     postBind:

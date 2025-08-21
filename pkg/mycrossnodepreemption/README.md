@@ -28,6 +28,10 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## TODOs
 
+- Handle the case better when the preempter is an RS-node. Just make it part of the RS-quota
+- Add a global timer, if plan is not completed within a certain timeframe, deactivate the plan.
+- Use QueuingHints for rescheduling queued pods.
+- Use Permit to wait for node resources becoming available instead of waiting for deletion in PostFilter.
 - Use atomic to guard plan execution and use other extension points to guard against pods currently trying to be scheduled since we took the snapshot.
 - Double check that we are not looking at only running pods but rather all pods assigned to a node (allocated)
 - Look how to put pods in correct queue for faster plan execution and other pods not to be scheduled.

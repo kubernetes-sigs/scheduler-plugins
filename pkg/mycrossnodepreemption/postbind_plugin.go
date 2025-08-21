@@ -11,10 +11,7 @@ import (
 )
 
 // PostBind runs after a pod is bound by the scheduler.
-// A single kube‑scheduler runs several parallel workers.
-// Each successful bind runs PostBind independently. So 10 pods can hit PostBind at nearly the same time.
-// We double-check that the binding is consistent with the active plan. If not, we
-// deactivate the plan immediately and log an error.
+// We check if the plan is completed.
 func (pl *MyCrossNodePreemption) PostBind(
 	ctx context.Context,
 	state *framework.CycleState,
@@ -26,61 +23,12 @@ func (pl *MyCrossNodePreemption) PostBind(
 		return
 	}
 
-	fail := func(reason string) {
-		klog.ErrorS(nil, "PostBind: plan violation; deactivating active plan",
-			"pod", podRef(pod), "node", nodeName, "reason", reason)
-		pl.clearActivePlan()              // stop gating immediately
-		pl.markPlanCompleted(ctx, cmName) // patch CM with Completed/CompletedAt
-	}
-
-	// 1) Pending preemptor must bind to TargetNode
-	if string(pod.UID) == sp.PendingUID {
-		if nodeName != sp.TargetNode {
-			fail("pending pod bound to non-target node")
-			return // violation -> stop
-		}
-		// 2) Standalone planned-by-name must bind to its planned node
-	} else if tgt, ok := sp.PlacementsByName[pod.Name]; ok {
-		if nodeName != tgt {
-			fail("standalone pod bound to wrong node")
-			return
-		}
-		// 3) RS pods: ensure this bind does not exceed per-node target
-	} else if rsName, ok := owningRS(pod); ok {
-		key := rsKey(pod.Namespace, rsName)
-		if perNode, ok := sp.RSDesiredPerNode[key]; ok {
-			want := perNode[nodeName]
-			if want == 0 {
-				fail("RS pod bound on node without a slot")
-				return
-			}
-			ni, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-			if err != nil || ni == nil || ni.Node() == nil {
-				fail("unable to validate RS per-node count after bind")
-				return
-			}
-			cur := 0
-			for _, pi := range ni.Pods {
-				if pi.Pod.Namespace == pod.Namespace {
-					if r, ok := owningRS(pi.Pod); ok && r == rsName {
-						cur++
-					}
-				}
-			}
-			if cur > want+1 {
-				fail("RS per-node target exceeded")
-				return
-			}
-		}
-	}
-
-	// Always run a completion check after any successful bind.
 	if ok, err := pl.isPlanCompleted(ctx, sp); err != nil {
 		klog.ErrorS(err, "PostBind: completion check failed")
 	} else if ok {
+		pl.clearActivePlan()
+		pl.markPlanCompleted(ctx, cmName)
 		klog.InfoS("PostBind: plan completed")
-		pl.clearActivePlan()              // clear fast path first
-		pl.markPlanCompleted(ctx, cmName) // persist Completed/CompletedAt in CM (audit)
 	} else {
 		klog.V(2).InfoS("PostBind: plan still active")
 	}

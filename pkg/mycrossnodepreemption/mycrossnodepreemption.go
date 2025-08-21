@@ -32,21 +32,38 @@ const (
 	ConfigMapLabelKey   = "crossnode-plan"
 	ConfigMapNamePrefix = "crossnode-plan-" // used to find plan CMs
 
-	PollTimeout  = 30 * time.Second
+	PollTimeout  = 60 * time.Second
 	PollInterval = 1 * time.Second
 
 	PythonSolverPath    = "/opt/solver/main.py"
-	PythonSolverTimeout = 60 * time.Second
+	PythonSolverTimeout = 80 * time.Second
 
 	DeletionCostTarget = math.MinInt32
 	DeletionCostKeep   = math.MaxInt32
 )
 
+// ---------------------------- Plugin wiring -----------------------
+func (pl *MyCrossNodePreemption) Name() string { return Name }
+
+func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
+	if obj != nil {
+		klog.V(2).InfoS("Plugin configuration", "config", obj)
+	}
+	client, err := kubernetes.NewForConfig(h.KubeConfig())
+	if err != nil {
+		return nil, err
+	}
+	klog.InfoS("Plugin initialized", "name", Name, "version", Version)
+	return &MyCrossNodePreemption{handle: h, client: client}, nil
+}
+
+// ---------------------------- Types -----------------------
 type MyCrossNodePreemption struct {
 	handle       framework.Handle
 	client       kubernetes.Interface
-	activePlan   atomic.Value // stores *StoredPlan or nil
-	activePlanID atomic.Value // string (e.g., cmName or a UUID)
+	activePlan   atomic.Value              // stores *StoredPlan or nil
+	activePlanID atomic.Value              // string (e.g., cmName or a UUID)
+	slotsPtr     atomic.Pointer[planSlots] // atomic planSlots pointer
 }
 
 type StoredPlan struct {
@@ -130,19 +147,11 @@ type SolverOutput struct {
 	Evictions     []SolverEviction  `json:"evictions"`
 }
 
-// ---------------------------- Plugin wiring -----------------------
-func (pl *MyCrossNodePreemption) Name() string { return Name }
+type rsNodeCounters map[string]map[string]*atomic.Int32 // rsKey -> node -> remaining
 
-func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
-	if obj != nil {
-		klog.V(2).InfoS("Plugin configuration", "config", obj)
-	}
-	client, err := kubernetes.NewForConfig(h.KubeConfig())
-	if err != nil {
-		return nil, err
-	}
-	klog.InfoS("Plugin initialized", "name", Name, "version", Version)
-	return &MyCrossNodePreemption{handle: h, client: client}, nil
+type planSlots struct {
+	planID    string
+	remaining rsNodeCounters
 }
 
 // ---------------------------- Plan helpers (shared) -----------------------
@@ -151,11 +160,108 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 	pl.activePlan.Store(sp)
 	pl.activePlanID.Store(id)
+
+	// 1) Start from desired per-node targets
+	desired := map[string]map[string]int{}
+	for rs, perNode := range sp.RSDesiredPerNode {
+		desired[rs] = map[string]int{}
+		for n, want := range perNode {
+			desired[rs][n] = want
+		}
+	}
+
+	// 2) Build a snapshot: current counts per RS/node, and a uid->pod map
+	cur := map[string]map[string]int{} // rsKey -> node -> count
+	podsByUID := map[string]*v1.Pod{}
+	if l := pl.handle.SnapshotSharedLister(); l != nil {
+		if nodes, err := l.NodeInfos().List(); err == nil {
+			for _, ni := range nodes {
+				if ni.Node() == nil {
+					continue
+				}
+				for _, pi := range ni.Pods {
+					p := pi.Pod
+					podsByUID[string(p.UID)] = p
+					if rsName, ok := owningRS(p); ok && p.Spec.NodeName != "" {
+						rk := rsKey(p.Namespace, rsName)
+						if _, tracked := desired[rk]; tracked {
+							if _, ok := cur[rk]; !ok {
+								cur[rk] = map[string]int{}
+							}
+							cur[rk][p.Spec.NodeName]++
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 3) Count planned OUT (leaving) RS pods per node from the lite plan.
+	//    We only add plannedOut for RS/node pairs that exist in desired,
+	//    because nodes not in desired shouldn't get new placements.
+	plannedOut := map[string]map[string]int{} // rsKey -> node -> count
+	addOut := func(uid string) {
+		if p := podsByUID[uid]; p != nil {
+			if rsName, ok := owningRS(p); ok && p.Spec.NodeName != "" {
+				rk := rsKey(p.Namespace, rsName)
+				if _, tracked := desired[rk]; !tracked {
+					return // we don't steer this RS via quotas
+				}
+				if _, ok := plannedOut[rk]; !ok {
+					plannedOut[rk] = map[string]int{}
+				}
+				plannedOut[rk][p.Spec.NodeName]++
+			}
+		}
+	}
+	// Movements and Evictions indicate deletions of the original pods
+	for _, mv := range sp.Plan.Movements {
+		addOut(mv.Pod.UID)
+	}
+	for _, ev := range sp.Plan.Evictions {
+		addOut(ev.UID)
+	}
+
+	// 4) Compute remaining = desired - current + plannedOut (clamped at >=0)
+	rem := map[string]map[string]int{}
+	for rs, perNode := range desired {
+		rem[rs] = map[string]int{}
+		for node, want := range perNode {
+			have := 0
+			if cur[rs] != nil {
+				have = cur[rs][node]
+			}
+			out := 0
+			if plannedOut[rs] != nil {
+				out = plannedOut[rs][node]
+			}
+			r := want - have + out
+			if r < 0 {
+				r = 0
+			}
+			rem[rs][node] = r
+		}
+	}
+
+	// 5) Convert to atomics
+	counters := make(rsNodeCounters, len(rem))
+	for rs, byNode := range rem {
+		inner := make(map[string]*atomic.Int32, len(byNode))
+		for node, v := range byNode {
+			ctr := new(atomic.Int32)
+			ctr.Store(int32(v))
+			inner[node] = ctr
+		}
+		counters[rs] = inner
+	}
+	ps := &planSlots{planID: id, remaining: counters}
+	pl.slotsPtr.Store(ps)
 }
 
 func (pl *MyCrossNodePreemption) clearActivePlan() {
 	pl.activePlan.Store((*StoredPlan)(nil))
 	pl.activePlanID.Store("")
+	pl.slotsPtr.Store(nil)
 }
 
 func (pl *MyCrossNodePreemption) getActivePlan() (*StoredPlan, string) {
@@ -284,17 +390,17 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan) (bool, error) {
-	// A) Preemptor must be bound to TargetNode
+	// A) If the preemptor Pod (by the recorded name) still exists, it must be bound to TargetNode.
+	//    This applies whether it's RS-owned or not. If NotFound, continue with B/C.
 	pns, pname := splitNSName(sp.PendingPod)
 	preemptor, err := pl.client.CoreV1().Pods(pns).Get(ctx, pname, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
+	if err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("get pending pod: %w", err)
 	}
-	if preemptor.Spec.NodeName != sp.TargetNode {
-		return false, nil
+	if err == nil {
+		if preemptor.Spec.NodeName != sp.TargetNode {
+			return false, nil
+		}
 	}
 
 	// B) Standalone/name-addressed pods placed on their target node
@@ -351,7 +457,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 		}
 
 		for node, want := range perNode {
-			if counts[node] < want {
+			if counts[node] != want {
 				return false, nil
 			}
 		}
@@ -488,6 +594,11 @@ func (pl *MyCrossNodePreemption) materializePlanDocs(
 		if !ok || p == nil {
 			continue
 		}
+		// Skip the pending pod – its placement is enforced by UID pinning, not RS counters
+		if uid == string(pending.UID) {
+			continue
+		}
+
 		if rsName, okRS := owningRS(p); okRS {
 			k := rsKey(p.Namespace, rsName)
 			if _, ok := rsDesired[k]; !ok {
@@ -495,8 +606,7 @@ func (pl *MyCrossNodePreemption) materializePlanDocs(
 			}
 			rsDesired[k][node]++
 		} else {
-			// Standalone: enforce placement by pod *name* (Filter checks name -> node).
-			byName[p.Name] = node
+			byName[p.Namespace+"/"+p.Name] = node // use ns/name (see below)
 		}
 	}
 

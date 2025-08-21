@@ -29,14 +29,20 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	pending *v1.Pod,
 	_ framework.NodeToStatusMap,
 ) (*framework.PostFilterResult, *framework.Status) {
+	// Don't allow another run of PostFilter if an active plan exists
+	sp, _ := pl.getActivePlan()
+	if sp != nil && !sp.Completed {
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "active plan exists")
+	}
 
 	klog.InfoS("PostFilter start", "pending pod", klog.KObj(pending),
 		"cpu(m)", getPodCPURequest(pending),
 		"mem(bytes)", getPodMemoryRequest(pending),
 	)
 
-	// ---- Early cluster-sum upper-bound check ----
-	if ok, reason, err := pl.earlyClusterCapacityCheck(pending); err != nil {
+	// Early cluster-sum to avoid running solver if we already know that
+	// moving/rejecting lower priority pods won't fit the preemptor.
+	if ok, reason, err := pl.clusterCapacityCheck(pending); err != nil {
 		klog.ErrorS(err, "Early cluster capacity check failed")
 		return nil, framework.NewStatus(framework.Error, "capacity check failed")
 	} else if !ok {
@@ -45,9 +51,8 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	}
 
 	// Run solver
-	solveCtx, cancel := context.WithTimeout(ctx, PythonSolverTimeout+5*time.Second)
+	solveCtx, cancel := context.WithTimeout(ctx, PythonSolverTimeout)
 	defer cancel()
-
 	start := time.Now()
 	out, err := pl.runPythonOptimizer(solveCtx, pending, PythonSolverTimeout)
 	if err != nil {
@@ -55,7 +60,6 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
 	klog.InfoS("PostFilter: solver executed", "status", out.Status, "took", time.Since(start))
-
 	plan, err := pl.translatePlanFromSolver(out, pending)
 	if err != nil {
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
@@ -64,15 +68,13 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		return nil, framework.NewStatus(framework.Unschedulable, "no actionable plan")
 	}
 
-	pl.logPlan(plan)
-
-	// Export ACTIVE plan for Filter
+	// Export active plan to ConfigMap for debugging purposes
 	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending)
 	if err != nil {
 		klog.ErrorS(err, "PostFilter: Failed to export plan to ConfigMap (continuing with in-memory only)")
 	}
 
-	// Build the StoredPlan in-memory (same data you put into CM)
+	// Build StoredPlan in-memory (same data as ConfigMap)
 	lite, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
 	if err != nil {
 		klog.ErrorS(err, "PostFilter: failed to materialize plan docs")
@@ -94,11 +96,33 @@ func (pl *MyCrossNodePreemption) PostFilter(
 
 	pl.setActivePlan(inMem, cmName)
 
-	// Execute the plan (evictions/recreates)
+	klog.InfoS("PostFilter: executing plan",
+		"targetNode", plan.TargetNode,
+		"movements", len(plan.PodMovements),
+		"evictions", len(plan.VictimsToEvict),
+	)
+	for i, mv := range plan.PodMovements {
+		klog.V(2).InfoS("PostFilter: movement plan",
+			"idx_move", i+1, "pod", podRef(mv.Pod),
+			"from", mv.FromNode, "to", mv.ToNode,
+			"cpu(m)", mv.CPURequest, "mem(bytes)", mv.MemoryRequest,
+		)
+	}
+	for i, v := range plan.VictimsToEvict {
+		klog.V(2).InfoS("PostFilter: eviction plan",
+			"idx_evict", i+1, "pod", podRef(v),
+			"node", v.Spec.NodeName,
+			"cpu(m)", getPodCPURequest(v), "mem(bytes)", getPodMemoryRequest(v),
+		)
+	}
+
+	// Execute plan (evictions/recreates)
 	if err := pl.executePlan(ctx, plan); err != nil {
 		klog.ErrorS(err, "PostFilter: plan execution failed")
 		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 	}
+
+	klog.InfoS("PostFilter: plan executed successfully")
 
 	return &framework.PostFilterResult{
 		NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.TargetNode},
@@ -249,6 +273,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	out *SolverOutput,
 	pending *v1.Pod,
 ) (string, error) {
+	// Build the lite plan from the concrete plan we execute.
 	litePlan := PodAssignmentPlanLite{TargetNode: plan.TargetNode}
 	for _, mv := range plan.PodMovements {
 		litePlan.Movements = append(litePlan.Movements, MovementLite{
@@ -265,37 +290,8 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		})
 	}
 
-	// uid -> pod
-	podsByUID := map[string]*v1.Pod{}
-	if all, err := pl.handle.SnapshotSharedLister().NodeInfos().List(); err == nil {
-		for _, ni := range all {
-			for _, pi := range ni.Pods {
-				podsByUID[string(pi.Pod.UID)] = pi.Pod
-			}
-		}
-	}
-	podsByUID[string(pending.UID)] = pending
-
-	byName := make(map[string]string)
-	rsDesired := map[string]map[string]int{}
-
-	for uid, node := range out.Placements {
-		p, ok := podsByUID[uid]
-		if !ok || p == nil {
-			continue
-		}
-		if rsName, okRS := owningRS(p); okRS {
-			k := rsKey(p.Namespace, rsName)
-			if _, ok := rsDesired[k]; !ok {
-				rsDesired[k] = map[string]int{}
-			}
-			rsDesired[k][node]++
-		} else {
-			// Standalone: planned node by *name*; Filter will enforce.
-			byName[p.Name] = node
-		}
-	}
-
+	// Single source of truth for byName + RSDesiredPerNode.
+	// Ensure materializePlanDocs skips uid == pending.UID and uses ns/name for standalone.
 	litePlan, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
 	if err != nil {
 		return "", err
@@ -311,8 +307,8 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		TargetNode:       plan.TargetNode,
 		SolverOutput:     out,
 		Plan:             litePlan,
-		PlacementsByName: byName,
-		RSDesiredPerNode: rsDesired,
+		PlacementsByName: byName,    // keys are "ns/name"
+		RSDesiredPerNode: rsDesired, // pending pod excluded
 	}
 
 	raw, err := json.MarshalIndent(doc, "", "  ")
@@ -333,32 +329,8 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		return "", err
 	}
 
-	// Maintain history
 	_ = pl.pruneOldPlans(ctx, 20)
-
 	return name, nil
-}
-
-func (pl *MyCrossNodePreemption) logPlan(plan *PodAssignmentPlan) {
-	klog.InfoS("PostFilter: execution plan",
-		"targetNode", plan.TargetNode,
-		"movements", len(plan.PodMovements),
-		"evictions", len(plan.VictimsToEvict),
-	)
-	for i, mv := range plan.PodMovements {
-		klog.V(2).InfoS("PostFilter: movement plan",
-			"idx_move", i+1, "pod", podRef(mv.Pod),
-			"from", mv.FromNode, "to", mv.ToNode,
-			"cpu(m)", mv.CPURequest, "mem(bytes)", mv.MemoryRequest,
-		)
-	}
-	for i, v := range plan.VictimsToEvict {
-		klog.V(2).InfoS("PostFilter: eviction plan",
-			"idx_evict", i+1, "pod", podRef(v),
-			"node", v.Spec.NodeName,
-			"cpu(m)", getPodCPURequest(v), "mem(bytes)", getPodMemoryRequest(v),
-		)
-	}
 }
 
 // prevDeletionCosts maps "ns/name" -> original value pointer.
@@ -444,8 +416,6 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 			return fmt.Errorf("wait for targeted pods gone: %w", err)
 		}
 	}
-
-	// DO NOT bind pending pod here — Filter will gate it to target node.
 
 	// 4) restore owner scales (no bind)
 	if len(rsDeltas) > 0 {
@@ -725,11 +695,11 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 	return nil
 }
 
-// earlyClusterCapacityCheck returns true if, cluster-wide, the sum of current
+// clusterCapacityCheck returns true if, cluster-wide, the sum of current
 // free headroom + reclaimable from strictly lower-priority pods is enough to
 // satisfy the pending pod's CPU AND memory requests. If not, we can bail out
 // before the solver, since we know no solution can exist.
-func (pl *MyCrossNodePreemption) earlyClusterCapacityCheck(pending *v1.Pod) (bool, string, error) {
+func (pl *MyCrossNodePreemption) clusterCapacityCheck(pending *v1.Pod) (bool, string, error) {
 	nodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return false, "snapshot error", err
@@ -786,7 +756,7 @@ func (pl *MyCrossNodePreemption) earlyClusterCapacityCheck(pending *v1.Pod) (boo
 	}
 
 	reason := fmt.Sprintf(
-		"insufficient cluster capacity: need cpu=%.1fm mem=%dMiB; have cpu=%.1fm mem=%dMiB",
+		"insufficient cluster capacity: need cpu=%dm mem=%dMiB; have cpu=%dm mem=%dMiB",
 		wantCPU, bytesToMiB(wantMem),
 		totalCPU, bytesToMiB(totalMem),
 	)
