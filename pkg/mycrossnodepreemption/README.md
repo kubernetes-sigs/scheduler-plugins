@@ -28,32 +28,32 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## TODOs
 
-- Test that QueueingHint works.
 - Make plugin work for DaemonSet, StatefulSet, Job, etc.
+- Consider to protect pods that have node-selectors, PDBs, and other rules.
+- Add batch scheduling.
 - Add a global timer, if plan is not completed within a certain timeframe, deactivate the plan.
-- Double check that we are not looking at only running pods but rather all pods assigned to a node (allocated)
-- Look how to put pods in correct queue for faster plan execution and other pods not to be scheduled.
-- Write something about the snapshotlister that it lags one scheduling cycle.
 - Cleanup code (incl. python) and write proper readme.
-- Consider to protect pods that have node-selectors, PDBs, and other rules
-- Add a diff in python code, so only needed changes are sent to plugin.
-- Check that the scheduler runs the plan correctly.
-- Consider to evict lower priority pods first, instead of just evicting the lowest amount of pods.
-- Simplify code and update readme.
 - Demo: Next week.
-- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
 
-## Later
-
+## Later TODOs
+- Faster algorithm using simple heuristics.
 - Fix Neri's code or know what has been done.
-- Make my own heuristic based optimization plan.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
 
-## Optional improvements
+## Optional TODOs
+- Consider to evict lower priority pods first, instead of just evicting the lowest amount of pods.
 
-- Only send needed changes from python to go.
-- Consider to make a delay when evicting pods to avoid race conditions when they are recreated.
-- Maybe different order of constraints should be considered.
+## Test
+- Double check that we are not looking at only running pods but rather all pods assigned to a node (allocated)
+- Check that the scheduler runs the plan correctly.
+- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
+- Large scale test
+
+## Write
+- Write something about the snapshotlister that it lags one scheduling cycle.
+- Write about QueuingHints that it is new and we use it for reschedule queued pods.
+- Write about atomics and we only use configmap for debugging.
+- Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
 
 ## Testing plan
 
