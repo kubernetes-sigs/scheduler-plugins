@@ -44,15 +44,11 @@ func (pl *MyCrossNodePreemption) PreEnqueue(
 		if _, inPlan := sp.RSDesiredPerNode[key]; inPlan {
 			return framework.NewStatus(framework.Success)
 		}
-		return framework.NewStatus(
-			framework.UnschedulableAndUnresolvable,
-			"stop-the-world: RS not in active plan",
-		)
+		pl.blocked.add(pod.UID, pod.Namespace, pod.Name)
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: RS not in active plan")
 	}
 
 	// Everything else waits while the plan executes.
-	return framework.NewStatus(
-		framework.UnschedulableAndUnresolvable,
-		"stop-the-world: pod not in active plan",
-	)
+	pl.blocked.add(pod.UID, pod.Namespace, pod.Name)
+	return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: pod not in active plan")
 }

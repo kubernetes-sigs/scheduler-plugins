@@ -37,7 +37,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 
 	klog.InfoS("PostFilter start", "pending pod", klog.KObj(pending),
 		"cpu(m)", getPodCPURequest(pending),
-		"mem(bytes)", getPodMemoryRequest(pending),
+		"mem(MiB)", bytesToMiB(getPodMemoryRequest(pending)),
 	)
 
 	// Early cluster-sum to avoid running solver if we already know that
@@ -47,7 +47,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		return nil, framework.NewStatus(framework.Error, "capacity check failed")
 	} else if !ok {
 		klog.InfoS("Early capacity check: unschedulable regardless of solver", "reason", reason)
-		return nil, framework.NewStatus(framework.Unschedulable, reason)
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, reason)
 	}
 
 	// Run solver
@@ -57,15 +57,15 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	out, err := pl.runPythonOptimizer(solveCtx, pending, PythonSolverTimeout)
 	if err != nil {
 		klog.ErrorS(err, "PostFilter: optimizer error", "took", time.Since(start))
-		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	klog.InfoS("PostFilter: solver executed", "status", out.Status, "took", time.Since(start))
 	plan, err := pl.translatePlanFromSolver(out, pending)
 	if err != nil {
-		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	if plan == nil || (len(plan.PodMovements) == 0 && len(plan.VictimsToEvict) == 0 && out.NominatedNode == "") {
-		return nil, framework.NewStatus(framework.Unschedulable, "no actionable plan")
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "no actionable plan")
 	}
 
 	// Export active plan to ConfigMap for debugging purposes
@@ -78,7 +78,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	lite, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
 	if err != nil {
 		klog.ErrorS(err, "PostFilter: failed to materialize plan docs")
-		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	inMem := &StoredPlan{
@@ -105,21 +105,21 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		klog.V(2).InfoS("PostFilter: movement plan",
 			"idx_move", i+1, "pod", podRef(mv.Pod),
 			"from", mv.FromNode, "to", mv.ToNode,
-			"cpu(m)", mv.CPURequest, "mem(bytes)", mv.MemoryRequest,
+			"cpu(m)", mv.CPURequest, "mem(MiB)", bytesToMiB(mv.MemoryRequest),
 		)
 	}
 	for i, v := range plan.VictimsToEvict {
 		klog.V(2).InfoS("PostFilter: eviction plan",
 			"idx_evict", i+1, "pod", podRef(v),
 			"node", v.Spec.NodeName,
-			"cpu(m)", getPodCPURequest(v), "mem(bytes)", getPodMemoryRequest(v),
+			"cpu(m)", getPodCPURequest(v), "mem(MiB)", bytesToMiB(getPodMemoryRequest(v)),
 		)
 	}
 
 	// Execute plan (evictions/recreates)
 	if err := pl.executePlan(ctx, plan); err != nil {
 		klog.ErrorS(err, "PostFilter: plan execution failed")
-		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	klog.InfoS("PostFilter: plan executed successfully")

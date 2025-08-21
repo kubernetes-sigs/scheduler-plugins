@@ -29,7 +29,8 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if rs, ok := owningRS(pod); ok {
 		key := rsKey(pod.Namespace, rs)
 		if _, inPlan := sp.RSDesiredPerNode[key]; !inPlan {
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "stop-the-world: RS not in active plan")
+			pl.blocked.add(pod.UID, pod.Namespace, pod.Name)
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: RS not in active plan")
 		}
 
 		// Allow nodes not yet allocated to their quotas
@@ -45,7 +46,8 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 			}
 		}
 		if allowed.Len() == 0 {
-			return nil, framework.NewStatus(framework.Unschedulable, "stop-the-world: RS node quotas exhausted")
+			pl.blocked.add(pod.UID, pod.Namespace, pod.Name)
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: RS-quotas exhausted; wait until plan is completed")
 		}
 		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
 	}
@@ -57,7 +59,8 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	}
 
 	// Everyone else must wait until the plan is completed
-	return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "stop-the-world: pod not in active plan")
+	pl.blocked.add(pod.UID, pod.Namespace, pod.Name)
+	return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: RS/pod not in active plan")
 }
 
 func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtensions {

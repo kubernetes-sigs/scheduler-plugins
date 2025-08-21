@@ -9,6 +9,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -54,7 +55,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, err
 	}
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version)
-	return &MyCrossNodePreemption{handle: h, client: client}, nil
+	return &MyCrossNodePreemption{handle: h, client: client, blocked: newBlockedSet()}, nil
 }
 
 // ---------------------------- Types -----------------------
@@ -64,6 +65,7 @@ type MyCrossNodePreemption struct {
 	activePlan   atomic.Value              // stores *StoredPlan or nil
 	activePlanID atomic.Value              // string (e.g., cmName or a UUID)
 	slotsPtr     atomic.Pointer[planSlots] // atomic planSlots pointer
+	blocked      *blockedSet
 }
 
 type StoredPlan struct {
@@ -532,6 +534,55 @@ func podRef(p *v1.Pod) string {
 
 func bytesToMiB(b int64) int64 {
 	return b / (1024 * 1024)
+}
+
+type blockedInfo struct {
+	ns    string
+	name  string
+	until time.Time
+}
+
+type blockedSet struct {
+	mu sync.RWMutex
+	m  map[types.UID]blockedInfo
+}
+
+func newBlockedSet() *blockedSet { return &blockedSet{m: map[types.UID]blockedInfo{}} }
+
+// Add a pod to the blocked set for 5 minutes.
+func (s *blockedSet) add(uid types.UID, ns, name string) {
+	s.mu.Lock()
+	s.m[uid] = blockedInfo{
+		ns:    ns,
+		name:  name,
+		until: time.Now().Add(5 * time.Minute),
+	}
+	s.mu.Unlock()
+}
+
+// Has returns true if the uid is still blocked (and not expired yet).
+func (s *blockedSet) has(uid types.UID) bool {
+	s.mu.RLock()
+	bi, ok := s.m[uid]
+	s.mu.RUnlock()
+	return ok && time.Now().Before(bi.until)
+}
+
+// snapshot returns a stable copy of entries.
+func (s *blockedSet) snapshot() map[types.UID]blockedInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[types.UID]blockedInfo, len(s.m))
+	for k, v := range s.m {
+		out[k] = v
+	}
+	return out
+}
+
+func (s *blockedSet) clear() {
+	s.mu.Lock()
+	s.m = map[types.UID]blockedInfo{}
+	s.mu.Unlock()
 }
 
 func isNodeUsable(ni *framework.NodeInfo) bool {
