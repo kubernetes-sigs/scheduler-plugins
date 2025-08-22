@@ -38,6 +38,7 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## Later TODOs
 
+- Third mode: Samle pods der ikke kan scheduleres af default scheduler op i postfilter og kør derefter solver og brug filter til at assigne til node. Altså køres pods potentielt igennem to gange.
 - Faster algorithm using simple heuristics.
 - Fix Neri's code or know what has been done.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption

@@ -10,11 +10,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// PostBind runs after a pod is bound by the scheduler.
-// When the preemptor binds and our plan goals are satisfied,
-// we mark the plan completed and clear the "blocked" set.
-// Requeueing of previously blocked pods is then driven by our
-// QueueingHintFn registered on Pod/ConfigMap events.
 func (pl *MyCrossNodePreemption) PostBind(
 	ctx context.Context,
 	_ *framework.CycleState,
@@ -29,15 +24,15 @@ func (pl *MyCrossNodePreemption) PostBind(
 	ok, err := pl.isPlanCompleted(ctx, sp)
 	if err != nil {
 		pl.onPlanSettled()
-		klog.ErrorS(err, "PostBind: completion check failed")
+		klog.ErrorS(err, "completion check failed")
 		return
 	}
 	if !ok {
-		klog.V(2).InfoS("PostBind: plan still active")
+		klog.V(2).InfoS("plan still active")
 		return
 	}
 
 	if pl.onPlanSettled() {
-		pl.markPlanCompleted(ctx, planID) // safe to call after; it’s idempotent
+		pl.markPlanCompleted(ctx, planID) // idempotent
 	}
 }

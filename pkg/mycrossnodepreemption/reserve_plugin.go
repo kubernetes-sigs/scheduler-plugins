@@ -18,10 +18,8 @@ type rsReservationState struct {
 	key reservationKey
 }
 
-// rsReservationKey is used as the key for storing reservation state in CycleState.
 const rsReservationKey framework.StateKey = "myx/rsReservation"
 
-// Clone implements framework.StateData interface for rsReservationState.
 func (s *rsReservationState) Clone() framework.StateData {
 	return &rsReservationState{
 		key: s.key,
@@ -34,13 +32,12 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 		return framework.NewStatus(framework.Success)
 	}
 
-	if string(pod.UID) == sp.PendingUID {
+	// Pending preemptor (only in single-preemptor mode) doesn't consume RS quota here.
+	if sp.TargetNode != "" && string(pod.UID) == sp.PendingUID {
 		return framework.NewStatus(framework.Success)
 	}
 
 	wk, ok := topWorkload(pod)
-
-	// If not RS-pod, allow reservation
 	if !ok {
 		return framework.NewStatus(framework.Success)
 	}
@@ -76,7 +73,6 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	}
 }
 
-// If pod reserved a slot but was not scheduled, release the reservation
 func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, _ string) {
 	v, err := st.Read(rsReservationKey)
 	if err != nil {
@@ -99,5 +95,5 @@ func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.Cy
 	if !ok {
 		return
 	}
-	ctr.Add(1) // atomic increment back
+	ctr.Add(1)
 }

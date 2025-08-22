@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 # main.py
 
 import sys, json
@@ -7,16 +6,19 @@ from ortools.sat.python import cp_model
 
 
 def solve(instance: dict) -> dict:
-    nodes = instance["nodes"]
-    pods  = instance["pods"]
+    # Be defensive: treat missing or null arrays as empty lists.
+    nodes = instance.get("nodes") or []
+    pods  = instance.get("pods")  or []
 
-    # --- NEW: multi-preemptor support (backward compatible) ---
+    # If there are no nodes, we cannot produce a plan.
+    if not nodes:
+        return {"status": "ERROR", "message": "no nodes provided"}
+
+    # --- multi/single-preemptor handling (safe access) ---
     preemptors = list(instance.get("preemptors") or [])
-    if not preemptors:
-        pre = instance.get("preemptor")
-        if not pre:
-            return {"status": "ERROR", "message": "missing preemptor(s)"}
-        preemptors = [pre]
+    legacy_pre = instance.get("preemptor")
+    if legacy_pre and not preemptors:
+        preemptors = [legacy_pre]
 
     timeout_ms = int(instance.get("timeout_ms", 3000))
     ignore_affinity = bool(instance.get("ignore_affinity", True))
@@ -41,27 +43,38 @@ def solve(instance: dict) -> dict:
     def p_eligible(i, j):
         if ignore_affinity:
             return True
-        # TODO: honor affinity/anti-affinity if desired
         return True
 
-    # map cohort uids to indices; all must be in pods[]
+    # Identify indices of declared preemptors (if any). If preemptor not present in pods,
+    # just ignore it (more forgiving than erroring out).
     pre_idxs = []
     for pre in preemptors:
-        uid = pre["uid"]
-        if uid not in pod_idx:
-            return {"status": "ERROR", "message": f"preemptor uid {uid} not in pods"}
-        pre_idxs.append(pod_idx[uid])
-    pre_first = pre_idxs[0]
-    pre_max_pr = max(p_pri(i) for i in pre_idxs)
+        uid = pre.get("uid")
+        if uid is None:
+            continue
+        if uid in pod_idx:
+            pre_idxs.append(pod_idx[uid])
+
+    single_preemptor_mode = (len(pre_idxs) == 1)
+
+    # If there are truly no pods at all, return a vacuous OK.
+    if P == 0:
+        nominated_legacy = ""
+        if single_preemptor_mode:
+            # preemptor exists but not in pods[]; with no pods we can only return empty plan
+            nominated_legacy = ""
+        return {"status": "OK", "nominatedNode": nominated_legacy, "placements": {}, "evictions": []}
+
+    pre_ref_pri = max((p_pri(i) for i in pre_idxs), default=max(p_pri(i) for i in range(P)))
 
     m = cp_model.CpModel()
 
     # Decision variables
-    x = [[m.NewBoolVar(f"x_{i}_{j}") for j in range(J)] for i in range(P)]  # pod i on node j
-    placed = [m.NewBoolVar(f"placed_{i}") for i in range(P)]                # pod i is scheduled somewhere
-    evict  = [m.NewBoolVar(f"evict_{i}")  for i in range(P)]                # pod i is evicted (unscheduled)
-    kept   = [m.NewBoolVar(f"kept_{i}")   for i in range(P)]                # pod i kept on its original node (if any)
-    move   = [m.NewBoolVar(f"move_{i}")   for i in range(P)]                # pod i is moved off its original node (if any)
+    x = [[m.NewBoolVar(f"x_{i}_{j}") for j in range(J)] for i in range(P)]
+    placed = [m.NewBoolVar(f"placed_{i}") for i in range(P)]
+    evict  = [m.NewBoolVar(f"evict_{i}")  for i in range(P)]
+    kept   = [m.NewBoolVar(f"kept_{i}")   for i in range(P)]
+    move   = [m.NewBoolVar(f"move_{i}")   for i in range(P)]
 
     # Assignment & eligibility
     for i in range(P):
@@ -75,7 +88,7 @@ def solve(instance: dict) -> dict:
         m.Add(sum(x[i][j] * p_cpu(i) for i in range(P)) <= n_cpu(j))
         m.Add(sum(x[i][j] * p_ram(i) for i in range(P)) <= n_ram(j))
 
-    # Keep/move indicators (only meaningful if pod had an original node)
+    # Keep/move indicators
     for i in range(P):
         orig = p_where_j(i)
         if orig is None:
@@ -89,30 +102,27 @@ def solve(instance: dict) -> dict:
             m.Add(move[i] <= placed[i])
             m.Add(move[i] <= 1 - x[i][orig])
 
-    # --- NEW: all preemptors must be placed; never evicted ---
-    for i_pre in pre_idxs:
+    # Mode-specific rules
+    if single_preemptor_mode:
+        i_pre = pre_idxs[0]
         m.Add(placed[i_pre] == 1)
         m.Add(evict[i_pre] == 0)
+        for i in range(P):
+            if i == i_pre:
+                continue
+            if p_prot(i) or p_pri(i) >= p_pri(i_pre):
+                m.Add(evict[i] == 0)
+                m.Add(placed[i] == 1)
+                m.Add(move[i] == 0)
+            else:
+                m.Add(placed[i] + evict[i] == 1)
+    else:
+        for i in range(P):
+            if p_prot(i):
+                m.Add(evict[i] == 0)
+                m.Add(placed[i] == 1)
 
-    # Moving policy: only strictly lower priority than the *max* preemptor priority may be moved
-    for i in range(P):
-        if i in pre_idxs:
-            continue
-        if p_prot(i) or p_pri(i) > pre_max_pr:
-            m.Add(move[i] == 0)
-
-    # Eviction policy: only strictly-lower-than-*max* preemptor priority may be evicted
-    for i in range(P):
-        if i in pre_idxs:
-            continue
-        if p_prot(i) or p_pri(i) >= pre_max_pr:
-            # must remain scheduled (possibly moved), cannot be evicted
-            m.Add(evict[i] == 0)
-            m.Add(placed[i] == 1)
-        else:
-            m.Add(placed[i] + evict[i] == 1)  # either placed or evicted
-
-    # ---------------- Symmetry-breaking ----------------
+    # Symmetry-breaking (unchanged)
     for j1 in range(J - 1):
         for j2 in range(j1 + 1, J):
             if n_cpu(j1) == n_cpu(j2) and n_ram(j1) == n_ram(j2):
@@ -131,48 +141,43 @@ def solve(instance: dict) -> dict:
                     rhs = sum(node_indices[j] * x[i2][j] for j in range(J))
                     m.Add(lhs <= rhs)
 
-    # ---------------- Lexicographic optimization ----------------
+    # Lexicographic optimization
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(0.1, timeout_ms / 1000.0)
     solver.parameters.num_search_workers = 8
 
-    # Stage 1: by priority tier, maximize placed
+    # Stage 1: maximize placed by priority tier
     priorities = sorted({p_pri(i) for i in range(P)}, reverse=True)
     for pr in priorities:
         idxs = [i for i in range(P) if p_pri(i) == pr]
         placed_count = m.NewIntVar(0, len(idxs), f"placed_count_pr{pr}")
         m.Add(placed_count == sum(placed[i] for i in idxs))
         m.Maximize(placed_count)
-
         st = solver.Solve(m)
         if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
-        m.Add(placed_count == int(solver.Value(placed_count)))  # freeze tier optimum
+        m.Add(placed_count == int(solver.Value(placed_count)))
 
-    # Stage 2: minimize total evictions
+    # Stage 2: minimize evictions
     total_evict = m.NewIntVar(0, P, "total_evict")
     m.Add(total_evict == sum(evict[i] for i in range(P)))
     m.Minimize(total_evict)
-
     st = solver.Solve(m)
     if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
-    m.Add(total_evict == int(solver.Value(total_evict)))  # freeze
+    m.Add(total_evict == int(solver.Value(total_evict)))
 
-    # Stage 3: minimize total moves among pods allowed to move (prio <= max preemptor pri)
-    move_idxs = [i for i in range(P) if p_pri(i) <= pre_max_pr]
-    total_moves = m.NewIntVar(0, len(move_idxs), "total_moves_allowed")
-    m.Add(total_moves == sum(move[i] for i in move_idxs))
+    # Stage 3: minimize moves
+    total_moves = m.NewIntVar(0, P, "total_moves")
+    m.Add(total_moves == sum(move[i] for i in range(P)))
     m.Minimize(total_moves)
-
     st = solver.Solve(m)
     if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
 
-    # --------------- Extract final plan ---------------
+    # Extract plan
     placements = {}
     evictions  = []
-
     for i in range(P):
         if int(solver.Value(evict[i])) == 1:
             evictions.append({"uid": p_uid(i), "namespace": p_ns(i), "name": p_name(i)})
@@ -183,14 +188,14 @@ def solve(instance: dict) -> dict:
                     placements[p_uid(i)] = nodes[j]["name"]
                     break
 
-    # NEW: nominations for each preemptor; keep legacy field for the first one
-    nominations = {pods[i]["uid"]: placements.get(pods[i]["uid"], "") for i in pre_idxs}
-    nominated_legacy = placements.get(pods[pre_first]["uid"], "")
+    nominated_legacy = ""
+    if single_preemptor_mode:
+        i_pre = pre_idxs[0]
+        nominated_legacy = placements.get(pods[i_pre]["uid"], "")
 
     return {
         "status": "OK",
-        "nominatedNode": nominated_legacy,   # back-compat
-        "nominations": nominations,          # new
+        "nominatedNode": nominated_legacy,
         "placements": placements,
         "evictions": evictions,
     }
@@ -198,8 +203,8 @@ def solve(instance: dict) -> dict:
 
 def main():
     raw = sys.stdin.read()
-    inst = json.loads(raw)
-    out = solve(inst)
+    inst = json.loads(raw or "{}")
+    out = solve(inst if isinstance(inst, dict) else {})
     print(json.dumps(out))
 
 
