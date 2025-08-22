@@ -44,11 +44,11 @@ func (pl *MyCrossNodePreemption) PreEnqueue(
 		if _, inPlan := sp.WorkloadDesiredPerNode[key]; inPlan {
 			return framework.NewStatus(framework.Success)
 		}
-		pl.batched.add(pod.UID, pod.Namespace, pod.Name)
+		pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: RS not in active plan")
 	}
 
 	// Everything else waits while the plan executes.
-	pl.batched.add(pod.UID, pod.Namespace, pod.Name)
+	pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
 	return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: pod not in active plan")
 }

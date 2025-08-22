@@ -44,6 +44,8 @@ const (
 
 	DeletionCostTarget = math.MinInt32
 	DeletionCostKeep   = math.MaxInt32
+
+	BatchWindow = 200 * time.Millisecond
 )
 
 // ---------------------------- Plugin wiring -----------------------
@@ -59,9 +61,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version)
 	return &MyCrossNodePreemption{
-		handle:  h,
-		client:  client,
-		batched: newBatchedSet(), // single structure for both cases
+		handle:      h,
+		client:      client,
+		blockedPods: newBlockedPodsSet(), // single structure for both cases
 	}, nil
 }
 
@@ -73,10 +75,123 @@ type MyCrossNodePreemption struct {
 	activePlan       atomic.Value              // stores *StoredPlan or nil
 	activePlanID     atomic.Value              // string (e.g., cmName or a UUID)
 	slotsPtr         atomic.Pointer[planSlots] // atomic planSlots pointer
-	batched          *batchedSet               // holds pods we "block" while a plan executes and while cool-down is active
+	blockedPods      *blockedPodsSet           // holds pods we "block" while a plan executes and while cool-down is active
 	nextAllowedSolve atomic.Int64              // unix nano when next solve is allowed
 	nudgeOnce        atomic.Bool               // avoid multiple timers per window
-	postFilterActive atomic.Bool               // indicates if post-filter is active
+
+	batchMu    sync.Mutex
+	batchOpen  bool
+	batchPods  map[types.UID]*v1.Pod
+	batchTimer *time.Timer
+}
+
+func (pl *MyCrossNodePreemption) addToBatch(p *v1.Pod) {
+	pl.batchMu.Lock()
+	defer pl.batchMu.Unlock()
+
+	if !pl.batchOpen {
+		pl.batchOpen = true
+		pl.batchPods = make(map[types.UID]*v1.Pod, 8)
+		// arm deadline
+		pl.batchTimer = time.AfterFunc(BatchWindow, pl.onBatchDeadline)
+	}
+	pl.batchPods[p.UID] = p
+}
+
+func (pl *MyCrossNodePreemption) onBatchDeadline() {
+	// Snapshot and close the batch
+	pl.batchMu.Lock()
+	pods := make([]*v1.Pod, 0, len(pl.batchPods))
+	for _, p := range pl.batchPods {
+		pods = append(pods, p)
+	}
+	pl.batchOpen = false
+	pl.batchPods = nil
+	pl.batchTimer = nil
+	pl.batchMu.Unlock()
+
+	if len(pods) == 0 {
+		return
+	}
+
+	// Only one optimizer run per window. Respect cooldown and active plan.
+	if sp, _ := pl.getActivePlan(); sp != nil && !sp.Completed {
+		// There’s a plan already; just let requeues flow.
+		return
+	}
+	if okRun, _ := pl.canRunOptimizer(); !okRun {
+		// Cooldown: let scheduleNudgeAtCooldownEnd re-activate.
+		for _, p := range pods {
+			pl.blockedPods.add(p.UID, p.Namespace, p.Name)
+		}
+		pl.scheduleNudgeAtCooldownEnd()
+		return
+	}
+
+	// Build + run multi-preemptor solve (same PostFilter flow, but cohort)
+	ctx, cancel := context.WithTimeout(context.Background(), PythonSolverTimeout)
+	defer cancel()
+
+	out, err := pl.runPythonOptimizerCohort(ctx, pods, PythonSolverTimeout)
+	pl.markOptimizerRunFinished()
+	if err != nil || out == nil {
+		pl.onPlanSettled()
+		if err != nil {
+			klog.ErrorS(err, "Optimizer error")
+		}
+		return
+	}
+
+	// We still materialize/execute a single plan (choose any nominated node
+	// for the “lead” preemptor; your Python returns one plan of placements).
+	// Pick the first as a canonical "pending" when exporting/mirroring.
+	pending := pods[0]
+
+	plan, err := pl.translatePlanFromSolver(out, pending)
+	if err != nil || plan == nil || (len(plan.PodMovements) == 0 && len(plan.VictimsToEvict) == 0 && out.NominatedNode == "") {
+		pl.onPlanSettled()
+		if err != nil {
+			klog.ErrorS(err, "translate plan failed")
+		}
+		return
+	}
+
+	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending)
+	if err != nil {
+		pl.clearActivePlan()
+		klog.ErrorS(err, "export plan failed; continuing in-memory")
+	}
+
+	lite, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
+	if err != nil {
+		pl.clearActivePlan()
+		klog.ErrorS(err, "materialize plan docs failed")
+		return
+	}
+
+	inMem := &StoredPlan{
+		Completed:              false,
+		GeneratedAt:            time.Now().UTC(),
+		PluginVersion:          Version,
+		PendingPod:             fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+		PendingUID:             string(pending.UID),
+		TargetNode:             plan.TargetNode,
+		SolverOutput:           out,
+		Plan:                   lite,
+		PlacementsByName:       byName,
+		WorkloadDesiredPerNode: rsDesired,
+	}
+	pl.setActivePlan(inMem, cmName)
+
+	_, planID := pl.getActivePlan()
+	pl.startPlanTimeout(planID, PlanExecutionTTL)
+
+	if err := pl.executePlan(ctx, plan); err != nil {
+		pl.onPlanSettled()
+		klog.ErrorS(err, "plan execution failed")
+		return
+	}
+	klog.InfoS("plan executed")
 }
 
 type WorkloadKind int
@@ -172,8 +287,9 @@ type SolverEviction struct {
 type SolverOutput struct {
 	Status        string            `json:"status"`
 	NominatedNode string            `json:"nominatedNode"`
-	Placements    map[string]string `json:"placements"` // uid -> node
-	Movements     map[string]string `json:"movements"`  // optional
+	Nominations   map[string]string `json:"nominations,omitempty"` // uid -> node (multi-preemptor)
+	Placements    map[string]string `json:"placements"`            // uid -> node
+	Movements     map[string]string `json:"movements"`             // optional
 	Evictions     []SolverEviction  `json:"evictions"`
 }
 
@@ -573,23 +689,23 @@ func bytesToMiB(b int64) int64 {
 	return b / (1024 * 1024)
 }
 
-type batchedInfo struct {
+type blockedPodInfo struct {
 	ns    string
 	name  string
 	until time.Time
 }
 
-type batchedSet struct {
+type blockedPodsSet struct {
 	mu sync.RWMutex
-	m  map[types.UID]batchedInfo
+	m  map[types.UID]blockedPodInfo
 }
 
-func newBatchedSet() *batchedSet { return &batchedSet{m: map[types.UID]batchedInfo{}} }
+func newBlockedPodsSet() *blockedPodsSet { return &blockedPodsSet{m: map[types.UID]blockedPodInfo{}} }
 
 // Add a pod to the set for 5 minutes.
-func (s *batchedSet) add(uid types.UID, ns, name string) {
+func (s *blockedPodsSet) add(uid types.UID, ns, name string) {
 	s.mu.Lock()
-	s.m[uid] = batchedInfo{
+	s.m[uid] = blockedPodInfo{
 		ns:    ns,
 		name:  name,
 		until: time.Now().Add(5 * time.Minute),
@@ -598,19 +714,19 @@ func (s *batchedSet) add(uid types.UID, ns, name string) {
 }
 
 // snapshot returns a stable copy of entries.
-func (s *batchedSet) snapshot() map[types.UID]batchedInfo {
+func (s *blockedPodsSet) snapshot() map[types.UID]blockedPodInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make(map[types.UID]batchedInfo, len(s.m))
+	out := make(map[types.UID]blockedPodInfo, len(s.m))
 	for k, v := range s.m {
 		out[k] = v
 	}
 	return out
 }
 
-func (s *batchedSet) clear() {
+func (s *blockedPodsSet) clear() {
 	s.mu.Lock()
-	s.m = map[types.UID]batchedInfo{}
+	s.m = map[types.UID]blockedPodInfo{}
 	s.mu.Unlock()
 }
 
@@ -818,11 +934,11 @@ func (pl *MyCrossNodePreemption) canRunOptimizer() (bool, time.Duration) {
 	return false, na.Sub(now)
 }
 
-func (pl *MyCrossNodePreemption) activateBatchedPods() {
-	if pl.batched == nil {
+func (pl *MyCrossNodePreemption) activateBlockedPods() {
+	if pl.blockedPods == nil {
 		return
 	}
-	snap := pl.batched.snapshot()
+	snap := pl.blockedPods.snapshot()
 	if len(snap) == 0 {
 		return
 	}
@@ -834,13 +950,13 @@ func (pl *MyCrossNodePreemption) activateBatchedPods() {
 	for _, bi := range snap {
 		p, err := podLister.Pods(bi.ns).Get(bi.name)
 		if err != nil {
-			klog.ErrorS(err, "activateBatchedPods: lister get failed", "pod", bi.ns+"/"+bi.name)
+			klog.ErrorS(err, "activateBlockedPods: lister get failed", "pod", bi.ns+"/"+bi.name)
 			continue
 		}
 		pods[bi.ns+"/"+bi.name] = p
 	}
 	pl.handle.Activate(klog.Background(), pods) // unknown pods are ignored safely
-	pl.batched.clear()
+	pl.blockedPods.clear()
 }
 
 func (pl *MyCrossNodePreemption) markOptimizerRunFinished() {
@@ -860,7 +976,7 @@ func (pl *MyCrossNodePreemption) scheduleNudgeAtCooldownEnd() {
 	}
 	delay := time.Until(deadline)
 	if delay <= 0 { // already past deadline
-		pl.activateBatchedPods()
+		pl.activateBlockedPods()
 		pl.nudgeOnce.Store(false)
 		return
 	}
@@ -868,21 +984,21 @@ func (pl *MyCrossNodePreemption) scheduleNudgeAtCooldownEnd() {
 		t := time.NewTimer(d)
 		defer t.Stop()
 		<-t.C
-		pl.activateBatchedPods()
+		pl.activateBlockedPods()
 		pl.nudgeOnce.Store(false)
 	}(delay)
 }
 
-func (pl *MyCrossNodePreemption) onPlanSettled() {
-	// 1) deactivate plan
+func (pl *MyCrossNodePreemption) onPlanSettled() bool {
+	// Check if already deactivated
+	sp, _ := pl.getActivePlan()
+	if sp == nil || sp.Completed {
+		return false
+	}
+	klog.InfoS("plan settled; clearing plan and activating blocked pods")
 	pl.clearActivePlan()
-
-	// 2) wake blocked pods now
-	pl.activateBatchedPods()
-
-	// 3) allow next optimizer run immediately (optional but recommended to avoid "cooldown 0s" re-bounce)
+	pl.activateBlockedPods()
 	pl.nextAllowedSolve.Store(0)
-
-	// 4) if a delayed nudge was armed, let future cycles re-arm as needed
 	pl.nudgeOnce.Store(false)
+	return true
 }

@@ -9,7 +9,14 @@ from ortools.sat.python import cp_model
 def solve(instance: dict) -> dict:
     nodes = instance["nodes"]
     pods  = instance["pods"]
-    pre   = instance["preemptor"]
+
+    # --- NEW: multi-preemptor support (backward compatible) ---
+    preemptors = list(instance.get("preemptors") or [])
+    if not preemptors:
+        pre = instance.get("preemptor")
+        if not pre:
+            return {"status": "ERROR", "message": "missing preemptor(s)"}
+        preemptors = [pre]
 
     timeout_ms = int(instance.get("timeout_ms", 3000))
     ignore_affinity = bool(instance.get("ignore_affinity", True))
@@ -37,11 +44,15 @@ def solve(instance: dict) -> dict:
         # TODO: honor affinity/anti-affinity if desired
         return True
 
-    if pre["uid"] not in pod_idx:
-        return {"status": "ERROR", "message": "preemptor uid not in pods"}
-
-    i_pre  = pod_idx[pre["uid"]]
-    pre_pr = p_pri(i_pre)
+    # map cohort uids to indices; all must be in pods[]
+    pre_idxs = []
+    for pre in preemptors:
+        uid = pre["uid"]
+        if uid not in pod_idx:
+            return {"status": "ERROR", "message": f"preemptor uid {uid} not in pods"}
+        pre_idxs.append(pod_idx[uid])
+    pre_first = pre_idxs[0]
+    pre_max_pr = max(p_pri(i) for i in pre_idxs)
 
     m = cp_model.CpModel()
 
@@ -57,7 +68,6 @@ def solve(instance: dict) -> dict:
         for j in range(J):
             if not p_eligible(i, j):
                 m.Add(x[i][j] == 0)
-        # placed[i] == OR_j x[i][j]
         m.Add(sum(x[i][j] for j in range(J)) == placed[i])
 
     # Capacity
@@ -72,44 +82,37 @@ def solve(instance: dict) -> dict:
             m.Add(kept[i] == 0)
             m.Add(move[i] == 0)
         else:
-            # kept[i] <-> placed[i] AND x[i,orig]
             m.Add(kept[i] <= placed[i])
             m.Add(kept[i] <= x[i][orig])
             m.Add(kept[i] >= placed[i] + x[i][orig] - 1)
-            # move[i] is 1 if placed and NOT kept
             m.Add(move[i] >= placed[i] - x[i][orig])
             m.Add(move[i] <= placed[i])
             m.Add(move[i] <= 1 - x[i][orig])
 
-    # Preemptor must be placed; never evicted
-    m.Add(placed[i_pre] == 1)
-    m.Add(evict[i_pre] == 0)
+    # --- NEW: all preemptors must be placed; never evicted ---
+    for i_pre in pre_idxs:
+        m.Add(placed[i_pre] == 1)
+        m.Add(evict[i_pre] == 0)
 
-    # Moving policy: Only pods with strictly lower priority than preemptor can be moved (pods with equal/higher priority cannot be moved)
-    # This also prevents a potential race condition, if a replica set is being scaled up, then this new pending pod
-    # will be deleted immediately if the execution plan needs to move some of the same replica sets, as pending pods
-    # are always deleted first, no matter what pod-deletion-cost is, see https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/#scaling-a-replicaset.
-    # It also reduces the search space (number of combinations the solver has to consider).
+    # Moving policy: only strictly lower priority than the *max* preemptor priority may be moved
     for i in range(P):
-        if i == i_pre:
+        if i in pre_idxs:
             continue
-        if p_prot(i) or p_pri(i) > pre_pr:
+        if p_prot(i) or p_pri(i) > pre_max_pr:
             m.Add(move[i] == 0)
 
-    # Eviction policy: only strictly-lower priority pods than preemptor can be evicted.
+    # Eviction policy: only strictly-lower-than-*max* preemptor priority may be evicted
     for i in range(P):
-        if i == i_pre:
+        if i in pre_idxs:
             continue
-        if p_prot(i) or p_pri(i) >= pre_pr:
+        if p_prot(i) or p_pri(i) >= pre_max_pr:
             # must remain scheduled (possibly moved), cannot be evicted
             m.Add(evict[i] == 0)
             m.Add(placed[i] == 1)
         else:
-            # either placed somewhere OR evicted (but not both)
-            m.Add(placed[i] + evict[i] == 1)
+            m.Add(placed[i] + evict[i] == 1)  # either placed or evicted
 
     # ---------------- Symmetry-breaking ----------------
-    # 1) For equal-capacity nodes, enforce non-decreasing packed RAM
     for j1 in range(J - 1):
         for j2 in range(j1 + 1, J):
             if n_cpu(j1) == n_cpu(j2) and n_ram(j1) == n_ram(j2):
@@ -119,7 +122,6 @@ def solve(instance: dict) -> dict:
                     sum(x[i][j2] * p_ram(i) for i in range(P))
                 )
 
-    # 2) For identical pods (cpu, ram, priority), enforce node index monotonicity
     if P > 0:
         node_indices = list(range(J))
         for i1 in range(P - 1):
@@ -134,7 +136,7 @@ def solve(instance: dict) -> dict:
     solver.parameters.max_time_in_seconds = max(0.1, timeout_ms / 1000.0)
     solver.parameters.num_search_workers = 8
 
-    # Stage 1: for each priority (high->low), maximize placed at that priority, freeze each optimum
+    # Stage 1: by priority tier, maximize placed
     priorities = sorted({p_pri(i) for i in range(P)}, reverse=True)
     for pr in priorities:
         idxs = [i for i in range(P) if p_pri(i) == pr]
@@ -145,11 +147,9 @@ def solve(instance: dict) -> dict:
         st = solver.Solve(m)
         if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
+        m.Add(placed_count == int(solver.Value(placed_count)))  # freeze tier optimum
 
-        best_placed = int(solver.Value(placed_count))
-        m.Add(placed_count == best_placed)  # freeze for this tier
-
-    # Stage 2: minimize total evictions, freeze
+    # Stage 2: minimize total evictions
     total_evict = m.NewIntVar(0, P, "total_evict")
     m.Add(total_evict == sum(evict[i] for i in range(P)))
     m.Minimize(total_evict)
@@ -159,8 +159,8 @@ def solve(instance: dict) -> dict:
         return {"status": "INFEASIBLE" if st == cp_model.INFEASIBLE else "TIMEOUT"}
     m.Add(total_evict == int(solver.Value(total_evict)))  # freeze
 
-    # Stage 3: minimize total pod moves among pods allowed to move (prio <= pre_pr)
-    move_idxs = [i for i in range(P) if p_pri(i) <= pre_pr]
+    # Stage 3: minimize total moves among pods allowed to move (prio <= max preemptor pri)
+    move_idxs = [i for i in range(P) if p_pri(i) <= pre_max_pr]
     total_moves = m.NewIntVar(0, len(move_idxs), "total_moves_allowed")
     m.Add(total_moves == sum(move[i] for i in move_idxs))
     m.Minimize(total_moves)
@@ -183,11 +183,14 @@ def solve(instance: dict) -> dict:
                     placements[p_uid(i)] = nodes[j]["name"]
                     break
 
-    nominated = placements.get(p_uid(i_pre), "")
+    # NEW: nominations for each preemptor; keep legacy field for the first one
+    nominations = {pods[i]["uid"]: placements.get(pods[i]["uid"], "") for i in pre_idxs}
+    nominated_legacy = placements.get(pods[pre_first]["uid"], "")
 
     return {
         "status": "OK",
-        "nominatedNode": nominated,
+        "nominatedNode": nominated_legacy,   # back-compat
+        "nominations": nominations,          # new
         "placements": placements,
         "evictions": evictions,
     }

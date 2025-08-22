@@ -37,7 +37,7 @@ func (pl *MyCrossNodePreemption) PostBind(
 		return
 	}
 
-	klog.InfoS("PostBind: plan completed; clearing plan and activating blocked pods")
-	pl.onPlanSettled()
-	pl.markPlanCompleted(ctx, planID) // safe to call after; it’s idempotent
+	if pl.onPlanSettled() {
+		pl.markPlanCompleted(ctx, planID) // safe to call after; it’s idempotent
+	}
 }

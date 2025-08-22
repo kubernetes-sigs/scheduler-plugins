@@ -22,46 +22,16 @@ import (
 
 // ---------------------------- PostFilter ----------------------------
 
-func (pl *MyCrossNodePreemption) tryEnterPostFilter() bool {
-	// returns true if we successfully acquired the gate
-	return !pl.postFilterActive.Swap(true)
-}
-
-func (pl *MyCrossNodePreemption) leavePostFilter() {
-	pl.postFilterActive.Store(false)
-}
-
 func (pl *MyCrossNodePreemption) PostFilter(
 	ctx context.Context,
 	state *framework.CycleState,
 	pending *v1.Pod,
 	_ framework.NodeToStatusMap,
 ) (*framework.PostFilterResult, *framework.Status) {
-	// Try to acquire the post-filter lock
-	if !pl.tryEnterPostFilter() {
-		pl.batched.add(pending.UID, pending.Namespace, pending.Name)
-		return nil, framework.NewStatus(
-			framework.Pending,
-			"optimizer busy; another pod is using the optimizer",
-		)
-	}
-	defer pl.leavePostFilter() // ensure we always release on every return path
 
-	// Don't allow another run of PostFilter if an active plan exists
-	sp, _ := pl.getActivePlan()
-	if sp != nil && !sp.Completed {
+	// If a plan is active, keep previous behaviour (don’t interfere).
+	if sp, _ := pl.getActivePlan(); sp != nil && !sp.Completed {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "active plan exists")
-	}
-
-	okRun, cooldown := pl.canRunOptimizer()
-	if !okRun {
-		pl.batched.add(pending.UID, pending.Namespace, pending.Name)
-		pl.scheduleNudgeAtCooldownEnd() // make sure we wake right after cool-down
-		klog.InfoS("PostFilter: optimizer cooldown", "batched pending pod", klog.KObj(pending), "cooldown", cooldown.Truncate(time.Second))
-		return nil, framework.NewStatus(
-			framework.UnschedulableAndUnresolvable,
-			fmt.Sprintf("optimizer cooling down; retry after ~%s", cooldown.Truncate(time.Second)),
-		)
 	}
 
 	klog.InfoS("PostFilter start", "pending pod", klog.KObj(pending),
@@ -69,127 +39,35 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		"mem(MiB)", bytesToMiB(getPodMemoryRequest(pending)),
 	)
 
-	// Early cluster-sum to avoid running solver if we already know that
-	// moving/rejecting lower priority pods won't fit the preemptor.
-	if ok, reason, err := pl.clusterTotalCapacity(pending); err != nil {
-		klog.ErrorS(err, "Early cluster capacity check failed")
-		return nil, framework.NewStatus(framework.Error, "capacity check failed")
-	} else if !ok {
-		klog.InfoS("Early capacity check: unschedulable regardless of solver", "reason", reason)
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, reason)
-	}
+	// collect this pod into the current batch window and return Pending.
+	pl.addToBatch(pending)
 
-	// Run solver
-	solveCtx, cancel := context.WithTimeout(ctx, PythonSolverTimeout)
-	defer cancel()
-	start := time.Now()
-	out, err := pl.runPythonOptimizer(solveCtx, pending, PythonSolverTimeout)
-	pl.markOptimizerRunFinished()
-	if err != nil {
-		pl.onPlanSettled()
-		klog.ErrorS(err, "PostFilter: optimizer error", "took", time.Since(start))
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
-	}
-	klog.InfoS("PostFilter: optimizer run finished", "took", time.Since(start))
-
-	plan, err := pl.translatePlanFromSolver(out, pending)
-	if err != nil {
-		pl.onPlanSettled()
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
-	}
-	if plan == nil || (len(plan.PodMovements) == 0 && len(plan.VictimsToEvict) == 0 && out.NominatedNode == "") {
-		pl.onPlanSettled()
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "no actionable plan")
-	}
-
-	// Export active plan to ConfigMap for debugging purposes
-	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending)
-	if err != nil {
-		pl.clearActivePlan()
-		klog.ErrorS(err, "PostFilter: Failed to export plan to ConfigMap (continuing with in-memory only)")
-	}
-
-	// Build StoredPlan in-memory (same data as ConfigMap)
-	lite, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
-	if err != nil {
-		pl.clearActivePlan()
-		klog.ErrorS(err, "PostFilter: failed to materialize plan docs")
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
-	}
-
-	inMem := &StoredPlan{
-		Completed:              false,
-		GeneratedAt:            time.Now().UTC(),
-		PluginVersion:          Version,
-		PendingPod:             fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
-		PendingUID:             string(pending.UID),
-		TargetNode:             plan.TargetNode,
-		SolverOutput:           out,
-		Plan:                   lite,
-		PlacementsByName:       byName,
-		WorkloadDesiredPerNode: rsDesired,
-	}
-
-	pl.setActivePlan(inMem, cmName)
-
-	// Arm a one-shot timeout. If the plan is still active when TTL elapses,
-	// it will be deactivated. No completion polling involved.
-	_, planID := pl.getActivePlan()
-	pl.startPlanTimeout(planID, PlanExecutionTTL)
-
-	klog.InfoS("PostFilter: executing plan",
-		"targetNode", plan.TargetNode,
-		"movements", len(plan.PodMovements),
-		"evictions", len(plan.VictimsToEvict),
-	)
-	for i, mv := range plan.PodMovements {
-		klog.V(2).InfoS("PostFilter: movement plan",
-			"idx_move", i+1, "pod", podRef(mv.Pod),
-			"from", mv.FromNode, "to", mv.ToNode,
-			"cpu(m)", mv.CPURequest, "mem(MiB)", bytesToMiB(mv.MemoryRequest),
-		)
-	}
-	for i, v := range plan.VictimsToEvict {
-		klog.V(2).InfoS("PostFilter: eviction plan",
-			"idx_evict", i+1, "pod", podRef(v),
-			"node", v.Spec.NodeName,
-			"cpu(m)", getPodCPURequest(v), "mem(MiB)", bytesToMiB(getPodMemoryRequest(v)),
-		)
-	}
-
-	// Execute plan (evictions/recreates)
-	if err := pl.executePlan(ctx, plan); err != nil {
-		pl.onPlanSettled()
-		klog.ErrorS(err, "PostFilter: plan execution failed")
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
-	}
-
-	klog.InfoS("PostFilter: plan executed successfully")
-
-	return &framework.PostFilterResult{
-		NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.TargetNode},
-	}, framework.NewStatus(framework.Success, "")
+	return nil, framework.NewStatus(framework.Pending, "batched for cross-node optimization")
 }
 
-// ----------------------- Solver bridge ----------------------------
-
-func (pl *MyCrossNodePreemption) runPythonOptimizer(
+// Cohort-capable runner
+func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
 	ctx context.Context,
-	pending *v1.Pod,
+	preemptors []*v1.Pod,
 	timeout time.Duration,
 ) (*SolverOutput, error) {
-
 	nodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
 
-	in := SolverInput{
-		TimeoutMs:      timeout.Milliseconds(),
-		IgnoreAffinity: true,
-		Preemptor:      toSolverPod(pending, ""),
+	type SolverInputCohort struct {
+		TimeoutMs      int64        `json:"timeout_ms"`
+		IgnoreAffinity bool         `json:"ignore_affinity"`
+		Preemptors     []SolverPod  `json:"preemptors"` // <-- NEW
+		Nodes          []SolverNode `json:"nodes"`
+		Pods           []SolverPod  `json:"pods"`
 	}
 
+	in := SolverInputCohort{
+		TimeoutMs:      timeout.Milliseconds(),
+		IgnoreAffinity: true,
+	}
 	usable := map[string]bool{}
 	for _, ni := range nodes {
 		if !isNodeUsable(ni) {
@@ -202,7 +80,6 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 		})
 		usable[ni.Node().Name] = true
 	}
-
 	for _, ni := range nodes {
 		if !isNodeUsable(ni) {
 			continue
@@ -219,33 +96,34 @@ func (pl *MyCrossNodePreemption) runPythonOptimizer(
 			in.Pods = append(in.Pods, sp)
 		}
 	}
-	in.Pods = append(in.Pods, toSolverPod(pending, ""))
-
-	raw, err := json.Marshal(in)
-	klog.V(2).InfoS("PostFilter: Solver input detail", "raw", string(raw))
-	if err != nil {
-		return nil, err
+	for _, p := range preemptors {
+		in.Preemptors = append(in.Preemptors, toSolverPod(p, ""))
+		in.Pods = append(in.Pods, toSolverPod(p, "")) // include the pending ones, unscheduled
 	}
+
+	raw, _ := json.Marshal(in)
+	klog.V(2).InfoS("Solver input", "raw", string(raw))
 
 	cmd := exec.CommandContext(ctx, "python3", PythonSolverPath)
 	cmd.Stdin = bytes.NewReader(raw)
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
-
 	if err := cmd.Run(); err != nil {
-		klog.ErrorS(err, "PostFilter: python solver failed", "stderr", errBuf.String())
+		klog.ErrorS(err, "python solver failed", "stderr", errBuf.String())
 		return nil, fmt.Errorf("solver run: %w", err)
 	}
 
 	var out SolverOutput
 	if err := json.Unmarshal(outBuf.Bytes(), &out); err != nil {
-		return nil, fmt.Errorf("PostFilter: decode solver output: %w", err)
+		return nil, fmt.Errorf("decode solver output: %w", err)
 	}
 	if out.Status != "OK" {
-		return &out, fmt.Errorf("PostFilter: solver status: %s", out.Status)
+		return &out, fmt.Errorf("solver status: %s", out.Status)
 	}
 	return &out, nil
 }
+
+// ----------------------- Solver bridge ----------------------------
 
 func toSolverPod(p *v1.Pod, where string) SolverPod {
 	return SolverPod{
@@ -265,10 +143,19 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 	out *SolverOutput,
 	pending *v1.Pod,
 ) (*PodAssignmentPlan, error) {
-
-	if out.NominatedNode == "" {
+	// prefer per-UID nomination if present; fall back to legacy field
+	nominated := ""
+	if out.Nominations != nil {
+		nominated = out.Nominations[string(pending.UID)]
+	}
+	if nominated == "" {
+		nominated = out.NominatedNode
+	}
+	if nominated == "" {
 		return nil, fmt.Errorf("PostFilter: no nominated node for pending pod")
 	}
+
+	plan := &PodAssignmentPlan{TargetNode: nominated}
 
 	all, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
@@ -281,8 +168,6 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 		}
 	}
 	podsByUID[string(pending.UID)] = pending
-
-	plan := &PodAssignmentPlan{TargetNode: out.NominatedNode}
 
 	for _, e := range out.Evictions {
 		if p, ok := podsByUID[e.UID]; ok {
@@ -396,7 +281,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 		}
 	}
 
-	// 1) evict/wait pods (batched)  --->  **NEW**
+	// 1) evict/wait pods
 	if len(targets) > 0 {
 		klog.V(2).InfoS("Evicting/awaiting eviction of targeted pods", "count", len(targets))
 
@@ -499,66 +384,6 @@ func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, 
 		return fmt.Errorf("failed to create pod %s: %w", podRef(newp), err)
 	}
 	return nil
-}
-
-// clusterTotalCapacity returns true if, cluster-wide, the sum of current
-// free headroom + reclaimable from strictly lower-priority pods is enough to
-// satisfy the pending pod's CPU AND memory requests. If not, we can bail out
-// before the solver, since we know no solution can exist.
-func (pl *MyCrossNodePreemption) clusterTotalCapacity(pending *v1.Pod) (bool, string, error) {
-	nodes, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return false, "snapshot error", err
-	}
-
-	wantCPU := getPodCPURequest(pending)
-	wantMem := getPodMemoryRequest(pending)
-	pPri := getPodPriority(pending)
-
-	var totalCPU, totalMem int64
-
-	for _, ni := range nodes {
-		if !isNodeUsable(ni) {
-			continue
-		}
-
-		// 1) current free headroom on the node
-		freeCPU := ni.Allocatable.MilliCPU - ni.Requested.MilliCPU
-		freeMem := ni.Allocatable.Memory - ni.Requested.Memory
-		if freeCPU < 0 {
-			freeCPU = 0
-		}
-		if freeMem < 0 {
-			freeMem = 0
-		}
-
-		// 2) reclaimable from strictly lower-priority pods on this node
-		var recCPU, recMem int64
-		for _, pi := range ni.Pods {
-			p := pi.Pod
-			// strictly lower priority than the pending pod
-			if getPodPriority(p) >= pPri {
-				continue
-			}
-			// avoid counting system/static pods as reclaimable
-			if p.Namespace == "kube-system" {
-				continue
-			}
-			recCPU += getPodCPURequest(p)
-			recMem += getPodMemoryRequest(p)
-		}
-		totalCPU += freeCPU + recCPU
-		totalMem += freeMem + recMem
-	}
-	if totalCPU >= wantCPU && totalMem >= wantMem {
-		return true, "", nil
-	}
-	reason := fmt.Sprintf(
-		"insufficient cluster capacity: need cpu=%dm mem=%dMiB; have cpu=%dm mem=%dMiB",
-		wantCPU, bytesToMiB(wantMem),
-		totalCPU, bytesToMiB(totalMem),
-	)
-	return false, reason, nil
 }
 
 func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) error {

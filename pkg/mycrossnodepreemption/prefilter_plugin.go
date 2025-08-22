@@ -29,7 +29,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if wk, ok := topWorkload(pod); ok {
 		key := wk.String()
 		if _, inPlan := sp.WorkloadDesiredPerNode[key]; !inPlan {
-			pl.batched.add(pod.UID, pod.Namespace, pod.Name)
+			pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: RS not in active plan")
 		}
 
@@ -46,7 +46,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 			}
 		}
 		if allowed.Len() == 0 {
-			pl.batched.add(pod.UID, pod.Namespace, pod.Name)
+			pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: RS-quotas exhausted; wait until plan is completed")
 		}
 		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
@@ -59,7 +59,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	}
 
 	// Everyone else must wait until the plan is completed
-	pl.batched.add(pod.UID, pod.Namespace, pod.Name)
+	pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
 	return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: RS/pod not in active plan")
 }
 
