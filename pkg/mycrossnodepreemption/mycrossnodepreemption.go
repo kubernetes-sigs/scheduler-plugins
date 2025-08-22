@@ -28,6 +28,8 @@ const (
 	Name    = "MyCrossNodePreemption"
 	Version = "v1.0.0"
 
+	PlanExecutionTTL = 2 * time.Second // how long a plan may run before being terminated
+
 	ConfigMapNamespace  = "kube-system"
 	ConfigMapLabelKey   = "crossnode-plan"
 	ConfigMapNamePrefix = "crossnode-plan-" // used to find plan CMs
@@ -171,6 +173,28 @@ type rsNodeCounters map[string]map[string]*atomic.Int32 // rsKey -> node -> rema
 type planSlots struct {
 	planID    string
 	remaining rsNodeCounters
+}
+
+func (pl *MyCrossNodePreemption) startPlanTimeout(ctx context.Context, planID, cmName string, ttl time.Duration) {
+	go func() {
+		t := time.NewTimer(ttl)
+		defer t.Stop()
+		<-t.C
+
+		// Only clear if this plan is still the active one.
+		_, id := pl.getActivePlan()
+		if id != planID {
+			return
+		}
+
+		klog.InfoS("plan timeout reached; deactivating plan", "planID", planID, "ttl", ttl)
+		pl.clearActivePlan()
+
+		// Optional: mark as completed in the ConfigMap history so it won’t linger as “active”.
+		if cmName != "" {
+			pl.markPlanCompleted(ctx, cmName)
+		}
+	}()
 }
 
 // ---------------------------- Plan helpers (shared) -----------------------
@@ -343,12 +367,13 @@ func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName s
 	})
 
 	// Prune history (JSON-only semantics)
-	if err := pl.pruneOldPlans(ctx, 20); err != nil {
+	if err := pl.pruneOldPlans(context.Background(), 20); err != nil {
 		klog.ErrorS(err, "Failed to prune old plans after completion")
 	}
 }
 
 // pruneOldPlans prunes old plans, keeping only the most recent 'keep' plans.
+// Prefer not to follow parent context for proper cleaning, e.g. context.Background()
 func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) error {
 	if keep <= 0 {
 		return nil

@@ -30,7 +30,6 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 - Consider to protect pods that have node-selectors, PDBs, and other rules.
 - Add batch scheduling.
-- Add a global timer, if plan is not completed within a certain timeframe, deactivate the plan.
 - Cleanup code (incl. python) and write proper readme.
 - Demo: Next week.
 
@@ -54,6 +53,7 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## Write
 
+- Write something about watchdogTTL
 - Write something about the snapshotlister that it lags one scheduling cycle.
 - Write about deletion-cost and that it is hard to evict the right workload-owned pods, therefore I found the new eviction API.
 - Write about QueuingHints that it is new and we use it for reschedule queued pods.

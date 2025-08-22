@@ -95,6 +95,11 @@ func (pl *MyCrossNodePreemption) PostFilter(
 
 	pl.setActivePlan(inMem, cmName)
 
+	// Arm a one-shot timeout. If the plan is still active when TTL elapses,
+	// it will be deactivated. No completion polling involved.
+	_, planID := pl.getActivePlan()
+	pl.startPlanTimeout(ctx, planID, cmName, PlanExecutionTTL)
+
 	klog.InfoS("PostFilter: executing plan",
 		"targetNode", plan.TargetNode,
 		"movements", len(plan.PodMovements),
