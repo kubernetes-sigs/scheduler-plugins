@@ -28,10 +28,13 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## TODOs
 
-- Consider to protect pods that have node-selectors, PDBs, and other rules.
 - Add batch scheduling.
-- Cleanup code (incl. python) and write proper readme.
+- Check that the scheduler runs the plan correctly.
+- Large scale test
+- Test that requing pods works.
 - Demo: Next week.
+- Cleanup code (incl. python) and write proper readme.
+- Consider to protect pods that have node-selectors, PDBs, and other rules.
 
 ## Later TODOs
 
@@ -46,9 +49,7 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 ## Test
 
 - Double check that we are not looking at only running pods but rather all pods assigned to a node (allocated)
-- Check that the scheduler runs the plan correctly.
 - Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
-- Large scale test
 - Test that it works across workload type
 
 ## Write

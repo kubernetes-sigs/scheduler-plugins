@@ -28,7 +28,7 @@ const (
 	Name    = "MyCrossNodePreemption"
 	Version = "v1.0.0"
 
-	PlanExecutionTTL = 2 * time.Second // how long a plan may run before being terminated
+	PlanExecutionTTL = 1 * time.Minute // how long a plan may run before being terminated
 
 	ConfigMapNamespace  = "kube-system"
 	ConfigMapLabelKey   = "crossnode-plan"
@@ -189,11 +189,6 @@ func (pl *MyCrossNodePreemption) startPlanTimeout(ctx context.Context, planID, c
 
 		klog.InfoS("plan timeout reached; deactivating plan", "planID", planID, "ttl", ttl)
 		pl.clearActivePlan()
-
-		// Optional: mark as completed in the ConfigMap history so it won’t linger as “active”.
-		if cmName != "" {
-			pl.markPlanCompleted(ctx, cmName)
-		}
 	}()
 }
 
@@ -305,6 +300,35 @@ func (pl *MyCrossNodePreemption) clearActivePlan() {
 	pl.activePlan.Store((*StoredPlan)(nil))
 	pl.activePlanID.Store("")
 	pl.slotsPtr.Store(nil)
+	pl.nudgeBlockedPods()
+}
+
+func (pl *MyCrossNodePreemption) nudgeBlockedPods() error {
+	nudgeBlockedPodsHelper := func(ns, name string) error {
+		patch := []byte(fmt.Sprintf(
+			`{"metadata":{"annotations":{"crossnode-plan/wakeup":"%d"}}}`,
+			time.Now().UnixNano(),
+		))
+		_, err := pl.client.CoreV1().Pods(ns).Patch(
+			context.TODO(),
+			name,
+			types.StrategicMergePatchType,
+			patch,
+			metav1.PatchOptions{FieldManager: "my-crossnode-plugin"},
+		)
+		return err
+	}
+
+	// Wakeup blocked pods by patching an annotation.
+	if pl.blocked != nil {
+		for uid, bi := range pl.blocked.snapshot() {
+			if err := nudgeBlockedPodsHelper(bi.ns, bi.name); err != nil {
+				klog.ErrorS(err, "failed to nudge blocked pod", "uid", string(uid), "pod", bi.ns+"/"+bi.name)
+			}
+		}
+		pl.blocked.clear()
+	}
+	return nil
 }
 
 func (pl *MyCrossNodePreemption) getActivePlan() (*StoredPlan, string) {
