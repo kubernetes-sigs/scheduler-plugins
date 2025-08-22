@@ -22,16 +22,46 @@ import (
 
 // ---------------------------- PostFilter ----------------------------
 
+func (pl *MyCrossNodePreemption) tryEnterPostFilter() bool {
+	// returns true if we successfully acquired the gate
+	return !pl.postFilterActive.Swap(true)
+}
+
+func (pl *MyCrossNodePreemption) leavePostFilter() {
+	pl.postFilterActive.Store(false)
+}
+
 func (pl *MyCrossNodePreemption) PostFilter(
 	ctx context.Context,
 	state *framework.CycleState,
 	pending *v1.Pod,
 	_ framework.NodeToStatusMap,
 ) (*framework.PostFilterResult, *framework.Status) {
+	// Try to acquire the post-filter lock
+	if !pl.tryEnterPostFilter() {
+		pl.batched.add(pending.UID, pending.Namespace, pending.Name)
+		return nil, framework.NewStatus(
+			framework.Pending,
+			"optimizer busy; another pod is using the optimizer",
+		)
+	}
+	defer pl.leavePostFilter() // ensure we always release on every return path
+
 	// Don't allow another run of PostFilter if an active plan exists
 	sp, _ := pl.getActivePlan()
 	if sp != nil && !sp.Completed {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "active plan exists")
+	}
+
+	okRun, cooldown := pl.canRunOptimizer()
+	if !okRun {
+		pl.batched.add(pending.UID, pending.Namespace, pending.Name)
+		pl.scheduleNudgeAtCooldownEnd() // make sure we wake right after cool-down
+		klog.InfoS("PostFilter: optimizer cooldown", "batched pending pod", klog.KObj(pending), "cooldown", cooldown.Truncate(time.Second))
+		return nil, framework.NewStatus(
+			framework.UnschedulableAndUnresolvable,
+			fmt.Sprintf("optimizer cooling down; retry after ~%s", cooldown.Truncate(time.Second)),
+		)
 	}
 
 	klog.InfoS("PostFilter start", "pending pod", klog.KObj(pending),
@@ -54,28 +84,35 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	defer cancel()
 	start := time.Now()
 	out, err := pl.runPythonOptimizer(solveCtx, pending, PythonSolverTimeout)
+	pl.markOptimizerRunFinished()
 	if err != nil {
+		pl.onPlanSettled()
 		klog.ErrorS(err, "PostFilter: optimizer error", "took", time.Since(start))
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
-	klog.InfoS("PostFilter: solver executed", "status", out.Status, "took", time.Since(start))
+	klog.InfoS("PostFilter: optimizer run finished", "took", time.Since(start))
+
 	plan, err := pl.translatePlanFromSolver(out, pending)
 	if err != nil {
+		pl.onPlanSettled()
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	if plan == nil || (len(plan.PodMovements) == 0 && len(plan.VictimsToEvict) == 0 && out.NominatedNode == "") {
+		pl.onPlanSettled()
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "no actionable plan")
 	}
 
 	// Export active plan to ConfigMap for debugging purposes
 	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending)
 	if err != nil {
+		pl.clearActivePlan()
 		klog.ErrorS(err, "PostFilter: Failed to export plan to ConfigMap (continuing with in-memory only)")
 	}
 
 	// Build StoredPlan in-memory (same data as ConfigMap)
 	lite, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
 	if err != nil {
+		pl.clearActivePlan()
 		klog.ErrorS(err, "PostFilter: failed to materialize plan docs")
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
@@ -98,7 +135,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	// Arm a one-shot timeout. If the plan is still active when TTL elapses,
 	// it will be deactivated. No completion polling involved.
 	_, planID := pl.getActivePlan()
-	pl.startPlanTimeout(ctx, planID, cmName, PlanExecutionTTL)
+	pl.startPlanTimeout(planID, PlanExecutionTTL)
 
 	klog.InfoS("PostFilter: executing plan",
 		"targetNode", plan.TargetNode,
@@ -122,6 +159,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 
 	// Execute plan (evictions/recreates)
 	if err := pl.executePlan(ctx, plan); err != nil {
+		pl.onPlanSettled()
 		klog.ErrorS(err, "PostFilter: plan execution failed")
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}

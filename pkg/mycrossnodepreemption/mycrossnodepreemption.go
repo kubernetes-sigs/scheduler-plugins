@@ -28,6 +28,8 @@ const (
 	Name    = "MyCrossNodePreemption"
 	Version = "v1.0.0"
 
+	MinOptimizeGap = 20 * time.Second
+
 	PlanExecutionTTL = 1 * time.Minute // how long a plan may run before being terminated
 
 	ConfigMapNamespace  = "kube-system"
@@ -56,18 +58,25 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, err
 	}
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version)
-	return &MyCrossNodePreemption{handle: h, client: client, blocked: newBlockedSet()}, nil
+	return &MyCrossNodePreemption{
+		handle:  h,
+		client:  client,
+		batched: newBatchedSet(), // single structure for both cases
+	}, nil
 }
 
 // ---------------------------- Types -----------------------
 
 type MyCrossNodePreemption struct {
-	handle       framework.Handle
-	client       kubernetes.Interface
-	activePlan   atomic.Value              // stores *StoredPlan or nil
-	activePlanID atomic.Value              // string (e.g., cmName or a UUID)
-	slotsPtr     atomic.Pointer[planSlots] // atomic planSlots pointer
-	blocked      *blockedSet
+	handle           framework.Handle
+	client           kubernetes.Interface
+	activePlan       atomic.Value              // stores *StoredPlan or nil
+	activePlanID     atomic.Value              // string (e.g., cmName or a UUID)
+	slotsPtr         atomic.Pointer[planSlots] // atomic planSlots pointer
+	batched          *batchedSet               // holds pods we "block" while a plan executes and while cool-down is active
+	nextAllowedSolve atomic.Int64              // unix nano when next solve is allowed
+	nudgeOnce        atomic.Bool               // avoid multiple timers per window
+	postFilterActive atomic.Bool               // indicates if post-filter is active
 }
 
 type WorkloadKind int
@@ -175,7 +184,7 @@ type planSlots struct {
 	remaining rsNodeCounters
 }
 
-func (pl *MyCrossNodePreemption) startPlanTimeout(ctx context.Context, planID, cmName string, ttl time.Duration) {
+func (pl *MyCrossNodePreemption) startPlanTimeout(planID string, ttl time.Duration) {
 	go func() {
 		t := time.NewTimer(ttl)
 		defer t.Stop()
@@ -188,7 +197,7 @@ func (pl *MyCrossNodePreemption) startPlanTimeout(ctx context.Context, planID, c
 		}
 
 		klog.InfoS("plan timeout reached; deactivating plan", "planID", planID, "ttl", ttl)
-		pl.clearActivePlan()
+		pl.onPlanSettled()
 	}()
 }
 
@@ -300,35 +309,6 @@ func (pl *MyCrossNodePreemption) clearActivePlan() {
 	pl.activePlan.Store((*StoredPlan)(nil))
 	pl.activePlanID.Store("")
 	pl.slotsPtr.Store(nil)
-	pl.nudgeBlockedPods()
-}
-
-func (pl *MyCrossNodePreemption) nudgeBlockedPods() error {
-	nudgeBlockedPodsHelper := func(ns, name string) error {
-		patch := []byte(fmt.Sprintf(
-			`{"metadata":{"annotations":{"crossnode-plan/wakeup":"%d"}}}`,
-			time.Now().UnixNano(),
-		))
-		_, err := pl.client.CoreV1().Pods(ns).Patch(
-			context.TODO(),
-			name,
-			types.StrategicMergePatchType,
-			patch,
-			metav1.PatchOptions{FieldManager: "my-crossnode-plugin"},
-		)
-		return err
-	}
-
-	// Wakeup blocked pods by patching an annotation.
-	if pl.blocked != nil {
-		for uid, bi := range pl.blocked.snapshot() {
-			if err := nudgeBlockedPodsHelper(bi.ns, bi.name); err != nil {
-				klog.ErrorS(err, "failed to nudge blocked pod", "uid", string(uid), "pod", bi.ns+"/"+bi.name)
-			}
-		}
-		pl.blocked.clear()
-	}
-	return nil
 }
 
 func (pl *MyCrossNodePreemption) getActivePlan() (*StoredPlan, string) {
@@ -593,23 +573,23 @@ func bytesToMiB(b int64) int64 {
 	return b / (1024 * 1024)
 }
 
-type blockedInfo struct {
+type batchedInfo struct {
 	ns    string
 	name  string
 	until time.Time
 }
 
-type blockedSet struct {
+type batchedSet struct {
 	mu sync.RWMutex
-	m  map[types.UID]blockedInfo
+	m  map[types.UID]batchedInfo
 }
 
-func newBlockedSet() *blockedSet { return &blockedSet{m: map[types.UID]blockedInfo{}} }
+func newBatchedSet() *batchedSet { return &batchedSet{m: map[types.UID]batchedInfo{}} }
 
-// Add a pod to the blocked set for 5 minutes.
-func (s *blockedSet) add(uid types.UID, ns, name string) {
+// Add a pod to the set for 5 minutes.
+func (s *batchedSet) add(uid types.UID, ns, name string) {
 	s.mu.Lock()
-	s.m[uid] = blockedInfo{
+	s.m[uid] = batchedInfo{
 		ns:    ns,
 		name:  name,
 		until: time.Now().Add(5 * time.Minute),
@@ -617,28 +597,20 @@ func (s *blockedSet) add(uid types.UID, ns, name string) {
 	s.mu.Unlock()
 }
 
-// Has returns true if the uid is still blocked (and not expired yet).
-func (s *blockedSet) has(uid types.UID) bool {
-	s.mu.RLock()
-	bi, ok := s.m[uid]
-	s.mu.RUnlock()
-	return ok && time.Now().Before(bi.until)
-}
-
 // snapshot returns a stable copy of entries.
-func (s *blockedSet) snapshot() map[types.UID]blockedInfo {
+func (s *batchedSet) snapshot() map[types.UID]batchedInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make(map[types.UID]blockedInfo, len(s.m))
+	out := make(map[types.UID]batchedInfo, len(s.m))
 	for k, v := range s.m {
 		out[k] = v
 	}
 	return out
 }
 
-func (s *blockedSet) clear() {
+func (s *batchedSet) clear() {
 	s.mu.Lock()
-	s.m = map[types.UID]blockedInfo{}
+	s.m = map[types.UID]batchedInfo{}
 	s.mu.Unlock()
 }
 
@@ -828,4 +800,89 @@ func parseWorkloadKey(s string) (WorkloadKey, bool) {
 		return WorkloadKey{}, false
 	}
 	return WorkloadKey{kind: k, ns: ns, name: name}, true
+}
+
+func (pl *MyCrossNodePreemption) now() time.Time { return time.Now() }
+
+func (pl *MyCrossNodePreemption) canRunOptimizer() (bool, time.Duration) {
+	// if nextAllowedSolve is zero, allow immediately
+	na := time.Unix(0, pl.nextAllowedSolve.Load())
+	if na.IsZero() {
+		return true, 0
+	}
+	now := pl.now()
+	// if nextAllowedSolve is in the future, return false and the duration until it is allowed
+	if now.After(na) || now.Equal(na) {
+		return true, 0
+	}
+	return false, na.Sub(now)
+}
+
+func (pl *MyCrossNodePreemption) activateBatchedPods() {
+	if pl.batched == nil {
+		return
+	}
+	snap := pl.batched.snapshot()
+	if len(snap) == 0 {
+		return
+	}
+
+	// Use the shared informer lister (safe anytime, cheap).
+	podLister := pl.handle.SharedInformerFactory().Core().V1().Pods().Lister()
+
+	pods := make(map[string]*v1.Pod, len(snap))
+	for _, bi := range snap {
+		p, err := podLister.Pods(bi.ns).Get(bi.name)
+		if err != nil {
+			klog.ErrorS(err, "activateBatchedPods: lister get failed", "pod", bi.ns+"/"+bi.name)
+			continue
+		}
+		pods[bi.ns+"/"+bi.name] = p
+	}
+	pl.handle.Activate(klog.Background(), pods) // unknown pods are ignored safely
+	pl.batched.clear()
+}
+
+func (pl *MyCrossNodePreemption) markOptimizerRunFinished() {
+	pl.nextAllowedSolve.Store(pl.now().Add(MinOptimizeGap).UnixNano())
+	pl.scheduleNudgeAtCooldownEnd() // ensure a wake-up happens right after cool-down
+}
+
+// scheduleNudgeAtCooldownEnd triggers a one-shot wake-up when the optimizer cool-down elapses.
+func (pl *MyCrossNodePreemption) scheduleNudgeAtCooldownEnd() {
+	if pl.nudgeOnce.Swap(true) {
+		return // already scheduled for this window
+	}
+	deadline := time.Unix(0, pl.nextAllowedSolve.Load())
+	if deadline.IsZero() {
+		pl.nudgeOnce.Store(false)
+		return
+	}
+	delay := time.Until(deadline)
+	if delay <= 0 { // already past deadline
+		pl.activateBatchedPods()
+		pl.nudgeOnce.Store(false)
+		return
+	}
+	go func(d time.Duration) {
+		t := time.NewTimer(d)
+		defer t.Stop()
+		<-t.C
+		pl.activateBatchedPods()
+		pl.nudgeOnce.Store(false)
+	}(delay)
+}
+
+func (pl *MyCrossNodePreemption) onPlanSettled() {
+	// 1) deactivate plan
+	pl.clearActivePlan()
+
+	// 2) wake blocked pods now
+	pl.activateBatchedPods()
+
+	// 3) allow next optimizer run immediately (optional but recommended to avoid "cooldown 0s" re-bounce)
+	pl.nextAllowedSolve.Store(0)
+
+	// 4) if a delayed nudge was armed, let future cycles re-arm as needed
+	pl.nudgeOnce.Store(false)
 }

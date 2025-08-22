@@ -28,6 +28,7 @@ func (pl *MyCrossNodePreemption) PostBind(
 
 	ok, err := pl.isPlanCompleted(ctx, sp)
 	if err != nil {
+		pl.onPlanSettled()
 		klog.ErrorS(err, "PostBind: completion check failed")
 		return
 	}
@@ -36,9 +37,7 @@ func (pl *MyCrossNodePreemption) PostBind(
 		return
 	}
 
-	klog.InfoS("PostBind: plan completed; cleared active plan and nudged blocked pods") // log here, to prevent waiting for CM completion
-
-	// Mark completed both in-memory and in the persisted plan doc.
-	pl.clearActivePlan()
-	pl.markPlanCompleted(ctx, planID)
+	klog.InfoS("PostBind: plan completed; clearing plan and activating blocked pods")
+	pl.onPlanSettled()
+	pl.markPlanCompleted(ctx, planID) // safe to call after; it’s idempotent
 }
