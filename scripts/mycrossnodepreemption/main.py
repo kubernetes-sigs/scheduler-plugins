@@ -165,6 +165,37 @@ def solve(instance: dict) -> dict:
                 m.Add(evict[i] == 0)
                 m.Add(move[i]  == 0)
                 m.Add(placed[i] == 1)
+    
+    # ---- Strict cumulative monotonicity across priority tiers ------------
+    # For every distinct priority threshold t, if there is any pending pod with
+    # priority >= t, the new plan must place *strictly more* pods with priority >= t
+    # than are currently running.
+
+    all_priorities = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
+
+    # Precompute index sets per threshold
+    idxs_ge = {t: [i for i in range(num_pods) if p_pri(i) >= t] for t in all_priorities}
+
+    # How many are currently running (placed in the cluster *now*) for >= t
+    running_ge = {
+        t: sum(1 for i in idxs if p_where_j(i) is not None)
+        for t, idxs in idxs_ge.items()
+    }
+
+    # Do we have at least one *pending* pod with priority >= t?
+    has_pending_ge = {
+        t: any(p_where_j(i) is None for i in idxs)
+        for t, idxs in idxs_ge.items()
+    }
+
+    for t in all_priorities:
+        # Base: never regress
+        rhs = running_ge[t]
+        # Strictly more if there exists a pending pod at/above t
+        if has_pending_ge[t]:
+            rhs += 1
+        # Enforce on the *new* placement decision variables
+        m.Add(sum(placed[i] for i in idxs_ge[t]) >= rhs)
 
     # ---------------- Symmetry-breaking ----------------
     for j1 in range(num_nodes - 1):
