@@ -32,17 +32,15 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## TODOs
 
-- Add batch scheduling.
 - Check that the scheduler runs the plan correctly.
 - Large scale test
 - Cleanup structs and make the configmap more efficient
-- Demo: Next week.
 - Cleanup code (incl. python) and write proper readme.
+- Demo: Next week.
 - Consider to protect pods that have node-selectors, PDBs, and other rules.
 
 ## Later TODOs
 
-- Third mode: Samle pods der ikke kan scheduleres af default scheduler op i postfilter og kør derefter solver og brug filter til at assigne til node. Altså køres pods potentielt igennem to gange.
 - Faster algorithm using simple heuristics.
 - Fix Neri's code or know what has been done.
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
@@ -53,7 +51,6 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## Test
 
-- Double check that we are not looking at only running pods but rather all pods assigned to a node (allocated)
 - Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
 - Test that it works across workload type
 
