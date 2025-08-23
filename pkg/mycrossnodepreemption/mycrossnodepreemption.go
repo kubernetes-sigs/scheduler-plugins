@@ -40,7 +40,7 @@ const (
 	ModeEveryPreemptor = false
 
 	// ======= Batch settings =======
-	BatchSolveInterval = 30 * time.Second // periodic cohort solve
+	BatchSolveInterval = 40 * time.Second // periodic cohort solve
 
 	// ======= Plan settings =======
 	PlanExecutionTTL = 1 * time.Minute // how long a plan may run before being terminated
@@ -52,7 +52,7 @@ const (
 	EvictionPollInterval = 1 * time.Second
 
 	PythonSolverPath    = "/opt/solver/main.py"
-	PythonSolverTimeout = 20 * time.Second
+	PythonSolverTimeout = 30 * time.Second
 )
 
 // ---------------------------- Plugin wiring -----------------------
