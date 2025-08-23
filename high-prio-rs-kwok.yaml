@@ -6,7 +6,7 @@ metadata:
   name: high-priority-rs
   namespace: crossnode-test
 spec:
-  replicas: 4
+  replicas: 1
   selector:
     matchLabels:
       app: high-priority
@@ -25,8 +25,8 @@ spec:
           image: registry.k8s.io/pause:3.9
           resources:
             requests:
-              cpu: "7000m"
+              cpu: "5000m"
               memory: "1Gi"
             limits:
-              cpu: "7000m"
+              cpu: "5000m"
               memory: "1Gi"

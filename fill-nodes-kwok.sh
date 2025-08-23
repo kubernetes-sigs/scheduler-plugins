@@ -7,12 +7,12 @@ set -euo pipefail
 #
 # Behavior:
 # - NUM_REPLICASET == 0:
-#     Create naked Pods pinned per node. For each node, split the node-level target CPU/Mem
-#     evenly across the node’s PODS_PER_NODE pods (with small rounding).
+#     Create naked Pods pinned per node. For each node, RANDOMLY partition the node-level target CPU/Mem
+#     across the node’s PODS_PER_NODE pods (variable-sized per pod).
 # - NUM_REPLICASET > 0:
-#     Randomly partition TOTAL_REPLICAS = NUM_NODES*PODS_PER_NODE across NUM_REPLICASET RSs.
-#     Distribute cluster-level target CPU/Mem evenly across TOTAL_REPLICAS (with rounding) and
-#     assign contiguous slices of that distribution to each RS. No “fit” checks. No waiting.
+#     Randomly partition TOTAL_REPLICAS = NUM_NODES*PODS_PER_NODE across NUM_REPLICASET RSs (>=1 each).
+#     Randomly partition cluster-level target CPU/Mem across TOTAL_REPLICAS, then for RS i take the
+#     contiguous slice and use its integer average as that RS’s per-replica requests. No fit checks. No waiting.
 #
 # Priority rule (descending rollover): rs1->p4, rs2->p3, rs3->p2, rs4->p1, rs5->p4, ...
 
@@ -29,8 +29,9 @@ NODE_MEM_IN=${8:-32Gi}
 IMAGE="registry.k8s.io/pause:3.9"
 
 # Optional envs
-SRAND_SEED="${SRAND_SEED:-}" # if set, use deterministic partitioning
-VARIANCE="${VARIANCE:-50}"   # affects random partition spread
+SRAND_SEED="${SRAND_SEED:-}"   # if set, use deterministic partitioning
+VARIANCE="${VARIANCE:-50}"     # affects random partition spread (bigger = spikier)
+DIST_MODE="${DIST_MODE:-random}"  # "random" (default) or "even"
 
 die(){ echo "[kwok-fill][ERROR] $*" >&2; exit 1; }
 log(){ echo "[kwok-fill] $*"; }
@@ -67,7 +68,6 @@ partition_int() {
     sumw=$(( sumw + w[i] ))
   done
   for ((i=0;i<K-1;i++)); do
-    # proportional share (integer)
     share=$(( rem * w[i] / sumw ))
     parts[i]=$(( MIN + share ))
     allocated=$(( allocated + share ))
@@ -77,7 +77,6 @@ partition_int() {
 }
 
 # Even integer split of TOTAL across N slots -> array of length N summing to TOTAL.
-# Distributes remainder (+1) to the first few slots.
 split_even() {
   local TOTAL="$1" N="$2"
   (( N > 0 )) || die "split_even: N must be > 0"
@@ -219,6 +218,16 @@ prio_for_step_desc() {
   echo $(( 4 - ((step-1) % 4) ))
 }
 
+# Helper: choose distribution function
+pick_dist() {
+  local TOTAL="$1" N="$2"
+  if [[ "$DIST_MODE" == "even" ]]; then
+    split_even "$TOTAL" "$N"
+  else
+    partition_int "$TOTAL" "$N" 1
+  fi
+}
+
 main() {
   # optional deterministic RNG
   if [[ -n "${SRAND_SEED}" ]]; then
@@ -246,12 +255,12 @@ PY
   local TARGET_MI_CLUSTER=$(( TARGET_MI_NODE * NUM_NODES ))
 
   if (( NUM_REPLICASET <= 0 )); then
-    # -------- Naked Pod mode (even split per node) --------
+    # -------- Naked Pod mode (variable-sized per node) --------
     for i in $(seq 1 "$NUM_NODES"); do
       local node="kwok-node-${i}"
-      # Even split of node targets across PODS_PER_NODE
-      IFS=' ' read -r -a cpu_parts <<< "$(split_even "$TARGET_MC_NODE" "$PODS_PER_NODE")"
-      IFS=' ' read -r -a mem_parts <<< "$(split_even "$TARGET_MI_NODE" "$PODS_PER_NODE")"
+      # RANDOM (or even) split of node targets across PODS_PER_NODE
+      IFS=' ' read -r -a cpu_parts <<< "$(pick_dist "$TARGET_MC_NODE" "$PODS_PER_NODE")"
+      IFS=' ' read -r -a mem_parts <<< "$(pick_dist "$TARGET_MI_NODE" "$PODS_PER_NODE")"
       for p in $(seq 1 "$PODS_PER_NODE"); do
         local idx=$((p-1))
         local qcpu qmem pc podname
@@ -262,20 +271,20 @@ PY
         render_pod "$podname" "$node" "$qcpu" "$qmem" "$pc" | kubectl --context "$CTX" apply -f -
       done
     done
-    log "✅ Created $((NUM_NODES*PODS_PER_NODE)) naked pods (even per-node target split)."
+    log "✅ Created $((NUM_NODES*PODS_PER_NODE)) naked pods (DIST_MODE=${DIST_MODE}, variable-sized per node)."
     echo "  kubectl --context ${CTX} -n ${NS} get pods -o wide"
     exit 0
   fi
 
-  # -------- ReplicaSet mode (random replica partition; even resource per replica) --------
+  # -------- ReplicaSet mode (random replica partition; variable-sized RS) --------
   # 1) Randomly partition TOTAL_PODS into NUM_REPLICASET RS replica counts (>=1 each).
   IFS=' ' read -r -a rs_replicas <<< "$(partition_int "$TOTAL_PODS" "$NUM_REPLICASET" 1)"
 
-  # 2) Evenly split TOTAL target CPU/Mem across TOTAL_PODS replicas (integer, exact sum).
-  IFS=' ' read -r -a per_rep_cpu_mc <<< "$(split_even "$TARGET_MC_CLUSTER" "$TOTAL_PODS")"
-  IFS=' ' read -r -a per_rep_mem_mi <<< "$(split_even "$TARGET_MI_CLUSTER" "$TOTAL_PODS")"
+  # 2) RANDOM (or even) split TOTAL target CPU/Mem across TOTAL_PODS replicas (integer, exact sum).
+  IFS=' ' read -r -a per_rep_cpu_mc <<< "$(pick_dist "$TARGET_MC_CLUSTER" "$TOTAL_PODS")"
+  IFS=' ' read -r -a per_rep_mem_mi <<< "$(pick_dist "$TARGET_MI_CLUSTER" "$TOTAL_PODS")"
 
-  # 3) For RS i, take a contiguous slice of those per-rep arrays.
+  # 3) For RS i, take a contiguous slice of those per-rep arrays and use integer average as RS per-rep.
   local offset=0
   for i in $(seq 1 "$NUM_REPLICASET"); do
     local count="${rs_replicas[$((i-1))]}"
@@ -286,8 +295,6 @@ PY
     local pc="p${prio}"
     local rsname="rs${i}-p${pc}"
 
-    # Choose a representative per-rep request for this RS:
-    #   Use the average of the slice (still simple & deterministic).
     local sum_mc=0 sum_mi=0 idx
     for ((idx=0; idx<count; idx++)); do
       sum_mc=$(( sum_mc + per_rep_cpu_mc[offset+idx] ))
@@ -305,7 +312,7 @@ PY
     offset=$(( offset + count ))
   done
 
-  log "✅ Done (replicasets=${NUM_REPLICASET}, total replicas=${TOTAL_PODS})."
+  log "✅ Done (replicasets=${NUM_REPLICASET}, total replicas=${TOTAL_PODS}, DIST_MODE=${DIST_MODE})."
   echo "  kubectl --context ${CTX} -n ${NS} get rs"
   echo "  kubectl --context ${CTX} -n ${NS} get pods -o wide"
 }

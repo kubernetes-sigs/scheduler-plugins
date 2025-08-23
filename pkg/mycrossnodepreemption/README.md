@@ -26,12 +26,16 @@ Combined:
 
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile . && kwokctl create cluster --name kwok --config kwok-cluster.yaml &&  ./fill-nodes-kwok.sh kwok 13 4 5 && ./cluster-usage.sh
 
+## Questions
+
+- What to do with evicted pods - put them to queue or try again immediately?
+
 ## TODOs
 
 - Add batch scheduling.
 - Check that the scheduler runs the plan correctly.
 - Large scale test
-- Test that requing pods works.
+- Cleanup structs and make the configmap more efficient
 - Demo: Next week.
 - Cleanup code (incl. python) and write proper readme.
 - Consider to protect pods that have node-selectors, PDBs, and other rules.

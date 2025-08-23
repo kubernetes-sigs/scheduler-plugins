@@ -6,15 +6,13 @@ import (
 	"context"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 var _ framework.PreEnqueuePlugin = &MyCrossNodePreemption{}
 
-func (pl *MyCrossNodePreemption) PreEnqueue(
-	_ context.Context,
-	pod *v1.Pod,
-) *framework.Status {
+func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *framework.Status {
 	sp, _ := pl.getActivePlan()
 
 	// Always allow kube-system to proceed.
@@ -22,7 +20,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(
 		return framework.NewStatus(framework.Success)
 	}
 
-	// When a plan is active, stop-the-world except whitelisted pods.
+	// While a plan is executing, gate everything not explicitly allowed by the plan.
 	if sp != nil && !sp.Completed {
 		if string(pod.UID) == sp.PendingUID {
 			return framework.NewStatus(framework.Success)
@@ -32,23 +30,23 @@ func (pl *MyCrossNodePreemption) PreEnqueue(
 			return framework.NewStatus(framework.Success)
 		}
 		if wk, ok := topWorkload(pod); ok {
-			key := wk.String()
-			if _, inPlan := sp.WorkloadDesiredPerNode[key]; inPlan {
+			if _, inPlan := sp.WorkloadDesiredPerNode[wk.String()]; inPlan {
 				return framework.NewStatus(framework.Success)
 			}
-			pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: RS not in active plan")
 		}
+		// New pods while executing → catch here regardless of BatchMode
+		klog.V(2).InfoS("PreEnqueue: active plan; blocking", "pod", klog.KObj(pod))
 		pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: pod not in active plan")
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: active plan; blocking")
 	}
 
 	// No active plan:
-	if BatchModeEnabled {
+	if batchAtPreEnqueue() {
+		klog.V(2).InfoS("PreEnqueue: batched pod", "pod", klog.KObj(pod))
 		pl.addToBatch(pod)
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: batched for cross-node optimization")
+		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: batched pod")
 	}
 
-	// Not batching: let it flow; if unschedulable, PostFilter may solve single-preemptor.
+	// BatchPostFilter or BatchOff, let it flow; if it fails, PostFilter will catch (or every-preemptor will act).
 	return framework.NewStatus(framework.Success)
 }

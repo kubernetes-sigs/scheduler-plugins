@@ -10,12 +10,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-func (pl *MyCrossNodePreemption) PostBind(
-	ctx context.Context,
-	_ *framework.CycleState,
-	_ *v1.Pod,
-	_ string,
-) {
+func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, _ *v1.Pod, _ string) {
 	sp, planID := pl.getActivePlan()
 	if sp == nil || sp.Completed {
 		return

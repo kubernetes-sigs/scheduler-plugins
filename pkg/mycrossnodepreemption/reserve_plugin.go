@@ -32,7 +32,7 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 		return framework.NewStatus(framework.Success)
 	}
 
-	// Pending preemptor (only in single-preemptor mode) doesn't consume RS quota here.
+	// Pending preemptor (only in every-preemptor mode) doesn't consume workload quota here.
 	if sp.TargetNode != "" && string(pod.UID) == sp.PendingUID {
 		return framework.NewStatus(framework.Success)
 	}
@@ -45,26 +45,26 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	key := wk.String()
 	perNode, ok := sp.WorkloadDesiredPerNode[key]
 	if !ok || perNode[node] == 0 {
-		return framework.NewStatus(framework.Unschedulable, "stop-the-world: RS not allowed on node")
+		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not allowed on node")
 	}
 
 	slots := pl.slotsPtr.Load()
 	if slots == nil || slots.planID != planID {
-		return framework.NewStatus(framework.Unschedulable, "stop-the-world: plan changed")
+		return framework.NewStatus(framework.Unschedulable, "Reserve: plan changed")
 	}
 	ctrs, ok := slots.remaining[key]
 	if !ok {
-		return framework.NewStatus(framework.Unschedulable, "stop-the-world: RS not tracked")
+		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not tracked")
 	}
 	ctr, ok := ctrs[node]
 	if !ok {
-		return framework.NewStatus(framework.Unschedulable, "stop-the-world: node not tracked")
+		return framework.NewStatus(framework.Unschedulable, "Reserve: node not tracked")
 	}
 
 	for {
 		cur := ctr.Load()
 		if cur <= 0 {
-			return framework.NewStatus(framework.Unschedulable, "stop-the-world: RS node quota exhausted")
+			return framework.NewStatus(framework.Unschedulable, "Reserve: workload node quota exhausted")
 		}
 		if ctr.CompareAndSwap(cur, cur-1) {
 			st.Write(rsReservationKey, &rsReservationState{key: reservationKey{rsKey: key, nodeName: node}})

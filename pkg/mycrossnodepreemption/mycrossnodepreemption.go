@@ -30,19 +30,17 @@ import (
 
 const (
 	Name    = "MyCrossNodePreemption"
-	Version = "v1.3.1"
+	Version = "v1.4.0"
 
-	// ======= Modes =======
-	// If true, we collect pods in a local batch and solve every SolveInterval.
-	// If false, pods flow normally and/or PostFilter can run single-preemptor solving.
-	BatchModeEnabled = false
+	// ======= Modes (pick exactly one high-level strategy) =======
+	// Batch strategy:
+	BatchMode BatchIngressMode = BatchPreEnqueue // Modes: BatchPostFilter, BatchPreEnqueue, BatchOff
 
-	// If true, PostFilter (when reached and BatchModeEnabled==false) will take the single
-	// unschedulable preemptor and compute/execute a plan immediately.
-	PostFilterSinglePreemptor = true
+	// Every-preemptor strategy (mutually exclusive with any BatchMode != BatchOff)
+	ModeEveryPreemptor = false
 
 	// ======= Batch settings =======
-	BatchSolveInterval = 30 * time.Second // periodic cohort solve
+	BatchSolveInterval = 120 * time.Second // periodic cohort solve
 
 	// ======= Plan settings =======
 	PlanExecutionTTL = 1 * time.Minute // how long a plan may run before being terminated
@@ -50,26 +48,27 @@ const (
 	ConfigMapNamespace = "kube-system"
 	ConfigMapLabelKey  = "crossnode-plan"
 
-	EvictionPollTimeout  = 30 * time.Second
+	EvictionPollTimeout  = 20 * time.Second
 	EvictionPollInterval = 1 * time.Second
 
 	PythonSolverPath    = "/opt/solver/main.py"
-	PythonSolverTimeout = 120 * time.Second
+	PythonSolverTimeout = 80 * time.Second
 )
 
 // ---------------------------- Plugin wiring -----------------------
 func (pl *MyCrossNodePreemption) Name() string { return Name }
 
 func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
-	// sanity: exactly one mode
-	if (BatchModeEnabled && PostFilterSinglePreemptor) || (!BatchModeEnabled && !PostFilterSinglePreemptor) {
-		return nil, fmt.Errorf("%s: invalid config: enable exactly one of BatchModeEnabled or PostFilterSinglePreemptor", Name)
+	// exactly one strategy
+	if (batchingEnabled() && ModeEveryPreemptor) || (!batchingEnabled() && !ModeEveryPreemptor) {
+		return nil, fmt.Errorf("%s: invalid config: enable exactly one of {BatchMode!=BatchOff, PostFilterSinglePreemptor}", Name)
 	}
 
 	client, err := kubernetes.NewForConfig(h.KubeConfig())
 	if err != nil {
 		return nil, err
 	}
+
 	pl := &MyCrossNodePreemption{
 		handle:      h,
 		client:      client,
@@ -77,9 +76,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		batchPods:   make(map[types.UID]*v1.Pod, 32),
 	}
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version,
-		"batchMode", BatchModeEnabled, "singlePreemptorMode", PostFilterSinglePreemptor)
+		"batchMode", BatchMode, "everyPreemptorMode", ModeEveryPreemptor)
 
-	if BatchModeEnabled {
+	if batchingEnabled() {
 		go pl.batchLoop(context.Background())
 	}
 	return pl, nil
@@ -100,6 +99,19 @@ type MyCrossNodePreemption struct {
 	batchMu   sync.Mutex
 	batchPods map[types.UID]*v1.Pod
 }
+
+type BatchIngressMode int
+
+const (
+	BatchOff BatchIngressMode = iota
+	BatchPreEnqueue
+	BatchPostFilter
+)
+
+// small helpers
+func batchAtPreEnqueue() bool { return BatchMode == BatchPreEnqueue }
+func batchAtPostFilter() bool { return BatchMode == BatchPostFilter }
+func batchingEnabled() bool   { return BatchMode != BatchOff }
 
 type WorkloadKind int
 
@@ -135,12 +147,18 @@ type StoredPlan struct {
 type PodAssignmentPlanLite struct {
 	TargetNode string         `json:"targetNode"`
 	Movements  []MovementLite `json:"movements"`
-	Evictions  []PodRefLite   `json:"evictions"`
+	Evictions  []EvictionLite `json:"evictions"`
 }
 type MovementLite struct {
 	Pod      PodRefLite `json:"pod"`
 	FromNode string     `json:"fromNode"`
 	ToNode   string     `json:"toNode"`
+	CPUm     int64      `json:"cpu_m"`
+	MemBytes int64      `json:"mem_bytes"`
+}
+type EvictionLite struct {
+	Pod      PodRefLite `json:"pod"`
+	FromNode string     `json:"fromNode"`
 	CPUm     int64      `json:"cpu_m"`
 	MemBytes int64      `json:"mem_bytes"`
 }
@@ -186,7 +204,7 @@ type SolverEviction struct {
 	Name      string `json:"name"`
 }
 
-// NOTE: Nominations removed; nominatedNode is optional and used only in single-preemptor mode.
+// NOTE: Nominations removed; nominatedNode is optional and used only in every-preemptor mode.
 type SolverOutput struct {
 	Status        string            `json:"status"`
 	NominatedNode string            `json:"nominatedNode,omitempty"`
@@ -222,18 +240,20 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 					return
 				}
 
+				_ = pl.pruneBatchStale()
+
 				// Snapshot (do NOT clear yet). We only remove on success.
 				pods := pl.snapshotBatch()
 				if len(pods) == 0 {
 					return
 				}
 
+				klog.InfoS("Batch loop: solving for batch", "batchSize", len(pods))
+
 				// run cohort solve (no explicit preemptor)
 				cctx, cancel := context.WithTimeout(context.Background(), PythonSolverTimeout)
-				// log solver time
 				startTime := time.Now()
 				out, err := pl.runPythonOptimizerCohort(cctx, pods, PythonSolverTimeout)
-				klog.InfoS("batch solve completed", "duration", time.Since(startTime))
 				cancel()
 				if err != nil || out == nil {
 					if err != nil {
@@ -284,6 +304,8 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 				}
 				pl.setActivePlan(inMem, cmName)
 
+				klog.InfoS("batch solve completed", "status", out.Status, "duration", time.Since(startTime))
+
 				// TTL watchdog
 				_, planID := pl.getActivePlan()
 				pl.startPlanTimeout(planID, PlanExecutionTTL)
@@ -311,7 +333,25 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 				// Now that we succeeded, remove these pods from the batch.
 				pl.removeFromBatchByUIDs(pods)
 
-				klog.InfoS("batch plan executed; batch activated", "batchSize", len(pods), "planID", planID, "moved", len(plan.PodMovements), "evicted", len(plan.VictimsToEvict))
+				// Count "new from batch" = pending pods in this batch that solver placed somewhere.
+				newFromBatch := 0
+				for _, p := range pods {
+					if p == nil || p.Spec.NodeName != "" {
+						continue
+					}
+					if node, ok := out.Placements[string(p.UID)]; ok && node != "" {
+						newFromBatch++
+					}
+				}
+
+				// Existing summary line — add "new"
+				klog.InfoS("batch plan executed; batch activated",
+					"batchSize", len(pods),
+					"planID", planID,
+					"moved", len(plan.PodMovements),
+					"evicted", len(plan.VictimsToEvict),
+					"new", newFromBatch,
+				)
 			}()
 		case <-ctx.Done():
 			return
@@ -359,6 +399,10 @@ func (pl *MyCrossNodePreemption) removeFromBatchByUIDs(pods []*v1.Pod) {
 }
 
 func (pl *MyCrossNodePreemption) addToBatch(p *v1.Pod) {
+	// Only add to batch if pod is not scheduled yet.
+	if p == nil || p.Spec.NodeName != "" {
+		return
+	}
 	pl.batchMu.Lock()
 	pl.batchPods[p.UID] = p
 	pl.batchMu.Unlock()
@@ -433,7 +477,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 		addOut(mv.Pod.UID)
 	}
 	for _, ev := range sp.Plan.Evictions {
-		addOut(ev.UID)
+		addOut(ev.Pod.UID)
 	}
 
 	// 4) remaining = desired - current + plannedOut (>=0)
@@ -769,8 +813,11 @@ func (pl *MyCrossNodePreemption) materializePlanDocs(
 		})
 	}
 	for _, v := range plan.VictimsToEvict {
-		lite.Evictions = append(lite.Evictions, PodRefLite{
-			Namespace: v.Namespace, Name: v.Name, UID: string(v.UID),
+		lite.Evictions = append(lite.Evictions, EvictionLite{
+			Pod:      PodRefLite{Namespace: v.Namespace, Name: v.Name, UID: string(v.UID)},
+			FromNode: v.Spec.NodeName,
+			CPUm:     getPodCPURequest(v),
+			MemBytes: getPodMemoryRequest(v),
 		})
 	}
 
@@ -794,8 +841,9 @@ func (pl *MyCrossNodePreemption) materializePlanDocs(
 		if !ok || p == nil {
 			continue
 		}
-		// Skip the lead pending pod if any; its binding is enforced by UID pinning (single-preemptor only)
-		if uid == string(pending.UID) {
+		leadIsPreemptor := out != nil && out.NominatedNode != ""
+		if uid == string(pending.UID) && leadIsPreemptor {
+			// In single-preemptor mode, the lead is bound by nominated node; don't allocate it via quotas.
 			continue
 		}
 
@@ -914,7 +962,7 @@ func parseWorkloadKey(s string) (WorkloadKey, bool) {
 // Cohort-capable runner
 func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
 	ctx context.Context,
-	preemptors []*v1.Pod,
+	batched []*v1.Pod,
 	timeout time.Duration,
 ) (*SolverOutput, error) {
 	// Live nodes
@@ -923,17 +971,10 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
 
-	type SolverInputCohort struct {
-		TimeoutMs      int64        `json:"timeout_ms"`
-		IgnoreAffinity bool         `json:"ignore_affinity"`
-		Preemptors     []SolverPod  `json:"preemptors,omitempty"`
-		Nodes          []SolverNode `json:"nodes"`
-		Pods           []SolverPod  `json:"pods"`
-	}
-	in := SolverInputCohort{
+	in := SolverInput{
 		TimeoutMs:      timeout.Milliseconds(),
 		IgnoreAffinity: true,
-		Preemptors:     make([]SolverPod, 0),
+		Preemptor:      nil, // batch mode
 		Nodes:          make([]SolverNode, 0),
 		Pods:           make([]SolverPod, 0),
 	}
@@ -959,6 +1000,7 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
+	seen := make(map[string]bool, len(allPods)+len(batched))
 	for _, p := range allPods {
 		where := p.Spec.NodeName
 		if where != "" && !usable[where] {
@@ -969,17 +1011,20 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
 			sp.Protected = true
 		}
 		in.Pods = append(in.Pods, sp)
+		seen[sp.UID] = true
 	}
 
-	// include preemptors explicitly and also as unscheduled pods
-	for _, p := range preemptors {
-		in.Preemptors = append(in.Preemptors, toSolverPod(p, ""))
-		in.Pods = append(in.Pods, toSolverPod(p, ""))
+	// Append batched pending pods (no node) if not already present
+	for _, p := range batched {
+		sp := toSolverPod(p, "")
+		if !seen[sp.UID] {
+			in.Pods = append(in.Pods, sp)
+			seen[sp.UID] = true
+		}
 	}
 
 	raw, _ := json.Marshal(in)
-	klog.V(2).InfoS("Solver input", "raw", string(raw),
-		"nodes", len(in.Nodes), "pods", len(in.Pods), "preemptors", len(in.Preemptors))
+	klog.V(2).InfoS("Batch solver input", "nodes", len(in.Nodes), "pods", len(in.Pods))
 
 	cmd := exec.CommandContext(ctx, "python3", PythonSolverPath)
 	cmd.Stdin = bytes.NewReader(raw)
@@ -994,7 +1039,8 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
 	if err := json.Unmarshal(outBuf.Bytes(), &out); err != nil {
 		return nil, fmt.Errorf("decode solver output: %w", err)
 	}
-	if out.Status != "OK" {
+	okStatus := out.Status == "OPTIMAL" || out.Status == "FEASIBLE"
+	if !okStatus {
 		return &out, fmt.Errorf("solver status: %s", out.Status)
 	}
 	return &out, nil
@@ -1018,7 +1064,7 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 	out *SolverOutput,
 	pending *v1.Pod,
 ) (*PodAssignmentPlan, error) {
-	// In single-preemptor mode we expect NominatedNode != "".
+	// In every-preemptor mode we expect NominatedNode != "".
 	// In batch mode NominatedNode may be "".
 	plan := &PodAssignmentPlan{TargetNode: out.NominatedNode}
 
@@ -1043,17 +1089,19 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 			continue
 		}
 		from := p.Spec.NodeName
+		if from == "" {
+			// Pending pod: not a "move" — let controllers/scheduler place it
+			continue
+		}
 		if from == dest || dest == "" {
 			continue
 		}
 		plan.PodMovements = append(plan.PodMovements, PodMovement{
-			Pod:           p,
-			FromNode:      from,
-			ToNode:        dest,
-			CPURequest:    getPodCPURequest(p),
-			MemoryRequest: getPodMemoryRequest(p),
+			Pod: p, FromNode: from, ToNode: dest,
+			CPURequest: getPodCPURequest(p), MemoryRequest: getPodMemoryRequest(p),
 		})
 	}
+
 	return plan, nil
 }
 
@@ -1123,6 +1171,24 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssig
 			seen[key] = true
 			targets = append(targets, v)
 		}
+	}
+
+	for _, mv := range plan.PodMovements {
+		klog.V(2).InfoS("Pod movement planned",
+			"pod", podRef(mv.Pod),
+			"from", mv.FromNode,
+			"to", mv.ToNode,
+			"cpu(m)", mv.CPURequest,
+			"mem(MiB)", bytesToMiB(mv.MemoryRequest),
+		)
+	}
+	for _, v := range plan.VictimsToEvict {
+		klog.V(2).InfoS("Eviction planned",
+			"pod", podRef(v),
+			"from", v.Spec.NodeName,
+			"cpu(m)", getPodCPURequest(v),
+			"mem(MiB)", bytesToMiB(getPodMemoryRequest(v)),
+		)
 	}
 
 	// 1) evict/wait pods
@@ -1266,7 +1332,7 @@ func (pl *MyCrossNodePreemption) activateBlockedPods() {
 	for _, bi := range snap {
 		p, err := podLister.Pods(bi.ns).Get(bi.name)
 		if err != nil {
-			klog.ErrorS(err, "activateBlockedPods: lister get failed", "pod", bi.ns+"/"+bi.name)
+			klog.ErrorS(err, "lister failed", "pod", bi.ns+"/"+bi.name)
 			continue
 		}
 		pods[bi.ns+"/"+bi.name] = p
@@ -1302,6 +1368,14 @@ func isNodeUsable(n *v1.Node) bool {
 		n.Status.Allocatable.Memory().Value() > 0
 }
 
+type SolverInput struct {
+	TimeoutMs      int64        `json:"timeout_ms"`
+	IgnoreAffinity bool         `json:"ignore_affinity"`
+	Preemptor      *SolverPod   `json:"preemptor,omitempty"` // nil => batch mode
+	Nodes          []SolverNode `json:"nodes"`
+	Pods           []SolverPod  `json:"pods"`
+}
+
 func (pl *MyCrossNodePreemption) runPythonOptimizerSingle(
 	ctx context.Context,
 	preemptor *v1.Pod,
@@ -1316,17 +1390,12 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerSingle(
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
 
-	type SolverInput struct {
-		TimeoutMs      int64        `json:"timeout_ms"`
-		IgnoreAffinity bool         `json:"ignore_affinity"`
-		Preemptors     []SolverPod  `json:"preemptors"`
-		Nodes          []SolverNode `json:"nodes"`
-		Pods           []SolverPod  `json:"pods"`
-	}
 	in := SolverInput{
 		TimeoutMs:      timeout.Milliseconds(),
 		IgnoreAffinity: true,
-		Preemptors:     []SolverPod{toSolverPod(preemptor, "")},
+		Preemptor:      ptr(toSolverPod(preemptor, "")), // pending preemptor
+		Nodes:          make([]SolverNode, 0),
+		Pods:           make([]SolverPod, 0),
 	}
 
 	usable := map[string]bool{}
@@ -1365,13 +1434,16 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerSingle(
 			if pi.Pod.Namespace == "kube-system" {
 				sp.Protected = true
 			}
+			// Do NOT duplicate the preemptor
+			if sp.UID == string(preemptor.UID) {
+				continue
+			}
 			in.Pods = append(in.Pods, sp)
 		}
 	}
-	in.Pods = append(in.Pods, toSolverPod(preemptor, ""))
 
 	raw, _ := json.Marshal(in)
-	klog.V(2).InfoS("Single-preemptor solver input", "nodes", len(in.Nodes), "pods", len(in.Pods))
+	klog.V(2).InfoS("Single-preemptor solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
 
 	cmd := exec.CommandContext(ctx, "python3", PythonSolverPath)
 	cmd.Stdin = bytes.NewReader(raw)
@@ -1386,8 +1458,63 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerSingle(
 	if err := json.Unmarshal(outBuf.Bytes(), &out); err != nil {
 		return nil, fmt.Errorf("decode solver output: %w", err)
 	}
-	if out.Status != "OK" {
+	okStatus := out.Status == "OPTIMAL" || out.Status == "FEASIBLE"
+	if !okStatus {
 		return &out, fmt.Errorf("solver status: %s", out.Status)
 	}
 	return &out, nil
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// pruneBatchStale removes batch entries that no longer correspond to a live pod.
+// Returns how many were removed.
+func (pl *MyCrossNodePreemption) pruneBatchStale() int {
+	// Snapshot current batch entries without holding the lock during API calls.
+	pl.batchMu.Lock()
+	if len(pl.batchPods) == 0 {
+		pl.batchMu.Unlock()
+		return 0
+	}
+	candidates := make([]*v1.Pod, 0, len(pl.batchPods))
+	for _, p := range pl.batchPods {
+		candidates = append(candidates, p)
+	}
+	pl.batchMu.Unlock()
+
+	podLister := pl.handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	toDelete := make([]types.UID, 0, len(candidates))
+
+	for _, p := range candidates {
+		cur, err := podLister.Pods(p.Namespace).Get(p.Name)
+		if apierrors.IsNotFound(err) {
+			toDelete = append(toDelete, p.UID)
+			continue
+		}
+		if err != nil {
+			// conservative: keep if lister errored for transient reasons
+			continue
+		}
+		// If the object was recreated (UID mismatch) or is terminating, drop it from batch.
+		if string(cur.UID) != string(p.UID) || cur.DeletionTimestamp != nil {
+			toDelete = append(toDelete, p.UID)
+			continue
+		}
+		// Optional: if you ALSO want to drop pods that already got scheduled, uncomment:
+		// if cur.Spec.NodeName != "" {
+		// 	toDelete = append(toDelete, p.UID)
+		// }
+	}
+
+	if len(toDelete) == 0 {
+		return 0
+	}
+	pl.batchMu.Lock()
+	for _, uid := range toDelete {
+		delete(pl.batchPods, uid)
+	}
+	pl.batchMu.Unlock()
+
+	klog.V(2).InfoS("Pruned stale entries from batch", "removed", len(toDelete))
+	return len(toDelete)
 }

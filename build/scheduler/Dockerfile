@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 # ---------- build kube-scheduler ----------
 ARG GO_BASE_IMAGE=golang:1.24
 ARG UBUNTU_BASE_IMAGE=ubuntu:22.04
@@ -27,17 +28,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
-# 2) Copy your solver code (adjust the path if needed)
-#    You said the script + requirements live under scripts/optimal-pod-assignments/
+# 2) Copy solver code
 ENV SOLVER_DIR=/opt/solver
 RUN mkdir -p ${SOLVER_DIR}
-COPY scripts/optimal-pod-assignments/ ${SOLVER_DIR}/
+COPY scripts/mycrossnodepreemption/ ${SOLVER_DIR}/
 
-# 3) Install Python deps **globally** for python3
-#    (so your Go plugin's "python3 /opt/solver/main.py" finds them)
+# 3) Install Python dependencies
 RUN pip3 install --no-cache-dir -r ${SOLVER_DIR}/requirements.txt
 
-# 4) Copy the scheduler binary
+# 4) Copy scheduler binary
 COPY --from=builder /src/bin/kube-scheduler /bin/kube-scheduler
 
 WORKDIR /bin
