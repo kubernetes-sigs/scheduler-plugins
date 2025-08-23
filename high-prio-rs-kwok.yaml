@@ -6,7 +6,7 @@ metadata:
   name: high-priority-rs
   namespace: crossnode-test
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: high-priority

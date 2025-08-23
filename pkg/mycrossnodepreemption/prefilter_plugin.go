@@ -29,14 +29,14 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 		key := wk.String()
 		if _, inPlan := sp.WorkloadDesiredPerNode[key]; !inPlan {
 			klog.V(2).InfoS("PreFilter: top-workload pod not in active plan; blocking", "pod", klog.KObj(pod))
-			pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
+			pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: top-workload pod not in active plan; blocking")
 		}
 
 		allowed := sets.New[string]()
-		slots := pl.slotsPtr.Load()
-		if slots != nil && slots.planID == planID {
-			if byNode, ok := slots.remaining[key]; ok {
+		slots := pl.SlotsPtr.Load()
+		if slots != nil && slots.PlanID == planID {
+			if byNode, ok := slots.Remaining[key]; ok {
 				for node, ctr := range byNode {
 					if ctr.Load() > 0 {
 						allowed.Insert(node)
@@ -46,7 +46,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 		}
 		if allowed.Len() == 0 {
 			klog.V(2).InfoS("PreFilter: top-workload-quotas exhausted; wait until plan is completed; blocking", "pod", klog.KObj(pod))
-			pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
+			pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: top-workload-quotas exhausted; wait until plan is completed; blocking")
 		}
 		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
@@ -59,7 +59,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	}
 
 	klog.V(2).InfoS("PreFilter: pod not in active plan; blocking", "pod", klog.KObj(pod))
-	pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
+	pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
 	return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: pod not in active plan; blocking")
 }
 

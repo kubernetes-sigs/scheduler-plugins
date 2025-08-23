@@ -48,11 +48,11 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not allowed on node")
 	}
 
-	slots := pl.slotsPtr.Load()
-	if slots == nil || slots.planID != planID {
+	slots := pl.SlotsPtr.Load()
+	if slots == nil || slots.PlanID != planID {
 		return framework.NewStatus(framework.Unschedulable, "Reserve: plan changed")
 	}
-	ctrs, ok := slots.remaining[key]
+	ctrs, ok := slots.Remaining[key]
 	if !ok {
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not tracked")
 	}
@@ -83,11 +83,11 @@ func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.Cy
 		return
 	}
 
-	slots := pl.slotsPtr.Load()
+	slots := pl.SlotsPtr.Load()
 	if slots == nil {
 		return
 	}
-	ctrs, ok := slots.remaining[rsst.key.rsKey]
+	ctrs, ok := slots.Remaining[rsst.key.rsKey]
 	if !ok {
 		return
 	}

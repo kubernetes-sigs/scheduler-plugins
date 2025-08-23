@@ -13,6 +13,7 @@ import (
 var _ framework.PreEnqueuePlugin = &MyCrossNodePreemption{}
 
 func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *framework.Status {
+	_ = pl.pruneBlockedStale()
 	sp, _ := pl.getActivePlan()
 
 	// Always allow kube-system to proceed.
@@ -36,14 +37,14 @@ func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *fra
 		}
 		// New pods while executing → catch here regardless of BatchMode
 		klog.V(2).InfoS("PreEnqueue: active plan; blocking", "pod", klog.KObj(pod))
-		pl.blockedPods.add(pod.UID, pod.Namespace, pod.Name)
+		pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: active plan; blocking")
 	}
 
 	// No active plan:
 	if batchAtPreEnqueue() {
 		klog.V(2).InfoS("PreEnqueue: batched pod", "pod", klog.KObj(pod))
-		pl.addToBatch(pod)
+		pl.Batched.AddPod(pod)
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: batched pod")
 	}
 

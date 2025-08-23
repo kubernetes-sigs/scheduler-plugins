@@ -26,7 +26,7 @@ Combined:
 
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile . && kwokctl create cluster --name kwok --config kwok-cluster.yaml &&  ./fill-nodes-kwok.sh kwok 13 4 5 && ./cluster-usage.sh
 
-## Questions
+## Open Questions
 
 - What to do with evicted pods - put them to queue or try again immediately?
 
@@ -43,16 +43,13 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 - Faster algorithm using simple heuristics.
 - Fix Neri's code or know what has been done.
-- Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
-
-## Optional TODOs
-
-- Consider to evict lower priority pods first, instead of just evicting the lowest amount of pods.
+- Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption 
 
 ## Test
 
 - Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
 - Test that it works across workload type
+- Test CP-SAT vs. other solvers
 
 ## Write
 

@@ -20,11 +20,12 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, state *framewor
 	if sp, _ := pl.getActivePlan(); sp != nil && !sp.Completed {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: active plan in progress")
 	}
+	_ = pl.pruneBlockedStale()
 
 	// Batching strategy via PostFilter: only unschedulable pods get batched.
 	if batchAtPostFilter() {
 		klog.V(2).InfoS("PostFilter: batched pod", "pod", klog.KObj(pending))
-		pl.addToBatch(pending)
+		pl.Batched.AddPod(pending)
 		return nil, framework.NewStatus(framework.Pending, "PostFilter: batched pod")
 	}
 
@@ -81,7 +82,13 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, state *framewor
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: plan execution failed")
 		}
 
-		klog.InfoS("PostFilter: nominated after plan execution", "pod", klog.KObj(pending), "node", out.NominatedNode, "planID", planID, "moved", len(plan.PodMovements), "evicted", len(plan.VictimsToEvict))
+		klog.InfoS("PostFilter: plan execution finished",
+			"pod", klog.KObj(pending),
+			"node", out.NominatedNode,
+			"planID", planID,
+			"moved", len(plan.PodMovements),
+			"evicted", len(plan.VictimsToEvict),
+			"unscheduled", pl.numOfUnscheduledPods())
 
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{
