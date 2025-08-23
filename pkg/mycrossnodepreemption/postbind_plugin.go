@@ -10,6 +10,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
+// PostBind is called after a pod is bound to a node.
+// It is used to check if the active scheduling plan is still in progress.
 func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, _ *v1.Pod, _ string) {
 	sp, planID := pl.getActivePlan()
 	if sp == nil || sp.Completed {
@@ -19,11 +21,11 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	ok, err := pl.isPlanCompleted(ctx, sp)
 	if err != nil {
 		pl.onPlanSettled()
-		klog.ErrorS(err, "completion check failed")
+		klog.ErrorS(err, "PostBind: completion check failed")
 		return
 	}
 	if !ok {
-		klog.V(2).InfoS("plan still active")
+		klog.V(2).InfoS("PostBind: plan still active")
 		return
 	}
 

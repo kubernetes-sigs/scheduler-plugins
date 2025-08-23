@@ -28,7 +28,7 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ## Open Questions
 
-- What to do with evicted pods - put them to queue or try again immediately?
+- What to do with evicted and blocked pods - put them to queue or try again immediately?
 
 ## TODOs
 

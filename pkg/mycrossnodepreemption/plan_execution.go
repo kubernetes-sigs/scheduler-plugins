@@ -365,7 +365,7 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan) (bool, error) {
 	// A) Pending/preemptor pod bound to target node (only meaningful if TargetNode set)
 	if sp.TargetNode != "" && sp.PendingPod != "" {
-		pns, pname := splitNSName(sp.PendingPod)
+		pns, pname := splitNamespaceName(sp.PendingPod)
 		preemptor, err := pl.Client.CoreV1().Pods(pns).Get(ctx, pname, metav1.GetOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("get pending pod: %w", err)
@@ -379,7 +379,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 	for name, node := range sp.PlacementsByName {
 		ns := nsOf(sp.PendingPod)
 		if strings.Contains(name, "/") {
-			ns, name = splitNSName(name)
+			ns, name = splitNamespaceName(name)
 		}
 		pod, err := pl.Client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
@@ -873,7 +873,7 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerSingle(
 	in := SolverInput{
 		TimeoutMs:      timeout.Milliseconds(),
 		IgnoreAffinity: true,
-		Preemptor:      ptr(toSolverPod(preemptor, "")), // pending preemptor
+		Preemptor:      ptr(toSolverPod(preemptor, "")),
 		Nodes:          make([]SolverNode, 0),
 		Pods:           make([]SolverPod, 0),
 	}

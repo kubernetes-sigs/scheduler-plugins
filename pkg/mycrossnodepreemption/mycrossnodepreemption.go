@@ -66,9 +66,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 type MyCrossNodePreemption struct {
 	Handle       framework.Handle
 	Client       kubernetes.Interface
-	ActivePlan   atomic.Value              // stores *StoredPlan or nil
-	ActivePlanID atomic.Value              // string (e.g., cmName or a UUID)
-	SlotsPtr     atomic.Pointer[PlanSlots] // atomic planSlots pointer
+	ActivePlan   atomic.Value
+	ActivePlanID atomic.Value
+	SlotsPtr     atomic.Pointer[PlanSlots]
 	Blocked      *podSet
 	Batched      *podSet
 }
@@ -95,20 +95,6 @@ const (
 	wkJob
 )
 
-// has at least one usable node in the scheduler snapshot
-func (pl *MyCrossNodePreemption) haveUsableNodes() bool {
-	nodes, err := pl.getNodes()
-	if err != nil {
-		return false
-	}
-	for _, n := range nodes {
-		if isNodeUsable(n) {
-			return true
-		}
-	}
-	return false
-}
-
 func nsOf(nsSlashName string) string {
 	if i := strings.IndexByte(nsSlashName, '/'); i >= 0 {
 		return nsSlashName[:i]
@@ -116,7 +102,7 @@ func nsOf(nsSlashName string) string {
 	return "default"
 }
 
-func splitNSName(s string) (ns, name string) {
+func splitNamespaceName(s string) (ns, name string) {
 	if i := strings.IndexByte(s, '/'); i >= 0 {
 		return s[:i], s[i+1:]
 	}
@@ -195,9 +181,8 @@ func (s *podSet) Size() int {
 	return n
 }
 
-// Snapshot returns a copy of keys to avoid holding locks while calling the lister.
 func (s *podSet) Snapshot() map[types.UID]podKey {
-	s.mu.RLock()
+	s.mu.RLock() //
 	out := make(map[types.UID]podKey, len(s.m))
 	for k, v := range s.m {
 		out[k] = v
@@ -206,8 +191,6 @@ func (s *podSet) Snapshot() map[types.UID]podKey {
 	return out
 }
 
-// pruneSetStale removes entries whose live pod either doesn't exist, changed UID,
-// is terminating, or fails the optional keep predicate.
 func (pl *MyCrossNodePreemption) pruneSetStale(set *podSet, keep func(cur *v1.Pod) bool) int {
 	if set == nil || set.Size() == 0 {
 		return 0
@@ -320,7 +303,7 @@ func parseWorkloadKey(s string) (WorkloadKey, bool) {
 		return WorkloadKey{}, false
 	}
 	kindStr, rest := s[:colon], s[colon+1:]
-	ns, name := splitNSName(rest)
+	ns, name := splitNamespaceName(rest)
 
 	var k WorkloadKind
 	switch kindStr {
@@ -391,10 +374,9 @@ func isNodeUsable(n *v1.Node) bool {
 
 func ptr[T any](v T) *T { return &v }
 
-// Blocked: drop if the pod is already scheduled, terminating, recreated, or gone.
 func (pl *MyCrossNodePreemption) pruneBlockedStale() int {
 	rem := pl.pruneSetStale(pl.Blocked, func(cur *v1.Pod) bool {
-		return cur.Spec.NodeName == "" // keep only truly unscheduled
+		return cur.Spec.NodeName == "" // keep only unscheduled
 	})
 	if rem > 0 {
 		klog.V(2).InfoS("Pruned stale entries from blocked set", "removed", rem)
@@ -402,7 +384,7 @@ func (pl *MyCrossNodePreemption) pruneBlockedStale() int {
 	return rem
 }
 
-func (pl *MyCrossNodePreemption) numOfUnscheduledPods() int {
+func (pl *MyCrossNodePreemption) countUnscheduledPods() int {
 	nodeInfos, err := pl.Handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return -1

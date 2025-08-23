@@ -26,6 +26,9 @@ func (s *rsReservationState) Clone() framework.StateData {
 	}
 }
 
+// Reserve is called at the end of scheduling cycle to reserve resources for a pod on a specific node.
+// If it fails, the Unreserve function is called to release any reserved resources.
+// It is used, here, to place workload pods on the appropriate nodes as they are automatically created, therefore, placement by name cannot be done.
 func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, node string) *framework.Status {
 	sp, planID := pl.getActivePlan()
 	if sp == nil || sp.Completed {

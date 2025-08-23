@@ -12,9 +12,13 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// ---------------------------- PostFilter ----------------------------
-
-func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, state *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+// PostFilter is called at the end of scheduling cycle if a pod does not succeed to be scheduled "normally" (without preemption).
+// It is used, here, to try schedule the pod using our plugin, by doing cross-node preemption.
+func (pl *MyCrossNodePreemption) PostFilter(
+	ctx context.Context,
+	state *framework.CycleState,
+	pending *v1.Pod,
+	_ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 
 	// A plan is running → don't start (or grow) cohorts here; let PreEnqueue catch newcomers.
 	if sp, _ := pl.getActivePlan(); sp != nil && !sp.Completed {
@@ -88,7 +92,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, state *framewor
 			"planID", planID,
 			"moved", len(plan.PodMovements),
 			"evicted", len(plan.VictimsToEvict),
-			"unscheduled", pl.numOfUnscheduledPods())
+			"unscheduled", pl.countUnscheduledPods())
 
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{
