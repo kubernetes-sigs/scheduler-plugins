@@ -43,7 +43,7 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	}
 
 	key := wk.String()
-	perNode, ok := sp.WorkloadDesiredPerNode[key]
+	perNode, ok := sp.WkDesiredPerNode[key]
 	if !ok || perNode[node] == 0 {
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not allowed on node")
 	}

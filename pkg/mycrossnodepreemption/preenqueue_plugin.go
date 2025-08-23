@@ -31,7 +31,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *fra
 			return framework.NewStatus(framework.Success)
 		}
 		if wk, ok := topWorkload(pod); ok {
-			if _, inPlan := sp.WorkloadDesiredPerNode[wk.String()]; inPlan {
+			if _, inPlan := sp.WkDesiredPerNode[wk.String()]; inPlan {
 				return framework.NewStatus(framework.Success)
 			}
 		}

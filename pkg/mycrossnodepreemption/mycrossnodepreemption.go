@@ -338,8 +338,6 @@ func parseWorkloadKey(s string) (WorkloadKey, bool) {
 	return WorkloadKey{Kind: k, Namespace: ns, Name: name}, true
 }
 
-// ----------------------- Solver bridge (cohort) ----------------------------
-
 func (pl *MyCrossNodePreemption) activateBlockedPods() {
 	if pl.Blocked == nil {
 		return
@@ -404,17 +402,6 @@ func (pl *MyCrossNodePreemption) pruneBlockedStale() int {
 	return rem
 }
 
-// Batched: drop if scheduled, terminating, recreated, or gone.
-func (pl *MyCrossNodePreemption) pruneBatchStale() int {
-	rem := pl.pruneSetStale(pl.Batched, func(cur *v1.Pod) bool {
-		return cur.Spec.NodeName == "" // keep only pending
-	})
-	if rem > 0 {
-		klog.V(2).InfoS("Pruned stale entries from batch", "removed", rem)
-	}
-	return rem
-}
-
 func (pl *MyCrossNodePreemption) numOfUnscheduledPods() int {
 	nodeInfos, err := pl.Handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
@@ -429,27 +416,4 @@ func (pl *MyCrossNodePreemption) numOfUnscheduledPods() int {
 		}
 	}
 	return len(unscheduledPods)
-}
-
-// Snapshot batch when solving
-func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
-	keys := pl.Batched.Snapshot()
-	if len(keys) == 0 {
-		return nil
-	}
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-	out := make([]*v1.Pod, 0, len(keys))
-	for _, k := range keys {
-		if cur, err := podLister.Pods(k.Namespace).Get(k.Name); err == nil {
-			out = append(out, cur)
-		}
-	}
-	return out
-}
-
-// Remove from batch after success
-func (pl *MyCrossNodePreemption) removeFromBatchByUIDs(pods []*v1.Pod) {
-	for _, p := range pods {
-		pl.Batched.Remove(p.UID)
-	}
 }

@@ -61,16 +61,16 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, state *framewor
 		if cmName, err := pl.exportPlanToConfigMap(context.Background(), plan, out, pending); err == nil {
 			lite, byName, rsDesired, _ := pl.materializePlanDocs(plan, out, pending)
 			pl.setActivePlan(&StoredPlan{
-				Completed:              false,
-				GeneratedAt:            time.Now().UTC(),
-				PluginVersion:          Version,
-				PendingPod:             fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
-				PendingUID:             string(pending.UID),
-				TargetNode:             plan.TargetNode,
-				SolverOutput:           out,
-				Plan:                   lite,
-				PlacementsByName:       byName,
-				WorkloadDesiredPerNode: rsDesired,
+				Completed:        false,
+				GeneratedAt:      time.Now().UTC(),
+				PluginVersion:    Version,
+				PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+				PendingUID:       string(pending.UID),
+				TargetNode:       plan.TargetNode,
+				SolverOutput:     out,
+				Plan:             lite,
+				PlacementsByName: byName,
+				WkDesiredPerNode: rsDesired,
 			}, cmName)
 			_, planID = pl.getActivePlan()
 			pl.startPlanTimeout(planID, PlanExecutionTTL)

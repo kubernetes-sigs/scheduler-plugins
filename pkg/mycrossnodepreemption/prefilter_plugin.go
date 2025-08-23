@@ -27,7 +27,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	// Top-Workload pods: allow nodes with remaining > 0
 	if wk, ok := topWorkload(pod); ok {
 		key := wk.String()
-		if _, inPlan := sp.WorkloadDesiredPerNode[key]; !inPlan {
+		if _, inPlan := sp.WkDesiredPerNode[key]; !inPlan {
 			klog.V(2).InfoS("PreFilter: top-workload pod not in active plan; blocking", "pod", klog.KObj(pod))
 			pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: top-workload pod not in active plan; blocking")

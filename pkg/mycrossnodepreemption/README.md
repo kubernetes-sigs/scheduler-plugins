@@ -2,7 +2,7 @@
 
 ## The cross-node preemption plan
 
-The python script should provide the optimal pod placement plan as output, including all necessary moves and evictions. That means, it must consider the current state of the cluster, including resource availability and pod priorities, to generate a valid scheduling plan including the new pending pod. The optimization should prefer higher priorities first, that means it should place as many high priority pods first on the nodes as possible, then next priority level should be considered. The optimization is that it should place as many high priority pods as possible before considering lower priority ones, then it should try to minimize the number of evictions and moves required to achieve the desired state and minimize the number of nodes used.
+The python script computes  the optimal pod placement plan, including all necessary moves and evictions. That means, it must consider the current state of the cluster, including resource availability and pod priorities, to generate a valid scheduling plan including the new pending pod. The optimization should prefer higher priorities first, that means it should place as many high priority pods first on the nodes as possible, then next priority level should be considered. The optimization is that it should place as many high priority pods as possible before considering lower priority ones, then it should try to minimize the number of evictions and moves required to achieve the desired state and minimize the number of nodes used.
 
 The plugin will call this script in PostFilter with the current cluster state and the pending pod's requirements, and it will receive the proposed plan as output.
 
@@ -24,7 +24,7 @@ kwokctl create cluster --name kwok --config kwok-cluster.yaml
 
 Combined:
 
-docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile . && kwokctl create cluster --name kwok --config kwok-cluster.yaml &&  ./fill-nodes-kwok.sh kwok 13 4 5 && ./cluster-usage.sh
+docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile . && kwokctl create cluster --name kwok --config kwok-cluster.yaml && ./fill-nodes-kwok.sh kwok 9 4 4 && ./cluster-usage.sh
 
 ## Open Questions
 

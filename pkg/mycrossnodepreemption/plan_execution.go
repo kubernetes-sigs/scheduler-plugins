@@ -38,17 +38,17 @@ const (
 )
 
 type StoredPlan struct {
-	Completed              bool                      `json:"completed"`
-	CompletedAt            *time.Time                `json:"completedAt,omitempty"`
-	GeneratedAt            time.Time                 `json:"generatedAt"`
-	PluginVersion          string                    `json:"pluginVersion"`
-	PendingPod             string                    `json:"pendingPod"` // ns/name (kept for compatibility; any "lead" in cohort)
-	PendingUID             string                    `json:"pendingUID"`
-	TargetNode             string                    `json:"targetNode"` // may be empty in batch mode
-	SolverOutput           *SolverOutput             `json:"solverOutput,omitempty"`
-	Plan                   PodAssignmentPlanLite     `json:"plan"`
-	PlacementsByName       map[string]string         `json:"placementsByName,omitempty"`       // standalone pods -> node
-	WorkloadDesiredPerNode map[string]map[string]int `json:"workloadDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
+	Completed        bool                      `json:"completed"`
+	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
+	GeneratedAt      time.Time                 `json:"generatedAt"`
+	PluginVersion    string                    `json:"pluginVersion"`
+	PendingPod       string                    `json:"pendingPod"` // ns/name (kept for compatibility; any "lead" in cohort)
+	PendingUID       string                    `json:"pendingUID"`
+	TargetNode       string                    `json:"targetNode"` // may be empty in batch mode
+	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
+	Plan             PodAssignmentPlanLite     `json:"plan"`
+	PlacementsByName map[string]string         `json:"placementsByName,omitempty"` // standalone pods -> node
+	WkDesiredPerNode map[string]map[string]int `json:"wkDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
 }
 
 type PodAssignmentPlanLite struct {
@@ -155,7 +155,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 
 	// 1) desired per-node targets
 	desired := map[string]map[string]int{}
-	for rs, perNode := range sp.WorkloadDesiredPerNode {
+	for rs, perNode := range sp.WkDesiredPerNode {
 		desired[rs] = map[string]int{}
 		for n, want := range perNode {
 			desired[rs][n] = want
@@ -394,7 +394,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 	}
 
 	// C) Per-workload per-node quotas satisfied.
-	for wkStr, perNode := range sp.WorkloadDesiredPerNode {
+	for wkStr, perNode := range sp.WkDesiredPerNode {
 		wk, ok := parseWorkloadKey(wkStr)
 		if !ok {
 			return false, nil
@@ -658,17 +658,17 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	}
 
 	doc := &StoredPlan{
-		Completed:              false,
-		CompletedAt:            nil,
-		GeneratedAt:            time.Now().UTC(),
-		PluginVersion:          Version,
-		PendingPod:             fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
-		PendingUID:             string(pending.UID),
-		TargetNode:             plan.TargetNode, // may be empty in batch
-		SolverOutput:           out,
-		Plan:                   litePlan,
-		PlacementsByName:       byName,
-		WorkloadDesiredPerNode: rsDesired,
+		Completed:        false,
+		CompletedAt:      nil,
+		GeneratedAt:      time.Now().UTC(),
+		PluginVersion:    Version,
+		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+		PendingUID:       string(pending.UID),
+		TargetNode:       plan.TargetNode, // may be empty in batch
+		SolverOutput:     out,
+		Plan:             litePlan,
+		PlacementsByName: byName,
+		WkDesiredPerNode: rsDesired,
 	}
 
 	raw, err := json.MarshalIndent(doc, "", "  ")
