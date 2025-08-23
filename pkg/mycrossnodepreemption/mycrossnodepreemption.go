@@ -34,10 +34,10 @@ const (
 
 	// ======= Modes (pick exactly one high-level strategy) =======
 	// Batch strategy:
-	BatchMode BatchIngressMode = BatchPreEnqueue // Modes: BatchPostFilter, BatchPreEnqueue, BatchOff
+	BatchMode BatchIngressMode = BatchOff // Modes: BatchPostFilter, BatchPreEnqueue, BatchOff
 
 	// Every-preemptor strategy (mutually exclusive with any BatchMode != BatchOff)
-	ModeEveryPreemptor = false
+	ModeEveryPreemptor = true
 
 	// ======= Batch settings =======
 	BatchSolveInterval = 40 * time.Second // periodic cohort solve
@@ -334,13 +334,20 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 				pl.removeFromBatchByUIDs(pods)
 
 				// Count "new from batch" = pending pods in this batch that solver placed somewhere.
+				// Also count "unscheduledFromBatch" = pending batch pods that got no placement
+				// in an OPTIMAL/FEASIBLE solution (i.e., left out by optimality/constraints).
 				newFromBatch := 0
+				unscheduledFromBatch := 0
 				for _, p := range pods {
 					if p == nil || p.Spec.NodeName != "" {
+						// was already running; not part of "pending batch" accounting
 						continue
 					}
-					if node, ok := out.Placements[string(p.UID)]; ok && node != "" {
+					node, ok := out.Placements[string(p.UID)]
+					if ok && node != "" {
 						newFromBatch++
+					} else {
+						unscheduledFromBatch++
 					}
 				}
 
@@ -351,6 +358,7 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 					"moved", len(plan.PodMovements),
 					"evicted", len(plan.VictimsToEvict),
 					"new", newFromBatch,
+					"unscheduled", unscheduledFromBatch,
 				)
 			}()
 		case <-ctx.Done():

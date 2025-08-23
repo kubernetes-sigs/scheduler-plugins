@@ -71,7 +71,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, state *framewor
 				PlacementsByName:       byName,
 				WorkloadDesiredPerNode: rsDesired,
 			}, cmName)
-			_, planID := pl.getActivePlan()
+			_, planID = pl.getActivePlan()
 			pl.startPlanTimeout(planID, PlanExecutionTTL)
 		}
 
@@ -82,8 +82,6 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, state *framewor
 		}
 
 		klog.InfoS("PostFilter: nominated after plan execution", "pod", klog.KObj(pending), "node", out.NominatedNode, "planID", planID, "moved", len(plan.PodMovements), "evicted", len(plan.VictimsToEvict))
-
-		pl.onPlanSettled()
 
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{
