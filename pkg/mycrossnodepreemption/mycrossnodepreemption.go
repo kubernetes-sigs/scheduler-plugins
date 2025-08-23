@@ -40,7 +40,7 @@ const (
 	ModeEveryPreemptor = false
 
 	// ======= Batch settings =======
-	BatchSolveInterval = 120 * time.Second // periodic cohort solve
+	BatchSolveInterval = 30 * time.Second // periodic cohort solve
 
 	// ======= Plan settings =======
 	PlanExecutionTTL = 1 * time.Minute // how long a plan may run before being terminated
@@ -52,7 +52,7 @@ const (
 	EvictionPollInterval = 1 * time.Second
 
 	PythonSolverPath    = "/opt/solver/main.py"
-	PythonSolverTimeout = 80 * time.Second
+	PythonSolverTimeout = 20 * time.Second
 )
 
 // ---------------------------- Plugin wiring -----------------------
@@ -972,7 +972,7 @@ func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
 	}
 
 	in := SolverInput{
-		TimeoutMs:      timeout.Milliseconds(),
+		TimeoutMs:      timeout.Milliseconds() - 500, // leave some margin for returning results
 		IgnoreAffinity: true,
 		Preemptor:      nil, // batch mode
 		Nodes:          make([]SolverNode, 0),
