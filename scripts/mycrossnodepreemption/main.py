@@ -198,6 +198,7 @@ def solve(instance: dict) -> dict:
         m.Add(sum(placed[i] for i in idxs_ge[t]) >= rhs)
 
     # ---------------- Symmetry-breaking ----------------
+    # TODO: Check if we need this
     for j1 in range(num_nodes - 1):
         for j2 in range(j1 + 1, num_nodes):
             if n_cpu(j1) == n_cpu(j2) and n_ram(j1) == n_ram(j2):
