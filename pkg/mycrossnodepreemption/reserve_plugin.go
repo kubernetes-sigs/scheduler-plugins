@@ -9,6 +9,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
+const rsReservationKey framework.StateKey = "myx/rsReservation"
+
 type reservationKey struct {
 	rsKey    string
 	nodeName string
@@ -17,8 +19,6 @@ type reservationKey struct {
 type rsReservationState struct {
 	key reservationKey
 }
-
-const rsReservationKey framework.StateKey = "myx/rsReservation"
 
 func (s *rsReservationState) Clone() framework.StateData {
 	return &rsReservationState{
@@ -30,13 +30,13 @@ func (s *rsReservationState) Clone() framework.StateData {
 // If it fails, the Unreserve function is called to release any reserved resources.
 // It is used, here, to place workload pods on the appropriate nodes as they are automatically created, therefore, placement by name cannot be done.
 func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, node string) *framework.Status {
-	sp, planID := pl.getActivePlan()
-	if sp == nil || sp.Completed {
+	ap := pl.getActive()
+	if ap == nil || ap.PlanDoc.Completed {
 		return framework.NewStatus(framework.Success)
 	}
 
 	// Pending preemptor (only in every-preemptor mode) doesn't consume workload quota here.
-	if sp.TargetNode != "" && string(pod.UID) == sp.PendingUID {
+	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingPod {
 		return framework.NewStatus(framework.Success)
 	}
 
@@ -46,16 +46,12 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	}
 
 	key := wk.String()
-	perNode, ok := sp.WkDesiredPerNode[key]
+	perNode, ok := ap.PlanDoc.WkDesiredPerNode[key]
 	if !ok || perNode[node] == 0 {
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not allowed on node")
 	}
 
-	slots := pl.SlotsPtr.Load()
-	if slots == nil || slots.PlanID != planID {
-		return framework.NewStatus(framework.Unschedulable, "Reserve: plan changed")
-	}
-	ctrs, ok := slots.Remaining[key]
+	ctrs, ok := ap.Remaining[key]
 	if !ok {
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not tracked")
 	}
@@ -86,17 +82,13 @@ func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.Cy
 		return
 	}
 
-	slots := pl.SlotsPtr.Load()
-	if slots == nil {
+	ap := pl.getActive()
+	if ap == nil {
 		return
 	}
-	ctrs, ok := slots.Remaining[rsst.key.rsKey]
-	if !ok {
-		return
+	if ctrs, ok := ap.Remaining[rsst.key.rsKey]; ok {
+		if ctr, ok := ctrs[rsst.key.nodeName]; ok {
+			ctr.Add(1)
+		}
 	}
-	ctr, ok := ctrs[rsst.key.nodeName]
-	if !ok {
-		return
-	}
-	ctr.Add(1)
 }

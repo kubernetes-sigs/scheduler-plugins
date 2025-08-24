@@ -42,8 +42,8 @@ def solve(instance: dict) -> dict:
                 "uid": pre["uid"],
                 "namespace": pre.get("namespace","default"),
                 "name": pre.get("name","preemptor"),
-                "cpu": int(pre.get("cpu", 0)),
-                "ram": int(pre.get("ram", 0)),
+                "cpu_m": int(pre.get("cpu_m", 0)),
+                "mem_bytes": int(pre.get("mem_bytes", 0)),
                 "priority": int(pre.get("priority", 0)),
                 "protected": bool(pre.get("protected", False)),
                 "where": "",  # pending
@@ -68,15 +68,15 @@ def solve(instance: dict) -> dict:
     def encode_status(st: int) -> dict:
         return {"status": status_str(st)}
 
-    def n_cpu(j): return int(nodes[j]["cpu"])
-    def n_ram(j): return int(nodes[j]["ram"])
-    def p_uid(i): return pods[i]["uid"]
-    def p_ns(i):  return pods[i].get("namespace","default")
-    def p_name(i):return pods[i].get("name","")
-    def p_cpu(i): return int(pods[i]["cpu"])
-    def p_ram(i): return int(pods[i]["ram"])
-    def p_pri(i): return int(pods[i].get("priority",0))
-    def p_prot(i):return bool(pods[i].get("protected", False))
+    def n_cpu_m(j):     return int(nodes[j]["cpu_m"])
+    def n_mem_bytes(j): return int(nodes[j]["mem_bytes"])
+    def p_uid(i):       return pods[i]["uid"]
+    def p_ns(i):        return pods[i].get("namespace","default")
+    def p_name(i):      return pods[i].get("name","")
+    def p_cpu_m(i):     return int(pods[i]["cpu_m"])
+    def p_mem_bytes(i): return int(pods[i]["mem_bytes"])
+    def p_pri(i):       return int(pods[i].get("priority",0))
+    def p_prot(i):      return bool(pods[i].get("protected", False))
     def p_where_j(i):
         w = pods[i].get("where") or ""
         return node_idx.get(w) if w else None
@@ -122,8 +122,8 @@ def solve(instance: dict) -> dict:
 
     # Capacity
     for j in range(num_nodes):
-        m.Add(sum(x[i][j] * p_cpu(i) for i in range(num_pods)) <= n_cpu(j))
-        m.Add(sum(x[i][j] * p_ram(i) for i in range(num_pods)) <= n_ram(j))
+        m.Add(sum(x[i][j] * p_cpu_m(i) for i in range(num_pods)) <= n_cpu_m(j))
+        m.Add(sum(x[i][j] * p_mem_bytes(i) for i in range(num_pods)) <= n_mem_bytes(j))
 
     # Keep/move indicators
     for i in range(num_pods):

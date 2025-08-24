@@ -3,11 +3,9 @@
 package mycrossnodepreemption
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -17,6 +15,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -24,145 +23,38 @@ import (
 )
 
 const (
-	// ======= Plan settings =======
-	PlanExecutionTTL = 1 * time.Minute // how long a plan may run before being terminated
-
 	ConfigMapNamespace = "kube-system"
 	ConfigMapLabelKey  = "crossnode-plan"
-
-	EvictionPollTimeout  = 20 * time.Second
-	EvictionPollInterval = 1 * time.Second
-
-	PythonSolverPath    = "/opt/solver/main.py"
-	PythonSolverTimeout = 50 * time.Second
+	PythonSolverPath   = "/opt/solver/main.py"
 )
 
-type StoredPlan struct {
-	Completed        bool                      `json:"completed"`
-	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
-	GeneratedAt      time.Time                 `json:"generatedAt"`
-	PluginVersion    string                    `json:"pluginVersion"`
-	PendingPod       string                    `json:"pendingPod"` // ns/name (kept for compatibility; any "lead" in cohort)
-	PendingUID       string                    `json:"pendingUID"`
-	TargetNode       string                    `json:"targetNode"` // may be empty in batch mode
-	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
-	Plan             PodAssignmentPlanLite     `json:"plan"`
-	PlacementsByName map[string]string         `json:"placementsByName,omitempty"` // standalone pods -> node
-	WkDesiredPerNode map[string]map[string]int `json:"wkDesiredPerNode,omitempty"` // "<ns>/<rs>" -> node -> count
-}
-
-type PodAssignmentPlanLite struct {
-	TargetNode string         `json:"targetNode"`
-	Movements  []MovementLite `json:"movements"`
-	Evictions  []EvictionLite `json:"evictions"`
-}
-type MovementLite struct {
-	Pod      PodRefLite `json:"pod"`
-	FromNode string     `json:"fromNode"`
-	ToNode   string     `json:"toNode"`
-	CPUm     int64      `json:"cpu_m"`
-	MemBytes int64      `json:"mem_bytes"`
-}
-type EvictionLite struct {
-	Pod      PodRefLite `json:"pod"`
-	FromNode string     `json:"fromNode"`
-	CPUm     int64      `json:"cpu_m"`
-	MemBytes int64      `json:"mem_bytes"`
-}
-type PodRefLite struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	UID       string `json:"uid"`
-}
-
-type PodAssignmentPlan struct {
-	TargetNode     string
-	PodMovements   []PodMovement
-	VictimsToEvict []*v1.Pod
-}
-type PodMovement struct {
-	Pod           *v1.Pod
-	FromNode      string
-	ToNode        string
-	CPURequest    int64 // milliCPU
-	MemoryRequest int64 // bytes
-}
-
-type SolverNode struct {
-	Name   string            `json:"name"`
-	CPU    int64             `json:"cpu"` // milliCPU
-	RAM    int64             `json:"ram"` // bytes
-	Labels map[string]string `json:"labels,omitempty"`
-}
-type SolverPod struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	CPU       int64  `json:"cpu"`
-	RAM       int64  `json:"ram"`
-	Priority  int32  `json:"priority"`
-	Where     string `json:"where"`
-	Protected bool   `json:"protected,omitempty"`
-}
-
-type SolverEviction struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
-
-type SolverInput struct {
-	TimeoutMs      int64        `json:"timeout_ms"`
-	IgnoreAffinity bool         `json:"ignore_affinity"`
-	Preemptor      *SolverPod   `json:"preemptor,omitempty"` // nil => batch mode
-	Nodes          []SolverNode `json:"nodes"`
-	Pods           []SolverPod  `json:"pods"`
-}
-
-type SolverOutput struct {
-	Status        string            `json:"status"`
-	NominatedNode string            `json:"nominatedNode,omitempty"`
-	Placements    map[string]string `json:"placements"` // uid -> node
-	Evictions     []SolverEviction  `json:"evictions"`
-}
-
-type WorkloadNodeCounters map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
-
-type PlanSlots struct {
-	PlanID    string
-	Remaining WorkloadNodeCounters
-}
-
-func (pl *MyCrossNodePreemption) startPlanTimeout(planID string, ttl time.Duration) {
+func (pl *MyCrossNodePreemption) startPlanTimeout(ttl time.Duration) {
 	go func() {
 		t := time.NewTimer(ttl)
 		defer t.Stop()
 		<-t.C
 
-		_, id := pl.getActivePlan()
-		if id != planID {
+		ap := pl.getActive()
+		if ap == nil || ap.PlanDoc.Completed {
 			return
 		}
-		klog.InfoS("plan timeout reached; deactivating plan", "planID", planID, "ttl", ttl)
+		klog.InfoS("plan timeout reached; deactivating plan", "ttl", ttl)
 		pl.onPlanSettled()
 	}()
 }
 
-// TODO: Only store needed ones in atomic plan
 func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
-	pl.ActivePlan.Store(sp)
-	pl.ActivePlanID.Store(id)
-
-	// 1) desired per-node targets
+	// 1) Copy desired per-node targets
 	desired := map[string]map[string]int{}
 	for rs, perNode := range sp.WkDesiredPerNode {
-		desired[rs] = map[string]int{}
+		inner := make(map[string]int, len(perNode))
 		for n, want := range perNode {
-			desired[rs][n] = want
+			inner[n] = want
 		}
+		desired[rs] = inner
 	}
 
-	// 2) current per RS/node + uid map
+	// 2) Current per RS/node + UID map
 	cur := map[string]map[string]int{}
 	podsByUID := map[string]*v1.Pod{}
 	if live, err := pl.getPods(); err == nil {
@@ -180,7 +72,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 		}
 	}
 
-	// 3) planned OUT counts from lite plan
+	// 3) planned OUT counts from plan doc
 	plannedOut := map[string]map[string]int{}
 	addOut := func(uid string) {
 		if p := podsByUID[uid]; p != nil {
@@ -196,17 +88,17 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 			}
 		}
 	}
-	for _, mv := range sp.Plan.Movements {
+	for _, mv := range sp.Plan.Moves {
 		addOut(mv.Pod.UID)
 	}
-	for _, ev := range sp.Plan.Evictions {
+	for _, ev := range sp.Plan.Evicts {
 		addOut(ev.Pod.UID)
 	}
 
 	// 4) remaining = desired - current + plannedOut (>=0)
 	rem := map[string]map[string]int{}
 	for rs, perNode := range desired {
-		rem[rs] = map[string]int{}
+		inner := map[string]int{}
 		for node, want := range perNode {
 			have := 0
 			if cur[rs] != nil {
@@ -220,8 +112,9 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 			if r < 0 {
 				r = 0
 			}
-			rem[rs][node] = r
+			inner[node] = r
 		}
+		rem[rs] = inner
 	}
 
 	// 5) atomics
@@ -235,22 +128,21 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 		}
 		counters[rs] = inner
 	}
-	ps := &PlanSlots{PlanID: id, Remaining: counters}
-	pl.SlotsPtr.Store(ps)
-}
 
-func (pl *MyCrossNodePreemption) clearActivePlan() {
-	pl.ActivePlan.Store((*StoredPlan)(nil))
-	pl.ActivePlanID.Store("")
-	pl.SlotsPtr.Store(nil)
-}
-
-func (pl *MyCrossNodePreemption) getActivePlan() (*StoredPlan, string) {
-	v := pl.ActivePlan.Load()
-	if v == nil {
-		return nil, ""
+	ap := &ActivePlanState{
+		ID:        id,
+		PlanDoc:   sp,
+		Remaining: counters,
 	}
-	return v.(*StoredPlan), pl.ActivePlanID.Load().(string)
+	pl.ActivePtr.Store(ap)
+}
+
+func (pl *MyCrossNodePreemption) clearActive() {
+	pl.ActivePtr.Store(nil)
+}
+
+func (pl *MyCrossNodePreemption) getActive() *ActivePlanState {
+	return pl.ActivePtr.Load()
 }
 
 // listPlans returns newest-first plan ConfigMaps found by label.
@@ -434,55 +326,35 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 	return true, nil
 }
 
-func (pl *MyCrossNodePreemption) materializePlanDocs(
-	plan *PodAssignmentPlan,
+// derivePlanDocs computes PlacementsByName (standalone pods) and WkDesiredPerNode (per-RS/node quotas)
+// from the solver placements and current live pods (+ pending).
+func (pl *MyCrossNodePreemption) derivePlanDocs(
 	out *SolverOutput,
 	pending *v1.Pod,
-) (PodAssignmentPlanLite, map[string]string, map[string]map[string]int, error) {
+) (map[string]string, map[string]map[string]int, error) {
 
-	// 1) lite plan
-	lite := PodAssignmentPlanLite{TargetNode: plan.TargetNode}
-	for _, mv := range plan.PodMovements {
-		lite.Movements = append(lite.Movements, MovementLite{
-			Pod:      PodRefLite{Namespace: mv.Pod.Namespace, Name: mv.Pod.Name, UID: string(mv.Pod.UID)},
-			FromNode: mv.FromNode,
-			ToNode:   mv.ToNode,
-			CPUm:     mv.CPURequest,
-			MemBytes: mv.MemoryRequest,
-		})
-	}
-	for _, v := range plan.VictimsToEvict {
-		lite.Evictions = append(lite.Evictions, EvictionLite{
-			Pod:      PodRefLite{Namespace: v.Namespace, Name: v.Name, UID: string(v.UID)},
-			FromNode: v.Spec.NodeName,
-			CPUm:     getPodCPURequest(v),
-			MemBytes: getPodMemoryRequest(v),
-		})
-	}
-
-	// 2) uid -> pod map (+ pending)
+	// UID -> *v1.Pod
 	podsByUID := map[string]*v1.Pod{}
 	live, err := pl.getPods()
 	if err != nil {
-		return PodAssignmentPlanLite{}, nil, nil, err
+		return nil, nil, err
 	}
 	for _, p := range live {
 		podsByUID[string(p.UID)] = p
 	}
 	podsByUID[string(pending.UID)] = pending
 
-	// 3) build byName + rsDesired from placements
 	byName := make(map[string]string)
 	rsDesired := map[string]map[string]int{}
 
 	for uid, node := range out.Placements {
-		p, ok := podsByUID[uid]
-		if !ok || p == nil {
+		p := podsByUID[uid]
+		if p == nil {
 			continue
 		}
-		leadIsPreemptor := out != nil && out.NominatedNode != ""
-		if uid == string(pending.UID) && leadIsPreemptor {
-			// In single-preemptor mode, the lead is bound by nominated node; don't allocate it via quotas.
+		// In single-preemptor mode: skip allocating the preemptor via RS quotas if NominatedNode is set
+		isLeadPreemptor := out != nil && out.NominatedNode != "" && uid == string(pending.UID)
+		if isLeadPreemptor {
 			continue
 		}
 
@@ -496,95 +368,7 @@ func (pl *MyCrossNodePreemption) materializePlanDocs(
 			byName[p.Namespace+"/"+p.Name] = node
 		}
 	}
-
-	return lite, byName, rsDesired, nil
-}
-
-// Cohort-capable runner
-func (pl *MyCrossNodePreemption) runPythonOptimizerCohort(
-	ctx context.Context,
-	batched []*v1.Pod,
-	timeout time.Duration,
-) (*SolverOutput, error) {
-	// Live nodes
-	nodes, err := pl.getNodes()
-	if err != nil {
-		return nil, fmt.Errorf("list nodes: %w", err)
-	}
-
-	in := SolverInput{
-		TimeoutMs:      timeout.Milliseconds() - 500, // leave some margin for returning results
-		IgnoreAffinity: true,
-		Preemptor:      nil, // batch mode
-		Nodes:          make([]SolverNode, 0),
-		Pods:           make([]SolverPod, 0),
-	}
-
-	usable := map[string]bool{}
-	for _, n := range nodes {
-		if !isNodeUsable(n) {
-			continue
-		}
-		in.Nodes = append(in.Nodes, SolverNode{
-			Name: n.Name,
-			CPU:  n.Status.Allocatable.Cpu().MilliValue(),
-			RAM:  n.Status.Allocatable.Memory().Value(),
-		})
-		usable[n.Name] = true
-	}
-	if len(in.Nodes) == 0 {
-		return nil, fmt.Errorf("no usable nodes available")
-	}
-
-	// Live pods
-	allPods, err := pl.getPods()
-	if err != nil {
-		return nil, fmt.Errorf("list pods: %w", err)
-	}
-	seen := make(map[string]bool, len(allPods)+len(batched))
-	for _, p := range allPods {
-		where := p.Spec.NodeName
-		if where != "" && !usable[where] {
-			continue
-		}
-		sp := toSolverPod(p, where)
-		if p.Namespace == "kube-system" {
-			sp.Protected = true
-		}
-		in.Pods = append(in.Pods, sp)
-		seen[sp.UID] = true
-	}
-
-	// Append batched pending pods (no node) if not already present
-	for _, p := range batched {
-		sp := toSolverPod(p, "")
-		if !seen[sp.UID] {
-			in.Pods = append(in.Pods, sp)
-			seen[sp.UID] = true
-		}
-	}
-
-	raw, _ := json.Marshal(in)
-	klog.V(2).InfoS("Batch solver input", "nodes", len(in.Nodes), "pods", len(in.Pods))
-
-	cmd := exec.CommandContext(ctx, "python3", PythonSolverPath)
-	cmd.Stdin = bytes.NewReader(raw)
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
-	if err := cmd.Run(); err != nil {
-		klog.ErrorS(err, "python solver failed", "stderr", errBuf.String())
-		return nil, fmt.Errorf("solver run: %w", err)
-	}
-
-	var out SolverOutput
-	if err := json.Unmarshal(outBuf.Bytes(), &out); err != nil {
-		return nil, fmt.Errorf("decode solver output: %w", err)
-	}
-	okStatus := out.Status == "OPTIMAL" || out.Status == "FEASIBLE"
-	if !okStatus {
-		return &out, fmt.Errorf("solver status: %s", out.Status)
-	}
-	return &out, nil
+	return byName, rsDesired, nil
 }
 
 func toSolverPod(p *v1.Pod, where string) SolverPod {
@@ -592,8 +376,8 @@ func toSolverPod(p *v1.Pod, where string) SolverPod {
 		UID:       string(p.UID),
 		Namespace: p.Namespace,
 		Name:      p.Name,
-		CPU:       getPodCPURequest(p),
-		RAM:       getPodMemoryRequest(p),
+		CPU_m:     getPodCPURequest(p),
+		MemBytes:  getPodMemoryRequest(p),
 		Priority:  getPodPriority(p),
 		Where:     where,
 	}
@@ -604,11 +388,11 @@ func toSolverPod(p *v1.Pod, where string) SolverPod {
 func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 	out *SolverOutput,
 	pending *v1.Pod,
-) (*PodAssignmentPlan, error) {
-	// In every-preemptor mode we expect NominatedNode != "".
-	// In batch mode NominatedNode may be "".
-	plan := &PodAssignmentPlan{TargetNode: out.NominatedNode}
+) (*Plan, error) {
 
+	plan := &Plan{TargetNode: out.NominatedNode}
+
+	// Build quick UID -> *v1.Pod map (live + pending)
 	podsByUID := map[string]*v1.Pod{}
 	live, err := pl.getPods()
 	if err != nil {
@@ -619,27 +403,37 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 	}
 	podsByUID[string(pending.UID)] = pending
 
+	// Evictions
 	for _, e := range out.Evictions {
 		if p, ok := podsByUID[e.UID]; ok {
-			plan.VictimsToEvict = append(plan.VictimsToEvict, p)
+			plan.Evicts = append(plan.Evicts, Evict{
+				Pod:      PodRef{Namespace: p.Namespace, Name: p.Name, UID: string(p.UID)},
+				FromNode: p.Spec.NodeName,
+				CPUm:     getPodCPURequest(p),
+				MemBytes: getPodMemoryRequest(p),
+			})
 		}
 	}
+
+	// Moves (only for running pods assigned a different node)
 	for uid, dest := range out.Placements {
+		if uid == string(pending.UID) {
+			continue // pending pod isn't a "move"
+		}
 		p, ok := podsByUID[uid]
-		if !ok || uid == string(pending.UID) {
+		if !ok {
 			continue
 		}
 		from := p.Spec.NodeName
-		if from == "" {
-			// Pending pod: not a "move" — let controllers/scheduler place it
+		if from == "" || dest == "" || from == dest {
 			continue
 		}
-		if from == dest || dest == "" {
-			continue
-		}
-		plan.PodMovements = append(plan.PodMovements, PodMovement{
-			Pod: p, FromNode: from, ToNode: dest,
-			CPURequest: getPodCPURequest(p), MemoryRequest: getPodMemoryRequest(p),
+		plan.Moves = append(plan.Moves, Move{
+			Pod:      PodRef{Namespace: p.Namespace, Name: p.Name, UID: string(p.UID)},
+			FromNode: from,
+			ToNode:   dest,
+			CPUm:     getPodCPURequest(p),
+			MemBytes: getPodMemoryRequest(p),
 		})
 	}
 
@@ -648,11 +442,12 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 
 func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	ctx context.Context,
-	plan *PodAssignmentPlan,
+	plan *Plan,
 	out *SolverOutput,
 	pending *v1.Pod,
 ) (string, error) {
-	litePlan, byName, rsDesired, err := pl.materializePlanDocs(plan, out, pending)
+
+	byName, rsDesired, err := pl.derivePlanDocs(out, pending)
 	if err != nil {
 		return "", err
 	}
@@ -664,9 +459,9 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		PluginVersion:    Version,
 		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
 		PendingUID:       string(pending.UID),
-		TargetNode:       plan.TargetNode, // may be empty in batch
+		TargetNode:       plan.TargetNode,
 		SolverOutput:     out,
-		Plan:             litePlan,
+		Plan:             *plan,
 		PlacementsByName: byName,
 		WkDesiredPerNode: rsDesired,
 	}
@@ -695,78 +490,90 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 
 // Standalone pods are recreated without binding (Filter steers placement).
 // RS pods are recreated by their controllers.
-func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *PodAssignmentPlan) error {
-	// Collect unique target pods (moves + evictions).
+func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) error {
+	pl.startPlanTimeout(PlanExecutionTTL)
+
+	// Resolve pods for all ops upfront (by UID) so we can evict/recreate correctly.
+
+	lister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+
+	resolve := func(uid, ns, name string) *v1.Pod {
+		// 1) Fast path: informer lister by name, then verify UID
+		if p, err := lister.Pods(ns).Get(name); err == nil && p != nil && string(p.UID) == uid {
+			return p
+		}
+		// 2) Fallback: list namespace from lister and match by UID (handles name reuse)
+		if pods, err := lister.Pods(ns).List(labels.Everything()); err == nil {
+			for _, p := range pods {
+				if string(p.UID) == uid {
+					return p
+				}
+			}
+		}
+		// 3) Last resort: direct GET by name and check UID
+		if p, err := pl.Client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{}); err == nil && p != nil && string(p.UID) == uid {
+			return p
+		}
+		return nil
+	}
+
 	var targets []*v1.Pod
-	seen := map[string]bool{}
-	for _, mv := range plan.PodMovements {
-		key := mv.Pod.Namespace + "/" + mv.Pod.Name
-		if !seen[key] {
-			seen[key] = true
-			targets = append(targets, mv.Pod)
+	seenUID := make(map[string]bool, len(plan.Moves)+len(plan.Evicts))
+
+	addTarget := func(p *v1.Pod) {
+		if p == nil {
+			return
 		}
-	}
-	for _, v := range plan.VictimsToEvict {
-		key := v.Namespace + "/" + v.Name
-		if !seen[key] {
-			seen[key] = true
-			targets = append(targets, v)
+		uid := string(p.UID)
+		if !seenUID[uid] {
+			seenUID[uid] = true
+			targets = append(targets, p)
 		}
 	}
 
-	for _, mv := range plan.PodMovements {
+	for _, mv := range plan.Moves {
+		addTarget(resolve(mv.Pod.UID, mv.Pod.Namespace, mv.Pod.Name))
+	}
+	for _, e := range plan.Evicts {
+		addTarget(resolve(e.Pod.UID, e.Pod.Namespace, e.Pod.Name))
+	}
+
+	for _, mv := range plan.Moves {
 		klog.V(2).InfoS("Pod movement planned",
-			"pod", podRef(mv.Pod),
-			"from", mv.FromNode,
-			"to", mv.ToNode,
-			"cpu(m)", mv.CPURequest,
-			"mem(MiB)", bytesToMiB(mv.MemoryRequest),
+			"pod", mv.Pod.Namespace+"/"+mv.Pod.Name,
+			"from", mv.FromNode, "to", mv.ToNode,
+			"cpu(m)", mv.CPUm, "mem(MiB)", bytesToMiB(mv.MemBytes),
 		)
 	}
-	for _, v := range plan.VictimsToEvict {
+	for _, e := range plan.Evicts {
 		klog.V(2).InfoS("Eviction planned",
-			"pod", podRef(v),
-			"from", v.Spec.NodeName,
-			"cpu(m)", getPodCPURequest(v),
-			"mem(MiB)", bytesToMiB(getPodMemoryRequest(v)),
+			"pod", e.Pod.Namespace+"/"+e.Pod.Name,
+			"from", e.FromNode,
+			"cpu(m)", e.CPUm, "mem(MiB)", bytesToMiB(e.MemBytes),
 		)
 	}
 
-	// 1) evict/wait pods
+	// 1) Evict all targeted pods and wait for them to disappear.
 	if len(targets) > 0 {
 		klog.V(2).InfoS("Evicting/awaiting eviction of targeted pods", "count", len(targets))
-
 		for _, p := range targets {
 			if err := pl.evictPod(ctx, p); err != nil && !apierrors.IsNotFound(err) {
 				return fmt.Errorf("evict pod %s: %w", podRef(p), err)
 			}
 		}
-
-		// Wait for all targeted pods to actually disappear
 		if err := pl.waitPodsGone(ctx, targets); err != nil {
 			return fmt.Errorf("wait for targeted pods gone: %w", err)
 		}
 	}
 
-	// 2) recreate standalone pods (no bind)
-	for _, mv := range plan.PodMovements {
-		if _, ok := topWorkload(mv.Pod); ok {
-			klog.V(2).InfoS("Skipping workload-owned move recreate (controller will recreate)", "pod", podRef(mv.Pod), "to", mv.ToNode)
+	// 2) Recreate standalone pods (controllers will recreate RS/SS/Job pods).
+	for _, p := range targets {
+		if _, owned := topWorkload(p); owned {
 			continue
 		}
-		klog.V(2).InfoS("Recreating moved standalone pod (no bind)", "pod", podRef(mv.Pod))
-		if err := pl.recreatePod(ctx, mv.Pod, ""); err != nil {
-			return fmt.Errorf("recreate moved pod %s: %w", podRef(mv.Pod), err)
-		}
-	}
-	for _, v := range plan.VictimsToEvict {
-		if _, ok := topWorkload(v); ok {
-			klog.V(2).InfoS("Skipping workload-owned eviction recreate (controller will recreate)", "pod", podRef(v))
-			continue
-		}
-		klog.V(2).InfoS("Recreating evicted standalone pod (no bind)", "pod", podRef(v))
-		if err := pl.recreatePod(ctx, v, ""); err != nil {
-			return fmt.Errorf("recreate evicted pod %s: %w", podRef(v), err)
+		klog.V(2).InfoS("Recreating standalone pod (no bind)", "pod", podRef(p))
+		if err := pl.recreatePod(ctx, p, ""); err != nil {
+			return fmt.Errorf("recreate standalone pod %s: %w", podRef(p), err)
 		}
 	}
 
@@ -846,101 +653,51 @@ func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) erro
 }
 
 func (pl *MyCrossNodePreemption) onPlanSettled() bool {
-	sp, _ := pl.getActivePlan()
-	if sp == nil || sp.Completed {
+	ap := pl.getActive()
+	if ap == nil || ap.PlanDoc.Completed {
 		return false
 	}
 	klog.InfoS("plan settled; deactivating active plan")
-	pl.clearActivePlan()
+	pl.clearActive()
 	pl.activateBlockedPods()
 	return true
 }
 
-func (pl *MyCrossNodePreemption) runPythonOptimizerSingle(
+func (pl *MyCrossNodePreemption) publishPlan(
 	ctx context.Context,
-	preemptor *v1.Pod,
-	timeout time.Duration,
-) (*SolverOutput, error) {
-	l := pl.Handle.SnapshotSharedLister()
-	if l == nil {
-		return nil, fmt.Errorf("no snapshot lister")
-	}
-	nodeInfos, err := l.NodeInfos().List()
+	out *SolverOutput,
+	pending *v1.Pod, // for batch, just metadata/lead
+) (*Plan, *ActivePlanState, error) {
+
+	plan, err := pl.translatePlanFromSolver(out, pending)
 	if err != nil {
-		return nil, fmt.Errorf("list nodes: %w", err)
+		return nil, nil, fmt.Errorf("plan translation failed: %w", err)
 	}
 
-	in := SolverInput{
-		TimeoutMs:      timeout.Milliseconds(),
-		IgnoreAffinity: true,
-		Preemptor:      ptr(toSolverPod(preemptor, "")),
-		Nodes:          make([]SolverNode, 0),
-		Pods:           make([]SolverPod, 0),
+	// Export plan for auditing
+	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending)
+	if err != nil {
+		klog.ErrorS(err, "export plan failed (non-fatal)")
 	}
 
-	usable := map[string]bool{}
-	for _, ni := range nodeInfos {
-		if ni == nil || ni.Node() == nil {
-			continue
-		}
-		n := ni.Node()
-		isCP := n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
-			n.Labels["node-role.kubernetes.io/master"] != "" ||
-			n.Name == "control-plane" || n.Name == "kind-control-plane"
-		if isCP || n.Spec.Unschedulable || ni.Allocatable.MilliCPU <= 0 || ni.Allocatable.Memory <= 0 {
-			continue
-		}
-		in.Nodes = append(in.Nodes, SolverNode{
-			Name: n.Name,
-			CPU:  ni.Allocatable.MilliCPU,
-			RAM:  ni.Allocatable.Memory,
-		})
-		usable[n.Name] = true
-	}
-	if len(in.Nodes) == 0 {
-		return nil, fmt.Errorf("no usable nodes available (snapshot)")
+	// Derive docs (placementsByName + per-workload quotas)
+	byName, wkDesired, derr := pl.derivePlanDocs(out, pending)
+	if derr != nil {
+		klog.ErrorS(derr, "derive plan docs failed (non-fatal)")
 	}
 
-	for _, ni := range nodeInfos {
-		if ni == nil || ni.Node() == nil {
-			continue
-		}
-		for _, pi := range ni.Pods {
-			where := pi.Pod.Spec.NodeName
-			if where != "" && !usable[where] {
-				continue
-			}
-			sp := toSolverPod(pi.Pod, where)
-			if pi.Pod.Namespace == "kube-system" {
-				sp.Protected = true
-			}
-			// Do NOT duplicate the preemptor
-			if sp.UID == string(preemptor.UID) {
-				continue
-			}
-			in.Pods = append(in.Pods, sp)
-		}
+	inMem := &StoredPlan{
+		Completed:        false,
+		GeneratedAt:      time.Now().UTC(),
+		PluginVersion:    Version,
+		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
+		PendingUID:       string(pending.UID),
+		TargetNode:       plan.TargetNode,
+		SolverOutput:     out,
+		Plan:             *plan,
+		PlacementsByName: byName,
+		WkDesiredPerNode: wkDesired,
 	}
-
-	raw, _ := json.Marshal(in)
-	klog.V(2).InfoS("Single-preemptor solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
-
-	cmd := exec.CommandContext(ctx, "python3", PythonSolverPath)
-	cmd.Stdin = bytes.NewReader(raw)
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &outBuf, &errBuf
-	if err := cmd.Run(); err != nil {
-		klog.ErrorS(err, "python solver failed", "stderr", errBuf.String())
-		return nil, fmt.Errorf("solver run: %w", err)
-	}
-
-	var out SolverOutput
-	if err := json.Unmarshal(outBuf.Bytes(), &out); err != nil {
-		return nil, fmt.Errorf("decode solver output: %w", err)
-	}
-	okStatus := out.Status == "OPTIMAL" || out.Status == "FEASIBLE"
-	if !okStatus {
-		return &out, fmt.Errorf("solver status: %s", out.Status)
-	}
-	return &out, nil
+	pl.setActivePlan(inMem, cmName)
+	return plan, pl.getActive(), nil
 }
