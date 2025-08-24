@@ -38,22 +38,23 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		startTime := time.Now()
 		out, err := pl.solve(ctxSolve, SolveSingle, pending, nil, SolverTimeout)
 		if err != nil || out.NominatedNode == "" {
-			if err != nil {
-				klog.ErrorS(err, "PostFilter: solver failed")
-			}
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: solver failed")
+			klog.ErrorS(err, "PostFilter: solver found no solution", "pod", klog.KObj(pending), "duration", time.Since(startTime))
+			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: solver found no solution")
 		}
-		klog.InfoS("PostFilter: solver finished", "status", out.Status, "duration", time.Since(startTime))
+		klog.InfoS("PostFilter: solver found a solution", "status", out.Status, "duration", time.Since(startTime))
 
 		plan, ap, err := pl.publishPlan(ctx, out, pending)
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
 
-		if err := pl.executePlan(ctx, plan); err != nil {
-			klog.ErrorS(err, "PostFilter: plan execution failed")
-			pl.onPlanSettled()
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: plan execution failed")
+		// Skip plan execution if no moves or evictions
+		if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
+			if err := pl.executePlan(ctx, plan); err != nil {
+				klog.ErrorS(err, "PostFilter: plan execution failed")
+				pl.onPlanSettled()
+				return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: plan execution failed")
+			}
 		}
 
 		klog.InfoS("PostFilter: plan execution finished",
@@ -62,7 +63,6 @@ func (pl *MyCrossNodePreemption) PostFilter(
 			"planID", ap.ID,
 			"moved", len(plan.Moves),
 			"evicted", len(plan.Evicts),
-			"unscheduled", pl.countUnscheduledPods(),
 		)
 
 		return &framework.PostFilterResult{

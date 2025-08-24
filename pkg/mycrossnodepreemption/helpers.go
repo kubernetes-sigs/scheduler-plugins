@@ -291,19 +291,3 @@ func (pl *MyCrossNodePreemption) pruneBlockedStale() int {
 	}
 	return rem
 }
-
-func (pl *MyCrossNodePreemption) countUnscheduledPods() int {
-	nodeInfos, err := pl.Handle.SnapshotSharedLister().NodeInfos().List()
-	if err != nil {
-		return -1
-	}
-	var unscheduledPods []*v1.Pod
-	for _, ni := range nodeInfos {
-		for _, pi := range ni.Pods {
-			if pi.Pod.Status.Phase == v1.PodPending {
-				unscheduledPods = append(unscheduledPods, pi.Pod)
-			}
-		}
-	}
-	return len(unscheduledPods)
-}

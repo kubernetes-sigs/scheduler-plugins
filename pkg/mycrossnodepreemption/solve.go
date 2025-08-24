@@ -26,7 +26,7 @@ func solverFeasible(out *SolverOutput) bool {
 
 // buildSolverInput builds the common input for either batch(cohort) or single-preemptor.
 func (pl *MyCrossNodePreemption) buildSolverInput(
-	mode SolveMode,
+	mode SolveMode, // TODO: Rename SolveMode so it doesnt confuses with SolverMode
 	preemptor *v1.Pod, // only for SolveSingle
 	batched []*v1.Pod, // only for SolveCohort
 	timeout time.Duration,
@@ -37,6 +37,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(
 		IgnoreAffinity: true,
 		Nodes:          make([]SolverNode, 0),
 		Pods:           make([]SolverPod, 0),
+		Mode:           SolverMode,
 	}
 
 	switch mode {

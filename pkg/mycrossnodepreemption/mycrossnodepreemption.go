@@ -28,10 +28,9 @@ const (
 	BatchInitialDelay  = 15 * time.Second // small delay before first run
 
 	// ======= Plan settings =======
-	PlanExecutionTTL     = 60 * time.Second // how long a plan may run before being terminated
-	EvictionPollTimeout  = 20 * time.Second
-	EvictionPollInterval = 1 * time.Second
-	SolverTimeout        = 50 * time.Second
+	PlanExecutionTTL = 120 * time.Second // how long a plan may run before being terminated; it can take up to 60 seconds to complete a plan
+	SolverTimeout    = 80 * time.Second
+	SolverMode       = SolverModeLexi // SolverModeLexi or SolverModeWeighted
 )
 
 func (pl *MyCrossNodePreemption) Name() string { return Name }

@@ -29,6 +29,7 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 ## Open Questions
 
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
+  - For example, when running every-preempter mode and if we evict in cycle #1, then in cycle #2 this pod is currently not taken into account.
 
 ## TODOs
 

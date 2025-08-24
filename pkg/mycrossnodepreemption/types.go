@@ -3,6 +3,7 @@
 package mycrossnodepreemption
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,10 +39,17 @@ const (
 	BatchPostFilter
 )
 
+const (
+	SolverModeLexi     = "lexi"
+	SolverModeWeighted = "weighted"
+)
+
 type ActivePlanState struct {
 	ID        string               // configmap name (or any unique id)
 	PlanDoc   *StoredPlan          // the same JSON you store in the ConfigMap
 	Remaining WorkloadNodeCounters // workloadKey -> node -> *atomic.Int32
+	Ctx       context.Context
+	Cancel    context.CancelFunc
 }
 
 type WorkloadKind int
@@ -127,11 +135,14 @@ type SolverEviction struct {
 }
 
 type SolverInput struct {
-	TimeoutMs      int64        `json:"timeout_ms"`
-	IgnoreAffinity bool         `json:"ignore_affinity"`
 	Preemptor      *SolverPod   `json:"preemptor,omitempty"` // nil => batch mode
 	Nodes          []SolverNode `json:"nodes"`
 	Pods           []SolverPod  `json:"pods"`
+	TimeoutMs      int64        `json:"timeout_ms"`
+	IgnoreAffinity bool         `json:"ignore_affinity"`
+	Mode           string       `json:"solver_mode,omitempty"` // "lexi" or "weighted"
+	UseHints       bool         `json:"use_hints,omitempty"`
+	Workers        int          `json:"workers,omitempty"`
 }
 
 type SolverOutput struct {

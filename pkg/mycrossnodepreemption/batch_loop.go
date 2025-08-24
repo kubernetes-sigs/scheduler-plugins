@@ -57,6 +57,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() (int, string, int, int, int, in
 		klog.InfoS("Batch loop: active plan in progress; skipping batch")
 		return 0, "", 0, 0, 0, 0
 	}
+	// Prune stale entries; keep only pending pods
 	_ = pl.pruneBlockedStale()
 	_ = pl.pruneBatchStale()
 
@@ -86,10 +87,13 @@ func (pl *MyCrossNodePreemption) runBatchCycle() (int, string, int, int, int, in
 		return 0, "", 0, 0, 0, 0
 	}
 
-	if err := pl.executePlan(context.Background(), plan); err != nil {
-		klog.ErrorS(err, "batch plan execution failed")
-		pl.onPlanSettled()
-		return 0, "", 0, 0, 0, 0
+	// Skip plan execution if no moves or evictions
+	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
+		if err := pl.executePlan(context.Background(), plan); err != nil {
+			klog.ErrorS(err, "batch plan execution failed")
+			pl.onPlanSettled()
+			return 0, "", 0, 0, 0, 0
+		}
 	}
 
 	pl.activateBatchedPods(pods)
