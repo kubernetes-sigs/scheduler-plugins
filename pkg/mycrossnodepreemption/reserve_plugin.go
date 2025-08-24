@@ -36,7 +36,7 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	}
 
 	// Pending preemptor (only in every-preemptor mode) doesn't consume workload quota here.
-	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingPod {
+	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
 		return framework.NewStatus(framework.Success)
 	}
 

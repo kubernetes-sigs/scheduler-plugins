@@ -28,7 +28,7 @@ const (
 	BatchInitialDelay  = 15 * time.Second // small delay before first run
 
 	// ======= Plan settings =======
-	PlanExecutionTTL     = 100 * time.Second // how long a plan may run before being terminated
+	PlanExecutionTTL     = 60 * time.Second // how long a plan may run before being terminated
 	EvictionPollTimeout  = 20 * time.Second
 	EvictionPollInterval = 1 * time.Second
 	SolverTimeout        = 50 * time.Second

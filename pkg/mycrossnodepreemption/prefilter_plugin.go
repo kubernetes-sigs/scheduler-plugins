@@ -24,7 +24,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	}
 
 	// Pin lead pod only if TargetNode is set (every-preemptor mode).
-	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingPod {
+	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
 		return &framework.PreFilterResult{NodeNames: sets.New(ap.PlanDoc.TargetNode)}, framework.NewStatus(framework.Success)
 	}
 

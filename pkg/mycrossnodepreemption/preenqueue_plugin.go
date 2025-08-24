@@ -25,7 +25,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *fra
 
 	// While a plan is executing, gate everything not explicitly allowed by the plan.
 	if ap != nil && !ap.PlanDoc.Completed {
-		if string(pod.UID) == ap.PlanDoc.PendingPod {
+		if string(pod.UID) == ap.PlanDoc.PendingUID {
 			return framework.NewStatus(framework.Success)
 		}
 		full := pod.Namespace + "/" + pod.Name
