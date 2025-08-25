@@ -32,22 +32,10 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		}
 		return false
 	}()
-	if !relevant || ap.Settled.Load() {
+
+	if !relevant {
 		return
 	}
-
-	// Serialize completion checks
-	if !ap.Checking.CompareAndSwap(false, true) {
-		return
-	}
-
-	// By default, release the lock; if we settle, we won't need to.
-	release := true
-	defer func() {
-		if release {
-			ap.Checking.Store(false)
-		}
-	}()
 
 	ok, err := pl.isPlanCompleted(ctx, ap.PlanDoc)
 

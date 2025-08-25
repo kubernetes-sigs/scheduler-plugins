@@ -701,11 +701,11 @@ func (pl *MyCrossNodePreemption) onPlanSettled() bool {
 		return false
 	}
 	klog.InfoS("plan settled; deactivating active plan", "planID", ap.ID)
+	pl.clearActive()
 	if ap.Cancel != nil {
 		ap.Cancel() // stop the timeout watcher
 	}
 	pl.markPlanCompleted(context.Background(), ap.ID)
-	pl.clearActive()
 	pl.activateBlockedPods()
 	return true
 }

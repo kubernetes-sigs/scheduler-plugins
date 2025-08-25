@@ -20,7 +20,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	if ap := pl.getActive(); ap != nil && !ap.PlanDoc.Completed {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: active plan in progress")
 	}
-	_ = pl.pruneBlockedStale()
+	_ = pl.pruneStaleSetEntries(pl.Blocked)
 
 	// Batch on PostFilter?
 	if strategyBatchAtPostFilter() {

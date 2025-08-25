@@ -15,7 +15,7 @@ var _ framework.PreEnqueuePlugin = &MyCrossNodePreemption{}
 // PreEnqueue is called before a pod is enqueued (first point of contact).
 // It is used, here, to determine if a pod can be enqueued or if it should be blocked/batched according to the active plan.
 func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *framework.Status {
-	_ = pl.pruneBlockedStale()
+	_ = pl.pruneStaleSetEntries(pl.Blocked)
 	ap := pl.getActive()
 
 	// Always allow kube-system to proceed.

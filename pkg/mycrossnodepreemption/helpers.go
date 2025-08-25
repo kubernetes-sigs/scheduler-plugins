@@ -276,36 +276,46 @@ func isNodeUsable(n *v1.Node) bool {
 		n.Status.Allocatable.Memory().Value() > 0
 }
 
-func (pl *MyCrossNodePreemption) activateBlockedPods() {
-	if pl.Blocked == nil {
-		return
+func (pl *MyCrossNodePreemption) activatePodsFromSet(set *podSet) bool {
+	if set == nil || set.Size() == 0 {
+		return false
 	}
-	snap := pl.Blocked.Snapshot()
-	if len(snap) == 0 {
-		return
-	}
+	snap := set.Snapshot() // UID -> podKey
 	l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-	pods := make(map[string]*v1.Pod, len(snap))
+	toAct := make(map[string]*v1.Pod, len(snap))
 	for _, k := range snap {
-		p, err := l.Pods(k.Namespace).Get(k.Name)
-		if err != nil {
-			klog.ErrorS(err, "lister failed", "pod", k.Namespace+"/"+k.Name)
-			continue
+		if p, err := l.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
+			toAct[k.Namespace+"/"+k.Name] = p
 		}
-		pods[k.Namespace+"/"+k.Name] = p
 	}
-	if len(pods) > 0 {
-		pl.Handle.Activate(klog.Background(), pods)
+	if len(toAct) > 0 {
+		pl.Handle.Activate(klog.Background(), toAct)
+		return true
 	}
-	pl.Blocked.Clear()
+	return false
 }
 
-func (pl *MyCrossNodePreemption) pruneBlockedStale() int {
-	rem := pl.pruneSetStale(pl.Blocked, func(cur *v1.Pod) bool {
-		return cur.Spec.NodeName == "" // keep only unscheduled
+func (pl *MyCrossNodePreemption) activateBlockedPods() {
+	if pl.activatePodsFromSet(pl.Blocked) {
+		pl.Blocked.Clear()
+	}
+}
+
+// keep activateBatchedPods signature for call sites; under the hood use the generic one
+func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod) {
+	if pl.activatePodsFromSet(pl.Batched) {
+		for _, p := range podsToRemove {
+			pl.Batched.Remove(p.UID)
+		}
+	}
+}
+
+func (pl *MyCrossNodePreemption) pruneStaleSetEntries(set *podSet) int {
+	rem := pl.pruneSetStale(set, func(cur *v1.Pod) bool {
+		return cur.Spec.NodeName == "" // keep only pending pods
 	})
 	if rem > 0 {
-		klog.V(2).InfoS("Pruned stale entries from blocked set", "removed", rem)
+		klog.V(2).InfoS("Pruned stale entries", "removed", rem)
 	}
 	return rem
 }

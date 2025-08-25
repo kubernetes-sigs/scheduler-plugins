@@ -18,7 +18,7 @@ const (
 
 	// ======= Strategy =======
 	// Choices: StrategyEveryPreemptor, StrategyBatchPostFilter, StrategyBatchPreEnqueue
-	Strategy StrategyIngress = StrategyBatchPostFilter
+	Strategy StrategyIngress = StrategyEveryPreemptor
 
 	// ======= Batch settings =======
 	BatchSolveInterval = 60 * time.Second // periodic cohort solve
@@ -48,7 +48,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "strategy", strategyToString())
 
 	if batchingEnabled() {
-		go pl.batchLoop(context.Background())
+		go pl.batchLoop(ctx)
 	}
 	return pl, nil
 }

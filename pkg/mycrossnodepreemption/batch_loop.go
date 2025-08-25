@@ -40,8 +40,8 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 	}
 
 	// Prune stale entries; keep only pending pods
-	_ = pl.pruneBlockedStale()
-	_ = pl.pruneBatchStale()
+	_ = pl.pruneStaleSetEntries(pl.Blocked)
+	_ = pl.pruneStaleSetEntries(pl.Batched)
 
 	// Get current batch pods
 	pods := pl.snapshotBatch()
@@ -117,45 +117,15 @@ func (pl *MyCrossNodePreemption) countNewAndUnscheduledFromBatch(Placements map[
 
 func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
 	keys := pl.Batched.Snapshot()
-	if len(keys) == 0 {
+	if len(keys) == 0 { // no pods in batch
 		return nil
 	}
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-	out := make([]*v1.Pod, 0, len(keys))
+	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister() // use SharedInformerFactory for immediate consistency
+	snapshot := make([]*v1.Pod, 0, len(keys))                                  // preallocate slice
 	for _, k := range keys {
-		if cur, err := podLister.Pods(k.Namespace).Get(k.Name); err == nil {
-			out = append(out, cur)
+		if pod, err := podLister.Pods(k.Namespace).Get(k.Name); err == nil { // get current pod
+			snapshot = append(snapshot, pod) // add pod to snapshot
 		}
 	}
-	return out
-}
-
-func (pl *MyCrossNodePreemption) removePodsFromBatch(pods []*v1.Pod) {
-	for _, p := range pods {
-		pl.Batched.Remove(p.UID)
-	}
-}
-
-func (pl *MyCrossNodePreemption) pruneBatchStale() int {
-	rem := pl.pruneSetStale(pl.Batched, func(cur *v1.Pod) bool {
-		return cur.Spec.NodeName == "" // keep only pending pods
-	})
-	if rem > 0 {
-		klog.V(2).InfoS("Pruned stale entries from batch", "removed", rem)
-	}
-	return rem
-}
-
-func (pl *MyCrossNodePreemption) activateBatchedPods(pods []*v1.Pod) {
-	activate := map[string]*v1.Pod{}
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-	for _, p := range pods {
-		if lp, err := podLister.Pods(p.Namespace).Get(p.Name); err == nil {
-			activate[p.Namespace+"/"+p.Name] = lp
-		}
-	}
-	if len(activate) > 0 {
-		pl.Handle.Activate(klog.Background(), activate)
-	}
-	pl.removePodsFromBatch(pods)
+	return snapshot
 }
