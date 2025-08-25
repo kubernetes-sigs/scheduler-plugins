@@ -244,6 +244,9 @@ def solve(instance: dict) -> dict:
     solver.parameters.log_search_progress       = log_progress
     solver.parameters.log_subsolver_statistics  = log_subsolvers
     solver.parameters.log_to_stdout = False  # KEEP False → logs go to stderr
+    solver.log_callback = lambda line: (
+        print(line, file=sys.stderr, flush=True) if line else None
+    )
     
     if mode == "weighted":
         st = _solve_weighted(m, solver, placed, evict, move, running_idxs, p_pri, single_preemptor_mode, pre_idx)
@@ -255,7 +258,7 @@ def solve(instance: dict) -> dict:
     if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _encode_status(st)
 
-    print(f"[solver]", file=sys.stderr, flush=True)
+    # print(file=sys.stderr, flush=True)
     
     # ---------------------- extract plan ----------------------
     placements = {}
