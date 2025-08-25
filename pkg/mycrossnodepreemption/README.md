@@ -10,26 +10,36 @@ The plugin will call this script in PostFilter with the current cluster state an
 
 ### Getting saved solver plan from kube-scheduler
 
+```bash
 kubectl -n kube-system get cm -l crossnode-plan
-
 kubectl -n kube-system get cm <CM> -o jsonpath='{.data.plan\.json}' | jq .
+```
 
 ### Build kwok cluster with custom image and random pods
 
+```bash
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile .
-
 kwokctl create cluster --name kwok --config kwok-cluster.yaml
-
 ./fill-nodes-kwok.sh kwok 3 4 4
+```
+
+### Recreate cluster and fill nodes (continue if already deleted)
+
+```bash
+kubectl delete ns crossnode-test >& /dev/null || true && ./fill-nodes-kwok.sh kwok 9 4 4 && ./cluster-usage.sh
+```
 
 Combined:
 
-docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile . && kwokctl create cluster --name kwok --config kwok-cluster.yaml && ./fill-nodes-kwok.sh kwok 9 4 4 && ./cluster-usage.sh
+```bash
+docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile . && kwokctl create cluster --name kwok --config kwok-cluster.yaml && sleep 1 && ./fill-nodes-kwok.sh kwok 9 4 4 && ./cluster-usage.sh
+```
 
 ## Open Questions
 
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
   - For example, when running every-preempter mode and if we evict in cycle #1, then in cycle #2 this pod is currently not taken into account.
+- What to with batched pods, we do not succeed to bind on first try?
 
 ## TODOs
 

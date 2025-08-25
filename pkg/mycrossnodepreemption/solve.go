@@ -37,6 +37,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(
 	in := SolverInput{
 		TimeoutMs:      timeout.Milliseconds(),
 		IgnoreAffinity: true,
+		LogProgress:    SolverLogProgress,
 		Nodes:          make([]SolverNode, 0),
 		Pods:           make([]SolverPod, 0),
 		Mode:           SolverMode,

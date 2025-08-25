@@ -33,14 +33,14 @@ def solve(instance: dict) -> dict:
         return {"status": "ERROR", "message": "no nodes provided"}
 
     # ---- options / params ----
-    timeout_ms       = int(instance.get("timeout_ms", 3000))
-    ignore_affinity  = bool(instance.get("ignore_affinity", True))  # TODO: use this
-    mode             = str(instance.get("mode", "lexi")).strip().lower()   # "weighted" or "lexi"
-    workers          = _available_cpus() # set number of workers to the amount available
-    decision_order   = False   # TODO: not sure if needed
-    use_hints        = False  # TODO: not sure if needed
-    log_progress     = True  # log search progress
-    log_subsolvers   = True  # log subsolver statistics
+    timeout_ms          = int(instance.get("timeout_ms", 3000))
+    ignore_affinity     = bool(instance.get("ignore_affinity", True))  # TODO: use this
+    mode                = str(instance.get("mode", "lexi")).strip().lower()   # "weighted" or "lexi"
+    workers             = _available_cpus() # set number of workers to the amount available
+    use_decision_order  = False   # TODO: not sure if needed
+    use_hints           = False  # TODO: not sure if needed; but seems to improve EveryPreemptor and BatchPostFilter modes
+    log_progress        = bool(instance.get("log_progress", False))
+    log_subsolvers      = bool(instance.get("log_progress", False))
 
     # --- De-dup by UID, prefer entries that have 'where' (running) ---
     by_uid = {}
@@ -213,7 +213,7 @@ def solve(instance: dict) -> dict:
 
     # ---------------------- decision strategies -------------------------
     # Order pods: sort by (CPU, MEM, PRI desc)
-    if decision_order:
+    if use_decision_order:
         order = list(range(num_pods))
         def key(i):
             return (

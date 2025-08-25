@@ -142,6 +142,7 @@ type SolverInput struct {
 	Pods           []SolverPod  `json:"pods"`
 	TimeoutMs      int64        `json:"timeout_ms"`
 	IgnoreAffinity bool         `json:"ignore_affinity"`
+	LogProgress    bool         `json:"log_progress,omitempty"`
 	Mode           string       `json:"solver_mode,omitempty"` // "lexi" or "weighted"
 	UseHints       bool         `json:"use_hints,omitempty"`
 	Workers        int          `json:"workers,omitempty"`

@@ -18,16 +18,17 @@ const (
 
 	// ======= Strategy =======
 	// Choices: StrategyEveryPreemptor, StrategyBatchPostFilter, StrategyBatchPreEnqueue
-	Strategy StrategyIngress = StrategyEveryPreemptor
+	Strategy StrategyIngress = StrategyBatchPostFilter
 
 	// ======= Batch settings =======
 	BatchSolveInterval = 60 * time.Second // periodic cohort solve
 	BatchInitialDelay  = 15 * time.Second // small delay before first run
 
 	// ======= Plan settings =======
-	PlanExecutionTTL = 60 * time.Second // how long a plan may run before being terminated; it can take up to 60 seconds to complete a plan
-	SolverTimeout    = 55 * time.Second
-	SolverMode       = SolverModeLexi // SolverModeLexi or SolverModeWeighted
+	PlanExecutionTTL  = 60 * time.Second // how long a plan may run before being terminated; it can take up to 60 seconds to complete a plan
+	SolverTimeout     = 55 * time.Second
+	SolverMode        = SolverModeLexi // SolverModeLexi or SolverModeWeighted
+	SolverLogProgress = false          // log search progress (may be verbose here in GO)
 )
 
 func (pl *MyCrossNodePreemption) Name() string { return Name }

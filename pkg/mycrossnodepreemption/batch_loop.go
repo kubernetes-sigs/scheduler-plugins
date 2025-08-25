@@ -80,7 +80,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 	pl.activateBatchedPods(pods)
 
 	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 || newScheduledFromBatch > 0 {
-		klog.InfoS("Batch loop: finished cycle; activate batch",
+		klog.InfoS("Batch loop: finished cycle; waiting plan to settle",
 			"solverStatus", out.Status,
 			"batchSize", batchSize,
 			"planID", ap.ID,
