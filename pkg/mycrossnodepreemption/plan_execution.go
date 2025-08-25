@@ -360,7 +360,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 // from the solver placements and current live pods (+ pending).
 func (pl *MyCrossNodePreemption) derivePlanDocs(
 	out *SolverOutput,
-	pending *v1.Pod,
+	pending *v1.Pod, // may be nil in batch
 ) (map[string]string, map[string]map[string]int, error) {
 
 	// UID -> *v1.Pod
@@ -372,7 +372,9 @@ func (pl *MyCrossNodePreemption) derivePlanDocs(
 	for _, p := range live {
 		podsByUID[string(p.UID)] = p
 	}
-	podsByUID[string(pending.UID)] = pending
+	if pending != nil {
+		podsByUID[string(pending.UID)] = pending
+	}
 
 	byName := make(map[string]string)
 	rsDesired := map[string]map[string]int{}
@@ -382,8 +384,9 @@ func (pl *MyCrossNodePreemption) derivePlanDocs(
 		if p == nil {
 			continue
 		}
+
 		// In single-preemptor mode: skip allocating the preemptor via RS quotas if NominatedNode is set
-		isLeadPreemptor := out != nil && out.NominatedNode != "" && uid == string(pending.UID)
+		isLeadPreemptor := pending != nil && out != nil && out.NominatedNode != "" && uid == string(pending.UID)
 		if isLeadPreemptor {
 			continue
 		}
@@ -417,7 +420,7 @@ func toSolverPod(p *v1.Pod, where string) SolverPod {
 
 func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 	out *SolverOutput,
-	pending *v1.Pod,
+	pending *v1.Pod, // may be nil
 ) (*Plan, error) {
 
 	plan := &Plan{TargetNode: out.NominatedNode}
@@ -431,7 +434,9 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 	for _, p := range live {
 		podsByUID[string(p.UID)] = p
 	}
-	podsByUID[string(pending.UID)] = pending
+	if pending != nil {
+		podsByUID[string(pending.UID)] = pending
+	}
 
 	// Evictions
 	for _, e := range out.Evictions {
@@ -447,8 +452,9 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 
 	// Moves (only for running pods assigned a different node)
 	for uid, dest := range out.Placements {
-		if uid == string(pending.UID) {
-			continue // pending pod isn't a "move"
+		// Skip preemptor only when we actually have one
+		if pending != nil && uid == string(pending.UID) {
+			continue
 		}
 		p, ok := podsByUID[uid]
 		if !ok {
@@ -474,7 +480,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	ctx context.Context,
 	plan *Plan,
 	out *SolverOutput,
-	pending *v1.Pod,
+	pending *v1.Pod, // may be nil
 ) (string, error) {
 
 	byName, rsDesired, err := pl.derivePlanDocs(out, pending)
@@ -487,13 +493,17 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		CompletedAt:      nil,
 		GeneratedAt:      time.Now().UTC(),
 		PluginVersion:    Version,
-		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
-		PendingUID:       string(pending.UID),
-		TargetNode:       plan.TargetNode,
 		SolverOutput:     out,
 		Plan:             *plan,
 		PlacementsByName: byName,
 		WkDesiredPerNode: rsDesired,
+	}
+
+	// Fill single-preemptor metadata only when provided
+	if pending != nil {
+		doc.PendingPod = fmt.Sprintf("%s/%s", pending.Namespace, pending.Name)
+		doc.PendingUID = string(pending.UID)
+		doc.TargetNode = plan.TargetNode // may be empty, kept for symmetry
 	}
 
 	raw, err := json.MarshalIndent(doc, "", "  ")
@@ -501,7 +511,8 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		return "", err
 	}
 
-	name := fmt.Sprintf("crossnode-plan-%s-%d", pending.UID, time.Now().Unix())
+	// Make a unique name
+	name := fmt.Sprintf("crossnode-plan-%d", time.Now().UnixNano())
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -702,7 +713,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled() bool {
 func (pl *MyCrossNodePreemption) publishPlan(
 	ctx context.Context,
 	out *SolverOutput,
-	pending *v1.Pod, // for batch, just metadata/lead
+	pending *v1.Pod, // may be nil
 ) (*Plan, *ActivePlanState, error) {
 
 	plan, err := pl.translatePlanFromSolver(out, pending)
@@ -710,7 +721,7 @@ func (pl *MyCrossNodePreemption) publishPlan(
 		return nil, nil, fmt.Errorf("plan translation failed: %w", err)
 	}
 
-	// Export plan for auditing
+	// Export plan for auditing (CM id also becomes our plan ID)
 	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending)
 	if err != nil {
 		klog.ErrorS(err, "export plan failed (non-fatal)")
@@ -726,14 +737,19 @@ func (pl *MyCrossNodePreemption) publishPlan(
 		Completed:        false,
 		GeneratedAt:      time.Now().UTC(),
 		PluginVersion:    Version,
-		PendingPod:       fmt.Sprintf("%s/%s", pending.Namespace, pending.Name),
-		PendingUID:       string(pending.UID),
-		TargetNode:       plan.TargetNode,
 		SolverOutput:     out,
 		Plan:             *plan,
 		PlacementsByName: byName,
 		WkDesiredPerNode: wkDesired,
 	}
+
+	// Only fill these when we actually have a single-preemptor
+	if pending != nil {
+		inMem.PendingPod = fmt.Sprintf("%s/%s", pending.Namespace, pending.Name)
+		inMem.PendingUID = string(pending.UID)
+		inMem.TargetNode = plan.TargetNode
+	}
+
 	pl.setActivePlan(inMem, cmName)
 	return plan, pl.getActive(), nil
 }

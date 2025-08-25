@@ -105,9 +105,9 @@ type StoredPlan struct {
 	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
 	GeneratedAt      time.Time                 `json:"generatedAt"`
 	PluginVersion    string                    `json:"pluginVersion"`
-	PendingPod       string                    `json:"pendingPod"`
-	PendingUID       string                    `json:"pendingUID"`
-	TargetNode       string                    `json:"targetNode"`
+	PendingPod       string                    `json:"pendingPod,omitempty"`
+	PendingUID       string                    `json:"pendingUID,omitempty"`
+	TargetNode       string                    `json:"targetNode,omitempty"`
 	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
 	Plan             Plan                      `json:"plan"`
 	PlacementsByName map[string]string         `json:"placementsByName,omitempty"`

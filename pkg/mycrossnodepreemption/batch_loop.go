@@ -11,9 +11,8 @@ import (
 )
 
 func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
-	// Schedule first run
 	firstDelay := BatchInitialDelay
-	timer := time.NewTimer(firstDelay)
+	timer := time.NewTimer(firstDelay) // first run after initial delay
 	nextAt := time.Now().Add(firstDelay)
 	defer timer.Stop()
 
@@ -27,21 +26,24 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 		case <-timer.C:
 			klog.InfoS("Batch loop: starting cycle")
 			pl.runBatchCycle()
-			timer.Reset(BatchSolveInterval)
+			timer.Reset(BatchSolveInterval) // after first run, we use the regular interval
 			klog.InfoS("Batch loop: next run scheduled", "in(s)", BatchSolveInterval)
 		}
 	}
 }
 
 func (pl *MyCrossNodePreemption) runBatchCycle() {
+	// Check for active plan; skip batch if one is in progress
 	if ap := pl.getActive(); ap != nil && !ap.PlanDoc.Completed {
 		klog.InfoS("Batch loop: active plan in progress; skipping batch")
 		return
 	}
+
 	// Prune stale entries; keep only pending pods
 	_ = pl.pruneBlockedStale()
 	_ = pl.pruneBatchStale()
 
+	// Get current batch pods
 	pods := pl.snapshotBatch()
 	batchSize := len(pods)
 	if batchSize == 0 {
@@ -59,9 +61,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 		return
 	}
 
-	// Use first pod as "lead" for metadata
-	pending := pods[0]
-	plan, ap, err := pl.publishPlan(context.Background(), out, pending)
+	plan, ap, err := pl.publishPlan(context.Background(), out, nil)
 	if err != nil {
 		klog.ErrorS(err, "Batch loop: publish plan failed")
 		return
@@ -97,9 +97,10 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 	}
 }
 
-func batchAtPreEnqueue() bool { return Strategy == StrategyBatchPreEnqueue }
-func batchAtPostFilter() bool { return Strategy == StrategyBatchPostFilter }
-func batchingEnabled() bool   { return Strategy != StrategyEveryPreemptor }
+func strategyEveryPreempter() bool    { return Strategy == StrategyEveryPreemptor }
+func strategyBatchAtPreEnqueue() bool { return Strategy == StrategyBatchPreEnqueue }
+func strategyBatchAtPostFilter() bool { return Strategy == StrategyBatchPostFilter }
+func batchingEnabled() bool           { return Strategy != StrategyEveryPreemptor }
 
 func strategyToString() string {
 	switch Strategy {

@@ -44,7 +44,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *fra
 	}
 
 	// No active plan:
-	if batchAtPreEnqueue() {
+	if strategyBatchAtPreEnqueue() {
 		klog.V(2).InfoS("PreEnqueue: batched pod", "pod", klog.KObj(pod))
 		pl.Batched.AddPod(pod)
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreEnqueue: batched pod")

@@ -22,6 +22,10 @@ def split_even(total:int, n:int) -> list[int]:
     return [base + (1 if i < rem else 0) for i in range(n)]
 
 def partition_int(total:int, k:int, min_each:int, rng:random.Random, variance:int) -> list[int]:
+    '''
+    Partition an integer into k parts, each at least min_each, with some randomness.
+    Used to simulate resource allocation in a Kubernetes cluster.
+    '''
     rem = max(0, total - k*min_each)
     if rem == 0: return [min_each]*k
     weights = [rng.randrange(1, max(2, variance+1)) for _ in range(k)]
