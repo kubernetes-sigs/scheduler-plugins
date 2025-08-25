@@ -30,18 +30,18 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	}
 
 	// Every-preemptor flow (single)
-	if ModeEveryPreemptor {
+	if Strategy == StrategyEveryPreemptor {
 		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
 		ctxSolve, cancel := context.WithTimeout(ctx, SolverTimeout)
 		defer cancel()
 
 		startTime := time.Now()
 		out, err := pl.solve(ctxSolve, SolveSingle, pending, nil, SolverTimeout)
+		solverDuration := time.Since(startTime)
 		if err != nil || out.NominatedNode == "" {
 			klog.ErrorS(err, "PostFilter: solver found no solution", "pod", klog.KObj(pending), "duration", time.Since(startTime))
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: solver found no solution")
 		}
-		klog.InfoS("PostFilter: solver found a solution", "status", out.Status, "duration", time.Since(startTime))
 
 		plan, ap, err := pl.publishPlan(ctx, out, pending)
 		if err != nil {
@@ -58,11 +58,14 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		}
 
 		klog.InfoS("PostFilter: plan execution finished",
+			"solverStatus", out.Status,
 			"pod", klog.KObj(pending),
 			"node", out.NominatedNode,
 			"planID", ap.ID,
 			"moved", len(plan.Moves),
 			"evicted", len(plan.Evicts),
+			"postFilterDuration", time.Since(startTime),
+			"solverDuration", solverDuration,
 		)
 
 		return &framework.PostFilterResult{

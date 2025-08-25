@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
+import os
 import sys, json
 from ortools.sat.python import cp_model
+
+def _available_cpus() -> int:
+    # Honor Linux cgroup/affinity limits when inside containers
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except Exception:
+        return max(1, os.cpu_count() or 1)
 
 # ----------------------------- helpers ---------------------------------
 
@@ -11,10 +19,10 @@ STATUS_MAP = {
     cp_model.MODEL_INVALID: "MODEL_INVALID",
     cp_model.UNKNOWN:       "UNKNOWN",
 }
-def status_str(st: int) -> str:
+def _status_str(st: int) -> str:
     return STATUS_MAP.get(st, "UNKNOWN")
-def encode_status(st: int) -> dict:
-    return {"status": status_str(st)}
+def _encode_status(st: int) -> dict:
+    return {"status": _status_str(st)}
 
 def solve(instance: dict) -> dict:
     nodes = instance.get("nodes") or []
@@ -28,8 +36,11 @@ def solve(instance: dict) -> dict:
     timeout_ms       = int(instance.get("timeout_ms", 3000))
     ignore_affinity  = bool(instance.get("ignore_affinity", True))  # TODO: use this
     mode             = str(instance.get("mode", "lexi")).strip().lower()   # "weighted" or "lexi"
-    workers          = 16
-    decision_order   = True
+    workers          = _available_cpus() # set number of workers to the amount available
+    decision_order   = False   # TODO: not sure if needed
+    use_hints        = False  # TODO: not sure if needed
+    log_progress     = True  # log search progress
+    log_subsolvers   = True  # log subsolver statistics
 
     # --- De-dup by UID, prefer entries that have 'where' (running) ---
     by_uid = {}
@@ -218,20 +229,22 @@ def solve(instance: dict) -> dict:
 
     # ---------------------- optional hints (both modes) -----------------
     # Add hints to keep running pods where they are if possible
-    # TODO: Not sure if this is needed
-    # if use_hints:
-    #     for i in running_idxs:
-    #         orig = p_where_j(i)
-    #         if orig in eligible[i]:
-    #             idx = eligible[i].index(orig)
-    #             m.AddHint(x[i][idx], 1)
-    #             m.AddHint(placed[i], 1)
+    if use_hints:
+        for i in running_idxs:
+            orig = p_where_j(i)
+            if orig in eligible[i]:
+                idx = eligible[i].index(orig)
+                m.AddHint(x[i][idx], 1)
+                m.AddHint(placed[i], 1)
     
     # ------------------------ solve (two modes) -------------------------
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(0.05, timeout_ms / 1000.0)
     solver.parameters.num_search_workers  = max(1, workers)
-
+    solver.parameters.log_search_progress       = log_progress
+    solver.parameters.log_subsolver_statistics  = log_subsolvers
+    solver.parameters.log_to_stdout = False  # KEEP False → logs go to stderr
+    
     if mode == "weighted":
         st = _solve_weighted(m, solver, placed, evict, move, running_idxs, p_pri, single_preemptor_mode, pre_idx)
     elif mode == "lexi":
@@ -240,8 +253,10 @@ def solve(instance: dict) -> dict:
         return {"status": "ERROR", "message": f"unknown mode '{mode}', expected 'weighted' or 'lexi'"}
 
     if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return encode_status(st)
+        return _encode_status(st)
 
+    print(f"[solver]", file=sys.stderr, flush=True)
+    
     # ---------------------- extract plan ----------------------
     placements = {}
     evictions  = []
@@ -262,7 +277,7 @@ def solve(instance: dict) -> dict:
         nominated = placements.get(p_uid(pre_idx), "")
 
     return {
-        "status": status_str(st),
+        "status": _status_str(st),
         "nominatedNode": nominated,
         "placements": placements,
         "evictions": evictions,

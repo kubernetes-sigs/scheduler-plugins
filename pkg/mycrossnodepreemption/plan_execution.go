@@ -333,7 +333,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 				continue
 			}
 			// Skip the plan's preemptor: it is not part of WkDesiredPerNode by design.
-			if string(p.UID) == sp.PendingUID {
+			if sp.TargetNode != "" && string(p.UID) == sp.PendingUID {
 				continue
 			}
 			if twk, ok := topWorkload(p); !ok || !workloadEqual(twk, wk) {
@@ -684,6 +684,7 @@ func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) erro
 }
 
 func (pl *MyCrossNodePreemption) onPlanSettled() bool {
+	// Just double-check plan is not already completed
 	ap := pl.getActive()
 	if ap == nil || ap.PlanDoc.Completed {
 		return false

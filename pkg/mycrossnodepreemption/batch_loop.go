@@ -13,70 +13,50 @@ import (
 func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 	// Schedule first run
 	firstDelay := BatchInitialDelay
-	tm := time.NewTimer(firstDelay)
-	defer tm.Stop()
-
+	timer := time.NewTimer(firstDelay)
 	nextAt := time.Now().Add(firstDelay)
-	klog.InfoS("Batch loop: first run scheduled", "in", time.Until(nextAt).Round(time.Second))
+	defer timer.Stop()
+
+	klog.InfoS("Batch loop: first run scheduled", "in(s)", time.Until(nextAt).Round(time.Second))
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 
-		case <-tm.C:
-			start := time.Now()
-			nextAt = time.Now().Add(BatchSolveInterval)
+		case <-timer.C:
 			klog.InfoS("Batch loop: starting cycle")
-			batchSize, planID, moves, evicts, newScheduled, unsched := pl.runBatchCycle()
-			if moves+evicts+newScheduled == 0 {
-				klog.InfoS("Batch loop: finished cycle with no changes",
-					"nextCycleIn(s)", time.Until(nextAt).Round(time.Second),
-					"interval", BatchSolveInterval,
-				)
-			} else {
-				klog.InfoS("Batch loop: finished cycle",
-					"batchSize", batchSize,
-					"planID", planID,
-					"moves", moves,
-					"evicts", evicts,
-					"newScheduledFromBatch", newScheduled,
-					"unscheduledFromBatch", unsched,
-					"duration", time.Since(start),
-					"nextCycleIn(s)", time.Until(nextAt).Round(time.Second),
-					"interval", BatchSolveInterval,
-				)
-			}
-			tm.Reset(BatchSolveInterval)
+			pl.runBatchCycle()
+			timer.Reset(BatchSolveInterval)
+			klog.InfoS("Batch loop: next run scheduled", "in(s)", BatchSolveInterval)
 		}
 	}
 }
 
-func (pl *MyCrossNodePreemption) runBatchCycle() (int, string, int, int, int, int) {
+func (pl *MyCrossNodePreemption) runBatchCycle() {
 	if ap := pl.getActive(); ap != nil && !ap.PlanDoc.Completed {
 		klog.InfoS("Batch loop: active plan in progress; skipping batch")
-		return 0, "", 0, 0, 0, 0
+		return
 	}
 	// Prune stale entries; keep only pending pods
 	_ = pl.pruneBlockedStale()
 	_ = pl.pruneBatchStale()
 
 	pods := pl.snapshotBatch()
-	if len(pods) == 0 {
-		return 0, "", 0, 0, 0, 0
+	batchSize := len(pods)
+	if batchSize == 0 {
+		klog.InfoS("Batch loop: finished cycle; no pods to process")
+		return
 	}
 
 	ctxSolve, cancel := context.WithTimeout(context.Background(), SolverTimeout)
+	batchStart := time.Now()
 	out, err := pl.solve(ctxSolve, SolveCohort, nil, pods, SolverTimeout)
+	solverDuration := time.Since(batchStart)
 	cancel()
 	if err != nil || out == nil {
-		if err != nil {
-			klog.ErrorS(err, "batch solve failed")
-		}
-		klog.InfoS("Batch loop: batch executed; no changes",
-			"batchSize", len(pods),
-		)
-		return 0, "", 0, 0, 0, 0 // keep batch; try again next tick
+		klog.ErrorS(err, "Batch loop: batch solve failed")
+		return
 	}
 
 	// Use first pod as "lead" for metadata
@@ -84,36 +64,50 @@ func (pl *MyCrossNodePreemption) runBatchCycle() (int, string, int, int, int, in
 	plan, ap, err := pl.publishPlan(context.Background(), out, pending)
 	if err != nil {
 		klog.ErrorS(err, "Batch loop: publish plan failed")
-		return 0, "", 0, 0, 0, 0
+		return
 	}
 
 	// Skip plan execution if no moves or evictions
+	newScheduledFromBatch, unsched := pl.countNewAndUnscheduledFromBatch(out.Placements, pods)
 	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
 		if err := pl.executePlan(context.Background(), plan); err != nil {
-			klog.ErrorS(err, "batch plan execution failed")
+			klog.ErrorS(err, "Batch loop: batch plan execution failed")
 			pl.onPlanSettled()
-			return 0, "", 0, 0, 0, 0
+			return
 		}
 	}
 
 	pl.activateBatchedPods(pods)
 
-	newScheduledFromBatch, unsched := pl.countNewAndUnscheduledFromBatch(out.Placements, pods)
-
-	return len(pods), ap.ID, len(plan.Moves), len(plan.Evicts), newScheduledFromBatch, unsched
+	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 || newScheduledFromBatch > 0 {
+		klog.InfoS("Batch loop: finished cycle; activate batch",
+			"solverStatus", out.Status,
+			"batchSize", batchSize,
+			"planID", ap.ID,
+			"moves", len(plan.Moves),
+			"evicts", len(plan.Evicts),
+			"newScheduledFromBatch", newScheduledFromBatch,
+			"unscheduledFromBatch", unsched,
+			"batchDuration", time.Since(batchStart),
+			"solverDuration", solverDuration,
+		)
+	} else {
+		klog.InfoS("Batch loop: finished cycle with no changes")
+		pl.onPlanSettled() // no changes, complete plan immediately
+	}
 }
 
-func batchAtPreEnqueue() bool { return BatchMode == BatchPreEnqueue }
-func batchAtPostFilter() bool { return BatchMode == BatchPostFilter }
-func batchingEnabled() bool   { return BatchMode != BatchOff }
+func batchAtPreEnqueue() bool { return Strategy == StrategyBatchPreEnqueue }
+func batchAtPostFilter() bool { return Strategy == StrategyBatchPostFilter }
+func batchingEnabled() bool   { return Strategy != StrategyEveryPreemptor }
 
-func batchModeToString() string {
-	switch BatchMode {
-	case BatchOff:
-		return "BatchOff"
-	case BatchPreEnqueue:
+func strategyToString() string {
+	switch Strategy {
+	case StrategyEveryPreemptor:
+		return "EveryPreemptor"
+	case StrategyBatchPreEnqueue:
 		return "BatchPreEnqueue"
-	case BatchPostFilter:
+	case StrategyBatchPostFilter:
 		return "BatchPostFilter"
 	default:
 		return "Unknown"

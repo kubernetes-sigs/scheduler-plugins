@@ -26,7 +26,7 @@ func solverFeasible(out *SolverOutput) bool {
 
 // buildSolverInput builds the common input for either batch(cohort) or single-preemptor.
 func (pl *MyCrossNodePreemption) buildSolverInput(
-	mode SolveMode, // TODO: Rename SolveMode so it doesnt confuses with SolverMode
+	mode SolveMode,
 	preemptor *v1.Pod, // only for SolveSingle
 	batched []*v1.Pod, // only for SolveCohort
 	timeout time.Duration,
@@ -163,6 +163,9 @@ func (pl *MyCrossNodePreemption) runSolver(ctx context.Context, in SolverInput) 
 	if err := cmd.Run(); err != nil {
 		klog.ErrorS(err, "python solver failed", "stderr", errBuf.String())
 		return nil, fmt.Errorf("solver run: %w", err)
+	}
+	if s := errBuf.String(); s != "" {
+		klog.InfoS("solver", "stderr", s)
 	}
 
 	var out SolverOutput

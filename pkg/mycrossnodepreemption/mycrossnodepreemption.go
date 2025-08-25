@@ -4,7 +4,6 @@ package mycrossnodepreemption
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,30 +16,23 @@ const (
 	Name    = "MyCrossNodePreemption"
 	Version = "v1.5.0"
 
-	// ======= Batch strategy =======
-	// Batch strategy: BatchPostFilter, BatchPreEnqueue, BatchOff
-	BatchMode BatchIngressMode = BatchOff
+	// ======= Strategy =======
+	// Choices: StrategyEveryPreemptor, StrategyBatchPostFilter, StrategyBatchPreEnqueue
+	Strategy StrategyIngress = StrategyEveryPreemptor
 
-	// Every-preemptor strategy (mutually exclusive with any BatchMode != BatchOff)
-	ModeEveryPreemptor = true
-
+	// ======= Batch settings =======
 	BatchSolveInterval = 60 * time.Second // periodic cohort solve
 	BatchInitialDelay  = 15 * time.Second // small delay before first run
 
 	// ======= Plan settings =======
-	PlanExecutionTTL = 120 * time.Second // how long a plan may run before being terminated; it can take up to 60 seconds to complete a plan
-	SolverTimeout    = 80 * time.Second
+	PlanExecutionTTL = 60 * time.Second // how long a plan may run before being terminated; it can take up to 60 seconds to complete a plan
+	SolverTimeout    = 55 * time.Second
 	SolverMode       = SolverModeLexi // SolverModeLexi or SolverModeWeighted
 )
 
 func (pl *MyCrossNodePreemption) Name() string { return Name }
 
 func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
-	// Exactly one strategy
-	if (batchingEnabled() && ModeEveryPreemptor) || (!batchingEnabled() && !ModeEveryPreemptor) {
-		return nil, fmt.Errorf("%s: invalid config: enable exactly one of {BatchMode!=BatchOff, PostFilterSinglePreemptor}", Name)
-	}
-
 	client, err := kubernetes.NewForConfig(h.KubeConfig())
 	if err != nil {
 		return nil, err
@@ -52,8 +44,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		Blocked: newPodSet(),
 		Batched: newPodSet(),
 	}
-	klog.InfoS("Plugin initialized", "name", Name, "version", Version,
-		"batchMode", batchModeToString(), "everyPreemptorMode", ModeEveryPreemptor)
+	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "strategy", strategyToString())
 
 	if batchingEnabled() {
 		go pl.batchLoop(context.Background())

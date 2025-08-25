@@ -31,12 +31,12 @@ const (
 	wkJob
 )
 
-type BatchIngressMode int
+type StrategyIngress int
 
 const (
-	BatchOff BatchIngressMode = iota
-	BatchPreEnqueue
-	BatchPostFilter
+	StrategyEveryPreemptor StrategyIngress = iota
+	StrategyBatchPreEnqueue
+	StrategyBatchPostFilter
 )
 
 const (
@@ -50,6 +50,8 @@ type ActivePlanState struct {
 	Remaining WorkloadNodeCounters // workloadKey -> node -> *atomic.Int32
 	Ctx       context.Context
 	Cancel    context.CancelFunc
+	Checking  atomic.Bool // guards PostBind completion check (one at a time)
+	Settled   atomic.Bool // ensures settle/log happens once
 }
 
 type WorkloadKind int

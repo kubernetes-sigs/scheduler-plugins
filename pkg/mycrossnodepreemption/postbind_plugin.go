@@ -12,20 +12,62 @@ import (
 
 // PostBind is called after a pod is bound to a node.
 // It is used to check if the active scheduling plan is still in progress.
-func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, _ *v1.Pod, _ string) {
+func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, p *v1.Pod, _ string) {
 	ap := pl.getActive()
 	if ap == nil || ap.PlanDoc.Completed {
 		return
 	}
+
+	// Only react for pods belonging to the active plan
+	relevant := func() bool {
+		if string(p.UID) == ap.PlanDoc.PendingUID {
+			return true
+		}
+		if _, ok := ap.PlanDoc.PlacementsByName[p.Namespace+"/"+p.Name]; ok {
+			return true
+		}
+		if wk, ok := topWorkload(p); ok {
+			_, in := ap.PlanDoc.WkDesiredPerNode[wk.String()]
+			return in
+		}
+		return false
+	}()
+	if !relevant || ap.Settled.Load() {
+		return
+	}
+
+	// Serialize completion checks
+	if !ap.Checking.CompareAndSwap(false, true) {
+		return
+	}
+
+	// By default, release the lock; if we settle, we won't need to.
+	release := true
+	defer func() {
+		if release {
+			ap.Checking.Store(false)
+		}
+	}()
+
 	ok, err := pl.isPlanCompleted(ctx, ap.PlanDoc)
+
 	if err != nil {
-		pl.onPlanSettled()
+		_ = pl.onPlanSettled()
 		klog.ErrorS(err, "PostBind: completion check failed")
 		return
 	}
-	if ok {
-		if pl.onPlanSettled() {
-			pl.markPlanCompleted(ctx, ap.ID) // idempotent
-		}
+
+	if !ok { // Plan is not completed
+		klog.V(2).InfoS("PostBind: plan still in progress", "planID", ap.ID, "pod", klog.KObj(p))
+		return
+	}
+
+	// Double-check we still act on the same plan; otherwise another PostBind may have taken over
+	cur := pl.getActive()
+	if cur == nil || cur.ID != ap.ID {
+		return
+	}
+	if pl.onPlanSettled() {
+		pl.markPlanCompleted(ctx, ap.ID) // idempotent
 	}
 }
