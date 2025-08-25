@@ -16,6 +16,24 @@ import (
 	"k8s.io/klog/v2"
 )
 
+func strategyEveryPreempter() bool    { return Strategy == StrategyEveryPreemptor }
+func strategyBatchAtPreEnqueue() bool { return Strategy == StrategyBatchPreEnqueue }
+func strategyBatchAtPostFilter() bool { return Strategy == StrategyBatchPostFilter }
+func batchingEnabled() bool           { return Strategy != StrategyEveryPreemptor }
+
+func strategyToString() string {
+	switch Strategy {
+	case StrategyEveryPreemptor:
+		return "EveryPreemptor"
+	case StrategyBatchPreEnqueue:
+		return "BatchPreEnqueue"
+	case StrategyBatchPostFilter:
+		return "BatchPostFilter"
+	default:
+		return "Unknown"
+	}
+}
+
 func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }

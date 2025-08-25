@@ -97,24 +97,6 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 	}
 }
 
-func strategyEveryPreempter() bool    { return Strategy == StrategyEveryPreemptor }
-func strategyBatchAtPreEnqueue() bool { return Strategy == StrategyBatchPreEnqueue }
-func strategyBatchAtPostFilter() bool { return Strategy == StrategyBatchPostFilter }
-func batchingEnabled() bool           { return Strategy != StrategyEveryPreemptor }
-
-func strategyToString() string {
-	switch Strategy {
-	case StrategyEveryPreemptor:
-		return "EveryPreemptor"
-	case StrategyBatchPreEnqueue:
-		return "BatchPreEnqueue"
-	case StrategyBatchPostFilter:
-		return "BatchPostFilter"
-	default:
-		return "Unknown"
-	}
-}
-
 func (pl *MyCrossNodePreemption) countNewAndUnscheduledFromBatch(Placements map[string]string, pods []*v1.Pod) (int, int) {
 	newFromBatch := 0
 	unscheduledFromBatch := 0
