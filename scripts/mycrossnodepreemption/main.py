@@ -257,8 +257,6 @@ def solve(instance: dict) -> dict:
 
     if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _encode_status(st)
-
-    # print(file=sys.stderr, flush=True)
     
     # ---------------------- extract plan ----------------------
     placements = {}

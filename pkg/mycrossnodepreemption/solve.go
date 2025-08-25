@@ -178,7 +178,7 @@ func (pl *MyCrossNodePreemption) runSolver(ctx context.Context, in SolverInput) 
 		buf := make([]byte, 0, 256*1024)
 		s.Buffer(buf, 1024*1024)
 		for s.Scan() {
-			klog.Info("solver: " + s.Text())
+			klog.V(2).Info("solver: " + s.Text())
 		}
 		if err := s.Err(); err != nil {
 			klog.Info("solver scan failed: " + err.Error())
