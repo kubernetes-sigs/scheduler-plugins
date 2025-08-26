@@ -30,7 +30,7 @@ func (s *rsReservationState) Clone() framework.StateData {
 // If it fails, the Unreserve function is called to release any reserved resources.
 // It is used, here, to place workload pods on the appropriate nodes as they are automatically created, therefore, placement by name cannot be done.
 func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, node string) *framework.Status {
-	ap := pl.getActive()
+	ap := pl.getActivePlan()
 	if ap == nil || ap.PlanDoc.Completed {
 		return framework.NewStatus(framework.Success)
 	}
@@ -82,7 +82,7 @@ func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.Cy
 		return
 	}
 
-	ap := pl.getActive()
+	ap := pl.getActivePlan()
 	if ap == nil {
 		return
 	}

@@ -16,7 +16,7 @@ var _ framework.PreEnqueuePlugin = &MyCrossNodePreemption{}
 // It is used, here, to determine if a pod can be enqueued or if it should be blocked/batched according to the active plan.
 func (pl *MyCrossNodePreemption) PreEnqueue(_ context.Context, pod *v1.Pod) *framework.Status {
 	_ = pl.pruneStaleSetEntries(pl.Blocked)
-	ap := pl.getActive()
+	ap := pl.getActivePlan()
 
 	// Always allow kube-system to proceed.
 	if pod.Namespace == "kube-system" {

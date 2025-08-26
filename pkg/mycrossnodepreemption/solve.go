@@ -226,3 +226,17 @@ func (pl *MyCrossNodePreemption) solve(
 	}
 	return pl.runSolver(ctx, in)
 }
+
+// ----------- Solver Helpers --------------
+
+func toSolverPod(p *v1.Pod, where string) SolverPod {
+	return SolverPod{
+		UID:       string(p.UID),
+		Namespace: p.Namespace,
+		Name:      p.Name,
+		CPU_m:     getPodCPURequest(p),
+		MemBytes:  getPodMemoryRequest(p),
+		Priority:  getPodPriority(p),
+		Where:     where,
+	}
+}

@@ -18,7 +18,7 @@ var _ framework.PreFilterPlugin = &MyCrossNodePreemption{}
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
 // it is determined in Reserve plugin and will be retried again.
 func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	ap := pl.getActive()
+	ap := pl.getActivePlan()
 	if ap == nil || ap.PlanDoc.Completed {
 		return nil, framework.NewStatus(framework.Success)
 	}
@@ -38,7 +38,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 		}
 
 		allowed := sets.New[string]()
-		ap := pl.getActive()
+		ap := pl.getActivePlan()
 		if ap == nil { /* block or pass */
 		}
 		if byNode, ok := ap.Remaining[key]; ok {

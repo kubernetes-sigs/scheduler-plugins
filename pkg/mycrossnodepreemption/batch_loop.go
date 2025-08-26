@@ -34,7 +34,7 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 
 func (pl *MyCrossNodePreemption) runBatchCycle() {
 	// Check for active plan; skip batch if one is in progress
-	if ap := pl.getActive(); ap != nil && !ap.PlanDoc.Completed {
+	if ap := pl.getActivePlan(); ap != nil && !ap.PlanDoc.Completed {
 		klog.InfoS("Batch loop: active plan in progress; skipping batch")
 		return
 	}
@@ -61,7 +61,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 		return
 	}
 
-	plan, ap, err := pl.publishPlan(context.Background(), out, nil)
+	plan, ap, err := pl.registerPlan(context.Background(), out, nil)
 	if err != nil {
 		klog.ErrorS(err, "Batch loop: publish plan failed")
 		return

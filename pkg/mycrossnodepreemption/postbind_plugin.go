@@ -13,7 +13,7 @@ import (
 // PostBind is called after a pod is bound to a node.
 // It is used to check if the active scheduling plan is still in progress.
 func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, p *v1.Pod, _ string) {
-	ap := pl.getActive()
+	ap := pl.getActivePlan()
 	if ap == nil || ap.PlanDoc.Completed {
 		return
 	}
@@ -51,7 +51,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	}
 
 	// Double-check we still act on the same plan; otherwise another PostBind may have taken over
-	cur := pl.getActive()
+	cur := pl.getActivePlan()
 	if cur == nil || cur.ID != ap.ID {
 		return
 	}

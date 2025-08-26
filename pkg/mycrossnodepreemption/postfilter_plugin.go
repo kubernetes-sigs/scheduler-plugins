@@ -17,7 +17,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	pending *v1.Pod,
 	_ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 
-	if ap := pl.getActive(); ap != nil && !ap.PlanDoc.Completed {
+	if ap := pl.getActivePlan(); ap != nil && !ap.PlanDoc.Completed {
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: active plan in progress")
 	}
 	_ = pl.pruneStaleSetEntries(pl.Blocked)
@@ -43,7 +43,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: solver found no solution")
 		}
 
-		plan, ap, err := pl.publishPlan(ctx, out, pending)
+		plan, ap, err := pl.registerPlan(ctx, out, pending)
 		if err != nil {
 			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 		}
