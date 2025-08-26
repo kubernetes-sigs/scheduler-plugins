@@ -20,22 +20,24 @@ import (
 )
 
 // ----- Helpers for strategies -------
-func strategyEveryPreempter() bool    { return Strategy == StrategyEveryPreemptor }
-func strategyBatchAtPreEnqueue() bool { return Strategy == StrategyBatchPreEnqueue }
-func strategyBatchAtPostFilter() bool { return Strategy == StrategyBatchPostFilter }
-func batchingEnabled() bool           { return Strategy != StrategyEveryPreemptor }
+// Optimizer cadence (per-preemptor vs. batches)
+func optimizeForEvery() bool  { return OptimizeCadence == OptimizeForEvery }
+func optimizeInBatches() bool { return OptimizeCadence == OptimizeInBatches }
 
-func strategyToString() string {
-	switch Strategy {
-	case StrategyEveryPreemptor:
-		return "EveryPreemptor"
-	case StrategyBatchPreEnqueue:
-		return "BatchPreEnqueue"
-	case StrategyBatchPostFilter:
-		return "BatchPostFilter"
-	default:
-		return "Unknown"
+// Action point (PreEnqueue vs. PostFilter)
+func optimizeAtPreEnqueue() bool { return OptimizeAt == OptimizeAtPreEnqueue }
+func optimizeAtPostFilter() bool { return OptimizeAt == OptimizeAtPostFilter }
+
+func modeToString() string {
+	a := "ForEvery"
+	if optimizeInBatches() {
+		a = "InBatches"
 	}
+	b := "PreEnqueue"
+	if optimizeAtPostFilter() {
+		b = "PostFilter"
+	}
+	return fmt.Sprintf("%s/%s", a, b)
 }
 
 // ---------- Helpers for objects --------------
@@ -221,7 +223,7 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod) {
 
 func (pl *MyCrossNodePreemption) pruneStaleSetEntries(set *podSet) int {
 	rem := pl.pruneSetStale(set, func(cur *v1.Pod) bool {
-		return cur.Spec.NodeName == "" // keep only pending pods
+		return cur.Spec.NodeName == "" // keep function: keep only pending pods
 	})
 	if rem > 0 {
 		klog.V(2).InfoS("Pruned stale entries", "removed", rem)
@@ -401,4 +403,12 @@ func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Po
 		klog.V(2).InfoS("Waiting for targeted pods to disappear", "remaining", len(remaining))
 		return false, nil
 	})
+}
+
+func (pl *MyCrossNodePreemption) tryEnterActive() bool {
+	return pl.Active.CompareAndSwap(false, true)
+}
+
+func (pl *MyCrossNodePreemption) leaveActive() {
+	pl.Active.Store(false)
 }

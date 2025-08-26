@@ -12,6 +12,9 @@ TODO
 
 ## Open Questions
 
+- Use Active atomic for checking active plan is running.
+- Add mode: Optimization at pre-enqueue for every pod.
+- Snapshot vs. SharedCache when running multiple in parallel causing multiple to be scheduled even though one is processed.
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
   - For example, when running every-preempter mode and if we evict in cycle #1, then in cycle #2 this pod is currently not taken into account.
 - What to with batched pods, we do not succeed to bind on first try?
@@ -20,6 +23,8 @@ TODO
 
 ## TODOs
 
+- Local search, then optimizer to see if we can improve.
+- Variant, where we run the optimizer in background to see if cluster state can be improved.
 - Cleanup code, structs and make the configmap more efficient
 - Write a proper README.md
 - Demo: Next week.

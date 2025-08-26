@@ -11,7 +11,7 @@ import (
 )
 
 func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
-	firstDelay := BatchInitialDelay
+	firstDelay := OptimizationInitialDelay
 	timer := time.NewTimer(firstDelay) // first run after initial delay
 	nextAt := time.Now().Add(firstDelay)
 	defer timer.Stop()
@@ -26,8 +26,8 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 		case <-timer.C:
 			klog.InfoS("Batch loop: starting cycle")
 			pl.runBatchCycle()
-			timer.Reset(BatchSolveInterval) // after first run, we use the regular interval
-			klog.InfoS("Batch loop: next run scheduled", "in(s)", BatchSolveInterval)
+			timer.Reset(OptimizationInterval) // after first run, use the regular interval
+			klog.InfoS("Batch loop: next run scheduled", "in(s)", OptimizationInterval)
 		}
 	}
 }
@@ -68,7 +68,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 	}
 
 	// Skip plan execution if no moves or evictions
-	newScheduledFromBatch, unsched := pl.countNewAndUnscheduledFromBatch(out.Placements, pods)
+	newScheduledFromBatch, unscheduledFromBatch := pl.countNewAndUnscheduledFromBatch(out.Placements, pods)
 	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
 		if err := pl.executePlan(context.Background(), plan); err != nil {
 			klog.ErrorS(err, "Batch loop: batch plan execution failed")
@@ -79,7 +79,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 
 	pl.activateBatchedPods(pods)
 
-	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 || newScheduledFromBatch > 0 {
+	if newScheduledFromBatch > 0 {
 		klog.InfoS("Batch loop: finished cycle; waiting plan to settle",
 			"solverStatus", out.Status,
 			"batchSize", batchSize,
@@ -87,12 +87,19 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 			"moves", len(plan.Moves),
 			"evicts", len(plan.Evicts),
 			"newScheduledFromBatch", newScheduledFromBatch,
-			"unscheduledFromBatch", unsched,
+			"unscheduledFromBatch", unscheduledFromBatch,
 			"batchDuration", time.Since(batchStart),
 			"solverDuration", solverDuration,
 		)
 	} else {
-		klog.InfoS("Batch loop: finished cycle with no changes")
+		klog.InfoS("Batch loop: finished cycle with no changes",
+			"solverStatus", out.Status,
+			"batchSize", batchSize,
+			"planID", ap.ID,
+			"unscheduledFromBatch", unscheduledFromBatch,
+			"batchDuration", time.Since(batchStart),
+			"solverDuration", solverDuration,
+		)
 		pl.onPlanSettled() // no changes, complete plan immediately
 	}
 }

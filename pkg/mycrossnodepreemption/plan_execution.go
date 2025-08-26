@@ -47,6 +47,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		Completed:        false,
 		GeneratedAt:      time.Now().UTC(),
 		PluginVersion:    Version,
+		Mode:             modeToString(),
 		SolverOutput:     out,
 		Plan:             *plan,
 		PlacementsByName: placementsByName,
@@ -260,7 +261,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 		Ctx:       ctxPlan,
 		Cancel:    cancel,
 	}
-	pl.ActivePtr.Store(ap)
+	pl.ActivePlan.Store(ap)
 
 	// Start a watcher tied to this plan only
 	go pl.watchPlanTimeout(ap)
@@ -357,19 +358,19 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 }
 
 func (pl *MyCrossNodePreemption) getActivePlan() *ActivePlanState {
-	return pl.ActivePtr.Load()
+	return pl.ActivePlan.Load()
 }
 
 func (pl *MyCrossNodePreemption) clearActivePlan() {
-	pl.ActivePtr.Store(nil)
+	pl.ActivePlan.Store(nil)
 }
 
 // listPlans returns newest-first plan ConfigMaps found by label.
 func (pl *MyCrossNodePreemption) listPlans(ctx context.Context) ([]v1.ConfigMap, error) {
-	lst, err := pl.Client.CoreV1().ConfigMaps(ConfigMapNamespace).List(
+	lst, err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).List(
 		ctx,
 		metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("%s=%s", ConfigMapLabelKey, "true"),
+			LabelSelector: fmt.Sprintf("%s=%s", PlanConfigMapLabelKey, "true"),
 		},
 	)
 	if err != nil {
@@ -384,7 +385,7 @@ func (pl *MyCrossNodePreemption) listPlans(ctx context.Context) ([]v1.ConfigMap,
 // markPlanCompleted sets Completed=true in json (i.e. not active plan).
 func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName string) {
 	_ = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cm, err := pl.Client.CoreV1().ConfigMaps(ConfigMapNamespace).Get(ctx, cmName, metav1.GetOptions{})
+		cm, err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).Get(ctx, cmName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) || cm == nil {
 			return nil
 		}
@@ -406,7 +407,7 @@ func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName s
 			sp.CompletedAt = &now
 			b, _ := json.MarshalIndent(&sp, "", "  ")
 			patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
-			_, err = pl.Client.CoreV1().ConfigMaps(ConfigMapNamespace).
+			_, err = pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
 				Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
 			return err
 		}
@@ -481,7 +482,7 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 		if _, ok := keepSet[name]; ok {
 			continue
 		}
-		if err := pl.Client.CoreV1().ConfigMaps(ConfigMapNamespace).
+		if err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
 			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			klog.ErrorS(err, "Failed to delete old plan ConfigMap", "configMap", name)
 		}
@@ -610,6 +611,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		CompletedAt:      nil,
 		GeneratedAt:      time.Now().UTC(),
 		PluginVersion:    Version,
+		Mode:             modeToString(),
 		SolverOutput:     out,
 		Plan:             *plan,
 		PlacementsByName: placementsByName,
@@ -633,12 +635,12 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: ConfigMapNamespace,
-			Labels:    map[string]string{ConfigMapLabelKey: "true"},
+			Namespace: PlanConfigMapNamespace,
+			Labels:    map[string]string{PlanConfigMapLabelKey: "true"},
 		},
 		Data: map[string]string{"plan.json": string(raw)},
 	}
-	if _, err := pl.Client.CoreV1().ConfigMaps(ConfigMapNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+	if _, err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 		return "", err
 	}
 

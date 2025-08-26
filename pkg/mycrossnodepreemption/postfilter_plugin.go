@@ -23,14 +23,14 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	_ = pl.pruneStaleSetEntries(pl.Blocked)
 
 	// Batch on PostFilter?
-	if strategyBatchAtPostFilter() {
+	if optimizeInBatches() && optimizeAtPostFilter() {
 		klog.V(2).InfoS("PostFilter: batched pod", "pod", klog.KObj(pending))
 		pl.Batched.AddPod(pending)
 		return nil, framework.NewStatus(framework.Pending, "PostFilter: batched pod")
 	}
 
 	// Every-preemptor flow (single)
-	if strategyEveryPreempter() {
+	if optimizeForEvery() && optimizeAtPostFilter() {
 		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
 		ctxSolve, cancel := context.WithTimeout(ctx, SolverTimeout)
 		defer cancel()

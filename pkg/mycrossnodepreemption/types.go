@@ -1,5 +1,4 @@
 // types.go
-
 package mycrossnodepreemption
 
 import (
@@ -14,29 +13,34 @@ import (
 )
 
 type MyCrossNodePreemption struct {
-	Handle    framework.Handle
-	Client    kubernetes.Interface
-	ActivePtr atomic.Pointer[ActivePlanState]
-	Blocked   *podSet
-	Batched   *podSet
+	Handle     framework.Handle
+	Client     kubernetes.Interface
+	Active     atomic.Bool
+	ActivePlan atomic.Pointer[ActivePlanState]
+	Blocked    *podSet
+	Batched    *podSet
 }
 
 const (
 	// Deployment and CronJob are handled otherwise
-	// Deployment -> ReplicaSet
-	// CronJob -> Job
 	wkReplicaSet WorkloadKind = iota
 	wkStatefulSet
 	wkDaemonSet
 	wkJob
 )
 
-type StrategyIngress int
+type OptimizationCadenceMode int
 
 const (
-	StrategyEveryPreemptor StrategyIngress = iota
-	StrategyBatchPreEnqueue
-	StrategyBatchPostFilter
+	OptimizeForEvery  OptimizationCadenceMode = iota // solve per unschedulable preemptor
+	OptimizeInBatches                                // periodic cohort solving
+)
+
+type OptimizationAtMode int
+
+const (
+	OptimizeAtPreEnqueue OptimizationAtMode = iota // act in PreEnqueue
+	OptimizeAtPostFilter                           // act in PostFilter
 )
 
 const (
@@ -45,9 +49,9 @@ const (
 )
 
 type ActivePlanState struct {
-	ID        string               // configmap name (or any unique id)
-	PlanDoc   *StoredPlan          // the same JSON you store in the ConfigMap
-	Remaining WorkloadNodeCounters // workloadKey -> node -> *atomic.Int32
+	ID        string
+	PlanDoc   *StoredPlan
+	Remaining WorkloadNodeCounters
 	Ctx       context.Context
 	Cancel    context.CancelFunc
 }
@@ -99,11 +103,12 @@ type PodRef struct {
 }
 
 type StoredPlan struct {
+	PluginVersion    string                    `json:"pluginVersion"`
+	Mode             string                    `json:"mode"`
+	GeneratedAt      time.Time                 `json:"generatedAt"`
+	PendingPod       string                    `json:"pendingPod,omitempty"`
 	Completed        bool                      `json:"completed"`
 	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
-	GeneratedAt      time.Time                 `json:"generatedAt"`
-	PluginVersion    string                    `json:"pluginVersion"`
-	PendingPod       string                    `json:"pendingPod,omitempty"`
 	PendingUID       string                    `json:"pendingUID,omitempty"`
 	TargetNode       string                    `json:"targetNode,omitempty"`
 	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
