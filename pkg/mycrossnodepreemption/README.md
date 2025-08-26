@@ -12,10 +12,7 @@ TODO
 
 ## Open Questions
 
-- Use Active atomic for checking active plan is running.
-- Add mode: Optimization at pre-enqueue for every pod.
-- Snapshot vs. SharedCache when running multiple in parallel causing multiple to be scheduled even though one is processed.
-- What to do with evicted and blocked pods - put them to queue or try again immediately?
+- What to do with evicted and blocked pods - put them to queue or try again immediately? - Jacopo: Fine, what i am doing now, by just letting them try afain immediately
   - For example, when running every-preempter mode and if we evict in cycle #1, then in cycle #2 this pod is currently not taken into account.
 - What to with batched pods, we do not succeed to bind on first try?
 - How to make large scale tests, and should I make a seperate test for the CP-SAT solver alone?
@@ -23,12 +20,17 @@ TODO
 
 ## TODOs
 
+- Use Active atomic for checking active plan is running.
+- Add mode: Optimization at pre-enqueue for every pod.
+- Fast heuristic algorithm that rund in front of solver. So the solver needs to improve on that.
+- Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
+- Snapshot vs. SharedCache when running multiple in parallel causing multiple to be scheduled even though one is processed.
 - Local search, then optimizer to see if we can improve.
 - Variant, where we run the optimizer in background to see if cluster state can be improved.
 - Cleanup code, structs and make the configmap more efficient
 - Write a proper README.md
 - Demo: Next week.
-- Consider to protect pods that have node-selectors, PDBs, and other rules.
+- Consider to protect pods that have node-selectors, PDBs, and other rules. - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller sesrch space).
 
 ## Later TODOs
 
