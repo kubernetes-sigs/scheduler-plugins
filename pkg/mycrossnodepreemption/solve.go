@@ -15,18 +15,23 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type SolveMode int
+// TODO: Build solve, buildSolverInput and runSolver into one more efficient function
+// TODO: Think cohort and single code can be reduced.
 
-const (
-	SolveCohort SolveMode = iota
-	SolveSingle
-)
-
-func solverFeasible(out *SolverOutput) bool {
-	return out != nil && (out.Status == "OPTIMAL" || out.Status == "FEASIBLE")
+func (pl *MyCrossNodePreemption) solve(
+	ctx context.Context,
+	mode SolveMode,
+	preemptor *v1.Pod,
+	batched []*v1.Pod,
+	timeout time.Duration,
+) (*SolverOutput, error) {
+	in, err := pl.buildSolverInput(mode, preemptor, batched, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return pl.runSolver(ctx, in)
 }
 
-// buildSolverInput builds the common input for either batch(cohort) or single-preemptor.
 // buildSolverInput builds the common input for either batch(cohort) or single-preemptor.
 func (pl *MyCrossNodePreemption) buildSolverInput(
 	mode SolveMode,
@@ -240,22 +245,6 @@ func (pl *MyCrossNodePreemption) runSolver(ctx context.Context, in SolverInput) 
 	}
 	return &out, nil
 }
-
-func (pl *MyCrossNodePreemption) solve(
-	ctx context.Context,
-	mode SolveMode,
-	preemptor *v1.Pod,
-	batched []*v1.Pod,
-	timeout time.Duration,
-) (*SolverOutput, error) {
-	in, err := pl.buildSolverInput(mode, preemptor, batched, timeout)
-	if err != nil {
-		return nil, err
-	}
-	return pl.runSolver(ctx, in)
-}
-
-// ----------- Solver Helpers --------------
 
 func toSolverPod(p *v1.Pod, where string) SolverPod {
 	return SolverPod{

@@ -48,6 +48,13 @@ const (
 	SolverModeWeighted = "weighted"
 )
 
+type SolveMode int
+
+const (
+	SolveCohort SolveMode = iota
+	SolveSingle
+)
+
 type ActivePlanState struct {
 	ID        string
 	PlanDoc   *StoredPlan

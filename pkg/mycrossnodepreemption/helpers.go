@@ -21,6 +21,7 @@ import (
 )
 
 // ----- Helpers for strategies -------
+
 // Optimizer cadence (per-preemptor vs. batches)
 func optimizeForEvery() bool  { return OptimizeCadence == OptimizeForEvery }
 func optimizeInBatches() bool { return OptimizeCadence == OptimizeInBatches }
@@ -87,6 +88,46 @@ func getPodPriority(p *v1.Pod) int32 {
 		return *p.Spec.Priority
 	}
 	return 0
+}
+
+func isControlPlane(n *v1.Node) bool {
+	return n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
+		n.Labels["node-role.kubernetes.io/master"] != "" ||
+		n.Name == "control-plane" || n.Name == "kind-control-plane"
+}
+
+func nodeReady(n *v1.Node) bool {
+	for _, c := range n.Status.Conditions {
+		if c.Type == v1.NodeReady {
+			return c.Status == v1.ConditionTrue
+		}
+	}
+	return false
+}
+
+func hasNoScheduleCondTaint(n *v1.Node) bool {
+	for _, t := range n.Spec.Taints {
+		if (t.Key == "node.kubernetes.io/not-ready" || t.Key == "node.kubernetes.io/unreachable") &&
+			(t.Effect == v1.TaintEffectNoSchedule || string(t.Effect) == "") {
+			return true
+		}
+	}
+	return false
+}
+
+func isNodeUsable(n *v1.Node) bool {
+	if n == nil || isControlPlane(n) || n.Spec.Unschedulable {
+		return false
+	}
+	if !nodeReady(n) {
+		// This is what becomes node.kubernetes.io/not-ready in scheduling.
+		return false
+	}
+	if hasNoScheduleCondTaint(n) {
+		return false
+	}
+	return n.Status.Allocatable.Cpu().MilliValue() > 0 &&
+		n.Status.Allocatable.Memory().Value() > 0
 }
 
 // --------- Pod set functions ---------
@@ -169,7 +210,7 @@ func (pl *MyCrossNodePreemption) pruneSetStale(set *podSet, keep func(cur *v1.Po
 	return removed
 }
 
-// Activate up to `max` pods from the blocked set; clear only the ones you activated.
+// Activate up to 'max' pods from the blocked set; clear only the ones activated.
 func (pl *MyCrossNodePreemption) activateBlockedPods(max int) {
 	if pl.Blocked == nil || pl.Blocked.Size() == 0 {
 		return
@@ -193,7 +234,7 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) {
 		return
 	}
 
-	// Sort with same comparator
+	// Sort by priority and creation timestamp
 	sort.Slice(items, func(i, j int) bool {
 		pi := getPodPriority(items[i].p)
 		pj := getPodPriority(items[j].p)
@@ -229,14 +270,13 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) {
 	}
 }
 
-// Activate up to `max` pods from the batched set; remove only those that were activated
-// or explicitly provided via podsToRemove (kept for your existing call sites).
+// Activate up to 'max' pods from the batched set; remove only those that were activated
+// or explicitly provided via podsToRemove.
 func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max int) {
 	if pl.Batched == nil || pl.Batched.Size() == 0 {
 		return
 	}
 
-	// Collect/Sort like above
 	snap := pl.Batched.Snapshot()
 	l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
 
@@ -254,6 +294,7 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 		return
 	}
 
+	// Sort by priority and creation timestamp
 	sort.Slice(items, func(i, j int) bool {
 		pi := getPodPriority(items[i].p)
 		pj := getPodPriority(items[j].p)
@@ -288,7 +329,7 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 		}
 	}
 
-	// Preserve your previous behavior if caller passes podsToRemove
+	// If caller passes podsToRemove; remove them from the batched set
 	for _, p := range podsToRemove {
 		if p != nil {
 			pl.Batched.Remove(p.UID)
@@ -306,7 +347,7 @@ func (pl *MyCrossNodePreemption) pruneStaleSetEntries(set *podSet) int {
 	return rem
 }
 
-// ---------- Helpers for workloads --------------
+// ---------- Helpers for Workloads --------------
 
 func (wk WorkloadKey) String() string {
 	switch wk.Kind {
@@ -453,6 +494,7 @@ func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Po
 	}
 
 	// Use context's deadline if any, else default to 2m
+	// TODO: make this better, remove client calls and improve time settings
 	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		if len(remaining) == 0 {
 			return true, nil
@@ -480,6 +522,8 @@ func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Po
 	})
 }
 
+// ---------- Helpers for Plan ------------
+
 func (pl *MyCrossNodePreemption) tryEnterActive() bool {
 	return pl.Active.CompareAndSwap(false, true)
 }
@@ -488,49 +532,7 @@ func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)
 }
 
-const (
-	taintNotReady    = "node.kubernetes.io/not-ready"
-	taintUnreachable = "node.kubernetes.io/unreachable"
-)
-
-func isControlPlane(n *v1.Node) bool {
-	return n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
-		n.Labels["node-role.kubernetes.io/master"] != "" ||
-		n.Name == "control-plane" || n.Name == "kind-control-plane"
-}
-
-func nodeReady(n *v1.Node) bool {
-	for _, c := range n.Status.Conditions {
-		if c.Type == v1.NodeReady {
-			return c.Status == v1.ConditionTrue
-		}
-	}
-	return false
-}
-
-func hasNoScheduleCondTaint(n *v1.Node) bool {
-	// Many clusters mirror condition taints into spec.taints; be defensive.
-	for _, t := range n.Spec.Taints {
-		if (t.Key == taintNotReady || t.Key == taintUnreachable) &&
-			(t.Effect == v1.TaintEffectNoSchedule || string(t.Effect) == "") {
-			return true
-		}
-	}
-	return false
-}
-
-// Single predicate used everywhere you build candidates.
-func isNodeUsable(n *v1.Node) bool {
-	if n == nil || isControlPlane(n) || n.Spec.Unschedulable {
-		return false
-	}
-	if !nodeReady(n) {
-		// This is what becomes node.kubernetes.io/not-ready in scheduling.
-		return false
-	}
-	if hasNoScheduleCondTaint(n) {
-		return false
-	}
-	return n.Status.Allocatable.Cpu().MilliValue() > 0 &&
-		n.Status.Allocatable.Memory().Value() > 0
+// ------------- Solver Helpers --------------
+func solverFeasible(out *SolverOutput) bool {
+	return out != nil && (out.Status == "OPTIMAL" || out.Status == "FEASIBLE")
 }

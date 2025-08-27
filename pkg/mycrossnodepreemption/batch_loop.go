@@ -43,8 +43,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 		return
 	}
 
-	// Prune stale entries; keep only pending pods
-	_ = pl.pruneStaleSetEntries(pl.Blocked)
+	// Prune stale entries; keep only pending batched pods
 	_ = pl.pruneStaleSetEntries(pl.Batched)
 
 	// Get current batch pods
