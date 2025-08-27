@@ -34,8 +34,12 @@ func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 
 func (pl *MyCrossNodePreemption) runBatchCycle() {
 	// Check for active plan; skip batch if one is in progress
-	if ap := pl.getActivePlan(); ap != nil && !ap.PlanDoc.Completed {
-		klog.InfoS("Batch loop: active plan in progress; skipping batch")
+	if pl.Active.Load() {
+		klog.InfoS("Batch loop already in progress; skipping")
+		return
+	}
+	if !pl.tryEnterActive() {
+		klog.V(V2).InfoS("Batch loop already in progress; skipping")
 		return
 	}
 
@@ -47,6 +51,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 	pods := pl.snapshotBatch()
 	batchSize := len(pods)
 	if batchSize == 0 {
+		pl.leaveActive()
 		klog.InfoS("Batch loop: finished cycle; no pods to process")
 		return
 	}
@@ -57,12 +62,14 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 	solverDuration := time.Since(batchStart)
 	cancel()
 	if err != nil || out == nil {
+		pl.leaveActive()
 		klog.ErrorS(err, "Batch loop: batch solve failed")
 		return
 	}
 
 	plan, ap, err := pl.registerPlan(context.Background(), out, nil)
 	if err != nil {
+		pl.leaveActive()
 		klog.ErrorS(err, "Batch loop: publish plan failed")
 		return
 	}
@@ -77,7 +84,7 @@ func (pl *MyCrossNodePreemption) runBatchCycle() {
 		}
 	}
 
-	pl.activateBatchedPods(pods)
+	pl.activateBatchedPods(pods, 0)
 
 	if newScheduledFromBatch > 0 {
 		klog.InfoS("Batch loop: finished cycle; waiting plan to settle",

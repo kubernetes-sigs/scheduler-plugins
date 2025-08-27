@@ -16,21 +16,22 @@ func (pl *MyCrossNodePreemption) PostFilter(
 	_ *framework.CycleState,
 	pending *v1.Pod,
 	_ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-
-	if ap := pl.getActivePlan(); ap != nil && !ap.PlanDoc.Completed {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: active plan in progress")
+	if pl.Active.Load() {
+		pl.Blocked.AddPod(pending)
+		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 	}
 	_ = pl.pruneStaleSetEntries(pl.Blocked)
 
 	// Batch on PostFilter?
 	if optimizeInBatches() && optimizeAtPostFilter() {
-		klog.V(2).InfoS("PostFilter: batched pod", "pod", klog.KObj(pending))
+		klog.V(V2).InfoS("PostFilter: batched pod", "pod", klog.KObj(pending))
 		pl.Batched.AddPod(pending)
-		return nil, framework.NewStatus(framework.Pending, "PostFilter: batched pod")
-	}
-
-	// Every-preemptor flow (single)
-	if optimizeForEvery() && optimizeAtPostFilter() {
+		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: batched pod")
+	} else if optimizeForEvery() && optimizeAtPostFilter() {
+		if !pl.tryEnterActive() {
+			pl.Blocked.AddPod(pending)
+			return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
+		}
 		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
 		ctxSolve, cancel := context.WithTimeout(ctx, SolverTimeout)
 		defer cancel()
@@ -40,20 +41,25 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		solverDuration := time.Since(startTime)
 		if err != nil || out.NominatedNode == "" {
 			klog.ErrorS(err, "PostFilter: solver found no solution", "pod", klog.KObj(pending), "duration", time.Since(startTime))
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: solver found no solution")
+			pl.leaveActive()
+			return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: solver found no solution")
 		}
 
 		plan, ap, err := pl.registerPlan(ctx, out, pending)
 		if err != nil {
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+			klog.ErrorS(err, "PostFilter: plan registration failed", "pod", klog.KObj(pending))
+			pl.Blocked.AddPod(pending)
+			pl.leaveActive()
+			return nil, framework.NewStatus(framework.Unschedulable, err.Error())
 		}
 
 		// Skip plan execution if no moves or evictions
 		if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
 			if err := pl.executePlan(ctx, plan); err != nil {
 				klog.ErrorS(err, "PostFilter: plan execution failed")
+				pl.Blocked.AddPod(pending)
 				pl.onPlanSettled()
-				return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: plan execution failed")
+				return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: plan execution failed")
 			}
 		}
 

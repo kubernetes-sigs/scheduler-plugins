@@ -15,6 +15,7 @@ import (
 func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, p *v1.Pod, _ string) {
 	ap := pl.getActivePlan()
 	if ap == nil || ap.PlanDoc.Completed {
+		klog.V(V2).InfoS("PostBind: no active plan; no completion check", "pod", klog.KObj(p))
 		return
 	}
 
@@ -34,6 +35,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	}()
 
 	if !relevant {
+		klog.InfoS("PostBind: irrelevant pod", "pod", klog.KObj(p))
 		return
 	}
 
@@ -46,13 +48,14 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	}
 
 	if !ok { // Plan is not completed
-		klog.V(2).InfoS("PostBind: plan still in progress", "planID", ap.ID, "pod", klog.KObj(p))
+		klog.V(V2).InfoS("PostBind: plan still in progress", "planID", ap.ID, "pod", klog.KObj(p))
 		return
 	}
 
-	// Double-check we still act on the same plan; otherwise another PostBind may have taken over
+	// Double-check we still act on the same plan after we have done the completion check; another PostBind may have taken over
 	cur := pl.getActivePlan()
 	if cur == nil || cur.ID != ap.ID {
+		klog.V(V2).InfoS("PostBind: plan already settled", "planID", ap.ID, "pod", klog.KObj(p))
 		return
 	}
 	if pl.onPlanSettled() {

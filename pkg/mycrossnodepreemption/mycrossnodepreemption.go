@@ -8,6 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -16,7 +17,9 @@ const (
 	Name    = "MyCrossNodePreemption"
 	Version = "v1.5.0"
 
-	// ======= Optimality settings (new) =======
+	EXTRA_VERBOSE = false
+
+	// ======= Optimality where/when settings =======
 	OptimizeCadence          = OptimizeInBatches    // Choices: OptimizeForEvery, OptimizeInBatches
 	OptimizeAt               = OptimizeAtPreEnqueue // Choices: OptimizeAtPostFilter, OptimizeAtPreEnqueue
 	OptimizationInterval     = 60 * time.Second
@@ -34,6 +37,8 @@ const (
 	PlanConfigMapLabelKey  = "crossnode-plan"
 )
 
+var V2 = klog.Level(2)
+
 func (pl *MyCrossNodePreemption) Name() string { return Name }
 
 func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
@@ -42,12 +47,40 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, err
 	}
 
+	// Ensure the Pod informer has the namespace index.
+	podInf := h.SharedInformerFactory().Core().V1().Pods().Informer()
+	if err := podInf.AddIndexers(cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, // "namespace" index
+	}); err != nil {
+		klog.ErrorS(err, "failed adding namespace indexer to Pod informer")
+	}
+
 	pl := &MyCrossNodePreemption{
 		Handle:  h,
 		Client:  client,
 		Blocked: newPodSet(),
 		Batched: newPodSet(),
 	}
+
+	if EXTRA_VERBOSE { // if set, then klog promotes V(2) logs to V(0)
+		V2 = 0
+		klog.InfoS("Extra verbose logging enabled")
+	}
+
+	// Continue to wait for informer caches to sync
+	synced := h.SharedInformerFactory().WaitForCacheSync(ctx.Done())
+	allSynced := true
+	for _, v := range synced {
+		if !v {
+			allSynced = false
+			break
+		}
+	}
+	if !allSynced {
+		klog.Error("SharedInformerFactory caches not fully synced")
+	}
+
+	time.Sleep(4 * time.Second) // wait a bit before starting optimization cycles
 
 	pl.Active.Store(false)
 

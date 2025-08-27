@@ -20,13 +20,14 @@ TODO
 
 ## TODOs
 
-- Use Active atomic for checking active plan is running.
-- Add mode: Optimization at pre-enqueue for every pod.
+- Don't call batch cycle if same state of cluster and same batched pods as last call.
+- Try to remove all client calls and use informers/listers instead.
+- Use same logic for single and cohort solve.
+- Use same logic in preenqueue as in postfilter.
+- Variant, where we run the optimizer in background to see if cluster state can be improved.
 - Fast heuristic algorithm that rund in front of solver. So the solver needs to improve on that.
 - Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
-- Snapshot vs. SharedCache when running multiple in parallel causing multiple to be scheduled even though one is processed.
 - Local search, then optimizer to see if we can improve.
-- Variant, where we run the optimizer in background to see if cluster state can be improved.
 - Cleanup code, structs and make the configmap more efficient
 - Write a proper README.md
 - Demo: Next week.

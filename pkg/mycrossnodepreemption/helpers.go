@@ -5,6 +5,7 @@ package mycrossnodepreemption
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,13 +47,6 @@ func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }
 
-func nsOf(nsSlashName string) string {
-	if i := strings.IndexByte(nsSlashName, '/'); i >= 0 {
-		return nsSlashName[:i]
-	}
-	return "default"
-}
-
 func splitNamespaceName(s string) (ns, name string) {
 	if i := strings.IndexByte(s, '/'); i >= 0 {
 		return s[:i], s[i+1:]
@@ -68,19 +62,6 @@ func (pl *MyCrossNodePreemption) getNodes() ([]*v1.Node, error) {
 func (pl *MyCrossNodePreemption) getPods() ([]*v1.Pod, error) {
 	// Do not use SnapshotLister as it may return stale data
 	return pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister().List(labels.Everything())
-}
-
-func isNodeUsable(n *v1.Node) bool {
-	if n == nil {
-		return false
-	}
-	isCP := n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
-		n.Labels["node-role.kubernetes.io/master"] != "" ||
-		n.Name == "control-plane" || n.Name == "kind-control-plane"
-	return !isCP &&
-		!n.Spec.Unschedulable &&
-		n.Status.Allocatable.Cpu().MilliValue() > 0 &&
-		n.Status.Allocatable.Memory().Value() > 0
 }
 
 // --------- Pod specifications functions ---------
@@ -188,34 +169,128 @@ func (pl *MyCrossNodePreemption) pruneSetStale(set *podSet, keep func(cur *v1.Po
 	return removed
 }
 
-func (pl *MyCrossNodePreemption) activatePodsFromSet(set *podSet) bool {
-	if set == nil || set.Size() == 0 {
-		return false
+// Activate up to `max` pods from the blocked set; clear only the ones you activated.
+func (pl *MyCrossNodePreemption) activateBlockedPods(max int) {
+	if pl.Blocked == nil || pl.Blocked.Size() == 0 {
+		return
 	}
-	snap := set.Snapshot()
+
+	// We need to know which UIDs we activated to remove only those.
+	snap := pl.Blocked.Snapshot()
 	l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-	toAct := make(map[string]*v1.Pod, len(snap))
+
+	type item struct {
+		p   *v1.Pod
+		key podKey
+	}
+	items := make([]item, 0, len(snap))
 	for _, k := range snap {
 		if p, err := l.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
-			toAct[k.Namespace+"/"+k.Name] = p
+			items = append(items, item{p: p, key: k})
 		}
 	}
+	if len(items) == 0 {
+		return
+	}
+
+	// Sort with same comparator
+	sort.Slice(items, func(i, j int) bool {
+		pi := getPodPriority(items[i].p)
+		pj := getPodPriority(items[j].p)
+		if pi != pj {
+			return pi > pj
+		}
+		ti := items[i].p.GetCreationTimestamp().Time
+		tj := items[j].p.GetCreationTimestamp().Time
+		if ti.IsZero() || tj.IsZero() {
+			return items[i].p.GetName() < items[j].p.GetName()
+		}
+		return ti.Before(tj)
+	})
+
+	limit := len(items)
+	if max > 0 && max < limit {
+		limit = max
+	}
+
+	toAct := make(map[string]*v1.Pod, limit)
+	for _, it := range items[:limit] {
+		toAct[it.p.Namespace+"/"+it.p.Name] = it.p
+	}
+
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		return true
-	}
-	return false
-}
+		klog.V(V2).InfoS("Activated blocked pods", "count", len(toAct), "max", max)
 
-func (pl *MyCrossNodePreemption) activateBlockedPods() {
-	if pl.activatePodsFromSet(pl.Blocked) {
-		pl.Blocked.Clear()
+		// Remove only the activated ones from the set
+		for _, it := range items[:limit] {
+			pl.Blocked.Remove(it.key.UID)
+		}
 	}
 }
 
-func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod) {
-	if pl.activatePodsFromSet(pl.Batched) {
-		for _, p := range podsToRemove {
+// Activate up to `max` pods from the batched set; remove only those that were activated
+// or explicitly provided via podsToRemove (kept for your existing call sites).
+func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max int) {
+	if pl.Batched == nil || pl.Batched.Size() == 0 {
+		return
+	}
+
+	// Collect/Sort like above
+	snap := pl.Batched.Snapshot()
+	l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+
+	type item struct {
+		p   *v1.Pod
+		key podKey
+	}
+	items := make([]item, 0, len(snap))
+	for _, k := range snap {
+		if p, err := l.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
+			items = append(items, item{p: p, key: k})
+		}
+	}
+	if len(items) == 0 {
+		return
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		pi := getPodPriority(items[i].p)
+		pj := getPodPriority(items[j].p)
+		if pi != pj {
+			return pi > pj
+		}
+		ti := items[i].p.GetCreationTimestamp().Time
+		tj := items[j].p.GetCreationTimestamp().Time
+		if ti.IsZero() || tj.IsZero() {
+			return items[i].p.GetName() < items[j].p.GetName()
+		}
+		return ti.Before(tj)
+	})
+
+	limit := len(items)
+	if max > 0 && max < limit {
+		limit = max
+	}
+
+	toAct := make(map[string]*v1.Pod, limit)
+	for _, it := range items[:limit] {
+		toAct[it.p.Namespace+"/"+it.p.Name] = it.p
+	}
+
+	if len(toAct) > 0 {
+		pl.Handle.Activate(klog.Background(), toAct)
+		klog.V(V2).InfoS("Activated batched pods", "count", len(toAct), "max", max)
+
+		// Remove only the ones we just activated
+		for _, it := range items[:limit] {
+			pl.Batched.Remove(it.key.UID)
+		}
+	}
+
+	// Preserve your previous behavior if caller passes podsToRemove
+	for _, p := range podsToRemove {
+		if p != nil {
 			pl.Batched.Remove(p.UID)
 		}
 	}
@@ -226,7 +301,7 @@ func (pl *MyCrossNodePreemption) pruneStaleSetEntries(set *podSet) int {
 		return cur.Spec.NodeName == "" // keep function: keep only pending pods
 	})
 	if rem > 0 {
-		klog.V(2).InfoS("Pruned stale entries", "removed", rem)
+		klog.V(V2).InfoS("Pruned stale entries", "removed", rem)
 	}
 	return rem
 }
@@ -400,7 +475,7 @@ func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Po
 		if len(remaining) == 0 {
 			return true, nil
 		}
-		klog.V(2).InfoS("Waiting for targeted pods to disappear", "remaining", len(remaining))
+		klog.V(V2).InfoS("Waiting for targeted pods to disappear", "remaining", len(remaining))
 		return false, nil
 	})
 }
@@ -411,4 +486,58 @@ func (pl *MyCrossNodePreemption) tryEnterActive() bool {
 
 func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)
+}
+
+const (
+	taintNotReady    = "node.kubernetes.io/not-ready"
+	taintUnreachable = "node.kubernetes.io/unreachable"
+)
+
+func isControlPlane(n *v1.Node) bool {
+	return n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
+		n.Labels["node-role.kubernetes.io/master"] != "" ||
+		n.Name == "control-plane" || n.Name == "kind-control-plane"
+}
+
+func nodeReady(n *v1.Node) bool {
+	for _, c := range n.Status.Conditions {
+		if c.Type == v1.NodeReady {
+			return c.Status == v1.ConditionTrue
+		}
+	}
+	return false
+}
+
+func hasNoScheduleCondTaint(n *v1.Node) bool {
+	// Many clusters mirror condition taints into spec.taints; be defensive.
+	for _, t := range n.Spec.Taints {
+		if (t.Key == taintNotReady || t.Key == taintUnreachable) &&
+			(t.Effect == v1.TaintEffectNoSchedule || string(t.Effect) == "") {
+			return true
+		}
+	}
+	return false
+}
+
+// Single predicate used everywhere you build candidates.
+func isNodeUsable(n *v1.Node) bool {
+	if n == nil || isControlPlane(n) || n.Spec.Unschedulable {
+		return false
+	}
+	if !nodeReady(n) {
+		// This is what becomes node.kubernetes.io/not-ready in scheduling.
+		return false
+	}
+	if hasNoScheduleCondTaint(n) {
+		return false
+	}
+	return n.Status.Allocatable.Cpu().MilliValue() > 0 &&
+		n.Status.Allocatable.Memory().Value() > 0
+}
+
+func verboseLevel() klog.Level {
+	if EXTRA_VERBOSE {
+		return klog.Level(2)
+	}
+	return klog.Level(1)
 }

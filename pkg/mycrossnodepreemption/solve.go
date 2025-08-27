@@ -27,13 +27,13 @@ func solverFeasible(out *SolverOutput) bool {
 }
 
 // buildSolverInput builds the common input for either batch(cohort) or single-preemptor.
+// buildSolverInput builds the common input for either batch(cohort) or single-preemptor.
 func (pl *MyCrossNodePreemption) buildSolverInput(
 	mode SolveMode,
 	preemptor *v1.Pod, // only for SolveSingle
 	batched []*v1.Pod, // only for SolveCohort
 	timeout time.Duration,
 ) (SolverInput, error) {
-
 	in := SolverInput{
 		TimeoutMs:      timeout.Milliseconds(),
 		IgnoreAffinity: true,
@@ -45,119 +45,147 @@ func (pl *MyCrossNodePreemption) buildSolverInput(
 
 	switch mode {
 	case SolveSingle:
-		// Use snapshot view (keeps scheduler’s picture coherent for the cycle)
-		l := pl.Handle.SnapshotSharedLister()
-		if l == nil {
-			return SolverInput{}, fmt.Errorf("no snapshot lister")
+		if preemptor == nil {
+			return SolverInput{}, fmt.Errorf("SolveSingle requires preemptor")
 		}
-		nodeInfos, err := l.NodeInfos().List()
-		if err != nil {
-			return SolverInput{}, fmt.Errorf("list nodes: %w", err)
-		}
-
 		pre := toSolverPod(preemptor, "")
 		in.Preemptor = &pre
 
-		usable := map[string]bool{}
-		for _, ni := range nodeInfos {
-			if ni == nil || ni.Node() == nil {
-				continue
-			}
-			n := ni.Node()
-			isCP := n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
-				n.Labels["node-role.kubernetes.io/master"] != "" ||
-				n.Name == "control-plane" || n.Name == "kind-control-plane"
-			if isCP || n.Spec.Unschedulable || ni.Allocatable.MilliCPU <= 0 || ni.Allocatable.Memory <= 0 {
-				continue
-			}
-			in.Nodes = append(in.Nodes, SolverNode{
-				Name:     n.Name,
-				CPUm:     ni.Allocatable.MilliCPU,
-				MemBytes: ni.Allocatable.Memory,
-			})
-			usable[n.Name] = true
-		}
-		if len(in.Nodes) == 0 {
-			return SolverInput{}, fmt.Errorf("no usable nodes available (snapshot)")
-		}
-		for _, ni := range nodeInfos {
-			if ni == nil || ni.Node() == nil {
-				continue
-			}
-			for _, pi := range ni.Pods {
-				where := pi.Pod.Spec.NodeName
-				if where != "" && !usable[where] {
-					continue
-				}
-				sp := toSolverPod(pi.Pod, where)
-				if pi.Pod.Namespace == "kube-system" {
-					sp.Protected = true
-				}
-				// Do NOT duplicate the preemptor
-				if sp.UID == string(preemptor.UID) {
-					continue
-				}
-				in.Pods = append(in.Pods, sp)
-			}
+		// choose snapshot or factory; both pass includePending=false
+		if err := pl.fillFromFactory(&in, preemptor, nil, false); err != nil {
+			return SolverInput{}, fmt.Errorf("fill (single): %w", err)
 		}
 
 	case SolveCohort:
-		// Use live listers for batch
-		nodes, err := pl.getNodes()
-		if err != nil {
-			return SolverInput{}, fmt.Errorf("list nodes: %w", err)
-		}
-		usable := map[string]bool{}
-		for _, n := range nodes {
-			if !isNodeUsable(n) {
-				continue
-			}
-			in.Nodes = append(in.Nodes, SolverNode{
-				Name:     n.Name,
-				CPUm:     n.Status.Allocatable.Cpu().MilliValue(),
-				MemBytes: n.Status.Allocatable.Memory().Value(),
-			})
-			usable[n.Name] = true
-		}
-		if len(in.Nodes) == 0 {
-			return SolverInput{}, fmt.Errorf("no usable nodes available")
-		}
-
-		allPods, err := pl.getPods()
-		if err != nil {
-			return SolverInput{}, fmt.Errorf("list pods: %w", err)
-		}
-		seen := make(map[string]bool, len(allPods)+len(batched))
-		for _, p := range allPods {
-			where := p.Spec.NodeName
-			if where != "" && !usable[where] {
-				continue
-			}
-			sp := toSolverPod(p, where)
-			if p.Namespace == "kube-system" {
-				sp.Protected = true
-			}
-			in.Pods = append(in.Pods, sp)
-			seen[sp.UID] = true
-		}
-		for _, p := range batched {
-			sp := toSolverPod(p, "")
-			if !seen[sp.UID] {
-				in.Pods = append(in.Pods, sp)
-				seen[sp.UID] = true
-			}
+		// include other pending pods (the batched set)
+		if err := pl.fillFromFactory(&in, nil, batched, true); err != nil {
+			return SolverInput{}, fmt.Errorf("fill (cohort): %w", err)
 		}
 
 	default:
 		return SolverInput{}, fmt.Errorf("unknown solve mode")
 	}
 
+	// If zero Ready/usable nodes were seen via snapshot, poll snapshot briefly and try again.
+	// TODO: make this better
+	if len(in.Nodes) == 0 {
+		klog.InfoS("buildSolverInput: zero usable nodes via snapshot; waiting for nodes to become Ready")
+		const maxWait = 10 * time.Second
+		const step = 2 * time.Second
+		time.Sleep(step)
+		deadline := time.Now().Add(maxWait)
+
+		for time.Now().Before(deadline) && len(in.Nodes) == 0 {
+			in.Nodes = in.Nodes[:0]
+			in.Pods = in.Pods[:0]
+			if err := pl.fillFromFactory(&in, preemptor, batched, false); err != nil {
+				klog.V(3).InfoS("retry snapshot fill failed", "err", err)
+			}
+			if len(in.Nodes) > 0 {
+				break
+			}
+			time.Sleep(step)
+		}
+	}
+
+	if len(in.Nodes) == 0 {
+		return SolverInput{}, fmt.Errorf("no usable Ready nodes available (snapshot)")
+	}
 	return in, nil
+}
+
+// ---------- helpers ----------
+
+// fillFromFactory adds nodes/pods using SharedInformerFactory listers (live).
+// If batched != nil, pending batched pods are appended with where="" (and preemptor can be nil).
+func (pl *MyCrossNodePreemption) fillFromFactory(
+	in *SolverInput,
+	preemptor *v1.Pod,
+	batched []*v1.Pod,
+	includePending bool,
+) error {
+	// Nodes
+	nodes, err := pl.getNodes()
+	if err != nil {
+		return fmt.Errorf("list nodes (factory): %w", err)
+	}
+	usable := map[string]bool{}
+	for _, n := range nodes {
+		if !isNodeUsable(n) {
+			continue
+		}
+		in.Nodes = append(in.Nodes, SolverNode{
+			Name:     n.Name,
+			CPUm:     n.Status.Allocatable.Cpu().MilliValue(),
+			MemBytes: n.Status.Allocatable.Memory().Value(),
+		})
+		usable[n.Name] = true
+	}
+
+	// Pods
+	allPods, err := pl.getPods()
+	if err != nil {
+		return fmt.Errorf("list pods (factory): %w", err)
+	}
+	preUID := ""
+	if preemptor != nil {
+		preUID = string(preemptor.UID)
+	}
+	seen := make(map[string]bool, len(allPods)+len(batched))
+	for _, p := range allPods {
+		// Skip the preemptor (it is provided via in.Preemptor)
+		if string(p.UID) == preUID {
+			continue
+		}
+
+		where := p.Spec.NodeName
+		if where == "" {
+			// Only include pending pods when explicitly asked (cohort mode).
+			if !includePending {
+				continue
+			}
+		} else {
+			// If the pod is already bound to a node, ensure that node is usable.
+			if !usable[where] {
+				continue
+			}
+		}
+
+		sp := toSolverPod(p, where)
+		if p.Namespace == "kube-system" {
+			sp.Protected = true
+		}
+		if !seen[sp.UID] {
+			in.Pods = append(in.Pods, sp)
+			seen[sp.UID] = true
+		}
+	}
+
+	// Cohort: append the batched pending pods (where = ""), if requested
+	if includePending {
+		for _, p := range batched {
+			if p == nil {
+				continue
+			}
+			if string(p.UID) == preUID {
+				continue
+			}
+			sp := toSolverPod(p, "")
+			if p.Namespace == "kube-system" {
+				sp.Protected = true
+			}
+			if !seen[sp.UID] {
+				in.Pods = append(in.Pods, sp)
+				seen[sp.UID] = true
+			}
+		}
+	}
+	return nil
 }
 
 func (pl *MyCrossNodePreemption) runSolver(ctx context.Context, in SolverInput) (*SolverOutput, error) {
 	raw, _ := json.Marshal(in)
-	klog.V(2).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
+	klog.V(V2).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
 
 	cmd := exec.CommandContext(ctx, "python3", SolverPath)
 	cmd.Stdin = bytes.NewReader(raw)
@@ -179,7 +207,7 @@ func (pl *MyCrossNodePreemption) runSolver(ctx context.Context, in SolverInput) 
 		buf := make([]byte, 0, 256*1024)
 		s.Buffer(buf, 1024*1024)
 		for s.Scan() {
-			klog.V(2).Info("solver: " + s.Text())
+			klog.V(V2).Info("solver: " + s.Text())
 		}
 		if err := s.Err(); err != nil {
 			klog.Info("solver scan failed: " + err.Error())

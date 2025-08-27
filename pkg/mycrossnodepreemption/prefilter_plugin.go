@@ -18,13 +18,25 @@ var _ framework.PreFilterPlugin = &MyCrossNodePreemption{}
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
 // it is determined in Reserve plugin and will be retried again.
 func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	if pod.Namespace == "kube-system" {
+		return nil, framework.NewStatus(framework.Success)
+	}
+
+	if !pl.Active.Load() {
+		// Let the default scheduler proceed when there is no active plan.
+		return nil, framework.NewStatus(framework.Success)
+	}
+
+	// Get active plan
 	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc.Completed {
+	if ap == nil {
+		klog.V(V2).InfoS("PreFilter: no active plan; allowing", "pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.Success)
 	}
 
 	// Pin lead pod only if TargetNode is set (every-preemptor mode).
 	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
+		klog.V(V2).InfoS("PreFilter: lead pod; pinning to target node", "pod", klog.KObj(pod), "node", ap.PlanDoc.TargetNode)
 		return &framework.PreFilterResult{NodeNames: sets.New(ap.PlanDoc.TargetNode)}, framework.NewStatus(framework.Success)
 	}
 
@@ -32,15 +44,12 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if wk, ok := topWorkload(pod); ok {
 		key := wk.String()
 		if _, inPlan := ap.PlanDoc.WkDesiredPerNode[key]; !inPlan {
-			klog.V(2).InfoS("PreFilter: workload pod not in active plan; blocking", "pod", klog.KObj(pod))
+			klog.InfoS("PreFilter: workload pod not in active plan; blocking", "pod", klog.KObj(pod))
 			pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: workload pod not in active plan; blocking")
+			return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: workload pod not in active plan; blocking")
 		}
 
 		allowed := sets.New[string]()
-		ap := pl.getActivePlan()
-		if ap == nil { /* block or pass */
-		}
 		if byNode, ok := ap.Remaining[key]; ok {
 			for node, ctr := range byNode {
 				if ctr.Load() > 0 {
@@ -49,9 +58,9 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 			}
 		}
 		if allowed.Len() == 0 {
-			klog.V(2).InfoS("PreFilter: workload-quotas exhausted; wait until plan is completed; blocking", "pod", klog.KObj(pod))
+			klog.V(V2).InfoS("PreFilter: workload-quotas exhausted; wait until plan is completed; blocking", "pod", klog.KObj(pod))
 			pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: workload-quotas exhausted; wait until plan is completed; blocking")
+			return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: workload-quotas exhausted; wait until plan is completed; blocking")
 		}
 		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
 	}
@@ -59,12 +68,14 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	// Standalone pods: allow nodes explicitly placed by name and namespace
 	full := pod.Namespace + "/" + pod.Name
 	if tgt, ok := ap.PlanDoc.PlacementsByName[full]; ok {
+		klog.InfoS("PreFilter: standalone pod; pinning to planned node", "pod", klog.KObj(pod), "node", tgt)
 		return &framework.PreFilterResult{NodeNames: sets.New(tgt)}, framework.NewStatus(framework.Success)
 	}
 
-	klog.V(2).InfoS("PreFilter: pod not in active plan; blocking", "pod", klog.KObj(pod))
+	klog.InfoS("PreFilter: pod not in active plan; blocking", "pod", klog.KObj(pod))
 	pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
-	return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PreFilter: pod not in active plan; blocking")
+	return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: pod not in active plan; blocking")
+
 }
 
 func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtensions {

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -38,10 +37,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	}
 
 	// Export plan for auditing (CM id also becomes our plan ID)
-	cmName, err := pl.exportPlanToConfigMap(ctx, plan, out, pending, placementsByName, workloadDesired)
-	if err != nil {
-		klog.ErrorS(err, "export plan failed (non-fatal)")
-	}
+	name := fmt.Sprintf("crossnode-plan-%d", time.Now().UnixNano())
 
 	inMem := &StoredPlan{
 		Completed:        false,
@@ -61,7 +57,13 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		inMem.TargetNode = plan.TargetNode
 	}
 
-	pl.setActivePlan(inMem, cmName)
+	pl.setActivePlan(inMem, name)
+
+	err = pl.exportPlanToConfigMap(ctx, name, plan, out, pending, placementsByName, workloadDesired)
+	if err != nil {
+		klog.ErrorS(err, "export plan failed (non-fatal)")
+	}
+
 	return plan, pl.getActivePlan(), nil
 }
 
@@ -119,14 +121,14 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) er
 	}
 
 	for _, mv := range plan.Moves {
-		klog.V(2).InfoS("Pod movement planned",
+		klog.V(V2).InfoS("Pod movement planned",
 			"pod", mv.Pod.Namespace+"/"+mv.Pod.Name,
 			"from", mv.FromNode, "to", mv.ToNode,
 			"cpu(m)", mv.CPUm, "mem(MiB)", bytesToMiB(mv.MemBytes),
 		)
 	}
 	for _, e := range plan.Evicts {
-		klog.V(2).InfoS("Eviction planned",
+		klog.V(V2).InfoS("Eviction planned",
 			"pod", e.Pod.Namespace+"/"+e.Pod.Name,
 			"from", e.FromNode,
 			"cpu(m)", e.CPUm, "mem(MiB)", bytesToMiB(e.MemBytes),
@@ -135,7 +137,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) er
 
 	// 1) Evict all targeted pods and wait for them to disappear.
 	if len(targets) > 0 {
-		klog.V(2).InfoS("Evicting/awaiting eviction of targeted pods", "count", len(targets))
+		klog.V(V2).InfoS("Evicting/awaiting eviction of targeted pods", "count", len(targets))
 		for _, p := range targets {
 			if err := pl.evictPod(ctxPlan, p); err != nil && !apierrors.IsNotFound(err) {
 				return fmt.Errorf("evict pod %s: %w", podRef(p), err)
@@ -151,7 +153,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) er
 		if _, owned := topWorkload(p); owned {
 			continue
 		}
-		klog.V(2).InfoS("Recreating standalone pod (no bind)", "pod", podRef(p))
+		klog.V(V2).InfoS("Recreating standalone pod (no bind)", "pod", podRef(p))
 		if err := pl.recreatePod(ctxPlan, p, ""); err != nil {
 			return fmt.Errorf("recreate standalone pod %s: %w", podRef(p), err)
 		}
@@ -163,6 +165,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) er
 // ----------------- Plan helpers --------------------
 
 func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
+	// TODO: Simplify this and make it fast with atomics
 	// 1) Copy desired per-node targets
 	desired := map[string]map[string]int{}
 	for rs, perNode := range sp.WkDesiredPerNode {
@@ -269,38 +272,40 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan) (bool, error) {
+	// Sleep TODO Fix this ...
+	time.Sleep(2 * time.Second)
+	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+
 	// A) Pending/preemptor pod bound to target node
 	if sp.TargetNode != "" && sp.PendingPod != "" {
 		pns, pname := splitNamespaceName(sp.PendingPod)
-		preemptor, err := pl.Client.CoreV1().Pods(pns).Get(ctx, pname, metav1.GetOptions{})
+		preemptor, err := podLister.Pods(pns).Get(pname)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("get pending pod: %w", err)
+			return false, fmt.Errorf("get pending pod from lister: %w", err)
 		}
+		// If it's present but not yet bound to the target, plan is not complete.
 		if err == nil && preemptor.Spec.NodeName != sp.TargetNode {
-			klog.V(2).InfoS("Plan incomplete: preemptor not yet bound",
+			klog.V(V2).InfoS("Plan incomplete: preemptor not yet bound",
 				"pod", sp.PendingPod, "wantNode", sp.TargetNode, "haveNode", preemptor.Spec.NodeName)
 			return false, nil
 		}
 	}
 
 	// B) Standalone/name-addressed pods on specified node
-	for name, node := range sp.PlacementsByName {
-		ns := nsOf(sp.PendingPod)
-		if strings.Contains(name, "/") {
-			ns, name = splitNamespaceName(name)
-		}
-		pod, err := pl.Client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
+	for fullName, wantNode := range sp.PlacementsByName {
+		ns, name := splitNamespaceName(fullName) // <— use the entry's own namespace/name
+		pod, err := podLister.Pods(ns).Get(name)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				klog.V(2).InfoS("Plan incomplete: standalone pod missing",
-					"pod", ns+"/"+name, "expectedNode", node)
+				klog.V(V2).InfoS("Plan incomplete: standalone pod missing",
+					"pod", ns+"/"+name, "expectedNode", wantNode)
 				return false, nil
 			}
-			return false, fmt.Errorf("get pod %s/%s: %w", ns, name, err)
+			return false, fmt.Errorf("get pod %s/%s from lister: %w", ns, name, err)
 		}
-		if pod.DeletionTimestamp != nil || pod.Spec.NodeName != node {
-			klog.V(2).InfoS("Plan incomplete: standalone pod mismatch",
-				"pod", ns+"/"+name, "expectedNode", node, "haveNode", pod.Spec.NodeName)
+		if pod.DeletionTimestamp != nil || pod.Spec.NodeName != wantNode {
+			klog.V(V2).InfoS("Plan incomplete: standalone pod mismatch",
+				"pod", ns+"/"+name, "expectedNode", wantNode, "haveNode", pod.Spec.NodeName)
 			return false, nil
 		}
 	}
@@ -311,6 +316,9 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 		if !ok {
 			continue
 		}
+
+		// We still need the owner selector (from the API objects); you can keep this client call,
+		// or cache selectors elsewhere if you prefer.
 		lblSel, err := workloadSelector(ctx, pl.Client, wk)
 		if err != nil {
 			return false, fmt.Errorf("selector for %s: %w", wk.String(), err)
@@ -320,23 +328,22 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 			return false, fmt.Errorf("build selector for %s: %w", wk.String(), err)
 		}
 
-		podList, err := pl.Client.CoreV1().Pods(wk.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: selector.String(),
-		})
+		// List from the pod lister (namespace-scoped) using the selector
+		pods, err := podLister.Pods(wk.Namespace).List(selector)
 		if err != nil {
-			return false, fmt.Errorf("list pods for %s: %w", wk.String(), err)
+			return false, fmt.Errorf("list pods for %s from lister: %w", wk.String(), err)
 		}
 
 		counts := map[string]int{}
-		for i := range podList.Items {
-			p := &podList.Items[i]
-			if p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
+		for _, p := range pods {
+			if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
 				continue
 			}
 			// Skip the plan's preemptor: it is not part of WkDesiredPerNode by design.
 			if sp.TargetNode != "" && string(p.UID) == sp.PendingUID {
 				continue
 			}
+			// Defensive: ensure we only count pods that actually belong to this workload
 			if twk, ok := topWorkload(p); !ok || !workloadEqual(twk, wk) {
 				continue
 			}
@@ -344,9 +351,8 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 		}
 
 		for node, want := range perNode {
-			have := counts[node]
-			if have != want {
-				klog.V(2).InfoS("Plan incomplete: workload count mismatch",
+			if have := counts[node]; have != want {
+				klog.V(V2).InfoS("Plan incomplete: workload count mismatch",
 					"workload", wk.String(), "node", node, "want", want, "have", have,
 					"note", "counts exclude preemptor")
 				return false, nil
@@ -600,12 +606,13 @@ func (pl *MyCrossNodePreemption) translatePlanFromSolver(
 
 func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	ctx context.Context,
+	name string,
 	plan *Plan,
 	out *SolverOutput,
 	pending *v1.Pod, // may be nil
 	placementsByName map[string]string,
 	workloadDesired map[string]map[string]int,
-) (string, error) {
+) error {
 	doc := &StoredPlan{
 		Completed:        false,
 		CompletedAt:      nil,
@@ -627,11 +634,10 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 
 	raw, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	// Make a unique name
-	name := fmt.Sprintf("crossnode-plan-%d", time.Now().UnixNano())
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -641,11 +647,11 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 		Data: map[string]string{"plan.json": string(raw)},
 	}
 	if _, err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
-		return "", err
+		return err
 	}
 
 	_ = pl.pruneOldPlans(ctx, 20)
-	return name, nil
+	return nil
 }
 
 // ----------- Plan Helpers --------------
@@ -658,10 +664,15 @@ func (pl *MyCrossNodePreemption) onPlanSettled() bool {
 	}
 	klog.InfoS("plan settled; deactivating active plan", "planID", ap.ID)
 	pl.clearActivePlan()
+	pl.leaveActive()
+	if optimizeForEvery() {
+		pl.activateBlockedPods(1)
+	} else {
+		pl.activateBlockedPods(0)
+	}
 	if ap.Cancel != nil {
 		ap.Cancel() // stop the timeout watcher
 	}
 	pl.markPlanCompleted(context.Background(), ap.ID)
-	pl.activateBlockedPods()
 	return true
 }
