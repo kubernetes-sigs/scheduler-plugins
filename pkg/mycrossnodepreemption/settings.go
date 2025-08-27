@@ -11,8 +11,8 @@ const (
 	V2 = 2 // klog verbosity level; set to 0 for extra verbose logging
 
 	// ======= Optimality where/when settings =======
-	OptimizeCadence          = OptimizeForEvery     // Choices: OptimizeForEvery, OptimizeInBatches
-	OptimizeAt               = OptimizeAtPreEnqueue // Choices: OptimizeAtPostFilter, OptimizeAtPreEnqueue
+	OptimizeCadence          = OptimizeInBatches    // Choices: OptimizeForEvery, OptimizeInBatches
+	OptimizeAt               = OptimizeAtPostFilter // Choices: OptimizeAtPostFilter, OptimizeAtPreEnqueue
 	OptimizationInterval     = 60 * time.Second
 	OptimizationInitialDelay = 5 * time.Second
 

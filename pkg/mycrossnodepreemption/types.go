@@ -63,23 +63,32 @@ type ActivePlanState struct {
 	Cancel    context.CancelFunc
 }
 
-type WorkloadKind int
-
-type WorkloadKey struct {
-	Kind      WorkloadKind
-	Namespace string
-	Name      string
+type StoredPlan struct {
+	PluginVersion    string                    `json:"pluginVersion"`
+	Mode             string                    `json:"mode"`
+	GeneratedAt      time.Time                 `json:"generatedAt"`
+	PendingPod       string                    `json:"pendingPod,omitempty"`
+	Completed        bool                      `json:"completed"`
+	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
+	PendingUID       string                    `json:"pendingUID,omitempty"`
+	TargetNode       string                    `json:"targetNode,omitempty"`
+	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
+	Plan             Plan                      `json:"plan"`
+	PlacementsByName map[string]string         `json:"placementsByName,omitempty"`
+	WkDesiredPerNode map[string]map[string]int `json:"wkDesiredPerNode,omitempty"`
 }
 
-type podKey struct {
-	UID       types.UID
-	Namespace string
-	Name      string
+type SolverOutput struct {
+	Status        string            `json:"status"`
+	NominatedNode string            `json:"nominatedNode,omitempty"`
+	Placements    map[string]string `json:"placements"`
+	Evictions     []SolverEviction  `json:"evictions"`
 }
 
-type podSet struct {
-	mu sync.RWMutex
-	m  map[types.UID]podKey
+type SolverEviction struct {
+	UID       string `json:"uid"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 type Plan struct {
@@ -109,43 +118,6 @@ type PodRef struct {
 	UID       string `json:"uid"`
 }
 
-type StoredPlan struct {
-	PluginVersion    string                    `json:"pluginVersion"`
-	Mode             string                    `json:"mode"`
-	GeneratedAt      time.Time                 `json:"generatedAt"`
-	PendingPod       string                    `json:"pendingPod,omitempty"`
-	Completed        bool                      `json:"completed"`
-	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
-	PendingUID       string                    `json:"pendingUID,omitempty"`
-	TargetNode       string                    `json:"targetNode,omitempty"`
-	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
-	Plan             Plan                      `json:"plan"`
-	PlacementsByName map[string]string         `json:"placementsByName,omitempty"`
-	WkDesiredPerNode map[string]map[string]int `json:"wkDesiredPerNode,omitempty"`
-}
-type SolverNode struct {
-	Name     string            `json:"name"`
-	CPUm     int64             `json:"cpu_m"`
-	MemBytes int64             `json:"mem_bytes"`
-	Labels   map[string]string `json:"labels,omitempty"`
-}
-type SolverPod struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	CPU_m     int64  `json:"cpu_m"`
-	MemBytes  int64  `json:"mem_bytes"`
-	Priority  int32  `json:"priority"`
-	Where     string `json:"where"`
-	Protected bool   `json:"protected,omitempty"`
-}
-
-type SolverEviction struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
-
 type SolverInput struct {
 	Preemptor      *SolverPod   `json:"preemptor,omitempty"` // nil => batch mode
 	Nodes          []SolverNode `json:"nodes"`
@@ -158,11 +130,41 @@ type SolverInput struct {
 	Workers        int          `json:"workers,omitempty"`
 }
 
-type SolverOutput struct {
-	Status        string            `json:"status"`
-	NominatedNode string            `json:"nominatedNode,omitempty"`
-	Placements    map[string]string `json:"placements"`
-	Evictions     []SolverEviction  `json:"evictions"`
+type SolverPod struct {
+	UID       string `json:"uid"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	CPU_m     int64  `json:"cpu_m"`
+	MemBytes  int64  `json:"mem_bytes"`
+	Priority  int32  `json:"priority"`
+	Where     string `json:"where"`
+	Protected bool   `json:"protected,omitempty"`
+}
+
+type SolverNode struct {
+	Name     string            `json:"name"`
+	CPUm     int64             `json:"cpu_m"`
+	MemBytes int64             `json:"mem_bytes"`
+	Labels   map[string]string `json:"labels,omitempty"`
 }
 
 type WorkloadNodeCounters map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
+
+type WorkloadKind int
+
+type WorkloadKey struct {
+	Kind      WorkloadKind
+	Namespace string
+	Name      string
+}
+
+type podSet struct {
+	mu sync.RWMutex
+	m  map[types.UID]podKey
+}
+
+type podKey struct {
+	UID       types.UID
+	Namespace string
+	Name      string
+}
