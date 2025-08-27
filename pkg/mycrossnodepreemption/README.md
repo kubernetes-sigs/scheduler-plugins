@@ -20,6 +20,7 @@ TODO
 
 ## TODOs
 
+- Fix small timing issue in isPlanCompleted; maybe fix it by checking that the pending pod is part of the cache, otherwise wait 100ms.
 - Don't call batch cycle if same state of cluster and same batched pods as last call.
 - Try to remove all client calls and use informers/listers instead.
 - Use same logic for single and cohort solve.
