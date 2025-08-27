@@ -534,10 +534,3 @@ func isNodeUsable(n *v1.Node) bool {
 	return n.Status.Allocatable.Cpu().MilliValue() > 0 &&
 		n.Status.Allocatable.Memory().Value() > 0
 }
-
-func verboseLevel() klog.Level {
-	if EXTRA_VERBOSE {
-		return klog.Level(2)
-	}
-	return klog.Level(1)
-}

@@ -20,7 +20,7 @@ const (
 	EXTRA_VERBOSE = false
 
 	// ======= Optimality where/when settings =======
-	OptimizeCadence          = OptimizeInBatches    // Choices: OptimizeForEvery, OptimizeInBatches
+	OptimizeCadence          = OptimizeForEvery     // Choices: OptimizeForEvery, OptimizeInBatches
 	OptimizeAt               = OptimizeAtPreEnqueue // Choices: OptimizeAtPostFilter, OptimizeAtPreEnqueue
 	OptimizationInterval     = 60 * time.Second
 	OptimizationInitialDelay = 5 * time.Second

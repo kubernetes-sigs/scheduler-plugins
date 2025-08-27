@@ -5,6 +5,7 @@ package mycrossnodepreemption
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
@@ -270,11 +272,69 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 	go pl.watchPlanTimeout(ap)
 }
 
+const (
+	PlanPendingBindTimeout  = 5 * time.Second
+	PlanPendingBindInterval = 250 * time.Millisecond
+)
+
+func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
+	ctx context.Context,
+	pending *v1.Pod,
+) (bool, error) {
+	l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+
+	ns := pending.Namespace
+	name := pending.Name
+
+	// Single-shot check
+	p, err := l.Pods(ns).Get(name)
+	if err == nil && p.Spec.NodeName != "" {
+		return true, nil
+	}
+
+	// Poll until the cached pod is bound.
+	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTTL, true, func(ctx context.Context) (bool, error) {
+		p, err := l.Pods(ns).Get(name)
+		if apierrors.IsNotFound(err) {
+			klog.V(V2).InfoS("Waiting for preemptor to appear in cache", "pod", ns+"/"+name)
+			return false, nil
+		}
+		if err != nil {
+			// Treat lister hiccups as transient; keep polling.
+			klog.V(V2).InfoS("Lister error while waiting for preemptor", "pod", ns+"/"+name, "err", err)
+			return false, nil
+		}
+		if p.UID != pending.UID {
+			klog.V(V2).InfoS("Waiting for matching preemptor UID", "pod", ns+"/"+name, "wantUID", pending.UID, "haveUID", p.UID)
+			return false, nil
+		}
+		if p.Spec.NodeName == "" {
+			klog.V(V2).InfoS("Waiting for preemptor to bind", "pod", ns+"/"+name)
+			return false, nil
+		}
+		return true, nil
+	})
+	if err == nil {
+		return true, nil
+	}
+	// Timeout/cancel
+	if errors.Is(err, context.DeadlineExceeded) {
+		return false, nil
+	}
+	return false, err
+}
+
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
-func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan) (bool, error) {
-	// Sleep TODO Fix this ...
-	time.Sleep(2 * time.Second)
+func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan, pod *v1.Pod) (bool, error) {
 	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	ok, err := pl.waitPendingBoundInCache(ctx, pod)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		// Still not bound in cache within the window — try again later.
+		return false, nil
+	}
 
 	// A) Pending/preemptor pod bound to target node
 	if sp.TargetNode != "" && sp.PendingPod != "" {
