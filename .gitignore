@@ -21,3 +21,6 @@ hack/tools/bin/*
 
 # Ignore vendor/
 vendor
+
+# TODO_HC: added
+__pycache__/
