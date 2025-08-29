@@ -16,6 +16,9 @@ class KwokStats:
         self.ctx = ctx
 
     def _node_table(self, alloc, cpu_req_by_node, mem_req_by_node, pods_run_by_node) -> str:
+        """
+        Generate a table of node statistics.
+        """
         pods_run_by_node = pods_run_by_node or {n: 0 for n in alloc}
 
         headers = [
@@ -52,7 +55,10 @@ class KwokStats:
         return tabulate(rows, headers=headers, tablefmt="fancy_grid", stralign="right")
 
     def _totals_tables(self, alloc, cpu_req_by_node, mem_req_by_node,
-                       all_run:int, all_notrun:int, cpu_req_all:int, mem_req_all:int):
+                       all_run:int, all_notrun:int, cpu_req_all:int, mem_req_all:int) -> tuple[str, str]:
+        """
+        Generate total resource usage tables.
+        """
         tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
             alloc, cpu_req_by_node, mem_req_by_node
         )
@@ -86,7 +92,10 @@ class KwokStats:
 
         return tbl_run, tbl_all
 
-    def run(self):
+    def run(self) -> None:
+        """
+        Run the statistics collection and reporting.
+        """
         s = stat_snapshot(self.ctx)
         self._printer(f"[kwok-stats] context: {self.ctx}")
         self._printer(self._node_table(s.alloc, s.cpu_req_by_node, s.mem_req_by_node, s.pods_run_by_node))
