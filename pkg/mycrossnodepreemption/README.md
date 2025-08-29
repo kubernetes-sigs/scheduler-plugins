@@ -26,6 +26,7 @@ TODO
 
 ## TODOs Test
 
+- Test at which utilization the default scheduler stops to work properly.
 - Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
 - Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
 - Test the plugin works across workload type.
