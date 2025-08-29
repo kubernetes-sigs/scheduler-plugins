@@ -30,6 +30,66 @@ class TestTargets:
     target_mc_cluster: int
     target_mi_cluster: int
 
+def load_instance_row(seed: int, path: str) -> dict | None:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if int(row.get("seed", -1)) == int(seed):
+                    return row
+    except FileNotFoundError:
+        print(f"[kwok-fill][ERROR] seed file not found: {path}", file=sys.stderr)
+    return None
+
+def load_instance_into_args(args: argparse.Namespace) -> None:
+    """
+    If --load-instance is set, use --seed to look up an instance in --seed-file,
+    then override compatible CLI args with the saved row. Errors if --simulate is set.
+    """
+    if not getattr(args, "load_instance", False):
+        return
+
+    # Disallow combined usage with --simulate
+    if getattr(args, "simulate", False):
+        print("[kwok-fill][ERROR] --load-instance cannot be used together with --simulate", file=sys.stderr)
+        sys.exit(2)
+
+    if args.seed is None:
+        print("[kwok-fill][ERROR] --load-instance requires --seed to be specified", file=sys.stderr)
+        sys.exit(2)
+
+    row = load_instance_row(args.seed, args.seed_file)
+    if not row:
+        print(f"[kwok-fill][ERROR] seed {args.seed} not found in {args.seed_file}", file=sys.stderr)
+        sys.exit(2)
+
+    overrides = {
+        "num_nodes": "num_nodes",
+        "pods_per_node": "pods_per_node",
+        "num_replicaset": "num_replicaset",
+        "target_util": "target_util",
+        "target_util_tolerance": "target_util_tolerance",
+        "node_cpu": "node_cpu",
+        "node_mem": "node_mem",
+        "cpu_interval": "cpu_interval",
+        "mem_interval": "mem_interval",
+        "dist_mode": "dist_mode",
+        "variance": "variance",
+        "num_priorities": "num_priorities",
+        "simulate_add_condition": "simulate_add_condition",
+    }
+
+    for arg_name, row_key in overrides.items():
+        if row_key in row and row[row_key] is not None:
+            setattr(args, arg_name, row[row_key])
+
+    print(f"[kwok-fill] Loaded instance config from {args.seed_file} using seed={args.seed}")
+
 class KwokTestGeneratorRunner:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -252,110 +312,49 @@ class KwokTestGeneratorRunner:
 
         print("[sim] done.")
 
-def run_normal(self):
-    ensure_namespace(self.ctx, self.ns, recreate=True)
-    ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
+    def run_normal(self):
+        ensure_namespace(self.ctx, self.ns, recreate=True)
+        ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
 
-    # --- apply workload ---
-    if self.args.num_replicaset <= 0:
-        created = self._apply_standalone_pods()
-        print(f"[kwok-fill] Applied {created} standalone pods across {self.args.num_nodes} nodes")
-    else:
-        created, num_rs = self._apply_rs()
-        print(f"[kwok-fill] Applied {created} pods via {num_rs}")
+        # --- apply workload ---
+        if self.args.num_replicaset <= 0:
+            created = self._apply_standalone_pods()
+            print(f"[kwok-fill] Applied {created} standalone pods across {self.args.num_nodes} nodes")
+        else:
+            created, num_rs = self._apply_rs()
+            print(f"[kwok-fill] Applied {created} pods via {num_rs}")
 
-    # --- monitor scheduling ---
-    settle_timeout = parse_timeout_s(self.args.settle_timeout)
-    outcome, info = wait_until_settled_or_unschedulable_events(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout_sec=settle_timeout)
+        # --- monitor scheduling ---
+        settle_timeout = parse_timeout_s(self.args.settle_timeout)
+        outcome, info = wait_until_settled_or_unschedulable_events(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout_sec=settle_timeout)
 
-    if outcome == "some_unschedulable":
-        unsched_list = info.get("unschedulable", [])
-        print(f"[check] Some pods marked Unschedulable ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
-            f"{' ...' if len(unsched_list) > 20 else ''}")
-    elif outcome == "all_scheduled":
-        print("[check] All pods scheduled successfully")
-    else:
-        print("[check] Monitoring ended inconclusive")
+        if outcome == "some_unschedulable":
+            unsched_list = info.get("unschedulable", [])
+            print(f"[check] Some pods marked Unschedulable ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
+                f"{' ...' if len(unsched_list) > 20 else ''}")
+        elif outcome == "all_scheduled":
+            print("[check] All pods scheduled successfully")
+        else:
+            print("[check] Monitoring ended inconclusive")
 
-    # --- metrics snapshot (running vs total incl. unscheduled) ---
-    snap = stat_snapshot(self.ctx)
-    tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
-        snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
-    )
-    cpu_util_run = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
-    mem_util_run = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
-    cpu_util_all = (snap.cpu_req_all / tot_cpu_alloc) if tot_cpu_alloc else 0.0
-    mem_util_all = (snap.mem_req_all / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+        # --- metrics snapshot (running vs total incl. unscheduled) ---
+        snap = stat_snapshot(self.ctx)
+        tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
+            snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
+        )
+        cpu_util_run = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
+        mem_util_run = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+        cpu_util_all = (snap.cpu_req_all / tot_cpu_alloc) if tot_cpu_alloc else 0.0
+        mem_util_all = (snap.mem_req_all / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
 
-    nodes = [f"kwok-node-{i}" for i in range(1, self.args.num_nodes+1)]
-    per_node = pods_per_node_in_ns(self.ctx, self.ns, nodes)
-    tol = self.args.target_util_tolerance
+        nodes = [f"kwok-node-{i}" for i in range(1, self.args.num_nodes+1)]
+        per_node = pods_per_node_in_ns(self.ctx, self.ns, nodes)
+        tol = self.args.target_util_tolerance
 
-    print(f"[check] run_util: cpu={cpu_util_run:.4f} mem={mem_util_run:.4f} | "
-          f"all_util: cpu={cpu_util_all:.4f} mem={mem_util_all:.4f} | "
-          f"target={self.args.target_util:.2f}±{tol:.3f}")
-    print(f"[check] pods/node: {per_node} (target {self.args.pods_per_node} each)")
-
-
-def load_instance_row(seed: int, path: str) -> dict | None:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    row = json.loads(line)
-                except Exception:
-                    continue
-                if int(row.get("seed", -1)) == int(seed):
-                    return row
-    except FileNotFoundError:
-        print(f"[kwok-fill][ERROR] seed file not found: {path}", file=sys.stderr)
-    return None
-
-def load_instance_into_args(args: argparse.Namespace) -> None:
-    """
-    If --load-instance is set, use --seed to look up an instance in --seed-file,
-    then override compatible CLI args with the saved row. Errors if --simulate is set.
-    """
-    if not getattr(args, "load_instance", False):
-        return
-
-    # Disallow combined usage with --simulate
-    if getattr(args, "simulate", False):
-        print("[kwok-fill][ERROR] --load-instance cannot be used together with --simulate", file=sys.stderr)
-        sys.exit(2)
-
-    if args.seed is None:
-        print("[kwok-fill][ERROR] --load-instance requires --seed to be specified", file=sys.stderr)
-        sys.exit(2)
-
-    row = load_instance_row(args.seed, args.seed_file)
-    if not row:
-        print(f"[kwok-fill][ERROR] seed {args.seed} not found in {args.seed_file}", file=sys.stderr)
-        sys.exit(2)
-
-    overrides = {
-        "num_nodes": "num_nodes",
-        "pods_per_node": "pods_per_node",
-        "num_replicaset": "num_replicaset",
-        "target_util": "target_util",
-        "target_util_tolerance": "target_util_tolerance",
-        "node_cpu": "node_cpu",
-        "node_mem": "node_mem",
-        "cpu_interval": "cpu_interval",
-        "mem_interval": "mem_interval",
-        "dist_mode": "dist_mode",
-        "variance": "variance",
-        "num_priorities": "num_priorities",
-        "simulate_add_condition": "simulate_add_condition",
-    }
-
-    for arg_name, row_key in overrides.items():
-        if row_key in row and row[row_key] is not None:
-            setattr(args, arg_name, row[row_key])
-
-    print(f"[kwok-fill] Loaded instance config from {args.seed_file} using seed={args.seed}")
+        print(f"[check] run_util: cpu={cpu_util_run:.4f} mem={mem_util_run:.4f} | "
+            f"all_util: cpu={cpu_util_all:.4f} mem={mem_util_all:.4f} | "
+            f"target={self.args.target_util:.2f}±{tol:.3f}")
+        print(f"[check] pods/node: {per_node} (target {self.args.pods_per_node} each)")
 
 def main():
     ap = argparse.ArgumentParser()
