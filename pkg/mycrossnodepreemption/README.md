@@ -12,37 +12,40 @@ TODO
 
 ## Open Questions
 
-- What to do with evicted and blocked pods - put them to queue or try again immediately? - Jacopo: Fine, what i am doing now, by just letting them try afain immediately
-  - For example, when running every-preempter mode and if we evict in cycle #1, then in cycle #2 this pod is currently not taken into account.
+- What to do with evicted and blocked pods - put them to queue or try again immediately?
+  - Jacopo: Fine, what i am doing now, by just letting them try again immediately
 - What to with batched pods, we do not succeed to bind on first try?
 - How to make large scale tests, and should I make a seperate test for the CP-SAT solver alone?
 - Faster algorithm using simple heuristics if solver fails - which strategy to use - simply swapping?
+- What to do with node-selectors, PDBs, and other rules.
+  - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
 
-## TODOs
+## TODOs General
 
-- Fix small timing issue in isPlanCompleted; maybe fix it by checking that the pending pod is part of the cache, otherwise wait 100ms.
+- Write a proper README.md
+
+## TODOs Test
+
+- Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
+- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
+- Test the plugin works across workload type.
+- Test CP-SAT vs. other solvers.
+
+## TODOs Plugin
+
+- Check that plugin still works for standalone pods.
 - Don't call batch cycle if same state of cluster and same batched pods as last call.
 - Try to remove all client calls and use informers/listers instead.
 - Use same logic for single and cohort solve.
 - Use same logic in preenqueue as in postfilter.
 - Variant, where we run the optimizer in background to see if cluster state can be improved.
 - Fast heuristic algorithm that rund in front of solver. So the solver needs to improve on that.
-- Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
 - Local search, then optimizer to see if we can improve.
 - Cleanup code, structs and make the configmap more efficient
-- Write a proper README.md
-- Demo: Next week.
-- Consider to protect pods that have node-selectors, PDBs, and other rules. - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller sesrch space).
 
 ## Later TODOs
 
 - Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption 
-
-## Test
-
-- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
-- Test the plugin works across workload type.
-- Test CP-SAT vs. other solvers.
 
 ## Write
 
@@ -52,6 +55,7 @@ TODO
 - Write about QueuingHints and that I end up using Pod Activator for reschedule queued pods.
 - Write about atomics and we only use configmap for debugging.
 - Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
+- Write about that Optimizer is not deterministic, when having multiple workers. However, we need multiple workers, otherwise it is too slow.
 
 ## Developed
 
@@ -70,6 +74,12 @@ TODO
   ```bash
   kubectl -n kube-system get cm -l crossnode-plan
   kubectl -n kube-system get cm <CM> -o jsonpath='{.data.plan\.json}' | jq .
+  ```
+
+- Get reasons for pod(s) not scheduling
+
+  ```bash
+  kubectl --context kwok-kwok1 -n crossnode-test get events --field-selector involvedObject.kind=Pod -o json | jq '.items[] | {name: .involvedObject.name, reason: .reason, message: .message}'
   ```
 
 - Build kwok-cluster with plugin and random pods
