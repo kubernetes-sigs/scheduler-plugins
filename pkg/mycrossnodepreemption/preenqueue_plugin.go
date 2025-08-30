@@ -36,20 +36,18 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 
 	case DecideEvery:
 		klog.InfoS("PreEnqueue: start", "pod", klog.KObj(pod))
-		_, err := pl.runSingleFlow(ctx, pod, PhasePreEnqueue)
+		_, err := pl.runFlow(ctx, PhasePreEnqueue, pod)
 		if err != nil {
 			if err == ErrActiveInProgress {
 				pl.Blocked.AddPod(pod)
-				klog.V(V2).InfoS("PreEnqueue: active plan in progress", "pod", klog.KObj(pod))
 				return framework.NewStatus(framework.Pending, "PreEnqueue: active plan in progress")
 			}
-			if err == ErrNoNomination {
+			if err == ErrSolver {
 				pl.Blocked.AddPod(pod)
-				klog.InfoS("PreEnqueue: no nomination", "pod", klog.KObj(pod))
-				return framework.NewStatus(framework.Pending, "PreEnqueue: solver found no solution")
+				return framework.NewStatus(framework.Pending, "PreEnqueue: solver failed")
 			}
-			klog.ErrorS(err, "PreEnqueue: plan failed", "pod", klog.KObj(pod))
-			return framework.NewStatus(framework.Pending, "PreEnqueue: plan failed")
+			// else ErrRegisterPlan
+			return framework.NewStatus(framework.Pending, "PreEnqueue: register plan failed")
 		}
 		return framework.NewStatus(framework.Success, "PreEnqueue: nominated after plan execution")
 	}

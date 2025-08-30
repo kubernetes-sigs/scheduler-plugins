@@ -11,7 +11,7 @@ const (
 	V2 = 2 // klog verbosity level; set to 0 for extra verbose logging
 
 	// ======= Optimality where/when settings =======
-	OptimizeCadence          = OptimizeInBatches    // Choices: OptimizeForEvery, OptimizeInBatches
+	OptimizeCadence          = OptimizeForEvery     // Choices: OptimizeForEvery, OptimizeInBatches
 	OptimizeAt               = OptimizeAtPostFilter // Choices: OptimizeAtPreEnqueue, OptimizeAtPostFilter
 	OptimizationInterval     = 30 * time.Second
 	OptimizationInitialDelay = 15 * time.Second // 15 seconds, should be the minimum...

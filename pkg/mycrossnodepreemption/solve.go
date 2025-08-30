@@ -32,13 +32,8 @@ func (pl *MyCrossNodePreemption) solve(
 	return pl.runSolver(ctx, in)
 }
 
-// buildSolverInput builds the common input for either batch(cohort) or single-preemptor.
-func (pl *MyCrossNodePreemption) buildSolverInput(
-	mode SolveMode,
-	preemptor *v1.Pod, // only for SolveSingle
-	batched []*v1.Pod, // only for SolveCohort
-	timeout time.Duration,
-) (SolverInput, error) {
+// buildSolverInput builds the common input for either batch or single.
+func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, preemptor *v1.Pod, batched []*v1.Pod, timeout time.Duration) (SolverInput, error) {
 	in := SolverInput{
 		TimeoutMs:      timeout.Milliseconds(),
 		IgnoreAffinity: true,
@@ -61,7 +56,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(
 			return SolverInput{}, fmt.Errorf("fill (single): %w", err)
 		}
 
-	case SolveCohort:
+	case SolveBatch:
 		// include other pending pods (the batched set)
 		if err := pl.fillFromFactory(&in, nil, batched, true); err != nil {
 			return SolverInput{}, fmt.Errorf("fill (cohort): %w", err)

@@ -18,13 +18,14 @@ type MyCrossNodePreemption struct {
 	Client     kubernetes.Interface
 	Active     atomic.Bool
 	ActivePlan atomic.Pointer[ActivePlanState]
-	Blocked    *podSet
-	Batched    *podSet
+	Blocked    *PodSet
+	Batched    *PodSet
 }
 
 var (
 	ErrActiveInProgress = errors.New("active plan in progress")
-	ErrNoNomination     = errors.New("solver returned no nominated node")
+	ErrSolver           = errors.New("solver failed")
+	ErrRegisterPlan     = errors.New("failed to register plan")
 )
 
 const (
@@ -57,7 +58,7 @@ const (
 type SolveMode int
 
 const (
-	SolveCohort SolveMode = iota
+	SolveBatch SolveMode = iota
 	SolveSingle
 )
 
@@ -76,19 +77,21 @@ type Phase string
 const (
 	PhasePreEnqueue Phase = "PreEnqueue"
 	PhasePostFilter Phase = "PostFilter"
+	PhaseBatch      Phase = "BatchLoop"
 )
 
-func (p Phase) atPreEnqueue() bool { return p == PhasePreEnqueue }
-func (p Phase) atPostFilter() bool { return p == PhasePostFilter }
-
-type BatchResult struct {
-	BatchSize                      int
+type FlowResult struct {
 	PlanID                         string
+	Nominated                      string
+	BatchSize                      int
 	Moves, Evicts                  int
 	NewScheduled, StillUnscheduled int
-	Status                         string
-	TotalDuration, solverDuration  time.Duration
+	SolverStatus                   string
+	TotalDuration, SolverDuration  time.Duration
 }
+
+func (phase Phase) atPreEnqueue() bool { return phase == PhasePreEnqueue }
+func (phase Phase) atPostFilter() bool { return phase == PhasePostFilter }
 
 type ActivePlanState struct {
 	ID        string
@@ -193,12 +196,12 @@ type WorkloadKey struct {
 	Name      string
 }
 
-type podSet struct {
+type PodSet struct {
 	mu sync.RWMutex
-	m  map[types.UID]podKey
+	m  map[types.UID]PodKey
 }
 
-type podKey struct {
+type PodKey struct {
 	UID       types.UID
 	Namespace string
 	Name      string

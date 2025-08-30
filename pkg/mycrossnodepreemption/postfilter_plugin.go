@@ -39,22 +39,22 @@ func (pl *MyCrossNodePreemption) PostFilter(
 
 	case DecideEvery:
 		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
-		res, err := pl.runSingleFlow(ctx, pending, PhasePostFilter)
+		res, err := pl.runFlow(ctx, PhasePostFilter, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {
 				pl.Blocked.AddPod(pending)
 				return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 			}
-			if err == ErrNoNomination {
-				return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: solver found no solution")
+			if err == ErrSolver {
+				return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: solver failed")
 			}
-			klog.ErrorS(err, "PostFilter: plan failed", "pod", klog.KObj(pending))
-			return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: plan failed")
+			// Else ErrRegisterPlan
+			return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: register plan failed")
 		}
 
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{
-				NominatedNodeName: res.nominated,
+				NominatedNodeName: res.Nominated,
 				NominatingMode:    framework.ModeOverride,
 			},
 		}, framework.NewStatus(framework.Success, "PostFilter: nominated after plan execution")

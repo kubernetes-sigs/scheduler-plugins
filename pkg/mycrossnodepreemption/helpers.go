@@ -20,6 +20,40 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// ------ Batch Helpers -------
+func (pl *MyCrossNodePreemption) countNewAndUnscheduledFromBatch(Placements map[string]string, pods []*v1.Pod) (int, int) {
+	newFromBatch := 0
+	unscheduledFromBatch := 0
+	for _, p := range pods {
+		if p == nil || p.Spec.NodeName != "" {
+			// was already running; not part of "pending batch" accounting
+			continue
+		}
+		node, ok := Placements[string(p.UID)]
+		if ok && node != "" {
+			newFromBatch++
+		} else {
+			unscheduledFromBatch++
+		}
+	}
+	return newFromBatch, unscheduledFromBatch
+}
+
+func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
+	keys := pl.Batched.Snapshot()
+	if len(keys) == 0 { // no pods in batch
+		return nil
+	}
+	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister() // use SharedInformerFactory for immediate consistency
+	snapshot := make([]*v1.Pod, 0, len(keys))                                  // preallocate slice
+	for _, k := range keys {
+		if pod, err := podLister.Pods(k.Namespace).Get(k.Name); err == nil { // get current pod
+			snapshot = append(snapshot, pod) // add pod to snapshot
+		}
+	}
+	return snapshot
+}
+
 // ----- Strategy Helpers -------
 
 // Optimizer cadence (per-preemptor vs. batches)
@@ -42,21 +76,21 @@ func modeToString() string {
 	return fmt.Sprintf("%s/%s", a, b)
 }
 
-func (pl *MyCrossNodePreemption) decideStrategy(p Phase) StrategyDecision {
+func (pl *MyCrossNodePreemption) decideStrategy(phase Phase) StrategyDecision {
 	// Active plan gates everything (except whitelisted by plan; PreEnqueue handles that later).
 	if pl.Active.Load() {
 		return DecideBlockActive
 	}
 	if optimizeInBatches() {
 		// Batch only when phase matches configured OptimizeAt
-		if (optimizeAtPreEnqueue() && p.atPreEnqueue()) || (optimizeAtPostFilter() && p.atPostFilter()) {
+		if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
 			return DecideBatch
 		}
 		// Other phase; pass through (batching will happen at the configured phase)
 		return DecidePassThrough
 	}
 	// Every-preemptor mode
-	if (optimizeAtPreEnqueue() && p.atPreEnqueue()) || (optimizeAtPostFilter() && p.atPostFilter()) {
+	if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
 		return DecideEvery
 	}
 	// Every-preemptor but at the "other" phase; pass through
@@ -153,43 +187,43 @@ func isNodeUsable(n *v1.Node) bool {
 
 // --------- Pod set functions ---------
 
-func newPodSet() *podSet { return &podSet{m: make(map[types.UID]podKey)} }
+func newPodSet() *PodSet { return &PodSet{m: make(map[types.UID]PodKey)} }
 
-func (s *podSet) AddRef(uid types.UID, ns, name string) {
+func (s *PodSet) AddRef(uid types.UID, ns, name string) {
 	s.mu.Lock()
-	s.m[uid] = podKey{UID: uid, Namespace: ns, Name: name}
+	s.m[uid] = PodKey{UID: uid, Namespace: ns, Name: name}
 	s.mu.Unlock()
 }
 
-func (s *podSet) AddPod(p *v1.Pod) {
+func (s *PodSet) AddPod(p *v1.Pod) {
 	if p == nil {
 		return
 	}
 	s.AddRef(p.UID, p.Namespace, p.Name)
 }
 
-func (s *podSet) Remove(uid types.UID) {
+func (s *PodSet) Remove(uid types.UID) {
 	s.mu.Lock()
 	delete(s.m, uid)
 	s.mu.Unlock()
 }
 
-func (s *podSet) Clear() {
+func (s *PodSet) Clear() {
 	s.mu.Lock()
-	s.m = make(map[types.UID]podKey)
+	s.m = make(map[types.UID]PodKey)
 	s.mu.Unlock()
 }
 
-func (s *podSet) Size() int {
+func (s *PodSet) Size() int {
 	s.mu.RLock()
 	n := len(s.m)
 	s.mu.RUnlock()
 	return n
 }
 
-func (s *podSet) Snapshot() map[types.UID]podKey {
+func (s *PodSet) Snapshot() map[types.UID]PodKey {
 	s.mu.RLock()
-	out := make(map[types.UID]podKey, len(s.m))
+	out := make(map[types.UID]PodKey, len(s.m))
 	for k, v := range s.m {
 		out[k] = v
 	}
@@ -197,7 +231,7 @@ func (s *podSet) Snapshot() map[types.UID]podKey {
 	return out
 }
 
-func (pl *MyCrossNodePreemption) pruneSetStale(set *podSet, keep func(cur *v1.Pod) bool) int {
+func (pl *MyCrossNodePreemption) pruneSetStale(set *PodSet, keep func(cur *v1.Pod) bool) int {
 	if set == nil || set.Size() == 0 {
 		return 0
 	}
@@ -244,7 +278,7 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) {
 
 	type item struct {
 		p   *v1.Pod
-		key podKey
+		key PodKey
 	}
 	items := make([]item, 0, len(snap))
 	for _, k := range snap {
@@ -305,7 +339,7 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 
 	type item struct {
 		p   *v1.Pod
-		key podKey
+		key PodKey
 	}
 	items := make([]item, 0, len(snap))
 	for _, k := range snap {
@@ -360,7 +394,7 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 	}
 }
 
-func (pl *MyCrossNodePreemption) pruneStaleSetEntries(set *podSet) int {
+func (pl *MyCrossNodePreemption) pruneStaleSetEntries(set *PodSet) int {
 	rem := pl.pruneSetStale(set, func(cur *v1.Pod) bool {
 		return cur.Spec.NodeName == "" // keep function: keep only pending pods
 	})
