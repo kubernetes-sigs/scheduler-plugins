@@ -722,12 +722,13 @@ func (pl *MyCrossNodePreemption) onPlanSettled() bool {
 	if ap == nil || ap.PlanDoc.Completed {
 		return false
 	}
-	klog.InfoS("plan settled; deactivating active plan", "planID", ap.ID)
 	pl.clearActivePlan()
+	klog.InfoS("plan settled; deactivating active plan", "planID", ap.ID)
 	pl.leaveActive()
-	if optimizeForEvery() {
-		pl.activateBlockedPods(1)
-	} else {
+
+	// We do not activate blocked pods when we are in Every@PreEnqueue
+	// as it would lead to high contention; instead we periodically nudge them.
+	if !optimizeForEvery() || !optimizeAtPreEnqueue() {
 		pl.activateBlockedPods(0)
 	}
 	if ap.Cancel != nil {

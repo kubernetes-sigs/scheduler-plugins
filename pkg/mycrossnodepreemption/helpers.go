@@ -20,7 +20,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// ----- Helpers for strategies -------
+// ----- Strategy Helpers -------
 
 // Optimizer cadence (per-preemptor vs. batches)
 func optimizeForEvery() bool  { return OptimizeCadence == OptimizeForEvery }
@@ -40,6 +40,27 @@ func modeToString() string {
 		b = "PostFilter"
 	}
 	return fmt.Sprintf("%s/%s", a, b)
+}
+
+func (pl *MyCrossNodePreemption) decideStrategy(p Phase) StrategyDecision {
+	// Active plan gates everything (except whitelisted by plan; PreEnqueue handles that later).
+	if pl.Active.Load() {
+		return DecideBlockActive
+	}
+	if optimizeInBatches() {
+		// Batch only when phase matches configured OptimizeAt
+		if (optimizeAtPreEnqueue() && p.atPreEnqueue()) || (optimizeAtPostFilter() && p.atPostFilter()) {
+			return DecideBatch
+		}
+		// Other phase; pass through (batching will happen at the configured phase)
+		return DecidePassThrough
+	}
+	// Every-preemptor mode
+	if (optimizeAtPreEnqueue() && p.atPreEnqueue()) || (optimizeAtPostFilter() && p.atPostFilter()) {
+		return DecideEvery
+	}
+	// Every-preemptor but at the "other" phase; pass through
+	return DecidePassThrough
 }
 
 // ---------- Helpers for objects --------------
@@ -212,6 +233,7 @@ func (pl *MyCrossNodePreemption) pruneSetStale(set *podSet, keep func(cur *v1.Po
 
 // Activate up to 'max' pods from the blocked set; clear only the ones activated.
 func (pl *MyCrossNodePreemption) activateBlockedPods(max int) {
+	_ = pl.pruneStaleSetEntries(pl.Blocked)
 	if pl.Blocked == nil || pl.Blocked.Size() == 0 {
 		return
 	}
@@ -273,6 +295,7 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) {
 // Activate up to 'max' pods from the batched set; remove only those that were activated
 // or explicitly provided via podsToRemove.
 func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max int) {
+	_ = pl.pruneStaleSetEntries(pl.Batched)
 	if pl.Batched == nil || pl.Batched.Size() == 0 {
 		return
 	}
@@ -530,6 +553,40 @@ func (pl *MyCrossNodePreemption) tryEnterActive() bool {
 
 func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)
+}
+
+func (pl *MyCrossNodePreemption) executePlanIfOps(ctx context.Context, plan *Plan) bool {
+	if plan == nil {
+		return false
+	}
+	if len(plan.Moves) == 0 && len(plan.Evicts) == 0 {
+		return false
+	}
+	if err := pl.executePlan(ctx, plan); err != nil {
+		klog.ErrorS(err, "Plan execution failed")
+		pl.onPlanSettled()
+		return false
+	}
+	return true
+}
+
+func (pl *MyCrossNodePreemption) allowedByActivePlan(pod *v1.Pod) bool {
+	ap := pl.getActivePlan()
+	if ap == nil || ap.PlanDoc.Completed {
+		return false
+	}
+	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
+		return true
+	}
+	if _, ok := ap.PlanDoc.PlacementsByName[pod.Namespace+"/"+pod.Name]; ok {
+		return true
+	}
+	if wk, ok := topWorkload(pod); ok {
+		if _, in := ap.PlanDoc.WkDesiredPerNode[wk.String()]; in {
+			return true
+		}
+	}
+	return false
 }
 
 // ------------- Solver Helpers --------------

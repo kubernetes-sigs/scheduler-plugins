@@ -21,34 +21,50 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if pod.Namespace == "kube-system" {
 		return nil, framework.NewStatus(framework.Success)
 	}
-
 	if !pl.Active.Load() {
-		// Let the default scheduler proceed when there is no active plan.
 		return nil, framework.NewStatus(framework.Success)
 	}
 
-	// Get active plan
+	nodes, msg, ok := pl.preFilterAllowedNodes(pod)
+	switch {
+	case ok && nodes == nil:
+		// allowed, no pin
+		klog.V(V2).InfoS("PreFilter: allow", "pod", klog.KObj(pod), "reason", msg)
+		return nil, framework.NewStatus(framework.Success)
+	case ok && nodes.Len() > 0:
+		klog.V(V2).InfoS("PreFilter: pin", "pod", klog.KObj(pod), "nodes", nodes.UnsortedList(), "reason", msg)
+		return &framework.PreFilterResult{NodeNames: nodes}, framework.NewStatus(framework.Success)
+	default: // not ok
+		klog.V(V2).InfoS("PreFilter: block", "pod", klog.KObj(pod), "reason", msg)
+		pl.Blocked.AddPod(pod)
+		return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: "+msg)
+	}
+}
+
+func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtensions {
+	return nil
+}
+
+// preFilterAllowedNodes returns:
+// - node set to pin (non-nil) and Success, or
+// - nil and an appropriate framework.Status reason to block/allow.
+func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
 	ap := pl.getActivePlan()
-	if ap == nil {
-		klog.V(V2).InfoS("PreFilter: no active plan; allowing", "pod", klog.KObj(pod))
-		return nil, framework.NewStatus(framework.Success)
+	if ap == nil || ap.PlanDoc.Completed {
+		return nil, "no active plan", true // allow
 	}
 
-	// Pin lead pod only if TargetNode is set (every-preemptor mode).
+	// Lead pod pinning (single-preemptor mode)
 	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
-		klog.V(V2).InfoS("PreFilter: lead pod; pinning to target node", "pod", klog.KObj(pod), "node", ap.PlanDoc.TargetNode)
-		return &framework.PreFilterResult{NodeNames: sets.New(ap.PlanDoc.TargetNode)}, framework.NewStatus(framework.Success)
+		return sets.New(ap.PlanDoc.TargetNode), "lead; pin to target", true
 	}
 
-	// Workload pods: allow nodes with remaining > 0
+	// Workload quota routing
 	if wk, ok := topWorkload(pod); ok {
 		key := wk.String()
 		if _, inPlan := ap.PlanDoc.WkDesiredPerNode[key]; !inPlan {
-			klog.InfoS("PreFilter: workload pod not in active plan; blocking", "pod", klog.KObj(pod))
-			pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
-			return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: workload pod not in active plan; blocking")
+			return nil, "workload not in active plan; block", false
 		}
-
 		allowed := sets.New[string]()
 		if byNode, ok := ap.Remaining[key]; ok {
 			for node, ctr := range byNode {
@@ -58,26 +74,16 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 			}
 		}
 		if allowed.Len() == 0 {
-			klog.V(V2).InfoS("PreFilter: workload-quotas exhausted; wait until plan is completed; blocking", "pod", klog.KObj(pod))
-			pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
-			return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: workload-quotas exhausted; wait until plan is completed; blocking")
+			return nil, "workload quotas exhausted; block", false
 		}
-		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
+		return allowed, "workload nodes allowed", true
 	}
 
-	// Standalone pods: allow nodes explicitly placed by name and namespace
+	// Standalone by name
 	full := pod.Namespace + "/" + pod.Name
 	if tgt, ok := ap.PlanDoc.PlacementsByName[full]; ok {
-		klog.InfoS("PreFilter: standalone pod; pinning to planned node", "pod", klog.KObj(pod), "node", tgt)
-		return &framework.PreFilterResult{NodeNames: sets.New(tgt)}, framework.NewStatus(framework.Success)
+		return sets.New(tgt), "standalone; pin to planned node", true
 	}
 
-	klog.InfoS("PreFilter: pod not in active plan; blocking", "pod", klog.KObj(pod))
-	pl.Blocked.AddRef(pod.UID, pod.Namespace, pod.Name)
-	return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: pod not in active plan; blocking")
-
-}
-
-func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtensions {
-	return nil
+	return nil, "pod not in active plan; block", false
 }

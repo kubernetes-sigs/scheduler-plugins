@@ -12,102 +12,100 @@ import (
 
 func (pl *MyCrossNodePreemption) batchLoop(ctx context.Context) {
 	firstDelay := OptimizationInitialDelay
-	timer := time.NewTimer(firstDelay) // first run after initial delay
-	nextAt := time.Now().Add(firstDelay)
+	timer := time.NewTimer(firstDelay)
 	defer timer.Stop()
-
-	klog.InfoS("Batch loop: first run scheduled", "in(s)", time.Until(nextAt).Round(time.Second))
+	klog.InfoS("Batch loop: first run scheduled", "in(s)", firstDelay)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-
 		case <-timer.C:
-			klog.InfoS("Batch loop: starting cycle")
-			pl.runBatchCycle()
-			timer.Reset(OptimizationInterval) // after first run, use the regular interval
-			klog.InfoS("Batch loop: next run scheduled", "in(s)", OptimizationInterval)
+			klog.InfoS("Batch loop: cycle")
+			if _, err := pl.runBatchFlow(context.Background()); err != nil && err != ErrActiveInProgress {
+				klog.ErrorS(err, "Batch loop: cycle failed")
+			}
+			timer.Reset(OptimizationInterval)
+			klog.InfoS("Batch loop: next run", "in(s)", OptimizationInterval)
 		}
 	}
 }
 
-func (pl *MyCrossNodePreemption) runBatchCycle() {
-	// Check for active plan; skip batch if one is in progress
-	if pl.Active.Load() {
-		klog.InfoS("Batch loop already in progress; skipping")
-		return
-	}
+func (pl *MyCrossNodePreemption) runBatchFlow(ctx context.Context) (*BatchResult, error) {
 	if !pl.tryEnterActive() {
-		klog.V(V2).InfoS("Batch loop already in progress; skipping")
-		return
+		return nil, ErrActiveInProgress
 	}
+	done := func() { pl.leaveActive() }
 
 	// Prune stale entries; keep only pending batched pods
 	_ = pl.pruneStaleSetEntries(pl.Batched)
 
-	// Get current batch pods
 	pods := pl.snapshotBatch()
-	batchSize := len(pods)
-	if batchSize == 0 {
-		pl.leaveActive()
-		klog.InfoS("Batch loop: finished cycle; no pods to process")
-		return
+	if len(pods) == 0 {
+		done()
+		klog.InfoS("Batch loop: nothing to do")
+		return &BatchResult{}, nil
 	}
 
-	ctxSolve, cancel := context.WithTimeout(context.Background(), SolverTimeout)
-	batchStart := time.Now()
+	start := time.Now()
+	ctxSolve, cancel := context.WithTimeout(ctx, SolverTimeout)
 	out, err := pl.solve(ctxSolve, SolveCohort, nil, pods, SolverTimeout)
-	solverDuration := time.Since(batchStart)
+	solverDur := time.Since(start)
 	cancel()
 	if err != nil || out == nil {
-		pl.leaveActive()
-		klog.ErrorS(err, "Batch loop: batch solve failed")
-		return
-	}
-
-	plan, ap, err := pl.registerPlan(context.Background(), out, nil)
-	if err != nil {
-		pl.leaveActive()
-		klog.ErrorS(err, "Batch loop: publish plan failed")
-		return
-	}
-
-	// Skip plan execution if no moves or evictions
-	newScheduledFromBatch, unscheduledFromBatch := pl.countNewAndUnscheduledFromBatch(out.Placements, pods)
-	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
-		if err := pl.executePlan(context.Background(), plan); err != nil {
-			klog.ErrorS(err, "Batch loop: batch plan execution failed")
-			pl.onPlanSettled()
-			return
+		done()
+		if err == nil {
+			err = ErrNoNomination // re-using sentinel for “no useful result”
 		}
+		klog.ErrorS(err, "Batch loop: solver failed")
+		return nil, err
 	}
 
+	plan, ap, err := pl.registerPlan(ctx, out, nil)
+	if err != nil {
+		done()
+		klog.ErrorS(err, "Batch loop: register plan failed")
+		return nil, err
+	}
+
+	// Only execute when needed
+	// Count which in cohort got a placement (for observability)
+	newSched, stillUn := pl.countNewAndUnscheduledFromBatch(out.Placements, pods)
+	if hasOps := pl.executePlanIfOps(ctx, plan); !hasOps {
+		klog.InfoS("Batch loop: plan had no moves/evicts", "planID", ap.ID)
+	}
+
+	// activate everyone we just batched (so they re-enter queue)
 	pl.activateBatchedPods(pods, 0)
 
-	if newScheduledFromBatch > 0 {
-		klog.InfoS("Batch loop: finished cycle; waiting plan to settle",
-			"solverStatus", out.Status,
-			"batchSize", batchSize,
-			"planID", ap.ID,
-			"moves", len(plan.Moves),
-			"evicts", len(plan.Evicts),
-			"newScheduledFromBatch", newScheduledFromBatch,
-			"unscheduledFromBatch", unscheduledFromBatch,
-			"batchDuration", time.Since(batchStart),
-			"solverDuration", solverDuration,
-		)
-	} else {
-		klog.InfoS("Batch loop: finished cycle with no changes",
-			"solverStatus", out.Status,
-			"batchSize", batchSize,
-			"planID", ap.ID,
-			"unscheduledFromBatch", unscheduledFromBatch,
-			"batchDuration", time.Since(batchStart),
-			"solverDuration", solverDuration,
-		)
-		pl.onPlanSettled() // no changes, complete plan immediately
+	klog.InfoS("Batch loop: plan executed; waiting to settle",
+		"planID", ap.ID,
+		"batchSize", len(pods),
+		"solverStatus", out.Status,
+		"moves", len(plan.Moves),
+		"evicts", len(plan.Evicts),
+		"newScheduledFromBatch", newSched,
+		"unscheduledFromBatch", stillUn,
+		"batchDuration", time.Since(start),
+		"solverDuration", solverDur,
+	)
+
+	// If nothing got newly scheduled we can complete immediately (no tail effects)
+	if newSched == 0 {
+		pl.onPlanSettled()
 	}
+
+	return &BatchResult{
+		BatchSize:        len(pods),
+		PlanID:           ap.ID,
+		Moves:            len(plan.Moves),
+		Evicts:           len(plan.Evicts),
+		NewScheduled:     newSched,
+		StillUnscheduled: stillUn,
+		Status:           out.Status,
+		TotalDuration:    time.Since(start),
+		solverDuration:   solverDur,
+	}, nil
 }
 
 func (pl *MyCrossNodePreemption) countNewAndUnscheduledFromBatch(Placements map[string]string, pods []*v1.Pod) (int, int) {

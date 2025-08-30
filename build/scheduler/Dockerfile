@@ -22,7 +22,7 @@ COPY . .
 RUN make build-scheduler
 
 FROM ${UBUNTU_BASE_IMAGE}
-
+#TODO_HC: USE NEWEST PYTHON VERSION
 # 1) Python + pip
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip && \

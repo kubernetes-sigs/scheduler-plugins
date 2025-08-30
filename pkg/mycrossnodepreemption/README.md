@@ -34,13 +34,11 @@ TODO
 
 ## TODOs Plugin
 
+- Variant, where we run the optimizer in background to see if cluster state can be improved.
 - Check that plugin still works for standalone pods.
 - Don't call batch cycle if same state of cluster and same batched pods as last call.
 - Try to remove all client calls and use informers/listers instead.
-- Use same logic for single and cohort solve.
-- Use same logic in preenqueue as in postfilter.
-- Variant, where we run the optimizer in background to see if cluster state can be improved.
-- Fast heuristic algorithm that rund in front of solver. So the solver needs to improve on that.
+- Fast heuristic algorithm which runs in front of solver. So the solver needs to improve on that.
 - Local search, then optimizer to see if we can improve.
 - Cleanup code, structs and make the configmap more efficient
 

@@ -337,7 +337,7 @@ class KwokTestGeneratorRunner:
             print(f"[kwok-fill] Applied {created} standalone pods across {self.args.num_nodes} nodes")
         else:
             created, num_rs = self._apply_rs()
-            print(f"[kwok-fill] Applied {created} pods via {num_rs}")
+            print(f"[kwok-fill] Applied {created} pods via {num_rs} ReplicaSets")
 
         # --- monitor scheduling ---
         settle_timeout = parse_timeout_s(self.args.settle_timeout)
@@ -366,9 +366,9 @@ class KwokTestGeneratorRunner:
         per_node = pods_per_node_in_ns(self.ctx, self.ns, nodes)
         tol = self.args.target_util_tolerance
 
-        print(f"[check] run_util: cpu={cpu_util_run:.4f} mem={mem_util_run:.4f} | "
-            f"all_util: cpu={cpu_util_all:.4f} mem={mem_util_all:.4f} | "
-            f"target={self.args.target_util:.2f}±{tol:.3f}")
+        print(f"[check] run_util: cpu={cpu_util_run*100:.1f}% mem={mem_util_run*100:.1f}% | "
+            f"all_util: cpu={cpu_util_all*100:.1f}% mem={mem_util_all*100:.1f}% | "
+            f"target={self.args.target_util*100:.1f}%±{tol*100:.1f}%")
         print(f"[check] pods/node: {per_node} (target {self.args.pods_per_node} each)")
 
 def main():
@@ -388,7 +388,7 @@ def main():
     ap.add_argument("--variance", type=int, default=50)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--num-priorities", type=int, default=4)
-    ap.add_argument("--wait-each", action="store_true", default=True)
+    ap.add_argument("--wait-each", action="store_true", default=False)
     ap.add_argument("--wait-timeout", default="10s")
     ap.add_argument("--settle-timeout", default="5s")
     ap.add_argument("--cpu-interval", default="50m,500m")

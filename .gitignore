@@ -24,3 +24,4 @@ vendor
 
 # TODO_HC: added
 __pycache__/
+.VSCodeCounter

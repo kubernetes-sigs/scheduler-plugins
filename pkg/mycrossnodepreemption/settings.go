@@ -12,18 +12,18 @@ const (
 
 	// ======= Optimality where/when settings =======
 	OptimizeCadence          = OptimizeInBatches    // Choices: OptimizeForEvery, OptimizeInBatches
-	OptimizeAt               = OptimizeAtPostFilter // Choices: OptimizeAtPostFilter, OptimizeAtPreEnqueue
-	OptimizationInterval     = 60 * time.Second
-	OptimizationInitialDelay = 5 * time.Second
+	OptimizeAt               = OptimizeAtPostFilter // Choices: OptimizeAtPreEnqueue, OptimizeAtPostFilter
+	OptimizationInterval     = 30 * time.Second
+	OptimizationInitialDelay = 15 * time.Second // 15 seconds, should be the minimum...
 
 	// ======= Solver settings =======
-	SolverTimeout     = 55 * time.Second
+	SolverTimeout     = 25 * time.Second
 	SolverMode        = SolverModeLexi // Choices: SolverModeLexi or SolverModeWeighted
 	SolverLogProgress = false          // log search progress (may be verbose here in GO)
 	SolverPath        = "/opt/solver/main.py"
 
 	// ======= Plan settings =======
-	PlanExecutionTTL       = 60 * time.Second // how long a plan may run before being terminated
+	PlanExecutionTTL       = 30 * time.Second // how long a plan may run before being terminated
 	PlanConfigMapNamespace = "kube-system"    // match kube-scheduler namespace
 	PlanConfigMapLabelKey  = "crossnode-plan"
 )

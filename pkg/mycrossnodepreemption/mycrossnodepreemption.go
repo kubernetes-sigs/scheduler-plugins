@@ -20,6 +20,13 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, err
 	}
 
+	pl := &MyCrossNodePreemption{
+		Handle:  h,
+		Client:  client,
+		Blocked: newPodSet(),
+		Batched: newPodSet(),
+	}
+
 	// Ensure the Pod informer has the namespace index
 	podInf := h.SharedInformerFactory().Core().V1().Pods().Informer()
 	if err := podInf.AddIndexers(cache.Indexers{
@@ -28,19 +35,14 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		klog.ErrorS(err, "failed adding namespace indexer to Pod informer")
 	}
 
-	pl := &MyCrossNodePreemption{
-		Handle:  h,
-		Client:  client,
-		Blocked: newPodSet(),
-		Batched: newPodSet(),
-	}
-
 	pl.Active.Store(false)
 
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", modeToString())
 
 	if optimizeInBatches() {
 		go pl.batchLoop(ctx)
+	} else if optimizeForEvery() && optimizeAtPreEnqueue() {
+		go pl.idleNudgeBlockedLoop(ctx)
 	}
 	return pl, nil
 }

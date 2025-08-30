@@ -3,6 +3,7 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +21,11 @@ type MyCrossNodePreemption struct {
 	Blocked    *podSet
 	Batched    *podSet
 }
+
+var (
+	ErrActiveInProgress = errors.New("active plan in progress")
+	ErrNoNomination     = errors.New("solver returned no nominated node")
+)
 
 const (
 	// Deployment and CronJob are handled otherwise
@@ -54,6 +60,35 @@ const (
 	SolveCohort SolveMode = iota
 	SolveSingle
 )
+
+// decideStrategy says what to do with this pod at this phase.
+type StrategyDecision int
+
+const (
+	DecidePassThrough StrategyDecision = iota // let default scheduler proceed
+	DecideBatch                               // add to Batched and stop here
+	DecideEvery                               // run the single-preemptor optimization flow now
+	DecideBlockActive                         // plan active; block this pod
+)
+
+type Phase string
+
+const (
+	PhasePreEnqueue Phase = "PreEnqueue"
+	PhasePostFilter Phase = "PostFilter"
+)
+
+func (p Phase) atPreEnqueue() bool { return p == PhasePreEnqueue }
+func (p Phase) atPostFilter() bool { return p == PhasePostFilter }
+
+type BatchResult struct {
+	BatchSize                      int
+	PlanID                         string
+	Moves, Evicts                  int
+	NewScheduled, StillUnscheduled int
+	Status                         string
+	TotalDuration, solverDuration  time.Duration
+}
 
 type ActivePlanState struct {
 	ID        string
