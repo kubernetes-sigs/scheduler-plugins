@@ -11,8 +11,8 @@ const (
 	V2 = 2 // klog verbosity level; set to 0 for extra verbose logging
 
 	// ======= Optimality where/when settings =======
-	OptimizeCadence          = OptimizeForEvery     // Choices: OptimizeForEvery, OptimizeInBatches
-	OptimizeAt               = OptimizeAtPostFilter // Choices: OptimizeAtPreEnqueue, OptimizeAtPostFilter
+	OptimizeCadence          = OptimizeContinuously // Choices: OptimizeForEvery, OptimizeInBatches, OptimizeContinuously
+	OptimizeAt               = OptimizeAtPostFilter // Choices: OptimizeAtPreEnqueue, OptimizeAtPostFilter (ignored in continuous mode)
 	OptimizationInterval     = 30 * time.Second
 	OptimizationInitialDelay = 15 * time.Second // 15 seconds, should be the minimum...
 
@@ -23,7 +23,7 @@ const (
 	SolverPath        = "/opt/solver/main.py"
 
 	// ======= Plan settings =======
-	PlanExecutionTTL       = 30 * time.Second // how long a plan may run before being terminated
+	PlanExecutionTTL       = 60 * time.Second // how long a plan may run before being terminated
 	PlanConfigMapNamespace = "kube-system"    // match kube-scheduler namespace
 	PlanConfigMapLabelKey  = "crossnode-plan"
 )

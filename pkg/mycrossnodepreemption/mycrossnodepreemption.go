@@ -40,7 +40,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", modeToString())
 
 	if optimizeInBatches() {
-		go pl.batchLoop(ctx)
+		go pl.periodicOptimizeLoop(ctx, PhaseBatch)
+	} else if optimizeContinuously() {
+		go pl.periodicOptimizeLoop(ctx, PhaseContinuous)
 	} else if optimizeForEvery() && optimizeAtPreEnqueue() {
 		go pl.idleNudgeBlockedLoop(ctx)
 	}

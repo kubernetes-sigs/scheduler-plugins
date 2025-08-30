@@ -15,23 +15,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO: Build solve, buildSolverInput and runSolver into one more efficient function
-// TODO: Think cohort and single code can be reduced.
-
-func (pl *MyCrossNodePreemption) solve(
-	ctx context.Context,
-	mode SolveMode,
-	preemptor *v1.Pod,
-	batched []*v1.Pod,
-	timeout time.Duration,
-) (*SolverOutput, error) {
-	in, err := pl.buildSolverInput(mode, preemptor, batched, timeout)
-	if err != nil {
-		return nil, err
-	}
-	return pl.runSolver(ctx, in)
-}
-
 // buildSolverInput builds the common input for either batch or single.
 func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, preemptor *v1.Pod, batched []*v1.Pod, timeout time.Duration) (SolverInput, error) {
 	in := SolverInput{
@@ -59,7 +42,12 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, preemptor *v1.
 	case SolveBatch:
 		// include other pending pods (the batched set)
 		if err := pl.fillFromFactory(&in, nil, batched, true); err != nil {
-			return SolverInput{}, fmt.Errorf("fill (cohort): %w", err)
+			return SolverInput{}, fmt.Errorf("fill (batch): %w", err)
+		}
+
+	case SolveContinuously:
+		if err := pl.fillFromFactory(&in, nil, nil, true); err != nil {
+			return SolverInput{}, fmt.Errorf("fill (continuous): %w", err)
 		}
 
 	default:

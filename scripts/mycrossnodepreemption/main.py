@@ -261,6 +261,27 @@ def solve(instance: dict) -> dict:
     if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _encode_status(st)
     
+
+    # ---------------- metrics for comparison ----------------
+    placed_by_priority = {}
+    evicted = 0
+    moved = 0
+    for i in running_idxs:
+        if int(solver.Value(evict[i])) == 1:
+            evicted += 1
+        else:
+            if move[i] is not None and int(solver.Value(move[i])) == 1:
+                moved += 1
+    for i in range(num_pods):
+        if int(solver.Value(placed[i])) == 1:
+            pr = str(p_pri(i))
+            placed_by_priority[pr] = placed_by_priority.get(pr, 0) + 1
+    score = {
+        "placed_by_priority": placed_by_priority,
+        "evicted": evicted,
+        "moved": moved,
+    }
+
     # ---------------------- extract plan ----------------------
     placements = {}
     evictions  = []
@@ -269,12 +290,21 @@ def solve(instance: dict) -> dict:
         if int(solver.Value(evict[i])) == 1:
             evictions.append({"uid": p_uid(i), "namespace": p_ns(i), "name": p_name(i)})
             continue
+
         if int(solver.Value(placed[i])) == 1 and eligible[i]:
             # find the chosen node among eligible list
+            chosen_j = None
             for local, j in enumerate(eligible[i]):
                 if int(solver.Value(x[i][local])) == 1:
-                    placements[p_uid(i)] = nodes[j]["name"]
+                    chosen_j = j
                     break
+            if chosen_j is None:
+                continue
+
+            orig_j = p_where_j(i)  # None for pending pods
+            # Emit placement only if this pod is pending OR it actually moved
+            if orig_j is None or (move[i] is not None and int(solver.Value(move[i])) == 1):
+                placements[p_uid(i)] = nodes[chosen_j]["name"]
 
     nominated = ""
     if single_preemptor_mode and pre_idx is not None:
@@ -285,10 +315,10 @@ def solve(instance: dict) -> dict:
         "nominatedNode": nominated,
         "placements": placements,
         "evictions": evictions,
+        "score": score,
     }
 
 # ---------------------- optimization modes -----------------------------
-
 def _solve_weighted(m, solver, placed, evict, move, running_idxs, p_pri, single_preemptor_mode, pre_idx):
     """
     Single-solve big-M objective:

@@ -4,8 +4,11 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,24 +24,6 @@ import (
 )
 
 // ------ Batch Helpers -------
-func (pl *MyCrossNodePreemption) countNewAndUnscheduledFromBatch(Placements map[string]string, pods []*v1.Pod) (int, int) {
-	newFromBatch := 0
-	unscheduledFromBatch := 0
-	for _, p := range pods {
-		if p == nil || p.Spec.NodeName != "" {
-			// was already running; not part of "pending batch" accounting
-			continue
-		}
-		node, ok := Placements[string(p.UID)]
-		if ok && node != "" {
-			newFromBatch++
-		} else {
-			unscheduledFromBatch++
-		}
-	}
-	return newFromBatch, unscheduledFromBatch
-}
-
 func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
 	keys := pl.Batched.Snapshot()
 	if len(keys) == 0 { // no pods in batch
@@ -57,8 +42,9 @@ func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
 // ----- Strategy Helpers -------
 
 // Optimizer cadence (per-preemptor vs. batches)
-func optimizeForEvery() bool  { return OptimizeCadence == OptimizeForEvery }
-func optimizeInBatches() bool { return OptimizeCadence == OptimizeInBatches }
+func optimizeForEvery() bool     { return OptimizeCadence == OptimizeForEvery }
+func optimizeInBatches() bool    { return OptimizeCadence == OptimizeInBatches }
+func optimizeContinuously() bool { return OptimizeCadence == OptimizeContinuously }
 
 // Action point (PreEnqueue vs. PostFilter)
 func optimizeAtPreEnqueue() bool { return OptimizeAt == OptimizeAtPreEnqueue }
@@ -66,8 +52,11 @@ func optimizeAtPostFilter() bool { return OptimizeAt == OptimizeAtPostFilter }
 
 func modeToString() string {
 	a := "ForEvery"
-	if optimizeInBatches() {
+	switch OptimizeCadence {
+	case OptimizeInBatches:
 		a = "InBatches"
+	case OptimizeContinuously:
+		a = "Continuous"
 	}
 	b := "PreEnqueue"
 	if optimizeAtPostFilter() {
@@ -77,23 +66,22 @@ func modeToString() string {
 }
 
 func (pl *MyCrossNodePreemption) decideStrategy(phase Phase) StrategyDecision {
-	// Active plan gates everything (except whitelisted by plan; PreEnqueue handles that later).
+	// Continuous mode never blocks or batches due to the optimizer.
+	if optimizeContinuously() {
+		return DecidePassThrough
+	}
 	if pl.Active.Load() {
 		return DecideBlockActive
 	}
 	if optimizeInBatches() {
-		// Batch only when phase matches configured OptimizeAt
 		if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
 			return DecideBatch
 		}
-		// Other phase; pass through (batching will happen at the configured phase)
 		return DecidePassThrough
 	}
-	// Every-preemptor mode
 	if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
 		return DecideEvery
 	}
-	// Every-preemptor but at the "other" phase; pass through
 	return DecidePassThrough
 }
 
@@ -626,4 +614,193 @@ func (pl *MyCrossNodePreemption) allowedByActivePlan(pod *v1.Pod) bool {
 // ------------- Solver Helpers --------------
 func solverFeasible(out *SolverOutput) bool {
 	return out != nil && (out.Status == "OPTIMAL" || out.Status == "FEASIBLE")
+}
+
+// comparePlaced returns 1 if a>b, -1 if a<b, 0 if equal (lexi by priority desc).
+func comparePlaced(a, b map[string]int) int {
+	keys := map[int]struct{}{}
+	for k := range a {
+		if v, err := strconv.Atoi(k); err == nil {
+			keys[v] = struct{}{}
+		}
+	}
+	for k := range b {
+		if v, err := strconv.Atoi(k); err == nil {
+			keys[v] = struct{}{}
+		}
+	}
+	prs := make([]int, 0, len(keys))
+	for k := range keys {
+		prs = append(prs, k)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(prs)))
+	for _, pr := range prs {
+		ai := a[strconv.Itoa(pr)]
+		bi := b[strconv.Itoa(pr)]
+		if ai != bi {
+			if ai > bi {
+				return 1
+			}
+			return -1
+		}
+	}
+	return 0
+}
+
+// IsImprovement: (1) more placed per priority (lexi), then (2) fewer evictions, then (3) fewer moves.
+func IsImprovement(baseline Score, suggested Score) bool {
+	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
+		klog.V(V2).InfoS("Improvement by placed pods", "cmp", cmp, "score", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
+		return cmp > 0
+	}
+	// better fallback: only treat as improvement if there are real ops
+	if suggested.Evicted > baseline.Evicted {
+		klog.V(V2).InfoS("No improvement: more evictions than baseline")
+		return false
+	}
+	if suggested.Moved > baseline.Moved {
+		klog.V(V2).InfoS("No improvement: more moves than baseline")
+		return false
+	}
+	hasOps := suggested.Evicted > 0 || suggested.Moved > 0
+	klog.V(V2).InfoS("Fallback: require real ops", "hasOps", hasOps)
+	return hasOps
+}
+
+// buildInputAndBaseline builds the exact snapshot we send to the solver,
+// and returns the baseline and a digest for concurrency checks.
+func (pl *MyCrossNodePreemption) buildInputAndBaseline(
+	mode SolveMode,
+	preemptor *v1.Pod,
+	batched []*v1.Pod,
+	timeout time.Duration,
+) (SolverInput, Score, string, error) {
+
+	in, err := pl.buildSolverInput(mode, preemptor, batched, timeout)
+	if err != nil {
+		return SolverInput{}, Score{}, "", err
+	}
+	baseline := computeBaselineFromInput(in)
+	digest := buildDigestFromInput(in)
+	return in, baseline, digest, nil
+}
+
+func computeBaselineFromInput(in SolverInput) Score {
+	placedByPri := map[string]int{}
+	for _, sp := range in.Pods {
+		if sp.Where == "" {
+			continue // pending doesn't count into "placed"
+		}
+		pr := strconv.Itoa(int(sp.Priority))
+		placedByPri[pr] = placedByPri[pr] + 1
+	}
+	return Score{
+		PlacedByPriority: placedByPri,
+		Evicted:          0,
+		Moved:            0,
+	}
+}
+
+// buildDigestFromInput produces a deterministic hash of the snapshot that fed the solver input.
+// We use the already-normalized SolverInput (nodes/pods) for stability.
+func buildDigestFromInput(in SolverInput) string {
+	h := sha256.New()
+
+	// nodes sorted by name
+
+	ns := make([]SolverNode, len(in.Nodes))
+	copy(ns, in.Nodes)
+	sort.Slice(ns, func(i, j int) bool { return ns[i].Name < ns[j].Name })
+	for _, n := range ns {
+		h.Write([]byte(n.Name))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(n.CPUm, 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(n.MemBytes, 10)))
+		h.Write([]byte("\n"))
+	}
+	// pods sorted by UID
+	ps := make([]SolverPod, len(in.Pods))
+	copy(ps, in.Pods)
+	sort.Slice(ps, func(i, j int) bool { return ps[i].UID < ps[j].UID })
+	for _, p := range ps {
+		h.Write([]byte(p.UID))
+		h.Write([]byte("|"))
+		h.Write([]byte(p.Namespace))
+		h.Write([]byte("|"))
+		h.Write([]byte(p.Name))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(p.CPU_m, 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(p.MemBytes, 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(int64(p.Priority), 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(p.Where))
+		h.Write([]byte("|"))
+		if p.Protected {
+			h.Write([]byte("1"))
+		} else {
+			h.Write([]byte("0"))
+		}
+		h.Write([]byte("\n"))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// countNewAndTotalPods computes, from the live cluster view and the solver output:
+//
+//	 pendingScheduled  = # of currently-pending pods that got a placement in this plan
+//		total  = (# running now) - (# running that will be evicted) + pendingScheduled
+//
+// It does NOT need the batched pods list; it uses the shared informer lister.
+func (pl *MyCrossNodePreemption) countNewAndTotalPods(out *SolverOutput) (pendingScheduled, total int) {
+	if out == nil {
+		return 0, 0
+	}
+
+	pods, err := pl.getPods()
+	if err != nil {
+		return 0, 0
+	}
+	podsByUID := make(map[string]*v1.Pod, len(pods))
+	runningNow := 0
+	for _, p := range pods {
+		if p == nil || p.DeletionTimestamp != nil {
+			continue
+		}
+		podsByUID[string(p.UID)] = p
+		if p.Spec.NodeName != "" {
+			runningNow++
+		}
+	}
+
+	// 2) How many currently running will be evicted by this plan?
+	evicted := 0
+	for _, e := range out.Evictions {
+		if p := podsByUID[e.UID]; p != nil && p.DeletionTimestamp == nil && p.Spec.NodeName != "" {
+			evicted++
+		}
+	}
+
+	// 3) How many currently pending get placed by this plan?
+	for uid, node := range out.Placements {
+		if node == "" {
+			continue
+		}
+		p := podsByUID[uid]
+		if p == nil || p.DeletionTimestamp != nil {
+			continue
+		}
+		if p.Spec.NodeName == "" { // pending -> will become running
+			pendingScheduled++
+		}
+		// Note: moves of already-running pods don’t change the running count.
+	}
+
+	total = runningNow - evicted + pendingScheduled
+	if total < 0 {
+		total = 0 // safety clamp
+	}
+	return pendingScheduled, total
 }

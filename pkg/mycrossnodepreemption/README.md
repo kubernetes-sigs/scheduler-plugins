@@ -34,12 +34,13 @@ TODO
 
 ## TODOs Plugin
 
-- Variant, where we run the optimizer in background to see if cluster state can be improved.
+- Do not print "ContinuousLoop: plan execution finished" if no operation.
+- Improve on this error: "solver failed (e.g. no feasible/improved solution)"
+- Ensure all pods/RS are different sizes to avoid potential tie breaks.
+- Remove context from functions where it isnt needed.
 - Check that plugin still works for standalone pods.
-- Don't call batch cycle if same state of cluster and same batched pods as last call.
 - Try to remove all client calls and use informers/listers instead.
 - Fast heuristic algorithm which runs in front of solver. So the solver needs to improve on that.
-- Local search, then optimizer to see if we can improve.
 - Cleanup code, structs and make the configmap more efficient
 
 ## Later TODOs

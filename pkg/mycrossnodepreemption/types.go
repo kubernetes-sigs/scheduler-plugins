@@ -23,9 +23,14 @@ type MyCrossNodePreemption struct {
 }
 
 var (
-	ErrActiveInProgress = errors.New("active plan in progress")
-	ErrSolver           = errors.New("solver failed")
-	ErrRegisterPlan     = errors.New("failed to register plan")
+	ErrActiveInProgress    = errors.New("active plan in progress")
+	ErrSolver              = errors.New("solver failed")
+	ErrRegisterPlan        = errors.New("failed to register plan")
+	ErrDigestMismatch      = errors.New("cluster changed since solve")
+	ErrNoImprovement       = errors.New("no improvement")
+	ErrNoNomination        = errors.New("no node nominated for preemption")
+	ErrNoOptimalOrFeasible = errors.New("no optimal or feasible solution")
+	ErrNoop                = errors.New("no operation")
 )
 
 const (
@@ -39,8 +44,9 @@ const (
 type OptimizationCadenceMode int
 
 const (
-	OptimizeForEvery  OptimizationCadenceMode = iota // solve per unschedulable preemptor
-	OptimizeInBatches                                // periodic cohort solving
+	OptimizeForEvery     OptimizationCadenceMode = iota // solve per unschedulable preemptor (blocking)
+	OptimizeInBatches                                   // periodic batch solving (blocking)
+	OptimizeContinuously                                // continuous optimization (non-blocking)
 )
 
 type OptimizationAtMode int
@@ -60,6 +66,7 @@ type SolveMode int
 const (
 	SolveBatch SolveMode = iota
 	SolveSingle
+	SolveContinuously
 )
 
 // decideStrategy says what to do with this pod at this phase.
@@ -78,16 +85,17 @@ const (
 	PhasePreEnqueue Phase = "PreEnqueue"
 	PhasePostFilter Phase = "PostFilter"
 	PhaseBatch      Phase = "BatchLoop"
+	PhaseContinuous Phase = "ContinuousLoop"
 )
 
 type FlowResult struct {
-	PlanID                         string
-	Nominated                      string
-	BatchSize                      int
-	Moves, Evicts                  int
-	NewScheduled, StillUnscheduled int
-	SolverStatus                   string
-	TotalDuration, SolverDuration  time.Duration
+	PlanID                        string
+	Nominated                     string
+	BatchSize                     int
+	Moves, Evicts                 int
+	PendingScheduled, TotalPods   int
+	SolverStatus                  string
+	TotalDuration, SolverDuration time.Duration
 }
 
 func (phase Phase) atPreEnqueue() bool { return phase == PhasePreEnqueue }
@@ -121,6 +129,7 @@ type SolverOutput struct {
 	NominatedNode string            `json:"nominatedNode,omitempty"`
 	Placements    map[string]string `json:"placements"`
 	Evictions     []SolverEviction  `json:"evictions"`
+	Score         Score             `json:"score,omitempty"`
 }
 
 type SolverEviction struct {
@@ -205,4 +214,10 @@ type PodKey struct {
 	UID       types.UID
 	Namespace string
 	Name      string
+}
+
+type Score struct {
+	PlacedByPriority map[string]int `json:"placed_by_priority,omitempty"`
+	Evicted          int            `json:"evicted,omitempty"`
+	Moved            int            `json:"moved,omitempty"`
 }
