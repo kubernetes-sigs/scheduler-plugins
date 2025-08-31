@@ -1,3 +1,5 @@
+// constants.go
+
 package mycrossnodepreemption
 
 import (
@@ -11,8 +13,6 @@ const (
 	V2 = 2 // klog verbosity level; set to 0 for extra verbose logging
 
 	// ======= Optimality where/when settings =======
-	OptimizeCadence          = OptimizeContinuously // Choices: OptimizeForEvery, OptimizeInBatches, OptimizeContinuously
-	OptimizeAt               = OptimizeAtPostFilter // Choices: OptimizeAtPreEnqueue, OptimizeAtPostFilter (ignored in continuous mode)
 	OptimizationInterval     = 30 * time.Second
 	OptimizationInitialDelay = 15 * time.Second // 15 seconds, should be the minimum...
 

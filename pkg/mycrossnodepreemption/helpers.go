@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -1495,4 +1496,38 @@ func (pl *MyCrossNodePreemption) countNewAndTotalPods(out *SolverOutput) (pendin
 		total = 0 // safety clamp
 	}
 	return pendingScheduled, total
+}
+
+// --------- Environment Helpers ----------
+func getenv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func parseCadence(s string) OptimizationCadenceMode {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "for_every":
+		return OptimizeForEvery
+	case "in_batches":
+		return OptimizeInBatches
+	case "continuously":
+		return OptimizeContinuously
+	default:
+		klog.InfoS("Unknown ENV: OPTIMIZE_CADENCE value; defaulting to in_batches", "value", s)
+		return OptimizeContinuously
+	}
+}
+
+func parseOptimizeAt(s string) OptimizationAtMode {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "preenqueue":
+		return OptimizeAtPreEnqueue
+	case "postfilter":
+		return OptimizeAtPostFilter
+	default:
+		klog.InfoS("Unknown ENV: OPTIMIZE_AT value; defaulting to postfilter", "value", s)
+		return OptimizeAtPostFilter
+	}
 }
