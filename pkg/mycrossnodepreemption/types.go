@@ -98,9 +98,6 @@ type FlowResult struct {
 	TotalDuration, SolverDuration time.Duration
 }
 
-func (phase Phase) atPreEnqueue() bool { return phase == PhasePreEnqueue }
-func (phase Phase) atPostFilter() bool { return phase == PhasePostFilter }
-
 type ActivePlanState struct {
 	ID        string
 	PlanDoc   *StoredPlan
@@ -122,47 +119,6 @@ type StoredPlan struct {
 	Plan             Plan                      `json:"plan"`
 	PlacementsByName map[string]string         `json:"placementsByName,omitempty"`
 	WkDesiredPerNode map[string]map[string]int `json:"wkDesiredPerNode,omitempty"`
-}
-
-type SolverOutput struct {
-	Status        string            `json:"status"`
-	NominatedNode string            `json:"nominatedNode,omitempty"`
-	Placements    map[string]string `json:"placements"`
-	Evictions     []SolverEviction  `json:"evictions"`
-	Score         Score             `json:"score,omitempty"`
-}
-
-type SolverEviction struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
-
-type Plan struct {
-	TargetNode string  `json:"targetNode"` // may be empty in batch mode
-	Moves      []Move  `json:"moves"`
-	Evicts     []Evict `json:"evicts"`
-}
-
-type Move struct {
-	Pod      PodRef `json:"pod"`
-	FromNode string `json:"fromNode"`
-	ToNode   string `json:"toNode"`
-	CPUm     int64  `json:"cpu_m"`
-	MemBytes int64  `json:"mem_bytes"`
-}
-
-type Evict struct {
-	Pod      PodRef `json:"pod"`
-	FromNode string `json:"fromNode"`
-	CPUm     int64  `json:"cpu_m"`
-	MemBytes int64  `json:"mem_bytes"`
-}
-
-type PodRef struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	UID       string `json:"uid"`
 }
 
 type SolverInput struct {
@@ -195,6 +151,53 @@ type SolverNode struct {
 	Labels   map[string]string `json:"labels,omitempty"`
 }
 
+type SolverOutput struct {
+	Status        string            `json:"status"`
+	NominatedNode string            `json:"nominatedNode,omitempty"`
+	Placements    map[string]string `json:"placements"`
+	Evictions     []SolverEviction  `json:"evictions"`
+	Score         Score             `json:"score,omitempty"`
+}
+
+type SolverEviction struct {
+	UID       string `json:"uid"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+type Score struct {
+	PlacedByPriority map[string]int `json:"placed_by_priority,omitempty"`
+	Evicted          int            `json:"evicted,omitempty"`
+	Moved            int            `json:"moved,omitempty"`
+}
+
+type Plan struct {
+	TargetNode string  `json:"targetNode"` // may be empty in batch mode
+	Moves      []Move  `json:"moves"`
+	Evicts     []Evict `json:"evicts"`
+}
+
+type Move struct {
+	Pod      PodRef `json:"pod"`
+	FromNode string `json:"fromNode"`
+	ToNode   string `json:"toNode"`
+	CPUm     int64  `json:"cpu_m"`
+	MemBytes int64  `json:"mem_bytes"`
+}
+
+type Evict struct {
+	Pod      PodRef `json:"pod"`
+	FromNode string `json:"fromNode"`
+	CPUm     int64  `json:"cpu_m"`
+	MemBytes int64  `json:"mem_bytes"`
+}
+
+type PodRef struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	UID       string `json:"uid"`
+}
+
 type WorkloadNodeCounters map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
 
 type WorkloadKind int
@@ -214,10 +217,4 @@ type PodKey struct {
 	UID       types.UID
 	Namespace string
 	Name      string
-}
-
-type Score struct {
-	PlacedByPriority map[string]int `json:"placed_by_priority,omitempty"`
-	Evicted          int            `json:"evicted,omitempty"`
-	Moved            int            `json:"moved,omitempty"`
 }

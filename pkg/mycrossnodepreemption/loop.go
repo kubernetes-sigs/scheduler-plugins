@@ -1,4 +1,5 @@
 // loop.go
+
 package mycrossnodepreemption
 
 import (
@@ -8,8 +9,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// periodicOptimizeLoop runs runFlow(phase) on a fixed cadence.
-// If verbose is true, per-cycle logs use V(V2); otherwise InfoS.
 func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context, phase Phase) {
 	firstDelay := OptimizationInitialDelay
 	interval := OptimizationInterval

@@ -9,11 +9,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	// How often to try waking one blocked pod when idle in ForEvery@PreEnqueue.
-	NudgeBlockedInterval = 200 * time.Millisecond
-)
-
 func (pl *MyCrossNodePreemption) idleNudgeBlockedLoop(ctx context.Context) {
 	// Only meaningful for ForEvery@PreEnqueue
 	// This function is needed as if we activate all blocked pods at once

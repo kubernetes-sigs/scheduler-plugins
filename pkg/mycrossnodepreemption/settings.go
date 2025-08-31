@@ -23,7 +23,10 @@ const (
 	SolverPath        = "/opt/solver/main.py"
 
 	// ======= Plan settings =======
-	PlanExecutionTTL       = 60 * time.Second // how long a plan may run before being terminated
-	PlanConfigMapNamespace = "kube-system"    // match kube-scheduler namespace
-	PlanConfigMapLabelKey  = "crossnode-plan"
+	PlanExecutionTTL        = 60 * time.Second // how long a plan may run before being terminated
+	PlanConfigMapNamespace  = "kube-system"    // match kube-scheduler namespace
+	PlanConfigMapLabelKey   = "crossnode-plan"
+	NudgeBlockedInterval    = 200 * time.Millisecond // How often to try waking one blocked pod when idle in ForEvery@PreEnqueue.
+	PlanPendingBindTimeout  = 5 * time.Second
+	PlanPendingBindInterval = 250 * time.Millisecond
 )

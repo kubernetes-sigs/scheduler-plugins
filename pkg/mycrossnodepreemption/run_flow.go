@@ -63,7 +63,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	if err != nil {
 		pl.leaveActive()
 		if out != nil {
-			if !solverFeasible(out) {
+			if !IsSolverFeasible(out) {
 				klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal or feasible solution")
 				return nil, ErrNoOptimalOrFeasible
 			} else if !IsImprovement(baseline, out.Score) {
