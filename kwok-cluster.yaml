@@ -7,6 +7,14 @@ componentsPatches:
   - name: kube-scheduler
     extraEnvs:
       - name: OPTIMIZE_CADENCE
-        value: "for_every"
+        value: "in_batches" # choices: for_every, in_batches, continuous
       - name: OPTIMIZE_AT
-        value: "preenqueue"
+        value: "preenqueue" # choices: preenqueue, postfilter
+      - name: OPTIMIZATION_INTERVAL
+        value: "30s"
+      - name: OPTIMIZATION_INITIAL_DELAY
+        value: "15s"
+      - name: SOLVER_TIMEOUT
+        value: "25s"
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "50s"

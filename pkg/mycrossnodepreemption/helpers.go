@@ -825,7 +825,7 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 	}
 
 	// Poll until the cached pod is bound.
-	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTTL, true, func(ctx context.Context) (bool, error) {
+	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTimeout, true, func(ctx context.Context) (bool, error) {
 		p, err := l.Pods(ns).Get(name)
 		if apierrors.IsNotFound(err) {
 			klog.V(V2).InfoS("Waiting for preemptor to appear in cache", "pod", ns+"/"+name)
@@ -1028,7 +1028,7 @@ func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlanState) {
 	if cur == nil || cur.ID != ap.ID || cur.PlanDoc.Completed {
 		return
 	}
-	klog.InfoS("plan timeout reached; deactivating plan", "planID", ap.ID, "ttl", PlanExecutionTTL)
+	klog.InfoS("plan timeout reached; deactivating plan", "planID", ap.ID, "ttl", PlanExecutionTimeout)
 	// Mark completed for auditing, then settle
 	pl.markPlanCompleted(context.Background(), ap.ID)
 	pl.onPlanSettled()
@@ -1126,7 +1126,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 		old.Cancel()
 	}
 
-	ctxPlan, cancel := context.WithTimeout(context.Background(), PlanExecutionTTL)
+	ctxPlan, cancel := context.WithTimeout(context.Background(), PlanExecutionTimeout)
 	ap := &ActivePlanState{
 		ID:        id,
 		PlanDoc:   sp,
@@ -1498,12 +1498,19 @@ func (pl *MyCrossNodePreemption) countNewAndTotalPods(out *SolverOutput) (pendin
 	return pendingScheduled, total
 }
 
-// --------- Environment Helpers ----------
+// --------- Environment Variables Helpers ----------
 func getenv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return def
+}
+
+func parseTime(s string) time.Duration {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	return 0
 }
 
 func parseCadence(s string) OptimizationCadenceMode {

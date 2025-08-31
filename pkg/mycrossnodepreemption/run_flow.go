@@ -127,9 +127,11 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// ---------- Batch bookkeeping ----------
 	if phase == PhaseBatch {
 		pl.activateBatchedPods(batchedPods, 0)
-		if pendingScheduled == 0 {
-			pl.onPlanSettled()
-		}
+	}
+
+	if pendingScheduled == 0 {
+		klog.InfoS(string(phase) + ": no pending pods scheduled by plan")
+		pl.onPlanSettled()
 	}
 
 	res := &FlowResult{

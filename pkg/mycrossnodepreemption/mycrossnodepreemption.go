@@ -38,6 +38,11 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	pl.Active.Store(false)
 
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", modeToString())
+	klog.InfoS("Solver configuration", "timeout", SolverTimeout.String())
+	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
+	if optimizeInBatches() || optimizeContinuously() {
+		klog.InfoS("Loop configuration", "optimizationInterval", OptimizationInterval.String())
+	}
 
 	if optimizeInBatches() {
 		go pl.periodicOptimizeLoop(ctx, PhaseBatch)
@@ -46,5 +51,6 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	} else if optimizeForEvery() && optimizeAtPreEnqueue() {
 		go pl.idleNudgeBlockedLoop(ctx)
 	}
+
 	return pl, nil
 }
