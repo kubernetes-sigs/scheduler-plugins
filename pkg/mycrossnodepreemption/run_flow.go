@@ -105,7 +105,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Count new and total pods ----------
-	pendingScheduled, oldTotal := pl.countNewAndTotalPods(out)
+	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(out)
 
 	// ---------- Register + execute plan ----------
 	var plan *Plan
@@ -149,8 +149,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		BatchSize:      len(batchedPods),
 		Moves:          0,
 		Evicts:         0,
-		NewTotalPods:   oldTotal + pendingScheduled,
-		OldTotalPods:   oldTotal,
+		TotalPrePlan:   totalPrePlan,
+		TotalPostPlan:  totalPostPlan,
 		SolverStatus:   "",
 		TotalDuration:  time.Since(start),
 		SolverDuration: solverDur,
@@ -173,8 +173,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		"batchSize", res.BatchSize,
 		"moves", res.Moves,
 		"evicts", res.Evicts,
-		"newTotalPods", res.NewTotalPods,
-		"oldTotalPods", res.OldTotalPods,
+		"totalPrePlan", res.TotalPrePlan,
+		"totalPostPlan", res.TotalPostPlan,
 		"solverStatus", res.SolverStatus,
 		"totalDuration", res.TotalDuration,
 		"solverDuration", res.SolverDuration,

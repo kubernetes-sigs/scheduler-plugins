@@ -82,7 +82,7 @@ type FlowResult struct {
 	Nominated                     string
 	BatchSize                     int
 	Moves, Evicts                 int
-	OldTotalPods, NewTotalPods    int
+	TotalPostPlan, TotalPrePlan   int
 	SolverStatus                  string
 	TotalDuration, SolverDuration time.Duration
 }

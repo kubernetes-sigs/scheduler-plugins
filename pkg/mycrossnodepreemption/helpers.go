@@ -1035,46 +1035,67 @@ func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlanState) {
 
 // setActivePlan sets the given stored plan as the active plan and initializes its counters.
 func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
-	// TODO: Simplify this and make it fast with atomics
-	// 1) Copy desired per-node targets
-	desired := map[string]map[string]int{}
-	for rs, perNode := range sp.WkDesiredPerNode {
-		inner := make(map[string]int, len(perNode))
-		for n, want := range perNode {
-			inner[n] = want
-		}
-		desired[rs] = inner
+	// Fast exit: nothing to track
+	if sp == nil {
+		return
 	}
-	// 2) Current per RS/node + UID map
-	cur := map[string]map[string]int{}
-	podsByUID := map[string]*v1.Pod{}
-	if live, err := pl.getPods(); err == nil {
-		for _, p := range live {
-			podsByUID[string(p.UID)] = p
-			if wk, ok := topWorkload(p); ok && p.Spec.NodeName != "" {
-				key := wk.String()
-				if _, tracked := desired[key]; tracked {
-					if _, ok := cur[key]; !ok {
-						cur[key] = map[string]int{}
-					}
-					cur[key][p.Spec.NodeName]++
-				}
+
+	// --------------- Prepare bookkeeping sets ---------------
+	// Track only workloads present in the desired map.
+	desired := sp.WkDesiredPerNode // read-only while active
+	trackedWK := make(map[string]struct{}, len(desired))
+	for wk := range desired {
+		trackedWK[wk] = struct{}{}
+	}
+
+	// --------------- Single pass over current pods ---------------
+	pods, err := pl.getPods()
+	if err != nil {
+		klog.ErrorS(err, "setActivePlan: getPods failed; installing plan with empty counters")
+	}
+	// cur[wk][node] = count currently running that belong to tracked workloads
+	cur := make(map[string]map[string]int, len(desired))
+	// podsByUID is used to compute "plannedOut" from moves/evicts.
+	podsByUID := make(map[string]*v1.Pod, len(pods))
+	for _, p := range pods {
+		if p == nil || p.DeletionTimestamp != nil {
+			continue
+		}
+		podsByUID[string(p.UID)] = p
+		// Count only running workload pods that are part of tracked workloads
+		if p.Spec.NodeName == "" {
+			continue
+		}
+		if wk, ok := topWorkload(p); ok {
+			key := wk.String()
+			if _, tr := trackedWK[key]; !tr {
+				continue
 			}
+			m, ok := cur[key]
+			if !ok {
+				m = make(map[string]int, 2)
+				cur[key] = m
+			}
+			m[p.Spec.NodeName]++
 		}
 	}
-	// 3) planned OUT counts from plan doc
-	plannedOut := map[string]map[string]int{}
+
+	// --------------- Planned-out counts (from solver plan) ---------------
+	// plannedOut[wk][node] = how many will be removed from node by this plan
+	plannedOut := make(map[string]map[string]int, 8)
 	addOut := func(uid string) {
-		if p := podsByUID[uid]; p != nil {
-			if wk, ok := topWorkload(p); ok && p.Spec.NodeName != "" {
+		if p := podsByUID[uid]; p != nil && p.Spec.NodeName != "" {
+			if wk, ok := topWorkload(p); ok {
 				key := wk.String()
-				if _, tracked := desired[key]; !tracked {
+				if _, tr := trackedWK[key]; !tr {
 					return
 				}
-				if _, ok := plannedOut[key]; !ok {
-					plannedOut[key] = map[string]int{}
+				m, ok := plannedOut[key]
+				if !ok {
+					m = make(map[string]int, 1)
+					plannedOut[key] = m
 				}
-				plannedOut[key][p.Spec.NodeName]++
+				m[p.Spec.NodeName]++
 			}
 		}
 	}
@@ -1084,39 +1105,39 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 	for _, ev := range sp.Plan.Evicts {
 		addOut(ev.Pod.UID)
 	}
-	// 4) remaining = desired - current + plannedOut (>=0)
-	rem := map[string]map[string]int{}
-	for rs, perNode := range desired {
-		inner := map[string]int{}
+
+	// --------------- Remaining per workload/node ---------------
+	// remaining[wk][node] = max(0, want - have + out)
+	// want: how many are desired to be running on the node
+	// have: how many are currently running on the node
+	// out: how many will be removed from the node by this plan
+	remaining := make(WorkloadNodeCounters, len(desired))
+	for wk, perNode := range desired {
+		nodeMap := make(map[string]*atomic.Int32, len(perNode))
+		curWk := cur[wk]
+		outWk := plannedOut[wk]
 		for node, want := range perNode {
 			have := 0
-			if cur[rs] != nil {
-				have = cur[rs][node]
+			if curWk != nil {
+				have = curWk[node]
 			}
 			out := 0
-			if plannedOut[rs] != nil {
-				out = plannedOut[rs][node]
+			if outWk != nil {
+				out = outWk[node]
 			}
 			r := want - have + out
 			if r < 0 {
 				r = 0
 			}
-			inner[node] = r
-		}
-		rem[rs] = inner
-	}
-	// 5) atomics
-	counters := make(WorkloadNodeCounters, len(rem))
-	for rs, byNode := range rem {
-		inner := make(map[string]*atomic.Int32, len(byNode))
-		for node, v := range byNode {
 			ctr := new(atomic.Int32)
-			ctr.Store(int32(v))
-			inner[node] = ctr
+			ctr.Store(int32(r))
+			nodeMap[node] = ctr
 		}
-		counters[rs] = inner
+		remaining[wk] = nodeMap
 	}
-	// Cancel any previous plan
+
+	// --------------- Activate this plan (cancel old, start TTL watcher) ---------------
+	// Cancel any previous plan’s TTL context so its watcher exits.
 	if old := pl.getActivePlan(); old != nil && old.Cancel != nil {
 		old.Cancel()
 	}
@@ -1124,12 +1145,12 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 	ap := &ActivePlanState{
 		ID:        id,
 		PlanDoc:   sp,
-		Remaining: counters,
+		Remaining: remaining,
 		Ctx:       ctxPlan,
 		Cancel:    cancel,
 	}
 	pl.ActivePlan.Store(ap)
-	// Start a watcher tied to this plan only
+	// Start timeout watcher for *this* plan only.
 	go pl.watchPlanTimeout(ap)
 }
 
@@ -1406,37 +1427,40 @@ func buildDigestFromInput(in SolverInput) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// countNewAndTotalPods computes, from the live cluster view and the solver output:
-// pendingScheduled = # of currently-pending pods that got a placement in this plan
-// total  = (# running now) - (# running that will be evicted) + pendingScheduled
-// It does NOT need the batched pods list; it uses the shared informer lister.
-func (pl *MyCrossNodePreemption) countNewAndTotalPods(out *SolverOutput) (pendingScheduled, total int) {
+// countNewAndTotalPods computes from the live cluster view and the solver output:
+//
+//	pendingScheduled = # of currently-pending pods that got a placement in this plan
+//	totalPrePlan     = # of pods currently bound
+//	totalPostPlan    = runningNow - evicted + pendingScheduled
+func (pl *MyCrossNodePreemption) countNewAndTotalPods(out *SolverOutput) (pendingScheduled, totalPrePlan, totalPostPlan int) {
 	if out == nil {
-		return 0, 0
+		return 0, 0, 0
 	}
+	totalPrePlan = 0
+	pendingScheduled = 0
+	totalPostPlan = 0
 	pods, err := pl.getPods()
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	podsByUID := make(map[string]*v1.Pod, len(pods))
-	runningNow := 0
 	for _, p := range pods {
 		if p == nil || p.DeletionTimestamp != nil {
 			continue
 		}
 		podsByUID[string(p.UID)] = p
 		if p.Spec.NodeName != "" {
-			runningNow++
+			totalPrePlan++
 		}
 	}
-	// How many currently running will be evicted by this plan?
+	// Count pods that will be evicted
 	evicted := 0
 	for _, e := range out.Evictions {
 		if p := podsByUID[e.UID]; p != nil && p.DeletionTimestamp == nil && p.Spec.NodeName != "" {
 			evicted++
 		}
 	}
-	// How many currently pending get placed by this plan?
+	// Count pending pods that will be placed
 	for uid, node := range out.Placements {
 		if node == "" {
 			continue
@@ -1448,13 +1472,12 @@ func (pl *MyCrossNodePreemption) countNewAndTotalPods(out *SolverOutput) (pendin
 		if p.Spec.NodeName == "" { // pending -> will become running
 			pendingScheduled++
 		}
-		// Note: moves of already-running pods don’t change the running count.
 	}
-	total = runningNow - evicted + pendingScheduled
-	if total < 0 {
-		total = 0 // safety clamp
+	totalPostPlan = totalPrePlan - evicted + pendingScheduled
+	if totalPostPlan < 0 {
+		totalPostPlan = 0
 	}
-	return pendingScheduled, total
+	return pendingScheduled, totalPrePlan, totalPostPlan
 }
 
 // --------- Environment Variables Helpers ----------
