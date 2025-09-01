@@ -9,18 +9,14 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-func (pl *MyCrossNodePreemption) PostFilter(
-	ctx context.Context,
-	_ *framework.CycleState,
-	pending *v1.Pod,
-	_ framework.NodeToStatusMap,
-) (*framework.PostFilterResult, *framework.Status) {
-
+// PostFilter is called after filtering a pod.
+// It is a replacement for the default preemption with cross-node preemption logic implemented.
+// It catch all pods not handled by the default scheduling.
+func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	if pl.Active.Load() {
 		pl.Blocked.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 	}
-
 	_ = pl.pruneStaleSetEntries(pl.Blocked)
 
 	switch pl.decideStrategy(PhasePostFilter) {
@@ -52,6 +48,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 			return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: register plan failed")
 		}
 
+		// Return the result with the nominated node information which the scheduler will use to bind the pod.
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{
 				NominatedNodeName: res.Nominated,
@@ -63,6 +60,4 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		klog.Error("PostFilter: unexpected decision")
 		return nil, framework.NewStatus(framework.Error, "PostFilter: unexpected decision")
 	}
-
-	// unreachable
 }

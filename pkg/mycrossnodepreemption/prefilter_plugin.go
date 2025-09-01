@@ -18,6 +18,7 @@ var _ framework.PreFilterPlugin = &MyCrossNodePreemption{}
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
 // it is determined in Reserve plugin and will be retried again.
 func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	// Always allow kube-system pods
 	if pod.Namespace == "kube-system" {
 		return nil, framework.NewStatus(framework.Success)
 	}

@@ -9,16 +9,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// Only meaningful for ForEvery@PreEnqueue
+// This function is needed as if we activate all blocked pods at once
+// over and over again in onPlanSettled, we end up with a large waiting time in the queue.
 func (pl *MyCrossNodePreemption) idleNudgeBlockedLoop(ctx context.Context) {
-	// Only meaningful for ForEvery@PreEnqueue
-	// This function is needed as if we activate all blocked pods at once
-	// over and over again in onPlanSettled, we end up with a large waiting time.
 	if !optimizeForEvery() || !optimizeAtPreEnqueue() {
 		return
 	}
 	t := time.NewTicker(NudgeBlockedInterval)
 	defer t.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():

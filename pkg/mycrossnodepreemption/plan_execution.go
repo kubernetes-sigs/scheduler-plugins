@@ -13,6 +13,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// TODO:
 func (pl *MyCrossNodePreemption) registerPlan(
 	ctx context.Context,
 	out *SolverOutput,
@@ -61,8 +62,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	return plan, pl.getActivePlan(), nil
 }
 
-// derivePlan computes PlacementsByName (standalone pods) and WkDesiredPerNode (per-RS/node quotas)
-// from the solver placements and current live pods (+ pending).
+// TODO
 func (pl *MyCrossNodePreemption) derivePlan(
 	out *SolverOutput,
 	pending *v1.Pod, // may be nil in batch
@@ -109,6 +109,7 @@ func (pl *MyCrossNodePreemption) derivePlan(
 	return byName, rsDesired, nil
 }
 
+// TODO
 // Standalone pods are recreated without binding (Filter steers placement).
 // RS pods are recreated by their controllers.
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) error {
