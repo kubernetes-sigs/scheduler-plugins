@@ -178,7 +178,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) er
 		)
 	}
 
-	// 1) Evict all targeted pods and wait for them to disappear.
+	// Evict all targeted pods and wait for them to disappear.
 	if len(targets) > 0 {
 		klog.V(V2).InfoS("Evicting/awaiting eviction of targeted pods", "count", len(targets))
 		for _, p := range targets {
@@ -191,7 +191,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) er
 		}
 	}
 
-	// 2) Recreate standalone pods (controllers will recreate RS/SS/Job pods).
+	// Recreate standalone pods (controllers will recreate RS/SS/Job pods).
 	for _, p := range targets {
 		if _, owned := topWorkload(p); owned {
 			continue

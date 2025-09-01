@@ -591,21 +591,6 @@ func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)
 }
 
-func (pl *MyCrossNodePreemption) executePlanIfOps(ctx context.Context, plan *Plan) bool {
-	if plan == nil {
-		return false
-	}
-	if len(plan.Moves) == 0 && len(plan.Evicts) == 0 {
-		return false
-	}
-	if err := pl.executePlan(ctx, plan); err != nil {
-		klog.ErrorS(err, "Plan execution failed")
-		pl.onPlanSettled()
-		return false
-	}
-	return true
-}
-
 func (pl *MyCrossNodePreemption) allowedByActivePlan(pod *v1.Pod) bool {
 	ap := pl.getActivePlan()
 	if ap == nil || ap.PlanDoc.Completed {
@@ -857,6 +842,8 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 }
 
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
+// Mode: For-every: Single preemptor pod bound to target node (A), and all other pods in place (B, C)
+// Mode: In-batches: All pods bound to target nodes (only B,C).
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan, pod *v1.Pod) (bool, error) {
 	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
 	ok, err := pl.waitPendingBoundInCache(ctx, pod)
@@ -868,7 +855,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 		return false, nil
 	}
 
-	// A) Pending/preemptor pod bound to target node
+	// A) Single preemptor pod bound to target node
 	if sp.TargetNode != "" && sp.PendingPod != "" {
 		pns, pname := splitNamespaceName(sp.PendingPod)
 		preemptor, err := podLister.Pods(pns).Get(pname)

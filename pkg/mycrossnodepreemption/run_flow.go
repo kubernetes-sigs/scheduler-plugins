@@ -122,15 +122,20 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		return nil, ErrRegisterPlan
 	}
 
-	_ = pl.executePlanIfOps(ctx, plan)
+	// Only execute if there are moves or evicts
+	if plan != nil && (len(plan.Moves) > 0 || len(plan.Evicts) > 0) {
+		if err := pl.executePlan(ctx, plan); err != nil {
+			klog.ErrorS(err, "Plan execution failed")
+			pl.onPlanSettled()
+		}
+	}
 
-	// ---------- Batch bookkeeping ----------
 	if phase == PhaseBatch {
 		pl.activateBatchedPods(batchedPods, 0)
 	}
 
 	if pendingScheduled == 0 {
-		klog.InfoS(string(phase) + ": no pending pods scheduled by plan")
+		klog.InfoS(string(phase) + ": no pending pods scheduled; completing immediately")
 		pl.onPlanSettled()
 	}
 

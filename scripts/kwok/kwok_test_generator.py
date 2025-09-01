@@ -14,8 +14,8 @@ from kwok_shared import (
     ensure_namespace, create_kwok_nodes, delete_kwok_nodes, ensure_priority_classes,
     yaml_kwok_pod, yaml_kwok_rs, apply_yaml, cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
     compute_stat_totals, stat_snapshot, check_context, set_context,
+    get_json_ctx, sum_pod_requests, bytes_to_mib,
 )
-
 @dataclass
 class TestTargets:
     node_mc: int
@@ -127,6 +127,71 @@ class KwokTestGeneratorRunner:
         self.cpu_int = parse_cpu_interval(args.cpu_interval)
         self.mem_int = parse_mem_interval(args.mem_interval)
 
+    def _collect_pair_buckets(self, ns: str, mode_rs: bool) -> dict[tuple[int,int], list[str]]:
+        """
+        mode_rs=True  -> collect RS template (cpu_m, mem_mi) -> [rs_name...]
+        mode_rs=False -> collect standalone pod (cpu_m, mem_mi) -> [pod_name...]
+        """
+        buckets: dict[tuple[int,int], list[str]] = {}
+
+        if mode_rs:
+            rs_items = get_json_ctx(self.ctx, ["-n", ns, "get", "replicasets", "-o", "json"]).get("items", [])
+            for rs in rs_items:
+                name = (rs.get("metadata") or {}).get("name", "<nors>")
+                tpl = (rs.get("spec") or {}).get("template") or {}
+                containers = ((tpl.get("spec") or {}).get("containers") or [])
+                mc_sum = 0
+                mi_sum = 0
+                for c in containers:
+                    req = ((c.get("resources") or {}).get("requests") or {})
+                    mc_sum += cpu_m_str_to_int(str(req.get("cpu", "0")))
+                    mi_sum += mem_str_to_mib_int(str(req.get("memory", "0")))
+                pair = (int(mc_sum), int(mi_sum))
+                buckets.setdefault(pair, []).append(name)
+            return buckets
+
+        # standalone pods
+        pods = get_json_ctx(self.ctx, ["-n", ns, "get", "pods", "-o", "json"]).get("items", [])
+        for p in pods:
+            owners = (p.get("metadata", {}).get("ownerReferences") or [])
+            if any(o.get("controller") for o in owners):
+                continue  # skip controller-owned pods
+            name = (p.get("metadata") or {}).get("name", "<noname>")
+            mc, mem_b = sum_pod_requests(p)             # (mCPU, bytes)
+            pair = (int(mc), int(bytes_to_mib(mem_b)))  # normalize to (mCPU, MiB)
+            buckets.setdefault(pair, []).append(name)
+        return buckets
+
+
+    def _assert_unique_pairs_after_apply(self) -> None:
+        """
+        Fail the run if any (CPU_m, MEM_Mi) duplicates exist:
+        - RS mode: check RS templates
+        - Standalone mode: check pods without a controller owner
+        """
+        dup_msgs = []
+        # RS mode?
+        if self.args.num_replicaset > 0:
+            buckets = self._collect_pair_buckets(self.ns, mode_rs=True)
+            label = "RS template duplicate"
+        else:
+            buckets = self._collect_pair_buckets(self.ns, mode_rs=False)
+            label = "Standalone duplicate"
+
+        for pair, names in buckets.items():
+            if len(names) > 1:
+                dup_msgs.append(f"{label} {pair}: {', '.join(sorted(names))}")
+
+        if dup_msgs:
+            print("\n[check][FAIL] Found duplicate (CPU_m, MEM_Mi) pairs:")
+            for line in dup_msgs[:50]:
+                print(" - " + line)
+            if len(dup_msgs) > 50:
+                print(f"   ... and {len(dup_msgs)-50} more")
+            sys.exit(3)
+        else:
+            print("[check] Uniqueness OK: no duplicate (CPU_m, MEM_Mi) pairs")
+
     def _save_seed_row(self, path: str, row: dict) -> None:
         """
         Save a specific instance row to the seed file.
@@ -216,6 +281,37 @@ class KwokTestGeneratorRunner:
             offset += count
         return total_created, {len(rs_replicas)}
     
+    def _print_outcome_and_snapshot(ctx: str, ns: str, args, outcome: str, info: dict) -> None:
+        """
+        Shared tail: print outcome details + resource snapshot.
+        """
+        # Unsched list (if any)
+        unsched_list = info.get("unschedulable", []) if outcome == "some_unschedulable" else []
+        if unsched_list:
+            print(f"[check] Unschedulable pods ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
+                f"{' ...' if len(unsched_list) > 20 else ''}")
+
+        # Snapshot
+        time.sleep(1)
+        snap = stat_snapshot(ctx)
+        tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
+            snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
+        )
+        cpu_run = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
+        mem_run = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+        cpu_all = (snap.cpu_req_all / tot_cpu_alloc) if tot_cpu_alloc else 0.0
+        mem_all = (snap.mem_req_all / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+
+        print(f"[check] run_util: cpu={cpu_run*100:.1f}% mem={mem_run*100:.1f}% | "
+            f"all_util: cpu={cpu_all*100:.1f}% mem={mem_all*100:.1f}% | "
+            f"target={args.target_util*100:.1f}%±{args.target_util_tolerance*100:.1f}%")
+
+        # Per-node pods (only in normal mode where we know num_nodes)
+        nodes = [f"kwok-node-{i}" for i in range(1, getattr(args, "num_nodes", 0) + 1)]
+        if nodes:
+            per_node = pods_per_node_in_ns(ctx, ns, nodes)
+            print(f"[check] pods/node: {per_node}")
+    
     def setup_cluster(self) -> None:
         """
         Set up the cluster by creating the necessary nodes and ensuring intervals.
@@ -261,6 +357,7 @@ class KwokTestGeneratorRunner:
             if desired == "all_scheduled" and outcome != "all_scheduled":
                 print(f"[sim] failed; outcome='{outcome}' != desired='{desired}' — discarding seed and retrying…")
                 continue
+            self._assert_unique_pairs_after_apply()
 
             unsched_list = info.get("unschedulable", []) if outcome == "some_unschedulable" else []
             scheduled = count_scheduled_in_ns(self.ctx, self.ns)
@@ -272,21 +369,18 @@ class KwokTestGeneratorRunner:
             print(f"[sim] ✓ succeeded; outcome='{outcome}' == desired='{desired}' (outcome='{outcome}', unschedulable={len(unsched_list)})")
             
             # snapshot (running vs total incl. unscheduled)
-            try:
-                time.sleep(0.5)
-                snap = stat_snapshot(self.ctx)
-                tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
-                    snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
-                )
-                cpu_util_run = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
-                mem_util_run = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
-                cpu_util_all = (snap.cpu_req_all / tot_cpu_alloc) if tot_cpu_alloc else 0.0
-                mem_util_all = (snap.mem_req_all / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+            time.sleep(1)
+            snap = stat_snapshot(self.ctx)
+            tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
+                snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
+            )
+            cpu_util_run = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
+            mem_util_run = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+            cpu_util_all = (snap.cpu_req_all / tot_cpu_alloc) if tot_cpu_alloc else 0.0
+            mem_util_all = (snap.mem_req_all / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
 
-                print(f"[sim] cpu_run={cpu_util_run*100:.2f} mem_run={mem_util_run*100:.2f} "
-                    f"cpu_all={cpu_util_all*100:.2f} mem_all={mem_util_all*100:.2f}")
-            except Exception:
-                pass
+            print(f"[sim] cpu_run={cpu_util_run*100:.2f} mem_run={mem_util_run*100:.2f} "
+                f"cpu_all={cpu_util_all*100:.2f} mem_all={mem_util_all*100:.2f}")
             
             row = OrderedDict()
             row["timestamp"] = int(time.time())
@@ -351,8 +445,14 @@ class KwokTestGeneratorRunner:
             print("[check] All pods scheduled successfully")
         else:
             print("[check] Monitoring ended inconclusive")
+        
+        unsched_list = info.get("unschedulable", []) if outcome == "some_unschedulable" else []
+        if unsched_list:
+            print(f"[sim] Unschedulable pods ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
+                  f"{' ...' if len(unsched_list) > 20 else ''}")
 
         # --- metrics snapshot (running vs total incl. unscheduled) ---
+        time.sleep(1)
         snap = stat_snapshot(self.ctx)
         tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
             snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
@@ -369,6 +469,7 @@ class KwokTestGeneratorRunner:
         print(f"[check] run_util: cpu={cpu_util_run*100:.1f}% mem={mem_util_run*100:.1f}% | "
             f"all_util: cpu={cpu_util_all*100:.1f}% mem={mem_util_all*100:.1f}% | "
             f"target={self.args.target_util*100:.1f}%±{tol*100:.1f}%")
+        self._assert_unique_pairs_after_apply()
         print(f"[check] pods/node: {per_node} (target {self.args.pods_per_node} each)")
 
 def main():

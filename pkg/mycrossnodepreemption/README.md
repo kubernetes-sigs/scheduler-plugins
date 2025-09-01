@@ -35,10 +35,7 @@ TODO
 ## TODOs Plugin
 
 - Do not print "ContinuousLoop: plan execution finished" if no operation.
-- Improve on this error: "solver failed (e.g. no feasible/improved solution)"
 - Ensure all pods/RS are different sizes to avoid potential tie breaks.
-- Remove context from functions where it isnt needed.
-- Check that plugin still works for standalone pods.
 - Try to remove all client calls and use informers/listers instead.
 - Fast heuristic algorithm which runs in front of solver. So the solver needs to improve on that.
 - Cleanup code, structs and make the configmap more efficient
