@@ -34,9 +34,12 @@ TODO
 
 ## TODOs Plugin
 
-- Be careful when to take cluster state
-- Make use of design patterns where possible.
+- Fix/test the digest issue.
+- Write about that the OptimizeForEvery@PreEnqueue can not be deterministic as we do not determine which order the pods are taken. But maybe we should implemnt some logic to control it.
+- Be careful when to take cluster stats
 - Fast heuristic algorithm which runs in front of solver. So the solver needs to improve on that.
+- Fix TODOs
+- Make use of design patterns where possible.
 - Cleanup code, structs and make the configmap more efficient
 
 ## Later TODOs
