@@ -9,7 +9,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 )
@@ -119,26 +118,20 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, plan *Plan) er
 		ctxPlan = ap.Ctx
 	}
 
-	// Resolve pods for all ops upfront (by UID) so we can evict/recreate correctly.
-	lister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-
 	resolve := func(uid, ns, name string) *v1.Pod {
-		// 1) Fast path: informer lister by name, then verify UID
-		if p, err := lister.Pods(ns).Get(name); err == nil && p != nil && string(p.UID) == uid {
+		l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+		if p, err := l.Pods(ns).Get(name); err == nil && p != nil && string(p.UID) == uid {
 			return p
 		}
-		// 2) Fallback: list namespace from lister and match by UID (handles name reuse)
-		if pods, err := lister.Pods(ns).List(labels.Everything()); err == nil {
+		// name reused or not yet in name index — fall back to LIST (still cached)
+		if pods, err := l.Pods(ns).List(labels.Everything()); err == nil {
 			for _, p := range pods {
 				if string(p.UID) == uid {
 					return p
 				}
 			}
 		}
-		// 3) Last resort: direct GET by name and check UID
-		if p, err := pl.Client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{}); err == nil && p != nil && string(p.UID) == uid {
-			return p
-		}
+		// no live fallback; treat as unavailable
 		return nil
 	}
 

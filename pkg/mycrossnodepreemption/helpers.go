@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
@@ -153,44 +152,37 @@ func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) erro
 	return pl.Client.CoreV1().Pods(pod.Namespace).EvictV1(ctx, ev)
 }
 
-// TODO: Replace client calls with informers
 func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 	if len(pods) == 0 {
 		return nil
 	}
 
 	type key struct{ ns, name, uid string }
-	remaining := make(map[key]struct{}, len(pods))
+	rem := make(map[key]struct{}, len(pods))
 	for _, p := range pods {
-		remaining[key{ns: p.Namespace, name: p.Name, uid: string(p.UID)}] = struct{}{}
+		rem[key{ns: p.Namespace, name: p.Name, uid: string(p.UID)}] = struct{}{}
 	}
 
-	// Use context's deadline if any, else default to 2m
-	// TODO: make this better, remove client calls and improve time settings
+	l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
 	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		if len(remaining) == 0 {
+		if len(rem) == 0 {
 			return true, nil
 		}
-		for k := range remaining {
-			got, err := pl.Client.CoreV1().Pods(k.ns).Get(ctx, k.name, metav1.GetOptions{})
+		for k := range rem {
+			p, err := l.Pods(k.ns).Get(k.name)
 			if apierrors.IsNotFound(err) {
-				delete(remaining, k)
+				delete(rem, k)
 				continue
 			}
 			if err != nil {
-				// transient error: keep polling
+				// lister hiccup; keep polling (no live fallback)
 				return false, nil
 			}
-			if string(got.UID) != k.uid {
-				// name reused; original is gone
-				delete(remaining, k)
+			if string(p.UID) != k.uid || p.DeletionTimestamp != nil {
+				delete(rem, k)
 			}
 		}
-		if len(remaining) == 0 {
-			return true, nil
-		}
-		klog.V(V2).InfoS("Waiting for targeted pods to disappear", "remaining", len(remaining))
-		return false, nil
+		return len(rem) == 0, nil
 	})
 }
 
@@ -516,29 +508,36 @@ func workloadEqual(a, b WorkloadKey) bool {
 	return a.Kind == b.Kind && a.Namespace == b.Namespace && a.Name == b.Name
 }
 
-// TODO: Replace client calls with informers
-func workloadSelector(ctx context.Context, cli kubernetes.Interface, wk WorkloadKey) (metav1.LabelSelector, error) {
+func (pl *MyCrossNodePreemption) workloadSelector(wk WorkloadKey) (metav1.LabelSelector, error) {
 	switch wk.Kind {
 	case wkReplicaSet:
-		rs, err := cli.AppsV1().ReplicaSets(wk.Namespace).Get(ctx, wk.Name, metav1.GetOptions{})
+		rs, err := pl.Handle.SharedInformerFactory().
+			Apps().V1().ReplicaSets().Lister().
+			ReplicaSets(wk.Namespace).Get(wk.Name)
 		if err != nil {
 			return metav1.LabelSelector{}, err
 		}
 		return *rs.Spec.Selector, nil
 	case wkStatefulSet:
-		ss, err := cli.AppsV1().StatefulSets(wk.Namespace).Get(ctx, wk.Name, metav1.GetOptions{})
+		ss, err := pl.Handle.SharedInformerFactory().
+			Apps().V1().StatefulSets().Lister().
+			StatefulSets(wk.Namespace).Get(wk.Name)
 		if err != nil {
 			return metav1.LabelSelector{}, err
 		}
 		return *ss.Spec.Selector, nil
 	case wkDaemonSet:
-		ds, err := cli.AppsV1().DaemonSets(wk.Namespace).Get(ctx, wk.Name, metav1.GetOptions{})
+		ds, err := pl.Handle.SharedInformerFactory().
+			Apps().V1().DaemonSets().Lister().
+			DaemonSets(wk.Namespace).Get(wk.Name)
 		if err != nil {
 			return metav1.LabelSelector{}, err
 		}
 		return *ds.Spec.Selector, nil
 	case wkJob:
-		job, err := cli.BatchV1().Jobs(wk.Namespace).Get(ctx, wk.Name, metav1.GetOptions{})
+		job, err := pl.Handle.SharedInformerFactory().
+			Batch().V1().Jobs().Lister().
+			Jobs(wk.Namespace).Get(wk.Name)
 		if err != nil {
 			return metav1.LabelSelector{}, err
 		}
@@ -547,7 +546,7 @@ func workloadSelector(ctx context.Context, cli kubernetes.Interface, wk Workload
 		}
 		return metav1.LabelSelector{MatchLabels: job.Spec.Template.Labels}, nil
 	default:
-		return metav1.LabelSelector{}, fmt.Errorf("unsupported workload kind for selector: %v", wk.Kind)
+		return metav1.LabelSelector{}, fmt.Errorf("unsupported workload kind: %v", wk.Kind)
 	}
 }
 
@@ -898,7 +897,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 
 		// We still need the owner selector (from the API objects); you can keep this client call,
 		// or cache selectors elsewhere if you prefer.
-		lblSel, err := workloadSelector(ctx, pl.Client, wk)
+		lblSel, err := pl.workloadSelector(wk)
 		if err != nil {
 			return false, fmt.Errorf("selector for %s: %w", wk.String(), err)
 		}
@@ -951,52 +950,62 @@ func (pl *MyCrossNodePreemption) clearActivePlan() {
 }
 
 // listPlans returns newest-first plan ConfigMaps found by label.
-func (pl *MyCrossNodePreemption) listPlans(ctx context.Context) ([]v1.ConfigMap, error) {
-	lst, err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).List(
-		ctx,
-		metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("%s=%s", PlanConfigMapLabelKey, "true"),
-		},
-	)
+func (pl *MyCrossNodePreemption) listPlans(_ context.Context) ([]v1.ConfigMap, error) {
+	sel := labels.SelectorFromSet(labels.Set{PlanConfigMapLabelKey: "true"})
+	l := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(PlanConfigMapNamespace)
+
+	items, err := l.List(sel)
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(lst.Items, func(i, j int) bool {
-		return lst.Items[i].CreationTimestamp.Time.After(lst.Items[j].CreationTimestamp.Time)
+
+	out := make([]v1.ConfigMap, len(items))
+	for i := range items {
+		out[i] = *items[i].DeepCopy()
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreationTimestamp.Time.After(out[j].CreationTimestamp.Time)
 	})
-	return lst.Items, nil
+	return out, nil
 }
 
 // markPlanCompleted sets Completed=true in json (i.e. not active plan).
 func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName string) {
 	_ = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cm, err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).Get(ctx, cmName, metav1.GetOptions{})
+		l := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().
+			Lister().ConfigMaps(PlanConfigMapNamespace)
+		cm, err := l.Get(cmName)
 		if apierrors.IsNotFound(err) || cm == nil {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
+
 		raw := cm.Data["plan.json"]
 		if raw == "" {
 			return nil
 		}
+
 		var sp StoredPlan
 		if err := json.Unmarshal([]byte(raw), &sp); err != nil {
 			klog.ErrorS(err, "markPlanCompleted: cannot decode plan.json", "configMap", cmName)
 			return nil
 		}
-		if !sp.Completed {
-			now := time.Now().UTC()
-			sp.Completed = true
-			sp.CompletedAt = &now
-			b, _ := json.MarshalIndent(&sp, "", "  ")
-			patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
-			_, err = pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
-				Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
-			return err
+		if sp.Completed {
+			return nil
 		}
-		return nil
+
+		now := time.Now().UTC()
+		sp.Completed = true
+		sp.CompletedAt = &now
+		b, _ := json.MarshalIndent(&sp, "", "  ")
+		patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
+
+		// write still goes to API server (required)
+		_, err = pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
+			Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
+		return err
 	})
 
 	if err := pl.pruneOldPlans(context.Background(), 20); err != nil {
@@ -1255,28 +1264,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, preemptor *v1.
 		return SolverInput{}, fmt.Errorf("unknown solve mode")
 	}
 
-	// If zero Ready/usable nodes were seen via snapshot, poll snapshot briefly and try again.
-	// TODO: make this better
-	if len(in.Nodes) == 0 {
-		klog.InfoS("buildSolverInput: zero usable nodes via snapshot; waiting for nodes to become Ready")
-		const maxWait = 10 * time.Second
-		const step = 2 * time.Second
-		time.Sleep(step)
-		deadline := time.Now().Add(maxWait)
-
-		for time.Now().Before(deadline) && len(in.Nodes) == 0 {
-			in.Nodes = in.Nodes[:0]
-			in.Pods = in.Pods[:0]
-			if err := pl.fillFromFactory(&in, preemptor, batched, false); err != nil {
-				klog.V(3).InfoS("retry snapshot fill failed", "err", err)
-			}
-			if len(in.Nodes) > 0 {
-				break
-			}
-			time.Sleep(step)
-		}
-	}
-
+	// If zero Ready/usable nodes, we need to wait for them to become available.
 	if len(in.Nodes) == 0 {
 		return SolverInput{}, fmt.Errorf("no usable Ready nodes available (snapshot)")
 	}

@@ -35,7 +35,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		_ = pl.pruneStaleSetEntries(pl.Batched)
 		batchedPods = pl.snapshotBatch()
 		if len(batchedPods) == 0 {
-			klog.InfoS(string(phase) + ": nothing to do")
+			klog.InfoS(string(phase) + ": no batched pod(s) to schedule")
 			pl.leaveActive()
 			return nil, ErrNoop
 		}
@@ -63,6 +63,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	if err != nil {
 		pl.leaveActive()
 		if out != nil {
+			// Print baseline and score for debugging
+			klog.InfoS("Solver output", "baseline", baseline, "score", out.Score)
 			if !IsSolverFeasible(out) {
 				klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal or feasible solution")
 				return nil, ErrNoOptimalOrFeasible
@@ -102,7 +104,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Count new and total pods ----------
-	pendingScheduled, total := pl.countNewAndTotalPods(out)
+	pendingScheduled, oldTotal := pl.countNewAndTotalPods(out)
 
 	// ---------- Register + execute plan ----------
 	var plan *Plan
@@ -122,6 +124,12 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		return nil, ErrRegisterPlan
 	}
 
+	if pendingScheduled == 0 {
+		klog.InfoS(string(phase) + ": no pending pod(s) to be scheduled; skipping")
+		pl.onPlanSettled()
+		return nil, ErrNoop
+	}
+
 	// Only execute if there are moves or evicts
 	if plan != nil && (len(plan.Moves) > 0 || len(plan.Evicts) > 0) {
 		if err := pl.executePlan(ctx, plan); err != nil {
@@ -134,22 +142,17 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		pl.activateBatchedPods(batchedPods, 0)
 	}
 
-	if pendingScheduled == 0 {
-		klog.InfoS(string(phase) + ": no pending pods scheduled; completing immediately")
-		pl.onPlanSettled()
-	}
-
 	res := &FlowResult{
-		PlanID:           "",
-		Nominated:        "",
-		BatchSize:        len(batchedPods),
-		Moves:            0,
-		Evicts:           0,
-		PendingScheduled: pendingScheduled,
-		TotalPods:        total,
-		SolverStatus:     "",
-		TotalDuration:    time.Since(start),
-		SolverDuration:   solverDur,
+		PlanID:         "",
+		Nominated:      "",
+		BatchSize:      len(batchedPods),
+		Moves:          0,
+		Evicts:         0,
+		NewTotalPods:   oldTotal + pendingScheduled,
+		OldTotalPods:   oldTotal,
+		SolverStatus:   "",
+		TotalDuration:  time.Since(start),
+		SolverDuration: solverDur,
 	}
 	if ap != nil {
 		res.PlanID = ap.ID
@@ -163,14 +166,14 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		res.Evicts = len(plan.Evicts)
 	}
 
-	klog.InfoS(string(phase)+": plan execution finished",
+	klog.InfoS(string(phase)+": plan execution finished; waiting for settlement",
 		"planID", res.PlanID,
 		"nominated", res.Nominated,
 		"batchSize", res.BatchSize,
 		"moves", res.Moves,
 		"evicts", res.Evicts,
-		"pendingScheduled", res.PendingScheduled,
-		"totalPods", res.TotalPods,
+		"newTotalPods", res.NewTotalPods,
+		"oldTotalPods", res.OldTotalPods,
 		"solverStatus", res.SolverStatus,
 		"totalDuration", res.TotalDuration,
 		"solverDuration", res.SolverDuration,

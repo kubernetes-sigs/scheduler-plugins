@@ -4,6 +4,7 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -27,13 +28,42 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		Batched: newPodSet(),
 	}
 
-	// Ensure the Pod informer has the namespace index
-	podInf := h.SharedInformerFactory().Core().V1().Pods().Informer()
-	if err := podInf.AddIndexers(cache.Indexers{
+	f := h.SharedInformerFactory()
+
+	podsInf := f.Core().V1().Pods().Informer()
+	if err := podsInf.AddIndexers(cache.Indexers{
 		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
 	}); err != nil {
 		klog.ErrorS(err, "failed adding namespace indexer to Pod informer")
 	}
+
+	// warm informers (no Start/Wait here!)
+	nodesInf := f.Core().V1().Nodes().Informer()
+	cmsInf := f.Core().V1().ConfigMaps().Informer()
+	rsInf := f.Apps().V1().ReplicaSets().Informer()
+	ssInf := f.Apps().V1().StatefulSets().Informer()
+	dsInf := f.Apps().V1().DaemonSets().Informer()
+	jobInf := f.Batch().V1().Jobs().Informer()
+
+	go func() {
+		if cache.WaitForCacheSync(ctx.Done(),
+			podsInf.HasSynced, nodesInf.HasSynced, cmsInf.HasSynced,
+			rsInf.HasSynced, ssInf.HasSynced, dsInf.HasSynced, jobInf.HasSynced,
+		) {
+			if CacheWarmupDelay > 0 {
+				klog.InfoS("Cache warm-up delay", "duration", CacheWarmupDelay)
+				select {
+				case <-time.After(CacheWarmupDelay):
+				case <-ctx.Done():
+					return
+				}
+			}
+			pl.CachesWarm.Store(true)
+			klog.InfoS("Caches marked ready")
+		} else {
+			klog.InfoS("Cache sync aborted (context done)")
+		}
+	}()
 
 	pl.Active.Store(false)
 

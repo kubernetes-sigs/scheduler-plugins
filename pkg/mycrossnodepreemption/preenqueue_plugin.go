@@ -10,10 +10,15 @@ import (
 )
 
 func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *framework.Status {
-
 	if pod.Namespace == "kube-system" {
 		return framework.NewStatus(framework.Success)
 	}
+
+	if !pl.CachesWarm.Load() {
+		klog.V(V2).Info("Caches not warmed up yet; skipping plugin logic")
+		return framework.NewStatus(framework.Pending, "Caches not warmed up yet; skipping plugin logic")
+	}
+
 	_ = pl.pruneStaleSetEntries(pl.Blocked)
 
 	switch pl.decideStrategy(PhasePreEnqueue) {

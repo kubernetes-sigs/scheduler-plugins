@@ -34,9 +34,8 @@ TODO
 
 ## TODOs Plugin
 
-- Do not print "ContinuousLoop: plan execution finished" if no operation.
-- Ensure all pods/RS are different sizes to avoid potential tie breaks.
-- Try to remove all client calls and use informers/listers instead.
+- Be careful when to take cluster state
+- Make use of design patterns where possible.
 - Fast heuristic algorithm which runs in front of solver. So the solver needs to improve on that.
 - Cleanup code, structs and make the configmap more efficient
 
@@ -48,6 +47,7 @@ TODO
 
 - Write something about watchdogTTL
 - Write something about the snapshotlister that it lags one scheduling cycle.
+- Write about cache calls instead of client calls. Faster and better. https://pkg.go.dev/k8s.io/client-go/tools/cache
 - Write about deletion-cost and that it is hard to evict the right workload-owned pods, therefore I found the new eviction API.
 - Write about QueuingHints and that I end up using Pod Activator for reschedule queued pods.
 - Write about atomics and we only use configmap for debugging.

@@ -17,7 +17,7 @@ func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context, phase
 	defer timer.Stop()
 
 	label := string(phase)
-	klog.InfoS(label+": first run scheduled", "in(s)", firstDelay)
+	klog.InfoS(label+": first run scheduled", "in", firstDelay)
 
 	for {
 		select {
@@ -26,11 +26,16 @@ func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context, phase
 		case <-timer.C:
 			klog.InfoS(label + ": cycle started")
 
+			if !pl.CachesWarm.Load() {
+				klog.InfoS(label+": caches not warmed up yet; skipping", "nextTryIn", interval)
+				continue
+			}
+
 			// no singlePod in periodic modes
 			_, _ = pl.runFlow(context.Background(), phase, nil)
 
 			timer.Reset(interval)
-			klog.InfoS(label+": next run", "in(s)", interval)
+			klog.InfoS(label+": next run", "in", interval)
 		}
 	}
 }

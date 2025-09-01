@@ -20,6 +20,7 @@ type MyCrossNodePreemption struct {
 	ActivePlan atomic.Pointer[ActivePlanState]
 	Blocked    *PodSet
 	Batched    *PodSet
+	CachesWarm atomic.Bool
 }
 
 var (
@@ -32,6 +33,8 @@ var (
 	ErrNoOptimalOrFeasible = errors.New("no optimal or feasible solution")
 	ErrNoop                = errors.New("no operation")
 )
+
+const CacheWarmupDelay = 1 * time.Second
 
 const (
 	// Deployment and CronJob are handled otherwise
@@ -93,7 +96,7 @@ type FlowResult struct {
 	Nominated                     string
 	BatchSize                     int
 	Moves, Evicts                 int
-	PendingScheduled, TotalPods   int
+	OldTotalPods, NewTotalPods    int
 	SolverStatus                  string
 	TotalDuration, SolverDuration time.Duration
 }
