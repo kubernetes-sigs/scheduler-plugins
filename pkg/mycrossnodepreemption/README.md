@@ -32,10 +32,11 @@ TODO
 
 ## TODOs Plugin
 
+- Improve fast solver.
 - Check SDU contract
 - Not sure my plugin will work if a pod is removed during plan execution
-- Fix/test the digest issue.
-- Be careful when to take cluster stats
+  - Standalone pods deleted externally (not by your plan): You only recreate standalone pods that you evicted/targeted (they’re in targets). If a standalone you intended to move was deleted by someone else before you “resolve” it, it won’t end up in targets, so you won’t recreate it. Result: the “by name” check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.
+  - A workload is scaled down during the plan: Your completion check for workload quotas requires the desired counts to materialize. If the controller scaled down and won’t create more pods, the quotas won’t be consumed and the plan will sit “in progress” until the plan TTL cancels it.
 - Fix TODOs
 - Make use of design patterns where possible.
 - Cleanup code, structs.
