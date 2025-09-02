@@ -244,7 +244,7 @@ def solve(instance: dict) -> dict:
     
     # ------------------------ solve (two modes) -------------------------
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = max(0.05, timeout_ms / 1000.0)
+    solver.parameters.max_time_in_seconds = max(1, timeout_ms / 1000.0)
     solver.parameters.num_search_workers  = max(1, workers)
     solver.parameters.log_search_progress       = log_progress
     solver.parameters.log_subsolver_statistics  = log_subsolvers

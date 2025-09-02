@@ -94,7 +94,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// 2) Python solver (only keep if it improves over heuristic)
 	if SolverPythonEnabled {
 		ctxSolve, cancel := context.WithTimeout(ctx, SolverPythonTimeout)
-		in0.TimeoutMs = SolverPythonTimeout.Milliseconds()
+		in0.TimeoutMs = SolverPythonTimeout.Milliseconds() - 200 // substract 200 ms to let the solver be able to return a feasible result.
 		pyOut, pyErr := pl.runSolver(ctxSolve, in0)
 		cancel()
 		pyFeasible = pyErr == nil && IsSolverFeasible(pyOut)
@@ -174,8 +174,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		return nil, ErrNoImprovement
 	}
 
-	// ---------- Digest recheck (cluster drift between build and apply) ----------
-	// TODO_HC: digest mismatches occur when running Every mode, possibly due to many changes in short timeframe; or too strict digest checks
+	// Digest recheck when in continuous mode to detect cluster drift between building -> solving -> applying.
+	// Applying needs to be at the same state as when we take the digest (cluster state).
 	if phase == PhaseContinuous {
 		_, _, d1, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods)
 		if err != nil {
