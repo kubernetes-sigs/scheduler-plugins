@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
@@ -111,6 +112,30 @@ func modeToString() string {
 		b = "PostFilter"
 	}
 	return fmt.Sprintf("%s/%s", a, b)
+}
+
+// ---------- Cache Helpers ----------------
+
+func (pl *MyCrossNodePreemption) WaitForInformersSynced(ctx context.Context, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf cache.SharedIndexInformer) {
+	if cache.WaitForCacheSync(ctx.Done(),
+		podsInf.HasSynced, nodesInf.HasSynced, cmsInf.HasSynced,
+		rsInf.HasSynced, ssInf.HasSynced, dsInf.HasSynced, jobInf.HasSynced,
+	) {
+		if CacheWarmupAfterDelay > 0 {
+			klog.InfoS("Cache warm-up delay", "duration", CacheWarmupAfterDelay)
+			select {
+			case <-time.After(CacheWarmupAfterDelay):
+			case <-ctx.Done():
+				// Activate the pods we have blocked while waiting
+				pl.activateBlockedPods(0)
+				return
+			}
+		}
+		pl.CachesWarm.Store(true)
+		klog.InfoS("Caches marked ready")
+	} else {
+		klog.InfoS("Cache sync aborted (context done)")
+	}
 }
 
 // ---------- Objects Helpers --------------
