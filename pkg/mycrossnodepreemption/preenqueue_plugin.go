@@ -17,6 +17,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 	}
 
 	if !pl.CachesWarm.Load() {
+		pl.Blocked.AddPod(pod)
 		klog.V(V2).Info("Caches not warmed up yet; skipping plugin logic")
 		return framework.NewStatus(framework.Pending, "Caches not warmed up yet; skipping plugin logic")
 	}

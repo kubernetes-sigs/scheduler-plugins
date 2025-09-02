@@ -116,23 +116,49 @@ func modeToString() string {
 
 // ---------- Cache Helpers ----------------
 
-func (pl *MyCrossNodePreemption) WaitForInformersSynced(ctx context.Context, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf cache.SharedIndexInformer) {
+func (pl *MyCrossNodePreemption) WaitForInformersSynced(
+	ctx context.Context,
+	podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf cache.SharedIndexInformer,
+) {
 	if cache.WaitForCacheSync(ctx.Done(),
 		podsInf.HasSynced, nodesInf.HasSynced, cmsInf.HasSynced,
 		rsInf.HasSynced, ssInf.HasSynced, dsInf.HasSynced, jobInf.HasSynced,
 	) {
-		if CacheWarmupSettleDelay > 0 {
-			klog.InfoS("Cache warm-up delay", "duration", CacheWarmupSettleDelay)
+		t := time.NewTicker(200 * time.Millisecond)
+		defer t.Stop()
+
+		for {
 			select {
-			case <-time.After(CacheWarmupSettleDelay):
 			case <-ctx.Done():
-				// Activate all the pods we have blocked while waiting
 				pl.activateBlockedPods(0)
 				return
+			case <-t.C:
+				nodes, err := pl.getNodes()
+				if err == nil {
+					usable := false
+					for _, n := range nodes {
+						if isNodeUsable(n) {
+							usable = true
+							break
+						}
+					}
+					if usable {
+						// time.Sleep(1 * time.Second) // just to make sure all nodes are available
+						pl.CachesWarm.Store(true)
+						klog.InfoS("Caches marked ready")
+
+						// Avoid a surge in ForEvery@PreEnqueue; the idle nudge will trickle them.
+						if !(optimizeForEvery() && optimizeAtPreEnqueue()) {
+							pl.activateBlockedPods(0)
+						} else {
+							klog.V(V2).InfoS("Skipping mass activation; idle nudge will handle blocked pods")
+						}
+						return
+					}
+				}
+				klog.V(V2).InfoS("Cache warm-up: waiting for a usable node")
 			}
 		}
-		pl.CachesWarm.Store(true)
-		klog.InfoS("Caches marked ready")
 	} else {
 		klog.InfoS("Cache sync aborted (context done)")
 	}
@@ -1270,14 +1296,14 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 }
 
 // buildSolverInput builds the common input for either batch or single.
-func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, preemptor *v1.Pod, batched []*v1.Pod, timeout time.Duration) (SolverInput, error) {
+func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, preemptor *v1.Pod, batched []*v1.Pod) (SolverInput, error) {
 	in := SolverInput{
-		TimeoutMs:      timeout.Milliseconds(),
 		IgnoreAffinity: true,
 		LogProgress:    SolverLogProgress,
 		Nodes:          make([]SolverNode, 0),
 		Pods:           make([]SolverPod, 0),
 		Mode:           SolverMode,
+		TimeoutMs:      0, // will be filled outside
 	}
 	switch mode {
 	case SolveSingle:
@@ -1384,9 +1410,8 @@ func (pl *MyCrossNodePreemption) buildInputAndBaseline(
 	mode SolveMode,
 	preemptor *v1.Pod,
 	batched []*v1.Pod,
-	timeout time.Duration,
 ) (SolverInput, Score, string, error) {
-	in, err := pl.buildSolverInput(mode, preemptor, batched, timeout)
+	in, err := pl.buildSolverInput(mode, preemptor, batched)
 	if err != nil {
 		return SolverInput{}, Score{}, "", err
 	}

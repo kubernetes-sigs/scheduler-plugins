@@ -47,7 +47,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Build input + baseline + digest ----------
-	in0, baseline, d0, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods, SolverTimeout)
+	in0, baseline, d0, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods)
 	if err != nil {
 		klog.ErrorS(err, string(phase)+": failed to build input/baseline")
 		pl.leaveActive()
@@ -65,6 +65,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 
 	// 1) Optional fast (greedy) solver
 	if SolverFastEnabled {
+		in0.TimeoutMs = SolverFastTimeout.Milliseconds() // TODO: Make use of in.TimeoutMs
 		fastOut := runFastSolver(in0)
 		fastFeasible = fastOut != nil && IsSolverFeasible(fastOut)
 		bestOut = fastOut
@@ -74,22 +75,26 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// 2) Python solver (only keep if it improves over heuristic)
-	ctxSolve, cancel := context.WithTimeout(ctx, SolverTimeout)
-	pyOut, pyErr := pl.runSolver(ctxSolve, in0)
-	cancel()
-	solverDur := time.Since(solverStart)
-	pyFeasible = pyErr == nil && IsSolverFeasible(pyOut)
-	// If we didn't run the fast solver (or it was disabled), accept python if feasible.
-	if bestOut == nil {
-		if pyFeasible {
+	if SolverPythonEnabled {
+		ctxSolve, cancel := context.WithTimeout(ctx, SolverPythonTimeout)
+		in0.TimeoutMs = SolverPythonTimeout.Milliseconds()
+		pyOut, pyErr := pl.runSolver(ctxSolve, in0)
+		cancel()
+		pyFeasible = pyErr == nil && IsSolverFeasible(pyOut)
+		// If we didn't run the fast solver (or it was disabled), accept python if feasible.
+		if bestOut == nil {
+			if pyFeasible {
+				bestOut = pyOut
+				bestSolver = "python"
+			}
+		} else if pyFeasible && IsImprovement(bestOut.Score, pyOut.Score) {
+			// Otherwise, keep python only if it improves over the current best.
 			bestOut = pyOut
 			bestSolver = "python"
 		}
-	} else if pyFeasible && IsImprovement(bestOut.Score, pyOut.Score) {
-		// Otherwise, keep python only if it improves over the current best.
-		bestOut = pyOut
-		bestSolver = "python"
 	}
+
+	solverDuration := time.Since(solverStart)
 
 	// Decide failure reason:
 	// - If BOTH solvers are infeasible (or nil) -> ErrNoOptimalOrFeasible
@@ -118,7 +123,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// ---------- Digest recheck (cluster drift between build and apply) ----------
 	// TODO_HC: digest mismatches occur when running Every mode, possibly due to many changes in short timeframe; or too strict digest checks
 	if phase == PhaseContinuous {
-		_, _, d1, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods, SolverTimeout)
+		_, _, d1, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods)
 		if err != nil {
 			pl.leaveActive()
 			return nil, err
@@ -187,7 +192,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		TotalPostPlan:  totalPostPlan,
 		SolverStatus:   "",
 		TotalDuration:  time.Since(start),
-		SolverDuration: solverDur,
+		SolverDuration: solverDuration,
 	}
 	if ap != nil {
 		res.PlanID = ap.ID

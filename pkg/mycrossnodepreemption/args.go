@@ -21,11 +21,14 @@ var OptimizationInitialDelay = parseTime(getenv("OPTIMIZATION_INITIAL_DELAY", "1
 
 // ======= Solver settings =======
 
-// SolverTimeout is the timeout for the solver to complete.
-var SolverTimeout = parseTime(getenv("SOLVER_TIMEOUT", "25s"))
+// SolverPythonTimeout is the timeout for the python solver to complete.
+var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "25s"))
 
 // SolverFastEnabled indicates whether the fast solver is enabled.
 var SolverFastEnabled = parseBool(getenv("SOLVER_FAST_ENABLED", "true"))
+
+// SolverFastTimeout is the timeout for the fast solver to complete.
+var SolverFastTimeout = parseTime(getenv("SOLVER_FAST_TIMEOUT", "500ms"))
 
 // SolverPythonEnabled indicates whether the Python solver is enabled.
 var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "true"))

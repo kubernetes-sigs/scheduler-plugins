@@ -23,13 +23,20 @@ func (pl *MyCrossNodePreemption) idleNudgeBlockedLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			// If caches are not warm, do nothing.
+			if !pl.CachesWarm.Load() {
+				klog.V(V2).InfoS("Idle nudge: caches not warmed up yet; skipping")
+				continue
+			}
 			// If a plan is executing (or not fully torn down), do nothing.
 			if pl.Active.Load() {
+				klog.V(V2).InfoS("Idle nudge: plan is active; skipping")
 				continue
 			}
 			// Wake exactly one; function already prunes stale + sorts by priority/age.
 			before := pl.Blocked.Size()
 			if before == 0 {
+				klog.V(V2).InfoS("Idle nudge: no blocked pods to activate")
 				continue
 			}
 			pl.activateBlockedPods(1)

@@ -14,7 +14,7 @@ const (
 	// V2 is the klog verbosity level; set to 0 for extra verbose logging.
 	V2 = 2
 	// CacheWarmupSettleDelay is the duration to wait before proceeding after cache has warmed up.
-	CacheWarmupSettleDelay = 1 * time.Second
+	CacheWarmupSettleDelay = 2 * time.Second
 	// =========================================================
 
 	// ================ Solver settings ========================

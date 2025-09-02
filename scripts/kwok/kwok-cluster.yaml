@@ -9,16 +9,30 @@ componentsPatches:
       - name: OPTIMIZE_CADENCE
         value: "for_every" # choices: for_every, in_batches, continuous
       - name: OPTIMIZE_AT
-        value: "postfilter" # choices: preenqueue, postfilter
+        value: "preenqueue" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL
         value: "30s"
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "15s"
-      - name: SOLVER_TIMEOUT
-        value: "400ms" # 25s
-      - name: SOLVER_FAST_ENABLED
-        value: "true"
       - name: SOLVER_PYTHON_ENABLED
+        value: "true" # TODO: disabled during testing fast solver
+      - name: SOLVER_PYTHON_TIMEOUT
+        value: "10s"
+      - name: SOLVER_FAST_ENABLED
         value: "false"
+      - name: SOLVER_FAST_TIMEOUT
+        value: "500ms" # 25s
       - name: PLAN_EXECUTION_TIMEOUT
-        value: "600s" # 50s
+        value: "600s" # 50s # TODO: set high to determine any potential issues
+      - name: SOLVER_FAST_MAX_EVICTIONS
+        value: "-1" # -1 means unlimited
+      - name: SOLVER_FAST_MAX_CHAIN_DEPTH
+        value: "4"
+      - name: SOLVER_FAST_MOVE_BUDGET
+        value: "5"
+      - name: SOLVER_FAST_MOVE_ATTEMPTS
+        value: "30"
+      - name: SOLVER_FAST_VICTIMS_PER_LEVEL # how many victims to consider per level (level is depth of DFS)
+        value: "8" # -1 means unlimited
+      - name: SOLVER_FAST_DESTS_PER_LEVEL # how many destinations to consider per victim
+        value: "5" # -1 means unlimited

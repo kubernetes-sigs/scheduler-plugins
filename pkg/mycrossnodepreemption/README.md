@@ -4,11 +4,9 @@
 
 An improved cross-node preemption plugin that addresses the limitations of the default scheduler's preemption. This plugin implements efficient algorithms for cross-node preemption with optimization strategies.
 
-
 ### Scheduling flow
 
 TODO
-
 
 ## Open Questions
 
@@ -34,6 +32,7 @@ TODO
 
 ## TODOs Plugin
 
+- Check SDU contract
 - Not sure my plugin will work if a pod is removed during plan execution
 - Fix/test the digest issue.
 - Be careful when to take cluster stats
@@ -43,14 +42,14 @@ TODO
 
 ## Later TODOs
 
-- Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption 
+- Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
 
 ## Write
 
 - Write about that the OptimizeForEvery@PreEnqueue cannot be deterministic as we do not determine which order the pods are taken.
 - Write something about watchdogTTL
 - Write something about the snapshotlister that it lags one scheduling cycle.
-- Write about cache calls instead of client calls. Faster and better. https://pkg.go.dev/k8s.io/client-go/tools/cache
+- Write about cache calls instead of client calls. Faster and better. [See documentation](https://pkg.go.dev/k8s.io/client-go/tools/cache)
 - Write about deletion-cost and that it is hard to evict the right workload-owned pods, therefore I found the new eviction API.
 - Write about QueuingHints and that I end up using Pod Activator for reschedule queued pods.
 - Write about atomics and we only use configmap for debugging.
