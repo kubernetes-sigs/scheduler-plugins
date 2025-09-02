@@ -110,6 +110,24 @@ def set_context(ctx_name: str) -> None:
     """
     run(["kubectl", "config", "use-context", ctx_name])
 
+def scale_replicaset(ctx: str, ns: str, rs_name: str, replicas: int) -> None:
+    """Scale a ReplicaSet to a desired replica count."""
+    run([
+        "kubectl", "--context", ctx, "-n", ns,
+        "scale", "replicaset", rs_name, f"--replicas={replicas}"
+    ], check=True)
+
+def get_rs_spec_replicas(ctx: str, ns: str, rs_name: str) -> Optional[int]:
+    """Fetch .spec.replicas for a ReplicaSet, or None if not found."""
+    r = run(["kubectl","--context",ctx,"-n",ns,"get","replicaset",rs_name,"-o","json"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if r.returncode != 0:
+        return None
+    try:
+        return int((json.loads(r.stdout).get("spec") or {}).get("replicas") or 0)
+    except Exception:
+        return None
+
 # -------------- cluster management --------------
 def ensure_namespace(ctx: str, ns: str, *, recreate: bool = False) -> None:
     """
@@ -422,35 +440,49 @@ def wait_pod(ctx: str, name: str, ns: str, timeout_sec: int, mode: str = "ready"
 
 def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = "ready") -> int:
     """
-    Wait for all pods in a ReplicaSet. Returns the number of pods that reached the condition.
+    Wait until the RS has its desired number of pods meeting the condition.
+    mode:
+      - "exist": counts pods by presence (len of pod list)
+      - "ready": counts Ready=True
+      - "running": counts phase == Running
+    Returns the number of pods that met the condition (possibly less than desired on timeout).
     """
     deadline = time.time() + timeout_sec
     last_count = 0
+
     while time.time() < deadline:
+        desired = get_rs_spec_replicas(ctx, ns, rs_name)
+
         r = run(["kubectl","--context",ctx,"-n",ns,"get","pods","-l",f"app={rs_name}","-o","json"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         if r.returncode != 0:
             time.sleep(0.5); continue
+
         try:
             podlist = json.loads(r.stdout).get("items", [])
-            count = 0
-            for p in podlist:
-                phase = (p.get("status") or {}).get("phase") or ""
-                conditions = p.get("status", {}).get("conditions", [])
-                ready = any(c.get("type")=="Ready" and c.get("status")=="True" for c in conditions)
-                if mode == "running" and phase == "Running":
-                    count += 1
-                if mode == "ready" and ready:
-                    count += 1
+            if mode == "exist":
+                count = len(podlist)
+            else:
+                count = 0
+                for p in podlist:
+                    phase = (p.get("status") or {}).get("phase") or ""
+                    conditions = p.get("status", {}).get("conditions", []) or []
+                    ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
+                    if mode == "running" and phase == "Running":
+                        count += 1
+                    elif mode == "ready" and ready:
+                        count += 1
+
             last_count = count
-            # If all pods satisfied the condition, we can exit early
-            desired = int((p.get("spec") or {}).get("replicas") or 0) if podlist else None
-            if desired is None or count >= len(podlist):
+            if desired is not None and count >= desired:
                 return count
         except Exception:
             pass
+
         time.sleep(0.5)
+
     return last_count
+
 
 def wait_until_settled_or_unschedulable_events(
     ctx: str,
@@ -547,6 +579,7 @@ def yaml_kwok_node(name: str, cpu: str, mem: str, pods_cap: int) -> str:
 def yaml_kwok_rs(ns: str, rs_name: str, replicas: int, qcpu: str, qmem: str, pc: str) -> str:
     """
     Generate a YAML manifest for a KWOK ReplicaSet.
+    Replicas will be 0 initially; we scale incrementally after creation. This is to ensure same cluster state at the same seed.
     """
     return textwrap.dedent(f"""\
     apiVersion: apps/v1

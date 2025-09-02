@@ -14,7 +14,7 @@ from kwok_shared import (
     ensure_namespace, create_kwok_nodes, delete_kwok_nodes, ensure_priority_classes,
     yaml_kwok_pod, yaml_kwok_rs, apply_yaml, cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
     compute_stat_totals, stat_snapshot, check_context, set_context,
-    get_json_ctx, sum_pod_requests, bytes_to_mib,
+    get_json_ctx, sum_pod_requests, bytes_to_mib, scale_replicaset, wait_rs_pods,
 )
 @dataclass
 class TestTargets:
@@ -254,13 +254,25 @@ class KwokTestGeneratorRunner:
 
     def _apply_rs(self) -> tuple[int, set[int]]:
         """
-        Apply ReplicaSets to the cluster.
+        Apply ReplicaSets.
+
+        If wait_each && wait_mode == "running":
+        - Create RS with replicas=0
+        - Scale 1-by-1 up to the intended size, waiting to 'running' between steps.
+        Else:
+        - Create RS with the final replicas and (optionally) wait using the chosen wait_mode
+            (exist/ready/running) the same way as before.
         """
         rs_replicas = partition_int(self.T.total_pods, self.args.num_replicaset, 1, self.rng, self.args.variance)
-        per_pod_cpu = gen_parts_constrained(self.T.target_mc_cluster, self.T.total_pods,
-                                               self.rng, self.cpu_int, self.args.dist_mode, self.args.variance)
-        per_pod_mem = gen_parts_constrained(self.T.target_mi_cluster, self.T.total_pods,
-                                               self.rng, self.mem_int, self.args.dist_mode, self.args.variance)
+        per_pod_cpu = gen_parts_constrained(
+            self.T.target_mc_cluster, self.T.total_pods, self.rng, self.cpu_int, self.args.dist_mode, self.args.variance
+        )
+        per_pod_mem = gen_parts_constrained(
+            self.T.target_mi_cluster, self.T.total_pods, self.rng, self.mem_int, self.args.dist_mode, self.args.variance
+        )
+
+        do_gradual = bool(self.args.wait_each and (self.args.wait_mode == "running"))
+
         offset = 0
         total_created = 0
         for i, count in enumerate(rs_replicas, start=1):
@@ -268,18 +280,32 @@ class KwokTestGeneratorRunner:
             rsname = f"rs-{i:02d}-{pc}"
             slice_cpu = per_pod_cpu[offset:offset+count]
             slice_mem = per_pod_mem[offset:offset+count]
+
             avg_mc = max(1, sum(slice_cpu)//count)
             avg_mi = max(1, sum(slice_mem)//count)
             if self.cpu_int: avg_mc = min(max(avg_mc, self.cpu_int[0]), self.cpu_int[1])
             if self.mem_int: avg_mi = min(max(avg_mi, self.mem_int[0]), self.mem_int[1])
-            rs_yaml = yaml_kwok_rs(self.ns, rsname, count, cpu_m_int_to_str(avg_mc), mem_mi_int_to_str(avg_mi), pc)
-            apply_yaml(self.ctx, rs_yaml)
-            if self.args.wait_each:
-                tsec = parse_timeout_s(self.args.wait_timeout)
-                wait_each(self.ctx, "replicaset", rsname, self.ns, tsec, self.args.wait_mode)
+
+            if do_gradual:
+                # Create with 0, then scale 1->count; wait to 'running' each step
+                rs_yaml = yaml_kwok_rs(self.ns, rsname, 0, cpu_m_int_to_str(avg_mc), mem_mi_int_to_str(avg_mi), pc)
+                apply_yaml(self.ctx, rs_yaml)
+                _ = wait_rs_pods(self.ctx, rsname, self.ns, parse_timeout_s(self.args.wait_timeout), "exist")
+                for r in range(1, count + 1):
+                    scale_replicaset(self.ctx, self.ns, rsname, r)
+                    _ = wait_rs_pods(self.ctx, rsname, self.ns, parse_timeout_s(self.args.wait_timeout), "running")
+            else:
+                # Create at full replicas, then wait according to wait_mode (exist/ready/running)
+                rs_yaml = yaml_kwok_rs(self.ns, rsname, count, cpu_m_int_to_str(avg_mc), mem_mi_int_to_str(avg_mi), pc)
+                apply_yaml(self.ctx, rs_yaml)
+                if self.args.wait_each:
+                    _ = wait_rs_pods(self.ctx, rsname, self.ns, parse_timeout_s(self.args.wait_timeout), self.args.wait_mode)
+
             total_created += count
             offset += count
+
         return total_created, {len(rs_replicas)}
+
     
     def _print_outcome_and_snapshot(ctx: str, ns: str, args, outcome: str, info: dict) -> None:
         """
