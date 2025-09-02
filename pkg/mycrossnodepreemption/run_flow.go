@@ -69,9 +69,26 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		fastOut := runFastSolver(in0)
 		fastFeasible = fastOut != nil && IsSolverFeasible(fastOut)
 		bestOut = fastOut
-		bestSolver = "heuristic"
-	} else {
-		klog.V(V2).InfoS(string(phase) + ": fast solver disabled")
+		if fastFeasible {
+			switch IsImprovement(baseline, fastOut.Score) {
+			case 1:
+				klog.V(V2).InfoS(string(phase)+": fast solver improved over baseline",
+					"placedByPri", fastOut.Score.PlacedByPriority,
+					"evictions", fastOut.Score.Evicted,
+					"moves", fastOut.Score.Moved)
+				bestSolver = "fast"
+			case 0:
+				klog.V(V2).InfoS(string(phase)+": fast solver equal to baseline",
+					"placedByPri", fastOut.Score.PlacedByPriority,
+					"evictions", fastOut.Score.Evicted,
+					"moves", fastOut.Score.Moved)
+			case -1:
+				klog.V(V2).InfoS(string(phase)+": fast solver worse than baseline",
+					"placedByPri", fastOut.Score.PlacedByPriority,
+					"evictions", fastOut.Score.Evicted,
+					"moves", fastOut.Score.Moved)
+			}
+		}
 	}
 
 	// 2) Python solver (only keep if it improves over heuristic)
@@ -81,16 +98,49 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		pyOut, pyErr := pl.runSolver(ctxSolve, in0)
 		cancel()
 		pyFeasible = pyErr == nil && IsSolverFeasible(pyOut)
-		// If we didn't run the fast solver (or it was disabled), accept python if feasible.
 		if bestOut == nil {
 			if pyFeasible {
 				bestOut = pyOut
 				bestSolver = "python"
+				switch IsImprovement(baseline, pyOut.Score) { // baseline vs. python
+				case 1:
+					klog.V(V2).InfoS(string(phase)+": python improved over baseline",
+						"placedByPri", pyOut.Score.PlacedByPriority,
+						"evictions", pyOut.Score.Evicted,
+						"moves", pyOut.Score.Moved)
+				case 0:
+					klog.V(V2).InfoS(string(phase)+": python equal to baseline",
+						"placedByPri", pyOut.Score.PlacedByPriority,
+						"evictions", pyOut.Score.Evicted,
+						"moves", pyOut.Score.Moved)
+				default:
+					klog.V(V2).InfoS(string(phase)+": python worse than baseline",
+						"placedByPri", pyOut.Score.PlacedByPriority,
+						"evictions", pyOut.Score.Evicted,
+						"moves", pyOut.Score.Moved)
+				}
 			}
-		} else if pyFeasible && IsImprovement(bestOut.Score, pyOut.Score) {
-			// Otherwise, keep python only if it improves over the current best.
-			bestOut = pyOut
-			bestSolver = "python"
+		} else if pyFeasible {
+			switch IsImprovement(bestOut.Score, pyOut.Score) { // best (i.e. fast solver) vs. python
+			case 1:
+				klog.InfoS(string(phase)+": python improved over fast solver",
+					"placedByPri", pyOut.Score.PlacedByPriority,
+					"evictions", pyOut.Score.Evicted,
+					"moves", pyOut.Score.Moved)
+				bestOut = pyOut
+				bestSolver = "python"
+			case 0:
+				klog.InfoS(string(phase)+": python equal to fast solver",
+					"placedByPri", pyOut.Score.PlacedByPriority,
+					"evictions", pyOut.Score.Evicted,
+					"moves", pyOut.Score.Moved)
+				bestSolver = "python=fast"
+			case -1:
+				klog.InfoS(string(phase)+": python worse than fast solver",
+					"placedByPri", pyOut.Score.PlacedByPriority,
+					"evictions", pyOut.Score.Evicted,
+					"moves", pyOut.Score.Moved)
+			}
 		}
 	}
 
@@ -104,20 +154,24 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal/feasible solution from any solver")
 		return nil, ErrNoOptimalOrFeasible
 	}
-	if !IsImprovement(baseline, bestOut.Score) {
+
+	switch IsImprovement(baseline, bestOut.Score) {
+	case 1: // bestOut better than baseline
+		// proceed
+	case 0: // bestOut equal to baseline
 		pl.leaveActive()
-		klog.ErrorS(ErrNoImprovement, string(phase)+": no improvement over baseline")
+		klog.ErrorS(ErrNoImprovement, string(phase)+": equal to baseline (no improvement)",
+			"placedByPri", bestOut.Score.PlacedByPriority,
+			"evictions", bestOut.Score.Evicted,
+			"moves", bestOut.Score.Moved)
 		return nil, ErrNoImprovement
-	}
-
-	// From here on, use bestOut
-	klog.InfoS(string(phase)+": best solver", "name", bestSolver)
-
-	// ---------- Feasibility / improvement (+ nomination for single) ----------
-	if bestOut == nil || !IsSolverFeasible(bestOut) {
+	case -1: // bestOut worse than baseline
 		pl.leaveActive()
-		klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal or feasible solution")
-		return nil, ErrNoOptimalOrFeasible
+		klog.ErrorS(ErrNoImprovement, string(phase)+": worse than baseline",
+			"placedByPri", bestOut.Score.PlacedByPriority,
+			"evictions", bestOut.Score.Evicted,
+			"moves", bestOut.Score.Moved)
+		return nil, ErrNoImprovement
 	}
 
 	// ---------- Digest recheck (cluster drift between build and apply) ----------

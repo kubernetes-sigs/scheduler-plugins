@@ -145,7 +145,7 @@ func (pl *MyCrossNodePreemption) WaitForInformersSynced(
 					if usable {
 						// time.Sleep(1 * time.Second) // just to make sure all nodes are available
 						pl.CachesWarm.Store(true)
-						klog.InfoS("Caches marked ready")
+						klog.InfoS("Caches ready")
 
 						// Avoid a surge in ForEvery@PreEnqueue; the idle nudge will trickle them.
 						if !(optimizeForEvery() && optimizeAtPreEnqueue()) {
@@ -575,78 +575,6 @@ func topWorkload(p *v1.Pod) (WorkloadKey, bool) {
 	return WorkloadKey{}, false
 }
 
-// workloadEqual returns true if two workload keys are equal.
-func workloadEqual(a, b WorkloadKey) bool {
-	return a.Kind == b.Kind && a.Namespace == b.Namespace && a.Name == b.Name
-}
-
-// workloadSelector returns the label selector for a workload.
-func (pl *MyCrossNodePreemption) workloadSelector(wk WorkloadKey) (metav1.LabelSelector, error) {
-	switch wk.Kind {
-	case wkReplicaSet:
-		rs, err := pl.Handle.SharedInformerFactory().
-			Apps().V1().ReplicaSets().Lister().
-			ReplicaSets(wk.Namespace).Get(wk.Name)
-		if err != nil {
-			return metav1.LabelSelector{}, err
-		}
-		return *rs.Spec.Selector, nil
-	case wkStatefulSet:
-		ss, err := pl.Handle.SharedInformerFactory().
-			Apps().V1().StatefulSets().Lister().
-			StatefulSets(wk.Namespace).Get(wk.Name)
-		if err != nil {
-			return metav1.LabelSelector{}, err
-		}
-		return *ss.Spec.Selector, nil
-	case wkDaemonSet:
-		ds, err := pl.Handle.SharedInformerFactory().
-			Apps().V1().DaemonSets().Lister().
-			DaemonSets(wk.Namespace).Get(wk.Name)
-		if err != nil {
-			return metav1.LabelSelector{}, err
-		}
-		return *ds.Spec.Selector, nil
-	case wkJob:
-		job, err := pl.Handle.SharedInformerFactory().
-			Batch().V1().Jobs().Lister().
-			Jobs(wk.Namespace).Get(wk.Name)
-		if err != nil {
-			return metav1.LabelSelector{}, err
-		}
-		if job.Spec.Selector != nil {
-			return *job.Spec.Selector, nil
-		}
-		return metav1.LabelSelector{MatchLabels: job.Spec.Template.Labels}, nil
-	default:
-		return metav1.LabelSelector{}, fmt.Errorf("unsupported workload kind: %v", wk.Kind)
-	}
-}
-
-// workloadParseKey parses a workload key from its string representation.
-func workloadParseKey(s string) (WorkloadKey, bool) {
-	colon := strings.IndexByte(s, ':')
-	if colon <= 0 || colon == len(s)-1 {
-		return WorkloadKey{}, false
-	}
-	kindStr, rest := s[:colon], s[colon+1:]
-	ns, name := splitNamespaceName(rest)
-	var k WorkloadKind
-	switch kindStr {
-	case "rs":
-		k = wkReplicaSet
-	case "ss":
-		k = wkStatefulSet
-	case "ds":
-		k = wkDaemonSet
-	case "job":
-		k = wkJob
-	default:
-		return WorkloadKey{}, false
-	}
-	return WorkloadKey{Kind: k, Namespace: ns, Name: name}, true
-}
-
 // -------------- Quantity Helpers --------------
 
 // bytesToMiB converts bytes to MiB.
@@ -954,46 +882,15 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 			return false, nil
 		}
 	}
-	// C) Per-workload per-node quotas satisfied.
-	for wkStr, perNode := range sp.WkDesiredPerNode {
-		wk, ok := workloadParseKey(wkStr)
-		if !ok {
-			continue
-		}
-		lblSel, err := pl.workloadSelector(wk)
-		if err != nil {
-			return false, fmt.Errorf("selector for %s: %w", wk.String(), err)
-		}
-		selector, err := metav1.LabelSelectorAsSelector(&lblSel)
-		if err != nil {
-			return false, fmt.Errorf("build selector for %s: %w", wk.String(), err)
-		}
-		// List from the pod lister (namespace-scoped) using the selector
-		pods, err := podLister.Pods(wk.Namespace).List(selector)
-		if err != nil {
-			return false, fmt.Errorf("list pods for %s from lister: %w", wk.String(), err)
-		}
-		counts := map[string]int{}
-		for _, p := range pods {
-			if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
-				continue
-			}
-			// Skip the plan's preemptor: it is not part of WkDesiredPerNode by design.
-			if sp.TargetNode != "" && string(p.UID) == sp.PendingUID {
-				continue
-			}
-			// Ensure we only count pods that actually belong to this workload
-			if twk, ok := topWorkload(p); !ok || !workloadEqual(twk, wk) {
-				continue
-			}
-			counts[p.Spec.NodeName]++
-		}
-		for node, want := range perNode {
-			if have := counts[node]; have != want {
-				klog.V(V2).InfoS("Plan incomplete: workload count mismatch",
-					"workload", wk.String(), "node", node, "want", want, "have", have,
-					"note", "counts exclude preemptor")
-				return false, nil
+	// C) Per-workload per-node quotas consumed (all counters reached 0).
+	if ap := pl.getActivePlan(); ap != nil {
+		for wk, perNode := range ap.Remaining {
+			for node, ctr := range perNode {
+				if ctr.Load() > 0 {
+					klog.V(V2).InfoS("Plan incomplete: remaining quota",
+						"workload", wk, "node", node, "remaining", ctr.Load())
+					return false, nil
+				}
 			}
 		}
 	}
@@ -1091,97 +988,20 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 		return
 	}
 
-	// --------------- Prepare bookkeeping sets ---------------
-	// Track only workloads present in the desired map.
+	// Desired quotas for this plan:
+	// WkDesiredPerNode encodes *additional* placements we want to realize
+	// (moved/pending), not the final totals. Initialize Remaining directly
+	// from desired and let Reserve/Unreserve consume/return the counters.
 	desired := sp.WkDesiredPerNode // read-only while active
-	trackedWK := make(map[string]struct{}, len(desired))
-	for wk := range desired {
-		trackedWK[wk] = struct{}{}
-	}
-
-	// --------------- Single pass over current pods ---------------
-	pods, err := pl.getPods()
-	if err != nil {
-		klog.ErrorS(err, "setActivePlan: getPods failed; installing plan with empty counters")
-	}
-	// cur[wk][node] = count currently running that belong to tracked workloads
-	cur := make(map[string]map[string]int, len(desired))
-	// podsByUID is used to compute "plannedOut" from moves/evicts.
-	podsByUID := make(map[string]*v1.Pod, len(pods))
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
-			continue
-		}
-		podsByUID[string(p.UID)] = p
-		// Count only running workload pods that are part of tracked workloads
-		if p.Spec.NodeName == "" {
-			continue
-		}
-		if wk, ok := topWorkload(p); ok {
-			key := wk.String()
-			if _, tr := trackedWK[key]; !tr {
-				continue
-			}
-			m, ok := cur[key]
-			if !ok {
-				m = make(map[string]int, 2)
-				cur[key] = m
-			}
-			m[p.Spec.NodeName]++
-		}
-	}
-
-	// --------------- Planned-out counts (from solver plan) ---------------
-	// plannedOut[wk][node] = how many will be removed from node by this plan
-	plannedOut := make(map[string]map[string]int, 8)
-	addOut := func(uid string) {
-		if p := podsByUID[uid]; p != nil && p.Spec.NodeName != "" {
-			if wk, ok := topWorkload(p); ok {
-				key := wk.String()
-				if _, tr := trackedWK[key]; !tr {
-					return
-				}
-				m, ok := plannedOut[key]
-				if !ok {
-					m = make(map[string]int, 1)
-					plannedOut[key] = m
-				}
-				m[p.Spec.NodeName]++
-			}
-		}
-	}
-	for _, mv := range sp.Plan.Moves {
-		addOut(mv.Pod.UID)
-	}
-	for _, ev := range sp.Plan.Evicts {
-		addOut(ev.Pod.UID)
-	}
-
-	// --------------- Remaining per workload/node ---------------
-	// remaining[wk][node] = max(0, want - have + out)
-	// want: how many are desired to be running on the node
-	// have: how many are currently running on the node
-	// out: how many will be removed from the node by this plan
 	remaining := make(WorkloadNodeCounters, len(desired))
 	for wk, perNode := range desired {
 		nodeMap := make(map[string]*atomic.Int32, len(perNode))
-		curWk := cur[wk]
-		outWk := plannedOut[wk]
 		for node, want := range perNode {
-			have := 0
-			if curWk != nil {
-				have = curWk[node]
-			}
-			out := 0
-			if outWk != nil {
-				out = outWk[node]
-			}
-			r := want - have + out
-			if r < 0 {
-				r = 0
+			if want < 0 {
+				want = 0
 			}
 			ctr := new(atomic.Int32)
-			ctr.Store(int32(r))
+			ctr.Store(int32(want))
 			nodeMap[node] = ctr
 		}
 		remaining[wk] = nodeMap
@@ -1384,24 +1204,46 @@ func comparePlaced(a, b map[string]int) int {
 	return 0
 }
 
-// IsImprovement: (1) more placed per priority (lexi), then (2) fewer evictions, then (3) fewer moves.
-func IsImprovement(baseline Score, suggested Score) bool {
-	// Compare placed pods in terms of priority
+// cmpInt returns +1 if a<b (improvement because smaller is better),
+// -1 if a>b (worse), 0 if equal.
+func cmpInt(suggested, baseline int) int {
+	switch {
+	case suggested < baseline:
+		return 1
+	case suggested > baseline:
+		return -1
+	default:
+		return 0
+	}
+}
+
+// IsImprovement compares two scores lexicographically:
+// 1) More placed per priority (lexicographic map compare)
+// 2) Fewer evictions
+// 3) Fewer moves
+// Returns 1 if suggested is better, -1 if worse, 0 if equal.
+func IsImprovement(baseline, suggested Score) int {
+	// 1) Placed-by-priority (more is better)
 	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
-		klog.V(V2).InfoS("Improvement by placed pods", "cmp", cmp, "score", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
-		return cmp > 0
+		klog.V(V2).InfoS("Compare placed-by-priority", "result", cmp,
+			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
+		return cmp
 	}
-	// Number of evictions check
-	if suggested.Evicted > baseline.Evicted {
-		klog.V(V2).InfoS("No improvement: more evictions than baseline")
-		return false
+	// 2) Evictions (fewer is better)
+	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
+		klog.V(V2).InfoS("Compare evictions", "result", cmp,
+			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
+		return cmp
 	}
-	// Number of moves check
-	if suggested.Moved > baseline.Moved {
-		klog.V(V2).InfoS("No improvement: more moves than baseline")
-		return false
+	// 3) Moves (fewer is better)
+	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
+		klog.V(V2).InfoS("Compare moves", "result", cmp,
+			"suggested", suggested.Moved, "baseline", baseline.Moved)
+		return cmp
 	}
-	return true // suggested is better than baseline in terms of all metrics
+	// Equal on all metrics
+	klog.V(V2).InfoS("No change: equal on placed, evictions, and moves")
+	return 0
 }
 
 // buildInputAndBaseline builds the exact snapshot we send to the solver,
