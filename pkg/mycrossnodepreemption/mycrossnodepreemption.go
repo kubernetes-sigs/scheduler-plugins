@@ -4,7 +4,7 @@ package mycrossnodepreemption
 
 import (
 	"context"
-	"time"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -28,6 +28,11 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		Batched: newPodSet(),
 	}
 
+	if !pl.isSolverEnabled() { // ensure at least one solver is enabled
+		klog.Error("No solver is enabled")
+		return nil, fmt.Errorf("no solver is enabled")
+	}
+
 	// Warm informers
 	f := h.SharedInformerFactory()
 	podsInf := f.Core().V1().Pods().Informer()
@@ -49,7 +54,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 	// Plugin configuration
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", modeToString())
-	klog.InfoS("Solver configuration", "timeout", SolverTimeout.String())
+	klog.InfoS("Solver configuration", "fastSolver", SolverFastEnabled, "pythonSolver", SolverPythonEnabled, "timeout", SolverTimeout.String())
 	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
 	if optimizeInBatches() || optimizeContinuously() {
 		klog.InfoS("Loop configuration", "optimizationInterval", OptimizationInterval.String())
@@ -65,24 +70,4 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	return pl, nil
-}
-
-func (pl *MyCrossNodePreemption) WaitForInformersSynced(ctx context.Context, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf cache.SharedIndexInformer) {
-	if cache.WaitForCacheSync(ctx.Done(),
-		podsInf.HasSynced, nodesInf.HasSynced, cmsInf.HasSynced,
-		rsInf.HasSynced, ssInf.HasSynced, dsInf.HasSynced, jobInf.HasSynced,
-	) {
-		if CacheWarmupDelay > 0 {
-			klog.InfoS("Cache warm-up delay", "duration", CacheWarmupDelay)
-			select {
-			case <-time.After(CacheWarmupDelay):
-			case <-ctx.Done():
-				return
-			}
-		}
-		pl.CachesWarm.Store(true)
-		klog.InfoS("Caches marked ready")
-	} else {
-		klog.InfoS("Cache sync aborted (context done)")
-	}
 }

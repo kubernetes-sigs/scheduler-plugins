@@ -34,13 +34,12 @@ TODO
 
 ## TODOs Plugin
 
+- Not sure my plugin will work if a pod is removed during plan execution
 - Fix/test the digest issue.
-- Write about that the OptimizeForEvery@PreEnqueue can not be deterministic as we do not determine which order the pods are taken. But maybe we should implemnt some logic to control it.
 - Be careful when to take cluster stats
-- Fast heuristic algorithm which runs in front of solver. So the solver needs to improve on that.
 - Fix TODOs
 - Make use of design patterns where possible.
-- Cleanup code, structs and make the configmap more efficient
+- Cleanup code, structs.
 
 ## Later TODOs
 
@@ -48,6 +47,7 @@ TODO
 
 ## Write
 
+- Write about that the OptimizeForEvery@PreEnqueue cannot be deterministic as we do not determine which order the pods are taken.
 - Write something about watchdogTTL
 - Write something about the snapshotlister that it lags one scheduling cycle.
 - Write about cache calls instead of client calls. Faster and better. https://pkg.go.dev/k8s.io/client-go/tools/cache

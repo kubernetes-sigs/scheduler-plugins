@@ -121,12 +121,12 @@ func (pl *MyCrossNodePreemption) WaitForInformersSynced(ctx context.Context, pod
 		podsInf.HasSynced, nodesInf.HasSynced, cmsInf.HasSynced,
 		rsInf.HasSynced, ssInf.HasSynced, dsInf.HasSynced, jobInf.HasSynced,
 	) {
-		if CacheWarmupAfterDelay > 0 {
-			klog.InfoS("Cache warm-up delay", "duration", CacheWarmupAfterDelay)
+		if CacheWarmupSettleDelay > 0 {
+			klog.InfoS("Cache warm-up delay", "duration", CacheWarmupSettleDelay)
 			select {
-			case <-time.After(CacheWarmupAfterDelay):
+			case <-time.After(CacheWarmupSettleDelay):
 			case <-ctx.Done():
-				// Activate the pods we have blocked while waiting
+				// Activate all the pods we have blocked while waiting
 				pl.activateBlockedPods(0)
 				return
 			}
@@ -1181,6 +1181,11 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 
 // ------------- Solver Helpers --------------
 
+// check that at least one solver is enabled
+func (pl *MyCrossNodePreemption) isSolverEnabled() bool {
+	return SolverFastEnabled || SolverPythonEnabled
+}
+
 // fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.
 // If batched != nil, pending batched pods are appended with where="" (and preemptor can be nil).
 func (pl *MyCrossNodePreemption) fillNodesAndPods(
@@ -1513,6 +1518,12 @@ func getenv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// parseBool parses a boolean string and returns the corresponding bool value.
+func parseBool(s string) bool {
+	v, _ := strconv.ParseBool(s)
+	return v
 }
 
 // parseTime parses a duration string and returns the corresponding time.Duration.

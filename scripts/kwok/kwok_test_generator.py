@@ -489,7 +489,7 @@ def main():
     ap.add_argument("--variance", type=int, default=50)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--num-priorities", type=int, default=4)
-    ap.add_argument("--wait-each", action="store_true", default=False)
+    ap.add_argument("--wait-each", action="store_true", default=True)
     ap.add_argument("--wait-timeout", default="10s")
     ap.add_argument("--settle-timeout", default="5s")
     ap.add_argument("--cpu-interval", default="50m,500m")

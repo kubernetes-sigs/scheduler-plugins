@@ -15,6 +15,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// Batch/Single: take Active early because these modes block by design.
 	if phase != PhaseContinuous {
 		if !pl.tryEnterActive() {
+			klog.V(V2).InfoS(string(phase) + ": another plan active; skipping")
 			return nil, ErrActiveInProgress
 		}
 	}
@@ -48,37 +49,70 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// ---------- Build input + baseline + digest ----------
 	in0, baseline, d0, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods, SolverTimeout)
 	if err != nil {
+		klog.ErrorS(err, string(phase)+": failed to build input/baseline")
 		pl.leaveActive()
 		return nil, err
 	}
 
-	// ---------- Solve with timeout ----------
+	// ---------- Solve with heuristic first, then (optionally) Python ----------
 	solverStart := time.Now()
+
+	// Candidate best solution (from heuristic and/or python)
+	var bestOut *SolverOutput
+	fastFeasible := false
+	pyFeasible := false
+	bestSolver := "none" // "heuristic" or "python"
+
+	// 1) Optional fast (greedy) solver
+	if SolverFastEnabled {
+		fastOut := runFastSolver(in0)
+		fastFeasible = fastOut != nil && IsSolverFeasible(fastOut)
+		bestOut = fastOut
+		bestSolver = "heuristic"
+	} else {
+		klog.V(V2).InfoS(string(phase) + ": fast solver disabled")
+	}
+
+	// 2) Python solver (only keep if it improves over heuristic)
 	ctxSolve, cancel := context.WithTimeout(ctx, SolverTimeout)
-	out, err := pl.runSolver(ctxSolve, in0)
+	pyOut, pyErr := pl.runSolver(ctxSolve, in0)
 	cancel()
 	solverDur := time.Since(solverStart)
+	pyFeasible = pyErr == nil && IsSolverFeasible(pyOut)
+	// If we didn't run the fast solver (or it was disabled), accept python if feasible.
+	if bestOut == nil {
+		if pyFeasible {
+			bestOut = pyOut
+			bestSolver = "python"
+		}
+	} else if pyFeasible && IsImprovement(bestOut.Score, pyOut.Score) {
+		// Otherwise, keep python only if it improves over the current best.
+		bestOut = pyOut
+		bestSolver = "python"
+	}
+
+	// Decide failure reason:
+	// - If BOTH solvers are infeasible (or nil) -> ErrNoOptimalOrFeasible
+	// - Else if no improvement vs baseline -> ErrNoImprovement
+	if !(fastFeasible || pyFeasible) {
+		pl.leaveActive()
+		klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal/feasible solution from any solver")
+		return nil, ErrNoOptimalOrFeasible
+	}
+	if !IsImprovement(baseline, bestOut.Score) {
+		pl.leaveActive()
+		klog.ErrorS(ErrNoImprovement, string(phase)+": no improvement over baseline")
+		return nil, ErrNoImprovement
+	}
+
+	// From here on, use bestOut
+	klog.InfoS(string(phase)+": best solver", "name", bestSolver)
 
 	// ---------- Feasibility / improvement (+ nomination for single) ----------
-	requireNomination := (solveMode == SolveSingle && preemptor != nil)
-	if err != nil {
+	if bestOut == nil || !IsSolverFeasible(bestOut) {
 		pl.leaveActive()
-		if out != nil {
-			// Print baseline and score for debugging
-			klog.InfoS("Solver output", "baseline", baseline, "score", out.Score)
-			if !IsSolverFeasible(out) {
-				klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal or feasible solution")
-				return nil, ErrNoOptimalOrFeasible
-			} else if !IsImprovement(baseline, out.Score) {
-				klog.ErrorS(ErrNoImprovement, string(phase)+": no improvement found")
-				return nil, ErrNoImprovement
-			} else if requireNomination && out.NominatedNode == "" {
-				klog.ErrorS(ErrNoNomination, string(phase)+": no node nominated for preemption")
-				return nil, ErrNoNomination
-			}
-		}
-		klog.ErrorS(ErrSolver, "Solver failed")
-		return nil, ErrSolver
+		klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal or feasible solution")
+		return nil, ErrNoOptimalOrFeasible
 	}
 
 	// ---------- Digest recheck (cluster drift between build and apply) ----------
@@ -105,15 +139,15 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Count new and total pods ----------
-	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(out)
+	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestOut)
 
 	// ---------- Register + execute plan ----------
 	var plan *Plan
 	var ap *ActivePlanState
 	if solveMode == SolveSingle {
-		plan, ap, err = pl.registerPlan(ctx, out, preemptor) // pass the pod
+		plan, ap, err = pl.registerPlan(ctx, bestOut, preemptor) // pass the pod
 	} else {
-		plan, ap, err = pl.registerPlan(ctx, out, nil)
+		plan, ap, err = pl.registerPlan(ctx, bestOut, nil)
 	}
 	if err != nil {
 		// For single-preemptor, keep it blocked if we failed to register/execute.
@@ -158,10 +192,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	if ap != nil {
 		res.PlanID = ap.ID
 	}
-	if out != nil {
-		res.Nominated = out.NominatedNode
-		res.SolverStatus = out.Status
-	}
+	res.Nominated = bestOut.NominatedNode
+	res.SolverStatus = bestOut.Status
 	if plan != nil {
 		res.Moves = len(plan.Moves)
 		res.Evicts = len(plan.Evicts)
@@ -176,6 +208,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		"totalPrePlan", res.TotalPrePlan,
 		"totalPostPlan", res.TotalPostPlan,
 		"solverStatus", res.SolverStatus,
+		"bestSolver", bestSolver,
 		"totalDuration", res.TotalDuration,
 		"solverDuration", res.SolverDuration,
 	)

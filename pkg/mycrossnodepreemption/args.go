@@ -24,6 +24,12 @@ var OptimizationInitialDelay = parseTime(getenv("OPTIMIZATION_INITIAL_DELAY", "1
 // SolverTimeout is the timeout for the solver to complete.
 var SolverTimeout = parseTime(getenv("SOLVER_TIMEOUT", "25s"))
 
+// SolverFastEnabled indicates whether the fast solver is enabled.
+var SolverFastEnabled = parseBool(getenv("SOLVER_FAST_ENABLED", "true"))
+
+// SolverPythonEnabled indicates whether the Python solver is enabled.
+var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "true"))
+
 // ======= Plan settings =======
 
 // PlanExecutionTimeout is the maximum duration a plan may run before being terminated.

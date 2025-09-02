@@ -191,6 +191,7 @@ def solve(instance: dict) -> dict:
 
     # Mode-specific guards
     if single_preemptor_mode and pre_idx is not None:
+        m.Add(placed[pre_idx] == 1) # pending must be placed
         # preemptor must not evict
         m.Add(evict[pre_idx]  == 0)
         pre_pr = p_pri(pre_idx)
@@ -213,6 +214,7 @@ def solve(instance: dict) -> dict:
                 m.Add(placed[i] == 1)
                 if move[i] is not None:
                     m.Add(move[i] == 0)
+        m.Add(sum(placed[i] for i in pending_idxs) >= 1)
 
     # ---------------------- decision strategies -------------------------
     # Order pods: sort by (CPU, MEM, PRI desc)
