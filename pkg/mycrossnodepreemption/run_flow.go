@@ -22,7 +22,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 
 	// Make sure we have the latest node and pod information
 	// TODO: wait for pod and node cache has synced instead of sleeping
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	start := time.Now()
 
