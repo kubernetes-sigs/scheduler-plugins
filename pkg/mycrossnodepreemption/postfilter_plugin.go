@@ -34,7 +34,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 
 	case DecideEvery:
-		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
+		//klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
 		res, err := pl.runFlow(ctx, PhasePostFilter, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {

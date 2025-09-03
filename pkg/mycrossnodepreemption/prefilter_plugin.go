@@ -22,7 +22,8 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if pod.Namespace == "kube-system" {
 		return nil, framework.NewStatus(framework.Success)
 	}
-	if !pl.Active.Load() {
+	ap := pl.getActivePlan()
+	if ap == nil || ap.PlanDoc.Completed {
 		return nil, framework.NewStatus(framework.Success)
 	}
 

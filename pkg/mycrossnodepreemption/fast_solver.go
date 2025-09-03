@@ -1,17 +1,24 @@
 // solver_fast.go
-// K-hop (bounded) move solver that prioritizes placing higher-priority pods with minimal evictions.
-// For each pending pod (sorted by priority desc):
-//   1) Try direct fit.
-//   2) If the cluster has enough total free, try K-hop move chains on the best target nodes
-//      (bounded depth, small branching; moves only lower-priority, non-protected pods; no evictions).
-//   3) If K-hop fails (or aggregate free insufficient), evict exactly one lowest-priority non-protected
-//      victim that enables an immediate fit, then retry (1).
+// ----------------------------------------------------------------------------
+// Non-exponential "augmenting-path" mover for cross-node preemption with a
+// single linear iteration budget per pending pod.
 //
-// The algorithm is simple, bounded, and eviction-averse. It carries forward simulated state across
-// pending pods so higher-priority pods get placed first, maximizing their count.
+// Strategy per pending pod (sorted by priority desc):
+//   1) Direct fit: place on a node that already fits (best-waste).
+//   2) If the cluster has enough total free, try up to K targets (smallest
+//      deficit) and for each, run a BFS-based relocation that finds a chain of
+//      moves (lower-priority, non-protected pods only) to free the target.
+//      No evictions in this step.
+//   3) If BFS fails (or aggregate free insufficient), evict exactly one
+//      lowest-priority non-protected victim that enables an immediate fit.
 //
-// Expects these types elsewhere in the package: SolverInput, SolverOutput, SolverNode, SolverPod,
+// Bounded work:
+//   • Branching caps: kTargetsToTry, kVictimsPerLevel, kDestsPerLevel
+//   • Linear budget: kMaxIterationsPerPod, decremented in BFS/outer free loop
+//
+// Expects types elsewhere: SolverInput, SolverOutput, SolverNode, SolverPod,
 // SolverEviction, Score.
+// ----------------------------------------------------------------------------
 
 package mycrossnodepreemption
 
@@ -19,18 +26,21 @@ import (
 	"math"
 	"sort"
 	"strconv"
+
+	"k8s.io/klog/v2"
 )
 
-/* ----------------------------- Small, fixed knobs ----------------------------- */
+/* ============================= Tunable knobs ============================== */
 
 const (
-	kMaxHops         = 5 // maximum chain depth (number of moves) to free space
-	kTargetsToTry    = 5 // try top-K target nodes (smallest deficit)
-	kVictimsPerLevel = 6 // consider up to K victims per DFS frame
-	kDestsPerLevel   = 6 // consider up to K destinations per DFS frame
+	// Set to -1 for "no limit" or >0 for an explicit cap.
+	kTargetsToTry        = -1    // Try top-K target nodes (smallest deficit)
+	kVictimsPerLevel     = -1    // Consider up to K victims on a node
+	kDestsPerLevel       = -1    // Consider up to K destination nodes
+	kMaxIterationsPerPod = 10000 // Linear budget per pending pod (shared across BFS/relocations)
 )
 
-/* ----------------------------- Internal state ----------------------------- */
+/* =========================== Internal light state ========================= */
 
 type podState struct {
 	UID       string
@@ -47,7 +57,41 @@ type nodeState struct {
 	CapMem   int64
 	FreeCPUm int64
 	FreeMem  int64
-	Pods     map[string]*podState // resident pods by UID
+	Pods     map[string]*podState
+
+	// debug
+	StartFreeCPUm int64 // after loading existing pods, before placing any pending ones
+	StartFreeMem  int64
+}
+
+// limitCount interprets K with special values: -1 = unlimited, 0 = zero, >0 = min(K, n).
+func limitCount(K, n int) int {
+	if K < 0 { // unlimited
+		return n
+	}
+	if K == 0 {
+		return 0
+	}
+	if K > n {
+		return n
+	}
+	return K
+}
+
+// budgetDec decrements the iteration budget if finite.
+// Returns false when the budget is exhausted and work must stop.
+func budgetDec(budget *int) bool {
+	if budget == nil {
+		return true
+	}
+	if *budget < 0 { // unlimited
+		return true
+	}
+	if *budget == 0 {
+		return false
+	}
+	*budget--
+	return true
 }
 
 func (n *nodeState) fits(cpu, mem int64) bool { return n.FreeCPUm >= cpu && n.FreeMem >= mem }
@@ -68,10 +112,29 @@ func (n *nodeState) removePod(p *podState) {
 
 type moveAction struct{ UID, From, To string }
 
-/* ----------------------------- Solver entry ----------------------------- */
+// logPlacement emits before/after free on a node for a placement decision.
+func logPlacement(p *podState, n *nodeState, via string, freeCPUbefore, freeMembefore int64) {
+	klog.V(V2).InfoS("Placed pod",
+		"via", via,
+		"uid", p.UID,
+		"priority", p.Priority,
+		"node", n.Name,
+		"podCPU_m", p.CPUm,
+		"podMem_MiB", bytesToMiB(p.MemBytes),
+		"freeCPU_m_before", freeCPUbefore,
+		"freeMem_MiB_before", bytesToMiB(freeMembefore),
+		"freeCPU_m_after", n.FreeCPUm,
+		"freeMem_MiB_after", bytesToMiB(n.FreeMem),
+		"capCPU_m", n.CapCPUm,
+		"capMem_MiB", bytesToMiB(n.CapMem),
+	)
+}
+
+/* =============================== Solver entry ============================= */
 
 func runFastSolver(in SolverInput) *SolverOutput {
-	// Build nodes
+
+	// Materialize nodes
 	nodes := make(map[string]*nodeState, len(in.Nodes))
 	nodeList := make([]*nodeState, 0, len(in.Nodes))
 	for i := range in.Nodes {
@@ -87,11 +150,10 @@ func runFastSolver(in SolverInput) *SolverOutput {
 		nodeList = append(nodeList, n)
 	}
 
-	// Build pods
+	// Materialize pods
 	allPods := make(map[string]*podState, len(in.Pods)+1)
 	var pendingList []*podState
 
-	// Include preemptor (if any) as pending
 	if in.Preemptor != nil {
 		pre := &podState{
 			UID:       in.Preemptor.UID,
@@ -105,7 +167,6 @@ func runFastSolver(in SolverInput) *SolverOutput {
 		pendingList = append(pendingList, pre)
 	}
 
-	// Other pods (some placed, some pending)
 	for i := range in.Pods {
 		sp := in.Pods[i]
 		p := &podState{
@@ -123,8 +184,12 @@ func runFastSolver(in SolverInput) *SolverOutput {
 			n.addPod(p)
 		}
 	}
+	for _, n := range nodeList {
+		n.StartFreeCPUm = n.FreeCPUm
+		n.StartFreeMem = n.FreeMem
+	}
 
-	// Sort pending: priority desc, then CPU desc, then Mem desc
+	// Highest priority first; then larger CPU; then Mem
 	sort.Slice(pendingList, func(i, j int) bool {
 		if pendingList[i].Priority != pendingList[j].Priority {
 			return pendingList[i].Priority > pendingList[j].Priority
@@ -138,203 +203,345 @@ func runFastSolver(in SolverInput) *SolverOutput {
 	placements := make(map[string]string, len(pendingList))
 	var evictedUIDs []SolverEviction
 
-	// Track original placements for move counting
+	// For scoring: remember original locations.
 	originalNode := make(map[string]string, len(allPods))
 	for uid, p := range allPods {
 		originalNode[uid] = p.Node
 	}
 
-	// Per pending pod
+	// Main loop over pending pods
+	preUID := ""
+	if in.Preemptor != nil {
+		preUID = in.Preemptor.UID
+	}
 	for _, p := range pendingList {
-		if placeOneKHop(nodes, nodeList, allPods, p, placements, &evictedUIDs) {
-			// Single-preemptor flows end after placing or failing that one pod
-			if in.Preemptor != nil && p.UID == in.Preemptor.UID {
-				break
-			}
-		} else {
-			if in.Preemptor != nil && p.UID == in.Preemptor.UID {
-				break
-			}
+		_ = placeOneBFS(nodes, nodeList, allPods, p, placements, &evictedUIDs, preUID)
+		if in.Preemptor != nil && p.UID == in.Preemptor.UID {
+			break
 		}
 	}
 
-	// Score
+	// Assemble output
 	score := buildScoreFromState(allPods, originalNode, evictedUIDs)
 
+	status := "FEASIBLE"
+	if in.Preemptor != nil {
+		if _, ok := placements[in.Preemptor.UID]; !ok {
+			status = "INFEASIBLE"
+		}
+	}
+
 	out := &SolverOutput{
-		Status:        "FEASIBLE",
+		Status:        status,
 		NominatedNode: "",
 		Placements:    placements,
 		Evictions:     evictedUIDs,
 		Score:         score,
 	}
-
-	// Nominate destination for single-preemptor
 	if in.Preemptor != nil {
 		if dest, ok := placements[in.Preemptor.UID]; ok {
 			out.NominatedNode = dest
+			if n := nodes[dest]; n != nil {
+				// after-placing snapshot
+				afterCPU := n.FreeCPUm
+				afterMem := n.FreeMem
+				// what we believed immediately before placing preemptor on dest
+				beforeCPU := afterCPU + in.Preemptor.CPU_m
+				beforeMem := afterMem + in.Preemptor.MemBytes
+
+				klog.InfoS("Nominate node for preemptor",
+					"uid", in.Preemptor.UID,
+					"node", dest,
+					"podCPU_m", in.Preemptor.CPU_m,
+					"podMem_MiB", bytesToMiB(in.Preemptor.MemBytes),
+					"startFreeCPU_m", n.StartFreeCPUm,
+					"startFreeMem_MiB", bytesToMiB(n.StartFreeMem),
+					"freeCPU_m_before", beforeCPU,
+					"freeMem_MiB_before", bytesToMiB(beforeMem),
+					"freeCPU_m_after", afterCPU,
+					"freeMem_MiB_after", bytesToMiB(afterMem),
+					"capCPU_m", n.CapCPUm,
+					"capMem_MiB", bytesToMiB(n.CapMem),
+					"movesInPlanSoFar", len(placements)-1, // rough indicator
+				)
+
+				// extra safety: scream if we somehow nominated without fit
+				if beforeCPU < in.Preemptor.CPU_m || beforeMem < in.Preemptor.MemBytes {
+					klog.ErrorS(nil, "BUG: nominated node without enough free at placement time",
+						"uid", in.Preemptor.UID, "node", dest,
+						"needCPU_m", in.Preemptor.CPU_m, "needMem_MiB", bytesToMiB(in.Preemptor.MemBytes),
+						"freeCPU_m_before", beforeCPU, "freeMem_MiB_before", bytesToMiB(beforeMem))
+				}
+			}
 		}
 	}
 	return out
 }
 
-/* ----------------------------- K-hop placement ----------------------------- */
+func logPrePost(p *podState, n *nodeState, via string, beforeCPU, beforeMem int64) {
+	klog.InfoS("Preemptor placement",
+		"via", via,
+		"uid", p.UID,
+		"priority", p.Priority,
+		"node", n.Name,
+		"podCPU_m", p.CPUm,
+		"podMem_MiB", bytesToMiB(p.MemBytes),
+		"startFreeCPU_m", n.StartFreeCPUm,
+		"startFreeMem_MiB", bytesToMiB(n.StartFreeMem),
+		"freeCPU_m_before", beforeCPU,
+		"freeMem_MiB_before", bytesToMiB(beforeMem),
+		"freeCPU_m_after", n.FreeCPUm,
+		"freeMem_MiB_after", bytesToMiB(n.FreeMem),
+		"capCPU_m", n.CapCPUm,
+		"capMem_MiB", bytesToMiB(n.CapMem),
+	)
+}
 
-func placeOneKHop(
+func guardMustFit(where string, n *nodeState, p *podState, beforeCPU, beforeMem int64) {
+	if beforeCPU < p.CPUm || beforeMem < p.MemBytes {
+		klog.ErrorS(nil, "BUG: placing on node that does not fit",
+			"path", where,
+			"uid", p.UID, "node", n.Name,
+			"needCPU_m", p.CPUm, "needMem_MiB", bytesToMiB(p.MemBytes),
+			"freeCPU_m_before", beforeCPU, "freeMem_MiB_before", bytesToMiB(beforeMem),
+			"freeCPU_m_after", n.FreeCPUm, "freeMem_MiB_after", bytesToMiB(n.FreeMem))
+	}
+}
+
+/* ======================== Placement for a single pod ======================= */
+
+// placeOneBFS: direct-fit → BFS relocation (no evictions) → single-eviction fallback.
+// Uses a shared linear iteration budget per pending pod.
+func placeOneBFS(
 	nodes map[string]*nodeState,
 	nodeList []*nodeState,
 	allPods map[string]*podState,
 	p *podState,
 	placements map[string]string,
 	evictedUIDs *[]SolverEviction,
+	preUID string, // "" if none
 ) bool {
+	// Linear budget shared across freeing iterations and BFS expansions.
+	budget := kMaxIterationsPerPod
+
 	// 1) Direct fit
 	if nodeName, ok := selectDirectFit(nodes, nodeList, p); ok {
-		nodes[nodeName].addPod(p)
+		n := nodes[nodeName]
+		beforeCPU, beforeMem := n.FreeCPUm, n.FreeMem
+		guardMustFit("direct_fit", n, p, beforeCPU, beforeMem)
+		n.addPod(p)
 		placements[p.UID] = nodeName
+		if p.UID == preUID {
+			logPrePost(p, n, "direct_fit", beforeCPU, beforeMem)
+		}
 		return true
 	}
 
-	// 2) If aggregate free can hold p, try K-hop move chains (no evictions)
+	// 2) BFS relocations if aggregate free is sufficient
 	totalCPU, totalMem := totalFreeResources(nodeList)
 	if totalCPU >= p.CPUm && totalMem >= p.MemBytes {
 		targets := topKTargetsByDeficit(nodeList, p, kTargetsToTry)
-		if len(targets) > 0 {
-			// Try targets in order; stop on first success
-			for _, t := range targets {
-				if t.fits(p.CPUm, p.MemBytes) {
-					t.addPod(p)
-					placements[p.UID] = t.Name
-					return true
-				}
-				// Snapshot for backtracking
-				snap := newSnapshot(nodes, allPods)
-				moves := make([]moveAction, 0, kMaxHops)
-				visited := make(map[string]bool, 16) // avoid moving the same UID multiple times
-
-				if dfsKHopFree(snap, t.Name, p, int(p.Priority), kMaxHops, visited, &moves) {
-					// Apply moves to real state and place
-					applyMovesAndRecord(nodes, allPods, moves, placements)
-					nodes[t.Name].addPod(p)
-					placements[p.UID] = t.Name
-					return true
-				}
+		for _, t := range targets {
+			if t.fits(p.CPUm, p.MemBytes) {
+				t.addPod(p)
+				placements[p.UID] = t.Name
+				return true
+			}
+			moves, ok := bfsFreeTargetFor(nodes, allPods, t, p, int(p.Priority), &budget)
+			if ok {
+				// BFS already applied the moves to state; just record them so they reach the plan
+				recordMovesOnly(moves, placements)
+				t.addPod(p)
+				placements[p.UID] = t.Name
+				return true
+			}
+			// If budget exhausted, stop trying more targets for this pod.
+			if budget <= 0 {
+				break
 			}
 		}
 	}
 
-	// 3) Single eviction (strict last resort). Evict one lowest-priority non-protected victim
-	//    whose eviction allows immediate fit, then retry direct fit once.
+	// 3) Single-eviction fallback
 	victim, vNode := pickSingleEvictionCandidate(nodeList, p)
 	if victim == nil || vNode == nil {
 		return false
 	}
-	delete(vNode.Pods, victim.UID)
-	vNode.FreeCPUm += victim.CPUm
-	vNode.FreeMem += victim.MemBytes
+	vNode.removePod(victim)
 	*evictedUIDs = append(*evictedUIDs, SolverEviction{UID: victim.UID})
 
-	// Retry direct fit after eviction (guaranteed to fit on vNode, but choose best anyway)
-	if nodeName, ok := selectDirectFit(nodes, nodeList, p); ok {
-		nodes[nodeName].addPod(p)
-		placements[p.UID] = nodeName
-		return true
+	beforeCPU, beforeMem := vNode.FreeCPUm, vNode.FreeMem
+	guardMustFit("single_eviction", vNode, p, beforeCPU, beforeMem)
+	vNode.addPod(p)
+	placements[p.UID] = vNode.Name
+	if p.UID == preUID {
+		logPrePost(p, vNode, "single_eviction", beforeCPU, beforeMem)
 	}
-	return false
+	return true
 }
 
-/* ----------------------------- K-hop DFS (simple) ----------------------------- */
+func recordMovesOnly(moves []moveAction, placements map[string]string) {
+	for _, mv := range moves {
+		placements[mv.UID] = mv.To
+	}
+}
 
-// dfsKHopFree tries to free 'target' for pod p using <= depth moves.
-// It may recursively free destinations. Only moves pods with Priority < p.Priority and not Protected.
-func dfsKHopFree(
-	snap *snapshot,
-	target string,
+/* =============================== BFS building ============================= */
+
+// bfsFreeTargetFor frees target node 't' enough to fit pod 'p' by iteratively
+// relocating exactly one victim off 't' using BFS chains (no evictions).
+// Only moves pods with Priority < p.Priority and not Protected.
+// The linear *budget is decremented once per "free-one-victim" attempt.
+// Returns the concatenated move list (in order) or false if it gives up.
+func bfsFreeTargetFor(
+	nodes map[string]*nodeState,
+	allPods map[string]*podState,
+	t *nodeState,
 	p *podState,
 	prioLimit int,
-	depth int,
-	visited map[string]bool,
-	plan *[]moveAction,
-) bool {
-	if depth < 0 {
-		return false
-	}
-	if snap.nodes[target].fits(p.CPUm, p.MemBytes) {
-		return true
-	}
-	if depth == 0 {
-		return false
-	}
+	budget *int,
+) ([]moveAction, bool) {
+	totalMoves := make([]moveAction, 0, 16)
+	for !t.fits(p.CPUm, p.MemBytes) {
+		if !budgetDec(budget) {
+			return nil, false
+		}
 
-	t := snap.nodes[target]
-	needCPU := max64(0, p.CPUm-t.FreeCPUm)
-	needMem := max64(0, p.MemBytes-t.FreeMem)
+		needCPU := max64(0, p.CPUm-t.FreeCPUm)
+		needMem := max64(0, p.MemBytes-t.FreeMem)
 
-	// Pick up to K best victims on target (coverage first, then lower prio, then smaller)
-	victims := pickVictimsKHop(t, prioLimit, needCPU, needMem, kVictimsPerLevel)
-	if len(victims) == 0 {
-		return false
+		victims := pickVictimsKHop(t, prioLimit, needCPU, needMem, kVictimsPerLevel)
+		if len(victims) == 0 {
+			return nil, false
+		}
+
+		var chain []moveAction
+		ok := false
+
+		for _, v0 := range victims {
+			if dest := bestDirectDest(nodes, v0); dest != "" && dest != t.Name {
+				chain = []moveAction{{UID: v0.UID, From: t.Name, To: dest}}
+				ok = true
+				break
+			}
+			if c, ok2 := bfsRelocateOne(nodes, t, v0, prioLimit, budget); ok2 {
+				chain = c
+				ok = true
+				break
+			}
+			// no explicit budget <= 0 check here—bfsRelocateOne already consumes it
+		}
+
+		if !ok {
+			return nil, false
+		}
+
+		applyMovesBare(nodes, allPods, chain)
+		totalMoves = append(totalMoves, chain...)
 	}
+	return totalMoves, true
+}
 
-	// Candidate destinations: top by free (CPU then MEM)
-	dests := topKDestsByFreeSnap(snap, kDestsPerLevel)
+/* =============================== BFS internals ============================ */
 
-	startLen := len(*plan)
-	for _, v := range victims {
-		if visited[v.UID] {
+// BFS state: “we need node `needNode` to be able to host pod `needUID`”.
+type bfsKey struct {
+	needNode string
+	needUID  string
+}
+
+type bfsParent struct {
+	prev bfsKey
+	move moveAction // move that frees 'prev.needNode' to host 'prev.needUID'
+	ok   bool
+}
+
+// Relocate exactly one victim v0 out of target t via an augmenting-path BFS.
+// Decrements *budget once per dequeued state (linear bound).
+func bfsRelocateOne(
+	nodes map[string]*nodeState,
+	t *nodeState,
+	v0 *podState,
+	prioLimit int,
+	budget *int,
+) ([]moveAction, bool) {
+	start := bfsKey{needNode: t.Name, needUID: v0.UID}
+	q := []bfsKey{start}
+	parent := map[bfsKey]bfsParent{}
+	seen := map[bfsKey]bool{start: true}
+
+	for len(q) > 0 {
+		if !budgetDec(budget) {
+			return nil, false
+		}
+
+		cur := q[0]
+		q = q[1:]
+		needNode := nodes[cur.needNode]
+		if needNode == nil {
 			continue
 		}
 
-		for _, dn := range dests {
-			if dn.Name == target && !(t.FreeCPUm+v.CPUm >= p.CPUm && t.FreeMem+v.MemBytes >= p.MemBytes) {
-				continue
-			}
+		vicList := eligibleVictimsOn(needNode, prioLimit, kVictimsPerLevel)
+		dests := topKDestsByFree(nodes, kDestsPerLevel)
 
-			// If destination already fits victim, try direct move
-			if snap.nodes[dn.Name].fits(v.CPUm, v.MemBytes) {
-				if doMove(snap, v.UID, t.Name, dn.Name, plan) {
-					if snap.nodes[target].fits(p.CPUm, p.MemBytes) {
-						return true
-					}
-					if dfsKHopFree(snap, target, p, prioLimit, depth-(len(*plan)-startLen), visited, plan) {
-						return true
-					}
-					undoLastMove(snap, plan)
+		for _, y := range vicList {
+			for _, dn := range dests {
+				if dn.Name == needNode.Name {
+					continue
 				}
-				continue
-			}
-
-			// Otherwise, free destination first (reserve at least 1 move for victim later)
-			if depth-(len(*plan)-startLen) <= 1 {
-				continue
-			}
-			visited[v.UID] = true
-			mark := len(*plan)
-			if dfsKHopFree(snap, dn.Name, v, prioLimit, depth-1, visited, plan) &&
-				snap.nodes[dn.Name].fits(v.CPUm, v.MemBytes) &&
-				doMove(snap, v.UID, t.Name, dn.Name, plan) {
-
-				if snap.nodes[target].fits(p.CPUm, p.MemBytes) {
-					visited[v.UID] = false
-					return true
+				if dn.fits(y.CPUm, y.MemBytes) {
+					parent[bfsKey{needNode: "SUCCESS", needUID: ""}] =
+						bfsParent{prev: cur, move: moveAction{UID: y.UID, From: needNode.Name, To: dn.Name}, ok: true}
+					chain := reconstructBFSChain(parent, bfsKey{needNode: "SUCCESS", needUID: ""})
+					return chain, true
 				}
-				if dfsKHopFree(snap, target, p, prioLimit, depth-(len(*plan)-startLen), visited, plan) {
-					visited[v.UID] = false
-					return true
+			}
+			for _, dn := range dests {
+				if dn.Name == needNode.Name {
+					continue
 				}
-				undoLastMove(snap, plan)
+				next := bfsKey{needNode: dn.Name, needUID: y.UID}
+				if seen[next] {
+					continue
+				}
+				seen[next] = true
+				parent[next] = bfsParent{
+					prev: cur,
+					move: moveAction{UID: y.UID, From: needNode.Name, To: dn.Name},
+					ok:   true,
+				}
+				q = append(q, next)
 			}
-			// backtrack destination frees
-			for len(*plan) > mark {
-				undoLastMove(snap, plan)
-			}
-			visited[v.UID] = false
 		}
 	}
-	return false
+	return nil, false
 }
 
-/* ----------------------------- Helpers & scoring ----------------------------- */
+// Reconstruct BFS path by following parent links from the terminal marker.
+// Returns moves in execution order.
+func reconstructBFSChain(parent map[bfsKey]bfsParent, terminal bfsKey) []moveAction {
+	movesRev := make([]moveAction, 0, 8)
+	cur := terminal
+	for {
+		par, ok := parent[cur]
+		if !ok || !par.ok {
+			break
+		}
+		movesRev = append(movesRev, par.move)
+		cur = par.prev
+		if _, ok := parent[cur]; !ok {
+			break
+		}
+	}
+	// Reverse
+	for i, j := 0, len(movesRev)-1; i < j; i, j = i+1, j-1 {
+		movesRev[i], movesRev[j] = movesRev[j], movesRev[i]
+	}
+	return movesRev
+}
+
+/* =========================== Helpers & scoring ============================ */
 
 func max64(a, b int64) int64 {
 	if a > b {
@@ -349,9 +556,10 @@ func min64(a, b int64) int64 {
 	return b
 }
 
+// Pick best direct-fit node (minimize CPU waste, tie-break by Mem waste).
 func selectDirectFit(nodes map[string]*nodeState, order []*nodeState, p *podState) (string, bool) {
 	bestNode := ""
-	bestWaste := int64(math.MaxInt64) // minimize leftover CPU waste; tie-break on MEM
+	bestWaste := int64(math.MaxInt64)
 	for _, n := range order {
 		if n.fits(p.CPUm, p.MemBytes) {
 			waste := n.FreeCPUm - p.CPUm
@@ -373,6 +581,7 @@ func selectDirectFit(nodes map[string]*nodeState, order []*nodeState, p *podStat
 	return bestNode, bestNode != ""
 }
 
+// Order nodes by deficit for p (CPU first, then Mem). Smaller deficit first.
 func orderTargetsByDeficit(order []*nodeState, p *podState) []*nodeState {
 	targets := make([]*nodeState, len(order))
 	copy(targets, order)
@@ -391,10 +600,8 @@ func orderTargetsByDeficit(order []*nodeState, p *podState) []*nodeState {
 
 func topKTargetsByDeficit(order []*nodeState, p *podState, K int) []*nodeState {
 	ts := orderTargetsByDeficit(order, p)
-	if K <= 0 || K >= len(ts) {
-		return ts
-	}
-	return ts[:K]
+	take := limitCount(K, len(ts))
+	return ts[:take]
 }
 
 func totalFreeResources(order []*nodeState) (int64, int64) {
@@ -406,107 +613,21 @@ func totalFreeResources(order []*nodeState) (int64, int64) {
 	return cpu, mem
 }
 
-/* --- snapshot for backtracking --- */
-
-type snapshot struct {
-	nodes map[string]*nodeState
-	pods  map[string]*podState
-}
-
-func newSnapshot(nodes map[string]*nodeState, pods map[string]*podState) *snapshot {
-	ns := make(map[string]*nodeState, len(nodes))
-	for name, n := range nodes {
-		c := &nodeState{
-			Name:     n.Name,
-			CapCPUm:  n.CapCPUm,
-			CapMem:   n.CapMem,
-			FreeCPUm: n.FreeCPUm,
-			FreeMem:  n.FreeMem,
-			Pods:     make(map[string]*podState, len(n.Pods)),
-		}
-		ns[name] = c
-	}
-	ps := make(map[string]*podState, len(pods))
-	for uid, p := range pods {
-		cp := *p
-		ps[uid] = &cp
-		if p.Node != "" {
-			ns[p.Node].Pods[uid] = ps[uid]
-		}
-	}
-	return &snapshot{nodes: ns, pods: ps}
-}
-
-func (s *snapshot) move(uid, from, to string) bool {
-	p := s.pods[uid]
-	if p == nil {
-		return false
-	}
-	fn := s.nodes[from]
-	tn := s.nodes[to]
-	if fn == nil || tn == nil {
-		return false
-	}
-	if fn.Pods[uid] == nil {
-		return false
-	}
-	if !tn.fits(p.CPUm, p.MemBytes) {
-		return false
-	}
-	fn.removePod(p)
-	tn.addPod(p)
-	return true
-}
-
-func doMove(snap *snapshot, uid, from, to string, plan *[]moveAction) bool {
-	if snap.move(uid, from, to) {
-		*plan = append(*plan, moveAction{UID: uid, From: from, To: to})
-		return true
-	}
-	return false
-}
-
-func undoLastMove(snap *snapshot, plan *[]moveAction) {
-	if len(*plan) == 0 {
-		return
-	}
-	last := (*plan)[len(*plan)-1]
-	_ = snap.move(last.UID, last.To, last.From)
-	*plan = (*plan)[:len(*plan)-1]
-}
-
-func topKDestsByFreeSnap(snap *snapshot, K int) []*nodeState {
-	ns := make([]*nodeState, 0, len(snap.nodes))
-	for _, n := range snap.nodes {
-		ns = append(ns, n)
-	}
-	sort.Slice(ns, func(i, j int) bool {
-		if ns[i].FreeCPUm != ns[j].FreeCPUm {
-			return ns[i].FreeCPUm > ns[j].FreeCPUm
-		}
-		return ns[i].FreeMem > ns[j].FreeMem
-	})
-	if K > 0 && K < len(ns) {
-		return ns[:K]
-	}
-	return ns
-}
-
-/* --- victim/destination selection --- */
-
+// Coverage-biased victims on node t (strictly lower prio than pending pod),
+// ordered by (coverage score desc) → (lower prio) → (smaller).
 func pickVictimsKHop(t *nodeState, prioLimit int, needCPU, needMem int64, K int) []*podState {
 	type vic struct {
 		p     *podState
-		score int64 // coverage-weighted
+		score int64
 	}
 	buf := make([]vic, 0, len(t.Pods))
 	for _, rp := range t.Pods {
-		if rp.Protected || int(rp.Priority) >= prioLimit { // strictly lower prio than pending
+		if rp.Protected || int(rp.Priority) >= prioLimit {
 			continue
 		}
 		cg := min64(rp.CPUm, needCPU)
 		mg := min64(rp.MemBytes, needMem)
-		sc := cg*3 + mg*2
+		sc := cg*3 + mg*2 // heuristic: emphasize CPU slightly
 		buf = append(buf, vic{p: rp, score: sc})
 	}
 	if len(buf) == 0 {
@@ -515,18 +636,16 @@ func pickVictimsKHop(t *nodeState, prioLimit int, needCPU, needMem int64, K int)
 	sort.Slice(buf, func(i, j int) bool {
 		if buf[i].score != buf[j].score {
 			return buf[i].score > buf[j].score
-		} // more coverage first
+		}
 		if buf[i].p.Priority != buf[j].p.Priority {
 			return buf[i].p.Priority < buf[j].p.Priority
-		} // lower prio first
+		}
 		if buf[i].p.CPUm != buf[j].p.CPUm {
 			return buf[i].p.CPUm < buf[j].p.CPUm
-		} // smaller first
+		}
 		return buf[i].p.MemBytes < buf[j].p.MemBytes
 	})
-	if K > 0 && K < len(buf) {
-		buf = buf[:K]
-	}
+	buf = buf[:limitCount(K, len(buf))]
 	out := make([]*podState, len(buf))
 	for i := range buf {
 		out[i] = buf[i].p
@@ -534,8 +653,7 @@ func pickVictimsKHop(t *nodeState, prioLimit int, needCPU, needMem int64, K int)
 	return out
 }
 
-/* --- apply moves to real state & scoring --- */
-
+// Apply moves to real state and record placements.
 func applyMovesAndRecord(nodes map[string]*nodeState, pods map[string]*podState, moves []moveAction, placements map[string]string) {
 	for _, mv := range moves {
 		p := pods[mv.UID]
@@ -556,7 +674,27 @@ func applyMovesAndRecord(nodes map[string]*nodeState, pods map[string]*podState,
 	}
 }
 
-// pickSingleEvictionCandidate: choose exactly one victim whose eviction lets p fit (global cheapest).
+// Apply moves to real state (no placements bookkeeping).
+func applyMovesBare(nodes map[string]*nodeState, pods map[string]*podState, moves []moveAction) {
+	for _, mv := range moves {
+		p := pods[mv.UID]
+		if p == nil {
+			continue
+		}
+		from := nodes[mv.From]
+		to := nodes[mv.To]
+		if from == nil || to == nil {
+			continue
+		}
+		if from.Pods[mv.UID] == nil {
+			continue
+		}
+		from.removePod(p)
+		to.addPod(p)
+	}
+}
+
+// Single-eviction candidate: pick one victim that enables immediate fit (globally cheapest).
 func pickSingleEvictionCandidate(order []*nodeState, p *podState) (*podState, *nodeState) {
 	var bestVictim *podState
 	var bestNode *nodeState
@@ -572,10 +710,8 @@ func pickSingleEvictionCandidate(order []*nodeState, p *podState) (*podState, *n
 		needCPU := p.CPUm - n.FreeCPUm
 		needMem := p.MemBytes - n.FreeMem
 		if needCPU <= 0 && needMem <= 0 {
-			continue
-		} // already fits
-
-		// Eligible victims: strictly lower prio, not protected
+			continue // already fits
+		}
 		cands := make([]*podState, 0, len(n.Pods))
 		for _, rp := range n.Pods {
 			if rp.Protected || rp.Priority >= p.Priority {
@@ -586,7 +722,6 @@ func pickSingleEvictionCandidate(order []*nodeState, p *podState) (*podState, *n
 		if len(cands) == 0 {
 			continue
 		}
-
 		sort.Slice(cands, func(i, j int) bool {
 			if cands[i].Priority != cands[j].Priority {
 				return cands[i].Priority < cands[j].Priority
@@ -616,6 +751,7 @@ func pickSingleEvictionCandidate(order []*nodeState, p *podState) (*podState, *n
 	return bestVictim, bestNode
 }
 
+// Score: placed counts by priority tier; totals for evicted and moved.
 func buildScoreFromState(allPods map[string]*podState, originalNode map[string]string, evicted []SolverEviction) Score {
 	placedByPri := map[string]int{}
 	evictedSet := make(map[string]bool, len(evicted))
@@ -640,6 +776,67 @@ func buildScoreFromState(allPods map[string]*podState, originalNode map[string]s
 			moves++
 		}
 	}
-
 	return Score{PlacedByPriority: placedByPri, Evicted: len(evicted), Moved: moves}
+}
+
+/* ====================== Small utilities used by BFS ======================= */
+
+// Eligible victims on a node, ordered: lower prio first, then smaller pods.
+// limit: -1 unlimited, 0 none, >0 cap
+func eligibleVictimsOn(n *nodeState, prioLimit int, limit int) []*podState {
+	buf := make([]*podState, 0, len(n.Pods))
+	for _, rp := range n.Pods {
+		if rp.Protected || int(rp.Priority) >= prioLimit {
+			continue
+		}
+		buf = append(buf, rp)
+	}
+	sort.Slice(buf, func(i, j int) bool {
+		if buf[i].Priority != buf[j].Priority {
+			return buf[i].Priority < buf[j].Priority
+		}
+		if buf[i].CPUm != buf[j].CPUm {
+			return buf[i].CPUm < buf[j].CPUm
+		}
+		return buf[i].MemBytes < buf[j].MemBytes
+	})
+	take := limitCount(limit, len(buf))
+	return buf[:take]
+}
+
+// Top-K destinations by current free (CPU, then Mem) in descending order.
+func topKDestsByFree(nodes map[string]*nodeState, K int) []*nodeState {
+	ns := make([]*nodeState, 0, len(nodes))
+	for _, n := range nodes {
+		ns = append(ns, n)
+	}
+	sort.Slice(ns, func(i, j int) bool {
+		if ns[i].FreeCPUm != ns[j].FreeCPUm {
+			return ns[i].FreeCPUm > ns[j].FreeCPUm
+		}
+		return ns[i].FreeMem > ns[j].FreeMem
+	})
+	take := limitCount(K, len(ns))
+	return ns[:take]
+}
+
+// Best direct destination for a given pod (min CPU waste, tie by Mem).
+func bestDirectDest(nodes map[string]*nodeState, p *podState) string {
+	best := ""
+	bestCPUWaste := int64(math.MaxInt64)
+	bestMEMWaste := int64(math.MaxInt64)
+	for _, n := range nodes {
+		if n.Pods[p.UID] != nil { // skip current node
+			continue
+		}
+		if n.fits(p.CPUm, p.MemBytes) {
+			cw := n.FreeCPUm - p.CPUm
+			mw := n.FreeMem - p.MemBytes
+			if cw < bestCPUWaste || (cw == bestCPUWaste && mw < bestMEMWaste) {
+				bestCPUWaste, bestMEMWaste = cw, mw
+				best = n.Name
+			}
+		}
+	}
+	return best
 }
