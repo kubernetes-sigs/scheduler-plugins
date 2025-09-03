@@ -366,6 +366,9 @@ class KwokTestGeneratorRunner:
             ensure_namespace(self.ctx, self.ns, recreate=True)
             ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
 
+            # sleep a bit
+            time.sleep(1)
+            
             # apply workload
             _ = self._apply_standalone_pods() if self.args.num_replicaset <= 0 else self._apply_rs()[0]
 

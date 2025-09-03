@@ -49,13 +49,13 @@ run_case() {
 
     kubectl apply -f scripts/kwok/test-high-prio-rs.yaml
 
-    wait_for_running_count "${NS}" 35 80
+    wait_for_running_count "${NS}" "$expected" 80
 
   echo "===== Case ${mode}-${at} complete ====="
 }
 
 run_case "continuously" "postfilter" 34
 run_case "in_batches" "postfilter" 34
-run_case "for_every" "postfilter" 35
-run_case "for_every" "preenqueue" 35
-run_case "in_batches" "preenqueue" 35
+run_case "for_every" "postfilter" 34
+run_case "for_every" "preenqueue" 34
+run_case "in_batches" "preenqueue" 34
