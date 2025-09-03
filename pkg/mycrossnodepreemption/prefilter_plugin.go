@@ -51,22 +51,23 @@ func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtens
 // - nil and an appropriate framework.Status reason to block/allow.
 func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
 	if !pl.IsActivePlan() {
-		return nil, "no active plan", true // allow
+		return nil, "no active plan", true
 	}
 	ap := pl.getActivePlan()
-	// Lead pod pinning (single-preemptor mode)
-	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
-		return sets.New(ap.PlanDoc.TargetNode), "lead; pin to target", true
+
+	// Standalone/preemptor by name
+	if tgt, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok && tgt != "" {
+		return sets.New(tgt), "standalone; pin to planned node", true
 	}
 
 	// Workload quota routing
 	if wk, ok := topWorkload(pod); ok {
 		key := wk.String()
-		if _, inPlan := ap.PlanDoc.WkDesiredPerNode[key]; !inPlan {
+		if _, in := ap.PlanDoc.WorkloadPerNode[key]; !in {
 			return nil, "workload not in active plan; block", false
 		}
 		allowed := sets.New[string]()
-		if byNode, ok := ap.Remaining[key]; ok {
+		if byNode, ok := ap.WorkloadPerNodeCnts[key]; ok {
 			for node, ctr := range byNode {
 				if ctr.Load() > 0 {
 					allowed.Insert(node)
@@ -77,12 +78,6 @@ func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[st
 			return nil, "workload quotas exhausted; block", false
 		}
 		return allowed, "workload nodes allowed", true
-	}
-
-	// Standalone by name
-	full := pod.Namespace + "/" + pod.Name
-	if tgt, ok := ap.PlanDoc.PlacementsByName[full]; ok {
-		return sets.New(tgt), "standalone; pin to planned node", true
 	}
 
 	return nil, "pod not in active plan; block", false

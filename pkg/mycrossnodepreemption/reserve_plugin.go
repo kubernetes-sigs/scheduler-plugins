@@ -40,12 +40,6 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	}
 	ap := pl.getActivePlan()
 
-	// Pods that have are targeted directly; they are not consuming workload quota.
-	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
-		klog.V(V2).InfoS("Reserve: pending pod; not consuming workload quota", "pod", klog.KObj(pod), "node", ap.PlanDoc.TargetNode)
-		return framework.NewStatus(framework.Success)
-	}
-
 	// Check if pod is part of a workload; if not, allow it immediately.
 	// Otherwise, we need to check the workload quota.
 	wk, ok := topWorkload(pod)
@@ -54,12 +48,12 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 		return framework.NewStatus(framework.Success)
 	}
 	workloadKey := wk.String()
-	desiredPerNode, ok := ap.PlanDoc.WkDesiredPerNode[workloadKey]
+	desiredPerNode, ok := ap.PlanDoc.WorkloadPerNode[workloadKey]
 	if !ok || desiredPerNode[node] == 0 {
 		klog.V(V2).InfoS("Reserve: workload not allowed on node", "pod", klog.KObj(pod), "node", node)
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not allowed on node")
 	}
-	allWorkloadCnts, ok := ap.Remaining[workloadKey]
+	allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[workloadKey]
 	if !ok {
 		klog.V(V2).InfoS("Reserve: workload not tracked", "pod", klog.KObj(pod), "node", node)
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not tracked")
@@ -101,7 +95,7 @@ func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.Cy
 		klog.V(V2).InfoS("Unreserve: no active plan", "pod", klog.KObj(pod))
 		return
 	}
-	if allWorkloadCnts, ok := ap.Remaining[reservationState.key.rsKey]; ok {
+	if allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[reservationState.key.rsKey]; ok {
 		if ctr, ok := allWorkloadCnts[reservationState.key.nodeName]; ok {
 			ctr.Add(1) // return quota
 		}

@@ -32,6 +32,7 @@ TODO
 
 ## TODOs Plugin
 
+- Make a helper that calculate the score instead of solver does it.
 - Only capture pods one time
 - Improve fast solver.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
@@ -49,6 +50,7 @@ TODO
 
 ## Write
 
+- Write about that recreation always create a new uid therefore we place by name
 - Write about that the OptimizeForEvery@PreEnqueue cannot be deterministic as we do not determine which order the pods are taken.
 - Write something about watchdogTTL
 - Write something about the snapshotlister that it lags one scheduling cycle.

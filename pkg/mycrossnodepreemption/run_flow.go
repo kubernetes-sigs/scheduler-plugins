@@ -20,10 +20,6 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		}
 	}
 
-	// Make sure we have the latest node and pod information
-	// TODO: wait for pod and node cache has synced instead of sleeping
-	time.Sleep(1 * time.Second)
-
 	start := time.Now()
 
 	// ---------- Phase-specific setup ----------
@@ -205,15 +201,11 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestOut)
 
 	// ---------- Register + execute plan ----------
-	var plan *Plan
+	var doc *StoredPlan
 	var ap *ActivePlanState
-	if solveMode == SolveSingle {
-		plan, ap, err = pl.registerPlan(ctx, bestOut, preemptor) // pass the pod
-	} else {
-		plan, ap, err = pl.registerPlan(ctx, bestOut, nil)
-	}
+	doc, ap, err = pl.registerPlan(ctx, bestOut, preemptor) // preemptor may be nil
 	if err != nil {
-		// For single-preemptor, keep it blocked if we failed to register/execute.
+		// keep single-preemptor blocked on error
 		if solveMode == SolveSingle && preemptor != nil {
 			pl.Blocked.AddPod(preemptor)
 		}
@@ -228,9 +220,9 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		return nil, ErrNoop
 	}
 
-	// Only execute if there are moves or evicts
-	if plan != nil && (len(plan.Moves) > 0 || len(plan.Evicts) > 0) {
-		if err := pl.executePlan(ctx, plan); err != nil {
+	// Execute if there are moves/evictions
+	if len(doc.Moves) > 0 || len(doc.Evicts) > 0 {
+		if err := pl.executePlan(ctx, doc); err != nil {
 			klog.ErrorS(err, "Plan execution failed")
 			pl.onPlanSettled()
 		}
@@ -242,13 +234,13 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 
 	res := &FlowResult{
 		PlanID:         "",
-		Nominated:      "",
+		Nominated:      bestOut.NominatedNode,
 		BatchSize:      len(batchedPods),
-		Moves:          0,
-		Evicts:         0,
+		Moves:          len(doc.Moves),
+		Evicts:         len(doc.Evicts),
 		TotalPrePlan:   totalPrePlan,
 		TotalPostPlan:  totalPostPlan,
-		SolverStatus:   "",
+		SolverStatus:   bestOut.Status,
 		TotalDuration:  time.Since(start),
 		SolverDuration: solverDuration,
 	}
@@ -257,10 +249,6 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 	res.Nominated = bestOut.NominatedNode
 	res.SolverStatus = bestOut.Status
-	if plan != nil {
-		res.Moves = len(plan.Moves)
-		res.Evicts = len(plan.Evicts)
-	}
 
 	klog.InfoS(string(phase)+": plan execution finished; waiting for settlement",
 		"planID", res.PlanID,

@@ -3,6 +3,7 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -35,6 +36,10 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 
 	case DecideEvery:
 		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
+		// Make sure we have the correct node and pod information;
+		// needed in postfilter as we do not know if any pod was already in the middle of scheduling.
+		// TODO: wait for pod and node cache has synced instead of sleeping
+		time.Sleep(1 * time.Second)
 		res, err := pl.runFlow(ctx, PhasePostFilter, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {

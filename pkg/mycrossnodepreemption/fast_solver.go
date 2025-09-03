@@ -112,24 +112,6 @@ func (n *nodeState) removePod(p *podState) {
 
 type moveAction struct{ UID, From, To string }
 
-// logPlacement emits before/after free on a node for a placement decision.
-func logPlacement(p *podState, n *nodeState, via string, freeCPUbefore, freeMembefore int64) {
-	klog.V(V2).InfoS("Placed pod",
-		"via", via,
-		"uid", p.UID,
-		"priority", p.Priority,
-		"node", n.Name,
-		"podCPU_m", p.CPUm,
-		"podMem_MiB", bytesToMiB(p.MemBytes),
-		"freeCPU_m_before", freeCPUbefore,
-		"freeMem_MiB_before", bytesToMiB(freeMembefore),
-		"freeCPU_m_after", n.FreeCPUm,
-		"freeMem_MiB_after", bytesToMiB(n.FreeMem),
-		"capCPU_m", n.CapCPUm,
-		"capMem_MiB", bytesToMiB(n.CapMem),
-	)
-}
-
 /* =============================== Solver entry ============================= */
 
 func runFastSolver(in SolverInput) *SolverOutput {
@@ -651,27 +633,6 @@ func pickVictimsKHop(t *nodeState, prioLimit int, needCPU, needMem int64, K int)
 		out[i] = buf[i].p
 	}
 	return out
-}
-
-// Apply moves to real state and record placements.
-func applyMovesAndRecord(nodes map[string]*nodeState, pods map[string]*podState, moves []moveAction, placements map[string]string) {
-	for _, mv := range moves {
-		p := pods[mv.UID]
-		if p == nil {
-			continue
-		}
-		from := nodes[mv.From]
-		to := nodes[mv.To]
-		if from == nil || to == nil {
-			continue
-		}
-		if from.Pods[mv.UID] == nil {
-			continue
-		}
-		from.removePod(p)
-		to.addPod(p)
-		placements[mv.UID] = to.Name
-	}
 }
 
 // Apply moves to real state (no placements bookkeeping).

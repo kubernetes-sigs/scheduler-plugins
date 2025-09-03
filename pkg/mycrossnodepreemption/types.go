@@ -1,4 +1,4 @@
-// types.go
+// pkg/mycrossnodepreemption/types.go
 package mycrossnodepreemption
 
 import (
@@ -12,6 +12,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
+// ===== Plugin root =====
+
 type MyCrossNodePreemption struct {
 	Handle     framework.Handle
 	Client     kubernetes.Interface
@@ -22,32 +24,38 @@ type MyCrossNodePreemption struct {
 	CachesWarm atomic.Bool
 }
 
+// ===== Workload identification =====
+
+type WorkloadKind int
+
 const (
-	// Deployment and CronJob are handled otherwise
 	wkReplicaSet WorkloadKind = iota
 	wkStatefulSet
 	wkDaemonSet
 	wkJob
 )
 
+type WorkloadKey struct {
+	Kind      WorkloadKind
+	Namespace string
+	Name      string
+}
+
+// ===== Optimization modes =====
+
 type OptimizationCadenceMode int
 
 const (
-	OptimizeForEvery     OptimizationCadenceMode = iota // solve per unschedulable preemptor (blocking)
-	OptimizeInBatches                                   // periodic batch solving (blocking)
-	OptimizeContinuously                                // continuous optimization (non-blocking)
+	OptimizeForEvery OptimizationCadenceMode = iota
+	OptimizeInBatches
+	OptimizeContinuously
 )
 
 type OptimizationAtMode int
 
 const (
-	OptimizeAtPreEnqueue OptimizationAtMode = iota // act in PreEnqueue
-	OptimizeAtPostFilter                           // act in PostFilter
-)
-
-const (
-	SolverModeLexi     = "lexi"
-	SolverModeWeighted = "weighted"
+	OptimizeAtPreEnqueue OptimizationAtMode = iota
+	OptimizeAtPostFilter
 )
 
 type SolveMode int
@@ -58,14 +66,13 @@ const (
 	SolveContinuously
 )
 
-// decideStrategy says what to do with this pod at this phase.
 type StrategyDecision int
 
 const (
-	DecidePassThrough StrategyDecision = iota // let default scheduler proceed
-	DecideBatch                               // add to Batched and stop here
-	DecideEvery                               // run the single-preemptor optimization flow now
-	DecideBlockActive                         // plan active; block this pod
+	DecidePassThrough StrategyDecision = iota
+	DecideBatch
+	DecideEvery
+	DecideBlockActive
 )
 
 type Phase string
@@ -77,47 +84,21 @@ const (
 	PhaseContinuous Phase = "ContinuousLoop"
 )
 
-type FlowResult struct {
-	PlanID                        string
-	Nominated                     string
-	BatchSize                     int
-	Moves, Evicts                 int
-	TotalPostPlan, TotalPrePlan   int
-	SolverStatus                  string
-	TotalDuration, SolverDuration time.Duration
-}
+// ===== Solver I/O (unchanged, just kept) =====
 
-type ActivePlanState struct {
-	ID        string
-	PlanDoc   *StoredPlan
-	Remaining WorkloadNodeCounters
-	Ctx       context.Context
-	Cancel    context.CancelFunc
-}
-
-type StoredPlan struct {
-	PluginVersion    string                    `json:"pluginVersion"`
-	Mode             string                    `json:"mode"`
-	GeneratedAt      time.Time                 `json:"generatedAt"`
-	PendingPod       string                    `json:"pendingPod,omitempty"`
-	Completed        bool                      `json:"completed"`
-	CompletedAt      *time.Time                `json:"completedAt,omitempty"`
-	PendingUID       string                    `json:"pendingUID,omitempty"`
-	TargetNode       string                    `json:"targetNode,omitempty"`
-	SolverOutput     *SolverOutput             `json:"solverOutput,omitempty"`
-	Plan             Plan                      `json:"plan"`
-	PlacementsByName map[string]string         `json:"placementsByName,omitempty"`
-	WkDesiredPerNode map[string]map[string]int `json:"wkDesiredPerNode,omitempty"`
-}
+const (
+	SolverModeLexi     = "lexi"
+	SolverModeWeighted = "weighted"
+)
 
 type SolverInput struct {
-	Preemptor      *SolverPod   `json:"preemptor,omitempty"` // nil => batch mode
+	Preemptor      *SolverPod   `json:"preemptor,omitempty"`
 	Nodes          []SolverNode `json:"nodes"`
 	Pods           []SolverPod  `json:"pods"`
 	TimeoutMs      int64        `json:"timeout_ms"`
 	IgnoreAffinity bool         `json:"ignore_affinity"`
 	LogProgress    bool         `json:"log_progress,omitempty"`
-	Mode           string       `json:"solver_mode,omitempty"` // "lexi" or "weighted"
+	Mode           string       `json:"solver_mode,omitempty"`
 	UseHints       bool         `json:"use_hints,omitempty"`
 	Workers        int          `json:"workers,omitempty"`
 }
@@ -143,7 +124,7 @@ type SolverNode struct {
 type SolverOutput struct {
 	Status        string            `json:"status"`
 	NominatedNode string            `json:"nominatedNode,omitempty"`
-	Placements    map[string]string `json:"placements"`
+	Placements    map[string]string `json:"placements"` // uid -> targetNode
 	Evictions     []SolverEviction  `json:"evictions"`
 	Score         Score             `json:"score,omitempty"`
 }
@@ -160,42 +141,91 @@ type Score struct {
 	Moved            int            `json:"moved,omitempty"`
 }
 
-type Plan struct {
-	TargetNode string  `json:"targetNode"` // may be empty in batch mode
-	Moves      []Move  `json:"moves"`
-	Evicts     []Evict `json:"evicts"`
-}
+// ===== Building blocks =====
 
-type Move struct {
-	Pod      PodRef `json:"pod"`
-	FromNode string `json:"fromNode"`
-	ToNode   string `json:"toNode"`
-	CPUm     int64  `json:"cpu_m"`
-	MemBytes int64  `json:"mem_bytes"`
-}
-
-type Evict struct {
-	Pod      PodRef `json:"pod"`
-	FromNode string `json:"fromNode"`
-	CPUm     int64  `json:"cpu_m"`
-	MemBytes int64  `json:"mem_bytes"`
-}
-
-type PodRef struct {
+type PodKeyLite struct {
+	UID       string `json:"uid"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
-	UID       string `json:"uid"`
 }
 
-type WorkloadNodeCounters map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
-
-type WorkloadKind int
-
-type WorkloadKey struct {
-	Kind      WorkloadKind
-	Namespace string
-	Name      string
+type PlacementLite struct {
+	Pod        PodKeyLite `json:"pod"`
+	TargetNode string     `json:"targetNode"`
 }
+
+type MoveLite struct {
+	Pod      PodKeyLite `json:"pod"`
+	FromNode string     `json:"fromNode"`
+	ToNode   string     `json:"toNode"`
+}
+
+type EvictLite struct {
+	Pod      PodKeyLite `json:"pod"`
+	FromNode string     `json:"fromNode"`
+}
+
+type PendingInfo struct {
+	Pod        PodKeyLite `json:"pod"`
+	TargetNode string     `json:"targetNode"`
+}
+
+type SolverSummary struct {
+	Status string `json:"status"`
+	Score  Score  `json:"score,omitempty"`
+}
+
+// WorkloadPerNode: workloadKey -> node -> desired count
+type WorkloadPerNode map[string]map[string]int
+
+// ===== Your new StoredPlan shape =====
+
+type StoredPlan struct {
+	PluginVersion string       `json:"pluginVersion"`
+	Mode          string       `json:"mode"`
+	GeneratedAt   time.Time    `json:"generatedAt"`
+	Completed     bool         `json:"completed"`
+	CompletedAt   *time.Time   `json:"completedAt,omitempty"`
+	Pending       *PendingInfo `json:"pending,omitempty"` // Single-preemptor metadata (nil in batch/continuous)
+	// Actions
+	Evicts []EvictLite `json:"evicts,omitempty"`
+	Moves  []MoveLite  `json:"moves,omitempty"`
+	// Solver summary (status & score)
+	Solver SolverSummary `json:"solver"`
+	// Reference snapshot (where pods were at solve time) uid -> node
+	OldPlacements map[string]string `json:"oldPlacements,omitempty"`
+	// Planned new placements (pending or moved)
+	NewPlacements []PlacementLite `json:"newPlacements,omitempty"`
+	// Desired placements per workload / per node
+	WorkloadPerNode WorkloadPerNode `json:"workloadPerNode,omitempty"`
+}
+
+// ===== Runtime indices for fast execution =====
+
+type WorkloadPerNodeCnts map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
+
+type ActivePlanState struct {
+	ID                  string
+	PlanDoc             *StoredPlan
+	WorkloadPerNodeCnts WorkloadPerNodeCnts
+	PlacementByName     map[string]string // pod ns/name -> targetNode
+	Ctx                 context.Context
+	Cancel              context.CancelFunc
+}
+
+// ===== Flow / misc =====
+
+type FlowResult struct {
+	PlanID                        string
+	Nominated                     string
+	BatchSize                     int
+	Moves, Evicts                 int
+	TotalPostPlan, TotalPrePlan   int
+	SolverStatus                  string
+	TotalDuration, SolverDuration time.Duration
+}
+
+// ===== PodSet =====
 
 type PodSet struct {
 	mu sync.RWMutex
