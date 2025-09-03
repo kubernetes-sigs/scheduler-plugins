@@ -27,7 +27,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	}
 	ok, err := pl.isPlanCompleted(ctx, ap.PlanDoc, pod)
 	if err != nil {
-		_ = pl.onPlanSettled()
+		_ = pl.onPlanSettled(PlanStatusFailed)
 		klog.ErrorS(err, "PostBind: completion check failed")
 		return
 	}
@@ -37,7 +37,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	}
 	// Double-check still same plan
 	cur := pl.getActivePlan()
-	if cur != nil && cur.ID == ap.ID && pl.onPlanSettled() {
-		pl.markPlanCompleted(ctx, ap.ID) // idempotent
+	if cur != nil && cur.ID == ap.ID {
+		pl.onPlanSettled(PlanStatusCompleted)
 	}
 }

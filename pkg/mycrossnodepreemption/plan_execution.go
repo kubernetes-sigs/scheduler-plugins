@@ -14,12 +14,7 @@ import (
 )
 
 // TODO:
-func (pl *MyCrossNodePreemption) registerPlan(
-	ctx context.Context,
-	out *SolverOutput,
-	solverScore Score,
-	preemptor *v1.Pod, // may be nil
-) (*StoredPlan, *ActivePlanState, string, error) {
+func (pl *MyCrossNodePreemption) registerPlan(ctx context.Context, out *SolverOutput, summary SolverSummary, preemptor *v1.Pod) (*StoredPlan, *ActivePlanState, string, error) {
 
 	evicts, moves, newPls, nominatedNode, err := pl.buildActionsFromSolver(out, preemptor)
 	if err != nil {
@@ -37,10 +32,10 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		PluginVersion:   Version,
 		Mode:            modeToString(),
 		GeneratedAt:     time.Now().UTC(),
-		Completed:       false,
+		Status:          PlanStatusActive,
 		Evicts:          evicts,
 		Moves:           moves,
-		Solver:          SolverSummary{Status: out.Status, Score: solverScore},
+		Solver:          summary,
 		OldPlacements:   oldPls,
 		NewPlacements:   newPls, // includes both pending and moved (also preemptor)
 		WorkloadPerNode: wkDesired,

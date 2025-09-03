@@ -9,6 +9,119 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type solverAttempt struct {
+	name    string
+	enabled bool
+	timeout time.Duration
+	fudgeMs int64
+	run     func(ctx context.Context, in SolverInput) (*SolverOutput, error)
+}
+
+// runSolvers tries enabled solvers in order, keeping the best feasible improvement.
+// Returns: bestOut, whether anything was feasible, the best solver summary, and total duration (all attempts).
+func (pl *MyCrossNodePreemption) runSolvers(
+	ctx context.Context,
+	phase Phase,
+	in SolverInput,
+	baseline Score,
+) (bestOut *SolverOutput, anyFeasible bool, bestSolverSummary SolverSummary, totalDuration time.Duration) {
+	start := time.Now()
+
+	attempts := []solverAttempt{
+		{
+			name:    "fast",
+			enabled: SolverFastEnabled,
+			timeout: SolverFastTimeout,
+			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
+				return runFastSolver(in), nil
+			},
+		},
+		{
+			name:    "python",
+			enabled: SolverPythonEnabled,
+			timeout: SolverPythonTimeout,
+			fudgeMs: 200, // let the solver return a feasible result before ctx timeout
+			run:     pl.runPythonSolver,
+		},
+	}
+
+	var (
+		bestScore    Score
+		bestName     string
+		bestDuration time.Duration
+	)
+
+	for _, att := range attempts {
+		if !att.enabled {
+			continue
+		}
+		// copy input and set per-attempt timeout hint
+		inAttempt := in
+		toMs := att.timeout.Milliseconds()
+		if att.fudgeMs > 0 && toMs > att.fudgeMs {
+			toMs -= att.fudgeMs
+		}
+		inAttempt.TimeoutMs = toMs
+
+		ctxAtt, cancel := context.WithTimeout(ctx, att.timeout)
+		attStart := time.Now()
+		out, err := att.run(ctxAtt, inAttempt)
+		cancel()
+		attDur := time.Since(attStart)
+
+		feasible := (err == nil) && IsSolverFeasible(out)
+		if !feasible {
+			continue
+		}
+		anyFeasible = true
+		sc := computeSolverScore(inAttempt, out)
+
+		if bestOut == nil {
+			// First feasible candidate: compare vs baseline for logging.
+			switch IsImprovement(baseline, sc) {
+			case 1:
+				klog.V(V2).InfoS(string(phase)+": "+att.name+" improved over baseline",
+					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+			case 0:
+				klog.V(V2).InfoS(string(phase)+": "+att.name+" equal to baseline",
+					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+			default:
+				klog.V(V2).InfoS(string(phase)+": "+att.name+" worse than baseline",
+					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+			}
+			bestOut, bestScore, bestName, bestDuration = out, sc, att.name, attDur
+			continue
+		}
+
+		// Compare against the current best.
+		switch IsImprovement(bestScore, sc) {
+		case 1:
+			klog.InfoS(string(phase)+": "+att.name+" improved over "+bestName,
+				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+			bestOut, bestScore, bestName, bestDuration = out, sc, att.name, attDur
+		case 0:
+			klog.InfoS(string(phase)+": "+att.name+" equal to "+bestName,
+				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+			bestName = bestName + "=" + att.name
+		default:
+			klog.InfoS(string(phase)+": "+att.name+" worse than "+bestName,
+				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+		}
+	}
+
+	// Build best solver summary (if any)
+	if bestOut != nil {
+		bestSolverSummary = SolverSummary{
+			Name:     bestName,
+			Status:   bestOut.Status,
+			Duration: bestDuration,
+			Score:    bestScore,
+		}
+	}
+
+	return bestOut, anyFeasible, bestSolverSummary, time.Since(start)
+}
+
 // TODO
 func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singlePod *v1.Pod) (*FlowResult, error) {
 	// Continuous: do NOT take Active yet (we only take it if there is an improvement to apply).
@@ -54,132 +167,34 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		return nil, err
 	}
 
-	// ---------- Solve with heuristic first, then (optionally) Python ----------
-	solverStart := time.Now()
-
-	// Candidate best solution (from heuristic and/or python)
-	var bestOut *SolverOutput
-	fastFeasible := false
-	pyFeasible := false
-	bestSolver := "none" // "heuristic" or "python"
-	var bestScore, fastScore, pyScore Score
-
-	// 1) Optional fast (greedy) solver
-	if SolverFastEnabled {
-		in0.TimeoutMs = SolverFastTimeout.Milliseconds() // TODO: Make use of in.TimeoutMs
-		fastOut := runFastSolver(in0)
-		if fastOut != nil {
-			fastScore = computeSolverScore(in0, fastOut)
-		}
-		fastFeasible = fastOut != nil && IsSolverFeasible(fastOut)
-		bestOut = fastOut
-		bestScore = fastScore
-		if fastFeasible {
-			switch IsImprovement(baseline, fastScore) {
-			case 1:
-				klog.V(V2).InfoS(string(phase)+": fast solver improved over baseline",
-					"placedByPri", fastScore.PlacedByPriority,
-					"evictions", fastScore.Evicted,
-					"moves", fastScore.Moved)
-				bestSolver = "fast"
-			case 0:
-				klog.V(V2).InfoS(string(phase)+": fast solver equal to baseline",
-					"placedByPri", fastScore.PlacedByPriority,
-					"evictions", fastScore.Evicted,
-					"moves", fastScore.Moved)
-			case -1:
-				klog.V(V2).InfoS(string(phase)+": fast solver worse than baseline",
-					"placedByPri", fastScore.PlacedByPriority,
-					"evictions", fastScore.Evicted,
-					"moves", fastScore.Moved)
-			}
-		}
-	}
-
-	// 2) Python solver (only keep if it improves over heuristic)
-	if SolverPythonEnabled {
-		ctxSolve, cancel := context.WithTimeout(ctx, SolverPythonTimeout)
-		in0.TimeoutMs = SolverPythonTimeout.Milliseconds() - 200 // substract 200 ms to let the solver be able to return a feasible result.
-		pyOut, pyErr := pl.runSolver(ctxSolve, in0)
-		cancel()
-		pyFeasible = pyErr == nil && IsSolverFeasible(pyOut)
-		if pyFeasible {
-			pyScore = computeSolverScore(in0, pyOut)
-		}
-		if bestOut == nil {
-			if pyFeasible {
-				bestOut = pyOut
-				bestSolver = "python"
-				bestScore = pyScore
-				switch IsImprovement(baseline, pyScore) { // baseline vs. python
-				case 1:
-					klog.V(V2).InfoS(string(phase)+": python improved over baseline",
-						"placedByPri", pyScore.PlacedByPriority,
-						"evictions", pyScore.Evicted,
-						"moves", pyScore.Moved)
-				case 0:
-					klog.V(V2).InfoS(string(phase)+": python equal to baseline",
-						"placedByPri", pyScore.PlacedByPriority,
-						"evictions", pyScore.Evicted,
-						"moves", pyScore.Moved)
-				default:
-					klog.V(V2).InfoS(string(phase)+": python worse than baseline",
-						"placedByPri", pyScore.PlacedByPriority,
-						"evictions", pyScore.Evicted,
-						"moves", pyScore.Moved)
-				}
-			}
-		} else if pyFeasible {
-			switch IsImprovement(bestScore, pyScore) { // best (i.e. fast solver) vs. python
-			case 1:
-				klog.InfoS(string(phase)+": python improved over fast solver",
-					"placedByPri", pyScore.PlacedByPriority,
-					"evictions", pyScore.Evicted,
-					"moves", pyScore.Moved)
-				bestScore = pyScore
-				bestSolver = "python"
-			case 0:
-				klog.InfoS(string(phase)+": python equal to fast solver",
-					"placedByPri", pyScore.PlacedByPriority,
-					"evictions", pyScore.Evicted,
-					"moves", pyScore.Moved)
-				bestSolver = "python=fast"
-			case -1:
-				klog.InfoS(string(phase)+": python worse than fast solver",
-					"placedByPri", pyScore.PlacedByPriority,
-					"evictions", pyScore.Evicted,
-					"moves", pyScore.Moved)
-			}
-		}
-	}
-
-	solverDuration := time.Since(solverStart)
+	// ---------- Solve with fast then python (deduped) ----------
+	bestOut, anyFeasible, bestSummary, solverDuration := pl.runSolvers(ctx, phase, in0, baseline)
 
 	// Decide failure reason:
 	// - If BOTH solvers are infeasible (or nil) -> ErrNoOptimalOrFeasible
 	// - Else if no improvement vs baseline -> ErrNoImprovement
-	if !(fastFeasible || pyFeasible) {
+	if !anyFeasible {
 		pl.leaveActive()
 		klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal/feasible solution from any solver")
 		return nil, ErrNoOptimalOrFeasible
 	}
 
-	switch IsImprovement(baseline, bestScore) {
+	switch IsImprovement(baseline, bestSummary.Score) {
 	case 1: // bestScore better than baseline
 		// proceed
 	case 0: // bestScore equal to baseline
 		pl.leaveActive()
 		klog.ErrorS(ErrNoImprovement, string(phase)+": equal to baseline (no improvement)",
-			"placedByPri", bestScore.PlacedByPriority,
-			"evictions", bestScore.Evicted,
-			"moves", bestScore.Moved)
+			"placedByPri", bestSummary.Score.PlacedByPriority,
+			"evictions", bestSummary.Score.Evicted,
+			"moves", bestSummary.Score.Moved)
 		return nil, ErrNoImprovement
 	case -1: // bestScore worse than baseline
 		pl.leaveActive()
 		klog.ErrorS(ErrNoImprovement, string(phase)+": worse than baseline",
-			"placedByPri", bestScore.PlacedByPriority,
-			"evictions", bestScore.Evicted,
-			"moves", bestScore.Moved)
+			"placedByPri", bestSummary.Score.PlacedByPriority,
+			"evictions", bestSummary.Score.Evicted,
+			"moves", bestSummary.Score.Moved)
 		return nil, ErrNoImprovement
 	}
 
@@ -213,7 +228,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	var doc *StoredPlan
 	var ap *ActivePlanState
 	var targetNode string
-	doc, ap, targetNode, err = pl.registerPlan(ctx, bestOut, bestScore, preemptor) // preemptor may be nil
+	// preemptor may be nil. registerPlan should store bestSummary into StoredPlan.Solver.
+	doc, ap, targetNode, err = pl.registerPlan(ctx, bestOut, bestSummary, preemptor)
 	if err != nil {
 		// keep single-preemptor blocked on error
 		if solveMode == SolveSingle && preemptor != nil {
@@ -226,7 +242,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 
 	if pendingScheduled == 0 {
 		klog.InfoS(string(phase) + ": no pending pod(s) to be scheduled; skipping")
-		pl.onPlanSettled()
+		pl.onPlanSettled(PlanStatusFailed)
 		return nil, ErrNoop
 	}
 
@@ -234,7 +250,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	if len(doc.Moves) > 0 || len(doc.Evicts) > 0 {
 		if err := pl.executePlan(ctx, doc); err != nil {
 			klog.ErrorS(err, "Plan execution failed")
-			pl.onPlanSettled()
+			pl.onPlanSettled(PlanStatusFailed)
 		}
 	}
 
@@ -250,7 +266,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		Evicts:         len(doc.Evicts),
 		TotalPrePlan:   totalPrePlan,
 		TotalPostPlan:  totalPostPlan,
-		SolverStatus:   bestOut.Status,
+		SolverStatus:   bestSummary.Status,
 		TotalDuration:  time.Since(start),
 		SolverDuration: solverDuration,
 	}
@@ -263,7 +279,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		"totalPrePlan", res.TotalPrePlan,
 		"totalPostPlan", res.TotalPostPlan,
 		"solverStatus", res.SolverStatus,
-		"bestSolver", bestSolver,
+		"bestSolver", bestSummary.Name,
 		"totalDuration", res.TotalDuration,
 		"solverDuration", res.SolverDuration,
 	)

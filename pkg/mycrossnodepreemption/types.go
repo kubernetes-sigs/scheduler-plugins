@@ -103,6 +103,12 @@ type SolverInput struct {
 	Workers        int          `json:"workers,omitempty"`
 }
 
+type SolverOutput struct {
+	Status     string            `json:"status"`
+	Placements map[string]string `json:"placements"` // uid -> targetNode
+	Evictions  []SolverEviction  `json:"evictions"`
+}
+
 type SolverPod struct {
 	UID       string `json:"uid"`
 	Namespace string `json:"namespace"`
@@ -121,12 +127,6 @@ type SolverNode struct {
 	Labels   map[string]string `json:"labels,omitempty"`
 }
 
-type SolverOutput struct {
-	Status     string            `json:"status"`
-	Placements map[string]string `json:"placements"` // uid -> targetNode
-	Evictions  []SolverEviction  `json:"evictions"`
-}
-
 type SolverEviction struct {
 	UID       string `json:"uid"`
 	Namespace string `json:"namespace"`
@@ -134,8 +134,10 @@ type SolverEviction struct {
 }
 
 type SolverSummary struct {
-	Status string `json:"status"`
-	Score  Score  `json:"score,omitempty"`
+	Name     string        `json:"name,omitempty"`
+	Status   string        `json:"status"`
+	Duration time.Duration `json:"duration,omitempty"`
+	Score    Score         `json:"score,omitempty"`
 }
 
 // ===== Building blocks =====
@@ -181,13 +183,13 @@ type Preemtor struct {
 // WorkloadPerNode: workloadKey -> node -> desired count
 type WorkloadPerNode map[string]map[string]int
 
-// ===== Your new StoredPlan shape =====
+// ===== Plan =====
 
 type StoredPlan struct {
 	PluginVersion string     `json:"pluginVersion"`
 	Mode          string     `json:"mode"`
 	GeneratedAt   time.Time  `json:"generatedAt"`
-	Completed     bool       `json:"completed"`
+	Status        PlanStatus `json:"status"`
 	CompletedAt   *time.Time `json:"completedAt,omitempty"`
 	Preemptor     *Preemtor  `json:"preemptor,omitempty"` // Single-preemptor metadata (nil in batch/continuous)
 	// Actions
@@ -202,6 +204,14 @@ type StoredPlan struct {
 	// Desired placements per workload / per node
 	WorkloadPerNode WorkloadPerNode `json:"workloadPerNode,omitempty"`
 }
+
+type PlanStatus string
+
+const (
+	PlanStatusActive    PlanStatus = "Active"
+	PlanStatusCompleted PlanStatus = "Completed"
+	PlanStatusFailed    PlanStatus = "Failed"
+)
 
 // ===== Runtime indices for fast execution =====
 

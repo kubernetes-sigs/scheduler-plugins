@@ -691,11 +691,11 @@ func (pl *MyCrossNodePreemption) allowedByActivePlan(pod *v1.Pod) bool {
 
 func (pl *MyCrossNodePreemption) IsActivePlan() bool {
 	ap := pl.getActivePlan()
-	return ap != nil && !ap.PlanDoc.Completed
+	return ap != nil && ap.PlanDoc.Status == PlanStatusActive
 }
 
 // onPlanSettled is called when a plan is settled (i.e., all its actions are completed).
-func (pl *MyCrossNodePreemption) onPlanSettled() bool {
+func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	// Just double-check plan is not already completed
 	if !pl.IsActivePlan() {
 		return false
@@ -712,7 +712,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled() bool {
 	if ap.Cancel != nil {
 		ap.Cancel() // stop the timeout watcher
 	}
-	pl.markPlanCompleted(context.Background(), ap.ID)
+	_ = pl.markPlanStatus(context.Background(), ap.ID, status)
 	return true
 }
 
@@ -822,9 +822,11 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 			continue
 		}
 		var sp StoredPlan
-		if json.Unmarshal([]byte(raw), &sp) == nil && !sp.Completed {
-			latestIncomplete = items[i].Name
-			break
+		if json.Unmarshal([]byte(raw), &sp) == nil {
+			if sp.Status != PlanStatusCompleted && sp.Status != PlanStatusFailed {
+				latestIncomplete = items[i].Name
+				break
+			}
 		}
 	}
 	keepSet := make(map[string]struct{}, keep)
@@ -1015,9 +1017,11 @@ func (pl *MyCrossNodePreemption) listPlans(_ context.Context) ([]v1.ConfigMap, e
 	return out, nil
 }
 
-// markPlanCompleted sets Completed=true in json (i.e. not active plan).
-func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName string) {
-	_ = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+// markPlanStatus sets the Status (Active/Completed/Failed) in plan.json.
+// It will set CompletedAt for Completed/Failed, and clear it for Active.
+// If the plan is already in a final state (Completed/Failed), it won't be downgraded.
+func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName string, status PlanStatus) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		l := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().
 			Lister().ConfigMaps(PlanConfigMapNamespace)
 		cm, err := l.Get(cmName)
@@ -1033,24 +1037,27 @@ func (pl *MyCrossNodePreemption) markPlanCompleted(ctx context.Context, cmName s
 		}
 		var sp StoredPlan
 		if err := json.Unmarshal([]byte(raw), &sp); err != nil {
-			klog.ErrorS(err, "markPlanCompleted: cannot decode plan.json", "configMap", cmName)
+			klog.ErrorS(err, "markPlanStatus: cannot decode plan.json", "configMap", cmName)
 			return nil
 		}
-		if sp.Completed {
+		// If already final, don't overwrite with a different status.
+		if sp.Status == PlanStatusCompleted || sp.Status == PlanStatusFailed {
 			return nil
 		}
-		now := time.Now().UTC()
-		sp.Completed = true
-		sp.CompletedAt = &now
+		sp.Status = status
+		if status == PlanStatusCompleted || status == PlanStatusFailed {
+			now := time.Now().UTC()
+			sp.CompletedAt = &now
+		} else {
+			// Active again: clear completed timestamp
+			sp.CompletedAt = nil
+		}
 		b, _ := json.MarshalIndent(&sp, "", "  ")
 		patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
 		_, err = pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
 			Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
 		return err
 	})
-	if err := pl.pruneOldPlans(context.Background(), PlansToRetain); err != nil {
-		klog.ErrorS(err, "Failed to prune old plans after completion")
-	}
 }
 
 // watchPlanTimeout monitors the timeout for the given active plan.
@@ -1062,13 +1069,11 @@ func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlanState) {
 	}
 	// Ensure we're still looking at the same active plan
 	cur := pl.getActivePlan()
-	if cur == nil || cur.ID != ap.ID || cur.PlanDoc.Completed {
+	if cur == nil || cur.ID != ap.ID || cur.PlanDoc.Status != PlanStatusActive {
 		return
 	}
 	klog.InfoS("plan timeout reached; deactivating plan", "planID", ap.ID, "ttl", PlanExecutionTimeout)
-	// Mark completed for auditing, then settle
-	pl.markPlanCompleted(context.Background(), ap.ID)
-	pl.onPlanSettled()
+	pl.onPlanSettled(PlanStatusFailed)
 }
 
 // setActivePlan sets the given stored plan as the active plan and initializes its counters.

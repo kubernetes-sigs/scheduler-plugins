@@ -1,4 +1,5 @@
-// solve.go
+// python_solver.go
+
 package mycrossnodepreemption
 
 import (
@@ -14,7 +15,7 @@ import (
 )
 
 // TODO: Can we remove the in.Preemptor, and just use in.Pods?
-func (pl *MyCrossNodePreemption) runSolver(ctx context.Context, in SolverInput) (*SolverOutput, error) {
+func (pl *MyCrossNodePreemption) runPythonSolver(ctx context.Context, in SolverInput) (*SolverOutput, error) {
 	raw, _ := json.Marshal(in)
 	klog.V(V2).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
 
