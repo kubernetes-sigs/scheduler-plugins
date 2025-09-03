@@ -122,11 +122,9 @@ type SolverNode struct {
 }
 
 type SolverOutput struct {
-	Status        string            `json:"status"`
-	NominatedNode string            `json:"nominatedNode,omitempty"`
-	Placements    map[string]string `json:"placements"` // uid -> targetNode
-	Evictions     []SolverEviction  `json:"evictions"`
-	Score         Score             `json:"score,omitempty"`
+	Status     string            `json:"status"`
+	Placements map[string]string `json:"placements"` // uid -> targetNode
+	Evictions  []SolverEviction  `json:"evictions"`
 }
 
 type SolverEviction struct {
@@ -135,44 +133,49 @@ type SolverEviction struct {
 	Name      string `json:"name"`
 }
 
+type SolverSummary struct {
+	Status string `json:"status"`
+	Score  Score  `json:"score,omitempty"`
+}
+
+// ===== Building blocks =====
+
 type Score struct {
 	PlacedByPriority map[string]int `json:"placed_by_priority,omitempty"`
 	Evicted          int            `json:"evicted,omitempty"`
 	Moved            int            `json:"moved,omitempty"`
 }
 
-// ===== Building blocks =====
-
-type PodKeyLite struct {
+type PodLite struct {
 	UID       string `json:"uid"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 }
 
-type PlacementLite struct {
-	Pod        PodKeyLite `json:"pod"`
-	TargetNode string     `json:"targetNode"`
+type NewPlacements struct {
+	Pod        PodLite `json:"pod"`
+	TargetNode string  `json:"targetNode"`
+}
+
+type OldPlacements struct {
+	Pod  PodLite `json:"pod"`
+	Node string  `json:"node"`
 }
 
 type MoveLite struct {
-	Pod      PodKeyLite `json:"pod"`
-	FromNode string     `json:"fromNode"`
-	ToNode   string     `json:"toNode"`
+	Pod      PodLite `json:"pod"`
+	FromNode string  `json:"fromNode"`
+	ToNode   string  `json:"toNode"`
 }
 
 type EvictLite struct {
-	Pod      PodKeyLite `json:"pod"`
-	FromNode string     `json:"fromNode"`
+	Pod      PodLite `json:"pod"`
+	FromNode string  `json:"fromNode"`
 }
 
-type PendingInfo struct {
-	Pod        PodKeyLite `json:"pod"`
-	TargetNode string     `json:"targetNode"`
-}
-
-type SolverSummary struct {
-	Status string `json:"status"`
-	Score  Score  `json:"score,omitempty"`
+type Preemtor struct {
+	Pod           PodLite `json:"pod"`
+	NominatedNode string  `json:"nominatedNode"`
 }
 
 // WorkloadPerNode: workloadKey -> node -> desired count
@@ -181,21 +184,21 @@ type WorkloadPerNode map[string]map[string]int
 // ===== Your new StoredPlan shape =====
 
 type StoredPlan struct {
-	PluginVersion string       `json:"pluginVersion"`
-	Mode          string       `json:"mode"`
-	GeneratedAt   time.Time    `json:"generatedAt"`
-	Completed     bool         `json:"completed"`
-	CompletedAt   *time.Time   `json:"completedAt,omitempty"`
-	Pending       *PendingInfo `json:"pending,omitempty"` // Single-preemptor metadata (nil in batch/continuous)
+	PluginVersion string     `json:"pluginVersion"`
+	Mode          string     `json:"mode"`
+	GeneratedAt   time.Time  `json:"generatedAt"`
+	Completed     bool       `json:"completed"`
+	CompletedAt   *time.Time `json:"completedAt,omitempty"`
+	Preemptor     *Preemtor  `json:"preemptor,omitempty"` // Single-preemptor metadata (nil in batch/continuous)
 	// Actions
 	Evicts []EvictLite `json:"evicts,omitempty"`
 	Moves  []MoveLite  `json:"moves,omitempty"`
 	// Solver summary (status & score)
 	Solver SolverSummary `json:"solver"`
 	// Reference snapshot (where pods were at solve time) uid -> node
-	OldPlacements map[string]string `json:"oldPlacements,omitempty"`
-	// Planned new placements (pending or moved)
-	NewPlacements []PlacementLite `json:"newPlacements,omitempty"`
+	OldPlacements []OldPlacements `json:"oldPlacements,omitempty"`
+	// Planned new placements (pending or moved) - note that moved will get a new uid
+	NewPlacements []NewPlacements `json:"newPlacements,omitempty"`
 	// Desired placements per workload / per node
 	WorkloadPerNode WorkloadPerNode `json:"workloadPerNode,omitempty"`
 }
@@ -217,7 +220,7 @@ type ActivePlanState struct {
 
 type FlowResult struct {
 	PlanID                        string
-	Nominated                     string
+	TargetNode                    string
 	BatchSize                     int
 	Moves, Evicts                 int
 	TotalPostPlan, TotalPrePlan   int

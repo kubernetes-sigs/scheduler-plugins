@@ -56,7 +56,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 		// Return the result with the nominated node information which the scheduler will use to bind the pod.
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{
-				NominatedNodeName: res.Nominated,
+				NominatedNodeName: res.TargetNode,
 				NominatingMode:    framework.ModeOverride,
 			},
 		}, framework.NewStatus(framework.Success, "PostFilter: nominated after plan execution")

@@ -578,6 +578,81 @@ func bytesToMiB(b int64) int64 {
 	return b / (1024 * 1024)
 }
 
+// computeSolverScore computes final Score from the snapshot given to the solver
+// (SolverInput) and the solver plan (SolverOutput).
+// It reconstructs the "after" world by applying {placements, evictions} on top of
+// the original locations (Where) from the input, then counts:
+//   - placed_by_priority: all pods that end up placed (not evicted)
+//   - evicted:            len(out.Evictions)
+//   - moved:              running→running on a different node (not evicted)
+func computeSolverScore(in SolverInput, out *SolverOutput) Score {
+	if out == nil {
+		return Score{}
+	}
+	// before-state (where) and priority by UID
+	origWhere := make(map[string]string, len(in.Pods)+1)
+	pri := make(map[string]int32, len(in.Pods)+1)
+	for _, sp := range in.Pods {
+		origWhere[sp.UID] = sp.Where
+		pri[sp.UID] = sp.Priority
+	}
+	if in.Preemptor != nil {
+		if _, ok := origWhere[in.Preemptor.UID]; !ok {
+			origWhere[in.Preemptor.UID] = "" // pending
+			pri[in.Preemptor.UID] = in.Preemptor.Priority
+		}
+	}
+
+	// after-state starts from orig, then apply placements for known UIDs
+	afterWhere := make(map[string]string, len(origWhere))
+	for uid, w := range origWhere {
+		afterWhere[uid] = w
+	}
+	for uid, dest := range out.Placements {
+		if dest == "" {
+			continue
+		}
+		if _, known := afterWhere[uid]; known {
+			afterWhere[uid] = dest
+		}
+	}
+
+	// evicted set
+	evicted := make(map[string]struct{}, len(out.Evictions))
+	for _, e := range out.Evictions {
+		evicted[e.UID] = struct{}{}
+	}
+
+	// placed_by_priority
+	placedByPri := map[string]int{}
+	for uid, after := range afterWhere {
+		if _, gone := evicted[uid]; gone {
+			continue
+		}
+		if after != "" {
+			key := strconv.Itoa(int(pri[uid]))
+			placedByPri[key] = placedByPri[key] + 1
+		}
+	}
+
+	// moves: running→running and node changed, not evicted
+	moves := 0
+	for uid, before := range origWhere {
+		if _, gone := evicted[uid]; gone {
+			continue
+		}
+		after := afterWhere[uid]
+		if before != "" && after != "" && before != after {
+			moves++
+		}
+	}
+	return Score{
+		PlacedByPriority: placedByPri,
+		Evicted:          len(evicted),
+		Moved:            moves,
+	}
+}
+
 // ---------- Plan Helpers ------------
 
 // tryEnterActive attempts to enter the active plan state.
@@ -669,7 +744,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 func (pl *MyCrossNodePreemption) buildActionsFromSolver(
 	out *SolverOutput,
 	preemptor *v1.Pod, // may be nil
-) (evicts []EvictLite, moves []MoveLite, newPlacements []PlacementLite, nominated string, err error) {
+) (evicts []EvictLite, moves []MoveLite, newPlacements []NewPlacements, nominatedNode string, err error) {
 	if out == nil {
 		return nil, nil, nil, "", nil
 	}
@@ -691,12 +766,11 @@ func (pl *MyCrossNodePreemption) buildActionsFromSolver(
 	for _, e := range out.Evictions {
 		if p := podsByUID[e.UID]; p != nil {
 			evicts = append(evicts, EvictLite{
-				Pod:      PodKeyLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
+				Pod:      PodLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
 				FromNode: p.Spec.NodeName,
 			})
 		}
 	}
-
 	// Moves + New placements set
 	for uid, dest := range out.Placements {
 		p := podsByUID[uid]
@@ -706,22 +780,27 @@ func (pl *MyCrossNodePreemption) buildActionsFromSolver(
 		src := p.Spec.NodeName
 		// record a new placement whenever pending OR node changes
 		if src == "" || src != dest {
-			newPlacements = append(newPlacements, PlacementLite{
-				Pod:        PodKeyLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
+			newPlacements = append(newPlacements, NewPlacements{
+				Pod:        PodLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
 				TargetNode: dest,
 			})
+			// save target node for later use
+			if preemptor != nil && string(preemptor.UID) == uid {
+				nominatedNode = dest
+			}
 		}
+
 		// "move" only if actually changing nodes (not pending->dest)
 		if src != "" && src != dest {
 			moves = append(moves, MoveLite{
-				Pod:      PodKeyLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
+				Pod:      PodLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
 				FromNode: src,
 				ToNode:   dest,
 			})
 		}
 	}
 
-	return evicts, moves, newPlacements, out.NominatedNode, nil
+	return evicts, moves, newPlacements, nominatedNode, nil
 }
 
 // pruneOldPlans removes old plans from the ConfigMap.
@@ -795,19 +874,19 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTimeout, true, func(ctx context.Context) (bool, error) {
 		p, err := l.Pods(ns).Get(name)
 		if apierrors.IsNotFound(err) { // pod not found; keep polling
-			klog.V(V2).InfoS("Waiting for preemptor to appear in cache", "pod", ns+"/"+name)
+			klog.V(V2).InfoS("Waiting for pending to appear in cache", "pod", ns+"/"+name)
 			return false, nil
 		}
 		if err != nil { // Lister error; keep polling
-			klog.V(V2).InfoS("Lister error while waiting for preemptor", "pod", ns+"/"+name, "err", err)
+			klog.V(V2).InfoS("Lister error while waiting for pending", "pod", ns+"/"+name, "err", err)
 			return false, nil
 		}
-		if p.UID != pending.UID { // waiting for matching preemptor UID
-			klog.V(V2).InfoS("Waiting for matching preemptor UID", "pod", ns+"/"+name, "wantUID", pending.UID, "haveUID", p.UID)
+		if p.UID != pending.UID { // waiting for matching pending UID
+			klog.V(V2).InfoS("Waiting for matching pending UID", "pod", ns+"/"+name, "wantUID", pending.UID, "haveUID", p.UID)
 			return false, nil
 		}
 		if p.Spec.NodeName == "" { // waiting for preemptor to bind
-			klog.V(V2).InfoS("Waiting for preemptor to bind", "pod", ns+"/"+name)
+			klog.V(V2).InfoS("Waiting for pending to bind", "pod", ns+"/"+name)
 			return false, nil
 		}
 		return true, nil
@@ -843,18 +922,20 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 		po, err := podLister.Pods(plm.Pod.Namespace).Get(plm.Pod.Name)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				klog.V(V2).InfoS("Plan incomplete: standalone pod missing",
+				klog.V(V2).InfoS("Plan incomplete: standalone/preemptor pod missing",
 					"pod", plm.Pod.Namespace+"/"+plm.Pod.Name, "expectedNode", plm.TargetNode)
 				return false, nil
 			}
 			return false, fmt.Errorf("get pod %s/%s from lister: %w", plm.Pod.Namespace, plm.Pod.Name, err)
 		}
-		// Only enforce for standalone (non-workload) pods.
-		if _, owned := topWorkload(po); owned {
+		// Only enforce for standalone and preemptor.
+		// Workload pods will be handled next.
+		_, owned := topWorkload(po)
+		if owned && string(po.UID) != sp.Preemptor.Pod.UID {
 			continue
 		}
 		if po.DeletionTimestamp != nil || po.Spec.NodeName != plm.TargetNode {
-			klog.V(V2).InfoS("Plan incomplete: standalone pod mismatch",
+			klog.V(V2).InfoS("Plan incomplete: standalone/preemptor pod mismatch",
 				"pod", combineNsName(plm.Pod.Namespace, plm.Pod.Name),
 				"expectedNode", plm.TargetNode, "haveNode", po.Spec.NodeName)
 			return false, nil
@@ -880,18 +961,27 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 	return true, nil
 }
 
-func (pl *MyCrossNodePreemption) snapshotOldPlacements() (map[string]string, error) {
+// snapshotOldPlacementsInfo returns the "before" snapshot with identity for auditing:
+// one entry per currently bound pod, including uid, namespace, name, and node.
+func (pl *MyCrossNodePreemption) snapshotOldPlacements() ([]OldPlacements, error) {
 	pods, err := pl.getPods()
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string, len(pods))
+	out := make([]OldPlacements, 0, len(pods))
 	for _, p := range pods {
 		if p == nil || p.DeletionTimestamp != nil {
 			continue
 		}
 		if node := p.Spec.NodeName; node != "" {
-			out[string(p.UID)] = node
+			out = append(out, OldPlacements{
+				Pod: PodLite{
+					UID:       string(p.UID),
+					Namespace: p.Namespace,
+					Name:      p.Name,
+				},
+				Node: node,
+			})
 		}
 	}
 	return out, nil
@@ -1008,8 +1098,8 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 		byName[combineNsName(plm.Pod.Namespace, plm.Pod.Name)] = plm.TargetNode
 	}
 	// Add preemptor to PlacementByName
-	if sp.Pending != nil {
-		byName[combineNsName(sp.Pending.Pod.Namespace, sp.Pending.Pod.Name)] = sp.Pending.TargetNode
+	if sp.Preemptor != nil {
+		byName[combineNsName(sp.Preemptor.Pod.Namespace, sp.Preemptor.Pod.Name)] = sp.Preemptor.NominatedNode
 	}
 
 	if old := pl.getActivePlan(); old != nil && old.Cancel != nil {

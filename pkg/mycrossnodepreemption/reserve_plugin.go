@@ -40,6 +40,11 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	}
 	ap := pl.getActivePlan()
 
+	// Always let preemptor pods through; not part of workload quotas
+	if ap.PlanDoc.Preemptor != nil && string(pod.UID) == ap.PlanDoc.Preemptor.Pod.UID {
+		return framework.NewStatus(framework.Success)
+	}
+
 	// Check if pod is part of a workload; if not, allow it immediately.
 	// Otherwise, we need to check the workload quota.
 	wk, ok := topWorkload(pod)

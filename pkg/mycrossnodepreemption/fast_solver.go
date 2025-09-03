@@ -25,7 +25,6 @@ package mycrossnodepreemption
 import (
 	"math"
 	"sort"
-	"strconv"
 
 	"k8s.io/klog/v2"
 )
@@ -185,12 +184,6 @@ func runFastSolver(in SolverInput) *SolverOutput {
 	placements := make(map[string]string, len(pendingList))
 	var evictedUIDs []SolverEviction
 
-	// For scoring: remember original locations.
-	originalNode := make(map[string]string, len(allPods))
-	for uid, p := range allPods {
-		originalNode[uid] = p.Node
-	}
-
 	// Main loop over pending pods
 	preUID := ""
 	if in.Preemptor != nil {
@@ -203,9 +196,6 @@ func runFastSolver(in SolverInput) *SolverOutput {
 		}
 	}
 
-	// Assemble output
-	score := buildScoreFromState(allPods, originalNode, evictedUIDs)
-
 	status := "FEASIBLE"
 	if in.Preemptor != nil {
 		if _, ok := placements[in.Preemptor.UID]; !ok {
@@ -214,15 +204,13 @@ func runFastSolver(in SolverInput) *SolverOutput {
 	}
 
 	out := &SolverOutput{
-		Status:        status,
-		NominatedNode: "",
-		Placements:    placements,
-		Evictions:     evictedUIDs,
-		Score:         score,
+		Status:     status,
+		Placements: placements,
+		Evictions:  evictedUIDs,
 	}
+
 	if in.Preemptor != nil {
 		if dest, ok := placements[in.Preemptor.UID]; ok {
-			out.NominatedNode = dest
 			if n := nodes[dest]; n != nil {
 				// after-placing snapshot
 				afterCPU := n.FreeCPUm
@@ -710,34 +698,6 @@ func pickSingleEvictionCandidate(order []*nodeState, p *podState) (*podState, *n
 		}
 	}
 	return bestVictim, bestNode
-}
-
-// Score: placed counts by priority tier; totals for evicted and moved.
-func buildScoreFromState(allPods map[string]*podState, originalNode map[string]string, evicted []SolverEviction) Score {
-	placedByPri := map[string]int{}
-	evictedSet := make(map[string]bool, len(evicted))
-	for _, e := range evicted {
-		evictedSet[e.UID] = true
-	}
-
-	for _, p := range allPods {
-		if evictedSet[p.UID] {
-			continue
-		}
-		if p.Node != "" {
-			pr := strconv.Itoa(int(p.Priority))
-			placedByPri[pr] = placedByPri[pr] + 1
-		}
-	}
-	moves := 0
-	for uid, p := range allPods {
-		from := originalNode[uid]
-		to := p.Node
-		if from != "" && to != "" && from != to && !evictedSet[uid] {
-			moves++
-		}
-	}
-	return Score{PlacedByPriority: placedByPri, Evicted: len(evicted), Moved: moves}
 }
 
 /* ====================== Small utilities used by BFS ======================= */

@@ -17,20 +17,21 @@ import (
 func (pl *MyCrossNodePreemption) registerPlan(
 	ctx context.Context,
 	out *SolverOutput,
-	pending *v1.Pod, // may be nil
-) (*StoredPlan, *ActivePlanState, error) {
+	solverScore Score,
+	preemptor *v1.Pod, // may be nil
+) (*StoredPlan, *ActivePlanState, string, error) {
 
-	evicts, moves, newPls, nominated, err := pl.buildActionsFromSolver(out, pending)
+	evicts, moves, newPls, nominatedNode, err := pl.buildActionsFromSolver(out, preemptor)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build actions: %w", err)
+		return nil, nil, "", fmt.Errorf("build actions: %w", err)
 	}
 
 	oldPls, err := pl.snapshotOldPlacements()
 	if err != nil {
-		return nil, nil, fmt.Errorf("snapshot old placements: %w", err)
+		return nil, nil, "", fmt.Errorf("snapshot old placements: %w", err)
 	}
 
-	wkDesired := pl.deriveWorkloadPerNode(newPls)
+	wkDesired := pl.deriveWorkloadPerNode(newPls, preemptor)
 
 	doc := &StoredPlan{
 		PluginVersion:   Version,
@@ -39,20 +40,21 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		Completed:       false,
 		Evicts:          evicts,
 		Moves:           moves,
-		Solver:          SolverSummary{Status: out.Status, Score: out.Score},
+		Solver:          SolverSummary{Status: out.Status, Score: solverScore},
 		OldPlacements:   oldPls,
-		NewPlacements:   newPls,
+		NewPlacements:   newPls, // includes both pending and moved (also preemptor)
 		WorkloadPerNode: wkDesired,
 	}
 
-	if pending != nil {
-		doc.Pending = &PendingInfo{
-			Pod: PodKeyLite{
-				UID:       string(pending.UID),
-				Namespace: pending.Namespace,
-				Name:      pending.Name,
+	if preemptor != nil {
+		// TODO: Get target node from placements
+		doc.Preemptor = &Preemtor{
+			Pod: PodLite{
+				UID:       string(preemptor.UID),
+				Namespace: preemptor.Namespace,
+				Name:      preemptor.Name,
 			},
-			TargetNode: nominated, // may be ""
+			NominatedNode: nominatedNode,
 		}
 	}
 
@@ -66,12 +68,12 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		klog.ErrorS(err, "export plan failed (non-fatal)")
 	}
 
-	return doc, pl.getActivePlan(), nil
+	return doc, pl.getActivePlan(), nominatedNode, nil
 }
 
 // deriveWorkloadPerNode derives the desired workload distribution per node from the new placements.
 // It also includes a preemptor-pod if exists.
-func (pl *MyCrossNodePreemption) deriveWorkloadPerNode(newPlacements []PlacementLite) WorkloadPerNode {
+func (pl *MyCrossNodePreemption) deriveWorkloadPerNode(newPlacements []NewPlacements, preemptor *v1.Pod) WorkloadPerNode {
 	wkDesired := WorkloadPerNode{}
 	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
 
@@ -80,7 +82,12 @@ func (pl *MyCrossNodePreemption) deriveWorkloadPerNode(newPlacements []Placement
 		if err != nil || p == nil {
 			continue
 		}
-		if wk, ok := topWorkload(p); ok {
+		if preemptor != nil && p.UID == preemptor.UID {
+			// Don't include the preemptor in the workload; will cause troubles
+			// since another pod from the same replicaset could takes it place.
+			continue
+		}
+		if wk, ok := topWorkload(p); ok { // only consider pods from workloads
 			key := wk.String()
 			m, ok := wkDesired[key]
 			if !ok {
