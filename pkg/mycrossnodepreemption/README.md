@@ -32,7 +32,6 @@ TODO
 
 ## TODOs Plugin
 
-- Make a helper that calculate the score instead of solver does it.
 - Only capture pods one time
 - Improve fast solver.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
