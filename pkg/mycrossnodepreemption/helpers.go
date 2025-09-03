@@ -81,7 +81,7 @@ func (pl *MyCrossNodePreemption) decideStrategy(phase Phase) StrategyDecision {
 		return DecidePassThrough
 	}
 	// If not in continuous mode and there's an active plan, block all new pods.
-	if pl.Active.Load() {
+	if pl.IsActivePlan() {
 		return DecideBlockActive
 	}
 	// Modes: OptimizeInBatches@PreEnqueue or OptimizeInBatches@PostFilter
@@ -598,10 +598,10 @@ func (pl *MyCrossNodePreemption) leaveActive() {
 
 // allowedByActivePlan returns true if the pod is allowed by the active plan.
 func (pl *MyCrossNodePreemption) allowedByActivePlan(pod *v1.Pod) bool {
-	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc.Completed {
+	if !pl.IsActivePlan() {
 		return false
 	}
+	ap := pl.getActivePlan()
 	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
 		return true
 	}
@@ -616,13 +616,18 @@ func (pl *MyCrossNodePreemption) allowedByActivePlan(pod *v1.Pod) bool {
 	return false
 }
 
+func (pl *MyCrossNodePreemption) IsActivePlan() bool {
+	ap := pl.getActivePlan()
+	return ap != nil && !ap.PlanDoc.Completed
+}
+
 // onPlanSettled is called when a plan is settled (i.e., all its actions are completed).
 func (pl *MyCrossNodePreemption) onPlanSettled() bool {
 	// Just double-check plan is not already completed
-	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc.Completed {
+	if !pl.IsActivePlan() {
 		return false
 	}
+	ap := pl.getActivePlan()
 	pl.clearActivePlan()
 	klog.InfoS("plan settled; deactivating active plan", "planID", ap.ID)
 	pl.leaveActive()

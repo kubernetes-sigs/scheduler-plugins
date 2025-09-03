@@ -13,7 +13,7 @@ import (
 // It is a replacement for the default preemption with cross-node preemption logic implemented.
 // It catch all pods not handled by the default scheduling.
 func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	if pl.Active.Load() {
+	if pl.IsActivePlan() {
 		pl.Blocked.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 	}

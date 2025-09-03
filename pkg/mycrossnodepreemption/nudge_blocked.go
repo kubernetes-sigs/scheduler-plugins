@@ -29,7 +29,7 @@ func (pl *MyCrossNodePreemption) idleNudgeBlockedLoop(ctx context.Context) {
 				continue
 			}
 			// If a plan is executing (or not fully torn down), do nothing.
-			if pl.Active.Load() {
+			if pl.IsActivePlan() {
 				klog.V(V2).InfoS("Idle nudge: plan is active; skipping")
 				continue
 			}

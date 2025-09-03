@@ -22,8 +22,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if pod.Namespace == "kube-system" {
 		return nil, framework.NewStatus(framework.Success)
 	}
-	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc.Completed {
+	if !pl.IsActivePlan() {
 		return nil, framework.NewStatus(framework.Success)
 	}
 
@@ -51,11 +50,10 @@ func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtens
 // - node set to pin (non-nil) and Success, or
 // - nil and an appropriate framework.Status reason to block/allow.
 func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
-	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc.Completed {
+	if !pl.IsActivePlan() {
 		return nil, "no active plan", true // allow
 	}
-
+	ap := pl.getActivePlan()
 	// Lead pod pinning (single-preemptor mode)
 	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {
 		return sets.New(ap.PlanDoc.TargetNode), "lead; pin to target", true

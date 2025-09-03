@@ -35,11 +35,10 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	if pod.Namespace == "kube-system" {
 		return framework.NewStatus(framework.Success)
 	}
-
-	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc.Completed {
+	if !pl.IsActivePlan() {
 		return framework.NewStatus(framework.Success)
 	}
+	ap := pl.getActivePlan()
 
 	// Pods that have are targeted directly; they are not consuming workload quota.
 	if ap.PlanDoc.TargetNode != "" && string(pod.UID) == ap.PlanDoc.PendingUID {

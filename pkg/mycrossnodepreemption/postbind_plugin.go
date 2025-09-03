@@ -17,10 +17,10 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	if pod.Namespace == "kube-system" {
 		return
 	}
-	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc.Completed {
+	if !pl.IsActivePlan() {
 		return
 	}
+	ap := pl.getActivePlan()
 	if !pl.allowedByActivePlan(pod) {
 		klog.V(V2).InfoS("PostBind: irrelevant", "pod", klog.KObj(pod))
 		return
