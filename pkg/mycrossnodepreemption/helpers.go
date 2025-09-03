@@ -906,21 +906,27 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
 // Mode: For-every: Single preemptor pod bound to target node (A) either in preenqueue or in postfilter, and all other pods in place (B, C)
 // Mode: In-batches: All pods bound to target nodes (only B, C).
-func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *StoredPlan, pod *v1.Pod) (bool, error) {
+// helpers.go
+func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *ActivePlanState, pod *v1.Pod) (bool, error) {
+	if ap == nil || ap.PlanDoc == nil {
+		// Plan got torn down concurrently; treat as "not completed yet" (retry later)
+		klog.V(V2).InfoS("Plan completion check skipped: no active plan doc")
+		return false, nil
+	}
+
 	// Wait until the pod is visible+bound in cache when relevant.
 	ok, err := pl.waitPendingBoundInCache(ctx, pod)
 	if err != nil {
 		return false, err
 	}
 	if !ok {
-		// Still not bound in cache within the window — try again later.
 		return false, nil
 	}
 
 	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
 
 	// A) Standalone/preemptor pods planned to specific nodes must be there.
-	for _, plm := range sp.NewPlacements {
+	for _, plm := range ap.PlanDoc.NewPlacements {
 		po, err := podLister.Pods(plm.Pod.Namespace).Get(plm.Pod.Name)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -930,10 +936,9 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 			}
 			return false, fmt.Errorf("get pod %s/%s from lister: %w", plm.Pod.Namespace, plm.Pod.Name, err)
 		}
-		// Only enforce for standalone and preemptor.
-		// Workload pods will be handled next.
+		// Only enforce for standalone and preemptor; workload pods handled next.
 		_, owned := topWorkload(po)
-		if owned && string(po.UID) != sp.Preemptor.Pod.UID {
+		if owned && (ap.PlanDoc.Preemptor == nil || string(po.UID) != ap.PlanDoc.Preemptor.Pod.UID) {
 			continue
 		}
 		if po.DeletionTimestamp != nil || po.Spec.NodeName != plm.TargetNode {
@@ -943,23 +948,18 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, sp *Stored
 			return false, nil
 		}
 	}
-	// Now placements are ok
 
 	// B) Per-workload per-node quotas consumed.
-	if ap := pl.getActivePlan(); ap != nil {
-		for wk, perNode := range ap.WorkloadPerNodeCnts {
-			for node, ctr := range perNode {
-				if ctr.Load() > 0 {
-					klog.V(V2).InfoS("Plan incomplete: remaining quota",
-						"workload", wk, "node", node, "remaining", ctr.Load())
-					return false, nil
-				}
+	for wk, perNode := range ap.WorkloadPerNodeCnts {
+		for node, ctr := range perNode {
+			if ctr.Load() > 0 {
+				klog.V(V2).InfoS("Plan incomplete: remaining quota",
+					"workload", wk, "node", node, "remaining", ctr.Load())
+				return false, nil
 			}
 		}
 	}
-	// Now workloads are ok
 
-	// All are ok
 	return true, nil
 }
 

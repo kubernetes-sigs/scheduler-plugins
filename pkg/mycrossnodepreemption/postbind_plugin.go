@@ -12,20 +12,26 @@ import (
 
 // PostBind is called after a pod is bound to a node.
 // It is used to check if the active scheduling plan is still in progress.
+// postbind_plugin.go
 func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, _ string) {
-	// Don't check kube-system pods
 	if pod.Namespace == "kube-system" {
 		return
 	}
 	if !pl.IsActivePlan() {
 		return
 	}
-	ap := pl.getActivePlan()
+	// Quickly bail if this pod isn't part of the current plan.
 	if !pl.allowedByActivePlan(pod) {
 		klog.V(V2).InfoS("PostBind: irrelevant", "pod", klog.KObj(pod))
 		return
 	}
-	ok, err := pl.isPlanCompleted(ctx, ap.PlanDoc, pod)
+
+	// Snapshot the plan atomically for this check.
+	ap := pl.getActivePlan()
+	if ap == nil || ap.PlanDoc == nil {
+		return
+	}
+	ok, err := pl.isPlanCompleted(ctx, ap, pod)
 	if err != nil {
 		_ = pl.onPlanSettled(PlanStatusFailed)
 		klog.ErrorS(err, "PostBind: completion check failed")
@@ -35,9 +41,9 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		klog.V(V2).InfoS("PostBind: still in progress", "planID", ap.ID, "pod", klog.KObj(pod))
 		return
 	}
-	// Double-check still same plan
-	cur := pl.getActivePlan()
-	if cur != nil && cur.ID == ap.ID {
+
+	// Only settle if the same plan is still active.
+	if cur := pl.getActivePlan(); cur != nil && cur.ID == ap.ID {
 		pl.onPlanSettled(PlanStatusCompleted)
 	}
 }
