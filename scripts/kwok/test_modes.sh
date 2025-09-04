@@ -13,6 +13,33 @@ declare -a NOTES=()
 PASS=0
 FAIL=0
 
+wait_for_rs_ready_replicas() {
+  local ns="$1" rs_name="$2" replicas="$3" timeout="$4"
+  local start end ready
+
+  start=$(date +%s)
+  while true; do
+    # Get .status.readyReplicas (defaults to 0 if empty)
+    ready=$(kubectl --context "${CTX}" -n "${ns}" get rs "${rs_name}" \
+      -o jsonpath='{.status.readyReplicas}')
+    ready=${ready:-0}
+
+    echo "[wait] RS/${rs_name}: ${ready}/${replicas} Ready in ns/${ns}"
+    if (( ready >= replicas )); then
+      echo "[wait] RS/${rs_name} reached target: ${ready}/${replicas} Ready"
+      return 0
+    fi
+
+    end=$(date +%s)
+    if (( end - start > timeout )); then
+      echo "[wait] timeout after ${timeout}s waiting for RS/${rs_name} to have ${replicas} Ready replicas"
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+
 wait_for_running_count() {
   local ns="$1" expected="$2" timeout="$3"
   local start end
@@ -55,7 +82,7 @@ run_case() {
 
   # Build python args
   pyargs=(
-    "${CLUSTER_NAME}" 6 5 0
+    "${CLUSTER_NAME}" 7 6 0
     --seed 112233
   )
   if [[ "${mode}" == "for_every" || "${at}" == "postfilter" ]]; then
@@ -69,7 +96,7 @@ run_case() {
   fi
 
   # --- Only waiting timeouts affect pass/fail summary ---
-  if ! wait_for_running_count "${NS}" 30 80; then
+  if ! wait_for_running_count "${NS}" 42 80; then
     ok=false
     note+="baseline wait timed out; "
   fi
@@ -80,9 +107,10 @@ run_case() {
     note+="apply RS failed; "
   fi
 
-  if ! wait_for_running_count "${NS}" "$expected" 80; then
+  # Wait specifically for 5 replicas of the high-priority-rs to be Ready
+  if ! wait_for_rs_ready_replicas "${NS}" "high-priority-rs" 7 80; then
     ok=false
-    note+="final wait timed out; "
+    note+="RS wait timed out; "
   fi
 
   if $ok; then

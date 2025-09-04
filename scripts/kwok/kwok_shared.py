@@ -153,6 +153,23 @@ def delete_namespace(ctx: str, ns: str) -> None:
     except:
         print(f"[kwok-fill] Error deleting namespace '{ns}' in ctx={ctx}")
 
+import time
+
+def ensure_default_serviceaccount(ctx: str, ns: str, retries: int = 10, delay: float = 0.5) -> None:
+    """
+    Ensure that the 'default' ServiceAccount exists in the given namespace.
+    """
+    for _ in range(1, retries + 1):
+        r = run(["kubectl","--context",ctx,"-n",ns,"get","sa","default"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r.returncode == 0:
+            print(f"[kwok-fill] Found default serviceaccount in ns '{ns}'")
+            return
+        time.sleep(delay)
+
+    raise RuntimeError(f"default serviceaccount not found in ns '{ns}'")
+
+
 def ensure_priority_classes(ctx: str, num_priorities: int, *, prefix: str = "p", start: int = 1) -> None:
     """
     Apply N PriorityClasses named {prefix}{i} for i in [start, start+N).

@@ -329,6 +329,7 @@ func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int)
 		var chain []move
 		found := false
 		for _, v0 := range vics {
+			// Quick direct move for the selected victim v0 (keeps the "coverage" bias).
 			if dst := bestDirectDest(c.nodes, v0); dst != "" && dst != t.Name {
 				klog.V(V2).InfoS("BFS quick move",
 					"pod", podName(c, v0.UID), "from", t.Name, "to", dst)
@@ -336,7 +337,9 @@ func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int)
 				found = true
 				break
 			}
-			if ch, ok := bfsOne(c, t, v0, prioLimit, budget); ok {
+			// BFS relocation chain to free 't' for 'p' (no eviction). IMPORTANT:
+			// Seed BFS with "need p on t", not with v0.
+			if ch, ok := bfsOne(c, t, p, prioLimit, budget); ok {
 				chain, found = ch, true
 				break
 			}
@@ -363,8 +366,8 @@ func podName(c *ctxFast, uid string) string {
 	return uid
 }
 
-func bfsOne(c *ctxFast, t *nState, v0 *pState, prioLimit int, budget *int) ([]move, bool) {
-	start := bfsKey{needNode: t.Name, needUID: v0.UID}
+func bfsOne(c *ctxFast, t *nState, pre *pState, prioLimit int, budget *int) ([]move, bool) {
+	start := bfsKey{needNode: t.Name, needUID: pre.UID}
 	q := []bfsKey{start}
 	par := map[bfsKey]parentEdge{}
 	seen := map[bfsKey]bool{start: true}
@@ -381,22 +384,18 @@ func bfsOne(c *ctxFast, t *nState, v0 *pState, prioLimit int, budget *int) ([]mo
 		if needNode == nil {
 			continue
 		}
-		needPod := c.allPods[cur.needUID]
-		if needPod == nil {
-			continue
-		}
 
+		// During relocation (no eviction), allow moving any non-protected pod.
+		// Priority constraints apply to evictions (step 3), not here.
 		vics := eligibleVictims(needNode, prioLimit, c.cfg.VictimsPerLevel)
 		dests := topDestsByFree(c.nodes, c.cfg.DestsPerLevel)
 
 		for _, y := range vics {
-			// allow partial coverage; outer loop will keep freeing more if needed
 			if y.CPUm == 0 && y.MemBytes == 0 {
 				continue
 			}
-			// quick win
+			// quick win: move y off needNode to any other node that can accept it
 			for _, dn := range dests {
-				// quick win: only accept if final two-phase free (with current path reservations) is OK
 				if dn.Name != needNode.Name && dn.Name != t.Name {
 					if fitsWithReservations(dn, y, par, cur, c.allPods) {
 						par[bfsKey{needNode: "OK", needUID: ""}] = parentEdge{
@@ -406,7 +405,7 @@ func bfsOne(c *ctxFast, t *nState, v0 *pState, prioLimit int, budget *int) ([]mo
 					}
 				}
 			}
-			// expand frontier
+			// expand frontier: moving y into dn will require freeing dn
 			for _, dn := range dests {
 				if dn.Name == needNode.Name || dn.Name == t.Name {
 					continue

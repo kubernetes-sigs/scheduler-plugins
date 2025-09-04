@@ -12,6 +12,7 @@ from kwok_shared import (
     partition_int, gen_parts_constrained, count_scheduled_in_ns, pods_per_node_in_ns,
     wait_each, wait_until_settled_or_unschedulable_events,
     ensure_namespace, create_kwok_nodes, delete_kwok_nodes, ensure_priority_classes,
+    ensure_default_serviceaccount,
     yaml_kwok_pod, yaml_kwok_rs, apply_yaml, cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
     compute_stat_totals, stat_snapshot, check_context, set_context,
     get_json_ctx, sum_pod_requests, bytes_to_mib, scale_replicaset, wait_rs_pods,
@@ -368,6 +369,7 @@ class KwokTestGeneratorRunner:
 
             # fresh ns + PCs
             ensure_namespace(self.ctx, self.ns, recreate=True)
+            ensure_default_serviceaccount(self.ctx, self.ns)
             ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
             
             # apply workload
@@ -453,6 +455,7 @@ class KwokTestGeneratorRunner:
         Run the normal scheduling simulation.
         """
         ensure_namespace(self.ctx, self.ns, recreate=True)
+        ensure_default_serviceaccount(self.ctx, self.ns)
         ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
 
         # --- apply workload ---
