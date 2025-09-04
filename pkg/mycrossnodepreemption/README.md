@@ -32,6 +32,7 @@ TODO
 
 ## TODOs Plugin
 
+- Instead of using podState, can we use SolverPod instead
 - Save total plan execution time in configmap
 - Provide the greedy solution to python as a hint
 - Improve fast solver.
