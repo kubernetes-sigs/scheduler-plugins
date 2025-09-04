@@ -596,6 +596,11 @@ func topWorkload(p *v1.Pod) (WorkloadKey, bool) {
 
 // -------------- Quantity Helpers --------------
 
+// bytesToMiB converts bytes to MiB.
+func bytesToMiB(b int64) int64 {
+	return b / (1024 * 1024)
+}
+
 // computeSolverScore computes final Score from the snapshot given to the solver
 // (SolverInput) and the solver plan (SolverOutput).
 // It reconstructs the "after" world by applying {placements, evictions} on top of

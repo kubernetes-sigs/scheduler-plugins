@@ -127,6 +127,14 @@ func runSolverFast(in SolverInput) *SolverOutput {
 		c.order = append(c.order, n)
 	}
 
+	for _, n := range c.order {
+		klog.V(V2).InfoS("Node snapshot",
+			"node", n.Name,
+			"capCPU_m", n.CapCPUm, "capMem_MiB", bytesToMiB(n.CapMem),
+			"freeCPU_m", n.FreeCPUm, "freeMem_MiB", bytesToMiB(n.FreeMem),
+			"pods", len(n.Pods))
+	}
+
 	// Pods
 	var pending []*pState
 	if in.Preemptor != nil {
@@ -225,11 +233,23 @@ func placeForPod(c *ctxFast, p *pState, placements map[string]string, evicted *[
 		n := c.nodes[to]
 		n.add(p)
 		placements[p.UID] = to
+		klog.V(V2).InfoS("Direct fit",
+			"pod", podName(c, p.UID), "to", to)
 		return true
 	}
 
 	// 2) BFS relocations if cluster aggregate free is sufficient
 	if cpuTot, memTot := totalFree(c.order); cpuTot >= p.CPUm && memTot >= p.MemBytes {
+		klog.V(V2).InfoS("placeForPod: try targets",
+			"pod", podName(c, p.UID),
+			"targets", func() []string {
+				xs := []string{}
+				for _, n := range topKTargetsByDeficit(c.order, p, c.cfg.TargetsToTry) {
+					xs = append(xs, n.Name)
+				}
+				return xs
+			}())
+
 		for _, t := range topKTargetsByDeficit(c.order, p, c.cfg.TargetsToTry) {
 			if t.fits(p.CPUm, p.MemBytes) { // trivial after someone else moved
 				t.add(p)
@@ -241,9 +261,18 @@ func placeForPod(c *ctxFast, p *pState, placements map[string]string, evicted *[
 				recordMoves(mvs, placements)
 				t.add(p)
 				placements[p.UID] = t.Name
+				for i, mv := range mvs {
+					p := c.allPods[mv.UID]
+					klog.V(V2).InfoS("  move",
+						"idx", i, "pod", podName(c, mv.UID),
+						"from", mv.From, "to", mv.To,
+						"cpu_m", p.CPUm, "mem_MiB", bytesToMiB(p.MemBytes))
+				}
 				return true
 			}
-			if budget == 0 {
+			if budget <= 0 {
+				klog.V(V2).InfoS("Budget exhausted while searching BFS relocations",
+					"pod", podName(c, p.UID))
 				break
 			}
 		}
@@ -277,6 +306,12 @@ type parentEdge struct {
 }
 
 func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int) ([]move, bool) {
+	klog.V(V2).InfoS("BFS start",
+		"targetNode", t.Name,
+		"preemptor", podName(c, p.UID),
+		"needCPU_m", max64(0, p.CPUm-t.FreeCPUm),
+		"needMem_MiB", bytesToMiB(max64(0, p.MemBytes-t.FreeMem)),
+		"prioLimit", prioLimit)
 	var acc []move
 	for !t.fits(p.CPUm, p.MemBytes) {
 		if !dec(budget) {
@@ -287,6 +322,7 @@ func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int)
 
 		vics := pickVictims(t, prioLimit, needCPU, needMem, c.cfg.VictimsPerLevel)
 		if len(vics) == 0 {
+			klog.V(V2).InfoS("BFS abort: no eligible victims", "targetNode", t.Name)
 			return nil, false
 		}
 
@@ -294,6 +330,8 @@ func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int)
 		found := false
 		for _, v0 := range vics {
 			if dst := bestDirectDest(c.nodes, v0); dst != "" && dst != t.Name {
+				klog.V(V2).InfoS("BFS quick move",
+					"pod", podName(c, v0.UID), "from", t.Name, "to", dst)
 				chain = []move{{UID: v0.UID, From: t.Name, To: dst}}
 				found = true
 				break
@@ -304,14 +342,25 @@ func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int)
 			}
 		}
 		if !found {
+			klog.V(V2).InfoS("BFS failed to free target", "targetNode", t.Name)
 			return nil, false
 		}
-		if !applyTwoPhase(c.nodes, c.allPods, chain) {
+		if !applyTwoPhase(c, c.nodes, c.allPods, chain) {
 			return nil, false
 		}
 		acc = append(acc, chain...)
 	}
 	return acc, true
+}
+
+func podName(c *ctxFast, uid string) string {
+	if info, ok := c.uidInfo[uid]; ok {
+		if info.Namespace != "" {
+			return info.Namespace + "/" + info.Name
+		}
+		return info.Name
+	}
+	return uid
 }
 
 func bfsOne(c *ctxFast, t *nState, v0 *pState, prioLimit int, budget *int) ([]move, bool) {
@@ -322,6 +371,7 @@ func bfsOne(c *ctxFast, t *nState, v0 *pState, prioLimit int, budget *int) ([]mo
 
 	for len(q) > 0 {
 		if !dec(budget) {
+			klog.InfoS("BFS queue stop: budget exhausted")
 			return nil, false
 		}
 		cur := q[0]
@@ -336,26 +386,24 @@ func bfsOne(c *ctxFast, t *nState, v0 *pState, prioLimit int, budget *int) ([]mo
 			continue
 		}
 
-		needCPU := max64(0, needPod.CPUm-needNode.FreeCPUm)
-		needMem := max64(0, needPod.MemBytes-needNode.FreeMem)
 		vics := eligibleVictims(needNode, prioLimit, c.cfg.VictimsPerLevel)
 		dests := topDestsByFree(c.nodes, c.cfg.DestsPerLevel)
 
 		for _, y := range vics {
-			// coverage: y must be enough to cover current deficit
-			if y.CPUm < needCPU || y.MemBytes < needMem {
+			// allow partial coverage; outer loop will keep freeing more if needed
+			if y.CPUm == 0 && y.MemBytes == 0 {
 				continue
 			}
 			// quick win
 			for _, dn := range dests {
-				if dn.Name == needNode.Name || dn.Name == t.Name {
-					continue
-				}
-				if dn.fits(y.CPUm, y.MemBytes) {
-					par[bfsKey{needNode: "OK", needUID: ""}] = parentEdge{
-						prev: cur, mov: move{UID: y.UID, From: needNode.Name, To: dn.Name}, ok: true,
+				// quick win: only accept if final two-phase free (with current path reservations) is OK
+				if dn.Name != needNode.Name && dn.Name != t.Name {
+					if fitsWithReservations(dn, y, par, cur, c.allPods) {
+						par[bfsKey{needNode: "OK", needUID: ""}] = parentEdge{
+							prev: cur, mov: move{UID: y.UID, From: needNode.Name, To: dn.Name}, ok: true,
+						}
+						return reconstruct(par, bfsKey{needNode: "OK", needUID: ""}), true
 					}
-					return reconstruct(par, bfsKey{needNode: "OK", needUID: ""}), true
 				}
 			}
 			// expand frontier
@@ -364,15 +412,15 @@ func bfsOne(c *ctxFast, t *nState, v0 *pState, prioLimit int, budget *int) ([]mo
 					continue
 				}
 				next := bfsKey{needNode: dn.Name, needUID: y.UID}
-				if seen[next] {
-					continue
+				if !seen[next] && fitsWithReservations(dn, y, par, cur, c.allPods) {
+					seen[next] = true
+					par[next] = parentEdge{prev: cur, mov: move{UID: y.UID, From: needNode.Name, To: dn.Name}, ok: true}
+					q = append(q, next)
 				}
-				seen[next] = true
-				par[next] = parentEdge{prev: cur, mov: move{UID: y.UID, From: needNode.Name, To: dn.Name}, ok: true}
-				q = append(q, next)
 			}
 		}
 	}
+	klog.V(V2).InfoS("BFS queue drained without success")
 	return nil, false
 }
 
@@ -392,9 +440,50 @@ func reconstruct(par map[bfsKey]parentEdge, terminal bfsKey) []move {
 
 /* =========================== Helpers & scoring =========================== */
 
+type delta struct{ cpu, mem int64 }
+
+// sum of deltas along the parent chain from 'cur' back to the root (last→first order)
+func pathNetDeltas(par map[bfsKey]parentEdge, cur bfsKey, pods map[string]*pState) map[string]delta {
+	acc := map[string]delta{}
+	for {
+		pe, ok := par[cur]
+		if !ok || !pe.ok {
+			break
+		}
+		mv := pe.mov
+		p := pods[mv.UID]
+		if p != nil {
+			// leaving 'From' frees (+)
+			df := acc[mv.From]
+			df.cpu += p.CPUm
+			df.mem += p.MemBytes
+			acc[mv.From] = df
+			// entering 'To' consumes (−)
+			dt := acc[mv.To]
+			dt.cpu -= p.CPUm
+			dt.mem -= p.MemBytes
+			acc[mv.To] = dt
+		}
+		cur = pe.prev
+	}
+	return acc
+}
+
+// check if node 'n' can accept pod 'y' given *current* path reservations
+func fitsWithReservations(n *nState, y *pState, par map[bfsKey]parentEdge, cur bfsKey, pods map[string]*pState) bool {
+	d := pathNetDeltas(par, cur, pods)[n.Name]
+	// final two-phase free on this node if we add 'y' next:
+	finalCPU := n.FreeCPUm + d.cpu - y.CPUm
+	finalMem := n.FreeMem + d.mem - y.MemBytes
+	return finalCPU >= 0 && finalMem >= 0
+}
+
 func dec(budget *int) bool {
-	if budget == nil || *budget <= 0 {
-		return budget == nil || *budget <= 0 // nil or unlimited (<=0) -> always true
+	if budget == nil { // nil -> unlimited
+		return true
+	}
+	if *budget <= 0 { // exhausted
+		return false
 	}
 	*budget--
 	return true
@@ -542,7 +631,7 @@ func bestDirectDest(nodes map[string]*nState, p *pState) string {
 }
 
 // Two-phase apply: remove all, then add all. Reject if final would overfill.
-func applyTwoPhase(nodes map[string]*nState, pods map[string]*pState, mvs []move) bool {
+func applyTwoPhase(c *ctxFast, nodes map[string]*nState, pods map[string]*pState, mvs []move) bool {
 	if len(mvs) == 0 {
 		return true
 	}
@@ -565,12 +654,28 @@ func applyTwoPhase(nodes map[string]*nState, pods map[string]*pState, mvs []move
 	}
 	for name, d := range per {
 		if n := nodes[name]; n != nil {
-			if n.FreeCPUm+d.cpu < 0 || n.FreeMem+d.mem < 0 {
-				klog.ErrorS(nil, "BUG: BFS chain would overfill node", "node", name)
+			finalCPU := n.FreeCPUm + d.cpu
+			finalMem := n.FreeMem + d.mem
+			if finalCPU < 0 || finalMem < 0 {
+				klog.V(V2).InfoS("Rejecting BFS chain: final-state overfill",
+					"node", name,
+					"freeCPU_m_now", n.FreeCPUm, "freeMem_MiB_now", bytesToMiB(n.FreeMem),
+					"deltaCPU_m", d.cpu, "deltaMem_MiB", bytesToMiB(d.mem),
+					"finalCPU_m", finalCPU, "finalMem_MiB", bytesToMiB(finalMem))
+				// Dump the chain at V=3 for post-mortem
+				for i, mv := range mvs {
+					if p := pods[mv.UID]; p != nil {
+						klog.V(V2).InfoS("  move",
+							"idx", i, "pod", podName(c, mv.UID),
+							"from", mv.From, "to", mv.To,
+							"cpu_m", p.CPUm, "mem_MiB", bytesToMiB(p.MemBytes))
+					}
+				}
 				return false
 			}
 		}
 	}
+
 	for _, mv := range mvs { // remove
 		if p := pods[mv.UID]; p != nil {
 			if from := nodes[mv.From]; from != nil && from.Pods[p.UID] != nil {
@@ -585,8 +690,8 @@ func applyTwoPhase(nodes map[string]*nState, pods map[string]*pState, mvs []move
 			continue
 		}
 		if !to.fits(p.CPUm, p.MemBytes) {
-			klog.ErrorS(nil, "BUG: chain does not fit on destination",
-				"podUID", p.UID, "to", mv.To)
+			klog.ErrorS(nil, "Chain does not fit on destination",
+				"pod", podName(&ctxFast{uidInfo: c.uidInfo}, p.UID), "to", mv.To)
 			return false
 		}
 		to.add(p)
