@@ -631,12 +631,12 @@ func computeSolverScore(in SolverInput, out *SolverOutput) Score {
 	for uid, w := range origWhere {
 		afterWhere[uid] = w
 	}
-	for uid, dest := range out.Placements {
-		if dest == "" {
+	for _, plm := range out.Placements {
+		if plm.TargetNode == "" {
 			continue
 		}
-		if _, known := afterWhere[uid]; known {
-			afterWhere[uid] = dest
+		if _, known := afterWhere[plm.Pod.UID]; known {
+			afterWhere[plm.Pod.UID] = plm.TargetNode
 		}
 	}
 
@@ -799,41 +799,37 @@ func podsByUID(live []*v1.Pod) map[string]*v1.Pod {
 func (pl *MyCrossNodePreemption) buildActionsFromSolver(
 	out *SolverOutput,
 	preemptor *v1.Pod, // may be nil
-	live []*v1.Pod, // <-- pre-fetched once per flow
+	pods []*v1.Pod, // <-- pre-fetched once per flow
 ) (evicts []EvictLite, moves []MoveLite, oldPlacements []OldPlacements, newPlacements []NewPlacements, nominatedNode string, err error) {
 	if out == nil {
 		return nil, nil, nil, nil, "", nil
 	}
 
 	// Build UID -> *v1.Pod from provided snapshot
-	podsByUID := podsByUID(live)
+	podsByUID := podsByUID(pods)
 	if preemptor != nil {
 		podsByUID[string(preemptor.UID)] = preemptor
 	}
 
-	// ---------------- Old placements (only pods involved in the plan and currently placed) ----------------
-	uids := make(map[string]struct{}, len(out.Placements)+len(out.Evictions)+1)
-	for uid := range out.Placements {
-		uids[uid] = struct{}{}
-	}
-	for _, e := range out.Evictions {
-		uids[e.UID] = struct{}{}
-	}
-	if preemptor != nil {
-		uids[string(preemptor.UID)] = struct{}{}
-	}
-
-	oldPlacements = make([]OldPlacements, 0, len(uids))
-	for uid := range uids {
-		if p := podsByUID[uid]; p != nil && p.DeletionTimestamp == nil {
-			if node := p.Spec.NodeName; node != "" {
-				oldPlacements = append(oldPlacements, OldPlacements{
-					Pod:  PodLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
-					Node: node,
-				})
-			}
+	// ---------------- Old placements (ALL running pods in the snapshot) ----------------
+	oldPlacements = make([]OldPlacements, 0, len(podsByUID))
+	for _, p := range podsByUID {
+		if p == nil || p.DeletionTimestamp != nil {
+			continue
+		}
+		if node := p.Spec.NodeName; node != "" {
+			oldPlacements = append(oldPlacements, OldPlacements{
+				Pod:  PodLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
+				Node: node,
+			})
 		}
 	}
+	sort.Slice(oldPlacements, func(i, j int) bool {
+		if oldPlacements[i].Pod.Namespace != oldPlacements[j].Pod.Namespace {
+			return oldPlacements[i].Pod.Namespace < oldPlacements[j].Pod.Namespace
+		}
+		return oldPlacements[i].Pod.Name < oldPlacements[j].Pod.Name
+	})
 
 	// ---------------- Evictions ----------------
 	for _, e := range out.Evictions {
@@ -846,26 +842,26 @@ func (pl *MyCrossNodePreemption) buildActionsFromSolver(
 	}
 
 	// ---------------- Moves + new placements + preemptor's nominated node ----------------
-	for uid, dest := range out.Placements {
-		p := podsByUID[uid]
-		if p == nil || dest == "" {
+	for _, plm := range out.Placements {
+		p := podsByUID[plm.Pod.UID]
+		if p == nil || plm.TargetNode == "" {
 			continue
 		}
 		src := p.Spec.NodeName
 
-		if src == "" || src != dest {
+		if src == "" || src != plm.TargetNode {
 			newPlacements = append(newPlacements, NewPlacements{
 				Pod:        PodLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
-				TargetNode: dest,
+				TargetNode: plm.TargetNode,
 			})
-			if preemptor != nil && string(preemptor.UID) == uid {
-				nominatedNode = dest
+			if preemptor != nil && string(preemptor.UID) == plm.Pod.UID {
+				nominatedNode = plm.TargetNode
 			}
 		}
-		if src != "" && src != dest {
+		if src != "" && src != plm.TargetNode {
 			moves = append(moves, MoveLite{
 				Pod:      PodLite{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
-				FromNode: src, ToNode: dest,
+				FromNode: src, ToNode: plm.TargetNode,
 			})
 		}
 	}
@@ -1062,7 +1058,7 @@ func (pl *MyCrossNodePreemption) listPlans(_ context.Context) ([]v1.ConfigMap, e
 }
 
 // markPlanStatus sets the Status (Active/Completed/Failed) in plan.json.
-// It will set CompletedAt for Completed/Failed, and clear it for Active.
+// It will clear it for Active.
 // If the plan is already in a final state (Completed/Failed), it won't be downgraded.
 func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName string, status PlanStatus) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -1089,13 +1085,6 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 			return nil
 		}
 		sp.Status = status
-		if status == PlanStatusCompleted || status == PlanStatusFailed {
-			now := time.Now().UTC()
-			sp.CompletedAt = &now
-		} else {
-			// Active again: clear completed timestamp
-			sp.CompletedAt = nil
-		}
 		b, _ := json.MarshalIndent(&sp, "", "  ")
 		patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
 		_, err = pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
@@ -1494,11 +1483,11 @@ func (pl *MyCrossNodePreemption) countNewAndTotalPods(
 		}
 	}
 	// Count pending that will be placed
-	for uid, node := range out.Placements {
-		if node == "" {
+	for _, plm := range out.Placements {
+		if plm.TargetNode == "" {
 			continue
 		}
-		if p := pUID[uid]; p != nil && p.DeletionTimestamp == nil && p.Spec.NodeName == "" {
+		if p := pUID[plm.Pod.UID]; p != nil && p.DeletionTimestamp == nil && p.Spec.NodeName == "" {
 			pendingScheduled++
 		}
 	}

@@ -7,7 +7,7 @@ componentsPatches:
   - name: kube-scheduler
     extraEnvs:
       - name: OPTIMIZE_CADENCE
-        value: "for_every" # choices: for_every, in_batches, continuously
+        value: "in_batches" # choices: for_every, in_batches, continuously
       - name: OPTIMIZE_AT
         value: "postfilter" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL
@@ -15,7 +15,7 @@ componentsPatches:
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "20s"
       - name: SOLVER_PYTHON_ENABLED
-        value: "true" # TODO: disabled during testing fast solver
+        value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
         value: "10s"
       - name: SOLVER_FAST_ENABLED
@@ -23,7 +23,7 @@ componentsPatches:
       - name: SOLVER_FAST_TIMEOUT
         value: "500ms" # 25s
       - name: PLAN_EXECUTION_TIMEOUT
-        value: "600s" # 50s # TODO: set high to determine any potential issues
+        value: "600h" # 50s # TODO: set high to determine any potential issues
       - name: SOLVER_FAST_MAX_EVICTIONS
         value: "-1" # -1 means unlimited
       - name: SOLVER_FAST_MAX_CHAIN_DEPTH

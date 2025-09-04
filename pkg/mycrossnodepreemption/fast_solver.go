@@ -17,7 +17,7 @@
 //   • Linear budget: kMaxIterationsPerPod, decremented in BFS/outer free loop
 //
 // Expects types elsewhere: SolverInput, SolverOutput, SolverNode, SolverPod,
-// SolverEviction, Score.
+// PodLite, Score.
 // ----------------------------------------------------------------------------
 
 package mycrossnodepreemption
@@ -134,6 +134,8 @@ func runFastSolver(in SolverInput) *SolverOutput {
 	// Materialize pods
 	allPods := make(map[string]*podState, len(in.Pods)+1)
 	var pendingList []*podState
+	// Keep UID → (ns,name,uid) so we can build NewPlacements later.
+	uidInfo := make(map[string]PodLite, len(in.Pods)+1)
 
 	if in.Preemptor != nil {
 		pre := &podState{
@@ -146,6 +148,11 @@ func runFastSolver(in SolverInput) *SolverOutput {
 		}
 		allPods[pre.UID] = pre
 		pendingList = append(pendingList, pre)
+		uidInfo[pre.UID] = PodLite{
+			UID:       in.Preemptor.UID,
+			Namespace: in.Preemptor.Namespace,
+			Name:      in.Preemptor.Name,
+		}
 	}
 
 	for i := range in.Pods {
@@ -159,6 +166,7 @@ func runFastSolver(in SolverInput) *SolverOutput {
 			Node:      sp.Where,
 		}
 		allPods[p.UID] = p
+		uidInfo[p.UID] = PodLite{UID: sp.UID, Namespace: sp.Namespace, Name: sp.Name}
 		if p.Node == "" {
 			pendingList = append(pendingList, p)
 		} else if n := nodes[p.Node]; n != nil {
@@ -181,8 +189,9 @@ func runFastSolver(in SolverInput) *SolverOutput {
 		return pendingList[i].MemBytes > pendingList[j].MemBytes
 	})
 
-	placements := make(map[string]string, len(pendingList))
-	var evictedUIDs []SolverEviction
+	// Build final placements as last-destination-per-UID, then convert to []NewPlacements.
+	var placementsByUID = make(map[string]string) // podUID → nodeName
+	var evictedUIDs []PodLite
 
 	// Main loop over pending pods
 	preUID := ""
@@ -190,7 +199,7 @@ func runFastSolver(in SolverInput) *SolverOutput {
 		preUID = in.Preemptor.UID
 	}
 	for _, p := range pendingList {
-		_ = placeOneBFS(nodes, nodeList, allPods, p, placements, &evictedUIDs, preUID)
+		_ = placeOneBFS(nodes, nodeList, allPods, p, placementsByUID, &evictedUIDs, preUID)
 		if in.Preemptor != nil && p.UID == in.Preemptor.UID {
 			break
 		}
@@ -198,19 +207,32 @@ func runFastSolver(in SolverInput) *SolverOutput {
 
 	status := "FEASIBLE"
 	if in.Preemptor != nil {
-		if _, ok := placements[in.Preemptor.UID]; !ok {
+		if _, ok := placementsByUID[in.Preemptor.UID]; !ok {
 			status = "INFEASIBLE"
 		}
 	}
 
-	out := &SolverOutput{
-		Status:     status,
-		Placements: placements,
-		Evictions:  evictedUIDs,
+	// Convert map → stable, deduped []NewPlacements (sorted by UID for determinism).
+	uidList := make([]string, 0, len(placementsByUID))
+	for uid := range placementsByUID {
+		uidList = append(uidList, uid)
+	}
+	sort.Strings(uidList)
+	placementsList := make([]NewPlacements, 0, len(uidList))
+	for _, uid := range uidList {
+		dest := placementsByUID[uid]
+		if dest == "" {
+			continue
+		}
+		info := uidInfo[uid]
+		placementsList = append(placementsList, NewPlacements{
+			Pod:        PodLite{UID: info.UID, Namespace: info.Namespace, Name: info.Name},
+			TargetNode: dest,
+		})
 	}
 
 	if in.Preemptor != nil {
-		if dest, ok := placements[in.Preemptor.UID]; ok {
+		if dest, ok := placementsByUID[in.Preemptor.UID]; ok {
 			if n := nodes[dest]; n != nil {
 				// after-placing snapshot
 				afterCPU := n.FreeCPUm
@@ -232,7 +254,7 @@ func runFastSolver(in SolverInput) *SolverOutput {
 					"freeMem_MiB_after", bytesToMiB(afterMem),
 					"capCPU_m", n.CapCPUm,
 					"capMem_MiB", bytesToMiB(n.CapMem),
-					"movesInPlanSoFar", len(placements)-1, // rough indicator
+					"movesInPlanSoFar", len(placementsByUID)-1, // rough indicator
 				)
 
 				// extra safety: scream if we somehow nominated without fit
@@ -245,7 +267,11 @@ func runFastSolver(in SolverInput) *SolverOutput {
 			}
 		}
 	}
-	return out
+	return &SolverOutput{
+		Status:     status,
+		Placements: placementsList,
+		Evictions:  evictedUIDs,
+	}
 }
 
 func logPrePost(p *podState, n *nodeState, via string, beforeCPU, beforeMem int64) {
@@ -287,8 +313,8 @@ func placeOneBFS(
 	nodeList []*nodeState,
 	allPods map[string]*podState,
 	p *podState,
-	placements map[string]string,
-	evictedUIDs *[]SolverEviction,
+	placementsByUID map[string]string,
+	evictedUIDs *[]PodLite,
 	preUID string, // "" if none
 ) bool {
 	// Linear budget shared across freeing iterations and BFS expansions.
@@ -300,7 +326,7 @@ func placeOneBFS(
 		beforeCPU, beforeMem := n.FreeCPUm, n.FreeMem
 		guardMustFit("direct_fit", n, p, beforeCPU, beforeMem)
 		n.addPod(p)
-		placements[p.UID] = nodeName
+		placementsByUID[p.UID] = nodeName
 		if p.UID == preUID {
 			logPrePost(p, n, "direct_fit", beforeCPU, beforeMem)
 		}
@@ -314,15 +340,21 @@ func placeOneBFS(
 		for _, t := range targets {
 			if t.fits(p.CPUm, p.MemBytes) {
 				t.addPod(p)
-				placements[p.UID] = t.Name
+				placementsByUID[p.UID] = t.Name
 				return true
 			}
 			moves, ok := bfsFreeTargetFor(nodes, allPods, t, p, int(p.Priority), &budget)
 			if ok {
 				// BFS already applied the moves to state; just record them so they reach the plan
-				recordMovesOnly(moves, placements)
+				recordMovesOnly(moves, placementsByUID)
+				// Safety: the BFS chain should have freed enough on t now.
+				beforeCPU, beforeMem := t.FreeCPUm, t.FreeMem
+				guardMustFit("bfs_chain", t, p, beforeCPU, beforeMem)
 				t.addPod(p)
-				placements[p.UID] = t.Name
+				placementsByUID[p.UID] = t.Name
+				if p.UID == preUID {
+					logPrePost(p, t, "bfs_chain", beforeCPU, beforeMem)
+				}
 				return true
 			}
 			// If budget exhausted, stop trying more targets for this pod.
@@ -338,21 +370,21 @@ func placeOneBFS(
 		return false
 	}
 	vNode.removePod(victim)
-	*evictedUIDs = append(*evictedUIDs, SolverEviction{UID: victim.UID})
+	*evictedUIDs = append(*evictedUIDs, PodLite{UID: victim.UID})
 
 	beforeCPU, beforeMem := vNode.FreeCPUm, vNode.FreeMem
 	guardMustFit("single_eviction", vNode, p, beforeCPU, beforeMem)
 	vNode.addPod(p)
-	placements[p.UID] = vNode.Name
+	placementsByUID[p.UID] = vNode.Name
 	if p.UID == preUID {
 		logPrePost(p, vNode, "single_eviction", beforeCPU, beforeMem)
 	}
 	return true
 }
 
-func recordMovesOnly(moves []moveAction, placements map[string]string) {
+func recordMovesOnly(moves []moveAction, placementsByUID map[string]string) {
 	for _, mv := range moves {
-		placements[mv.UID] = mv.To
+		placementsByUID[mv.UID] = mv.To
 	}
 }
 
@@ -489,26 +521,20 @@ func bfsRelocateOne(
 }
 
 // Reconstruct BFS path by following parent links from the terminal marker.
-// Returns moves in execution order.
+// IMPORTANT: return moves in *execution* order = last -> first.
+// Executing last first ensures every move fits without temporary overfill.
 func reconstructBFSChain(parent map[bfsKey]bfsParent, terminal bfsKey) []moveAction {
-	movesRev := make([]moveAction, 0, 8)
+	chain := make([]moveAction, 0, 8)
 	cur := terminal
 	for {
 		par, ok := parent[cur]
 		if !ok || !par.ok {
 			break
 		}
-		movesRev = append(movesRev, par.move)
+		chain = append(chain, par.move) // append last→first
 		cur = par.prev
-		if _, ok := parent[cur]; !ok {
-			break
-		}
 	}
-	// Reverse
-	for i, j := 0, len(movesRev)-1; i < j; i, j = i+1, j-1 {
-		movesRev[i], movesRev[j] = movesRev[j], movesRev[i]
-	}
-	return movesRev
+	return chain
 }
 
 /* =========================== Helpers & scoring ============================ */
@@ -639,6 +665,13 @@ func applyMovesBare(nodes map[string]*nodeState, pods map[string]*podState, move
 			continue
 		}
 		from.removePod(p)
+		// Defensive check: with correct chain order this should always fit.
+		if !to.fits(p.CPUm, p.MemBytes) {
+			klog.ErrorS(nil, "BUG: applying move that does not fit (check chain order)",
+				"podUID", p.UID, "from", from.Name, "to", to.Name,
+				"needCPU_m", p.CPUm, "needMem_MiB", bytesToMiB(p.MemBytes),
+				"freeCPU_m", to.FreeCPUm, "freeMem_MiB", bytesToMiB(to.FreeMem))
+		}
 		to.addPod(p)
 	}
 }

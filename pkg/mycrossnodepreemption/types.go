@@ -104,9 +104,9 @@ type SolverInput struct {
 }
 
 type SolverOutput struct {
-	Status     string            `json:"status"`
-	Placements map[string]string `json:"placements"` // uid -> targetNode
-	Evictions  []SolverEviction  `json:"evictions"`
+	Status     string          `json:"status"`
+	Placements []NewPlacements `json:"placements"`
+	Evictions  []PodLite       `json:"evictions"`
 }
 
 type SolverPod struct {
@@ -127,15 +127,9 @@ type SolverNode struct {
 	Labels   map[string]string `json:"labels,omitempty"`
 }
 
-type SolverEviction struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-}
-
 type SolverSummary struct {
 	Name     string        `json:"name,omitempty"`
-	Status   string        `json:"status"`
+	Status   string        `json:"status,omitempty"`
 	Duration time.Duration `json:"duration,omitempty"`
 	Score    Score         `json:"score,omitempty"`
 }
@@ -149,9 +143,9 @@ type Score struct {
 }
 
 type PodLite struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	UID       string `json:"uid,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name,omitempty"`
 }
 
 type NewPlacements struct {
@@ -190,7 +184,6 @@ type StoredPlan struct {
 	Mode          string     `json:"mode"`
 	GeneratedAt   time.Time  `json:"generatedAt"`
 	Status        PlanStatus `json:"status"`
-	CompletedAt   *time.Time `json:"completedAt,omitempty"`
 	Preemptor     *Preemtor  `json:"preemptor,omitempty"` // Single-preemptor metadata (nil in batch/continuous)
 	// Actions
 	Evicts []EvictLite `json:"evicts,omitempty"`

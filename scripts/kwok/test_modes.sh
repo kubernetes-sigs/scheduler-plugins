@@ -36,8 +36,8 @@ wait_for_running_count() {
 }
 
 run_case() {
-  local mode="$1" at="$2" expected="$3"
-  local label="${mode}-${at}"
+  local solver="$1" mode="$2" at="$3" expected="$4"
+  local label="${solver}-${mode}-${at}"
   local ok=true
   local note=""
 
@@ -45,7 +45,7 @@ run_case() {
 
   # Fresh KWOK cluster for this case
   kwokctl delete cluster --name "${CLUSTER_NAME}" || true
-  if ! kwokctl create cluster --name "${CLUSTER_NAME}" --config "scripts/kwok/test-${mode}-${at}.yaml"; then
+  if ! kwokctl create cluster --name "${CLUSTER_NAME}" --config "scripts/kwok/test-${solver}-${mode}-${at}.yaml"; then
     ok=false
     note+="kwokctl create failed; "
   fi
@@ -97,11 +97,17 @@ run_case() {
 }
 
 # -------------------- Test Matrix --------------------
-run_case "in_batches"   "preenqueue" 34
-run_case "for_every"    "preenqueue" 34
-run_case "for_every"    "postfilter" 34
-run_case "in_batches"   "postfilter" 34
-run_case "continuously" "postfilter" 34
+run_case "fast" "for_every"    "preenqueue" 34
+run_case "fast" "for_every"    "postfilter" 34
+run_case "fast" "in_batches"   "preenqueue" 34
+run_case "fast" "in_batches"   "postfilter" 34
+run_case "fast" "continuously" "postfilter" 34
+
+run_case "py"   "for_every"    "preenqueue" 34
+run_case "py"   "in_batches"   "preenqueue" 34
+run_case "py"   "for_every"    "postfilter" 34
+run_case "py"   "in_batches"   "postfilter" 34
+run_case "py"   "continuously" "postfilter" 34
 
 # -------------------- Summary --------------------
 echo

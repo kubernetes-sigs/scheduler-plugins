@@ -1,0 +1,38 @@
+kind: KwokctlConfiguration
+apiVersion: config.kwok.x-k8s.io/v1alpha1
+options:
+  kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
+  kubeSchedulerConfig: manifests/mycrossnodepreemption/sched-cc.yaml
+componentsPatches:
+  - name: kube-scheduler
+    extraEnvs:
+      - name: OPTIMIZE_CADENCE
+        value: "in_batches" # choices: for_every, in_batches, continuously
+      - name: OPTIMIZE_AT
+        value: "postfilter" # choices: preenqueue, postfilter
+      - name: OPTIMIZATION_INTERVAL
+        value: "15s"
+      - name: OPTIMIZATION_INITIAL_DELAY
+        value: "20s"
+      - name: SOLVER_PYTHON_ENABLED
+        value: "false"
+      - name: SOLVER_PYTHON_TIMEOUT
+        value: "10s"
+      - name: SOLVER_FAST_ENABLED
+        value: "true"
+      - name: SOLVER_FAST_TIMEOUT
+        value: "500ms" # 25s
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # 50s # TODO: set high to determine any potential issues
+      - name: SOLVER_FAST_MAX_EVICTIONS
+        value: "-1" # -1 means unlimited
+      - name: SOLVER_FAST_MAX_CHAIN_DEPTH
+        value: "4"
+      - name: SOLVER_FAST_MOVE_BUDGET
+        value: "5"
+      - name: SOLVER_FAST_MOVE_ATTEMPTS
+        value: "30"
+      - name: SOLVER_FAST_VICTIMS_PER_LEVEL # how many victims to consider per level (level is depth of DFS)
+        value: "8" # -1 means unlimited
+      - name: SOLVER_FAST_DESTS_PER_LEVEL # how many destinations to consider per victim
+        value: "5" # -1 means unlimited

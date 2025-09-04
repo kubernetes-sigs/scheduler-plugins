@@ -85,7 +85,7 @@ def solve(instance: dict) -> dict:
     num_nodes = len(nodes)
     num_pods  = len(pods)
     if num_pods == 0:
-        return {"status": "OK", "nominatedNode": "", "placements": {}, "evictions": []}
+        return {"status": "OK", "placements": [], "evictions": []}
 
     node_idx = {n["name"]: j for j, n in enumerate(nodes)}
 
@@ -264,7 +264,7 @@ def solve(instance: dict) -> dict:
         return _encode_status(st)
 
     # ---------------------- extract plan ----------------------
-    placements = {}
+    placements = []
     evictions  = []
 
     for i in range(num_pods):
@@ -285,7 +285,14 @@ def solve(instance: dict) -> dict:
             orig_j = p_where_j(i)  # None for pending pods
             # Emit placement only if this pod is pending OR it actually moved
             if orig_j is None or (move[i] is not None and int(solver.Value(move[i])) == 1):
-                placements[p_uid(i)] = nodes[chosen_j]["name"]
+                placements.append({
+                    "pod": {
+                        "uid": p_uid(i),
+                        "namespace": p_ns(i),
+                        "name": p_name(i),
+                    },
+                    "targetNode": nodes[chosen_j]["name"],
+                })
 
     return {
         "status": _status_str(st),
