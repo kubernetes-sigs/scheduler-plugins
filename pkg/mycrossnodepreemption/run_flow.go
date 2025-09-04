@@ -33,7 +33,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			enabled: SolverFastEnabled,
 			timeout: SolverFastTimeout,
 			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runFastSolver(in), nil
+				return runSolverFast(in), nil
 			},
 		},
 		{
@@ -41,7 +41,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			enabled: SolverPythonEnabled,
 			timeout: SolverPythonTimeout,
 			fudgeMs: 200, // let the solver return a feasible result before ctx timeout
-			run:     pl.runPythonSolver,
+			run:     pl.runSolverPython,
 		},
 	}
 

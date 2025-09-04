@@ -42,6 +42,9 @@ TODO
   - A workload is scaled down during the plan: Your completion check for workload quotas requires the desired counts to materialize. If the controller scaled down and won’t create more pods, the quotas won’t be consumed and the plan will sit “in progress” until the plan TTL cancels it.
 - Fix TODOs
 - Make use of design patterns where possible.
+- Find a better way to set verbose level.
+- Create unit and integration tests.
+- Add more comments to the code.
 
 ## Later TODOs
 

@@ -113,7 +113,7 @@ type moveAction struct{ UID, From, To string }
 
 /* =============================== Solver entry ============================= */
 
-func runFastSolver(in SolverInput) *SolverOutput {
+func runSolverFast(in SolverInput) *SolverOutput {
 	// Materialize nodes
 	nodes := make(map[string]*nodeState, len(in.Nodes))
 	nodeList := make([]*nodeState, 0, len(in.Nodes))
@@ -430,7 +430,7 @@ func bfsFreeTargetFor(
 				ok = true
 				break
 			}
-			if c, ok2 := bfsRelocateOne(nodes, t, v0, prioLimit, budget); ok2 {
+			if c, ok2 := bfsRelocateOne(nodes, allPods, t, v0, prioLimit, budget); ok2 {
 				chain = c
 				ok = true
 				break
@@ -442,7 +442,10 @@ func bfsFreeTargetFor(
 			return nil, false
 		}
 
-		applyMovesBare(nodes, allPods, chain)
+		if !applyMovesBare(nodes, allPods, chain) {
+			// Chain would overfill under two-phase semantics; reject and keep searching.
+			return nil, false
+		}
 		totalMoves = append(totalMoves, chain...)
 	}
 	return totalMoves, true
@@ -466,6 +469,7 @@ type bfsParent struct {
 // Decrements *budget once per dequeued state (linear bound).
 func bfsRelocateOne(
 	nodes map[string]*nodeState,
+	allPods map[string]*podState,
 	t *nodeState,
 	v0 *podState,
 	prioLimit int,
@@ -489,10 +493,25 @@ func bfsRelocateOne(
 			continue
 		}
 
+		// The pod that must eventually fit on `needNode` at this BFS state.
+		needPod := allPods[cur.needUID]
+		if needPod == nil {
+			// Shouldn't happen, but don't expand bad state.
+			continue
+		}
+		// What this node is still missing (CPU/Mem) to host that pod.
+		needCPU := max64(0, needPod.CPUm-needNode.FreeCPUm)
+		needMem := max64(0, needPod.MemBytes-needNode.FreeMem)
+
 		vicList := eligibleVictimsOn(needNode, prioLimit, kVictimsPerLevel)
 		dests := topKDestsByFree(nodes, kDestsPerLevel)
 
 		for _, y := range vicList {
+
+			// **Coverage constraint:** moving y must be enough to let `needNode` host `needPod`.
+			if y.CPUm < needCPU || y.MemBytes < needMem {
+				continue
+			}
 			for _, dn := range dests {
 				if dn.Name == needNode.Name || dn.Name == targetName {
 					continue
@@ -662,9 +681,9 @@ func applyMovesBare(
 	nodes map[string]*nodeState,
 	pods map[string]*podState,
 	moves []moveAction,
-) {
+) bool {
 	if len(moves) == 0 {
-		return
+		return true
 	}
 
 	// Optional safety: compute final deltas per node and warn if the final
@@ -699,6 +718,7 @@ func applyMovesBare(
 					"freeCPU_m_now", n.FreeCPUm, "freeMem_MiB_now", bytesToMiB(n.FreeMem),
 					"deltaCPU_m", d.cpu, "deltaMem_MiB", bytesToMiB(d.mem),
 					"chainLen", len(moves))
+				return false
 			}
 		}
 	}
@@ -736,9 +756,11 @@ func applyMovesBare(
 				"needCPU_m", p.CPUm, "needMem_MiB", bytesToMiB(p.MemBytes),
 				"freeCPU_m", to.FreeCPUm, "freeMem_MiB", bytesToMiB(to.FreeMem),
 				"chainLen", len(moves))
+			return false
 		}
 		to.addPod(p)
 	}
+	return true
 }
 
 // Single-eviction candidate: pick one victim that enables immediate fit (globally cheapest).
@@ -761,7 +783,7 @@ func pickSingleEvictionCandidate(order []*nodeState, p *podState) (*podState, *n
 		}
 		cands := make([]*podState, 0, len(n.Pods))
 		for _, rp := range n.Pods {
-			if rp.Protected || rp.Priority >= p.Priority {
+			if rp.Protected || rp.Priority >= p.Priority { // only strictly lower prio may be evicted
 				continue
 			}
 			cands = append(cands, rp)
@@ -805,7 +827,7 @@ func pickSingleEvictionCandidate(order []*nodeState, p *podState) (*podState, *n
 func eligibleVictimsOn(n *nodeState, prioLimit int, limit int) []*podState {
 	buf := make([]*podState, 0, len(n.Pods))
 	for _, rp := range n.Pods {
-		if rp.Protected || int(rp.Priority) > prioLimit { // allow equal-priority moves
+		if rp.Protected || int(rp.Priority) > prioLimit {
 			continue
 		}
 		buf = append(buf, rp)

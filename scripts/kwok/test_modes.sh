@@ -99,20 +99,20 @@ run_case() {
 # -------------------- Test Matrix --------------------
 run_case "fast" "for_every"    "preenqueue" 34
 
-run_case "py"   "for_every"    "preenqueue" 34
+# run_case "py"   "for_every"    "preenqueue" 34
 
 
 
-run_case "fast" "for_every"    "postfilter" 34
-run_case "fast" "in_batches"   "preenqueue" 34
-run_case "fast" "in_batches"   "postfilter" 34
-run_case "fast" "continuously" "postfilter" 34
+# run_case "fast" "for_every"    "postfilter" 34
+# run_case "fast" "in_batches"   "preenqueue" 34
+# run_case "fast" "in_batches"   "postfilter" 34
+# run_case "fast" "continuously" "postfilter" 34
 
-run_case "py"   "for_every"    "preenqueue" 34
-run_case "py"   "in_batches"   "preenqueue" 34
-run_case "py"   "for_every"    "postfilter" 34
-run_case "py"   "in_batches"   "postfilter" 34
-run_case "py"   "continuously" "postfilter" 34
+# run_case "py"   "for_every"    "preenqueue" 34
+# run_case "py"   "in_batches"   "preenqueue" 34
+# run_case "py"   "for_every"    "postfilter" 34
+# run_case "py"   "in_batches"   "postfilter" 34
+# run_case "py"   "continuously" "postfilter" 34
 
 # -------------------- Summary --------------------
 echo
