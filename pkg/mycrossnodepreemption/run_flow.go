@@ -69,8 +69,12 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		cancel()
 		attDur := time.Since(attStart)
 
-		feasible := (err == nil) && IsSolverFeasible(out)
-		if !feasible {
+		if err != nil {
+			klog.ErrorS(err, string(phase)+": "+att.name+" failed", "duration", attDur)
+			continue
+		}
+		if !IsSolverFeasible(out) {
+			klog.ErrorS(err, string(phase)+": "+att.name+" infeasible", "duration", attDur)
 			continue
 		}
 		anyFeasible = true
@@ -97,15 +101,21 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		switch IsImprovement(bestScore, sc) {
 		case 1:
 			klog.InfoS(string(phase)+": "+att.name+" improved over "+bestName,
-				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+				att.name+"PlacedByPri", sc.PlacedByPriority, bestName+"PlacedByPri", bestScore.PlacedByPriority,
+				att.name+"Evictions", sc.Evicted, bestName+"Evictions", bestScore.Evicted,
+				att.name+"Moves", sc.Moved, bestName+"Moves", bestScore.Moved)
 			bestOut, bestScore, bestName, bestDuration = out, sc, att.name, attDur
-		case 0:
+		case 0: // if equal; keep the first one
 			klog.InfoS(string(phase)+": "+att.name+" equal to "+bestName,
-				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
-			bestName = bestName + "=" + att.name
+				att.name+"PlacedByPri", sc.PlacedByPriority, bestName+"PlacedByPri", bestScore.PlacedByPriority,
+				att.name+"Evictions", sc.Evicted, bestName+"Evictions", bestScore.Evicted,
+				att.name+"Moves", sc.Moved, bestName+"Moves", bestScore.Moved)
+			bestName = bestName + "=" + att.name + " (" + bestName + " choosen)"
 		default:
 			klog.InfoS(string(phase)+": "+att.name+" worse than "+bestName,
-				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+				att.name+"PlacedByPri", sc.PlacedByPriority, bestName+"PlacedByPri", bestScore.PlacedByPriority,
+				att.name+"Evictions", sc.Evicted, bestName+"Evictions", bestScore.Evicted,
+				att.name+"Moves", sc.Moved, bestName+"Moves", bestScore.Moved)
 		}
 	}
 

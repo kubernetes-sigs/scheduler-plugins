@@ -1,35 +1,3 @@
-// solver_fast.go
-
-// while pod not placed AND there are still eviction candidates:
-//     1. Direct Fit:
-//         - For each node:
-//             - If node fits pod, place pod and break.
-
-//     2. Relocation Chain (No Evictions):
-//         - If cluster free is enough:
-//             - For up to K target nodes (smallest deficit):
-//                 - If target fits pod, place pod and break.
-//                 - Else, try to free room via BFS relocation chain:
-//                     - Only move pods with priority ≤ pod.priority
-//                     - Never evict (delete) pods
-//                     - If chain found, execute moves, place pod, break.
-
-//     3. Single-Eviction Fallback:
-//         - For each node:
-//             - If node is close to fitting pod:
-//                 - Find lowest-priority non-protected pod with priority < pod.priority
-//                 - If evicting it enables fit:
-//                     - Evict pod, place preemptor, break.
-//                     - Mark this pod as evicted for future attempts.
-
-//     End of inner loop for this pod
-
-//     If pod still not placed:
-//         - Remove each pod evicted in this round from the system (do not try to evict again).
-//         - Repeat the loop for this pod with updated state.
-
-// If no more pods can be evicted for this pending pod, mark as infeasible.
-
 package mycrossnodepreemption
 
 import (
@@ -145,14 +113,6 @@ func runSolverFast(in SolverInput) *SolverOutput {
 		}
 		c.nodes[n.Name] = n
 		c.order = append(c.order, n)
-	}
-
-	for _, n := range c.order {
-		klog.V(V2).InfoS("Node snapshot",
-			"node", n.Name,
-			"capCPU_m", n.CapCPUm, "capMem_MiB", bytesToMiB(n.CapMem),
-			"freeCPU_m", n.FreeCPUm, "freeMem_MiB", bytesToMiB(n.FreeMem),
-			"pods", len(n.Pods))
 	}
 
 	// Pods
@@ -286,7 +246,7 @@ func placeForPod(c *ctxFast, p *pState, placements map[string]string, evicted *[
 					placements[p.UID] = t.Name
 					for i, mv := range mvs {
 						pm := c.allPods[mv.UID]
-						klog.V(V2).InfoS("  move",
+						klog.InfoS("  move",
 							"idx", i, "pod", podName(c, mv.UID),
 							"from", mv.From, "to", mv.To,
 							"cpu_m", pm.CPUm, "mem_MiB", bytesToMiB(pm.MemBytes))
@@ -301,9 +261,7 @@ func placeForPod(c *ctxFast, p *pState, placements map[string]string, evicted *[
 			}
 		}
 
-		// 3) Single eviction (global): strictly lower priority than preemptor,
-		// choose globally lowest priority, tie-break by highest CPU, then highest Mem.
-		// Does NOT require immediate fit; we loop back to step 1.
+		// 3) Single eviction: Prefer one whose eviction immediately enables a fit.
 		if v, on := pickOneEvictionGlobal(c.order, p); v != nil && on != nil {
 			on.remove(v)
 			info, ok := c.uidInfo[v.UID]
@@ -311,7 +269,7 @@ func placeForPod(c *ctxFast, p *pState, placements map[string]string, evicted *[
 				info = Pod{UID: v.UID}
 			}
 			*evicted = append(*evicted, Placement{Pod: info, Node: on.Name})
-			klog.V(V2).InfoS("Evicted one victim (global policy, progress)",
+			klog.V(V2).InfoS("Evicted one victim",
 				"victim", podName(c, v.UID), "victimPri", v.Priority,
 				"cpu_m", v.CPUm, "mem_MiB", bytesToMiB(v.MemBytes),
 				"from", on.Name, "preemptor", podName(c, p.UID), "preemptorPri", p.Priority)
@@ -324,46 +282,41 @@ func placeForPod(c *ctxFast, p *pState, placements map[string]string, evicted *[
 	}
 }
 
-// Evict exactly one strictly-lower-priority, non-protected victim globally.
-// Selection order: lowest priority -> highest CPU -> highest Mem.
-// Does not require that the eviction immediately enables a fit.
+// Evict exactly one strictly-lower-priority, non-protected victim.
+// Prefer victims where evicting them immediately enables a fit for the preemptor on some node.
+// If none exist, fall back to the "lowest priority -> highest CPU -> highest Mem" global policy.
 func pickOneEvictionGlobal(order []*nState, p *pState) (*pState, *nState) {
-	var bestV *pState
-	var bestN *nState
-	// Priority ascending (lower first). For CPU/Mem we want highest, so init with minima.
-	bestKey := struct {
+	// Pass 1: near-fit candidates
+	var bestNearV *pState
+	var bestNearN *nState
+	type nearKey struct {
 		priority int32
-		cpu, mem int64
-	}{math.MaxInt32, math.MinInt64, math.MinInt64}
-
+		cpu, mem int64 // bigger is "better" to reduce future evictions
+		name     string
+	}
+	bestNear := nearKey{math.MaxInt32, math.MinInt64, math.MinInt64, "\xff"}
 	for _, n := range order {
 		for _, rp := range n.Pods {
-			// Strictly lower priority than preemptor; never evict protected.
 			if rp.Protected || rp.Priority >= p.Priority {
 				continue
 			}
-			key := struct {
-				priority int32
-				cpu, mem int64
-			}{rp.Priority, rp.CPUm, rp.MemBytes}
-
-			// Compare by (priority asc) -> (cpu desc) -> (mem desc)
-			better := false
-			if key.priority < bestKey.priority {
-				better = true
-			} else if key.priority == bestKey.priority {
-				if key.cpu > bestKey.cpu {
+			if n.FreeCPUm+rp.CPUm >= p.CPUm && n.FreeMem+rp.MemBytes >= p.MemBytes {
+				key := nearKey{rp.Priority, rp.CPUm, rp.MemBytes, n.Name}
+				better := false
+				if key.priority < bestNear.priority {
 					better = true
-				} else if key.cpu == bestKey.cpu && key.mem > bestKey.mem {
-					better = true
+				} else if key.priority == bestNear.priority {
+					if key.cpu > bestNear.cpu || (key.cpu == bestNear.cpu && (key.mem > bestNear.mem || (key.mem == bestNear.mem && key.name < bestNear.name))) {
+						better = true
+					}
 				}
-			}
-			if better {
-				bestV, bestN, bestKey = rp, n, key
+				if better {
+					bestNearV, bestNearN, bestNear = rp, n, key
+				}
 			}
 		}
 	}
-	return bestV, bestN
+	return bestNearV, bestNearN
 }
 
 /* ============================ BFS relocation ============================ */
@@ -379,7 +332,7 @@ type parentEdge struct {
 }
 
 func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int) ([]move, bool) {
-	klog.V(V2).InfoS("BFS start",
+	klog.InfoS("BFS start",
 		"targetNode", t.Name,
 		"preemptor", podName(c, p.UID),
 		"needCPU_m", max64(0, p.CPUm-t.FreeCPUm),
@@ -395,28 +348,31 @@ func bfsFreeTarget(c *ctxFast, t *nState, p *pState, prioLimit int, budget *int)
 
 		vics := pickVictims(t, prioLimit, needCPU, needMem, c.cfg.VictimsPerLevel)
 		if len(vics) == 0 {
-			klog.V(V2).InfoS("BFS abort: no eligible victims", "targetNode", t.Name)
+			klog.InfoS("BFS abort: no eligible victims", "targetNode", t.Name)
 			return nil, false
 		}
 
-		var chain []move
-		found := false
+		// Try quick direct move of any victim first (one per iteration).
+		var quickChain []move
 		for _, v0 := range vics {
-			// Quick direct move for the selected victim v0 (keeps the "coverage" bias).
 			if dst := bestDirectDest(c.nodes, v0); dst != "" && dst != t.Name {
-				klog.V(V2).InfoS("BFS quick move",
-					"pod", podName(c, v0.UID), "from", t.Name, "to", dst)
-				chain = []move{{UID: v0.UID, From: t.Name, To: dst}}
-				found = true
-				break
-			}
-			// BFS relocation chain to free 't' for 'p' (no eviction). IMPORTANT:
-			// Seed BFS with "need p on t", not with v0.
-			if ch, ok := bfsOne(c, t, p, prioLimit, budget); ok {
-				chain, found = ch, true
+				klog.V(V2).InfoS("BFS quick move", "pod", podName(c, v0.UID), "from", t.Name, "to", dst)
+				quickChain = []move{{UID: v0.UID, From: t.Name, To: dst}}
 				break
 			}
 		}
+
+		var chain []move
+		var found bool
+		if len(quickChain) > 0 {
+			chain, found = quickChain, true
+		} else {
+			// Single BFS exploration (do not run once per victim)
+			if ch, ok := bfsOne(c, t, p, prioLimit, budget); ok {
+				chain, found = ch, true
+			}
+		}
+
 		if !found {
 			klog.V(V2).InfoS("BFS failed to free target", "targetNode", t.Name)
 			return nil, false
@@ -458,8 +414,8 @@ func bfsOne(c *ctxFast, t *nState, pre *pState, prioLimit int, budget *int) ([]m
 			continue
 		}
 
-		// During relocation (no eviction), allow moving any non-protected pod.
-		// Priority constraints apply to evictions (step 3), not here.
+		// During relocation (no eviction), only move non-protected pods
+		// with priority <= preemptor.
 		vics := eligibleVictims(needNode, prioLimit, c.cfg.VictimsPerLevel)
 		dests := topDestsByFree(c.nodes, c.cfg.DestsPerLevel)
 
@@ -575,7 +531,8 @@ func bestDirectFit(order []*nState, byName map[string]*nState, p *pState) (strin
 				if best != "" {
 					memBest = byName[best].FreeMem - p.MemBytes
 				}
-				if n.FreeMem-p.MemBytes < memBest {
+				// tie-break: lower mem waste, then name
+				if n.FreeMem-p.MemBytes < memBest || (n.FreeMem-p.MemBytes == memBest && n.Name < best) {
 					best = n.Name
 				}
 			}
@@ -596,7 +553,10 @@ func topKTargetsByDeficit(order []*nState, p *pState, K int) []*nState {
 		}
 		diMem := max64(0, p.MemBytes-ts[i].FreeMem)
 		djMem := max64(0, p.MemBytes-ts[j].FreeMem)
-		return diMem < djMem
+		if diMem != djMem {
+			return diMem < djMem
+		}
+		return ts[i].Name < ts[j].Name
 	})
 	return ts[:capK(K, len(ts))]
 }
@@ -637,7 +597,10 @@ func pickVictims(t *nState, prioLimit int, needCPU, needMem int64, K int) []*pSt
 		if buf[i].p.CPUm != buf[j].p.CPUm {
 			return buf[i].p.CPUm < buf[j].p.CPUm
 		}
-		return buf[i].p.MemBytes < buf[j].p.MemBytes
+		if buf[i].p.MemBytes != buf[j].p.MemBytes {
+			return buf[i].p.MemBytes < buf[j].p.MemBytes
+		}
+		return buf[i].p.UID < buf[j].p.UID
 	})
 	buf = buf[:capK(K, len(buf))]
 	out := make([]*pState, len(buf))
@@ -663,12 +626,15 @@ func eligibleVictims(n *nState, prioLimit, K int) []*pState {
 		if buf[i].CPUm != buf[j].CPUm {
 			return buf[i].CPUm < buf[j].CPUm
 		}
-		return buf[i].MemBytes < buf[j].MemBytes
+		if buf[i].MemBytes != buf[j].MemBytes {
+			return buf[i].MemBytes < buf[j].MemBytes
+		}
+		return buf[i].UID < buf[j].UID
 	})
 	return buf[:capK(K, len(buf))]
 }
 
-// Top destinations by free (CPU desc, then Mem desc).
+// Top destinations by free (CPU desc, then Mem desc, then name asc).
 func topDestsByFree(nodes map[string]*nState, K int) []*nState {
 	ns := make([]*nState, 0, len(nodes))
 	for _, n := range nodes {
@@ -678,23 +644,34 @@ func topDestsByFree(nodes map[string]*nState, K int) []*nState {
 		if ns[i].FreeCPUm != ns[j].FreeCPUm {
 			return ns[i].FreeCPUm > ns[j].FreeCPUm
 		}
-		return ns[i].FreeMem > ns[j].FreeMem
+		if ns[i].FreeMem != ns[j].FreeMem {
+			return ns[i].FreeMem > ns[j].FreeMem
+		}
+		return ns[i].Name < ns[j].Name
 	})
 	return ns[:capK(K, len(ns))]
 }
 
-// Best direct destination for pod p (min CPU waste, tie Mem).
+// Best direct destination for pod p (min CPU waste, tie Mem, tie name). Deterministic.
 func bestDirectDest(nodes map[string]*nState, p *pState) string {
+	ns := make([]*nState, 0, len(nodes))
+	for _, n := range nodes {
+		ns = append(ns, n)
+	}
+	// Sort by name to make iteration deterministic in ties later
+	sort.Slice(ns, func(i, j int) bool { return ns[i].Name < ns[j].Name })
+
 	best := ""
 	bestCPU := int64(math.MaxInt64)
 	bestMEM := int64(math.MaxInt64)
-	for _, n := range nodes {
+	for _, n := range ns {
 		if n.Pods[p.UID] != nil { // same node
 			continue
 		}
 		if n.fits(p.CPUm, p.MemBytes) {
 			cw, mw := n.FreeCPUm-p.CPUm, n.FreeMem-p.MemBytes
-			if cw < bestCPU || (cw == bestCPU && mw < bestMEM) {
+			if cw < bestCPU ||
+				(cw == bestCPU && (mw < bestMEM || (mw == bestMEM && n.Name < best))) {
 				bestCPU, bestMEM, best = cw, mw, n.Name
 			}
 		}
@@ -729,7 +706,7 @@ func applyTwoPhase(c *ctxFast, nodes map[string]*nState, pods map[string]*pState
 			finalCPU := n.FreeCPUm + d.cpu
 			finalMem := n.FreeMem + d.mem
 			if finalCPU < 0 || finalMem < 0 {
-				klog.V(V2).InfoS("Rejecting BFS chain: final-state overfill",
+				klog.InfoS("Rejecting BFS chain: final-state overfill",
 					"node", name,
 					"freeCPU_m_now", n.FreeCPUm, "freeMem_MiB_now", bytesToMiB(n.FreeMem),
 					"deltaCPU_m", d.cpu, "deltaMem_MiB", bytesToMiB(d.mem),
@@ -737,7 +714,7 @@ func applyTwoPhase(c *ctxFast, nodes map[string]*nState, pods map[string]*pState
 				// Dump the chain at V=3 for post-mortem
 				for i, mv := range mvs {
 					if p := pods[mv.UID]; p != nil {
-						klog.V(V2).InfoS("  move",
+						klog.InfoS("  move",
 							"idx", i, "pod", podName(c, mv.UID),
 							"from", mv.From, "to", mv.To,
 							"cpu_m", p.CPUm, "mem_MiB", bytesToMiB(p.MemBytes))
