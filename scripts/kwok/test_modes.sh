@@ -98,6 +98,11 @@ run_case() {
 
 # -------------------- Test Matrix --------------------
 run_case "fast" "for_every"    "preenqueue" 34
+
+run_case "py"   "for_every"    "preenqueue" 34
+
+
+
 run_case "fast" "for_every"    "postfilter" 34
 run_case "fast" "in_batches"   "preenqueue" 34
 run_case "fast" "in_batches"   "postfilter" 34

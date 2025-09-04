@@ -32,6 +32,7 @@ TODO
 
 ## TODOs Plugin
 
+- Save total plan execution time in configmap
 - Provide the greedy solution to python as a hint
 - Improve fast solver.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
@@ -41,7 +42,6 @@ TODO
   - A workload is scaled down during the plan: Your completion check for workload quotas requires the desired counts to materialize. If the controller scaled down and won’t create more pods, the quotas won’t be consumed and the plan will sit “in progress” until the plan TTL cancels it.
 - Fix TODOs
 - Make use of design patterns where possible.
-- Cleanup code, structs.
 
 ## Later TODOs
 

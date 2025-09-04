@@ -22,7 +22,9 @@ COPY . .
 RUN make build-scheduler
 
 FROM ${UBUNTU_BASE_IMAGE}
+
 #TODO_HC: USE NEWEST PYTHON VERSION
+
 # 1) Python + pip
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip && \
@@ -31,12 +33,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 2) Copy solver code
 ENV SOLVER_DIR=/opt/solver
 RUN mkdir -p ${SOLVER_DIR}
+
+# Copy just requirements first (keeps this layer cached)
+COPY scripts/mycrossnodepreemption/requirements.txt ${SOLVER_DIR}/requirements.txt
+
+# Install deps using cache (for faster rebuilds)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install -r ${SOLVER_DIR}/requirements.txt
+
+# Now copy the rest of the solver code
 COPY scripts/mycrossnodepreemption/ ${SOLVER_DIR}/
 
-# 3) Install Python dependencies
-RUN pip3 install --no-cache-dir -r ${SOLVER_DIR}/requirements.txt
-
-# 4) Copy scheduler binary
+# 3) Copy scheduler binary
 COPY --from=builder /src/bin/kube-scheduler /bin/kube-scheduler
 
 WORKDIR /bin

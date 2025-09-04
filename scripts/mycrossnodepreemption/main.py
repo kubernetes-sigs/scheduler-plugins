@@ -269,7 +269,10 @@ def solve(instance: dict) -> dict:
 
     for i in range(num_pods):
         if int(solver.Value(evict[i])) == 1:
-            evictions.append({"uid": p_uid(i), "namespace": p_ns(i), "name": p_name(i)})
+            evictions.append(
+                {"uid": p_uid(i), "namespace": p_ns(i), "name": p_name(i)},
+                {"node": p_where_j(i)},
+            )
             continue
 
         if int(solver.Value(placed[i])) == 1 and eligible[i]:
@@ -291,7 +294,8 @@ def solve(instance: dict) -> dict:
                         "namespace": p_ns(i),
                         "name": p_name(i),
                     },
-                    "targetNode": nodes[chosen_j]["name"],
+                    "fromNode": nodes[orig_j]["name"] if orig_j is not None else "",
+                    "toNode": nodes[chosen_j]["name"],
                 })
 
     return {

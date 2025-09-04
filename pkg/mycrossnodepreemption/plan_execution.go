@@ -45,7 +45,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	if preemptor != nil {
 		// TODO: Get target node from placements
 		doc.Preemptor = &Preemtor{
-			Pod: PodLite{
+			Pod: Pod{
 				UID:       string(preemptor.UID),
 				Namespace: preemptor.Namespace,
 				Name:      preemptor.Name,
@@ -69,7 +69,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 
 // deriveWorkloadPerNode derives the desired workload distribution per node from the new placements.
 // It also includes a preemptor-pod if exists.
-func (pl *MyCrossNodePreemption) deriveWorkloadPerNode(newPlacements []NewPlacements, preemptor *v1.Pod) WorkloadPerNode {
+func (pl *MyCrossNodePreemption) deriveWorkloadPerNode(newPlacements []NewPlacement, preemptor *v1.Pod) WorkloadPerNode {
 	wkDesired := WorkloadPerNode{}
 	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
 
@@ -90,7 +90,7 @@ func (pl *MyCrossNodePreemption) deriveWorkloadPerNode(newPlacements []NewPlacem
 				m = map[string]int{}
 				wkDesired[key] = m
 			}
-			m[plm.TargetNode]++
+			m[plm.ToNode]++
 		}
 	}
 	return wkDesired
@@ -146,7 +146,7 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, sp *StoredPlan
 	}
 	for _, e := range sp.Evicts {
 		klog.V(V2).InfoS("Eviction planned",
-			"pod", e.Pod.Namespace+"/"+e.Pod.Name, "from", e.FromNode)
+			"pod", e.Pod.Namespace+"/"+e.Pod.Name, "from", e.Node)
 	}
 
 	if len(targets) > 0 {

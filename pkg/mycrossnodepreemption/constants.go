@@ -38,7 +38,7 @@ const (
 	PlanConfigMapLabelKey = "crossnode-plan"
 	// PlanPendingBindInterval is the interval at which pending binds are retried.
 	PlanPendingBindInterval = 250 * time.Millisecond
-	// PlansToRetain is the number of ConfigMaps plans to retain.
+	// PlansToRetain is the number of ConfigMaps plans to retain before the oldest are deleted.
 	PlansToRetain = 30
 	// NudgeBlockedInterval is how often to try waking one blocked pod when idle in ForEvery@PreEnqueue.
 	// We need this functionality at this mode, as if we activate all blocked pods at once

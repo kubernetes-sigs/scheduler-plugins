@@ -104,9 +104,9 @@ type SolverInput struct {
 }
 
 type SolverOutput struct {
-	Status     string          `json:"status"`
-	Placements []NewPlacements `json:"placements"`
-	Evictions  []PodLite       `json:"evictions"`
+	Status     string         `json:"status"`
+	Placements []NewPlacement `json:"placements"`
+	Evictions  []Placement    `json:"evictions"`
 }
 
 type SolverPod struct {
@@ -142,36 +142,26 @@ type Score struct {
 	Moved            int            `json:"moved,omitempty"`
 }
 
-type PodLite struct {
+type Pod struct {
 	UID       string `json:"uid,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	Name      string `json:"name,omitempty"`
 }
 
-type NewPlacements struct {
-	Pod        PodLite `json:"pod"`
-	TargetNode string  `json:"targetNode"`
+type NewPlacement struct {
+	Pod      Pod    `json:"pod"`
+	FromNode string `json:"fromNode,omitempty"` // empty if new pod
+	ToNode   string `json:"toNode"`
 }
 
-type OldPlacements struct {
-	Pod  PodLite `json:"pod"`
-	Node string  `json:"node"`
-}
-
-type MoveLite struct {
-	Pod      PodLite `json:"pod"`
-	FromNode string  `json:"fromNode"`
-	ToNode   string  `json:"toNode"`
-}
-
-type EvictLite struct {
-	Pod      PodLite `json:"pod"`
-	FromNode string  `json:"fromNode"`
+type Placement struct {
+	Pod  Pod    `json:"pod"`
+	Node string `json:"node"`
 }
 
 type Preemtor struct {
-	Pod           PodLite `json:"pod"`
-	NominatedNode string  `json:"nominatedNode"`
+	Pod           Pod    `json:"pod"`
+	NominatedNode string `json:"nominatedNode"`
 }
 
 // WorkloadPerNode: workloadKey -> node -> desired count
@@ -186,14 +176,14 @@ type StoredPlan struct {
 	Status        PlanStatus `json:"status"`
 	Preemptor     *Preemtor  `json:"preemptor,omitempty"` // Single-preemptor metadata (nil in batch/continuous)
 	// Actions
-	Evicts []EvictLite `json:"evicts,omitempty"`
-	Moves  []MoveLite  `json:"moves,omitempty"`
+	Evicts []Placement    `json:"evicts,omitempty"`
+	Moves  []NewPlacement `json:"moves,omitempty"`
 	// Solver summary (status & score)
 	Solver SolverSummary `json:"solver"`
 	// Reference snapshot (where pods were at solve time) uid -> node
-	OldPlacements []OldPlacements `json:"oldPlacements,omitempty"`
+	OldPlacements []Placement `json:"oldPlacements,omitempty"`
 	// Planned new placements (pending or moved) - note that moved will get a new uid
-	NewPlacements []NewPlacements `json:"newPlacements,omitempty"`
+	NewPlacements []NewPlacement `json:"newPlacements,omitempty"`
 	// Desired placements per workload / per node
 	WorkloadPerNode WorkloadPerNode `json:"workloadPerNode,omitempty"`
 }
@@ -239,7 +229,7 @@ type PodSet struct {
 }
 
 type PodKey struct {
-	UID       types.UID
+	UID       types.UID // for fast lookup, we only use types.UID as key (not as a string)
 	Namespace string
 	Name      string
 }
