@@ -1,14 +1,34 @@
-// pkg/mycrossnodepreemption/solver_fast.go
-// ----------------------------------------------------------------------------
-// Fast, bounded "augmenting-path" mover for cross-node preemption.
-// Order per pending pod (prio desc):
-//   1) Direct fit (best-waste).
-//   2) If cluster total free is enough, try up to K targets (smallest deficit)
-//      and free them via BFS relocation chains (no evictions).
-//   3) Else evict exactly one lowest-priority non-protected victim that enables
-//      an immediate fit.
-// Bounded work via: targets/victims/dests caps + per-pod iteration budget.
-// ----------------------------------------------------------------------------
+// solver_fast.go
+
+// while pod not placed AND there are still eviction candidates:
+//     1. Direct Fit:
+//         - For each node:
+//             - If node fits pod, place pod and break.
+
+//     2. Relocation Chain (No Evictions):
+//         - If cluster free is enough:
+//             - For up to K target nodes (smallest deficit):
+//                 - If target fits pod, place pod and break.
+//                 - Else, try to free room via BFS relocation chain:
+//                     - Only move pods with priority ≤ pod.priority
+//                     - Never evict (delete) pods
+//                     - If chain found, execute moves, place pod, break.
+
+//     3. Single-Eviction Fallback:
+//         - For each node:
+//             - If node is close to fitting pod:
+//                 - Find lowest-priority non-protected pod with priority < pod.priority
+//                 - If evicting it enables fit:
+//                     - Evict pod, place preemptor, break.
+//                     - Mark this pod as evicted for future attempts.
+
+//     End of inner loop for this pod
+
+//     If pod still not placed:
+//         - Remove each pod evicted in this round from the system (do not try to evict again).
+//         - Repeat the loop for this pod with updated state.
+
+// If no more pods can be evicted for this pending pod, mark as infeasible.
 
 package mycrossnodepreemption
 
@@ -225,72 +245,125 @@ func runSolverFast(in SolverInput) *SolverOutput {
 
 /* ========================= Core placement flow ========================= */
 
+// Iterative: Direct fit -> relocations -> single eviction (global policy) -> repeat
 func placeForPod(c *ctxFast, p *pState, placements map[string]string, evicted *[]Placement) bool {
 	budget := c.cfg.MaxIterationsPerPod
 
-	// 1) Direct fit (best-waste)
-	if to, ok := bestDirectFit(c.order, c.nodes, p); ok {
-		n := c.nodes[to]
-		n.add(p)
-		placements[p.UID] = to
-		klog.V(V2).InfoS("Direct fit",
-			"pod", podName(c, p.UID), "to", to)
-		return true
+	for {
+		// 1) Direct fit (best-waste)
+		if to, ok := bestDirectFit(c.order, c.nodes, p); ok {
+			n := c.nodes[to]
+			n.add(p)
+			placements[p.UID] = to
+			klog.V(V2).InfoS("Direct fit", "pod", podName(c, p.UID), "to", to)
+			return true
+		}
+
+		// 2) BFS relocations (no evictions) if cluster aggregate free is sufficient
+		if cpuTot, memTot := totalFree(c.order); cpuTot >= p.CPUm && memTot >= p.MemBytes {
+			klog.V(V2).InfoS("placeForPod: try targets",
+				"pod", podName(c, p.UID),
+				"targets", func() []string {
+					xs := []string{}
+					for _, n := range topKTargetsByDeficit(c.order, p, c.cfg.TargetsToTry) {
+						xs = append(xs, n.Name)
+					}
+					return xs
+				}())
+
+			for _, t := range topKTargetsByDeficit(c.order, p, c.cfg.TargetsToTry) {
+				// trivial fit after prior changes
+				if t.fits(p.CPUm, p.MemBytes) {
+					t.add(p)
+					placements[p.UID] = t.Name
+					return true
+				}
+				// Restrict relocations to pods with priority <= preemptor
+				mvs, ok := bfsFreeTarget(c, t, p, int(p.Priority), &budget)
+				if ok {
+					recordMoves(mvs, placements)
+					t.add(p)
+					placements[p.UID] = t.Name
+					for i, mv := range mvs {
+						pm := c.allPods[mv.UID]
+						klog.V(V2).InfoS("  move",
+							"idx", i, "pod", podName(c, mv.UID),
+							"from", mv.From, "to", mv.To,
+							"cpu_m", pm.CPUm, "mem_MiB", bytesToMiB(pm.MemBytes))
+					}
+					return true
+				}
+				if budget <= 0 {
+					klog.V(V2).InfoS("Budget exhausted while searching BFS relocations",
+						"pod", podName(c, p.UID))
+					break
+				}
+			}
+		}
+
+		// 3) Single eviction (global): strictly lower priority than preemptor,
+		// choose globally lowest priority, tie-break by highest CPU, then highest Mem.
+		// Does NOT require immediate fit; we loop back to step 1.
+		if v, on := pickOneEvictionGlobal(c.order, p); v != nil && on != nil {
+			on.remove(v)
+			info, ok := c.uidInfo[v.UID]
+			if !ok {
+				info = Pod{UID: v.UID}
+			}
+			*evicted = append(*evicted, Placement{Pod: info, Node: on.Name})
+			klog.V(V2).InfoS("Evicted one victim (global policy, progress)",
+				"victim", podName(c, v.UID), "victimPri", v.Priority,
+				"cpu_m", v.CPUm, "mem_MiB", bytesToMiB(v.MemBytes),
+				"from", on.Name, "preemptor", podName(c, p.UID), "preemptorPri", p.Priority)
+			// Loop back to step 1 with updated state.
+			continue
+		}
+
+		// No direct fit, no relocation chain, and no eligible eviction left -> infeasible for this pod.
+		return false
 	}
+}
 
-	// 2) BFS relocations if cluster aggregate free is sufficient
-	if cpuTot, memTot := totalFree(c.order); cpuTot >= p.CPUm && memTot >= p.MemBytes {
-		klog.V(V2).InfoS("placeForPod: try targets",
-			"pod", podName(c, p.UID),
-			"targets", func() []string {
-				xs := []string{}
-				for _, n := range topKTargetsByDeficit(c.order, p, c.cfg.TargetsToTry) {
-					xs = append(xs, n.Name)
-				}
-				return xs
-			}())
+// Evict exactly one strictly-lower-priority, non-protected victim globally.
+// Selection order: lowest priority -> highest CPU -> highest Mem.
+// Does not require that the eviction immediately enables a fit.
+func pickOneEvictionGlobal(order []*nState, p *pState) (*pState, *nState) {
+	var bestV *pState
+	var bestN *nState
+	// Priority ascending (lower first). For CPU/Mem we want highest, so init with minima.
+	bestKey := struct {
+		priority int32
+		cpu, mem int64
+	}{math.MaxInt32, math.MinInt64, math.MinInt64}
 
-		for _, t := range topKTargetsByDeficit(c.order, p, c.cfg.TargetsToTry) {
-			if t.fits(p.CPUm, p.MemBytes) { // trivial after someone else moved
-				t.add(p)
-				placements[p.UID] = t.Name
-				return true
+	for _, n := range order {
+		for _, rp := range n.Pods {
+			// Strictly lower priority than preemptor; never evict protected.
+			if rp.Protected || rp.Priority >= p.Priority {
+				continue
 			}
-			mvs, ok := bfsFreeTarget(c, t, p, int(p.Priority), &budget)
-			if ok {
-				recordMoves(mvs, placements)
-				t.add(p)
-				placements[p.UID] = t.Name
-				for i, mv := range mvs {
-					p := c.allPods[mv.UID]
-					klog.V(V2).InfoS("  move",
-						"idx", i, "pod", podName(c, mv.UID),
-						"from", mv.From, "to", mv.To,
-						"cpu_m", p.CPUm, "mem_MiB", bytesToMiB(p.MemBytes))
+			key := struct {
+				priority int32
+				cpu, mem int64
+			}{rp.Priority, rp.CPUm, rp.MemBytes}
+
+			// Compare by (priority asc) -> (cpu desc) -> (mem desc)
+			better := false
+			if key.priority < bestKey.priority {
+				better = true
+			} else if key.priority == bestKey.priority {
+				if key.cpu > bestKey.cpu {
+					better = true
+				} else if key.cpu == bestKey.cpu && key.mem > bestKey.mem {
+					better = true
 				}
-				return true
 			}
-			if budget <= 0 {
-				klog.V(V2).InfoS("Budget exhausted while searching BFS relocations",
-					"pod", podName(c, p.UID))
-				break
+			if better {
+				bestV, bestN, bestKey = rp, n, key
 			}
 		}
 	}
-
-	// 3) Single-eviction fallback
-	if v, on := pickSingleEviction(c.order, p); v != nil && on != nil {
-		on.remove(v)
-		info, ok := c.uidInfo[v.UID]
-		if !ok {
-			info = Pod{UID: v.UID}
-		}
-		*evicted = append(*evicted, Placement{Pod: info, Node: on.Name})
-		on.add(p)
-		placements[p.UID] = on.Name
-		return true
-	}
-	return false
+	return bestV, bestN
 }
 
 /* ============================ BFS relocation ============================ */
@@ -696,58 +769,6 @@ func applyTwoPhase(c *ctxFast, nodes map[string]*nState, pods map[string]*pState
 		to.add(p)
 	}
 	return true
-}
-
-// Evict exactly one victim that enables immediate fit (globally cheapest).
-func pickSingleEviction(order []*nState, p *pState) (*pState, *nState) {
-	var bestV *pState
-	var bestN *nState
-	bestKey := struct {
-		priority int32
-		cpu, mem int64
-	}{math.MaxInt32, math.MaxInt64, math.MaxInt64}
-
-	for _, n := range order {
-		needCPU := p.CPUm - n.FreeCPUm
-		needMem := p.MemBytes - n.FreeMem
-		if needCPU <= 0 && needMem <= 0 {
-			continue
-		}
-		cands := make([]*pState, 0, len(n.Pods))
-		for _, rp := range n.Pods {
-			if rp.Protected || rp.Priority >= p.Priority {
-				continue
-			}
-			cands = append(cands, rp)
-		}
-		if len(cands) == 0 {
-			continue
-		}
-		sort.Slice(cands, func(i, j int) bool {
-			if cands[i].Priority != cands[j].Priority {
-				return cands[i].Priority < cands[j].Priority
-			}
-			if cands[i].CPUm != cands[j].CPUm {
-				return cands[i].CPUm < cands[j].CPUm
-			}
-			return cands[i].MemBytes < cands[j].MemBytes
-		})
-		for _, v := range cands {
-			if n.FreeCPUm+v.CPUm >= p.CPUm && n.FreeMem+v.MemBytes >= p.MemBytes {
-				key := struct {
-					priority int32
-					cpu, mem int64
-				}{v.Priority, v.CPUm, v.MemBytes}
-				if key.priority < bestKey.priority ||
-					(key.priority == bestKey.priority && (key.cpu < bestKey.cpu ||
-						(key.cpu == bestKey.cpu && key.mem < bestKey.mem))) {
-					bestV, bestN, bestKey = v, n, key
-				}
-				break // best on this node
-			}
-		}
-	}
-	return bestV, bestN
 }
 
 func recordMoves(mvs []move, placements map[string]string) {
