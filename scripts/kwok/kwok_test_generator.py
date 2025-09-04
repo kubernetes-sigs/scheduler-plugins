@@ -93,14 +93,18 @@ class KwokTestGeneratorRunner:
     def __init__(self, args: argparse.Namespace):
         self.args = args
         ctx_name = f"kwok-{args.cluster_name}"
-        resolved_ctx = check_context(ctx_name)
-        if resolved_ctx:
-            self.ctx = resolved_ctx
-            # Just set current context, for no confusing
-            set_context(self.ctx)
-            print(f"[kwok-fill] Using kubectl context '{self.ctx}' for cluster '{args.cluster_name}'")
-        else:
+        # Retry a few times in case kwokctl just created the cluster
+        resolved_ctx = None
+        for attempt in range(10):  # up to ~5s
+            resolved_ctx = check_context(ctx_name)
+            if resolved_ctx:
+                break
+            print(f"[kwok-fill] Waiting for kubectl context '{ctx_name}' (attempt {attempt+1})...")
+            time.sleep(0.5)
+        if not resolved_ctx:
             raise Exception(f"Could not resolve context for cluster '{args.cluster_name}'")
+        self.ctx = resolved_ctx
+        set_context(resolved_ctx)
         self.ns = args.namespace
         # seed/rng
         if args.seed is not None:
@@ -365,9 +369,6 @@ class KwokTestGeneratorRunner:
             # fresh ns + PCs
             ensure_namespace(self.ctx, self.ns, recreate=True)
             ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
-
-            # sleep a bit
-            time.sleep(1)
             
             # apply workload
             _ = self._apply_standalone_pods() if self.args.num_replicaset <= 0 else self._apply_rs()[0]
@@ -518,7 +519,7 @@ def main():
     ap.add_argument("--variance", type=int, default=50)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--num-priorities", type=int, default=4)
-    ap.add_argument("--wait-each", action="store_true", default=True)
+    ap.add_argument("--wait-each", action="store_true", default=False)
     ap.add_argument("--wait-timeout", default="10s")
     ap.add_argument("--settle-timeout", default="5s")
     ap.add_argument("--cpu-interval", default="50m,500m")

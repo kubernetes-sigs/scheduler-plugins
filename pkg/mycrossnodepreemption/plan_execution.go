@@ -14,19 +14,20 @@ import (
 )
 
 // TODO:
-func (pl *MyCrossNodePreemption) registerPlan(ctx context.Context, out *SolverOutput, summary SolverSummary, preemptor *v1.Pod) (*StoredPlan, *ActivePlanState, string, error) {
+func (pl *MyCrossNodePreemption) registerPlan(
+	ctx context.Context,
+	out *SolverOutput,
+	summary SolverSummary,
+	preemptor *v1.Pod,
+	pods []*v1.Pod,
+) (*StoredPlan, *ActivePlanState, string, error) {
 
-	evicts, moves, newPls, nominatedNode, err := pl.buildActionsFromSolver(out, preemptor)
+	evicts, moves, oldPlc, newPlc, nominated, err := pl.buildActionsFromSolver(out, preemptor, pods)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("build actions: %w", err)
 	}
 
-	oldPls, err := pl.snapshotOldPlacements()
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("snapshot old placements: %w", err)
-	}
-
-	wkDesired := pl.deriveWorkloadPerNode(newPls, preemptor)
+	wkDesired := pl.deriveWorkloadPerNode(newPlc, preemptor)
 
 	doc := &StoredPlan{
 		PluginVersion:   Version,
@@ -36,8 +37,8 @@ func (pl *MyCrossNodePreemption) registerPlan(ctx context.Context, out *SolverOu
 		Evicts:          evicts,
 		Moves:           moves,
 		Solver:          summary,
-		OldPlacements:   oldPls,
-		NewPlacements:   newPls, // includes both pending and moved (also preemptor)
+		OldPlacements:   oldPlc,
+		NewPlacements:   newPlc, // includes both pending and moved (also preemptor)
 		WorkloadPerNode: wkDesired,
 	}
 
@@ -49,7 +50,7 @@ func (pl *MyCrossNodePreemption) registerPlan(ctx context.Context, out *SolverOu
 				Namespace: preemptor.Namespace,
 				Name:      preemptor.Name,
 			},
-			NominatedNode: nominatedNode,
+			NominatedNode: nominated,
 		}
 	}
 
@@ -63,7 +64,7 @@ func (pl *MyCrossNodePreemption) registerPlan(ctx context.Context, out *SolverOu
 		klog.ErrorS(err, "export plan failed (non-fatal)")
 	}
 
-	return doc, pl.getActivePlan(), nominatedNode, nil
+	return doc, pl.getActivePlan(), nominated, nil
 }
 
 // deriveWorkloadPerNode derives the desired workload distribution per node from the new placements.

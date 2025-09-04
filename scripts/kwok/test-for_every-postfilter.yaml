@@ -11,9 +11,9 @@ componentsPatches:
       - name: OPTIMIZE_AT
         value: "postfilter" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL
-        value: "30s"
-      - name: OPTIMIZATION_INITIAL_DELAY
         value: "15s"
+      - name: OPTIMIZATION_INITIAL_DELAY
+        value: "20s"
       - name: SOLVER_PYTHON_ENABLED
         value: "true" # TODO: disabled during testing fast solver
       - name: SOLVER_PYTHON_TIMEOUT

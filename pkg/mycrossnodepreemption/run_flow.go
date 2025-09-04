@@ -154,20 +154,35 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 			pl.leaveActive()
 			return nil, ErrNoop
 		}
-	default: // PreEnqueue / PostFilter single-preemptor flow
+	default: // Every: PreEnqueue / PostFilter
 		solveMode = SolveSingle
 		preemptor = singlePod
 	}
 
+	// -------- Fetch nodes and pods ONCE for this flow --------
+	nodes, err := pl.getNodes()
+	if err != nil {
+		pl.leaveActive()
+		klog.ErrorS(err, string(phase)+": failed to list nodes")
+		return nil, err
+	}
+	pods, err := pl.getPods()
+	if err != nil {
+		pl.leaveActive()
+		klog.ErrorS(err, string(phase)+": failed to list pods")
+		return nil, err
+	}
+	// ----------------------------------------------------
+
 	// ---------- Build input + baseline + digest ----------
-	in0, baseline, d0, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods)
+	in0, baseline, d0, err := pl.buildInputAndBaseline(solveMode, nodes, pods, preemptor, batchedPods)
 	if err != nil {
 		klog.ErrorS(err, string(phase)+": failed to build input/baseline")
 		pl.leaveActive()
 		return nil, err
 	}
 
-	// ---------- Solve with fast then python (deduped) ----------
+	// ---------- Solve ----------
 	bestOut, anyFeasible, bestSummary, solverDuration := pl.runSolvers(ctx, phase, in0, baseline)
 
 	// Decide failure reason:
@@ -201,7 +216,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// Digest recheck when in continuous mode to detect cluster drift between building -> solving -> applying.
 	// Applying needs to be at the same state as when we take the digest (cluster state).
 	if phase == PhaseContinuous {
-		_, _, d1, err := pl.buildInputAndBaseline(solveMode, preemptor, batchedPods)
+		_, _, d1, err := pl.buildInputAndBaseline(solveMode, nodes, pods, preemptor, batchedPods)
 		if err != nil {
 			pl.leaveActive()
 			return nil, err
@@ -222,14 +237,13 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Count new and total pods ----------
-	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestOut)
+	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestOut, pods)
 
 	// ---------- Register + execute plan ----------
 	var doc *StoredPlan
 	var ap *ActivePlanState
 	var targetNode string
-	// preemptor may be nil. registerPlan should store bestSummary into StoredPlan.Solver.
-	doc, ap, targetNode, err = pl.registerPlan(ctx, bestOut, bestSummary, preemptor)
+	doc, ap, targetNode, err = pl.registerPlan(ctx, bestOut, bestSummary, preemptor, pods)
 	if err != nil {
 		// keep single-preemptor blocked on error
 		if solveMode == SolveSingle && preemptor != nil {
