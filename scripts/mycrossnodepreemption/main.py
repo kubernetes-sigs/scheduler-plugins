@@ -191,22 +191,30 @@ def solve(instance: dict) -> dict:
 
     # Mode-specific guards
     if single_preemptor_mode and pre_idx is not None:
-        m.Add(placed[pre_idx] == 1) # pending must be placed; otherwise we cannot use the solution
-        # preemptor must not evict
+        # preemptor must be placed and never evicted
+        m.Add(placed[pre_idx] == 1)
         m.Add(evict[pre_idx]  == 0)
         pre_pr = p_pri(pre_idx)
+
         for i in running_idxs:
-            if p_prot(i) or p_pri(i) >= pre_pr:
-                # protected pods and higher priority: no evict, no move
-                # equal priority: no evict, move allowed
+            if p_prot(i) or p_pri(i) > pre_pr:
+                # Protected OR higher-priority than preemptor:
+                # must stay put (no evict, no move)
                 m.Add(placed[i] == 1)
                 m.Add(evict[i] == 0)
                 if move[i] is not None:
                     m.Add(move[i] == 0)
-                if p_pri(i) == pre_pr:
-                    # same priority: no evict, move allowed
-                    m.Add(evict[i] == 0)
-                    m.Add(placed[i] == 1)
+
+            elif p_pri(i) == pre_pr:
+                # Equal priority to preemptor:
+                # no evict, but moves ARE allowed
+                m.Add(placed[i] == 1)
+                m.Add(evict[i] == 0)
+
+            else:
+                # Lower-priority than preemptor:
+                # no extra guard — solver may move or evict as needed
+                pass
     else:
         for i in running_idxs:
             if p_prot(i):
@@ -269,10 +277,10 @@ def solve(instance: dict) -> dict:
 
     for i in range(num_pods):
         if int(solver.Value(evict[i])) == 1:
-            evictions.append(
-                {"uid": p_uid(i), "namespace": p_ns(i), "name": p_name(i)},
-                {"node": p_where_j(i)},
-            )
+            evictions.append({
+                "pod": {"uid": p_uid(i), "namespace": p_ns(i), "name": p_name(i)},
+                "node": nodes[p_where_j(i)]["name"],
+            })
             continue
 
         if int(solver.Value(placed[i])) == 1 and eligible[i]:
