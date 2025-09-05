@@ -27,11 +27,11 @@ var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "false"))
 // SolverPythonTimeout is the timeout for the python solver to complete.
 var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "25s"))
 
-// SolverDfsEnabled indicates whether the DFS solver is enabled.
-var SolverDfsEnabled = parseBool(getenv("SOLVER_DFS_ENABLED", "false"))
+// SolverBfsEnabled indicates whether the BFS solver is enabled.
+var SolverBfsEnabled = parseBool(getenv("SOLVER_BFS_ENABLED", "false"))
 
-// SolverDfsTimeout is the timeout for the DFS solver to complete.
-var SolverDfsTimeout = parseTime(getenv("SOLVER_DFS_TIMEOUT", "500ms"))
+// SolverBfsTimeout is the timeout for the BFS solver to complete.
+var SolverBfsTimeout = parseTime(getenv("SOLVER_BFS_TIMEOUT", "500ms"))
 
 // SolverSwapEnabled indicates whether the swap solver is enabled.
 var SolverSwapEnabled = parseBool(getenv("SOLVER_SWAP_ENABLED", "false"))

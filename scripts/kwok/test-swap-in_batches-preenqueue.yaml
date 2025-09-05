@@ -15,7 +15,7 @@ componentsPatches:
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "20s"
       - name: SOLVER_PYTHON_ENABLED
-        value: "true"
+        value: "false"
       - name: SOLVER_PYTHON_TIMEOUT
         value: "10s"
       - name: SOLVER_BFS_ENABLED
@@ -23,7 +23,7 @@ componentsPatches:
       - name: SOLVER_BFS_TIMEOUT
         value: "100ms"
       - name: SOLVER_SWAP_ENABLED
-        value: "false"
+        value: "true"
       - name: SOLVER_SWAP_TIMEOUT
         value: "100ms"
       - name: PLAN_EXECUTION_TIMEOUT

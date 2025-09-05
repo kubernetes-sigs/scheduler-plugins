@@ -125,28 +125,25 @@ run_case() {
 }
 
 # -------------------- Test Matrix --------------------
-run_case "swap" "for_every"    "preenqueue" 34
-#run_case "dfs" "for_every"    "preenqueue" 34
-# 
-
-
-
-
-
-
-
-
-
-# run_case "dfs" "for_every"    "postfilter" 34
-# run_case "dfs" "in_batches"   "preenqueue" 34
-# run_case "dfs" "in_batches"   "postfilter" 34
-# run_case "dfs" "continuously" "postfilter" 34
+run_case "bfs" "for_every"    "preenqueue" 34
 
 # run_case "py"   "for_every"    "preenqueue" 34
 # run_case "py"   "in_batches"   "preenqueue" 34
 # run_case "py"   "for_every"    "postfilter" 34
 # run_case "py"   "in_batches"   "postfilter" 34
 # run_case "py"   "continuously" "postfilter" 34
+
+# run_case "bfs" "for_every"    "preenqueue" 34
+# run_case "bfs" "for_every"    "postfilter" 34
+# run_case "bfs" "in_batches"   "preenqueue" 34
+# run_case "bfs" "in_batches"   "postfilter" 34
+# run_case "bfs" "continuously" "postfilter" 34
+
+# run_case "swap" "for_every"    "preenqueue" 34
+# run_case "swap" "for_every"    "postfilter" 34
+# run_case "swap" "in_batches"   "preenqueue" 34
+# run_case "swap" "in_batches"   "postfilter" 34
+# run_case "swap" "continuously" "postfilter" 34
 
 # -------------------- Summary --------------------
 echo

@@ -32,6 +32,9 @@ TODO
 
 ## TODOs Plugin
 
+- At first glance I would think that BFS is better, as we first try to move only once and go back to the next victim. If it is not possible with one move after trying all nodes, then we accept two and use previous paths to get there to be able to form a possible two-move strategy, etc. This way we can just stop if we find a possible solution since we know that the number of moves will be the same or worse for other solutions. We should sort the victims according to what is exactly enough for preemptor. Consider whether to take two small ones instead
+- Always start by trying the one that just makes room for the preemptor, then the slightly larger one. If all of these have been tried, we can try moving two smaller ones at a time. But only allowed after we have gone to depth 2 and moving a pod from another node to others has also been tried.
+- Instead of adding a preemptor that is a replica pod as a placement by name use the workload cnt and save one spot for it
 - Save total plan execution time in configmap
 - Provide the greedy solution to python as a hint
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
