@@ -164,9 +164,6 @@ type Preemtor struct {
 	NominatedNode string `json:"nominatedNode"`
 }
 
-// WorkloadPerNode: workloadKey -> node -> desired count
-type WorkloadPerNode map[string]map[string]int
-
 // ===== Plan =====
 
 type StoredPlan struct {
@@ -184,8 +181,6 @@ type StoredPlan struct {
 	OldPlacements []Placement `json:"oldPlacements,omitempty"`
 	// Planned new placements (pending or moved) - note that moved will get a new uid
 	NewPlacements []NewPlacement `json:"newPlacements,omitempty"`
-	// Desired placements per workload / per node
-	WorkloadPerNode WorkloadPerNode `json:"workloadPerNode,omitempty"`
 }
 
 type PlanStatus string

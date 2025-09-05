@@ -27,19 +27,16 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		return nil, nil, "", fmt.Errorf("build actions: %w", err)
 	}
 
-	wkDesired := pl.deriveWorkloadPerNode(newPlc, preemptor)
-
 	doc := &StoredPlan{
-		PluginVersion:   Version,
-		Mode:            modeToString(),
-		GeneratedAt:     time.Now().UTC(),
-		Status:          PlanStatusActive,
-		Evicts:          evicts,
-		Moves:           moves,
-		Solver:          summary,
-		OldPlacements:   oldPlc,
-		NewPlacements:   newPlc, // includes both pending and moved (also preemptor)
-		WorkloadPerNode: wkDesired,
+		PluginVersion: Version,
+		Mode:          modeToString(),
+		GeneratedAt:   time.Now().UTC(),
+		Status:        PlanStatusActive,
+		Evicts:        evicts,
+		Moves:         moves,
+		Solver:        summary,
+		OldPlacements: oldPlc,
+		NewPlacements: newPlc, // includes both pending and moved (also preemptor) - also replica-pods
 	}
 
 	if preemptor != nil {
@@ -65,35 +62,6 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	}
 
 	return doc, pl.getActivePlan(), nominated, nil
-}
-
-// deriveWorkloadPerNode derives the desired workload distribution per node from the new placements.
-// It also includes a preemptor-pod if exists.
-func (pl *MyCrossNodePreemption) deriveWorkloadPerNode(newPlacements []NewPlacement, preemptor *v1.Pod) WorkloadPerNode {
-	wkDesired := WorkloadPerNode{}
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-
-	for _, plm := range newPlacements {
-		p, err := podLister.Pods(plm.Pod.Namespace).Get(plm.Pod.Name)
-		if err != nil || p == nil {
-			continue
-		}
-		if preemptor != nil && p.UID == preemptor.UID {
-			// Don't include the preemptor in the workload; will cause troubles
-			// since another pod from the same replicaset could takes it place.
-			continue
-		}
-		if wk, ok := topWorkload(p); ok { // only consider pods from workloads
-			key := wk.String()
-			m, ok := wkDesired[key]
-			if !ok {
-				m = map[string]int{}
-				wkDesired[key] = m
-			}
-			m[plm.ToNode]++
-		}
-	}
-	return wkDesired
 }
 
 // TODO

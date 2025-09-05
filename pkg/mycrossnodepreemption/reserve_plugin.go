@@ -53,11 +53,6 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 		return framework.NewStatus(framework.Success)
 	}
 	workloadKey := wk.String()
-	desiredPerNode, ok := ap.PlanDoc.WorkloadPerNode[workloadKey]
-	if !ok || desiredPerNode[node] == 0 {
-		klog.V(V2).InfoS("Reserve: workload not allowed on node", "pod", klog.KObj(pod), "node", node)
-		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not allowed on node")
-	}
 	allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[workloadKey]
 	if !ok {
 		klog.V(V2).InfoS("Reserve: workload not tracked", "pod", klog.KObj(pod), "node", node)

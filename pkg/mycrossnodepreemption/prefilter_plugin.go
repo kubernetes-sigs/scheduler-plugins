@@ -63,15 +63,14 @@ func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[st
 	// Workload quota routing
 	if wk, ok := topWorkload(pod); ok {
 		key := wk.String()
-		if _, in := ap.PlanDoc.WorkloadPerNode[key]; !in {
+		byNode, ok := ap.WorkloadPerNodeCnts[key]
+		if !ok || len(byNode) == 0 {
 			return nil, "workload not in active plan; block", false
 		}
 		allowed := sets.New[string]()
-		if byNode, ok := ap.WorkloadPerNodeCnts[key]; ok {
-			for node, ctr := range byNode {
-				if ctr.Load() > 0 {
-					allowed.Insert(node)
-				}
+		for node, ctr := range byNode {
+			if ctr.Load() > 0 {
+				allowed.Insert(node)
 			}
 		}
 		if allowed.Len() == 0 {
