@@ -21,17 +21,23 @@ var OptimizationInitialDelay = parseTime(getenv("OPTIMIZATION_INITIAL_DELAY", "1
 
 // ======= Solver settings =======
 
+// SolverPythonEnabled indicates whether the Python solver is enabled.
+var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "false"))
+
 // SolverPythonTimeout is the timeout for the python solver to complete.
 var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "25s"))
 
-// SolverFastEnabled indicates whether the fast solver is enabled.
-var SolverFastEnabled = parseBool(getenv("SOLVER_FAST_ENABLED", "true"))
+// SolverDfsEnabled indicates whether the DFS solver is enabled.
+var SolverDfsEnabled = parseBool(getenv("SOLVER_DFS_ENABLED", "false"))
 
-// SolverFastTimeout is the timeout for the fast solver to complete.
-var SolverFastTimeout = parseTime(getenv("SOLVER_FAST_TIMEOUT", "500ms"))
+// SolverDfsTimeout is the timeout for the DFS solver to complete.
+var SolverDfsTimeout = parseTime(getenv("SOLVER_DFS_TIMEOUT", "500ms"))
 
-// SolverPythonEnabled indicates whether the Python solver is enabled.
-var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "true"))
+// SolverSwapEnabled indicates whether the swap solver is enabled.
+var SolverSwapEnabled = parseBool(getenv("SOLVER_SWAP_ENABLED", "false"))
+
+// SolverSwapTimeout is the timeout for the swap solver to complete.
+var SolverSwapTimeout = parseTime(getenv("SOLVER_SWAP_TIMEOUT", "500ms"))
 
 // ======= Plan settings =======
 

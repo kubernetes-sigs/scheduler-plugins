@@ -1112,7 +1112,7 @@ func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlanState) {
 }
 
 // setActivePlan sets the given stored plan as the active plan and initializes its counters.
-func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
+func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string, pods []*v1.Pod) {
 	if sp == nil {
 		return
 	}
@@ -1134,7 +1134,16 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 
 	// Build runtime index: ns/name -> targetNode
 	byName := make(map[string]string, len(sp.NewPlacements)+1)
+	podMap := podsByUID(pods)
 	for _, plm := range sp.NewPlacements {
+		pod := podMap[string(plm.Pod.UID)]
+		// Do not add workload pods that is not a preemptor
+		if plm.Pod.UID != sp.Preemptor.Pod.UID {
+			_, owned := topWorkload(pod)
+			if owned {
+				continue
+			}
+		}
 		byName[combineNsName(plm.Pod.Namespace, plm.Pod.Name)] = plm.ToNode
 	}
 	// Add preemptor to PlacementByName
@@ -1162,7 +1171,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string) {
 
 // check that at least one solver is enabled
 func (pl *MyCrossNodePreemption) isSolverEnabled() bool {
-	return SolverFastEnabled || SolverPythonEnabled
+	return SolverDfsEnabled || SolverPythonEnabled || SolverSwapEnabled
 }
 
 // fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.

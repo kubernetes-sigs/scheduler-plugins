@@ -30,10 +30,18 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	attempts := []solverAttempt{
 		{
 			name:    "fast",
-			enabled: SolverFastEnabled,
-			timeout: SolverFastTimeout,
+			enabled: SolverDfsEnabled,
+			timeout: SolverDfsTimeout,
 			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runSolverFast(in), nil
+				return runSolverDfs(in), nil
+			},
+		},
+		{
+			name:    "swap",
+			enabled: SolverSwapEnabled,
+			timeout: SolverSwapTimeout,
+			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
+				return runSolverSwap(in), nil
 			},
 		},
 		{

@@ -57,7 +57,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	// Unique plan id (and ConfigMap name)
 	id := fmt.Sprintf("crossnode-plan-%d", time.Now().UnixNano())
 
-	pl.setActivePlan(doc, id)
+	pl.setActivePlan(doc, id, pods)
 
 	// Export (JSON) to ConfigMap for audit
 	if err := pl.exportPlanToConfigMap(ctx, id, doc); err != nil {
