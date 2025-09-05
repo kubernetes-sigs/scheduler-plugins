@@ -126,7 +126,7 @@ run_case() {
 
 # -------------------- Test Matrix --------------------
 run_case "swap" "for_every"    "preenqueue" 34
-# run_case "dfs" "for_every"    "preenqueue" 34
+#run_case "dfs" "for_every"    "preenqueue" 34
 # 
 
 

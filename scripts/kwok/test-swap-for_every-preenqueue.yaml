@@ -15,11 +15,11 @@ componentsPatches:
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "20s"
       - name: SOLVER_PYTHON_ENABLED
-        value: "false"
+        value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
         value: "10s"
       - name: SOLVER_DFS_ENABLED
-        value: "false"
+        value: "true"
       - name: SOLVER_DFS_TIMEOUT
         value: "1m" # 25s
       - name: SOLVER_SWAP_ENABLED
