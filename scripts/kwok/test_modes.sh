@@ -101,6 +101,9 @@ run_case() {
     note+="baseline wait timed out; "
   fi
 
+  # Sleep a bit
+  sleep 3
+
   # Apply RS; do NOT abort whole script on failure
   if ! kubectl --context "${CTX}" apply -f scripts/kwok/test-high-prio-rs.yaml; then
     ok=false
@@ -125,7 +128,7 @@ run_case() {
 }
 
 # -------------------- Test Matrix --------------------
-run_case "bfs" "for_every"    "preenqueue" 34
+
 
 # run_case "py"   "for_every"    "preenqueue" 34
 # run_case "py"   "in_batches"   "preenqueue" 34
@@ -141,7 +144,7 @@ run_case "bfs" "for_every"    "preenqueue" 34
 
 # run_case "swap" "for_every"    "preenqueue" 34
 # run_case "swap" "for_every"    "postfilter" 34
-# run_case "swap" "in_batches"   "preenqueue" 34
+run_case "swap" "in_batches"   "preenqueue" 34
 # run_case "swap" "in_batches"   "postfilter" 34
 # run_case "swap" "continuously" "postfilter" 34
 
