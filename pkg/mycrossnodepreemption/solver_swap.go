@@ -286,25 +286,26 @@ type plannerStats struct {
 	lastEligible int
 }
 
+// ---------- compact random-swap planner (drop-in) ----------
 func tryRandomSwapPlansBatch(
 	nodes map[string]*nLite,
 	all map[string]*pLite,
 	order []*nLite,
-	pendingPods []*pLite,
+	incoming []*pLite,
 	rng *rand.Rand,
 	triedPlans map[string]struct{},
 	allowPriPtr *int32,
-	preferUIDs map[string]struct{}, // prefer already-moved pods
+	preferUIDs map[string]struct{},
 ) ([]moveLite, map[string]string, bool, plannerStats) {
 
-	bestMoves := []moveLite(nil)
-	bestAssign := map[string]string(nil)
-	bestCount := math.MaxInt32
-	found := false
-
+	type sel = struct {
+		p     *pLite
+		from  string
+		fromN *nLite
+	}
 	stats := plannerStats{}
 
-	// Helpers
+	// ------------ tiny helpers ------------
 	buildOrig := func() map[string]string {
 		orig := map[string]string{}
 		for _, p := range all {
@@ -314,11 +315,54 @@ func tryRandomSwapPlansBatch(
 		}
 		return orig
 	}
-	finalDestFromFinalLoc := func(finalLoc map[string]string, orig map[string]string) map[string]string {
+	ensureAllInFinal := func(finalLoc map[string]string) {
+		for _, n := range order {
+			for _, q := range n.Pods {
+				if q.Node != "" {
+					if _, ok := finalLoc[q.UID]; !ok {
+						finalLoc[q.UID] = q.Node
+					}
+				}
+			}
+		}
+	}
+	prefLess := func(a, b *pLite) bool {
+		_, pa := preferUIDs[a.UID]
+		_, pb := preferUIDs[b.UID]
+		if pa != pb {
+			return pa
+		}
+		if a.Priority != b.Priority {
+			return a.Priority < b.Priority
+		}
+		sa, sb := a.CPUm*a.MemBytes, b.CPUm*b.MemBytes
+		if sa != sb {
+			return sa > sb
+		}
+		return a.UID < b.UID
+	}
+	sortByPref := func(list []*pLite) {
+		sort.SliceStable(list, func(i, j int) bool { return prefLess(list[i], list[j]) })
+	}
+	isMovable := func(p *pLite) bool { return canMoveWithGate(p, allowPriPtr) }
+
+	addMoveDelta := func(delta map[string]deltaDM, from, to string, cpu, mem int64) {
+		da := delta[from]
+		da.cpu += cpu
+		da.mem += mem
+		delta[from] = da
+		db := delta[to]
+		db.cpu -= cpu
+		db.mem -= mem
+		delta[to] = db
+	}
+	residCPU := func(n *nLite, d deltaDM) int64 { return n.FreeCPUm + d.cpu }
+	residMem := func(n *nLite, d deltaDM) int64 { return n.FreeMemBytes + d.mem }
+
+	finalDestFromFinalLoc := func(finalLoc, orig map[string]string) map[string]string {
 		fd := map[string]string{}
 		for uid, from := range orig {
-			to := finalLoc[uid]
-			if to != "" && to != from {
+			if to := finalLoc[uid]; to != "" && to != from {
 				fd[uid] = to
 			}
 		}
@@ -350,210 +394,164 @@ func tryRandomSwapPlansBatch(
 		}
 		return s
 	}
-	checkBatchFitAfterDeltas := func(delta map[string]deltaDM) (map[string]string, bool) {
-		return batchFitOnResidual(order, delta, pendingPods)
-	}
-
-	// Movability gate: if allowPriPtr is nil => no gating; else use preemptor priority
-	isMovable := func(p *pLite) bool {
-		return canMoveWithGate(p, allowPriPtr)
-	}
-
-	for trial := 0; trial < SolverSwapMaxSwapTrials; trial++ {
-		stats.trials++
-		orig := buildOrig()
-
-		// Virtual state trackers for this trial
-		delta := map[string]deltaDM{}      // per-node free deltas
-		finalLoc := map[string]string{}    // virtual final location per UID
-		chosenUID := map[string]struct{}{} // avoid picking same UID multiple times in plan
-		for uid, from := range orig {
-			finalLoc[uid] = from
+	validateEndpoints := func(mvs []moveLite) bool {
+		for _, mv := range mvs {
+			if nodes[mv.From] == nil || nodes[mv.To] == nil {
+				return false
+			}
 		}
-		// Ensure finalLoc has entries for every pod currently on nodes
+		return true
+	}
+	checkBatchFitAfterDeltas := func(delta map[string]deltaDM) (map[string]string, bool) {
+		return batchFitOnResidual(order, delta, incoming)
+	}
+
+	// Reusable enumeration of movable pods (not already chosen, with known from)
+	buildEligible := func(finalLoc map[string]string, chosen map[string]struct{}) []sel {
+		out := make([]sel, 0, 64)
 		for _, n := range order {
 			for _, q := range n.Pods {
+				if !isMovable(q) {
+					continue
+				}
 				if q.Node == "" {
 					continue
 				}
-				if _, ok := finalLoc[q.UID]; !ok {
-					finalLoc[q.UID] = q.Node
+				if _, seen := chosen[q.UID]; seen {
+					continue
 				}
+				fromA := finalLoc[q.UID]
+				if fromA == "" {
+					continue
+				}
+				out = append(out, sel{p: q, from: fromA, fromN: nodes[fromA]})
 			}
 		}
+		// keep only pod dimension for sorting; then rebuild sel order in-place
+		plist := make([]*pLite, 0, len(out))
+		for _, s := range out {
+			plist = append(plist, s.p)
+		}
+		sortByPref(plist)
+		idx := map[string]sel{}
+		for _, s := range out {
+			idx[s.p.UID] = s
+		}
+		out = out[:0]
+		for _, p := range plist {
+			out = append(out, idx[p.UID])
+		}
+		return out
+	}
 
+	// ---------- search ----------
+	bestMoves := []moveLite(nil)
+	bestAssign := map[string]string(nil)
+	bestCount := math.MaxInt32
+	found := false
+
+	for trial := 0; trial < SolverSwapMaxSwapTrials; trial++ {
+		stats.trials++
+
+		orig := buildOrig()
+		delta := map[string]deltaDM{}
+		finalLoc := map[string]string{}
+		for uid, from := range orig {
+			finalLoc[uid] = from
+		}
+		ensureAllInFinal(finalLoc)
+
+		chosen := map[string]struct{}{}
 		planMoves := make([]moveLite, 0, SolverSwapMaxMovesPerPlan)
 
 		tryStep := func() bool {
-			// Build eligible list (movable, not already chosen, with a valid location)
-			eligible := make([]*pLite, 0, 64)
-			for _, n := range order {
-				for _, q := range n.Pods {
-					if !isMovable(q) {
-						continue
-					}
-					if _, seen := chosenUID[q.UID]; seen {
-						continue
-					}
-					if q.Node == "" {
-						continue
-					}
-					if loc := finalLoc[q.UID]; loc == "" {
-						continue
-					}
-					eligible = append(eligible, q)
-				}
-			}
-			// prefer already-moved first; then lower priority; then bigger pods
-			sort.SliceStable(eligible, func(i, j int) bool {
-				_, pi := preferUIDs[eligible[i].UID]
-				_, pj := preferUIDs[eligible[j].UID]
-				if pi != pj {
-					return pi
-				}
-				if eligible[i].Priority != eligible[j].Priority {
-					return eligible[i].Priority < eligible[j].Priority
-				}
-				si := eligible[i].CPUm * eligible[i].MemBytes
-				sj := eligible[j].CPUm * eligible[j].MemBytes
-				if si != sj {
-					return si > sj
-				}
-				return eligible[i].UID < eligible[j].UID
-			})
-			stats.lastEligible = len(eligible)
-			if len(eligible) == 0 {
-				klog.V(2).InfoS("random-swap: no-eligible-movable-pods", "trial", trial)
+			el := buildEligible(finalLoc, chosen)
+			stats.lastEligible = len(el)
+			if len(el) == 0 {
+				klog.V(2).InfoS("random-swap: no-eligible-movable-pods")
 				return false
 			}
 
 			for attempt := 0; attempt < 16; attempt++ {
-				action := rng.Intn(2) // 0=direct, 1=swap
-				p := eligible[rng.Intn(len(eligible))]
-				fromA := finalLoc[p.UID]
-				if fromA == "" {
-					klog.V(2).InfoS("random-swap: skip-eligible-without-valid-fromA", "trial", trial, "uid", p.UID)
-					continue
-				}
-				na := nodes[fromA]
+				s := el[rng.Intn(len(el))]
+				p, fromA, na := s.p, s.from, s.fromN
 				if na == nil {
-					klog.V(2).InfoS("random-swap: skip-eligible-with-unknown-fromA-node", "trial", trial, "uid", p.UID, "fromA", fromA)
 					continue
 				}
 
-				// choose a different destination node
-				destIdx := rng.Intn(maxInt(1, len(order)))
-				for tries := 0; tries < len(order); tries++ {
-					dst := order[(destIdx+tries)%len(order)]
+				// pick a different destination node (round-robin from random start)
+				start := rng.Intn(maxInt(1, len(order)))
+				for t := 0; t < len(order); t++ {
+					dst := order[(start+t)%len(order)]
 					if dst.Name == fromA {
 						continue
 					}
-					da := delta[fromA]
-					db := delta[dst.Name]
+					da, db := delta[fromA], delta[dst.Name]
 
-					if action == 0 {
-						// DIRECT MOVE
-						needCPU, needMem := p.CPUm, p.MemBytes
-						availCPU := dst.FreeCPUm + db.cpu
-						availMem := dst.FreeMemBytes + db.mem
-						if availCPU >= needCPU && availMem >= needMem {
-							klog.V(3).InfoS("random-swap: direct-ok", "trial", trial,
-								"uid", p.UID, "from", fromA, "to", dst.Name,
-								"needCPU", needCPU, "needMem", needMem, "availCPU", availCPU, "availMem", availMem,
-							)
+					// Action 1: DIRECT
+					if rng.Intn(2) == 0 {
+						if residCPU(dst, db) >= p.CPUm && residMem(dst, db) >= p.MemBytes {
 							planMoves = append(planMoves, moveLite{UID: p.UID, From: fromA, To: dst.Name})
-							delta[fromA] = deltaDM{cpu: da.cpu + p.CPUm, mem: da.mem + p.MemBytes}
-							delta[dst.Name] = deltaDM{cpu: db.cpu - p.CPUm, mem: db.mem - p.MemBytes}
+							addMoveDelta(delta, fromA, dst.Name, p.CPUm, p.MemBytes)
 							finalLoc[p.UID] = dst.Name
-							chosenUID[p.UID] = struct{}{}
+							chosen[p.UID] = struct{}{}
 							return true
 						}
-						klog.V(3).InfoS("random-swap: direct-reject", "trial", trial, "uid", p.UID, "from", fromA, "to", dst.Name,
-							"needCPU", needCPU, "needMem", needMem, "availCPU", availCPU, "availMem", availMem,
-						)
 					} else {
-						// SWAP
-						candsQ := make([]*pLite, 0, len(dst.Pods))
+						// Action 2: SWAP with q on dst
+						qcands := make([]*pLite, 0, len(dst.Pods))
 						for _, q := range dst.Pods {
 							if !isMovable(q) {
 								continue
 							}
-							if _, seen := chosenUID[q.UID]; seen {
+							if _, seen := chosen[q.UID]; seen {
 								continue
 							}
-							if q.Node == "" {
+							if finalLoc[q.UID] == "" {
 								continue
 							}
-							if loc := finalLoc[q.UID]; loc == "" {
-								continue
-							}
-							candsQ = append(candsQ, q)
+							qcands = append(qcands, q)
 						}
-						// prefer already-moved; then lower priority; then bigger pods
-						sort.SliceStable(candsQ, func(i, j int) bool {
-							_, pi := preferUIDs[candsQ[i].UID]
-							_, pj := preferUIDs[candsQ[j].UID]
-							if pi != pj {
-								return pi
-							}
-							if candsQ[i].Priority != candsQ[j].Priority {
-								return candsQ[i].Priority < candsQ[j].Priority
-							}
-							si := candsQ[i].CPUm * candsQ[i].MemBytes
-							sj := candsQ[j].CPUm * candsQ[j].MemBytes
-							if si != sj {
-								return si > sj
-							}
-							return candsQ[i].UID < candsQ[j].UID
-						})
-						if len(candsQ) == 0 {
-							klog.V(3).InfoS("random-swap: swap-reject-no-q", "trial", trial, "dst", dst.Name)
+						if len(qcands) == 0 {
 							continue
 						}
-						q := candsQ[rng.Intn(len(candsQ))]
+						sortByPref(qcands)
+						q := qcands[rng.Intn(len(qcands))]
 						fromB := finalLoc[q.UID]
-						if fromB == "" {
-							klog.V(2).InfoS("random-swap: skip-swap-without-valid-fromB", "trial", trial, "q", q.UID)
-							continue
-						}
-						nbFrom := nodes[fromB]
-						if nbFrom == nil {
-							klog.V(2).InfoS("random-swap: skip-swap-with-unknown-fromB-node", "trial", trial, "q", q.UID, "fromB", fromB)
+						nb := nodes[fromB]
+						if nb == nil {
 							continue
 						}
 
-						finalA_CPU := (na.FreeCPUm + da.cpu) + p.CPUm - q.CPUm
-						finalA_MEM := (na.FreeMemBytes + da.mem) + p.MemBytes - q.MemBytes
-						finalB_CPU := (dst.FreeCPUm + db.cpu) + q.CPUm - p.CPUm
-						finalB_MEM := (dst.FreeMemBytes + db.mem) + q.MemBytes - p.MemBytes
+						// residuals after swap
+						finalA_CPU := residCPU(na, da) + p.CPUm - q.CPUm
+						finalA_MEM := residMem(na, da) + p.MemBytes - q.MemBytes
+						finalB_CPU := residCPU(dst, db) + q.CPUm - p.CPUm
+						finalB_MEM := residMem(dst, db) + q.MemBytes - p.MemBytes
 
 						if finalA_CPU >= 0 && finalA_MEM >= 0 && finalB_CPU >= 0 && finalB_MEM >= 0 {
-							klog.V(3).InfoS("random-swap: swap-ok", "trial", trial,
-								"p", p.UID, "q", q.UID, "A", fromA, "B", dst.Name,
-								"finalA_CPU", finalA_CPU, "finalA_MEM", finalA_MEM,
-								"finalB_CPU", finalB_CPU, "finalB_MEM", finalB_MEM,
-							)
 							planMoves = append(planMoves,
 								moveLite{UID: p.UID, From: fromA, To: dst.Name},
 								moveLite{UID: q.UID, From: fromB, To: fromA},
 							)
-							delta[fromA] = deltaDM{cpu: da.cpu + p.CPUm - q.CPUm, mem: da.mem + p.MemBytes - q.MemBytes}
-							delta[dst.Name] = deltaDM{cpu: db.cpu + q.CPUm - p.CPUm, mem: db.mem + q.MemBytes - p.MemBytes}
+							// delta[fromA] += p - q; delta[dst] += q - p
+							da.cpu += p.CPUm - q.CPUm
+							da.mem += p.MemBytes - q.MemBytes
+							db.cpu += q.CPUm - p.CPUm
+							db.mem += q.MemBytes - p.MemBytes
+							delta[fromA] = da
+							delta[dst.Name] = db
+
 							finalLoc[p.UID] = dst.Name
 							finalLoc[q.UID] = fromA
-							chosenUID[p.UID] = struct{}{}
-							chosenUID[q.UID] = struct{}{}
+							chosen[p.UID] = struct{}{}
+							chosen[q.UID] = struct{}{}
 							return true
 						}
-						klog.V(3).InfoS("random-swap: swap-reject",
-							"trial", trial, "p", p.UID, "q", q.UID, "A", fromA, "B", dst.Name,
-							"finalA_CPU", finalA_CPU, "finalA_MEM", finalA_MEM,
-							"finalB_CPU", finalB_CPU, "finalB_MEM", finalB_MEM,
-						)
 					}
-				} // for each dst
-				// Try a different p/action again
-			} // attempts
+				}
+				// try another (p, action) pair
+			}
 			return false
 		}
 
@@ -562,30 +560,16 @@ func tryRandomSwapPlansBatch(
 				break
 			}
 
-			// After each change, see if ALL pendingPods can be placed on the residuals.
+			// After each step, see if ALL incoming fit on residuals.
 			if assign, ok := checkBatchFitAfterDeltas(delta); ok {
-				logResiduals("assignment-found", order, delta)
 				fd := finalDestFromFinalLoc(finalLoc, orig)
 				coalesced := squashMoves(fd, orig)
-
-				// Validate endpoints exist
-				valid := true
-				for i, mv := range coalesced {
-					if nodes[mv.From] == nil || nodes[mv.To] == nil {
-						klog.V(2).InfoS("random-swap: drop-coalesced-move-with-unknown-node",
-							"i", i, "from", mv.From, "to", mv.To)
-						valid = false
-						break
-					}
-				}
-				if !valid {
+				if !validateEndpoints(coalesced) {
 					continue
 				}
-
 				sig := signatureFromMovesPlusAssign(coalesced, assign)
 				if _, seen := triedPlans[sig]; seen {
 					stats.dedupSkips++
-					klog.V(2).InfoS("random-swap: dedup-skip", "moves", len(coalesced), "assigned", len(assign))
 				} else {
 					triedPlans[sig] = struct{}{}
 					if len(coalesced) < bestCount {
@@ -594,25 +578,20 @@ func tryRandomSwapPlansBatch(
 						bestAssign = assign
 						found = true
 						stats.improvements++
-						klog.InfoS("random-swap: improved-plan", "moves", bestCount, "assigned", len(assign))
 						if bestCount <= 1 {
 							return bestMoves, bestAssign, found, stats
 						}
 					}
 				}
-			} else {
-				klog.V(3).InfoS("random-swap: batch-fit-failed")
-				logResiduals("assignment-failed", order, delta)
 			}
 
-			// If we already have a plan with X moves, no point extending this trial beyond X.
+			// If we already have a plan with X moves, don't extend beyond X.
 			if found && len(planMoves) >= bestCount {
-				klog.V(2).InfoS("random-swap: stop-extending-trial", "currentPlanMoves", len(planMoves), "bestMoves", bestCount)
 				break
 			}
 		}
 
-		// Mark the attempted plan (even unsuccessful) to avoid repeating
+		// Mark this (unsuccessful) finalLoc as tried so we don't repeat it next trial.
 		fd := map[string]string{}
 		for uid, from := range orig {
 			if to := finalLoc[uid]; to != "" && to != from {
@@ -620,30 +599,10 @@ func tryRandomSwapPlansBatch(
 			}
 		}
 		coalesced := squashMoves(fd, orig)
-		sig := signatureFromMovesPlusAssign(coalesced, map[string]string{})
-		triedPlans[sig] = struct{}{}
+		triedPlans[signatureFromMovesPlusAssign(coalesced, map[string]string{})] = struct{}{}
 	}
 
 	return bestMoves, bestAssign, found, stats
-}
-
-//
-// ========================= Public entry points =========================
-//
-
-// --- Logging helpers ---
-// Small pretty-printer for residual capacity per node.
-func logResiduals(prefix string, order []*nLite, delta map[string]deltaDM) {
-	rows := make([]interface{}, 0, len(order)*4+2)
-	rows = append(rows, "prefix", prefix)
-	for _, n := range order {
-		d := delta[n.Name]
-		rows = append(rows,
-			n.Name+"_cpu", n.FreeCPUm+d.cpu,
-			n.Name+"_mem", n.FreeMemBytes+d.mem,
-		)
-	}
-	klog.V(2).InfoS("residuals", rows...)
 }
 
 type deltaDM struct{ cpu, mem int64 }
