@@ -14,15 +14,15 @@ import (
 //
 
 type swapCfg struct {
-	// Maximum number of pod moves allowed in one random plan (a swap counts as 2).
-	MaxMovesPerPlan int
-	// Maximum number of random swap plans to try before we fall back to evicting a pod.
-	MaxSwapTrials int
+	MaxMovesPerPlan    int
+	MaxSwapTrials      int
+	MaxEvictionsPerPod int // NEW: bound evictions per incoming pod
 }
 
 var defaultSwapCfg = swapCfg{
-	MaxMovesPerPlan: 6,
-	MaxSwapTrials:   1000,
+	MaxMovesPerPlan:    6,
+	MaxSwapTrials:      1000,
+	MaxEvictionsPerPod: 2, // sensible default
 }
 
 type deltaDM struct{ cpu, mem int64 }
@@ -124,7 +124,6 @@ func runSolverSwapBatchCore(
 
 	// Build movable pods
 	all := make(map[string]*pLite, len(in.Pods)+1)
-	// Single preemptor -> incoming slice of len 1 (if present
 
 	for i := range in.Pods {
 		sp := in.Pods[i]
@@ -158,153 +157,125 @@ func runSolverSwapBatchCore(
 		"maxMovesPerPlan", cfg.MaxMovesPerPlan, "maxSwapTrials", cfg.MaxSwapTrials,
 	)
 
+	// Decide mode and build the worklist
+	var worklist []*pLite
+	singleMode := false
+	if in.Preemptor != nil {
+		// Single-preemptor mode: only place the preemptor
+		for _, p := range incoming {
+			if p.UID == in.Preemptor.UID {
+				worklist = []*pLite{p}
+				singleMode = true
+				break
+			}
+		}
+	} else {
+		// Batch mode: sort by priority desc, then smallest first
+		worklist = append(worklist, incoming...)
+		sortPodsByPriorityDescThenSmallestFirst(worklist)
+	}
+
 	placements := make(map[string]string)
 	var evicts []Placement
 
-	if len(incoming) == 0 {
-		klog.InfoS("random-swap: no incoming pods", "trace", trace)
+	// Track pods moved earlier in this batch to prefer them in later moves and avoid evicting them.
+	movedUIDs := make(map[string]struct{})
+
+	if len(worklist) == 0 {
+		klog.InfoS("random-swap: nothing to place", "trace", trace)
 		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
 	}
 
-	// 0) Try direct greedy fit for ALL incoming preemptors.
-	if assign, ok := greedyBatchDirectFit(order, incoming); ok {
-		klog.InfoS("random-swap: direct-batch-fit success", "trace", trace)
-		for _, p := range incoming {
-			n := nodes[assign[p.UID]]
-			n.add(p)
-			placements[p.UID] = n.Name
-		}
-		return stableOutput("FEASIBLE", placements, evicts, in)
-	}
-	klog.InfoS("random-swap: direct-batch-fit failed, continuing to random search", "trace", trace)
+	// --- Helper: place a single pod with given gate (<= for moves, < for evict) ---
+	placeOne := func(p *pLite, gate int32) bool {
+		evicted := 0
+		for {
+			// 0) direct fit
+			if to, ok := bestDirectFit(order, p); ok {
+				nodes[to].add(p)
+				placements[p.UID] = to
+				return true
+			}
 
-	// 1) Random swap search; keep de-dup of tried plans (moves+assignment).
-	triedPlans := map[string]struct{}{}
-
-	for {
-		bestMoves, bestAssign, found, stats := tryRandomSwapPlansBatch(nodes, all, order, incoming, cfg, rng, triedPlans, trace)
-		klog.InfoS("random-swap: trial-summary",
-			"trace", trace,
-			"trials", stats.trials,
-			"improvements", stats.improvements,
-			"dedupSkips", stats.dedupSkips,
-			"lastEligible", stats.lastEligible,
-		)
-
-		if found {
-			// Verify & apply moves (no preemptor placed yet).
-			if !verifyCoalescedPlan(nodes, all, bestMoves, nil, "") {
-				klog.InfoS("random-swap: best plan failed verification, falling back to eviction",
-					"trace", trace, "moves", len(bestMoves))
-			} else if applyTwoPhase(nodes, all, bestMoves) {
-				klog.InfoS("random-swap: applying moves", "trace", trace, "moves", len(bestMoves))
-				for _, mv := range bestMoves {
+			// 1) moves-only
+			triedPlans := map[string]struct{}{}
+			bm, ba, found, _ := tryRandomSwapPlansBatch(
+				nodes, all, order, []*pLite{p}, cfg, rng, triedPlans, &gate, trace, movedUIDs,
+			)
+			if found && verifyCoalescedPlan(nodes, all, bm, nil, "") && applyTwoPhase(nodes, all, bm) {
+				for _, mv := range bm {
 					placements[mv.UID] = mv.To
+					movedUIDs[mv.UID] = struct{}{}
 				}
-				for _, p := range incoming {
-					target := bestAssign[p.UID]
+				if target := ba[p.UID]; target != "" {
 					if n := nodes[target]; n != nil && n.fits(p.CPUm, p.MemBytes) {
 						n.add(p)
 						placements[p.UID] = n.Name
-					} else {
-						klog.InfoS("random-swap: target no longer fits after apply; trying bestDirectFit",
-							"trace", trace, "preemptor", p.UID, "target", target)
-						if to, ok := bestDirectFit(order, p); ok {
-							nodes[to].add(p)
-							placements[p.UID] = to
-						} else {
-							klog.InfoS("random-swap: cannot place even after moves; will evict", "trace", trace, "preemptor", p.UID)
-							goto tryEvict
-						}
+						return true
 					}
 				}
-				klog.InfoS("random-swap: success", "trace", trace, "placed", len(incoming), "moves", len(bestMoves))
-				return stableOutput("FEASIBLE", placements, evicts, in)
+				if to, ok := bestDirectFit(order, p); ok {
+					nodes[to].add(p)
+					placements[p.UID] = to
+					return true
+				}
+				// fallthrough to eviction if still not placed
 			}
-		} else {
-			klog.InfoS("random-swap: no plan found this round", "trace", trace)
-		}
 
-	tryEvict:
-		// 2) Eviction fallback
-		v, on := pickLowestPriorityGlobalForBatch(order, incoming)
-		if v == nil || on == nil {
-			klog.InfoS("random-swap: infeasible (no eligible victim)", "trace", trace)
+			// 2) single eviction, then loop back to direct→moves
+			if evicted >= cfg.MaxEvictionsPerPod {
+				return false
+			}
+			v, on := pickLowestPriorityGlobalForBatch(order, &gate, movedUIDs)
+			if v == nil || on == nil {
+				return false
+			}
+			on.remove(v)
+			evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
+			evicted++
+
+			// loop continues: try direct fit next, then moves again
+		}
+	}
+
+	// --- Execute depending on mode ---
+	if singleMode {
+		gate := in.Preemptor.Priority
+		ok := placeOne(worklist[0], gate)
+		if !ok {
+			klog.InfoS("random-swap: single preemptor infeasible under <=-move/<-evict gate", "trace", trace,
+				"preemptor", worklist[0].UID, "prio", gate)
 			return stableOutput("INFEASIBLE", placements, evicts, in)
 		}
-		on.remove(v)
-		evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
-		klog.InfoS("random-swap: evict-and-retry", "trace", trace, "victim", v.UID, "prio", v.Priority, "from", on.Name)
-
-		// After eviction, quick greedy check again
-		if assign, ok := greedyBatchDirectFit(order, incoming); ok {
-			klog.InfoS("random-swap: direct-batch-fit success after eviction", "trace", trace)
-			for _, p := range incoming {
-				n := nodes[assign[p.UID]]
-				n.add(p)
-				placements[p.UID] = n.Name
-			}
-			return stableOutput("FEASIBLE", placements, evicts, in)
-		}
-		triedPlans = map[string]struct{}{} // state changed; reset de-dup
+		return stableOutput("FEASIBLE", placements, evicts, in)
 	}
+
+	// Batch mode: process in prio-desc order; stop at first failure and discard rest (<= that prio)
+	var (
+		stop       bool
+		stopAtPrio int32
+	)
+	for _, p := range worklist {
+		if stop && p.Priority <= stopAtPrio {
+			// Discard the rest (<= stop prio)
+			break
+		}
+		gate := p.Priority
+		if ok := placeOne(p, gate); !ok {
+			stop = true
+			stopAtPrio = p.Priority
+			klog.InfoS("random-swap: stopping batch at priority; discarding remainder",
+				"trace", trace, "priority", stopAtPrio, "uid", p.UID)
+			break
+		}
+	}
+
+	return stableOutput("FEASIBLE", placements, evicts, in)
 }
 
+//
 // ========================= Batch fitting helpers =========================
 //
-
-// Greedy direct fit for a batch (Best-Fit-Decreasing).
-func greedyBatchDirectFit(order []*nLite, incoming []*pLite) (map[string]string, bool) {
-	type capDM struct{ cpu, mem int64 }
-
-	// Sort by “size” to pack big ones first.
-	cand := make([]*pLite, len(incoming))
-	copy(cand, incoming)
-	sort.Slice(cand, func(i, j int) bool {
-		ai, aj := cand[i], cand[j]
-		si := ai.CPUm * ai.MemBytes
-		sj := aj.CPUm * aj.MemBytes
-		if si != sj {
-			return si > sj
-		}
-		if ai.CPUm != aj.CPUm {
-			return ai.CPUm > aj.CPUm
-		}
-		if ai.MemBytes != aj.MemBytes {
-			return ai.MemBytes > aj.MemBytes
-		}
-		return ai.UID < aj.UID
-	})
-
-	residual := make(map[string]capDM, len(order))
-	for _, n := range order {
-		residual[n.Name] = capDM{cpu: n.FreeCPU, mem: n.FreeMem}
-	}
-
-	assign := make(map[string]string, len(cand))
-	for _, p := range cand {
-		best := ""
-		bestCPUWaste := int64(math.MaxInt64)
-		bestMEMWaste := int64(math.MaxInt64)
-		for _, n := range order {
-			r := residual[n.Name]
-			if r.cpu >= p.CPUm && r.mem >= p.MemBytes {
-				wc := r.cpu - p.CPUm
-				wm := r.mem - p.MemBytes
-				if wc < bestCPUWaste || (wc == bestCPUWaste && (wm < bestMEMWaste || (wm == bestMEMWaste && n.Name < best))) {
-					best, bestCPUWaste, bestMEMWaste = n.Name, wc, wm
-				}
-			}
-		}
-		if best == "" {
-			return nil, false
-		}
-		assign[p.UID] = best
-		r := residual[best]
-		residual[best] = capDM{cpu: r.cpu - p.CPUm, mem: r.mem - p.MemBytes}
-	}
-	return assign, true
-}
 
 // Batch fit on current residuals (Free + delta), returns assignment for ALL incoming if possible.
 func batchFitOnResidual(order []*nLite, delta map[string]deltaDM, incoming []*pLite) (map[string]string, bool) {
@@ -373,33 +344,71 @@ func batchFitOnResidual(order []*nLite, delta map[string]deltaDM, incoming []*pL
 // ========================= Misc helpers (priority, eviction, etc.) =========================
 //
 
-func maxIncomingPriority(incoming []*pLite) int32 {
-	var mx int32 = math.MinInt32
-	for _, p := range incoming {
-		if p != nil && p.Priority > mx {
-			mx = p.Priority
+// Sort by (Priority desc, size ASC, UID asc)
+func sortPodsByPriorityDescThenSmallestFirst(pods []*pLite) {
+	sort.Slice(pods, func(i, j int) bool {
+		a, b := pods[i], pods[j]
+		if a.Priority != b.Priority {
+			return a.Priority > b.Priority // higher prio first
 		}
+		// size = CPU * MEM; smaller first
+		sa := a.CPUm * a.MemBytes
+		sb := b.CPUm * b.MemBytes
+		if sa != sb {
+			return sa < sb
+		}
+		// tie-breakers: smaller CPU, then smaller MEM, then UID
+		if a.CPUm != b.CPUm {
+			return a.CPUm < b.CPUm
+		}
+		if a.MemBytes != b.MemBytes {
+			return a.MemBytes < b.MemBytes
+		}
+		return a.UID < b.UID
+	})
+}
+
+// Movement gate: allow moving pods with priority <= gate
+func canMoveWithGate(p *pLite, gate *int32) bool {
+	if p == nil || p.Node == "" || p.Protected {
+		return false
 	}
-	return mx
+	if gate == nil {
+		return true
+	} // defensive
+	return p.Priority <= *gate
+}
+
+// Eviction gate: only strictly lower than gate
+func canEvictWithGate(p *pLite, gate *int32) bool {
+	if p == nil || p.Protected {
+		return false
+	}
+	if gate == nil {
+		return true
+	} // defensive
+	return p.Priority < *gate
 }
 
 // Evict globally lowest-priority eligible pod for the batch (priority strictly lower than max incoming).
-func pickLowestPriorityGlobalForBatch(order []*nLite, incoming []*pLite) (*pLite, *nLite) {
-	allowPri := maxIncomingPriority(incoming)
+func pickLowestPriorityGlobalForBatch(
+	order []*nLite,
+	allowPriPtr *int32,
+	avoid map[string]struct{}, // don't evict already-moved UIDs
+) (*pLite, *nLite) {
 	var bestPod *pLite
 	var bestNode *nLite
 	for _, n := range order {
 		for _, q := range n.Pods {
-			if q.Protected {
+			if !canEvictWithGate(q, allowPriPtr) {
 				continue
 			}
-			if q.Priority >= allowPri {
+			if _, moved := avoid[q.UID]; moved {
 				continue
-			}
+			} // don't evict already-moved
 			if bestPod == nil || q.Priority < bestPod.Priority ||
 				(q.Priority == bestPod.Priority && (q.CPUm+q.MemBytes) > (bestPod.CPUm+bestPod.MemBytes)) {
-				bestPod = q
-				bestNode = n
+				bestPod, bestNode = q, n
 			}
 		}
 	}
@@ -421,7 +430,9 @@ func tryRandomSwapPlansBatch(
 	cfg swapCfg,
 	rng *rand.Rand,
 	triedPlans map[string]struct{},
+	allowPriPtr *int32,
 	trace string,
+	preferUIDs map[string]struct{}, // prefer already-moved pods
 ) ([]moveLite, map[string]string, bool, plannerStats) {
 
 	bestMoves := []moveLite(nil)
@@ -481,13 +492,9 @@ func tryRandomSwapPlansBatch(
 		return batchFitOnResidual(order, delta, incoming)
 	}
 
-	// Movability gate: allow moving pods up to the max incoming priority.
-	allowPri := maxIncomingPriority(incoming)
+	// Movability gate: if allowPriPtr is nil => no gating; else use preemptor priority
 	isMovable := func(p *pLite) bool {
-		if p == nil || p.Node == "" || p.Protected {
-			return false
-		}
-		return p.Priority <= allowPri
+		return canMoveWithGate(p, allowPriPtr)
 	}
 
 	for trial := 0; trial < cfg.MaxSwapTrials; trial++ {
@@ -501,23 +508,57 @@ func tryRandomSwapPlansBatch(
 		for uid, from := range orig {
 			finalLoc[uid] = from
 		}
+		// Ensure finalLoc has entries for every pod currently on nodes
+		for _, n := range order {
+			for _, q := range n.Pods {
+				if q.Node == "" {
+					continue
+				}
+				if _, ok := finalLoc[q.UID]; !ok {
+					finalLoc[q.UID] = q.Node
+				}
+			}
+		}
 
 		planMoves := make([]moveLite, 0, cfg.MaxMovesPerPlan)
 
 		tryStep := func() bool {
-			// count eligible once at start of attempt
+			// Build eligible list (movable, not already chosen, with a valid location)
 			eligible := make([]*pLite, 0, 64)
 			for _, n := range order {
-				for _, p := range n.Pods {
-					if !isMovable(p) {
+				for _, q := range n.Pods {
+					if !isMovable(q) {
 						continue
 					}
-					if _, seen := chosenUID[p.UID]; seen {
+					if _, seen := chosenUID[q.UID]; seen {
 						continue
 					}
-					eligible = append(eligible, p)
+					if q.Node == "" {
+						continue
+					}
+					if loc := finalLoc[q.UID]; loc == "" {
+						continue
+					}
+					eligible = append(eligible, q)
 				}
 			}
+			// prefer already-moved first; then lower priority; then bigger pods
+			sort.SliceStable(eligible, func(i, j int) bool {
+				_, pi := preferUIDs[eligible[i].UID]
+				_, pj := preferUIDs[eligible[j].UID]
+				if pi != pj {
+					return pi
+				}
+				if eligible[i].Priority != eligible[j].Priority {
+					return eligible[i].Priority < eligible[j].Priority
+				}
+				si := eligible[i].CPUm * eligible[i].MemBytes
+				sj := eligible[j].CPUm * eligible[j].MemBytes
+				if si != sj {
+					return si > sj
+				}
+				return eligible[i].UID < eligible[j].UID
+			})
 			stats.lastEligible = len(eligible)
 			if len(eligible) == 0 {
 				klog.V(2).InfoS("random-swap: no-eligible-movable-pods", "trace", trace, "trial", trial)
@@ -528,21 +569,30 @@ func tryRandomSwapPlansBatch(
 				action := rng.Intn(2) // 0=direct, 1=swap
 				p := eligible[rng.Intn(len(eligible))]
 				fromA := finalLoc[p.UID]
+				if fromA == "" {
+					klog.V(2).InfoS("random-swap: skip-eligible-without-valid-fromA",
+						"trace", trace, "trial", trial, "uid", p.UID)
+					continue
+				}
+				na := nodes[fromA]
+				if na == nil {
+					klog.V(2).InfoS("random-swap: skip-eligible-with-unknown-fromA-node",
+						"trace", trace, "trial", trial, "uid", p.UID, "fromA", fromA)
+					continue
+				}
 
 				// choose a different destination node
 				destIdx := rng.Intn(maxInt(1, len(order)))
-				triedDests := 0
-
 				for tries := 0; tries < len(order); tries++ {
 					dst := order[(destIdx+tries)%len(order)]
 					if dst.Name == fromA {
 						continue
 					}
-					triedDests++
 					da := delta[fromA]
 					db := delta[dst.Name]
 
 					if action == 0 {
+						// DIRECT MOVE
 						needCPU, needMem := p.CPUm, p.MemBytes
 						availCPU := dst.FreeCPU + db.cpu
 						availMem := dst.FreeMem + db.mem
@@ -563,7 +613,7 @@ func tryRandomSwapPlansBatch(
 							"needCPU", needCPU, "needMem", needMem, "availCPU", availCPU, "availMem", availMem,
 						)
 					} else {
-						// Swap
+						// SWAP
 						candsQ := make([]*pLite, 0, len(dst.Pods))
 						for _, q := range dst.Pods {
 							if !isMovable(q) {
@@ -572,17 +622,51 @@ func tryRandomSwapPlansBatch(
 							if _, seen := chosenUID[q.UID]; seen {
 								continue
 							}
+							if q.Node == "" {
+								continue
+							}
+							if loc := finalLoc[q.UID]; loc == "" {
+								continue
+							}
 							candsQ = append(candsQ, q)
 						}
+						// prefer already-moved; then lower priority; then bigger pods
+						sort.SliceStable(candsQ, func(i, j int) bool {
+							_, pi := preferUIDs[candsQ[i].UID]
+							_, pj := preferUIDs[candsQ[j].UID]
+							if pi != pj {
+								return pi
+							}
+							if candsQ[i].Priority != candsQ[j].Priority {
+								return candsQ[i].Priority < candsQ[j].Priority
+							}
+							si := candsQ[i].CPUm * candsQ[i].MemBytes
+							sj := candsQ[j].CPUm * candsQ[j].MemBytes
+							if si != sj {
+								return si > sj
+							}
+							return candsQ[i].UID < candsQ[j].UID
+						})
 						if len(candsQ) == 0 {
 							klog.V(3).InfoS("random-swap: swap-reject-no-q", "trace", trace, "trial", trial, "dst", dst.Name)
 							continue
 						}
 						q := candsQ[rng.Intn(len(candsQ))]
 						fromB := finalLoc[q.UID]
+						if fromB == "" {
+							klog.V(2).InfoS("random-swap: skip-swap-without-valid-fromB",
+								"trace", trace, "trial", trial, "q", q.UID)
+							continue
+						}
+						nbFrom := nodes[fromB]
+						if nbFrom == nil {
+							klog.V(2).InfoS("random-swap: skip-swap-with-unknown-fromB-node",
+								"trace", trace, "trial", trial, "q", q.UID, "fromB", fromB)
+							continue
+						}
 
-						finalA_CPU := (nodes[fromA].FreeCPU + da.cpu) + p.CPUm - q.CPUm
-						finalA_MEM := (nodes[fromA].FreeMem + da.mem) + p.MemBytes - q.MemBytes
+						finalA_CPU := (na.FreeCPU + da.cpu) + p.CPUm - q.CPUm
+						finalA_MEM := (na.FreeMem + da.mem) + p.MemBytes - q.MemBytes
 						finalB_CPU := (dst.FreeCPU + db.cpu) + q.CPUm - p.CPUm
 						finalB_MEM := (dst.FreeMem + db.mem) + q.MemBytes - p.MemBytes
 
@@ -610,9 +694,9 @@ func tryRandomSwapPlansBatch(
 							"finalB_CPU", finalB_CPU, "finalB_MEM", finalB_MEM,
 						)
 					}
-				}
+				} // for each dst
 				// Try a different p/action again
-			}
+			} // attempts
 			return false
 		}
 
@@ -626,6 +710,21 @@ func tryRandomSwapPlansBatch(
 				logResiduals("assignment-found", order, delta)
 				fd := finalDestFromFinalLoc(finalLoc, orig)
 				coalesced := squashMoves(fd, orig)
+
+				// Validate endpoints exist
+				valid := true
+				for i, mv := range coalesced {
+					if nodes[mv.From] == nil || nodes[mv.To] == nil {
+						klog.V(2).InfoS("random-swap: drop-coalesced-move-with-unknown-node",
+							"trace", trace, "i", i, "from", mv.From, "to", mv.To)
+						valid = false
+						break
+					}
+				}
+				if !valid {
+					continue
+				}
+
 				sig := signatureFromMovesPlusAssign(coalesced, assign)
 				if _, seen := triedPlans[sig]; seen {
 					stats.dedupSkips++
