@@ -12,7 +12,7 @@ import (
 // When we can't place a pod and need an eviction,
 // we should actually remove one of the previous moved, as they then will not count as a move.
 // We can do: (1) direct move of a pod to another (best option, only one move), or (2) swap pods between nodes (if it frees resources on one of the nodes).
-//
+// When we fallback to eviction, we should first try to evict one of the already moved pods (as they don't count as a move anymore).
 
 func runSolverSwap(in SolverInput) *SolverOutput {
 	nodes, allPods, pending, order, _ := buildClusterState(in)
@@ -104,14 +104,30 @@ func runSolverSwap(in SolverInput) *SolverOutput {
 		if evicted >= SolverSwapMaxEvictionsPerPod {
 			return false
 		}
-		v, on := pickLowestPriorityGlobalForBatch(order, gatePtr, movedUIDs)
-		if v == nil || on == nil {
-			return false
+
+		// (A) First prefer evicting a pod we already moved in this batch
+		//     *if* that single eviction enables a direct fit for `p`.
+		if mv, on := pickEvictionPreferMovedEnablingDirectFit(order, gatePtr, movedUIDs, p); mv != nil && on != nil {
+			on.remove(mv)
+			// Undo "move counting" for that pod: drop its placement entry and
+			// from the moved set so it doesn't look like a move+evict.
+			delete(newPlacements, mv.UID)
+			delete(movedUIDs, mv.UID)
+			evicts = append(evicts, Placement{Pod: Pod{UID: mv.UID}, Node: on.Name})
+			evicted++
+			goto tryDirect
 		}
-		on.remove(v)
-		evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
-		evicted++
-		goto tryDirect
+
+		// (B) Otherwise, behave as before: pick global lowest-priority victim,
+		//     still avoiding already-moved pods.
+		if v, on := pickLowestPriorityGlobalForBatch(order, gatePtr, movedUIDs); v != nil && on != nil {
+			on.remove(v)
+			evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
+			evicted++
+			goto tryDirect
+		}
+
+		return false
 	}
 
 	// Execute
@@ -606,3 +622,34 @@ func tryRandomSwapPlansBatch(
 }
 
 type deltaDM struct{ cpu, mem int64 }
+
+func pickEvictionPreferMovedEnablingDirectFit(
+	order []*nLite,
+	allowPriPtr *int32,
+	moved map[string]struct{},
+	need *pLite,
+) (*pLite, *nLite) {
+
+	var bestPod *pLite
+	var bestNode *nLite
+
+	for _, n := range order {
+		for _, q := range n.Pods {
+			if _, wasMoved := moved[q.UID]; !wasMoved {
+				continue
+			}
+			if !canEvictWithGate(q, allowPriPtr) {
+				continue
+			}
+			// Would evicting q on n make the needed pod fit here?
+			if n.FreeCPUm+q.CPUm >= need.CPUm && n.FreeMemBytes+q.MemBytes >= need.MemBytes {
+				// Keep the same tiebreakers you already use.
+				if bestPod == nil || q.Priority < bestPod.Priority ||
+					(q.Priority == bestPod.Priority && (q.CPUm+q.MemBytes) > (bestPod.CPUm+bestPod.MemBytes)) {
+					bestPod, bestNode = q, n
+				}
+			}
+		}
+	}
+	return bestPod, bestNode
+}
