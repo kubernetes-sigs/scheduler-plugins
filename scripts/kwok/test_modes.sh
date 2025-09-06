@@ -83,7 +83,7 @@ run_case() {
   # Build python args
   pyargs=(
     "${CLUSTER_NAME}" 7 6 0
-    #--seed 1757021274032995385
+    --seed 757198141668940213
   )
   if [[ "${mode}" == "for_every" || "${at}" == "postfilter" ]]; then
       pyargs+=(--wait-each)

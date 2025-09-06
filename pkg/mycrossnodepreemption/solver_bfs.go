@@ -2,7 +2,6 @@ package mycrossnodepreemption
 
 import (
 	"fmt"
-	"math"
 	"runtime"
 	"sort"
 
@@ -108,38 +107,6 @@ tryEvict:
 	return stableOutput("INFEASIBLE", newPlacements, evicts, in)
 }
 
-type pLite struct {
-	// Unique identifier of the pod
-	UID string
-	// Requested CPU in milliCPU
-	CPUm int64
-	// Requested memory in bytes
-	MemBytes int64
-	// Priority of the pod
-	Priority int32
-	// Whether the pod is protected
-	Protected bool
-	// Current node of the pod; "" if pending
-	Node string // "" if pending
-	// Original node of the pod
-	origNode string
-}
-
-type nLite struct {
-	// Name of the node
-	Name string
-	// Total capacity on the node of milliCPU
-	CapCPUm int64
-	// Total capacity on the node of memory in bytes
-	CapMemBytes int64
-	// Free capacity on the node of milliCPU
-	FreeCPUm int64
-	// Free capacity on the node of memory in bytes
-	FreeMemBytes int64
-	// Pods on the node
-	Pods map[string]*pLite
-}
-
 func (n *nLite) fits(cpu, mem int64) bool { return n.FreeCPUm >= cpu && n.FreeMemBytes >= mem }
 func (n *nLite) addPod(p *pLite) {
 	n.FreeCPUm -= p.CPUm
@@ -155,8 +122,6 @@ func (n *nLite) remove(p *pLite) {
 		p.Node = ""
 	}
 }
-
-type moveLite struct{ UID, From, To string }
 
 // add near the other top-level types
 type resvDelta struct{ cpu, mem int64 }
@@ -217,22 +182,6 @@ func verifyCoalescedPlan(nodes map[string]*nLite, all map[string]*pLite, moves [
 }
 
 // ========================= Helpers / scoring =========================
-
-func bestDirectFit(order []*nLite, p *pLite) (string, bool) {
-	bestNode := ""
-	bestCPUWaste := int64(math.MaxInt64)
-	bestMEMWaste := int64(math.MaxInt64)
-	for _, n := range order {
-		if n.fits(p.CPUm, p.MemBytes) {
-			cw := n.FreeCPUm - p.CPUm
-			mw := n.FreeMemBytes - p.MemBytes
-			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && n.Name < bestNode))) {
-				bestNode, bestCPUWaste, bestMEMWaste = n.Name, cw, mw
-			}
-		}
-	}
-	return bestNode, bestNode != ""
-}
 
 func eligibleVictimsSorted(n *nLite, prioLimit int32, capK int, needCPU, needMem int64) []*pLite {
 	buf := make([]*pLite, 0, len(n.Pods))
@@ -432,36 +381,6 @@ func pickEvictionThatEnablesFit(order []*nLite, pre *pLite) (*pLite, *nLite) {
 		return vi.UID < vj.UID
 	})
 	return cands[0].v, cands[0].on
-}
-
-func stableOutput(status string, placements map[string]string, evicts []Placement, in SolverInput) *SolverOutput {
-	uids := make([]string, 0, len(placements))
-	for uid := range placements {
-		uids = append(uids, uid)
-	}
-	sort.Strings(uids)
-
-	lookup := func(uid string) Pod {
-		if in.Preemptor != nil && in.Preemptor.UID == uid {
-			return Pod{UID: uid, Namespace: in.Preemptor.Namespace, Name: in.Preemptor.Name}
-		}
-		for i := range in.Pods {
-			if in.Pods[i].UID == uid {
-				return Pod{UID: uid, Namespace: in.Pods[i].Namespace, Name: in.Pods[i].Name}
-			}
-		}
-		return Pod{UID: uid}
-	}
-
-	outPl := make([]NewPlacement, 0, len(uids))
-	for _, uid := range uids {
-		to := placements[uid]
-		if to == "" {
-			continue
-		}
-		outPl = append(outPl, NewPlacement{Pod: lookup(uid), ToNode: to})
-	}
-	return &SolverOutput{Status: status, Placements: outPl, Evictions: evicts}
 }
 
 // ============================ small utils ============================

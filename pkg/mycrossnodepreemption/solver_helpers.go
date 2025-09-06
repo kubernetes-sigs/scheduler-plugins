@@ -2,6 +2,40 @@ package mycrossnodepreemption
 
 import "sort"
 
+type pLite struct {
+	// Unique identifier of the pod
+	UID string
+	// Requested CPU in milliCPU
+	CPUm int64
+	// Requested memory in bytes
+	MemBytes int64
+	// Priority of the pod
+	Priority int32
+	// Whether the pod is protected
+	Protected bool
+	// Current node of the pod; "" if pending
+	Node string // "" if pending
+	// Original node of the pod
+	origNode string
+}
+
+type nLite struct {
+	// Name of the node
+	Name string
+	// Total capacity on the node of milliCPU
+	CapCPUm int64
+	// Total capacity on the node of memory in bytes
+	CapMemBytes int64
+	// Free capacity on the node of milliCPU
+	FreeCPUm int64
+	// Free capacity on the node of memory in bytes
+	FreeMemBytes int64
+	// Pods on the node
+	Pods map[string]*pLite
+}
+
+type moveLite struct{ UID, From, To string }
+
 func buildClusterState(in SolverInput) (map[string]*nLite, map[string]*pLite, []*pLite, []*nLite, *pLite) {
 	// Build nodes map
 	nodes := make(map[string]*nLite, len(in.Nodes))
@@ -101,9 +135,33 @@ func min64(a, b int64) int64 {
 	return b
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
+// stableOutput converts newPlacements + evicts into your SolverOutput.
+func stableOutput(status string, placements map[string]string, evicts []Placement, in SolverInput) *SolverOutput {
+	uids := make([]string, 0, len(placements))
+	for uid := range placements {
+		uids = append(uids, uid)
 	}
-	return b
+	sort.Strings(uids)
+
+	lookup := func(uid string) Pod {
+		if in.Preemptor != nil && in.Preemptor.UID == uid {
+			return Pod{UID: uid, Namespace: in.Preemptor.Namespace, Name: in.Preemptor.Name}
+		}
+		for i := range in.Pods {
+			if in.Pods[i].UID == uid {
+				return Pod{UID: uid, Namespace: in.Pods[i].Namespace, Name: in.Pods[i].Name}
+			}
+		}
+		return Pod{UID: uid}
+	}
+
+	outPl := make([]NewPlacement, 0, len(uids))
+	for _, uid := range uids {
+		to := placements[uid]
+		if to == "" {
+			continue
+		}
+		outPl = append(outPl, NewPlacement{Pod: lookup(uid), ToNode: to})
+	}
+	return &SolverOutput{Status: status, Placements: outPl, Evictions: evicts}
 }

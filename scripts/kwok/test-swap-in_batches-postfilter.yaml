@@ -26,5 +26,13 @@ componentsPatches:
         value: "true"
       - name: SOLVER_SWAP_TIMEOUT
         value: "100ms"
+      - name: SOLVER_SWAP_MAX_VICTIMS_PER_NODE
+        value: "8" # -1 (unlimited)
+      - name: SOLVER_SWAP_MAX_TRIALS_PER_NODE
+        value: "30"
+      - name: SOLVER_SWAP_MAX_MOVES_FOR_PENDING_POD
+        value: "5"
+      - name: SOLVER_SWAP_MAX_TRIALS_PER_PENDING_POD
+        value: "100"
       - name: PLAN_EXECUTION_TIMEOUT
         value: "600h" # 50s # TODO: set high to determine any potential issues

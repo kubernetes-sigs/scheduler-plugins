@@ -57,11 +57,14 @@ var SolverBfsMaxDestsPerLevel = parseInt(getenv("SOLVER_BFS_MAX_DESTS_PER_LEVEL"
 
 // ======= Swap solver settings =======
 
+// Maximum number of victims to consider per node
+var SolverSwapMaxVictimsPerNode = parseInt(getenv("SOLVER_SWAP_MAX_VICTIMS_PER_NODE", "8"))
+
+// Maximum number of relocation trials per node
+var SolverSwapMaxTrialsPerNode = parseInt(getenv("SOLVER_SWAP_MAX_TRIALS_PER_NODE", "30"))
+
 // Maximum number of moves for the complete plan
-var SolverSwapMaxMovesPerPlan = parseInt(getenv("SOLVER_SWAP_MAX_MOVES_PER_PLAN", "6"))
+var SolverSwapMaxMovesForPendingPod = parseInt(getenv("SOLVER_SWAP_MAX_MOVES_FOR_PENDING_POD", "5"))
 
-// Maximum number of swap trials for the complete plan
-var SolverSwapMaxSwapTrials = parseInt(getenv("SOLVER_SWAP_MAX_SWAP_TRIALS", "1000"))
-
-// Maximum number of evictions per pod in the plan
-var SolverSwapMaxEvictionsPerPod = parseInt(getenv("SOLVER_SWAP_MAX_EVICTIONS_PER_POD", "2"))
+// Maximum number of relocation trials for the complete plan
+var SolverSwapMaxTrialsPerPendingPod = parseInt(getenv("SOLVER_SWAP_MAX_TRIALS_PER_PENDING_POD", "100"))

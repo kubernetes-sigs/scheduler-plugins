@@ -9,647 +9,731 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// When we can't place a pod and need an eviction,
-// we should actually remove one of the previous moved, as they then will not count as a move.
-// We can do: (1) direct move of a pod to another (best option, only one move), or (2) swap pods between nodes (if it frees resources on one of the nodes).
-// When we fallback to eviction, we should first try to evict one of the already moved pods (as they don't count as a move anymore).
+/*
+Plan:
+
+A. Worklist (pending pods order)
+   - Priority:            DESC (higher first)
+   - Size (CPU*MEM):      DESC
+   - CPU:                 DESC
+   - MEM:                 DESC
+   - UID:                 ASC
+   Rationale: big-first reduces fragmentation and later relocations.
+
+B. For each pending pod p
+   1) Quick feasibility (cluster slack)
+      If sum(FreeCPU) < p.CPU or sum(FreeMEM) < p.MEM → go to §4 (Evict).
+      Otherwise continue (relocations may still be needed).
+
+   2) Direct fit (Best-Fit)
+      Pick node with minimum post-waste:
+         (freeCPU - p.CPU, then freeMEM - p.MEM; tie by node name)
+      If it fits, place p and continue.
+
+   3) Moves-only (no evictions)
+      Goal: free “just enough” on one promising node with the FEWEST moves.
+      3.1 Target nodes order
+          For each node n compute deficits for p:
+            defCPU = max(0, p.CPU - n.freeCPU)
+            defMEM = max(0, p.MEM - n.freeMEM)
+          Score(n) = max(defCPU/p.CPU, defMEM/p.MEM)  (ascending)
+          Ties: (defCPU+defMEM) ASC → predicted post-placement waste ASC → name ASC
+      3.2 Per-target planning (virtual)
+          - Use a tiny *virtual delta*: a per-node scratchpad of (ΔCPU, ΔMEM) updated
+            when tentatively moving/swapping pods. Fit checks use (free + delta).
+          - Try up to maxTrialsPerPod *fresh* plans for this p on this target,
+            each respecting a cap of maxMovesPerPod planned moves.
+          - Within a plan, repeatedly pick victims from the target node:
+              Preference order for victims:
+                • alreadyMoved (seen earlier in this batch)
+                • single-victim coverage of (defCPU, defMEM)
+                • higher relocability (# of destination nodes where it fits under current delta)
+                • smaller overshoot of needs (CPU/MEM)
+                • lower priority
+                • larger size (CPU*MEM), then smaller CPU, smaller MEM, UID ASC
+              Try:
+                (a) Direct move victim → its best-fit destination under current delta
+                (b) Else, try a swap with some q on a destination node such that both nodes stay ≥ 0
+              Update delta after each tentative step. Stop the plan as soon as the target
+              node virtually fits p. If a step would exceed maxMovesPerPod, abort this plan.
+          - Keep the plan with the FEWEST moves across targets (tiny jitter allowed for tie-breaks).
+          - Optional early success: if after any tentative steps `batchFitOnResidual(delta, rest)`
+            succeeds for the remaining pending pods, coalesce and commit immediately.
+      3.3 Commit
+          - Verify plan (endpoints exist; final free ≥ 0) and apply once via two-phase.
+          - Place p on the chosen target. Record moves in `newPlacements` and add their UIDs to `alreadyMoved`.
+
+   4) Evict (only when it guarantees improvement)
+		- Policy:
+		  1) Only candidates where evicting v alone enables placing p on v's node.
+		  2) Among candidates, find the *minimum priority*.
+	      3) Within that lowest-priority tier: prefer alreadyMoved; then size desc; CPU desc; MEM desc; node name asc; UID asc.
+
+Mode guardrails
+   - Batch mode:
+       * Moves: no priority gate (still respect Protected).
+       * Evictions: victim.priority < p.priority (strict).
+   - Single-preemptor mode:
+       * Moves allowed only if victim.priority ≤ preemptor.priority.
+       * Evictions allowed only if victim.priority < preemptor.priority (strict).
+*/
 
 func runSolverSwap(in SolverInput) *SolverOutput {
-	nodes, allPods, pending, order, _ := buildClusterState(in)
-
-	newPlacements := make(map[string]string)
-	var evicts []Placement
+	nodes, _, pending, order, pre := buildClusterState(in)
 
 	if len(pending) == 0 {
-		klog.InfoS("random-swap: nothing to place")
+		klog.InfoS("swap: nothing to place")
 		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
 	}
 
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	klog.InfoS("random-swap: start")
+	// A. Worklist
+	worklist, singleMode, moveGatePtr := buildWorklist(pending, pre)
 
-	// Worklist + gating policy (nil gate in batch mode == no priority restriction).
-	var (
-		worklist []*pLite
-		single   bool
-		gatePtr  *int32
-	)
-	if in.Preemptor != nil {
-		for _, p := range pending {
-			if p.UID == in.Preemptor.UID {
-				worklist = []*pLite{p}
-				single = true
-				g := in.Preemptor.Priority
-				gatePtr = &g // restrict moves/evictions to <= / <
-				break
-			}
-		}
-	}
-	if !single {
-		worklist = append(worklist, pending...)
-		sortPodsByPriorityDescThenSmallestFirst(worklist)
-		gatePtr = nil // batch: unrestricted (still respects Protected)
-	}
-
-	// Prefer already-moved pods within a batch; avoid evicting them.
+	// Batch accounting
+	newPlacements := make(map[string]string)
+	var evicts []Placement
 	movedUIDs := make(map[string]struct{})
 
-	// Helper: after a plan is applied, try preferred target, else best fit.
-	placeAfterMoves := func(p *pLite, prefer string) bool {
-		if prefer != "" {
-			if n := nodes[prefer]; n != nil && n.fits(p.CPUm, p.MemBytes) {
-				n.addPod(p)
-				newPlacements[p.UID] = n.Name
-				return true
-			}
-		}
-		if to, ok := bestDirectFit(order, p); ok {
-			nodes[to].addPod(p)
-			newPlacements[p.UID] = to
-			return true
-		}
-		return false
-	}
-
-	// Place a single pod using labels (tryDirect → tryMoves → tryEvict → tryDirect…)
-	placeOne := func(p *pLite) bool {
-		evicted := 0
-
-	tryDirect:
-		if to, ok := bestDirectFit(order, p); ok {
-			nodes[to].addPod(p)
-			newPlacements[p.UID] = to
-			return true
-		}
-		goto tryMoves
-
-	tryMoves:
-		tried := map[string]struct{}{}
-		mvs, assign, found, _ := tryRandomSwapPlansBatch(
-			nodes, allPods, order, []*pLite{p}, rng, tried, gatePtr, movedUIDs,
-		)
-		if found && verifyCoalescedPlan(nodes, allPods, mvs, nil, "") && applyTwoPhase(nodes, allPods, mvs) {
-			for _, mv := range mvs {
-				newPlacements[mv.UID] = mv.To
-				movedUIDs[mv.UID] = struct{}{}
-			}
-			if placeAfterMoves(p, assign[p.UID]) {
-				return true
-			}
-			// fallthrough → eviction
-		}
-		goto tryEvict
-
-	tryEvict:
-		if evicted >= SolverSwapMaxEvictionsPerPod {
-			return false
-		}
-
-		// Only evict strictly-lower priority than the pod we're placing.
-		evictGate := p.Priority
-
-		// (A) Prefer evicting a pod we've already moved if that single eviction
-		//     enables a direct fit for `p`.
-		if mv, on := pickEvictionPreferMovedEnablingDirectFit(order, &evictGate, movedUIDs, p); mv != nil && on != nil {
-			on.remove(mv)
-			delete(newPlacements, mv.UID)
-			delete(movedUIDs, mv.UID)
-			evicts = append(evicts, Placement{Pod: Pod{UID: mv.UID}, Node: on.Name})
-			evicted++
-			goto tryDirect
-		}
-
-		// (B) Otherwise fall back to lowest-priority global victim (still < evictGate).
-		if v, on := pickLowestPriorityGlobalForBatch(order, &evictGate, movedUIDs); v != nil && on != nil {
-			on.remove(v)
-			evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
-			evicted++
-			goto tryDirect
-		}
-
-		return false
-	}
-
-	// Execute
-	if single {
-		if !placeOne(worklist[0]) {
-			klog.InfoS("random-swap: single preemptor infeasible under <=-move/<-evict gate",
-				"preemptor", worklist[0].UID, "prio", in.Preemptor.Priority)
-			return stableOutput("INFEASIBLE", newPlacements, evicts, in)
-		}
-		return stableOutput("FEASIBLE", newPlacements, evicts, in)
-	}
-
-	// Batch: process prio-desc; stop at first failure and discard ≤ that prio.
-	var stop bool
+	stop := false
 	var stopAt int32
+
 	for _, p := range worklist {
 		if stop && p.Priority <= stopAt {
 			break
 		}
-		if ok := placeOne(p); !ok {
+		if singleMode && pre != nil && p.UID != pre.UID {
+			continue
+		}
+
+		placed, infeasible := placeOnePod(
+			p, nodes, order,
+			moveGatePtr,
+			evictGateForPod(p, singleMode, pre),
+			movedUIDs, newPlacements, &evicts,
+		)
+
+		if !placed {
+			if singleMode || infeasible {
+				return stableOutput("INFEASIBLE", newPlacements, evicts, in)
+			}
 			stop = true
 			stopAt = p.Priority
-			klog.InfoS("random-swap: stopping batch at priority; discarding remainder",
+			klog.InfoS("swap: stopping batch at priority; discarding remainder",
 				"priority", stopAt, "uid", p.UID)
-			break
 		}
 	}
 
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
-// Batch fit on current residuals (Free + delta), returns assignment for ALL pendingPods if possible.
-func batchFitOnResidual(order []*nLite, delta map[string]deltaDM, pendingPods []*pLite) (map[string]string, bool) {
-	type capDM struct{ cpu, mem int64 }
+// -----------------------------------------------------------------------------
+// Worklist / gates
+// -----------------------------------------------------------------------------
 
-	// Compute residual capacity per node
-	resid := make(map[string]capDM, len(order))
-	for _, n := range order {
-		d := delta[n.Name]
-		resid[n.Name] = capDM{cpu: n.FreeCPUm + d.cpu, mem: n.FreeMemBytes + d.mem}
-	}
-
-	// Best-Fit-Decreasing on these residuals
-	cand := make([]*pLite, len(pendingPods))
-	copy(cand, pendingPods)
-	sort.Slice(cand, func(i, j int) bool {
-		ai, aj := cand[i], cand[j]
-		si := ai.CPUm * ai.MemBytes
-		sj := aj.CPUm * aj.MemBytes
-		if si != sj {
-			return si > sj
-		}
-		if ai.CPUm != aj.CPUm {
-			return ai.CPUm > aj.CPUm
-		}
-		if ai.MemBytes != aj.MemBytes {
-			return ai.MemBytes > aj.MemBytes
-		}
-		return ai.UID < aj.UID
-	})
-
-	assign := make(map[string]string, len(cand))
-	for _, p := range cand {
-		bestNode := ""
-		bestCPUWaste := int64(math.MaxInt64)
-		bestMEMWaste := int64(math.MaxInt64)
-		for _, n := range order {
-			r := resid[n.Name]
-			if r.cpu >= p.CPUm && r.mem >= p.MemBytes {
-				wc := r.cpu - p.CPUm
-				wm := r.mem - p.MemBytes
-				if wc < bestCPUWaste || (wc == bestCPUWaste && (wm < bestMEMWaste || (wm == bestMEMWaste && n.Name < bestNode))) {
-					bestNode, bestCPUWaste, bestMEMWaste = n.Name, wc, wm
-				}
+func buildWorklist(pending []*pLite, pre *pLite) (out []*pLite, single bool, moveGate *int32) {
+	if pre != nil {
+		for _, p := range pending {
+			if p.UID == pre.UID {
+				mg := pre.Priority
+				return []*pLite{p}, true, &mg
 			}
 		}
-		if bestNode == "" {
-			// LOG FAILURE REASON
-			klog.V(2).InfoS("batch-fit: cannot-place", "uid", p.UID, "needCPU", p.CPUm, "needMem", p.MemBytes)
-			for _, n := range order {
-				r := resid[n.Name]
-				klog.V(2).InfoS("batch-fit: node-free", "node", n.Name, "cpu", r.cpu, "mem", r.mem)
-			}
-			return nil, false
-		}
-		assign[p.UID] = bestNode
-		r := resid[bestNode]
-		resid[bestNode] = capDM{cpu: r.cpu - p.CPUm, mem: r.mem - p.MemBytes}
 	}
-	return assign, true
-}
-
-//
-// ========================= Misc helpers (priority, eviction, etc.) =========================
-//
-
-// Sort by (Priority desc, size ASC, UID asc)
-func sortPodsByPriorityDescThenSmallestFirst(pods []*pLite) {
-	sort.Slice(pods, func(i, j int) bool {
-		a, b := pods[i], pods[j]
+	out = append(out, pending...)
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
 		if a.Priority != b.Priority {
-			return a.Priority > b.Priority // higher prio first
-		}
-		// size = CPU * MEM; smaller first
-		sa := a.CPUm * a.MemBytes
-		sb := b.CPUm * b.MemBytes
-		if sa != sb {
-			return sa < sb
-		}
-		// tie-breakers: smaller CPU, then smaller MEM, then UID
-		if a.CPUm != b.CPUm {
-			return a.CPUm < b.CPUm
-		}
-		if a.MemBytes != b.MemBytes {
-			return a.MemBytes < b.MemBytes
-		}
-		return a.UID < b.UID
-	})
-}
-
-// Movement gate: allow moving pods with priority <= gate
-func canMoveWithGate(p *pLite, gate *int32) bool {
-	if p == nil || p.Node == "" || p.Protected {
-		return false
-	}
-	if gate == nil {
-		return true
-	} // defensive
-	return p.Priority <= *gate
-}
-
-// Eviction gate: only strictly lower than gate
-func canEvictWithGate(p *pLite, gate *int32) bool {
-	if p == nil || p.Protected {
-		return false
-	}
-	if gate == nil {
-		return true
-	} // defensive
-	return p.Priority < *gate
-}
-
-// Evict globally lowest-priority eligible pod for the batch (priority strictly lower than max pendingPods).
-func pickLowestPriorityGlobalForBatch(
-	order []*nLite,
-	allowPriPtr *int32,
-	avoid map[string]struct{}, // don't evict already-moved UIDs
-) (*pLite, *nLite) {
-	var bestPod *pLite
-	var bestNode *nLite
-	for _, n := range order {
-		for _, q := range n.Pods {
-			if !canEvictWithGate(q, allowPriPtr) {
-				continue
-			}
-			if _, moved := avoid[q.UID]; moved {
-				continue
-			} // don't evict already-moved
-			if bestPod == nil || q.Priority < bestPod.Priority ||
-				(q.Priority == bestPod.Priority && (q.CPUm+q.MemBytes) > (bestPod.CPUm+bestPod.MemBytes)) {
-				bestPod, bestNode = q, n
-			}
-		}
-	}
-	return bestPod, bestNode
-}
-
-type plannerStats struct {
-	trials       int
-	improvements int
-	dedupSkips   int
-	lastEligible int
-}
-
-// ---------- compact random-swap planner (drop-in) ----------
-func tryRandomSwapPlansBatch(
-	nodes map[string]*nLite,
-	all map[string]*pLite,
-	order []*nLite,
-	incoming []*pLite,
-	rng *rand.Rand,
-	triedPlans map[string]struct{},
-	allowPriPtr *int32,
-	preferUIDs map[string]struct{},
-) ([]moveLite, map[string]string, bool, plannerStats) {
-
-	type sel = struct {
-		p     *pLite
-		from  string
-		fromN *nLite
-	}
-	stats := plannerStats{}
-
-	// ------------ tiny helpers ------------
-	buildOrig := func() map[string]string {
-		orig := map[string]string{}
-		for _, p := range all {
-			if p.Node != "" {
-				orig[p.UID] = p.Node
-			}
-		}
-		return orig
-	}
-	ensureAllInFinal := func(finalLoc map[string]string) {
-		for _, n := range order {
-			for _, q := range n.Pods {
-				if q.Node != "" {
-					if _, ok := finalLoc[q.UID]; !ok {
-						finalLoc[q.UID] = q.Node
-					}
-				}
-			}
-		}
-	}
-	prefLess := func(a, b *pLite) bool {
-		_, pa := preferUIDs[a.UID]
-		_, pb := preferUIDs[b.UID]
-		if pa != pb {
-			return pa
-		}
-		if a.Priority != b.Priority {
-			return a.Priority < b.Priority
+			return a.Priority > b.Priority
 		}
 		sa, sb := a.CPUm*a.MemBytes, b.CPUm*b.MemBytes
 		if sa != sb {
 			return sa > sb
 		}
+		if a.CPUm != b.CPUm {
+			return a.CPUm > b.CPUm
+		}
+		if a.MemBytes != b.MemBytes {
+			return a.MemBytes > b.MemBytes
+		}
 		return a.UID < b.UID
-	}
-	sortByPref := func(list []*pLite) {
-		sort.SliceStable(list, func(i, j int) bool { return prefLess(list[i], list[j]) })
-	}
-	isMovable := func(p *pLite) bool { return canMoveWithGate(p, allowPriPtr) }
-
-	addMoveDelta := func(delta map[string]deltaDM, from, to string, cpu, mem int64) {
-		da := delta[from]
-		da.cpu += cpu
-		da.mem += mem
-		delta[from] = da
-		db := delta[to]
-		db.cpu -= cpu
-		db.mem -= mem
-		delta[to] = db
-	}
-	residCPU := func(n *nLite, d deltaDM) int64 { return n.FreeCPUm + d.cpu }
-	residMem := func(n *nLite, d deltaDM) int64 { return n.FreeMemBytes + d.mem }
-
-	finalDestFromFinalLoc := func(finalLoc, orig map[string]string) map[string]string {
-		fd := map[string]string{}
-		for uid, from := range orig {
-			if to := finalLoc[uid]; to != "" && to != from {
-				fd[uid] = to
-			}
-		}
-		return fd
-	}
-	signatureFromMovesPlusAssign := func(moves []moveLite, assign map[string]string) string {
-		cp := append([]moveLite(nil), moves...)
-		sort.Slice(cp, func(i, j int) bool {
-			if cp[i].UID != cp[j].UID {
-				return cp[i].UID < cp[j].UID
-			}
-			if cp[i].From != cp[j].From {
-				return cp[i].From < cp[j].From
-			}
-			return cp[i].To < cp[j].To
-		})
-		s := ""
-		for _, mv := range cp {
-			s += mv.UID + ":" + mv.From + "->" + mv.To + ";"
-		}
-		ids := make([]string, 0, len(assign))
-		for uid := range assign {
-			ids = append(ids, uid)
-		}
-		sort.Strings(ids)
-		s += "#"
-		for _, uid := range ids {
-			s += uid + "@" + assign[uid] + ";"
-		}
-		return s
-	}
-	validateEndpoints := func(mvs []moveLite) bool {
-		for _, mv := range mvs {
-			if nodes[mv.From] == nil || nodes[mv.To] == nil {
-				return false
-			}
-		}
-		return true
-	}
-	checkBatchFitAfterDeltas := func(delta map[string]deltaDM) (map[string]string, bool) {
-		return batchFitOnResidual(order, delta, incoming)
-	}
-
-	// Reusable enumeration of movable pods (not already chosen, with known from)
-	buildEligible := func(finalLoc map[string]string, chosen map[string]struct{}) []sel {
-		out := make([]sel, 0, 64)
-		for _, n := range order {
-			for _, q := range n.Pods {
-				if !isMovable(q) {
-					continue
-				}
-				if q.Node == "" {
-					continue
-				}
-				if _, seen := chosen[q.UID]; seen {
-					continue
-				}
-				fromA := finalLoc[q.UID]
-				if fromA == "" {
-					continue
-				}
-				out = append(out, sel{p: q, from: fromA, fromN: nodes[fromA]})
-			}
-		}
-		// keep only pod dimension for sorting; then rebuild sel order in-place
-		plist := make([]*pLite, 0, len(out))
-		for _, s := range out {
-			plist = append(plist, s.p)
-		}
-		sortByPref(plist)
-		idx := map[string]sel{}
-		for _, s := range out {
-			idx[s.p.UID] = s
-		}
-		out = out[:0]
-		for _, p := range plist {
-			out = append(out, idx[p.UID])
-		}
-		return out
-	}
-
-	// ---------- search ----------
-	bestMoves := []moveLite(nil)
-	bestAssign := map[string]string(nil)
-	bestCount := math.MaxInt32
-	found := false
-
-	for trial := 0; trial < SolverSwapMaxSwapTrials; trial++ {
-		stats.trials++
-
-		orig := buildOrig()
-		delta := map[string]deltaDM{}
-		finalLoc := map[string]string{}
-		for uid, from := range orig {
-			finalLoc[uid] = from
-		}
-		ensureAllInFinal(finalLoc)
-
-		chosen := map[string]struct{}{}
-		planMoves := make([]moveLite, 0, SolverSwapMaxMovesPerPlan)
-
-		tryStep := func() bool {
-			el := buildEligible(finalLoc, chosen)
-			stats.lastEligible = len(el)
-			if len(el) == 0 {
-				klog.V(2).InfoS("random-swap: no-eligible-movable-pods")
-				return false
-			}
-
-			for attempt := 0; attempt < 16; attempt++ {
-				s := el[rng.Intn(len(el))]
-				p, fromA, na := s.p, s.from, s.fromN
-				if na == nil {
-					continue
-				}
-
-				// pick a different destination node (round-robin from random start)
-				start := rng.Intn(maxInt(1, len(order)))
-				for t := 0; t < len(order); t++ {
-					dst := order[(start+t)%len(order)]
-					if dst.Name == fromA {
-						continue
-					}
-					da, db := delta[fromA], delta[dst.Name]
-
-					// Action 1: DIRECT
-					if rng.Intn(2) == 0 {
-						if residCPU(dst, db) >= p.CPUm && residMem(dst, db) >= p.MemBytes {
-							planMoves = append(planMoves, moveLite{UID: p.UID, From: fromA, To: dst.Name})
-							addMoveDelta(delta, fromA, dst.Name, p.CPUm, p.MemBytes)
-							finalLoc[p.UID] = dst.Name
-							chosen[p.UID] = struct{}{}
-							return true
-						}
-					} else {
-						// Action 2: SWAP with q on dst
-						qcands := make([]*pLite, 0, len(dst.Pods))
-						for _, q := range dst.Pods {
-							if !isMovable(q) {
-								continue
-							}
-							if _, seen := chosen[q.UID]; seen {
-								continue
-							}
-							if finalLoc[q.UID] == "" {
-								continue
-							}
-							qcands = append(qcands, q)
-						}
-						if len(qcands) == 0 {
-							continue
-						}
-						sortByPref(qcands)
-						q := qcands[rng.Intn(len(qcands))]
-						fromB := finalLoc[q.UID]
-						nb := nodes[fromB]
-						if nb == nil {
-							continue
-						}
-
-						// residuals after swap
-						finalA_CPU := residCPU(na, da) + p.CPUm - q.CPUm
-						finalA_MEM := residMem(na, da) + p.MemBytes - q.MemBytes
-						finalB_CPU := residCPU(dst, db) + q.CPUm - p.CPUm
-						finalB_MEM := residMem(dst, db) + q.MemBytes - p.MemBytes
-
-						if finalA_CPU >= 0 && finalA_MEM >= 0 && finalB_CPU >= 0 && finalB_MEM >= 0 {
-							planMoves = append(planMoves,
-								moveLite{UID: p.UID, From: fromA, To: dst.Name},
-								moveLite{UID: q.UID, From: fromB, To: fromA},
-							)
-							// delta[fromA] += p - q; delta[dst] += q - p
-							da.cpu += p.CPUm - q.CPUm
-							da.mem += p.MemBytes - q.MemBytes
-							db.cpu += q.CPUm - p.CPUm
-							db.mem += q.MemBytes - p.MemBytes
-							delta[fromA] = da
-							delta[dst.Name] = db
-
-							finalLoc[p.UID] = dst.Name
-							finalLoc[q.UID] = fromA
-							chosen[p.UID] = struct{}{}
-							chosen[q.UID] = struct{}{}
-							return true
-						}
-					}
-				}
-				// try another (p, action) pair
-			}
-			return false
-		}
-
-		for len(planMoves) < SolverSwapMaxMovesPerPlan {
-			if !tryStep() {
-				break
-			}
-
-			// After each step, see if ALL incoming fit on residuals.
-			if assign, ok := checkBatchFitAfterDeltas(delta); ok {
-				fd := finalDestFromFinalLoc(finalLoc, orig)
-				coalesced := squashMoves(fd, orig)
-				if !validateEndpoints(coalesced) {
-					continue
-				}
-				sig := signatureFromMovesPlusAssign(coalesced, assign)
-				if _, seen := triedPlans[sig]; seen {
-					stats.dedupSkips++
-				} else {
-					triedPlans[sig] = struct{}{}
-					if len(coalesced) < bestCount {
-						bestCount = len(coalesced)
-						bestMoves = coalesced
-						bestAssign = assign
-						found = true
-						stats.improvements++
-						if bestCount <= 1 {
-							return bestMoves, bestAssign, found, stats
-						}
-					}
-				}
-			}
-
-			// If we already have a plan with X moves, don't extend beyond X.
-			if found && len(planMoves) >= bestCount {
-				break
-			}
-		}
-
-		// Mark this (unsuccessful) finalLoc as tried so we don't repeat it next trial.
-		fd := map[string]string{}
-		for uid, from := range orig {
-			if to := finalLoc[uid]; to != "" && to != from {
-				fd[uid] = to
-			}
-		}
-		coalesced := squashMoves(fd, orig)
-		triedPlans[signatureFromMovesPlusAssign(coalesced, map[string]string{})] = struct{}{}
-	}
-
-	return bestMoves, bestAssign, found, stats
+	})
+	return out, false, nil
 }
+
+func evictGateForPod(p *pLite, single bool, pre *pLite) *int32 {
+	if single && pre != nil {
+		eg := pre.Priority
+		return &eg
+	}
+	eg := p.Priority
+	return &eg
+}
+
+// -----------------------------------------------------------------------------
+// B. Place one pending pod
+// -----------------------------------------------------------------------------
+
+func placeOnePod(
+	p *pLite,
+	nodes map[string]*nLite,
+	order []*nLite,
+	moveGate *int32,
+	evictGate *int32,
+	movedUIDs map[string]struct{},
+	newPlacements map[string]string,
+	evicts *[]Placement,
+) (bool, bool) {
+
+	// 1) Cluster slack
+	if !clusterHasSlack(order, p) {
+		goto tryEvict
+	}
+
+	// 2) Direct best-fit
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true, false
+	}
+
+	// 3) Moves-only (pick minimal plan across targets)
+	if placeByMovesOnly(p, nodes, order, moveGate, movedUIDs, newPlacements) {
+		return true, false
+	}
+
+	// 4) Evict (strictly lower prio, enabling-only)
+tryEvict:
+	v, on := pickLargestEnablingEviction(order, p, evictGate, movedUIDs)
+	if v == nil || on == nil {
+		return false, true
+	}
+	delete(newPlacements, v.UID)
+	delete(movedUIDs, v.UID)
+	on.remove(v)
+	*evicts = append(*evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
+
+	if on.fits(p.CPUm, p.MemBytes) {
+		on.addPod(p)
+		newPlacements[p.UID] = on.Name
+		return true, false
+	}
+	// Defensive fallback
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true, false
+	}
+	return false, true
+}
+
+// -----------------------------------------------------------------------------
+// B.1 Cluster slack
+// -----------------------------------------------------------------------------
+
+func clusterHasSlack(order []*nLite, p *pLite) bool {
+	var cpu, mem int64
+	for _, n := range order {
+		cpu += n.FreeCPUm
+		mem += n.FreeMemBytes
+	}
+	return cpu >= p.CPUm && mem >= p.MemBytes
+}
+
+// -----------------------------------------------------------------------------
+// B.2 Direct best-fit (minimize post-placement waste)
+// -----------------------------------------------------------------------------
+
+func bestDirectFit(order []*nLite, p *pLite) (string, bool) {
+	bestNode := ""
+	bestCPUWaste := int64(math.MaxInt64)
+	bestMEMWaste := int64(math.MaxInt64)
+	for _, n := range order {
+		if n.fits(p.CPUm, p.MemBytes) {
+			cw := n.FreeCPUm - p.CPUm
+			mw := n.FreeMemBytes - p.MemBytes
+			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && n.Name < bestNode))) {
+				bestNode, bestCPUWaste, bestMEMWaste = n.Name, cw, mw
+			}
+		}
+	}
+	return bestNode, bestNode != ""
+}
+
+// -----------------------------------------------------------------------------
+// B.3 Moves-only: choose target by smallest deficit; plan min moves; apply
+// -----------------------------------------------------------------------------
 
 type deltaDM struct{ cpu, mem int64 }
 
-func pickEvictionPreferMovedEnablingDirectFit(
+func placeByMovesOnly(
+	p *pLite,
+	nodes map[string]*nLite,
 	order []*nLite,
-	allowPriPtr *int32,
-	moved map[string]struct{},
-	need *pLite,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	newPlacements map[string]string,
+) bool {
+	targets := orderTargetsByDeficit(order, p)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	var bestMoves []moveLite
+	bestTarget := ""
+	bestCount := math.MaxInt32
+	found := false
+
+	for _, t := range targets {
+		// Try a few fresh relocation attempts for this target node
+		for trial := 0; trial < SolverSwapMaxTrialsPerPendingPod; trial++ {
+			mvs, ok := planOnTargetVirtual(p, t, order, moveGate, movedUIDs, rng, SolverSwapMaxMovesForPendingPod)
+			if ok && len(mvs) < bestCount {
+				bestMoves = mvs
+				bestTarget = t.Name
+				bestCount = len(mvs)
+				found = true
+				if bestCount <= 1 { // can’t beat 0/1 anyway
+					break
+				}
+			}
+		}
+		if found && bestCount <= 1 {
+			break
+		}
+	}
+
+	if !found {
+		return false
+	}
+
+	// Commit chosen plan and place p
+	all := buildAllPodsMap(order)
+	if !applyTwoPhase(nodes, all, bestMoves) {
+		return false
+	}
+	for _, mv := range bestMoves {
+		newPlacements[mv.UID] = mv.To
+		movedUIDs[mv.UID] = struct{}{}
+	}
+	if n := nodes[bestTarget]; n != nil && n.fits(p.CPUm, p.MemBytes) {
+		n.addPod(p)
+		newPlacements[p.UID] = bestTarget
+		return true
+	}
+	// defensive: best-fit in case of drift
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true
+	}
+	return false
+}
+
+type targetScore struct {
+	n      *nLite
+	score  float64 // max(defCPU/p.CPU, defMEM/p.MEM)
+	defSum int64
+	waste  int64
+}
+
+func orderTargetsByDeficit(order []*nLite, p *pLite) []*nLite {
+	s := make([]targetScore, 0, len(order))
+	for _, n := range order {
+		defCPU := max64(0, p.CPUm-n.FreeCPUm)
+		defMEM := max64(0, p.MemBytes-n.FreeMemBytes)
+		score := float64(max64(
+			int64(float64(defCPU)/float64(max64(1, p.CPUm))*1_000_000),
+			int64(float64(defMEM)/float64(max64(1, p.MemBytes))*1_000_000),
+		)) / 1_000_000.0
+		waste := int64(0)
+		if n.fits(p.CPUm, p.MemBytes) {
+			waste = (n.FreeCPUm - p.CPUm) + (n.FreeMemBytes - p.MemBytes)
+		}
+		s = append(s, targetScore{n: n, score: score, defSum: defCPU + defMEM, waste: waste})
+	}
+	sort.Slice(s, func(i, j int) bool {
+		if s[i].score != s[j].score {
+			return s[i].score < s[j].score
+		}
+		if s[i].defSum != s[j].defSum {
+			return s[i].defSum < s[j].defSum
+		}
+		if s[i].waste != s[j].waste {
+			return s[i].waste < s[j].waste
+		}
+		return s[i].n.Name < s[j].n.Name
+	})
+	out := make([]*nLite, 0, len(s))
+	for _, e := range s {
+		out = append(out, e.n)
+	}
+	return out
+}
+
+// --- Minimal virtual planner for one target node (no real mutations) ---
+
+func planOnTargetVirtual(
+	p *pLite,
+	A *nLite,
+	order []*nLite,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	rng *rand.Rand,
+	capMoves int,
+) ([]moveLite, bool) {
+	needCPU := max64(0, p.CPUm-A.FreeCPUm)
+	needMem := max64(0, p.MemBytes-A.FreeMemBytes)
+	if needCPU == 0 && needMem == 0 {
+		return nil, true
+	}
+
+	delta := map[string]deltaDM{}
+	chosen := map[string]struct{}{}
+	moves := make([]moveLite, 0, 8)
+
+	victims := rankVictimsOnNode(A, needCPU, needMem, moveGate, movedUIDs, order)
+	if len(victims) > 1 && rng.Intn(4) == 0 {
+		i, j := rng.Intn(len(victims)), rng.Intn(len(victims))
+		victims[i], victims[j] = victims[j], victims[i]
+	}
+
+	attempts := 0
+	for _, v := range victims {
+		if attempts >= SolverSwapMaxTrialsPerNode {
+			break
+		}
+		if _, seen := chosen[v.UID]; seen {
+			continue
+		}
+
+		// (1) direct move v -> D (honor cap)
+		if D := bestDestUnderDelta(v, A.Name, order, delta); D != nil {
+			if len(moves)+1 > capMoves {
+				return nil, false // exceeded budget → let caller try another trial
+			}
+			moves = append(moves, moveLite{UID: v.UID, From: A.Name, To: D.Name})
+			addDelta(delta, A.Name, D.Name, v.CPUm, v.MemBytes)
+			needCPU = max64(0, needCPU-v.CPUm)
+			needMem = max64(0, needMem-v.MemBytes)
+			chosen[v.UID] = struct{}{}
+			if needCPU == 0 && needMem == 0 {
+				return moves, true
+			}
+			attempts++
+			continue
+		}
+
+		// (2) swap v <-> q (counts as 2 moves, honor cap)
+		if B, q := bestSwapUnderDelta(A, v, needCPU, needMem, order, delta, moveGate, movedUIDs, chosen); B != nil && q != nil {
+			if len(moves)+2 > capMoves {
+				return nil, false // swap would exceed budget → new trial
+			}
+			moves = append(moves,
+				moveLite{UID: v.UID, From: A.Name, To: B.Name},
+				moveLite{UID: q.UID, From: B.Name, To: A.Name},
+			)
+			da := delta[A.Name]
+			db := delta[B.Name]
+			da.cpu += v.CPUm - q.CPUm
+			da.mem += v.MemBytes - q.MemBytes
+			db.cpu += q.CPUm - v.CPUm
+			db.mem += q.MemBytes - v.MemBytes
+			delta[A.Name] = da
+			delta[B.Name] = db
+
+			// recompute remaining need for A under delta
+			needCPU = max64(0, p.CPUm-(A.FreeCPUm+delta[A.Name].cpu))
+			needMem = max64(0, p.MemBytes-(A.FreeMemBytes+delta[A.Name].mem))
+
+			chosen[v.UID] = struct{}{}
+			chosen[q.UID] = struct{}{}
+			if needCPU == 0 && needMem == 0 {
+				return moves, true
+			}
+			attempts++
+			continue
+		}
+
+		attempts++
+	}
+
+	return nil, false
+}
+
+func addDelta(delta map[string]deltaDM, from, to string, cpu, mem int64) {
+	da := delta[from]
+	da.cpu += cpu
+	da.mem += mem
+	delta[from] = da
+	db := delta[to]
+	db.cpu -= cpu
+	db.mem -= mem
+	delta[to] = db
+}
+
+func bestDestUnderDelta(q *pLite, src string, order []*nLite, delta map[string]deltaDM) *nLite {
+	var best *nLite
+	bestCPUWaste := int64(math.MaxInt64)
+	bestMEMWaste := int64(math.MaxInt64)
+	for _, n := range order {
+		if n.Name == src {
+			continue
+		}
+		d := delta[n.Name]
+		if (n.FreeCPUm+d.cpu) >= q.CPUm && (n.FreeMemBytes+d.mem) >= q.MemBytes {
+			cw := (n.FreeCPUm + d.cpu) - q.CPUm
+			mw := (n.FreeMemBytes + d.mem) - q.MemBytes
+			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && (best == nil || n.Name < best.Name)))) {
+				best = n
+				bestCPUWaste, bestMEMWaste = cw, mw
+			}
+		}
+	}
+	return best
+}
+
+func bestSwapUnderDelta(
+	A *nLite,
+	v *pLite,
+	needCPU, needMem int64,
+	order []*nLite,
+	delta map[string]deltaDM,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	chosen map[string]struct{},
+) (*nLite, *pLite) {
+	var bestB *nLite
+	var bestQ *pLite
+	bestGain := int64(math.MinInt64)
+
+	for _, B := range order {
+		if B.Name == A.Name {
+			continue
+		}
+		db := delta[B.Name]
+		for _, q := range B.Pods {
+			if !canMove(q, moveGate) {
+				continue
+			}
+			if _, used := chosen[q.UID]; used {
+				continue
+			}
+			finalA_CPU := (A.FreeCPUm + delta[A.Name].cpu) + v.CPUm - q.CPUm
+			finalA_MEM := (A.FreeMemBytes + delta[A.Name].mem) + v.MemBytes - q.MemBytes
+			finalB_CPU := (B.FreeCPUm + db.cpu) + q.CPUm - v.CPUm
+			finalB_MEM := (B.FreeMemBytes + db.mem) + q.MemBytes - v.MemBytes
+			if finalA_CPU < 0 || finalA_MEM < 0 || finalB_CPU < 0 || finalB_MEM < 0 {
+				continue
+			}
+			// Limit gains by the remaining need on A
+			gainCPU := min64(v.CPUm, needCPU) - min64(q.CPUm, needCPU)
+			gainMEM := min64(v.MemBytes, needMem) - min64(q.MemBytes, needMem)
+			gain := gainCPU + gainMEM
+
+			mvQ := hasKey(movedUIDs, q.UID)
+			mvBest := bestQ != nil && hasKey(movedUIDs, bestQ.UID)
+
+			if bestQ == nil || gain > bestGain || (gain == bestGain && mvQ && !mvBest) {
+				bestB, bestQ, bestGain = B, q, gain
+			}
+		}
+	}
+	return bestB, bestQ
+}
+
+// Utility to rebuild pod map from current nodes (for applyTwoPhase).
+func buildAllPodsMap(order []*nLite) map[string]*pLite {
+	m := make(map[string]*pLite, 256)
+	for _, n := range order {
+		for _, p := range n.Pods {
+			m[p.UID] = p
+		}
+	}
+	return m
+}
+
+// -----------------------------------------------------------------------------
+// Victim ranking (reused, compact)
+// -----------------------------------------------------------------------------
+
+func rankVictimsOnNode(
+	A *nLite,
+	needCPU, needMem int64,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	order []*nLite,
+) []*pLite {
+	cands := make([]*pLite, 0, len(A.Pods))
+	for _, q := range A.Pods {
+		if !canMove(q, moveGate) {
+			continue
+		}
+		cands = append(cands, q)
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+
+	type scored struct {
+		q           *pLite
+		singleCover bool
+		relocCount  int
+		overshoot   int64
+		alreadyMv   bool
+	}
+	sc := make([]scored, 0, len(cands))
+	for _, q := range cands {
+		_, already := movedUIDs[q.UID]
+		single := (q.CPUm >= needCPU && q.MemBytes >= needMem)
+		ov := max64(0, q.CPUm-needCPU) + max64(0, q.MemBytes-needMem)
+		rc := 0
+		for _, n := range order {
+			if n.Name == A.Name {
+				continue
+			}
+			if n.fits(q.CPUm, q.MemBytes) {
+				rc++
+			}
+		}
+		sc = append(sc, scored{q: q, singleCover: single, relocCount: rc, overshoot: ov, alreadyMv: already})
+	}
+	sort.Slice(sc, func(i, j int) bool {
+		if sc[i].alreadyMv != sc[j].alreadyMv {
+			return sc[i].alreadyMv
+		}
+		if sc[i].singleCover != sc[j].singleCover {
+			return sc[i].singleCover
+		}
+		if sc[i].relocCount != sc[j].relocCount {
+			return sc[i].relocCount > sc[j].relocCount
+		}
+		if sc[i].overshoot != sc[j].overshoot {
+			return sc[i].overshoot < sc[j].overshoot
+		}
+		qi, qj := sc[i].q, sc[j].q
+		if qi.Priority != qj.Priority {
+			return qi.Priority < qj.Priority
+		}
+		si, sj := qi.CPUm*qi.MemBytes, qj.CPUm*qj.MemBytes
+		if si != sj {
+			return si > sj
+		}
+		if qi.CPUm != qj.CPUm {
+			return qi.CPUm < qj.CPUm
+		}
+		if qi.MemBytes != qj.MemBytes {
+			return qi.MemBytes < qj.MemBytes
+		}
+		return qi.UID < qj.UID
+	})
+	limit := SolverSwapMaxVictimsPerNode
+	if limit > 0 && len(sc) > limit {
+		sc = sc[:limit]
+	}
+	out := make([]*pLite, 0, len(sc))
+	for _, s := range sc {
+		out = append(out, s.q)
+	}
+	return out
+}
+
+// -----------------------------------------------------------------------------
+// Evictions: strictly-lower priority & enabling-only; largest by size
+// -----------------------------------------------------------------------------
+
+func pickLargestEnablingEviction(
+	order []*nLite,
+	p *pLite,
+	evictGate *int32,
+	movedUIDs map[string]struct{},
 ) (*pLite, *nLite) {
+	type cand struct {
+		v  *pLite
+		on *nLite
+	}
+	cands := make([]cand, 0, 64)
+	minPrioSet := false
+	var minPrio int32
 
-	var bestPod *pLite
-	var bestNode *nLite
-
+	// Build enabling candidates and track the minimum priority among them.
 	for _, n := range order {
 		for _, q := range n.Pods {
-			if _, wasMoved := moved[q.UID]; !wasMoved {
-				continue
+			if !canEvict(q, evictGate) {
+				continue // enforces q.Priority < gate (i.e., < p.Priority in batch)
 			}
-			if !canEvictWithGate(q, allowPriPtr) {
-				continue
-			}
-			// Would evicting q on n make the needed pod fit here?
-			if n.FreeCPUm+q.CPUm >= need.CPUm && n.FreeMemBytes+q.MemBytes >= need.MemBytes {
-				// Keep the same tiebreakers you already use.
-				if bestPod == nil || q.Priority < bestPod.Priority ||
-					(q.Priority == bestPod.Priority && (q.CPUm+q.MemBytes) > (bestPod.CPUm+bestPod.MemBytes)) {
-					bestPod, bestNode = q, n
+			// enabling: evicting q must allow direct placement of p on n
+			if n.FreeCPUm+q.CPUm >= p.CPUm && n.FreeMemBytes+q.MemBytes >= p.MemBytes {
+				cands = append(cands, cand{v: q, on: n})
+				if !minPrioSet || q.Priority < minPrio {
+					minPrio = q.Priority
+					minPrioSet = true
 				}
 			}
 		}
 	}
-	return bestPod, bestNode
+	if len(cands) == 0 {
+		return nil, nil
+	}
+
+	// Keep only the lowest-priority tier.
+	kept := cands[:0]
+	for _, c := range cands {
+		if c.v.Priority == minPrio {
+			kept = append(kept, c)
+		}
+	}
+	cands = kept
+
+	// Sort within the lowest-priority tier:
+	// alreadyMoved → size desc → CPU desc → MEM desc → node name asc → UID asc
+	sort.Slice(cands, func(i, j int) bool {
+		vi, vj := cands[i].v, cands[j].v
+
+		mi := hasKey(movedUIDs, vi.UID)
+		mj := hasKey(movedUIDs, vj.UID)
+		if mi != mj {
+			return mi // prefer already moved
+		}
+
+		si, sj := vi.CPUm*vi.MemBytes, vj.CPUm*vj.MemBytes
+		if si != sj {
+			return si > sj // larger first
+		}
+		if vi.CPUm != vj.CPUm {
+			return vi.CPUm > vj.CPUm
+		}
+		if vi.MemBytes != vj.MemBytes {
+			return vi.MemBytes > vj.MemBytes
+		}
+		if cands[i].on.Name != cands[j].on.Name {
+			return cands[i].on.Name < cands[j].on.Name
+		}
+		return vi.UID < vj.UID
+	})
+
+	return cands[0].v, cands[0].on
+}
+
+func hasKey(m map[string]struct{}, k string) bool { _, ok := m[k]; return ok }
+
+// -----------------------------------------------------------------------------
+// Gates (same semantics as before)
+// -----------------------------------------------------------------------------
+
+func canMove(p *pLite, gate *int32) bool {
+	if p == nil || p.Node == "" || p.Protected {
+		return false
+	}
+	if gate == nil {
+		return true
+	}
+	return p.Priority <= *gate
+}
+
+func canEvict(p *pLite, gate *int32) bool {
+	if p == nil || p.Protected {
+		return false
+	}
+	if gate == nil {
+		return true
+	}
+	return p.Priority < *gate
 }
