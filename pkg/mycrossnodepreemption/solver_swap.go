@@ -52,7 +52,7 @@ func runSolverSwap(in SolverInput) *SolverOutput {
 	}
 
 	// --- Helper: place a single pod with given gate (<= for moves, < for evict) ---
-	placeOne := func(p *pLite, gate int32) bool {
+	placeOne := func(p *pLite, gatePtr *int32) bool {
 		evicted := 0
 		for {
 			// 0) direct fit
@@ -65,7 +65,7 @@ func runSolverSwap(in SolverInput) *SolverOutput {
 			// 1) moves-only
 			triedPlans := map[string]struct{}{}
 			bm, ba, found, _ := tryRandomSwapPlansBatch(
-				nodes, allPods, order, []*pLite{p}, rng, triedPlans, &gate, movedUIDs,
+				nodes, allPods, order, []*pLite{p}, rng, triedPlans, gatePtr, movedUIDs,
 			)
 			if found && verifyCoalescedPlan(nodes, allPods, bm, nil, "") && applyTwoPhase(nodes, allPods, bm) {
 				for _, mv := range bm {
@@ -84,51 +84,47 @@ func runSolverSwap(in SolverInput) *SolverOutput {
 					newPlacements[p.UID] = to
 					return true
 				}
-				// fallthrough to eviction if still not placed
 			}
 
-			// 2) single eviction, then loop back to direct→moves
+			// 2) bounded eviction and retry
 			if evicted >= SolverSwapMaxEvictionsPerPod {
 				return false
 			}
-			v, on := pickLowestPriorityGlobalForBatch(order, &gate, movedUIDs)
+			v, on := pickLowestPriorityGlobalForBatch(order, gatePtr, movedUIDs)
 			if v == nil || on == nil {
 				return false
 			}
 			on.remove(v)
 			evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
 			evicted++
-
-			// loop continues: try direct fit next, then moves again
 		}
 	}
 
 	// --- Execute depending on mode ---
 	if singleMode {
-		gate := in.Preemptor.Priority
-		ok := placeOne(worklist[0], gate)
+		gp := in.Preemptor.Priority
+		ok := placeOne(worklist[0], &gp) // keep priority gating here
 		if !ok {
-			klog.InfoS("random-swap: single preemptor infeasible under <=-move/<-evict gate", "preemptor", worklist[0].UID, "prio", gate)
+			klog.InfoS("random-swap: single preemptor infeasible under <=-move/<-evict gate", "preemptor", worklist[0].UID, "prio", gp)
 			return stableOutput("INFEASIBLE", newPlacements, evicts, in)
 		}
 		return stableOutput("FEASIBLE", newPlacements, evicts, in)
 	}
 
-	// Batch mode: process in prio-desc order; stop at first failure and discard rest (<= that prio)
+	// Batch mode loop
 	var (
 		stop       bool
 		stopAtPrio int32
 	)
 	for _, p := range worklist {
 		if stop && p.Priority <= stopAtPrio {
-			// Discard the rest (<= stop prio)
 			break
 		}
-		gate := p.Priority
-		if ok := placeOne(p, gate); !ok {
+		if ok := placeOne(p, nil); !ok { // <- no priority restriction in batch
 			stop = true
 			stopAtPrio = p.Priority
-			klog.InfoS("random-swap: stopping batch at priority; discarding remainder", "priority", stopAtPrio, "uid", p.UID)
+			klog.InfoS("random-swap: stopping batch at priority; discarding remainder",
+				"priority", stopAtPrio, "uid", p.UID)
 			break
 		}
 	}

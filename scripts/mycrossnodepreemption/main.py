@@ -216,6 +216,10 @@ def solve(instance: dict) -> dict:
                 # no extra guard — solver may move or evict as needed
                 pass
     else:
+        # In batch mode (no single preemptor):
+        # Protected pods must stay put (no evict, no move)
+        # Compared to single-preemptor mode, we allow to move all already running pods no matter their priority.
+        # Also we do not restrict any evictions, however, the objective will try to minimize them, so in practice it should be ok.
         for i in running_idxs:
             if p_prot(i):
                 m.Add(evict[i] == 0)
