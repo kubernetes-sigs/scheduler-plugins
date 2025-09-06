@@ -5,55 +5,153 @@ import (
 	"math"
 	"runtime"
 	"sort"
-	"time"
 
 	"k8s.io/klog/v2"
 )
 
-type chainCfg struct {
-	MaxDepth          int
-	MaxVictimsPerNode int
-	MaxDestsPerLevel  int
-	MaxTotalMoves     int // NEW: cap total unique pod moves in a plan
-}
+func runSolverBfs(in SolverInput) *SolverOutput {
+	nodes, pods, _, order, preemptor := buildClusterState(in)
 
-var defaultChainCfg = chainCfg{
-	MaxDepth:          5,
-	MaxVictimsPerNode: 0,
-	MaxDestsPerLevel:  0,
+	newPlacements := make(map[string]string)
+	var evicts []Placement
+
+	// Initialize RNG, a source of randomness
+	//rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	if preemptor == nil {
+		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
+	}
+
+	cpuFree, memFree := clusterTotalFree(order)
+	if !spaceForIncoming(preemptor.CPUm, preemptor.MemBytes, cpuFree, memFree) {
+		klog.InfoS("BFS: relocate; total free insufficient -> evict path")
+		goto tryEvict
+	}
+	goto tryDirectFit
+
+tryDirectFit:
+	klog.InfoS("BFS: direct-fit", "preemptor", preemptor.UID, "needCPU", preemptor.CPUm, "needMem", preemptor.MemBytes)
+
+	if bestNode, ok := bestDirectFit(order, preemptor); ok {
+		nodes[bestNode].addPod(preemptor)
+		newPlacements[preemptor.UID] = bestNode
+		return stableOutput("FEASIBLE", newPlacements, evicts, in)
+	}
+	goto tryRelocate
+
+tryRelocate:
+	klog.InfoS("BFS: relocate", "preemptor", preemptor.UID, "needCPU", preemptor.CPUm, "needMem", preemptor.MemBytes)
+
+	for _, t := range targetsBySmallDeficit(order, preemptor) {
+		if t.fits(preemptor.CPUm, preemptor.MemBytes) {
+			t.addPod(preemptor)
+			newPlacements[preemptor.UID] = t.Name
+			return stableOutput("FEASIBLE", newPlacements, evicts, in)
+		}
+
+		needCPU := max64(0, preemptor.CPUm-t.FreeCPUm)
+		needMem := max64(0, preemptor.MemBytes-t.FreeMemBytes)
+
+		fd, ok := bfsFreeTargets(nodes, t.Name, needCPU, needMem, preemptor.Priority)
+		if !ok {
+			continue
+		}
+
+		// coalesce to (from,to) pairs; verify and apply
+		orig := map[string]string{}
+		for uid, p := range pods {
+			if p.Node != "" {
+				orig[uid] = p.Node
+			}
+		}
+		coalesced := squashMoves(fd, orig)
+
+		// Log the BFS result: raw chain steps and coalesced plan
+		klog.InfoS("bfs: plan-found",
+			"target", t.Name,
+			"coalescedMoves", len(coalesced),
+		)
+		for i, mv := range coalesced {
+			klog.InfoS("bfs: coalesced-move", "i", i, "uid", mv.UID, "from", mv.From, "to", mv.To)
+		}
+
+		if !verifyCoalescedPlan(nodes, pods, coalesced, preemptor, t.Name) {
+			klog.V(V2).InfoS("bfs: verifier rejected plan", "target", t.Name, "moves", len(coalesced))
+			continue
+		}
+		if !applyTwoPhase(nodes, pods, coalesced) {
+			klog.InfoS("bfs: applyTwoPhase rejected plan", "target", t.Name, "moves", len(coalesced))
+			continue
+		}
+		for _, mv := range coalesced {
+			newPlacements[mv.UID] = mv.To
+		}
+		t.addPod(preemptor)
+		newPlacements[preemptor.UID] = t.Name
+
+		// paranoid re-verify
+		if !verifyCoalescedPlan(nodes, pods, nil, nil, "") {
+			klog.InfoS("bfs: post-apply verify failed unexpectedly")
+			return stableOutput("INFEASIBLE", newPlacements, evicts, in)
+		}
+		return stableOutput("FEASIBLE", newPlacements, evicts, in)
+	}
+
+tryEvict:
+	if v, on := pickEvictionThatEnablesFit(order, preemptor); v != nil {
+		on.remove(v)
+		evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
+		klog.InfoS("bfs: evict-one-and-retry", "victim", v.UID, "from", on.Name)
+		goto tryDirectFit
+	}
+
+	return stableOutput("INFEASIBLE", newPlacements, evicts, in)
 }
 
 type pLite struct {
-	UID       string
-	CPUm      int64
-	MemBytes  int64
-	Priority  int32
+	// Unique identifier of the pod
+	UID string
+	// Requested CPU in milliCPU
+	CPUm int64
+	// Requested memory in bytes
+	MemBytes int64
+	// Priority of the pod
+	Priority int32
+	// Whether the pod is protected
 	Protected bool
-	Node      string // "" if pending
-	origNode  string // snapshot of original node for coalescing
+	// Current node of the pod; "" if pending
+	Node string // "" if pending
+	// Original node of the pod
+	origNode string
 }
 
 type nLite struct {
-	Name    string
-	CapCPU  int64
-	CapMem  int64
-	FreeCPU int64
-	FreeMem int64
-	Pods    map[string]*pLite
+	// Name of the node
+	Name string
+	// Total capacity on the node of milliCPU
+	CapCPUm int64
+	// Total capacity on the node of memory in bytes
+	CapMemBytes int64
+	// Free capacity on the node of milliCPU
+	FreeCPUm int64
+	// Free capacity on the node of memory in bytes
+	FreeMemBytes int64
+	// Pods on the node
+	Pods map[string]*pLite
 }
 
-func (n *nLite) fits(cpu, mem int64) bool { return n.FreeCPU >= cpu && n.FreeMem >= mem }
-func (n *nLite) add(p *pLite) {
-	n.FreeCPU -= p.CPUm
-	n.FreeMem -= p.MemBytes
+func (n *nLite) fits(cpu, mem int64) bool { return n.FreeCPUm >= cpu && n.FreeMemBytes >= mem }
+func (n *nLite) addPod(p *pLite) {
+	n.FreeCPUm -= p.CPUm
+	n.FreeMemBytes -= p.MemBytes
 	n.Pods[p.UID] = p
 	p.Node = n.Name
 }
 func (n *nLite) remove(p *pLite) {
 	if _, ok := n.Pods[p.UID]; ok {
 		delete(n.Pods, p.UID)
-		n.FreeCPU += p.CPUm
-		n.FreeMem += p.MemBytes
+		n.FreeCPUm += p.CPUm
+		n.FreeMemBytes += p.MemBytes
 		p.Node = ""
 	}
 }
@@ -98,11 +196,11 @@ func verifyCoalescedPlan(nodes map[string]*nLite, all map[string]*pLite, moves [
 	ok := true
 	for name, dd := range per {
 		if n := nodes[name]; n != nil {
-			fCPU := n.FreeCPU + dd.cpu
-			fMEM := n.FreeMem + dd.mem
+			fCPU := n.FreeCPUm + dd.cpu
+			fMEM := n.FreeMemBytes + dd.mem
 			if fCPU < 0 || fMEM < 0 {
 				klog.InfoS("verify: final negative free", "node", name,
-					"freeCPU_now", n.FreeCPU, "freeMem_now", n.FreeMem,
+					"freeCPU_now", n.FreeCPUm, "freeMem_now", n.FreeMemBytes,
 					"deltaCPU", dd.cpu, "deltaMem", dd.mem,
 					"finalCPU", fCPU, "finalMem", fMEM)
 				ok = false
@@ -121,19 +219,19 @@ func verifyCoalescedPlan(nodes map[string]*nLite, all map[string]*pLite, moves [
 // ========================= Helpers / scoring =========================
 
 func bestDirectFit(order []*nLite, p *pLite) (string, bool) {
-	best := ""
+	bestNode := ""
 	bestCPUWaste := int64(math.MaxInt64)
 	bestMEMWaste := int64(math.MaxInt64)
 	for _, n := range order {
 		if n.fits(p.CPUm, p.MemBytes) {
-			cw := n.FreeCPU - p.CPUm
-			mw := n.FreeMem - p.MemBytes
-			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && n.Name < best))) {
-				best, bestCPUWaste, bestMEMWaste = n.Name, cw, mw
+			cw := n.FreeCPUm - p.CPUm
+			mw := n.FreeMemBytes - p.MemBytes
+			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && n.Name < bestNode))) {
+				bestNode, bestCPUWaste, bestMEMWaste = n.Name, cw, mw
 			}
 		}
 	}
-	return best, best != ""
+	return bestNode, bestNode != ""
 }
 
 func eligibleVictimsSorted(n *nLite, prioLimit int32, capK int, needCPU, needMem int64) []*pLite {
@@ -183,11 +281,11 @@ func destsByFree(nodes map[string]*nLite, capK int) []*nLite {
 		ns = append(ns, n)
 	}
 	sort.Slice(ns, func(i, j int) bool {
-		if ns[i].FreeCPU != ns[j].FreeCPU {
-			return ns[i].FreeCPU > ns[j].FreeCPU
+		if ns[i].FreeCPUm != ns[j].FreeCPUm {
+			return ns[i].FreeCPUm > ns[j].FreeCPUm
 		}
-		if ns[i].FreeMem != ns[j].FreeMem {
-			return ns[i].FreeMem > ns[j].FreeMem
+		if ns[i].FreeMemBytes != ns[j].FreeMemBytes {
+			return ns[i].FreeMemBytes > ns[j].FreeMemBytes
 		}
 		return ns[i].Name < ns[j].Name
 	})
@@ -251,11 +349,11 @@ func applyTwoPhase(nodes map[string]*nLite, all map[string]*pLite, moves []moveL
 	}
 	for name, dd := range per {
 		if n := nodes[name]; n != nil {
-			if n.FreeCPU+dd.cpu < 0 || n.FreeMem+dd.mem < 0 {
+			if n.FreeCPUm+dd.cpu < 0 || n.FreeMemBytes+dd.mem < 0 {
 				klog.InfoS("apply: reject, final negative free", "node", name,
-					"freeCPU_now", n.FreeCPU, "freeMem_now", n.FreeMem,
+					"freeCPU_now", n.FreeCPUm, "freeMem_now", n.FreeMemBytes,
 					"deltaCPU", dd.cpu, "deltaMem", dd.mem,
-					"finalCPU", n.FreeCPU+dd.cpu, "finalMem", n.FreeMem+dd.mem)
+					"finalCPU", n.FreeCPUm+dd.cpu, "finalMem", n.FreeMemBytes+dd.mem)
 				for i, mv := range moves {
 					klog.InfoS("  mv", "i", i, "uid", mv.UID, "from", mv.From, "to", mv.To)
 				}
@@ -278,11 +376,11 @@ func applyTwoPhase(nodes map[string]*nLite, all map[string]*pLite, moves []moveL
 		if n := nodes[mv.To]; n != nil {
 			if !n.fits(p.CPUm, p.MemBytes) {
 				klog.InfoS("apply: reject, does not fit on destination",
-					"uid", p.UID, "to", n.Name, "freeCPU_now", n.FreeCPU, "freeMem_now", n.FreeMem,
+					"uid", p.UID, "to", n.Name, "freeCPU_now", n.FreeCPUm, "freeMem_now", n.FreeMemBytes,
 					"needCPU", p.CPUm, "needMem", p.MemBytes)
 				return false
 			}
-			n.add(p)
+			n.addPod(p)
 		}
 	}
 	return true
@@ -300,7 +398,7 @@ func pickEvictionThatEnablesFit(order []*nLite, pre *pLite) (*pLite, *nLite) {
 			if q.Protected || q.Priority >= pre.Priority {
 				continue
 			}
-			if n.FreeCPU+q.CPUm >= pre.CPUm && n.FreeMem+q.MemBytes >= pre.MemBytes {
+			if n.FreeCPUm+q.CPUm >= pre.CPUm && n.FreeMemBytes+q.MemBytes >= pre.MemBytes {
 				cands = append(cands, cand{v: q, on: n})
 			}
 		}
@@ -368,200 +466,6 @@ func stableOutput(status string, placements map[string]string, evicts []Placemen
 
 // ============================ small utils ============================
 
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-func min64(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// ============================= BFS =============================
-
-func runSolverBfs(in SolverInput) *SolverOutput {
-	cfg := defaultChainCfg
-
-	// --- build nodes (unchanged) ---
-	nodes := make(map[string]*nLite, len(in.Nodes))
-	order := make([]*nLite, 0, len(in.Nodes))
-	for i := range in.Nodes {
-		n := &nLite{
-			Name:    in.Nodes[i].Name,
-			CapCPU:  in.Nodes[i].CPUm,
-			CapMem:  in.Nodes[i].MemBytes,
-			FreeCPU: in.Nodes[i].CPUm,
-			FreeMem: in.Nodes[i].MemBytes,
-			Pods:    make(map[string]*pLite, 32),
-		}
-		nodes[n.Name] = n
-		order = append(order, n)
-	}
-	sort.Slice(order, func(i, j int) bool { return order[i].Name < order[j].Name })
-
-	// --- build pods (unchanged) ---
-	all := make(map[string]*pLite, len(in.Pods)+1)
-	var pre *pLite
-	if in.Preemptor != nil {
-		pre = &pLite{
-			UID:       in.Preemptor.UID,
-			CPUm:      in.Preemptor.CPU_m,
-			MemBytes:  in.Preemptor.MemBytes,
-			Priority:  in.Preemptor.Priority,
-			Protected: in.Preemptor.Protected,
-		}
-		all[pre.UID] = pre
-	}
-	for i := range in.Pods {
-		sp := in.Pods[i]
-		p := &pLite{
-			UID:       sp.UID,
-			CPUm:      sp.CPU_m,
-			MemBytes:  sp.MemBytes,
-			Priority:  sp.Priority,
-			Protected: sp.Protected,
-			Node:      sp.Where,
-			origNode:  sp.Where,
-		}
-		all[p.UID] = p
-		if p.Node != "" {
-			if n := nodes[p.Node]; n != nil {
-				n.add(p)
-			}
-		}
-	}
-
-	placements := make(map[string]string)
-	var evicts []Placement
-	if pre == nil {
-		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
-	}
-
-	// direct fit first (unchanged)
-	if to, ok := bestDirectFit(order, pre); ok {
-		nodes[to].add(pre)
-		placements[pre.UID] = to
-		return stableOutput("FEASIBLE", placements, evicts, in)
-	}
-
-	// aggregate free check
-	totalFree := func() (int64, int64) {
-		var c, m int64
-		for _, n := range order {
-			c += n.FreeCPU
-			m += n.FreeMem
-		}
-		return c, m
-	}
-
-	// targets sorted by smallest deficit (unchanged)
-	targets := func() []*nLite {
-		ts := make([]*nLite, len(order))
-		copy(ts, order)
-		sort.Slice(ts, func(i, j int) bool {
-			diCPU := max64(0, pre.CPUm-ts[i].FreeCPU)
-			djCPU := max64(0, pre.CPUm-ts[j].FreeCPU)
-			if diCPU != djCPU {
-				return diCPU < djCPU
-			}
-			diMem := max64(0, pre.MemBytes-ts[i].FreeMem)
-			djMem := max64(0, pre.MemBytes-ts[j].FreeMem)
-			if diMem != djMem {
-				return diMem < djMem
-			}
-			return ts[i].Name < ts[j].Name
-		})
-		return ts
-	}
-
-	trace := fmt.Sprintf("%s-%d", pre.UID, time.Now().UnixNano())
-
-tryRelocate:
-	klog.InfoS("bfs-relocate: start", "trace", trace, "preemptor", pre.UID, "needCPU", pre.CPUm, "needMem", pre.MemBytes)
-
-	if cTot, mTot := totalFree(); cTot < pre.CPUm || mTot < pre.MemBytes {
-		klog.InfoS("bfs-relocate: total free insufficient -> evict path", "totalFreeCPU", cTot, "totalFreeMem", mTot)
-		goto tryEvict
-	}
-
-	for _, t := range targets() {
-		if t.fits(pre.CPUm, pre.MemBytes) {
-			t.add(pre)
-			placements[pre.UID] = t.Name
-			return stableOutput("FEASIBLE", placements, evicts, in)
-		}
-
-		needCPU := max64(0, pre.CPUm-t.FreeCPU)
-		needMem := max64(0, pre.MemBytes-t.FreeMem)
-
-		fd, ok := bfsFreeTargets(cfg, nodes, t.Name, needCPU, needMem, pre.Priority, trace)
-		if !ok {
-			continue
-		}
-
-		// coalesce to (from,to) pairs; verify and apply
-		orig := map[string]string{}
-		for uid, p := range all {
-			if p.Node != "" {
-				orig[uid] = p.Node
-			}
-		}
-		coalesced := squashMoves(fd, orig)
-
-		// Log the BFS result: raw chain steps and coalesced plan
-		klog.InfoS("bfs: plan-found",
-			"trace", trace,
-			"target", t.Name,
-			"coalescedMoves", len(coalesced),
-		)
-		for i, mv := range coalesced {
-			klog.InfoS("bfs: coalesced-move", "i", i, "uid", mv.UID, "from", mv.From, "to", mv.To)
-		}
-
-		if !verifyCoalescedPlan(nodes, all, coalesced, pre, t.Name) {
-			klog.V(V2).InfoS("bfs: verifier rejected plan", "target", t.Name, "moves", len(coalesced))
-			continue
-		}
-		if !applyTwoPhase(nodes, all, coalesced) {
-			klog.InfoS("bfs: applyTwoPhase rejected plan", "target", t.Name, "moves", len(coalesced))
-			continue
-		}
-		for _, mv := range coalesced {
-			placements[mv.UID] = mv.To
-		}
-		t.add(pre)
-		placements[pre.UID] = t.Name
-
-		// paranoid re-verify
-		if !verifyCoalescedPlan(nodes, all, nil, nil, "") {
-			klog.InfoS("bfs: post-apply verify failed unexpectedly")
-			return stableOutput("INFEASIBLE", placements, evicts, in)
-		}
-		return stableOutput("FEASIBLE", placements, evicts, in)
-	}
-
-tryEvict:
-	if v, on := pickEvictionThatEnablesFit(order, pre); v != nil {
-		on.remove(v)
-		evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
-		klog.InfoS("bfs: evict-one-and-retry", "victim", v.UID, "from", on.Name)
-		goto tryRelocate
-	}
-
-	return stableOutput("INFEASIBLE", placements, evicts, in)
-}
-
 // ----- Pure BFS state for freeing capacity on a set of nodes -----
 
 type deficit struct {
@@ -607,12 +511,10 @@ func cloneDeficits(d []deficit) []deficit {
 // Initial deficit 0 is the root target (where the preemptor will land).
 // Returns: coalesced finalDest + ordered moves if a plan exists within caps.
 func bfsFreeTargets(
-	cfg chainCfg,
 	nodes map[string]*nLite,
 	rootTarget string,
 	rootNeedCPU, rootNeedMem int64,
 	prioLimit int32,
-	trace string,
 ) (map[string]string, bool) {
 
 	init := bfsState{
@@ -648,7 +550,6 @@ func bfsFreeTargets(
 		var ms runtime.MemStats
 		runtime.ReadMemStats(&ms)
 		klog.InfoS("bfs: summary",
-			"trace", trace,
 			"ok", goalDepth >= 0,
 			"goalDepth", goalDepth,
 			"expanded", totalExpanded,
@@ -670,7 +571,7 @@ func bfsFreeTargets(
 		)
 	}()
 
-	for depth := 0; depth <= cfg.MaxDepth; depth++ {
+	for depth := 0; depth <= SolverBfsMaxDepth; depth++ {
 		// goal check within this layer
 		for _, st := range front {
 			if len(st.deficits) == 0 {
@@ -680,7 +581,7 @@ func bfsFreeTargets(
 				return st.finalDest, true
 			}
 		}
-		if depth == cfg.MaxDepth {
+		if depth == SolverBfsMaxDepth {
 			break
 		}
 
@@ -700,7 +601,7 @@ func bfsFreeTargets(
 			vics := eligibleVictimsSorted(
 				nodes[need.node],
 				prioLimit,
-				cfg.MaxVictimsPerNode,
+				SolverBfsMaxVictimsPerNode,
 				need.needCPU,
 				need.needMem,
 			)
@@ -712,7 +613,7 @@ func bfsFreeTargets(
 			}
 
 			// candidate destinations
-			dests := destsByFree(nodes, cfg.MaxDestsPerLevel)
+			dests := destsByFree(nodes, SolverBfsMaxDestsPerLevel)
 
 			for _, v := range vics {
 				if st.finalDest[v.UID] != "" {
@@ -737,8 +638,8 @@ func bfsFreeTargets(
 
 					// destination shortage under current reserve
 					dstRes := st.reserve[dn.Name]
-					needCPU2 := max64(0, v.CPUm-(dn.FreeCPU+dstRes.cpu))
-					needMem2 := max64(0, v.MemBytes-(dn.FreeMem+dstRes.mem))
+					needCPU2 := max64(0, v.CPUm-(dn.FreeCPUm+dstRes.cpu))
+					needMem2 := max64(0, v.MemBytes-(dn.FreeMemBytes+dstRes.mem))
 
 					// progress rule (don't make a worse deficit than we relieve)
 					freedCPU := min64(v.CPUm, need.needCPU)
@@ -868,4 +769,23 @@ func sig(defs []deficit, fd map[string]string, res map[string]resvDelta) string 
 	b = append(b, '|')
 	b = append(b, sigResv(res)...)
 	return string(b)
+}
+
+func targetsBySmallDeficit(order []*nLite, p *pLite) []*nLite {
+	ts := make([]*nLite, len(order))
+	copy(ts, order)
+	sort.Slice(ts, func(i, j int) bool {
+		diCPU := max64(0, p.CPUm-ts[i].FreeCPUm)
+		djCPU := max64(0, p.CPUm-ts[j].FreeCPUm)
+		if diCPU != djCPU {
+			return diCPU < djCPU
+		}
+		diMem := max64(0, p.MemBytes-ts[i].FreeMemBytes)
+		djMem := max64(0, p.MemBytes-ts[j].FreeMemBytes)
+		if diMem != djMem {
+			return diMem < djMem
+		}
+		return ts[i].Name < ts[j].Name
+	})
+	return ts
 }

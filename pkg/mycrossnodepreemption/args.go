@@ -43,3 +43,25 @@ var SolverSwapTimeout = parseTime(getenv("SOLVER_SWAP_TIMEOUT", "500ms"))
 
 // PlanExecutionTimeout is the maximum duration a plan may run before being terminated.
 var PlanExecutionTimeout = parseTime(getenv("PLAN_EXECUTION_TIMEOUT", "60s"))
+
+// ======= BFS solver settings =======
+
+// Maximum search depth (i.e. number of moves allowed to place the preemptor)
+var SolverBfsMaxDepth = parseInt(getenv("SOLVER_BFS_MAX_DEPTH", "5"))
+
+// Maximum number of victims to consider per node
+var SolverBfsMaxVictimsPerNode = parseInt(getenv("SOLVER_BFS_MAX_VICTIMS_PER_NODE", "0"))
+
+// Maximum number of candidate destination nodes to consider per search level
+var SolverBfsMaxDestsPerLevel = parseInt(getenv("SOLVER_BFS_MAX_DESTS_PER_LEVEL", "0"))
+
+// ======= Swap solver settings =======
+
+// Maximum number of moves for the complete plan
+var SolverSwapMaxMovesPerPlan = parseInt(getenv("SOLVER_SWAP_MAX_MOVES_PER_PLAN", "6"))
+
+// Maximum number of swap trials for the complete plan
+var SolverSwapMaxSwapTrials = parseInt(getenv("SOLVER_SWAP_MAX_SWAP_TRIALS", "1000"))
+
+// Maximum number of evictions per pod in the plan
+var SolverSwapMaxEvictionsPerPod = parseInt(getenv("SOLVER_SWAP_MAX_EVICTIONS_PER_POD", "2"))

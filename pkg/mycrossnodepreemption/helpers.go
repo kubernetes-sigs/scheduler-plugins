@@ -1542,6 +1542,12 @@ func parseBool(s string) bool {
 	return v
 }
 
+// parseInt parses an integer string and returns the corresponding int value.
+func parseInt(s string) int {
+	v, _ := strconv.Atoi(s)
+	return v
+}
+
 // parseTime parses a duration string and returns the corresponding time.Duration.
 func parseTime(s string) time.Duration {
 	if d, err := time.ParseDuration(s); err == nil {
