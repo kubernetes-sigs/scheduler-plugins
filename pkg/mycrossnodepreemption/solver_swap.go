@@ -105,12 +105,13 @@ func runSolverSwap(in SolverInput) *SolverOutput {
 			return false
 		}
 
-		// (A) First prefer evicting a pod we already moved in this batch
-		//     *if* that single eviction enables a direct fit for `p`.
-		if mv, on := pickEvictionPreferMovedEnablingDirectFit(order, gatePtr, movedUIDs, p); mv != nil && on != nil {
+		// Only evict strictly-lower priority than the pod we're placing.
+		evictGate := p.Priority
+
+		// (A) Prefer evicting a pod we've already moved if that single eviction
+		//     enables a direct fit for `p`.
+		if mv, on := pickEvictionPreferMovedEnablingDirectFit(order, &evictGate, movedUIDs, p); mv != nil && on != nil {
 			on.remove(mv)
-			// Undo "move counting" for that pod: drop its placement entry and
-			// from the moved set so it doesn't look like a move+evict.
 			delete(newPlacements, mv.UID)
 			delete(movedUIDs, mv.UID)
 			evicts = append(evicts, Placement{Pod: Pod{UID: mv.UID}, Node: on.Name})
@@ -118,9 +119,8 @@ func runSolverSwap(in SolverInput) *SolverOutput {
 			goto tryDirect
 		}
 
-		// (B) Otherwise, behave as before: pick global lowest-priority victim,
-		//     still avoiding already-moved pods.
-		if v, on := pickLowestPriorityGlobalForBatch(order, gatePtr, movedUIDs); v != nil && on != nil {
+		// (B) Otherwise fall back to lowest-priority global victim (still < evictGate).
+		if v, on := pickLowestPriorityGlobalForBatch(order, &evictGate, movedUIDs); v != nil && on != nil {
 			on.remove(v)
 			evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
 			evicted++
