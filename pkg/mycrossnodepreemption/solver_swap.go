@@ -15,116 +15,127 @@ import (
 //
 
 func runSolverSwap(in SolverInput) *SolverOutput {
-	nodes, allPods, pendingPods, order, _ := buildClusterState(in)
+	nodes, allPods, pending, order, _ := buildClusterState(in)
 
 	newPlacements := make(map[string]string)
 	var evicts []Placement
 
-	// Initialize RNG, a source of randomness
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	klog.InfoS("random-swap: start")
-
-	// Decide mode and build the worklist
-	var worklist []*pLite
-	singleMode := false
-	if in.Preemptor != nil {
-		// Single-preemptor mode: only place the preemptor
-		for _, p := range pendingPods {
-			if p.UID == in.Preemptor.UID {
-				worklist = []*pLite{p}
-				singleMode = true
-				break
-			}
-		}
-	} else {
-		// Batch mode: sort by priority desc, then smallest first
-		worklist = append(worklist, pendingPods...)
-		sortPodsByPriorityDescThenSmallestFirst(worklist)
-	}
-
-	// Track pods moved earlier in this batch to prefer them in later moves and avoid evicting them.
-	movedUIDs := make(map[string]struct{})
-
-	if len(worklist) == 0 {
+	if len(pending) == 0 {
 		klog.InfoS("random-swap: nothing to place")
 		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
 	}
 
-	// --- Helper: place a single pod with given gate (<= for moves, < for evict) ---
-	placeOne := func(p *pLite, gatePtr *int32) bool {
-		evicted := 0
-		for {
-			// 0) direct fit
-			if to, ok := bestDirectFit(order, p); ok {
-				nodes[to].addPod(p)
-				newPlacements[p.UID] = to
-				return true
-			}
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	klog.InfoS("random-swap: start")
 
-			// 1) moves-only
-			triedPlans := map[string]struct{}{}
-			bm, ba, found, _ := tryRandomSwapPlansBatch(
-				nodes, allPods, order, []*pLite{p}, rng, triedPlans, gatePtr, movedUIDs,
-			)
-			if found && verifyCoalescedPlan(nodes, allPods, bm, nil, "") && applyTwoPhase(nodes, allPods, bm) {
-				for _, mv := range bm {
-					newPlacements[mv.UID] = mv.To
-					movedUIDs[mv.UID] = struct{}{}
-				}
-				if target := ba[p.UID]; target != "" {
-					if n := nodes[target]; n != nil && n.fits(p.CPUm, p.MemBytes) {
-						n.addPod(p)
-						newPlacements[p.UID] = n.Name
-						return true
-					}
-				}
-				if to, ok := bestDirectFit(order, p); ok {
-					nodes[to].addPod(p)
-					newPlacements[p.UID] = to
-					return true
-				}
+	// Worklist + gating policy (nil gate in batch mode == no priority restriction).
+	var (
+		worklist []*pLite
+		single   bool
+		gatePtr  *int32
+	)
+	if in.Preemptor != nil {
+		for _, p := range pending {
+			if p.UID == in.Preemptor.UID {
+				worklist = []*pLite{p}
+				single = true
+				g := in.Preemptor.Priority
+				gatePtr = &g // restrict moves/evictions to <= / <
+				break
 			}
-
-			// 2) bounded eviction and retry
-			if evicted >= SolverSwapMaxEvictionsPerPod {
-				return false
-			}
-			v, on := pickLowestPriorityGlobalForBatch(order, gatePtr, movedUIDs)
-			if v == nil || on == nil {
-				return false
-			}
-			on.remove(v)
-			evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
-			evicted++
 		}
 	}
+	if !single {
+		worklist = append(worklist, pending...)
+		sortPodsByPriorityDescThenSmallestFirst(worklist)
+		gatePtr = nil // batch: unrestricted (still respects Protected)
+	}
 
-	// --- Execute depending on mode ---
-	if singleMode {
-		gp := in.Preemptor.Priority
-		ok := placeOne(worklist[0], &gp) // keep priority gating here
-		if !ok {
-			klog.InfoS("random-swap: single preemptor infeasible under <=-move/<-evict gate", "preemptor", worklist[0].UID, "prio", gp)
+	// Prefer already-moved pods within a batch; avoid evicting them.
+	movedUIDs := make(map[string]struct{})
+
+	// Helper: after a plan is applied, try preferred target, else best fit.
+	placeAfterMoves := func(p *pLite, prefer string) bool {
+		if prefer != "" {
+			if n := nodes[prefer]; n != nil && n.fits(p.CPUm, p.MemBytes) {
+				n.addPod(p)
+				newPlacements[p.UID] = n.Name
+				return true
+			}
+		}
+		if to, ok := bestDirectFit(order, p); ok {
+			nodes[to].addPod(p)
+			newPlacements[p.UID] = to
+			return true
+		}
+		return false
+	}
+
+	// Place a single pod using labels (tryDirect → tryMoves → tryEvict → tryDirect…)
+	placeOne := func(p *pLite) bool {
+		evicted := 0
+
+	tryDirect:
+		if to, ok := bestDirectFit(order, p); ok {
+			nodes[to].addPod(p)
+			newPlacements[p.UID] = to
+			return true
+		}
+		goto tryMoves
+
+	tryMoves:
+		tried := map[string]struct{}{}
+		mvs, assign, found, _ := tryRandomSwapPlansBatch(
+			nodes, allPods, order, []*pLite{p}, rng, tried, gatePtr, movedUIDs,
+		)
+		if found && verifyCoalescedPlan(nodes, allPods, mvs, nil, "") && applyTwoPhase(nodes, allPods, mvs) {
+			for _, mv := range mvs {
+				newPlacements[mv.UID] = mv.To
+				movedUIDs[mv.UID] = struct{}{}
+			}
+			if placeAfterMoves(p, assign[p.UID]) {
+				return true
+			}
+			// fallthrough → eviction
+		}
+		goto tryEvict
+
+	tryEvict:
+		if evicted >= SolverSwapMaxEvictionsPerPod {
+			return false
+		}
+		v, on := pickLowestPriorityGlobalForBatch(order, gatePtr, movedUIDs)
+		if v == nil || on == nil {
+			return false
+		}
+		on.remove(v)
+		evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
+		evicted++
+		goto tryDirect
+	}
+
+	// Execute
+	if single {
+		if !placeOne(worklist[0]) {
+			klog.InfoS("random-swap: single preemptor infeasible under <=-move/<-evict gate",
+				"preemptor", worklist[0].UID, "prio", in.Preemptor.Priority)
 			return stableOutput("INFEASIBLE", newPlacements, evicts, in)
 		}
 		return stableOutput("FEASIBLE", newPlacements, evicts, in)
 	}
 
-	// Batch mode loop
-	var (
-		stop       bool
-		stopAtPrio int32
-	)
+	// Batch: process prio-desc; stop at first failure and discard ≤ that prio.
+	var stop bool
+	var stopAt int32
 	for _, p := range worklist {
-		if stop && p.Priority <= stopAtPrio {
+		if stop && p.Priority <= stopAt {
 			break
 		}
-		if ok := placeOne(p, nil); !ok { // <- no priority restriction in batch
+		if ok := placeOne(p); !ok {
 			stop = true
-			stopAtPrio = p.Priority
+			stopAt = p.Priority
 			klog.InfoS("random-swap: stopping batch at priority; discarding remainder",
-				"priority", stopAtPrio, "uid", p.UID)
+				"priority", stopAt, "uid", p.UID)
 			break
 		}
 	}
