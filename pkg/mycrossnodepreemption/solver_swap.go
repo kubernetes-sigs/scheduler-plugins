@@ -79,77 +79,56 @@ Mode guardrails
 func runSolverSwap(in SolverInput) *SolverOutput {
 	return runSolverCommon(in,
 		// Swap/Virtual planner
-		func(p *pLite, nodes map[string]*nLite, _ map[string]*pLite, order []*nLite,
+		func(p *pLite, nodes map[string]*nLite, pods map[string]*pLite, order []*nLite,
 			moveGate *int32, movedUIDs map[string]struct{}, newPlacements map[string]string,
 		) bool {
-			return placeByMovesOnly(p, nodes, order, moveGate, movedUIDs, newPlacements)
+			return placeByMovesOnly(p, nodes, pods, order, moveGate, movedUIDs, newPlacements)
 		},
 		"swap",
 	)
 }
 
-type deltaDM struct{ cpu, mem int64 }
+type Delta struct{ cpu, mem int64 }
 
 func placeByMovesOnly(
 	p *pLite,
 	nodes map[string]*nLite,
+	pods map[string]*pLite,
 	order []*nLite,
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
 ) bool {
-	targets := orderTargetsByDeficit(order, p)
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	var bestMoves []moveLite
-	bestTarget := ""
-	bestCount := math.MaxInt32
-	found := false
-
-	for _, t := range targets {
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *nLite) ([]moveLite, bool) {
 		// Try a few fresh relocation attempts for this target node
+		var best []moveLite
+		bestCount := math.MaxInt32
 		for trial := 0; trial < SolverSwapMaxTrialsPerPendingPod; trial++ {
 			mvs, ok := planOnTargetVirtual(p, t, order, moveGate, movedUIDs, rng, SolverSwapMaxMovesForPendingPod)
 			if ok && len(mvs) < bestCount {
-				bestMoves = mvs
-				bestTarget = t.Name
-				bestCount = len(mvs)
-				found = true
-				if bestCount <= 1 { // can’t beat 0/1 anyway
+				best, bestCount = mvs, len(mvs)
+				if bestCount <= 1 {
 					break
 				}
 			}
 		}
-		if found && bestCount <= 1 {
-			break
+		if best == nil {
+			return nil, false
 		}
-	}
-
-	if !found {
+		return best, true
+	})
+	if !ok {
 		return false
 	}
 
-	// Commit chosen plan and place p
-	all := buildAllPodsMap(order)
-	if !verifyPlan(nodes, all, bestMoves) {
-		return false
-	}
-	for _, mv := range bestMoves {
-		newPlacements[mv.UID] = mv.To
-		movedUIDs[mv.UID] = struct{}{}
-	}
-	if n := nodes[bestTarget]; n != nil && n.canPodFit(p.CPUm, p.MemBytes) {
-		n.addPod(p)
-		newPlacements[p.UID] = bestTarget
-		return true
-	}
-	// defensive: best-fit in case of drift
-	if to, ok := bestDirectFit(order, p); ok {
-		nodes[to].addPod(p)
-		newPlacements[p.UID] = to
-		return true
-	}
-	return false
+	// Shared commit path
+	return commitPlanAndPlace(
+		p, bestTarget, bestMoves,
+		nodes, pods, order,
+		newPlacements, movedUIDs,
+	)
 }
 
 func planOnTargetVirtual(
@@ -167,7 +146,7 @@ func planOnTargetVirtual(
 		return nil, true
 	}
 
-	delta := map[string]deltaDM{}
+	delta := map[string]Delta{}
 	chosen := map[string]struct{}{}
 	moves := make([]moveLite, 0, 8)
 
@@ -240,18 +219,11 @@ func planOnTargetVirtual(
 	return nil, false
 }
 
-func addDelta(delta map[string]deltaDM, from, to string, cpu, mem int64) {
-	da := delta[from]
-	da.cpu += cpu
-	da.mem += mem
-	delta[from] = da
-	db := delta[to]
-	db.cpu -= cpu
-	db.mem -= mem
-	delta[to] = db
+func addDelta(delta map[string]Delta, from, to string, cpu, mem int64) {
+	addEdgeDelta(delta, from, to, cpu, mem)
 }
 
-func bestDestUnderDelta(q *pLite, src string, order []*nLite, delta map[string]deltaDM) *nLite {
+func bestDestUnderDelta(q *pLite, src string, order []*nLite, delta map[string]Delta) *nLite {
 	var best *nLite
 	bestCPUWaste := int64(math.MaxInt64)
 	bestMEMWaste := int64(math.MaxInt64)
@@ -277,7 +249,7 @@ func bestSwapUnderDelta(
 	v *pLite,
 	needCPU, needMem int64,
 	order []*nLite,
-	delta map[string]deltaDM,
+	delta map[string]Delta,
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	chosen map[string]struct{},
@@ -320,21 +292,6 @@ func bestSwapUnderDelta(
 	}
 	return bestB, bestQ
 }
-
-// Utility to rebuild pod map from current nodes (for applyTwoPhase).
-func buildAllPodsMap(order []*nLite) map[string]*pLite {
-	m := make(map[string]*pLite, 256)
-	for _, n := range order {
-		for _, p := range n.Pods {
-			m[p.UID] = p
-		}
-	}
-	return m
-}
-
-// -----------------------------------------------------------------------------
-// Victim ranking (reused, compact)
-// -----------------------------------------------------------------------------
 
 func rankVictimsOnNode(
 	A *nLite,
@@ -415,18 +372,4 @@ func rankVictimsOnNode(
 		out = append(out, s.q)
 	}
 	return out
-}
-
-// -----------------------------------------------------------------------------
-// Gates (same semantics as before)
-// -----------------------------------------------------------------------------
-
-func canMove(p *pLite, gate *int32) bool {
-	if p == nil || p.Node == "" || p.Protected {
-		return false
-	}
-	if gate == nil {
-		return true
-	}
-	return p.Priority <= *gate
 }

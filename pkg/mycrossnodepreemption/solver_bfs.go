@@ -3,10 +3,7 @@ package mycrossnodepreemption
 import (
 	"fmt"
 	"math"
-	"runtime"
 	"sort"
-
-	"k8s.io/klog/v2"
 )
 
 /*
@@ -136,91 +133,38 @@ func placeByBFS(
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
-) (placed bool) {
-	targets := orderTargetsByDeficit(order, p)
+) bool {
+	orig := buildOrigMap(order)
 
-	// build orig map once for squashMoves
-	orig := make(map[string]string, 256)
-	for _, n := range order {
-		for _, q := range n.Pods {
-			if q.Node != "" {
-				orig[q.UID] = q.Node
-			}
-		}
-	}
-
-	var bestMoves []moveLite
-	bestTarget := ""
-	bestCount := math.MaxInt32
-	found := false
-
-	// Moves gate policy:
-	//  - single-preemptor: gate = pre.Priority (passed via moveGate)
-	//  - batch mode: gate disabled -> allow all priorities (respect Protected)
+	// Move gate policy
 	prioLimit := int32(math.MaxInt32)
 	if moveGate != nil {
 		prioLimit = *moveGate
 	}
 
-	for _, t := range targets {
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *nLite) ([]moveLite, bool) {
 		needCPU := max64(0, p.CPUm-t.FreeCPUm)
 		needMem := max64(0, p.MemBytes-t.FreeMemBytes)
-
 		if needCPU == 0 && needMem == 0 {
-			bestTarget = t.Name
-			bestMoves = nil
-			bestCount = 0
-			found = true
-			break
+			return nil, true // zero-move plan on t
 		}
-
-		// Run your layered BFS for this target (fewest moves for this target).
-		// Note: bfsFreeTargets already respects priority via prioLimit and Protected via your filters.
 		fd, ok := bfsFreeTargets(nodes, t.Name, needCPU, needMem, prioLimit)
 		if !ok {
-			continue
+			return nil, false
 		}
-
-		coalesced := squashMoves(fd, orig)
-		if len(coalesced) < bestCount {
-			bestMoves = coalesced
-			bestTarget = t.Name
-			bestCount = len(coalesced)
-			found = true
-			if bestCount <= 1 { // can't beat 0/1
-				break
-			}
-		}
-	}
-
-	if !found {
+		return squashMoves(fd, orig), true
+	})
+	if !ok {
 		return false
 	}
 
-	// Commit chosen plan and place p
-	if !verifyPlan(nodes, pods, bestMoves) {
-		return false
-	}
-	for _, mv := range bestMoves {
-		newPlacements[mv.UID] = mv.To
-		movedUIDs[mv.UID] = struct{}{}
-	}
-	if n := nodes[bestTarget]; n != nil && n.canPodFit(p.CPUm, p.MemBytes) {
-		n.addPod(p)
-		newPlacements[p.UID] = bestTarget
-		return true
-	}
-	// defensive: best-fit in case of drift
-	if to, ok := bestDirectFit(order, p); ok {
-		nodes[to].addPod(p)
-		newPlacements[p.UID] = to
-		return true
-	}
-	return false
+	// Shared commit path
+	return commitPlanAndPlace(
+		p, bestTarget, bestMoves,
+		nodes, pods, order,
+		newPlacements, movedUIDs,
+	)
 }
-
-// add near the other top-level types
-type resvDelta struct{ cpu, mem int64 }
 
 // ========================= Helpers / scoring =========================
 
@@ -285,11 +229,8 @@ func destsByFree(nodes map[string]*nLite, capK int) []*nLite {
 	return ns
 }
 
-func pushResv(m map[string]resvDelta, node string, dcpu, dmem int64) {
-	cur := m[node]
-	cur.cpu += dcpu
-	cur.mem += dmem
-	m[node] = cur
+func pushResv(m map[string]Delta, node string, dcpu, dmem int64) {
+	addNodeDelta(m, node, dcpu, dmem)
 }
 
 func squashMoves(finalDest map[string]string, orig map[string]string) []moveLite {
@@ -325,15 +266,15 @@ type deficit struct {
 }
 
 type bfsState struct {
-	deficits  []deficit            // outstanding nodes to free (front is active)
-	reserve   map[string]resvDelta // node -> reserved delta (+free on sources, -consumed on dests)
-	finalDest map[string]string    // UID -> final destination node (each UID moved at most once)
-	moves     []moveLite           // ordered move list (each step adds exactly one)
+	deficits  []deficit         // outstanding nodes to free (front is active)
+	reserve   map[string]Delta  // node -> reserved delta (+free on sources, -consumed on dests)
+	finalDest map[string]string // UID -> final destination node (each UID moved at most once)
+	moves     []moveLite        // ordered move list (each step adds exactly one)
 }
 
 // helpers to clone small maps/slices (kept tiny by caps)
-func cloneResv(m map[string]resvDelta) map[string]resvDelta {
-	c := make(map[string]resvDelta, len(m))
+func cloneResv(m map[string]Delta) map[string]Delta {
+	c := make(map[string]Delta, len(m))
 	for k, v := range m {
 		c[k] = v
 	}
@@ -369,7 +310,7 @@ func bfsFreeTargets(
 
 	init := bfsState{
 		deficits:  []deficit{{node: rootTarget, needCPU: rootNeedCPU, needMem: rootNeedMem}},
-		reserve:   map[string]resvDelta{},
+		reserve:   map[string]Delta{},
 		finalDest: map[string]string{},
 		moves:     nil,
 	}
@@ -385,49 +326,16 @@ func bfsFreeTargets(
 	prunedVisited := 0
 	prunedRootHit := 0
 	prunedSelfLoop := 0
-	prunedCapMoves := 0 // kept in case you reintroduce a cap
 	prunedNoFit := 0
 
 	uniqVictimsEnum := map[string]bool{} // across all depths
 	uniqVictimsUsed := map[string]bool{} // across all depths
 	maxFrontier := 0
 
-	goalDepth := -1
-	foundRawSteps := 0
-	foundChainVictims := 0 // unique UIDs with a finalDest at the goal
-
-	defer func() {
-		var ms runtime.MemStats
-		runtime.ReadMemStats(&ms)
-		klog.InfoS("bfs: summary",
-			"ok", goalDepth >= 0,
-			"goalDepth", goalDepth,
-			"expanded", totalExpanded,
-			"enqueued", totalEnqueued,
-			"visited", len(visited),
-			"edgesTried", totalEdgesTried,
-			"prunedVisited", prunedVisited,
-			"prunedRootHit", prunedRootHit,
-			"prunedSelfLoop", prunedSelfLoop,
-			"prunedCapMoves", prunedCapMoves,
-			"prunedNoFit", prunedNoFit,
-			"uniqVictimsEnumerated", len(uniqVictimsEnum),
-			"uniqVictimsUsed", len(uniqVictimsUsed),
-			"frontierMax", maxFrontier,
-			"rawSteps", foundRawSteps,
-			"chainVictims", foundChainVictims,
-			"heapAlloc", ms.HeapAlloc,
-			"heapInuse", ms.HeapInuse,
-		)
-	}()
-
 	for depth := 0; depth <= SolverBfsMaxDepth; depth++ {
 		// goal check within this layer
 		for _, st := range front {
 			if len(st.deficits) == 0 {
-				goalDepth = depth
-				foundRawSteps = len(st.moves)
-				foundChainVictims = len(st.finalDest)
 				return st.finalDest, true
 			}
 		}
@@ -565,7 +473,7 @@ func bfsFreeTargets(
 }
 
 // add this helper
-func sigResv(r map[string]resvDelta) string {
+func sigResv(r map[string]Delta) string {
 	if len(r) == 0 {
 		return "-"
 	}
@@ -594,7 +502,7 @@ func sigResv(r map[string]resvDelta) string {
 }
 
 // change sig to include reserve:
-func sig(defs []deficit, fd map[string]string, res map[string]resvDelta) string {
+func sig(defs []deficit, fd map[string]string, res map[string]Delta) string {
 	b := make([]byte, 0, 256)
 	// deficits in order
 	for _, d := range defs {

@@ -41,7 +41,75 @@ type nLite struct {
 
 type moveLite struct{ UID, From, To string }
 
-type TryRelocateFn func(
+type UIDSet map[string]struct{}
+
+func (s UIDSet) Add(uid string)      { s[uid] = struct{}{} }
+func (s UIDSet) Del(uid string)      { delete(s, uid) }
+func (s UIDSet) Has(uid string) bool { _, ok := s[uid]; return ok }
+
+// bestPlanAcrossTargets iterates targets (ordered by deficit for p) and
+// keeps the plan with the fewest moves. `planForTarget` should return the
+// candidate move list for that target (or !ok if no plan exists).
+func bestPlanAcrossTargets(
+	p *pLite,
+	order []*nLite,
+	planForTarget func(t *nLite) (moves []moveLite, ok bool),
+) (bestMoves []moveLite, bestTarget string, ok bool) {
+	bestCount := math.MaxInt32
+	for _, t := range orderTargetsByDeficit(order, p) {
+		mvs, okT := planForTarget(t)
+		if !okT {
+			continue
+		}
+		if len(mvs) < bestCount {
+			bestCount, bestMoves, bestTarget, ok = len(mvs), mvs, t.Name, true
+			if bestCount <= 1 { // can’t beat 0/1
+				break
+			}
+		}
+	}
+	return
+}
+
+// gateAllows centralizes priority checks (strict: < vs <=).
+func gateAllows(p *pLite, gate *int32, strict bool) bool {
+	if p == nil || p.Protected {
+		return false
+	}
+	if gate == nil {
+		return true
+	}
+	if strict {
+		return p.Priority < *gate
+	}
+	return p.Priority <= *gate
+}
+
+func canMove(p *pLite, gate *int32) bool {
+	if p == nil || p.Node == "" {
+		return false
+	}
+	return gateAllows(p, gate, false)
+}
+
+func canEvict(p *pLite, gate *int32) bool {
+	return gateAllows(p, gate, true)
+}
+
+func addNodeDelta(m map[string]Delta, node string, dcpu, dmem int64) {
+	d := m[node]
+	d.cpu += dcpu
+	d.mem += dmem
+	m[node] = d
+}
+
+// Adds +cpu/+mem to "from" and −cpu/−mem to "to".
+func addEdgeDelta(m map[string]Delta, from, to string, cpu, mem int64) {
+	addNodeDelta(m, from, +cpu, +mem)
+	addNodeDelta(m, to, -cpu, -mem)
+}
+
+type tryRelocate func(
 	p *pLite,
 	nodes map[string]*nLite,
 	pods map[string]*pLite,
@@ -51,7 +119,7 @@ type TryRelocateFn func(
 	newPlacements map[string]string,
 ) bool
 
-func runSolverCommon(in SolverInput, tryRelocate TryRelocateFn, tag string) *SolverOutput {
+func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *SolverOutput {
 	nodes, pods, pending, order, pre := buildClusterState(in)
 
 	if len(pending) == 0 {
@@ -100,6 +168,40 @@ func runSolverCommon(in SolverInput, tryRelocate TryRelocateFn, tag string) *Sol
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
+// commitPlanAndPlace verifies & applies `moves`, records them in newPlacements/movedUIDs,
+// then places p on `target` (if it fits). If not, it falls back to bestDirectFit.
+// Returns true on success, false if the plan is invalid or placement fails.
+func commitPlanAndPlace(
+	p *pLite,
+	target string,
+	moves []moveLite,
+	nodes map[string]*nLite,
+	pods map[string]*pLite,
+	order []*nLite,
+	newPlacements map[string]string,
+	movedUIDs map[string]struct{},
+) bool {
+	if !verifyPlan(nodes, pods, moves) {
+		return false
+	}
+	for _, mv := range moves {
+		newPlacements[mv.UID] = mv.To
+		movedUIDs[mv.UID] = struct{}{}
+	}
+	if n := nodes[target]; n != nil && n.canPodFit(p.CPUm, p.MemBytes) {
+		n.addPod(p)
+		newPlacements[p.UID] = target
+		return true
+	}
+	// Defensive fallback: best-fit anywhere (in case of tiny drift)
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true
+	}
+	return false
+}
+
 func placeOnePodCommon(
 	p *pLite,
 	nodes map[string]*nLite,
@@ -110,7 +212,7 @@ func placeOnePodCommon(
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
 	evicts *[]Placement,
-	tryRelocate TryRelocateFn,
+	tryRelocate tryRelocate,
 ) (feasible bool, triedEvicting bool) {
 
 	// 1) Cluster slack
@@ -369,17 +471,17 @@ func pickLargestEnablingEviction(order []*nLite, p *pLite, evictGate *int32, mov
 // hasKey reports whether map m has key k.
 func hasKey(m map[string]struct{}, k string) bool { _, ok := m[k]; return ok }
 
-// canEvict returns true iff pod p can be evicted given the eviction gate.
-// The gate is the priority threshold: only pods with Priority < *gate can be evicted.
-// If gate is nil, there is no priority restriction (all non-protected pods can be evicted).
-func canEvict(p *pLite, gate *int32) bool {
-	if p == nil || p.Protected {
-		return false
+// buildOrigMap returns UID -> current node for all placed pods.
+func buildOrigMap(order []*nLite) map[string]string {
+	orig := make(map[string]string, 256)
+	for _, n := range order {
+		for _, q := range n.Pods {
+			if q.Node != "" {
+				orig[q.UID] = q.Node
+			}
+		}
 	}
-	if gate == nil {
-		return true
-	}
-	return p.Priority < *gate
+	return orig
 }
 
 type targetScore struct {

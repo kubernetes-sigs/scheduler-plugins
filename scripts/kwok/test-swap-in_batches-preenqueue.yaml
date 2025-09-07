@@ -19,7 +19,7 @@ componentsPatches:
       - name: SOLVER_PYTHON_TIMEOUT
         value: "10s"
       - name: SOLVER_BFS_ENABLED
-        value: "false"
+        value: "true"
       - name: SOLVER_BFS_TIMEOUT
         value: "5s"
       - name: SOLVER_SWAP_ENABLED
