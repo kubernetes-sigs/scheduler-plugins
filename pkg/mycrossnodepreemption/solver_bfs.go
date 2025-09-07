@@ -9,6 +9,110 @@ import (
 	"k8s.io/klog/v2"
 )
 
+/*
+1) Build cluster state (nodes, pods, pending, order, preemptor)
+
+2) Worklist (big-first)
+   - Sort pending by: Priority DESC → size (CPU*MEM) DESC → CPU DESC → MEM DESC → UID ASC.
+   - Single-preemptor mode: worklist has exactly the preemptor.
+   - Batch mode: whole pending list is processed in order.
+
+3) Per-pod placement (`placeOnePodBfs`)
+   a) Cluster slack check (`clusterHasSlack`):
+      If total free CPU/MEM across the cluster is insufficient for p, skip
+      relocations and try the eviction path for p.
+   b) Direct fit (`bestDirectFit`):
+      If any node fits p, place it there (best-fit by post-waste).
+   c) Relocations via BFS (`placeByBFS`):
+      - Consider all nodes as targets, ordered by increasing deficit for p
+        (`orderTargetsByDeficit`). For each target T, try to free just enough
+        capacity on T with the FEWEST moves (no eviction).
+      - For each T, run `bfsFreeTargets` up to `SolverBfsMaxDepth`.
+        Keep the coalesced plan with the smallest number of moves across targets.
+      - If a plan exists: verify + apply (two-phase), then place p on the
+        chosen target.
+   d) Eviction fallback (`pickLargestEnablingEviction`):
+      Only consider a victim v if evicting v alone enables placing p on v’s node.
+      Respect strict priority: victim.priority < gate (see “Mode & gates” below).
+      Choose within the lowest-priority tier, preferring already-moved, then size.
+
+4) Batch termination rule
+   - If a pod at priority P cannot be placed without violating the rules,
+     we stop the batch at that priority and return the partial result
+     (same behavior as runSolverSwap). Single-preemptor mode returns INFEASIBLE.
+
+BFS search (fewest-moves planner per target)
+--------------------------------------------
+We search by number of moves (layers = depth). The root represents the target
+node T (where p will land) with an initial **deficit** equal to the shortfall
+(needCPU, needMem) on T.
+
+State (node in BFS tree):
+  - deficits:  FIFO queue of outstanding (node, needCPU, needMem);
+               the *front* is the currently active deficit node.
+  - reserve:   per-node virtual deltas (ΔCPU, ΔMEM) that reflect tentative
+               moves so far; fit checks use (free + reserve).
+  - finalDest: map[UID]→dest, guaranteeing each UID is moved at most once.
+  - moves:     ordered move list (each expansion adds exactly one move).
+
+Edge (expansion step):
+  - Pick a **victim** v from the *active* deficit node A (front of `deficits`),
+    respecting: not Protected, priority ≤ prioLimit, and v not already moved.
+  - Pick a **destination** D (by free); prune:
+      • self-loop (D == A) or D already hosts v,
+      • root-consumption (D == root target T), to keep T’s freed space intact.
+  - Compute D’s shortage under current reserve (needCPU2, needMem2).
+    **Progress rule:** do not create a worse deficit than the relief on A:
+      needCPU2 ≤ min(v.CPUm, needCPU) AND needMem2 ≤ min(v.MemBytes, needMem).
+    If violated, prune.
+  - Produce successor:
+      • `reserve[A] += (v.CPUm, v.MemBytes)`, `reserve[D] -= (v.CPUm, v.MemBytes)`
+      • Decrease/resolve A’s deficit; if D is short, append a new deficit for D.
+      • Record move (v: A→D) and `finalDest[v] = D`.
+
+Layer goal:
+  - A plan is found when `deficits` becomes empty (all shortfalls resolved).
+    Coalesce `finalDest` against original locations to an (UID, from, to) list.
+    The depth where the plan appears equals its number of moves.
+
+Pruning & deduplication:
+  - We dedupe with a signature `sig(deficits, finalDest, reserve)`:
+      • deficits in order,
+      • `finalDest` sorted by UID,
+      • a compact snapshot of non-zero `reserve` entries.
+  - Additional prunes: self-loop/root hit, progress rule, and revisit-avoidance.
+  - BFS is bounded by:
+      • `SolverBfsMaxDepth` (search layers),
+      • `SolverBfsMaxVictimsPerNode` (victim fanout per active node),
+      • `SolverBfsMaxDestsPerLevel` (destination fanout).
+    Rough bound at depth k:  P(M,k) * min(D, N−2)^k  (see earlier discussion).
+
+Mode & gates (same semantics as swap)
+-------------------------------------
+- Move gate:
+    • Single-preemptor mode: only move pods with priority ≤ preemptor.priority
+      (passed into BFS as `prioLimit`).
+    • Batch mode: move gate disabled (allow any priority), still respect Protected.
+- Evict gate:
+    • Always strict: victim.priority < gate (preemptor.priority in single mode,
+      p.priority in batch).
+
+Commit path & safety
+--------------------
+- Candidates from BFS are **virtual**; before mutating:
+    • `verifyCoalescedPlan` ensures all endpoints exist and final free ≥ 0
+      (including the placement of p on the chosen target).
+    • `applyTwoPhase` removes all moved pods from sources, then adds them to
+      their destinations, preventing transient negatives.
+- On success, we place p, update `newPlacements`, and remember moved UIDs.
+
+Tuning knobs
+------------
+- `SolverBfsMaxDepth`               // max number of moves in a plan
+- `SolverBfsMaxVictimsPerNode`      // breadth over victims per active node
+- `SolverBfsMaxDestsPerLevel`       // breadth over candidate destinations
+*/
+
 func runSolverBfs(in SolverInput) *SolverOutput {
 	nodes, pods, pending, order, pre := buildClusterState(in)
 
@@ -98,10 +202,10 @@ tryEvict:
 	}
 	delete(newPlacements, v.UID)
 	delete(movedUIDs, v.UID)
-	on.remove(v)
+	on.removePod(v)
 	*evicts = append(*evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
 
-	if on.fits(p.CPUm, p.MemBytes) {
+	if on.canPodFit(p.CPUm, p.MemBytes) {
 		on.addPod(p)
 		newPlacements[p.UID] = on.Name
 		return true, false
@@ -189,14 +293,14 @@ func placeByBFS(
 	}
 
 	// Commit chosen plan and place p
-	if !applyTwoPhase(nodes, pods, bestMoves) {
+	if !verifyPlan(nodes, pods, bestMoves) {
 		return false
 	}
 	for _, mv := range bestMoves {
 		newPlacements[mv.UID] = mv.To
 		movedUIDs[mv.UID] = struct{}{}
 	}
-	if n := nodes[bestTarget]; n != nil && n.fits(p.CPUm, p.MemBytes) {
+	if n := nodes[bestTarget]; n != nil && n.canPodFit(p.CPUm, p.MemBytes) {
 		n.addPod(p)
 		newPlacements[p.UID] = bestTarget
 		return true

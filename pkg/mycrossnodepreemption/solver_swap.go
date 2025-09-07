@@ -166,10 +166,10 @@ tryEvict:
 	}
 	delete(newPlacements, v.UID)
 	delete(movedUIDs, v.UID)
-	on.remove(v)
+	on.removePod(v)
 	*evicts = append(*evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
 
-	if on.fits(p.CPUm, p.MemBytes) {
+	if on.canPodFit(p.CPUm, p.MemBytes) {
 		on.addPod(p)
 		newPlacements[p.UID] = on.Name
 		return true, false
@@ -230,14 +230,14 @@ func placeByMovesOnly(
 
 	// Commit chosen plan and place p
 	all := buildAllPodsMap(order)
-	if !applyTwoPhase(nodes, all, bestMoves) {
+	if !verifyPlan(nodes, all, bestMoves) {
 		return false
 	}
 	for _, mv := range bestMoves {
 		newPlacements[mv.UID] = mv.To
 		movedUIDs[mv.UID] = struct{}{}
 	}
-	if n := nodes[bestTarget]; n != nil && n.fits(p.CPUm, p.MemBytes) {
+	if n := nodes[bestTarget]; n != nil && n.canPodFit(p.CPUm, p.MemBytes) {
 		n.addPod(p)
 		newPlacements[p.UID] = bestTarget
 		return true
@@ -472,7 +472,7 @@ func rankVictimsOnNode(
 			if n.Name == A.Name {
 				continue
 			}
-			if n.fits(q.CPUm, q.MemBytes) {
+			if n.canPodFit(q.CPUm, q.MemBytes) {
 				rc++
 			}
 		}
