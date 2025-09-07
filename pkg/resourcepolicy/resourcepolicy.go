@@ -459,6 +459,7 @@ func (rspp *resourcePolicyPlugin) PreBind(ctx context.Context, state *framework.
 	if !ok {
 		return framework.AsStatus(fmt.Errorf("unable to convert state to ResourcePolicyPreFilterState"))
 	}
+	unitIndex := preFilterState.assumedUnitIndex
 	newPod := v1.Pod{}
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		err := rspp.client.Get(ctx, types.NamespacedName{Namespace: p.Namespace, Name: p.Name}, &newPod)
@@ -469,6 +470,7 @@ func (rspp *resourcePolicyPlugin) PreBind(ctx context.Context, state *framework.
 			newPod.Annotations = make(map[string]string)
 		}
 		newPod.Annotations[ManagedByResourcePolicyAnnoKey] = string(preFilterState.matchedInfo.ks)
+		newPod.Annotations[v1.PodDeletionCost] = fmt.Sprintf("%v", 100-unitIndex)
 		return rspp.client.Update(ctx, &newPod)
 	})
 	if err != nil {

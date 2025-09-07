@@ -60,7 +60,8 @@ const ManagedByResourcePolicyIndexKey = "metadata.annotations[scheduling.x-k8s.i
 const ResourcePolicyPreFilterStateKey = "scheduling.x-k8s.io/resourcepolicy-prefilter-state"
 
 type ResourcePolicyPreFilterState struct {
-	matchedInfo *resourcePolicyInfo
+	matchedInfo      *resourcePolicyInfo
+	assumedUnitIndex int
 
 	maxCount       []int
 	currentCount   []int

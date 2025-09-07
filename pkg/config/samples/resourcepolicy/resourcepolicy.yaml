@@ -10,3 +10,5 @@ spec:
   - max: 1
     nodeSelector: 
       unit: first
+  - nodeSelector:
+      unit: second

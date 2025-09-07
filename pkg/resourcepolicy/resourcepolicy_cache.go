@@ -30,6 +30,7 @@ import (
 	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/utils/ptr"
 )
 
 type resourcePolicyCache struct {
@@ -100,12 +101,19 @@ func (rspc *resourcePolicyCache) Assume(cycleState *framework.CycleState, pod *c
 	}
 	rspc.pd2Rps[podKey] = preFilterState.matchedInfo.ks
 
+	var unitIndex *int
 	rspi := preFilterState.matchedInfo
 	for idx, sel := range rspi.nodeSelectors {
 		if !sel.Matches(labels.Set(node.Labels)) {
 			continue
 		}
+		if unitIndex == nil {
+			unitIndex = ptr.To(idx)
+		}
 		rspi.addPodToBoundOrAssumedPods(rspi.assumedPods, idx, preFilterState.labelKeyValue, node.Name, podKey, preFilterState.podRes)
+	}
+	if unitIndex != nil {
+		preFilterState.assumedUnitIndex = *unitIndex
 	}
 	return nil
 }
