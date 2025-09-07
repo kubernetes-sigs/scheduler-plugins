@@ -88,7 +88,10 @@ func runSolverSwap(in SolverInput) *SolverOutput {
 	)
 }
 
-type Delta struct{ cpu, mem int64 }
+type Delta struct {
+	CPU int64
+	Mem int64
+}
 
 func placeByMovesOnly(
 	p *SolverPod,
@@ -101,9 +104,9 @@ func placeByMovesOnly(
 ) bool {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *SolverNode) ([]moveLite, bool) {
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *SolverNode) ([]MoveLite, bool) {
 		// Try a few fresh relocation attempts for this target node
-		var best []moveLite
+		var best []MoveLite
 		bestCount := math.MaxInt32
 		for trial := 0; trial < SolverSwapMaxTrialsPerPendingPod; trial++ {
 			mvs, ok := planOnTargetVirtual(p, t, order, moveGate, movedUIDs, rng, SolverSwapMaxMovesForPendingPod)
@@ -139,7 +142,7 @@ func planOnTargetVirtual(
 	movedUIDs map[string]struct{},
 	rng *rand.Rand,
 	capMoves int,
-) ([]moveLite, bool) {
+) ([]MoveLite, bool) {
 	needCPU := max64(0, p.ReqCPUm-A.AllocCPUm)
 	needMem := max64(0, p.ReqMemBytes-A.AllocMemBytes)
 	if needCPU == 0 && needMem == 0 {
@@ -148,7 +151,7 @@ func planOnTargetVirtual(
 
 	delta := map[string]Delta{}
 	chosen := map[string]struct{}{}
-	moves := make([]moveLite, 0, 8)
+	moves := make([]MoveLite, 0, 8)
 
 	victims := rankVictimsOnNode(A, needCPU, needMem, moveGate, movedUIDs, order)
 	if len(victims) > 1 && rng.Intn(4) == 0 {
@@ -170,7 +173,7 @@ func planOnTargetVirtual(
 			if len(moves)+1 > capMoves {
 				return nil, false // exceeded budget → let caller try another trial
 			}
-			moves = append(moves, moveLite{UID: v.UID, From: A.Name, To: D.Name})
+			moves = append(moves, MoveLite{UID: v.UID, From: A.Name, To: D.Name})
 			addDelta(delta, A.Name, D.Name, v.ReqCPUm, v.ReqMemBytes)
 			needCPU = max64(0, needCPU-v.ReqCPUm)
 			needMem = max64(0, needMem-v.ReqMemBytes)
@@ -188,21 +191,21 @@ func planOnTargetVirtual(
 				return nil, false // swap would exceed budget → new trial
 			}
 			moves = append(moves,
-				moveLite{UID: v.UID, From: A.Name, To: B.Name},
-				moveLite{UID: q.UID, From: B.Name, To: A.Name},
+				MoveLite{UID: v.UID, From: A.Name, To: B.Name},
+				MoveLite{UID: q.UID, From: B.Name, To: A.Name},
 			)
 			da := delta[A.Name]
 			db := delta[B.Name]
-			da.cpu += v.ReqCPUm - q.ReqCPUm
-			da.mem += v.ReqMemBytes - q.ReqMemBytes
-			db.cpu += q.ReqCPUm - v.ReqCPUm
-			db.mem += q.ReqMemBytes - v.ReqMemBytes
+			da.CPU += v.ReqCPUm - q.ReqCPUm
+			da.Mem += v.ReqMemBytes - q.ReqMemBytes
+			db.CPU += q.ReqCPUm - v.ReqCPUm
+			db.Mem += q.ReqMemBytes - v.ReqMemBytes
 			delta[A.Name] = da
 			delta[B.Name] = db
 
 			// recompute remaining need for A under delta
-			needCPU = max64(0, p.ReqCPUm-(A.AllocCPUm+delta[A.Name].cpu))
-			needMem = max64(0, p.ReqMemBytes-(A.AllocMemBytes+delta[A.Name].mem))
+			needCPU = max64(0, p.ReqCPUm-(A.AllocCPUm+delta[A.Name].CPU))
+			needMem = max64(0, p.ReqMemBytes-(A.AllocMemBytes+delta[A.Name].Mem))
 
 			chosen[v.UID] = struct{}{}
 			chosen[q.UID] = struct{}{}
@@ -232,9 +235,9 @@ func bestDestUnderDelta(q *SolverPod, src string, order []*SolverNode, delta map
 			continue
 		}
 		d := delta[n.Name]
-		if (n.AllocCPUm+d.cpu) >= q.ReqCPUm && (n.AllocMemBytes+d.mem) >= q.ReqMemBytes {
-			cw := (n.AllocCPUm + d.cpu) - q.ReqCPUm
-			mw := (n.AllocMemBytes + d.mem) - q.ReqMemBytes
+		if (n.AllocCPUm+d.CPU) >= q.ReqCPUm && (n.AllocMemBytes+d.Mem) >= q.ReqMemBytes {
+			cw := (n.AllocCPUm + d.CPU) - q.ReqCPUm
+			mw := (n.AllocMemBytes + d.Mem) - q.ReqMemBytes
 			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && (best == nil || n.Name < best.Name)))) {
 				best = n
 				bestCPUWaste, bestMEMWaste = cw, mw
@@ -270,10 +273,10 @@ func bestSwapUnderDelta(
 			if _, used := chosen[q.UID]; used {
 				continue
 			}
-			finalA_CPU := (A.AllocCPUm + delta[A.Name].cpu) + v.ReqCPUm - q.ReqCPUm
-			finalA_MEM := (A.AllocMemBytes + delta[A.Name].mem) + v.ReqMemBytes - q.ReqMemBytes
-			finalB_CPU := (B.AllocCPUm + db.cpu) + q.ReqCPUm - v.ReqCPUm
-			finalB_MEM := (B.AllocMemBytes + db.mem) + q.ReqMemBytes - v.ReqMemBytes
+			finalA_CPU := (A.AllocCPUm + delta[A.Name].CPU) + v.ReqCPUm - q.ReqCPUm
+			finalA_MEM := (A.AllocMemBytes + delta[A.Name].Mem) + v.ReqMemBytes - q.ReqMemBytes
+			finalB_CPU := (B.AllocCPUm + db.CPU) + q.ReqCPUm - v.ReqCPUm
+			finalB_MEM := (B.AllocMemBytes + db.Mem) + q.ReqMemBytes - v.ReqMemBytes
 			if finalA_CPU < 0 || finalA_MEM < 0 || finalB_CPU < 0 || finalB_MEM < 0 {
 				continue
 			}

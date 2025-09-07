@@ -142,7 +142,7 @@ func placeByBFS(
 		prioLimit = *moveGate
 	}
 
-	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *SolverNode) ([]moveLite, bool) {
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *SolverNode) ([]MoveLite, bool) {
 		needCPU := max64(0, p.ReqCPUm-t.AllocCPUm)
 		needMem := max64(0, p.ReqMemBytes-t.AllocMemBytes)
 		if needCPU == 0 && needMem == 0 {
@@ -233,9 +233,9 @@ func pushResv(m map[string]Delta, node string, dcpu, dmem int64) {
 	addNodeDelta(m, node, dcpu, dmem)
 }
 
-func squashMoves(finalDest map[string]string, orig map[string]string) []moveLite {
+func squashMoves(finalDest map[string]string, orig map[string]string) []MoveLite {
 	seen := map[string]bool{}
-	out := make([]moveLite, 0, len(finalDest))
+	out := make([]MoveLite, 0, len(finalDest))
 	uids := make([]string, 0, len(finalDest))
 	for uid := range finalDest {
 		uids = append(uids, uid)
@@ -248,7 +248,7 @@ func squashMoves(finalDest map[string]string, orig map[string]string) []moveLite
 			continue
 		}
 		if !seen[uid] {
-			out = append(out, moveLite{UID: uid, From: from, To: to})
+			out = append(out, MoveLite{UID: uid, From: from, To: to})
 			seen[uid] = true
 		}
 	}
@@ -364,8 +364,8 @@ func bfsFreeTargets(
 
 					// destination shortage under current reserve
 					dstRes := st.reserve[dn.Name]
-					needCPU2 := max64(0, v.ReqCPUm-(dn.AllocCPUm+dstRes.cpu))
-					needMem2 := max64(0, v.ReqMemBytes-(dn.AllocMemBytes+dstRes.mem))
+					needCPU2 := max64(0, v.ReqCPUm-(dn.AllocCPUm+dstRes.CPU))
+					needMem2 := max64(0, v.ReqMemBytes-(dn.AllocMemBytes+dstRes.Mem))
 
 					// progress rule (don't make a worse deficit than we relieve)
 					freedCPU := min64(v.ReqCPUm, need.needCPU)
@@ -439,10 +439,10 @@ func sigResv(r map[string]Delta) string {
 	}
 	arr := make([]item, 0, len(r))
 	for k, v := range r {
-		if v.cpu == 0 && v.mem == 0 {
+		if v.CPU == 0 && v.Mem == 0 {
 			continue
 		}
-		arr = append(arr, item{n: k, c: v.cpu, m: v.mem})
+		arr = append(arr, item{n: k, c: v.CPU, m: v.Mem})
 	}
 	sort.Slice(arr, func(i, j int) bool { return arr[i].n < arr[j].n })
 	if len(arr) == 0 {

@@ -7,7 +7,19 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type moveLite struct{ UID, From, To string }
+// TODO: Replace with NewPlacement
+type MoveLite struct {
+	UID  string
+	From string
+	To   string
+}
+
+type TargetScore struct {
+	Node   *SolverNode
+	Score  float64 // max(defCPU/p.CPU, defMEM/p.MEM)
+	DefSum int64
+	Waste  int64
+}
 
 type UIDSet map[string]struct{}
 
@@ -21,8 +33,8 @@ func (s UIDSet) Has(uid string) bool { _, ok := s[uid]; return ok }
 func bestPlanAcrossTargets(
 	p *SolverPod,
 	order []*SolverNode,
-	planForTarget func(t *SolverNode) (moves []moveLite, ok bool),
-) (bestMoves []moveLite, bestTarget string, ok bool) {
+	planForTarget func(t *SolverNode) (moves []MoveLite, ok bool),
+) (bestMoves []MoveLite, bestTarget string, ok bool) {
 	bestCount := math.MaxInt32
 	for _, t := range orderTargetsByDeficit(order, p) {
 		mvs, okT := planForTarget(t)
@@ -66,8 +78,8 @@ func canEvict(p *SolverPod, gate *int32) bool {
 
 func addNodeDelta(m map[string]Delta, node string, dcpu, dmem int64) {
 	d := m[node]
-	d.cpu += dcpu
-	d.mem += dmem
+	d.CPU += dcpu
+	d.Mem += dmem
 	m[node] = d
 }
 
@@ -142,7 +154,7 @@ func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *Solve
 func commitPlanAndPlace(
 	p *SolverPod,
 	target string,
-	moves []moveLite,
+	moves []MoveLite,
 	nodes map[string]*SolverNode,
 	pods map[string]*SolverPod,
 	order []*SolverNode,
@@ -436,13 +448,6 @@ func buildOrigMap(order []*SolverNode) map[string]string {
 	return orig
 }
 
-type targetScore struct {
-	n      *SolverNode
-	score  float64 // max(defCPU/p.CPU, defMEM/p.MEM)
-	defSum int64
-	waste  int64
-}
-
 // orderTargetsByDeficit orders nodes by how well they can accommodate pod p,
 // even if they can’t fit it directly.
 // The ordering is:
@@ -451,7 +456,7 @@ type targetScore struct {
 //  3. waste ASC (lower is better)
 //  4. name ASC (lexicographically)
 func orderTargetsByDeficit(order []*SolverNode, p *SolverPod) []*SolverNode {
-	s := make([]targetScore, 0, len(order))
+	s := make([]TargetScore, 0, len(order))
 	for _, n := range order {
 		defCPU := max64(0, p.ReqCPUm-n.AllocCPUm)
 		defMEM := max64(0, p.ReqMemBytes-n.AllocMemBytes)
@@ -463,23 +468,23 @@ func orderTargetsByDeficit(order []*SolverNode, p *SolverPod) []*SolverNode {
 		if n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
 			waste = (n.AllocCPUm - p.ReqCPUm) + (n.AllocMemBytes - p.ReqMemBytes)
 		}
-		s = append(s, targetScore{n: n, score: score, defSum: defCPU + defMEM, waste: waste})
+		s = append(s, TargetScore{Node: n, Score: score, DefSum: defCPU + defMEM, Waste: waste})
 	}
 	sort.Slice(s, func(i, j int) bool {
-		if s[i].score != s[j].score {
-			return s[i].score < s[j].score
+		if s[i].Score != s[j].Score {
+			return s[i].Score < s[j].Score
 		}
-		if s[i].defSum != s[j].defSum {
-			return s[i].defSum < s[j].defSum
+		if s[i].DefSum != s[j].DefSum {
+			return s[i].DefSum < s[j].DefSum
 		}
-		if s[i].waste != s[j].waste {
-			return s[i].waste < s[j].waste
+		if s[i].Waste != s[j].Waste {
+			return s[i].Waste < s[j].Waste
 		}
-		return s[i].n.Name < s[j].n.Name
+		return s[i].Node.Name < s[j].Node.Name
 	})
 	out := make([]*SolverNode, 0, len(s))
 	for _, e := range s {
-		out = append(out, e.n)
+		out = append(out, e.Node)
 	}
 	return out
 }
@@ -594,7 +599,7 @@ func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, sing
 //   - no node ends up with negative free resources after all moves are applied
 //
 // If the plan is valid, it is applied in-place to the nodes and pods state.
-func verifyPlan(nodes map[string]*SolverNode, all map[string]*SolverPod, moves []moveLite) bool {
+func verifyPlan(nodes map[string]*SolverNode, all map[string]*SolverPod, moves []MoveLite) bool {
 	if len(moves) == 0 {
 		return true
 	}
