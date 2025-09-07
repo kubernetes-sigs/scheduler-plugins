@@ -138,13 +138,13 @@ run_case() {
 
 # run_case "bfs" "for_every"    "preenqueue" 34
 # run_case "bfs" "for_every"    "postfilter" 34
-# run_case "bfs" "in_batches"   "preenqueue" 34
+run_case "bfs" "in_batches"   "preenqueue" 34
 # run_case "bfs" "in_batches"   "postfilter" 34
 # run_case "bfs" "continuously" "postfilter" 34
 
 # run_case "swap" "for_every"    "preenqueue" 34
 # run_case "swap" "for_every"    "postfilter" 34
-run_case "swap" "in_batches"   "preenqueue" 34
+# run_case "swap" "in_batches"   "preenqueue" 34
 # run_case "swap" "in_batches"   "postfilter" 34
 # run_case "swap" "continuously" "postfilter" 34
 

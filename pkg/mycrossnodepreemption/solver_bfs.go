@@ -269,7 +269,6 @@ type bfsState struct {
 	deficits  []deficit         // outstanding nodes to free (front is active)
 	reserve   map[string]Delta  // node -> reserved delta (+free on sources, -consumed on dests)
 	finalDest map[string]string // UID -> final destination node (each UID moved at most once)
-	moves     []moveLite        // ordered move list (each step adds exactly one)
 }
 
 // helpers to clone small maps/slices (kept tiny by caps)
@@ -285,11 +284,6 @@ func cloneFD(m map[string]string) map[string]string {
 	for k, v := range m {
 		c[k] = v
 	}
-	return c
-}
-func cloneMoves(mv []moveLite) []moveLite {
-	c := make([]moveLite, len(mv))
-	copy(c, mv)
 	return c
 }
 func cloneDeficits(d []deficit) []deficit {
@@ -312,7 +306,6 @@ func bfsFreeTargets(
 		deficits:  []deficit{{node: rootTarget, needCPU: rootNeedCPU, needMem: rootNeedMem}},
 		reserve:   map[string]Delta{},
 		finalDest: map[string]string{},
-		moves:     nil,
 	}
 
 	front := []bfsState{init}
@@ -386,7 +379,6 @@ func bfsFreeTargets(
 						deficits:  cloneDeficits(st.deficits),
 						reserve:   cloneResv(st.reserve),
 						finalDest: cloneFD(st.finalDest),
-						moves:     cloneMoves(st.moves),
 					}
 
 					// reservations from this move
@@ -411,8 +403,7 @@ func bfsFreeTargets(
 							needMem: needMem2,
 						})
 					}
-
-					ns.moves = append(ns.moves, moveLite{UID: v.UID, From: need.node, To: dn.Name})
+					// record move
 					ns.finalDest[v.UID] = dn.Name
 
 					key := sig(ns.deficits, ns.finalDest, ns.reserve)
