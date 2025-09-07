@@ -3,6 +3,8 @@ package mycrossnodepreemption
 import (
 	"math"
 	"sort"
+
+	"k8s.io/klog/v2"
 )
 
 type pLite struct {
@@ -361,4 +363,82 @@ func buildWorklist(pending []*pLite, pre *pLite) (out []*pLite, single bool, mov
 		return a.UID < b.UID
 	})
 	return out, false, nil
+}
+
+func applyTwoPhase(nodes map[string]*nLite, all map[string]*pLite, moves []moveLite) bool {
+	if len(moves) == 0 {
+		return true
+	}
+
+	type d struct{ cpu, mem int64 }
+	per := map[string]d{}
+	for _, mv := range moves {
+		p := all[mv.UID]
+		from, to := nodes[mv.From], nodes[mv.To]
+		if p == nil || from == nil || to == nil {
+			klog.InfoS("apply: invalid endpoint", "uid", mv.UID, "from", mv.From, "to", mv.To)
+			return false
+		}
+		df := per[from.Name]
+		df.cpu += p.CPUm
+		df.mem += p.MemBytes
+		per[from.Name] = df
+		dt := per[to.Name]
+		dt.cpu -= p.CPUm
+		dt.mem -= p.MemBytes
+		per[to.Name] = dt
+	}
+	for name, dd := range per {
+		if n := nodes[name]; n != nil {
+			if n.FreeCPUm+dd.cpu < 0 || n.FreeMemBytes+dd.mem < 0 {
+				klog.InfoS("apply: reject, final negative free", "node", name,
+					"freeCPU_now", n.FreeCPUm, "freeMem_now", n.FreeMemBytes,
+					"deltaCPU", dd.cpu, "deltaMem", dd.mem,
+					"finalCPU", n.FreeCPUm+dd.cpu, "finalMem", n.FreeMemBytes+dd.mem)
+				for i, mv := range moves {
+					klog.InfoS("  mv", "i", i, "uid", mv.UID, "from", mv.From, "to", mv.To)
+				}
+				return false
+			}
+		}
+	}
+
+	// Step 1: Remove all moved pods from their sources
+	for _, mv := range moves {
+		p := all[mv.UID]
+		if n := nodes[mv.From]; n != nil && n.Pods[p.UID] != nil {
+			n.remove(p)
+		}
+	}
+
+	// Step 2: Then add them to their final destinations
+	for _, mv := range moves {
+		p := all[mv.UID]
+		if n := nodes[mv.To]; n != nil {
+			if !n.fits(p.CPUm, p.MemBytes) {
+				klog.InfoS("apply: reject, does not fit on destination",
+					"uid", p.UID, "to", n.Name, "freeCPU_now", n.FreeCPUm, "freeMem_now", n.FreeMemBytes,
+					"needCPU", p.CPUm, "needMem", p.MemBytes)
+				return false
+			}
+			n.addPod(p)
+		}
+	}
+	return true
+}
+
+func (n *nLite) fits(cpu, mem int64) bool { return n.FreeCPUm >= cpu && n.FreeMemBytes >= mem }
+func (n *nLite) addPod(p *pLite) {
+	n.FreeCPUm -= p.CPUm
+	n.FreeMemBytes -= p.MemBytes
+	n.Pods[p.UID] = p
+	p.Node = n.Name
+}
+func (n *nLite) remove(p *pLite) {
+	if _, ok := n.Pods[p.UID]; ok {
+		delete(n.Pods, p.UID)
+		n.FreeCPUm += p.CPUm
+		n.FreeMemBytes += p.MemBytes
+		p.Node = ""
+	}
 }
