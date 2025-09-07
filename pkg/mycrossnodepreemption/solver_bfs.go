@@ -114,115 +114,20 @@ Tuning knobs
 */
 
 func runSolverBfs(in SolverInput) *SolverOutput {
-	nodes, pods, pending, order, pre := buildClusterState(in)
-
-	if len(pending) == 0 {
-		klog.InfoS("bfs: nothing to place")
-		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
-	}
-
-	// A. Worklist (big-first), same as swap
-	worklist, singleMode, moveGatePtr := buildWorklist(pending, pre)
-
-	// Batch accounting
-	newPlacements := make(map[string]string)
-	var evicts []Placement
-	movedUIDs := make(map[string]struct{})
-
-	stop := false
-	var stopAt int32
-
-	for _, p := range worklist {
-		if stop && p.Priority <= stopAt {
-			break
-		}
-		if singleMode && pre != nil && p.UID != pre.UID {
-			continue
-		}
-
-		placed, infeasible := placeOnePodBfs(
-			p, nodes, pods, order,
-			moveGatePtr,
-			evictGateForPod(p, singleMode, pre),
-			movedUIDs, newPlacements, &evicts,
-		)
-
-		if !placed {
-			if singleMode || infeasible {
-				return stableOutput("INFEASIBLE", newPlacements, evicts, in)
-			}
-			stop = true
-			stopAt = p.Priority
-			klog.InfoS("bfs: stopping batch at priority; discarding remainder",
-				"priority", stopAt, "uid", p.UID)
-		}
-	}
-
-	return stableOutput("FEASIBLE", newPlacements, evicts, in)
+	return runSolverCommon(in,
+		// BFS planner
+		func(p *pLite, nodes map[string]*nLite, pods map[string]*pLite, order []*nLite,
+			moveGate *int32, movedUIDs map[string]struct{}, newPlacements map[string]string,
+		) bool {
+			return placeByBFS(p, nodes, pods, order, moveGate, movedUIDs, newPlacements)
+		},
+		"bfs",
+	)
 }
 
-// -----------------------------------------------------------------------------
-// Per-pod BFS pipeline (same shape as placeOnePod, but step 3 uses BFS)
-// -----------------------------------------------------------------------------
-
-func placeOnePodBfs(
-	p *pLite,
-	nodes map[string]*nLite,
-	pods map[string]*pLite,
-	order []*nLite,
-	moveGate *int32,
-	evictGate *int32,
-	movedUIDs map[string]struct{},
-	newPlacements map[string]string,
-	evicts *[]Placement,
-) (bool, bool) {
-
-	// 1) Cluster slack
-	if !clusterHasSlack(order, p) {
-		goto tryEvict
-	}
-
-	// 2) Direct best-fit
-	if to, ok := bestDirectFit(order, p); ok {
-		nodes[to].addPod(p)
-		newPlacements[p.UID] = to
-		return true, false
-	}
-
-	// 3) Moves-only via BFS (fewest moves on the best target)
-	if placeByBFS(p, nodes, pods, order, moveGate, movedUIDs, newPlacements) {
-		return true, false
-	}
-
-	// 4) Evict (strictly lower prio & enabling-only)
-tryEvict:
-	v, on := pickLargestEnablingEviction(order, p, evictGate, movedUIDs)
-	if v == nil || on == nil {
-		return false, true
-	}
-	delete(newPlacements, v.UID)
-	delete(movedUIDs, v.UID)
-	on.removePod(v)
-	*evicts = append(*evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
-
-	if on.canPodFit(p.CPUm, p.MemBytes) {
-		on.addPod(p)
-		newPlacements[p.UID] = on.Name
-		return true, false
-	}
-	// Defensive fallback
-	if to, ok := bestDirectFit(order, p); ok {
-		nodes[to].addPod(p)
-		newPlacements[p.UID] = to
-		return true, false
-	}
-	return false, true
-}
-
-// -----------------------------------------------------------------------------
-// Moves-only using BFS: finish each target up to MaxDepth, pick fewest moves
-// -----------------------------------------------------------------------------
-
+// placeByBFS tries to place p by relocating existing pods via BFS.
+// Returns true if successful (p placed, newPlacements and movedUIDs updated).
+// On failure, the cluster state is unchanged.
 func placeByBFS(
 	p *pLite,
 	nodes map[string]*nLite,
@@ -231,7 +136,7 @@ func placeByBFS(
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
-) bool {
+) (placed bool) {
 	targets := orderTargetsByDeficit(order, p)
 
 	// build orig map once for squashMoves

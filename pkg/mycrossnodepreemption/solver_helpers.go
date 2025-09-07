@@ -41,6 +41,120 @@ type nLite struct {
 
 type moveLite struct{ UID, From, To string }
 
+type TryRelocateFn func(
+	p *pLite,
+	nodes map[string]*nLite,
+	pods map[string]*pLite,
+	order []*nLite,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	newPlacements map[string]string,
+) bool
+
+func runSolverCommon(in SolverInput, tryRelocate TryRelocateFn, tag string) *SolverOutput {
+	nodes, pods, pending, order, pre := buildClusterState(in)
+
+	if len(pending) == 0 {
+		klog.InfoS(tag + ": nothing to place")
+		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
+	}
+
+	// Worklist (big-first) and mode flags (single vs batch)
+	worklist, singleMode, moveGatePtr := buildWorklist(pending, pre)
+
+	// Batch accounting
+	newPlacements := make(map[string]string)
+	var evicts []Placement
+	movedUIDs := make(map[string]struct{})
+
+	stop := false
+	var stopAt int32
+
+	for _, p := range worklist {
+		if stop && p.Priority <= stopAt {
+			break
+		}
+		if singleMode && pre != nil && p.UID != pre.UID {
+			continue
+		}
+
+		placed, infeasible := placeOnePodCommon(
+			p, nodes, pods, order,
+			moveGatePtr,
+			evictGateForPod(p, singleMode, pre),
+			movedUIDs, newPlacements, &evicts,
+			tryRelocate,
+		)
+
+		if !placed {
+			if singleMode || infeasible {
+				return stableOutput("INFEASIBLE", newPlacements, evicts, in)
+			}
+			stop = true
+			stopAt = p.Priority
+			klog.InfoS(tag+": stopping batch at priority; discarding remainder",
+				"priority", stopAt, "uid", p.UID)
+		}
+	}
+
+	return stableOutput("FEASIBLE", newPlacements, evicts, in)
+}
+
+func placeOnePodCommon(
+	p *pLite,
+	nodes map[string]*nLite,
+	pods map[string]*pLite,
+	order []*nLite,
+	moveGate *int32,
+	evictGate *int32,
+	movedUIDs map[string]struct{},
+	newPlacements map[string]string,
+	evicts *[]Placement,
+	tryRelocate TryRelocateFn,
+) (feasible bool, triedEvicting bool) {
+
+	// 1) Cluster slack
+	if !clusterHasSlack(order, p) {
+		goto tryEvict
+	}
+
+	// 2) Direct best-fit
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true, false
+	}
+
+	// 3) Moves-only via strategy hook (Swap virtual planner or BFS)
+	if tryRelocate(p, nodes, pods, order, moveGate, movedUIDs, newPlacements) {
+		return true, false
+	}
+
+	// 4) Evict (strictly lower prio & enabling-only)
+tryEvict:
+	v, on := pickLargestEnablingEviction(order, p, evictGate, movedUIDs)
+	if v == nil || on == nil {
+		return false, true
+	}
+	delete(newPlacements, v.UID)
+	delete(movedUIDs, v.UID)
+	on.removePod(v)
+	*evicts = append(*evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
+
+	if on.canPodFit(p.CPUm, p.MemBytes) {
+		on.addPod(p)
+		newPlacements[p.UID] = on.Name
+		return true, false
+	}
+	// Defensive fallback
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true, false
+	}
+	return false, true
+}
+
 // buildClusterState builds the cluster state from the given solver input.
 // It returns:
 //   - map of node name → *nLite
