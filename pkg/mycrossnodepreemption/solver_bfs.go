@@ -113,7 +113,7 @@ Tuning knobs
 func runSolverBfs(in SolverInput) *SolverOutput {
 	return runSolverCommon(in,
 		// BFS planner
-		func(p *pLite, nodes map[string]*nLite, pods map[string]*pLite, order []*nLite,
+		func(p *SolverPod, nodes map[string]*SolverNode, pods map[string]*SolverPod, order []*SolverNode,
 			moveGate *int32, movedUIDs map[string]struct{}, newPlacements map[string]string,
 		) bool {
 			return placeByBFS(p, nodes, pods, order, moveGate, movedUIDs, newPlacements)
@@ -126,10 +126,10 @@ func runSolverBfs(in SolverInput) *SolverOutput {
 // Returns true if successful (p placed, newPlacements and movedUIDs updated).
 // On failure, the cluster state is unchanged.
 func placeByBFS(
-	p *pLite,
-	nodes map[string]*nLite,
-	pods map[string]*pLite,
-	order []*nLite,
+	p *SolverPod,
+	nodes map[string]*SolverNode,
+	pods map[string]*SolverPod,
+	order []*SolverNode,
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
@@ -142,9 +142,9 @@ func placeByBFS(
 		prioLimit = *moveGate
 	}
 
-	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *nLite) ([]moveLite, bool) {
-		needCPU := max64(0, p.CPUm-t.FreeCPUm)
-		needMem := max64(0, p.MemBytes-t.FreeMemBytes)
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *SolverNode) ([]moveLite, bool) {
+		needCPU := max64(0, p.ReqCPUm-t.AllocCPUm)
+		needMem := max64(0, p.ReqMemBytes-t.AllocMemBytes)
 		if needCPU == 0 && needMem == 0 {
 			return nil, true // zero-move plan on t
 		}
@@ -168,8 +168,8 @@ func placeByBFS(
 
 // ========================= Helpers / scoring =========================
 
-func eligibleVictimsSorted(n *nLite, prioLimit int32, capK int, needCPU, needMem int64) []*pLite {
-	buf := make([]*pLite, 0, len(n.Pods))
+func eligibleVictimsSorted(n *SolverNode, prioLimit int32, capK int, needCPU, needMem int64) []*SolverPod {
+	buf := make([]*SolverPod, 0, len(n.Pods))
 	for _, p := range n.Pods {
 		if p.Protected || p.Priority > prioLimit {
 			continue
@@ -187,19 +187,19 @@ func eligibleVictimsSorted(n *nLite, prioLimit int32, capK int, needCPU, needMem
 	}
 
 	sort.Slice(buf, func(i, j int) bool {
-		si := min64(buf[i].CPUm, needCPU)*wCPU + min64(buf[i].MemBytes, needMem)*wMem
-		sj := min64(buf[j].CPUm, needCPU)*wCPU + min64(buf[j].MemBytes, needMem)*wMem
+		si := min64(buf[i].ReqCPUm, needCPU)*wCPU + min64(buf[i].ReqMemBytes, needMem)*wMem
+		sj := min64(buf[j].ReqCPUm, needCPU)*wCPU + min64(buf[j].ReqMemBytes, needMem)*wMem
 		if si != sj {
 			return si > sj
 		}
 		if buf[i].Priority != buf[j].Priority {
 			return buf[i].Priority < buf[j].Priority
 		}
-		if buf[i].CPUm != buf[j].CPUm {
-			return buf[i].CPUm < buf[j].CPUm
+		if buf[i].ReqCPUm != buf[j].ReqCPUm {
+			return buf[i].ReqCPUm < buf[j].ReqCPUm
 		}
-		if buf[i].MemBytes != buf[j].MemBytes {
-			return buf[i].MemBytes < buf[j].MemBytes
+		if buf[i].ReqMemBytes != buf[j].ReqMemBytes {
+			return buf[i].ReqMemBytes < buf[j].ReqMemBytes
 		}
 		return buf[i].UID < buf[j].UID
 	})
@@ -209,17 +209,17 @@ func eligibleVictimsSorted(n *nLite, prioLimit int32, capK int, needCPU, needMem
 	return buf
 }
 
-func destsByFree(nodes map[string]*nLite, capK int) []*nLite {
-	ns := make([]*nLite, 0, len(nodes))
+func destsByFree(nodes map[string]*SolverNode, capK int) []*SolverNode {
+	ns := make([]*SolverNode, 0, len(nodes))
 	for _, n := range nodes {
 		ns = append(ns, n)
 	}
 	sort.Slice(ns, func(i, j int) bool {
-		if ns[i].FreeCPUm != ns[j].FreeCPUm {
-			return ns[i].FreeCPUm > ns[j].FreeCPUm
+		if ns[i].AllocCPUm != ns[j].AllocCPUm {
+			return ns[i].AllocCPUm > ns[j].AllocCPUm
 		}
-		if ns[i].FreeMemBytes != ns[j].FreeMemBytes {
-			return ns[i].FreeMemBytes > ns[j].FreeMemBytes
+		if ns[i].AllocMemBytes != ns[j].AllocMemBytes {
+			return ns[i].AllocMemBytes > ns[j].AllocMemBytes
 		}
 		return ns[i].Name < ns[j].Name
 	})
@@ -302,7 +302,7 @@ func cloneDeficits(d []deficit) []deficit {
 // Initial deficit 0 is the root target (where the preemptor will land).
 // Returns: coalesced finalDest + ordered moves if a plan exists within caps.
 func bfsFreeTargets(
-	nodes map[string]*nLite,
+	nodes map[string]*SolverNode,
 	rootTarget string,
 	rootNeedCPU, rootNeedMem int64,
 	prioLimit int32,
@@ -371,12 +371,12 @@ func bfsFreeTargets(
 
 					// destination shortage under current reserve
 					dstRes := st.reserve[dn.Name]
-					needCPU2 := max64(0, v.CPUm-(dn.FreeCPUm+dstRes.cpu))
-					needMem2 := max64(0, v.MemBytes-(dn.FreeMemBytes+dstRes.mem))
+					needCPU2 := max64(0, v.ReqCPUm-(dn.AllocCPUm+dstRes.cpu))
+					needMem2 := max64(0, v.ReqMemBytes-(dn.AllocMemBytes+dstRes.mem))
 
 					// progress rule (don't make a worse deficit than we relieve)
-					freedCPU := min64(v.CPUm, need.needCPU)
-					freedMem := min64(v.MemBytes, need.needMem)
+					freedCPU := min64(v.ReqCPUm, need.needCPU)
+					freedMem := min64(v.ReqMemBytes, need.needMem)
 					if needCPU2 > freedCPU || needMem2 > freedMem {
 						continue
 					}
@@ -390,12 +390,12 @@ func bfsFreeTargets(
 					}
 
 					// reservations from this move
-					pushResv(ns.reserve, need.node, +v.CPUm, +v.MemBytes)
-					pushResv(ns.reserve, dn.Name, -v.CPUm, -v.MemBytes)
+					pushResv(ns.reserve, need.node, +v.ReqCPUm, +v.ReqMemBytes)
+					pushResv(ns.reserve, dn.Name, -v.ReqCPUm, -v.ReqMemBytes)
 
 					// reduce front deficit
-					remCPU := max64(0, need.needCPU-v.CPUm)
-					remMem := max64(0, need.needMem-v.MemBytes)
+					remCPU := max64(0, need.needCPU-v.ReqCPUm)
+					remMem := max64(0, need.needMem-v.ReqMemBytes)
 					if remCPU == 0 && remMem == 0 {
 						ns.deficits = ns.deficits[1:]
 					} else {

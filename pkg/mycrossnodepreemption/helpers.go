@@ -616,7 +616,7 @@ func computeSolverScore(in SolverInput, out *SolverOutput) Score {
 	origWhere := make(map[string]string, len(in.Pods)+1)
 	pri := make(map[string]int32, len(in.Pods)+1)
 	for _, sp := range in.Pods {
-		origWhere[sp.UID] = sp.Where
+		origWhere[sp.UID] = sp.Node
 		pri[sp.UID] = sp.Priority
 	}
 	if in.Preemptor != nil {
@@ -1208,9 +1208,9 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 			continue
 		}
 		in.Nodes = append(in.Nodes, SolverNode{
-			Name:     n.Name,
-			CPUm:     n.Status.Allocatable.Cpu().MilliValue(),
-			MemBytes: n.Status.Allocatable.Memory().Value(),
+			Name:        n.Name,
+			CapCPUm:     n.Status.Allocatable.Cpu().MilliValue(),
+			CapMemBytes: n.Status.Allocatable.Memory().Value(),
 		})
 		usable[n.Name] = true
 	}
@@ -1237,7 +1237,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 				continue
 			}
 		}
-		sp := toSolverPod(p, where)
+		sp := toPodType(p, where)
 		if p.Namespace == "kube-system" {
 			sp.Protected = true
 		}
@@ -1255,7 +1255,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 			if string(p.UID) == preUID {
 				continue
 			}
-			sp := toSolverPod(p, "")
+			sp := toPodType(p, "")
 			if p.Namespace == "kube-system" {
 				sp.Protected = true
 			}
@@ -1283,7 +1283,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.No
 		if preemptor == nil {
 			return SolverInput{}, fmt.Errorf("SolveSingle requires preemptor")
 		}
-		pre := toSolverPod(preemptor, "")
+		pre := toPodType(preemptor, "")
 		in.Preemptor = &pre
 		if err := pl.fillNodesAndPods(&in, nodes, pods, preemptor, nil, false); err != nil {
 			return SolverInput{}, fmt.Errorf("fill (single): %w", err)
@@ -1312,16 +1312,16 @@ func IsSolverFeasible(out *SolverOutput) bool {
 	return out != nil && (out.Status == "OPTIMAL" || out.Status == "FEASIBLE")
 }
 
-// toSolverPod converts a Pod to a SolverPod.
-func toSolverPod(p *v1.Pod, where string) SolverPod {
+// toPodType converts a Pod to a PodType.
+func toPodType(p *v1.Pod, node string) SolverPod {
 	return SolverPod{
-		UID:       string(p.UID),
-		Namespace: p.Namespace,
-		Name:      p.Name,
-		CPU_m:     getPodCPURequest(p),
-		MemBytes:  getPodMemoryRequest(p),
-		Priority:  getPodPriority(p),
-		Where:     where,
+		UID:         string(p.UID),
+		Namespace:   p.Namespace,
+		Name:        p.Name,
+		ReqCPUm:     getPodCPURequest(p),
+		ReqMemBytes: getPodMemoryRequest(p),
+		Priority:    getPodPriority(p),
+		Node:        node,
 	}
 }
 
@@ -1421,7 +1421,7 @@ func (pl *MyCrossNodePreemption) buildInputAndBaseline(
 func computeBaselineFromInput(in SolverInput) Score {
 	placedByPri := map[string]int{}
 	for _, sp := range in.Pods {
-		if sp.Where == "" {
+		if sp.Node == "" {
 			continue // pending doesn't count into "placed"
 		}
 		pr := strconv.Itoa(int(sp.Priority))
@@ -1445,9 +1445,9 @@ func buildDigestFromInput(in SolverInput) string {
 	for _, n := range ns {
 		h.Write([]byte(n.Name))
 		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(n.CPUm, 10)))
+		h.Write([]byte(strconv.FormatInt(n.CapCPUm, 10)))
 		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(n.MemBytes, 10)))
+		h.Write([]byte(strconv.FormatInt(n.CapMemBytes, 10)))
 		h.Write([]byte("\n"))
 	}
 	// pods sorted by UID
@@ -1461,13 +1461,13 @@ func buildDigestFromInput(in SolverInput) string {
 		h.Write([]byte("|"))
 		h.Write([]byte(p.Name))
 		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(p.CPU_m, 10)))
+		h.Write([]byte(strconv.FormatInt(p.ReqCPUm, 10)))
 		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(p.MemBytes, 10)))
+		h.Write([]byte(strconv.FormatInt(p.ReqMemBytes, 10)))
 		h.Write([]byte("|"))
 		h.Write([]byte(strconv.FormatInt(int64(p.Priority), 10)))
 		h.Write([]byte("|"))
-		h.Write([]byte(p.Where))
+		h.Write([]byte(p.Node))
 		h.Write([]byte("|"))
 		if p.Protected {
 			h.Write([]byte("1"))

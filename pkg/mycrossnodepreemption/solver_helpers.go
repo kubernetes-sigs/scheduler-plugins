@@ -7,38 +7,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type pLite struct {
-	// Unique identifier of the pod
-	UID string
-	// Requested CPU in milliCPU
-	CPUm int64
-	// Requested memory in bytes
-	MemBytes int64
-	// Priority of the pod
-	Priority int32
-	// Whether the pod is protected
-	Protected bool
-	// Current node of the pod; "" if pending
-	Node string // "" if pending
-	// Original node of the pod
-	origNode string
-}
-
-type nLite struct {
-	// Name of the node
-	Name string
-	// Total capacity on the node of milliCPU
-	CapCPUm int64
-	// Total capacity on the node of memory in bytes
-	CapMemBytes int64
-	// Free capacity on the node of milliCPU
-	FreeCPUm int64
-	// Free capacity on the node of memory in bytes
-	FreeMemBytes int64
-	// Pods on the node
-	Pods map[string]*pLite
-}
-
 type moveLite struct{ UID, From, To string }
 
 type UIDSet map[string]struct{}
@@ -51,9 +19,9 @@ func (s UIDSet) Has(uid string) bool { _, ok := s[uid]; return ok }
 // keeps the plan with the fewest moves. `planForTarget` should return the
 // candidate move list for that target (or !ok if no plan exists).
 func bestPlanAcrossTargets(
-	p *pLite,
-	order []*nLite,
-	planForTarget func(t *nLite) (moves []moveLite, ok bool),
+	p *SolverPod,
+	order []*SolverNode,
+	planForTarget func(t *SolverNode) (moves []moveLite, ok bool),
 ) (bestMoves []moveLite, bestTarget string, ok bool) {
 	bestCount := math.MaxInt32
 	for _, t := range orderTargetsByDeficit(order, p) {
@@ -72,7 +40,7 @@ func bestPlanAcrossTargets(
 }
 
 // gateAllows centralizes priority checks (strict: < vs <=).
-func gateAllows(p *pLite, gate *int32, strict bool) bool {
+func gateAllows(p *SolverPod, gate *int32, strict bool) bool {
 	if p == nil || p.Protected {
 		return false
 	}
@@ -85,14 +53,14 @@ func gateAllows(p *pLite, gate *int32, strict bool) bool {
 	return p.Priority <= *gate
 }
 
-func canMove(p *pLite, gate *int32) bool {
+func canMove(p *SolverPod, gate *int32) bool {
 	if p == nil || p.Node == "" {
 		return false
 	}
 	return gateAllows(p, gate, false)
 }
 
-func canEvict(p *pLite, gate *int32) bool {
+func canEvict(p *SolverPod, gate *int32) bool {
 	return gateAllows(p, gate, true)
 }
 
@@ -110,10 +78,10 @@ func addEdgeDelta(m map[string]Delta, from, to string, cpu, mem int64) {
 }
 
 type tryRelocate func(
-	p *pLite,
-	nodes map[string]*nLite,
-	pods map[string]*pLite,
-	order []*nLite,
+	p *SolverPod,
+	nodes map[string]*SolverNode,
+	pods map[string]*SolverPod,
+	order []*SolverNode,
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
@@ -172,12 +140,12 @@ func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *Solve
 // then places p on `target` (if it fits). If not, it falls back to bestDirectFit.
 // Returns true on success, false if the plan is invalid or placement fails.
 func commitPlanAndPlace(
-	p *pLite,
+	p *SolverPod,
 	target string,
 	moves []moveLite,
-	nodes map[string]*nLite,
-	pods map[string]*pLite,
-	order []*nLite,
+	nodes map[string]*SolverNode,
+	pods map[string]*SolverPod,
+	order []*SolverNode,
 	newPlacements map[string]string,
 	movedUIDs map[string]struct{},
 ) bool {
@@ -188,7 +156,7 @@ func commitPlanAndPlace(
 		newPlacements[mv.UID] = mv.To
 		movedUIDs[mv.UID] = struct{}{}
 	}
-	if n := nodes[target]; n != nil && n.canPodFit(p.CPUm, p.MemBytes) {
+	if n := nodes[target]; n != nil && n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
 		n.addPod(p)
 		newPlacements[p.UID] = target
 		return true
@@ -203,10 +171,10 @@ func commitPlanAndPlace(
 }
 
 func placeOnePodCommon(
-	p *pLite,
-	nodes map[string]*nLite,
-	pods map[string]*pLite,
-	order []*nLite,
+	p *SolverPod,
+	nodes map[string]*SolverNode,
+	pods map[string]*SolverPod,
+	order []*SolverNode,
 	moveGate *int32,
 	evictGate *int32,
 	movedUIDs map[string]struct{},
@@ -243,7 +211,7 @@ tryEvict:
 	on.removePod(v)
 	*evicts = append(*evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
 
-	if on.canPodFit(p.CPUm, p.MemBytes) {
+	if on.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
 		on.addPod(p)
 		newPlacements[p.UID] = on.Name
 		return true, false
@@ -259,83 +227,67 @@ tryEvict:
 
 // buildClusterState builds the cluster state from the given solver input.
 // It returns:
-//   - map of node name → *nLite
-//   - map of pod UID → *pLite
+//   - map of node name → *NodeType
+//   - map of pod UID → *PodType
 //   - slice of pending pods (to be scheduled)
 //   - slice of all nodes in lexicographical order by name
 //   - the preemptor pod if any (nil otherwise)
-func buildClusterState(in SolverInput) (map[string]*nLite, map[string]*pLite, []*pLite, []*nLite, *pLite) {
-	// Build nodes map
-	nodes := make(map[string]*nLite, len(in.Nodes))
-	order := make([]*nLite, 0, len(in.Nodes))
+func buildClusterState(in SolverInput) (map[string]*SolverNode, map[string]*SolverPod, []*SolverPod, []*SolverNode, *SolverPod) {
+	// Nodes map + ordered slice
+	nodes := make(map[string]*SolverNode, len(in.Nodes))
+	order := make([]*SolverNode, 0, len(in.Nodes))
 	for i := range in.Nodes {
-		n := &nLite{
-			Name:         in.Nodes[i].Name,
-			CapCPUm:      in.Nodes[i].CPUm,
-			CapMemBytes:  in.Nodes[i].MemBytes,
-			FreeCPUm:     in.Nodes[i].CPUm,
-			FreeMemBytes: in.Nodes[i].MemBytes,
-			Pods:         make(map[string]*pLite, 32),
+		n := &SolverNode{
+			Name:          in.Nodes[i].Name,
+			CapCPUm:       in.Nodes[i].CapCPUm,
+			CapMemBytes:   in.Nodes[i].CapMemBytes,
+			Labels:        in.Nodes[i].Labels,
+			AllocCPUm:     in.Nodes[i].CapCPUm,
+			AllocMemBytes: in.Nodes[i].CapMemBytes,
+			Pods:          make(map[string]*SolverPod, 32),
 		}
 		nodes[n.Name] = n
 		order = append(order, n)
 	}
 	sort.Slice(order, func(i, j int) bool { return order[i].Name < order[j].Name })
 
-	// Build pods map and assign pods to nodes
-	pods := make(map[string]*pLite, len(in.Pods)+1)
-	pendingPods := make([]*pLite, 0, len(in.Pods))
-	var pre *pLite
-	// Add the preemptor to the total set of pods if it exists
+	// Pods map + pending list (+ preemptor ptr if any)
+	pods := make(map[string]*SolverPod, len(in.Pods)+1)
+	pending := make([]*SolverPod, 0, len(in.Pods))
+	var pre *SolverPod
+
 	if in.Preemptor != nil {
-		pendingPods = append(pendingPods, &pLite{
-			UID:       in.Preemptor.UID,
-			CPUm:      in.Preemptor.CPU_m,
-			MemBytes:  in.Preemptor.MemBytes,
-			Priority:  in.Preemptor.Priority,
-			Protected: in.Preemptor.Protected,
-		})
-		pre = &pLite{
-			UID:       in.Preemptor.UID,
-			CPUm:      in.Preemptor.CPU_m,
-			MemBytes:  in.Preemptor.MemBytes,
-			Priority:  in.Preemptor.Priority,
-			Protected: in.Preemptor.Protected,
-		}
-		pods[pre.UID] = pre
+		pi := *in.Preemptor // copy
+		pi.Node = ""        // ensure pending
+		pending = append(pending, &pi)
+		pre = &pi
+		pods[pi.UID] = pre
 	}
-	// Add also other pods to the total set of pods
+
 	for i := range in.Pods {
 		sp := in.Pods[i]
-		if sp.Where == "" { // pending => treat as incoming
-			pendingPods = append(pendingPods, &pLite{
-				UID:       sp.UID,
-				CPUm:      sp.CPU_m,
-				MemBytes:  sp.MemBytes,
-				Priority:  sp.Priority,
-				Protected: sp.Protected,
-			})
+		p := &SolverPod{
+			UID:         sp.UID,
+			Namespace:   sp.Namespace,
+			Name:        sp.Name,
+			ReqCPUm:     sp.ReqCPUm,
+			ReqMemBytes: sp.ReqMemBytes,
+			Priority:    sp.Priority,
+			Protected:   sp.Protected,
+			Node:        sp.Node, // "where" in JSON
 		}
-		p := &pLite{
-			UID:       sp.UID,
-			CPUm:      sp.CPU_m,
-			MemBytes:  sp.MemBytes,
-			Priority:  sp.Priority,
-			Protected: sp.Protected,
-			Node:      sp.Where,
-			origNode:  sp.Where,
+		if p.Node == "" {
+			pending = append(pending, p)
 		}
 		pods[p.UID] = p
-
-		// Add the pod to its node
 		if p.Node != "" {
-			if node := nodes[p.Node]; node != nil {
-				node.addPod(p)
+			if n := nodes[p.Node]; n != nil {
+				n.addPod(p)
 			}
 		}
 	}
 
-	return nodes, pods, pendingPods, order, pre
+	return nodes, pods, pending, order, pre
 }
 
 // max64 returns the larger of a or b.
@@ -400,10 +352,10 @@ func stableOutput(status string, placements map[string]string, evicts []Placemen
 //  3. Among those, prefer pods that have already been moved in this cycle.
 //  4. Among those, pick the largest (CPUm*MemBytes), then by CPU, then by MEM.
 //  5. Among those, pick lexicographically by node name, then by pod UID.
-func pickLargestEnablingEviction(order []*nLite, p *pLite, evictGate *int32, movedUIDs map[string]struct{}) (*pLite, *nLite) {
+func pickLargestEnablingEviction(order []*SolverNode, p *SolverPod, evictGate *int32, movedUIDs map[string]struct{}) (*SolverPod, *SolverNode) {
 	type cand struct {
-		v  *pLite
-		on *nLite
+		v  *SolverPod
+		on *SolverNode
 	}
 	cands := make([]cand, 0, 64)
 	minPrioSet := false
@@ -416,7 +368,7 @@ func pickLargestEnablingEviction(order []*nLite, p *pLite, evictGate *int32, mov
 				continue // enforces q.Priority < gate (i.e., < p.Priority in batch)
 			}
 			// enabling: evicting q must allow direct placement of p on n
-			if n.FreeCPUm+q.CPUm >= p.CPUm && n.FreeMemBytes+q.MemBytes >= p.MemBytes {
+			if n.AllocCPUm+q.ReqCPUm >= p.ReqCPUm && n.AllocMemBytes+q.ReqMemBytes >= p.ReqMemBytes {
 				cands = append(cands, cand{v: q, on: n})
 				if !minPrioSet || q.Priority < minPrio {
 					minPrio = q.Priority
@@ -449,15 +401,15 @@ func pickLargestEnablingEviction(order []*nLite, p *pLite, evictGate *int32, mov
 			return mi // prefer already moved
 		}
 
-		si, sj := vi.CPUm*vi.MemBytes, vj.CPUm*vj.MemBytes
+		si, sj := vi.ReqCPUm*vi.ReqMemBytes, vj.ReqCPUm*vj.ReqMemBytes
 		if si != sj {
 			return si > sj // larger first
 		}
-		if vi.CPUm != vj.CPUm {
-			return vi.CPUm > vj.CPUm
+		if vi.ReqCPUm != vj.ReqCPUm {
+			return vi.ReqCPUm > vj.ReqCPUm
 		}
-		if vi.MemBytes != vj.MemBytes {
-			return vi.MemBytes > vj.MemBytes
+		if vi.ReqMemBytes != vj.ReqMemBytes {
+			return vi.ReqMemBytes > vj.ReqMemBytes
 		}
 		if cands[i].on.Name != cands[j].on.Name {
 			return cands[i].on.Name < cands[j].on.Name
@@ -472,7 +424,7 @@ func pickLargestEnablingEviction(order []*nLite, p *pLite, evictGate *int32, mov
 func hasKey(m map[string]struct{}, k string) bool { _, ok := m[k]; return ok }
 
 // buildOrigMap returns UID -> current node for all placed pods.
-func buildOrigMap(order []*nLite) map[string]string {
+func buildOrigMap(order []*SolverNode) map[string]string {
 	orig := make(map[string]string, 256)
 	for _, n := range order {
 		for _, q := range n.Pods {
@@ -485,7 +437,7 @@ func buildOrigMap(order []*nLite) map[string]string {
 }
 
 type targetScore struct {
-	n      *nLite
+	n      *SolverNode
 	score  float64 // max(defCPU/p.CPU, defMEM/p.MEM)
 	defSum int64
 	waste  int64
@@ -498,18 +450,18 @@ type targetScore struct {
 //  2. defSum ASC (lower is better)
 //  3. waste ASC (lower is better)
 //  4. name ASC (lexicographically)
-func orderTargetsByDeficit(order []*nLite, p *pLite) []*nLite {
+func orderTargetsByDeficit(order []*SolverNode, p *SolverPod) []*SolverNode {
 	s := make([]targetScore, 0, len(order))
 	for _, n := range order {
-		defCPU := max64(0, p.CPUm-n.FreeCPUm)
-		defMEM := max64(0, p.MemBytes-n.FreeMemBytes)
+		defCPU := max64(0, p.ReqCPUm-n.AllocCPUm)
+		defMEM := max64(0, p.ReqMemBytes-n.AllocMemBytes)
 		score := float64(max64(
-			int64(float64(defCPU)/float64(max64(1, p.CPUm))*1_000_000),
-			int64(float64(defMEM)/float64(max64(1, p.MemBytes))*1_000_000),
+			int64(float64(defCPU)/float64(max64(1, p.ReqCPUm))*1_000_000),
+			int64(float64(defMEM)/float64(max64(1, p.ReqMemBytes))*1_000_000),
 		)) / 1_000_000.0
 		waste := int64(0)
-		if n.canPodFit(p.CPUm, p.MemBytes) {
-			waste = (n.FreeCPUm - p.CPUm) + (n.FreeMemBytes - p.MemBytes)
+		if n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
+			waste = (n.AllocCPUm - p.ReqCPUm) + (n.AllocMemBytes - p.ReqMemBytes)
 		}
 		s = append(s, targetScore{n: n, score: score, defSum: defCPU + defMEM, waste: waste})
 	}
@@ -525,7 +477,7 @@ func orderTargetsByDeficit(order []*nLite, p *pLite) []*nLite {
 		}
 		return s[i].n.Name < s[j].n.Name
 	})
-	out := make([]*nLite, 0, len(s))
+	out := make([]*SolverNode, 0, len(s))
 	for _, e := range s {
 		out = append(out, e.n)
 	}
@@ -536,14 +488,14 @@ func orderTargetsByDeficit(order []*nLite, p *pLite) []*nLite {
 // It returns the node name and true if found, or "", false if not found.
 // Best-fit is defined as the node that minimizes CPU waste, then MEM waste,
 // then lexicographically by node name.
-func bestDirectFit(order []*nLite, p *pLite) (string, bool) {
+func bestDirectFit(order []*SolverNode, p *SolverPod) (string, bool) {
 	bestNode := ""
 	bestCPUWaste := int64(math.MaxInt64)
 	bestMEMWaste := int64(math.MaxInt64)
 	for _, n := range order {
-		if n.canPodFit(p.CPUm, p.MemBytes) {
-			cw := n.FreeCPUm - p.CPUm
-			mw := n.FreeMemBytes - p.MemBytes
+		if n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
+			cw := n.AllocCPUm - p.ReqCPUm
+			mw := n.AllocMemBytes - p.ReqMemBytes
 			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && n.Name < bestNode))) {
 				bestNode, bestCPUWaste, bestMEMWaste = n.Name, cw, mw
 			}
@@ -555,19 +507,19 @@ func bestDirectFit(order []*nLite, p *pLite) (string, bool) {
 // clusterHasSlack returns true iff the cluster has total enough free resources to potentially fit p.
 // The pod p may not fit on any single node, but if clusterHasSlack returns false, it means the cluster is
 // unable to accommodate p even with all resources considered.
-func clusterHasSlack(order []*nLite, p *pLite) bool {
+func clusterHasSlack(order []*SolverNode, p *SolverPod) bool {
 	var cpu, mem int64
 	for _, n := range order {
-		cpu += n.FreeCPUm
-		mem += n.FreeMemBytes
+		cpu += n.AllocCPUm
+		mem += n.AllocMemBytes
 	}
-	return cpu >= p.CPUm && mem >= p.MemBytes
+	return cpu >= p.ReqCPUm && mem >= p.ReqMemBytes
 }
 
 // evictGateForPod returns the eviction gate for pod p.
 // In single-preemptor mode, the gate is the preemptor’s priority;
 // in batch mode, it’s p.Priority.
-func evictGateForPod(p *pLite, single bool, pre *pLite) *int32 {
+func evictGateForPod(p *SolverPod, single bool, pre *SolverPod) *int32 {
 	if single && pre != nil {
 		eg := pre.Priority
 		return &eg
@@ -605,12 +557,12 @@ func evictGateForPod(p *pLite, single bool, pre *pLite) *int32 {
 //	moveGate: pointer to the priority threshold for moves (non-nil in single
 //	          mode; nil in batch mode). The pointer is safe to return—Go will
 //	          heap-allocate `mg` as needed.
-func buildWorklist(pending []*pLite, pre *pLite) (out []*pLite, single bool, moveGate *int32) {
+func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, single bool, moveGate *int32) {
 	if pre != nil {
 		for _, p := range pending {
 			if p.UID == pre.UID {
 				mg := pre.Priority
-				return []*pLite{p}, true, &mg
+				return []*SolverPod{p}, true, &mg
 			}
 		}
 	}
@@ -620,15 +572,15 @@ func buildWorklist(pending []*pLite, pre *pLite) (out []*pLite, single bool, mov
 		if a.Priority != b.Priority {
 			return a.Priority > b.Priority
 		}
-		sa, sb := a.CPUm*a.MemBytes, b.CPUm*b.MemBytes
+		sa, sb := a.ReqCPUm*a.ReqMemBytes, b.ReqCPUm*b.ReqMemBytes
 		if sa != sb {
 			return sa > sb
 		}
-		if a.CPUm != b.CPUm {
-			return a.CPUm > b.CPUm
+		if a.ReqCPUm != b.ReqCPUm {
+			return a.ReqCPUm > b.ReqCPUm
 		}
-		if a.MemBytes != b.MemBytes {
-			return a.MemBytes > b.MemBytes
+		if a.ReqMemBytes != b.ReqMemBytes {
+			return a.ReqMemBytes > b.ReqMemBytes
 		}
 		return a.UID < b.UID
 	})
@@ -642,7 +594,7 @@ func buildWorklist(pending []*pLite, pre *pLite) (out []*pLite, single bool, mov
 //   - no node ends up with negative free resources after all moves are applied
 //
 // If the plan is valid, it is applied in-place to the nodes and pods state.
-func verifyPlan(nodes map[string]*nLite, all map[string]*pLite, moves []moveLite) bool {
+func verifyPlan(nodes map[string]*SolverNode, all map[string]*SolverPod, moves []moveLite) bool {
 	if len(moves) == 0 {
 		return true
 	}
@@ -664,23 +616,23 @@ func verifyPlan(nodes map[string]*nLite, all map[string]*pLite, moves []moveLite
 
 		// accumulate net delta
 		df := per[src.Name]
-		df.cpu += p.CPUm
-		df.mem += p.MemBytes
+		df.cpu += p.ReqCPUm
+		df.mem += p.ReqMemBytes
 		per[src.Name] = df
 
 		dt := per[dst.Name]
-		dt.cpu -= p.CPUm
-		dt.mem -= p.MemBytes
+		dt.cpu -= p.ReqCPUm
+		dt.mem -= p.ReqMemBytes
 		per[dst.Name] = dt
 	}
 
 	for name, dd := range per {
 		n := nodes[name]
-		if n.FreeCPUm+dd.cpu < 0 || n.FreeMemBytes+dd.mem < 0 {
+		if n.AllocCPUm+dd.cpu < 0 || n.AllocMemBytes+dd.mem < 0 {
 			klog.InfoS("apply: reject, final negative free",
-				"node", name, "freeCPU_now", n.FreeCPUm, "freeMem_now", n.FreeMemBytes,
+				"node", name, "freeCPU_now", n.AllocCPUm, "freeMem_now", n.AllocMemBytes,
 				"deltaCPU", dd.cpu, "deltaMem", dd.mem,
-				"finalCPU", n.FreeCPUm+dd.cpu, "finalMem", n.FreeMemBytes+dd.mem)
+				"finalCPU", n.AllocCPUm+dd.cpu, "finalMem", n.AllocMemBytes+dd.mem)
 			return false
 		}
 	}
@@ -698,7 +650,7 @@ func verifyPlan(nodes map[string]*nLite, all map[string]*pLite, moves []moveLite
 	for _, mv := range moves {
 		p := all[mv.UID]
 		n := nodes[mv.To]
-		if !n.canPodFit(p.CPUm, p.MemBytes) {
+		if !n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
 			klog.InfoS("apply: unexpected no-fit at destination", "uid", p.UID, "to", n.Name)
 			return false
 		}
@@ -709,22 +661,27 @@ func verifyPlan(nodes map[string]*nLite, all map[string]*pLite, moves []moveLite
 }
 
 // canPodFit returns true iff the node has enough free resources to fit the given cpu/mem request.
-func (n *nLite) canPodFit(cpu, mem int64) bool { return n.FreeCPUm >= cpu && n.FreeMemBytes >= mem }
+func (n *SolverNode) canPodFit(cpu, mem int64) bool {
+	return n.AllocCPUm >= cpu && n.AllocMemBytes >= mem
+}
 
 // addPod adds pod p to node n, updating free resources accordingly.
-func (n *nLite) addPod(p *pLite) {
-	n.FreeCPUm -= p.CPUm
-	n.FreeMemBytes -= p.MemBytes
+func (n *SolverNode) addPod(p *SolverPod) {
+	n.AllocCPUm -= p.ReqCPUm
+	n.AllocMemBytes -= p.ReqMemBytes
+	if n.Pods == nil {
+		n.Pods = make(map[string]*SolverPod, 16)
+	}
 	n.Pods[p.UID] = p
 	p.Node = n.Name
 }
 
 // removePod removes pod p from node n, updating free resources accordingly.
-func (n *nLite) removePod(p *pLite) {
+func (n *SolverNode) removePod(p *SolverPod) {
 	if _, ok := n.Pods[p.UID]; ok {
 		delete(n.Pods, p.UID)
-		n.FreeCPUm += p.CPUm
-		n.FreeMemBytes += p.MemBytes
+		n.AllocCPUm += p.ReqCPUm
+		n.AllocMemBytes += p.ReqMemBytes
 		p.Node = ""
 	}
 }

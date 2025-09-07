@@ -110,21 +110,26 @@ type SolverOutput struct {
 }
 
 type SolverPod struct {
-	UID       string `json:"uid"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	CPU_m     int64  `json:"cpu_m"`
-	MemBytes  int64  `json:"mem_bytes"`
-	Priority  int32  `json:"priority"`
-	Where     string `json:"where"`
-	Protected bool   `json:"protected,omitempty"`
+	UID         string `json:"uid"`
+	Namespace   string `json:"namespace"`
+	Name        string `json:"name"`
+	ReqCPUm     int64  `json:"req_cpu_m"`
+	ReqMemBytes int64  `json:"req_mem_bytes"`
+	Priority    int32  `json:"priority"`
+	Protected   bool   `json:"protected,omitempty"`
+	// Current placement (pending if "")
+	Node string `json:"node"`
 }
 
 type SolverNode struct {
-	Name     string            `json:"name"`
-	CPUm     int64             `json:"cpu_m"`
-	MemBytes int64             `json:"mem_bytes"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Name        string            `json:"name"`
+	CapCPUm     int64             `json:"cap_cpu_m"`
+	CapMemBytes int64             `json:"cap_mem_bytes"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	// Runtime-only (not serialized)
+	AllocCPUm     int64                 `json:"-"`
+	AllocMemBytes int64                 `json:"-"`
+	Pods          map[string]*SolverPod `json:"-"`
 }
 
 type SolverSummary struct {

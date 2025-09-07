@@ -45,7 +45,7 @@ def solve(instance: dict) -> dict:
     log_progress        = bool(instance.get("log_progress", False))
     log_subsolvers      = bool(instance.get("log_progress", False))
 
-    # --- De-dup by UID, prefer entries that have 'where' (running) ---
+    # --- De-dup by UID, prefer entries that have 'node' (running) ---
     by_uid = {}
     for p in pods:
         uid = p.get("uid")
@@ -56,8 +56,8 @@ def solve(instance: dict) -> dict:
         if old is None:
             keep = True
         else:
-            old_has = bool((old.get("where") or "").strip())
-            new_has = bool((p.get("where")  or "").strip())
+            old_has = bool((old.get("node") or "").strip())
+            new_has = bool((p.get("node")  or "").strip())
             if new_has and not old_has:
                 keep = True
         if keep:
@@ -74,11 +74,11 @@ def solve(instance: dict) -> dict:
                 "uid": pre["uid"],
                 "namespace": pre.get("namespace","default"),
                 "name": pre.get("name","preemptor"),
-                "cpu_m": int(pre.get("cpu_m", 0)),
-                "mem_bytes": int(pre.get("mem_bytes", 0)),
+                "req_cpu_m": int(pre.get("req_cpu_m", 0)),
+                "req_mem_bytes": int(pre.get("req_mem_bytes", 0)),
                 "priority": int(pre.get("priority", 0)),
                 "protected": bool(pre.get("protected", False)),
-                "where": "",  # pending
+                "node": "",  # pending
             }
 
     pods = list(by_uid.values())
@@ -90,18 +90,18 @@ def solve(instance: dict) -> dict:
     node_idx = {n["name"]: j for j, n in enumerate(nodes)}
 
     # field accessors
-    def n_cpu_m(j):     return int(nodes[j]["cpu_m"])
-    def n_mem_bytes(j): return int(nodes[j]["mem_bytes"])
+    def n_cap_cpu_m(j):     return int(nodes[j]["cap_cpu_m"])
+    def n_cap_mem_bytes(j): return int(nodes[j]["cap_mem_bytes"])
 
     def p_uid(i):       return pods[i]["uid"]
     def p_ns(i):        return pods[i].get("namespace","default")
     def p_name(i):      return pods[i].get("name","")
-    def p_cpu_m(i):     return int(pods[i]["cpu_m"])
-    def p_mem_bytes(i): return int(pods[i]["mem_bytes"])
+    def p_req_cpu_m(i):     return int(pods[i]["req_cpu_m"])
+    def p_req_mem_bytes(i): return int(pods[i]["req_mem_bytes"])
     def p_pri(i):       return int(pods[i].get("priority",0))
     def p_prot(i):      return bool(pods[i].get("protected", False))
-    def p_where_j(i):
-        w = pods[i].get("where") or ""
+    def p_node_j(i):
+        w = pods[i].get("node") or ""
         return node_idx.get(w) if w else None
 
     # Index of preemptor if present
@@ -117,17 +117,17 @@ def solve(instance: dict) -> dict:
             single_preemptor_mode = False  # fallback if not found
 
     # Identify which pods are "running now" vs "pending"
-    running_idxs = [i for i in range(num_pods) if p_where_j(i) is not None]
-    pending_idxs = [i for i in range(num_pods) if p_where_j(i) is None]
+    running_idxs = [i for i in range(num_pods) if p_node_j(i) is not None]
+    pending_idxs = [i for i in range(num_pods) if p_node_j(i) is None]
 
     # --------------------- Build pruned eligibility ---------------------
     # Only keep nodes that can host the pod alone (quick screen).
     eligible = []
     for i in range(num_pods):
-        cpu_i, mem_i = p_cpu_m(i), p_mem_bytes(i)
+        cpu_i, mem_i = p_req_cpu_m(i), p_req_mem_bytes(i)
         lst = []
         for j in range(num_nodes):
-            if n_cpu_m(j) >= cpu_i and n_mem_bytes(j) >= mem_i:
+            if n_cap_cpu_m(j) >= cpu_i and n_cap_mem_bytes(j) >= mem_i:
                 # TODO: add affinity/anti-affinity checks here when you enable them
                 lst.append(j)
         eligible.append(lst)
@@ -151,17 +151,17 @@ def solve(instance: dict) -> dict:
 
     # capacity
     for j in range(num_nodes):
-        # sum over i where j in eligible[i]
+        # sum over i node j in eligible[i]
         cap_cpu_terms = []
         cap_mem_terms = []
         for i in range(num_pods):
             if j in eligible[i]:
                 idx = eligible[i].index(j)
-                cap_cpu_terms.append(x[i][idx] * p_cpu_m(i))
-                cap_mem_terms.append(x[i][idx] * p_mem_bytes(i))
+                cap_cpu_terms.append(x[i][idx] * p_req_cpu_m(i))
+                cap_mem_terms.append(x[i][idx] * p_req_mem_bytes(i))
         if cap_cpu_terms:
-            m.Add(sum(cap_cpu_terms) <= n_cpu_m(j))
-            m.Add(sum(cap_mem_terms) <= n_mem_bytes(j))
+            m.Add(sum(cap_cpu_terms) <= n_cap_cpu_m(j))
+            m.Add(sum(cap_mem_terms) <= n_cap_mem_bytes(j))
         else:
             # no pods eligible for this node => trivially satisfied
             pass
@@ -178,7 +178,7 @@ def solve(instance: dict) -> dict:
     move = [None] * num_pods
     for i in running_idxs:
         move[i] = m.NewBoolVar(f"move_{i}")
-        orig = p_where_j(i)
+        orig = p_node_j(i)
         m.Add(move[i] <= placed[i])
         if orig in eligible[i]:
             idx = eligible[i].index(orig)
@@ -234,8 +234,8 @@ def solve(instance: dict) -> dict:
         order = list(range(num_pods))
         def key(i):
             return (
-                p_cpu_m(i),
-                p_mem_bytes(i),
+                p_req_cpu_m(i),
+                p_req_mem_bytes(i),
                 p_pri(i),
                 -len(eligible[i]),
             )
@@ -248,7 +248,7 @@ def solve(instance: dict) -> dict:
     # Add hints to keep running pods where they are if possible
     if use_hints:
         for i in running_idxs:
-            orig = p_where_j(i)
+            orig = p_node_j(i)
             if orig in eligible[i]:
                 idx = eligible[i].index(orig)
                 m.AddHint(x[i][idx], 1)
@@ -283,7 +283,7 @@ def solve(instance: dict) -> dict:
         if int(solver.Value(evict[i])) == 1:
             evictions.append({
                 "pod": {"uid": p_uid(i), "namespace": p_ns(i), "name": p_name(i)},
-                "node": nodes[p_where_j(i)]["name"],
+                "node": nodes[p_node_j(i)]["name"],
             })
             continue
 
@@ -297,7 +297,7 @@ def solve(instance: dict) -> dict:
             if chosen_j is None:
                 continue
 
-            orig_j = p_where_j(i)  # None for pending pods
+            orig_j = p_node_j(i)  # None for pending pods
             # Emit placement only if this pod is pending OR it actually moved
             if orig_j is None or (move[i] is not None and int(solver.Value(move[i])) == 1):
                 placements.append({
