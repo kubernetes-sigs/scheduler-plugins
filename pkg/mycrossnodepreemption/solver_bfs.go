@@ -2,109 +2,219 @@ package mycrossnodepreemption
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sort"
 
 	"k8s.io/klog/v2"
 )
 
+// -----------------------------------------------------------------------------
+// Unified entry point: single preemptor or batch (mirrors runSolverSwap)
+// -----------------------------------------------------------------------------
+
 func runSolverBfs(in SolverInput) *SolverOutput {
-	nodes, pods, _, order, preemptor := buildClusterState(in)
+	nodes, pods, pending, order, pre := buildClusterState(in)
 
-	newPlacements := make(map[string]string)
-	var evicts []Placement
-
-	// Initialize RNG, a source of randomness
-	//rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	if preemptor == nil {
+	if len(pending) == 0 {
+		klog.InfoS("bfs: nothing to place")
 		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
 	}
 
-	cpuFree, memFree := clusterTotalFree(order)
-	if !spaceForIncoming(preemptor.CPUm, preemptor.MemBytes, cpuFree, memFree) {
-		klog.InfoS("BFS: relocate; total free insufficient -> evict path")
-		goto tryEvict
-	}
-	goto tryDirectFit
+	// A. Worklist (big-first), same as swap
+	worklist, singleMode, moveGatePtr := buildWorklist(pending, pre)
 
-tryDirectFit:
-	klog.InfoS("BFS: direct-fit", "preemptor", preemptor.UID, "needCPU", preemptor.CPUm, "needMem", preemptor.MemBytes)
+	// Batch accounting
+	newPlacements := make(map[string]string)
+	var evicts []Placement
+	movedUIDs := make(map[string]struct{})
 
-	if bestNode, ok := bestDirectFit(order, preemptor); ok {
-		nodes[bestNode].addPod(preemptor)
-		newPlacements[preemptor.UID] = bestNode
-		return stableOutput("FEASIBLE", newPlacements, evicts, in)
-	}
-	goto tryRelocate
+	stop := false
+	var stopAt int32
 
-tryRelocate:
-	klog.InfoS("BFS: relocate", "preemptor", preemptor.UID, "needCPU", preemptor.CPUm, "needMem", preemptor.MemBytes)
-
-	for _, t := range targetsBySmallDeficit(order, preemptor) {
-		if t.fits(preemptor.CPUm, preemptor.MemBytes) {
-			t.addPod(preemptor)
-			newPlacements[preemptor.UID] = t.Name
-			return stableOutput("FEASIBLE", newPlacements, evicts, in)
+	for _, p := range worklist {
+		if stop && p.Priority <= stopAt {
+			break
+		}
+		if singleMode && pre != nil && p.UID != pre.UID {
+			continue
 		}
 
-		needCPU := max64(0, preemptor.CPUm-t.FreeCPUm)
-		needMem := max64(0, preemptor.MemBytes-t.FreeMemBytes)
+		placed, infeasible := placeOnePodBfs(
+			p, nodes, pods, order,
+			moveGatePtr,
+			evictGateForPod(p, singleMode, pre),
+			movedUIDs, newPlacements, &evicts,
+		)
 
-		fd, ok := bfsFreeTargets(nodes, t.Name, needCPU, needMem, preemptor.Priority)
+		if !placed {
+			if singleMode || infeasible {
+				return stableOutput("INFEASIBLE", newPlacements, evicts, in)
+			}
+			stop = true
+			stopAt = p.Priority
+			klog.InfoS("bfs: stopping batch at priority; discarding remainder",
+				"priority", stopAt, "uid", p.UID)
+		}
+	}
+
+	return stableOutput("FEASIBLE", newPlacements, evicts, in)
+}
+
+// -----------------------------------------------------------------------------
+// Per-pod BFS pipeline (same shape as placeOnePod, but step 3 uses BFS)
+// -----------------------------------------------------------------------------
+
+func placeOnePodBfs(
+	p *pLite,
+	nodes map[string]*nLite,
+	pods map[string]*pLite,
+	order []*nLite,
+	moveGate *int32,
+	evictGate *int32,
+	movedUIDs map[string]struct{},
+	newPlacements map[string]string,
+	evicts *[]Placement,
+) (bool, bool) {
+
+	// 1) Cluster slack
+	if !clusterHasSlack(order, p) {
+		goto tryEvict
+	}
+
+	// 2) Direct best-fit
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true, false
+	}
+
+	// 3) Moves-only via BFS (fewest moves on the best target)
+	if placeByBFS(p, nodes, pods, order, moveGate, movedUIDs, newPlacements) {
+		return true, false
+	}
+
+	// 4) Evict (strictly lower prio & enabling-only)
+tryEvict:
+	v, on := pickLargestEnablingEviction(order, p, evictGate, movedUIDs)
+	if v == nil || on == nil {
+		return false, true
+	}
+	delete(newPlacements, v.UID)
+	delete(movedUIDs, v.UID)
+	on.remove(v)
+	*evicts = append(*evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
+
+	if on.fits(p.CPUm, p.MemBytes) {
+		on.addPod(p)
+		newPlacements[p.UID] = on.Name
+		return true, false
+	}
+	// Defensive fallback
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true, false
+	}
+	return false, true
+}
+
+// -----------------------------------------------------------------------------
+// Moves-only using BFS: finish each target up to MaxDepth, pick fewest moves
+// -----------------------------------------------------------------------------
+
+func placeByBFS(
+	p *pLite,
+	nodes map[string]*nLite,
+	pods map[string]*pLite,
+	order []*nLite,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	newPlacements map[string]string,
+) bool {
+	targets := orderTargetsByDeficit(order, p)
+
+	// build orig map once for squashMoves
+	orig := make(map[string]string, 256)
+	for _, n := range order {
+		for _, q := range n.Pods {
+			if q.Node != "" {
+				orig[q.UID] = q.Node
+			}
+		}
+	}
+
+	var bestMoves []moveLite
+	bestTarget := ""
+	bestCount := math.MaxInt32
+	found := false
+
+	// Moves gate policy:
+	//  - single-preemptor: gate = pre.Priority (passed via moveGate)
+	//  - batch mode: gate disabled -> allow all priorities (respect Protected)
+	prioLimit := int32(math.MaxInt32)
+	if moveGate != nil {
+		prioLimit = *moveGate
+	}
+
+	for _, t := range targets {
+		needCPU := max64(0, p.CPUm-t.FreeCPUm)
+		needMem := max64(0, p.MemBytes-t.FreeMemBytes)
+
+		if needCPU == 0 && needMem == 0 {
+			bestTarget = t.Name
+			bestMoves = nil
+			bestCount = 0
+			found = true
+			break
+		}
+
+		// Run your layered BFS for this target (fewest moves for this target).
+		// Note: bfsFreeTargets already respects priority via prioLimit and Protected via your filters.
+		fd, ok := bfsFreeTargets(nodes, t.Name, needCPU, needMem, prioLimit)
 		if !ok {
 			continue
 		}
 
-		// coalesce to (from,to) pairs; verify and apply
-		orig := map[string]string{}
-		for uid, p := range pods {
-			if p.Node != "" {
-				orig[uid] = p.Node
+		coalesced := squashMoves(fd, orig)
+		if len(coalesced) < bestCount {
+			bestMoves = coalesced
+			bestTarget = t.Name
+			bestCount = len(coalesced)
+			found = true
+			if bestCount <= 1 { // can't beat 0/1
+				break
 			}
 		}
-		coalesced := squashMoves(fd, orig)
-
-		// Log the BFS result: raw chain steps and coalesced plan
-		klog.InfoS("bfs: plan-found",
-			"target", t.Name,
-			"coalescedMoves", len(coalesced),
-		)
-		for i, mv := range coalesced {
-			klog.InfoS("bfs: coalesced-move", "i", i, "uid", mv.UID, "from", mv.From, "to", mv.To)
-		}
-
-		if !verifyCoalescedPlan(nodes, pods, coalesced, preemptor, t.Name) {
-			klog.V(V2).InfoS("bfs: verifier rejected plan", "target", t.Name, "moves", len(coalesced))
-			continue
-		}
-		if !applyTwoPhase(nodes, pods, coalesced) {
-			klog.InfoS("bfs: applyTwoPhase rejected plan", "target", t.Name, "moves", len(coalesced))
-			continue
-		}
-		for _, mv := range coalesced {
-			newPlacements[mv.UID] = mv.To
-		}
-		t.addPod(preemptor)
-		newPlacements[preemptor.UID] = t.Name
-
-		// paranoid re-verify
-		if !verifyCoalescedPlan(nodes, pods, nil, nil, "") {
-			klog.InfoS("bfs: post-apply verify failed unexpectedly")
-			return stableOutput("INFEASIBLE", newPlacements, evicts, in)
-		}
-		return stableOutput("FEASIBLE", newPlacements, evicts, in)
 	}
 
-tryEvict:
-	if v, on := pickEvictionThatEnablesFit(order, preemptor); v != nil {
-		on.remove(v)
-		evicts = append(evicts, Placement{Pod: Pod{UID: v.UID}, Node: on.Name})
-		klog.InfoS("bfs: evict-one-and-retry", "victim", v.UID, "from", on.Name)
-		goto tryDirectFit
+	if !found {
+		return false
 	}
 
-	return stableOutput("INFEASIBLE", newPlacements, evicts, in)
+	// Commit chosen plan and place p
+	if !verifyCoalescedPlan(nodes, pods, bestMoves, p, bestTarget) {
+		return false
+	}
+	if !applyTwoPhase(nodes, pods, bestMoves) {
+		return false
+	}
+	for _, mv := range bestMoves {
+		newPlacements[mv.UID] = mv.To
+		movedUIDs[mv.UID] = struct{}{}
+	}
+	if n := nodes[bestTarget]; n != nil && n.fits(p.CPUm, p.MemBytes) {
+		n.addPod(p)
+		newPlacements[p.UID] = bestTarget
+		return true
+	}
+	// defensive: best-fit in case of drift
+	if to, ok := bestDirectFit(order, p); ok {
+		nodes[to].addPod(p)
+		newPlacements[p.UID] = to
+		return true
+	}
+	return false
 }
 
 func (n *nLite) fits(cpu, mem int64) bool { return n.FreeCPUm >= cpu && n.FreeMemBytes >= mem }
@@ -333,54 +443,6 @@ func applyTwoPhase(nodes map[string]*nLite, all map[string]*pLite, moves []moveL
 		}
 	}
 	return true
-}
-
-func pickEvictionThatEnablesFit(order []*nLite, pre *pLite) (*pLite, *nLite) {
-	tightCPU := pre.CPUm >= pre.MemBytes
-	type cand struct {
-		v  *pLite
-		on *nLite
-	}
-	cands := make([]cand, 0, 64)
-	for _, n := range order {
-		for _, q := range n.Pods {
-			if q.Protected || q.Priority >= pre.Priority {
-				continue
-			}
-			if n.FreeCPUm+q.CPUm >= pre.CPUm && n.FreeMemBytes+q.MemBytes >= pre.MemBytes {
-				cands = append(cands, cand{v: q, on: n})
-			}
-		}
-	}
-	if len(cands) == 0 {
-		return nil, nil
-	}
-	sort.Slice(cands, func(i, j int) bool {
-		vi, vj := cands[i].v, cands[j].v
-		if vi.Priority != vj.Priority {
-			return vi.Priority < vj.Priority
-		}
-		if tightCPU && vi.CPUm != vj.CPUm {
-			return vi.CPUm > vj.CPUm
-		}
-		if !tightCPU && vi.MemBytes != vj.MemBytes {
-			return vi.MemBytes > vj.MemBytes
-		}
-		if tightCPU {
-			if vi.MemBytes != vj.MemBytes {
-				return vi.MemBytes > vj.MemBytes
-			}
-		} else {
-			if vi.CPUm != vj.CPUm {
-				return vi.CPUm > vj.CPUm
-			}
-		}
-		if cands[i].on.Name != cands[j].on.Name {
-			return cands[i].on.Name < cands[j].on.Name
-		}
-		return vi.UID < vj.UID
-	})
-	return cands[0].v, cands[0].on
 }
 
 // ============================ small utils ============================
@@ -688,23 +750,4 @@ func sig(defs []deficit, fd map[string]string, res map[string]resvDelta) string 
 	b = append(b, '|')
 	b = append(b, sigResv(res)...)
 	return string(b)
-}
-
-func targetsBySmallDeficit(order []*nLite, p *pLite) []*nLite {
-	ts := make([]*nLite, len(order))
-	copy(ts, order)
-	sort.Slice(ts, func(i, j int) bool {
-		diCPU := max64(0, p.CPUm-ts[i].FreeCPUm)
-		djCPU := max64(0, p.CPUm-ts[j].FreeCPUm)
-		if diCPU != djCPU {
-			return diCPU < djCPU
-		}
-		diMem := max64(0, p.MemBytes-ts[i].FreeMemBytes)
-		djMem := max64(0, p.MemBytes-ts[j].FreeMemBytes)
-		if diMem != djMem {
-			return diMem < djMem
-		}
-		return ts[i].Name < ts[j].Name
-	})
-	return ts
 }

@@ -110,18 +110,6 @@ func buildClusterState(in SolverInput) (map[string]*nLite, map[string]*pLite, []
 	return nodes, pods, pendingPods, order, pre
 }
 
-func clusterTotalFree(order []*nLite) (cpu, mem int64) {
-	for _, n := range order {
-		cpu += n.FreeCPUm
-		mem += n.FreeMemBytes
-	}
-	return
-}
-
-func spaceForIncoming(requestedCPUm, requestedMemBytes, freeCPUm, freeMemBytes int64) bool {
-	return freeCPUm >= requestedCPUm && freeMemBytes >= requestedMemBytes
-}
-
 func max64(a, b int64) int64 {
 	if a > b {
 		return a
