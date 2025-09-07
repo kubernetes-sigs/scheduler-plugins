@@ -318,18 +318,6 @@ func bfsFreeTargets(
 	front := []bfsState{init}
 	initKey := sig(init.deficits, init.finalDest, init.reserve)
 	visited := map[string]bool{initKey: true}
-
-	// -------- instrumentation (aggregate; logged once on exit) --------
-	totalExpanded := 0
-	totalEnqueued := 0
-	totalEdgesTried := 0
-	prunedVisited := 0
-	prunedRootHit := 0
-	prunedSelfLoop := 0
-	prunedNoFit := 0
-
-	uniqVictimsEnum := map[string]bool{} // across all depths
-	uniqVictimsUsed := map[string]bool{} // across all depths
 	maxFrontier := 0
 
 	for depth := 0; depth <= SolverBfsMaxDepth; depth++ {
@@ -343,12 +331,7 @@ func bfsFreeTargets(
 			break
 		}
 
-		totalExpanded += len(front)
-
 		next := make([]bfsState, 0, len(front)*4)
-		layerVictimsEnum := map[string]bool{}
-		layerVictimsUsed := map[string]bool{}
-
 		for _, st := range front {
 			if len(st.deficits) == 0 {
 				continue
@@ -363,9 +346,6 @@ func bfsFreeTargets(
 				need.needCPU,
 				need.needMem,
 			)
-			for _, v := range vics {
-				layerVictimsEnum[v.UID] = true
-			}
 			if len(vics) == 0 {
 				continue
 			}
@@ -378,18 +358,13 @@ func bfsFreeTargets(
 					continue // each UID at most once
 				}
 				for _, dn := range dests {
-					totalEdgesTried++
-
 					if dn.Name == need.node {
-						prunedSelfLoop++
 						continue
 					}
 					if dn.Pods[v.UID] != nil {
-						prunedSelfLoop++
 						continue
 					}
 					if dn.Name == rootTarget {
-						prunedRootHit++
 						continue // don't consume root freed space
 					}
 					// (If you keep a MaxTotalMoves cap, check it here and bump prunedCapMoves)
@@ -403,7 +378,6 @@ func bfsFreeTargets(
 					freedCPU := min64(v.CPUm, need.needCPU)
 					freedMem := min64(v.MemBytes, need.needMem)
 					if needCPU2 > freedCPU || needMem2 > freedMem {
-						prunedNoFit++
 						continue
 					}
 
@@ -443,12 +417,10 @@ func bfsFreeTargets(
 
 					key := sig(ns.deficits, ns.finalDest, ns.reserve)
 					if visited[key] {
-						prunedVisited++
 						continue
 					}
 					visited[key] = true
 					next = append(next, ns)
-					layerVictimsUsed[v.UID] = true
 				}
 			}
 		}
@@ -456,13 +428,6 @@ func bfsFreeTargets(
 		// update aggregates for the layer
 		if len(next) > maxFrontier {
 			maxFrontier = len(next)
-		}
-		totalEnqueued += len(next)
-		for uid := range layerVictimsEnum {
-			uniqVictimsEnum[uid] = true
-		}
-		for uid := range layerVictimsUsed {
-			uniqVictimsUsed[uid] = true
 		}
 
 		front = next

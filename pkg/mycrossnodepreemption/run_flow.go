@@ -193,18 +193,28 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			}
 			return order[i].Duration < order[j].Duration
 		})
+
 		names := make([]string, len(order))
 		evs := make([]int, len(order))
 		mvs := make([]int, len(order))
 		cmps := make([]int, len(order))
+		dursMs := make([]int64, len(order))
+
 		for i := range order {
 			names[i] = order[i].Name
 			evs[i] = order[i].Score.Evicted
 			mvs[i] = order[i].Score.Moved
 			cmps[i] = order[i].CmpBase
+			dursMs[i] = order[i].Duration.Milliseconds()
 		}
+
 		klog.InfoS(string(phase)+": solver leaderboard",
-			"order", names, "evictions", evs, "moves", mvs, "cmpVsBaseline", cmps, "best", bestSolverSummary.Name)
+			"order", names,
+			"durationsMs", dursMs,
+			"evictions", evs,
+			"moves", mvs,
+			"cmpVsBaseline", cmps,
+			"best", bestSolverSummary.Name)
 	}
 
 	return bestOut, anyFeasible, bestSolverSummary, time.Since(start)
