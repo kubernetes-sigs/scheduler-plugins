@@ -6,7 +6,7 @@ package mycrossnodepreemption
 
 // OptimizeCadence is the frequency at which optimization is performed.
 // Choices: "for_every", "in_batches", "continuously"
-var OptimizeCadence = parseCadence(getenv("OPTIMIZE_CADENCE", "for_every"))
+var OptimizeCadence = parseCadence(getenv("OPTIMIZE_CADENCE", "in_batches"))
 
 // OptimizeAt is the action point that triggers optimization.
 // Choices: "preenqueue", "postfilter" (ignored in continuous mode)
@@ -25,7 +25,7 @@ var OptimizationInitialDelay = parseTime(getenv("OPTIMIZATION_INITIAL_DELAY", "1
 var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "false"))
 
 // SolverPythonTimeout is the timeout for the python solver to complete.
-var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "25s"))
+var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "10s"))
 
 // SolverBfsEnabled indicates whether the BFS solver is enabled.
 var SolverBfsEnabled = parseBool(getenv("SOLVER_BFS_ENABLED", "false"))
@@ -42,29 +42,44 @@ var SolverSwapTimeout = parseTime(getenv("SOLVER_SWAP_TIMEOUT", "500ms"))
 // ======= Plan settings =======
 
 // PlanExecutionTimeout is the maximum duration a plan may run before being terminated.
-var PlanExecutionTimeout = parseTime(getenv("PLAN_EXECUTION_TIMEOUT", "60s"))
+var PlanExecutionTimeout = parseTime(getenv("PLAN_EXECUTION_TIMEOUT", "20s"))
 
 // ======= BFS solver settings =======
 
 // Maximum search depth (i.e. number of moves allowed to place the preemptor)
 var SolverBfsMaxDepth = parseInt(getenv("SOLVER_BFS_MAX_DEPTH", "5"))
 
-// Maximum number of victims to consider per node
-var SolverBfsMaxVictimsPerNode = parseInt(getenv("SOLVER_BFS_MAX_VICTIMS_PER_NODE", "0"))
+// Maximum number of victims to consider per node.
+// -1 = unlimited; 0 = no victims ⇒ search stops at that node.
+var SolverBfsMaxVictimsPerNode = parseInt(getenv("SOLVER_BFS_MAX_VICTIMS_PER_NODE", "-1"))
 
-// Maximum number of candidate destination nodes to consider per search level
-var SolverBfsMaxDestsPerLevel = parseInt(getenv("SOLVER_BFS_MAX_DESTS_PER_LEVEL", "0"))
+// Maximum number of candidate destination nodes to consider per search level.
+// -1 = unlimited; 0 = no destinations ⇒ search stops at that level.
+var SolverBfsMaxDestsPerLevel = parseInt(getenv("SOLVER_BFS_MAX_DESTS_PER_LEVEL", "-1"))
+
+// Max new states we’re allowed to emit while expanding *one* state.
+// -1 = unlimited; 0 = emit no successors (useful for testing).
+var SolverBfsMaxSuccessorsPerState = parseInt(getenv("SOLVER_BFS_MAX_SUCCESSORS_PER_STATE", "-1"))
+
+// Max number of states we keep in the frontier after finishing a depth.
+// If we created more, we keep the "best" ones by a greedy score
+// (lowest remaining total deficit, then fewer deficit nodes, then signature).
+// -1 = unlimited; 0 = frontier cleared ⇒ search stops at that depth.
+var SolverBfsMaxFrontierPerDepth = parseInt(getenv("SOLVER_BFS_MAX_FRONTIER_PER_DEPTH", "-1"))
 
 // ======= Swap solver settings =======
 
-// Maximum number of victims to consider per node
+// Maximum number of victims to consider per node.
+// -1 = unlimited; 0 = no victims ⇒ search stops at that node.
 var SolverSwapMaxVictimsPerNode = parseInt(getenv("SOLVER_SWAP_MAX_VICTIMS_PER_NODE", "8"))
 
-// Maximum number of relocation trials per node
+// Maximum number of relocation trials per node.
+// -1 = unlimited; 0 = no trials ⇒ search stops at that node.
 var SolverSwapMaxTrialsPerNode = parseInt(getenv("SOLVER_SWAP_MAX_TRIALS_PER_NODE", "30"))
 
-// Maximum number of moves for the complete plan
+// Maximum number of moves for the complete plan.
+// -1 = unlimited; 0 = no moves ⇒ search stops immediately.
 var SolverSwapMaxMovesForPendingPod = parseInt(getenv("SOLVER_SWAP_MAX_MOVES_FOR_PENDING_POD", "5"))
 
-// Maximum number of relocation trials for the complete plan
+// Maximum number of relocation trials for the complete plan.
 var SolverSwapMaxTrialsPerPendingPod = parseInt(getenv("SOLVER_SWAP_MAX_TRIALS_PER_PENDING_POD", "100"))

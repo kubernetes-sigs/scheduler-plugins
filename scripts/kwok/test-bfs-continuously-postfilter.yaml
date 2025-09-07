@@ -14,17 +14,19 @@ componentsPatches:
         value: "15s"
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "20s"
-      - name: SOLVER_PYTHON_ENABLED
-        value: "false"
-      - name: SOLVER_PYTHON_TIMEOUT
-        value: "10s"
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # 50s # TODO: set high to determine any potential issues
       - name: SOLVER_BFS_ENABLED
         value: "true"
       - name: SOLVER_BFS_TIMEOUT
-        value: "100ms"
-      - name: SOLVER_SWAP_ENABLED
-        value: "false"
-      - name: SOLVER_SWAP_TIMEOUT
-        value: "100ms"
-      - name: PLAN_EXECUTION_TIMEOUT
-        value: "600h" # 50s # TODO: set high to determine any potential issues
+        value: "200ms"
+      - name: SOLVER_BFS_MAX_DEPTH
+        value: "5"
+      - name: SOLVER_BFS_MAX_VICTIMS_PER_NODE
+        value: "-1" # -1 (unlimited)
+      - name: SOLVER_BFS_MAX_DESTS_PER_LEVEL
+        value: "-1" # -1 (unlimited)
+      - name: SOLVER_BFS_MAX_SUCCESSORS_PER_STATE
+        value: "-1" # -1 (unlimited)
+      - name: SOLVER_BFS_MAX_FRONTIER_PER_DEPTH
+        value: "-1" # -1 (unlimited)
