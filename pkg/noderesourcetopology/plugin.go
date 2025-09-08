@@ -30,6 +30,7 @@ import (
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
 	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 
 	"github.com/go-logr/logr"
 	topologyapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology"
@@ -48,8 +49,23 @@ func init() {
 	utilruntime.Must(topologyv1alpha2.AddToScheme(scheme))
 }
 
-type filterFn func(lh logr.Logger, pod *v1.Pod, zones topologyv1alpha2.ZoneList, nodeInfo *framework.NodeInfo) *framework.Status
-type scoringFn func(logr.Logger, *v1.Pod, topologyv1alpha2.ZoneList) (int64, *framework.Status)
+type filterInfo struct {
+	nodeName        string // shortcut, used very often
+	node            *framework.NodeInfo
+	topologyManager nodeconfig.TopologyManager
+	numaNodes       NUMANodeList
+	qos             v1.PodQOSClass
+}
+
+type filterFn func(logr.Logger, *v1.Pod, *filterInfo) *framework.Status
+
+type scoreInfo struct {
+	topologyManager nodeconfig.TopologyManager
+	qos             v1.PodQOSClass
+	numaNodes       NUMANodeList
+}
+
+type scoringFn func(logr.Logger, *v1.Pod, *scoreInfo) (int64, *framework.Status)
 
 // TopologyMatch plugin which run simplified version of TopologyManager's admit handler
 type TopologyMatch struct {
@@ -73,7 +89,7 @@ func (tm *TopologyMatch) Name() string {
 
 // New initializes a new plugin and returns it.
 func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	lh := klog.FromContext(ctx).WithValues("plugin", Name)
+	lh := klog.FromContext(ctx)
 
 	lh.V(5).Info("creating new noderesourcetopology plugin")
 	tcfg, ok := args.(*apiconfig.NodeResourceTopologyMatchArgs)

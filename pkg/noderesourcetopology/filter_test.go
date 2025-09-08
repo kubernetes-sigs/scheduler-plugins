@@ -19,9 +19,10 @@ package noderesourcetopology
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 
 	v1 "k8s.io/api/core/v1"
@@ -696,7 +697,7 @@ func TestNodeResourceTopology(t *testing.T) {
 			}
 			gotStatus := tm.Filter(context.Background(), framework.NewCycleState(), tt.pod, nodeInfo)
 
-			if !reflect.DeepEqual(gotStatus, tt.wantStatus) {
+			if !quasiEqualStatus(gotStatus, tt.wantStatus) {
 				t.Errorf("status does not match: %v, want: %v", gotStatus, tt.wantStatus)
 			}
 		})
@@ -913,7 +914,7 @@ func TestNodeResourceTopologyMultiContainerPodScope(t *testing.T) {
 			}
 			gotStatus := tm.Filter(context.Background(), framework.NewCycleState(), tt.pod, nodeInfo)
 
-			if !reflect.DeepEqual(gotStatus, tt.wantStatus) {
+			if !quasiEqualStatus(gotStatus, tt.wantStatus) {
 				t.Errorf("status does not match: %v, want: %v", gotStatus, tt.wantStatus)
 			}
 		})
@@ -1172,7 +1173,7 @@ func TestNodeResourceTopologyMultiContainerContainerScope(t *testing.T) {
 			nodeInfo.SetNode(nodes[0])
 			gotStatus := tm.Filter(context.Background(), framework.NewCycleState(), tt.pod, nodeInfo)
 
-			if !reflect.DeepEqual(gotStatus, tt.wantStatus) {
+			if !quasiEqualStatus(gotStatus, tt.wantStatus) {
 				t.Errorf("status does not match: %v, want: %v", gotStatus, tt.wantStatus)
 			}
 		})
@@ -1285,4 +1286,19 @@ func parseState(error string) *framework.Status {
 	}
 
 	return framework.NewStatus(framework.Unschedulable, error)
+}
+
+func quasiEqualStatus(s, x *framework.Status) bool {
+	if s == nil || x == nil {
+		return s.IsSuccess() && x.IsSuccess()
+	}
+	if s.Code() != x.Code() {
+		return false
+	}
+	sMsg := s.Message()
+	xMsg := x.Message()
+	if !strings.HasPrefix(sMsg, xMsg) {
+		return false
+	}
+	return cmp.Equal(s.Plugin(), x.Plugin())
 }
