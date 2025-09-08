@@ -741,7 +741,6 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 		return false
 	}
 	pl.clearActivePlan()
-	klog.InfoS("plan settled; deactivating active plan", "planID", ap.ID)
 	pl.leaveActive()
 	// We do not activate blocked pods when we are in Every@PreEnqueue
 	// as it would lead to high contention; instead we periodically nudge them.
@@ -751,6 +750,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	if ap.Cancel != nil {
 		ap.Cancel() // stop the timeout watcher
 	}
+	klog.InfoS("deactivating active plan", "planID", ap.ID)
 	_ = pl.markPlanStatus(context.Background(), ap.ID, status)
 	return true
 }

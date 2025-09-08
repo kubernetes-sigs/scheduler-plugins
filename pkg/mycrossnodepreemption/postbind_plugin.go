@@ -40,6 +40,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		return
 	}
 	if cur := pl.getActivePlan(); cur != nil && cur.ID == ap.ID {
+		klog.InfoS("plan completed", "planID", ap.ID)
 		pl.onPlanSettled(PlanStatusCompleted)
 	}
 }
