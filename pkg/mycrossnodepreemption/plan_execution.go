@@ -28,15 +28,20 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	}
 
 	doc := &StoredPlan{
-		PluginVersion: Version,
-		Mode:          modeToString(),
-		GeneratedAt:   time.Now().UTC(),
-		Status:        PlanStatusActive,
-		Evicts:        evicts,
-		Moves:         moves,
-		Solver:        summary,
-		OldPlacements: oldPlc,
-		NewPlacements: newPlc, // includes both pending and moved (also preemptor) - also replica-pods
+		PluginVersion:   Version,
+		Mode:            modeToString(),
+		GeneratedAt:     time.Now().UTC(),
+		Status:          PlanStatusActive,
+		Evicts:          evicts,
+		Moves:           moves,
+		Solver:          summary,
+		OldPlacements:   oldPlc,
+		PlacementByName: newPlc, // includes both pending and moved (also preemptor) - also replica-pods
+	}
+
+	doc.WorkloadQuotasDoc = computeWorkloadQuotasFromPlan(doc, pods) // use the same live snapshot you pass around
+	if len(doc.WorkloadQuotasDoc) == 0 {
+		doc.WorkloadQuotasDoc = nil // omit empty in JSON
 	}
 
 	if preemptor != nil {

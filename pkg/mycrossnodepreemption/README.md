@@ -32,14 +32,12 @@ TODO
 
 ## TODOs Plugin
 
+- Try to place workload preemptor using quotas instead of name.
 - Add a verifier of the solvers plan in IsImprovement.
-- Reactivate not scheduled pods after plan execution.
-- At first glance I would think that BFS is better, as we first try to move only once and go back to the next victim. If it is not possible with one move after trying all nodes, then we accept two and use previous paths to get there to be able to form a possible two-move strategy, etc. This way we can just stop if we find a possible solution since we know that the number of moves will be the same or worse for other solutions. We should sort the victims according to what is exactly enough for preemptor. Consider whether to take two small ones instead
-- Always start by trying the one that just makes room for the preemptor, then the slightly larger one. If all of these have been tried, we can try moving two smaller ones at a time. But only allowed after we have gone to depth 2 and moving a pod from another node to others has also been tried.
-- Instead of adding a preemptor that is a replica pod as a placement by name use the workload cnt and save one spot for it
-- Save total plan execution time in configmap
-- Provide the greedy solution to python as a hint
+- Provide the best solution found so far to next solvers; so they have to improve from that.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
+- Save total plan execution time in configmap
+- Reactivate not scheduled pods after plan execution.
 - Check SDU contract
 - Not sure my plugin will work if a pod is removed during plan execution
   - Standalone pods deleted externally (not by your plan): You only recreate standalone pods that you evicted/targeted (they’re in targets). If a standalone you intended to move was deleted by someone else before you “resolve” it, it won’t end up in targets, so you won’t recreate it. Result: the “by name” check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.
@@ -56,6 +54,7 @@ TODO
 
 ## Write
 
+- Write about that it were not possible to place a preemptor by workload cnts, needs to be done by name as we otherwise can let other pods of the same workload through the scheduling phase before the preemptor that hit the postfilter.
 - Write about that recreation always create a new uid therefore we place by name
 - Write about that the OptimizeForEvery@PreEnqueue cannot be deterministic as we do not determine which order the pods are taken.
 - Write something about watchdogTTL

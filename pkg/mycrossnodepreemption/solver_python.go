@@ -58,17 +58,17 @@ func (pl *MyCrossNodePreemption) runSolverPython(ctx context.Context, in SolverI
 		return nil, fmt.Errorf("read solver stdout: %w", err)
 	}
 
+	// 5) Wait for exit and check code
 	if err := cmd.Wait(); err != nil {
 		// Non‑zero exit; logs already streamed above
 		return nil, fmt.Errorf("solver run: %w", err)
 	}
 
+	// 6) Decode JSON
 	var out SolverOutput
 	if err := json.Unmarshal(outBuf, &out); err != nil {
 		return nil, fmt.Errorf("decode solver output: %w", err)
 	}
-	if !IsSolverFeasible(&out) {
-		return &out, fmt.Errorf("solver status: %s", out.Status)
-	}
+
 	return &out, nil
 }

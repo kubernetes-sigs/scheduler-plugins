@@ -9,75 +9,74 @@ import (
 Plan:
 
 A. Worklist (pending pods order)
-   - Priority:            DESC (higher first)
-   - Size (CPU*MEM):      DESC
-   - CPU:                 DESC
-   - MEM:                 DESC
-   - UID:                 ASC
-   Rationale: big-first reduces fragmentation and later relocations.
+  - Priority:            DESC (higher first)
+  - Size (CPU*MEM):      DESC
+  - CPU:                 DESC
+  - MEM:                 DESC
+  - UID:                 ASC
+    Rationale: big-first reduces fragmentation and later relocations.
 
 B. For each pending pod p
-   1) Quick feasibility (cluster slack)
-      If sum(FreeCPU) < p.CPU or sum(FreeMEM) < p.MEM → go to §4 (Evict).
-      Otherwise continue (relocations may still be needed).
 
-   2) Direct fit (Best-Fit)
-      Pick node with minimum post-waste:
-         (freeCPU - p.CPU, then freeMEM - p.MEM; tie by node name)
-      If it fits, place p and continue.
+ 1. Quick feasibility (cluster slack)
+    If sum(FreeCPU) < p.CPU or sum(FreeMEM) < p.MEM → go to §4 (Evict).
+    Otherwise continue (relocations may still be needed).
 
-   3) Moves-only (no evictions)
-      Goal: free “just enough” on one promising node with the FEWEST moves.
-      3.1 Target nodes order
-          For each node n compute deficits for p:
-            defCPU = max(0, p.CPU - n.freeCPU)
-            defMEM = max(0, p.MEM - n.freeMEM)
-          Score(n) = max(defCPU/p.CPU, defMEM/p.MEM)  (ascending)
-          Ties: (defCPU+defMEM) ASC → predicted post-placement waste ASC → name ASC
-      3.2 Per-target planning (virtual)
-          - Use a tiny *virtual delta*: a per-node scratchpad of (ΔCPU, ΔMEM) updated
-            when tentatively moving/swapping pods. Fit checks use (free + delta).
-          - Try up to maxTrialsPerPod *fresh* plans for this p on this target,
-            each respecting a cap of maxMovesPerPod planned moves.
-          - Within a plan, repeatedly pick victims from the target node:
-              Preference order for victims:
-                • alreadyMoved (seen earlier in this batch)
-                • single-victim coverage of (defCPU, defMEM)
-                • higher relocability (# of destination nodes where it fits under current delta)
-                • smaller overshoot of needs (CPU/MEM)
-                • lower priority
-                • larger size (CPU*MEM), then smaller CPU, smaller MEM, UID ASC
-              Try:
-                (a) Direct move victim → its best-fit destination under current delta
-                (b) Else, try a swap with some q on a destination node such that both nodes stay ≥ 0
-              Update delta after each tentative step. Stop the plan as soon as the target
-              node virtually fits p. If a step would exceed maxMovesPerPod, abort this plan.
-          - Keep the plan with the FEWEST moves across targets (tiny jitter allowed for tie-breaks).
-          - Optional early success: if after any tentative steps `batchFitOnResidual(delta, rest)`
-            succeeds for the remaining pending pods, coalesce and commit immediately.
-      3.3 Commit
-          - Verify plan (endpoints exist; final free ≥ 0) and apply once via two-phase.
-          - Place p on the chosen target. Record moves in `newPlacements` and add their UIDs to `alreadyMoved`.
+ 2. Direct fit (Best-Fit)
+    Pick node with minimum post-waste:
+    (freeCPU - p.CPU, then freeMEM - p.MEM; tie by node name)
+    If it fits, place p and continue.
 
-   4) Evict (only when it guarantees improvement)
-		- Policy:
-		  1) Only candidates where evicting v alone enables placing p on v's node.
-		  2) Among candidates, find the *minimum priority*.
-	      3) Within that lowest-priority tier: prefer alreadyMoved; then size desc; CPU desc; MEM desc; node name asc; UID asc.
+ 3. Moves-only (no evictions)
+    Goal: free “just enough” on one promising node with the FEWEST moves.
+    3.1 Target nodes order
+    For each node n compute deficits for p:
+    defCPU = max(0, p.CPU - n.freeCPU)
+    defMEM = max(0, p.MEM - n.freeMEM)
+    Score(n) = max(defCPU/p.CPU, defMEM/p.MEM)  (ascending)
+    Ties: (defCPU+defMEM) ASC → predicted post-placement waste ASC → name ASC
+    3.2 Per-target planning (virtual)
+    - Use a tiny *virtual delta*: a per-node scratchpad of (ΔCPU, ΔMEM) updated
+    when tentatively moving/swapping pods. Fit checks use (free + delta).
+    - Try up to maxTrialsPerPod *fresh* plans for this p on this target,
+    each respecting a cap of maxMovesPerPod planned moves.
+    - Within a plan, repeatedly pick victims from the target node:
+    Preference order for victims:
+    • alreadyMoved (seen earlier in this batch)
+    • single-victim coverage of (defCPU, defMEM)
+    • higher relocability (# of destination nodes where it fits under current delta)
+    • smaller overshoot of needs (CPU/MEM)
+    • lower priority
+    • larger size (CPU*MEM), then smaller CPU, smaller MEM, UID ASC
+    Try:
+    (a) Direct move victim → its best-fit destination under current delta
+    (b) Else, try a swap with some q on a destination node such that both nodes stay ≥ 0
+    Update delta after each tentative step. Stop the plan as soon as the target
+    node virtually fits p. If a step would exceed maxMovesPerPod, abort this plan.
+    - Keep the plan with the FEWEST moves across targets (tiny jitter allowed for tie-breaks).
+    - Optional early success: if after any tentative steps `batchFitOnResidual(delta, rest)`
+    succeeds for the remaining pending pods, coalesce and commit immediately.
+    3.3 Commit
+    - Verify plan (endpoints exist; final free ≥ 0) and apply once via two-phase.
+    - Place p on the chosen target. Record moves in `newPlacements` and add their UIDs to `alreadyMoved`.
+
+ 4. Evict (only when it guarantees improvement)
+    - Policy:
+
+ 1. Only candidates where evicting v alone enables placing p on v's node.
+
+ 2. Among candidates, find the *minimum priority*.
+
+ 3. Within that lowest-priority tier: prefer alreadyMoved; then size desc; CPU desc; MEM desc; node name asc; UID asc.
 
 Mode guardrails
-   - Batch mode:
-       * Moves: no priority gate (still respect Protected).
-       * Evictions: victim.priority < p.priority (strict).
-   - Single-preemptor mode:
-       * Moves allowed only if victim.priority ≤ preemptor.priority.
-       * Evictions allowed only if victim.priority < preemptor.priority (strict).
+  - Batch mode:
+  - Moves: no priority gate (still respect Protected).
+  - Evictions: victim.priority < p.priority (strict).
+  - Single-preemptor mode:
+  - Moves allowed only if victim.priority ≤ preemptor.priority.
+  - Evictions allowed only if victim.priority < preemptor.priority (strict).
 */
-
-func runSolverLocalSearch(in SolverInput) *SolverOutput {
-	return runSolverCommon(in, localSearchPlan, "local-search")
-}
-
 func localSearchPlan(
 	pending *SolverPod,
 	target *SolverNode,

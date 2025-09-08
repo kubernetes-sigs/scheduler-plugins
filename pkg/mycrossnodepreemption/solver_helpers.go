@@ -45,6 +45,83 @@ func (s UIDSet) Add(uid string)      { s[uid] = struct{}{} }
 func (s UIDSet) Del(uid string)      { delete(s, uid) }
 func (s UIDSet) Has(uid string) bool { _, ok := s[uid]; return ok }
 
+// runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
+func runSolverDirectFit(in SolverInput, base *preparedState) *SolverOutput {
+	nodes, _, order, worklist := base.freshClone()
+	if len(worklist) == 0 {
+		return &SolverOutput{Status: "UNKNOWN"}
+	}
+	placements := make(map[string]string, len(worklist))
+
+	stop := false
+	var stopAt int32
+	for _, p := range worklist {
+		if stop && p.Priority <= stopAt {
+			break
+		}
+		if to, ok := bestDirectFit(order, p); ok {
+			nodes[to].addPod(p)
+			placements[p.UID] = to
+			continue
+		}
+		if base.single { // single-preemptor must place or fail
+			return stableOutput("INFEASIBLE", placements, nil, in)
+		}
+		stop = true
+		stopAt = p.Priority
+	}
+	if len(placements) == 0 {
+		return &SolverOutput{Status: "INFEASIBLE"}
+	}
+	return stableOutput("FEASIBLE", placements, nil, in)
+}
+
+// runSolverCommon runs a solver plan function on the input and prepared state.
+func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *preparedState) *SolverOutput {
+	klog.V(V2).InfoS("Running solver", "tag", tag)
+	nodes, pods, order, worklist := base.freshClone()
+	if len(worklist) == 0 {
+		return &SolverOutput{Status: "UNKNOWN"}
+	}
+
+	newPlacements := make(map[string]string)
+	var evicts []Placement
+	movedUIDs := make(map[string]struct{})
+
+	stop := false
+	var stopAt int32
+
+	maxTrials := in.MaxTrials
+	if maxTrials < 1 {
+		maxTrials = 1
+	}
+
+	for _, p := range worklist {
+		if stop && p.Priority <= stopAt {
+			break
+		}
+		if base.single && base.pre != nil && p.UID != base.pre.UID {
+			continue
+		}
+		placed, infeasible := placeOnePodCommon(
+			plan,
+			p, nodes, pods, order,
+			base.moveGate,
+			evictGateForPod(p, base.single, base.pre),
+			movedUIDs, newPlacements, &evicts,
+			maxTrials,
+		)
+		if !placed {
+			if base.single || infeasible {
+				return stableOutput("INFEASIBLE", newPlacements, evicts, in)
+			}
+			stop = true
+			stopAt = p.Priority
+		}
+	}
+	return stableOutput("FEASIBLE", newPlacements, evicts, in)
+}
+
 // bestPlanAcrossTargets iterates targets (ordered by deficit for p) and
 // keeps the plan with the fewest moves. `planForTarget` should return the
 // candidate move list for that target (or !ok if no plan exists).
@@ -332,55 +409,6 @@ func getVictims(target *SolverNode, opts VictimOpts) []*SolverPod {
 	}
 
 	return cands
-}
-
-func runSolverCommon(in SolverInput, plan PlanFunc, tag string) *SolverOutput {
-	klog.V(V2).InfoS("Running solver", "tag", tag)
-	nodes, pods, pending, order, pre := buildClusterState(in)
-	if len(pending) == 0 {
-		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
-	}
-
-	worklist, singleMode, moveGate := buildWorklist(pending, pre)
-
-	newPlacements := make(map[string]string)
-	var evicts []Placement
-	movedUIDs := make(map[string]struct{})
-
-	stop := false
-	var stopAt int32
-
-	maxTrials := in.MaxTrials
-	if maxTrials < 1 {
-		maxTrials = 1
-	}
-
-	for _, p := range worklist {
-		if stop && p.Priority <= stopAt {
-			break
-		}
-		if singleMode && pre != nil && p.UID != pre.UID {
-			continue
-		}
-
-		placed, infeasible := placeOnePodCommon(
-			plan,
-			p, nodes, pods, order,
-			moveGate,
-			evictGateForPod(p, singleMode, pre),
-			movedUIDs, newPlacements, &evicts,
-			maxTrials,
-		)
-
-		if !placed {
-			if singleMode || infeasible {
-				return stableOutput("INFEASIBLE", newPlacements, evicts, in)
-			}
-			stop = true
-			stopAt = p.Priority
-		}
-	}
-	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
 // commitPlan verifies & applies `moves`, records them in newPlacements/movedUIDs,

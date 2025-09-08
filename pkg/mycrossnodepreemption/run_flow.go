@@ -29,6 +29,28 @@ func (pl *MyCrossNodePreemption) runSolvers(
 ) (bestOut *SolverOutput, anyFeasible bool, bestSolverSummary SolverSummary, totalDuration time.Duration) {
 	start := time.Now()
 
+	// Build cluster state
+	base := prepareState(in)
+
+	if optimizeAtPreEnqueue() && phase == PhasePreEnqueue {
+		// Direct-fit pre-pass
+		dfStart := time.Now()
+		if dfOut := runSolverDirectFit(in, base); IsSolverFeasible(dfOut) {
+			dfScore := computeSolverScore(in, dfOut)
+			dfDur := time.Since(dfStart)
+			klog.InfoS(string(phase)+": direct-fit; skipping other solvers",
+				"placedByPri", dfScore.PlacedByPriority, "evictions", dfScore.Evicted, "moves", dfScore.Moved,
+				"duration", dfDur)
+			return dfOut, true, SolverSummary{
+				Name:     "direct-fit",
+				Status:   dfOut.Status,
+				Duration: dfDur,
+				Score:    dfScore,
+			}, time.Since(start)
+		}
+		klog.V(V2).InfoS(string(phase)+": direct-fit could not place all pods; run solvers", "duration", time.Since(dfStart))
+	}
+
 	attempts := []solverAttempt{
 		{
 			name:    "bfs",
@@ -36,7 +58,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			timeout: SolverBfsTimeout,
 			trials:  1,
 			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runSolverBfs(in), nil
+				return runSolverCommon(in, bfsPlan, "bfs", base), nil
 			},
 		},
 		{
@@ -45,7 +67,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			timeout: SolverLocalSearchTimeout,
 			trials:  SolverLocalSearchMaxRestartsPerTarget,
 			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runSolverLocalSearch(in), nil
+				return runSolverCommon(in, localSearchPlan, "local-search", base), nil
 			},
 		},
 		{
@@ -53,8 +75,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			enabled: SolverPythonEnabled,
 			timeout: SolverPythonTimeout,
 			trials:  1,
-			fudgeMs: 200, // let the solver return a feasible result before ctx timeout
-			run:     pl.runSolverPython,
+			fudgeMs: 200,
+			run:     pl.runSolverPython, // python uses raw JSON input
 		},
 	}
 
@@ -74,7 +96,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		enabledNames = append(enabledNames, a.name)
 		timeoutsMs = append(timeoutsMs, a.timeout.Milliseconds())
 	}
-	klog.InfoS(string(phase)+": solver attempts planned",
+	klog.V(V2).InfoS(string(phase)+": solver attempts planned",
 		"enabled", enabledNames, "timeoutsMs", timeoutsMs,
 		"baselinePlacedByPri", baseline.PlacedByPriority,
 		"baselineEvictions", baseline.Evicted, "baselineMoves", baseline.Moved)
@@ -216,10 +238,10 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		klog.InfoS(string(phase)+": solver leaderboard",
 			"order", names,
 			"durationsMs", dursMs,
+			"best", bestSolverSummary.Name,
 			"evictions", evs,
 			"moves", mvs,
-			"cmpVsBaseline", cmps,
-			"best", bestSolverSummary.Name)
+			"placedByPri", bestSolverSummary.Score.PlacedByPriority)
 	}
 
 	return bestOut, anyFeasible, bestSolverSummary, time.Since(start)

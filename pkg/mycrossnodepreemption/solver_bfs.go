@@ -112,10 +112,6 @@ Tuning knobs
 
 // PlanFunc generates an ordered move list to free just-enough on `target` for `pending`.
 // `trial` and `rng` let stochastic planners vary attempts; deterministic planners ignore them.
-func runSolverBfs(in SolverInput) *SolverOutput {
-	return runSolverCommon(in, bfsPlan, "bfs")
-}
-
 func bfsPlan(
 	pending *SolverPod,
 	target *SolverNode,

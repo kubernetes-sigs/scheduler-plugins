@@ -186,7 +186,9 @@ type StoredPlan struct {
 	// Reference snapshot (where pods were at solve time) uid -> node
 	OldPlacements []Placement `json:"oldPlacements,omitempty"`
 	// Planned new placements (pending or moved) - note that moved will get a new uid
-	NewPlacements []NewPlacement `json:"newPlacements,omitempty"`
+	PlacementByName []NewPlacement `json:"placementsByName,omitempty"`
+	// Workload quotas after plan execution (nil if none)
+	WorkloadQuotasDoc WorkloadQuotas `json:"workloadQuotas,omitempty"`
 }
 
 type PlanStatus string
