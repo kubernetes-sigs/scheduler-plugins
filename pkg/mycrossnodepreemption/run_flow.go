@@ -388,7 +388,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 
 	// Execute if there are moves/evictions
 	if len(doc.Moves) > 0 || len(doc.Evicts) > 0 {
-		if err := pl.executePlan(ctx, doc); err != nil {
+		if err := pl.executePlan(doc); err != nil {
 			klog.ErrorS(err, "Plan execution failed")
 			pl.onPlanSettled(PlanStatusFailed)
 		}

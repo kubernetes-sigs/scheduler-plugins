@@ -14,9 +14,9 @@ componentsPatches:
         value: "15s"
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "20s"
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # 50s # TODO: set high to determine any potential issues
       - name: SOLVER_PYTHON_ENABLED
         value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
         value: "10s"
-      - name: PLAN_EXECUTION_TIMEOUT
-        value: "600h" # 50s # TODO: set high to determine any potential issues

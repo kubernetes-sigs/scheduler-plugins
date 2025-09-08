@@ -14,6 +14,8 @@ componentsPatches:
         value: "15s"
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "20s"
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # 50s # TODO: set high to determine any potential issues
       - name: SOLVER_LOCAL_SEARCH_ENABLED
         value: "true"
       - name: SOLVER_LOCAL_SEARCH_TIMEOUT
@@ -26,5 +28,3 @@ componentsPatches:
         value: "50" # -1 (unlimited)
       - name: SOLVER_LOCAL_SEARCH_MAX_MOVES_PER_PLAN
         value: "5" # -1 (unlimited)
-      - name: PLAN_EXECUTION_TIMEOUT
-        value: "600h" # 50s # TODO: set high to determine any potential issues

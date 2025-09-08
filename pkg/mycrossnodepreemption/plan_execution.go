@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -66,12 +67,19 @@ func (pl *MyCrossNodePreemption) registerPlan(
 }
 
 // executePlan executes the given plan: evicting and recreating pods as needed.
-func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, sp *StoredPlan) error {
+func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	ap := pl.getActivePlan()
-	ctxPlan := ctx
+
+	// Base context for I/O: keep any deadline, but ignore plan cancellation.
+	var base context.Context
 	if ap != nil && ap.Ctx != nil {
-		ctxPlan = ap.Ctx
+		base = context.WithoutCancel(ap.Ctx)
+	} else {
+		base = context.Background()
 	}
+	// Optional overall cap for this whole method.
+	overallCtx, overallCancel := context.WithTimeout(base, 5*time.Minute)
+	defer overallCancel()
 
 	resolve := func(uid, ns, name string) *v1.Pod {
 		l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
@@ -118,24 +126,60 @@ func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, sp *StoredPlan
 
 	if len(targets) > 0 {
 		klog.V(V2).InfoS("Evicting/awaiting targeted pods", "count", len(targets))
-		for _, p := range targets {
-			if err := pl.evictPod(ctxPlan, p); err != nil && !apierrors.IsNotFound(err) {
-				return fmt.Errorf("evict pod %s: %w", podRef(p), err)
+
+		// 1) Evict with bounded parallelism + per-op timeout
+		{
+			g, gctx := errgroup.WithContext(overallCtx)
+			g.SetLimit(8) // tune as needed
+			for _, p := range targets {
+				p := p
+				g.Go(func() error {
+					opCtx, cancel := context.WithTimeout(gctx, 30*time.Second)
+					defer cancel()
+					if err := pl.evictPod(opCtx, p); err != nil && !apierrors.IsNotFound(err) {
+						return fmt.Errorf("evict %s: %w", podRef(p), err)
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return err
 			}
 		}
-		if err := pl.waitPodsGone(ctxPlan, targets); err != nil {
-			return fmt.Errorf("wait for targeted pods gone: %w", err)
+
+		// 2) Wait for the evicted pods to actually disappear from cache (own timeout)
+		{
+			waitCtx, cancel := context.WithTimeout(overallCtx, 1*time.Minute)
+			defer cancel()
+			if err := pl.waitPodsGone(waitCtx, targets); err != nil {
+				return fmt.Errorf("wait for targeted pods gone: %w", err)
+			}
 		}
 	}
-	// Recreate standalone pods only
-	for _, p := range targets {
-		if _, owned := topWorkload(p); owned {
-			continue
+
+	// 3) Recreate standalone pods only (controllers will recreate theirs)
+	{
+		g, gctx := errgroup.WithContext(overallCtx)
+		g.SetLimit(8) // number of concurrent creations
+		for _, p := range targets {
+			if _, owned := topWorkload(p); owned {
+				continue
+			}
+			p := p
+			g.Go(func() error {
+				opCtx, cancel := context.WithTimeout(gctx, 30*time.Second)
+				defer cancel()
+				klog.V(V2).InfoS("Recreating standalone pod (no bind)", "pod", podRef(p))
+				if err := pl.recreatePod(opCtx, p, ""); err != nil {
+					return fmt.Errorf("recreate %s: %w", podRef(p), err)
+				}
+				return nil
+			})
 		}
-		klog.V(V2).InfoS("Recreating standalone pod (no bind)", "pod", podRef(p))
-		if err := pl.recreatePod(ctxPlan, p, ""); err != nil {
-			return fmt.Errorf("recreate standalone pod %s: %w", podRef(p), err)
+		if err := g.Wait(); err != nil {
+			return err
 		}
 	}
+
 	return nil
 }

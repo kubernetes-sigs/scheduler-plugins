@@ -14,6 +14,8 @@ componentsPatches:
         value: "30s"
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "15s"
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # 50s # TODO: set high to determine any potential issues
       - name: SOLVER_PYTHON_ENABLED
         value: "true" # TODO: disabled during testing fast solver
       - name: SOLVER_PYTHON_TIMEOUT
@@ -22,5 +24,3 @@ componentsPatches:
         value: "false"
       - name: SOLVER_BFS_TIMEOUT
         value: "500ms" # 25s
-      - name: PLAN_EXECUTION_TIMEOUT
-        value: "600s" # 50s # TODO: set high to determine any potential issues
