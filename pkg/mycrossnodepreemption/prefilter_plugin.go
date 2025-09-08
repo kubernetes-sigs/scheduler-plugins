@@ -23,6 +23,13 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 		return nil, framework.NewStatus(framework.Success)
 	}
 	nodes, msg, ok := pl.preFilterAllowedNodes(pod)
+
+	// TODO_HC: DEBUG
+	klog.InfoS("Filter decision",
+		"activePlan", ap != nil,
+		"pod", pod.Namespace+"/"+pod.Name,
+		"nodes", nodes.UnsortedList())
+
 	switch {
 	case ok && nodes == nil:
 		// allowed, no pin

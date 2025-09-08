@@ -31,8 +31,8 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 
 	ok, err := pl.isPlanCompleted(ctx, ap, pod)
 	if err != nil {
-		_ = pl.onPlanSettled(PlanStatusFailed)
-		klog.ErrorS(err, "PostBind: completion check failed")
+		//_ = pl.onPlanSettled(PlanStatusFailed) // TODO_HC: comment out as sometimes we get pod not found
+		klog.V(V2).ErrorS(err, "PostBind: completion check failed")
 		return
 	}
 	if !ok {

@@ -1212,6 +1212,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string, _ []*v
 	workloadCnts := buildWorkloadCntsAtomics(sp.WorkloadQuotasDoc)
 	// Note: We just pass PlacementsByName directly
 
+	// Cancel any previous plan's timeout watcher.
 	if old := pl.getActivePlan(); old != nil && old.Cancel != nil {
 		old.Cancel()
 	}
