@@ -33,10 +33,10 @@ TODO
 ## TODOs Plugin
 
 - Try to place workload preemptor using quotas instead of name.
+- - Save total plan execution time in configmap
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
-- Save total plan execution time in configmap
 - Reactivate not scheduled pods after plan execution.
 - Check SDU contract
 - Not sure my plugin will work if a pod is removed during plan execution
