@@ -53,6 +53,7 @@ TODO
 
 ## Write
 
+- Write about Iterative deepening depth-first search
 - Write about that it were not possible to place a preemptor by workload cnts, needs to be done by name as we otherwise can let other pods of the same workload through the scheduling phase before the preemptor that hit the postfilter.
 - Write about that recreation always create a new uid therefore we place by name
 - Write about that the OptimizeForEvery@PreEnqueue cannot be deterministic as we do not determine which order the pods are taken.
@@ -64,6 +65,12 @@ TODO
 - Write about atomics and we only use configmap for debugging.
 - Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
 - Write about that Optimizer is not deterministic, when having multiple workers. However, we need multiple workers, otherwise it is too slow.
+
+## Anology
+
+Lad os forestille os, at vi har fem legokasser fyldt med klodser i forskellige størrelser. Vi har netop købt nogle nye klodser, som vi gerne vil lægge ned i kasserne. Problemet er, at ingen af kasserne umiddelbart har plads nok, fordi de allerede næsten er fyldt. For at få plads kan vi derfor vælge at flytte nogle af de eksisterende klodser over i andre kasser, hvor der stadig er lidt ledig plads.
+
+Men her opstår en kaskadeeffekt: når vi flytter én klods fra kasse A til kasse B, kan vi være nødt til at flytte en anden klods fra kasse B videre til kasse C – og så fremdeles – før vi til sidst får frigjort nok plads til de nye klodser. Denne kædereaktion kan blive lang og kompliceret. Derfor er målet ikke kun at få plads til de nye klodser, men også at gøre det med så få flytninger som muligt.
 
 ## Developed
 
