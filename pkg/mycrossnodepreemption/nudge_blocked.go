@@ -41,7 +41,8 @@ func (pl *MyCrossNodePreemption) idleNudgeBlockedLoop(ctx context.Context) {
 				timer.Reset(delay)
 				continue
 			}
-			if pl.IsActivePlan() {
+			ap := pl.getActivePlan()
+			if ap != nil {
 				klog.V(V2).InfoS("Idle nudge: plan is active; skipping")
 				sameCount = 0
 				last = ""

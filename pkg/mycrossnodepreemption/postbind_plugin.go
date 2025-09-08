@@ -14,15 +14,10 @@ import (
 // It is used to check if the active scheduling plan is still in progress.
 // postbind_plugin.go
 func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, _ string) {
-	if pod.Namespace == "kube-system" || !pl.IsActivePlan() {
-		return
-	}
-
 	ap := pl.getActivePlan()
-	if ap == nil || ap.PlanDoc == nil {
+	if pod.Namespace == "kube-system" || ap == nil {
 		return
 	}
-
 	relevant := false
 	if _, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok {
 		relevant = true

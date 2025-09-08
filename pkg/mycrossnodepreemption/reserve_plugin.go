@@ -31,18 +31,17 @@ func (s *rsReservationState) Clone() framework.StateData {
 // If it fails, the Unreserve function is called to release any reserved resources.
 // It is used, here, to place workload pods on the appropriate nodes as they are automatically created, therefore, placement by name cannot be done.
 func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, node string) *framework.Status {
-	// Don't reserve kube-system pods
-	if pod.Namespace == "kube-system" {
-		return framework.NewStatus(framework.Success)
-	}
-	if !pl.IsActivePlan() {
-		return framework.NewStatus(framework.Success)
-	}
 	ap := pl.getActivePlan()
-
-	// Always let preemptor pods through; not part of workload quotas
-	if ap.PlanDoc.Preemptor != nil && string(pod.UID) == ap.PlanDoc.Preemptor.Pod.UID {
+	if pod.Namespace == "kube-system" || ap == nil {
 		return framework.NewStatus(framework.Success)
+	}
+
+	// Pass through placementByName pods; do not consume workload quota.
+	if ap.PlacementByName != nil {
+		if _, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok {
+			klog.V(V2).InfoS("Reserve: pod placed by name; allowing", "pod", klog.KObj(pod))
+			return framework.NewStatus(framework.Success)
+		}
 	}
 
 	// Check if pod is part of a workload; if not, allow it immediately.

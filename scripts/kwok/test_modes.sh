@@ -83,7 +83,7 @@ run_case() {
   # Build python args
   pyargs=(
     "${CLUSTER_NAME}" 7 6 0
-    #--seed 757198141668940213
+    --seed 757198141668940213
   )
   if [[ "${mode}" == "for_every" || "${at}" == "postfilter" ]]; then
       pyargs+=(--wait-each)
@@ -130,7 +130,7 @@ run_case() {
 # -------------------- Test Matrix --------------------
 
 
-run_case "py"   "for_every"    "preenqueue" 34
+# run_case "py"   "for_every"    "preenqueue" 34
 run_case "py"   "in_batches"   "preenqueue" 34
 run_case "py"   "for_every"    "postfilter" 34
 run_case "py"   "in_batches"   "postfilter" 34

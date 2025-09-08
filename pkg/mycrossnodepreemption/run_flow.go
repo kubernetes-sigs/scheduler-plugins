@@ -247,7 +247,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	return bestOut, anyFeasible, bestSolverSummary, time.Since(start)
 }
 
-// TODO
+// runFlow runs the full flow for the given phase (Continuous, Batch, Single).
+// For Single phase, the singlePod must be provided (the preemptor).
 func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singlePod *v1.Pod) (*FlowResult, error) {
 	// Continuous: do NOT take Active yet (we only take it if there is an improvement to apply).
 	// Batch/Single: take Active early because these modes block by design.

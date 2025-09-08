@@ -34,7 +34,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		return framework.NewStatus(framework.Pending, "PreEnqueue: batched pod")
 
 	case DecideBlockActive:
-		if pl.IsActivePlan() && !pl.allowedByActivePlan(pod) {
+		if !pl.allowedByActivePlan(pod) {
 			klog.V(V2).InfoS("PreEnqueue: active plan; blocking", "pod", klog.KObj(pod))
 			pl.Blocked.AddPod(pod)
 			return framework.NewStatus(framework.Pending, "PreEnqueue: active plan; blocking")

@@ -18,14 +18,10 @@ var _ framework.PreFilterPlugin = &MyCrossNodePreemption{}
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
 // it is determined in Reserve plugin and will be retried again.
 func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	// Always allow kube-system pods
-	if pod.Namespace == "kube-system" {
+	ap := pl.getActivePlan()
+	if pod.Namespace == "kube-system" || ap == nil {
 		return nil, framework.NewStatus(framework.Success)
 	}
-	if !pl.IsActivePlan() {
-		return nil, framework.NewStatus(framework.Success)
-	}
-
 	nodes, msg, ok := pl.preFilterAllowedNodes(pod)
 	switch {
 	case ok && nodes == nil:
@@ -50,10 +46,10 @@ func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtens
 // - node set to pin (non-nil) and Success, or
 // - nil and an appropriate framework.Status reason to block/allow.
 func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
-	if !pl.IsActivePlan() {
+	ap := pl.getActivePlan()
+	if ap == nil {
 		return nil, "no active plan", true
 	}
-	ap := pl.getActivePlan()
 
 	// Standalone/preemptor by name
 	if tgt, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok && tgt != "" {
@@ -67,16 +63,16 @@ func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[st
 		if !ok || len(byNode) == 0 {
 			return nil, "workload not in active plan; block", false
 		}
-		allowed := sets.New[string]()
+		nodesAllowed := sets.New[string]()
 		for node, ctr := range byNode {
 			if ctr.Load() > 0 {
-				allowed.Insert(node)
+				nodesAllowed.Insert(node)
 			}
 		}
-		if allowed.Len() == 0 {
+		if nodesAllowed.Len() == 0 {
 			return nil, "workload quotas exhausted; block", false
 		}
-		return allowed, "workload nodes allowed", true
+		return nodesAllowed, "workload nodes allowed", true
 	}
 
 	return nil, "pod not in active plan; block", false

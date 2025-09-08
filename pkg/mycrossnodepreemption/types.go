@@ -173,21 +173,31 @@ type Preemtor struct {
 // ===== Plan =====
 
 type StoredPlan struct {
-	PluginVersion string     `json:"pluginVersion"`
-	Mode          string     `json:"mode"`
-	GeneratedAt   time.Time  `json:"generatedAt"`
-	Status        PlanStatus `json:"status"`
-	Preemptor     *Preemtor  `json:"preemptor,omitempty"` // Single-preemptor metadata (nil in batch/continuous)
-	// Actions
-	Evicts []Placement    `json:"evicts,omitempty"`
-	Moves  []NewPlacement `json:"moves,omitempty"`
+	// Plugin version that generated the plan
+	PluginVersion string `json:"pluginVersion"`
+	// The optimization mode used
+	OptimizationStrategy string `json:"optimizationStrategy"`
+	// When the plan was generated
+	GeneratedAt time.Time `json:"generatedAt"`
+	// When the plan was completed (if ever)
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	// Status of the plan
+	Status PlanStatus `json:"status"`
+	// Single-preemptor metadata
+	Preemptor *Preemtor `json:"preemptor,omitempty"`
+	// Evicted pods
+	Evicts []Placement `json:"evicts,omitempty"`
+	// Moved pods
+	Moves []NewPlacement `json:"moves,omitempty"`
 	// Solver summary (status & score)
 	Solver SolverSummary `json:"solver"`
-	// Reference snapshot (where pods were at solve time) uid -> node
+	// All pods and their old placements
 	OldPlacements []Placement `json:"oldPlacements,omitempty"`
-	// Planned new placements (pending or moved) - note that moved will get a new uid
-	PlacementByName []NewPlacement `json:"placementsByName,omitempty"`
-	// Workload quotas after plan execution (nil if none)
+	// All pods and their new placements
+	NewPlacement []NewPlacement `json:"newPlacement,omitempty"`
+	// Placement by name for standalone pods: ns/name -> node
+	PlacementByName map[string]string `json:"placementsByName,omitempty"`
+	// Workload quotas for new placed pods that are part of a workload
 	WorkloadQuotasDoc WorkloadQuotas `json:"workloadQuotas,omitempty"`
 }
 
@@ -205,7 +215,6 @@ type WorkloadPerNodeCnts map[string]map[string]*atomic.Int32 // workloadKey -> n
 
 type ActivePlanState struct {
 	ID                  string
-	PlanDoc             *StoredPlan
 	WorkloadPerNodeCnts WorkloadPerNodeCnts
 	PlacementByName     map[string]string // pod ns/name -> targetNode
 	Ctx                 context.Context

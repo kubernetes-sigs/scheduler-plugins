@@ -13,8 +13,15 @@ import (
 // PostFilter is called after filtering a pod.
 // It is a replacement for the default preemption with cross-node preemption logic implemented.
 // It catch all pods not handled by the default scheduling.
-func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
-	if pl.IsActivePlan() {
+func (pl *MyCrossNodePreemption) PostFilter(
+	ctx context.Context,
+	_ *framework.CycleState,
+	pending *v1.Pod,
+	_ framework.NodeToStatusMap,
+) (*framework.PostFilterResult, *framework.Status) {
+
+	ap := pl.getActivePlan()
+	if ap != nil {
 		pl.Blocked.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 	}

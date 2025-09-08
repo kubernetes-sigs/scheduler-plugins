@@ -14,7 +14,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO: Can we remove the in.Preemptor, and just use in.Pods?
 func (pl *MyCrossNodePreemption) runSolverPython(ctx context.Context, in SolverInput) (*SolverOutput, error) {
 	raw, _ := json.Marshal(in)
 	klog.V(V2).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)

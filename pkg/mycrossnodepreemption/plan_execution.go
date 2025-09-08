@@ -13,7 +13,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO:
+// registerPlan builds and registers a new plan as active, exporting it to a ConfigMap.
 func (pl *MyCrossNodePreemption) registerPlan(
 	ctx context.Context,
 	out *SolverOutput,
@@ -22,30 +22,26 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	pods []*v1.Pod,
 ) (*StoredPlan, *ActivePlanState, string, error) {
 
-	evicts, moves, oldPlc, newPlc, nominated, err := pl.buildActionsFromSolver(out, preemptor, pods)
+	evicts, moves, oldPlacement, newPlacement, placementByName, workloadQuotas, nominated, err := pl.buildPlan(out, preemptor, pods)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("build actions: %w", err)
 	}
 
 	doc := &StoredPlan{
-		PluginVersion:   Version,
-		Mode:            modeToString(),
-		GeneratedAt:     time.Now().UTC(),
-		Status:          PlanStatusActive,
-		Evicts:          evicts,
-		Moves:           moves,
-		Solver:          summary,
-		OldPlacements:   oldPlc,
-		PlacementByName: newPlc, // includes both pending and moved (also preemptor) - also replica-pods
-	}
-
-	doc.WorkloadQuotasDoc = computeWorkloadQuotasFromPlan(doc, pods) // use the same live snapshot you pass around
-	if len(doc.WorkloadQuotasDoc) == 0 {
-		doc.WorkloadQuotasDoc = nil // omit empty in JSON
+		PluginVersion:        Version,
+		OptimizationStrategy: modeToString(),
+		GeneratedAt:          time.Now().UTC(),
+		Status:               PlanStatusActive,
+		Evicts:               evicts,
+		Moves:                moves,
+		Solver:               summary,
+		OldPlacements:        oldPlacement,
+		NewPlacement:         newPlacement,
+		PlacementByName:      placementByName,
+		WorkloadQuotasDoc:    workloadQuotas,
 	}
 
 	if preemptor != nil {
-		// TODO: Get target node from placements
 		doc.Preemptor = &Preemtor{
 			Pod: Pod{
 				UID:       string(preemptor.UID),
@@ -69,9 +65,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	return doc, pl.getActivePlan(), nominated, nil
 }
 
-// TODO
-// Standalone pods are recreated without binding (Filter steers placement).
-// RS pods are recreated by their controllers.
+// executePlan executes the given plan: evicting and recreating pods as needed.
 func (pl *MyCrossNodePreemption) executePlan(ctx context.Context, sp *StoredPlan) error {
 	ap := pl.getActivePlan()
 	ctxPlan := ctx

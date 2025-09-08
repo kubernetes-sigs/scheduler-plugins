@@ -32,8 +32,6 @@ TODO
 
 ## TODOs Plugin
 
-- Try to place workload preemptor using quotas instead of name.
-- - Save total plan execution time in configmap
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
@@ -65,6 +63,10 @@ TODO
 - Write about atomics and we only use configmap for debugging.
 - Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
 - Write about that Optimizer is not deterministic, when having multiple workers. However, we need multiple workers, otherwise it is too slow.
+
+# ERROR
+
+
 
 ## Developed
 
