@@ -38,11 +38,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			},
 		},
 		{
-			name:    "swap",
-			enabled: SolverSwapEnabled,
-			timeout: SolverSwapTimeout,
+			name:    "local-search",
+			enabled: SolverLocalSearchEnabled,
+			timeout: SolverLocalSearchTimeout,
 			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runSolverSwap(in), nil
+				return runSolverLocalSearch(in), nil
 			},
 		},
 		{
@@ -120,16 +120,16 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			// First feasible candidate: compare vs baseline for logging.
 			switch IsImprovement(baseline, sc) {
 			case 1:
-				klog.InfoS(string(phase)+": solver improved over baseline",
+				klog.V(V2).InfoS(string(phase)+": solver improved over baseline",
 					"attempt", i, "solver", att.name, "duration", attDur,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
 					"deltaEvictions", dEv, "deltaMoves", dMv)
 			case 0:
-				klog.InfoS(string(phase)+": solver equal to baseline",
+				klog.V(V2).InfoS(string(phase)+": solver equal to baseline",
 					"attempt", i, "solver", att.name, "duration", attDur,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
 			default:
-				klog.InfoS(string(phase)+": solver worse than baseline",
+				klog.V(V2).InfoS(string(phase)+": solver worse than baseline",
 					"attempt", i, "solver", att.name, "duration", attDur,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
 					"deltaEvictions", dEv, "deltaMoves", dMv)
@@ -143,19 +143,19 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// Compare against the current best.
 		switch IsImprovement(bestScore, sc) {
 		case 1:
-			klog.InfoS(string(phase)+": new leader",
+			klog.V(V2).InfoS(string(phase)+": new leader",
 				"attempt", i, "solver", att.name, "prevLeader", bestName, "duration", attDur,
 				"leaderPlacedByPri", sc.PlacedByPriority, "prevPlacedByPri", bestScore.PlacedByPriority,
 				"leaderEvictions", sc.Evicted, "prevEvictions", bestScore.Evicted,
 				"leaderMoves", sc.Moved, "prevMoves", bestScore.Moved)
 			bestOut, bestScore, bestName, bestDuration = out, sc, att.name, attDur
 		case 0: // if equal; keep the first one
-			klog.InfoS(string(phase)+": solver tied with leader",
+			klog.V(V2).InfoS(string(phase)+": solver tied with leader",
 				"attempt", i, "solver", att.name, "leader", bestName, "duration", attDur,
 				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
 			bestName = bestName + "=" + att.name + " (" + bestName + " chosen)"
 		default:
-			klog.InfoS(string(phase)+": solver worse than leader",
+			klog.V(V2).InfoS(string(phase)+": solver worse than leader",
 				"attempt", i, "solver", att.name, "leader", bestName, "duration", attDur,
 				"placedByPri", sc.PlacedByPriority, "leaderPlacedByPri", bestScore.PlacedByPriority,
 				"evictions", sc.Evicted, "leaderEvictions", bestScore.Evicted,

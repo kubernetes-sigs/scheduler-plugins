@@ -21,6 +21,11 @@ type TargetScore struct {
 	Waste  int64
 }
 
+type Delta struct {
+	CPU int64
+	Mem int64
+}
+
 type UIDSet map[string]struct{}
 
 func (s UIDSet) Add(uid string)      { s[uid] = struct{}{} }
@@ -51,8 +56,50 @@ func bestPlanAcrossTargets(
 	return
 }
 
-// gateAllows centralizes priority checks (strict: < vs <=).
-func gateAllows(p *SolverPod, gate *int32, strict bool) bool {
+// orderTargetsByDeficit orders nodes by how well they can accommodate pod p,
+// even if they can’t fit it directly.
+// The ordering is:
+//  1. score ASC (lower is better)
+//  2. defSum ASC (lower is better)
+//  3. waste ASC (lower is better)
+//  4. name ASC (lexicographically)
+func orderTargetsByDeficit(order []*SolverNode, p *SolverPod) []*SolverNode {
+	s := make([]TargetScore, 0, len(order))
+	for _, n := range order {
+		defCPU := max64(0, p.ReqCPUm-n.AllocCPUm)
+		defMEM := max64(0, p.ReqMemBytes-n.AllocMemBytes)
+		score := float64(max64(
+			int64(float64(defCPU)/float64(max64(1, p.ReqCPUm))*1_000_000),
+			int64(float64(defMEM)/float64(max64(1, p.ReqMemBytes))*1_000_000),
+		)) / 1_000_000.0
+		waste := int64(0)
+		if n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
+			waste = (n.AllocCPUm - p.ReqCPUm) + (n.AllocMemBytes - p.ReqMemBytes)
+		}
+		s = append(s, TargetScore{Node: n, Score: score, DefSum: defCPU + defMEM, Waste: waste})
+	}
+	sort.Slice(s, func(i, j int) bool {
+		if s[i].Score != s[j].Score {
+			return s[i].Score < s[j].Score
+		}
+		if s[i].DefSum != s[j].DefSum {
+			return s[i].DefSum < s[j].DefSum
+		}
+		if s[i].Waste != s[j].Waste {
+			return s[i].Waste < s[j].Waste
+		}
+		return s[i].Node.Name < s[j].Node.Name
+	})
+	out := make([]*SolverNode, 0, len(s))
+	for _, e := range s {
+		out = append(out, e.Node)
+	}
+	return out
+}
+
+// podAllowedByPriority centralizes priority checks (strict: < vs <=).
+// Returns false if p is nil, protected or if gate is set and p.Priority is too high; true otherwise.
+func podAllowedByPriority(p *SolverPod, gate *int32, strict bool) bool {
 	if p == nil || p.Protected {
 		return false
 	}
@@ -69,17 +116,17 @@ func canMove(p *SolverPod, gate *int32) bool {
 	if p == nil || p.Node == "" {
 		return false
 	}
-	return gateAllows(p, gate, false)
+	return podAllowedByPriority(p, gate, false)
 }
 
 func canEvict(p *SolverPod, gate *int32) bool {
-	return gateAllows(p, gate, true)
+	return podAllowedByPriority(p, gate, true)
 }
 
-func addNodeDelta(m map[string]Delta, node string, dcpu, dmem int64) {
+func addNodeDelta(m map[string]Delta, node string, deficitCPU, deficitMem int64) {
 	d := m[node]
-	d.CPU += dcpu
-	d.Mem += dmem
+	d.CPU += deficitCPU
+	d.Mem += deficitMem
 	m[node] = d
 }
 
@@ -108,7 +155,7 @@ func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *Solve
 	}
 
 	// Worklist (big-first) and mode flags (single vs batch)
-	worklist, singleMode, moveGatePtr := buildWorklist(pending, pre)
+	worklist, singleMode, moveGate := buildWorklist(pending, pre)
 
 	// Batch accounting
 	newPlacements := make(map[string]string)
@@ -128,7 +175,7 @@ func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *Solve
 
 		placed, infeasible := placeOnePodCommon(
 			p, nodes, pods, order,
-			moveGatePtr,
+			moveGate,
 			evictGateForPod(p, singleMode, pre),
 			movedUIDs, newPlacements, &evicts,
 			tryRelocate,
@@ -148,10 +195,10 @@ func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *Solve
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
-// commitPlanAndPlace verifies & applies `moves`, records them in newPlacements/movedUIDs,
+// commitPlan verifies & applies `moves`, records them in newPlacements/movedUIDs,
 // then places p on `target` (if it fits). If not, it falls back to bestDirectFit.
 // Returns true on success, false if the plan is invalid or placement fails.
-func commitPlanAndPlace(
+func commitPlan(
 	p *SolverPod,
 	target string,
 	moves []MoveLite,
@@ -435,8 +482,8 @@ func pickLargestEnablingEviction(order []*SolverNode, p *SolverPod, evictGate *i
 // hasKey reports whether map m has key k.
 func hasKey(m map[string]struct{}, k string) bool { _, ok := m[k]; return ok }
 
-// buildOrigMap returns UID -> current node for all placed pods.
-func buildOrigMap(order []*SolverNode) map[string]string {
+// buildOrigPlacements builds a map of pod UID → original node name from the current cluster state.
+func buildOrigPlacements(order []*SolverNode) map[string]string {
 	orig := make(map[string]string, 256)
 	for _, n := range order {
 		for _, q := range n.Pods {
@@ -446,47 +493,6 @@ func buildOrigMap(order []*SolverNode) map[string]string {
 		}
 	}
 	return orig
-}
-
-// orderTargetsByDeficit orders nodes by how well they can accommodate pod p,
-// even if they can’t fit it directly.
-// The ordering is:
-//  1. score ASC (lower is better)
-//  2. defSum ASC (lower is better)
-//  3. waste ASC (lower is better)
-//  4. name ASC (lexicographically)
-func orderTargetsByDeficit(order []*SolverNode, p *SolverPod) []*SolverNode {
-	s := make([]TargetScore, 0, len(order))
-	for _, n := range order {
-		defCPU := max64(0, p.ReqCPUm-n.AllocCPUm)
-		defMEM := max64(0, p.ReqMemBytes-n.AllocMemBytes)
-		score := float64(max64(
-			int64(float64(defCPU)/float64(max64(1, p.ReqCPUm))*1_000_000),
-			int64(float64(defMEM)/float64(max64(1, p.ReqMemBytes))*1_000_000),
-		)) / 1_000_000.0
-		waste := int64(0)
-		if n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
-			waste = (n.AllocCPUm - p.ReqCPUm) + (n.AllocMemBytes - p.ReqMemBytes)
-		}
-		s = append(s, TargetScore{Node: n, Score: score, DefSum: defCPU + defMEM, Waste: waste})
-	}
-	sort.Slice(s, func(i, j int) bool {
-		if s[i].Score != s[j].Score {
-			return s[i].Score < s[j].Score
-		}
-		if s[i].DefSum != s[j].DefSum {
-			return s[i].DefSum < s[j].DefSum
-		}
-		if s[i].Waste != s[j].Waste {
-			return s[i].Waste < s[j].Waste
-		}
-		return s[i].Node.Name < s[j].Node.Name
-	})
-	out := make([]*SolverNode, 0, len(s))
-	for _, e := range s {
-		out = append(out, e.Node)
-	}
-	return out
 }
 
 // bestDirectFit finds the best-fit node for pod p in order.

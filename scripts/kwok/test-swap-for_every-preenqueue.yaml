@@ -14,9 +14,9 @@ componentsPatches:
         value: "15s"
       - name: OPTIMIZATION_INITIAL_DELAY
         value: "20s"
-      - name: SOLVER_SWAP_ENABLED
+      - name: SOLVER_LOCAL_SEARCH_ENABLED
         value: "true"
-      - name: SOLVER_SWAP_TIMEOUT
+      - name: SOLVER_LOCAL_SEARCH_TIMEOUT
         value: "200ms"
       - name: SOLVER_SWAP_MAX_VICTIMS_PER_NODE
         value: "8" # -1 (unlimited)

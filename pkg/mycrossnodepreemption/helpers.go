@@ -1188,7 +1188,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string, pods [
 
 // check that at least one solver is enabled
 func (pl *MyCrossNodePreemption) isSolverEnabled() bool {
-	return SolverPythonEnabled || SolverBfsEnabled || SolverSwapEnabled
+	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
 }
 
 // fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.

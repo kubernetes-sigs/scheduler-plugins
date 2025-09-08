@@ -33,11 +33,11 @@ var SolverBfsEnabled = parseBool(getenv("SOLVER_BFS_ENABLED", "false"))
 // SolverBfsTimeout is the timeout for the BFS solver to complete.
 var SolverBfsTimeout = parseTime(getenv("SOLVER_BFS_TIMEOUT", "500ms"))
 
-// SolverSwapEnabled indicates whether the swap solver is enabled.
-var SolverSwapEnabled = parseBool(getenv("SOLVER_SWAP_ENABLED", "false"))
+// SolverLocalSearchEnabled indicates whether the swap solver is enabled.
+var SolverLocalSearchEnabled = parseBool(getenv("SOLVER_LOCAL_SEARCH_ENABLED", "false"))
 
-// SolverSwapTimeout is the timeout for the swap solver to complete.
-var SolverSwapTimeout = parseTime(getenv("SOLVER_SWAP_TIMEOUT", "500ms"))
+// SolverLocalSearchTimeout is the timeout for the swap solver to complete.
+var SolverLocalSearchTimeout = parseTime(getenv("SOLVER_LOCAL_SEARCH_TIMEOUT", "500ms"))
 
 // ======= Plan settings =======
 

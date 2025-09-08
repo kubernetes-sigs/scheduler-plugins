@@ -76,25 +76,20 @@ Mode guardrails
        * Evictions allowed only if victim.priority < preemptor.priority (strict).
 */
 
-func runSolverSwap(in SolverInput) *SolverOutput {
+func runSolverLocalSearch(in SolverInput) *SolverOutput {
 	return runSolverCommon(in,
 		// Swap/Virtual planner
 		func(p *SolverPod, nodes map[string]*SolverNode, pods map[string]*SolverPod, order []*SolverNode,
 			moveGate *int32, movedUIDs map[string]struct{}, newPlacements map[string]string,
 		) bool {
-			return placeByMovesOnly(p, nodes, pods, order, moveGate, movedUIDs, newPlacements)
+			return placeByLocalSearch(p, nodes, pods, order, moveGate, movedUIDs, newPlacements)
 		},
 		"swap",
 	)
 }
 
-type Delta struct {
-	CPU int64
-	Mem int64
-}
-
-func placeByMovesOnly(
-	p *SolverPod,
+func placeByLocalSearch(
+	pending *SolverPod,
 	nodes map[string]*SolverNode,
 	pods map[string]*SolverPod,
 	order []*SolverNode,
@@ -104,12 +99,12 @@ func placeByMovesOnly(
 ) bool {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(t *SolverNode) ([]MoveLite, bool) {
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(pending, order, func(t *SolverNode) ([]MoveLite, bool) {
 		// Try a few fresh relocation attempts for this target node
 		var best []MoveLite
 		bestCount := math.MaxInt32
 		for trial := 0; trial < SolverSwapMaxTrialsPerPendingPod; trial++ {
-			mvs, ok := planOnTargetVirtual(p, t, order, moveGate, movedUIDs, rng, SolverSwapMaxMovesForPendingPod)
+			mvs, ok := localSearchTryFreeTarget(pending, t, order, moveGate, movedUIDs, rng, SolverSwapMaxMovesForPendingPod)
 			if ok && len(mvs) < bestCount {
 				best, bestCount = mvs, len(mvs)
 				if bestCount <= 1 {
@@ -127,24 +122,24 @@ func placeByMovesOnly(
 	}
 
 	// Shared commit path
-	return commitPlanAndPlace(
-		p, bestTarget, bestMoves,
+	return commitPlan(
+		pending, bestTarget, bestMoves,
 		nodes, pods, order,
 		newPlacements, movedUIDs,
 	)
 }
 
-func planOnTargetVirtual(
-	p *SolverPod,
-	A *SolverNode,
+func localSearchTryFreeTarget(
+	pending *SolverPod,
+	target *SolverNode,
 	order []*SolverNode,
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	rng *rand.Rand,
 	capMoves int,
 ) ([]MoveLite, bool) {
-	needCPU := max64(0, p.ReqCPUm-A.AllocCPUm)
-	needMem := max64(0, p.ReqMemBytes-A.AllocMemBytes)
+	needCPU := max64(0, pending.ReqCPUm-target.AllocCPUm)
+	needMem := max64(0, pending.ReqMemBytes-target.AllocMemBytes)
 	if needCPU == 0 && needMem == 0 {
 		return nil, true
 	}
@@ -153,7 +148,7 @@ func planOnTargetVirtual(
 	chosen := map[string]struct{}{}
 	moves := make([]MoveLite, 0, 8)
 
-	victims := rankVictimsOnNode(A, needCPU, needMem, moveGate, movedUIDs, order)
+	victims := rankVictimsOnNode(target, needCPU, needMem, moveGate, movedUIDs, order)
 	if len(victims) > 1 && rng.Intn(4) == 0 {
 		i, j := rng.Intn(len(victims)), rng.Intn(len(victims))
 		victims[i], victims[j] = victims[j], victims[i]
@@ -169,12 +164,12 @@ func planOnTargetVirtual(
 		}
 
 		// (1) direct move v -> D (honor cap)
-		if D := bestDestUnderDelta(v, A.Name, order, delta); D != nil {
+		if D := bestDest(v, target.Name, order, delta); D != nil {
 			if len(moves)+1 > capMoves {
 				return nil, false // exceeded budget → let caller try another trial
 			}
-			moves = append(moves, MoveLite{UID: v.UID, From: A.Name, To: D.Name})
-			addDelta(delta, A.Name, D.Name, v.ReqCPUm, v.ReqMemBytes)
+			moves = append(moves, MoveLite{UID: v.UID, From: target.Name, To: D.Name})
+			addDelta(delta, target.Name, D.Name, v.ReqCPUm, v.ReqMemBytes)
 			needCPU = max64(0, needCPU-v.ReqCPUm)
 			needMem = max64(0, needMem-v.ReqMemBytes)
 			chosen[v.UID] = struct{}{}
@@ -186,26 +181,26 @@ func planOnTargetVirtual(
 		}
 
 		// (2) swap v <-> q (counts as 2 moves, honor cap)
-		if B, q := bestSwapUnderDelta(A, v, needCPU, needMem, order, delta, moveGate, movedUIDs, chosen); B != nil && q != nil {
+		if B, q := bestSwap(target, v, needCPU, needMem, order, delta, moveGate, movedUIDs, chosen); B != nil && q != nil {
 			if len(moves)+2 > capMoves {
 				return nil, false // swap would exceed budget → new trial
 			}
 			moves = append(moves,
-				MoveLite{UID: v.UID, From: A.Name, To: B.Name},
-				MoveLite{UID: q.UID, From: B.Name, To: A.Name},
+				MoveLite{UID: v.UID, From: target.Name, To: B.Name},
+				MoveLite{UID: q.UID, From: B.Name, To: target.Name},
 			)
-			da := delta[A.Name]
+			da := delta[target.Name]
 			db := delta[B.Name]
 			da.CPU += v.ReqCPUm - q.ReqCPUm
 			da.Mem += v.ReqMemBytes - q.ReqMemBytes
 			db.CPU += q.ReqCPUm - v.ReqCPUm
 			db.Mem += q.ReqMemBytes - v.ReqMemBytes
-			delta[A.Name] = da
+			delta[target.Name] = da
 			delta[B.Name] = db
 
 			// recompute remaining need for A under delta
-			needCPU = max64(0, p.ReqCPUm-(A.AllocCPUm+delta[A.Name].CPU))
-			needMem = max64(0, p.ReqMemBytes-(A.AllocMemBytes+delta[A.Name].Mem))
+			needCPU = max64(0, pending.ReqCPUm-(target.AllocCPUm+delta[target.Name].CPU))
+			needMem = max64(0, pending.ReqMemBytes-(target.AllocMemBytes+delta[target.Name].Mem))
 
 			chosen[v.UID] = struct{}{}
 			chosen[q.UID] = struct{}{}
@@ -222,89 +217,19 @@ func planOnTargetVirtual(
 	return nil, false
 }
 
-func addDelta(delta map[string]Delta, from, to string, cpu, mem int64) {
-	addEdgeDelta(delta, from, to, cpu, mem)
-}
-
-func bestDestUnderDelta(q *SolverPod, src string, order []*SolverNode, delta map[string]Delta) *SolverNode {
-	var best *SolverNode
-	bestCPUWaste := int64(math.MaxInt64)
-	bestMEMWaste := int64(math.MaxInt64)
-	for _, n := range order {
-		if n.Name == src {
-			continue
-		}
-		d := delta[n.Name]
-		if (n.AllocCPUm+d.CPU) >= q.ReqCPUm && (n.AllocMemBytes+d.Mem) >= q.ReqMemBytes {
-			cw := (n.AllocCPUm + d.CPU) - q.ReqCPUm
-			mw := (n.AllocMemBytes + d.Mem) - q.ReqMemBytes
-			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && (best == nil || n.Name < best.Name)))) {
-				best = n
-				bestCPUWaste, bestMEMWaste = cw, mw
-			}
-		}
-	}
-	return best
-}
-
-func bestSwapUnderDelta(
-	A *SolverNode,
-	v *SolverPod,
-	needCPU, needMem int64,
-	order []*SolverNode,
-	delta map[string]Delta,
-	moveGate *int32,
-	movedUIDs map[string]struct{},
-	chosen map[string]struct{},
-) (*SolverNode, *SolverPod) {
-	var bestB *SolverNode
-	var bestQ *SolverPod
-	bestGain := int64(math.MinInt64)
-
-	for _, B := range order {
-		if B.Name == A.Name {
-			continue
-		}
-		db := delta[B.Name]
-		for _, q := range B.Pods {
-			if !canMove(q, moveGate) {
-				continue
-			}
-			if _, used := chosen[q.UID]; used {
-				continue
-			}
-			finalA_CPU := (A.AllocCPUm + delta[A.Name].CPU) + v.ReqCPUm - q.ReqCPUm
-			finalA_MEM := (A.AllocMemBytes + delta[A.Name].Mem) + v.ReqMemBytes - q.ReqMemBytes
-			finalB_CPU := (B.AllocCPUm + db.CPU) + q.ReqCPUm - v.ReqCPUm
-			finalB_MEM := (B.AllocMemBytes + db.Mem) + q.ReqMemBytes - v.ReqMemBytes
-			if finalA_CPU < 0 || finalA_MEM < 0 || finalB_CPU < 0 || finalB_MEM < 0 {
-				continue
-			}
-			// Limit gains by the remaining need on A
-			gainCPU := min64(v.ReqCPUm, needCPU) - min64(q.ReqCPUm, needCPU)
-			gainMEM := min64(v.ReqMemBytes, needMem) - min64(q.ReqMemBytes, needMem)
-			gain := gainCPU + gainMEM
-
-			mvQ := hasKey(movedUIDs, q.UID)
-			mvBest := bestQ != nil && hasKey(movedUIDs, bestQ.UID)
-
-			if bestQ == nil || gain > bestGain || (gain == bestGain && mvQ && !mvBest) {
-				bestB, bestQ, bestGain = B, q, gain
-			}
-		}
-	}
-	return bestB, bestQ
-}
-
+// rankVictimsOnNode ranks victims on A for freeing (needCPU, needMem).
+// ranks by:
+//   - alreadyMoved (yes first)
+//   - single-victim coverage of (needCPU, needMem) (yes first)
 func rankVictimsOnNode(
-	A *SolverNode,
+	target *SolverNode,
 	needCPU, needMem int64,
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	order []*SolverNode,
 ) []*SolverPod {
-	cands := make([]*SolverPod, 0, len(A.Pods))
-	for _, q := range A.Pods {
+	cands := make([]*SolverPod, 0, len(target.Pods))
+	for _, q := range target.Pods {
 		if !canMove(q, moveGate) {
 			continue
 		}
@@ -328,7 +253,7 @@ func rankVictimsOnNode(
 		ov := max64(0, q.ReqCPUm-needCPU) + max64(0, q.ReqMemBytes-needMem)
 		rc := 0
 		for _, n := range order {
-			if n.Name == A.Name {
+			if n.Name == target.Name {
 				continue
 			}
 			if n.canPodFit(q.ReqCPUm, q.ReqMemBytes) {
@@ -375,4 +300,78 @@ func rankVictimsOnNode(
 		out = append(out, s.q)
 	}
 	return out
+}
+
+func bestSwap(
+	target *SolverNode,
+	victim *SolverPod,
+	needCPU, needMem int64,
+	order []*SolverNode,
+	delta map[string]Delta,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	chosen map[string]struct{},
+) (*SolverNode, *SolverPod) {
+	var bestB *SolverNode
+	var bestQ *SolverPod
+	bestGain := int64(math.MinInt64)
+
+	for _, B := range order {
+		if B.Name == target.Name {
+			continue
+		}
+		db := delta[B.Name]
+		for _, q := range B.Pods {
+			if !canMove(q, moveGate) {
+				continue
+			}
+			if _, used := chosen[q.UID]; used {
+				continue
+			}
+			finalA_CPU := (target.AllocCPUm + delta[target.Name].CPU) + victim.ReqCPUm - q.ReqCPUm
+			finalA_MEM := (target.AllocMemBytes + delta[target.Name].Mem) + victim.ReqMemBytes - q.ReqMemBytes
+			finalB_CPU := (B.AllocCPUm + db.CPU) + q.ReqCPUm - victim.ReqCPUm
+			finalB_MEM := (B.AllocMemBytes + db.Mem) + q.ReqMemBytes - victim.ReqMemBytes
+			if finalA_CPU < 0 || finalA_MEM < 0 || finalB_CPU < 0 || finalB_MEM < 0 {
+				continue
+			}
+			// Limit gains by the remaining need on A
+			gainCPU := min64(victim.ReqCPUm, needCPU) - min64(q.ReqCPUm, needCPU)
+			gainMEM := min64(victim.ReqMemBytes, needMem) - min64(q.ReqMemBytes, needMem)
+			gain := gainCPU + gainMEM
+
+			mvQ := hasKey(movedUIDs, q.UID)
+			mvBest := bestQ != nil && hasKey(movedUIDs, bestQ.UID)
+
+			if bestQ == nil || gain > bestGain || (gain == bestGain && mvQ && !mvBest) {
+				bestB, bestQ, bestGain = B, q, gain
+			}
+		}
+	}
+	return bestB, bestQ
+}
+
+func bestDest(q *SolverPod, src string, order []*SolverNode, delta map[string]Delta) *SolverNode {
+	var best *SolverNode
+	bestCPUWaste := int64(math.MaxInt64)
+	bestMEMWaste := int64(math.MaxInt64)
+	for _, n := range order {
+		if n.Name == src {
+			continue
+		}
+		d := delta[n.Name]
+		if (n.AllocCPUm+d.CPU) >= q.ReqCPUm && (n.AllocMemBytes+d.Mem) >= q.ReqMemBytes {
+			cw := (n.AllocCPUm + d.CPU) - q.ReqCPUm
+			mw := (n.AllocMemBytes + d.Mem) - q.ReqMemBytes
+			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && (best == nil || n.Name < best.Name)))) {
+				best = n
+				bestCPUWaste, bestMEMWaste = cw, mw
+			}
+		}
+	}
+	return best
+}
+
+func addDelta(delta map[string]Delta, from, to string, cpu, mem int64) {
+	addEdgeDelta(delta, from, to, cpu, mem)
 }
