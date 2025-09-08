@@ -142,11 +142,11 @@ run_case "bfs" "in_batches"   "preenqueue" 34
 # run_case "bfs" "in_batches"   "postfilter" 34
 # run_case "bfs" "continuously" "postfilter" 34
 
-# run_case "swap" "for_every"    "preenqueue" 34
-# run_case "swap" "for_every"    "postfilter" 34
-# run_case "swap" "in_batches"   "preenqueue" 34
-# run_case "swap" "in_batches"   "postfilter" 34
-# run_case "swap" "continuously" "postfilter" 34
+# run_case "local_search" "for_every"    "preenqueue" 34
+# run_case "local_search" "for_every"    "postfilter" 34
+# run_case "local_search" "in_batches"   "preenqueue" 34
+# run_case "local_search" "in_batches"   "postfilter" 34
+# run_case "local_search" "continuously" "postfilter" 34
 
 # -------------------- Summary --------------------
 echo

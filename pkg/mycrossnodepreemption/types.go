@@ -101,6 +101,7 @@ type SolverInput struct {
 	Mode           string       `json:"solver_mode,omitempty"`
 	UseHints       bool         `json:"use_hints,omitempty"`
 	Workers        int          `json:"workers,omitempty"`
+	MaxTrials      int          `json:"max_trials,omitempty"` // for local search
 }
 
 type SolverOutput struct {

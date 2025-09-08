@@ -7,7 +7,7 @@ componentsPatches:
   - name: kube-scheduler
     extraEnvs:
       - name: OPTIMIZE_CADENCE
-        value: "in_batches" # choices: for_every, in_batches, continuously
+        value: "continuously" # choices: for_every, in_batches, continuously
       - name: OPTIMIZE_AT
         value: "postfilter" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL
@@ -18,13 +18,13 @@ componentsPatches:
         value: "true"
       - name: SOLVER_LOCAL_SEARCH_TIMEOUT
         value: "200ms"
-      - name: SOLVER_SWAP_MAX_VICTIMS_PER_NODE
+      - name: SOLVER_LOCAL_SEARCH_MAX_VICTIMS_PER_NODE
         value: "8" # -1 (unlimited)
-      - name: SOLVER_SWAP_MAX_TRIALS_PER_NODE
-        value: "30"
-      - name: SOLVER_SWAP_MAX_MOVES_FOR_PENDING_POD
-        value: "5"
-      - name: SOLVER_SWAP_MAX_TRIALS_PER_PENDING_POD
-        value: "100"
+      - name: SOLVER_LOCAL_SEARCH_MAX_RESTARTS_PER_TARGET
+        value: "30" # -1 (unlimited)
+      - name: SOLVER_LOCAL_SEARCH_MAX_VICTIM_PROBES_PER_TARGET
+        value: "50" # -1 (unlimited)
+      - name: SOLVER_LOCAL_SEARCH_MAX_MOVES_PER_PLAN
+        value: "5" # -1 (unlimited)
       - name: PLAN_EXECUTION_TIMEOUT
         value: "600h" # 50s # TODO: set high to determine any potential issues

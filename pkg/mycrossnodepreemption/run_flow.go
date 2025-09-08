@@ -14,6 +14,7 @@ type solverAttempt struct {
 	name    string
 	enabled bool
 	timeout time.Duration
+	trials  int
 	fudgeMs int64
 	run     func(ctx context.Context, in SolverInput) (*SolverOutput, error)
 }
@@ -33,6 +34,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			name:    "bfs",
 			enabled: SolverBfsEnabled,
 			timeout: SolverBfsTimeout,
+			trials:  1,
 			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
 				return runSolverBfs(in), nil
 			},
@@ -41,6 +43,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			name:    "local-search",
 			enabled: SolverLocalSearchEnabled,
 			timeout: SolverLocalSearchTimeout,
+			trials:  SolverLocalSearchMaxRestartsPerTarget,
 			run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
 				return runSolverLocalSearch(in), nil
 			},
@@ -49,6 +52,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			name:    "python",
 			enabled: SolverPythonEnabled,
 			timeout: SolverPythonTimeout,
+			trials:  1,
 			fudgeMs: 200, // let the solver return a feasible result before ctx timeout
 			run:     pl.runSolverPython,
 		},
@@ -94,6 +98,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			toMs -= att.fudgeMs
 		}
 		inAttempt.TimeoutMs = toMs
+		inAttempt.MaxTrials = att.trials
 
 		ctxAtt, cancel := context.WithTimeout(ctx, att.timeout)
 		attStart := time.Now()

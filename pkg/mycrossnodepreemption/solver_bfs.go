@@ -2,6 +2,7 @@ package mycrossnodepreemption
 
 import (
 	"fmt"
+	"math/rand"
 	"sort"
 )
 
@@ -109,75 +110,45 @@ Tuning knobs
 - `SolverBfsMaxDestsPerLevel`       // breadth over candidate destinations
 */
 
+// PlanFunc generates an ordered move list to free just-enough on `target` for `pending`.
+// `trial` and `rng` let stochastic planners vary attempts; deterministic planners ignore them.
 func runSolverBfs(in SolverInput) *SolverOutput {
-	return runSolverCommon(in,
-		func(p *SolverPod, nodes map[string]*SolverNode, pods map[string]*SolverPod, order []*SolverNode,
-			moveGate *int32, movedUIDs map[string]struct{}, newPlacements map[string]string,
-		) bool {
-			return placeByBfs(p, nodes, pods, order, moveGate, movedUIDs, newPlacements)
-		},
-		"bfs",
-	)
+	return runSolverCommon(in, bfsPlan, "bfs")
 }
 
-// placeByBfs tries to place p by relocating existing pods via BFS.
-// Returns true if successful (p placed, newPlacements and movedUIDs updated).
-// On failure, the cluster state is unchanged.
-func placeByBfs(
+func bfsPlan(
 	pending *SolverPod,
+	target *SolverNode,
 	nodes map[string]*SolverNode,
-	pods map[string]*SolverPod,
 	order []*SolverNode,
 	moveGate *int32,
-	movedUIDs map[string]struct{},
-	newPlacements map[string]string,
-) (ok bool) {
-	origPlacements := buildOrigPlacements(order)
-
-	// Iterate over targets by increasing deficit for p
-	// (zero-deficit targets first, i.e. direct-fit nodes)
-	// Stop at the first target where a plan is found.
-	bestMoves, bestTarget, ok := bestPlanAcrossTargets(pending, order, func(target *SolverNode) ([]MoveLite, bool) {
-		needCPU := max64(0, pending.ReqCPUm-target.AllocCPUm)
-		needMem := max64(0, pending.ReqMemBytes-target.AllocMemBytes)
-		if needCPU == 0 && needMem == 0 {
-			return nil, true // zero-move plan on t
-		}
-		// Try to free just enough on target via BFS
-		// (fewest moves, respecting prioLimit)
-		// Returns finalDest map if a plan is found within caps.
-		finalDest, ok := bfsTryFreeTarget(nodes, target.Name, needCPU, needMem, moveGate)
-		if !ok {
-			return nil, false
-		}
-		// Make ordered moves from finalDest
-		return createMoves(finalDest, origPlacements), true
-	})
+	_ map[string]struct{},
+	_ int,
+	_ *rand.Rand,
+) ([]MoveLite, bool) {
+	finalDest, ok := bfsTryFreeTarget(pending, target, nodes, moveGate)
 	if !ok {
-		return false
+		return nil, false
 	}
-
-	// Commit the best plan found (verify + apply)
-	return commitPlan(
-		pending, bestTarget, bestMoves,
-		nodes, pods, order,
-		newPlacements, movedUIDs,
-	)
+	origPlacements := buildOrigPlacements(order)
+	return createMoves(finalDest, origPlacements), true
 }
 
 // bfsTryFreeTarget runs a breadth-first search over move-count to satisfy all deficits.
 // Initial deficit 0 is the root target (where the preemptor will land).
 // Returns: coalesced finalDest + ordered moves if a plan exists within caps.
 func bfsTryFreeTarget(
+	pending *SolverPod,
+	target *SolverNode,
 	nodes map[string]*SolverNode,
-	rootTarget string,
-	rootNeedCPU, rootNeedMem int64,
 	moveGate *int32,
 ) (finalDest map[string]string, ok bool) {
 
-	// BFS init state
+	rootNeedCPU := max64(0, pending.ReqCPUm-target.AllocCPUm)
+	rootNeedMem := max64(0, pending.ReqMemBytes-target.AllocMemBytes)
+
 	init := BfsState{
-		Deficits:  []Deficit{{Node: rootTarget, DeficitCPU: rootNeedCPU, DeficitMem: rootNeedMem}},
+		Deficits:  []Deficit{{Node: target.Name, DeficitCPU: rootNeedCPU, DeficitMem: rootNeedMem}},
 		NetDelta:  map[string]Delta{},
 		FinalDest: map[string]string{},
 	}
@@ -185,10 +156,7 @@ func bfsTryFreeTarget(
 	front := []BfsState{init}
 	visited := map[string]bool{bfsStateKey(init.Deficits, init.FinalDest): true}
 
-	// Layered BFS by depth (#moves)
-	// (at most SolverBfsMaxDepth layers, each expanding all states in the layer)
 	for depth := 0; depth <= SolverBfsMaxDepth; depth++ {
-		// Goal check
 		for _, st := range front {
 			if len(st.Deficits) == 0 {
 				return st.FinalDest, true
@@ -198,165 +166,89 @@ func bfsTryFreeTarget(
 			break
 		}
 
-		// Expand all states in the current layer (front)
-		// (each expansion adds exactly one move, i.e. goes to the next layer)
 		next := make([]BfsState, 0, len(front)*4)
 		for _, state := range front {
-			// Active deficit node
 			if len(state.Deficits) == 0 {
 				continue
 			}
 			need := state.Deficits[0]
 
-			// Enumerate victims on active deficit node
-			victims := getVictims(
-				nodes[need.Node],
-				moveGate,
-				SolverBfsMaxVictimsPerNode,
-				need.DeficitCPU,
-				need.DeficitMem,
-			)
+			victims := getVictims(nodes[need.Node], VictimOpts{
+				Strategy: VictimsBFS,
+				MoveGate: moveGate,
+				NeedCPU:  need.DeficitCPU,
+				NeedMem:  need.DeficitMem,
+				Cap:      SolverBfsMaxVictimsPerNode,
+			})
 			if len(victims) == 0 {
 				continue
 			}
 
-			// Candidate destinations
 			destinations := destsByFree(nodes, SolverBfsMaxDestsPerLevel)
 
-			// Expand over victim/destination pairs
 			for _, v := range victims {
-
-				// Skip already-moved
 				if state.FinalDest[v.UID] != "" {
 					continue
 				}
-				// Try all candidate destinations and prune
 				for _, destNode := range destinations {
-
-					// Prune self-loop
 					if destNode.Name == need.Node {
 						continue
 					}
-					// Prune self-host
 					if destNode.Pods[v.UID] != nil {
 						continue
 					}
-					// Prune root-consumption
-					if destNode.Name == rootTarget {
+					if destNode.Name == target.Name { // <- fixed (was rootTarget)
 						continue
 					}
 
-					// Destination shortage under current reserve
 					dstAdj := state.NetDelta[destNode.Name]
 					needCPU2 := max64(0, v.ReqCPUm-(destNode.AllocCPUm+dstAdj.CPU))
 					needMem2 := max64(0, v.ReqMemBytes-(destNode.AllocMemBytes+dstAdj.Mem))
 
-					// Progress rule (don't make a worse deficit than we relieve)
 					freedCPU := min64(v.ReqCPUm, need.DeficitCPU)
 					freedMem := min64(v.ReqMemBytes, need.DeficitMem)
 					if needCPU2 > freedCPU || needMem2 > freedMem {
 						continue
 					}
 
-					// Successor state (adds exactly one move)
-					successorState := BfsState{
+					succ := BfsState{
 						Deficits:  cloneDeficits(state.Deficits),
 						NetDelta:  cloneNetDelta(state.NetDelta),
 						FinalDest: cloneFinalDest(state.FinalDest),
 					}
 
-					// Reservations from this move
-					addNetDelta(successorState.NetDelta, need.Node, +v.ReqCPUm, +v.ReqMemBytes)     // source
-					addNetDelta(successorState.NetDelta, destNode.Name, -v.ReqCPUm, -v.ReqMemBytes) // destination
+					addNetDelta(succ.NetDelta, need.Node, +v.ReqCPUm, +v.ReqMemBytes)
+					addNetDelta(succ.NetDelta, destNode.Name, -v.ReqCPUm, -v.ReqMemBytes)
 
-					// Update front deficit
-					deficitCPU := max64(0, need.DeficitCPU-v.ReqCPUm)
-					deficitMem := max64(0, need.DeficitMem-v.ReqMemBytes)
-					// Check if resolved; pop front if so; else update
-					if deficitCPU == 0 && deficitMem == 0 {
-						successorState.Deficits = successorState.Deficits[1:]
+					remCPU := max64(0, need.DeficitCPU-v.ReqCPUm)
+					remMem := max64(0, need.DeficitMem-v.ReqMemBytes)
+					if remCPU == 0 && remMem == 0 {
+						succ.Deficits = succ.Deficits[1:]
 					} else {
-						successorState.Deficits[0].DeficitCPU = deficitCPU
-						successorState.Deficits[0].DeficitMem = deficitMem
+						succ.Deficits[0].DeficitCPU = remCPU
+						succ.Deficits[0].DeficitMem = remMem
 					}
 
-					// Add new deficit for dest if needed
 					if needCPU2 > 0 || needMem2 > 0 {
-						successorState.Deficits = append(successorState.Deficits, Deficit{
-							Node:       destNode.Name,
-							DeficitCPU: needCPU2,
-							DeficitMem: needMem2,
+						succ.Deficits = append(succ.Deficits, Deficit{
+							Node: destNode.Name, DeficitCPU: needCPU2, DeficitMem: needMem2,
 						})
 					}
-					// Record move
-					successorState.FinalDest[v.UID] = destNode.Name
 
-					key := bfsStateKey(successorState.Deficits, successorState.FinalDest)
-					// Check if already visited
+					succ.FinalDest[v.UID] = destNode.Name
+
+					key := bfsStateKey(succ.Deficits, succ.FinalDest)
 					if visited[key] {
 						continue
 					}
 					visited[key] = true
-
-					// Enqueue successor
-					next = append(next, successorState)
+					next = append(next, succ)
 				}
 			}
 		}
 		front = next
 	}
-
-	// no plan found
 	return nil, false
-}
-
-// getVictims returns candidate victims on node n, respecting:
-// not Protected and (move gate == nil OR p.Priority <= *moveGate).
-// Sorted by "most freeing", then prio (lower first), then size (smaller), then UID.
-// If capK > 0, returns at most capK entries.
-func getVictims(target *SolverNode, moveGate *int32, capK int, needCPU, needMem int64) []*SolverPod {
-	victims := make([]*SolverPod, 0, len(target.Pods))
-	for _, p := range target.Pods {
-		if !podAllowedByPriority(p, moveGate, false) {
-			continue
-		}
-		victims = append(victims, p)
-	}
-
-	// Normalize weights by current deficit (handles zeros)
-	total := max64(1, needCPU) + max64(1, needMem)
-	wCPU := float64(max64(1, needCPU)) / float64(total)
-	wMem := 1.0 - wCPU
-
-	sort.Slice(victims, func(i, j int) bool {
-		// Contribution of each victim towards the remaining need
-		contribCPU_i := float64(min64(victims[i].ReqCPUm, needCPU))
-		contribCPU_j := float64(min64(victims[j].ReqCPUm, needCPU))
-		contribMem_i := float64(min64(victims[i].ReqMemBytes, needMem))
-		contribMem_j := float64(min64(victims[j].ReqMemBytes, needMem))
-
-		// Weighted coverage scores
-		score_i := wCPU*contribCPU_i + wMem*contribMem_i
-		score_j := wCPU*contribCPU_j + wMem*contribMem_j
-
-		if score_i != score_j {
-			return score_i > score_j // higher coverage first
-		}
-		if victims[i].Priority != victims[j].Priority {
-			return victims[i].Priority < victims[j].Priority
-		}
-		if victims[i].ReqCPUm != victims[j].ReqCPUm {
-			return victims[i].ReqCPUm < victims[j].ReqCPUm
-		}
-		if victims[i].ReqMemBytes != victims[j].ReqMemBytes {
-			return victims[i].ReqMemBytes < victims[j].ReqMemBytes
-		}
-		return victims[i].UID < victims[j].UID
-	})
-	if capK > 0 && capK < len(victims) {
-		return victims[:capK]
-	}
-	return victims
 }
 
 // destsByFree returns nodes sorted by decreasing Alloc (i.e. increasing free).

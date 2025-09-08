@@ -3,8 +3,6 @@ package mycrossnodepreemption
 import (
 	"math"
 	"math/rand"
-	"sort"
-	"time"
 )
 
 /*
@@ -77,55 +75,22 @@ Mode guardrails
 */
 
 func runSolverLocalSearch(in SolverInput) *SolverOutput {
-	return runSolverCommon(in,
-		// Swap/Virtual planner
-		func(p *SolverPod, nodes map[string]*SolverNode, pods map[string]*SolverPod, order []*SolverNode,
-			moveGate *int32, movedUIDs map[string]struct{}, newPlacements map[string]string,
-		) bool {
-			return placeByLocalSearch(p, nodes, pods, order, moveGate, movedUIDs, newPlacements)
-		},
-		"swap",
-	)
+	return runSolverCommon(in, localSearchPlan, "local-search")
 }
 
-func placeByLocalSearch(
+func localSearchPlan(
 	pending *SolverPod,
+	target *SolverNode,
 	nodes map[string]*SolverNode,
-	pods map[string]*SolverPod,
 	order []*SolverNode,
 	moveGate *int32,
 	movedUIDs map[string]struct{},
-	newPlacements map[string]string,
-) bool {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	bestMoves, bestTarget, ok := bestPlanAcrossTargets(pending, order, func(t *SolverNode) ([]MoveLite, bool) {
-		// Try a few fresh relocation attempts for this target node
-		var best []MoveLite
-		bestCount := math.MaxInt32
-		for trial := 0; trial < SolverSwapMaxTrialsPerPendingPod; trial++ {
-			mvs, ok := localSearchTryFreeTarget(pending, t, order, moveGate, movedUIDs, rng, SolverSwapMaxMovesForPendingPod)
-			if ok && len(mvs) < bestCount {
-				best, bestCount = mvs, len(mvs)
-				if bestCount <= 1 {
-					break
-				}
-			}
-		}
-		if best == nil {
-			return nil, false
-		}
-		return best, true
-	})
-	if !ok {
-		return false
-	}
-
-	// Shared commit path
-	return commitPlan(
-		pending, bestTarget, bestMoves,
-		nodes, pods, order,
-		newPlacements, movedUIDs,
+	trial int,
+	rng *rand.Rand,
+) ([]MoveLite, bool) {
+	return localSearchTryFreeTarget(
+		pending, target, order, moveGate, movedUIDs,
+		rng, SolverLocalSearchMaxMovesPerPlan,
 	)
 }
 
@@ -148,15 +113,27 @@ func localSearchTryFreeTarget(
 	chosen := map[string]struct{}{}
 	moves := make([]MoveLite, 0, 8)
 
-	victims := rankVictimsOnNode(target, needCPU, needMem, moveGate, movedUIDs, order)
-	if len(victims) > 1 && rng.Intn(4) == 0 {
-		i, j := rng.Intn(len(victims)), rng.Intn(len(victims))
-		victims[i], victims[j] = victims[j], victims[i]
+	victims := getVictims(target, VictimOpts{
+		Strategy:     VictimsLocal,
+		MoveGate:     moveGate,
+		NeedCPU:      needCPU,
+		NeedMem:      needMem,
+		Order:        order,
+		MovedUIDs:    movedUIDs,
+		Cap:          SolverLocalSearchMaxVictimsPerNode,
+		Rng:          rng,
+		RandomizePct: 25,
+	})
+
+	// NEW: respect -1/0/+N for per-target victim probes
+	limit := SolverLocalSearchMaxVictimProbesPerTarget
+	if limit == 0 {
+		return nil, false // no probes at this target
 	}
 
 	attempts := 0
 	for _, v := range victims {
-		if attempts >= SolverSwapMaxTrialsPerNode {
+		if limit > 0 && attempts >= limit {
 			break
 		}
 		if _, seen := chosen[v.UID]; seen {
@@ -165,8 +142,9 @@ func localSearchTryFreeTarget(
 
 		// (1) direct move v -> D (honor cap)
 		if D := bestDest(v, target.Name, order, delta); D != nil {
-			if len(moves)+1 > capMoves {
-				return nil, false // exceeded budget → let caller try another trial
+			// FIX: only enforce when capMoves > 0
+			if capMoves > 0 && len(moves)+1 > capMoves {
+				return nil, false
 			}
 			moves = append(moves, MoveLite{UID: v.UID, From: target.Name, To: D.Name})
 			addDelta(delta, target.Name, D.Name, v.ReqCPUm, v.ReqMemBytes)
@@ -182,8 +160,9 @@ func localSearchTryFreeTarget(
 
 		// (2) swap v <-> q (counts as 2 moves, honor cap)
 		if B, q := bestSwap(target, v, needCPU, needMem, order, delta, moveGate, movedUIDs, chosen); B != nil && q != nil {
-			if len(moves)+2 > capMoves {
-				return nil, false // swap would exceed budget → new trial
+			// FIX: only enforce when capMoves > 0
+			if capMoves > 0 && len(moves)+2 > capMoves {
+				return nil, false
 			}
 			moves = append(moves,
 				MoveLite{UID: v.UID, From: target.Name, To: B.Name},
@@ -198,7 +177,7 @@ func localSearchTryFreeTarget(
 			delta[target.Name] = da
 			delta[B.Name] = db
 
-			// recompute remaining need for A under delta
+			// recompute remaining need
 			needCPU = max64(0, pending.ReqCPUm-(target.AllocCPUm+delta[target.Name].CPU))
 			needMem = max64(0, pending.ReqMemBytes-(target.AllocMemBytes+delta[target.Name].Mem))
 
@@ -211,95 +190,10 @@ func localSearchTryFreeTarget(
 			continue
 		}
 
-		attempts++
+		attempts++ // counted even if neither move nor swap succeeded
 	}
 
 	return nil, false
-}
-
-// rankVictimsOnNode ranks victims on A for freeing (needCPU, needMem).
-// ranks by:
-//   - alreadyMoved (yes first)
-//   - single-victim coverage of (needCPU, needMem) (yes first)
-func rankVictimsOnNode(
-	target *SolverNode,
-	needCPU, needMem int64,
-	moveGate *int32,
-	movedUIDs map[string]struct{},
-	order []*SolverNode,
-) []*SolverPod {
-	cands := make([]*SolverPod, 0, len(target.Pods))
-	for _, q := range target.Pods {
-		if !canMove(q, moveGate) {
-			continue
-		}
-		cands = append(cands, q)
-	}
-	if len(cands) == 0 {
-		return nil
-	}
-
-	type scored struct {
-		q           *SolverPod
-		singleCover bool
-		relocCount  int
-		overshoot   int64
-		alreadyMv   bool
-	}
-	sc := make([]scored, 0, len(cands))
-	for _, q := range cands {
-		_, already := movedUIDs[q.UID]
-		single := (q.ReqCPUm >= needCPU && q.ReqMemBytes >= needMem)
-		ov := max64(0, q.ReqCPUm-needCPU) + max64(0, q.ReqMemBytes-needMem)
-		rc := 0
-		for _, n := range order {
-			if n.Name == target.Name {
-				continue
-			}
-			if n.canPodFit(q.ReqCPUm, q.ReqMemBytes) {
-				rc++
-			}
-		}
-		sc = append(sc, scored{q: q, singleCover: single, relocCount: rc, overshoot: ov, alreadyMv: already})
-	}
-	sort.Slice(sc, func(i, j int) bool {
-		if sc[i].alreadyMv != sc[j].alreadyMv {
-			return sc[i].alreadyMv
-		}
-		if sc[i].singleCover != sc[j].singleCover {
-			return sc[i].singleCover
-		}
-		if sc[i].relocCount != sc[j].relocCount {
-			return sc[i].relocCount > sc[j].relocCount
-		}
-		if sc[i].overshoot != sc[j].overshoot {
-			return sc[i].overshoot < sc[j].overshoot
-		}
-		qi, qj := sc[i].q, sc[j].q
-		if qi.Priority != qj.Priority {
-			return qi.Priority < qj.Priority
-		}
-		si, sj := qi.ReqCPUm*qi.ReqMemBytes, qj.ReqCPUm*qj.ReqMemBytes
-		if si != sj {
-			return si > sj
-		}
-		if qi.ReqCPUm != qj.ReqCPUm {
-			return qi.ReqCPUm < qj.ReqCPUm
-		}
-		if qi.ReqMemBytes != qj.ReqMemBytes {
-			return qi.ReqMemBytes < qj.ReqMemBytes
-		}
-		return qi.UID < qj.UID
-	})
-	limit := SolverSwapMaxVictimsPerNode
-	if limit > 0 && len(sc) > limit {
-		sc = sc[:limit]
-	}
-	out := make([]*SolverPod, 0, len(sc))
-	for _, s := range sc {
-		out = append(out, s.q)
-	}
-	return out
 }
 
 func bestSwap(

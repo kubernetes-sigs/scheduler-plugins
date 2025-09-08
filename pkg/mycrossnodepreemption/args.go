@@ -67,19 +67,20 @@ var SolverBfsMaxSuccessorsPerState = parseInt(getenv("SOLVER_BFS_MAX_SUCCESSORS_
 // -1 = unlimited; 0 = frontier cleared ⇒ search stops at that depth.
 var SolverBfsMaxFrontierPerDepth = parseInt(getenv("SOLVER_BFS_MAX_FRONTIER_PER_DEPTH", "-1"))
 
-// ======= Swap solver settings =======
+// ======= Local Search solver settings =======
 
 // Maximum number of victims to consider per node.
 // -1 = unlimited; 0 = no victims ⇒ search stops at that node.
-var SolverSwapMaxVictimsPerNode = parseInt(getenv("SOLVER_SWAP_MAX_VICTIMS_PER_NODE", "8"))
+var SolverLocalSearchMaxVictimsPerNode = parseInt(getenv("SOLVER_LOCAL_SEARCH_MAX_VICTIMS_PER_NODE", "8"))
 
-// Maximum number of relocation trials per node.
-// -1 = unlimited; 0 = no trials ⇒ search stops at that node.
-var SolverSwapMaxTrialsPerNode = parseInt(getenv("SOLVER_SWAP_MAX_TRIALS_PER_NODE", "30"))
+// Number of independent restarts (fresh randomized plans) per target node.
+// -1 = unlimited; 0 = no restarts (i.e., skip local-search altogether).
+var SolverLocalSearchMaxRestartsPerTarget = parseInt(getenv("SOLVER_LOCAL_SEARCH_MAX_RESTARTS_PER_TARGET", "30"))
+
+// Cap how many victim *probes* we try on the active target in a single attempt.
+// -1 = unlimited; 0 = no probes (skip local search on this target).
+var SolverLocalSearchMaxVictimProbesPerTarget = parseInt(getenv("SOLVER_LOCAL_SEARCH_MAX_VICTIM_PROBES_PER_TARGET", "50"))
 
 // Maximum number of moves for the complete plan.
 // -1 = unlimited; 0 = no moves ⇒ search stops immediately.
-var SolverSwapMaxMovesForPendingPod = parseInt(getenv("SOLVER_SWAP_MAX_MOVES_FOR_PENDING_POD", "5"))
-
-// Maximum number of relocation trials for the complete plan.
-var SolverSwapMaxTrialsPerPendingPod = parseInt(getenv("SOLVER_SWAP_MAX_TRIALS_PER_PENDING_POD", "100"))
+var SolverLocalSearchMaxMovesPerPlan = parseInt(getenv("SOLVER_LOCAL_SEARCH_MAX_MOVES_PER_PLAN", "5"))

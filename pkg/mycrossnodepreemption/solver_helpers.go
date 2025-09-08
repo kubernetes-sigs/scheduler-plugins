@@ -2,10 +2,23 @@ package mycrossnodepreemption
 
 import (
 	"math"
+	"math/rand"
 	"sort"
+	"time"
 
 	"k8s.io/klog/v2"
 )
+
+type PlanFunc func(
+	pending *SolverPod,
+	target *SolverNode,
+	nodes map[string]*SolverNode,
+	order []*SolverNode,
+	moveGate *int32,
+	movedUIDs map[string]struct{},
+	trial int,
+	rng *rand.Rand,
+) ([]MoveLite, bool)
 
 // TODO: Replace with NewPlacement
 type MoveLite struct {
@@ -136,7 +149,8 @@ func addEdgeDelta(m map[string]Delta, from, to string, cpu, mem int64) {
 	addNodeDelta(m, to, -cpu, -mem)
 }
 
-type tryRelocate func(
+func relocateViaPlan(
+	plan PlanFunc,
 	p *SolverPod,
 	nodes map[string]*SolverNode,
 	pods map[string]*SolverPod,
@@ -144,26 +158,202 @@ type tryRelocate func(
 	moveGate *int32,
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
-) bool
+	maxTrials int, // <-- added
+) bool {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *SolverOutput {
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(target *SolverNode) ([]MoveLite, bool) {
+		// zero-move fast path
+		if target.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
+			return nil, true
+		}
+		var best []MoveLite
+		bestCount := math.MaxInt32
+		for trial := 0; trial < maxTrials; trial++ {
+			mvs, ok := plan(p, target, nodes, order, moveGate, movedUIDs, trial, rng)
+			if !ok {
+				continue
+			}
+			if len(mvs) < bestCount {
+				best, bestCount = mvs, len(mvs)
+				if bestCount <= 1 {
+					break
+				}
+			}
+		}
+		if best == nil {
+			return nil, false
+		}
+		return best, true
+	})
+	if !ok {
+		return false
+	}
+	return commitPlan(p, bestTarget, bestMoves, nodes, pods, order, newPlacements, movedUIDs)
+}
+
+type VictimStrategy int
+
+const (
+	VictimsBFS   VictimStrategy = iota // coverage-first for BFS
+	VictimsLocal                       // relocatability-aware for local search
+)
+
+type VictimOpts struct {
+	Strategy     VictimStrategy
+	MoveGate     *int32              // priority gate for moves
+	NeedCPU      int64               // remaining CPU deficit on the active node
+	NeedMem      int64               // remaining MEM deficit on the active node
+	Cap          int                 // max victims to return (0 = no cap)
+	Order        []*SolverNode       // required for VictimsLocal (to compute relocCount)
+	MovedUIDs    map[string]struct{} // prefer already-moved in local
+	Rng          *rand.Rand          // for randomization (nil = none)
+	RandomizePct int                 // % of randomization of victim order (0 = none)
+}
+
+func getVictims(target *SolverNode, opts VictimOpts) []*SolverPod {
+	// filter by move gate / protected
+	cands := make([]*SolverPod, 0, len(target.Pods))
+	for _, q := range target.Pods {
+		if !canMove(q, opts.MoveGate) {
+			continue
+		}
+		cands = append(cands, q)
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+
+	switch opts.Strategy {
+	case VictimsBFS:
+		// Weighted coverage of the current deficit; keep BFS fanout small.
+		total := max64(1, opts.NeedCPU) + max64(1, opts.NeedMem)
+		wCPU := float64(max64(1, opts.NeedCPU)) / float64(total)
+		wMem := 1.0 - wCPU
+		sort.Slice(cands, func(i, j int) bool {
+			vi, vj := cands[i], cands[j]
+			scoreI := wCPU*float64(min64(vi.ReqCPUm, opts.NeedCPU)) +
+				wMem*float64(min64(vi.ReqMemBytes, opts.NeedMem))
+			scoreJ := wCPU*float64(min64(vj.ReqCPUm, opts.NeedCPU)) +
+				wMem*float64(min64(vj.ReqMemBytes, opts.NeedMem))
+			if scoreI != scoreJ {
+				return scoreI > scoreJ
+			}
+			if vi.Priority != vj.Priority {
+				return vi.Priority < vj.Priority
+			}
+			if vi.ReqCPUm != vj.ReqCPUm {
+				return vi.ReqCPUm < vj.ReqCPUm
+			}
+			if vi.ReqMemBytes != vj.ReqMemBytes {
+				return vi.ReqMemBytes < vj.ReqMemBytes
+			}
+			return vi.UID < vj.UID
+		})
+
+	case VictimsLocal:
+		// Relocatability-aware multi-criteria ranking for local search.
+		type scored struct {
+			q           *SolverPod
+			singleCover bool
+			relocCount  int
+			overshoot   int64
+			alreadyMv   bool
+		}
+		sc := make([]scored, 0, len(cands))
+		for _, q := range cands {
+			_, already := opts.MovedUIDs[q.UID]
+			single := (q.ReqCPUm >= opts.NeedCPU && q.ReqMemBytes >= opts.NeedMem)
+			ov := max64(0, q.ReqCPUm-opts.NeedCPU) + max64(0, q.ReqMemBytes-opts.NeedMem)
+			rc := 0
+			if opts.Order != nil {
+				for _, n := range opts.Order {
+					if n.Name == target.Name {
+						continue
+					}
+					if n.canPodFit(q.ReqCPUm, q.ReqMemBytes) {
+						rc++
+					}
+				}
+			}
+			sc = append(sc, scored{q: q, singleCover: single, relocCount: rc, overshoot: ov, alreadyMv: already})
+		}
+		sort.Slice(sc, func(i, j int) bool {
+			if sc[i].alreadyMv != sc[j].alreadyMv {
+				return sc[i].alreadyMv
+			}
+			if sc[i].singleCover != sc[j].singleCover {
+				return sc[i].singleCover
+			}
+			if sc[i].relocCount != sc[j].relocCount {
+				return sc[i].relocCount > sc[j].relocCount
+			}
+			if sc[i].overshoot != sc[j].overshoot {
+				return sc[i].overshoot < sc[j].overshoot
+			}
+			qi, qj := sc[i].q, sc[j].q
+			if qi.Priority != qj.Priority {
+				return qi.Priority < qj.Priority
+			}
+			si, sj := qi.ReqCPUm*qi.ReqMemBytes, qj.ReqCPUm*qj.ReqMemBytes
+			if si != sj {
+				return si > sj
+			}
+			if qi.ReqCPUm != qj.ReqCPUm {
+				return qi.ReqCPUm < qj.ReqCPUm
+			}
+			if qi.ReqMemBytes != qj.ReqMemBytes {
+				return qi.ReqMemBytes < qj.ReqMemBytes
+			}
+			return qi.UID < qj.UID
+		})
+		// rebuild ordered pods
+		out := make([]*SolverPod, 0, len(sc))
+		for _, s := range sc {
+			out = append(out, s.q)
+		}
+		cands = out
+	}
+
+	// Randomize victim order a bit to get different plans on different trials.
+	if opts.Rng != nil && opts.RandomizePct > 0 && len(cands) > 1 {
+		p := float64(opts.RandomizePct) / 100.0
+		if opts.Rng.Float64() < p {
+			i := opts.Rng.Intn(len(cands))
+			j := opts.Rng.Intn(len(cands))
+			if i != j {
+				cands[i], cands[j] = cands[j], cands[i]
+			}
+		}
+	}
+
+	if opts.Cap > 0 && opts.Cap < len(cands) {
+		return cands[:opts.Cap]
+	}
+
+	return cands
+}
+
+func runSolverCommon(in SolverInput, plan PlanFunc, tag string) *SolverOutput {
+	klog.V(V2).InfoS("Running solver", "tag", tag)
 	nodes, pods, pending, order, pre := buildClusterState(in)
-
 	if len(pending) == 0 {
-		klog.InfoS(tag + ": nothing to place")
 		return &SolverOutput{Status: "UNKNOWN", Placements: nil, Evictions: nil}
 	}
 
-	// Worklist (big-first) and mode flags (single vs batch)
 	worklist, singleMode, moveGate := buildWorklist(pending, pre)
 
-	// Batch accounting
 	newPlacements := make(map[string]string)
 	var evicts []Placement
 	movedUIDs := make(map[string]struct{})
 
 	stop := false
 	var stopAt int32
+
+	maxTrials := in.MaxTrials
+	if maxTrials < 1 {
+		maxTrials = 1
+	}
 
 	for _, p := range worklist {
 		if stop && p.Priority <= stopAt {
@@ -174,11 +364,12 @@ func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *Solve
 		}
 
 		placed, infeasible := placeOnePodCommon(
+			plan,
 			p, nodes, pods, order,
 			moveGate,
 			evictGateForPod(p, singleMode, pre),
 			movedUIDs, newPlacements, &evicts,
-			tryRelocate,
+			maxTrials,
 		)
 
 		if !placed {
@@ -187,11 +378,8 @@ func runSolverCommon(in SolverInput, tryRelocate tryRelocate, tag string) *Solve
 			}
 			stop = true
 			stopAt = p.Priority
-			klog.InfoS(tag+": stopping batch at priority; discarding remainder",
-				"priority", stopAt, "uid", p.UID)
 		}
 	}
-
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
@@ -230,6 +418,7 @@ func commitPlan(
 }
 
 func placeOnePodCommon(
+	plan PlanFunc,
 	p *SolverPod,
 	nodes map[string]*SolverNode,
 	pods map[string]*SolverPod,
@@ -239,7 +428,7 @@ func placeOnePodCommon(
 	movedUIDs map[string]struct{},
 	newPlacements map[string]string,
 	evicts *[]Placement,
-	tryRelocate tryRelocate,
+	maxTrials int,
 ) (feasible bool, triedEvicting bool) {
 
 	// 1) Cluster slack
@@ -254,8 +443,8 @@ func placeOnePodCommon(
 		return true, false
 	}
 
-	// 3) Moves-only via strategy hook (Swap virtual planner or BFS)
-	if tryRelocate(p, nodes, pods, order, moveGate, movedUIDs, newPlacements) {
+	// 3) Relocations via provided plan
+	if relocateViaPlan(plan, p, nodes, pods, order, moveGate, movedUIDs, newPlacements, maxTrials) {
 		return true, false
 	}
 
