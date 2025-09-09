@@ -32,7 +32,6 @@ TODO_HC
 
 ## TODOs Plugin
 
-- Make test_modes.sh to a python script instead.
 - Only activate pods we need to schedule
 - Reactivate not scheduled pods after plan execution.
 - Somehow ensure that the cluster state is the same throughout execution. Consider to evict non-planned pods.
@@ -55,6 +54,7 @@ TODO_HC
 
 ## Write
 
+- Write about that when simulating standalone pods, then the scheduler might preempt it and we can no longer see it.
 - Write about Iterative deepening depth-first search
 - Write about that it were not possible to place a preemptor by workload cnts, needs to be done by name as we otherwise can let other pods of the same workload through the scheduling phase before the preemptor that hit the postfilter.
 - Write about that recreation always create a new uid therefore we place by name
