@@ -9,6 +9,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// PlanFunc is a function that, given a pod and a target node, tries to find a plan.
 type PlanFunc func(
 	pending *SolverPod,
 	target *SolverNode,
@@ -20,13 +21,14 @@ type PlanFunc func(
 	rng *rand.Rand,
 ) ([]MoveLite, bool)
 
-// TODO: Replace with NewPlacement
+// TODO_HC: Replace MoveLite with NewPlacement
 type MoveLite struct {
 	UID  string
 	From string
 	To   string
 }
 
+// TargetScore is used to order nodes by how well they can accommodate a pod.
 type TargetScore struct {
 	Node   *SolverNode
 	Score  float64 // max(defCPU/p.CPU, defMEM/p.MEM)
@@ -34,15 +36,42 @@ type TargetScore struct {
 	Waste  int64
 }
 
+type VictimStrategy int
+
+const (
+	VictimsBFS   VictimStrategy = iota // coverage-first for BFS
+	VictimsLocal                       // relocatability-aware for local search
+)
+
+// VictimOptions holds options for getVictims.
+type VictimOptions struct {
+	Strategy     VictimStrategy
+	MoveGate     *int32              // priority gate for moves
+	NeedCPU      int64               // remaining CPU deficit on the active node
+	NeedMem      int64               // remaining MEM deficit on the active node
+	Cap          int                 // max victims to return (0 = no cap)
+	Order        []*SolverNode       // required for VictimsLocal (to compute relocCount)
+	MovedUIDs    map[string]struct{} // prefer already-moved in local
+	Rng          *rand.Rand          // for randomization (nil = none)
+	RandomizePct int                 // % of randomization of victim order (0 = none)
+}
+
+// Delta represents a change in CPU and Memory.
 type Delta struct {
 	CPU int64
 	Mem int64
 }
 
+// UIDSet is a set of pod UIDs.
 type UIDSet map[string]struct{}
 
-func (s UIDSet) Add(uid string)      { s[uid] = struct{}{} }
-func (s UIDSet) Del(uid string)      { delete(s, uid) }
+// Add adds a UID to the set.
+func (s UIDSet) Add(uid string) { s[uid] = struct{}{} }
+
+// Delete removes a UID from the set.
+func (s UIDSet) Delete(uid string) { delete(s, uid) }
+
+// Has checks if a UID is in the set.
 func (s UIDSet) Has(uid string) bool { _, ok := s[uid]; return ok }
 
 // runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
@@ -202,6 +231,7 @@ func podAllowedByPriority(p *SolverPod, gate *int32, strict bool) bool {
 	return p.Priority <= *gate
 }
 
+// canMove returns true if pod p can be moved (not nil, not pending, not protected, below moveGate if any).
 func canMove(p *SolverPod, gate *int32) bool {
 	if p == nil || p.Node == "" {
 		return false
@@ -209,10 +239,12 @@ func canMove(p *SolverPod, gate *int32) bool {
 	return podAllowedByPriority(p, gate, false)
 }
 
+// canEvict returns true if pod p can be evicted (not nil, not protected, below evictGate if any).
 func canEvict(p *SolverPod, gate *int32) bool {
 	return podAllowedByPriority(p, gate, true)
 }
 
+// addNodeDelta adds +cpu/+mem to the given node in the map.
 func addNodeDelta(m map[string]Delta, node string, deficitCPU, deficitMem int64) {
 	d := m[node]
 	d.CPU += deficitCPU
@@ -220,12 +252,13 @@ func addNodeDelta(m map[string]Delta, node string, deficitCPU, deficitMem int64)
 	m[node] = d
 }
 
-// Adds +cpu/+mem to "from" and −cpu/−mem to "to".
+// addEdgeDelta adds +cpu/+mem to `from` and -cpu/-mem to `to` in the map.
 func addEdgeDelta(m map[string]Delta, from, to string, cpu, mem int64) {
 	addNodeDelta(m, from, +cpu, +mem)
 	addNodeDelta(m, to, -cpu, -mem)
 }
 
+// relocateViaPlan tries to relocate pod p to target via the given plan function.
 func relocateViaPlan(
 	plan PlanFunc,
 	p *SolverPod,
@@ -240,7 +273,7 @@ func relocateViaPlan(
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(target *SolverNode) ([]MoveLite, bool) {
-		// zero-move fast path
+		// Direct fit: fast path
 		if target.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
 			return nil, true
 		}
@@ -269,26 +302,7 @@ func relocateViaPlan(
 	return commitPlan(p, bestTarget, bestMoves, nodes, pods, order, newPlacements, movedUIDs)
 }
 
-type VictimStrategy int
-
-const (
-	VictimsBFS   VictimStrategy = iota // coverage-first for BFS
-	VictimsLocal                       // relocatability-aware for local search
-)
-
-type VictimOpts struct {
-	Strategy     VictimStrategy
-	MoveGate     *int32              // priority gate for moves
-	NeedCPU      int64               // remaining CPU deficit on the active node
-	NeedMem      int64               // remaining MEM deficit on the active node
-	Cap          int                 // max victims to return (0 = no cap)
-	Order        []*SolverNode       // required for VictimsLocal (to compute relocCount)
-	MovedUIDs    map[string]struct{} // prefer already-moved in local
-	Rng          *rand.Rand          // for randomization (nil = none)
-	RandomizePct int                 // % of randomization of victim order (0 = none)
-}
-
-func getVictims(target *SolverNode, opts VictimOpts) []*SolverPod {
+func getVictims(target *SolverNode, opts VictimOptions) []*SolverPod {
 	// filter by move gate / protected
 	cands := make([]*SolverPod, 0, len(target.Pods))
 	for _, q := range target.Pods {
@@ -445,6 +459,11 @@ func commitPlan(
 	return false
 }
 
+// placeOnePodCommon tries to place pod p using the given plan function.
+// It returns (feasible, triedEvicting).
+// If feasible is true, p was placed.
+// If feasible is false and triedEvicting is true, it means an eviction was attempted but failed to place p.
+// If feasible is false and triedEvicting is false, it means no eviction was attempted (e.g. cluster full).
 func placeOnePodCommon(
 	plan PlanFunc,
 	p *SolverPod,

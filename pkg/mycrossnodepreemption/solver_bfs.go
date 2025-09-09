@@ -169,7 +169,7 @@ func bfsTryFreeTarget(
 			}
 			need := state.Deficits[0]
 
-			victims := getVictims(nodes[need.Node], VictimOpts{
+			victims := getVictims(nodes[need.Node], VictimOptions{
 				Strategy: VictimsBFS,
 				MoveGate: moveGate,
 				NeedCPU:  need.DeficitCPU,

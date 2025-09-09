@@ -6,7 +6,6 @@ import (
 	"context"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -22,7 +21,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if pod.Namespace == "kube-system" || ap == nil {
 		return nil, framework.NewStatus(framework.Success)
 	}
-	nodes, msg, ok := pl.preFilterAllowedNodes(pod)
+	nodes, msg, ok := pl.allowedNodes(pod)
 	klog.V(V2).InfoS("Filter decision",
 		"activePlan", ap != nil,
 		"pod", pod.Namespace+"/"+pod.Name,
@@ -45,40 +44,4 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 
 func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
-}
-
-// preFilterAllowedNodes returns:
-// - node set to pin (non-nil) and Success, or
-// - nil and an appropriate framework.Status reason to block/allow.
-func (pl *MyCrossNodePreemption) preFilterAllowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
-	ap := pl.getActivePlan()
-	if ap == nil {
-		return nil, "no active plan", true
-	}
-
-	// Standalone/preemptor by name
-	if tgt, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok && tgt != "" {
-		return sets.New(tgt), "standalone; pin to planned node", true
-	}
-
-	// Workload quota routing
-	if wk, ok := topWorkload(pod); ok {
-		key := wk.String()
-		byNode, ok := ap.WorkloadPerNodeCnts[key]
-		if !ok || len(byNode) == 0 {
-			return nil, "workload not in active plan; block", false
-		}
-		nodesAllowed := sets.New[string]()
-		for node, ctr := range byNode {
-			if ctr.Load() > 0 {
-				nodesAllowed.Insert(node)
-			}
-		}
-		if nodesAllowed.Len() == 0 {
-			return nil, "workload quotas exhausted; block", false
-		}
-		return nodesAllowed, "workload nodes allowed", true
-	}
-
-	return nil, "pod not in active plan; block", false
 }

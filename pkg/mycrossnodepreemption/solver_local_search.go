@@ -77,6 +77,7 @@ Mode guardrails
   - Moves allowed only if victim.priority ≤ preemptor.priority.
   - Evictions allowed only if victim.priority < preemptor.priority (strict).
 */
+
 func localSearchPlan(
 	pending *SolverPod,
 	target *SolverNode,
@@ -112,7 +113,7 @@ func localSearchTryFreeTarget(
 	chosen := map[string]struct{}{}
 	moves := make([]MoveLite, 0, 8)
 
-	victims := getVictims(target, VictimOpts{
+	victims := getVictims(target, VictimOptions{
 		Strategy:     VictimsLocal,
 		MoveGate:     moveGate,
 		NeedCPU:      needCPU,
@@ -195,6 +196,9 @@ func localSearchTryFreeTarget(
 	return nil, false
 }
 
+// bestSwap finds the best swap of victim on target with some q on another node B,
+// maximizing gain on target (limited by remaining need) while keeping both nodes ≥ 0.
+// Among equals, prefer q that has already been moved in this batch.
 func bestSwap(
 	target *SolverNode,
 	victim *SolverPod,
@@ -244,6 +248,8 @@ func bestSwap(
 	return bestB, bestQ
 }
 
+// bestDest finds the best destination node for q (not src) where it fits under current delta,
+// minimizing post-placement waste (CPU, then MEM, then name).
 func bestDest(q *SolverPod, src string, order []*SolverNode, delta map[string]Delta) *SolverNode {
 	var best *SolverNode
 	bestCPUWaste := int64(math.MaxInt64)
@@ -265,6 +271,7 @@ func bestDest(q *SolverPod, src string, order []*SolverNode, delta map[string]De
 	return best
 }
 
+// addDelta updates the delta map to reflect a move of cpu/mem from "from" to "to".
 func addDelta(delta map[string]Delta, from, to string, cpu, mem int64) {
 	addEdgeDelta(delta, from, to, cpu, mem)
 }

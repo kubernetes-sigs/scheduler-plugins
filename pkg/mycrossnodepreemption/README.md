@@ -6,7 +6,7 @@ An improved cross-node preemption plugin that addresses the limitations of the d
 
 ### Scheduling flow
 
-TODO
+TODO_HC
 
 ## Open Questions
 
@@ -75,7 +75,7 @@ Men her opstår en kaskadeeffekt: når vi flytter én klods fra kasse A til kass
 
 ## Developed
 
-TODO
+TODO_HC
 
 ## Good commands
 

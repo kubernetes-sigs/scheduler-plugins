@@ -37,11 +37,11 @@ def solve(instance: dict) -> dict:
 
     # ---- options / params ----
     timeout_ms          = int(instance.get("timeout_ms", 3000))
-    ignore_affinity     = bool(instance.get("ignore_affinity", True))  # TODO: use this
+    ignore_affinity     = bool(instance.get("ignore_affinity", True))  # TODO_HC: consider to use this
     mode                = str(instance.get("mode", "lexi")).strip().lower()   # "weighted" or "lexi"
     workers             = _available_cpus() # set number of workers to the amount available
-    use_decision_order  = False   # TODO: not sure if needed
-    use_hints           = False  # TODO: not sure if needed; but seems to improve EveryPreemptor and BatchPostFilter modes
+    use_decision_order  = False   # TODO_HC: not sure if needed
+    use_hints           = False  # TODO_HC: not sure if needed; but seems to improve EveryPreemptor and BatchPostFilter modes
     log_progress        = bool(instance.get("log_progress", False))
     log_subsolvers      = bool(instance.get("log_progress", False))
 
@@ -128,7 +128,7 @@ def solve(instance: dict) -> dict:
         lst = []
         for j in range(num_nodes):
             if n_cap_cpu_m(j) >= cpu_i and n_cap_mem_bytes(j) >= mem_i:
-                # TODO: add affinity/anti-affinity checks here when you enable them
+                # TODO_HC: add affinity/anti-affinity checks here when you enable them
                 lst.append(j)
         eligible.append(lst)
 
