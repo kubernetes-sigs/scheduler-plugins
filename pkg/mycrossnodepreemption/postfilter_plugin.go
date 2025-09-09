@@ -1,4 +1,5 @@
-// postfilter_plugin.go (refactored)
+// postfilter_plugin.go
+
 package mycrossnodepreemption
 
 import (

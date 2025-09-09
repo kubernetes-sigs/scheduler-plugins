@@ -1,3 +1,5 @@
+// solver_helpers.go
+
 package mycrossnodepreemption
 
 import (
@@ -6,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
 
@@ -16,14 +19,14 @@ type PlanFunc func(
 	nodes map[string]*SolverNode,
 	order []*SolverNode,
 	moveGate *int32,
-	movedUIDs map[string]struct{},
+	movedUIDs map[types.UID]struct{},
 	trial int,
 	rng *rand.Rand,
 ) ([]MoveLite, bool)
 
 // TODO_HC: Replace MoveLite with NewPlacement
 type MoveLite struct {
-	UID  string
+	UID  types.UID
 	From string
 	To   string
 }
@@ -46,14 +49,14 @@ const (
 // VictimOptions holds options for getVictims.
 type VictimOptions struct {
 	Strategy     VictimStrategy
-	MoveGate     *int32              // priority gate for moves
-	NeedCPU      int64               // remaining CPU deficit on the active node
-	NeedMem      int64               // remaining MEM deficit on the active node
-	Cap          int                 // max victims to return (0 = no cap)
-	Order        []*SolverNode       // required for VictimsLocal (to compute relocCount)
-	MovedUIDs    map[string]struct{} // prefer already-moved in local
-	Rng          *rand.Rand          // for randomization (nil = none)
-	RandomizePct int                 // % of randomization of victim order (0 = none)
+	MoveGate     *int32                 // priority gate for moves
+	NeedCPU      int64                  // remaining CPU deficit on the active node
+	NeedMem      int64                  // remaining MEM deficit on the active node
+	Cap          int                    // max victims to return (0 = no cap)
+	Order        []*SolverNode          // required for VictimsLocal (to compute relocCount)
+	MovedUIDs    map[types.UID]struct{} // prefer already-moved in local
+	Rng          *rand.Rand             // for randomization (nil = none)
+	RandomizePct int                    // % of randomization of victim order (0 = none)
 }
 
 // Delta represents a change in CPU and Memory.
@@ -80,7 +83,7 @@ func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	if len(worklist) == 0 {
 		return &SolverOutput{Status: "UNKNOWN"}
 	}
-	placements := make(map[string]string, len(worklist))
+	placements := make(map[types.UID]string, len(worklist))
 
 	stop := false
 	var stopAt int32
@@ -113,9 +116,9 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 		return &SolverOutput{Status: "UNKNOWN"}
 	}
 
-	newPlacements := make(map[string]string)
+	newPlacements := make(map[types.UID]string)
 	var evicts []Placement
-	movedUIDs := make(map[string]struct{})
+	movedUIDs := make(map[types.UID]struct{})
 
 	stop := false
 	var stopAt int32
@@ -263,11 +266,11 @@ func relocateViaPlan(
 	plan PlanFunc,
 	p *SolverPod,
 	nodes map[string]*SolverNode,
-	pods map[string]*SolverPod,
+	pods map[types.UID]*SolverPod,
 	order []*SolverNode,
 	moveGate *int32,
-	movedUIDs map[string]struct{},
-	newPlacements map[string]string,
+	movedUIDs map[types.UID]struct{},
+	newPlacements map[types.UID]string,
 	maxTrials int, // <-- added
 ) bool {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -433,10 +436,10 @@ func commitPlan(
 	target string,
 	moves []MoveLite,
 	nodes map[string]*SolverNode,
-	pods map[string]*SolverPod,
+	pods map[types.UID]*SolverPod,
 	order []*SolverNode,
-	newPlacements map[string]string,
-	movedUIDs map[string]struct{},
+	newPlacements map[types.UID]string,
+	movedUIDs map[types.UID]struct{},
 ) bool {
 	if !verifyPlan(nodes, pods, moves) {
 		return false
@@ -468,12 +471,12 @@ func placeOnePodCommon(
 	plan PlanFunc,
 	p *SolverPod,
 	nodes map[string]*SolverNode,
-	pods map[string]*SolverPod,
+	pods map[types.UID]*SolverPod,
 	order []*SolverNode,
 	moveGate *int32,
 	evictGate *int32,
-	movedUIDs map[string]struct{},
-	newPlacements map[string]string,
+	movedUIDs map[types.UID]struct{},
+	newPlacements map[types.UID]string,
 	evicts *[]Placement,
 	maxTrials int,
 ) (feasible bool, triedEvicting bool) {
@@ -527,7 +530,7 @@ tryEvict:
 //   - slice of pending pods (to be scheduled)
 //   - slice of all nodes in lexicographical order by name
 //   - the preemptor pod if any (nil otherwise)
-func buildClusterState(in SolverInput) (map[string]*SolverNode, map[string]*SolverPod, []*SolverPod, []*SolverNode, *SolverPod) {
+func buildClusterState(in SolverInput) (map[string]*SolverNode, map[types.UID]*SolverPod, []*SolverPod, []*SolverNode, *SolverPod) {
 	// Nodes map + ordered slice
 	nodes := make(map[string]*SolverNode, len(in.Nodes))
 	order := make([]*SolverNode, 0, len(in.Nodes))
@@ -539,7 +542,7 @@ func buildClusterState(in SolverInput) (map[string]*SolverNode, map[string]*Solv
 			Labels:        in.Nodes[i].Labels,
 			AllocCPUm:     in.Nodes[i].CapCPUm,
 			AllocMemBytes: in.Nodes[i].CapMemBytes,
-			Pods:          make(map[string]*SolverPod, 32),
+			Pods:          make(map[types.UID]*SolverPod, 32),
 		}
 		nodes[n.Name] = n
 		order = append(order, n)
@@ -547,7 +550,7 @@ func buildClusterState(in SolverInput) (map[string]*SolverNode, map[string]*Solv
 	sort.Slice(order, func(i, j int) bool { return order[i].Name < order[j].Name })
 
 	// Pods map + pending list (+ preemptor ptr if any)
-	pods := make(map[string]*SolverPod, len(in.Pods)+1)
+	pods := make(map[types.UID]*SolverPod, len(in.Pods)+1)
 	pending := make([]*SolverPod, 0, len(in.Pods))
 	var pre *SolverPod
 
@@ -606,14 +609,14 @@ func min64(a, b int64) int64 {
 // The evictions list is a list of Placement structs indicating which pods to evict.
 // The output is stable in that the Placements slice is sorted by pod UID ascending,
 // and within that, the pods are looked up by UID from the input to get their Namespace and Name.
-func stableOutput(status string, placements map[string]string, evicts []Placement, in SolverInput) *SolverOutput {
-	uids := make([]string, 0, len(placements))
+func stableOutput(status string, placements map[types.UID]string, evicts []Placement, in SolverInput) *SolverOutput {
+	uids := make([]types.UID, 0, len(placements))
 	for uid := range placements {
 		uids = append(uids, uid)
 	}
-	sort.Strings(uids)
+	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
 
-	lookup := func(uid string) Pod {
+	lookup := func(uid types.UID) Pod {
 		if in.Preemptor != nil && in.Preemptor.UID == uid {
 			return Pod{UID: uid, Namespace: in.Preemptor.Namespace, Name: in.Preemptor.Name}
 		}
@@ -647,7 +650,7 @@ func stableOutput(status string, placements map[string]string, evicts []Placemen
 //  3. Among those, prefer pods that have already been moved in this cycle.
 //  4. Among those, pick the largest (CPUm*MemBytes), then by CPU, then by MEM.
 //  5. Among those, pick lexicographically by node name, then by pod UID.
-func pickLargestEnablingEviction(order []*SolverNode, p *SolverPod, evictGate *int32, movedUIDs map[string]struct{}) (*SolverPod, *SolverNode) {
+func pickLargestEnablingEviction(order []*SolverNode, p *SolverPod, evictGate *int32, movedUIDs map[types.UID]struct{}) (*SolverPod, *SolverNode) {
 	type cand struct {
 		v  *SolverPod
 		on *SolverNode
@@ -716,11 +719,11 @@ func pickLargestEnablingEviction(order []*SolverNode, p *SolverPod, evictGate *i
 }
 
 // hasKey reports whether map m has key k.
-func hasKey(m map[string]struct{}, k string) bool { _, ok := m[k]; return ok }
+func hasKey(m map[types.UID]struct{}, k types.UID) bool { _, ok := m[k]; return ok }
 
 // buildOrigPlacements builds a map of pod UID → original node name from the current cluster state.
-func buildOrigPlacements(order []*SolverNode) map[string]string {
-	orig := make(map[string]string, 256)
+func buildOrigPlacements(order []*SolverNode) map[types.UID]string {
+	orig := make(map[types.UID]string, 256)
 	for _, n := range order {
 		for _, q := range n.Pods {
 			if q.Node != "" {
@@ -841,7 +844,7 @@ func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, sing
 //   - no node ends up with negative free resources after all moves are applied
 //
 // If the plan is valid, it is applied in-place to the nodes and pods state.
-func verifyPlan(nodes map[string]*SolverNode, all map[string]*SolverPod, moves []MoveLite) bool {
+func verifyPlan(nodes map[string]*SolverNode, all map[types.UID]*SolverPod, moves []MoveLite) bool {
 	if len(moves) == 0 {
 		return true
 	}
@@ -917,7 +920,7 @@ func (n *SolverNode) addPod(p *SolverPod) {
 	n.AllocCPUm -= p.ReqCPUm
 	n.AllocMemBytes -= p.ReqMemBytes
 	if n.Pods == nil {
-		n.Pods = make(map[string]*SolverPod, 16)
+		n.Pods = make(map[types.UID]*SolverPod, 16)
 	}
 	n.Pods[p.UID] = p
 	p.Node = n.Name

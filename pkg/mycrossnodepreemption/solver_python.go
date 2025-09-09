@@ -1,4 +1,4 @@
-// python_solver.go
+// solver_python.go
 
 package mycrossnodepreemption
 

@@ -381,20 +381,20 @@ func isNodeUsable(n *v1.Node) bool {
 }
 
 // podsByUID returns a map of pod UIDs to their corresponding Pod objects.
-func podsByUID(pods []*v1.Pod) map[string]*v1.Pod {
-	m := make(map[string]*v1.Pod, len(pods))
+func podsByUID(pods []*v1.Pod) map[types.UID]*v1.Pod {
+	m := make(map[types.UID]*v1.Pod, len(pods))
 	for _, p := range pods {
 		if p == nil || p.DeletionTimestamp != nil {
 			continue
 		}
-		m[string(p.UID)] = p
+		m[p.UID] = p
 	}
 	return m
 }
 
 // IsPreemptor returns true if the preemptorUID matches the other podUID.
-func IsPreemptor(PodUID string, preemptorUID string) bool {
-	return PodUID != "" && preemptorUID != "" && preemptorUID == PodUID
+func IsPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
+	return string(PodUID) != "" && string(preemptorUID) != "" && preemptorUID == PodUID
 }
 
 // --------- Pod set Helpers ---------
@@ -667,8 +667,8 @@ func computeSolverScore(in SolverInput, out *SolverOutput) Score {
 	}
 
 	// Before-state (where) and priority by UID
-	origWhere := make(map[string]string, len(in.Pods)+1)
-	pri := make(map[string]int32, len(in.Pods)+1)
+	origWhere := make(map[types.UID]string, len(in.Pods)+1)
+	pri := make(map[types.UID]int32, len(in.Pods)+1)
 	for _, sp := range in.Pods {
 		origWhere[sp.UID] = sp.Node
 		pri[sp.UID] = sp.Priority
@@ -681,7 +681,7 @@ func computeSolverScore(in SolverInput, out *SolverOutput) Score {
 	}
 
 	// After-state starts from orig, then apply placements for known UIDs
-	afterWhere := make(map[string]string, len(origWhere))
+	afterWhere := make(map[types.UID]string, len(origWhere))
 	for uid, w := range origWhere {
 		afterWhere[uid] = w
 	}
@@ -695,7 +695,7 @@ func computeSolverScore(in SolverInput, out *SolverOutput) Score {
 	}
 
 	// Evicted
-	evicted := make(map[string]struct{}, len(out.Evictions))
+	evicted := make(map[types.UID]struct{}, len(out.Evictions))
 	for _, e := range out.Evictions {
 		evicted[e.Pod.UID] = struct{}{}
 	}
@@ -857,7 +857,7 @@ func (pl *MyCrossNodePreemption) buildPlan(
 	// Index pods by UID
 	byUID := podsByUID(pods)
 	if preemptor != nil {
-		byUID[string(preemptor.UID)] = preemptor
+		byUID[preemptor.UID] = preemptor
 	}
 
 	// Old placements (all currently running)
@@ -865,7 +865,7 @@ func (pl *MyCrossNodePreemption) buildPlan(
 	for _, p := range byUID {
 		if p != nil && p.DeletionTimestamp == nil && p.Spec.NodeName != "" {
 			oldPlacements = append(oldPlacements, Placement{
-				Pod:  Pod{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
+				Pod:  Pod{UID: p.UID, Namespace: p.Namespace, Name: p.Name},
 				Node: p.Spec.NodeName,
 			})
 		}
@@ -881,7 +881,7 @@ func (pl *MyCrossNodePreemption) buildPlan(
 	for _, e := range out.Evictions {
 		if p := byUID[e.Pod.UID]; p != nil && p.Spec.NodeName != "" {
 			evicts = append(evicts, Placement{
-				Pod:  Pod{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
+				Pod:  Pod{UID: p.UID, Namespace: p.Namespace, Name: p.Name},
 				Node: p.Spec.NodeName,
 			})
 		}
@@ -909,7 +909,7 @@ func (pl *MyCrossNodePreemption) buildPlan(
 		src := p.Spec.NodeName
 
 		np := NewPlacement{
-			Pod:      Pod{UID: string(p.UID), Namespace: p.Namespace, Name: p.Name},
+			Pod:      Pod{UID: p.UID, Namespace: p.Namespace, Name: p.Name},
 			FromNode: src,
 			ToNode:   plm.ToNode,
 		}
@@ -917,7 +917,7 @@ func (pl *MyCrossNodePreemption) buildPlan(
 		moved := src != "" && src != plm.ToNode
 
 		// Always add preemptor to placementByName and set nominatedNode
-		if preemptor != nil && IsPreemptor(plm.Pod.UID, string(preemptor.UID)) {
+		if preemptor != nil && IsPreemptor(plm.Pod.UID, preemptor.UID) {
 			placementByName[combineNsName(p.Namespace, p.Name)] = plm.ToNode
 			nominatedNode = plm.ToNode
 			continue
@@ -1218,8 +1218,8 @@ func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlanState) {
 
 // buildWorkloadCntsAtomics converts WorkloadQuotas (int32) to WorkloadPerNodeCnts (atomic.Int32)
 // for faster concurrent access during plan execution.
-func buildWorkloadCntsAtomics(wkCnts WorkloadQuotas) WorkloadPerNodeCnts {
-	remaining := make(WorkloadPerNodeCnts) // workload -> node -> *atomic.Int32
+func buildWorkloadCntsAtomics(wkCnts WorkloadQuotas) WorkloadQuotasAtomics {
+	remaining := make(WorkloadQuotasAtomics) // workload -> node -> *atomic.Int32
 	if wkCnts != nil {
 		for wk, perNode := range wkCnts {
 			if remaining[wk] == nil {
@@ -1359,7 +1359,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 	if preemptor != nil {
 		preUID = string(preemptor.UID)
 	}
-	seen := make(map[string]bool, len(pods)+len(batched))
+	seen := make(map[types.UID]bool, len(pods)+len(batched))
 	for _, p := range pods {
 		// Skip the preemptor (it is provided via in.Preemptor)
 		if string(p.UID) == preUID {
@@ -1558,12 +1558,12 @@ func computeBaselineFromInput(in SolverInput) Score {
 // the worklist against the cloned pods, so solvers can mutate safely.
 func (ps *PreparedState) freshClone() (
 	nodes map[string]*SolverNode,
-	pods map[string]*SolverPod,
+	pods map[types.UID]*SolverPod,
 	order []*SolverNode,
 	worklist []*SolverPod,
 ) {
 	// 1) clone pods
-	pods = make(map[string]*SolverPod, len(ps.Pods))
+	pods = make(map[types.UID]*SolverPod, len(ps.Pods))
 	for uid, p0 := range ps.Pods {
 		cp := *p0
 		pods[uid] = &cp
@@ -1579,7 +1579,7 @@ func (ps *PreparedState) freshClone() (
 			Labels:        n0.Labels,
 			AllocCPUm:     n0.AllocCPUm,
 			AllocMemBytes: n0.AllocMemBytes,
-			Pods:          make(map[string]*SolverPod, len(n0.Pods)),
+			Pods:          make(map[types.UID]*SolverPod, len(n0.Pods)),
 		}
 		for uid := range n0.Pods {
 			if p := pods[uid]; p != nil {

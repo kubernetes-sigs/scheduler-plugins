@@ -1,8 +1,12 @@
+// solver_local_search.go
+
 package mycrossnodepreemption
 
 import (
 	"math"
 	"math/rand"
+
+	"k8s.io/apimachinery/pkg/types"
 )
 
 /*
@@ -84,7 +88,7 @@ func localSearchPlan(
 	nodes map[string]*SolverNode,
 	order []*SolverNode,
 	moveGate *int32,
-	movedUIDs map[string]struct{},
+	movedUIDs map[types.UID]struct{},
 	trial int,
 	rng *rand.Rand,
 ) ([]MoveLite, bool) {
@@ -99,7 +103,7 @@ func localSearchTryFreeTarget(
 	target *SolverNode,
 	order []*SolverNode,
 	moveGate *int32,
-	movedUIDs map[string]struct{},
+	movedUIDs map[types.UID]struct{},
 	rng *rand.Rand,
 	capMoves int,
 ) ([]MoveLite, bool) {
@@ -110,7 +114,7 @@ func localSearchTryFreeTarget(
 	}
 
 	delta := map[string]Delta{}
-	chosen := map[string]struct{}{}
+	chosen := map[types.UID]struct{}{}
 	moves := make([]MoveLite, 0, 8)
 
 	victims := getVictims(target, VictimOptions{
@@ -206,8 +210,8 @@ func bestSwap(
 	order []*SolverNode,
 	delta map[string]Delta,
 	moveGate *int32,
-	movedUIDs map[string]struct{},
-	chosen map[string]struct{},
+	movedUIDs map[types.UID]struct{},
+	chosen map[types.UID]struct{},
 ) (*SolverNode, *SolverPod) {
 	var bestB *SolverNode
 	var bestQ *SolverPod

@@ -1,4 +1,5 @@
-// pkg/mycrossnodepreemption/types.go
+// types.go
+
 package mycrossnodepreemption
 
 import (
@@ -25,7 +26,7 @@ type MyCrossNodePreemption struct {
 	CachesWarm atomic.Bool
 }
 
-// ===== Plan =====
+// ===== Plan types =====
 
 type StoredPlan struct {
 	// Plugin version that generated the plan
@@ -39,7 +40,7 @@ type StoredPlan struct {
 	// Status of the plan
 	Status PlanStatus `json:"status"`
 	// Single-preemptor metadata
-	Preemptor *Preemtor `json:"preemptor,omitempty"`
+	Preemptor *Preemptor `json:"preemptor,omitempty"`
 	// Evicted pods
 	Evicts []Placement `json:"evicts,omitempty"`
 	// Moved pods
@@ -64,18 +65,29 @@ const (
 	PlanStatusFailed    PlanStatus = "Failed"
 )
 
-// ===== Runtime indices for fast execution =====
+// ===== Runtime types =====
+
 type ActivePlanState struct {
-	ID                  string
-	WorkloadPerNodeCnts WorkloadPerNodeCnts
-	PlacementByName     map[string]string // pod ns/name -> targetNode
-	Ctx                 context.Context
-	Cancel              context.CancelFunc
+	// Unique plan ID
+	ID string
+	// Workload quotas for moved or new pods that are part of a workload
+	WorkloadPerNodeCnts WorkloadQuotasAtomics
+	// Placements by name for standalone pods that is either moved or new: ns/name -> node
+	PlacementByName map[string]string // pod ns/name -> targetNode
+	// Context to cancel the plan
+	Ctx context.Context
+	// Cancel function to cancel the plan
+	Cancel context.CancelFunc
 }
 
-type WorkloadPerNodeCnts map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
-
 // ===== Workload types =====
+
+// WorkloadQuotas is a map of workloadKey -> node -> remaining count
+type WorkloadQuotas map[string]map[string]int32
+
+// WorkloadQuotasAtomics is a map of workloadKey -> node -> remaining count
+// The atomic.Int32 allows concurrent safe decrement during plan execution.
+type WorkloadQuotasAtomics map[string]map[string]*atomic.Int32
 
 type WorkloadKind int
 
@@ -87,14 +99,15 @@ const (
 )
 
 type WorkloadKey struct {
-	Kind      WorkloadKind
+	// What kind of workload
+	Kind WorkloadKind
+	// Namespace of the workload
 	Namespace string
-	Name      string
+	// Name of the workload
+	Name string
 }
 
-type WorkloadQuotas map[string]map[string]int32
-
-// ===== Optimization modes =====
+// ===== Optimization types =====
 
 type OptimizationCadenceMode int
 
@@ -109,14 +122,6 @@ type OptimizationAtMode int
 const (
 	OptimizeAtPreEnqueue OptimizationAtMode = iota
 	OptimizeAtPostFilter
-)
-
-type SolveMode int
-
-const (
-	SolveBatch SolveMode = iota
-	SolveSingle
-	SolveContinuously
 )
 
 type StrategyDecision int
@@ -139,125 +144,216 @@ const (
 
 // ===== Solver types =====
 
+// SolveMode indicates the mode of solving.
+type SolveMode int
+
+const (
+	SolveBatch SolveMode = iota
+	SolveSingle
+	SolveContinuously
+)
+
 const (
 	SolverModeLexi     = "lexi"
 	SolverModeWeighted = "weighted"
 )
 
+// SolverInput is the input to a solver.
 type SolverInput struct {
-	Preemptor      *SolverPod   `json:"preemptor,omitempty"`
-	Nodes          []SolverNode `json:"nodes"`
-	Pods           []SolverPod  `json:"pods"`
-	TimeoutMs      int64        `json:"timeout_ms"`
-	IgnoreAffinity bool         `json:"ignore_affinity"`
-	LogProgress    bool         `json:"log_progress,omitempty"`
-	Mode           string       `json:"solver_mode,omitempty"`
-	UseHints       bool         `json:"use_hints,omitempty"`
-	Workers        int          `json:"workers,omitempty"`
-	MaxTrials      int          `json:"max_trials,omitempty"` // for local search
+	// Preemptor pod (if any; single pod mode)
+	Preemptor *SolverPod `json:"preemptor,omitempty"`
+	// Nodes to consider
+	Nodes []SolverNode `json:"nodes"`
+	// Pods to schedule / re-schedule
+	Pods []SolverPod `json:"pods"`
+	// Timeout for the solver (ms)
+	TimeoutMs int64 `json:"timeout_ms"`
+	// If true, ignore affinity rules
+	IgnoreAffinity bool `json:"ignore_affinity"`
+	// Log solver progress
+	LogProgress bool `json:"log_progress,omitempty"`
+	// Optimization mode: "lexi" or "weighted"
+	Mode string `json:"solver_mode,omitempty"`
+	// Whether to use hints
+	UseHints bool `json:"use_hints,omitempty"`
+	// Number of parallel workers (0 = auto)
+	Workers int `json:"workers,omitempty"`
+	// Maximum number of trials (0 = unlimited)
+	MaxTrials int `json:"max_trials,omitempty"` // for local search
 }
 
+// SolverOutput is the output from a solver.
 type SolverOutput struct {
-	Status     string         `json:"status"`
+	// Status of the solver (failed/infeasible/feasible/optimal)
+	Status string `json:"status"`
+	// Pod placements (new or moved)
 	Placements []NewPlacement `json:"placements"`
-	Evictions  []Placement    `json:"evictions"`
+	// Evicted pods
+	Evictions []Placement `json:"evictions"`
 }
 
+// SolverPod represents a pod for the solver.
 type SolverPod struct {
-	UID         string `json:"uid"`
-	Namespace   string `json:"namespace"`
-	Name        string `json:"name"`
-	ReqCPUm     int64  `json:"req_cpu_m"`
-	ReqMemBytes int64  `json:"req_mem_bytes"`
-	Priority    int32  `json:"priority"`
-	Protected   bool   `json:"protected,omitempty"`
-	// Current placement (pending if "")
+	// Unique identifier for the pod
+	UID types.UID `json:"uid"`
+	// Namespace of the pod
+	Namespace string `json:"namespace"`
+	// Name of the pod
+	Name string `json:"name"`
+	// Requested CPU in millicores
+	ReqCPUm int64 `json:"req_cpu_m"`
+	// Requested memory in bytes
+	ReqMemBytes int64 `json:"req_mem_bytes"`
+	// Priority of the pod
+	Priority int32 `json:"priority"`
+	// Whether the pod is protected from preemption
+	Protected bool `json:"protected,omitempty"`
+	// Current node of the pod (empty if new pod)
 	Node string `json:"node"`
 }
 
+// SolverNode represents a node in the cluster for the solver.
 type SolverNode struct {
-	Name        string            `json:"name"`
-	CapCPUm     int64             `json:"cap_cpu_m"`
-	CapMemBytes int64             `json:"cap_mem_bytes"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	// Runtime-only (not serialized)
-	AllocCPUm     int64                 `json:"-"`
-	AllocMemBytes int64                 `json:"-"`
-	Pods          map[string]*SolverPod `json:"-"`
+	// Name of the node
+	Name string `json:"name"`
+	// Total CPU capacity in millicores
+	CapCPUm int64 `json:"cap_cpu_m"`
+	// Total memory capacity in bytes
+	CapMemBytes int64 `json:"cap_mem_bytes"`
+	// Allocated (used) CPU in millicores (not serialized)
+	AllocCPUm int64 `json:"-"`
+	// Allocated (used) memory in bytes (not serialized)
+	AllocMemBytes int64 `json:"-"`
+	// Labels of the node
+	Labels map[string]string `json:"labels,omitempty"`
+	// Pods currently on the node (not serialized)
+	Pods map[types.UID]*SolverPod `json:"-"`
 }
 
+// SolverSummary summarizes the result of a solver attempt.
 type SolverSummary struct {
-	Name     string        `json:"name,omitempty"`
-	Status   string        `json:"status,omitempty"`
+	// Name of the solver used
+	Name string `json:"name,omitempty"`
+	// Status of the solver
+	Status string `json:"status,omitempty"`
+	// Duration of the solver
 	Duration time.Duration `json:"duration,omitempty"`
-	Score    Score         `json:"score,omitempty"`
+	// Score of the solution
+	Score Score `json:"score,omitempty"`
 }
 
+// SolverAttempt defines a solver attempt configuration and function.
 type SolverAttempt struct {
-	Name    string
+	// Name of the solver attempt
+	Name string
+	// Whether the solver attempt is enabled
 	Enabled bool
+	// Timeout for the solver attempt
 	Timeout time.Duration
-	Trials  int
+	// Number of trials (for local search)
+	Trials int
+	// Fudge factor for timing (in ms)
 	FudgeMs int64
-	Run     func(ctx context.Context, in SolverInput) (*SolverOutput, error)
+	// Function to run the solver attempt
+	Run func(ctx context.Context, in SolverInput) (*SolverOutput, error)
 }
 
 // ===== Building blocks =====
 
+// Score of a solver solution
 type Score struct {
+	// Number of pods placed by priority (higher is better)
 	PlacedByPriority map[string]int `json:"placed_by_priority,omitempty"`
-	Evicted          int            `json:"evicted,omitempty"`
-	Moved            int            `json:"moved,omitempty"`
+	// Number of evicted pods (lower is better)
+	Evicted int `json:"evicted,omitempty"`
+	// Number of moved pods (lower is better)
+	Moved int `json:"moved,omitempty"`
 }
 
+// Pod represents a pod with minimal info.
 type Pod struct {
-	UID       string `json:"uid,omitempty"`
+	// Unique identifier for the pod
+	UID types.UID `json:"uid,omitempty"`
+	// Namespace of the pod
 	Namespace string `json:"namespace,omitempty"`
-	Name      string `json:"name,omitempty"`
+	// Name of the pod
+	Name string `json:"name,omitempty"`
 }
 
+// NewPlacement represents a pod placement from one node to another.
 type NewPlacement struct {
-	Pod      Pod    `json:"pod"`
-	FromNode string `json:"fromNode,omitempty"` // empty if new pod
-	ToNode   string `json:"toNode"`
+	// Pod being placed
+	Pod Pod `json:"pod"`
+	// Previous node of the pod; empty if new pod
+	FromNode string `json:"fromNode,omitempty"`
+	// New node of the pod
+	ToNode string `json:"toNode"`
 }
 
+// Placement represents a pod placement on a node.
 type Placement struct {
-	Pod  Pod    `json:"pod"`
+	// Pod being placed
+	Pod Pod `json:"pod"`
+	// Node the pod is placed on
 	Node string `json:"node"`
 }
 
-type Preemtor struct {
-	Pod           Pod    `json:"pod"`
+// Preemptor represents a preemptor pod and its nominated node.
+type Preemptor struct {
+	// Pod being preempted
+	Pod Pod `json:"pod"`
+	// Nominated node for the preemptor pod
 	NominatedNode string `json:"nominatedNode"`
 }
 
+// PreparedState is the prepared state for solving.
 type PreparedState struct {
-	Nodes     map[string]*SolverNode
-	Pods      map[string]*SolverPod
-	Order     []*SolverNode
+	// Whether we are in single-preemptor mode
+	Single bool
+	// Nodes to consider
+	Nodes map[string]*SolverNode
+	// Pods to schedule / re-schedule
+	Pods map[types.UID]*SolverPod
+	// Ordered list of nodes (by available resources descending)
+	Order []*SolverNode
+	// Current resource deltas per node (CPU, MEM)
 	Preemptor *SolverPod
-	Worklist  []*SolverPod
-	Single    bool
-	MoveGate  *int32
+	// The list of pods to work on (sorted by priority desc, req desc)
+	Worklist []*SolverPod
+	// Move gate for local search
+	MoveGate *int32
 }
 
-// ===== Flow / misc =====
+// ===== misc =====
 
+// FlowResult represents the result of a scheduling flow.
 type FlowResult struct {
-	PlanID                        string
-	TargetNode                    string
-	BatchSize                     int
-	Moves, Evicts                 int
-	TotalPostPlan, TotalPrePlan   int
-	SolverStatus                  string
-	TotalDuration, SolverDuration time.Duration
+	// ID of the plan (if any)
+	PlanID string
+	// Target node of the preemptor (if any)
+	TargetNode string
+	// Batch size (if any)
+	BatchSize int
+	// Number of moves
+	Moves int
+	// Number of evictions
+	Evicts int
+	// Total pods before plan execution
+	TotalPrePlan int
+	// Total pods after plan execution
+	TotalPostPlan int
+	// Status of the solver
+	SolverStatus string
+	// Duration of the solver
+	SolverDuration time.Duration
+	// Total duration of the flow
+	TotalDuration time.Duration
 }
 
-// ToPodType converts a Pod to a PodType.
+// ToPodType converts a Pod to a SolverPod.
 func ToPodType(p *v1.Pod, node string) SolverPod {
 	return SolverPod{
-		UID:         string(p.UID),
+		UID:         p.UID,
 		Namespace:   p.Namespace,
 		Name:        p.Name,
 		ReqCPUm:     getPodCPURequest(p),
@@ -269,13 +365,20 @@ func ToPodType(p *v1.Pod, node string) SolverPod {
 
 // ===== PodSet =====
 
+// PodSet is a thread-safe set of pods.
 type PodSet struct {
+	// mu protects the map
 	mu sync.RWMutex
-	m  map[types.UID]PodKey
+	// m maps pod UID to PodKey
+	m map[types.UID]PodKey
 }
 
+// PodKey is a minimal key for identifying a pod.
 type PodKey struct {
-	UID       types.UID // for fast lookup, we only use types.UID as key (not as a string)
+	// Unique identifier for the pod
+	UID types.UID // for fast lookup, we only use types.UID as key (not as a string)
+	// Namespace of the pod
 	Namespace string
-	Name      string
+	// Name of the pod
+	Name string
 }

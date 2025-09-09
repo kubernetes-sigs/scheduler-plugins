@@ -1,9 +1,13 @@
+// solver_bfs.go
+
 package mycrossnodepreemption
 
 import (
 	"fmt"
 	"math/rand"
 	"sort"
+
+	"k8s.io/apimachinery/pkg/types"
 )
 
 /*
@@ -118,7 +122,7 @@ func bfsPlan(
 	nodes map[string]*SolverNode,
 	order []*SolverNode,
 	moveGate *int32,
-	_ map[string]struct{},
+	_ map[types.UID]struct{},
 	_ int,
 	_ *rand.Rand,
 ) ([]MoveLite, bool) {
@@ -138,7 +142,7 @@ func bfsTryFreeTarget(
 	target *SolverNode,
 	nodes map[string]*SolverNode,
 	moveGate *int32,
-) (finalDest map[string]string, ok bool) {
+) (finalDest map[types.UID]string, ok bool) {
 
 	rootNeedCPU := max64(0, pending.ReqCPUm-target.AllocCPUm)
 	rootNeedMem := max64(0, pending.ReqMemBytes-target.AllocMemBytes)
@@ -146,7 +150,7 @@ func bfsTryFreeTarget(
 	init := BfsState{
 		Deficits:  []Deficit{{Node: target.Name, DeficitCPU: rootNeedCPU, DeficitMem: rootNeedMem}},
 		NetDelta:  map[string]Delta{},
-		FinalDest: map[string]string{},
+		FinalDest: map[types.UID]string{},
 	}
 
 	front := []BfsState{init}
@@ -272,7 +276,7 @@ func destsByFree(nodes map[string]*SolverNode, capK int) []*SolverNode {
 }
 
 // bfsStateKey encodes a BFS state into a compact string for deduplication.
-func bfsStateKey(defs []Deficit, fd map[string]string) string {
+func bfsStateKey(defs []Deficit, fd map[types.UID]string) string {
 	b := make([]byte, 0, 256)
 
 	// deficits in order (front is active)
@@ -283,11 +287,11 @@ func bfsStateKey(defs []Deficit, fd map[string]string) string {
 	}
 
 	// finalDest sorted for determinism
-	uids := make([]string, 0, len(fd))
+	uids := make([]types.UID, 0, len(fd))
 	for uid := range fd {
 		uids = append(uids, uid)
 	}
-	sort.Strings(uids)
+	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
 
 	b = append(b, '#')
 	for _, uid := range uids {
@@ -301,13 +305,13 @@ func bfsStateKey(defs []Deficit, fd map[string]string) string {
 
 // createMoves coalesces finalDest map into an ordered move list,
 // skipping no-ops and duplicates, sorted by UID.
-func createMoves(finalDest map[string]string, orig map[string]string) (moves []MoveLite) {
-	seen := map[string]bool{}
-	uids := make([]string, 0, len(finalDest))
+func createMoves(finalDest map[types.UID]string, orig map[types.UID]string) (moves []MoveLite) {
+	seen := map[types.UID]bool{}
+	uids := make([]types.UID, 0, len(finalDest))
 	for uid := range finalDest {
 		uids = append(uids, uid)
 	}
-	sort.Strings(uids)
+	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
 	for _, uid := range uids {
 		to := finalDest[uid]
 		from := orig[uid]
@@ -337,8 +341,8 @@ func cloneNetDelta(reservation map[string]Delta) map[string]Delta {
 }
 
 // cloneFinalDest clones a finalDest map.
-func cloneFinalDest(finalDest map[string]string) map[string]string {
-	c := make(map[string]string, len(finalDest))
+func cloneFinalDest(finalDest map[types.UID]string) map[types.UID]string {
+	c := make(map[types.UID]string, len(finalDest))
 	for key, value := range finalDest {
 		c[key] = value
 	}
@@ -371,5 +375,5 @@ type BfsState struct {
 	//   dests:    -CPU/-Mem (consumed)
 	NetDelta map[string]Delta
 	// Final chosen destination per UID (each UID moved at most once)
-	FinalDest map[string]string
+	FinalDest map[types.UID]string
 }

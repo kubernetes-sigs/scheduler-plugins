@@ -1,4 +1,5 @@
-// preenqueue_plugin.go (refactored)
+// preenqueue_plugin.go
+
 package mycrossnodepreemption
 
 import (

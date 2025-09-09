@@ -11,6 +11,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
 
@@ -43,9 +44,9 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	}
 
 	if preemptor != nil {
-		doc.Preemptor = &Preemtor{
+		doc.Preemptor = &Preemptor{
 			Pod: Pod{
-				UID:       string(preemptor.UID),
+				UID:       preemptor.UID,
 				Namespace: preemptor.Namespace,
 				Name:      preemptor.Name,
 			},
@@ -81,14 +82,14 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	overallCtx, overallCancel := context.WithTimeout(base, 5*time.Minute)
 	defer overallCancel()
 
-	resolve := func(uid, ns, name string) *v1.Pod {
+	resolve := func(uid types.UID, ns, name string) *v1.Pod {
 		podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-		if p, err := podLister.Pods(ns).Get(name); err == nil && p != nil && string(p.UID) == uid {
+		if p, err := podLister.Pods(ns).Get(name); err == nil && p != nil && p.UID == uid {
 			return p
 		}
 		if pods, err := podLister.Pods(ns).List(labels.Everything()); err == nil {
 			for _, p := range pods {
-				if string(p.UID) == uid {
+				if p.UID == uid {
 					return p
 				}
 			}
@@ -97,9 +98,9 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	}
 
 	// Build unique target set = (moves + evicts)
-	seen := map[string]bool{}
+	seen := map[types.UID]bool{}
 	var targets []*v1.Pod
-	add := func(uid, ns, name string) {
+	add := func(uid types.UID, ns, name string) {
 		if seen[uid] {
 			return
 		}
