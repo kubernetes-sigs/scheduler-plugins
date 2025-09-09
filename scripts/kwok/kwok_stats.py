@@ -6,115 +6,73 @@ import argparse
 from typing import Callable
 from tabulate import tabulate
 
-from kwok_shared import (bytes_to_mib, stat_snapshot, compute_stat_totals)
+from kwok_shared import stat_snapshot
 
 class KwokStats:
-    def __init__(self,
-                 ctx: str,
+    def __init__(self, ctx: str, ns: str, expected: int, settle_timeout: float,
                  printer: Callable[[str], None] = print):
         self._printer = printer
         self.ctx = ctx
+        self.ns = ns
+        self.expected = expected
+        self.settle_timeout = settle_timeout
 
-    def _node_table(self, alloc, cpu_req_by_node, mem_req_by_node, pods_run_by_node) -> str:
+    def _node_table(self, pods_run_by_node: dict[str, int]) -> str:
         """
-        Generate a table of node statistics.
+        Show only pods running per node.
         """
-        pods_run_by_node = pods_run_by_node or {n: 0 for n in alloc}
-
-        headers = [
-            "NODE",
-            "CPU\nALLOC(m)", "CPU\nREQ(m)", "CPU\nUTIL(%)", "CPU\nFREE(m)",
-            "MEM\nALLOC(Mi)", "MEM\nREQ(Mi)", "MEM\nUTIL(%)", "MEM\nFREE(Mi)",
-            "PODS\nRUN",
-        ]
+        headers = ["NODE", "PODS RUN"]
         rows = []
-        for node in sorted(alloc.keys()):
-            cpu_alloc, mem_alloc_b = alloc[node]
-            cpu_req   = cpu_req_by_node.get(node, 0)
-            mem_req_b = mem_req_by_node.get(node, 0)
-
-            free_cpu   = cpu_alloc - cpu_req
-            free_mem_b = mem_alloc_b - mem_req_b
-
-            cpu_req_pct = (cpu_req / cpu_alloc * 100.0) if cpu_alloc > 0 else 0.0
-            mem_req_pct = (mem_req_b / mem_alloc_b * 100.0) if mem_alloc_b > 0 else 0.0
-
-            rows.append([
-                node,
-                f"{cpu_alloc}",
-                f"{cpu_req}",
-                f"{cpu_req_pct:.1f}%",
-                f"{free_cpu}",
-                f"{bytes_to_mib(mem_alloc_b)}",
-                f"{bytes_to_mib(mem_req_b)}",
-                f"{mem_req_pct:.1f}%",
-                f"{bytes_to_mib(free_mem_b)}",
-                pods_run_by_node.get(node, 0),
-            ])
-
+        for node in sorted(pods_run_by_node.keys()):
+            rows.append([node, pods_run_by_node.get(node, 0)])
         return tabulate(rows, headers=headers, tablefmt="fancy_grid", stralign="right")
 
-    def _totals_tables(self, alloc, cpu_req_by_node, mem_req_by_node,
-                       all_run:int, all_notrun:int, cpu_req_all:int, mem_req_all:int) -> tuple[str, str]:
+    def _totals_table(self, cpu_run_util: float, mem_run_util: float,
+                      cpu_total_util: float, mem_total_util: float,
+                      total_running: int, total_not_running: int) -> str:
         """
-        Generate total resource usage tables.
+        Show running and total utilizations, plus pod counts.
         """
-        tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
-            alloc, cpu_req_by_node, mem_req_by_node
-        )
-        cpu_util_run = (tot_cpu_req_run / tot_cpu_alloc * 100.0) if tot_cpu_alloc else 0.0
-        mem_util_run = (tot_mem_req_run_b / tot_mem_alloc_b * 100.0) if tot_mem_alloc_b else 0.0
-
-        cpu_util_all = (cpu_req_all / tot_cpu_alloc * 100.0) if tot_cpu_alloc else 0.0
-        mem_util_all = (mem_req_all / tot_mem_alloc_b * 100.0) if tot_mem_alloc_b else 0.0
-
-        # Running-only summary
-        tbl_run = tabulate([[
-            tot_cpu_req_run, f"{cpu_util_run:.1f}",
-            bytes_to_mib(tot_mem_req_run_b), f"{mem_util_run:.1f}",
-        ]], headers=[
-            "CPU\nREQ(m)", "CPU\nUTIL(%)",
-            "MEM\nREQ(Mi)", "MEM\nUTIL(%)",
-        ], tablefmt="fancy_grid", stralign="right")
-
-        # All-pods summary (incl. unscheduled)
-        tbl_all = tabulate([[
-            cpu_req_all, f"{cpu_util_all:.1f}",
-            bytes_to_mib(mem_req_all), f"{mem_util_all:.1f}",
-            tot_cpu_alloc, bytes_to_mib(tot_mem_alloc_b),
-            all_run, all_notrun
-        ]], headers=[
-            "CPU\nREQ(m)", "CPU\nUTIL(%)",
-            "MEM\nREQ(Mi)", "MEM\nUTIL(%)",
-            "CPU\nALLOC(m)", "MEM\nALLOC(Mi)",
-            "PODS\nRUN", "PODS\nNOTRUN",
-        ], tablefmt="fancy_grid", stralign="right")
-
-        return tbl_run, tbl_all
+        rows = [[
+            f"{cpu_run_util*100:.1f}%/{cpu_total_util*100:.1f}%",
+            f"{mem_run_util*100:.1f}%/{mem_total_util*100:.1f}%",
+            f"{total_running}/{total_running+total_not_running}"
+        ]]
+        headers = [
+            "CPU UTIL", "MEM UTIL", "PODS"
+        ]
+        return tabulate(rows, headers=headers, tablefmt="fancy_grid", stralign="right")
 
     def run(self) -> None:
         """
-        Run the statistics collection and reporting.
+        Collect and print snapshot stats.
         """
-        s = stat_snapshot(self.ctx, ns="default", expected=None, settle_timeout=10.0) #TODO: fix ns and expected
-        self._printer(f"[kwok-stats] context: {self.ctx}")
-        self._printer(self._node_table(s.alloc, s.cpu_req_by_node, s.mem_req_by_node, s.pods_run_by_node))
-        self._printer("")
-        self._printer("Stats (Running Pods Only)")
-        run_only, totals = self._totals_tables(s.alloc, s.cpu_req_by_node, s.mem_req_by_node,
-                                               s.total_pods_scheduled, s.total_pods_unscheduled, s.cpu_req_all, s.mem_req_all)
-        self._printer(run_only)
-        self._printer("")
-        self._printer("Stats (All Pods, incl. unscheduled)")
-        self._printer(totals)
+        s = stat_snapshot(self.ctx, ns=self.ns, expected=self.expected, settle_timeout=self.settle_timeout)
 
+        self._printer(f"[kwok-stats] context={self.ctx} namespace={self.ns} expected={self.expected} settle_timeout={self.settle_timeout}s")
+        self._printer("")
+        self._printer("Cluster utilization and pod totals")
+        self._printer(self._totals_table(
+            s.cpu_run_util, s.mem_run_util,     # running-only util
+            s.cpu_total_util, s.mem_total_util, # total util (capped by alloc)
+            len(s.pods_scheduled), len(s.pods_unscheduled)
+        ))
+        self._printer("Pods running per node")
+        self._printer(self._node_table(s.pods_run_by_node))
+        self._printer("")
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("cluster_name")
+    ap = argparse.ArgumentParser(description="Show KWOK stats: running/total utilization and pods per node.")
+    ap.add_argument("cluster_name", help="Cluster short name (context will be kwok-<cluster_name>)")
+    ap.add_argument("--namespace", "-n", default="crossnode-test", help="Namespace to inspect")
+    ap.add_argument("--expected", type=int, default=0,
+                    help="Expected pod count for waiting logic in stat_snapshot; 0 means don't wait")
+    ap.add_argument("--settle-timeout", type=float, default=0.0,
+                    help="Seconds to wait in stat_snapshot; 0 means immediate snapshot")
+
     args = ap.parse_args()
     ctx = f"kwok-{args.cluster_name}"
-    KwokStats(ctx).run()
+    KwokStats(ctx, args.namespace, args.expected, args.settle_timeout).run()
 
 if __name__ == "__main__":
     main()

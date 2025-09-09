@@ -11,42 +11,10 @@ import os
 import sys
 import csv
 import time
-import shlex
 import argparse
 import subprocess
 from pathlib import Path
-from kwok_shared import stat_snapshot, get_scheduled_and_unscheduled, parse_timeout_s
-
-# ---------- helpers ----------
-
-def env_default(name: str, fallback: str) -> str:
-    return os.environ.get(name, fallback)
-
-def env_bool(name: str, fallback: bool = False) -> bool:
-    v = os.environ.get(name)
-    if v is None:
-        return fallback
-    return v.strip().lower() in ("1", "true", "yes", "on")
-
-def parse_int_list(s: str) -> list[int]:
-    if not s:
-        return []
-    parts = [p for chunk in s.split(",") for p in chunk.strip().split()]
-    return [int(x) for x in parts if x.strip()]
-
-def parse_float_list(s: str) -> list[float]:
-    if not s:
-        return []
-    parts = [p for chunk in s.split(",") for p in chunk.strip().split()]
-    return [float(x) for x in parts if x.strip()]
-
-def ensure_dir(p: Path) -> None:
-    p.mkdir(parents=True, exist_ok=True)
-
-def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    printable = " ".join(shlex.quote(x) for x in cmd)
-    # print(f"[exec] {printable}")
-    return subprocess.run(cmd, check=check)
+from kwok_shared import stat_snapshot, parse_timeout_s, ensure_cluster, env_default, env_bool, parse_int_list, parse_float_list, ensure_dir
 
 def ensure_header(path: Path) -> None:
     if not path.exists():
@@ -54,33 +22,8 @@ def ensure_header(path: Path) -> None:
             w = csv.writer(f)
             w.writerow([
                 "timestamp","cluster","num_nodes","pods_per_node","util","repeat",
-                "scheduled","total_pods","cpu_run_util","mem_run_util"
+                "scheduled","unscheduled","cpu_run_util","mem_run_util"
             ])
-
-def collect_metrics(ctx: str, ns: str, expected: int, settle_timeout: float) -> tuple[int, int, float, float]:
-    time.sleep(3)  # slight delay to allow metrics to settle
-    s = stat_snapshot(ctx, ns, expected=expected, settle_timeout=settle_timeout)
-    return (
-        int(s.total_pods_scheduled),
-        int(s.total_pods_unscheduled),
-        float(s.cpu_run_util_frac_all),
-        float(s.mem_run_util_frac_all),
-    )
-
-def ensure_cluster(cluster_name: str, kwok_config: Path | None, recreate: bool = True) -> None:
-    if recreate:
-        print(f"[setup] recreating kwok cluster '{cluster_name}'")
-        run(["kwokctl", "delete", "cluster", "--name", cluster_name], check=False)
-    if kwok_config and kwok_config.exists():
-        print(f"[setup] kwokctl create cluster --name {cluster_name} --config {kwok_config}")
-        run(["kwokctl", "create", "cluster", "--name", cluster_name, "--config", str(kwok_config)])
-    else:
-        if kwok_config and not kwok_config.exists():
-            print(f"[setup][warn] KWOK_CONFIG='{kwok_config}' not found; creating with defaults")
-        print(f"[setup] kwokctl create cluster --name {cluster_name}")
-        run(["kwokctl", "create", "cluster", "--name", cluster_name])
-
-# ---------- main ----------
 
 def build_parser() -> argparse.ArgumentParser:
     here = Path(__file__).resolve().parent
@@ -146,11 +89,13 @@ def main():
     for util in util_list:
         for nn in num_nodes_list:
             for ppn in pods_per_node_list:
-                combo_file = out_dir / f"runs_n{nn}_ppn{ppn}_util{util:.2f}.csv"
-                ensure_header(combo_file)
+                test_case = f"n{nn}_ppn{ppn}_util{util:.2f}"
+                file_name = out_dir / f"{test_case}.csv"
+                ensure_header(file_name)
 
                 for rep in range(1, args.repeats + 1):
-                    print(f"\n===== combo: nodes={nn} pods_per_node={ppn} util={util:.2f} (run {rep}/{args.repeats}) =====")
+                    test_case_rep = f"{test_case}_r{rep}/{args.repeats}"
+                    print(f"\n===== test: {test_case_rep} =====")
 
                     gen_args = [
                         sys.executable, str(gen_path),
@@ -172,32 +117,25 @@ def main():
                     ]
                     if args.wait_each:
                         gen_args.append("--wait-each")
-
-                    try:
-                        subprocess.run(gen_args, check=True)
-                    except subprocess.CalledProcessError:
-                        print("[warn] generator run failed; still recording metrics (may be zeros)")
-
-                    try:
-                        scheduled, unscheduled, cpu_u, mem_u = collect_metrics(ctx, args.namespace, expected=nn*ppn, settle_timeout=parse_timeout_s(args.settle_timeout))
-                    except Exception as e:
-                        print(f"[warn] metrics collection failed: {e!r}")
-                        scheduled, unscheduled, cpu_u, mem_u = 0, 0, 0.0, 0.0
-
+                    
+                    subprocess.run(gen_args, check=True)
+                    
+                    s = stat_snapshot(ctx, args.namespace, expected=nn*ppn, settle_timeout=parse_timeout_s(args.settle_timeout))
                     ts = int(time.time())
-                    with combo_file.open("a", newline="") as f:
+                    with file_name.open("a", newline="") as f:
                         w = csv.writer(f)
                         w.writerow([
                             ts, cluster, nn, ppn, f"{util:.2f}", rep,
-                            scheduled, unscheduled, f"{cpu_u:.6f}", f"{mem_u:.6f}"
+                            len(s.pods_scheduled), len(s.pods_unscheduled), f"{s.cpu_run_util:.6f}", f"{s.mem_run_util:.6f}"
                         ])
 
                     print(f"[run][n={nn} ppn={ppn} util={util:.2f}] "
-                          f"scheduled={scheduled}/{scheduled+unscheduled} cpu_run_util={cpu_u*100:.2f}% mem_run_util={mem_u*100:.2f}%")
+                          f"scheduled={len(s.pods_scheduled)}/{len(s.pods_scheduled)+len(s.pods_unscheduled)} "
+                          f"cpu_util={s.cpu_run_util*100:.2f}%/{s.cpu_total_util*100:.2f}% mem_util={s.mem_run_util*100:.2f}%/{s.mem_total_util*100:.2f}%")
 
-                print(f"[combo done] {combo_file}")
+                print(f"[done] {test_case} all {args.repeats} repeats done")
 
-    print(f"[done] Per-combo CSVs are in {out_dir}")
+    print(f"[done] all tests done")
 
 if __name__ == "__main__":
     main()

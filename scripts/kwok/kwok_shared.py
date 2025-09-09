@@ -2,10 +2,11 @@
 
 # kwok_shared.py
 
-import sys, time, random, subprocess, json, textwrap
+import os, time, random, subprocess, json, textwrap
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 # ---------- quantity helpers ----------
 def cpu_m_str_to_int(v: str) -> int:
@@ -206,6 +207,19 @@ def cleanup_priority_classes(ctx: str, desired_count: int, *, prefix: str = "p",
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 # ---------- KWOK management --------------
+def ensure_cluster(cluster_name: str, kwok_config: Path | None, recreate: bool = True) -> None:
+    if recreate:
+        print(f"[setup] recreating kwok cluster '{cluster_name}'")
+        run(["kwokctl", "delete", "cluster", "--name", cluster_name], check=False)
+    if kwok_config and kwok_config.exists():
+        print(f"[setup] kwokctl create cluster --name {cluster_name} --config {kwok_config}")
+        run(["kwokctl", "create", "cluster", "--name", cluster_name, "--config", str(kwok_config)])
+    else:
+        if kwok_config and not kwok_config.exists():
+            print(f"[setup][warn] KWOK_CONFIG='{kwok_config}' not found; creating with defaults")
+        print(f"[setup] kwokctl create cluster --name {cluster_name}")
+        run(["kwokctl", "create", "cluster", "--name", cluster_name])
+
 def create_kwok_nodes(ctx: str, num_nodes: int, node_cpu: str, node_mem: str, pods_cap: int) -> None:
     """
     Create KWOK nodes kwok-node-1..kwok-node-N with the given capacity.
@@ -233,67 +247,6 @@ def delete_kwok_nodes(ctx: str) -> None:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 # ---------- kubernetes state queries ------------
-def count_scheduled_in_ns(ctx: str, ns: str) -> int:
-    """
-    Count the number of pods in 'Running' phase in the given namespace.
-    """
-    r = run(["kubectl","--context",ctx,"-n",ns,"get","pods","-o","json"],
-            stdout=subprocess.PIPE, check=True)
-    items = json.loads(r.stdout).get("items", [])
-    cnt = 0
-    for p in items:
-        node = (p.get("spec") or {}).get("nodeName") or ""
-        if node: cnt += 1
-    return cnt
-
-def count_scheduled_from_events(ctx: str, ns: str) -> Tuple[int, Dict[str, str]]:
-    """
-    Reads all pod events in the namespace and determines each pod's current scheduling state
-    by looking at the latest relevant event for that pod name.
-    Returns (scheduled_count, state_by_pod) where state can be "scheduled","preempted","failed_scheduling","other".
-    """
-    cmd = ["kubectl", "--context", ctx, "-n", ns,
-           "get", "events",
-           "--field-selector", "involvedObject.kind=Pod",
-           "-o", "json"]
-    out = subprocess.check_output(cmd)
-    items = (json.loads(out) or {}).get("items", [])
-
-    # Track latest relevant event per pod name
-    latest: Dict[str, tuple[datetime, str]] = {}  # name -> (ts, state)
-
-    for ev in items:
-        inv = (ev.get("involvedObject") or {})
-        name = inv.get("name") or ""
-        if not name:
-            continue
-
-        reason  = (ev.get("reason") or "").strip()
-        message = (ev.get("message") or "").lower()
-        # Choose best timestamp available
-        ts = (_rfc3339_to_dt(ev.get("eventTime") or "")
-              or _rfc3339_to_dt(ev.get("lastTimestamp") or "")
-              or _rfc3339_to_dt((ev.get("metadata") or {}).get("creationTimestamp") or ""))
-
-        # Map reasons to coarse states
-        if reason == "Scheduled":
-            state = "scheduled"
-        elif reason == "Preempted":
-            state = "preempted"
-        elif reason == "FailedScheduling":
-            state = "failed_scheduling"
-        elif reason == "Evicted" or "evict" in message:
-            state = "preempted"
-        else:
-            state = "other"
-
-        prev = latest.get(name)
-        if (prev is None) or (ts > prev[0]):
-            latest[name] = (ts, state)
-
-    scheduled_count = sum(1 for _, (_, st) in latest.items() if st == "scheduled")
-    state_by_pod = {name: st for name, (_, st) in latest.items()}
-    return scheduled_count, state_by_pod
 
 def pods_per_node_in_ns(ctx: str, ns: str, nodes: List[str]) -> Dict[str,int]:
     """
@@ -310,18 +263,7 @@ def pods_per_node_in_ns(ctx: str, ns: str, nodes: List[str]) -> Dict[str,int]:
     return by
 
 # ---------- stats helpers ----------
-@dataclass
-class Snapshot:
-    alloc: Dict[str, Tuple[int,int]] # node -> (cpu m, mem bytes)
-    cpu_req_by_node: Dict[str,int]   # node -> m (Running & assigned only)
-    mem_req_by_node: Dict[str,int]   # node -> bytes (Running & assigned only)
-    pods_run_by_node: Dict[str,int]  # node -> running pods count
-    cpu_req_all: int                 # all pods (incl. unscheduled)
-    mem_req_all: int                 # all pods (incl. unscheduled)
-    total_pods_scheduled: int        # total pods in the cluster
-    total_pods_unscheduled: int      # all not running pods count
-    cpu_run_util_frac_all: float     # running requests / total alloc CPU (0..1)
-    mem_run_util_frac_all: float     # running requests / total alloc MEM (0..1)
+
 
 def sum_pod_requests(pod: dict) -> tuple[int, int]:
     """
@@ -345,11 +287,30 @@ def sum_pod_requests(pod: dict) -> tuple[int, int]:
 
     return cpu_sum + init_cpu_max, mem_sum_b + init_mem_max_b
 
+@dataclass
+class Snapshot:
+    alloc: Dict[str, Tuple[int,int]]       # node -> (cpu m, mem bytes)
+    cpu_req_by_node: Dict[str,int]         # node -> m (Running & assigned only)
+    mem_req_by_node: Dict[str,int]         # node -> bytes (Running & assigned only)
+    pods_run_by_node: Dict[str,int]        # node -> running pods count
+    pods_scheduled: list[str]              # total running pods
+    pods_unscheduled: list[str]            # all not-running pods
+    total_cpu_req_m: int                   # all pods (incl. unscheduled), milliCPU
+    total_mem_req_b: int                   # all pods (incl. unscheduled), bytes
+    total_cpu_alloc_m: int                 # sum of node allocatable CPU (milliCPU)
+    total_mem_alloc_b: int                 # sum of node allocatable MEM (bytes)
+    cpu_run_util: float                    # running requests / total alloc CPU
+    mem_run_util: float                    # running requests / total alloc MEM
+    cpu_total_util: float                  # total requests / total alloc CPU
+    mem_total_util: float                  # total requests / total alloc MEM
+
 def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Snapshot:
-    _, scheduled, unscheduled = get_scheduled_and_unscheduled(ctx, ns, expected=expected, settle_timeout_sec=settle_timeout)
-    
+    _, scheduled_names, unscheduled_names = get_scheduled_and_unscheduled(
+        ctx, ns, expected=expected, settle_timeout=settle_timeout
+    )
+
     nodes = get_json_ctx(ctx, ["get","nodes","-o","json"])
-    pods  = get_json_ctx(ctx, ["get","pods","--all-namespaces","-o","json"])
+    pods  = get_json_ctx(ctx, ["-n", ns, "get","pods","-o","json"])
 
     # Allocatable per node
     alloc: Dict[str,Tuple[int,int]] = {}
@@ -362,56 +323,109 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
         )
 
     # Totals for util calc
-    tot_cpu_alloc = sum(v[0] for v in alloc.values())
-    tot_mem_alloc_b = sum(v[1] for v in alloc.values())
+    total_cpu_alloc_m = sum(v[0] for v in alloc.values())
+    total_mem_alloc_b = sum(v[1] for v in alloc.values())
 
     # Per-node running attribution
-    cpu_req = {n:0 for n in alloc}
-    mem_req = {n:0 for n in alloc}
+    cpu_req_m = {n:0 for n in alloc}
+    mem_req_b = {n:0 for n in alloc}
     pods_run_by_node = {n:0 for n in alloc}
-
-
-    cpu_req_all = 0
-    mem_req_all = 0
+    
+    # Prefer planned totals if available (resilient to preemption/deletion)
+    planned = read_plan_configmap(ctx, ns, "kwok-plan")
+    use_planned_totals = planned is not None
+    if use_planned_totals:
+        total_cpu_req_m, total_mem_req_b = planned
+    else:
+        total_cpu_req_m = 0
+        total_mem_req_b = 0
 
     for p in pods["items"]:
         phase = (p.get("status",{}) or {}).get("phase","")
         node  = (p.get("spec",{}) or {}).get("nodeName","")
 
-        if phase == "Running":
-            if node in pods_run_by_node:
-                pods_run_by_node[node] += 1
+        if phase == "Running" and node in pods_run_by_node:
+            pods_run_by_node[node] += 1
 
         rcpu, rmem = sum_pod_requests(p)
-        cpu_req_all += rcpu
-        mem_req_all += rmem
+        # Only accumulate live-pod totals if we don't have a planned total
+        if not use_planned_totals:
+            total_cpu_req_m += rcpu
+            total_mem_req_b += rmem
 
         if node and node in alloc and phase == "Running":
-            cpu_req[node] += rcpu
-            mem_req[node] += rmem
+            cpu_req_m[node] += rcpu
+            mem_req_b[node] += rmem
 
-    # Running-only totals (already what compute_stat_totals returns)
-    tot_cpu_req_run = sum(cpu_req.values())
-    tot_mem_req_run_b = sum(mem_req.values())
+    # Running-only totals
+    total_cpu_req_run_m = sum(cpu_req_m.values())
+    total_mem_req_run_b = sum(mem_req_b.values())
 
-    # Running utilization (fractions 0..1)
-    cpu_run_util_frac_all = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
-    mem_run_util_frac_all = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+    # Running utilization (0..1)
+    cpu_run_util = (total_cpu_req_run_m / total_cpu_alloc_m) if total_cpu_alloc_m else 0.0
+    mem_run_util = (total_mem_req_run_b / total_mem_alloc_b) if total_mem_alloc_b else 0.0
     
-    
+    # Total utilization (incl. unscheduled), capped by alloc (0..1)
+    cpu_total_util = (
+        min(total_cpu_req_m, total_cpu_alloc_m) / total_cpu_alloc_m if total_cpu_alloc_m else 0.0
+    )
+    mem_total_util = (
+        min(total_mem_req_b, total_mem_alloc_b) / total_mem_alloc_b if total_mem_alloc_b else 0.0
+    )
 
     return Snapshot(
         alloc=alloc,
-        cpu_req_by_node=cpu_req,
-        mem_req_by_node=mem_req,
+        cpu_req_by_node=cpu_req_m,
+        mem_req_by_node=mem_req_b,
         pods_run_by_node=pods_run_by_node,
-        total_pods_scheduled=scheduled,
-        total_pods_unscheduled=len(unscheduled),
-        cpu_req_all=cpu_req_all,
-        mem_req_all=mem_req_all,
-        cpu_run_util_frac_all=float(cpu_run_util_frac_all),
-        mem_run_util_frac_all=float(mem_run_util_frac_all),
+        pods_scheduled=scheduled_names,
+        pods_unscheduled=unscheduled_names,
+        total_cpu_req_m=total_cpu_req_m,
+        total_mem_req_b=total_mem_req_b,
+        total_cpu_alloc_m=total_cpu_alloc_m,
+        total_mem_alloc_b=total_mem_alloc_b,
+        cpu_run_util=float(cpu_run_util),
+        mem_run_util=float(mem_run_util),
+        cpu_total_util=float(cpu_total_util),
+        mem_total_util=float(mem_total_util),
     )
+
+def write_plan_configmap(ctx: str, ns: str, name: str, plan: dict) -> None:
+    """
+    Store planned totals in a ConfigMap so totals remain correct even if pods are preempted.
+    `plan` should at least have {"total_cpu_m": int, "total_mem_mi": int}.
+    """
+    import textwrap, json
+    plan_json = json.dumps(plan, separators=(",", ":"))
+    yaml = textwrap.dedent(f"""\
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: {name}
+      namespace: {ns}
+      labels:
+        kwok.x/plan: "true"
+    data:
+      plan.json: |-
+        {plan_json}
+    """)
+    apply_yaml(ctx, yaml)
+
+def read_plan_configmap(ctx: str, ns: str, name: str = "kwok-plan") -> Optional[tuple[int, int]]:
+    """
+    Return (total_cpu_m, total_mem_bytes) from the plan ConfigMap if present, else None.
+    """
+    try:
+        cm = get_json_ctx(ctx, ["-n", ns, "get", "configmap", name, "-o", "json"])
+        data = (cm.get("data") or {}).get("plan.json")
+        if not data:
+            return None
+        plan = json.loads(data)
+        cpu_m = int(plan.get("total_cpu_m", 0))
+        mem_mi = int(plan.get("total_mem_mi", 0))
+        return cpu_m, mem_mi * 1024 * 1024
+    except Exception:
+        return None
 
 def compute_stat_totals(alloc: Dict[str,Tuple[int,int]], cpu_req_by_node: Dict[str,int], mem_req_by_node: Dict[str,int]) -> tuple[int, int, int, int]:
     """
@@ -517,41 +531,84 @@ def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = 
 
     return last_count
 
-# TODO: RETURN scheduled list
+
+
 def get_scheduled_and_unscheduled(
     ctx: str,
     ns: str,
     expected: int,
     interval: float = 0.5,
-    settle_timeout_sec: int | None = None
+    settle_timeout: Optional[int] = None
 ) -> Tuple[str, List[str], List[str]]:
     """
     Poll pod events until we can decide:
-      - ("all_scheduled", {"scheduled": N})
-      - ("some_unschedulable", {"unschedulable": [...]})
-      - ("timeout", {"scheduled": N, "unschedulable": [...]})
+      - ("all_scheduled", [scheduled_pods], [])
+      - ("some_unschedulable", [scheduled_pods], [unschedulable_pods])
+      - ("timeout", [scheduled_pods], [unschedulable_pods])
     Decision is based on the latest event per pod name.
     """
     start = time.time()
     while True:
-        scheduled, states = count_scheduled_from_events(ctx, ns)
-        failed_like = sum(1 for s in states.values() if s in {"failed_scheduling", "preempted"})
+        cmd = ["kubectl", "--context", ctx, "-n", ns,
+        "get", "events",
+        "--field-selector", "involvedObject.kind=Pod",
+        "-o", "json"]
+        out = subprocess.check_output(cmd)
+        items = (json.loads(out) or {}).get("items", [])
+
+        # Track latest relevant event per pod name
+        latest: Dict[str, tuple[datetime, str]] = {}  # name -> (ts, state)
+
+        for ev in items:
+            inv = (ev.get("involvedObject") or {})
+            name = inv.get("name") or ""
+            if not name:
+                continue
+
+            reason  = (ev.get("reason") or "").strip()
+            message = (ev.get("message") or "").lower()
+            # Choose best timestamp available
+            ts = (_rfc3339_to_dt(ev.get("eventTime") or "")
+                or _rfc3339_to_dt(ev.get("lastTimestamp") or "")
+                or _rfc3339_to_dt((ev.get("metadata") or {}).get("creationTimestamp") or ""))
+
+            # Map reasons to coarse states
+            if reason == "Scheduled":
+                state = "scheduled"
+            elif reason == "Preempted":
+                state = "preempted"
+            elif reason == "FailedScheduling":
+                state = "failed_scheduling"
+            elif reason == "Evicted" or "evict" in message:
+                state = "preempted"
+            else:
+                state = "other"
+
+            prev = latest.get(name)
+            if (prev is None) or (ts > prev[0]):
+                latest[name] = (ts, state)
+
+        states = {name: st for name, (_, st) in latest.items()}
+        
+        scheduled_pods = [p for p, st in states.items() if st == "scheduled"]
+        unschedulable_pods = [p for p, st in states.items() if st in {"failed_scheduling", "preempted"}]
+
+        failed_like = len(unschedulable_pods)
 
         # all_scheduled
-        if scheduled >= expected:
-            return "all_scheduled", scheduled, None
+        if len(scheduled_pods) >= expected:
+            return "all_scheduled", sorted(scheduled_pods), []
 
-        # some_unschedulable (we've 'decided' about at least expected pods: scheduled + failed_like)
-        if (scheduled + failed_like) >= expected and failed_like > 0:
-            unschedulable = [p for p, st in states.items() if st in {"failed_scheduling", "preempted"}]
-            return "some_unschedulable", scheduled, sorted(unschedulable)
+        # some_unschedulable
+        if (len(scheduled_pods) + failed_like) >= expected and failed_like > 0:
+            return "some_unschedulable", sorted(scheduled_pods), sorted(unschedulable_pods)
 
-        # timeout?
-        if settle_timeout_sec is not None and (time.time() - start) >= settle_timeout_sec:
-            unschedulable = [p for p, st in states.items() if st in {"failed_scheduling", "preempted"}]
-            return "timeout", scheduled, sorted(unschedulable)
+        # timeout
+        if settle_timeout is not None and (time.time() - start) >= settle_timeout:
+            return "timeout", sorted(scheduled_pods), sorted(unschedulable_pods)
 
         time.sleep(interval)
+
 
 # ----------- KWOK yaml builders ----------
 def yaml_priority_class(name: str, value: int) -> str:
@@ -831,6 +888,28 @@ def gen_parts_constrained(total: int, n: int, rng: random.Random,
     return scale_bounded_to_sum(raw, total, lo, hi)
 
 # --------- Other utilities -----------
+
+def env_default(name: str, fallback: str) -> str:
+    return os.environ.get(name, fallback)
+
+def env_bool(name: str, fallback: bool = False) -> bool:
+    v = os.environ.get(name)
+    if v is None:
+        return fallback
+    return v.strip().lower() in ("1", "true", "yes", "on")
+
+def parse_int_list(s: str) -> list[int]:
+    if not s:
+        return []
+    parts = [p for chunk in s.split(",") for p in chunk.strip().split()]
+    return [int(x) for x in parts if x.strip()]
+
+def parse_float_list(s: str) -> list[float]:
+    if not s:
+        return []
+    parts = [p for chunk in s.split(",") for p in chunk.strip().split()]
+    return [float(x) for x in parts if x.strip()]
+
 def parse_timeout_s(t:str) -> int:
     """
     Parse a timeout string into seconds.
@@ -843,4 +922,6 @@ def parse_timeout_s(t:str) -> int:
         return int(t)
     except Exception:
         return 60
-    
+
+def ensure_dir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
