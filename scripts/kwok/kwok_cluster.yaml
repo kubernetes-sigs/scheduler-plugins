@@ -17,10 +17,10 @@ componentsPatches:
       - name: PLAN_EXECUTION_TIMEOUT
         value: "600h" # 50s # TODO: set high to determine any potential issues
       - name: SOLVER_PYTHON_ENABLED
-        value: "true" # TODO: disabled during testing fast solver
+        value: "false"
       - name: SOLVER_PYTHON_TIMEOUT
         value: "10s"
       - name: SOLVER_BFS_ENABLED
         value: "false"
       - name: SOLVER_BFS_TIMEOUT
-        value: "500ms" # 25s
+        value: "200ms" # 25s

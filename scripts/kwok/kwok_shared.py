@@ -312,14 +312,18 @@ def pods_per_node_in_ns(ctx: str, ns: str, nodes: List[str]) -> Dict[str,int]:
 # ---------- stats helpers ----------
 @dataclass
 class Snapshot:
-    alloc: Dict[str, Tuple[int,int]]    # node -> (cpu m, mem bytes)
-    cpu_req_by_node: Dict[str,int]      # node -> m (Running & assigned only)
-    mem_req_by_node: Dict[str,int]      # node -> bytes (Running & assigned only)
-    pods_run_by_node: Dict[str,int]     # node -> running pods count
-    all_run: int                        # all running pods count
-    all_notrun: int                     # all not running pods count
-    cpu_req_all: int                    # all pods (incl. unscheduled)
-    mem_req_all: int                    # all pods (incl. unscheduled)
+    alloc: Dict[str, Tuple[int,int]] # node -> (cpu m, mem bytes)
+    cpu_req_by_node: Dict[str,int]   # node -> m (Running & assigned only)
+    mem_req_by_node: Dict[str,int]   # node -> bytes (Running & assigned only)
+    pods_run_by_node: Dict[str,int]  # node -> running pods count
+    cpu_req_all: int                 # all pods (incl. unscheduled)
+    mem_req_all: int                 # all pods (incl. unscheduled)
+    total_pods_all: int              # total pods in the cluster
+    total_pods_scheduled: int        # pods with spec.nodeName set (any phase)
+    total_pods_running: int          # all running pods count
+    total_pods_not_running: int      # all not running pods count
+    cpu_run_util_frac_all: float     # running requests / total alloc CPU (0..1)
+    mem_run_util_frac_all: float     # running requests / total alloc MEM (0..1)
 
 def sum_pod_requests(pod: dict) -> tuple[int, int]:
     """
@@ -344,18 +348,24 @@ def sum_pod_requests(pod: dict) -> tuple[int, int]:
     return cpu_sum + init_cpu_max, mem_sum_b + init_mem_max_b
 
 def stat_snapshot(ctx: str) -> Snapshot:
-    """
-    Take a snapshot of the current Kubernetes cluster state.
-    """
     nodes = get_json_ctx(ctx, ["get","nodes","-o","json"])
     pods  = get_json_ctx(ctx, ["get","pods","--all-namespaces","-o","json"])
 
+    # Allocatable per node
     alloc: Dict[str,Tuple[int,int]] = {}
     for n in nodes["items"]:
         name = n["metadata"]["name"]
         a = n.get("status",{}).get("allocatable",{}) or {}
-        alloc[name] = (cpu_m_str_to_int(a.get("cpu","0")), mem_str_to_bytes_int(a.get("memory","0")))
+        alloc[name] = (
+            cpu_m_str_to_int(a.get("cpu","0")),
+            mem_str_to_bytes_int(a.get("memory","0")),
+        )
 
+    # Totals for util calc
+    tot_cpu_alloc = sum(v[0] for v in alloc.values())
+    tot_mem_alloc_b = sum(v[1] for v in alloc.values())
+
+    # Per-node running attribution
     cpu_req = {n:0 for n in alloc}
     mem_req = {n:0 for n in alloc}
     pods_run_by_node = {n:0 for n in alloc}
@@ -364,36 +374,53 @@ def stat_snapshot(ctx: str) -> Snapshot:
     all_notrun = 0
     cpu_req_all = 0
     mem_req_all = 0
+    total_pods_all = 0
+    scheduled_all = 0
 
     for p in pods["items"]:
+        total_pods_all += 1
         phase = (p.get("status",{}) or {}).get("phase","")
-        node = (p.get("spec",{}) or {}).get("nodeName","")
+        node  = (p.get("spec",{}) or {}).get("nodeName","")
+
+        if node:
+            scheduled_all += 1
 
         if phase == "Running":
             all_run += 1
             if node in pods_run_by_node:
                 pods_run_by_node[node] += 1
-        elif phase: # Not running pods
+        elif phase:
             all_notrun += 1
 
         rcpu, rmem = sum_pod_requests(p)
         cpu_req_all += rcpu
         mem_req_all += rmem
 
-        # Per-node attribution: running & assigned only
         if node and node in alloc and phase == "Running":
             cpu_req[node] += rcpu
             mem_req[node] += rmem
+
+    # Running-only totals (already what compute_stat_totals returns)
+    tot_cpu_req_run = sum(cpu_req.values())
+    tot_mem_req_run_b = sum(mem_req.values())
+
+    # NEW: cluster-wide running utilization (fractions 0..1)
+    cpu_run_util_frac_all = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
+    mem_run_util_frac_all = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
 
     return Snapshot(
         alloc=alloc,
         cpu_req_by_node=cpu_req,
         mem_req_by_node=mem_req,
         pods_run_by_node=pods_run_by_node,
-        all_run=all_run,
-        all_notrun=all_notrun,
+        total_pods_running=all_run,
+        total_pods_not_running=all_notrun,
         cpu_req_all=cpu_req_all,
         mem_req_all=mem_req_all,
+        total_pods_all=total_pods_all,
+        total_pods_scheduled=scheduled_all,
+        cpu_run_util_frac_all=float(cpu_run_util_frac_all),
+        mem_run_util_frac_all=float(mem_run_util_frac_all),
     )
 
 def compute_stat_totals(alloc: Dict[str,Tuple[int,int]], cpu_req_by_node: Dict[str,int], mem_req_by_node: Dict[str,int]) -> tuple[int, int, int, int]:
@@ -826,3 +853,4 @@ def parse_timeout_s(t:str) -> int:
         return int(t)
     except Exception:
         return 60
+    

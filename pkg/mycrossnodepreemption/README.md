@@ -32,12 +32,13 @@ TODO_HC
 
 ## TODOs Plugin
 
+- Make test_modes.sh to a python script instead.
 - Only activate pods we need to schedule
-- Somehow ensure that the cluster state is the same throghout execution. Consider to evict non-planned pods.
+- Reactivate not scheduled pods after plan execution.
+- Somehow ensure that the cluster state is the same throughout execution. Consider to evict non-planned pods.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
-- Reactivate not scheduled pods after plan execution.
 - Check SDU contract
 - Not sure my plugin will work if a pod is removed during plan execution
   - Standalone pods deleted externally (not by your plan): You only recreate standalone pods that you evicted/targeted (they’re in targets). If a standalone you intended to move was deleted by someone else before you “resolve” it, it won’t end up in targets, so you won’t recreate it. Result: the “by name” check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.

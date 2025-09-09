@@ -102,7 +102,7 @@ class KwokStats:
         self._printer("")
         self._printer("Stats (Running Pods Only)")
         run_only, totals = self._totals_tables(s.alloc, s.cpu_req_by_node, s.mem_req_by_node,
-                                               s.all_run, s.all_notrun, s.cpu_req_all, s.mem_req_all)
+                                               s.total_pods_running, s.total_pods_not_running, s.cpu_req_all, s.mem_req_all)
         self._printer(run_only)
         self._printer("")
         self._printer("Stats (All Pods, incl. unscheduled)")
