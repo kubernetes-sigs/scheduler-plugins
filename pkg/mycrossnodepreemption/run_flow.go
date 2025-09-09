@@ -130,7 +130,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 
 	// ---------- Register + execute plan ----------
 	var doc *StoredPlan
-	var ap *ActivePlanState
+	var ap *ActivePlan
 	var targetNode string
 	doc, ap, targetNode, err = pl.registerPlan(ctx, bestOut, bestSummary, preemptor, pods)
 	if err != nil {

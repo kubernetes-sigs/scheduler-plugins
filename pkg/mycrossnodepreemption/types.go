@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -16,18 +15,27 @@ import (
 
 // ===== Plugin root =====
 
+// MyCrossNodePreemption is the main plugin struct.
 type MyCrossNodePreemption struct {
-	Handle     framework.Handle
-	Client     kubernetes.Interface
-	Active     atomic.Bool
-	ActivePlan atomic.Pointer[ActivePlanState]
-	Blocked    *PodSet
-	Batched    *PodSet
+	// Handle to the framework
+	Handle framework.Handle
+	// Kubernetes client
+	Client kubernetes.Interface
+	// Whether a plan is active
+	Active atomic.Bool
+	// Currently active plan (if any)
+	ActivePlan atomic.Pointer[ActivePlan]
+	// Set of blocked pods
+	Blocked *PodSet
+	// Set of batched pods
+	Batched *PodSet
+	// Mutex to wait for caches to warm up
 	CachesWarm atomic.Bool
 }
 
 // ===== Plan types =====
 
+// StoredPlan represents the plan to be executed.
 type StoredPlan struct {
 	// Plugin version that generated the plan
 	PluginVersion string `json:"pluginVersion"`
@@ -57,6 +65,7 @@ type StoredPlan struct {
 	WorkloadQuotasDoc WorkloadQuotas `json:"workloadQuotas,omitempty"`
 }
 
+// PlanStatus represents the status of a plan.
 type PlanStatus string
 
 const (
@@ -67,7 +76,8 @@ const (
 
 // ===== Runtime types =====
 
-type ActivePlanState struct {
+// ActivePlan represents the state of an active plan.
+type ActivePlan struct {
 	// Unique plan ID
 	ID string
 	// Workload quotas for moved or new pods that are part of a workload
@@ -89,6 +99,7 @@ type WorkloadQuotas map[string]map[string]int32
 // The atomic.Int32 allows concurrent safe decrement during plan execution.
 type WorkloadQuotasAtomics map[string]map[string]*atomic.Int32
 
+// WorkloadKind represents the kind of workload.
 type WorkloadKind int
 
 const (
@@ -98,6 +109,7 @@ const (
 	wkJob
 )
 
+// WorkloadKey is a key to identify a workload.
 type WorkloadKey struct {
 	// What kind of workload
 	Kind WorkloadKind
@@ -109,6 +121,7 @@ type WorkloadKey struct {
 
 // ===== Optimization types =====
 
+// OptimizationCadenceMode indicates how we optimize (for every pod, in batches, continuously).
 type OptimizationCadenceMode int
 
 const (
@@ -117,6 +130,7 @@ const (
 	OptimizeContinuously
 )
 
+// OptimizationAtMode indicates at which scheduling phase to optimize.
 type OptimizationAtMode int
 
 const (
@@ -124,6 +138,7 @@ const (
 	OptimizeAtPostFilter
 )
 
+// StrategyDecision indicates the decision made by the plugin.
 type StrategyDecision int
 
 const (
@@ -133,6 +148,7 @@ const (
 	DecideBlockActive
 )
 
+// Phase indicates which phase of scheduling we are in.
 type Phase string
 
 const (
@@ -348,19 +364,6 @@ type FlowResult struct {
 	SolverDuration time.Duration
 	// Total duration of the flow
 	TotalDuration time.Duration
-}
-
-// ToPodType converts a Pod to a SolverPod.
-func ToPodType(p *v1.Pod, node string) SolverPod {
-	return SolverPod{
-		UID:         p.UID,
-		Namespace:   p.Namespace,
-		Name:        p.Name,
-		ReqCPUm:     getPodCPURequest(p),
-		ReqMemBytes: getPodMemoryRequest(p),
-		Priority:    getPodPriority(p),
-		Node:        node,
-	}
 }
 
 // ===== PodSet =====

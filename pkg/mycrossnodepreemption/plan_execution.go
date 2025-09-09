@@ -22,7 +22,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	summary SolverSummary,
 	preemptor *v1.Pod,
 	pods []*v1.Pod,
-) (*StoredPlan, *ActivePlanState, string, error) {
+) (*StoredPlan, *ActivePlan, string, error) {
 
 	evicts, moves, oldPlacement, newPlacement, placementByName, workloadQuotas, nominated, err := pl.buildPlan(out, preemptor, pods)
 	if err != nil {

@@ -13,7 +13,7 @@ import (
 // Only meaningful for ForEvery@PreEnqueue
 // This function is needed as if we activate all blocked pods at once
 // over and over again in onPlanSettled, we end up with a large waiting time in the queue.
-func (pl *MyCrossNodePreemption) idleNudgeBlockedLoop(ctx context.Context) {
+func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 	if !optimizeForEvery() || !optimizeAtPreEnqueue() {
 		return
 	}

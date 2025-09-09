@@ -1080,7 +1080,7 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 // Mode: For-every: Single preemptor pod bound to target node (A) either in preenqueue or in postfilter, and all other pods in place (B, C)
 // Mode: In-batches: All pods bound to target nodes (only B, C).
 // helpers.go
-func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *ActivePlanState, pod *v1.Pod) (bool, error) {
+func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
 	if ap == nil {
 		// Plan got torn down concurrently; treat as "not completed yet" (retry later)
 		klog.V(V2).InfoS("Plan completion check skipped: no active plan doc")
@@ -1129,7 +1129,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 }
 
 // getActivePlan returns the currently active plan, if any.
-func (pl *MyCrossNodePreemption) getActivePlan() *ActivePlanState {
+func (pl *MyCrossNodePreemption) getActivePlan() *ActivePlan {
 	return pl.ActivePlan.Load()
 }
 
@@ -1201,7 +1201,7 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 }
 
 // watchPlanTimeout monitors the timeout for the given active plan.
-func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlanState) {
+func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlan) {
 	<-ap.Ctx.Done()
 	// If Cancel() was called due to completion/replacement, do nothing.
 	if ap.Ctx.Err() != context.DeadlineExceeded {
@@ -1255,7 +1255,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string, _ []*v
 		old.Cancel()
 	}
 	ctxPlan, cancel := context.WithTimeout(context.Background(), PlanExecutionTimeout)
-	ap := &ActivePlanState{
+	ap := &ActivePlan{
 		ID:                  id,
 		WorkloadPerNodeCnts: workloadCnts,
 		PlacementByName:     sp.PlacementByName,
@@ -1303,6 +1303,19 @@ func (pl *MyCrossNodePreemption) allowedNodes(pod *v1.Pod) (sets.Set[string], st
 }
 
 // ------------- Solver Helpers --------------
+
+// toSolverPod converts a Pod to a SolverPod.
+func toSolverPod(p *v1.Pod, node string) SolverPod {
+	return SolverPod{
+		UID:         p.UID,
+		Namespace:   p.Namespace,
+		Name:        p.Name,
+		ReqCPUm:     getPodCPURequest(p),
+		ReqMemBytes: getPodMemoryRequest(p),
+		Priority:    getPodPriority(p),
+		Node:        node,
+	}
+}
 
 // PreparedState holds the prepared cluster state for solvers.
 func prepareState(in SolverInput) *PreparedState {
@@ -1377,7 +1390,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 				continue
 			}
 		}
-		sp := ToPodType(p, where)
+		sp := toSolverPod(p, where)
 		if p.Namespace == "kube-system" {
 			sp.Protected = true
 		}
@@ -1395,7 +1408,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 			if string(p.UID) == preUID {
 				continue
 			}
-			sp := ToPodType(p, "")
+			sp := toSolverPod(p, "")
 			if p.Namespace == "kube-system" {
 				sp.Protected = true
 			}
@@ -1423,7 +1436,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.No
 		if preemptor == nil {
 			return SolverInput{}, fmt.Errorf("SolveSingle requires preemptor")
 		}
-		pre := ToPodType(preemptor, "")
+		pre := toSolverPod(preemptor, "")
 		in.Preemptor = &pre
 		if err := pl.fillNodesAndPods(&in, nodes, pods, preemptor, nil, false); err != nil {
 			return SolverInput{}, fmt.Errorf("fill (single): %w", err)

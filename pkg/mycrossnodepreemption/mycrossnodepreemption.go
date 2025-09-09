@@ -66,7 +66,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	} else if optimizeContinuously() {
 		go pl.periodicOptimizeLoop(ctx, PhaseContinuous)
 	} else if optimizeForEvery() && optimizeAtPreEnqueue() {
-		go pl.idleNudgeBlockedLoop(ctx)
+		go pl.nudgeBlockedLoop(ctx)
 	}
 
 	return pl, nil
