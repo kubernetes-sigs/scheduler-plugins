@@ -39,7 +39,7 @@ class KwokStats:
             f"{total_running}/{total_running+total_not_running}"
         ]]
         headers = [
-            "CPU UTIL", "MEM UTIL", "PODS"
+            "CPU UTIL", "MEM UTIL", "PODS RUN/TOTAL"
         ]
         return tabulate(rows, headers=headers, tablefmt="fancy_grid", stralign="right")
 
@@ -51,15 +51,15 @@ class KwokStats:
 
         self._printer(f"[kwok-stats] context={self.ctx} namespace={self.ns} expected={self.expected} settle_timeout={self.settle_timeout}s")
         self._printer("")
+        self._printer("Pods running per node")
+        self._printer(self._node_table(s.pods_run_by_node))
+        self._printer("")
         self._printer("Cluster utilization and pod totals")
         self._printer(self._totals_table(
             s.cpu_run_util, s.mem_run_util,     # running-only util
             s.cpu_total_util, s.mem_total_util, # total util (capped by alloc)
             len(s.pods_scheduled), len(s.pods_unscheduled)
         ))
-        self._printer("Pods running per node")
-        self._printer(self._node_table(s.pods_run_by_node))
-        self._printer("")
 
 def main():
     ap = argparse.ArgumentParser(description="Show KWOK stats: running/total utilization and pods per node.")
