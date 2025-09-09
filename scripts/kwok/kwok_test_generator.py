@@ -72,8 +72,8 @@ def load_instance_into_args(args: argparse.Namespace) -> None:
         "num_nodes": "num_nodes",
         "pods_per_node": "pods_per_node",
         "num_replicaset": "num_replicaset",
-        "target_util": "target_util",
-        "target_util_tolerance": "target_util_tolerance",
+        "util": "util",
+        "util_tolerance": "util_tolerance",
         "node_cpu": "node_cpu",
         "node_mem": "node_mem",
         "cpu_interval": "cpu_interval",
@@ -121,8 +121,8 @@ class KwokTestGeneratorRunner:
         node_mc = cpu_m_str_to_int(args.node_cpu)
         node_mi = mem_str_to_mib_int(args.node_mem)
         total_pods = args.num_nodes * args.pods_per_node
-        target_mc_node = int(node_mc * args.target_util)
-        target_mi_node = int(node_mi * args.target_util)
+        target_mc_node = int(node_mc * args.util)
+        target_mi_node = int(node_mi * args.util)
         target_mc_cluster = target_mc_node * args.num_nodes
         target_mi_cluster = target_mi_node * args.num_nodes
         self.T = TestTargets(node_mc, node_mi, total_pods, target_mc_node, target_mi_node,
@@ -335,7 +335,7 @@ class KwokTestGeneratorRunner:
 
         print(f"[check] run_util: cpu={cpu_run*100:.1f}% mem={mem_run*100:.1f}% | "
             f"all_util: cpu={cpu_all*100:.1f}% mem={mem_all*100:.1f}% | "
-            f"target={args.target_util*100:.1f}%±{args.target_util_tolerance*100:.1f}%")
+            f"target_util={args.util*100:.1f}%±{args.util_tolerance*100:.1f}%")
 
         # Per-node pods (only in normal mode where we know num_nodes)
         nodes = [f"kwok-node-{i}" for i in range(1, getattr(args, "num_nodes", 0) + 1)]
@@ -421,8 +421,8 @@ class KwokTestGeneratorRunner:
             row["pods_per_node"] = self.args.pods_per_node
             row["num_replicaset"] = self.args.num_replicaset
             row["num_priorities"] = self.args.num_priorities
-            row["target_util"] = self.args.target_util
-            row["target_util_tolerance"] = self.args.target_util_tolerance
+            row["util"] = self.args.util
+            row["util_tolerance"] = self.args.util_tolerance
             row["node_cpu"] = self.args.node_cpu
             row["node_mem"] = self.args.node_mem
             row["cpu_interval"] = self.args.cpu_interval
@@ -497,11 +497,11 @@ class KwokTestGeneratorRunner:
 
         nodes = [f"kwok-node-{i}" for i in range(1, self.args.num_nodes+1)]
         per_node = pods_per_node_in_ns(self.ctx, self.ns, nodes)
-        tol = self.args.target_util_tolerance
+        tol = self.args.util_tolerance
 
         print(f"[check] run_util: cpu={cpu_util_run*100:.1f}% mem={mem_util_run*100:.1f}% | "
             f"all_util: cpu={cpu_util_all*100:.1f}% mem={mem_util_all*100:.1f}% | "
-            f"target={self.args.target_util*100:.1f}%±{tol*100:.1f}%")
+            f"target_util={self.args.util*100:.1f}%±{tol*100:.1f}%")
         self._assert_unique_pairs_after_apply()
         print(f"[check] pods/node: {per_node} (target {self.args.pods_per_node} each)")
 
@@ -512,8 +512,8 @@ def main():
     ap.add_argument("pods_per_node", type=int)
     ap.add_argument("num_replicaset", type=int)
     ap.add_argument("--max-pods-per-node", type=int, default=32)
-    ap.add_argument("--target-util", type=float, default=0.90)
-    ap.add_argument("--target-util-tolerance", type=float, default=0.01)
+    ap.add_argument("--util", type=float, default=0.90)
+    ap.add_argument("--util-tolerance", type=float, default=0.01)
     ap.add_argument("--wait-mode", choices=["exist","ready","running"], default="running")
     ap.add_argument("--namespace", default="crossnode-test")
     ap.add_argument("--node-cpu", default="24")
