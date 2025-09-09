@@ -10,7 +10,7 @@ from collections import OrderedDict
 from kwok_shared import (
     parse_timeout_s, parse_cpu_interval, parse_mem_interval, resolve_interval_or_fallback, format_interval_cpu, format_interval_mem,
     partition_int, gen_parts_constrained, count_scheduled_in_ns, pods_per_node_in_ns,
-    wait_each, wait_until_settled_or_unschedulable_events,
+    wait_each, get_scheduled_and_unscheduled,
     ensure_namespace, create_kwok_nodes, delete_kwok_nodes, ensure_priority_classes,
     ensure_default_serviceaccount,
     yaml_kwok_pod, yaml_kwok_rs, apply_yaml, cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
@@ -324,7 +324,7 @@ class KwokTestGeneratorRunner:
 
         # Snapshot
         time.sleep(1)
-        snap = stat_snapshot(ctx)
+        snap = stat_snapshot(ctx, ns, expected=args.num_nodes * args.pods_per_node, settle_timeout=parse_timeout_s(args.settle_timeout))
         tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
             snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
         )
@@ -377,32 +377,29 @@ class KwokTestGeneratorRunner:
 
             # conditions-only monitor
             settle_timeout = parse_timeout_s(self.args.settle_timeout)
-            outcome, info = wait_until_settled_or_unschedulable_events(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout_sec=settle_timeout)
+            info, scheduled, unscheduled = get_scheduled_and_unscheduled(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout_sec=settle_timeout)
 
             # keep only matching outcomes
-            if desired == "all" and outcome == "inconclusive":
-                print(f"[sim] failed; outcome='{outcome}' != desired='{desired}' — discarding seed and retrying…")
+            if desired == "all" and info == "inconclusive":
+                print(f"[sim] failed; outcome='{scheduled}' != desired='{desired}' — discarding seed and retrying…")
                 continue
-            if desired == "some_unschedulable" and outcome != "some_unschedulable":
-                print(f"[sim] failed; outcome='{outcome}' != desired='{desired}' — discarding seed and retrying…")
+            if desired == "some_unschedulable" and info != "some_unschedulable":
+                print(f"[sim] failed; outcome='{scheduled}' != desired='{desired}' — discarding seed and retrying…")
                 continue
-            if desired == "all_scheduled" and outcome != "all_scheduled":
-                print(f"[sim] failed; outcome='{outcome}' != desired='{desired}' — discarding seed and retrying…")
+            if desired == "all_scheduled" and info != "all_scheduled":
+                print(f"[sim] failed; outcome='{scheduled}' != desired='{desired}' — discarding seed and retrying…")
                 continue
             self._assert_unique_pairs_after_apply()
 
-            unsched_list = info.get("unschedulable", []) if outcome == "some_unschedulable" else []
-            scheduled = count_scheduled_in_ns(self.ctx, self.ns)
+            if unscheduled:
+                print(f"[sim] Unschedulable pods ({len(unscheduled)}): {', '.join(unscheduled[:20])}"
+                    f"{' ...' if len(unscheduled) > 20 else ''}")
 
-            if unsched_list:
-                print(f"[sim] Unschedulable pods ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
-                    f"{' ...' if len(unsched_list) > 20 else ''}")
-            
-            print(f"[sim] ✓ succeeded; outcome='{outcome}' == desired='{desired}' (outcome='{outcome}', unschedulable={len(unsched_list)})")
-            
+            print(f"[sim] ✓ succeeded; outcome='{scheduled}' == desired='{desired}' (info='{info}', unschedulable={len(unscheduled)})")
+
             # snapshot (running vs total incl. unscheduled)
             time.sleep(1)
-            snap = stat_snapshot(self.ctx)
+            snap = stat_snapshot(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout=settle_timeout)
             tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
                 snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
             )
@@ -427,13 +424,13 @@ class KwokTestGeneratorRunner:
             row["node_mem"] = self.args.node_mem
             row["cpu_interval"] = self.args.cpu_interval
             row["mem_interval"] = self.args.mem_interval
-            row["outcome"] = outcome
+            row["info"] = info
             row["simulate_add_condition"] = self.args.simulate_add_condition
             row["dist_mode"] = self.args.dist_mode
             row["variance"] = self.args.variance
             row["scheduled_count"] = scheduled
-            row["unscheduled_count"] = max(0, self.T.total_pods - scheduled)
-            row["unschedulable_pods"] = unsched_list[:50]
+            row["unscheduled_count"] = len(unscheduled)
+            row["unschedulable_pods"] = unscheduled[:50]
             row["wait_each"] = self.args.wait_each
             row["wait_timeout"] = self.args.wait_timeout
             row["wait_mode"] = self.args.wait_mode
@@ -444,7 +441,7 @@ class KwokTestGeneratorRunner:
             print(f"[sim] ✓ saved seed {use_seed}"
                 f"-> {self.args.seed_file} ({found}/{self.args.simulator_instances})")
 
-            if self.args.simulate_stop_simulation_if_unschedulable and outcome == "some_unschedulable":
+            if self.args.simulate_stop_simulation_if_unschedulable and info == "some_unschedulable":
                 print("[sim] stopping further simulations due to unschedulable pods (as requested)")
                 break
 
@@ -468,25 +465,23 @@ class KwokTestGeneratorRunner:
 
         # --- monitor scheduling ---
         settle_timeout = parse_timeout_s(self.args.settle_timeout)
-        outcome, info = wait_until_settled_or_unschedulable_events(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout_sec=settle_timeout)
+        info, scheduled, unscheduled = get_scheduled_and_unscheduled(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout_sec=settle_timeout)
 
-        if outcome == "some_unschedulable":
-            unsched_list = info.get("unschedulable", [])
-            print(f"[check] Some pods marked Unschedulable ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
-                f"{' ...' if len(unsched_list) > 20 else ''}")
-        elif outcome == "all_scheduled":
+        if info == "some_unschedulable":
+            print(f"[check] Some pods marked Unschedulable ({len(unscheduled)}): {', '.join(unscheduled[:20])}"
+                f"{' ...' if len(unscheduled) > 20 else ''}")
+        elif info == "all_scheduled":
             print("[check] All pods scheduled successfully")
         else:
             print("[check] Monitoring ended inconclusive")
         
-        unsched_list = info.get("unschedulable", []) if outcome == "some_unschedulable" else []
-        if unsched_list:
-            print(f"[sim] Unschedulable pods ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
-                  f"{' ...' if len(unsched_list) > 20 else ''}")
+        if unscheduled:
+            print(f"[sim] Unschedulable pods ({len(unscheduled)}): {', '.join(unscheduled[:20])}"
+                  f"{' ...' if len(unscheduled) > 20 else ''}")
 
         # --- metrics snapshot (running vs total incl. unscheduled) ---
         time.sleep(1)
-        snap = stat_snapshot(self.ctx)
+        snap = stat_snapshot(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout=settle_timeout)
         tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b = compute_stat_totals(
             snap.alloc, snap.cpu_req_by_node, snap.mem_req_by_node
         )

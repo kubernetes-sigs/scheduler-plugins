@@ -318,10 +318,8 @@ class Snapshot:
     pods_run_by_node: Dict[str,int]  # node -> running pods count
     cpu_req_all: int                 # all pods (incl. unscheduled)
     mem_req_all: int                 # all pods (incl. unscheduled)
-    total_pods_all: int              # total pods in the cluster
-    total_pods_scheduled: int        # pods with spec.nodeName set (any phase)
-    total_pods_running: int          # all running pods count
-    total_pods_not_running: int      # all not running pods count
+    total_pods_scheduled: int        # total pods in the cluster
+    total_pods_unscheduled: int      # all not running pods count
     cpu_run_util_frac_all: float     # running requests / total alloc CPU (0..1)
     mem_run_util_frac_all: float     # running requests / total alloc MEM (0..1)
 
@@ -347,7 +345,9 @@ def sum_pod_requests(pod: dict) -> tuple[int, int]:
 
     return cpu_sum + init_cpu_max, mem_sum_b + init_mem_max_b
 
-def stat_snapshot(ctx: str) -> Snapshot:
+def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Snapshot:
+    _, scheduled, unscheduled = get_scheduled_and_unscheduled(ctx, ns, expected=expected, settle_timeout_sec=settle_timeout)
+    
     nodes = get_json_ctx(ctx, ["get","nodes","-o","json"])
     pods  = get_json_ctx(ctx, ["get","pods","--all-namespaces","-o","json"])
 
@@ -370,27 +370,17 @@ def stat_snapshot(ctx: str) -> Snapshot:
     mem_req = {n:0 for n in alloc}
     pods_run_by_node = {n:0 for n in alloc}
 
-    all_run = 0
-    all_notrun = 0
+
     cpu_req_all = 0
     mem_req_all = 0
-    total_pods_all = 0
-    scheduled_all = 0
 
     for p in pods["items"]:
-        total_pods_all += 1
         phase = (p.get("status",{}) or {}).get("phase","")
         node  = (p.get("spec",{}) or {}).get("nodeName","")
 
-        if node:
-            scheduled_all += 1
-
         if phase == "Running":
-            all_run += 1
             if node in pods_run_by_node:
                 pods_run_by_node[node] += 1
-        elif phase:
-            all_notrun += 1
 
         rcpu, rmem = sum_pod_requests(p)
         cpu_req_all += rcpu
@@ -404,21 +394,21 @@ def stat_snapshot(ctx: str) -> Snapshot:
     tot_cpu_req_run = sum(cpu_req.values())
     tot_mem_req_run_b = sum(mem_req.values())
 
-    # NEW: cluster-wide running utilization (fractions 0..1)
+    # Running utilization (fractions 0..1)
     cpu_run_util_frac_all = (tot_cpu_req_run / tot_cpu_alloc) if tot_cpu_alloc else 0.0
     mem_run_util_frac_all = (tot_mem_req_run_b / tot_mem_alloc_b) if tot_mem_alloc_b else 0.0
+    
+    
 
     return Snapshot(
         alloc=alloc,
         cpu_req_by_node=cpu_req,
         mem_req_by_node=mem_req,
         pods_run_by_node=pods_run_by_node,
-        total_pods_running=all_run,
-        total_pods_not_running=all_notrun,
+        total_pods_scheduled=scheduled,
+        total_pods_unscheduled=len(unscheduled),
         cpu_req_all=cpu_req_all,
         mem_req_all=mem_req_all,
-        total_pods_all=total_pods_all,
-        total_pods_scheduled=scheduled_all,
         cpu_run_util_frac_all=float(cpu_run_util_frac_all),
         mem_run_util_frac_all=float(mem_run_util_frac_all),
     )
@@ -527,14 +517,14 @@ def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = 
 
     return last_count
 
-
-def wait_until_settled_or_unschedulable_events(
+# TODO: RETURN scheduled list
+def get_scheduled_and_unscheduled(
     ctx: str,
     ns: str,
     expected: int,
     interval: float = 0.5,
     settle_timeout_sec: int | None = None
-) -> tuple[str, dict]:
+) -> Tuple[str, List[str], List[str]]:
     """
     Poll pod events until we can decide:
       - ("all_scheduled", {"scheduled": N})
@@ -549,17 +539,17 @@ def wait_until_settled_or_unschedulable_events(
 
         # all_scheduled
         if scheduled >= expected:
-            return "all_scheduled", {"scheduled": scheduled}
+            return "all_scheduled", scheduled, None
 
         # some_unschedulable (we've 'decided' about at least expected pods: scheduled + failed_like)
         if (scheduled + failed_like) >= expected and failed_like > 0:
             unschedulable = [p for p, st in states.items() if st in {"failed_scheduling", "preempted"}]
-            return "some_unschedulable", {"unschedulable": sorted(unschedulable)}
+            return "some_unschedulable", scheduled, sorted(unschedulable)
 
         # timeout?
         if settle_timeout_sec is not None and (time.time() - start) >= settle_timeout_sec:
             unschedulable = [p for p, st in states.items() if st in {"failed_scheduling", "preempted"}]
-            return "timeout", {"states": states}
+            return "timeout", scheduled, sorted(unschedulable)
 
         time.sleep(interval)
 

@@ -96,13 +96,13 @@ class KwokStats:
         """
         Run the statistics collection and reporting.
         """
-        s = stat_snapshot(self.ctx)
+        s = stat_snapshot(self.ctx, ns="default", expected=None, settle_timeout=10.0) #TODO: fix ns and expected
         self._printer(f"[kwok-stats] context: {self.ctx}")
         self._printer(self._node_table(s.alloc, s.cpu_req_by_node, s.mem_req_by_node, s.pods_run_by_node))
         self._printer("")
         self._printer("Stats (Running Pods Only)")
         run_only, totals = self._totals_tables(s.alloc, s.cpu_req_by_node, s.mem_req_by_node,
-                                               s.total_pods_running, s.total_pods_not_running, s.cpu_req_all, s.mem_req_all)
+                                               s.total_pods_scheduled, s.total_pods_unscheduled, s.cpu_req_all, s.mem_req_all)
         self._printer(run_only)
         self._printer("")
         self._printer("Stats (All Pods, incl. unscheduled)")

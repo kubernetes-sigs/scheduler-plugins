@@ -15,7 +15,7 @@ import shlex
 import argparse
 import subprocess
 from pathlib import Path
-from kwok_shared import stat_snapshot, wait_until_settled_or_unschedulable_events, parse_timeout_s
+from kwok_shared import stat_snapshot, get_scheduled_and_unscheduled, parse_timeout_s
 
 # ---------- helpers ----------
 
@@ -58,11 +58,11 @@ def ensure_header(path: Path) -> None:
             ])
 
 def collect_metrics(ctx: str, ns: str, expected: int, settle_timeout: float) -> tuple[int, int, float, float]:
-    outcome, info = wait_until_settled_or_unschedulable_events(ctx, ns, expected=expected, settle_timeout_sec=settle_timeout)
-    s = stat_snapshot(ctx)
+    time.sleep(3)  # slight delay to allow metrics to settle
+    s = stat_snapshot(ctx, ns, expected=expected, settle_timeout=settle_timeout)
     return (
         int(s.total_pods_scheduled),
-        int(s.total_pods_all),
+        int(s.total_pods_unscheduled),
         float(s.cpu_run_util_frac_all),
         float(s.mem_run_util_frac_all),
     )
@@ -179,21 +179,21 @@ def main():
                         print("[warn] generator run failed; still recording metrics (may be zeros)")
 
                     try:
-                        scheduled, total, cpu_u, mem_u = collect_metrics(ctx, args.namespace, expected=nn*ppn, settle_timeout=parse_timeout_s(args.settle_timeout))
+                        scheduled, unscheduled, cpu_u, mem_u = collect_metrics(ctx, args.namespace, expected=nn*ppn, settle_timeout=parse_timeout_s(args.settle_timeout))
                     except Exception as e:
                         print(f"[warn] metrics collection failed: {e!r}")
-                        scheduled, total, cpu_u, mem_u = 0, 0, 0.0, 0.0
+                        scheduled, unscheduled, cpu_u, mem_u = 0, 0, 0.0, 0.0
 
                     ts = int(time.time())
                     with combo_file.open("a", newline="") as f:
                         w = csv.writer(f)
                         w.writerow([
                             ts, cluster, nn, ppn, f"{util:.2f}", rep,
-                            scheduled, total, f"{cpu_u:.6f}", f"{mem_u:.6f}"
+                            scheduled, unscheduled, f"{cpu_u:.6f}", f"{mem_u:.6f}"
                         ])
 
                     print(f"[run][n={nn} ppn={ppn} util={util:.2f}] "
-                          f"scheduled={scheduled}/{total} cpu_run_util={cpu_u*100:.2f}% mem_run_util={mem_u*100:.2f}%")
+                          f"scheduled={scheduled}/{scheduled+unscheduled} cpu_run_util={cpu_u*100:.2f}% mem_run_util={mem_u*100:.2f}%")
 
                 print(f"[combo done] {combo_file}")
 
