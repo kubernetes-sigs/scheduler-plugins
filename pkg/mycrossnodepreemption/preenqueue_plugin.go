@@ -21,7 +21,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		klog.V(V2).Info("Caches not warmed up yet; skipping plugin logic")
 		return framework.NewStatus(framework.Pending, "Caches not warmed up yet; skipping plugin logic")
 	}
-	_ = pl.pruneStaleSetEntries(pl.Blocked)
+	_ = pl.pruneSetEntries(pl.Blocked)
 
 	switch pl.decideStrategy(PhasePreEnqueue) {
 	case DecidePassThrough:

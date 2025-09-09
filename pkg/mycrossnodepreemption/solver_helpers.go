@@ -46,7 +46,7 @@ func (s UIDSet) Del(uid string)      { delete(s, uid) }
 func (s UIDSet) Has(uid string) bool { _, ok := s[uid]; return ok }
 
 // runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
-func runSolverDirectFit(in SolverInput, base *preparedState) *SolverOutput {
+func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	nodes, _, order, worklist := base.freshClone()
 	if len(worklist) == 0 {
 		return &SolverOutput{Status: "UNKNOWN"}
@@ -64,7 +64,7 @@ func runSolverDirectFit(in SolverInput, base *preparedState) *SolverOutput {
 			placements[p.UID] = to
 			continue
 		}
-		if base.single { // single-preemptor must place or fail
+		if base.Single { // single-preemptor must place or fail
 			return stableOutput("INFEASIBLE", placements, nil, in)
 		}
 		stop = true
@@ -77,7 +77,7 @@ func runSolverDirectFit(in SolverInput, base *preparedState) *SolverOutput {
 }
 
 // runSolverCommon runs a solver plan function on the input and prepared state.
-func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *preparedState) *SolverOutput {
+func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedState) *SolverOutput {
 	klog.V(V2).InfoS("Running solver", "tag", tag)
 	nodes, pods, order, worklist := base.freshClone()
 	if len(worklist) == 0 {
@@ -100,19 +100,19 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *preparedSt
 		if stop && p.Priority <= stopAt {
 			break
 		}
-		if base.single && base.pre != nil && p.UID != base.pre.UID {
+		if base.Single && base.Preemptor != nil && p.UID != base.Preemptor.UID {
 			continue
 		}
 		placed, infeasible := placeOnePodCommon(
 			plan,
 			p, nodes, pods, order,
-			base.moveGate,
-			evictGateForPod(p, base.single, base.pre),
+			base.MoveGate,
+			evictGateForPod(p, base.Single, base.Preemptor),
 			movedUIDs, newPlacements, &evicts,
 			maxTrials,
 		)
 		if !placed {
-			if base.single || infeasible {
+			if base.Single || infeasible {
 				return stableOutput("INFEASIBLE", newPlacements, evicts, in)
 			}
 			stop = true

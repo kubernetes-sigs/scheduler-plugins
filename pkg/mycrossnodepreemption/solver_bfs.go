@@ -352,6 +352,7 @@ func cloneDeficits(deficit []Deficit) []Deficit {
 	return c
 }
 
+// Deficit represents a CPU/Mem deficit to free on a node.
 type Deficit struct {
 	// Name of the node with this deficit
 	Node string
@@ -361,6 +362,7 @@ type Deficit struct {
 	DeficitMem int64
 }
 
+// BfsState is a node in the BFS search tree.
 type BfsState struct {
 	// Outstanding nodes to free (front is active)
 	Deficits []Deficit

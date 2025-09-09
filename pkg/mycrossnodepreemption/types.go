@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -24,7 +25,57 @@ type MyCrossNodePreemption struct {
 	CachesWarm atomic.Bool
 }
 
-// ===== Workload identification =====
+// ===== Plan =====
+
+type StoredPlan struct {
+	// Plugin version that generated the plan
+	PluginVersion string `json:"pluginVersion"`
+	// The optimization mode used
+	OptimizationStrategy string `json:"optimizationStrategy"`
+	// When the plan was generated
+	GeneratedAt time.Time `json:"generatedAt"`
+	// When the plan was completed (if ever)
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	// Status of the plan
+	Status PlanStatus `json:"status"`
+	// Single-preemptor metadata
+	Preemptor *Preemtor `json:"preemptor,omitempty"`
+	// Evicted pods
+	Evicts []Placement `json:"evicts,omitempty"`
+	// Moved pods
+	Moves []NewPlacement `json:"moves,omitempty"`
+	// Solver summary (status & score)
+	Solver SolverSummary `json:"solver"`
+	// All pods and their old placements
+	OldPlacements []Placement `json:"oldPlacements,omitempty"`
+	// All pods and their new placements
+	NewPlacement []NewPlacement `json:"newPlacement,omitempty"`
+	// Placement by name for standalone pods: ns/name -> node
+	PlacementByName map[string]string `json:"placementsByName,omitempty"`
+	// Workload quotas for new placed pods that are part of a workload
+	WorkloadQuotasDoc WorkloadQuotas `json:"workloadQuotas,omitempty"`
+}
+
+type PlanStatus string
+
+const (
+	PlanStatusActive    PlanStatus = "Active"
+	PlanStatusCompleted PlanStatus = "Completed"
+	PlanStatusFailed    PlanStatus = "Failed"
+)
+
+// ===== Runtime indices for fast execution =====
+type ActivePlanState struct {
+	ID                  string
+	WorkloadPerNodeCnts WorkloadPerNodeCnts
+	PlacementByName     map[string]string // pod ns/name -> targetNode
+	Ctx                 context.Context
+	Cancel              context.CancelFunc
+}
+
+type WorkloadPerNodeCnts map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
+
+// ===== Workload types =====
 
 type WorkloadKind int
 
@@ -40,6 +91,8 @@ type WorkloadKey struct {
 	Namespace string
 	Name      string
 }
+
+type WorkloadQuotas map[string]map[string]int32
 
 // ===== Optimization modes =====
 
@@ -84,7 +137,7 @@ const (
 	PhaseContinuous Phase = "ContinuousLoop"
 )
 
-// ===== Solver I/O (unchanged, just kept) =====
+// ===== Solver types =====
 
 const (
 	SolverModeLexi     = "lexi"
@@ -140,6 +193,15 @@ type SolverSummary struct {
 	Score    Score         `json:"score,omitempty"`
 }
 
+type SolverAttempt struct {
+	Name    string
+	Enabled bool
+	Timeout time.Duration
+	Trials  int
+	FudgeMs int64
+	Run     func(ctx context.Context, in SolverInput) (*SolverOutput, error)
+}
+
 // ===== Building blocks =====
 
 type Score struct {
@@ -170,55 +232,14 @@ type Preemtor struct {
 	NominatedNode string `json:"nominatedNode"`
 }
 
-// ===== Plan =====
-
-type StoredPlan struct {
-	// Plugin version that generated the plan
-	PluginVersion string `json:"pluginVersion"`
-	// The optimization mode used
-	OptimizationStrategy string `json:"optimizationStrategy"`
-	// When the plan was generated
-	GeneratedAt time.Time `json:"generatedAt"`
-	// When the plan was completed (if ever)
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
-	// Status of the plan
-	Status PlanStatus `json:"status"`
-	// Single-preemptor metadata
-	Preemptor *Preemtor `json:"preemptor,omitempty"`
-	// Evicted pods
-	Evicts []Placement `json:"evicts,omitempty"`
-	// Moved pods
-	Moves []NewPlacement `json:"moves,omitempty"`
-	// Solver summary (status & score)
-	Solver SolverSummary `json:"solver"`
-	// All pods and their old placements
-	OldPlacements []Placement `json:"oldPlacements,omitempty"`
-	// All pods and their new placements
-	NewPlacement []NewPlacement `json:"newPlacement,omitempty"`
-	// Placement by name for standalone pods: ns/name -> node
-	PlacementByName map[string]string `json:"placementsByName,omitempty"`
-	// Workload quotas for new placed pods that are part of a workload
-	WorkloadQuotasDoc WorkloadQuotas `json:"workloadQuotas,omitempty"`
-}
-
-type PlanStatus string
-
-const (
-	PlanStatusActive    PlanStatus = "Active"
-	PlanStatusCompleted PlanStatus = "Completed"
-	PlanStatusFailed    PlanStatus = "Failed"
-)
-
-// ===== Runtime indices for fast execution =====
-
-type WorkloadPerNodeCnts map[string]map[string]*atomic.Int32 // workloadKey -> node -> remaining
-
-type ActivePlanState struct {
-	ID                  string
-	WorkloadPerNodeCnts WorkloadPerNodeCnts
-	PlacementByName     map[string]string // pod ns/name -> targetNode
-	Ctx                 context.Context
-	Cancel              context.CancelFunc
+type PreparedState struct {
+	Nodes     map[string]*SolverNode
+	Pods      map[string]*SolverPod
+	Order     []*SolverNode
+	Preemptor *SolverPod
+	Worklist  []*SolverPod
+	Single    bool
+	MoveGate  *int32
 }
 
 // ===== Flow / misc =====
@@ -231,6 +252,19 @@ type FlowResult struct {
 	TotalPostPlan, TotalPrePlan   int
 	SolverStatus                  string
 	TotalDuration, SolverDuration time.Duration
+}
+
+// ToPodType converts a Pod to a PodType.
+func ToPodType(p *v1.Pod, node string) SolverPod {
+	return SolverPod{
+		UID:         string(p.UID),
+		Namespace:   p.Namespace,
+		Name:        p.Name,
+		ReqCPUm:     getPodCPURequest(p),
+		ReqMemBytes: getPodMemoryRequest(p),
+		Priority:    getPodPriority(p),
+		Node:        node,
+	}
 }
 
 // ===== PodSet =====

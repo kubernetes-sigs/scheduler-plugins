@@ -25,7 +25,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		pl.Blocked.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 	}
-	_ = pl.pruneStaleSetEntries(pl.Blocked)
+	_ = pl.pruneSetEntries(pl.Blocked)
 
 	switch pl.decideStrategy(PhasePostFilter) {
 	case DecidePassThrough:

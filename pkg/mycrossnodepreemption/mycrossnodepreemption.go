@@ -28,7 +28,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		Batched: newPodSet(),
 	}
 
-	if !pl.isSolverEnabled() { // ensure at least one solver is enabled
+	if !pl.IsSolverEnabled() { // ensure at least one solver is enabled
 		klog.Error("No solver is enabled")
 		return nil, fmt.Errorf("no solver is enabled")
 	}
@@ -47,13 +47,13 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	ssInf := f.Apps().V1().StatefulSets().Informer()
 	dsInf := f.Apps().V1().DaemonSets().Informer()
 	jobInf := f.Batch().V1().Jobs().Informer()
-	go pl.WaitForInformersSynced(ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
+	go pl.waitForInformersSyncedAndNodes(ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
 
 	// Ensure Active is set to false
 	pl.Active.Store(false)
 
 	// Plugin configuration
-	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", modeToString())
+	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", strategyToString())
 	klog.InfoS("Solver configuration", "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "timeout", SolverPythonTimeout.String())
 	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
 	if optimizeInBatches() || optimizeContinuously() {

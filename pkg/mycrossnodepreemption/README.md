@@ -32,6 +32,7 @@ TODO
 
 ## TODOs Plugin
 
+- Only activate pods we need to schedule
 - Somehow ensure that the cluster state is the same throghout execution. Consider to evict non-planned pods.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.

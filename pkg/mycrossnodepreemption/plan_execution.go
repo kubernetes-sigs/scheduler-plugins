@@ -30,7 +30,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 
 	doc := &StoredPlan{
 		PluginVersion:        Version,
-		OptimizationStrategy: modeToString(),
+		OptimizationStrategy: strategyToString(),
 		GeneratedAt:          time.Now().UTC(),
 		Status:               PlanStatusActive,
 		Evicts:               evicts,
@@ -82,11 +82,11 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	defer overallCancel()
 
 	resolve := func(uid, ns, name string) *v1.Pod {
-		l := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-		if p, err := l.Pods(ns).Get(name); err == nil && p != nil && string(p.UID) == uid {
+		podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+		if p, err := podLister.Pods(ns).Get(name); err == nil && p != nil && string(p.UID) == uid {
 			return p
 		}
-		if pods, err := l.Pods(ns).List(labels.Everything()); err == nil {
+		if pods, err := podLister.Pods(ns).List(labels.Everything()); err == nil {
 			for _, p := range pods {
 				if string(p.UID) == uid {
 					return p
