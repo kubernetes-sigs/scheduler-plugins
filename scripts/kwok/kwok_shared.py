@@ -462,6 +462,7 @@ def wait_pod(ctx: str, name: str, ns: str, timeout_sec: int, mode: str = "ready"
         except Exception:
             pass
         time.sleep(0.5)
+    print(f"[wait-pod] timeout waiting for pod '{name}' in ns '{ns}' to be {mode}")
     return 0
 
 def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = "ready") -> int:
@@ -507,6 +508,7 @@ def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = 
 
         time.sleep(0.5)
 
+    print(f"[wait-rs-pods] timeout waiting for RS '{rs_name}' in ns '{ns}' to have desired pods ready")
     return last_count
 
 def get_timestamp() -> str:

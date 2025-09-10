@@ -11,7 +11,7 @@ from kwok_shared import (
     ensure_kwok_cluster, delete_kwok_nodes, create_kwok_nodes,
     ensure_namespace, ensure_priority_classes, apply_yaml,
     wait_each, wait_rs_pods, get_scheduled_and_unscheduled,
-    stat_snapshot, csv_append_row,
+    stat_snapshot, csv_append_row, scale_replicaset,
     cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
     parse_cpu_interval, parse_mem_interval, resolve_interval_or_fallback,
     gen_parts_constrained, partition_int, format_interval_cpu, format_interval_mem,
@@ -255,7 +255,9 @@ class KwokTestGenerator:
             apply_yaml(self.ctx, yaml_kwok_pod(ns, name, qcpu, qmem, pc))
             names.append(name)
             specs.append({"name": name, "cpu_m": cpu_m, "mem_mi": mem_mi, "priority": pc})
-        if wait_mode:
+            if wait_mode == "running":
+                _ = wait_each(self.ctx, "pod", name, ns, wait_timeout_s, wait_mode)
+        if wait_mode in ("exist", "ready"):
             for name in names:
                 _ = wait_each(self.ctx, "pod", name, ns, wait_timeout_s, wait_mode)
         return specs
@@ -289,11 +291,17 @@ class KwokTestGenerator:
 
             qcpu = cpu_m_int_to_str(int(avg_mc))
             qmem = mem_mi_int_to_str(int(avg_mi))
-            apply_yaml(self.ctx, yaml_kwok_rs(ns, rsname, int(count), qcpu, qmem, pc))
             specs.append({"name": rsname, "replicas": int(count), "cpu_m": int(avg_mc), "mem_mi": int(avg_mi), "priority": pc})
-
-            if wait_mode:
-                _ = wait_rs_pods(self.ctx, rsname, ns, wait_timeout_s, wait_mode)
+            # when creating the RS, set replicas=0
+            apply_yaml(self.ctx, yaml_kwok_rs(ns, rsname, 0, qcpu, qmem, pc))
+            # then scale 1..count, waiting each step
+            for r in range(1, int(count) + 1):
+                scale_replicaset(self.ctx, ns, rsname, r)
+                if wait_mode == "running":
+                    _ = wait_rs_pods(self.ctx, rsname, ns, wait_timeout_s, wait_mode)
+        if wait_mode in ("exist", "ready"):
+            for spec in specs:
+                _ = wait_each(self.ctx, "rs", spec["name"], ns, wait_timeout_s, wait_mode)
         return specs
 
     # ---------- per-seed execution ----------
@@ -413,22 +421,6 @@ class KwokTestGenerator:
                         "node": node,
                     })
 
-            if self.args.divide_scheduled_unscheduled:
-                sched_path = self.results_dir / f"{cfg.stem}_scheduled.csv"
-                unsched_path = self.results_dir / f"{cfg.stem}_unscheduled.csv"
-
-                # On override, drop previous rows for this seed in both files
-                if replace_existing:
-                    self._rewrite_csv_without_seed(sched_path, str(seed_int), RESULTS_HEADER)
-                    self._rewrite_csv_without_seed(unsched_path, str(seed_int), RESULTS_HEADER)
-
-                # Ensure headers then append the same summary row to both CSVs
-                self._ensure_csv_with_header(sched_path, RESULTS_HEADER)
-                self._ensure_csv_with_header(unsched_path, RESULTS_HEADER)
-                self._append_rows(sched_path, RESULTS_HEADER, [result_row])
-                self._append_rows(unsched_path, RESULTS_HEADER, [result_row])
-
-            # summary CSV row (kept regardless of split setting)
             result_row = {
                 "timestamp": get_timestamp(),
                 "kwok_config": str(cfg),
@@ -454,14 +446,32 @@ class KwokTestGenerator:
                 "unscheduled_count": int(len(unschedulable_names)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
                 "placed_by_priority": json.dumps(placed_by_priority, separators=(",", ":")),
-                "scheduled": scheduled_braced,
-                "unscheduled": unscheduled_braced,
+                "scheduled": scheduled_braced,          # e.g. "{pod-a,pod-b}"
+                "unscheduled": unscheduled_braced,      # e.g. "{pod-x}"
                 "pod_node": json.dumps(pod_node_list, separators=(",", ":")),
             }
 
+            # If splitting, write the SAME row to both split CSVs
+            if self.args.divide_scheduled_unscheduled:
+                sched_path = self.results_dir / f"{cfg.stem}_scheduled.csv"
+                unsched_path = self.results_dir / f"{cfg.stem}_unscheduled.csv"
+
+                self._ensure_csv_with_header(sched_path, RESULTS_HEADER)
+                self._ensure_csv_with_header(unsched_path, RESULTS_HEADER)
+
+                if replace_existing:
+                    # always clean both to avoid stale rows
+                    self._rewrite_csv_without_seed(sched_path, str(seed_int), RESULTS_HEADER)
+                    self._rewrite_csv_without_seed(unsched_path, str(seed_int), RESULTS_HEADER)
+
+                if len(unschedulable_names) > 0:
+                    self._append_rows(unsched_path, RESULTS_HEADER, [result_row])
+                else:
+                    self._append_rows(sched_path, RESULTS_HEADER, [result_row])
+
+            # Always append to the primary per-config CSV
             if replace_existing:
                 self._rewrite_results_without_seed(result_csv, seed_int)
-
             csv_append_row(result_csv, RESULTS_HEADER, result_row)
             seen.add(seed_int)
             print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> appended (unsched={len(unschedulable_names)})")
