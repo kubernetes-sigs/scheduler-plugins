@@ -14,7 +14,7 @@ import time
 import argparse
 import subprocess
 from pathlib import Path
-from kwok_shared import stat_snapshot, parse_timeout_s, ensure_cluster, env_default, env_bool, parse_int_list, parse_float_list, ensure_dir
+from kwok_shared import stat_snapshot, parse_timeout_s, ensure_kwok_cluster, env_default, env_bool, parse_int_list, parse_float_list, ensure_dir
 
 def ensure_header(path: Path) -> None:
     if not path.exists():
@@ -76,7 +76,7 @@ def main():
     cluster = args.cluster_name
     ctx = f"kwok-{cluster}"
 
-    ensure_cluster(cluster, kwok_config, recreate=True)
+    ensure_kwok_cluster(cluster, kwok_config, recreate=True)
 
     pods_per_node_list = parse_int_list(args.pods_per_node_list)
     num_nodes_list = parse_int_list(args.num_nodes_list)

@@ -28,14 +28,13 @@ class KwokStats:
         return tabulate(rows, headers=headers, tablefmt="fancy_grid", stralign="right")
 
     def _totals_table(self, cpu_run_util: float, mem_run_util: float,
-                      cpu_total_util: float, mem_total_util: float,
                       total_running: int, total_not_running: int) -> str:
         """
         Show running and total utilizations, plus pod counts.
         """
         rows = [[
-            f"{cpu_run_util*100:.1f}%/{cpu_total_util*100:.1f}%",
-            f"{mem_run_util*100:.1f}%/{mem_total_util*100:.1f}%",
+            f"{cpu_run_util*100:.1f}%",
+            f"{mem_run_util*100:.1f}%",
             f"{total_running}/{total_running+total_not_running}"
         ]]
         headers = [
@@ -55,15 +54,12 @@ class KwokStats:
         self._printer(self._node_table(s.pods_run_by_node))
         self._printer("")
         self._printer("Cluster utilization and pod totals")
-        self._printer(self._totals_table(
-            s.cpu_run_util, s.mem_run_util,     # running-only util
-            s.cpu_total_util, s.mem_total_util, # total util (capped by alloc)
-            len(s.pods_scheduled), len(s.pods_unscheduled)
+        self._printer(self._totals_table(s.cpu_run_util, s.mem_run_util, len(s.pods_scheduled), len(s.pods_unscheduled)
         ))
 
 def main():
     ap = argparse.ArgumentParser(description="Show KWOK stats: running/total utilization and pods per node.")
-    ap.add_argument("cluster_name", help="Cluster short name (context will be kwok-<cluster_name>)")
+    ap.add_argument("--cluster_name", help="Cluster short name (context will be kwok-<cluster_name>)", default="kwok1")
     ap.add_argument("--namespace", "-n", default="crossnode-test", help="Namespace to inspect")
     ap.add_argument("--expected", type=int, default=0,
                     help="Expected pod count for waiting logic in stat_snapshot; 0 means don't wait")

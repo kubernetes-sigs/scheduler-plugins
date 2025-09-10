@@ -2,11 +2,29 @@
 
 # kwok_shared.py
 
-import os, time, random, subprocess, json, textwrap
+import os, time, random, subprocess, json, textwrap, tempfile, csv
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+def seed_normalize_and_zero_pad(seed: int, width: int) -> tuple[int, str]:
+    """
+    Enforce a maximum length by cutting (keep LAST `width` digits), then left-pad with zeros.
+    Returns (normalized_int, zero_padded_str).
+    """
+    if width <= 0:
+        # no width: behave like identity, no padding/truncation
+        s = str(int(seed))
+        return int(seed), s
+    base = 10 ** width
+    norm = int(seed) % base                 # cut to max allowed length
+    return norm, str(norm).zfill(width)     # zero-pad to fixed width
+
+def seed_to_int(seed_val) -> int:
+    # seed may be zero-padded string; normalize to int (keep last digits)
+    s = str(seed_val)
+    return int(s.lstrip("0") or "0")
 
 # ---------- quantity helpers ----------
 def cpu_m_str_to_int(v: str) -> int:
@@ -78,7 +96,7 @@ def apply_yaml(ctx:str, yaml_text:str) -> subprocess.CompletedProcess:
     """
     return run(["kubectl","--context",ctx,"apply","-f","-"], input=yaml_text.encode(), check=True)
 
-def get_json_ctx(ctx: Optional[str], base_cmd: list[str]) -> dict:
+def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     """
     Get the JSON output from a kubectl command.
     """
@@ -105,12 +123,6 @@ def check_context(ctx_name: str) -> Optional[str]:
             return ctx_name
     return None
 
-def set_context(ctx_name: str) -> None:
-    """
-    Set the kubectl context to the specified context name.
-    """
-    run(["kubectl", "config", "use-context", ctx_name])
-
 def scale_replicaset(ctx: str, ns: str, rs_name: str, replicas: int) -> None:
     """Scale a ReplicaSet to a desired replica count."""
     run([
@@ -130,7 +142,7 @@ def get_rs_spec_replicas(ctx: str, ns: str, rs_name: str) -> Optional[int]:
         return None
 
 # -------------- cluster management --------------
-def ensure_namespace(ctx: str, ns: str, *, recreate: bool = False) -> None:
+def ensure_namespace(ctx: str, ns: str, *, recreate: bool = False, retries: int = 15, delay: float = 0.5) -> None:
     """
     Ensure the namespace exists in the given context.
     If recreate=True, delete it first, then (re)create if missing.
@@ -141,6 +153,15 @@ def ensure_namespace(ctx: str, ns: str, *, recreate: bool = False) -> None:
               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if rns.returncode != 0:
         run(["kubectl","--context",ctx,"create","ns",ns], check=True)
+    
+    # Ensure the default serviceaccount exists in the namespace; before we exit
+    for _ in range(1, retries + 1):
+        r = run(["kubectl","--context",ctx,"-n",ns,"get","sa","default"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r.returncode == 0:
+            print(f"[kwok-fill] Found default serviceaccount in ns '{ns}'")
+            break
+        time.sleep(delay)
 
 def delete_namespace(ctx: str, ns: str) -> None:
     """
@@ -149,31 +170,30 @@ def delete_namespace(ctx: str, ns: str) -> None:
     cmd = ["kubectl", "--context", ctx, "delete", "namespace", ns, "--ignore-not-found"]
     print(f"[kwok-fill] Deleting namespace '{ns}'...")
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT
+        )
         print(f"[kwok-fill] Namespace '{ns}' deleted (ctx={ctx})")
     except:
         print(f"[kwok-fill] Error deleting namespace '{ns}' in ctx={ctx}")
 
 import time
 
-def ensure_default_serviceaccount(ctx: str, ns: str, retries: int = 10, delay: float = 0.5) -> None:
+def ensure_priority_classes(
+    ctx: str,
+    num_priorities: int,
+    *,
+    prefix: str = "p",
+    start: int = 1,
+    delete_extras: bool = False,
+) -> None:
     """
-    Ensure that the 'default' ServiceAccount exists in the given namespace.
-    """
-    for _ in range(1, retries + 1):
-        r = run(["kubectl","--context",ctx,"-n",ns,"get","sa","default"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if r.returncode == 0:
-            print(f"[kwok-fill] Found default serviceaccount in ns '{ns}'")
-            return
-        time.sleep(delay)
-
-    raise RuntimeError(f"default serviceaccount not found in ns '{ns}'")
-
-
-def ensure_priority_classes(ctx: str, num_priorities: int, *, prefix: str = "p", start: int = 1) -> None:
-    """
-    Apply N PriorityClasses named {prefix}{i} for i in [start, start+N).
+    Ensure PriorityClasses {prefix}{i} for i in [start, start+num_priorities).
+    If delete_extras=True, remove any of our prefixed PCs outside that set
+    (never touches system/global-default classes).
     """
     pcs_yaml = "".join(
         yaml_priority_class(f"{prefix}{v}", v)
@@ -181,6 +201,9 @@ def ensure_priority_classes(ctx: str, num_priorities: int, *, prefix: str = "p",
     )
     if pcs_yaml:
         apply_yaml(ctx, pcs_yaml)
+
+    if delete_extras:
+        cleanup_priority_classes(ctx, desired_count=num_priorities, prefix=prefix, start=start)
 
 def cleanup_priority_classes(ctx: str, desired_count: int, *, prefix: str = "p", start: int = 1) -> None:
     """
@@ -207,18 +230,69 @@ def cleanup_priority_classes(ctx: str, desired_count: int, *, prefix: str = "p",
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 # ---------- KWOK management --------------
-def ensure_cluster(cluster_name: str, kwok_config: Path | None, recreate: bool = True) -> None:
+def prep_kwokctl_config_file(src: Path) -> tuple[Path, Path | None]:
+    """
+    If `src` is a multi-doc YAML, extract the document with
+    kind: KwokctlConfiguration into a temp file and return it.
+    Returns (path_to_pass_to_kwokctl, tmp_file_to_cleanup_or_None).
+    Falls back to (src, None) if PyYAML not present or doc not found.
+    """
+    try:
+        import yaml  # local import to keep optional
+    except Exception:
+        return src, None
+
+    try:
+        with open(src, "r", encoding="utf-8") as f:
+            docs = list(yaml.safe_load_all(f))
+    except Exception:
+        return src, None
+
+    chosen = None
+    for d in docs:
+        if isinstance(d, dict) and d.get("kind") == "KwokctlConfiguration":
+            # optionally also check apiVersion prefix
+            apiver = str(d.get("apiVersion", ""))
+            if not apiver.startswith("config.kwok.x-k8s.io/"):
+                continue
+            chosen = d
+            break
+    if chosen is None:
+        return src, None
+
+    # write chosen doc to a temp file
+    tf = tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml")
+    try:
+        yaml.safe_dump(chosen, tf, sort_keys=False)
+    finally:
+        tf.close()
+    return Path(tf.name), Path(tf.name)
+
+def ensure_kwok_cluster(name_or_ctx: str, kwok_config: str | Path | None, recreate: bool = True) -> None:
+    cluster_name = name_or_ctx[len("kwok-"):] if name_or_ctx.startswith("kwok-") else name_or_ctx
+    cfg_path = Path(kwok_config) if kwok_config else None
+
     if recreate:
         print(f"[setup] recreating kwok cluster '{cluster_name}'")
-        run(["kwokctl", "delete", "cluster", "--name", cluster_name], check=False)
-    if kwok_config and kwok_config.exists():
-        print(f"[setup] kwokctl create cluster --name {cluster_name} --config {kwok_config}")
-        run(["kwokctl", "create", "cluster", "--name", cluster_name, "--config", str(kwok_config)])
+        subprocess.run(["kwokctl", "delete", "cluster", "--name", cluster_name], check=False)
+
+    if cfg_path and cfg_path.exists():
+        cfg_for_kwokctl, tmp_to_cleanup = prep_kwokctl_config_file(cfg_path)
+        try:
+            print(f"[setup] kwokctl create cluster --name {cluster_name} --config {cfg_path}")
+            subprocess.run(
+                ["kwokctl", "create", "cluster", "--name", cluster_name, "--config", str(cfg_for_kwokctl)],
+                check=True
+            )
+        finally:
+            if tmp_to_cleanup and tmp_to_cleanup.exists():
+                try: os.unlink(tmp_to_cleanup)
+                except OSError: pass
     else:
-        if kwok_config and not kwok_config.exists():
-            print(f"[setup][warn] KWOK_CONFIG='{kwok_config}' not found; creating with defaults")
+        if cfg_path and not cfg_path.exists():
+            print(f"[setup][warn] KWOK_CONFIG='{cfg_path}' not found; creating with defaults")
         print(f"[setup] kwokctl create cluster --name {cluster_name}")
-        run(["kwokctl", "create", "cluster", "--name", cluster_name])
+        subprocess.run(["kwokctl", "create", "cluster", "--name", cluster_name], check=True)
 
 def create_kwok_nodes(ctx: str, num_nodes: int, node_cpu: str, node_mem: str, pods_cap: int) -> None:
     """
@@ -287,27 +361,49 @@ def sum_pod_requests(pod: dict) -> tuple[int, int]:
 
     return cpu_sum + init_cpu_max, mem_sum_b + init_mem_max_b
 
+def csv_append_row(
+    file_path: str | Path,
+    header: list[str],
+    row: dict,
+    *,
+    delimiter: str = ",",
+    lineterminator: str = "\n",
+    quoting: int = csv.QUOTE_MINIMAL,
+) -> None:
+    """
+    Append a single row to a CSV/TSV file, writing the header if the file is new/empty.
+    - Creates parent dirs.
+    - Ignores extra keys in 'row' not present in header (extrasaction='ignore').
+    - Uses configurable delimiter (default ',').
+    """
+    p = Path(file_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = p.exists()
+    needs_header = (not file_exists) or (p.stat().st_size == 0)
+
+    with open(p, "a", encoding="utf-8", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=header)
+        if needs_header:
+            wr.writeheader()
+        wr.writerow(row)
+        f.flush()
+
+
 @dataclass
 class Snapshot:
-    alloc: Dict[str, Tuple[int,int]]       # node -> (cpu m, mem bytes)
-    cpu_req_by_node: Dict[str,int]         # node -> m (Running & assigned only)
-    mem_req_by_node: Dict[str,int]         # node -> bytes (Running & assigned only)
-    pods_run_by_node: Dict[str,int]        # node -> running pods count
-    pods_scheduled: list[str]              # total running pods
-    pods_unscheduled: list[str]            # all not-running pods
-    total_cpu_req_m: int                   # all pods (incl. unscheduled), milliCPU
-    total_mem_req_b: int                   # all pods (incl. unscheduled), bytes
-    total_cpu_alloc_m: int                 # sum of node allocatable CPU (milliCPU)
-    total_mem_alloc_b: int                 # sum of node allocatable MEM (bytes)
     cpu_run_util: float                    # running requests / total alloc CPU
     mem_run_util: float                    # running requests / total alloc MEM
-    cpu_total_util: float                  # total requests / total alloc CPU
-    mem_total_util: float                  # total requests / total alloc MEM
+    pods_scheduled: list[str]              # total running pods
+    pods_unscheduled: list[str]            # all not-running pods
+    pods_run_by_node: Dict[str,int]        # node -> running pods count
+    cpu_req_by_node: Dict[str,int]         # node -> m (Running & assigned only)
+    mem_req_by_node: Dict[str,int]         # node -> bytes (Running & assigned only)
 
 def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Snapshot:
-    _, scheduled_names, unscheduled_names = get_scheduled_and_unscheduled(
+    _, scheduled_pairs, unscheduled = get_scheduled_and_unscheduled(
         ctx, ns, expected=expected, settle_timeout=settle_timeout
     )
+    scheduled = [n for (n, _) in scheduled_pairs]
 
     nodes = get_json_ctx(ctx, ["get","nodes","-o","json"])
     pods  = get_json_ctx(ctx, ["-n", ns, "get","pods","-o","json"])
@@ -330,15 +426,6 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
     cpu_req_m = {n:0 for n in alloc}
     mem_req_b = {n:0 for n in alloc}
     pods_run_by_node = {n:0 for n in alloc}
-    
-    # Prefer planned totals if available (resilient to preemption/deletion)
-    planned = read_plan_configmap(ctx, ns, "kwok-plan")
-    use_planned_totals = planned is not None
-    if use_planned_totals:
-        total_cpu_req_m, total_mem_req_b = planned
-    else:
-        total_cpu_req_m = 0
-        total_mem_req_b = 0
 
     for p in pods["items"]:
         phase = (p.get("status",{}) or {}).get("phase","")
@@ -348,11 +435,6 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
             pods_run_by_node[node] += 1
 
         rcpu, rmem = sum_pod_requests(p)
-        # Only accumulate live-pod totals if we don't have a planned total
-        if not use_planned_totals:
-            total_cpu_req_m += rcpu
-            total_mem_req_b += rmem
-
         if node and node in alloc and phase == "Running":
             cpu_req_m[node] += rcpu
             mem_req_b[node] += rmem
@@ -364,68 +446,16 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
     # Running utilization (0..1)
     cpu_run_util = (total_cpu_req_run_m / total_cpu_alloc_m) if total_cpu_alloc_m else 0.0
     mem_run_util = (total_mem_req_run_b / total_mem_alloc_b) if total_mem_alloc_b else 0.0
-    
-    # Total utilization (incl. unscheduled), capped by alloc (0..1)
-    cpu_total_util = (
-        min(total_cpu_req_m, total_cpu_alloc_m) / total_cpu_alloc_m if total_cpu_alloc_m else 0.0
-    )
-    mem_total_util = (
-        min(total_mem_req_b, total_mem_alloc_b) / total_mem_alloc_b if total_mem_alloc_b else 0.0
-    )
 
     return Snapshot(
-        alloc=alloc,
-        cpu_req_by_node=cpu_req_m,
-        mem_req_by_node=mem_req_b,
-        pods_run_by_node=pods_run_by_node,
-        pods_scheduled=scheduled_names,
-        pods_unscheduled=unscheduled_names,
-        total_cpu_req_m=total_cpu_req_m,
-        total_mem_req_b=total_mem_req_b,
-        total_cpu_alloc_m=total_cpu_alloc_m,
-        total_mem_alloc_b=total_mem_alloc_b,
         cpu_run_util=float(cpu_run_util),
         mem_run_util=float(mem_run_util),
-        cpu_total_util=float(cpu_total_util),
-        mem_total_util=float(mem_total_util),
+        pods_scheduled=scheduled,
+        pods_unscheduled=unscheduled,
+        pods_run_by_node=pods_run_by_node,
+        cpu_req_by_node=cpu_req_m,
+        mem_req_by_node=mem_req_b,
     )
-
-def write_plan_configmap(ctx: str, ns: str, name: str, plan: dict) -> None:
-    """
-    Store planned totals in a ConfigMap so totals remain correct even if pods are preempted.
-    `plan` should at least have {"total_cpu_m": int, "total_mem_mi": int}.
-    """
-    import textwrap, json
-    plan_json = json.dumps(plan, separators=(",", ":"))
-    yaml = textwrap.dedent(f"""\
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: {name}
-      namespace: {ns}
-      labels:
-        kwok.x/plan: "true"
-    data:
-      plan.json: |-
-        {plan_json}
-    """)
-    apply_yaml(ctx, yaml)
-
-def read_plan_configmap(ctx: str, ns: str, name: str = "kwok-plan") -> Optional[tuple[int, int]]:
-    """
-    Return (total_cpu_m, total_mem_bytes) from the plan ConfigMap if present, else None.
-    """
-    try:
-        cm = get_json_ctx(ctx, ["-n", ns, "get", "configmap", name, "-o", "json"])
-        data = (cm.get("data") or {}).get("plan.json")
-        if not data:
-            return None
-        plan = json.loads(data)
-        cpu_m = int(plan.get("total_cpu_m", 0))
-        mem_mi = int(plan.get("total_mem_mi", 0))
-        return cpu_m, mem_mi * 1024 * 1024
-    except Exception:
-        return None
 
 def compute_stat_totals(alloc: Dict[str,Tuple[int,int]], cpu_req_by_node: Dict[str,int], mem_req_by_node: Dict[str,int]) -> tuple[int, int, int, int]:
     """
@@ -463,19 +493,25 @@ def wait_each(ctx: str, kind: str, name: str, ns: str, timeout_sec: int, mode: s
         raise Exception(f"unknown kind for wait_each: {kind}")
 
 def wait_pod(ctx: str, name: str, ns: str, timeout_sec: int, mode: str = "ready") -> int:
-    """
-    Wait for a single pod. Returns 1 if pod reached the desired state, 0 otherwise.
-    """
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
         r = run(["kubectl","--context",ctx,"-n",ns,"get","pod",name,"-o","json"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+        # NEW: support exist
+        if mode == "exist":
+            if r.returncode == 0:
+                return 1
+            time.sleep(0.5)
+            continue
+
         if r.returncode != 0:
             time.sleep(0.5); continue
+
         try:
             pod = json.loads(r.stdout)
             phase = (pod.get("status") or {}).get("phase") or ""
-            conditions = pod.get("status", {}).get("conditions", [])
+            conditions = pod.get("status", {}).get("conditions", []) or []
             ready = any(c.get("type")=="Ready" and c.get("status")=="True" for c in conditions)
             if mode == "running" and phase == "Running":
                 return 1
@@ -539,25 +575,28 @@ def get_scheduled_and_unscheduled(
     expected: int,
     interval: float = 0.5,
     settle_timeout: Optional[int] = None
-) -> Tuple[str, List[str], List[str]]:
+) -> Tuple[str, List[Tuple[str, str]], List[str]]:
     """
     Poll pod events until we can decide:
-      - ("all_scheduled", [scheduled_pods], [])
-      - ("some_unschedulable", [scheduled_pods], [unschedulable_pods])
-      - ("timeout", [scheduled_pods], [unschedulable_pods])
+      - ("all_scheduled", [(pod, node), ...], [])
+      - ("some_unschedulable", [(pod, node), ...], [unschedulable_pods])
+      - ("timeout", [(pod, node), ...], [unschedulable_pods])
     Decision is based on the latest event per pod name.
     """
+    import re
+    node_from_msg = re.compile(r"\bto\s+([A-Za-z0-9._:-]+)\.?$")
+
     start = time.time()
     while True:
         cmd = ["kubectl", "--context", ctx, "-n", ns,
-        "get", "events",
-        "--field-selector", "involvedObject.kind=Pod",
-        "-o", "json"]
+               "get", "events",
+               "--field-selector", "involvedObject.kind=Pod",
+               "-o", "json"]
         out = subprocess.check_output(cmd)
         items = (json.loads(out) or {}).get("items", [])
 
-        # Track latest relevant event per pod name
-        latest: Dict[str, tuple[datetime, str]] = {}  # name -> (ts, state)
+        # name -> (ts, state, node)
+        latest: Dict[str, tuple[datetime, str, str]] = {}
 
         for ev in items:
             inv = (ev.get("involvedObject") or {})
@@ -566,46 +605,42 @@ def get_scheduled_and_unscheduled(
                 continue
 
             reason  = (ev.get("reason") or "").strip()
-            message = (ev.get("message") or "").lower()
-            # Choose best timestamp available
+            message = (ev.get("message") or "").strip()
             ts = (_rfc3339_to_dt(ev.get("eventTime") or "")
-                or _rfc3339_to_dt(ev.get("lastTimestamp") or "")
-                or _rfc3339_to_dt((ev.get("metadata") or {}).get("creationTimestamp") or ""))
+                  or _rfc3339_to_dt(ev.get("lastTimestamp") or "")
+                  or _rfc3339_to_dt((ev.get("metadata") or {}).get("creationTimestamp") or ""))
 
-            # Map reasons to coarse states
+            state = "other"
+            node = ""
             if reason == "Scheduled":
                 state = "scheduled"
-            elif reason == "Preempted":
-                state = "preempted"
+                m = node_from_msg.search(message)
+                if m:
+                    node = m.group(1)
             elif reason == "FailedScheduling":
                 state = "failed_scheduling"
-            elif reason == "Evicted" or "evict" in message:
+            elif reason == "Preempted":
                 state = "preempted"
-            else:
-                state = "other"
+            elif "evict" in message.lower():
+                state = "preempted"
 
             prev = latest.get(name)
             if (prev is None) or (ts > prev[0]):
-                latest[name] = (ts, state)
+                latest[name] = (ts, state, node)
 
-        states = {name: st for name, (_, st) in latest.items()}
-        
-        scheduled_pods = [p for p, st in states.items() if st == "scheduled"]
-        unschedulable_pods = [p for p, st in states.items() if st in {"failed_scheduling", "preempted"}]
+        scheduled_pairs = sorted([(n, node) for n, (_, st, node) in latest.items() if st == "scheduled"], key=lambda x: x[0])
+        unschedulable = sorted([n for n, (_, st, _) in latest.items() if st in {"failed_scheduling", "preempted"}])
 
-        failed_like = len(unschedulable_pods)
+        failed_like = len(unschedulable)
 
-        # all_scheduled
-        if len(scheduled_pods) >= expected:
-            return "all_scheduled", sorted(scheduled_pods), []
+        if len(scheduled_pairs) >= expected:
+            return "all_scheduled", scheduled_pairs, []
 
-        # some_unschedulable
-        if (len(scheduled_pods) + failed_like) >= expected and failed_like > 0:
-            return "some_unschedulable", sorted(scheduled_pods), sorted(unschedulable_pods)
+        if (len(scheduled_pairs) + failed_like) >= expected and failed_like > 0:
+            return "some_unschedulable", scheduled_pairs, unschedulable
 
-        # timeout
         if settle_timeout is not None and (time.time() - start) >= settle_timeout:
-            return "timeout", sorted(scheduled_pods), sorted(unschedulable_pods)
+            return "timeout", scheduled_pairs, unschedulable
 
         time.sleep(interval)
 
@@ -765,26 +800,11 @@ def feasible_range(interval: Tuple[int,int], k:int) -> Tuple[int,int]:
     lo, hi = interval
     return lo * k, hi * k
 
-def auto_interval_from_target(total: int, k: int, spread: Optional[float] = None) -> tuple[int,int]:
-    """
-    If spread>0: non-degenerate interval around average, clamped to >=1 and hi>lo.
-    Else: tight reachable interval (avg .. avg or floor/ceil avg).
-    """
-    if k <= 0:
-        return (max(1, total), max(1, total))
-    avg = total / k
-    if spread is not None and spread > 0:
-        lo = max(1, int(avg * (1.0 - spread)))
-        hi = max(lo + 1, int(avg * (1.0 + spread)))
-        return (lo, hi)
-    base = total // k
-    rem  = total - base * k
-    return (max(1, base), max(1, base + (1 if rem else 0)))
-
-def resolve_interval_or_fallback(interval: Optional[Tuple[int,int]], k:int, total:int, label:str, spread: Optional[float] = None) -> tuple[Optional[Tuple[int,int]], bool]:
+def resolve_interval_or_fallback(interval: Optional[Tuple[int,int]], k:int, total:int, spread: Optional[float] = None) -> tuple[Optional[Tuple[int,int]], bool]:
     """
     Resolve an interval by checking its feasibility against the target.
     If not feasible and mode=='auto' -> use auto_interval_from_target(total,k,spread)
+    Return true if auto-derived interval is used.
     """
     if interval is None: # No interval specified
         return None, False
@@ -792,13 +812,21 @@ def resolve_interval_or_fallback(interval: Optional[Tuple[int,int]], k:int, tota
     if lo_sum <= total <= hi_sum: # Interval is feasible
         return interval, False
 
-    # Interval is not feasible; fall back to auto-derived interval
-    msg = (f"[kwok-fill][ERROR] {label} interval {interval[0]}-{interval[1]} over {k} pods "
-        f"cannot reach target {total} (range {lo_sum}..{hi_sum}).")
-    auto_int = auto_interval_from_target(total, k, spread=spread)
-    print(msg.replace("[ERROR]", "[WARN]") +
-        f"\n[kwok-fill][WARN] Falling back to auto-derived interval {auto_int} ({label}/pod).")
-    return auto_int, True
+    # Interval is not feasible; use auto-derived interval
+    if k <= 0:
+        lo = max(1, total)
+        hi = max(1, total)
+        return (lo, hi), True
+    avg = total / k
+    if spread is not None and spread > 0:
+        lo = max(1, int(avg * (1.0 - spread)))
+        hi = max(lo + 1, int(avg * (1.0 + spread)))
+        return (lo, hi), True
+    base = total // k
+    rem  = total - base * k
+    lo = max(1, base)
+    hi = max(1, base + (1 if rem else 0))
+    return (lo, hi), True
 
 # ----------- partitioning & distributions -----------
 def split_even(total:int, n:int) -> list[int]:
@@ -923,5 +951,5 @@ def parse_timeout_s(t:str) -> int:
     except Exception:
         return 60
 
-def ensure_dir(p: Path) -> None:
-    p.mkdir(parents=True, exist_ok=True)
+def ensure_dir(p) -> None:
+    Path(p).mkdir(parents=True, exist_ok=True)

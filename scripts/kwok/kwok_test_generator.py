@@ -1,554 +1,280 @@
 #!/usr/bin/env python3
+# kwok_instance_generator.py
 
-# kwok_test_generator.py
-
-import os, sys, argparse, random, time, json
-from typing import List
-from dataclasses import dataclass
-from collections import OrderedDict
+import os, sys, json, csv, time, argparse, random, re
+from typing import Tuple, Set, List, Dict, Optional
 
 from kwok_shared import (
-    parse_timeout_s, parse_cpu_interval, parse_mem_interval, resolve_interval_or_fallback, format_interval_cpu, format_interval_mem,
-    partition_int, gen_parts_constrained, pods_per_node_in_ns,
-    wait_each, get_scheduled_and_unscheduled,
-    ensure_namespace, create_kwok_nodes, delete_kwok_nodes, ensure_priority_classes,
-    ensure_default_serviceaccount,
-    yaml_kwok_pod, yaml_kwok_rs, apply_yaml, cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
-    compute_stat_totals, stat_snapshot, check_context, set_context,
-    get_json_ctx, sum_pod_requests, bytes_to_mib, scale_replicaset, wait_rs_pods, write_plan_configmap, read_plan_configmap
+    parse_cpu_interval, parse_mem_interval, resolve_interval_or_fallback,
+    gen_parts_constrained, cpu_m_str_to_int, mem_str_to_mib_int, ensure_dir,
+    seed_normalize_and_zero_pad, format_interval_cpu, format_interval_mem, csv_append_row
 )
 
-from kwok_stats import KwokStats
-
-@dataclass
-class TestTargets:
-    node_mc: int
-    node_mi: int
-    total_pods: int
-    target_mc_node: int
-    target_mi_node: int
-    target_mc_cluster: int
-    target_mi_cluster: int
-
-def load_instance_row(seed: int, path: str) -> dict | None:
-    """
-    Load a specific instance row from the seed file.
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    row = json.loads(line)
-                except Exception:
-                    continue
-                if int(row.get("seed", -1)) == int(seed):
-                    return row
-    except FileNotFoundError:
-        print(f"[kwok-fill][ERROR] seed file not found: {path}", file=sys.stderr)
-    return None
-
-def load_instance_into_args(args: argparse.Namespace) -> None:
-    """
-    If --load-instance is set, use --seed to look up an instance in --seed-file,
-    then override compatible CLI args with the saved row. Errors if --simulate is set.
-    """
-    if not getattr(args, "load_instance", False):
-        return
-
-    # Disallow combined usage with --simulate
-    if getattr(args, "simulate", False):
-        print("[kwok-fill][ERROR] --load-instance cannot be used together with --simulate", file=sys.stderr)
-        sys.exit(2)
-
-    if args.seed is None:
-        print("[kwok-fill][ERROR] --load-instance requires --seed to be specified", file=sys.stderr)
-        sys.exit(2)
-
-    row = load_instance_row(args.seed, args.seed_file)
-    if not row:
-        print(f"[kwok-fill][ERROR] seed {args.seed} not found in {args.seed_file}", file=sys.stderr)
-        sys.exit(2)
-
-    overrides = {
-        "num_nodes": "num_nodes",
-        "pods_per_node": "pods_per_node",
-        "num_replicaset": "num_replicaset",
-        "util": "util",
-        "util_tolerance": "util_tolerance",
-        "node_cpu": "node_cpu",
-        "node_mem": "node_mem",
-        "cpu_interval": "cpu_interval",
-        "mem_interval": "mem_interval",
-        "dist_mode": "dist_mode",
-        "variance": "variance",
-        "num_priorities": "num_priorities",
-        "simulate_add_condition": "simulate_add_condition",
-    }
-
-    for arg_name, row_key in overrides.items():
-        if row_key in row and row[row_key] is not None:
-            setattr(args, arg_name, row[row_key])
-
-    print(f"[kwok-fill] Loaded instance config from {args.seed_file} using seed={args.seed}")
-
-class KwokTestGeneratorRunner:
+class KwokInstanceGenerator:
     def __init__(self, args: argparse.Namespace):
         self.args = args
-        ctx_name = f"kwok-{args.cluster_name}"
-        # Retry a few times in case kwokctl just created the cluster
-        resolved_ctx = None
-        for attempt in range(10):  # up to ~5s
-            resolved_ctx = check_context(ctx_name)
-            if resolved_ctx:
-                break
-            print(f"[kwok-fill] Waiting for kubectl context '{ctx_name}' (attempt {attempt+1})...")
-            time.sleep(0.5)
-        if not resolved_ctx:
-            raise Exception(f"Could not resolve context for cluster '{args.cluster_name}'")
-        self.ctx = resolved_ctx
-        set_context(resolved_ctx)
-        self.ns = args.namespace
-        # seed/rng
-        if args.seed is not None:
-            self.rng = random.Random(args.seed)
-            self.seed_used = args.seed
-            print(f"[kwok-fill] Using fixed seed={args.seed}")
-        else:
-            self.seed_used = int(time.time_ns())
-            self.rng = random.Random(self.seed_used)
-            print(f"[kwok-fill] Using auto-random seed={self.seed_used}")
+        ensure_dir(self.args.output_dir)
 
-        # numbers / targets
-        node_mc = cpu_m_str_to_int(args.node_cpu)
-        node_mi = mem_str_to_mib_int(args.node_mem)
-        total_pods = args.num_nodes * args.pods_per_node
-        target_mc_node = int(node_mc * args.util)
-        target_mi_node = int(node_mi * args.util)
-        target_mc_cluster = target_mc_node * args.num_nodes
-        target_mi_cluster = target_mi_node * args.num_nodes
-        self.T = TestTargets(node_mc, node_mi, total_pods, target_mc_node, target_mi_node,
-                         target_mc_cluster, target_mi_cluster)
+        # ---- pre-compute cluster targets and resolve intervals ONCE ----
+        self.node_mc = cpu_m_str_to_int(args.node_cpu)
+        self.node_mi = mem_str_to_mib_int(args.node_mem)
+        self.total_pods = args.num_nodes * args.pods_per_node
+        self.tgt_mc_node = int(self.node_mc * args.util)
+        self.tgt_mi_node = int(self.node_mi * args.util)
+        self.tgt_mc_cluster = self.tgt_mc_node * args.num_nodes
+        self.tgt_mi_cluster = self.tgt_mi_node * args.num_nodes
 
-        # intervals (parsed)
-        self.cpu_int = parse_cpu_interval(args.cpu_interval)
-        self.mem_int = parse_mem_interval(args.mem_interval)
-
-    def _collect_pair_buckets(self, ns: str, mode_rs: bool) -> dict[tuple[int,int], list[str]]:
-        """
-        mode_rs=True  -> collect RS template (cpu_m, mem_mi) -> [rs_name...]
-        mode_rs=False -> collect standalone pod (cpu_m, mem_mi) -> [pod_name...]
-        """
-        buckets: dict[tuple[int,int], list[str]] = {}
-
-        if mode_rs:
-            rs_items = get_json_ctx(self.ctx, ["-n", ns, "get", "replicasets", "-o", "json"]).get("items", [])
-            for rs in rs_items:
-                name = (rs.get("metadata") or {}).get("name", "<nors>")
-                tpl = (rs.get("spec") or {}).get("template") or {}
-                containers = ((tpl.get("spec") or {}).get("containers") or [])
-                mc_sum = 0
-                mi_sum = 0
-                for c in containers:
-                    req = ((c.get("resources") or {}).get("requests") or {})
-                    mc_sum += cpu_m_str_to_int(str(req.get("cpu", "0")))
-                    mi_sum += mem_str_to_mib_int(str(req.get("memory", "0")))
-                pair = (int(mc_sum), int(mi_sum))
-                buckets.setdefault(pair, []).append(name)
-            return buckets
-
-        # standalone pods
-        pods = get_json_ctx(self.ctx, ["-n", ns, "get", "pods", "-o", "json"]).get("items", [])
-        for p in pods:
-            owners = (p.get("metadata", {}).get("ownerReferences") or [])
-            if any(o.get("controller") for o in owners):
-                continue  # skip controller-owned pods
-            name = (p.get("metadata") or {}).get("name", "<noname>")
-            mc, mem_b = sum_pod_requests(p)             # (mCPU, bytes)
-            pair = (int(mc), int(bytes_to_mib(mem_b)))  # normalize to (mCPU, MiB)
-            buckets.setdefault(pair, []).append(name)
-        return buckets
-
-
-    def _assert_unique_pairs_after_apply(self) -> None:
-        """
-        Fail the run if any (CPU_m, MEM_Mi) duplicates exist:
-        - RS mode: check RS templates
-        - Standalone mode: check pods without a controller owner
-        """
-        dup_msgs = []
-        # RS mode?
-        if self.args.num_replicaset > 0:
-            buckets = self._collect_pair_buckets(self.ns, mode_rs=True)
-            label = "RS template duplicate"
-        else:
-            buckets = self._collect_pair_buckets(self.ns, mode_rs=False)
-            label = "Standalone duplicate"
-
-        for pair, names in buckets.items():
-            if len(names) > 1:
-                dup_msgs.append(f"{label} {pair}: {', '.join(sorted(names))}")
-
-        if dup_msgs:
-            print("\n[check][FAIL] Found duplicate (CPU_m, MEM_Mi) pairs:")
-            for line in dup_msgs[:50]:
-                print(" - " + line)
-            if len(dup_msgs) > 50:
-                print(f"   ... and {len(dup_msgs)-50} more")
-            sys.exit(3)
-        else:
-            print("[check] Uniqueness OK: no duplicate (CPU_m, MEM_Mi) pairs")
-
-    def _save_seed_row(self, path: str, row: dict) -> None:
-        """
-        Save a specific instance row to the seed file.
-        """
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row) + "\n")
-
-    def _prio_for_step_desc(self, step:int, num_prios:int) -> int:
-        """
-        Get the priority for a specific step in the descending order.
-        """
-        if num_prios <= 1: return 1
-        return num_prios - ((step - 1) % num_prios)
-
-    def _ensure_intervals(self) -> None:
-        """
-        Ensure that the CPU and memory intervals are set correctly.
-        """
-        k_pods = self.T.total_pods
-        tgt_mc = self.T.target_mc_cluster
-        tgt_mi = self.T.target_mi_cluster
-
-        cpu_used, cpu_fell_back = resolve_interval_or_fallback(self.cpu_int, k_pods, tgt_mc, "CPU(m)", spread=0.9)
-        self.cpu_int = cpu_used
-
-        mem_used, mem_fell_back = resolve_interval_or_fallback(self.mem_int, k_pods, tgt_mi, "MEM(Mi)", spread=0.9)
-        self.mem_int = mem_used
-
-        # Update args if fell back
-        if cpu_fell_back and self.cpu_int:
-            self.args.cpu_interval = format_interval_cpu(self.cpu_int)
-        if mem_fell_back and self.mem_int:
-            self.args.mem_interval = format_interval_mem(self.mem_int)
-
-    def _apply_standalone_pods(self) -> int:
-        """
-        Apply standalone pods to the cluster.
-        """
-        # Derive per-pod requests for the whole cluster once
-        parts_cpu = gen_parts_constrained(
-            self.T.target_mc_cluster, self.T.total_pods,
-            self.rng, self.cpu_int, self.args.dist_mode, self.args.variance
+        parsed_cpu = parse_cpu_interval(args.cpu_interval)
+        parsed_mem = parse_mem_interval(args.mem_interval)
+        self.cpu_interval_used, _ = resolve_interval_or_fallback(
+            parsed_cpu, self.total_pods, self.tgt_mc_cluster, spread=0.9
         )
-        parts_mem = gen_parts_constrained(
-            self.T.target_mi_cluster, self.T.total_pods,
-            self.rng, self.mem_int, self.args.dist_mode, self.args.variance
+        self.mem_interval_used, _ = resolve_interval_or_fallback(
+            parsed_mem, self.total_pods, self.tgt_mi_cluster, spread=0.9
         )
+
+        # build basename using the **resolved** intervals
+        _, fname_jsonl = self._make_params_signature(
+            args, self.cpu_interval_used, self.mem_interval_used
+        )
+        self.seed_file_jsonl = os.path.join(self.args.output_dir, fname_jsonl)
+        self.seed_file_csv = os.path.splitext(self.seed_file_jsonl)[0] + ".csv"
+
+        self.seen: Set[int] = self._load_existing_seeds(self.seed_file_csv, self.seed_file_jsonl)
+        self.rng = random.Random(int(time.time_ns()))
+
+    # ---------- helpers ----------
+
+    @staticmethod
+    def _sanitize(s: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", s)
+
+    def _make_params_signature(
+        self,
+        args: argparse.Namespace,
+        cpu_interval_used: Optional[Tuple[int,int]],
+        mem_interval_used: Optional[Tuple[int,int]],
+    ) -> str:
+        sig = {
+            "n": args.num_nodes,
+            "ppn": args.pods_per_node,
+            "rs": args.num_replicaset,
+            "prio": args.num_priorities,
+            "u": f"{args.util:.3f}",
+            "tol": f"{args.util_tolerance:.3f}",
+            "cpu": str(args.node_cpu),
+            "mem": str(args.node_mem),
+            "ci": format_interval_cpu(cpu_interval_used) if cpu_interval_used else "auto",
+            "mi": format_interval_mem(mem_interval_used) if mem_interval_used else "auto",
+        }
+        sig_str = json.dumps(sig, sort_keys=True, separators=(",", ":"))
+
+        ci_str = self._sanitize(sig["ci"])
+        mi_str = self._sanitize(sig["mi"])
+        fname = (
+            f"seeds_"
+            f"{args.num_nodes}n_"
+            f"{args.pods_per_node}ppn_"
+            f"{args.num_replicaset}rs_"
+            f"{args.num_priorities}prio_"
+            f"{args.util:.3f}u_{args.util_tolerance:.3f}tol_"
+            f"cpu{self._sanitize(args.node_cpu)}_"
+            f"mem{self._sanitize(args.node_mem)}_"
+            f"ci{ci_str}_"
+            f"mi{mi_str}.jsonl"
+        )
+        return sig_str, fname
+
+    @staticmethod
+    def _load_existing_seeds(csv_path: str, jsonl_path: str) -> Set[int]:
+        seen: Set[int] = set()
+        if os.path.exists(csv_path):
+            try:
+                with open(csv_path, "r", encoding="utf-8", newline="") as f:
+                    rd = csv.DictReader(f)
+                    for row in rd:
+                        if not row: continue
+                        if "seed" in row and row["seed"] is not None:
+                            ss = str(row["seed"])
+                            seen.add(int(ss.lstrip("0") or "0"))
+                    return seen
+            except Exception:
+                print(f"[instance-generator] no existing seeds found in {csv_path} (error)", file=sys.stderr)
+                pass
         
-        # Publish the plan so totals remain correct even if pods get preempted/deleted
-        write_plan_configmap(
-            self.ctx, self.ns, "kwok-plan",
-            {
-                "kind": "kwokPlan",
-                "mode": "standalone",
-                "total_cpu_m": int(sum(parts_cpu)),
-                "total_mem_mi": int(sum(parts_mem)),
-                "seed": self.seed_used,
-            },
-        )
-        
-        created = 0
-        for k in range(self.T.total_pods):
-            prio = self.rng.randint(1, self.args.num_priorities); pc = f"p{prio}"
-            name = f"pod-{k+1:02d}-{pc}"
-            pod_yaml = yaml_kwok_pod(self.ns, name, cpu_m_int_to_str(max(1, parts_cpu[k])), mem_mi_int_to_str(max(1, parts_mem[k])), pc)
-            apply_yaml(self.ctx, pod_yaml)
-            created += 1
-            if self.args.wait_each:
-                tsec = parse_timeout_s(self.args.wait_timeout)
-                wait_each(self.ctx, "pod", name, self.ns, tsec, self.args.wait_mode)
-        return created
+        return seen
 
-    def _apply_rs(self) -> tuple[int, set[int]]:
-        """
-        Apply ReplicaSets.
+    @staticmethod
+    def _percentiles(xs: List[int], ps=(5,25,50,75,95)) -> Dict[str, int]:
+        if not xs:
+            return {f"p{p}": 0 for p in ps}
+        ys = sorted(xs)
+        n = len(ys)
+        out = {}
+        for p in ps:
+            k = max(1, min(n, int(round(p/100.0 * n))))
+            out[f"p{p}"] = ys[k-1]
+        return out
 
-        If wait_each && wait_mode == "running":
-        - Create RS with replicas=0
-        - Scale 1-by-1 up to the intended size, waiting to 'running' between steps.
-        Else:
-        - Create RS with the final replicas and (optionally) wait using the chosen wait_mode
-            (exist/ready/running) the same way as before.
-        """
-        rs_replicas = partition_int(self.T.total_pods, self.args.num_replicaset, 1, self.rng, self.args.variance)
-        per_pod_cpu = gen_parts_constrained(
-            self.T.target_mc_cluster, self.T.total_pods, self.rng, self.cpu_int, self.args.dist_mode, self.args.variance
-        )
-        per_pod_mem = gen_parts_constrained(
-            self.T.target_mi_cluster, self.T.total_pods, self.rng, self.mem_int, self.args.dist_mode, self.args.variance
-        )
-        write_plan_configmap(
-            self.ctx, self.ns, "kwok-plan",
-            {
-                "kind": "kwokPlan",
-                "mode": "replicaset",
-                "total_cpu_m": int(sum(per_pod_cpu)),
-                "total_mem_mi": int(sum(per_pod_mem)),
-                "seed": self.seed_used,
-            },
-        )
+    def _stat_header(self) -> List[str]:
+        # Keep a stable column order for CSV
+        base = [
+            "seed",
+            "cpu_m_min","cpu_m_max","cpu_m_mean","cpu_m_std","cpu_m_cv",
+            "cpu_m_p5","cpu_m_p25","cpu_m_p50","cpu_m_p75","cpu_m_p95",
+            "mem_mi_min","mem_mi_max","mem_mi_mean","mem_mi_std","mem_mi_cv",
+            "mem_mi_p5","mem_mi_p25","mem_mi_p50","mem_mi_p75","mem_mi_p95",
+            "unique_pair_ratio",
+        ]
+        return base
 
-        do_gradual = bool(self.args.wait_each and (self.args.wait_mode == "running"))
+    def _compute_stats(self, cpu_parts: List[int], mem_parts: List[int]) -> Dict[str, object]:
+        assert len(cpu_parts) == len(mem_parts)
+        n = len(cpu_parts)
+        if n == 0:
+            return {}
+        def basic(xs: List[int], label: str) -> Dict[str, object]:
+            mn = min(xs); mx = max(xs); sm = sum(xs); mean = sm / n
+            var = sum((x - mean) ** 2 for x in xs) / n
+            std = var ** 0.5
+            cv = (std / mean) if mean > 0 else 0.0
+            q = self._percentiles(xs)
+            return {
+                f"{label}_min": mn,
+                f"{label}_max": mx,
+                f"{label}_mean": mean,
+                f"{label}_std": std,
+                f"{label}_cv": cv,
+                **{f"{label}_{k}": v for k, v in q.items()},
+            }
+        pairs = {(int(cpu_parts[i]), int(mem_parts[i])) for i in range(n)}
+        uniq_ratio = len(pairs) / n
+        out = {}
+        out.update(basic(cpu_parts, "cpu_m"))
+        out.update(basic(mem_parts, "mem_mi"))
+        out["unique_pair_ratio"] = uniq_ratio
+        return out
 
-        offset = 0
-        total_created = 0
-        for i, count in enumerate(rs_replicas, start=1):
-            prio = self._prio_for_step_desc(i, self.args.num_priorities); pc = f"p{prio}"
-            rsname = f"rs-{i:02d}-{pc}"
-            slice_cpu = per_pod_cpu[offset:offset+count]
-            slice_mem = per_pod_mem[offset:offset+count]
+    def _generate_and_verify(
+        self,
+        seed: int,
+        num_nodes: int,
+        util: float,
+        util_tolerance: float,
+        dist_mode: str,
+        variance: int,
+    ) -> Tuple[bool, str, List[int], List[int]]:
+        rng = random.Random(seed)
+        cpu_interval_used = self.cpu_interval_used
+        mem_interval_used = self.mem_interval_used
 
-            avg_mc = max(1, sum(slice_cpu)//count)
-            avg_mi = max(1, sum(slice_mem)//count)
-            if self.cpu_int: avg_mc = min(max(avg_mc, self.cpu_int[0]), self.cpu_int[1])
-            if self.mem_int: avg_mi = min(max(avg_mi, self.mem_int[0]), self.mem_int[1])
+        cpu_parts = gen_parts_constrained(self.tgt_mc_cluster, self.total_pods, rng, cpu_interval_used, dist_mode, variance)
+        mem_parts = gen_parts_constrained(self.tgt_mi_cluster, self.total_pods, rng, mem_interval_used, dist_mode, variance)
 
-            if do_gradual:
-                # Create with 0, then scale 1->count; wait to 'running' each step
-                rs_yaml = yaml_kwok_rs(self.ns, rsname, 0, cpu_m_int_to_str(avg_mc), mem_mi_int_to_str(avg_mi), pc)
-                apply_yaml(self.ctx, rs_yaml)
-                _ = wait_rs_pods(self.ctx, rsname, self.ns, parse_timeout_s(self.args.wait_timeout), "exist")
-                for r in range(1, count + 1):
-                    scale_replicaset(self.ctx, self.ns, rsname, r)
-                    _ = wait_rs_pods(self.ctx, rsname, self.ns, parse_timeout_s(self.args.wait_timeout), "running")
-            else:
-                # Create at full replicas, then wait according to wait_mode (exist/ready/running)
-                rs_yaml = yaml_kwok_rs(self.ns, rsname, count, cpu_m_int_to_str(avg_mc), mem_mi_int_to_str(avg_mi), pc)
-                apply_yaml(self.ctx, rs_yaml)
-                if self.args.wait_each:
-                    _ = wait_rs_pods(self.ctx, rsname, self.ns, parse_timeout_s(self.args.wait_timeout), self.args.wait_mode)
+        sum_cpu = int(sum(cpu_parts))
+        sum_mem = int(sum(mem_parts))
 
-            total_created += count
-            offset += count
+        alloc_cpu = self.node_mc * num_nodes
+        alloc_mem = self.node_mi * num_nodes
+        lo_cpu = int(alloc_cpu * (util - util_tolerance))
+        hi_cpu = int(alloc_cpu * (util + util_tolerance))
+        lo_mem = int(alloc_mem * (util - util_tolerance))
+        hi_mem = int(alloc_mem * (util + util_tolerance))
 
-        return total_created, {len(rs_replicas)}
+        if not (lo_cpu <= sum_cpu <= hi_cpu):
+            return (False, f"CPU total {sum_cpu} outside [{lo_cpu},{hi_cpu}]", [], [])
+        if not (lo_mem <= sum_mem <= hi_mem):
+            return (False, f"MEM total {sum_mem} outside [{lo_mem},{hi_mem}]", [], [])
 
+        pairs = set()
+        for i in range(self.total_pods):
+            pair = (int(cpu_parts[i]), int(mem_parts[i]))
+            if pair in pairs:
+                return (False, f"duplicate (cpu,mem) pair found: {pair}", [], [])
+            pairs.add(pair)
+
+        return (True, "ok", list(map(int, cpu_parts)), list(map(int, mem_parts)))
+
+    def _append_csv_row(self, seed_str: str, stats: Dict[str, object]) -> None:
+        header = self._stat_header()
+        row_out = {"seed": seed_str}
+        for k in header:
+            if k == "seed":
+                continue
+            row_out[k] = stats.get(k, "")
+        csv_append_row(self.seed_file_csv, header, row_out)
+
+    def _record(self, seed_str: str, stats: Dict[str, object] = {}) -> None:
+        self._append_csv_row(seed_str, stats)
     
-    def _print_outcome_and_snapshot(ctx: str, ns: str, args, outcome: str, info: dict) -> None:
-        """
-        Shared tail: print outcome details + resource snapshot.
-        """
-        # Unsched list (if any)
-        unsched_list = info.get("unschedulable", []) if outcome == "some_unschedulable" else []
-        if unsched_list:
-            print(f"[check] Unschedulable pods ({len(unsched_list)}): {', '.join(unsched_list[:20])}"
-                f"{' ...' if len(unsched_list) > 20 else ''}")
+    def _try_save_seed(self, seed_int: int) -> bool:
+        seed_int, seed_str = seed_normalize_and_zero_pad(seed_int, self.args.seed_width)
+        if seed_int in self.seen:
+            print(f"[instance-generator] seed={seed_str} already present — skip")
+            return True
 
-        # Snapshot (running vs total incl. unscheduled)
-        s = stat_snapshot(ctx, ns, expected=args.num_nodes * args.pods_per_node, settle_timeout=parse_timeout_s(args.settle_timeout))
+        ok, reason, cpu_parts, mem_parts = self._generate_and_verify(
+            seed_int,
+            self.args.num_nodes,
+            self.args.util, self.args.util_tolerance,
+            self.args.dist_mode, self.args.variance,
+        )
+        if not ok:
+            print(f"[instance-generator] rejected seed={seed_str}: {reason}")
+            return False
 
-        print(f"[check] run_util: cpu={s.cpu_run_util*100:.1f}%/{s.cpu_total_util*100:.1f}% | mem={s.mem_run_util*100:.1f}%/{s.mem_total_util*100:.1f}% | "
-            f"target_util={args.util*100:.1f}%±{args.util_tolerance*100:.1f}%")
+        stats = self._compute_stats(cpu_parts, mem_parts)
+        self._record(seed_str, stats)
+        self.seen.add(seed_int)
+        return True
 
-        # Per-node pods (only in normal mode where we know num_nodes)
-        nodes = [f"kwok-node-{i}" for i in range(1, getattr(args, "num_nodes", 0) + 1)]
-        if nodes:
-            per_node = pods_per_node_in_ns(ctx, ns, nodes)
-            print(f"[check] pods/node: {per_node}")
-    
-    def setup_cluster(self) -> None:
-        """
-        Set up the cluster by creating the necessary nodes and ensuring intervals.
-        """
-        delete_kwok_nodes(self.ctx) # we delete as configuration might have changed
-        create_kwok_nodes(self.ctx, self.args.num_nodes, self.args.node_cpu, self.args.node_mem, self.args.max_pods_per_node)
-        self._ensure_intervals()
+    def generate(self) -> None:
+        print(f"[instance-generator] Using seed files:\n  JSONL: {self.seed_file_jsonl}\n  CSV  : {self.seed_file_csv}")
+        print(f"[instance-generator] {len(self.seen)} seed(s) already recorded for this parameter set.")
 
-    def simulate(self) -> None:
-        """
-        Simulate the scheduling of pods in the cluster.
-        Save the simulation results to the seed file if checks pass.
-        """
-        found = 0
-        attempts = 0
-        desired = getattr(self.args, "simulate_add_condition", "some_unschedulable")
-        print(f"[sim] starting — need {self.args.simulator_instances} run(s) where outcome == '{desired}'")
+        # single-seed mode
+        if self.args.seed is not None:
+            self._try_save_seed(int(self.args.seed))
+            return
 
-        while found < self.args.simulator_instances:
-            attempts += 1
-            use_seed = int(time.time_ns())
-            self.rng.seed(use_seed)
-            print(f"[sim] attempt {attempts} seed={use_seed}")
+        # multi / infinite mode
+        to_make = int(self.args.count)
+        made = 0
+        while to_make == 0 or made < to_make:
+            s = self.rng.randint(1, 2**63 - 1)
+            if self._try_save_seed(s):
+                made += 1
+                print(f"[instance-generator] count={made} seed={s} recorded")
+            if self.args.count == 0:
+                time.sleep(0.0001)
+        print("[instance-generator] all requested seeds generated")
 
-            # fresh ns + PCs
-            ensure_namespace(self.ctx, self.ns, recreate=True)
-            ensure_default_serviceaccount(self.ctx, self.ns)
-            ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
-            
-            # apply workload
-            _ = self._apply_standalone_pods() if self.args.num_replicaset <= 0 else self._apply_rs()[0]
+# ---------- CLI ----------
 
-            # conditions-only monitor
-            settle_timeout = parse_timeout_s(self.args.settle_timeout)
-            info, scheduled, unscheduled = get_scheduled_and_unscheduled(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout=settle_timeout)
-
-            # keep only matching outcomes
-            if desired == "all" and info == "inconclusive":
-                print(f"[sim] failed; outcome='{scheduled}' != desired='{desired}' — discarding seed and retrying…")
-                continue
-            if desired == "some_unschedulable" and info != "some_unschedulable":
-                print(f"[sim] failed; outcome='{scheduled}' != desired='{desired}' — discarding seed and retrying…")
-                continue
-            if desired == "all_scheduled" and info != "all_scheduled":
-                print(f"[sim] failed; outcome='{scheduled}' != desired='{desired}' — discarding seed and retrying…")
-                continue
-            self._assert_unique_pairs_after_apply()
-
-            if unscheduled:
-                print(f"[sim] Unschedulable pods ({len(unscheduled)}): {', '.join(unscheduled[:20])}"
-                    f"{' ...' if len(unscheduled) > 20 else ''}")
-
-            print(f"[sim] ✓ succeeded; outcome='{scheduled}' == desired='{desired}' (info='{info}', unschedulable={len(unscheduled)})")
-
-            # snapshot (running vs total incl. unscheduled)
-            s = stat_snapshot(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout=settle_timeout)
-
-            print(f"[sim] cpu={s.cpu_run_util*100:.2f}%/{s.cpu_total_run_util*100:.2f}% | mem={s.mem_run_util*100:.2f}%/{s.mem_total_run_util*100:.2f}%")
-
-            row = OrderedDict()
-            row["timestamp"] = int(time.time())
-            row["seed"] = use_seed
-            row["num_nodes"] = self.args.num_nodes
-            row["pods_per_node"] = self.args.pods_per_node
-            row["num_replicaset"] = self.args.num_replicaset
-            row["num_priorities"] = self.args.num_priorities
-            row["util"] = self.args.util
-            row["util_tolerance"] = self.args.util_tolerance
-            row["node_cpu"] = self.args.node_cpu
-            row["node_mem"] = self.args.node_mem
-            row["cpu_interval"] = self.args.cpu_interval
-            row["mem_interval"] = self.args.mem_interval
-            row["info"] = info
-            row["simulate_add_condition"] = self.args.simulate_add_condition
-            row["dist_mode"] = self.args.dist_mode
-            row["variance"] = self.args.variance
-            row["scheduled_count"] = scheduled
-            row["unscheduled_count"] = len(unscheduled)
-            row["unschedulable_pods"] = unscheduled[:50]
-            row["wait_each"] = self.args.wait_each
-            row["wait_timeout"] = self.args.wait_timeout
-            row["wait_mode"] = self.args.wait_mode
-            row["settle_timeout"] = self.args.settle_timeout
-            
-            self._save_seed_row(self.args.seed_file, row)
-            found += 1
-            print(f"[sim] ✓ saved seed {use_seed}"
-                f"-> {self.args.seed_file} ({found}/{self.args.simulator_instances})")
-
-            if self.args.simulate_stop_simulation_if_unschedulable and info == "some_unschedulable":
-                print("[sim] stopping further simulations due to unschedulable pods (as requested)")
-                break
-
-        print("[sim] done.")
-
-    def run_normal(self) -> None:
-        """
-        Run the normal scheduling simulation.
-        """
-        ensure_namespace(self.ctx, self.ns, recreate=True)
-        ensure_default_serviceaccount(self.ctx, self.ns)
-        ensure_priority_classes(self.ctx, self.args.num_priorities, prefix="p", start=1)
-
-        # --- apply workload ---
-        if self.args.num_replicaset <= 0:
-            created = self._apply_standalone_pods()
-            print(f"[kwok-fill] Applied {created} standalone pods across {self.args.num_nodes} nodes")
-        else:
-            created, num_rs = self._apply_rs()
-            print(f"[kwok-fill] Applied {created} pods via {num_rs} ReplicaSets")
-
-        # --- monitor scheduling ---
-        settle_timeout = parse_timeout_s(self.args.settle_timeout)
-        info, scheduled, unscheduled = get_scheduled_and_unscheduled(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout=settle_timeout)
-
-        if info == "some_unschedulable":
-            print(f"[check] Some pods marked Unschedulable ({len(unscheduled)}): {', '.join(unscheduled[:20])}"
-                f"{' ...' if len(unscheduled) > 20 else ''}")
-        elif info == "all_scheduled":
-            print("[check] All pods scheduled successfully")
-        else:
-            print("[check] Monitoring ended inconclusive")
-        
-        if unscheduled:
-            print(f"[sim] Unschedulable pods ({len(unscheduled)}): {', '.join(unscheduled[:20])}"
-                  f"{' ...' if len(unscheduled) > 20 else ''}")
-
-        # --- metrics snapshot (running vs total incl. unscheduled) ---
-        time.sleep(1)
-        s = stat_snapshot(self.ctx, self.ns, expected=self.T.total_pods, settle_timeout=settle_timeout)
-
-        nodes = [f"kwok-node-{i}" for i in range(1, self.args.num_nodes+1)]
-        per_node = pods_per_node_in_ns(self.ctx, self.ns, nodes)
-        tol = self.args.util_tolerance
-
-        print(f"[check] cpu={s.cpu_run_util*100:.1f}%/{s.cpu_total_util*100:.1f}% | mem={s.mem_run_util*100:.1f}%/{s.mem_total_util*100:.1f}% | "
-            f"target_util={self.args.util*100:.1f}%±{tol*100:.1f}%")
-        self._assert_unique_pairs_after_apply()
-        print(f"[check] pods/node: {per_node} (target {self.args.pods_per_node} each)")
-        KwokStats(self.ctx, self.ns, self.T.total_pods, settle_timeout).run()
-
-
-def main():
+def build_argparser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
-    ap.add_argument("cluster_name")
-    ap.add_argument("num_nodes", type=int)
-    ap.add_argument("pods_per_node", type=int)
-    ap.add_argument("num_replicaset", type=int)
-    ap.add_argument("--max-pods-per-node", type=int, default=32)
+    ap.add_argument("--output-dir", default="./scripts/kwok/seeds", help="Directory to store seed files")
+    ap.add_argument("--num_nodes", type=int, default=8)
+    ap.add_argument("--pods_per_node", type=int, default=4)
+    ap.add_argument("--num_replicaset", type=int, default=0)
+    ap.add_argument("--num-priorities", type=int, default=4, dest="num_priorities")
     ap.add_argument("--util", type=float, default=0.90)
-    ap.add_argument("--util-tolerance", type=float, default=0.01)
-    ap.add_argument("--wait-mode", choices=["exist","ready","running"], default="running")
-    ap.add_argument("--namespace", default="crossnode-test")
-    ap.add_argument("--node-cpu", default="24")
-    ap.add_argument("--node-mem", default="32Gi")
+    ap.add_argument("--util-tolerance", type=float, default=0.01, dest="util_tolerance")
+    ap.add_argument("--node-cpu", default="24", dest="node_cpu")
+    ap.add_argument("--node-mem", default="32Gi", dest="node_mem")
+    ap.add_argument("--cpu-interval", default="50m,500m", dest="cpu_interval")
+    ap.add_argument("--mem-interval", default="64Mi,1024Mi", dest="mem_interval")
     ap.add_argument("--dist-mode", default="random", choices=["random","even"])
     ap.add_argument("--variance", type=int, default=50)
-    ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--num-priorities", type=int, default=4)
-    ap.add_argument("--wait-each", action="store_true", default=False)
-    ap.add_argument("--wait-timeout", default="10s")
-    ap.add_argument("--settle-timeout", default="5s")
-    ap.add_argument("--cpu-interval", default="50m,500m")
-    ap.add_argument("--mem-interval", default="64Mi,1024Mi")
-    ap.add_argument("--seed-file", default=None)
-    ap.add_argument("--simulate", action="store_true", default=False)
-    ap.add_argument("--simulate-stop-simulation-if-unschedulable", action="store_true", default=False)
-    ap.add_argument("--simulate-add-condition", choices=["all", "some_unschedulable", "all_scheduled"], default="some_unschedulable")
-    ap.add_argument("--simulator-instances", type=int, default=10)
-    ap.add_argument("--load-instance", action="store_true", default=False)
-    args = ap.parse_args()
-    
-    # If no seed-file was provided, default to <cluster_name>_seeds.jsonl
-    if args.seed_file is None:
-        args.seed_file = f"{args.cluster_name}_seeds.jsonl"
-        print(f"[kwok-fill] No --seed-file specified, using default: {args.seed_file}")
-    
-    load_instance_into_args(args)
-    
-    if args.num_priorities < 1:
-        print("[kwok-fill] --num-priorities must be >= 1; forcing to 1", file=sys.stderr)
-        args.num_priorities = 1
+    ap.add_argument("--seed", type=int, default=None, help="If set, verify exactly this seed once and save if valid.")
+    ap.add_argument("--seed-width", type=int, default=19, help="Zero-pad/cut seeds to this width.")
+    ap.add_argument("--count", type=int, default=0, help="How many seeds to generate when --seed is not set. Use 0 for infinite.")
+    return ap
 
-    runner = KwokTestGeneratorRunner(args)
-    runner.setup_cluster()
-    if args.simulate:
-        runner.simulate()
-    else:
-        runner.run_normal()
+def main():
+    args = build_argparser().parse_args()
+    gen = KwokInstanceGenerator(args)
+    gen.generate()
 
 if __name__ == "__main__":
     main()
