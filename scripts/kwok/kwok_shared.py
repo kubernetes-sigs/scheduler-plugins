@@ -3,28 +3,10 @@
 # kwok_shared.py
 
 import os, time, random, subprocess, json, textwrap, tempfile, csv
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-
-def seed_normalize_and_zero_pad(seed: int, width: int) -> tuple[int, str]:
-    """
-    Enforce a maximum length by cutting (keep LAST `width` digits), then left-pad with zeros.
-    Returns (normalized_int, zero_padded_str).
-    """
-    if width <= 0:
-        # no width: behave like identity, no padding/truncation
-        s = str(int(seed))
-        return int(seed), s
-    base = 10 ** width
-    norm = int(seed) % base                 # cut to max allowed length
-    return norm, str(norm).zfill(width)     # zero-pad to fixed width
-
-def seed_to_int(seed_val) -> int:
-    # seed may be zero-padded string; normalize to int (keep last digits)
-    s = str(seed_val)
-    return int(s.lstrip("0") or "0")
 
 # ---------- quantity helpers ----------
 def cpu_m_str_to_int(v: str) -> int:
@@ -106,22 +88,6 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     cmd += base_cmd
     out = subprocess.check_output(cmd)
     return json.loads(out)
-
-def check_context(ctx_name: str) -> Optional[str]:
-    """
-    Check if the given context name exists in the kubectl config.
-    Return  the context name if it exists, else None.
-    """
-    try:
-        cfg = get_json_ctx(None, ["config", "view", "-o", "json"])
-    except Exception:
-        raise Exception(f"Could not read kubectl config to resolve context '{ctx_name}'")
-
-    contexts = cfg.get("contexts", []) or []
-    for c in contexts:
-        if (c.get("name") or "") == ctx_name:
-            return ctx_name
-    return None
 
 def scale_replicaset(ctx: str, ns: str, rs_name: str, replicas: int) -> None:
     """Scale a ReplicaSet to a desired replica count."""
@@ -320,22 +286,6 @@ def delete_kwok_nodes(ctx: str) -> None:
             run(["kubectl","--context",ctx,"delete","node",name,"--ignore-not-found"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-# ---------- kubernetes state queries ------------
-
-def pods_per_node_in_ns(ctx: str, ns: str, nodes: List[str]) -> Dict[str,int]:
-    """
-    Count the number of pods in each node within the specified namespace.
-    """
-    pods_json = json.loads(run(
-        ["kubectl","--context",ctx,"-n",ns,"get","pods","-o","json"],
-        stdout=subprocess.PIPE, check=True).stdout)
-    by = {n:0 for n in nodes}
-    for p in pods_json.get("items", []):
-        node = (p.get("spec",{}) or {}).get("nodeName") or ""
-        if node in by and (p.get("status",{}) or {}).get("phase") == "Running":
-            by[node] += 1
-    return by
-
 # ---------- stats helpers ----------
 
 
@@ -363,12 +313,8 @@ def sum_pod_requests(pod: dict) -> tuple[int, int]:
 
 def csv_append_row(
     file_path: str | Path,
-    header: list[str],
+    header: List[str],
     row: dict,
-    *,
-    delimiter: str = ",",
-    lineterminator: str = "\n",
-    quoting: int = csv.QUOTE_MINIMAL,
 ) -> None:
     """
     Append a single row to a CSV/TSV file, writing the header if the file is new/empty.
@@ -378,13 +324,10 @@ def csv_append_row(
     """
     p = Path(file_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    file_exists = p.exists()
-    needs_header = (not file_exists) or (p.stat().st_size == 0)
 
     with open(p, "a", encoding="utf-8", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=header)
-        if needs_header:
-            wr.writeheader()
+        wr.writeheader() if f.tell() == 0 else None
         wr.writerow(row)
         f.flush()
 
@@ -498,7 +441,6 @@ def wait_pod(ctx: str, name: str, ns: str, timeout_sec: int, mode: str = "ready"
         r = run(["kubectl","--context",ctx,"-n",ns,"get","pod",name,"-o","json"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
-        # NEW: support exist
         if mode == "exist":
             if r.returncode == 0:
                 return 1
@@ -567,7 +509,85 @@ def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = 
 
     return last_count
 
+def get_timestamp() -> str:
+    return time.strftime("%Y/%m/%d/%H:%M:%S", time.localtime())
 
+def coerce_int(doc: Dict[str, Any], key: str, default: int) -> int:
+    v = doc.get(key, default)
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+def coerce_float(doc: Dict[str, Any], key: str, default: float) -> float:
+    v = doc.get(key, default)
+    try:
+        return float(v)
+    except Exception:
+        return default
+
+def coerce_str(doc: Dict[str, Any], key: str, default: str) -> str:
+    v = doc.get(key, default)
+    s = str(v).strip()
+    return s if s != "" else default
+
+def coerce_wait_mode(doc: Dict[str, Any], key: str, default: Optional[str]) -> Optional[str]:
+    v = doc.get(key, default)
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s.lower() in ("", "none"):
+        return None
+    if s not in ("exist", "ready", "running"):
+        raise ValueError(f"Invalid wait_mode: {s}")
+    return s
+
+def normalize_interval(
+    doc: Dict[str, Any],
+    key_combo: Tuple[str, str, str],
+    *,  # supports: single, lo/hi pair, list, or dict
+    allow_none: bool = True,
+) -> Optional[str]:
+    """
+    Normalize an interval to the canonical "lo,hi" string.
+    Accepts:
+        - "cpu_interval": "100m,1000m"
+        - "cpu_interval": ["100m","1000m"]
+        - "cpu_interval": {"lo":"100m","hi":"1000m"}
+        - "cpu_interval_lo": "100m" + "cpu_interval_hi": "1000m"
+    """
+    single, lo_key, hi_key = key_combo
+
+    if single in doc and doc[single] is not None:
+        v = doc[single]
+        if isinstance(v, str):
+            s = v.strip()
+            if s:
+                return s
+        elif isinstance(v, (list, tuple)) and len(v) == 2:
+            return f"{str(v[0]).strip()},{str(v[1]).strip()}"
+        elif isinstance(v, dict):
+            lo = str(v.get("lo", "")).strip()
+            hi = str(v.get("hi", "")).strip()
+            if lo and hi:
+                return f"{lo},{hi}"
+
+    lo = str(doc.get(lo_key, "")).strip()
+    hi = str(doc.get(hi_key, "")).strip()
+    if lo and hi:
+        return f"{lo},{hi}"
+
+    return None if allow_none else ""
+
+def count_running_by_priority(ctx: str, ns: str) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    pods = get_json_ctx(ctx, ["-n", ns, "get", "pods", "-o", "json"]).get("items", [])
+    for p in pods:
+        if (p.get("status") or {}).get("phase", "") != "Running":
+            continue
+        pc = (p.get("spec") or {}).get("priorityClassName") or ""
+        out[pc] = out.get(pc, 0) + 1
+    return out
 
 def get_scheduled_and_unscheduled(
     ctx: str,

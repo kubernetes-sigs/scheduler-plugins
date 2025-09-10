@@ -60,10 +60,10 @@ class KwokStats:
 def main():
     ap = argparse.ArgumentParser(description="Show KWOK stats: running/total utilization and pods per node.")
     ap.add_argument("--cluster_name", help="Cluster short name (context will be kwok-<cluster_name>)", default="kwok1")
-    ap.add_argument("--namespace", "-n", default="crossnode-test", help="Namespace to inspect")
+    ap.add_argument("--namespace", "-n", default="test", help="Namespace to inspect")
     ap.add_argument("--expected", type=int, default=0,
                     help="Expected pod count for waiting logic in stat_snapshot; 0 means don't wait")
-    ap.add_argument("--settle-timeout", type=float, default=0.0,
+    ap.add_argument("--settle-timeout", type=float, default=0,
                     help="Seconds to wait in stat_snapshot; 0 means immediate snapshot")
 
     args = ap.parse_args()
