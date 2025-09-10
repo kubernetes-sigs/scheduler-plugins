@@ -29,15 +29,15 @@ RESULTS_HEADER = [
     "util_run_cpu","util_run_mem","cpu_m_run","mem_b_run",
     "wait_mode","wait_timeout","settle_timeout",
     "scheduled_count","unscheduled_count",
-    "pods_run_by_node","placed_by_priority","pod_node",
+    "pods_run_by_node","placed_by_priority",
+    "scheduled","unscheduled",
+    "pod_node",
 ]
 
-
-# ---------- Strongly-typed per-config settings (with defaults) ----------
 @dataclass
 class TestConfig:
     # cluster & namespace
-    namespace: str = "crossnode-test"
+    namespace: str = "test"
 
     # topology / priorities
     num_nodes: int = 4
@@ -54,13 +54,13 @@ class TestConfig:
     mem_interval: Optional[str] = "128Mi,2048Mi"
 
     # utilization target
-    util: float = 0.9
-    util_tolerance: float = 0.1
+    util: float = 0.9 # total cluster utilization target. 0.9 = 90%
+    util_tolerance: float = 0.01 # tolerance for total utilization. 0.01 = 1%
 
     # waits
     wait_mode: Optional[str] = "ready"  # one of None/"none","exist","ready","running"
-    wait_timeout: str = "120s"
-    settle_timeout: str = "30s"
+    wait_timeout: str = "5s" # time to wait for each pod/RS to be ready
+    settle_timeout: str = "5s" # time to wait for cluster to settle
 
     # internal: remember where this came from
     source_file: Optional[Path] = field(default=None, repr=False)
@@ -69,7 +69,7 @@ class TestConfig:
 class KwokTestGenerator:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
-        self.ctx: Optional[str] = None   # built per-config from YAML cluster_name
+        self.ctx: Optional[str] = None   # built per-config from CLI cluster_name
         self.results_dir = Path(args.results_dir)
         self.failed_cfg_f = Path(args.failed_kwok_configs_file)
         self.failed_seeds_f = Path(args.failed_seeds_file)
@@ -81,24 +81,49 @@ class KwokTestGenerator:
         self.failed_cfg_f.touch(exist_ok=True)
         self.failed_seeds_f.touch(exist_ok=True)
 
-    # ---------- YAML loader (robust & flexible) ----------
+    # ---------- small CSV helpers for split documents ----------
+    @staticmethod
+    def _ensure_csv_with_header(path: Path, header: List[str]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                csv.DictWriter(f, fieldnames=header).writeheader()
 
+    @staticmethod
+    def _append_rows(path: Path, header: List[str], rows: List[Dict[str, Any]]) -> None:
+        KwokTestGenerator._ensure_csv_with_header(path, header)
+        if not rows:
+            return
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            wr = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
+            wr.writerows(rows)
+
+    @staticmethod
+    def _rewrite_csv_without_seed(path: Path, seed_str: str, header: List[str]) -> None:
+        if not path.exists():
+            KwokTestGenerator._ensure_csv_with_header(path, header)
+            return
+        kept: List[Dict[str, Any]] = []
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            rd = csv.DictReader(f)
+            for row in rd:
+                if (row.get("seed") or "") != seed_str:
+                    kept.append(row)
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            wr = csv.DictWriter(f, fieldnames=header)
+            wr.writeheader()
+            wr.writerows(kept)
+
+    # ---------- YAML loader (robust & flexible) ----------
     @staticmethod
     def _pick_runner_doc(docs: List[Any]) -> Dict[str, Any]:
         """
         Find the doc that contains run settings: doc with kind: KwokRunConfiguration
         """
-        known_keys = {
-            "cluster_name","namespace","num_nodes","pods_per_node",
-            "num_replicaset","num_priorities","node_cpu","node_mem",
-            "cpu_interval","cpu_interval_lo","cpu_interval_hi",
-            "mem_interval","mem_interval_lo","mem_interval_hi",
-            "util","util_tolerance","wait_mode","wait_timeout","settle_timeout"
-        }
         for d in docs:
             if isinstance(d, dict) and (str(d.get("kind","")) == "KwokRunConfiguration"):
                 return d
-        raise KeyError("No Kwok runner settings found in YAML (expected 'kind: KwokRunConfiguration', a 'kwok_run:' section, or known keys).")
+        raise KeyError("No Kwok runner settings found in YAML (expected 'kind: KwokRunConfiguration').")
 
     @staticmethod
     def _load_run_config(cfg_path: Path) -> TestConfig:
@@ -140,13 +165,13 @@ class KwokTestGenerator:
                 for row in rd:
                     s = (row.get("seed") or "").strip()
                     if s:
-                        seeds.append(seed_to_int(s))
+                        seeds.append(int(s))
         else:
             with open(path, "r", encoding="utf-8") as f:
                 for line in f:
                     s = line.strip()
                     if s:
-                        seeds.append(seed_to_int(s))
+                        seeds.append(int(s))
         return seeds
 
     @staticmethod
@@ -160,7 +185,7 @@ class KwokTestGenerator:
                 for row in rd:
                     s = (row.get("seed") or "").strip()
                     if s:
-                        seen.add(seed_to_int(s))
+                        seen.add(int(s))
         except Exception:
             pass
         return seen
@@ -174,7 +199,7 @@ class KwokTestGenerator:
             rd = csv.DictReader(f)
             hdr = rd.fieldnames or []
             for row in rd:
-                s = seed_to_int(row.get("seed", 0))
+                s = int(str(row.get("seed", "0")).strip() or "0")
                 if s != target_seed:
                     rows.append(row)
         with open(result_csv, "w", encoding="utf-8", newline="") as f:
@@ -353,6 +378,10 @@ class KwokTestGenerator:
             _, scheduled_pairs, unschedulable_names = get_scheduled_and_unscheduled(
                 self.ctx, namespace, expected=total_pods, settle_timeout=settle_timeout_s
             )
+            scheduled_names = sorted([name for (name, _) in scheduled_pairs])
+            scheduled_braced = "{" + ",".join(scheduled_names) + "}"
+            unscheduled_braced = "{" + ",".join(sorted(unschedulable_names)) + "}"
+
             scheduled_by_name = {name: node for (name, node) in scheduled_pairs}
             placed_by_priority = count_running_by_priority(self.ctx, namespace)
             snap = stat_snapshot(self.ctx, namespace, expected=total_pods, settle_timeout=settle_timeout_s)
@@ -384,9 +413,22 @@ class KwokTestGenerator:
                         "node": node,
                     })
 
-            if self.args.save_only_unscheduled and len(unschedulable_names) == 0:
-                return
+            if self.args.divide_scheduled_unscheduled:
+                sched_path = self.results_dir / f"{cfg.stem}_scheduled.csv"
+                unsched_path = self.results_dir / f"{cfg.stem}_unscheduled.csv"
 
+                # On override, drop previous rows for this seed in both files
+                if replace_existing:
+                    self._rewrite_csv_without_seed(sched_path, str(seed_int), RESULTS_HEADER)
+                    self._rewrite_csv_without_seed(unsched_path, str(seed_int), RESULTS_HEADER)
+
+                # Ensure headers then append the same summary row to both CSVs
+                self._ensure_csv_with_header(sched_path, RESULTS_HEADER)
+                self._ensure_csv_with_header(unsched_path, RESULTS_HEADER)
+                self._append_rows(sched_path, RESULTS_HEADER, [result_row])
+                self._append_rows(unsched_path, RESULTS_HEADER, [result_row])
+
+            # summary CSV row (kept regardless of split setting)
             result_row = {
                 "timestamp": get_timestamp(),
                 "kwok_config": str(cfg),
@@ -412,6 +454,8 @@ class KwokTestGenerator:
                 "unscheduled_count": int(len(unschedulable_names)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
                 "placed_by_priority": json.dumps(placed_by_priority, separators=(",", ":")),
+                "scheduled": scheduled_braced,
+                "unscheduled": unscheduled_braced,
                 "pod_node": json.dumps(pod_node_list, separators=(",", ":")),
             }
 
@@ -567,9 +611,9 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="Path to seeds file (CSV with 'seed' col or newline list).")
     ap.add_argument("--override", action="store_true",
                     help="Re-run and replace results for seeds already present")
-    ap.add_argument("--save-only-unscheduled", action="store_true",
-                    help="Save a result row only if there were unscheduled pods")
-    ap.add_argument("--count", type=int, default=None,
+    ap.add_argument("--divide-scheduled-unscheduled", action="store_true",
+                    help="Also create two per-pod CSVs named '<cfg>_scheduled.csv' and '<cfg>_unscheduled.csv'")
+    ap.add_argument("--count", type=int, default=-1,
                     help="Generate random seeds; -1=infinite.")
     
     # NOTE: other args are provided in YAML per-config
