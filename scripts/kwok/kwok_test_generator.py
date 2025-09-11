@@ -167,8 +167,8 @@ class TestConfig:
 
     # waits
     wait_mode: Optional[str] = "ready"  # None/"none","exist","ready","running"
-    wait_timeout: str = "5s"
-    settle_timeout: str = "5s"
+    wait_timeout: str = "5s" # TODO: should be optional and default to 5s
+    settle_timeout: str = "5s" # TODO: should be optional and default to 5s
 
     # internal: remember where this came from
     source_file: Optional[Path] = field(default=None, repr=False)
@@ -181,9 +181,11 @@ class KwokTestGenerator:
         self.args = args
         self.ctx: Optional[str] = None
         self.results_dir = Path(args.results_dir)
+        self.max_rows_per_file = int(args.max_rows_per_file)
+        
+        # TODO: Make one file for failed stuff.
         self.failed_cfg_f = Path(args.failed_kwok_configs_file)
         self.failed_seeds_f = Path(args.failed_seeds_file)
-        self.max_rows_per_file = int(args.max_rows_per_file)
 
         # Collect rows for summary if --test OR a single --seed is provided
         self._collect_test: bool = bool(args.test or (args.seed is not None))
@@ -493,11 +495,8 @@ class KwokTestGenerator:
         avg = total / n
         lo = max(1, int(math.floor(avg * (1.0 - jitter))))
         hi = int(math.ceil(avg * (1.0 + jitter)))
-        # Must be able to reach the target:
         hi = max(hi, int(math.ceil(total / n)))
-        # Keep lo from forcing us under the target:
         lo = min(lo, int(math.floor(total / n)))
-        # Respect per-pod cap if given
         if cap_each is not None:
             if cap_each < int(math.ceil(total / n)):
                 raise ValueError("Target cannot be met under per-pod cap.")
@@ -505,14 +504,16 @@ class KwokTestGenerator:
             hi = max(hi, int(math.ceil(total / n)))
         if lo > hi:
             lo = max(1, min(int(math.floor(total / n)), hi))
-        # Final sanity: guaranteed feasible
-        assert n*lo <= total <= n*hi
+        if not (n*lo <= total <= n*hi):
+            raise ValueError("Interval generation failed to produce a feasible range")
         return lo, hi
 
     @staticmethod
     def _gen_random_parts(total: int, n: int, lo: int, hi: int, rng: random.Random) -> List[int]:
         """
         Generate n parts in [lo, hi] that sum to total.
+        Uses a simple greedy algorithm to ensure feasibility at each step.
+        First generates in order, then shuffles the result.
         """
         parts: List[int] = []
         rem = total
@@ -541,7 +542,12 @@ class KwokTestGenerator:
         """
         Given a list of RS replica counts, generate per-RS (per-pod) CPU and MEM requests
         such that the weighted sums are close to target_cpu and target_mem within tolerances.
+        It does so by:
+        1) Randomly drawing per-RS requests within bounds.
+        2) Iteratively nudging them to reduce the error, up to max_steps.
+        Returns (possibly adjusted) counts, cpu_x, mem_x, ok.
         """
+        #TODO: See if we can reduce the amount of code here, without losing functionality and clarity.
         n = len(counts)
         if n == 0:
             return counts, [], [], True
@@ -846,7 +852,15 @@ class KwokTestGenerator:
     # ------------ KWOK / kubectl helpers --------
     ##############################################
     @staticmethod
+    def _apply_yaml(ctx:str, yaml_text:str) -> subprocess.CompletedProcess:
+        """
+        Apply a YAML configuration to the cluster.
+        """
+        return subprocess.run(["kubectl","--context",ctx,"apply","-f","-"], input=yaml_text.encode(), check=True)
+    
+    @staticmethod
     def _prep_kwokctl_config_file(src: Path) -> tuple[Path, Path | None]:
+        #TODO: find a better name
         """
         If `src` is a multi-doc YAML, extract the document with
         kind: KwokctlConfiguration into a temp file and return it.
@@ -936,13 +950,6 @@ class KwokTestGenerator:
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     @staticmethod
-    def _apply_yaml(ctx:str, yaml_text:str) -> subprocess.CompletedProcess:
-        """
-        Apply a YAML configuration to the cluster.
-        """
-        return subprocess.run(["kubectl","--context",ctx,"apply","-f","-"], input=yaml_text.encode(), check=True)
-    
-    @staticmethod
     def _ensure_namespace(ctx: str, ns: str, *, recreate: bool = False, retries: int = 15, delay: float = 0.5) -> None:
         """
         Ensure the namespace exists in the given context.
@@ -1028,30 +1035,6 @@ class KwokTestGenerator:
             if name.startswith(prefix) and name not in desired and name not in system_names and not global_default:
                 subprocess.run(["kubectl","--context",ctx,"delete","priorityclass.scheduling.k8s.io", name],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    @staticmethod
-    def _scale_replicaset(ctx: str, ns: str, rs_name: str, replicas: int) -> None:
-        """
-        Scale a ReplicaSet to a desired replica count.
-        """
-        subprocess.run([
-            "kubectl", "--context", ctx, "-n", ns,
-            "scale", "replicaset", rs_name, f"--replicas={replicas}"
-        ], check=True)
-
-    @staticmethod
-    def _get_rs_spec_replicas(ctx: str, ns: str, rs_name: str) -> Optional[int]:
-        """
-        Fetch .spec.replicas for a ReplicaSet, or None if not found.
-        """
-        r = subprocess.run(["kubectl","--context",ctx,"-n",ns,"get","replicaset",rs_name,"-o","json"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        if r.returncode != 0:
-            return None
-        try:
-            return int((json.loads(r.stdout).get("spec") or {}).get("replicas") or 0)
-        except Exception:
-            return None
 
     @staticmethod
     def _wait_each(ctx: str, kind: str, name: str, ns: str, timeout_sec: int, mode: str) -> int:
@@ -1233,6 +1216,30 @@ class KwokTestGenerator:
         return specs
 
     @staticmethod
+    def _scale_replicaset(ctx: str, ns: str, rs_name: str, replicas: int) -> None:
+        """
+        Scale a ReplicaSet to a desired replica count.
+        """
+        subprocess.run([
+            "kubectl", "--context", ctx, "-n", ns,
+            "scale", "replicaset", rs_name, f"--replicas={replicas}"
+        ], check=True)
+
+    @staticmethod
+    def _get_rs_spec_replicas(ctx: str, ns: str, rs_name: str) -> Optional[int]:
+        """
+        Fetch .spec.replicas for a ReplicaSet, or None if not found.
+        """
+        r = subprocess.run(["kubectl","--context",ctx,"-n",ns,"get","replicaset",rs_name,"-o","json"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        if r.returncode != 0:
+            return None
+        try:
+            return int((json.loads(r.stdout).get("spec") or {}).get("replicas") or 0)
+        except Exception:
+            return None
+
+    @staticmethod
     def _prio_for_step_desc(step: int, num_prios: int) -> int:
         """
         Get the priority for a given step in the sequence.
@@ -1262,20 +1269,6 @@ class KwokTestGenerator:
     # ------------ Seed helpers -----------------
     ##############################################
     @staticmethod
-    def _pick_num_replicaset_for_seed(seed_int: int, interval: Optional[Tuple[int, int]], total_pods: int) -> int:
-        """
-        Pick the number of ReplicaSets to create for a given seed.
-        """
-        if not interval:
-            return 0
-        lo, hi = interval
-        lo = max(0, int(lo))
-        hi = max(lo, int(hi))
-        hi = min(hi, int(total_pods))
-        rng = KwokTestGenerator._rng(seed_int, "num_replicaset", lo, hi, total_pods)
-        return rng.randint(lo, hi)
-
-    @staticmethod
     def _read_seeds_file(path: Path) -> List[int]:
         """
         Read seed values from a file.
@@ -1297,20 +1290,24 @@ class KwokTestGenerator:
                     if s:
                         seeds.append(int(s))
         return seeds
+    
+    @staticmethod
+    def _pick_num_replicaset_for_seed(seed_int: int, interval: Optional[Tuple[int, int]], total_pods: int) -> int:
+        """
+        Pick the number of ReplicaSets to create for a given seed.
+        """
+        if not interval:
+            return 0
+        lo, hi = interval
+        lo = max(0, int(lo))
+        hi = max(lo, int(hi))
+        hi = min(hi, int(total_pods))
+        rng = KwokTestGenerator._rng(seed_int, "num_replicaset", lo, hi, total_pods)
+        return rng.randint(lo, hi)
 
     ##############################################
     # ------------ Runner helpers ----------------
     ##############################################
-    @staticmethod
-    def _pick_runner_doc(docs: List[Any]) -> Dict[str, Any]:
-        """
-        Pick the KwokRunConfiguration document from the list of YAML documents.
-        """
-        for d in docs:
-            if isinstance(d, dict) and (str(d.get("kind","")) == "KwokRunConfiguration"):
-                return d
-        raise KeyError("No Kwok runner settings found in YAML (expected 'kind: KwokRunConfiguration').")
-
     @staticmethod
     def _get_kwok_configs(dir_path: str) -> List[Path]:
         """
@@ -1373,6 +1370,16 @@ class KwokTestGenerator:
             rc.rs_replicas_per_set_interval = KwokTestGenerator._parse_int_interval(raw_rs)
 
         return rc
+
+    @staticmethod
+    def _pick_runner_doc(docs: List[Any]) -> Dict[str, Any]:
+        """
+        Pick the KwokRunConfiguration document from the list of YAML documents.
+        """
+        for d in docs:
+            if isinstance(d, dict) and (str(d.get("kind","")) == "KwokRunConfiguration"):
+                return d
+        raise KeyError("No Kwok runner settings found in YAML (expected 'kind: KwokRunConfiguration').")
 
     def _print_test_summary(self) -> None:
         """
