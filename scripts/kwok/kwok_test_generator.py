@@ -2,7 +2,7 @@
 
 # kwok_test_generator.py
 
-import csv, json, time, random, argparse
+import csv, json, time, random, argparse, re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
@@ -74,8 +74,10 @@ class KwokTestGenerator:
         self.results_dir = Path(args.results_dir)
         self.failed_cfg_f = Path(args.failed_kwok_configs_file)
         self.failed_seeds_f = Path(args.failed_seeds_file)
+        self.max_rows_per_file = int(args.max_rows_per_file)
 
-        # test-mode accumulator: list of dicts
+        # Collect rows for summary if --test OR a single --seed is provided
+        self._collect_test: bool = bool(args.test or (args.seed is not None))
         self._test_rows: List[Dict[str, Any]] = []
 
         # filesystem prep
@@ -85,7 +87,7 @@ class KwokTestGenerator:
         self.failed_cfg_f.touch(exist_ok=True)
         self.failed_seeds_f.touch(exist_ok=True)
 
-    # ---------- small CSV helpers for split documents ----------
+    # ---------- CSV helpers ----------
     @staticmethod
     def _ensure_csv_with_header(path: Path, header: List[str]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,20 +105,13 @@ class KwokTestGenerator:
             wr.writerows(rows)
 
     @staticmethod
-    def _rewrite_csv_without_seed(path: Path, seed_str: str, header: List[str]) -> None:
+    def _count_csv_rows(path: Path) -> int:
+        """Count data rows (excluding header)."""
         if not path.exists():
-            KwokTestGenerator._ensure_csv_with_header(path, header)
-            return
-        kept: List[Dict[str, Any]] = []
+            return 0
         with open(path, "r", encoding="utf-8", newline="") as f:
             rd = csv.DictReader(f)
-            for row in rd:
-                if (row.get("seed") or "") != seed_str:
-                    kept.append(row)
-        with open(path, "w", encoding="utf-8", newline="") as f:
-            wr = csv.DictWriter(f, fieldnames=header)
-            wr.writeheader()
-            wr.writerows(kept)
+            return sum(1 for _ in rd)
 
     # ---------- YAML loader ----------
     @staticmethod
@@ -156,12 +151,105 @@ class KwokTestGenerator:
 
         return rc
 
+    # ---------- result files rotation / discovery ----------
+    def _segment_list(self, stem: str) -> List[tuple[int, Path]]:
+        """
+        Return [(idx, path), ...] for existing segments.
+        - Treat legacy '<stem>.csv' as idx=1
+        - Treat '<stem>_<N>.csv' as idx=N (N>=1)
+        Sorted by idx.
+        """
+        segs: List[tuple[int, Path]] = []
+        base = self.results_dir / f"{stem}.csv"
+        if base.exists():
+            segs.append((1, base))
+
+        pat = re.compile(rf"^{re.escape(stem)}_(\d+)\.csv$")
+        for p in self.results_dir.glob(f"{stem}_*.csv"):
+            m = pat.match(p.name)
+            if m:
+                segs.append((int(m.group(1)), p))
+
+        # de-dup idx=1 if both base and _1 exist; prefer base as #1
+        uniq: dict[int, Path] = {}
+        for idx, p in sorted(segs, key=lambda t: t[0]):
+            if idx not in uniq:
+                uniq[idx] = p
+        return sorted(uniq.items(), key=lambda t: t[0])
+
+
+    def _pick_results_csv_to_write(self, stem: str, rows_to_add: int = 1) -> Path:
+        """
+        Choose a segment to write 'rows_to_add' rows to.
+        - Creates '<stem>_1.csv' if no segments exist.
+        - Rotates to '<stem>_<last+1>.csv' when current_rows + rows_to_add > limit.
+        Always ensures the header on the chosen file.
+        """
+        segs = self._segment_list(stem)
+        if not segs:
+            target = self.results_dir / f"{stem}_1.csv"
+            self._ensure_csv_with_header(target, RESULTS_HEADER)
+            print(f"[kwok-test-gen] starting new segment: {target.name}")
+            return target
+
+        last_idx, last_path = segs[-1]
+        rows = self._count_csv_rows(last_path)
+
+        # Rotate if we would exceed the limit with this write.
+        if rows + rows_to_add > self.max_rows_per_file:
+            next_path = self.results_dir / f"{stem}_{last_idx + 1}.csv"
+            self._ensure_csv_with_header(next_path, RESULTS_HEADER)
+            print(f"[kwok-test-gen][rotate] {last_path.name} is full ({rows}/{self.max_rows_per_file}); "
+                f"switching to {next_path.name}")
+            return next_path
+
+        # Otherwise use the last segment
+        self._ensure_csv_with_header(last_path, RESULTS_HEADER)
+        return last_path
+
+
+    def _load_seen_results_all(self, stem: str) -> set[int]:
+        """
+        Load 'seen' seeds across legacy '<stem>.csv' and all rotated '<stem>_<N>.csv'.
+        """
+        seen: set[int] = set()
+        for _, p in self._segment_list(stem):
+            try:
+                with open(p, "r", encoding="utf-8", newline="") as fh:
+                    for row in csv.DictReader(fh):
+                        s = (row.get("seed") or "").strip()
+                        if s:
+                            seen.add(int(s))
+            except Exception:
+                pass
+        return seen
+    
+    
+    def _result_file_index(self, stem: str, file: Path) -> int:
+        """
+        Rotation index for files strictly matching: <stem>_<N>.csv  (N >= 1)
+        Returns -1 if not a rotated file. (Legacy <stem>.csv is *not* matched here.)
+        """
+        m = re.match(rf"^{re.escape(stem)}_(\d+)\.csv$", file.name)
+        return int(m.group(1)) if m else -1
+
+    def _result_files_for_cfg(self, stem: str) -> List[Path]:
+        """
+        Only consider rotated files (<stem>_<N>.csv) for writing/rotation.
+        """
+        files = [p for p in self.results_dir.glob(f"{stem}_*.csv")
+                if self._result_file_index(stem, p) >= 1]
+        files.sort(key=lambda p: self._result_file_index(stem, p))
+        return files
+
+
+    # ---------- seed helpers ----------
     @staticmethod
-    def _pick_num_replicaset(seed_int: int, total_pods: int, lo: int, hi: int) -> int:
+    def _pick_num_replicaset_for_seed(seed_int: int, lo: int, hi: int, total_pods: int) -> int:
         lo = max(0, int(lo))
         hi = max(lo, int(hi))
-        hi = min(hi, total_pods)
-        rng = random.Random(seed_int ^ 0x9E3779B9)
+        hi = min(hi, int(total_pods))
+        rng = random.Random(seed_int ^ 0x9E3779B97F4A7C15)
         return rng.randint(lo, hi)
 
     @staticmethod
@@ -183,68 +271,6 @@ class KwokTestGenerator:
                     if s:
                         seeds.append(int(s))
         return seeds
-
-    @staticmethod
-    def _load_seen_results(result_csv: Path) -> set[int]:
-        seen: set[int] = set()
-        if not result_csv.exists():
-            return seen
-        try:
-            with open(result_csv, "r", encoding="utf-8", newline="") as f:
-                rd = csv.DictReader(f)
-                for row in rd:
-                    s = (row.get("seed") or "").strip()
-                    if s:
-                        seen.add(int(s))
-        except Exception:
-            pass
-        return seen
-
-    @staticmethod
-    def _rewrite_results_without_seed(result_csv: Path, target_seed: int) -> None:
-        if not result_csv.exists():
-            return
-        rows: List[dict] = []
-        with open(result_csv, "r", encoding="utf-8", newline="") as f:
-            rd = csv.DictReader(f)
-            hdr = rd.fieldnames or []
-            for row in rd:
-                s = int(str(row.get("seed", "0")).strip() or "0")
-                if s != target_seed:
-                    rows.append(row)
-        with open(result_csv, "w", encoding="utf-8", newline="") as f:
-            wr = csv.DictWriter(f, fieldnames=hdr)
-            wr.writeheader()
-            wr.writerows(rows)
-
-    @staticmethod
-    def _prio_for_step_desc(step: int, num_prios: int) -> int:
-        if num_prios <= 1:
-            return 1
-        return num_prios - ((step - 1) % num_prios)
-
-    @staticmethod
-    def _check_seed_file_exists(seed_file: Optional[str]) -> None:
-        if not seed_file:
-            return
-        sf = Path(seed_file)
-        if not sf.exists() or not sf.is_file():
-            raise SystemExit(f"--seed-file not found or not a regular file: {sf}")
-        try:
-            with open(sf, "r", encoding="utf-8"):
-                pass
-        except Exception as e:
-            raise SystemExit(f"--seed-file not readable: {sf} ({e})")
-
-    @staticmethod
-    def _get_kwok_configs(dir_path: str) -> List[Path]:
-        cfg_dir = Path(dir_path)
-        if not cfg_dir.exists():
-            raise SystemExit(f"--kwok-config-dir not found: {cfg_dir}")
-        cfgs = sorted([p for p in cfg_dir.glob("**/*") if p.is_file() and p.suffix.lower() in (".yaml", ".yml")])
-        if not cfgs:
-            raise SystemExit("No KWOK configs found (must be at least one).")
-        return cfgs
 
     # ---------- k8s workload builders ----------
     def _apply_standalone_pods(
@@ -312,12 +338,18 @@ class KwokTestGenerator:
                 _ = wait_each(self.ctx, "rs", spec["name"], ns, wait_timeout_s, wait_mode)
         return specs
 
+    @staticmethod
+    def _prio_for_step_desc(step: int, num_prios: int) -> int:
+        if num_prios <= 1:
+            return 1
+        return num_prios - ((step - 1) % num_prios)
+
     # ---------- per-seed execution ----------
     def _run_one_seed(
         self,
         cfg: Path,
         namespace: str,
-        result_csv: Path,
+        result_stem_csv: Path,  # base path; rotation handled inside
         seen: set[int],
         seed_int: int,
         num_nodes: int, pods_per_node: int, num_replicaset: int, num_priorities: int,
@@ -330,26 +362,14 @@ class KwokTestGenerator:
         wait_timeout_s: int, settle_timeout_s: int,
     ) -> None:
         exists = seed_int in seen
-        replace_existing = bool(self.args.override and exists)
 
-        # Effective skip-save decision:
-        # - if --skip-save, don't write
-        # - if --test and the seed exists (and not overriding), run but don't write
-        skip_save_effective = bool(self.args.skip_save or (self.args.test and exists and not self.args.override))
+        # Save policy:
+        # - NEVER save in --test mode
+        # - If seed already exists, ALWAYS skip saving and warn
+        save_allowed = (not self.args.test) and (not exists)
 
-        if exists and not (self.args.override or skip_save_effective):
-            print(
-                f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> already present; "
-                f"use --override to replace or --skip-save/--test to run without saving"
-            )
-            return
-
-        if replace_existing:
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> replacing existing entry")
-        elif skip_save_effective and exists:
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> exists; running but NOT saving results")
-        else:
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> running a new seed")
+        if exists:
+            print(f"[kwok-test-gen][warn] cfg={cfg.stem} seed={seed_int} already present; will run but NOT save")
 
         try:
             tgt_mc_cluster = int(node_mc * util) * num_nodes
@@ -370,8 +390,7 @@ class KwokTestGenerator:
             hi_mem = int(alloc_mem * (util + util_tol))
 
             if not (lo_cpu <= sum_cpu <= hi_cpu) or not (lo_mem <= sum_mem <= hi_mem):
-                # record test-mode row then return
-                if self.args.test:
+                if self._collect_test:
                     self._test_rows.append({
                         "kwok_config": str(cfg),
                         "seed": seed_int,
@@ -450,8 +469,8 @@ class KwokTestGenerator:
                         "node": node,
                     })
 
-            # record test row
-            if self.args.test:
+            # record test row (for --test or any single-seed run)
+            if self._collect_test:
                 self._test_rows.append({
                     "kwok_config": str(cfg),
                     "seed": seed_int,
@@ -490,36 +509,19 @@ class KwokTestGenerator:
                 "pod_node": json.dumps(pod_node_list, separators=(",", ":")),
             }
 
-            # If splitting, write only when saving
-            if self.args.divide_scheduled_unscheduled and not skip_save_effective:
-                sched_path = self.results_dir / f"{cfg.stem}_scheduled.csv"
-                unsched_path = self.results_dir / f"{cfg.stem}_unscheduled.csv"
-                self._ensure_csv_with_header(sched_path, RESULTS_HEADER)
-                self._ensure_csv_with_header(unsched_path, RESULTS_HEADER)
-                if replace_existing:
-                    self._rewrite_csv_without_seed(sched_path, str(seed_int), RESULTS_HEADER)
-                    self._rewrite_csv_without_seed(unsched_path, str(seed_int), RESULTS_HEADER)
-                if len(unschedulable_names) > 0:
-                    self._append_rows(unsched_path, RESULTS_HEADER, [result_row])
-                else:
-                    self._append_rows(sched_path, RESULTS_HEADER, [result_row])
-
-            # Primary per-config CSV (only when saving)
-            if not skip_save_effective:
-                if replace_existing:
-                    self._rewrite_results_without_seed(result_csv, seed_int)
-                csv_append_row(result_csv, RESULTS_HEADER, result_row)
-
-            if not exists:
-                seen.add(seed_int)
-
-            if skip_save_effective:
-                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> ran without saving")
+            # Save if allowed (rotation-aware)
+            if save_allowed:
+                dest_csv = self._pick_results_csv_to_write(cfg.stem, rows_to_add=1)
+                # ensure header in case kwok_shared.csv_append_row doesn't add it
+                self._ensure_csv_with_header(dest_csv, RESULTS_HEADER)
+                csv_append_row(dest_csv, RESULTS_HEADER, result_row)
+                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> appended to {dest_csv.name} "
+                    f"(unsched={len(unschedulable_names)})")
             else:
-                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> appended (unsched={len(unschedulable_names)})")
+                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> NOT saved")
 
         except Exception as e:
-            if self.args.test:
+            if self._collect_test:
                 self._test_rows.append({
                     "kwok_config": str(cfg),
                     "seed": seed_int,
@@ -530,28 +532,19 @@ class KwokTestGenerator:
             with open(self.failed_seeds_f, "a", encoding="utf-8") as f:
                 f.write(f"{cfg}\t{seed_int}\t{e}\n")
 
-    @staticmethod
-    def _pick_num_replicaset_for_seed(seed_int: int, lo: int, hi: int, total_pods: int) -> int:
-        lo = max(0, int(lo))
-        hi = max(lo, int(hi))
-        hi = min(hi, int(total_pods))
-        rng = random.Random(seed_int ^ 0x9E3779B97F4A7C15)
-        return rng.randint(lo, hi)
-
+    # ---------- summary ----------
     def _print_test_summary(self) -> None:
         if not self._test_rows:
             print("\n[kwok-test-gen][summary] No test results.")
             return
         rows = sorted(self._test_rows, key=lambda r: (str(r["kwok_config"]), int(r.get("seed") or 0)))
-        # compute widths
         cfg_w = max(len("kwok_config"), *(len(Path(r["kwok_config"]).name) for r in rows))
         seed_w = max(len("seed"), *(len(str(r["seed"])) for r in rows))
         sch_w = len("scheduled")
         uns_w = len("unscheduled")
-        note_w = max(len("note"), *(len(str(r.get("note",""))) for r in rows))
 
         print("\n==================== TEST SUMMARY ====================")
-        header = f"{'kwok_config'.ljust(cfg_w)}  {'seed'.rjust(seed_w)}  {'scheduled'.rjust(sch_w)}  {'unscheduled'.rjust(uns_w)}  {'note'}"
+        header = f"{'kwok_config'.ljust(cfg_w)}  {'seed'.rjust(seed_w)}  {'scheduled'.rjust(sch_w)}  {'unscheduled'.rjust(uns_w)}  note"
         print(header)
         print("-" * len(header))
         for r in rows:
@@ -563,6 +556,7 @@ class KwokTestGenerator:
             print(f"{cfg_name}  {seed}  {sch}  {uns}  {note}")
         print("======================================================")
 
+    # ---------- per-config ----------
     def _run_for_config(self, cfg: Path) -> None:
         try:
             rc = self._load_run_config(cfg)
@@ -570,7 +564,7 @@ class KwokTestGenerator:
             print(f"[kwok-test-gen][config-failed] {cfg}: {e}")
             with open(self.failed_cfg_f, "a", encoding="utf-8") as f:
                 f.write(str(cfg) + "\n")
-            if self.args.test:
+            if self._collect_test:
                 self._test_rows.append({
                     "kwok_config": str(cfg),
                     "seed": self.args.seed,
@@ -589,7 +583,7 @@ class KwokTestGenerator:
             print(f"[kwok-test-gen][config-failed] ensure cluster {cfg}: {e}")
             with open(self.failed_cfg_f, "a", encoding="utf-8") as f:
                 f.write(str(cfg) + "\n")
-            if self.args.test:
+            if self._collect_test:
                 self._test_rows.append({
                     "kwok_config": str(cfg),
                     "seed": self.args.seed,
@@ -622,16 +616,16 @@ class KwokTestGenerator:
         cpu_interval_used, _ = resolve_interval_or_fallback(parsed_cpu, total_pods, tgt_mc_cluster, spread=0.9)
         mem_interval_used, _ = resolve_interval_or_fallback(parsed_mem, total_pods, tgt_mi_cluster, spread=0.9)
 
-        # per-config CSV + seen
-        result_csv = self.results_dir / f"{cfg.stem}.csv"
-        seen = self._load_seen_results(result_csv)
+        # rotation-aware: we still pass a "stem" base path; actual writing picks rotated file
+        result_stem_csv = self.results_dir / f"{cfg.stem}.csv"
+        seen = self._load_seen_results_all(cfg.stem)
 
-        # seed-only path (test mode requires a single seed)
+        # seed-only path
         if self.args.seed is not None:
             s = int(self.args.seed)
             num_rs = self._pick_num_replicaset_for_seed(s, rc.num_replicaset_lo, rc.num_replicaset_hi, total_pods)
             self._run_one_seed(
-                cfg, rc.namespace, result_csv, seen, s,
+                cfg, rc.namespace, result_stem_csv, seen, s,
                 rc.num_nodes, rc.pods_per_node, num_rs, rc.num_priorities,
                 rc.node_cpu, rc.node_mem, rc.util, rc.util_tolerance,
                 node_mc, node_mi, total_pods,
@@ -640,7 +634,7 @@ class KwokTestGenerator:
             )
             return
 
-        # other modes (count/seed-file)
+        # count path
         if self.args.count is not None and int(self.args.count) >= -1:
             to_make = int(self.args.count)
             rng = random.Random(int(time.time_ns()))
@@ -649,7 +643,7 @@ class KwokTestGenerator:
                 s = rng.randint(1, 2**63 - 1)
                 num_rs = self._pick_num_replicaset_for_seed(s, rc.num_replicaset_lo, rc.num_replicaset_hi, total_pods)
                 self._run_one_seed(
-                    cfg, rc.namespace, result_csv, seen, s,
+                    cfg, rc.namespace, result_stem_csv, seen, s,
                     rc.num_nodes, rc.pods_per_node, num_rs, rc.num_priorities,
                     rc.node_cpu, rc.node_mem, rc.util, rc.util_tolerance,
                     node_mc, node_mi, total_pods,
@@ -660,12 +654,19 @@ class KwokTestGenerator:
                     made += 1
             return
 
+        # seed-file path
         if self.args.seed_file:
-            for s in self._read_seeds_file(Path(self.args.seed_file)):
+            seeds_list = self._read_seeds_file(Path(self.args.seed_file))
+            total_seeds = len(seeds_list)
+            for idx, s in enumerate(seeds_list, start=1):
+                remaining = total_seeds - idx + 1
+                print("\n======================================================================================================")
+                print(f"[kwok-test-gen] starting seed={s} for config={cfg.name} (remaining seeds in file: {remaining})")
+                print("=======================================================================================")
                 s = int(s)
                 num_rs = self._pick_num_replicaset_for_seed(s, rc.num_replicaset_lo, rc.num_replicaset_hi, total_pods)
                 self._run_one_seed(
-                    cfg, rc.namespace, result_csv, seen, s,
+                    cfg, rc.namespace, result_stem_csv, seen, s,
                     rc.num_nodes, rc.pods_per_node, num_rs, rc.num_priorities,
                     rc.node_cpu, rc.node_mem, rc.util, rc.util_tolerance,
                     node_mc, node_mi, total_pods,
@@ -675,6 +676,30 @@ class KwokTestGenerator:
             return
 
         print(f"[kwok-test-gen] No seeds provided for cfg={cfg.name} (use --seed / --seed-file / --count).")
+
+    # ---------- top-level ----------
+    @staticmethod
+    def _check_seed_file_exists(seed_file: Optional[str]) -> None:
+        if not seed_file:
+            return
+        sf = Path(seed_file)
+        if not sf.exists() or not sf.is_file():
+            raise SystemExit(f"--seed-file not found or not a regular file: {sf}")
+        try:
+            with open(sf, "r", encoding="utf-8"):
+                pass
+        except Exception as e:
+            raise SystemExit(f"--seed-file not readable: {sf} ({e})")
+
+    @staticmethod
+    def _get_kwok_configs(dir_path: str) -> List[Path]:
+        cfg_dir = Path(dir_path)
+        if not cfg_dir.exists():
+            raise SystemExit(f"--kwok-config-dir not found: {cfg_dir}")
+        cfgs = sorted([p for p in cfg_dir.glob("**/*") if p.is_file() and p.suffix.lower() in (".yaml", ".yml")])
+        if not cfgs:
+            raise SystemExit("No KWOK configs found (must be at least one).")
+        return cfgs
 
     def run(self) -> None:
         # sanity for seed options
@@ -689,7 +714,7 @@ class KwokTestGenerator:
         if self.args.count is None and self.args.seed_file:
             self._check_seed_file_exists(self.args.seed_file)
 
-        # test-mode constraints
+        # test-mode constraints (still enforced)
         if self.args.test:
             if self.args.seed is None:
                 raise SystemExit("--test requires exactly one --seed")
@@ -697,13 +722,17 @@ class KwokTestGenerator:
                 raise SystemExit("--test cannot be combined with --count or --seed-file")
 
         cfgs = self._get_kwok_configs(self.args.kwok_config_dir)
-        print(f"[kwok-test-gen] configs={len(cfgs)}")
-        for cfg in cfgs:
-            print(f"\n[kwok-test-gen] ===== {cfg} =====")
+        total_cfgs = len(cfgs)
+        print(f"[kwok-test-gen] configs={total_cfgs}")
+        for idx, cfg in enumerate(cfgs, start=1):
+            remaining_cfgs = total_cfgs - idx + 1
+            print("\n======================================================================================================")
+            print(f"[kwok-test-gen] config={cfg}  (remaining configs: {remaining_cfgs})")
+            print("======================================================================================================")
             self._run_for_config(cfg)
 
-        # print summary if requested
-        if self.args.test:
+        # Always print summary if collecting (either --test OR single --seed)
+        if self._collect_test:
             self._print_test_summary()
 
 
@@ -721,7 +750,11 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="Directory containing one or more KWOK config YAMLs")
     ap.add_argument("--results-dir", dest="results_dir", default="./scripts/kwok/results",
                     help="Directory to store results CSV files (one per KWOK config)")
-    
+
+    # rotation
+    ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=2,
+                    help="Maximum number of data rows per results CSV before rotating to <name>_N.csv")
+
     # failure logs
     ap.add_argument("--failed-kwok-configs-file", dest="failed_kwok_configs_file",
                     default="./scripts/kwok/failed/failed_kwok_configs.csv",
@@ -735,22 +768,17 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="Run exactly this seed (per kwok-config)")
     ap.add_argument("--seed-file", dest="seed_file", default=None,
                     help="Path to seeds file (CSV with 'seed' col or newline list).")
-    ap.add_argument("--override", action="store_true",
-                    help="Re-run and replace results for seeds already present")
     ap.add_argument("--divide-scheduled-unscheduled", action="store_true",
                     help="Also create two per-pod CSVs named '<cfg>_scheduled.csv' and '<cfg>_unscheduled.csv'")
     ap.add_argument("--count", type=int, default=None,
                     help="Generate random seeds; -1=infinite.")
-    ap.add_argument("--skip-save", dest="skip_save", action="store_true",
-                    help="Run a seed without saving any results.")
 
-    # NEW: test mode
+    # Test summary mode — and note: test mode disables all saving
     ap.add_argument("--test", action="store_true",
                     help="Test mode: requires --seed; runs each kwok-config and prints a per-config summary "
-                         "of scheduled vs unscheduled at the end. If the seed already exists and --override is not set, "
-                         "the run proceeds without saving (like --skip-save) to ensure it is included in the summary.")
+                         "of scheduled vs unscheduled at the end. No results are saved in test mode.")
 
-    # NOTE: other args are provided in YAML per-config
+    # Note: other args are provided in YAML per-config
     return ap
 
 

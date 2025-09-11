@@ -125,7 +125,7 @@ def ensure_namespace(ctx: str, ns: str, *, recreate: bool = False, retries: int 
         r = run(["kubectl","--context",ctx,"-n",ns,"get","sa","default"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if r.returncode == 0:
-            print(f"[kwok-fill] Found default serviceaccount in ns '{ns}'")
+            print(f"Found default serviceaccount in ns '{ns}'")
             break
         time.sleep(delay)
 
@@ -134,7 +134,7 @@ def delete_namespace(ctx: str, ns: str) -> None:
     Delete the specified namespace in the given context.
     """
     cmd = ["kubectl", "--context", ctx, "delete", "namespace", ns, "--ignore-not-found"]
-    print(f"[kwok-fill] Deleting namespace '{ns}'...")
+    print(f"Deleting namespace '{ns}'...")
     try:
         subprocess.run(
             cmd,
@@ -142,9 +142,9 @@ def delete_namespace(ctx: str, ns: str) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT
         )
-        print(f"[kwok-fill] Namespace '{ns}' deleted (ctx={ctx})")
+        print(f"Namespace '{ns}' deleted (ctx={ctx})")
     except:
-        print(f"[kwok-fill] Error deleting namespace '{ns}' in ctx={ctx}")
+        print(f"Error deleting namespace '{ns}' in ctx={ctx}")
 
 import time
 
@@ -239,13 +239,12 @@ def ensure_kwok_cluster(name_or_ctx: str, kwok_config: str | Path | None, recrea
     cfg_path = Path(kwok_config) if kwok_config else None
 
     if recreate:
-        print(f"[setup] recreating kwok cluster '{cluster_name}'")
+        print(f"Recreating kwok cluster '{cluster_name}'")
         subprocess.run(["kwokctl", "delete", "cluster", "--name", cluster_name], check=False)
 
     if cfg_path and cfg_path.exists():
         cfg_for_kwokctl, tmp_to_cleanup = prep_kwokctl_config_file(cfg_path)
         try:
-            print(f"[setup] kwokctl create cluster --name {cluster_name} --config {cfg_path}")
             subprocess.run(
                 ["kwokctl", "create", "cluster", "--name", cluster_name, "--config", str(cfg_for_kwokctl)],
                 check=True
@@ -256,8 +255,7 @@ def ensure_kwok_cluster(name_or_ctx: str, kwok_config: str | Path | None, recrea
                 except OSError: pass
     else:
         if cfg_path and not cfg_path.exists():
-            print(f"[setup][warn] KWOK_CONFIG='{cfg_path}' not found; creating with defaults")
-        print(f"[setup] kwokctl create cluster --name {cluster_name}")
+            print(f"KWOK_CONFIG='{cfg_path}' not found; creating with defaults")
         subprocess.run(["kwokctl", "create", "cluster", "--name", cluster_name], check=True)
 
 def create_kwok_nodes(ctx: str, num_nodes: int, node_cpu: str, node_mem: str, pods_cap: int) -> None:
@@ -462,7 +460,7 @@ def wait_pod(ctx: str, name: str, ns: str, timeout_sec: int, mode: str = "ready"
         except Exception:
             pass
         time.sleep(0.5)
-    print(f"[wait-pod] timeout waiting for pod '{name}' in ns '{ns}' to be {mode}")
+    print(f"Timeout waiting for pod '{name}' in ns '{ns}' to be {mode}")
     return 0
 
 def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = "ready") -> int:
@@ -508,7 +506,7 @@ def wait_rs_pods(ctx: str, rs_name: str, ns: str, timeout_sec: int, mode: str = 
 
         time.sleep(0.5)
 
-    print(f"[wait-rs-pods] timeout waiting for RS '{rs_name}' in ns '{ns}' to have desired pods ready")
+    print(f"Timeout waiting for RS '{rs_name}' in ns '{ns}' to have desired pods ready")
     return last_count
 
 def get_timestamp() -> str:
