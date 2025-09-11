@@ -65,6 +65,7 @@ def mem_mi_int_to_str(mi: int) -> str:
     return f"{mi}Mi"
 
 # ---------- kubectl helpers ----------
+
 def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     """
     Get the JSON output from a kubectl command.
