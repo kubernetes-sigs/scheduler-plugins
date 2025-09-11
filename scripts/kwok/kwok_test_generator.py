@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 
 from kwok_shared import (
-    get_scheduled_and_unscheduled, get_json_ctx, stat_snapshot, csv_append_row,
-    cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
+    get_scheduled_and_unscheduled, get_json_ctx, stat_snapshot, dir_exists, file_exists,
+    csv_append_row, cpu_m_str_to_int, mem_str_to_mib_int, cpu_m_int_to_str, mem_mi_int_to_str,
 )
 
 # ===============================================================
@@ -946,20 +946,6 @@ class KwokTestGenerator:
         return out
 
     # ---------- seed helpers ----------
-
-    @staticmethod
-    def _check_seed_file_exists(seed_file: Optional[str]) -> None:
-        if not seed_file:
-            return
-        sf = Path(seed_file)
-        if not sf.exists() or not sf.is_file():
-            raise SystemExit(f"--seed-file not found or not a regular file: {sf}")
-        try:
-            with open(sf, "r", encoding="utf-8"):
-                pass
-        except Exception as e:
-            raise SystemExit(f"--seed-file not readable: {sf} ({e})")
-    
     @staticmethod
     def _pick_num_replicaset_for_seed(seed_int: int, lo: int, hi: int, total_pods: int) -> int:
         lo = max(0, int(lo))
@@ -1087,6 +1073,8 @@ class KwokTestGenerator:
             print(f"[kwok-test-gen][warn] cfg={cfg.stem} seed={seed_int} already present; will run but NOT save")
 
         try:
+            start_time = time.time()
+            
             tgt_mc_cluster = int(node_mc * util) * num_nodes
             tgt_mi_cluster = int(node_mi * util) * num_nodes
 
@@ -1223,6 +1211,9 @@ class KwokTestGenerator:
                 "scheduled": scheduled_braced,
                 "pod_node": json.dumps(pod_node_list, separators=(",", ":")),
             }
+            
+            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> done; took {time.time() - start_time:.1f}s, "
+                f"scheduled={len(scheduled_pairs)}, unschedulable={len(unschedulable_names)}")
 
             # Save if allowed (rotation-aware)
             if save_allowed:
@@ -1230,8 +1221,7 @@ class KwokTestGenerator:
                 # ensure header in case kwok_shared.csv_append_row doesn't add it
                 self._ensure_csv_with_header(dest_csv, RESULTS_HEADER)
                 csv_append_row(dest_csv, RESULTS_HEADER, result_row)
-                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> appended to {dest_csv.name} "
-                    f"(unsched={len(unschedulable_names)})")
+                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> appended to {dest_csv.name}")
             else:
                 print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed_int} -> NOT saved")
 
@@ -1355,7 +1345,7 @@ class KwokTestGenerator:
                 remaining = total_seeds - idx + 1
                 print("\n======================================================================================================")
                 print(f"[kwok-test-gen] starting seed={s} for config={cfg.name} (remaining seeds in file: {remaining})")
-                print("=======================================================================================")
+                print("======================================================================================================")
                 s = int(s)
                 num_rs = self._pick_num_replicaset_for_seed(s, rc.num_replicaset_lo, rc.num_replicaset_hi, total_pods)
                 self._run_one_seed(
@@ -1371,7 +1361,26 @@ class KwokTestGenerator:
         print(f"[kwok-test-gen] No seeds provided for cfg={cfg.name} (use --seed / --seed-file / --count).")
 
     def run(self) -> None:
-        # sanity for seed options
+        # --- early mode: just generate seeds to file and exit ---
+        if getattr(self.args, "random_seeds_to_file", None):
+            if self.args.count is None or self.args.count < 1:
+                raise SystemExit("--random-seeds-to-file requires --count >= 1")
+            if self.args.seed is not None or self.args.seed_file:
+                raise SystemExit("--random-seeds-to-file cannot be combined with --seed or --seed-file")
+
+            rng = random.Random(int(time.time_ns()))
+            seeds = [rng.randint(1, 2**63 - 1) for _ in range(int(self.args.count))]
+
+            outp = Path(self.args.random_seeds_to_file)
+            outp.parent.mkdir(parents=True, exist_ok=True)
+            with open(outp, "w", encoding="utf-8", newline="") as f:
+                for s in seeds:
+                    f.write(f"{s}\n")
+
+            print(f"[kwok-test-gen] wrote {len(seeds)} seeds to {outp} (one per line, no header)")
+            return
+
+        # --- argument sanity (mutual exclusions / ranges) ---
         if self.args.seed is not None and self.args.seed < 1:
             raise SystemExit("--seed must be a positive integer")
         if self.args.seed_file and self.args.count is not None:
@@ -1380,16 +1389,20 @@ class KwokTestGenerator:
             raise SystemExit("--seed cannot be used with --count")
         if self.args.count is not None and self.args.count < -1:
             raise SystemExit("--count must be -1 (infinite) or a positive integer")
-        if self.args.count is None and self.args.seed_file:
-            self._check_seed_file_exists(self.args.seed_file)
 
-        # test-mode constraints (still enforced)
+        # --- FAIL FAST on provided paths ---
+        if self.args.seed_file:
+            file_exists(self.args.seed_file)
+        dir_exists(self.args.kwok_config_dir)
+
+        # --- test-mode constraints ---
         if self.args.test:
             if self.args.seed is None:
                 raise SystemExit("--test requires exactly one --seed")
             if self.args.count is not None or self.args.seed_file:
                 raise SystemExit("--test cannot be combined with --count or --seed-file")
 
+        # proceed
         cfgs = self._get_kwok_configs(self.args.kwok_config_dir)
         total_cfgs = len(cfgs)
         print(f"[kwok-test-gen] configs={total_cfgs}")
@@ -1400,7 +1413,6 @@ class KwokTestGenerator:
             print("======================================================================================================")
             self._run_for_config(cfg)
 
-        # Always print summary if collecting (either --test OR single --seed)
         if self._collect_test:
             self._print_test_summary()
 
@@ -1437,6 +1449,8 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="Run exactly this seed (per kwok-config)")
     ap.add_argument("--seed-file", dest="seed_file", default=None,
                     help="Path to seeds file (CSV with 'seed' col or newline list).")
+    ap.add_argument("--random-seeds-to-file", dest="random_seeds_to_file", default=None,
+                    help="Write --count random seeds (one per line, no header) to this file, then exit. Cannot be combined with --seed/--seed-file.")
     ap.add_argument("--divide-scheduled-unscheduled", action="store_true",
                     help="Also create two per-pod CSVs named '<cfg>_scheduled.csv' and '<cfg>_unscheduled.csv'")
     ap.add_argument("--count", type=int, default=None,

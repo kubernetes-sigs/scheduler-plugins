@@ -76,7 +76,27 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     out = subprocess.check_output(cmd)
     return json.loads(out)
 
-# ---------- CSV helpers ----------
+# ---------- file I/O helpers ----------
+
+def dir_exists(dir_path: str) -> None:
+    p = Path(dir_path)
+    if not p.exists():
+        raise SystemExit(f"{p} not found: {p}")
+    if not p.is_dir():
+        raise SystemExit(f"{p} is not a directory")
+
+def file_exists(file: Optional[str]) -> None:
+    if not file:
+        return
+    f = Path(file)
+    if not f.exists() or not f.is_file():
+        raise SystemExit(f"--seed-file not found or not a regular file: {f}")
+    try:
+        with open(f, "r", encoding="utf-8"):
+            pass
+    except Exception as e:
+        raise SystemExit(f"--seed-file not readable: {f} ({e})")
+
 def csv_append_row(
     file_path: str | Path,
     header: List[str],
