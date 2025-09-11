@@ -30,9 +30,9 @@ RESULTS_HEADER = [
     "pod_node",
 ]
 
-# ===============================================================
+# ====================================================================
 # YAML builders. Due to identation problems we keep them outside class
-# ===============================================================
+# ====================================================================
 def yaml_priority_class(name: str, value: int) -> str:
     return textwrap.dedent(f"""\
     apiVersion: scheduling.k8s.io/v1
@@ -143,14 +143,14 @@ def yaml_kwok_pod(ns: str, name: str, qcpu: str, qmem: str, pc: str) -> str:
 # ===============================================================
 @dataclass
 class TestConfig:
-    # cluster & namespace
+    # namespace
     namespace: str = "test"
 
-    # topology / priorities
+    # topology
     num_nodes: int = 4
     pods_per_node: int = 4
-    num_replicaset: Optional[str] = None  # e.g. "1,4"
-    rs_replicas_per_set_interval: Optional[Tuple[int, int]] = None  # e.g. (1,4)
+    num_replicaset: Optional[Tuple[int, int]] = None  # (lo, hi) count of RS
+    rs_replicas_per_set_interval: Optional[Tuple[int, int]] = None  # (lo, hi) replicas per RS
     num_priorities: int = 4
 
     # node capacity
@@ -158,8 +158,8 @@ class TestConfig:
     node_mem: str = "32Gi"    # e.g. "32Gi"
 
     # per-pod intervals (normalized to "lo,hi" strings)
-    cpu_interval_per_pod: Optional[str] = "100m,1000m"
-    mem_interval_per_pod: Optional[str] = "128Mi,2048Mi"
+    cpu_interval_per_pod: Optional[Tuple[int, int]] = (100, 1000)   # mCPU
+    mem_interval_per_pod: Optional[Tuple[int, int]] = (128, 2048)    # MiB
 
     # utilization target
     util: float = 0.9
@@ -265,6 +265,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _parse_int_interval(s: Optional[str]) -> Optional[Tuple[int, int]]:
+        """
+        Parse a string into an integer interval (lo, hi).
+        """
         if not s:
             return None
         lo_s, hi_s = [x.strip() for x in s.split(",", 1)]
@@ -288,10 +291,16 @@ class KwokTestGenerator:
 
     @staticmethod
     def _get_timestamp() -> str:
+        """
+        Get the current timestamp as a string.
+        """
         return time.strftime("%Y/%m/%d/%H:%M:%S", time.localtime())
 
     @staticmethod
     def _get_int_from_dict(doc: Dict[str, Any], key: str, default: int) -> int:
+        """
+        Get an integer value from the document, returning a default if not found or invalid.
+        """
         v = doc.get(key, default)
         try:
             return int(v)
@@ -300,6 +309,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _get_float_from_dict(doc: Dict[str, Any], key: str, default: float) -> float:
+        """
+        Get a float value from the document, returning a default if not found or invalid.
+        """
         v = doc.get(key, default)
         try:
             return float(v)
@@ -308,12 +320,18 @@ class KwokTestGenerator:
 
     @staticmethod
     def _get_str_from_dict(doc: Dict[str, Any], key: str, default: str) -> str:
+        """
+        Get a string value from the document, returning a default if not found or empty.
+        """
         v = doc.get(key, default)
         s = str(v).strip()
         return s if s != "" else default
 
     @staticmethod
     def _get_wait_mode_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> Optional[str]:
+        """
+        Get the wait mode from the document, returning None for empty values.
+        """
         v = doc.get(key, default)
         if v is None:
             return None
@@ -351,6 +369,9 @@ class KwokTestGenerator:
     ######################################################
     @staticmethod
     def _format_interval_int(t: Optional[Tuple[int, int]]) -> str:
+        """
+        Format an integer interval for YAML output.
+        """
         return "" if not t else f"{int(t[0])},{int(t[1])}"
 
     @staticmethod
@@ -363,10 +384,9 @@ class KwokTestGenerator:
         """
         Normalize an interval to the canonical "lo,hi" string.
         Accepts:
-            - "cpu_interval_per_pod": "100m,1000m"
-            - "cpu_interval_per_pod": ["100m","1000m"]
-            - "cpu_interval_per_pod": {"lo":"100m","hi":"1000m"}
-            - "cpu_interval_per_pod_lo": "100m" + "cpu_interval_per_pod_hi": "1000m"
+            - "interval_name": ["100m","1000m"]
+            - "interval_name": {"lo":"100m","hi":"1000m"}
+            - "interval_name_lo": "100m" + "interval_name_hi": "1000m"
         """
         single, lo_key, hi_key = key_combo
 
@@ -393,6 +413,10 @@ class KwokTestGenerator:
     
     @staticmethod
     def _parse_cpu_interval(s: Optional[str]) -> Optional[Tuple[int,int]]:
+        """
+        Parse a CPU interval string into a tuple of (min, max) millicores.
+        Accepts decimals (e.g., '0.25', '250m', '1.5').
+        """
         if not s:
             return None
         lo_raw, hi_raw = [x.strip() for x in s.split(",", 1)]
@@ -428,21 +452,10 @@ class KwokTestGenerator:
         return f"{mem_mi_int_to_str(tup[0])},{mem_mi_int_to_str(tup[1])}"
 
     @staticmethod
-    def _resolve_interval(label, interval, n, total, *, cap_each, jitter=0.5):
-        if KwokTestGenerator._interval_feasible(interval, n, total):
-            return interval, False
-        if interval is not None:
-            raise ValueError(
-                f"Infeasible {label} per-pod interval {interval} for n={n}, total={total}. "
-                "Note: Intervals are expected to be per-pod. "
-                f"Remove them to allow auto-generation, otherwise, adjust them - must satisfy n*lo <= total_{label} <= n*hi."
-                f"One range that will works is: total_{label}/total_pods={total/n} +/- some jitter"
-            )
-        auto = KwokTestGenerator._autogen_interval_from_target(total, n, cap_each=cap_each, jitter=jitter)
-        return auto, True
-
-    @staticmethod
-    def _interval_feasible(interval: Optional[Tuple[int,int]], n: int, total: int) -> bool:
+    def _is_interval_feasible(interval: Optional[Tuple[int,int]], n: int, total: int) -> bool:
+        """
+        Check if the given interval is feasible for the specified n and total.
+        """
         if not interval or n <= 0: 
             return False
         lo, hi = interval
@@ -451,7 +464,24 @@ class KwokTestGenerator:
         return n*lo <= total <= n*hi
     
     @staticmethod
-    def _autogen_interval_from_target(total: int, n: int, *, cap_each: Optional[int], jitter: float = 0.4) -> Tuple[int,int]:
+    def _resolve_interval(label, interval, n, total, *, cap_each, jitter=0.5):
+        """
+        Validate or auto-generate a per-pod interval for the given total and n.
+        """
+        if KwokTestGenerator._is_interval_feasible(interval, n, total):
+            return interval, False
+        if interval is not None:
+            raise ValueError(
+                f"Infeasible {label} per-pod interval {interval} for n={n}, total={total}. "
+                "Note: Intervals are expected to be per-pod. "
+                f"Remove them to allow auto-generation, otherwise, adjust them - must satisfy n*lo <= total_{label} <= n*hi."
+                f"One range that will works is: total_{label}/total_pods={total/n} +/- some jitter"
+            )
+        auto = KwokTestGenerator._gen_interval(total, n, cap_each=cap_each, jitter=jitter)
+        return auto, True
+    
+    @staticmethod
+    def _gen_interval(total: int, n: int, *, cap_each: Optional[int], jitter: float = 0.4) -> Tuple[int,int]:
         """
         Build a [lo, hi] around the mean so that n*lo <= total <= n*hi.
         cap_each (e.g. node capacity for that resource) is optional.
@@ -480,10 +510,9 @@ class KwokTestGenerator:
         return lo, hi
 
     @staticmethod
-    def _gen_parts_fixed_interval(total: int, n: int, lo: int, hi: int, rng: random.Random) -> List[int]:
+    def _gen_random_parts(total: int, n: int, lo: int, hi: int, rng: random.Random) -> List[int]:
         """
-        Exact-sum random composition with bounds.
-        Guarantees success iff n*lo <= total <= n*hi (feasible).
+        Generate n parts in [lo, hi] that sum to total.
         """
         parts: List[int] = []
         rem = total
@@ -498,11 +527,209 @@ class KwokTestGenerator:
         rng.shuffle(parts)
         return parts
 
+    @staticmethod
+    def _gen_rs_specs(
+        rng: random.Random,
+        counts: list[int],                    # replicas per RS (will be adjusted by moving replicas)
+        c_lo: int, c_hi: int,                 # per-pod CPU bounds (millicores)
+        m_lo: int, m_hi: int,                 # per-pod MEM bounds (Mi)
+        target_cpu: int, target_mem: int,     # desired weighted sums: sum(counts[i]*x_i)
+        util: float, util_tol: float,         # from config
+        *,
+        max_steps: int = 10000
+    ) -> tuple[list[int], list[int], list[int], bool]:
+        """
+        Given a list of RS replica counts, generate per-RS (per-pod) CPU and MEM requests
+        such that the weighted sums are close to target_cpu and target_mem within tolerances.
+        """
+        n = len(counts)
+        if n == 0:
+            return counts, [], [], True
+
+        cpu_x = [rng.randint(c_lo, c_hi) for _ in range(n)]
+        mem_x = [rng.randint(m_lo, m_hi) for _ in range(n)]
+
+        def wsum(vals: list[int], cnts: list[int]) -> int:
+            return sum(v * c for v, c in zip(vals, cnts))
+
+        def abs_tol(target: int) -> int:
+            # target ≈ alloc*util → abs tolerance ≈ target*(util_tol/util)
+            if util <= 0:
+                return max(1, int(0.01 * target))
+            return max(1, int(round(target * (util_tol / util))))
+
+        tol_cpu = abs_tol(target_cpu)
+        tol_mem = abs_tol(target_mem)
+
+        S_cpu = wsum(cpu_x, counts)
+        S_mem = wsum(mem_x, counts)
+        
+        def in_tol() -> bool:
+            return abs(S_cpu - target_cpu) <= tol_cpu and abs(S_mem - target_mem) <= tol_mem
+
+        def try_nudge(which: str, direction: int) -> bool:
+            nonlocal S_cpu, S_mem  # declare before assigning
+            """
+            which: 'cpu' or 'mem'; direction: +1 to increase sum, -1 to decrease.
+            Picks a candidate RS (weighted by replicas) that can move 1 within bounds.
+            """
+            if which == "cpu":
+                cand = [i for i in range(n) if (direction > 0 and cpu_x[i] < c_hi) or (direction < 0 and cpu_x[i] > c_lo)]
+            else:
+                cand = [i for i in range(n) if (direction > 0 and mem_x[i] < m_hi) or (direction < 0 and mem_x[i] > m_lo)]
+            if not cand:
+                print(f"nudge: no candidates to adjust {which} in direction {direction}")
+                return False
+            i = rng.choices(cand, weights=[max(1, counts[j]) for j in cand], k=1)[0]
+            if which == "cpu":
+                if direction > 0 and cpu_x[i] < c_hi:
+                    cpu_x[i] += 1
+                    S_cpu += counts[i]
+                    return True
+                if direction < 0 and cpu_x[i] > c_lo:
+                    cpu_x[i] -= 1
+                    S_cpu -= counts[i]
+                    return True
+            else:
+                if direction > 0 and mem_x[i] < m_hi:
+                    mem_x[i] += 1
+                    S_mem += counts[i]
+                    return True
+                if direction < 0 and mem_x[i] > m_lo:
+                    mem_x[i] -= 1
+                    S_mem -= counts[i]
+                    return True
+            print("nudge failed unexpectedly")
+            return False
+
+        def move_one_replica() -> bool:
+            nonlocal S_cpu, S_mem  # declare before assigning
+            """
+            Move one replica from a 'heavier' RS to a 'lighter' RS if it reduces total L1 error.
+            """
+            if sum(counts) <= 1:
+                return False
+            order = sorted(range(n), key=lambda i: (cpu_x[i] + mem_x[i]) * max(1, counts[i]), reverse=True)
+            heavy = order
+            light = list(reversed(order))
+            cur_err = abs(S_cpu - target_cpu) + abs(S_mem - target_mem)
+            for i in heavy:
+                if counts[i] <= 1:
+                    continue
+                for j in light:
+                    if i == j:
+                        continue
+                    new_S_cpu = S_cpu + (cpu_x[j] - cpu_x[i])
+                    new_S_mem = S_mem + (mem_x[j] - mem_x[i])
+                    new_err = abs(new_S_cpu - target_cpu) + abs(new_S_mem - target_mem)
+                    if new_err < cur_err:
+                        counts[i] -= 1
+                        counts[j] += 1
+                        S_cpu, S_mem = new_S_cpu, new_S_mem
+                        return True
+            print("move_one_replica: no beneficial move found")
+            return False
+
+        # Pre-loop early exit: sometimes the initial draw is already within tolerance.
+        if in_tol():
+            print(
+                f"replicasets balancing ended early; ok=True "
+                f"(cpu {S_cpu}/{target_cpu}±{tol_cpu}, mem {S_mem}/{target_mem}±{tol_mem})"
+            )
+            return counts, cpu_x, mem_x, True
+
+        for step in range(1, max_steps + 1):
+            if in_tol():
+                print(
+                    f"replicasets balancing ended after {step} steps; ok=True "
+                    f"(cpu {S_cpu}/{target_cpu}±{tol_cpu}, mem {S_mem}/{target_mem}±{tol_mem})"
+                )
+                return counts, cpu_x, mem_x, True
+
+            wants = []
+            wants.append(("cpu", +1) if S_cpu < target_cpu else ("cpu", -1) if S_cpu > target_cpu else None)
+            wants.append(("mem", +1) if S_mem < target_mem else ("mem", -1) if S_mem > target_mem else None)
+            wants = [w for w in wants if w]
+
+            # Try nudges; if any change gets us within tolerance, stop immediately.
+            for which, direction in rng.sample(wants, len(wants)):
+                if try_nudge(which, direction):
+                    if in_tol():
+                        print(
+                            f"replicasets balancing ended after {step} steps (after nudge); ok=True "
+                            f"(cpu {S_cpu}/{target_cpu}±{tol_cpu}, mem {S_mem}/{target_mem}±{tol_mem})"
+                        )
+                    # Either way, go to next loop iteration to keep improving if needed.
+                    break
+            else:
+                # No nudge possible; try moving a replica.
+                if move_one_replica():
+                    if in_tol():
+                        print(
+                            f"replicasets balancing ended after {step} steps (after move); ok=True "
+                            f"(cpu {S_cpu}/{target_cpu}±{tol_cpu}, mem {S_mem}/{target_mem}±{tol_mem})"
+                        )
+                        return counts, cpu_x, mem_x, True
+                    continue
+                # Stuck: neither nudge nor move helped.
+                break
+
+            if move_one_replica():
+                continue
+            
+            break  # stuck
+
+        ok = in_tol()
+        print(
+            f"replicasets balancing ended after {max_steps} steps; ok={ok} "
+            f"(cpu {S_cpu}/{target_cpu}±{tol_cpu}, mem {S_mem}/{target_mem}±{tol_mem})"
+        )
+        return counts, cpu_x, mem_x, ok
+    
+    @staticmethod
+    def _gen_replicaset_counts(
+        total_pods: int,
+        num_replicaset: int,
+        rng: random.Random,
+        replicas_cnt_interval: Optional[Tuple[int, int]] = None, 
+    ) -> List[int]:
+        """
+        Partition total_pods into num_replicaset positive integers (exact sum).
+        If 'interval' is provided (lo,hi), draw each RS's replica count in [lo,hi]
+        while guaranteeing feasibility (n*lo <= total <= n*hi).
+        Otherwise, use an auto interval around the average.
+        """
+        if num_replicaset <= 0:
+            return []
+        if num_replicaset == 1:
+            return [total_pods]
+
+        if replicas_cnt_interval:
+            lo, hi = int(replicas_cnt_interval[0]), int(replicas_cnt_interval[1])
+            lo = max(1, lo)
+            hi = max(lo, hi)
+            if not (num_replicaset * lo <= total_pods <= num_replicaset * hi):
+                raise ValueError(
+                    f"num_replicas_per_set infeasible: n*lo={num_replicaset*lo} "
+                    f"total={total_pods} n*hi={num_replicaset*hi}"
+                )
+        else:
+            # Narrow auto-interval around the mean; jitter chosen to keep counts reasonable
+            lo, hi = KwokTestGenerator._gen_interval(
+                total_pods, num_replicaset, cap_each=None, jitter=0.4
+            )
+            lo = max(1, lo)
+
+        return KwokTestGenerator._gen_random_parts(total_pods, num_replicaset, lo, hi, rng)
+
     ######################################################
     # ---------- CSV helpers & results rotation ----------
     ######################################################
     @staticmethod
     def _ensure_csv_with_header(path: Path, header: List[str]) -> None:
+        """
+        Ensure the CSV file exists with the given header.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             with open(path, "w", encoding="utf-8", newline="") as f:
@@ -510,6 +737,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _append_rows(path: Path, header: List[str], rows: List[Dict[str, Any]]) -> None:
+        """
+        Append rows to the CSV file, ensuring the header exists.
+        """
         KwokTestGenerator._ensure_csv_with_header(path, header)
         if not rows:
             return
@@ -519,7 +749,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _count_csv_rows(path: Path) -> int:
-        """Count data rows (excluding header)."""
+        """
+        Count data rows (excluding header).
+        """
         if not path.exists():
             return 0
         with open(path, "r", encoding="utf-8", newline="") as f:
@@ -528,10 +760,7 @@ class KwokTestGenerator:
     
     def _segment_list(self, stem: str) -> List[tuple[int, Path]]:
         """
-        Return [(idx, path), ...] for existing segments.
-        - Treat legacy '<stem>.csv' as idx=1
-        - Treat '<stem>_<N>.csv' as idx=N (N>=1)
-        Sorted by idx.
+        List all segments for the given stem, returning (index, path) tuples sorted by index.
         """
         segs: List[tuple[int, Path]] = []
         base = self.results_dir / f"{stem}.csv"
@@ -582,7 +811,7 @@ class KwokTestGenerator:
 
     def _load_seen_results_all(self, stem: str) -> set[int]:
         """
-        Load 'seen' seeds across legacy '<stem>.csv' and all rotated '<stem>_<N>.csv'.
+        Load all seen seeds from all segments for the given stem.
         """
         seen: set[int] = set()
         for _, p in self._segment_list(stem):
@@ -599,7 +828,7 @@ class KwokTestGenerator:
     def _result_file_index(self, stem: str, file: Path) -> int:
         """
         Rotation index for files strictly matching: <stem>_<N>.csv  (N >= 1)
-        Returns -1 if not a rotated file. (Legacy <stem>.csv is *not* matched here.)
+        Returns -1 if not a rotated file.
         """
         m = re.match(rf"^{re.escape(stem)}_(\d+)\.csv$", file.name)
         return int(m.group(1)) if m else -1
@@ -652,6 +881,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _ensure_kwok_cluster(name_or_ctx: str, kwok_config: str | Path | None, recreate: bool = True) -> None:
+        """
+        Ensure a KWOK cluster with the given name or context exists.
+        """
         cluster_name = name_or_ctx[len("kwok-"):] if name_or_ctx.startswith("kwok-") else name_or_ctx
         cfg_path = Path(kwok_config) if kwok_config else None
 
@@ -760,8 +992,7 @@ class KwokTestGenerator:
     ) -> None:
         """
         Ensure PriorityClasses {prefix}{i} for i in [start, start+num_priorities).
-        If delete_extras=True, remove any of our prefixed PCs outside that set
-        (never touches system/global-default classes).
+        If delete_extras=True, remove any of our prefixed PCs outside that set.
         """
         pcs_yaml = "".join(
             yaml_priority_class(f"{prefix}{v}", v)
@@ -799,161 +1030,10 @@ class KwokTestGenerator:
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     @staticmethod
-    def _random_rs_templates(
-        rng: random.Random,
-        counts: list[int],                    # replicas per RS (will be adjusted by moving replicas)
-        c_lo: int, c_hi: int,                 # per-pod CPU bounds (millicores)
-        m_lo: int, m_hi: int,                 # per-pod MEM bounds (Mi)
-        target_cpu: int, target_mem: int,     # desired weighted sums: sum(counts[i]*x_i)
-        util: float, util_tol: float,         # from config
-        *,
-        max_steps: int = 10000
-    ) -> tuple[list[int], list[int], list[int], bool]:
-        """
-        Simple plan:
-        - pick cpu_x/mem_x uniformly at random in [lo,hi]
-        - while not within tolerance:
-            * try nudging one RS template by ±1 toward target
-            * if all templates are pinned at bounds, move 1 replica from a "heavy" RS to a "light" RS
-        - return (possibly adjusted counts, cpu_x, mem_x, ok)
-        Keeps total pods constant by only *moving* replicas, never adding/removing overall.
-        """
-        n = len(counts)
-        if n == 0:
-            return counts, [], [], True
-
-        cpu_x = [rng.randint(c_lo, c_hi) for _ in range(n)]
-        mem_x = [rng.randint(m_lo, m_hi) for _ in range(n)]
-
-        def wsum(vals: list[int], cnts: list[int]) -> int:
-            return sum(v * c for v, c in zip(vals, cnts))
-
-        def abs_tol(target: int) -> int:
-            # target ≈ alloc*util → abs tolerance ≈ target*(util_tol/util)
-            if util <= 0:
-                return max(1, int(0.01 * target))
-            return max(1, int(round(target * (util_tol / util))))
-
-        tol_cpu = abs_tol(target_cpu)
-        tol_mem = abs_tol(target_mem)
-
-        S_cpu = wsum(cpu_x, counts)
-        S_mem = wsum(mem_x, counts)
-
-        def try_nudge(which: str, direction: int) -> bool:
-            nonlocal S_cpu, S_mem  # declare before assigning
-            """
-            which: 'cpu' or 'mem'; direction: +1 to increase sum, -1 to decrease.
-            Picks a candidate RS (weighted by replicas) that can move 1 within bounds.
-            """
-            if which == "cpu":
-                cand = [i for i in range(n) if (direction > 0 and cpu_x[i] < c_hi) or (direction < 0 and cpu_x[i] > c_lo)]
-            else:
-                cand = [i for i in range(n) if (direction > 0 and mem_x[i] < m_hi) or (direction < 0 and mem_x[i] > m_lo)]
-            if not cand:
-                print(f"nudge: no candidates to adjust {which} in direction {direction}")
-                return False
-            i = rng.choices(cand, weights=[max(1, counts[j]) for j in cand], k=1)[0]
-            if which == "cpu":
-                if direction > 0 and cpu_x[i] < c_hi:
-                    cpu_x[i] += 1
-                    S_cpu += counts[i]
-                    return True
-                if direction < 0 and cpu_x[i] > c_lo:
-                    cpu_x[i] -= 1
-                    S_cpu -= counts[i]
-                    return True
-            else:
-                if direction > 0 and mem_x[i] < m_hi:
-                    mem_x[i] += 1
-                    S_mem += counts[i]
-                    return True
-                if direction < 0 and mem_x[i] > m_lo:
-                    mem_x[i] -= 1
-                    S_mem -= counts[i]
-                    return True
-            print("nudge failed unexpectedly")
-            return False
-
-        def move_one_replica() -> bool:
-            nonlocal S_cpu, S_mem  # declare before assigning
-            """
-            Move one replica from a 'heavier' RS to a 'lighter' RS if it reduces total L1 error.
-            """
-            if sum(counts) <= 1:
-                return False
-            order = sorted(range(n), key=lambda i: (cpu_x[i] + mem_x[i]) * max(1, counts[i]), reverse=True)
-            heavy = order
-            light = list(reversed(order))
-            cur_err = abs(S_cpu - target_cpu) + abs(S_mem - target_mem)
-            for i in heavy:
-                if counts[i] <= 1:
-                    continue
-                for j in light:
-                    if i == j:
-                        continue
-                    new_S_cpu = S_cpu + (cpu_x[j] - cpu_x[i])
-                    new_S_mem = S_mem + (mem_x[j] - mem_x[i])
-                    new_err = abs(new_S_cpu - target_cpu) + abs(new_S_mem - target_mem)
-                    if new_err < cur_err:
-                        counts[i] -= 1
-                        counts[j] += 1
-                        S_cpu, S_mem = new_S_cpu, new_S_mem
-                        return True
-            print("move_one_replica: no beneficial move found")
-            return False
-
-        for _ in range(max_steps):
-            if abs(S_cpu - target_cpu) <= tol_cpu and abs(S_mem - target_mem) <= tol_mem:
-                print(f"replicasets balancing ended after {max_steps} steps; ok={ok} (cpu {S_cpu}/{target_cpu}±{tol_cpu}, mem {S_mem}/{target_mem}±{tol_mem})")
-                return counts, cpu_x, mem_x, True
-
-            wants = []
-            wants.append(("cpu", +1) if S_cpu < target_cpu else ("cpu", -1) if S_cpu > target_cpu else None)
-            wants.append(("mem", +1) if S_mem < target_mem else ("mem", -1) if S_mem > target_mem else None)
-            wants = [w for w in wants if w]
-
-            changed = False
-            for which, direction in rng.sample(wants, len(wants)):
-                if try_nudge(which, direction):
-                    changed = True
-                    break
-            if changed:
-                continue
-
-            if move_one_replica():
-                continue
-            
-            break  # stuck
-
-        ok = (abs(S_cpu - target_cpu) <= tol_cpu and abs(S_mem - target_mem) <= tol_mem)
-        print(f"replicasets balancing ended after {max_steps} steps; ok={ok} (cpu {S_cpu}/{target_cpu}±{tol_cpu}, mem {S_mem}/{target_mem}±{tol_mem})")
-        return counts, cpu_x, mem_x, ok
-
-    @staticmethod
-    def _gen_replicaset_counts(
-        total_pods: int,
-        num_replicaset: int,
-        rng: random.Random,
-    ) -> List[int]:
-        """
-        Partition total_pods into num_replicaset positive integers (exact sum).
-        Uses a narrow auto interval around the average; deterministic given rng.
-        """
-        if num_replicaset <= 0:
-            return []
-        if num_replicaset == 1:
-            return [total_pods]
-
-        lo, hi = KwokTestGenerator._autogen_interval_from_target(
-            total_pods, num_replicaset, cap_each=None, jitter=0.25
-        )
-        lo = max(1, lo)
-        return KwokTestGenerator._gen_parts_fixed_interval(total_pods, num_replicaset, lo, hi, rng)
-
-    @staticmethod
     def _scale_replicaset(ctx: str, ns: str, rs_name: str, replicas: int) -> None:
-        """Scale a ReplicaSet to a desired replica count."""
+        """
+        Scale a ReplicaSet to a desired replica count.
+        """
         subprocess.run([
             "kubectl", "--context", ctx, "-n", ns,
             "scale", "replicaset", rs_name, f"--replicas={replicas}"
@@ -961,7 +1041,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _get_rs_spec_replicas(ctx: str, ns: str, rs_name: str) -> Optional[int]:
-        """Fetch .spec.replicas for a ReplicaSet, or None if not found."""
+        """
+        Fetch .spec.replicas for a ReplicaSet, or None if not found.
+        """
         r = subprocess.run(["kubectl","--context",ctx,"-n",ns,"get","replicaset",rs_name,"-o","json"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         if r.returncode != 0:
@@ -985,6 +1067,14 @@ class KwokTestGenerator:
 
     @staticmethod
     def _wait_pod(ctx: str, name: str, ns: str, timeout_sec: int, mode: str = "ready") -> int:
+        """
+        Wait until the pod meets the condition.
+        mode:
+        - "exist": counts pods by presence (len of pod list)
+        - "ready": counts Ready=True
+        - "running": counts phase == Running
+        Returns 1 if the pod met the condition within timeout, else 0.
+        """
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
             r = subprocess.run(["kubectl","--context",ctx,"-n",ns,"get","pod",name,"-o","json"],
@@ -1066,6 +1156,9 @@ class KwokTestGenerator:
         cpu_parts: List[int], mem_parts: List[int],
         num_priorities: int, wait_mode: Optional[str], wait_timeout_s: int
     ) -> List[Dict[str, object]]:
+        """
+        Apply standalone pods with the given specifications.
+        """
         specs: List[Dict[str, object]] = []
         names: List[str] = []
         for i in range(total_pods):
@@ -1094,15 +1187,24 @@ class KwokTestGenerator:
         mem_interval_per_pod_used: tuple[int,int] | None,
         wait_mode: str | None, wait_timeout_s: int,
         util: float, util_tolerance: float,
+        rs_replicas_per_set_interval: Optional[Tuple[int,int]] = None,   # <— NEW
     ) -> List[Dict[str, object]]:
+        """
+        Apply the ReplicaSets with the given specifications.
+        """
+        
         specs: List[Dict[str, object]] = []
-        # 1) RS replica counts (no separate interval)
-        replicas = KwokTestGenerator._gen_replicaset_counts(total_pods, num_replicaset, rng)
+        
+        # 1) RS replica counts using the configured (or auto) interval
+        replicas = KwokTestGenerator._gen_replicaset_counts(
+            total_pods, num_replicaset, rng, replicas_cnt_interval=rs_replicas_per_set_interval
+        )
+        
         # 2) Per-RS template sizes drawn under the SAME per-pod intervals,
         #    chosen so sums match the exact cluster totals from cpu_parts/mem_parts.
         c_lo, c_hi = cpu_interval_per_pod_used if cpu_interval_per_pod_used else (1, max(1, total_cpu))
         m_lo, m_hi = mem_interval_per_pod_used if mem_interval_per_pod_used else (1, max(1, total_mem))
-        replicas, cpu_x, mem_x, ok = KwokTestGenerator._random_rs_templates(
+        replicas, cpu_x, mem_x, ok = KwokTestGenerator._gen_rs_specs(
             rng, replicas, c_lo, c_hi, m_lo, m_hi, total_cpu, total_mem, util, util_tolerance,
         )
         if not ok:
@@ -1132,6 +1234,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _prio_for_step_desc(step: int, num_prios: int) -> int:
+        """
+        Get the priority for a given step in the sequence.
+        """
         if num_prios <= 1:
             return 1
         return num_prios - ((step - 1) % num_prios)
@@ -1141,6 +1246,9 @@ class KwokTestGenerator:
     ##############################################
     @staticmethod
     def _count_running_by_priority(ctx: str, ns: str) -> Dict[str, int]:
+        """
+        Count running pods by their priority class in the given namespace.
+        """
         out: Dict[str, int] = {}
         pods = get_json_ctx(ctx, ["-n", ns, "get", "pods", "-o", "json"]).get("items", [])
         for p in pods:
@@ -1155,7 +1263,9 @@ class KwokTestGenerator:
     ##############################################
     @staticmethod
     def _pick_num_replicaset_for_seed(seed_int: int, interval: Optional[Tuple[int, int]], total_pods: int) -> int:
-        # If not provided, default to standalone pods
+        """
+        Pick the number of ReplicaSets to create for a given seed.
+        """
         if not interval:
             return 0
         lo, hi = interval
@@ -1167,6 +1277,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _read_seeds_file(path: Path) -> List[int]:
+        """
+        Read seed values from a file.
+        """
         seeds: List[int] = []
         if not path.exists():
             return seeds
@@ -1190,6 +1303,9 @@ class KwokTestGenerator:
     ##############################################
     @staticmethod
     def _pick_runner_doc(docs: List[Any]) -> Dict[str, Any]:
+        """
+        Pick the KwokRunConfiguration document from the list of YAML documents.
+        """
         for d in docs:
             if isinstance(d, dict) and (str(d.get("kind","")) == "KwokRunConfiguration"):
                 return d
@@ -1197,6 +1313,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _get_kwok_configs(dir_path: str) -> List[Path]:
+        """
+        Get all KWOK configuration files from the specified directory.
+        """
         cfg_dir = Path(dir_path)
         if not cfg_dir.exists():
             raise SystemExit(f"--kwok-config-dir not found: {cfg_dir}")
@@ -1207,6 +1326,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _load_run_config(cfg_path: Path) -> TestConfig:
+        """
+        Load the run configuration from a YAML file.
+        """
         with open(cfg_path, "r", encoding="utf-8") as f:
             docs = list(yaml.safe_load_all(f)) or []
         runner_doc = KwokTestGenerator._pick_runner_doc(docs)
@@ -1229,25 +1351,33 @@ class KwokTestGenerator:
         )
         if raw_nr:
             rc.num_replicaset = KwokTestGenerator._parse_int_interval(raw_nr)
-        rc.cpu_interval_per_pod = KwokTestGenerator._normalize_interval(
+
+        raw_cpu = KwokTestGenerator._normalize_interval(
             runner_doc, ("cpu_interval_per_pod", "cpu_interval_per_pod_lo", "cpu_interval_per_pod_hi"), allow_none=True
-        ) or rc.cpu_interval_per_pod
-        rc.mem_interval_per_pod = KwokTestGenerator._normalize_interval(
+        )
+        if raw_cpu:
+            rc.cpu_interval_per_pod = KwokTestGenerator._parse_cpu_interval(raw_cpu)
+
+        raw_mem = KwokTestGenerator._normalize_interval(
             runner_doc, ("mem_interval_per_pod", "mem_interval_per_pod_lo", "mem_interval_per_pod_hi"), allow_none=True
-        ) or rc.mem_interval_per_pod
-        raw = KwokTestGenerator._normalize_interval(
+        )
+        if raw_mem:
+            rc.mem_interval_per_pod = KwokTestGenerator._parse_mem_interval(raw_mem)
+
+        raw_rs = KwokTestGenerator._normalize_interval(
             runner_doc,
-            ("rs_replicas_per_set_interval",
-            "rs_replicas_per_set_interval_lo",
-            "rs_replicas_per_set_interval_hi"),
+            ("num_replicas_per_set", "num_replicas_per_set_lo", "num_replicas_per_set_hi"),
             allow_none=True
         )
-        if raw:
-            rc.rs_replicas_per_set_interval = KwokTestGenerator._parse_int_interval(raw)
+        if raw_rs:
+            rc.rs_replicas_per_set_interval = KwokTestGenerator._parse_int_interval(raw_rs)
 
         return rc
 
     def _print_test_summary(self) -> None:
+        """
+        Print a summary of the test results.
+        """
         if not self._test_rows:
             print("\n[kwok-test-gen][summary] No test results.")
             return
@@ -1284,8 +1414,13 @@ class KwokTestGenerator:
         mem_interval_per_pod_used: Optional[Tuple[int,int]],
         wait_mode: Optional[str], wait_timeout_raw: str, settle_timeout_raw: str,
         wait_timeout_s: int, settle_timeout_s: int,
-        rs_interval_str: str = ""
+        rs_interval_str: str = "",
+        rs_replicas_per_set_interval: Optional[Tuple[int,int]] = None,  # <— NEW
     ) -> None:
+        """
+        Run a single seed test.
+        """
+        
         exists = seed_int in seen
 
         # Save policy:
@@ -1310,10 +1445,10 @@ class KwokTestGenerator:
             c_lo, c_hi = cpu_interval_per_pod_used
             m_lo, m_hi = mem_interval_per_pod_used
 
-            cpu_parts = KwokTestGenerator._gen_parts_fixed_interval(
+            cpu_parts = KwokTestGenerator._gen_random_parts(
                 tgt_mc_cluster, total_pods, c_lo, c_hi, rng_cpu
             )
-            mem_parts = KwokTestGenerator._gen_parts_fixed_interval(
+            mem_parts = KwokTestGenerator._gen_random_parts(
                 tgt_mi_cluster, total_pods, m_lo, m_hi, rng_mem
             )
 
@@ -1329,7 +1464,8 @@ class KwokTestGenerator:
                 rs_specs = self._apply_replicasets(
                     namespace, rng_layout, total_pods, total_cpu, total_mem,
                     num_replicaset, num_priorities, cpu_interval_per_pod_used, mem_interval_per_pod_used,
-                    wait_mode, wait_timeout_s, util, util_tol
+                    wait_mode, wait_timeout_s, util, util_tol,
+                    rs_replicas_per_set_interval=rs_replicas_per_set_interval,
                 )
             else: # STANDALONE
                 # Verify that the cluster totals hit the utilization window
@@ -1476,6 +1612,9 @@ class KwokTestGenerator:
                 f.write(f"{cfg}\t{seed_int}\t{e}\n")
 
     def _run_for_config(self, cfg: Path) -> None:
+        """
+        Run the test for a specific configuration.
+        """
         try:
             rc = self._load_run_config(cfg)
         except Exception as e:
@@ -1551,17 +1690,12 @@ class KwokTestGenerator:
         tgt_mc_cluster = int(node_mc * rc.util) * rc.num_nodes
         tgt_mi_cluster = int(node_mi * rc.util) * rc.num_nodes
 
-        parsed_cpu = KwokTestGenerator._parse_cpu_interval(rc.cpu_interval_per_pod)
-        parsed_mem = KwokTestGenerator._parse_mem_interval(rc.mem_interval_per_pod)
-
-        # cap_each is per-pod upper bound (can't exceed a single node capacity)
         cpu_interval_per_pod_used, _cpu_auto = KwokTestGenerator._resolve_interval(
-            "cpu", parsed_cpu, total_pods, tgt_mc_cluster, cap_each=node_mc, jitter=0.25
+            "cpu", rc.cpu_interval_per_pod, total_pods, tgt_mc_cluster, cap_each=node_mc, jitter=0.25
         )
         mem_interval_per_pod_used, _mem_auto = KwokTestGenerator._resolve_interval(
-            "mem", parsed_mem, total_pods, tgt_mi_cluster, cap_each=node_mi, jitter=0.25
+            "mem", rc.mem_interval_per_pod, total_pods, tgt_mi_cluster, cap_each=node_mi, jitter=0.25
         )
-
         # rotation-aware: we still pass a "stem" base path; actual writing picks rotated file
         seen = self._load_seen_results_all(cfg.stem)
 
@@ -1579,6 +1713,7 @@ class KwokTestGenerator:
                 cpu_interval_per_pod_used, mem_interval_per_pod_used,
                 wait_mode, rc.wait_timeout, rc.settle_timeout, wait_timeout_s, settle_timeout_s,
                 rs_interval_str=rs_interval_str,
+                s_replicas_per_set_interval=rc.rs_replicas_per_set_interval,
             )
             return
 
@@ -1600,6 +1735,7 @@ class KwokTestGenerator:
                     cpu_interval_per_pod_used, mem_interval_per_pod_used,
                     wait_mode, rc.wait_timeout, rc.settle_timeout, wait_timeout_s, settle_timeout_s,
                     rs_interval_str=rs_interval_str,
+                    rs_replicas_per_set_interval=rc.rs_replicas_per_set_interval,
                 )
                 if to_make != -1:
                     made += 1
@@ -1625,6 +1761,7 @@ class KwokTestGenerator:
                     cpu_interval_per_pod_used, mem_interval_per_pod_used,
                     wait_mode, rc.wait_timeout, rc.settle_timeout, wait_timeout_s, settle_timeout_s,
                     rs_interval_str=rs_interval_str,
+                    rs_replicas_per_set_interval=rc.rs_replicas_per_set_interval,
                 )
             return
 
@@ -1634,6 +1771,10 @@ class KwokTestGenerator:
     # ------------ Main runner -------------------
     ##############################################
     def run(self) -> None:
+        """
+        Main runner function.
+        """
+        
         # --- early mode: just generate seeds to file and exit ---
         if getattr(self.args, "random_seeds_to_file", None):
             if self.args.count is None or self.args.count < 1:
@@ -1694,6 +1835,10 @@ class KwokTestGenerator:
 # ------------ CLI ---------------------------
 ##############################################
 def build_argparser() -> argparse.ArgumentParser:
+    """
+    Build the argument parser for the KWOK test generator.
+    """
+    
     ap = argparse.ArgumentParser(description="Unified KWOK generator+applier runner.")
     
     # cluster
@@ -1741,6 +1886,9 @@ def build_argparser() -> argparse.ArgumentParser:
 
 
 def main():
+    """
+    Main entry point for the KWOK test generator.
+    """
     args = build_argparser().parse_args()
     runner = KwokTestGenerator(args)
     runner.run()
