@@ -17,7 +17,7 @@ from kwok_shared import (
 # Constants
 # ===============================================================
 RESULTS_HEADER = [
-    "timestamp","kwok_config","seed_config","seed",
+    "timestamp","kwok_config","seed_file","seed",
     "num_nodes","pods_per_node","num_replicaset","num_priorities",
     "node_cpu_m","node_mem_b",
     "cpu_per_pod_m","mem_per_pod_b",
@@ -1541,7 +1541,7 @@ class KwokTestGenerator:
             result_row = {
                 "timestamp": self._get_timestamp(),
                 "kwok_config": str(cfg),
-                "seed_config": seed_file,
+                "seed_file": seed_file,
                 "seed": str(seed),
                 "num_nodes": ta.num_nodes,
                 "pods_per_node": ta.pods_per_node,
