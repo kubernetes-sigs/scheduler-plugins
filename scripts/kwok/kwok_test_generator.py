@@ -225,11 +225,11 @@ class KwokTestGenerator:
         s = (v or "").strip()
         return s if s else fallback
  
-    def _parse_waits(self, rc: TestConfigRaw) -> tuple[Optional[str], str, str, int, int]:
+    def _parse_waits(self, tr: TestConfigRaw) -> tuple[Optional[str], str, str, int, int]:
         # TODO: instead of returning default strings fail.
-        wait_mode = None if rc.wait_mode in (None, "none", "None", "") else str(rc.wait_mode)
-        wait_timeout_s = KwokTestGenerator._parse_timeout_s(self._default_timeout_str(rc.wait_timeout, "5s"))
-        settle_timeout_s = KwokTestGenerator._parse_timeout_s(self._default_timeout_str(rc.settle_timeout, "5s"))
+        wait_mode = None if tr.wait_mode in (None, "none", "None", "") else str(tr.wait_mode)
+        wait_timeout_s = KwokTestGenerator._parse_timeout_s(self._default_timeout_str(tr.wait_timeout, "5s"))
+        settle_timeout_s = KwokTestGenerator._parse_timeout_s(self._default_timeout_str(tr.settle_timeout, "5s"))
         return wait_mode, wait_timeout_s, settle_timeout_s
 
     @staticmethod
@@ -1116,32 +1116,32 @@ class KwokTestGenerator:
             f.write(line + "\n")
 
     def _run_standalone(
-        self, cfg: Path, seed_int: int, rc: TestConfigApplied, rng_layout: random.Random,
+        self, cfg: Path, seed_int: int, ta: TestConfigApplied, rng_layout: random.Random,
     ) -> list[dict]:
-        c_lo, c_hi = rc.cpu_per_pod_m
-        m_lo_b, m_hi_b = rc.mem_per_pod_b
+        c_lo, c_hi = ta.cpu_per_pod_m
+        m_lo_b, m_hi_b = ta.mem_per_pod_b
 
         rng_cpu = self._rng(seed_int, "cpu_parts", cfg.stem)
         rng_mem = self._rng(seed_int, "mem_parts", cfg.stem)
 
-        alloc_cpu_m = rc.node_m * rc.num_nodes
-        alloc_mem_b = rc.node_b * rc.num_nodes
-        tgt_mc_cluster = int(alloc_cpu_m * rc.util)
-        tgt_b_cluster  = int(alloc_mem_b * rc.util)
+        alloc_cpu_m = ta.node_m * ta.num_nodes
+        alloc_mem_b = ta.node_b * ta.num_nodes
+        tgt_mc_cluster = int(alloc_cpu_m * ta.util)
+        tgt_b_cluster  = int(alloc_mem_b * ta.util)
 
-        cpu_parts = self._gen_random_parts(tgt_mc_cluster, rc.total_pods, c_lo, c_hi, rng_cpu)
-        mem_parts = self._gen_random_parts(tgt_b_cluster,  rc.total_pods, m_lo_b, m_hi_b, rng_mem)
+        cpu_parts = self._gen_random_parts(tgt_mc_cluster, ta.total_pods, c_lo, c_hi, rng_cpu)
+        mem_parts = self._gen_random_parts(tgt_b_cluster,  ta.total_pods, m_lo_b, m_hi_b, rng_mem)
 
         return self._apply_standalone_pods(
-            rc.namespace, rng_layout, rc.total_pods, cpu_parts, mem_parts,
-            rc.num_priorities, rc.wait_mode, rc.wait_timeout_s
+            ta.namespace, rng_layout, ta.total_pods, cpu_parts, mem_parts,
+            ta.num_priorities, ta.wait_mode, ta.wait_timeout_s
         )
 
     def _print_seed_summary(self, cfg: Path, seed: int | None,
                         scheduled: int | None, unscheduled: int | None, note: str = "") -> None:
-        print("-------------------------------- SEED SUMMARY ---------------------------------------")
+        print("--------------------------------------------- SEED SUMMARY ---------------------------------------------")
         print(f"[kwok-test-gen] {cfg.name}  seed={seed}  scheduled={scheduled}  unscheduled={unscheduled}  note={note}")
-        print("-------------------------------------------------------------------------------------")
+        print("--------------------------------------------------------------------------------------------------------")
 
     @staticmethod
     def _build_pod_node_list(
@@ -1294,7 +1294,7 @@ class KwokTestGenerator:
         return rng.randint(lo, hi)
 
     @staticmethod
-    def _validate_config(rc: TestConfigRaw) -> tuple[bool, str]:
+    def _validate_config(tr: TestConfigRaw) -> tuple[bool, str]:
         """
         Validate the raw config. Do NOT raise; return (ok, aggregated_message).
         All checks live here and we accumulate *all* failures.
@@ -1302,13 +1302,13 @@ class KwokTestGenerator:
         errors: list[str] = []
 
         # ---------- basic presence / shape ----------
-        if not rc.namespace or not str(rc.namespace).strip():
+        if not tr.namespace or not str(tr.namespace).strip():
             errors.append("namespace must be a non-empty string")
 
-        if rc.num_nodes < 1:
+        if tr.num_nodes < 1:
             errors.append("num_nodes must be >= 1")
 
-        if rc.pods_per_node < 1:
+        if tr.pods_per_node < 1:
             errors.append("pods_per_node must be >= 1")
 
         # ---------- quantities (parse using helpers) ----------
@@ -1316,41 +1316,41 @@ class KwokTestGenerator:
         node_b: Optional[int] = None
 
         try:
-            node_m = qty_to_mcpu_int(rc.node_cpu)
+            node_m = qty_to_mcpu_int(tr.node_cpu)
             if node_m < 1:
                 errors.append("node_cpu must be >= 1m (e.g., '2400m' or '24')")
         except Exception:
-            errors.append(f"node_cpu is not a valid quantity: {rc.node_cpu!r} (e.g., '2400m' or '24')")
+            errors.append(f"node_cpu is not a valid quantity: {tr.node_cpu!r} (e.g., '2400m' or '24')")
 
         try:
-            node_b = qty_to_bytes_int(rc.node_mem)
+            node_b = qty_to_bytes_int(tr.node_mem)
             if node_b < 1:
                 errors.append("node_mem must be > 0 (e.g., '32Gi')")
         except Exception:
-            errors.append(f"node_mem is not a valid quantity: {rc.node_mem!r} (e.g., '32Gi')")
+            errors.append(f"node_mem is not a valid quantity: {tr.node_mem!r} (e.g., '32Gi')")
 
-        total_pods = max(0, rc.num_nodes * rc.pods_per_node)
+        total_pods = max(0, tr.num_nodes * tr.pods_per_node)
 
         # ---------- util / tolerance ----------
-        if not (0.0 < rc.util <= 1.0):
-            errors.append(f"util must be in (0,1], got {rc.util}")
+        if not (0.0 < tr.util <= 1.0):
+            errors.append(f"util must be in (0,1], got {tr.util}")
 
-        if rc.util_tolerance < 0.0:
-            errors.append(f"util_tolerance must be >= 0, got {rc.util_tolerance}")
-        if rc.util_tolerance >= 1.0:
-            errors.append(f"util_tolerance must be < 1, got {rc.util_tolerance}")
-        if (rc.util - rc.util_tolerance) < 0.0 or (rc.util + rc.util_tolerance) > 1.0:
-            errors.append(f"util ± util_tolerance must stay within [0,1] (got {rc.util} ± {rc.util_tolerance})")
+        if tr.util_tolerance < 0.0:
+            errors.append(f"util_tolerance must be >= 0, got {tr.util_tolerance}")
+        if tr.util_tolerance >= 1.0:
+            errors.append(f"util_tolerance must be < 1, got {tr.util_tolerance}")
+        if (tr.util - tr.util_tolerance) < 0.0 or (tr.util + tr.util_tolerance) > 1.0:
+            errors.append(f"util ± util_tolerance must stay within [0,1] (got {tr.util} ± {tr.util_tolerance})")
 
         # ---------- priorities ----------
         prio_ok = False
         lo_prio = hi_prio = None
-        if not isinstance(rc.num_priorities, tuple) or len(rc.num_priorities) != 2:
+        if not isinstance(tr.num_priorities, tuple) or len(tr.num_priorities) != 2:
             errors.append("num_priorities must be provided (fixed number or [lo,hi])")
         else:
             try:
-                lo_prio = int(rc.num_priorities[0])
-                hi_prio = int(rc.num_priorities[1])
+                lo_prio = int(tr.num_priorities[0])
+                hi_prio = int(tr.num_priorities[1])
                 if lo_prio < 1:
                     errors.append("num_priorities_lo must be >= 1")
                 if hi_prio < lo_prio:
@@ -1361,12 +1361,12 @@ class KwokTestGenerator:
                 errors.append("num_priorities interval must contain integers")
 
         # ---------- replicaset count ----------
-        rs_present = rc.num_replicaset is not None
+        rs_present = tr.num_replicaset is not None
         lo_rs = hi_rs = None
         if rs_present:
             try:
-                lo_rs = int(rc.num_replicaset[0])
-                hi_rs = int(rc.num_replicaset[1])
+                lo_rs = int(tr.num_replicaset[0])
+                hi_rs = int(tr.num_replicaset[1])
                 if lo_rs < 0 or hi_rs < lo_rs:
                     errors.append("num_replicaset must satisfy 0 <= lo <= hi")
                 if hi_rs is not None and total_pods and hi_rs > total_pods:
@@ -1382,17 +1382,17 @@ class KwokTestGenerator:
                 errors.append("num_replicaset interval must contain integers")
 
         # If RS mode is used, replicas/RS must be provided
-        if rs_present and rc.num_replicas_per_rs_set is None:
+        if rs_present and tr.num_replicas_per_rs_set is None:
             errors.append("num_replicas_per_rs_set is required when num_replicaset is provided")
 
         # ---------- replicas per RS ----------
-        if rc.num_replicas_per_rs_set is not None:
+        if tr.num_replicas_per_rs_set is not None:
             if not rs_present:
                 errors.append("num_replicas_per_rs_set is set but num_replicaset is not set")
             else:
                 try:
-                    lo_rps = int(rc.num_replicas_per_rs_set[0])
-                    hi_rps = int(rc.num_replicas_per_rs_set[1])
+                    lo_rps = int(tr.num_replicas_per_rs_set[0])
+                    hi_rps = int(tr.num_replicas_per_rs_set[1])
                     if lo_rps < 1 or hi_rps < lo_rps:
                         errors.append("num_replicas_per_rs_set must satisfy 1 <= lo <= hi")
                     if (lo_rs is not None and hi_rs is not None and total_pods > 0):
@@ -1413,10 +1413,10 @@ class KwokTestGenerator:
         c_lo = c_hi = None
         m_lo = m_hi = None
 
-        if rc.cpu_per_pod is not None:
+        if tr.cpu_per_pod is not None:
             try:
-                c_lo = qty_to_mcpu_int(rc.cpu_per_pod[0])
-                c_hi = qty_to_mcpu_int(rc.cpu_per_pod[1])
+                c_lo = qty_to_mcpu_int(tr.cpu_per_pod[0])
+                c_hi = qty_to_mcpu_int(tr.cpu_per_pod[1])
                 if c_lo < 1 or c_hi < c_lo:
                     errors.append("cpu_per_pod must satisfy 1m <= lo <= hi")
                 else:
@@ -1424,12 +1424,12 @@ class KwokTestGenerator:
                 if node_m is not None and c_hi is not None and c_hi > node_m:
                     errors.append(f"cpu_per_pod_hi ({c_hi}m) cannot exceed node_cpu ({node_m}m)")
             except Exception:
-                errors.append(f"cpu_per_pod has invalid quantities: {rc.cpu_per_pod!r}")
+                errors.append(f"cpu_per_pod has invalid quantities: {tr.cpu_per_pod!r}")
 
-        if rc.mem_per_pod is not None:
+        if tr.mem_per_pod is not None:
             try:
-                m_lo = qty_to_bytes_int(rc.mem_per_pod[0])
-                m_hi = qty_to_bytes_int(rc.mem_per_pod[1])
+                m_lo = qty_to_bytes_int(tr.mem_per_pod[0])
+                m_hi = qty_to_bytes_int(tr.mem_per_pod[1])
                 if m_lo < 1 or m_hi < m_lo:
                     errors.append("mem_per_pod must satisfy 1B <= lo <= hi")
                 else:
@@ -1437,12 +1437,12 @@ class KwokTestGenerator:
                 if node_b is not None and m_hi is not None and m_hi > node_b:
                     errors.append(f"mem_per_pod_hi ({m_hi}B) cannot exceed node_mem ({node_b}B)")
             except Exception:
-                errors.append(f"mem_per_pod has invalid quantities: {rc.mem_per_pod!r}")
+                errors.append(f"mem_per_pod has invalid quantities: {tr.mem_per_pod!r}")
 
         # ---------- feasibility of per-pod intervals vs util ----------
         # Only check if intervals are provided (otherwise they will be auto-generated later).
-        if total_pods > 0 and rc.util > 0 and node_m is not None and cpu_iv_ok:
-            target_cpu = int(node_m * rc.num_nodes * rc.util)
+        if total_pods > 0 and tr.util > 0 and node_m is not None and cpu_iv_ok:
+            target_cpu = int(node_m * tr.num_nodes * tr.util)
             if not KwokTestGenerator._is_interval_feasible((c_lo, c_hi), total_pods, target_cpu):
                 avg_cpu = target_cpu / total_pods
                 errors.append(
@@ -1450,8 +1450,8 @@ class KwokTestGenerator:
                     f"(n={total_pods}, target={target_cpu}); consider ~{int(round(avg_cpu))}m per pod"
                 )
 
-        if total_pods > 0 and rc.util > 0 and node_b is not None and mem_iv_ok:
-            target_mem = int(node_b * rc.num_nodes * rc.util)
+        if total_pods > 0 and tr.util > 0 and node_b is not None and mem_iv_ok:
+            target_mem = int(node_b * tr.num_nodes * tr.util)
             if not KwokTestGenerator._is_interval_feasible((m_lo, m_hi), total_pods, target_mem):
                 avg_mem = int(target_mem / total_pods)
                 errors.append(
