@@ -1488,8 +1488,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _print_run_header(s, cfg_name, seed_idx, seeds_total, cfg_idx, cfgs_total):
+        seed_str = "unlimited" if seeds_total <=-1 else f"{seed_idx}/{seeds_total}"
         print("\n------------------------------------------------- SEED RUN -------------------------------------------------")
-        print(f"[kwok-test-gen] seed={s} ({seed_idx}/{seeds_total}) config={cfg_name} ({cfg_idx}/{cfgs_total})")
+        print(f"[kwok-test-gen] seed={s} ({seed_str}) config={cfg_name} ({cfg_idx}/{cfgs_total})")
         print("------------------------------------------------------------------------------------------------------------")
 
     @staticmethod
