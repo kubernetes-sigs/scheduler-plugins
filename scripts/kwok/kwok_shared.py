@@ -2,67 +2,80 @@
 
 # kwok_shared.py
 
-import time, subprocess, json, csv
+import time, subprocess, json, csv, re
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from decimal import Decimal
 
 # ---------- quantity helpers ----------
-def cpu_m_str_to_int(v: str) -> int:
+def qty_to_mcpu_int(token: str) -> int:
     """
-    Convert CPU string (e.g. "100m", "1") to milli CPU integer (e.g. 100, 1000).
+    Convert any CPU quantity to millicores.
+    Accepts: '250m', '0.25', '1.5', '2cpu', '2 cores', etc.
+    No unit => cores.
     """
-    if not v: return 0
-    return int(v[:-1]) if v.endswith('m') else int(float(v) * 1000)
+    t = (token or "").strip().lower()
+    m = re.fullmatch(r'\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z ]*)\s*', t)
+    if not m:
+        raise ValueError(f"Invalid CPU quantity: {token!r}")
+    val = Decimal(m.group(1))
+    unit = (m.group(2) or "").replace(" ", "")
+    if unit in ("m", "mcpu", "millicpu"):
+        milli = val
+    elif unit in ("", "c", "cpu", "core", "cores"):
+        milli = val * Decimal(1000)
+    else:
+        raise ValueError(f"Unsupported CPU unit: {unit!r}")
+    return max(1, int(milli))
 
-def cpu_m_int_to_str(m: int) -> str:
+def qty_to_bytes_int(token: str) -> int:
+    
+    """
+    Convert any Kubernetes-like memory quantity to integer bytes.
+    Accepts: '1536Mi', '1.5Gi', '500MB', '4G', '1024', '42 kib', etc.
+    No unit => bytes.
+    """
+    MEM_UNIT_TABLE = {
+        # bytes
+        "": 1, "b": 1, "byte": 1, "bytes": 1,
+        # SI (10^3)
+        "k": 10**3, "kb": 10**3,
+        "m": 10**6, "mb": 10**6,
+        "g": 10**9, "gb": 10**9,
+        "t": 10**12, "tb": 10**12,
+        "p": 10**15, "pb": 10**15,
+        "e": 10**18, "eb": 10**18,
+        # IEC (2^10)
+        "ki": 1024, "kib": 1024,
+        "mi": 1024**2, "mib": 1024**2,
+        "gi": 1024**3, "gib": 1024**3,
+        "ti": 1024**4, "tib": 1024**4,
+        "pi": 1024**5, "pib": 1024**5,
+        "ei": 1024**6, "eib": 1024**6,
+    }
+    t = (token or "").strip().lower()
+    m = re.fullmatch(r'\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z]+)?\s*', t)
+    if not m:
+        raise ValueError(f"Invalid memory quantity: {token!r}")
+    val = Decimal(m.group(1))
+    unit = (m.group(2) or "")
+    mult = MEM_UNIT_TABLE.get(unit)
+    if mult is None:
+        raise ValueError(f"Unsupported memory unit: {unit!r}")
+    bytes_int = int(val * mult)
+    return max(1, bytes_int)  # keep >0 for downstream constraints
+
+def qty_to_mcpu_str(m: int) -> str:
     """
     Convert milli CPU integer (e.g. 100, 1000) to CPU string (e.g. "100m", "1").
     """
     return str(m // 1000) if m % 1000 == 0 else f"{m}m"
 
-def mem_str_to_bytes_int(v: str) -> int:
-    """
-    Convert memory string (e.g. "100Mi", "1Gi") to bytes (e.g. 104857600, 1073741824).
-    """
-    if not v: return 0
-    s = v.strip()
-    try:
-        if s.endswith("Ki"): return int(s[:-2]) * 1024
-        if s.endswith("Mi"): return int(s[:-2]) * 1024 * 1024
-        if s.endswith("Gi"): return int(s[:-2]) * 1024 * 1024 * 1024
-        if s.endswith("Ti"): return int(s[:-2]) * 1024 * 1024 * 1024 * 1024
-        return int(s)  # bytes
-    except:
-        return 0
-
-def bytes_to_mib(b: int) -> int:
-    """
-    Convert bytes to MiB.
-    """
-    return b // (1024 * 1024)
-
-def mem_str_to_mib_int(v: str) -> int:
-    """
-    Convert memory string (e.g. "100Mi", "1Gi") to MiB (e.g. 100, 1024).
-    """
-    if not v: return 0
-    s = v.strip()
-    try:
-        if s.endswith('Ki'): return max(0, int(s[:-2]) // 1024)
-        if s.endswith('Mi'): return int(s[:-2])
-        if s.endswith('Gi'): return int(s[:-2]) * 1024
-        if s.endswith('Ti'): return int(s[:-2]) * 1024 * 1024
-        return int(s)  # assume Mi when bare number
-    except:
-        return 0
-
-def mem_mi_int_to_str(mi: int) -> str:
-    """
-    Convert MiB to memory string (e.g. 100Mi -> "100Mi").
-    """
-    return f"{mi}Mi"
+def qty_to_bytes_str(b: int) -> str:
+    """Return bytes as a decimal quantity string for K8s."""
+    return str(int(max(1, b)))
 
 # ---------- kubectl helpers ----------
 
@@ -74,7 +87,14 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     if ctx:
         cmd += ["--context", ctx]
     cmd += base_cmd
-    out = subprocess.check_output(cmd)
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        msg = (e.stdout or b"").decode("utf-8", "replace")
+        tail = msg[-1200:]
+        raise RuntimeError(
+            f"kubectl failed: rc={e.returncode} cmd={' '.join(cmd)} output_tail={tail!r}"
+        ) from e
     return json.loads(out)
 
 # ---------- file I/O helpers ----------
@@ -144,8 +164,8 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
         name = n["metadata"]["name"]
         a = n.get("status",{}).get("allocatable",{}) or {}
         alloc[name] = (
-            cpu_m_str_to_int(a.get("cpu","0")),
-            mem_str_to_bytes_int(a.get("memory","0")),
+            qty_to_mcpu_int(a.get("cpu","0")),
+            qty_to_bytes_int(a.get("memory","0")),
         )
 
     # Totals for util calc
@@ -197,15 +217,15 @@ def sum_pod_requests(pod: dict) -> tuple[int, int]:
 
     for c in spec.get("containers", []) or []:
         req = (c.get("resources",{}) or {}).get("requests",{}) or {}
-        cpu_sum += cpu_m_str_to_int(req.get("cpu","0"))
-        mem_sum_b += mem_str_to_bytes_int(req.get("memory","0"))
+        cpu_sum += qty_to_mcpu_int(req.get("cpu","0"))
+        mem_sum_b += qty_to_bytes_int(req.get("memory","0"))
 
     init_cpu_max = 0
     init_mem_max_b = 0
     for c in spec.get("initContainers", []) or []:
         req = (c.get("resources",{}) or {}).get("requests",{}) or {}
-        init_cpu_max = max(init_cpu_max, cpu_m_str_to_int(req.get("cpu","0")))
-        init_mem_max_b = max(init_mem_max_b, mem_str_to_bytes_int(req.get("memory","0")))
+        init_cpu_max = max(init_cpu_max, qty_to_mcpu_int(req.get("cpu","0")))
+        init_mem_max_b = max(init_mem_max_b, qty_to_bytes_int(req.get("memory","0")))
 
     return cpu_sum + init_cpu_max, mem_sum_b + init_mem_max_b
 
@@ -246,7 +266,6 @@ def get_scheduled_and_unscheduled(
       - ("timeout", [(pod, node), ...], [unschedulable_pods])
     Decision is based on the latest event per pod name.
     """
-    import re
     node_from_msg = re.compile(r"\bto\s+([A-Za-z0-9._:-]+)\.?$")
 
     start = time.time()
@@ -255,7 +274,14 @@ def get_scheduled_and_unscheduled(
                "get", "events",
                "--field-selector", "involvedObject.kind=Pod",
                "-o", "json"]
-        out = subprocess.check_output(cmd)
+        try:
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            msg = (e.stdout or b"").decode("utf-8", "replace")
+            tail = msg[-1200:]
+            raise RuntimeError(
+                f"kubectl events failed: rc={e.returncode} cmd={' '.join(cmd)} output_tail={tail!r}"
+            ) from e
         items = (json.loads(out) or {}).get("items", [])
 
         # name -> (ts, state, node)
