@@ -26,6 +26,7 @@ VENV_DIR="${VENV_DIR:-$REPO_DIR/.venv}"
 command -v python3 >/dev/null || { echo "python3 not found"; exit 1; }
 command -v kubectl  >/dev/null || { echo "kubectl not found"; exit 1; }
 command -v kwokctl  >/dev/null || { echo "kwokctl not found"; exit 1; }
+#TODO: add also check for docker and GO
 
 # --- ensure repo exists ---
 if [[ ! -d "$REPO_DIR/.git" ]]; then
