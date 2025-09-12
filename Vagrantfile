@@ -1,31 +1,25 @@
 ﻿# -*- mode: ruby -*-
 # vi: set ft=ruby :
 Vagrant.configure("2") do |config|
-  # Ubuntu 24.04 LTS
   config.vm.box = "ubuntu/jammy64"
-
-  # Resources
-  config.vm.provider "virtualbox" do |vb|
-    vb.memory = 8192
-    vb.cpus = 4
-  end
   config.vm.hostname = "kwok-test"
 
-  # Sync your bootstrap directory into the VM
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 8192
+    vb.cpus   = 4
+  end
+
+  # Share your host ./bootstrap_vm into the guest
   config.vm.synced_folder "./bootstrap_vm", "/home/vagrant/bootstrap_vm", type: "virtualbox"
 
-  # Run scripts in order
+  # Call only 00_init.sh
   config.vm.provision "shell", inline: <<-SHELL
-    set -euo pipefail
+    set -e
     cd /home/vagrant/bootstrap_vm
-
-    # Make scripts executable
-    chmod +x 01_system_setup.sh 02_build_test.sh
-
-    # 1) Base system + docker (needs sudo/root)
-    sudo ./01_system_setup.sh
-
-    # 2) Run tests (normal user)
-    ./02_build_test.sh
+    # Fix CRLF -> LF and make scripts executable (Windows hosts)
+    sed -i 's/\\r$//' 00_init.sh 01_system_setup.sh 02_build_test.sh
+    chmod +x 00_init.sh 01_system_setup.sh 02_build_test.sh
+    # Run init with bash so 'pipefail' etc. work regardless of /bin/sh
+    /usr/bin/env bash ./00_init.sh
   SHELL
 end
