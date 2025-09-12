@@ -1163,8 +1163,11 @@ class KwokTestGenerator:
 
     def _print_seed_summary(self, cfg: Path, seed: int | None,
                         scheduled: int | None, unscheduled: int | None, note: str = "") -> None:
+        note = f" note='{note}'" if note else ""
+        scheduled_str = "-" if scheduled is None else str(scheduled)
+        unscheduled_str = "-" if unscheduled is None else str(unscheduled)
         print("--------------------------------------------- SEED SUMMARY ---------------------------------------------")
-        print(f"[kwok-test-gen] {cfg.name}  seed={seed}  scheduled={scheduled}  unscheduled={unscheduled}  note={note}")
+        print(f"[kwok-test-gen] {cfg.name}  seed={seed}  scheduled={scheduled_str}  unscheduled={unscheduled_str}  {note}")
         print("--------------------------------------------------------------------------------------------------------")
 
     @staticmethod
