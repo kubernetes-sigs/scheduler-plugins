@@ -17,17 +17,13 @@ from kwok_shared import (
 # Constants
 # ===============================================================
 RESULTS_HEADER = [
-    "timestamp","kwok_config","seed_file","seed",
-    "num_nodes","pods_per_node","num_replicaset","num_priorities",
-    "node_cpu_m","node_mem_b",
-    "cpu_per_pod_m","mem_per_pod_b",
-    "num_replicas_per_rs_set",
-    "util","util_tolerance",
-    "util_run_cpu","util_run_mem","cpu_m_run","mem_b_run",
-    "wait_mode","wait_timeout_s","settle_timeout_s",
-    "scheduled_count","unscheduled_count",
-    "pods_run_by_node","placed_by_priority",
-    "unscheduled","scheduled",
+    "timestamp", "kwok_config", "seed_file", "seed",
+    "num_nodes", "pods_per_node", "num_priorities", "num_replicaset", "num_replicas_per_rs_set", 
+    "node_cpu_m", "node_mem_b", "cpu_per_pod_m", "mem_per_pod_b",
+    "util", "util_tolerance", "util_run_cpu", "util_run_mem", "cpu_m_run", "mem_b_run",
+    "wait_mode", "wait_timeout_s", "settle_timeout_s",
+    "scheduled_count","unscheduled_count", "pods_run_by_node", "placed_by_priority",
+    "unscheduled", "scheduled",
     "pod_node",
 ]
 
@@ -1545,9 +1541,9 @@ class KwokTestGenerator:
                 "seed": str(seed),
                 "num_nodes": ta.num_nodes,
                 "pods_per_node": ta.pods_per_node,
+                "num_priorities": ta.num_priorities,
                 "num_replicaset": ta.num_replicaset,
                 "num_replicas_per_rs_set": self._format_interval(ta.num_replicas_per_rs_set),
-                "num_priorities": ta.num_priorities,
                 "node_cpu_m": ta.node_m,
                 "node_mem_b": ta.node_b,
                 "cpu_per_pod_m": self._format_interval(ta.cpu_per_pod_m),
@@ -1613,6 +1609,54 @@ class KwokTestGenerator:
             raise SystemExit("One or more configs failed validation; see messages above and fix them.")
         print(f"[kwok-test-gen] all {len(cfgs)} configs validated successfully.")
 
+    def _run_gen_seeds(self):
+        if self.args.count is None or self.args.count < 1:
+            raise SystemExit("--random-seeds-to-file requires --count >= 1")
+        if self.args.seed is not None or self.args.seed_file:
+            raise SystemExit("--random-seeds-to-file cannot be combined with --seed or --seed-file")
+
+        base = int(time.time_ns())
+        rng = KwokTestGenerator._rng(base, "seed-file")
+        seeds = [(rng.getrandbits(63) or 1) for _ in range(int(self.args.count))]
+
+        outp = Path(self.args.generate_seeds_to_file)
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        with open(outp, "w", encoding="utf-8", newline="") as f:
+            for s in seeds:
+                f.write(f"{s}\n")
+        print(f"[kwok-test-gen] wrote {len(seeds)} seeds to {outp}")
+
+    def _run_count_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, raw: TestConfigRaw, seen: Dict[int, List[Path]]) -> None:
+        to_make = int(self.args.count)
+        base = int(time.time_ns())
+        rng = KwokTestGenerator._rng(base, "seed-stream", self.args.cluster_name)
+        made = 0
+        while to_make == -1 or made < to_make:
+            s = rng.getrandbits(63) or 1
+            self._print_run_header(s, cfg.name, made + 1, to_make, cfg_idx, cfgs_total)
+            rc = self._resolve_for_seed(raw, s)
+            self._run_single_seed(cfg, seen, s, rc)
+            if to_make != -1:
+                made += 1
+        return
+
+    def _run_seed_single_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, raw: TestConfigRaw, seen: Dict[int, List[Path]]) -> None:
+        s = int(self.args.seed)
+        self._print_run_header(s, cfg.name, 1, 1, cfg_idx, cfgs_total)
+        rc = self._resolve_for_seed(raw, s)
+        self._run_single_seed(cfg, seen, s, rc)
+        return
+
+    def _run_seed_file_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, raw: TestConfigRaw, seen: Dict[int, List[Path]]) -> None:
+        seeds_list = self._read_seeds_file(Path(self.args.seed_file))
+        seeds_total = len(seeds_list)
+        for seed_idx, s in enumerate(seeds_list, start=1):
+            self._print_run_header(s, cfg.name, seed_idx, seeds_total, cfg_idx, cfgs_total)
+            s = int(s)
+            rc = self._resolve_for_seed(raw, s)
+            self._run_single_seed(cfg, seen, s, rc, self.args.seed_file)
+        return
+
     def _run_for_config(self, cfg: Path, cfg_idx: int, cfgs_total: int) -> None:
         try:
             raw = self._load_run_config(cfg)
@@ -1642,7 +1686,6 @@ class KwokTestGenerator:
             self._print_seed_summary(cfg, self.args.seed, None, None, "ensure cluster failed")
             return
 
-        # Nodes are seed-agnostic; create once per config
         DEFAULT_POD_CAP = max(30, raw.pods_per_node * 3)
         try:
             print("[kwok-test-gen] phase=nodes: deleting old KWOK nodes …")
@@ -1658,59 +1701,21 @@ class KwokTestGenerator:
             return
 
         seen = self._load_seen_results(cfg.stem)
-
-        # seed-only path
+        
+        # single-seed path
         if self.args.seed is not None:
-            s = int(self.args.seed)
-            self._print_run_header(s, cfg.name, 1, 1, cfg_idx, cfgs_total)
-            rc = self._resolve_for_seed(raw, s)
-            self._run_single_seed(cfg, seen, s, rc)
+            self._run_seed_single_path(cfg, cfg_idx, cfgs_total, raw, seen)
             return
-
         # count path
         if self.args.count is not None and int(self.args.count) >= -1:
-            to_make = int(self.args.count)
-            base = int(time.time_ns())
-            rng = KwokTestGenerator._rng(base, "seed-stream", self.args.cluster_name)
-            made = 0
-            while to_make == -1 or made < to_make:
-                s = rng.getrandbits(63) or 1
-                self._print_run_header(s, cfg.name, made + 1, to_make, cfg_idx, cfgs_total)
-                rc = self._resolve_for_seed(raw, s)
-                self._run_single_seed(cfg, seen, s, rc)
-                if to_make != -1:
-                    made += 1
+            self._run_count_path(cfg, cfg_idx, cfgs_total, raw, seen)
             return
-
         # seed-file path
         if self.args.seed_file:
-            seeds_list = self._read_seeds_file(Path(self.args.seed_file))
-            seeds_total = len(seeds_list)
-            for seed_idx, s in enumerate(seeds_list, start=1):
-                self._print_run_header(s, cfg.name, seed_idx, seeds_total, cfg_idx, cfgs_total)
-                s = int(s)
-                rc = self._resolve_for_seed(raw, s)
-                self._run_single_seed(cfg, seen, s, rc, self.args.seed_file)
+            self._run_seed_file_path(cfg, cfg_idx, cfgs_total, raw, seen)
             return
 
         print(f"[kwok-test-gen] no seeds provided for cfg={cfg.name} (use --seed / --seed-file / --count).")
-
-    def _run_gen_seeds(self):
-        if self.args.count is None or self.args.count < 1:
-            raise SystemExit("--random-seeds-to-file requires --count >= 1")
-        if self.args.seed is not None or self.args.seed_file:
-            raise SystemExit("--random-seeds-to-file cannot be combined with --seed or --seed-file")
-
-        base = int(time.time_ns())
-        rng = KwokTestGenerator._rng(base, "seed-file")
-        seeds = [(rng.getrandbits(63) or 1) for _ in range(int(self.args.count))]
-
-        outp = Path(self.args.generate_seeds_to_file)
-        outp.parent.mkdir(parents=True, exist_ok=True)
-        with open(outp, "w", encoding="utf-8", newline="") as f:
-            for s in seeds:
-                f.write(f"{s}\n")
-        print(f"[kwok-test-gen] wrote {len(seeds)} seeds to {outp}")
 
     ##############################################
     # ------------ Main runner -------------------
