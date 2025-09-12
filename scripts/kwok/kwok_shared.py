@@ -9,6 +9,25 @@ from datetime import datetime
 from pathlib import Path
 from decimal import Decimal
 
+MEM_UNIT_TABLE = {
+    # bytes
+    "": 1, "b": 1, "byte": 1, "bytes": 1,
+    # SI (10^3)
+    "k": 10**3, "kb": 10**3,
+    "m": 10**6, "mb": 10**6,
+    "g": 10**9, "gb": 10**9,
+    "t": 10**12, "tb": 10**12,
+    "p": 10**15, "pb": 10**15,
+    "e": 10**18, "eb": 10**18,
+    # IEC (2^10)
+    "ki": 1024, "kib": 1024,
+    "mi": 1024**2, "mib": 1024**2,
+    "gi": 1024**3, "gib": 1024**3,
+    "ti": 1024**4, "tib": 1024**4,
+    "pi": 1024**5, "pib": 1024**5,
+    "ei": 1024**6, "eib": 1024**6,
+}
+
 # ---------- quantity helpers ----------
 def qty_to_mcpu_int(token: str) -> int:
     """
@@ -37,24 +56,6 @@ def qty_to_bytes_int(token: str) -> int:
     Accepts: '1536Mi', '1.5Gi', '500MB', '4G', '1024', '42 kib', etc.
     No unit => bytes.
     """
-    MEM_UNIT_TABLE = {
-        # bytes
-        "": 1, "b": 1, "byte": 1, "bytes": 1,
-        # SI (10^3)
-        "k": 10**3, "kb": 10**3,
-        "m": 10**6, "mb": 10**6,
-        "g": 10**9, "gb": 10**9,
-        "t": 10**12, "tb": 10**12,
-        "p": 10**15, "pb": 10**15,
-        "e": 10**18, "eb": 10**18,
-        # IEC (2^10)
-        "ki": 1024, "kib": 1024,
-        "mi": 1024**2, "mib": 1024**2,
-        "gi": 1024**3, "gib": 1024**3,
-        "ti": 1024**4, "tib": 1024**4,
-        "pi": 1024**5, "pib": 1024**5,
-        "ei": 1024**6, "eib": 1024**6,
-    }
     t = (token or "").strip().lower()
     m = re.fullmatch(r'\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z]+)?\s*', t)
     if not m:

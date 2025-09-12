@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 
 # ------------------ Config (override via env) ------------------
@@ -49,7 +49,7 @@ run_as_target() {
 need_pkg() { dpkg -s "$1" >/dev/null 2>&1 || return 0 && return 1; }
 
 # ------------------ Minimal OS prereqs ------------------
-echo "[init] installing base packages (git, curl, ca-certificates, python3-venv, pip, jq)…"
+echo "[init] installing base packages (git, curl, ca-certificates, python3-venv, pip, jq)â€¦"
 run_root "export DEBIAN_FRONTEND=noninteractive
   apt-get update
   apt-get install -y git curl ca-certificates python3 python3-venv python3-pip jq"

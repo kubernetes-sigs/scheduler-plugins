@@ -34,7 +34,8 @@ from decimal import Decimal
 
 from kwok_shared import (
     get_scheduled_and_unscheduled, get_json_ctx, stat_snapshot, dir_exists, file_exists,
-    csv_append_row, qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int
+    csv_append_row, qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
+    MEM_UNIT_TABLE
 )
 
 # ===============================================================
@@ -250,7 +251,6 @@ class KwokTestGenerator:
         return s if s else fallback
  
     def _parse_waits(self, tr: TestConfigRaw) -> tuple[Optional[str], str, str, int, int]:
-        # TODO: instead of returning default strings fail.
         wait_mode = None if tr.wait_mode in (None, "none", "None", "") else str(tr.wait_mode)
         wait_timeout_s = KwokTestGenerator._parse_timeout_s(self._default_timeout_str(tr.wait_timeout, "5s"))
         settle_timeout_s = KwokTestGenerator._parse_timeout_s(self._default_timeout_str(tr.settle_timeout, "5s"))
@@ -471,98 +471,138 @@ class KwokTestGenerator:
         max_steps: int = 100_000
     ) -> tuple[list[int], list[int], list[int], bool]:
         """
-        Draw per-RS (per-pod) CPU/MEM in bounds so that weighted sums match targets
-        within tolerance. Uses simple stochastic nudging plus replica moves.
-        Returns (counts, cpu_x, mem_x, ok).
+        Choose per-RS per-pod CPU/MEM requests in [lo, hi] so that the
+        weighted sums (sum_i counts[i] * x[i]) are close to the CPU/MEM targets.
+        Strategy:
+        1) Start with random values in bounds for each RS (for CPU and MEM).
+        2) Iteratively "nudge" random RS templates up/down in small steps
+            toward the target in each dimension (CPU, MEM).
+        3) If nudging stalls, try moving one replica from a "heavier" RS to
+            a "lighter" RS if it reduces total error across CPU+MEM.
+        4) Stop when within tolerance or we hit `max_steps`.
+        Returns:
+        (counts, cpu_x, mem_x, ok)
+            - counts: may be mutated by replica moves (same as before)
+            - cpu_x/mem_x: per-RS per-pod requests
+            - ok: True if inside tolerance, else best-effort False
         """
         n = len(counts)
         if n == 0:
             return counts, [], [], True
 
+        # ---- Initial draws within bounds
         cpu_x = [rng.randint(c_lo, c_hi) for _ in range(n)]
         mem_x = [rng.randint(m_lo, m_hi) for _ in range(n)]
+        x = {"cpu": cpu_x, "mem": mem_x}
 
-        def wsum(vals: list[int]) -> int:
+        # ---- Targets / tolerances per resource
+        def abs_tol(target: int) -> int:
+            # If util is 0 (defensive), fall back to ~1% band.
+            frac = (util_tol / util) if util > 0 else 0.01
+            return max(1, int(round(target * frac)))
+
+        resources = {
+            "cpu": {"lo": c_lo, "hi": c_hi, "target": target_cpu, "tol": abs_tol(target_cpu)},
+            "mem": {"lo": m_lo, "hi": m_hi, "target": target_mem, "tol": abs_tol(target_mem)},
+        }
+
+        # Weighted sums S[res] = sum_i counts[i] * x[res][i]
+        def wsum(res: str) -> int:
+            vals = x[res]
             return sum(v * c for v, c in zip(vals, counts))
 
-        def abs_tol(target: int) -> int:
-            return max(1, int(round(target * (util_tol / util)))) if util > 0 else max(1, int(0.01 * target))
-
-        tol_cpu, tol_mem = abs_tol(target_cpu), abs_tol(target_mem)
-        S_cpu, S_mem = wsum(cpu_x), wsum(mem_x)
+        S = {res: wsum(res) for res in resources}
 
         def within() -> bool:
-            return abs(S_cpu - target_cpu) <= tol_cpu and abs(S_mem - target_mem) <= tol_mem
+            # Are all resources within their individual tolerances?
+            return all(abs(S[res] - resources[res]["target"]) <= resources[res]["tol"] for res in resources)
 
         if within():
             return counts, cpu_x, mem_x, True
 
-        
-        Mi = 1024 * 1024
-        step_cpu = max(1, (c_hi - c_lo) // 50)   # ~2% of CPU range, at least 1m
-        step_mem = max(Mi, ((m_hi - m_lo) // 50) // Mi * Mi)  # ~2% of MEM range, at least 1 MiB
-        
-        def nudge(vec: list[int], lo: int, hi: int, want_up: bool, step: int) -> bool:
-            nonlocal S_cpu, S_mem
-            idxs = [i for i in range(n) if (want_up and vec[i] < hi) or ((not want_up) and vec[i] > lo)]
-            if not idxs:
+        # ---- Step sizes (~2% of each range; at least 1m CPU, 1MiB MEM)
+        Mi = MEM_UNIT_TABLE["mi"]
+        steps = {
+            "cpu": max(1, (c_hi - c_lo) // 50),
+            "mem": max(Mi, ((m_hi - m_lo) // 50) // Mi * Mi),
+        }
+
+        # ---- Local adjustment of a single RS template in a given resource
+        def nudge_one(res: str, want_up: bool) -> bool:
+            """Try to adjust one RS's per-pod request up/down by one step."""
+            lo, hi = resources[res]["lo"], resources[res]["hi"]
+            vals = x[res]
+
+            # Candidate RS indices that can move in the desired direction.
+            can_move = [i for i in range(n) if (want_up and vals[i] < hi) or ((not want_up) and vals[i] > lo)]
+            if not can_move:
                 return False
-            i = rng.choices(idxs, weights=[max(1, counts[j]) for j in idxs], k=1)[0]
-            delta = step if want_up else -step
-            new_val = max(lo, min(hi, vec[i] + delta))
-            actual = new_val - vec[i]
+
+            # Prefer RSes with more replicas (bigger effect for same step).
+            i = rng.choices(can_move, weights=[max(1, counts[j]) for j in can_move], k=1)[0]
+            delta = steps[res] if want_up else -steps[res]
+            new_v = max(lo, min(hi, vals[i] + delta))
+            actual = new_v - vals[i]
             if actual == 0:
                 return False
-            vec[i] = new_val
-            if vec is cpu_x:
-                S_cpu += counts[i] * actual
-            else:
-                S_mem += counts[i] * actual
+            vals[i] = new_v
+            S[res] += counts[i] * actual  # keep the running sum in sync
             return True
 
-        def move_replica() -> bool:
-            nonlocal S_cpu, S_mem
+        # ---- Move exactly one replica (from i to j) if it reduces joint error
+        def move_one_replica() -> bool:
             if sum(counts) <= 1:
                 return False
-            order = sorted(range(n), key=lambda i: (cpu_x[i] + mem_x[i]) * max(1, counts[i]), reverse=True)
-            cur_err = abs(S_cpu - target_cpu) + abs(S_mem - target_mem)
+            # Greedy order: heavier templates first.
+            order = sorted(
+                range(n),
+                key=lambda i: (cpu_x[i] + mem_x[i]) * max(1, counts[i]),
+                reverse=True
+            )
+
+            def total_error_after(i_from: int, i_to: int) -> int:
+                # If we move one replica from i_from to i_to, each resource's S changes
+                # by (x[to] - x[from]) for that resource.
+                err = 0
+                for res in resources:
+                    new_S = S[res] + (x[res][i_to] - x[res][i_from])
+                    err += abs(new_S - resources[res]["target"])
+                return err
+
+            cur_err = sum(abs(S[res] - resources[res]["target"]) for res in resources)
+
             for i in order:
                 if counts[i] <= 1:
                     continue
                 for j in reversed(order):
                     if i == j:
                         continue
-                    new_S_cpu = S_cpu + (cpu_x[j] - cpu_x[i])
-                    new_S_mem = S_mem + (mem_x[j] - mem_x[i])
-                    if abs(new_S_cpu - target_cpu) + abs(new_S_mem - target_mem) < cur_err:
+                    new_err = total_error_after(i, j)
+                    if new_err < cur_err:
+                        # Apply the move
                         counts[i] -= 1
                         counts[j] += 1
-                        S_cpu, S_mem = new_S_cpu, new_S_mem
+                        for res in resources:
+                            S[res] += (x[res][j] - x[res][i])
                         return True
             return False
 
+        # ---- Main improvement loop
         for _ in range(max_steps):
             if within():
                 return counts, cpu_x, mem_x, True
 
-            # Decide the directions we need to move each dimension
-            wants = []
-            wants.append(("cpu", S_cpu < target_cpu))
-            wants.append(("mem", S_mem < target_mem))
-            rng.shuffle(wants)
-
             changed = False
-            for which, want_up in wants:
-                if which == "cpu":
-                    changed |= nudge(cpu_x, c_lo, c_hi, want_up=(S_cpu < target_cpu), step=step_cpu)
-                else:
-                    changed |= nudge(mem_x, m_lo, m_hi, want_up=(S_mem < target_mem), step=step_mem)
+            # Randomize resource order each step to avoid bias.
+            for res in rng.sample(list(resources.keys()), k=len(resources)):
+                want_up = S[res] < resources[res]["target"]
+                changed |= nudge_one(res, want_up)
 
             if changed:
                 continue
-            if move_replica():
+            if move_one_replica():
                 continue
-            break
+            break  # no progress possible
 
         return counts, cpu_x, mem_x, within()
 
