@@ -4,8 +4,10 @@ set -euo pipefail
 # ------------------ Config (override via env) ------------------
 REPO_URL="${REPO_URL:-https://github.com/henrikdchristensen/scheduler-plugins}"
 REPO_BRANCH="${REPO_BRANCH:-henrikdc-cross-preemp}"   # e.g. main
-GO_VERSION="${GO_VERSION:-1.24.3}"
-TEST_ARGS="${TEST_ARGS:- -c 5}"                       # e.g. "--seed 123" or "-c 50"
+TEST_ARGS="${TEST_ARGS:-}"                       # e.g. "--seed 123" or "-c 50"
+
+REPO_DIR="${REPO_DIR:-${TARGET_HOME}/scheduler-plugins}"
+BOOT_DIR="${BOOT_DIR:-${REPO_DIR}/scripts/bootstrap}"
 
 # ------------------ Detect target user/home --------------------
 pick_target_user() {
@@ -25,9 +27,6 @@ pick_target_user() {
 }
 TARGET_USER="$(pick_target_user)"
 TARGET_HOME="$(eval echo "~${TARGET_USER}")"
-
-REPO_DIR="${REPO_DIR:-${TARGET_HOME}/scheduler-plugins}"
-BOOT_DIR="${BOOT_DIR:-${REPO_DIR}/scripts/bootstrap}"
 
 # ------------------ Helpers ------------------
 run_root() {
@@ -71,20 +70,11 @@ run_root "chown -R '${TARGET_USER}:${TARGET_USER}' '${REPO_DIR}'"
 
 # ------------------ Mark bootstrap scripts executable ------------------
 run_root "chmod +x '${BOOT_DIR}'/01_system_setup.sh \
-                '${BOOT_DIR}'/02_go.sh \
-                '${BOOT_DIR}'/03_tools.sh \
-                '${BOOT_DIR}'/04_clone_and_build.sh \
-                '${BOOT_DIR}'/05_test.sh"
+                '${BOOT_DIR}'/02_build_test.sh"
 
 # ------------------ System-level setup (as root) ------------------
 echo "[init] 01_system_setup.sh (Docker, etc.)"
 run_root "cd '${BOOT_DIR}' && ./01_system_setup.sh"
-
-echo "[init] 02_go.sh (Go ${GO_VERSION})"
-run_root "cd '${BOOT_DIR}' && GO_VERSION='${GO_VERSION}' ./02_go.sh"
-
-echo "[init] 03_tools.sh (kubectl + kwokctl)"
-run_root "cd '${BOOT_DIR}' && ./03_tools.sh"
 
 # ------------------ Docker group for TARGET_USER ------------------
 if command -v docker >/dev/null 2>&1; then
@@ -97,10 +87,7 @@ else
 fi
 
 # ------------------ User-level steps (build + tests) ------------------
-echo "[init] 04_clone_and_build.sh (runs as ${TARGET_USER})"
-run_as_target "cd '${BOOT_DIR}' && ./04_clone_and_build.sh"
-
-echo "[init] 05_test.sh ${TEST_ARGS} (runs as ${TARGET_USER})"
-run_as_target "cd '${BOOT_DIR}' && ./05_test.sh ${TEST_ARGS}"
+echo "[init] 02_build_test.sh ${TEST_ARGS} (runs as ${TARGET_USER})"
+run_as_target "cd '${BOOT_DIR}' && ./02_build_test.sh ${TEST_ARGS}"
 
 echo "[done] Initialization completed. Repo: ${REPO_DIR}"

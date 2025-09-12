@@ -20,21 +20,12 @@ Vagrant.configure("2") do |config|
     cd /home/vagrant/bootstrap_vm
 
     # Make scripts executable
-    chmod +x 01_system_setup.sh 02_go.sh 03_tools.sh 04_clone_and_build.sh 05_test.sh
+    chmod +x 01_system_setup.sh 02_build_test.sh
 
     # 1) Base system + docker (needs sudo/root)
     sudo ./01_system_setup.sh
 
-    # 2) go
-    sudo ./02_go.sh
-
-    # 2) kubectl + kwokctl (sudo/root)
-    sudo ./03_tools.sh
-
-    # 3) Clone repo + build & push image (normal user)
-    ./04_clone_and_build.sh
-
-    # 4) Run tests (normal user)
-    ./05_test.sh
+    # 2) Run tests (normal user)
+    ./02_build_test.sh
   SHELL
 end
