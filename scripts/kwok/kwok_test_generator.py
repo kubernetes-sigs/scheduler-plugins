@@ -1494,11 +1494,11 @@ class KwokTestGenerator:
             rng_layout = self._rng(seed, "layout", cfg.stem)
 
             phase = "ensure_namespace"
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} phase={phase}")
+            print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  phase={phase}")
             self._ensure_namespace(self.ctx, ta.namespace, recreate=True)
 
             phase = "ensure_priority_classes"
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} phase={phase} num_p={ta.num_priorities}")
+            print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  phase={phase}  num_p={ta.num_priorities}")
             self._ensure_priority_classes(self.ctx, ta.num_priorities, prefix="p", start=1, delete_extras=True)
 
             alloc_cpu_m = ta.node_m * ta.num_nodes
@@ -1507,7 +1507,7 @@ class KwokTestGenerator:
             tgt_b_cluster  = int(alloc_mem_b * ta.util)
 
             phase = "apply_workload"
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} phase={phase} mode={'RS' if ta.num_replicaset>0 else 'standalone'}")
+            print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  phase={phase}  mode={'RS' if ta.num_replicaset>0 else 'standalone'}")
             pod_specs: list[dict] = []
             rs_specs:  list[dict] = []
             if ta.num_replicaset > 0:
@@ -1524,13 +1524,13 @@ class KwokTestGenerator:
                 pod_specs = self._run_standalone(cfg, seed, ta, rng_layout)
 
             phase = "events_snapshot"
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} phase={phase}")
+            print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  phase={phase}")
             _, scheduled_pairs, unschedulable_names = get_scheduled_and_unscheduled(
                 self.ctx, ta.namespace, expected=ta.total_pods, settle_timeout=ta.settle_timeout_s
             )
 
             phase = "stats_snapshot"
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} phase={phase}")
+            print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  phase={phase}")
             placed_by_priority = self._count_running_by_priority(self.ctx, ta.namespace)
             snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.total_pods, settle_timeout=ta.settle_timeout_s)
 
@@ -1569,27 +1569,27 @@ class KwokTestGenerator:
                 ), separators=(",", ":")),
             }
             phase = "write_results"
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} phase={phase} rows=1")
+            print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  phase={phase}  rows=1")
             if save_allowed:
                 dest_csv = self._pick_results_csv_to_write(cfg.stem, rows_to_add=1)
                 self._ensure_csv_with_header(dest_csv, RESULTS_HEADER)
                 csv_append_row(dest_csv, RESULTS_HEADER, result_row)
-                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} appended to {dest_csv.name}")
+                print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  appended to {dest_csv.name}")
             else:
-                print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} not saved")
-            print(f"[kwok-test-gen] cfg={cfg.stem} seed={seed} done; took {time.time()-start_time:.1f}s")
+                print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  not saved")
+            print(f"[kwok-test-gen] cfg={cfg.stem}  seed={seed}  done; took {time.time()-start_time:.1f}s")
             self._print_seed_summary(cfg, seed, len(scheduled_pairs), len(unschedulable_names))
 
         except RuntimeError as e:
             # previously returned silently for some RuntimeErrors
             tb = traceback.format_exc()
             self._write_fail("seed", cfg, seed, phase, str(e), tb)
-            print(f"[kwok-test-gen] seed-runtime cfg={cfg.stem} seed={seed} phase={phase}: {e}")
+            print(f"[kwok-test-gen] seed-runtime  cfg={cfg.stem} seed={seed}  phase={phase}: {e}")
             return
         except Exception as e:
             tb = traceback.format_exc()
             self._write_fail("seed", cfg, seed, phase, str(e), tb)
-            print(f"[kwok-test-gen] seed-error cfg={cfg.stem} seed={seed} phase={phase}: {e}")
+            print(f"[kwok-test-gen] seed-error  cfg={cfg.stem}  seed={seed}  phase={phase}: {e}")
             self._print_seed_summary(cfg, seed, None, None, f"error: {e}")
 
     def _run_for_config(self, cfg: Path) -> None:
