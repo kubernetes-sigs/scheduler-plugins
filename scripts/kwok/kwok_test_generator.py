@@ -1466,7 +1466,11 @@ class KwokTestGenerator:
         ok = (len(errors) == 0)
         return ok, ("\n".join(errors) if errors else "")
 
-
+    @staticmethod
+    def _print_run_header(s, cfg_name, seed_idx, seeds_total, cfg_idx, cfgs_total):
+        print("\n------------------------------------------------- SEED RUN -------------------------------------------------")
+        print(f"[kwok-test-gen] seed={s} ({seed_idx}/{seeds_total}) config={cfg_name} ({cfg_idx}/{cfgs_total})")
+        print("------------------------------------------------------------------------------------------------------------")
 
     @staticmethod
     def _pick_runner_doc(docs: List[Any]) -> Dict[str, Any]:
@@ -1478,7 +1482,7 @@ class KwokTestGenerator:
                 return d
         raise KeyError("No Kwok runner settings found in YAML (expected 'kind: KwokRunConfiguration').")
 
-    def _run_one_seed(
+    def _run_single_seed(
         self,
         cfg: Path,
         seen: set[int],
@@ -1592,7 +1596,24 @@ class KwokTestGenerator:
             print(f"[kwok-test-gen] seed-error  cfg={cfg.stem}  seed={seed}  phase={phase}: {e}")
             self._print_seed_summary(cfg, seed, None, None, f"error: {e}")
 
-    def _run_for_config(self, cfg: Path) -> None:
+    def _validate_all_configs(self, cfgs: List[Path]) -> None:
+        any_fail = False
+        for cfg in cfgs:
+            try:
+                raw = self._load_run_config(cfg)
+                ok, msg = KwokTestGenerator._validate_config(raw)
+                if not ok:
+                    print(f"[kwok-test-gen] config-failed {cfg}: {msg}")
+                    any_fail = True
+            except Exception as e:
+                print(f"[kwok-test-gen] config-failed {cfg}: {e}")
+                any_fail = True
+                continue
+        if any_fail:
+            raise SystemExit("One or more configs failed validation; see messages above and fix them.")
+        print(f"[kwok-test-gen] all {len(cfgs)} configs validated successfully.")
+
+    def _run_for_config(self, cfg: Path, cfg_idx: int, cfgs_total: int) -> None:
         try:
             raw = self._load_run_config(cfg)
         except Exception as e:
@@ -1641,11 +1662,9 @@ class KwokTestGenerator:
         # seed-only path
         if self.args.seed is not None:
             s = int(self.args.seed)
-            print("\n------------------------------------------------- SEED RUN -------------------------------------------------")
-            print(f"[kwok-test-gen] running single seed={s} for config={cfg.name}")
-            print("------------------------------------------------------------------------------------------------------------")
+            self._print_run_header(s, cfg.name, 1, 1, cfg_idx, cfgs_total)
             rc = self._resolve_for_seed(raw, s)
-            self._run_one_seed(cfg, seen, s, rc)
+            self._run_single_seed(cfg, seen, s, rc)
             return
 
         # count path
@@ -1656,11 +1675,9 @@ class KwokTestGenerator:
             made = 0
             while to_make == -1 or made < to_make:
                 s = rng.getrandbits(63) or 1
-                print("\n------------------------------------------------- SEED RUN -------------------------------------------------")
-                print(f"[kwok-test-gen] random seed={s} for config={cfg.name} (seeds: {made+1}/{to_make})")
-                print("------------------------------------------------------------------------------------------------------------")
+                self._print_run_header(s, cfg.name, made + 1, to_make, cfg_idx, cfgs_total)
                 rc = self._resolve_for_seed(raw, s)
-                self._run_one_seed(cfg, seen, s, rc)
+                self._run_single_seed(cfg, seen, s, rc)
                 if to_make != -1:
                     made += 1
             return
@@ -1668,14 +1685,12 @@ class KwokTestGenerator:
         # seed-file path
         if self.args.seed_file:
             seeds_list = self._read_seeds_file(Path(self.args.seed_file))
-            total_seeds = len(seeds_list)
-            for idx, s in enumerate(seeds_list, start=1):
-                print("\n------------------------------------------------- SEED RUN -------------------------------------------------")
-                print(f"[kwok-test-gen] starting seed={s} for config={cfg.name} (seeds: {idx}/{total_seeds})")
-                print("------------------------------------------------------------------------------------------------------------")
+            seeds_total = len(seeds_list)
+            for seed_idx, s in enumerate(seeds_list, start=1):
+                self._print_run_header(s, cfg.name, seed_idx, seeds_total, cfg_idx, cfgs_total)
                 s = int(s)
                 rc = self._resolve_for_seed(raw, s)
-                self._run_one_seed(cfg, seen, s, rc, self.args.seed_file)
+                self._run_single_seed(cfg, seen, s, rc, self.args.seed_file)
             return
 
         print(f"[kwok-test-gen] no seeds provided for cfg={cfg.name} (use --seed / --seed-file / --count).")
@@ -1734,13 +1749,14 @@ class KwokTestGenerator:
 
         # proceed
         cfgs = self._get_kwok_configs(self.args.kwok_config_dir)
-        total_cfgs = len(cfgs)
-        print(f"[kwok-test-gen] configs={total_cfgs}")
-        for idx, cfg in enumerate(cfgs, start=1):
+        cfgs_total = len(cfgs)
+        self._validate_all_configs(cfgs)
+        print(f"[kwok-test-gen] configs={cfgs_total}")
+        for cfg_idx, cfg in enumerate(cfgs, start=1):
             print("\n===================================== CONFIG RUN =====================================")
-            print(f"[kwok-test-gen] config={cfg}  (configs: {idx}/{total_cfgs})")
+            print(f"[kwok-test-gen] config={cfg}  (configs: {cfg_idx}/{cfgs_total})")
             print("======================================================================================")
-            self._run_for_config(cfg)
+            self._run_for_config(cfg, cfg_idx, cfgs_total)
 
 ##############################################
 # ------------ CLI ---------------------------
