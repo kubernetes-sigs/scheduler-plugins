@@ -1,19 +1,19 @@
 kind: KwokRunConfiguration
 namespace: test
 num_nodes: 4
+pods_per_node: 8
+num_priorities: [4,8] # Can both be an interval or a fixed number
 node_cpu: 2400m
 node_mem: 32Gi
-pods_per_node: 8
-num_priorities: [4,8]
-
-num_replicaset: [4,8] # should be at least the number of priorities
-num_replicas_per_rs_set: [2,8] # high should be <= total_pods/num_replicaset
 
 # A good range for CPU and Mem interval can be found by finding the total CPU/Mem request for the utilization specified.
 # Example: node_cpu=2400m, num_nodes=4, util=0.9 => total_cpu=2400*4*0.9=8640m
 # Then divide it by total pods (e.g., 32) to get an average per pod (e.g., 270m) and set a range around it (e.g., 270m-150m=120 to 270m+150m=420m).
-cpu_interval_per_pod: [120m,420m]
-mem_interval_per_pod: [2Gi,5.2Gi]
+cpu_per_pod: [120m,420m]
+mem_per_pod: [2Gi,5.2Gi]
+
+num_replicaset: [0,8] # OPTIONAL: if set the lower bound should be at least the number of priorities. Can both be an interval or a fixed number.
+num_replicas_per_rs_set: [2,8] # Needed if num_replicaset is set, high should be <= total_pods/num_replicaset. Can both be an interval or a fixed number.
 
 util: 0.95
 util_tolerance: 0.01
