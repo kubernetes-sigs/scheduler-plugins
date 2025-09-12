@@ -10,11 +10,11 @@ Vagrant.configure("2") do |config|
   end
 
   # Share bootstrap source from host (Windows) → guest
-  config.vm.synced_folder "./bootstrap_vm", "/home/vagrant/bootstrap_vm", type: "virtualbox"
+  config.vm.synced_folder "./bootstrap", "/home/vagrant/bootstrap", type: "virtualbox"
 
   config.vm.provision "shell", inline: <<-SHELL
     set -e
-    cd /home/vagrant/bootstrap_vm
+    cd /home/vagrant/bootstrap
 
     # Convert CRLF -> LF for all scripts we’ll call
     sed -i 's/\\r$//' 00_init.sh 01_system_setup.sh 02_build_test.sh
