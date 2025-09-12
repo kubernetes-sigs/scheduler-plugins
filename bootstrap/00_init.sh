@@ -5,6 +5,7 @@ set -euo pipefail
 REPO_URL="${REPO_URL:-https://github.com/henrikdchristensen/scheduler-plugins}"
 REPO_BRANCH="${REPO_BRANCH:-henrikdc-cross-preemp}"
 TEST_ARGS="${TEST_ARGS:-}"  # e.g. "--seed 123" or "-c 50"
+#TODO find a way to pass CLUSTER_NAME, SEED_FILE, RESULTS_DIR, ...
 
 # ------------------ Detect target user/home --------------------
 pick_target_user() {
@@ -24,7 +25,7 @@ pick_target_user() {
 TARGET_USER="$(pick_target_user)"
 TARGET_HOME="$(eval echo "~${TARGET_USER}")"
 REPO_DIR="${REPO_DIR:-${TARGET_HOME}/scheduler-plugins}"
-BOOT_DIR="${BOOT_DIR:-${REPO_DIR}/scripts/bootstrap}"
+BOOT_DIR="${BOOT_DIR:-${REPO_DIR}/bootstrap}"
 
 # ------------------ Helpers ------------------
 run_as_target() {
