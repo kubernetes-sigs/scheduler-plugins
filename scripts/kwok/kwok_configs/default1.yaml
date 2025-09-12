@@ -12,7 +12,7 @@ node_mem: 32Gi
 cpu_per_pod: [120m,420m]
 mem_per_pod: [2Gi,5.2Gi]
 
-num_replicaset: [0,8] # OPTIONAL: if set the lower bound should be at least the number of priorities. Can both be an interval or a fixed number.
+num_replicaset: [4,8] # OPTIONAL: if set the lower bound should be at least the number of priorities. Can both be an interval or a fixed number.
 num_replicas_per_rs_set: [2,8] # Needed if num_replicaset is set, high should be <= total_pods/num_replicaset. Can both be an interval or a fixed number.
 
 util: 0.95
