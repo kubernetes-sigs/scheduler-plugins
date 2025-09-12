@@ -1,6 +1,30 @@
 #!/usr/bin/env python3
-
 # kwok_test_generator.py
+
+################################################################################
+# Arguments:
+#
+#   --cluster-name <name>               KWOK cluster name (default: "kwok1")
+#
+#   --config-dir <dir>                  Directory containing one or more KWOK config YAMLs (default: "./kwok_configs")
+#
+#   --results-dir <dir>                 Directory to store results CSV files (default: "./results")
+#
+#   --max-rows-per-file <int>           Maximum rows per CSV file before rotation (default: 500000)
+#
+#   --failed-file <file>                File to log failed seeds (default: "./failed.csv")
+#
+#   --seed <int>                        Run exactly this seed (per kwok-config)
+#
+#   --seed-file <file>                  Path to seeds file (CSV with 'seed' col or newline list)
+#
+#   --generate-seeds-to-file <file>     Write --count random seeds (one per line, no header) to this file, 
+#                                       then exit. Cannot be combined with --seed/--seed-file.
+#   --count <int>                       Generate random seeds; -1=infinite
+#
+#   --test                              Test mode: requires --seed; runs each kwok-config and prints a per-config summary
+#                                       of scheduled vs unscheduled at the end. No results are saved in test mode.
+################################################################################
 
 import csv, json, time, random, argparse, re, subprocess, tempfile, os, textwrap, hashlib, math, yaml, traceback
 from dataclasses import dataclass, field
@@ -324,7 +348,7 @@ class KwokTestGenerator:
     def _derive_seed(base_seed: int, *labels: object, nbytes: int = 16) -> int:
         """
         Deterministically derive a child seed from a base seed and a sequence of labels.
-        Uses BLAKE2b for mixing + domain separation.
+        This is to make sure that changes in one part of the code do not affect RNG streams in other parts.
         """
         h = hashlib.blake2b(digest_size=nbytes)
         # fixed-width encode base to keep derivations stable
@@ -1185,7 +1209,7 @@ class KwokTestGenerator:
         """
         cfg_dir = Path(dir_path)
         if not cfg_dir.exists():
-            raise SystemExit(f"--kwok-config-dir not found: {cfg_dir}")
+            raise SystemExit(f"--config-dir not found: {cfg_dir}")
         cfgs = sorted([p for p in cfg_dir.glob("**/*") if p.is_file() and p.suffix.lower() in (".yaml", ".yml")])
         if not cfgs:
             raise SystemExit("No KWOK configs found (must be at least one).")
@@ -1743,7 +1767,7 @@ class KwokTestGenerator:
         # --- check provided paths: seed file and kwok-config dir ---
         if self.args.seed_file:
             file_exists(self.args.seed_file)
-        dir_exists(self.args.kwok_config_dir)
+        dir_exists(self.args.config_dir)
 
         # --- test-mode constraints ---
         if self.args.test:
@@ -1753,7 +1777,7 @@ class KwokTestGenerator:
                 raise SystemExit("--test cannot be combined with --count or --seed-file")
 
         # proceed
-        cfgs = self._get_kwok_configs(self.args.kwok_config_dir)
+        cfgs = self._get_kwok_configs(self.args.config_dir)
         cfgs_total = len(cfgs)
         self._validate_all_configs(cfgs)
         print(f"[kwok-test-gen] configs={cfgs_total}")
@@ -1778,7 +1802,7 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="KWOK cluster name")
     
     # configs
-    ap.add_argument("--kwok-config-dir", dest="kwok_config_dir",
+    ap.add_argument("--config-dir", dest="config_dir",
                     default="./scripts/kwok/kwok_configs",
                     help="Directory containing one or more KWOK config YAMLs")
     ap.add_argument("--results-dir", dest="results_dir", default="./scripts/kwok/results",

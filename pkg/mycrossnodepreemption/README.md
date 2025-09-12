@@ -54,6 +54,8 @@ TODO_HC
 
 ## Write
 
+- Mention that I focus on plain CPU clusters as there can be other consideration when it comes to GPUs
+- Write about that we need hashlib for making sure we get the same seeds even when we make changes to the code.
 - Write about that when simulating standalone pods, then the scheduler might preempt it and we can no longer see it.
 - Write about Iterative deepening depth-first search
 - Write about that it were not possible to place a preemptor by workload cnts, needs to be done by name as we otherwise can let other pods of the same workload through the scheduling phase before the preemptor that hit the postfilter.

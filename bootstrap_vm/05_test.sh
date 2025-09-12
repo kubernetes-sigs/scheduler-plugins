@@ -63,7 +63,7 @@ GEN="kwok_test_generator.py"
 
 args=(
   "--cluster-name" "$CLUSTER_NAME"
-  "--kwok-config-dir" "$KWOK_CONFIG_DIR"
+  "--config-dir" "$KWOK_CONFIG_DIR"
   "--results-dir" "$RESULTS_DIR"
 )
 
