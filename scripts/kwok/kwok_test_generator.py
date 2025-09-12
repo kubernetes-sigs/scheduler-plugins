@@ -632,7 +632,7 @@ class KwokTestGenerator:
         return counts, cpu_x, mem_x, within()
 
     @staticmethod
-    def _gen_num_replicas_per_replicaset(
+    def _gen_num_replicas_per_replicaset( #TODO: Understand this better
         total_pods: int,
         num_replicaset: int,
         rng: random.Random,
@@ -758,7 +758,7 @@ class KwokTestGenerator:
         return subprocess.run(["kubectl","--context",ctx,"apply","-f","-"], input=yaml_text.encode(), check=True)
     
     @staticmethod
-    def _prepare_kwokctl_config_file(src: Path) -> tuple[Path, Path | None]: #TODO: find a better name
+    def _prepare_kwokctl_config_file(src: Path) -> tuple[Path, Path | None]:
         """
         Prepare a KWOK configuration file for kwokctl.
         If the source file contains multiple documents, pick the one with kind=KwokctlConfiguration

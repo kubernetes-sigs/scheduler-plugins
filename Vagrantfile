@@ -16,11 +16,15 @@ Vagrant.configure("2") do |config|
     set -e
     cd /home/vagrant/bootstrap
 
-    # Convert CRLF -> LF for all scripts we’ll call
-    sed -i 's/\\r$//' 00_init.sh 01_system_setup.sh 02_build_test.sh
-    chmod +x 00_init.sh 01_system_setup.sh 02_build_test.sh
+    for f in 00_init.sh 01_system_setup.sh 02_build_test.sh; do
+      # strip UTF-8 BOM if present
+      sed -i '1s/^\xef\xbb\xbf//' "$f"
+      # convert CRLF -> LF
+      sed -i 's/\r$//' "$f"
+      chmod +x "$f"
+    done
 
-    # Run the single entrypoint with bash
+    # always run with bash
     /usr/bin/env bash ./00_init.sh
   SHELL
 end
