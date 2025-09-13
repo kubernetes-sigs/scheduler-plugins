@@ -56,7 +56,17 @@ for f in "${BOOTSTRAP_DIR}/01_system_setup.sh" "${BOOTSTRAP_DIR}/02_build_test.s
 done
 
 echo "[init] 01_system_setup.sh (kubectl, kwokctl+kwok, Python; Docker only if KWOK_RUNTIME=docker)"
-run_root "TARGET_USER='${TARGET_USER}' KWOK_RUNTIME='${KWOK_RUNTIME:-binary}' /usr/bin/env bash '${BOOTSTRAP_DIR}/01_system_setup.sh'"
+run_root "/usr/bin/env bash '${BOOTSTRAP_DIR}/01_system_setup.sh'"
+
+# ------------------ Add TARGET_USER to docker group, if docker installed
+if command -v docker >/dev/null 2>&1; then
+  if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then
+    echo "[init] adding ${TARGET_USER} to docker group"
+    run_root "usermod -aG docker '${TARGET_USER}'"
+  fi
+else
+  echo "[warn] docker not found after 01_system_setup.sh"
+fi
 
 echo "[init] 02_build_test.sh (runs as ${TARGET_USER})"
 run_as_target "/usr/bin/env bash '${BOOTSTRAP_DIR}/02_build_test.sh'"
