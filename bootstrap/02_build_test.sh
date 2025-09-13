@@ -40,19 +40,20 @@ for bin in python3 kubectl kwokctl docker; do
 done
 
 # -------------- Build scheduler image --------------------
-IMG_TAG="${IMG_TAG:-localhost:5000/scheduler-plugins/kube-scheduler:dev}"
-cd "${REPO_DIR}"
-# Derive a version string for the binary
+IMG_REPO="${IMG_REPO:-localhost:5000/scheduler-plugins/kube-scheduler}"
 GIT_VERSION="$(git -C "${REPO_DIR}" describe --tags --always 2>/dev/null || echo dev)"
-echo "[build] docker image ${IMG_TAG}:${GIT_VERSION}"
+
+echo "[build] docker image ${IMG_REPO}:${GIT_VERSION} and ${IMG_REPO}:dev"
+
 DOCKER_BUILDKIT=1 docker build \
   --build-arg VERSION="${GIT_VERSION}" \
   ${GO_BASE_IMAGE:+--build-arg GO_BASE_IMAGE="${GO_BASE_IMAGE}"} \
   ${UBUNTU_BASE_IMAGE:+--build-arg UBUNTU_BASE_IMAGE="${UBUNTU_BASE_IMAGE}"} \
-  -t "${IMG_TAG}:${GIT_VERSION}" \
-  -f build/scheduler/Dockerfile .
+  -t "${IMG_REPO}:${GIT_VERSION}" \
+  -t "${IMG_REPO}:dev" \
+  -f build/scheduler/Dockerfile \
+  "${REPO_DIR}"
 # Also tag the 'dev' tag for consumers that don't care about the exact version
-docker tag "${IMG_TAG}:${GIT_VERSION}" "${IMG_TAG}"
 echo "[ok] image built: ${IMG_TAG}:${GIT_VERSION}"
 
 # -------------- Python venv + deps -----------------------

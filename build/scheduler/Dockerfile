@@ -1,52 +1,47 @@
-# ---------- build kube-scheduler ----------
+# build/scheduler/Dockerfile
+
 ARG GO_BASE_IMAGE=golang:1.24
-ARG UBUNTU_BASE_IMAGE=ubuntu:22.04
+ARG RUNTIME_IMAGE=python:3.12-slim
+ARG GO_BUILD_ENV="CGO_ENABLED=0"
 ARG VERSION=dev
 
+# ---------- builder ----------
 FROM ${GO_BASE_IMAGE} AS builder
 WORKDIR /src
 
-# Sanity check: fail early if Go is missing
-RUN go version
-
-# 1) Cache deps
+# 1) Go deps first for better cache
 COPY go.mod go.sum ./
+# enable BuildKit cache for modules/build
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-# 2) Copy just what’s needed to compile
-COPY cmd/scheduler/ ./cmd/scheduler/
-COPY pkg/ ./pkg/
-COPY apis/ ./apis/
-# COPY internal/ ./internal/   # add this if you import from internal/
+# 2) Copy only what the scheduler build needs
+COPY cmd/scheduler ./cmd/scheduler
+COPY pkg          ./pkg
+COPY apis         ./apis
+# copy anything else the build imports (add as needed)
+# COPY config       ./config
 
-# 3) Build (no shell tricks, no GO_BUILD_ENV indirection)
-ENV CGO_ENABLED=0 GO111MODULE=on
+# 3) Build
+# Use /bin/sh so $VERSION expands here (not a Makefile var)
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -ldflags "-X k8s.io/component-base/version.gitVersion=${VERSION} -w" \
-    -o /out/kube-scheduler ./cmd/scheduler
+    /bin/sh -lc "$GO_BUILD_ENV go build \
+    -ldflags '-X k8s.io/component-base/version.gitVersion=$VERSION -w' \
+    -o /out/kube-scheduler ./cmd/scheduler"
 
-FROM ${UBUNTU_BASE_IMAGE}
+# ---------- runtime ----------
+FROM ${RUNTIME_IMAGE}
 
-# (optional) much faster final image:
-# FROM python:3.12-slim AS runtime
-
-# Python for the solver
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip \
-    && rm -rf /var/lib/apt/lists/*
-
+# 1) Solver deps (pip already in python:slim)
 ENV SOLVER_DIR=/opt/solver
-RUN mkdir -p ${SOLVER_DIR}
+WORKDIR /opt/solver
+COPY scripts/mycrossnodepreemption/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Keep this layer cached
-COPY scripts/mycrossnodepreemption/requirements.txt ${SOLVER_DIR}/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install -r ${SOLVER_DIR}/requirements.txt
+# 2) Solver code
+COPY scripts/mycrossnodepreemption/ /opt/solver/
 
-# Copy solver code
-COPY scripts/mycrossnodepreemption/ ${SOLVER_DIR}/
-
-# Scheduler binary
+# 3) Scheduler binary
 COPY --from=builder /out/kube-scheduler /bin/kube-scheduler
 
 WORKDIR /bin
