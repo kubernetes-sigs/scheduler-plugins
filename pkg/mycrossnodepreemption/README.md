@@ -32,6 +32,7 @@ TODO_HC
 
 ## TODOs
 
+- Go back to the commit before "test" if improvements to init script is not working.
 - Improve init script execution time.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
 - Add a verifier of the solvers plan in IsImprovement.
