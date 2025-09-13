@@ -1,48 +1,42 @@
-# build/scheduler/Dockerfile
+# syntax=docker/dockerfile:1
 
 ARG GO_BASE_IMAGE=golang:1.24
-ARG RUNTIME_IMAGE=python:3.12-slim
-ARG GO_BUILD_ENV="CGO_ENABLED=0"
+ARG UBUNTU_BASE_IMAGE=ubuntu:22.04
 ARG VERSION=dev
+ARG GO_BUILD_ENV="CGO_ENABLED=0"
 
-# ---------- builder ----------
 FROM ${GO_BASE_IMAGE} AS builder
 WORKDIR /src
 
-# 1) Go deps first for better cache
+# 1) Module layer for cache
 COPY go.mod go.sum ./
-# enable BuildKit cache for modules/build
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-# 2) Copy only what the scheduler build needs
+# 2) Copy only what you need to build
 COPY cmd/scheduler ./cmd/scheduler
-COPY pkg          ./pkg
-COPY apis         ./apis
-# copy anything else the build imports (add as needed)
-# COPY config       ./config
+COPY pkg ./pkg
+COPY apis ./apis
+# COPY config ./config   # include only if main.go imports from here
 
 # 3) Build
-# Use /bin/sh so $VERSION expands here (not a Makefile var)
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    /bin/sh -lc "$GO_BUILD_ENV go build \
+    sh -lc "$GO_BUILD_ENV go build \
     -ldflags '-X k8s.io/component-base/version.gitVersion=$VERSION -w' \
     -o /out/kube-scheduler ./cmd/scheduler"
 
-# ---------- runtime ----------
-FROM ${RUNTIME_IMAGE}
+FROM ${UBUNTU_BASE_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
 
-# 1) Solver deps (pip already in python:slim)
 ENV SOLVER_DIR=/opt/solver
-WORKDIR /opt/solver
-COPY scripts/mycrossnodepreemption/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN mkdir -p ${SOLVER_DIR}
+COPY scripts/mycrossnodepreemption/requirements.txt ${SOLVER_DIR}/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install -r ${SOLVER_DIR}/requirements.txt
+COPY scripts/mycrossnodepreemption/ ${SOLVER_DIR}/
 
-# 2) Solver code
-COPY scripts/mycrossnodepreemption/ /opt/solver/
-
-# 3) Scheduler binary
 COPY --from=builder /out/kube-scheduler /bin/kube-scheduler
-
 WORKDIR /bin
 CMD ["kube-scheduler"]
