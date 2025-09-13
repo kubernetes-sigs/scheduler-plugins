@@ -14,6 +14,7 @@
 # limitations under the License.
 
 ARG GO_BASE_IMAGE=golang:1.24
+#TODO: try out 3.13-slim or 3.14-slim
 ARG PY_BUILDER_IMAGE=python:3.11-slim
 ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
 
