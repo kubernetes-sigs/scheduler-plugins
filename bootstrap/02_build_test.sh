@@ -46,7 +46,7 @@ else
   cd "${REPO_DIR}"
   IMG_TAG="localhost:5000/scheduler-plugins/kube-scheduler:dev"
   echo "[build] docker image ${IMG_TAG}"
-  docker build \
+  DOCKER_BUILDKIT=1 docker build \
     -t "${IMG_TAG}" \
     -f build/scheduler/Dockerfile .
   echo "[ok] image built locally: ${IMG_TAG}"
