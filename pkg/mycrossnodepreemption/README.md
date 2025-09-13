@@ -32,10 +32,7 @@ TODO_HC
 
 ## TODOs
 
-- Try to run KWOK as binary instead of docker images.
-- Automatic build docker image on GitHub so we just can pull it in init script.
-- Go back to the commit before "test" if improvements to init script is not working.
-- Improve init script execution time.
+- Finalize the init scripts and find out why we can't run distroless with nonroot
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
@@ -57,6 +54,7 @@ TODO_HC
 
 ## Write
 
+- Write about the difference ways of running KWOK - binary, docker, etc.
 - Mention that I focus on plain CPU clusters as there can be other consideration when it comes to GPUs
 - Write about that we need hashlib for making sure we get the same seeds even when we make changes to the code.
 - Write about that when simulating standalone pods, then the scheduler might preempt it and we can no longer see it.
