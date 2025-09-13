@@ -51,25 +51,17 @@ python -m pip install -r "$KWOK_DIR/requirements.txt"
 echo "[kwok] (re)creating cluster ${KWOK_CLUSTER} with runtime=${KWOK_RUNTIME}"
 kwokctl delete cluster --name "${KWOK_CLUSTER}" >/dev/null 2>&1 || true
 
-if [ "${KWOK_RUNTIME}" = "binary" ]; then
-  # Pure host processes (no Docker)
-  kwokctl create cluster \
-    --name "${KWOK_CLUSTER}" \
-    --runtime=binary \
-    --kube-version "${KUBE_VERSION}"
-else
-  # Fallback: docker runtime (kept for convenience)
-  kwokctl create cluster \
-    --name "${KWOK_CLUSTER}" \
-    --runtime=docker
-fi
+kwokctl create cluster \
+  --name "${KWOK_CLUSTER}" \
+  --runtime=binary \
+  --config "${KWOK_DIR}/kwok-cluster.yaml"
 
 # --- Run your generator on the host ---
-cd "$KWOK_DIR"
-python kwok_test_generator.py \
-  --cluster-name "${KWOK_CLUSTER}" \
-  --config-dir "${KWOK_CONFIG_DIR}" \
-  --results-dir "${RESULTS_DIR}" \
-  --seed-file "${SEED_FILE}"
+# cd "$KWOK_DIR"
+# python kwok_test_generator.py \
+#   --cluster-name "${KWOK_CLUSTER}" \
+#   --config-dir "${KWOK_CONFIG_DIR}" \
+#   --results-dir "${RESULTS_DIR}" \
+#   --seed-file "${SEED_FILE}"
 
 echo "[ok] Results CSVs: $RESULTS_DIR"
