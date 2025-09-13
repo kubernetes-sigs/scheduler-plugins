@@ -1047,7 +1047,7 @@ class KwokTestGenerator:
             mem_b_str = max(1, int(mem_parts[i]))
             cpu_m_int  = qty_to_mcpu_str(cpu_m_str)
             mem_b_int = qty_to_bytes_str(mem_b_str)
-            KwokTestGenerator._apply_yaml(self.ctx, yaml_kwok_pod(ns, name, cpu_m_int, mem_b_int, pc))
+            KwokTestGenerator._apply_yaml(self.ctx, yaml_kwok_pod(ta.namespace, name, cpu_m_int, mem_b_int, pc))
             names.append(name)
             specs.append({"name": name, "cpu_m": cpu_m_str, "mem_b": mem_b_str, "priority": pc})
             if ta.wait_mode == "running":
