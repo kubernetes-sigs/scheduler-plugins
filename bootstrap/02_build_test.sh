@@ -42,9 +42,18 @@ done
 # -------------- Build scheduler image --------------------
 IMG_TAG="${IMG_TAG:-localhost:5000/scheduler-plugins/kube-scheduler:dev}"
 cd "${REPO_DIR}"
-echo "[build] docker image ${IMG_TAG}"
-docker build -t "${IMG_TAG}" -f build/scheduler/Dockerfile .
-echo "[ok] image built"
+# Derive a version string for the binary
+GIT_VERSION="$(git -C "${REPO_DIR}" describe --tags --always 2>/dev/null || echo dev)"
+echo "[build] docker image ${IMG_TAG}:${GIT_VERSION}"
+DOCKER_BUILDKIT=1 docker build \
+  --build-arg VERSION="${GIT_VERSION}" \
+  ${GO_BASE_IMAGE:+--build-arg GO_BASE_IMAGE="${GO_BASE_IMAGE}"} \
+  ${UBUNTU_BASE_IMAGE:+--build-arg UBUNTU_BASE_IMAGE="${UBUNTU_BASE_IMAGE}"} \
+  -t "${IMG_TAG}:${GIT_VERSION}" \
+  -f build/scheduler/Dockerfile .
+# Also tag the 'dev' tag for consumers that don't care about the exact version
+docker tag "${IMG_TAG}:${GIT_VERSION}" "${IMG_TAG}"
+echo "[ok] image built: ${IMG_TAG}:${GIT_VERSION}"
 
 # -------------- Python venv + deps -----------------------
 VENV_DIR="${VENV_DIR:-$REPO_DIR/.venv}"
