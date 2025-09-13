@@ -8,7 +8,7 @@ KWOKRC="${REPO_DIR}/.kwokrc"
 # Defaults
 KUBE_VERSION="${KUBE_VERSION:-v1.32.7}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"
-TEST_GENERATOR_SCRIPT="${KWOK_DIR}/test_generator.py"
+TEST_GENERATOR_SCRIPT="${KWOK_DIR}/kwok_test_generator.py"
 
 # Load .kwokrc
 if [[ -f "$KWOKRC" ]]; then
