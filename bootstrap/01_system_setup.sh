@@ -55,8 +55,15 @@ if [ "${KWOK_RUNTIME}" = "docker" ]; then
 https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$UBUNTU_CODENAME") stable" \
     > /etc/apt/sources.list.d/docker.list
   apt-get update
-  apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io
+  apt-get install -y --no-install-recommends \
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin
   systemctl enable --now docker
+  # ensure the login user can talk to dockerd
+  TARGET_USER="${TARGET_USER:-${SUDO_USER:-vagrant}}"
+  if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then
+    usermod -aG docker "${TARGET_USER}"
+    echo "[info] Added ${TARGET_USER} to docker group"
+  fi
   docker --version
 fi
 
