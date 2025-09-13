@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 DOCKER_CHANNEL="${DOCKER_CHANNEL:-stable}"

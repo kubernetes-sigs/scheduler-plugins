@@ -2,29 +2,25 @@
 # vi: set ft=ruby :
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"
-  config.vm.hostname = "kwok-test"
-
   config.vm.provider "virtualbox" do |vb|
     vb.memory = 8192
     vb.cpus   = 4
   end
+  config.vm.hostname = "kwok-test"
 
-  # Share bootstrap source from host (Windows) → guest
+  # sync only the bootstrap folder
   config.vm.synced_folder "./bootstrap", "/home/vagrant/bootstrap", type: "virtualbox"
 
-  config.vm.provision "shell", inline: <<-SHELL
+  # TODO: check how we can override using UCLOUD
+  env = {
+    "KWOK_CLUSTER" => "kwok1",
+    "KWOK_CONFIGS" => "baseline",     # resolves to scripts/kwok/configs/baseline
+    "KWOK_SEEDS"   => "seeds001.txt", # resolves to scripts/kwok/seeds/seeds001.txt
+  }
+
+  config.vm.provision "shell", env: env, inline: <<-'SHELL'
     set -e
     cd /home/vagrant/bootstrap
-
-    for f in 00_init.sh 01_system_setup.sh 02_build_test.sh; do
-      # strip UTF-8 BOM if present
-      sed -i '1s/^\xef\xbb\xbf//' "$f"
-      # convert CRLF -> LF
-      sed -i 's/\r$//' "$f"
-      chmod +x "$f"
-    done
-
-    # always run with bash
     /usr/bin/env bash ./00_init.sh
   SHELL
 end
