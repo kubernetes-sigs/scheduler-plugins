@@ -8,16 +8,10 @@ if [ -z "${KWOK_RUNTIME}" ] && [ -f "${HOME}/scheduler-plugins/.kwokrc" ]; then
   source "${HOME}/scheduler-plugins/.kwokrc"
 fi
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"   # default
-
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
-GO_VERSION="${GO_VERSION:-1.24.3}"      # <-- pick your Go version
+GO_VERSION="${GO_VERSION:-1.24.3}"
 GO_ARCH="amd64"
-
-export DEBIAN_FRONTEND=noninteractive
-
-apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl make
 
 # --- kubectl ---
 cd /tmp
@@ -35,8 +29,7 @@ rm -f kwokctl-linux-amd64 kwok-linux-amd64
 kwokctl --version
 kwok --version
 
-# --- Go toolchain ---
-# only if KWOK_RUNTIME is binary
+# --- Go if binary runtime
 if [ "${KWOK_RUNTIME}" = "binary" ]; then
 curl -fsSLo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
 rm -rf /usr/local/go
@@ -55,7 +48,7 @@ fi
 # --- minimal Python for solver/generator if needed later ---
 apt-get install -y --no-install-recommends python3 python3-pip python3-venv
 
-# Docker only if we have KWOK_RUNTIME=docker
+# --- Docker if docker runtime
 if [ "${KWOK_RUNTIME}" = "docker" ]; then
   install -m 0755 -d /etc/apt/keyrings
   if [ ! -f /etc/apt/keyrings/docker.gpg ]; then

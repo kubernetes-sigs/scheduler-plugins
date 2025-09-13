@@ -33,12 +33,7 @@ echo "[cfg] results=${RESULTS_DIR}"
 [[ -d "$KWOK_CONFIG_DIR" ]] || { echo "[error] config dir not found: $KWOK_CONFIG_DIR"; exit 1; }
 [[ -f "$SEED_FILE" ]]      || { echo "[error] seed file not found: $SEED_FILE"; exit 1; }
 
-# Ensure Go is available in this shell
-export PATH="/usr/local/go/bin:${PATH}"
-go version >/dev/null
-
-# --- build kube-scheduler (from repo root) ---
-# only build if KWOK_RUNTIME is binary, otherwise we build in the Dockerfile
+# --- build kube-scheduler if binary runtime; otherwise we build from Dockerfile
 if [ "${KWOK_RUNTIME}" = "binary" ]; then
   echo "[build] build kube-scheduler (binary runtime)"
   cd "${REPO_DIR}"
@@ -47,30 +42,27 @@ if [ "${KWOK_RUNTIME}" = "binary" ]; then
   [[ -x "${REPO_DIR}/bin/kube-scheduler" ]] || { echo "[error] built binary not found: ${REPO_DIR}/bin/kube-scheduler"; exit 1; }
 fi
 
-# --- install Python deps for solver system-wide (so scheduler can import) ---
-echo "[py] installing solver requirements system-wide"
-python3 -m pip install --no-cache-dir -r "${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt"
+# --- install Python deps for solver if binary runtime ---
+if [ "${KWOK_RUNTIME}" = "binary" ]; then
+  echo "[py] installing solver requirements"
+  python3 -m pip install --no-cache-dir -r "${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt"
+fi
 
-# Your kwok_cluster.yaml references absolute paths under /home/vagrant/.
-# If this VM user is not 'vagrant', adjust the file or generate a temp copy.
-kwokctl create cluster \
-  --name "${KWOK_CLUSTER}" \
-  --runtime=binary \
-  --config "${KWOK_DIR}/kwok_cluster.yaml"
+args=(
+  "--cluster-name" "$KWOK_CLUSTER"
+  "--kwok-runtime" "$KWOK_RUNTIME"
+  "--config-dir" "$KWOK_CONFIG_DIR"
+  "--results-dir" "$RESULTS_DIR"
+  "--seed-file" "$SEED_FILE"
+)
 
-# args=(
-#   "--cluster-name" "$KWOK_CLUSTER"
-#   "--config-dir" "$KWOK_CONFIG_DIR"
-#   "--results-dir" "$RESULTS_DIR"
-#   "--seed-file" "$SEED_FILE"
-# )
-
-# echo "----- kwok test start: $(date +%Y%m%d_%H%M%S) -----"
-# set -o pipefail
-# python3 "$TEST_GENERATOR_SCRIPT" "${args[@]}"
-# echo
-# echo "----- kwok test end:   $(date +%Y%m%d_%H%M%S) -----"
-# echo "[ok] Results CSVs: $RESULTS_DIR"
+# --- run the tests ---
+echo "----- kwok test start: $(date +%Y%m%d_%H%M%S) -----"
+set -o pipefail
+python3 "$TEST_GENERATOR_SCRIPT" "${args[@]}"
+echo
+echo "----- kwok test end:   $(date +%Y%m%d_%H%M%S) -----"
+echo "[ok] Results CSVs: $RESULTS_DIR"
 
 
 echo "[ok] cluster up. results dir: ${RESULTS_DIR}"

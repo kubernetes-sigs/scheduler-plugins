@@ -23,8 +23,6 @@ BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-${REPO_DIR}/bootstrap}"
 KWOK_CLUSTER="${KWOK_CLUSTER:-kwok1}"
 KWOK_CONFIGS="${KWOK_CONFIGS:-baseline}"
 KWOK_SEEDS="${KWOK_SEEDS:-seeds001.txt}"
-
-# NEW: choose runtime here (binary by default)
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"   # binary | docker
 
 run_root() { [ "$(id -u)" -eq 0 ] && bash -lc "$*" || sudo bash -lc "$*"; }
@@ -33,7 +31,7 @@ run_as_target() { if [ "$(id -un)" = "${TARGET_USER}" ]; then bash -lc "$*"; els
 echo "[init] installing base packages (git, ca-certificates)"
 run_root "export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y --no-install-recommends git ca-certificates"
+  apt-get install -y --no-install-recommends git ca-certificates curl make"
 
 echo "[init] cloning ${REPO_URL} (branch=${REPO_BRANCH}) into ${REPO_DIR}"
 run_as_target "git clone --branch '${REPO_BRANCH}' --single-branch '${REPO_URL}' '${REPO_DIR}'"

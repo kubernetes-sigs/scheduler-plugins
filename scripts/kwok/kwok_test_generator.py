@@ -228,6 +228,7 @@ class KwokTestGenerator:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.ctx: Optional[str] = None
+        self.kwok_runtime: str = args.kwok_runtime
         self.results_dir = Path(args.results_dir)
         
         self.max_rows_per_file = int(args.max_rows_per_file)
@@ -775,7 +776,7 @@ class KwokTestGenerator:
         return Path(tf.name), Path(tf.name)
 
     @staticmethod
-    def _ensure_kwok_cluster(name_or_ctx: str, kwok_config: str | Path | None, recreate: bool = True) -> None:
+    def _ensure_kwok_cluster(name_or_ctx: str, kwok_runtime: str,kwok_config: str | Path | None, recreate: bool = True) -> None:
         """
         Ensure a KWOK cluster with the given name or context exists.
         """
@@ -790,7 +791,7 @@ class KwokTestGenerator:
             cfg_for_kwokctl, tmp_to_cleanup = KwokTestGenerator._prepare_kwokctl_config_file(cfg_path)
             try:
                 subprocess.run(
-                    ["kwokctl", "create", "cluster", "--name", cluster_name, "--config", str(cfg_for_kwokctl)],
+                    ["kwokctl", "create", "cluster", "--name", cluster_name, "--config", str(cfg_for_kwokctl), "--runtime", kwok_runtime],
                     check=True
                 )
             finally:
@@ -800,7 +801,7 @@ class KwokTestGenerator:
         else:
             if cfg_path and not cfg_path.exists():
                 print(f"[kwok-test-gen] kwok-config='{cfg_path}' not found; creating with defaults")
-            subprocess.run(["kwokctl", "create", "cluster", "--name", cluster_name], check=True)
+            subprocess.run(["kwokctl", "create", "cluster", "--name", cluster_name, "--runtime", kwok_runtime], check=True)
 
     @staticmethod
     def _create_kwok_nodes(ctx: str, num_nodes: int, node_cpu: str, node_mem: str, pods_cap: int) -> None:
@@ -1796,7 +1797,7 @@ class KwokTestGenerator:
         self.ctx = f"kwok-{self.args.cluster_name}"
 
         try:
-            KwokTestGenerator._ensure_kwok_cluster(self.ctx, cfg, recreate=True)
+            KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.kwok_runtimecfg, recreate=True)
         except Exception as e:
             print(f"[kwok-test-gen] config-failed; ensure cluster {cfg}: {e}")
             with open(self.failed_f, "a", encoding="utf-8") as f:
@@ -1894,6 +1895,8 @@ def build_argparser() -> argparse.ArgumentParser:
     
     ap.add_argument("--cluster-name", dest="cluster_name", default="kwok1",
                     help="KWOK cluster name")
+    ap.add_argument("--kwok-runtime", dest="kwok_runtime", default="docker",
+                    help="KWOK runtime (binary or docker)")
     ap.add_argument("--config-dir", dest="config_dir", default=None,
                     help="Directory containing one or more KWOK config YAMLs")
     ap.add_argument("--results-dir", dest="results_dir", default="./results",
