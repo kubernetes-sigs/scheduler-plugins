@@ -32,7 +32,8 @@ TODO_HC
 
 ## TODOs
 
-- Build and push docker image so we just can pull it in init script.
+- Try to run KWOK as binary instead of docker images.
+- Automatic build docker image on GitHub so we just can pull it in init script.
 - Go back to the commit before "test" if improvements to init script is not working.
 - Improve init script execution time.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
