@@ -16,6 +16,7 @@ Vagrant.configure("2") do |config|
     "KWOK_CLUSTER" => "kwok1",
     "KWOK_CONFIGS" => "baseline",     # resolves to scripts/kwok/configs/baseline
     "KWOK_SEEDS"   => "seeds001.txt", # resolves to scripts/kwok/seeds/seeds001.txt
+    "SCHED_IMAGE"  => "ghcr.io/henrikdchristensen/scheduler-plugins/kube-scheduler:dev",
   }
 
   config.vm.provision "shell", env: env, inline: <<-'SHELL'

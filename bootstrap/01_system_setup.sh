@@ -6,7 +6,6 @@ KUBECTL_VERSION="${KUBECTL_VERSION:-v1.34.0}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 export DEBIAN_FRONTEND=noninteractive
 
-# Only what's needed for Docker repo + downloads
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl gnupg
 
@@ -14,21 +13,13 @@ install -m 0755 -d /etc/apt/keyrings
 if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 fi
-
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
 https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$UBUNTU_CODENAME") ${DOCKER_CHANNEL}" \
 > /etc/apt/sources.list.d/docker.list
 
 apt-get update
-apt-get install -y --no-install-recommends \
-  docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
-  python3 python3-pip   # minimal Python for the generator
-
+apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io
 systemctl enable --now docker
-
-# Sanity
-docker --version
-docker buildx version
 
 # kubectl
 cd /tmp

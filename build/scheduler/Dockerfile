@@ -37,8 +37,6 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM ${PY_BUILDER_IMAGE} AS pybuilder
 WORKDIR /wheels
 COPY scripts/mycrossnodepreemption/requirements.txt .
-# If any deps need building, uncomment the next line:
-# RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev && rm -rf /var/lib/apt/lists/*
 RUN pip install --upgrade pip \
     && pip install --prefix /opt/pydeps -r requirements.txt
 
@@ -46,13 +44,10 @@ RUN pip install --upgrade pip \
 FROM ${DISTROLESS_PY} AS runtime
 # Make Python find the installed packages
 ENV PYTHONPATH="/opt/pydeps/lib/python3.11/site-packages"
-
-# Your solver code
+# Solver code
 COPY scripts/mycrossnodepreemption/ /opt/solver/
-
-# Go scheduler binary
+# Scheduler binary
 COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
-
 WORKDIR /bin
 
 # Neutralize distroless python entrypoint so kwokctl can run "kube-scheduler version"
