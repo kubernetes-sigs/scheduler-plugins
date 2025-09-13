@@ -54,7 +54,7 @@ kwokctl delete cluster --name "${KWOK_CLUSTER}" >/dev/null 2>&1 || true
 kwokctl create cluster \
   --name "${KWOK_CLUSTER}" \
   --runtime=binary \
-  --config "${KWOK_DIR}/kwok-cluster.yaml"
+  --config "${KWOK_DIR}/kwok_cluster.yaml"
 
 # --- Run your generator on the host ---
 # cd "$KWOK_DIR"
