@@ -11,12 +11,12 @@ Vagrant.configure("2") do |config|
   # sync only the bootstrap folder
   config.vm.synced_folder "./bootstrap", "/home/vagrant/bootstrap", type: "virtualbox"
 
-  # TODO: check how we can override using UCLOUD
+  # TODO: check how we set these in UCLOUD
   env = {
     "KWOK_CLUSTER" => "kwok1",
     "KWOK_CONFIGS" => "baseline",     # resolves to scripts/kwok/configs/baseline
     "KWOK_SEEDS"   => "seeds001.txt", # resolves to scripts/kwok/seeds/seeds001.txt
-    "KWOK_RUNTIME" => "binary",       # or "docker"
+    "KWOK_RUNTIME" => "docker",       # or "docker"
   }
 
   config.vm.provision "shell", env: env, inline: <<-'SHELL'

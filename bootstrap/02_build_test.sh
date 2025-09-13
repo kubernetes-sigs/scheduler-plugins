@@ -8,6 +8,7 @@ KWOKRC="${REPO_DIR}/.kwokrc"
 # Defaults
 KUBE_VERSION="${KUBE_VERSION:-v1.32.7}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"
+TEST_GENERATOR_SCRIPT="${KWOK_DIR}/test_generator.py"
 
 # Load .kwokrc
 if [[ -f "$KWOKRC" ]]; then
@@ -40,6 +41,15 @@ if [ "${KWOK_RUNTIME}" = "binary" ]; then
   echo "[build] make build-scheduler (CGO_DISABLED, linux/amd64)"
   make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
   [[ -x "${REPO_DIR}/bin/kube-scheduler" ]] || { echo "[error] built binary not found: ${REPO_DIR}/bin/kube-scheduler"; exit 1; }
+else
+  echo "[build] docker image (docker runtime)"
+  cd "${REPO_DIR}"
+  IMG_TAG="localhost:5000/scheduler-plugins/kube-scheduler:dev"
+  echo "[build] docker image ${IMG_TAG}"
+  docker build \
+    -t "${IMG_TAG}" \
+    -f build/scheduler/Dockerfile .
+  echo "[ok] image built locally: ${IMG_TAG}"
 fi
 
 # --- install Python deps for solver if binary runtime ---
