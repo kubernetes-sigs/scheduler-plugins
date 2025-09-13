@@ -1797,7 +1797,7 @@ class KwokTestGenerator:
         self.ctx = f"kwok-{self.args.cluster_name}"
 
         try:
-            KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.kwok_runtimecfg, recreate=True)
+            KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.kwok_runtime, cfg, recreate=True)
         except Exception as e:
             print(f"[kwok-test-gen] config-failed; ensure cluster {cfg}: {e}")
             with open(self.failed_f, "a", encoding="utf-8") as f:
