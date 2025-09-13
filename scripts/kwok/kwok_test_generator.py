@@ -245,14 +245,6 @@ class KwokTestGenerator:
         Format a tuple of integers as a string interval.
         """
         return "" if not tup else f"{int(tup[0])},{int(tup[1])}"
-
-    # @staticmethod
-    # def _default_timeout_str(v: Optional[str], default: str = "5s") -> str:
-    #     """
-    #     Return the trimmed string, or fallback to default if empty.
-    #     """
-    #     s = (v or "").strip()
-    #     return s if s else default
  
     def _parse_waits(self, tr: TestConfigRaw) -> tuple[Optional[str], str, str, int, int]:
         """
@@ -485,7 +477,7 @@ class KwokTestGenerator:
         return parts
 
     @staticmethod
-    def _gen_rs_specs(
+    def _gen_rs_specs( #TODO
         rng: random.Random,
         counts: list[int],
         c_lo: int, c_hi: int,

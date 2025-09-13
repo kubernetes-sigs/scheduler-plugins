@@ -30,8 +30,9 @@ TODO_HC
 - Test the plugin works across workload type.
 - Test CP-SAT vs. other solvers.
 
-## TODOs Plugin
+## TODOs
 
+- Improve init script execution time.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.

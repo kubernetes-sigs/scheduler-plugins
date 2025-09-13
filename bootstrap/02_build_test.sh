@@ -65,7 +65,7 @@ cd "$KWOK_DIR"
 
 args=(
   "--cluster-name" "$KWOK_CLUSTER"
-  "--kwok-config-dir" "$KWOK_CONFIG_DIR"
+  "--config-dir" "$KWOK_CONFIG_DIR"
   "--results-dir" "$RESULTS_DIR"
   "--seed-file" "$SEED_FILE"
 )
