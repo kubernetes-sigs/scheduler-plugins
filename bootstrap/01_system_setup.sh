@@ -13,23 +13,20 @@ KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 GO_VERSION="${GO_VERSION:-1.24.3}"
 GO_ARCH="amd64"
 
-# --- kubectl ---
+# --- Install kubectl + kwokctl + kwok ---
 cd /tmp
 curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-install -m 0755 kubectl /usr/local/bin/kubectl
-rm -f kubectl
-kubectl version --client=true
-
-# --- kwokctl + kwok (binary runtime) ---
 curl -fsSLO "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwokctl-linux-amd64"
 curl -fsSLO "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwok-linux-amd64"
+install -m 0755 kubectl /usr/local/bin/kubectl
 install -m 0755 kwokctl-linux-amd64 /usr/local/bin/kwokctl
 install -m 0755 kwok-linux-amd64   /usr/local/bin/kwok
-rm -f kwokctl-linux-amd64 kwok-linux-amd64
+rm -f kubectl kwokctl-linux-amd64 kwok-linux-amd64
+kubectl version --client=true
 kwokctl --version
 kwok --version
 
-# --- Go if binary runtime
+# --- Install Go; if binary runtime
 if [ "${KWOK_RUNTIME}" = "binary" ]; then
 curl -fsSLo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
 rm -rf /usr/local/go
@@ -45,10 +42,10 @@ export PATH="/usr/local/go/bin:${PATH}"
 go version
 fi
 
-# --- minimal Python for solver/generator if needed later ---
+# --- Install Python ---
 apt-get install -y --no-install-recommends python3 python3-pip python3-venv
 
-# --- Docker if docker runtime
+# --- Install Docker; if docker runtime
 if [ "${KWOK_RUNTIME}" = "docker" ]; then
   install -m 0755 -d /etc/apt/keyrings
   if [ ! -f /etc/apt/keyrings/docker.gpg ]; then

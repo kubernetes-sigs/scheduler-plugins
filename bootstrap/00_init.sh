@@ -56,7 +56,7 @@ for f in "${BOOTSTRAP_DIR}/01_system_setup.sh" "${BOOTSTRAP_DIR}/02_build_test.s
 done
 
 echo "[init] 01_system_setup.sh (kubectl, kwokctl+kwok, Python; Docker only if KWOK_RUNTIME=docker)"
-run_root "/usr/bin/env bash '${BOOTSTRAP_DIR}/01_system_setup.sh'"
+run_root "TARGET_USER='${TARGET_USER}' KWOK_RUNTIME='${KWOK_RUNTIME:-binary}' /usr/bin/env bash '${BOOTSTRAP_DIR}/01_system_setup.sh'"
 
 echo "[init] 02_build_test.sh (runs as ${TARGET_USER})"
 run_as_target "/usr/bin/env bash '${BOOTSTRAP_DIR}/02_build_test.sh'"
