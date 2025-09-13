@@ -1,1 +1,0 @@
-docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile --push .

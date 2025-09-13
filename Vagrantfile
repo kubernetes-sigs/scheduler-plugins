@@ -16,6 +16,7 @@ Vagrant.configure("2") do |config|
     "KWOK_CLUSTER" => "kwok1",
     "KWOK_CONFIGS" => "baseline",     # resolves to scripts/kwok/configs/baseline
     "KWOK_SEEDS"   => "seeds001.txt", # resolves to scripts/kwok/seeds/seeds001.txt
+    "KWOK_RUNTIME" => "binary",       # or "docker"
   }
 
   config.vm.provision "shell", env: env, inline: <<-'SHELL'

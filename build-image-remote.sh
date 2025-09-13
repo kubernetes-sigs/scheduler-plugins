@@ -1,1 +1,0 @@
-docker build -t ghcr.io/henrikdchristensen/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile --push .
