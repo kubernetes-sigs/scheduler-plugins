@@ -39,15 +39,8 @@ run_root "export DEBIAN_FRONTEND=noninteractive
   apt-get install -y --no-install-recommends git ca-certificates"
 
 # ------------------ Clone/update repo ------------------
-if [ ! -d "${REPO_DIR}/.git" ]; then
-  echo "[init] cloning ${REPO_URL} (branch=${REPO_BRANCH}) into ${REPO_DIR}"
-  run_as_target "git clone --branch '${REPO_BRANCH}' --single-branch '${REPO_URL}' '${REPO_DIR}'"
-else
-  echo "[init] repo exists; updating branch=${REPO_BRANCH}"
-  run_as_target "git -C '${REPO_DIR}' fetch --all --prune &&
-                 git -C '${REPO_DIR}' checkout '${REPO_BRANCH}' &&
-                 git -C '${REPO_DIR}' pull --ff-only"
-fi
+echo "[init] cloning ${REPO_URL} (branch=${REPO_BRANCH}) into ${REPO_DIR}"
+run_as_target "git clone --branch '${REPO_BRANCH}' --single-branch '${REPO_URL}' '${REPO_DIR}'"
 run_root "chown -R '${TARGET_USER}:${TARGET_USER}' '${REPO_DIR}'"
 
 # ------------------ Persist names ------------------

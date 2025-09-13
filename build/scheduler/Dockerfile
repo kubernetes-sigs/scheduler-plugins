@@ -1,39 +1,60 @@
-# global args (must appear before any FROM that uses them)
+
+# Copyright 2020 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 ARG GO_BASE_IMAGE=golang:1.24
-ARG UBUNTU_BASE_IMAGE=ubuntu:22.04
+ARG PY_BUILDER_IMAGE=python:3.11-slim
+ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
 
-# ---------- builder ----------
-FROM ${GO_BASE_IMAGE} AS builder
+# --- Go builder ---
+FROM ${GO_BASE_IMAGE} AS gobuilder
 WORKDIR /src
-
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
-
 COPY cmd/scheduler ./cmd/scheduler
 COPY pkg           ./pkg
 COPY apis          ./apis
-
-ARG VERSION=dev
+COPY manifests     ./manifests
+ARG VERSION=v0.32.7
 ENV CGO_ENABLED=0
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build \
-    -ldflags "-X k8s.io/component-base/version.gitVersion=${VERSION} -w" \
+    go build -ldflags "-X k8s.io/component-base/version.gitVersion=${VERSION} -w" \
     -o /out/kube-scheduler ./cmd/scheduler
 
-# ---------- runtime ----------
-FROM ${UBUNTU_BASE_IMAGE} AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+# --- Python builder: build deps into a relocatable prefix ---
+FROM ${PY_BUILDER_IMAGE} AS pybuilder
+WORKDIR /wheels
+COPY scripts/mycrossnodepreemption/requirements.txt .
+# If any deps need building, uncomment the next line:
+# RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev && rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip \
+    && pip install --prefix /opt/pydeps -r requirements.txt
 
-ENV SOLVER_DIR=/opt/solver
-RUN mkdir -p ${SOLVER_DIR}
-COPY scripts/mycrossnodepreemption/requirements.txt ${SOLVER_DIR}/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install -r ${SOLVER_DIR}/requirements.txt
-COPY scripts/mycrossnodepreemption/ ${SOLVER_DIR}/
+# --- Runtime (distroless with python3) ---
+FROM ${DISTROLESS_PY} AS runtime
+# Make Python find the installed packages
+ENV PYTHONPATH="/opt/pydeps/lib/python3.11/site-packages"
 
-COPY --from=builder /out/kube-scheduler /bin/kube-scheduler
+# Your solver code
+COPY scripts/mycrossnodepreemption/ /opt/solver/
+
+# Go scheduler binary
+COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
+
 WORKDIR /bin
+
+# Neutralize distroless python entrypoint so kwokctl can run "kube-scheduler version"
+ENTRYPOINT []
 CMD ["kube-scheduler"]
