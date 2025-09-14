@@ -16,7 +16,7 @@
 ARG GO_BASE_IMAGE=golang:1.24
 #TODO: try out 3.13-slim or 3.14-slim
 ARG PY_BUILDER_IMAGE=python:3.11-slim
-ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12:nonroot
+ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
 
 # --- Go builder ---
 FROM ${GO_BASE_IMAGE} AS gobuilder
@@ -52,4 +52,5 @@ COPY --from=pybuilder /opt/pydeps /opt/pydeps
 COPY scripts/mycrossnodepreemption/ /opt/solver/
 COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
 # Run the scheduler
-CMD ["/bin/kube-scheduler"]
+ENTRYPOINT []
+CMD ["bin/kube-scheduler"]

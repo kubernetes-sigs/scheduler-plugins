@@ -32,7 +32,7 @@ TODO_HC
 
 ## TODOs
 
-- Finalize the init scripts and find out why we can't run distroless with nonroot
+- Finalize the init scripts and find out why we 
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
@@ -54,6 +54,7 @@ TODO_HC
 
 ## Write
 
+- Write about dockerfile can't run distroless with nonroot
 - Write about the difference ways of running KWOK - binary, docker, etc.
 - Mention that I focus on plain CPU clusters as there can be other consideration when it comes to GPUs
 - Write about that we need hashlib for making sure we get the same seeds even when we make changes to the code.
