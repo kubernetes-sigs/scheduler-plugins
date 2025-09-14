@@ -1,0 +1,26 @@
+kind: KwokctlConfiguration
+apiVersion: config.kwok.x-k8s.io/v1alpha1
+options:
+  kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
+  kubeSchedulerConfig: manifests/mycrossnodepreemption/sched-cc.yaml
+componentsPatches:
+  - name: kube-scheduler
+    extraEnvs:
+      - name: OPTIMIZE_CADENCE
+        value: "for_every" # choices: for_every, in_batches, continuously
+      - name: OPTIMIZE_AT
+        value: "postfilter" # choices: preenqueue, postfilter
+      - name: OPTIMIZATION_INTERVAL
+        value: "30s"
+      - name: OPTIMIZATION_INITIAL_DELAY
+        value: "15s"
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # 50s # TODO: set high to determine any potential issues
+      - name: SOLVER_PYTHON_ENABLED
+        value: "true"
+      - name: SOLVER_PYTHON_TIMEOUT
+        value: "10s"
+      - name: SOLVER_BFS_ENABLED
+        value: "false"
+      - name: SOLVER_BFS_TIMEOUT
+        value: "200ms" # 25s

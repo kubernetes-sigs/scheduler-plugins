@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_NAME="scheduler-plugins"
-REPO_DIR="${HOME}/${REPO_NAME}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${REPO_DIR:-$(dirname "$SCRIPT_DIR")}"
 
 KUBECTL_VERSION="v1.32.7"
 KWOK_VERSION="v0.7.0"

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_NAME="scheduler-plugins"
-REPO_DIR="${REPO_DIR:-$HOME/$REPO_NAME}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${REPO_DIR:-$(dirname "$SCRIPT_DIR")}"
 KWOK_DIR="${KWOK_DIR:-$REPO_DIR/scripts/kwok}"
 TEST_GENERATOR_SCRIPT="${KWOK_DIR}/kwok_test_generator.py"
 
