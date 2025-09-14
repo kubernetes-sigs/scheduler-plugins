@@ -32,6 +32,8 @@ TODO_HC
 
 ## TODOs
 
+- Minimum number of priorities should be 3.
+- Simplify init scripts and binary vs. docker handling. Also, I think the reason why distroless needs root is that we add the solver code in /opt/solver (root only). Maybe we can add it to /usr/share/solver or similar?
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
