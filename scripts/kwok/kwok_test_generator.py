@@ -1871,8 +1871,9 @@ class KwokTestGenerator:
             if self.args.count is not None or self.args.seed_file:
                 raise SystemExit("--test cannot be combined with --count or --seed-file")
 
-        print(f"[kwok-test-gen] starting; cluster={self.args.cluster_name}  runtime={self.args.kwok_runtime}, config-dir={self.args.config_dir}, seed-file={self.args.seed_file}, runtime={self.args.kwok_runtime}")
-        
+        seed_file_str = ", seed-file=" + self.args.seed_file if self.args.seed_file else ""
+        print(f"[kwok-test-gen] starting; cluster={self.args.cluster_name}  runtime={self.args.kwok_runtime}, config-dir={self.args.config_dir}{seed_file_str}")
+
         # proceed
         cfgs = self._get_kwok_configs(self.args.config_dir)
         cfgs_total = len(cfgs)
