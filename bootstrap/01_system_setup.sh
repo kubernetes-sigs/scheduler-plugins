@@ -75,3 +75,13 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$UBUNTU_CO
   docker --version
   echo "[ok] docker installed"
 fi
+
+# Copy solver code for runtime=binary (simple)
+if [ "${KWOK_RUNTIME}" = "binary" ]; then
+  echo "[init] copying solver code to /opt/solver (runtime=binary)"
+  install -d -m 0755 /opt/solver
+  cp -a "${REPO_DIR}/scripts/mycrossnodepreemption/." /opt/solver/
+  chown -R root:root /opt/solver
+  chmod -R a+rX /opt/solver
+  echo "[ok] copied solver to /opt/solver"
+fi

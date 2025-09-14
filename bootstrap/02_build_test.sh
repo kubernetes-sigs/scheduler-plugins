@@ -49,16 +49,7 @@ if [ "${KWOK_RUNTIME}" = "binary" ]; then
   echo "[instal] installing solver requirements"
   python3 -m pip install --no-cache-dir -r "${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt"
   echo "[ok] solver requirements installed"
-  install -d -m 0755 /opt/solver
-  cp -a "${REPO_DIR}/scripts/mycrossnodepreemption/." /opt/solver/
-  chown -R root:root /opt/solver
-  chmod -R a+rX /opt/solver
-  echo "[ok] copied solver to /opt/solver"
 fi
-
-# --- copy solver code for runtime=binary (simple) ---
-
-
 
 # Test Generator script arguments
 args=(
