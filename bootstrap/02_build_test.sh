@@ -14,13 +14,13 @@ if [ ! -f "${KWOKRC}" ]; then
 fi
 # shellcheck disable=SC1090
 source "${REPO_DIR}/.kwokrc"
-echo "[init] read ${KWOKRC}: cluster=${KWOK_CLUSTER_NAME} configs=${KWOK_CONFIGS} seeds=${KWOK_SEEDS} runtime=${KWOK_RUNTIME}"
+echo "[init] read ${KWOKRC}: cluster=${KWOK_CLUSTER} configs=${KWOK_CONFIGS} seeds=${KWOK_SEEDS} runtime=${KWOK_RUNTIME}"
 
 KWOK_CONFIG_DIR="${KWOK_DIR}/configs/${KWOK_CONFIGS}"
 SEED_FILE="${KWOK_DIR}/seeds/${KWOK_SEEDS}"
 RESULTS_DIR="${RESULTS_DIR:-${REPO_DIR}/results}"
 
-echo "[cfg] cluster=${KWOK_CLUSTER_NAME}"
+echo "[cfg] cluster=${KWOK_CLUSTER}"
 echo "[cfg] runtime=${KWOK_RUNTIME}"
 echo "[cfg] configs=${KWOK_CONFIG_DIR}"
 echo "[cfg] seeds=${SEED_FILE}"
@@ -53,7 +53,7 @@ fi
 
 # Test Generator script arguments
 args=(
-  "--cluster-name" "$KWOK_CLUSTER_NAME"
+  "--cluster-name" "$KWOK_CLUSTER"
   "--kwok-runtime" "$KWOK_RUNTIME"
   "--config-dir" "$KWOK_CONFIG_DIR"
   "--results-dir" "$RESULTS_DIR"

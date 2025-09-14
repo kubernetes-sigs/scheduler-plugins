@@ -16,7 +16,7 @@
 ARG GO_BASE_IMAGE=golang:1.24
 #TODO: try out 3.13-slim or 3.14-slim
 ARG PY_BUILDER_IMAGE=python:3.11-slim
-ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
+ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12:nonroot
 
 # --- Go builder ---
 FROM ${GO_BASE_IMAGE} AS gobuilder
@@ -45,12 +45,11 @@ RUN pip install --upgrade pip \
 FROM ${DISTROLESS_PY} AS runtime
 # Make Python find the installed packages
 ENV PYTHONPATH="/opt/pydeps/lib/python3.11/site-packages"
-# Solver code
+# Use a writable dir for the nonroot user (already default on :nonroot images)
+WORKDIR /workspace
+# Copy artifacts; chown only if you need write access at runtime
+COPY --from=pybuilder /opt/pydeps /opt/pydeps
 COPY scripts/mycrossnodepreemption/ /opt/solver/
-# Scheduler binary
 COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
-WORKDIR /bin
-
-# Neutralize distroless python entrypoint so kwokctl can run "kube-scheduler version"
-ENTRYPOINT []
-CMD ["kube-scheduler"]
+# Run the scheduler
+CMD ["/bin/kube-scheduler"]

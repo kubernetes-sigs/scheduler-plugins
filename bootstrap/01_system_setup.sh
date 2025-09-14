@@ -18,7 +18,7 @@ if [ ! -f "${KWOKRC}" ]; then
 fi
 # shellcheck disable=SC1090
 source "${REPO_DIR}/.kwokrc"
-echo "[init] read ${KWOKRC}: cluster=${KWOK_CLUSTER_NAME} configs=${KWOK_CONFIGS} seeds=${KWOK_SEEDS} runtime=${KWOK_RUNTIME}"
+echo "[init] read ${KWOKRC}: cluster=${KWOK_CLUSTER} configs=${KWOK_CONFIGS} seeds=${KWOK_SEEDS} runtime=${KWOK_RUNTIME}"
 
 # Install kubectl + kwokctl + kwok
 echo "[instal] installing kubectl ${KUBECTL_VERSION}, kwokctl+kwok ${KWOK_VERSION}"
