@@ -7,6 +7,10 @@ KWOK_DIR="${KWOK_DIR:-$REPO_DIR/scripts/kwok}"
 TEST_GENERATOR_SCRIPT="${KWOK_DIR}/kwok_test_generator.py"
 
 # Read .kwokrc
+KWOKRC="${REPO_DIR}/.kwokrc"
+if [ ! -f "${KWOKRC}" ]; then
+  echo "[error] missing ${KWOKRC} (run 00_init.sh first)"; exit 1
+fi
 # shellcheck disable=SC1090
 source "${REPO_DIR}/.kwokrc"
 echo "[init] read ${KWOKRC}: cluster=${KWOK_CLUSTER_NAME} configs=${KWOK_CONFIGS} seeds=${KWOK_SEEDS} runtime=${KWOK_RUNTIME}"
@@ -48,7 +52,7 @@ fi
 
 # Test Generator script arguments
 args=(
-  "--cluster-name" "$KWOK_CLUSTER"
+  "--cluster-name" "$KWOK_CLUSTER_NAME"
   "--kwok-runtime" "$KWOK_RUNTIME"
   "--config-dir" "$KWOK_CONFIG_DIR"
   "--results-dir" "$RESULTS_DIR"

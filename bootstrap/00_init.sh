@@ -1,6 +1,7 @@
 # bootstrap/00_init.sh
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "[error] init failed at line $LINENO"; exit 1' ERR
 
 ########################## HELPER FUNCTIONS ##########################
 ######################################################################
@@ -49,6 +50,17 @@ KWOK_CONFIGS="${KWOK_CONFIGS:-baseline}"
 KWOK_SEEDS="${KWOK_SEEDS:-seeds001.txt}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"   # binary | docker
 
+# Fail fast
+if [ -z "${TARGET_USER:-}" ] || [ -z "${TARGET_HOME:-}" ]; then
+  echo "[error] could not resolve TARGET_USER/TARGET_HOME"; exit 1
+fi
+if ! command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then
+  echo "[error] sudo not available and not running as root"; exit 1
+fi
+if [ "${KWOK_RUNTIME}" != "binary" ] && [ "${KWOK_RUNTIME}" != "docker" ]; then
+  echo "[error] KWOK_RUNTIME must be 'binary' or 'docker' (got: ${KWOK_RUNTIME})"; exit 1
+fi
+
 # Write env vars to .kwokrc for reuse or reference
 echo "[init] writing configuration to ${REPO_DIR}/.kwokrc"
 KWOKRC="${REPO_DIR}/.kwokrc"
@@ -92,13 +104,15 @@ run_root "/usr/bin/env bash '${BOOTSTRAP_DIR}/01_system_setup.sh'"
 echo "[ok] system setup done with runtime=${KWOK_RUNTIME} $(date +%Y%m%d_%H%M%S)"
 
 # Ensure TARGET_USER is in docker group if docker installed
-if command -v docker >/dev/null 2>&1; then
-  if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then # check if in group
+# Ensure TARGET_USER is in docker group if docker runtime selected
+if [ "${KWOK_RUNTIME}" = "docker" ]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "[error] docker runtime selected but docker is not installed"; exit 1
+  fi
+  if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then
     echo "[init] adding ${TARGET_USER} to docker group"
     run_root "usermod -aG docker '${TARGET_USER}'"
   fi
-else
-  echo "[warn] docker not found after 01_system_setup.sh"
 fi
 
 # Run the build/test scripts as TARGET_USER
