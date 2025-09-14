@@ -32,7 +32,7 @@ TODO_HC
 
 ## TODOs
 
-- Finalize the init scripts and find out why we 
+- Print settings comming from args in test script.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
