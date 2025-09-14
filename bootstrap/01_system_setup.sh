@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Read runtime if .kwokrc exists (optional)
-KWOK_RUNTIME="${KWOK_RUNTIME:-${KWOK_RUNTIME_FROM_ENV:-}}"
-if [ -z "${KWOK_RUNTIME}" ] && [ -f "${HOME}/scheduler-plugins/.kwokrc" ]; then
-  # shellcheck disable=SC1090
-  source "${HOME}/scheduler-plugins/.kwokrc"
-fi
-KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"   # default
-KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
-KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
-GO_VERSION="${GO_VERSION:-1.24.3}"
+REPO_NAME="scheduler-plugins"
+REPO_DIR="${HOME}/${REPO_NAME}"
+
+KUBECTL_VERSION="v1.32.7"
+KWOK_VERSION="v0.7.0"
+
+GO_VERSION="1.24.3"
 GO_ARCH="amd64"
 
-# --- Install kubectl + kwokctl + kwok ---
+# Read .kwokrc
+# shellcheck disable=SC1090
+source "${REPO_DIR}/.kwokrc"
+echo "[init] read ${KWOKRC}: cluster=${KWOK_CLUSTER_NAME} configs=${KWOK_CONFIGS} seeds=${KWOK_SEEDS} runtime=${KWOK_RUNTIME}"
+
+# Install kubectl + kwokctl + kwok
+echo "[instal] installing kubectl ${KUBECTL_VERSION}, kwokctl+kwok ${KWOK_VERSION}"
 cd /tmp
 curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
 curl -fsSLO "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwokctl-linux-amd64"
@@ -25,9 +28,11 @@ rm -f kubectl kwokctl-linux-amd64 kwok-linux-amd64
 kubectl version --client=true
 kwokctl --version
 kwok --version
+echo "[ok] kubectl, kwokctl, kwok installed"
 
-# --- Install Go; if binary runtime
+# Install Go; if binary runtime
 if [ "${KWOK_RUNTIME}" = "binary" ]; then
+echo "[instal] installing golang ${GO_VERSION}"
 curl -fsSLo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
 rm -rf /usr/local/go
 tar -C /usr/local -xzf /tmp/go.tgz
@@ -40,13 +45,17 @@ chmod 0644 /etc/profile.d/golang.sh
 # make Go available in this non-login shell too
 export PATH="/usr/local/go/bin:${PATH}"
 go version
+echo "[ok] go installed: $(go version)"
 fi
 
-# --- Install Python ---
+# Install Python
+echo "[instal] installing python3, pip, venv"
 apt-get install -y --no-install-recommends python3 python3-pip python3-venv
+echo "[ok] python installed: $(python3 --version)"
 
-# --- Install Docker; if docker runtime
+# Install Docker; if docker runtime
 if [ "${KWOK_RUNTIME}" = "docker" ]; then
+  echo "[instal] installing docker"
   install -m 0755 -d /etc/apt/keyrings
   if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -58,13 +67,6 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$UBUNTU_CO
   apt-get install -y --no-install-recommends \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin
   systemctl enable --now docker
-  # ensure the login user can talk to dockerd
-  TARGET_USER="${TARGET_USER:-${SUDO_USER:-vagrant}}"
-  if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then
-    usermod -aG docker "${TARGET_USER}"
-    echo "[info] Added ${TARGET_USER} to docker group"
-  fi
   docker --version
+  echo "[ok] docker installed"
 fi
-
-echo "[ok] system setup done (runtime=${KWOK_RUNTIME})"
