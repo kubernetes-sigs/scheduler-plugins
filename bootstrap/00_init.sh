@@ -50,6 +50,8 @@ KWOK_CONFIGS="${KWOK_CONFIGS:-baseline}"
 KWOK_SEEDS="${KWOK_SEEDS:-seeds001.txt}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"   # binary | docker
 
+echo "[init] cluster=${KWOK_CLUSTER} configs=${KWOK_CONFIGS} seeds=${KWOK_SEEDS} runtime=${KWOK_RUNTIME}"
+
 # Fail fast
 if [ -z "${TARGET_USER:-}" ] || [ -z "${TARGET_HOME:-}" ]; then
   echo "[error] could not resolve TARGET_USER/TARGET_HOME"; exit 1
