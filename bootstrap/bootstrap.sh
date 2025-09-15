@@ -169,6 +169,8 @@ stage_build() {
     # install solver deps to venv (PEP-668 safe)
     run_root "
       set -euo pipefail
+      install -d -m 0755 /opt/solver
+      cp ${REPO_DIR}/scripts/mycrossnodepreemption/main.py /opt/solver/main.py
       python3 -m venv /opt/venv
       /opt/venv/bin/python -m pip install --upgrade pip
       /opt/venv/bin/pip install --no-cache-dir -r ${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt
