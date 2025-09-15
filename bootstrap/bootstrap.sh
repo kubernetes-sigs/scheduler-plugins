@@ -178,7 +178,7 @@ stage_build() {
       /opt/venv/bin/pip install --no-cache-dir -r /opt/solver/requirements.txt
 
       # sanity check
-      /opt/venv/bin/python -c 'import importlib,sys;print(sys.version);print(sys.executable);importlib.import_module("ortools");importlib.import_module("pandas");print("sanity-ok")'
+      /opt/venv/bin/python -c 'import importlib,sys;print(sys.version);print(sys.executable);importlib.import_module("ortools.sat.python");importlib.import_module("pandas");print("sanity-ok")'
     "
 
     # build scheduler
