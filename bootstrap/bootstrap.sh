@@ -177,22 +177,6 @@ stage_build() {
       /opt/venv/bin/python -m pip install --upgrade pip
       /opt/venv/bin/pip install --no-cache-dir -r /opt/solver/requirements.txt
 
-
-      # sanity check (write to a temp file to avoid any quoting mishaps)
-      /opt/venv/bin/python - <<'PY'
-    import sys, importlib
-    print(sys.version)
-    print(sys.executable)
-    ortools = importlib.import_module('ortools')
-    try:
-        ver = getattr(ortools, '__version__')
-    except Exception:
-        ver = 'unknown'
-    print('ortools version:', ver)
-    print('sanity-ok')
-    PY
-    "
-
     # build scheduler
     export PATH="/usr/local/go/bin:${PATH}"
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
