@@ -209,7 +209,7 @@ stage_test() {
   log cfg "results=${RESULTS_DIR}"
 
   run_as "${TARGET_USER}" \
-    "cd '${REPO_DIR}' && set -e; \\
+    "cd '${REPO_DIR}' && set -e; \
     python3 '${TEST_GENERATOR}' \
       --cluster-name '${KWOK_CLUSTER}' \
       --kwok-runtime '${KWOK_RUNTIME}' \
