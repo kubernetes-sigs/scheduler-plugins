@@ -97,6 +97,7 @@ stage_setup() {
     log init "repo exists; pulling latest"
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && git fetch && git checkout '${REPO_BRANCH}' && git pull --ff-only || true"
   fi
+  log ok "repo ready: ${REPO_DIR}"
 
   write_kwokrc
   read_kwokrc
@@ -171,10 +172,8 @@ stage_build() {
 
   if [ "${KWOK_RUNTIME}" = "binary" ]; then
     export PATH="/usr/local/go/bin:${PATH}"
-    run_as "${TARGET_USER}" "
-      cd '${REPO_DIR}'
-      make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
-    "
+    run_as "${TARGET_USER}" \
+      "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
     log ok "built binary: ${REPO_DIR}/build/kube-scheduler"
 
     # solver deps + copy to /opt/solver
@@ -190,11 +189,8 @@ stage_build() {
 
   else
     # docker image build
-    run_as "${TARGET_USER}" "
-      set -e
-      cd '${REPO_DIR}'
-      DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile .
-    "
+    run_as "${TARGET_USER}" \
+      "cd '${REPO_DIR}' && DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile ."
     log ok "image built: ${SCHED_IMAGE_TAG}"
   fi
 }
@@ -212,15 +208,13 @@ stage_test() {
   log cfg "seeds=${SEED_FILE}"
   log cfg "results=${RESULTS_DIR}"
 
-  run_as "${TARGET_USER}" "
-    set -e
-    python3 '${TEST_GENERATOR}' \
+  run_as "${TARGET_USER}" \
+    "set -e; python3 '${TEST_GENERATOR}' \
       --cluster-name '${KWOK_CLUSTER}' \
       --kwok-runtime '${KWOK_RUNTIME}' \
       --config-dir '${KWOK_CONFIG_DIR}' \
       --results-dir '${RESULTS_DIR}' \
-      --seed-file '${SEED_FILE}'
-  "
+      --seed-file '${SEED_FILE}'"
   log ok "KWOK test done, results in ${RESULTS_DIR}"
 }
 

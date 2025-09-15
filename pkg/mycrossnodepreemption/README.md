@@ -32,8 +32,8 @@ TODO_HC
 
 ## TODOs
 
-- Simplify init scripts and binary vs. docker handling. Also, I think the reason why distroless needs root is that we add the solver code in /opt/solver (root only). Maybe we can add it to /usr/share/solver or similar?
-- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
+- Simplify init scripts and binary vs. docker handling.
+- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
 - Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions

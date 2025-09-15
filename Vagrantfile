@@ -22,6 +22,6 @@ Vagrant.configure("2") do |config|
   config.vm.provision "shell", env: env, inline: <<-'SHELL'
     set -e
     cd /home/vagrant/bootstrap
-    /usr/bin/env bash ./00_init.sh
+    /usr/bin/env bash ./bootstrap.sh all
   SHELL
 end
