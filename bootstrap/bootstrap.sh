@@ -177,8 +177,9 @@ stage_build() {
       /opt/venv/bin/python -m pip install --upgrade pip
       /opt/venv/bin/pip install --no-cache-dir -r /opt/solver/requirements.txt
 
+
       # sanity check (write to a temp file to avoid any quoting mishaps)
-      cat >/tmp/solver_sanity.py <<'PY'
+      /opt/venv/bin/python - <<'PY'
     import sys, importlib
     print(sys.version)
     print(sys.executable)
@@ -190,8 +191,6 @@ stage_build() {
     print('ortools version:', ver)
     print('sanity-ok')
     PY
-      /opt/venv/bin/python /tmp/solver_sanity.py
-      rm -f /tmp/solver_sanity.py
     "
 
     # build scheduler
