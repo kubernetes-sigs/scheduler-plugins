@@ -32,7 +32,6 @@ TODO_HC
 
 ## TODOs
 
-- Minimum number of priorities should be 3.
 - Simplify init scripts and binary vs. docker handling. Also, I think the reason why distroless needs root is that we add the solver code in /opt/solver (root only). Maybe we can add it to /usr/share/solver or similar?
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution.
 - Add a verifier of the solvers plan in IsImprovement.
@@ -43,6 +42,7 @@ TODO_HC
   - Standalone pods deleted externally (not by your plan): You only recreate standalone pods that you evicted/targeted (they’re in targets). If a standalone you intended to move was deleted by someone else before you “resolve” it, it won’t end up in targets, so you won’t recreate it. Result: the “by name” check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.
   - A workload is scaled down during the plan: Your completion check for workload quotas requires the desired counts to materialize. If the controller scaled down and won’t create more pods, the quotas won’t be consumed and the plan will sit “in progress” until the plan TTL cancels it.
 - Fix TODOs
+- The reason why distroless image needs root is that kubeconfig is under /root/.kube/config. Maybe we can add it to /usr/share/solver or similar?
 
 ## Later TODOs
 

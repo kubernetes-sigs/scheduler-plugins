@@ -44,12 +44,9 @@ RUN pip install --upgrade pip \
 FROM ${DISTROLESS_PY} AS runtime
 # Make Python find the installed packages
 ENV PYTHONPATH="/opt/pydeps/lib/python3.13/site-packages"
-# Use a writable dir for the nonroot user (already default on :nonroot images)
 WORKDIR /workspace
-# Copy artifacts; chown only if you need write access at runtime
 COPY --from=pybuilder /opt/pydeps /opt/pydeps
 COPY scripts/mycrossnodepreemption/ /opt/solver/
 COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
-# Run the scheduler
 ENTRYPOINT []
-CMD ["bin/kube-scheduler"]
+CMD ["/bin/kube-scheduler"]

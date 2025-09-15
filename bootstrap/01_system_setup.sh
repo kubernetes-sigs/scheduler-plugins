@@ -76,7 +76,7 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$UBUNTU_CO
   echo "[ok] docker installed"
 fi
 
-# Ensure TARGET_USER is in docker group if docker installed
+# Ensure TARGET_USER is in docker group for runtime=docker
 if [ "${KWOK_RUNTIME}" = "docker" ]; then
   if ! command -v docker >/dev/null 2>&1; then
     echo "[error] docker runtime selected but docker is not installed"; exit 1

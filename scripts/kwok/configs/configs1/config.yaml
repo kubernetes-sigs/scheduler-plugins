@@ -2,7 +2,7 @@ kind: KwokRunConfiguration
 namespace: test
 num_nodes: 4
 pods_per_node: 4
-num_priorities: [2,4] # Can both be an interval or a fixed number
+num_priorities: [3,5] # Can both be an interval or a fixed number
 node_cpu: 2400m
 node_mem: 32Gi
 
@@ -28,8 +28,10 @@ settle_timeout: 3s      # same duration format
 apiVersion: config.kwok.x-k8s.io/v1alpha1
 kind: KwokctlConfiguration
 options:
-  kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
   kubeSchedulerConfig: manifests/mycrossnodepreemption/sched-cc.yaml
+  # We decide runtime (binary vs. docker) via --runtime command line flag when creating the cluster.
+  kubeSchedulerBinary: bin/kube-scheduler
+  kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
 componentsPatches:
   - name: kube-scheduler
     extraEnvs:
