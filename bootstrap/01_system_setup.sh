@@ -76,12 +76,23 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$UBUNTU_CO
   echo "[ok] docker installed"
 fi
 
-# Copy solver code for runtime=binary (simple)
+# Ensure TARGET_USER is in docker group if docker installed
+if [ "${KWOK_RUNTIME}" = "docker" ]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "[error] docker runtime selected but docker is not installed"; exit 1
+  fi
+  if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then
+    echo "[init] adding ${TARGET_USER} to docker group"
+    usermod -aG docker "${TARGET_USER}"
+  fi
+fi
+
+# Copy solver code for runtime=binary
 if [ "${KWOK_RUNTIME}" = "binary" ]; then
   echo "[init] copying solver code to /opt/solver (runtime=binary)"
   install -d -m 0755 /opt/solver
   cp -a "${REPO_DIR}/scripts/mycrossnodepreemption/." /opt/solver/
   chown -R root:root /opt/solver
   chmod -R a+rX /opt/solver
-  echo "[ok] copied solver to /opt/solver"
+  echo "[ok] copied solver code to /opt/solver"
 fi

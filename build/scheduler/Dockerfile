@@ -14,8 +14,7 @@
 # limitations under the License.
 
 ARG GO_BASE_IMAGE=golang:1.24
-#TODO: try out 3.13-slim or 3.14-slim
-ARG PY_BUILDER_IMAGE=python:3.11-slim
+ARG PY_BUILDER_IMAGE=python:3.13-slim
 ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
 
 # --- Go builder ---
@@ -44,7 +43,7 @@ RUN pip install --upgrade pip \
 # --- Runtime (distroless with python3) ---
 FROM ${DISTROLESS_PY} AS runtime
 # Make Python find the installed packages
-ENV PYTHONPATH="/opt/pydeps/lib/python3.11/site-packages"
+ENV PYTHONPATH="/opt/pydeps/lib/python3.13/site-packages"
 # Use a writable dir for the nonroot user (already default on :nonroot images)
 WORKDIR /workspace
 # Copy artifacts; chown only if you need write access at runtime

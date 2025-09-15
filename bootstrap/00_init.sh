@@ -106,18 +106,6 @@ echo "[init] 01_system_setup.sh (install kubectl, kwokctl+kwok, Python; Docker i
 run_root "/usr/bin/env bash '${BOOTSTRAP_DIR}/01_system_setup.sh'"
 echo "[ok] system setup done with runtime=${KWOK_RUNTIME} $(date +%Y%m%d_%H%M%S)"
 
-# Ensure TARGET_USER is in docker group if docker installed
-# Ensure TARGET_USER is in docker group if docker runtime selected
-if [ "${KWOK_RUNTIME}" = "docker" ]; then
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "[error] docker runtime selected but docker is not installed"; exit 1
-  fi
-  if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then
-    echo "[init] adding ${TARGET_USER} to docker group"
-    run_root "usermod -aG docker '${TARGET_USER}'"
-  fi
-fi
-
 # Run the build/test scripts as TARGET_USER
 echo "[init] 02_build_test.sh (runs as ${TARGET_USER})"
 run_as_target "/usr/bin/env bash '${BOOTSTRAP_DIR}/02_build_test.sh'"
