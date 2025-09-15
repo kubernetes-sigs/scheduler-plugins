@@ -166,11 +166,6 @@ https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$UBUNTU
 stage_build() {
   read_kwokrc
   if [ "${KWOK_RUNTIME}" = "binary" ]; then
-    export PATH="/usr/local/go/bin:${PATH}"
-
-    # build scheduler
-    run_as "${TARGET_USER}" "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
-
     # install solver deps to venv (PEP-668 safe)
     run_root "
       set -euo pipefail
@@ -182,9 +177,14 @@ stage_build() {
       /opt/venv/bin/python -m pip install --upgrade pip
       /opt/venv/bin/pip install --no-cache-dir -r /opt/solver/requirements.txt
 
-      # sanity
-      /opt/venv/bin/python -c 'import sys; print(sys.version); import ortools, pandas; print("ok")'
+      # sanity check
+      /opt/venv/bin/python -c 'import importlib, sys; print(sys.version); importlib.import_module("ortools"); print("sanity-ok")'
     "
+
+    # build scheduler
+    export PATH="/usr/local/go/bin:${PATH}"
+    run_as "${TARGET_USER}" "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
+
     log ok "built binary and staged solver (venv)"
   else
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile ."

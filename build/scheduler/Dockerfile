@@ -13,11 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# --- Images ---
 ARG GO_BASE_IMAGE=golang:1.24
 ARG PY_BUILDER_IMAGE=python:3.11-slim
 ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
 
-# --- Go builder unchanged ---
+# --- Go builder ---
 FROM ${GO_BASE_IMAGE} AS gobuilder
 
 WORKDIR /src
@@ -40,7 +41,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -ldflags "-X k8s.io/component-base/version.gitVersion=${VERSION} -w" \
     -o /out/kube-scheduler ./cmd/scheduler
 
-# --- Python builder: make venv point to /usr/bin/python3 ---
+# --- Python builder ---
 FROM ${PY_BUILDER_IMAGE} AS pybuilder
 
 # Ensure /usr/bin/python3 exists and points to the real interpreter in slim
@@ -54,7 +55,7 @@ COPY scripts/mycrossnodepreemption/requirements.txt /requirements.txt
 RUN /opt/venv/bin/python -m pip install --upgrade pip \
     && /opt/venv/bin/pip install --no-cache-dir -r /requirements.txt
 
-# --- Distroless runtime ---
+# --- Distroless w/python runtime ---
 FROM ${DISTROLESS_PY} AS runtime
 
 WORKDIR /workspace
