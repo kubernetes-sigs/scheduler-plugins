@@ -169,14 +169,10 @@ stage_build() {
     # install solver deps to venv (PEP-668 safe)
     run_root "
       set -euo pipefail
-      install -d -m 0755 /opt/solver
-      cp -a '${REPO_DIR}/scripts/mycrossnodepreemption/.' /opt/solver/
-      chmod -R a+rX /opt/solver
-
       python3 -m venv /opt/venv
       /opt/venv/bin/python -m pip install --upgrade pip
-      /opt/venv/bin/pip install --no-cache-dir -r /opt/solver/requirements.txt
-
+      /opt/venv/bin/pip install --no-cache-dir -r ${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt
+    "
     # build scheduler
     export PATH="/usr/local/go/bin:${PATH}"
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
@@ -201,6 +197,11 @@ stage_test() {
   log cfg "configs=${KWOK_CONFIG_DIR}"
   log cfg "seeds=${SEED_FILE}"
   log cfg "results=${RESULTS_DIR}"
+
+  run_root "
+    set -euo pipefail
+    /opt/venv/bin/pip install --no-cache-dir -r ${REPO_DIR}/scripts/kwok/requirements.txt
+  "
 
   run_as "${TARGET_USER}" "cd '${REPO_DIR}' && \
     /opt/venv/bin/python '${TEST_GENERATOR}' \
