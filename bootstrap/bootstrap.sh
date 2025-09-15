@@ -174,7 +174,7 @@ stage_build() {
     export PATH="/usr/local/go/bin:${PATH}"
     run_as "${TARGET_USER}" \
       "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
-    log ok "built binary: ${REPO_DIR}/build/kube-scheduler"
+    log ok "built binary: ${REPO_DIR}/bin/kube-scheduler"
 
     # solver deps + copy to /opt/solver
     log instal "installing solver requirements (runtime=binary)"
@@ -209,7 +209,8 @@ stage_test() {
   log cfg "results=${RESULTS_DIR}"
 
   run_as "${TARGET_USER}" \
-    "set -e; python3 '${TEST_GENERATOR}' \
+    "cd '${REPO_DIR}' && set -e; \\
+    python3 '${TEST_GENERATOR}' \
       --cluster-name '${KWOK_CLUSTER}' \
       --kwok-runtime '${KWOK_RUNTIME}' \
       --config-dir '${KWOK_CONFIG_DIR}' \
