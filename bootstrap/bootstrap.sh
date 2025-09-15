@@ -82,6 +82,7 @@ export KWOK_CONFIG_DIR=${KWOK_CONFIG_DIR}
 export RESULTS_DIR=${RESULTS_DIR}
 export SEED_FILE=${SEED_FILE}
 export SCHED_IMAGE_TAG=${SCHED_IMAGE_TAG}
+export SOLVER_PYTHON_BIN=/usr/local/bin/solver-python
 EOF
   run_root "chown '${TARGET_USER}:${TARGET_USER}' '${KWOKRC}'"
 }
@@ -166,20 +167,49 @@ stage_build() {
   read_kwokrc
   if [ "${KWOK_RUNTIME}" = "binary" ]; then
     export PATH="/usr/local/go/bin:${PATH}"
+
+    # build scheduler
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
-    run_root "python3 -m pip install --no-cache-dir -r '${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt'"
+
+    # install solver deps to venv (PEP-668 safe)
     run_root "
+      set -euo pipefail
       install -d -m 0755 /opt/solver
+
+      # copy solver sources
       cp -a '${REPO_DIR}/scripts/mycrossnodepreemption/.' /opt/solver/
       chown -R root:root /opt/solver
       chmod -R a+rX /opt/solver
+
+      # quick guard
+      test -f /opt/solver/requirements.txt
+
+      # create venv and install
+      python3 -m venv /opt/solver/.venv
+      /opt/solver/.venv/bin/python -m pip install --upgrade pip
+      /opt/solver/.venv/bin/pip install --no-cache-dir -r /opt/solver/requirements.txt
+
+      # stable wrapper that your Go code calls
+      cat >/usr/bin/python <<'EOF_SP'
+#!/usr/bin/env bash
+exec /opt/solver/.venv/bin/python "$@"
+EOF_SP
+      chmod 0755 /usr/bin/python
     "
-    log ok "built binary and staged solver"
+
+    # sanity check: wrapper works
+    run_root "
+      test -x /usr/bin/python
+      /usr/bin/python -c 'import sys; print(sys.version); print(\"ok\")'
+    "
+
+    log ok "built binary and staged solver (venv)"
   else
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile ."
     log ok "image built: ${SCHED_IMAGE_TAG}"
   fi
 }
+
 
 stage_test() {
   read_kwokrc
@@ -195,7 +225,7 @@ stage_test() {
   log cfg "results=${RESULTS_DIR}"
 
   run_as "${TARGET_USER}" "cd '${REPO_DIR}' && \
-    python3 '${TEST_GENERATOR}' \
+    /usr/bin/python '${TEST_GENERATOR}' \
       --cluster-name '${KWOK_CLUSTER}' \
       --kwok-runtime '${KWOK_RUNTIME}' \
       --config-dir '${KWOK_CONFIG_DIR}' \

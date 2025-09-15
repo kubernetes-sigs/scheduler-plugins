@@ -21,7 +21,8 @@ const (
 
 	// SolverPath is the path to the solver executable.
 	// See Dockerfile for details.
-	SolverPath = "/opt/solver/main.py"
+	SolverPath      = "/opt/solver/main.py"
+	SolverPythonBin = "/usr/bin/python3"
 	// SolverMode is the mode in which the solver operates.
 	// Choices: SolverModeLexi or SolverModeWeighted
 	SolverMode = SolverModeLexi

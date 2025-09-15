@@ -14,7 +14,7 @@
 # limitations under the License.
 
 ARG GO_BASE_IMAGE=golang:1.24
-ARG PY_BUILDER_IMAGE=python:3.13-slim
+ARG PY_BUILDER_IMAGE=python:3.11-slim
 ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
 
 # --- Go builder ---
@@ -42,11 +42,14 @@ RUN pip install --upgrade pip \
 
 # --- Runtime (distroless with python3) ---
 FROM ${DISTROLESS_PY} AS runtime
-# Make Python find the installed packages
-ENV PYTHONPATH="/opt/pydeps/lib/python3.13/site-packages"
 WORKDIR /workspace
+
+# Make the prefixed site-packages visible
+ENV PYTHONPATH="/opt/pydeps/lib/python3.11/site-packages"
+
 COPY --from=pybuilder /opt/pydeps /opt/pydeps
 COPY scripts/mycrossnodepreemption/ /opt/solver/
 COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
+
 ENTRYPOINT []
 CMD ["/bin/kube-scheduler"]

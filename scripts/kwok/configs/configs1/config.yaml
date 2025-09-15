@@ -38,7 +38,7 @@ componentsPatches:
       - name: OPTIMIZE_CADENCE
         value: "for_every" # choices: for_every, in_batches, continuously
       - name: OPTIMIZE_AT
-        value: "postfilter" # choices: preenqueue, postfilter
+        value: "preenqueue" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL
         value: "30s"
       - name: OPTIMIZATION_INITIAL_DELAY
