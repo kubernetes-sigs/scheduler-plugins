@@ -208,6 +208,7 @@ stage_test() {
   log cfg "seeds=${SEED_FILE}"
   log cfg "results=${RESULTS_DIR}"
 
+  # Needs to cd into repo to have correct relative paths for configs
   run_as "${TARGET_USER}" \
     "cd '${REPO_DIR}' && set -e; \
     python3 '${TEST_GENERATOR}' \
