@@ -172,14 +172,13 @@ stage_build() {
   if [ "${KWOK_RUNTIME}" = "binary" ]; then
     export PATH="/usr/local/go/bin:${PATH}"
     run_as "${TARGET_USER}" "
-      set -e
       cd '${REPO_DIR}'
       make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
     "
     log ok "built binary: ${REPO_DIR}/build/kube-scheduler"
 
     # solver deps + copy to /opt/solver
-    log instal "installing solver requirements (binary runtime)"
+    log instal "installing solver requirements (runtime=binary)"
     run_root "python3 -m pip install --no-cache-dir -r '${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt'"
     run_root "
       install -d -m 0755 /opt/solver
