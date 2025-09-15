@@ -17,37 +17,49 @@ ARG GO_BASE_IMAGE=golang:1.24
 ARG PY_BUILDER_IMAGE=python:3.11-slim
 ARG DISTROLESS_PY=gcr.io/distroless/python3-debian12
 
-# --- Go builder ---
+# --- Go builder unchanged ---
 FROM ${GO_BASE_IMAGE} AS gobuilder
+
 WORKDIR /src
+
 COPY go.mod go.sum ./
+
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
 COPY cmd/scheduler ./cmd/scheduler
-COPY pkg           ./pkg
-COPY apis          ./apis
-COPY manifests     ./manifests
+COPY pkg ./pkg
+COPY apis ./apis
+COPY manifests ./manifests
+
 ARG VERSION=v0.32.7
+
 ENV CGO_ENABLED=0
+
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags "-X k8s.io/component-base/version.gitVersion=${VERSION} -w" \
     -o /out/kube-scheduler ./cmd/scheduler
 
-# --- Python builder: build deps into a relocatable prefix ---
+# --- Python builder: make venv point to /usr/bin/python3 ---
 FROM ${PY_BUILDER_IMAGE} AS pybuilder
-WORKDIR /wheels
-COPY scripts/mycrossnodepreemption/requirements.txt .
-RUN pip install --upgrade pip \
-    && pip install --prefix /opt/pydeps -r requirements.txt
 
-# --- Runtime (distroless with python3) ---
+# Ensure /usr/bin/python3 exists and points to the real interpreter in slim
+RUN ln -sf /usr/local/bin/python3 /usr/bin/python3
+
+# Create the venv using /usr/bin/python3 so the venv’s symlinks match distroless
+RUN /usr/bin/python3 -m venv /opt/venv
+
+COPY scripts/mycrossnodepreemption/requirements.txt /requirements.txt
+
+RUN /opt/venv/bin/python -m pip install --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r /requirements.txt
+
+# --- Distroless runtime ---
 FROM ${DISTROLESS_PY} AS runtime
+
 WORKDIR /workspace
 
-# Make the prefixed site-packages visible
-ENV PYTHONPATH="/opt/pydeps/lib/python3.11/site-packages"
-
-COPY --from=pybuilder /opt/pydeps /opt/pydeps
+COPY --from=pybuilder /opt/venv /opt/venv
 COPY scripts/mycrossnodepreemption/ /opt/solver/
 COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
 
