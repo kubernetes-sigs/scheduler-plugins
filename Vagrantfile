@@ -16,7 +16,7 @@
     /usr/bin/env bash ./bootstrap.sh all \
       --cluster kwok1 \
       --runtime binary \
-      --config-dir scripts/kwok/configs/baseline \
+      --config-dir scripts/kwok/configs/configs1 \
       --results-dir results \
       --seed-file scripts/kwok/seeds/seeds001.txt
   SHELL
