@@ -1,6 +1,4 @@
-﻿# -*- mode: ruby -*-
-# vi: set ft=ruby :
-Vagrant.configure("2") do |config|
+﻿Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"
   config.vm.provider "virtualbox" do |vb|
     vb.memory = 8192
@@ -11,17 +9,14 @@ Vagrant.configure("2") do |config|
   # sync only the bootstrap folder
   config.vm.synced_folder "./bootstrap", "/home/vagrant/bootstrap", type: "virtualbox"
 
-  # TODO: check how we set these in UCLOUD
-  env = {
-    "KWOK_CLUSTER" => "kwok1",
-    "KWOK_CONFIGS" => "configs1",     # resolves to scripts/kwok/configs/baseline
-    "KWOK_SEEDS"   => "seeds001.txt", # resolves to scripts/kwok/seeds/seeds001.txt
-    "KWOK_RUNTIME" => "binary",       # "docker" | "binary"
-  }
-
-  config.vm.provision "shell", env: env, inline: <<-'SHELL'
+  config.vm.provision "shell", inline: <<-'SHELL'
     set -e
     cd /home/vagrant/bootstrap
-    /usr/bin/env bash ./bootstrap.sh all
+    /usr/bin/env bash ./bootstrap.sh all \
+      --cluster kwok1 \
+      --runtime binary \
+      --config-dir "scripts/kwok/configs/baseline" \
+      --results-dir "results" \
+      --seed-file "scripts/kwok/seeds/seeds001.txt"
   SHELL
 end
