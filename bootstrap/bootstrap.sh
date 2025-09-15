@@ -166,20 +166,37 @@ stage_build() {
   read_kwokrc
   if [ "${KWOK_RUNTIME}" = "binary" ]; then
     export PATH="/usr/local/go/bin:${PATH}"
+    # build scheduler
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
-    run_root "python3 -m pip install --no-cache-dir -r '${REPO_DIR}/scripts/mycrossnodepreemption/requirements.txt'"
+
+    # --- PEP 668 compliant: create venv and install solver deps there ---
     run_root "
+      set -euo pipefail
       install -d -m 0755 /opt/solver
-      cp -a '${REPO_DIR}/scripts/mycrossnodepreemption/.' /opt/solver/
+      # copy solver sources
+      rsync -a --delete '${REPO_DIR}/scripts/mycrossnodepreemption/' /opt/solver/
       chown -R root:root /opt/solver
       chmod -R a+rX /opt/solver
+
+      # create virtualenv and install requirements
+      python3 -m venv /opt/solver/.venv
+      /opt/solver/.venv/bin/python -m pip install --upgrade pip
+      /opt/solver/.venv/bin/pip install --no-cache-dir -r /opt/solver/requirements.txt
+
+      # wrapper so Go always hits the venv python
+      cat >/usr/local/bin/solver-python <<'EOF_SP'
+#!/usr/bin/env bash
+exec /opt/solver/.venv/bin/python "$@"
+EOF_SP
+      chmod 0755 /usr/local/bin/solver-python
     "
-    log ok "built binary and staged solver"
+    log ok "built binary and staged solver (venv @ /opt/solver/.venv)"
   else
     run_as "${TARGET_USER}" "cd '${REPO_DIR}' && DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile ."
     log ok "image built: ${SCHED_IMAGE_TAG}"
   fi
 }
+
 
 stage_test() {
   read_kwokrc

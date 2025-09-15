@@ -54,6 +54,7 @@ TODO_HC
 
 ## Write
 
+- Write about that we did not use globally installed python packages due to PEP 668 in UCLOUD.
 - Write about dockerfile can't run distroless with nonroot
 - Write about the difference ways of running KWOK - binary, docker, etc.
 - Mention that I focus on plain CPU clusters as there can be other consideration when it comes to GPUs
