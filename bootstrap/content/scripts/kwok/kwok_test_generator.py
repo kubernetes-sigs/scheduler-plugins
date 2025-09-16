@@ -781,6 +781,27 @@ class KwokTestGenerator:
         return r
 
     @staticmethod
+    def _run_kwokctl_logged(*args: str, input_bytes: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess:
+        """
+        Run `kwokctl <args...>` and stream its combined output into LOG (INFO).
+        """
+        cmd = ["kwokctl", *args]
+        LOG.debug("exec: %s", " ".join(shlex.quote(c) for c in cmd))
+        r = subprocess.run(
+            cmd,
+            input=input_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if r.stdout:
+            for line in r.stdout.decode(errors="replace").splitlines():
+                LOG.info("kwokctl> %s", line)
+        if check and r.returncode != 0:
+            raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout)
+        return r
+
+    @staticmethod
     def _apply_yaml(ctx:str, yaml_text:str) -> subprocess.CompletedProcess:
         """Apply a YAML configuration to the cluster, logging kubectl output with worker prefix."""
         return KwokTestGenerator._run_kubectl_logged(ctx, "apply", "-f", "-", input_bytes=yaml_text.encode(), check=True)
@@ -870,27 +891,6 @@ class KwokTestGenerator:
                 LOG.warning(f"kwok-config='{cfg_path}' not found; creating with defaults")
             with KwokTestGenerator._kwok_cache_lock():
                 KwokTestGenerator._run_kubectl_logged("create", "cluster", "--name", cluster_name, "--runtime", kwok_runtime)
-
-    @staticmethod
-    def _run_kwokctl_logged(*args: str, input_bytes: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess:
-        """
-        Run `kwokctl <args...>` and stream its combined output into LOG (INFO).
-        """
-        cmd = ["kwokctl", *args]
-        LOG.debug("exec: %s", " ".join(shlex.quote(c) for c in cmd))
-        r = subprocess.run(
-            cmd,
-            input=input_bytes,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        if r.stdout:
-            for line in r.stdout.decode(errors="replace").splitlines():
-                LOG.info("kwokctl> %s", line)
-        if check and r.returncode != 0:
-            raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout)
-        return r
 
     @staticmethod
     def _create_kwok_nodes(ctx: str, num_nodes: int, node_cpu: str, node_mem: str, pods_cap: int) -> None:
