@@ -23,7 +23,8 @@
       --kwok-config-dir data/configs/a \
       --results-dir data/results/a \
       --seed-file data/seeds/001.txt \
-      --matrix-file matrix-file.csv
+      --matrix-file matrix-file.csv \
+      --matrix-parallel 1
   SHELL
 end
 

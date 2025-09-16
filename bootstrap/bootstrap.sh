@@ -22,6 +22,7 @@ RESULTS_DIR="${RESULTS_DIR:-results}"      # can be relative to CONTENT_DIR
 KWOK_CONFIG_DIR="${KWOK_CONFIG_DIR:-}"     # can be relative to CONTENT_DIR
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 MATRIX_FILE="${MATRIX_FILE:-}"             # can be relative to CONTENT_DIR
+MATRIX_PARALLEL="${MATRIX_PARALLEL:-1}"    # number of parallel tests in matrix
 
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
@@ -87,6 +88,7 @@ print_cfg() {
   log cfg "KWOK_RUNTIME=${KWOK_RUNTIME}"
   if [ -n "${MATRIX_FILE}" ]; then
     log cfg "MATRIX_FILE=${MATRIX_FILE:-<unset>}"
+    log cfg "MATRIX_PARALLEL=${MATRIX_PARALLEL}"
   else
     log cfg "KWOK_CLUSTER=${KWOK_CLUSTER:-<unset>}"
     log cfg "KWOK_CONFIG_DIR=${KWOK_CONFIG_DIR:-<unset>}"
@@ -250,7 +252,8 @@ stage_test() {
       chmod +x './bin/kube-scheduler' && \
       '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
         --kwok-runtime '${KWOK_RUNTIME}' \
-        --matrix-file '${MATRIX_FILE}'"
+        --matrix-file '${MATRIX_FILE}' \
+        --matrix-parallel '${MATRIX_PARALLEL}'"
   else
     run_root "cd '${CONTENT_DIR}' && \
       chmod +x './bin/kube-scheduler' && \
@@ -287,6 +290,8 @@ while [ $# -gt 0 ]; do
     --seed-file)          SEED_FILE="$2"; shift;;
     --matrix-file=*)      MATRIX_FILE="${1#*=}";;
     --matrix-file)        MATRIX_FILE="$2"; shift;;
+    --matrix-parallel=*)  MATRIX_PARALLEL="${1#*=}";;
+    --matrix-parallel)    MATRIX_PARALLEL="$2"; shift;;
     *) die "unknown argument: $1";;
   esac
   shift
