@@ -167,7 +167,7 @@ func TestPreFilter(t *testing.T) {
 			pgMgr := &PodGroupManager{
 				client:               client,
 				snapshotSharedLister: tu.NewFakeSharedLister(tt.pendingPods, nodes),
-				podLister:            podInformer.Lister(),
+				podInformer:          podInformer.Informer(),
 				scheduleTimeout:      &scheduleTimeout,
 				permittedPG:          newCache(),
 				backedOffPG:          newCache(),
