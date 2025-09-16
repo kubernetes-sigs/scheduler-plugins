@@ -26,11 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	informerv1 "k8s.io/client-go/informers/core/v1"
-	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -88,8 +86,8 @@ type PodGroupManager struct {
 	permittedPG *gocache.Cache
 	// backedOffPG stores the podgorup name which failed scheudling recently.
 	backedOffPG *gocache.Cache
-	// podLister is pod lister
-	podLister listerv1.PodLister
+	// podInformer is pod informer
+	podInformer cache.SharedIndexInformer
 	// assignedPodsByPG stores the pods assumed or bound for podgroups
 	assignedPodsByPG map[string]sets.Set[string]
 	sync.RWMutex
@@ -124,7 +122,7 @@ func NewPodGroupManager(client client.Client, snapshotSharedLister framework.Sha
 		client:               client,
 		snapshotSharedLister: snapshotSharedLister,
 		scheduleTimeout:      scheduleTimeout,
-		podLister:            podInformer.Lister(),
+		podInformer:          podInformer.Informer(),
 		permittedPG:          gocache.New(3*time.Second, 3*time.Second),
 		backedOffPG:          gocache.New(10*time.Second, 10*time.Second),
 		assignedPodsByPG:     map[string]sets.Set[string]{},
@@ -175,8 +173,8 @@ func (pgMgr *PodGroupManager) BackoffPodGroup(pgName string, backoff time.Durati
 // in the given state, with a reserved key "kubernetes.io/pods-to-activate".
 func (pgMgr *PodGroupManager) ActivateSiblings(ctx context.Context, pod *corev1.Pod, state *framework.CycleState) {
 	lh := klog.FromContext(ctx)
-	pgName := util.GetPodGroupLabel(pod)
-	if pgName == "" {
+	pgFullName := util.GetPodGroupFullName(pod)
+	if pgFullName == "" {
 		return
 	}
 
@@ -186,19 +184,18 @@ func (pgMgr *PodGroupManager) ActivateSiblings(ctx context.Context, pod *corev1.
 	} else if s, ok := c.(*PermitState); !ok || !s.Activate {
 		return
 	}
-
-	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
-		labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: pgName}),
-	)
+	indexer := pgMgr.podInformer.GetIndexer()
+	podsObj, err := indexer.ByIndex(util.LabelIndexerName, pgFullName)
 	if err != nil {
-		lh.Error(err, "Failed to obtain pods belong to a PodGroup", "podGroup", pgName)
+		lh.Error(err, "Failed to obtain pods belong to a PodGroup", "podGroup", pgFullName)
 		return
 	}
+	pods := make([]*corev1.Pod, 0, len(podsObj))
 
-	for i := range pods {
-		if pods[i].UID == pod.UID {
-			pods = append(pods[:i], pods[i+1:]...)
-			break
+	for i := range podsObj {
+		tmpPod := podsObj[i].(*corev1.Pod)
+		if tmpPod.UID != pod.UID {
+			pods = append(pods, tmpPod)
 		}
 	}
 
@@ -231,12 +228,14 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	if _, exist := pgMgr.backedOffPG.Get(pgFullName); exist {
 		return fmt.Errorf("podGroup %v failed recently", pgFullName)
 	}
-
-	pods, err := pgMgr.podLister.Pods(pod.Namespace).List(
-		labels.SelectorFromSet(labels.Set{v1alpha1.PodGroupLabel: util.GetPodGroupLabel(pod)}),
-	)
+	indexer := pgMgr.podInformer.GetIndexer()
+	podsObj, err := indexer.ByIndex(util.LabelIndexerName, pgFullName)
 	if err != nil {
 		return fmt.Errorf("podLister list pods failed: %w", err)
+	}
+	pods := make([]*corev1.Pod, 0, len(podsObj))
+	for i := range podsObj {
+		pods = append(pods, podsObj[i].(*corev1.Pod))
 	}
 
 	if len(pods) < int(pg.Spec.MinMember) {

@@ -85,7 +85,10 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	}
 
 	// Performance improvement when retrieving list of objects by namespace or we'll log 'index not exist' warning.
-	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddIndexers(cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddIndexers(cache.Indexers{
+		cache.NamespaceIndex:  cache.MetaNamespaceIndexFunc,
+		util.LabelIndexerName: util.NewIndexByLabelAndNamespace(v1alpha1.PodGroupLabel),
+	})
 
 	scheduleTimeDuration := time.Duration(args.PermitWaitingTimeSeconds) * time.Second
 	pgMgr := core.NewPodGroupManager(
