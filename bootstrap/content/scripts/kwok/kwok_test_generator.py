@@ -930,15 +930,15 @@ class KwokTestGenerator:
         LOG.info(f"ensuring namespace '{ns}' in ctx={ctx} (recreate={recreate})")
         if recreate:
             KwokTestGenerator._delete_namespace(ctx, ns)
-        rns = subprocess.run(["kubectl","--context",ctx,"get","ns",ns],
+        rns = subprocess.run(["kubectl", "--context", ctx, "get", "ns", ns],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if rns.returncode != 0:
-            subprocess.run(["kubectl","--context",ctx,"create","ns",ns], check=True)
+            KwokTestGenerator._run_kubectl_logged(ctx, "create", "ns", ns, check=True)
         LOG.info(f"namespace '{ns}' exists in ctx={ctx}")
         
         # Ensure the default serviceaccount exists in the namespace; before we exit
         for _ in range(1, retries + 1):
-            r = subprocess.run(["kubectl","--context",ctx,"-n",ns,"get","sa","default"],
+            r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "sa", "default"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if r.returncode == 0:
                 LOG.info(f"found default serviceaccount in ns '{ns}'")
@@ -952,12 +952,7 @@ class KwokTestGenerator:
         """
         LOG.info(f"deleting namespace '{ns}'...")
         try:
-            subprocess.run(
-                ["kubectl", "--context", ctx, "delete", "namespace", ns, "--ignore-not-found"],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT
-            )
+            KwokTestGenerator._run_kubectl_logged(ctx, "delete", "namespace", ns, "--ignore-not-found", check=True)
             LOG.info(f"namespace '{ns}' deleted (ctx={ctx})")
         except:
             LOG.error(f"error deleting namespace '{ns}' in ctx={ctx}")
