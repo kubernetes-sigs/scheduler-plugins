@@ -15,7 +15,7 @@
     set -euo pipefail
     cd /home/vagrant/bootstrap
     find . -type f -name '*.sh' -print0 | xargs -0 -r sed -i 's/\r$//'
-    /usr/bin/env bash ./bootstrap_new.sh all \
+    /usr/bin/env bash ./bootstrap.sh all \
       --build-scheduler=false \
       --content-dir /home/vagrant/bootstrap/content \
       --kwok-cluster kwok-a \

@@ -31,21 +31,14 @@ GO_ARCH="${GO_ARCH:-amd64}"
 
 SCHED_IMAGE_TAG="${SCHED_IMAGE_TAG:-localhost:5000/scheduler-plugins/kube-scheduler:dev}"
 
+VENV_DIR="/opt/venv"
+SOLVER_DIR="/opt/solver"
+
 # ---------- Helpers ----------
 log(){ printf '[%s] %s\n' "$1" "$2"; }
 die(){ log error "$1"; exit 1; }
 
 run_root(){ if [ "$(id -u)" -eq 0 ]; then bash -lc "$*"; else sudo bash -lc "$*"; fi; }
-
-pick_target_user(){ if [ "$(id -u)" -eq 0 ]; then
-  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then echo "$SUDO_USER"; return; fi
-  getent passwd | awk -F: '$3>=1000 && $1!="nobody"{print $1; exit}'
-else id -un; fi; }
-run_as(){ local u="$1"; shift; if [ "$(id -un)" = "$u" ]; then bash -lc "$*"; else sudo -iu "$u" bash -lc "$*"; fi; }
-
-TARGET_USER="${TARGET_USER:-$(pick_target_user)}"
-[ -n "${TARGET_USER}" ] || die "could not resolve target user"
-TARGET_HOME="$(eval echo "~${TARGET_USER}")"
 
 wait_for_dir() {
   local dir="${1:?}"; local timeout="${2:-}"; local interval="${3:-1}"
@@ -89,7 +82,6 @@ resolve_paths_relative_to_folder() {
 }
 
 print_cfg() {
-  log cfg "TARGET_USER=${TARGET_USER}"
   log cfg "BUILD_SCHEDULER=${BUILD_SCHEDULER}"
   log cfg "CONTENT_DIR=${CONTENT_DIR}"
   log cfg "KWOK_RUNTIME=${KWOK_RUNTIME}"
@@ -123,10 +115,10 @@ stage_setup() {
     if [ ! -d "${REPO_DIR}/.git" ]; then
       cd '/tmp'
       log init "cloning https://github.com/${REPO_OWNER}/${REPO_NAME}#${REPO_BRANCH}"
-      run_as "${TARGET_USER}" "git clone --branch '${REPO_BRANCH}' --single-branch '${REPO_URL}' '${REPO_DIR}'"
+      run_root "git clone --branch '${REPO_BRANCH}' --single-branch '${REPO_URL}' '${REPO_DIR}'"
       run_root "chown -R '${TARGET_USER}:${TARGET_USER}' '${REPO_DIR}'"
     else
-      run_as "${TARGET_USER}" "cd '${REPO_DIR}' && git fetch && git checkout '${REPO_BRANCH}' && git pull --ff-only || true"
+      run_root "cd '${REPO_DIR}' && git fetch && git checkout '${REPO_BRANCH}' && git pull --ff-only || true"
     fi
   fi
 
@@ -203,58 +195,66 @@ stage_build() {
   resolve_paths_relative_to_folder
   print_cfg
 
-  # Always set up solver venv
   run_root "
     set -euo pipefail
-    install -d -m 0755 /opt/solver
-    cp -a '${CONTENT_DIR}/scripts/mycrossnodepreemption/main.py' /opt/solver/main.py
-    python3 -m venv /opt/venv
-    /opt/venv/bin/python -m pip install --upgrade pip
-    /opt/venv/bin/pip install --no-cache-dir -r '${CONTENT_DIR}/scripts/mycrossnodepreemption/requirements.txt'
+    install -d -m 0755 '${SOLVER_DIR}'
+    install -d -m 0755 '${VENV_DIR}'
+    cp -a '${CONTENT_DIR}/scripts/mycrossnodepreemption/main.py' '${SOLVER_DIR}/main.py'
+    python3 -m venv '${VENV_DIR}'
+    '${VENV_DIR}/bin/python' -m pip install --upgrade pip
+    '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/mycrossnodepreemption/requirements.txt'
   "
-  log ok "staged solver (venv)"
+  log ok "staged solver (venv @ ${VENV_DIR})"
 
   if [ "${BUILD_SCHEDULER}" = "true" ]; then
     if [ "${KWOK_RUNTIME}" = "binary" ]; then
-      export PATH="/usr/local/go/bin:${PATH}"
-      run_as "${TARGET_USER}" "cd '${REPO_DIR}' && make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'"
-      run_root "install -m 0755 -D '${REPO_DIR}/bin/kube-scheduler' '${CONTENT_DIR}/bin/kube-scheduler'"
-      log ok "built kube-scheduler binary"
+      # Build kube-scheduler binary as TARGET_USER; copy under CONTENT_DIR/bin
+      run_root "
+        set -euo pipefail
+        export PATH=\"/usr/local/go/bin:\$PATH\"  # from setup stage
+        cd '${REPO_DIR}'
+        make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
+        install -d -m 0755 '${CONTENT_DIR}/bin'
+        install -m 0755 '${REPO_DIR}/bin/kube-scheduler' '${CONTENT_DIR}/bin/kube-scheduler'
+      "
+      log ok "built kube-scheduler binary -> ${CONTENT_DIR}/bin/kube-scheduler"
     else
-      run_as "${TARGET_USER}" "cd '${REPO_DIR}' && DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile ."
+      # Build container image as TARGET_USER (requires docker group membership from setup)
+      run_root "
+        set -euo pipefail
+        cd '${REPO_DIR}'
+        DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile .
+      "
       log ok "built image: ${SCHED_IMAGE_TAG}"
     fi
   else
-    # Not building: make sure the artifact already exists when using binary runtime
+    # Not building: ensure the binary is present for binary runtime
     if [ "${KWOK_RUNTIME}" = "binary" ]; then
-      if [ ! -x "${CONTENT_DIR}/bin/kube-scheduler" ]; then
-        die "KWOK_RUNTIME=binary but no prebuilt scheduler at '${CONTENT_DIR}/bin/kube-scheduler'. Set BUILD_SCHEDULER=true or place the binary there."
-      fi
+      run_root "test -x '${CONTENT_DIR}/bin/kube-scheduler'" \
+        || die "KWOK_RUNTIME=binary but no prebuilt scheduler at '${CONTENT_DIR}/bin/kube-scheduler'. Set BUILD_SCHEDULER=true or place the binary there."
     fi
   fi
 }
+
 
 stage_test() {
   resolve_paths_relative_to_folder
   print_cfg
 
   # KWOK helper requirements
-  run_root "
-    set -euo pipefail
-    /opt/venv/bin/pip install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok/requirements.txt'
-  "
+  run_root "'${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok/requirements.txt'"
 
   # Run: matrix mode vs single-run mode
   if [ -n "${MATRIX_FILE}" ]; then
-    run_as "${TARGET_USER}" "cd '${CONTENT_DIR}' && \
+    run_root "cd '${CONTENT_DIR}' && \
       chmod +x './bin/kube-scheduler' && \
-      /opt/venv/bin/python scripts/kwok/kwok_test_generator.py \
+      '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
         --kwok-runtime '${KWOK_RUNTIME}' \
         --matrix-file '${MATRIX_FILE}'"
   else
-    run_as "${TARGET_USER}" "cd '${CONTENT_DIR}' && \
+    run_root "cd '${CONTENT_DIR}' && \
       chmod +x './bin/kube-scheduler' && \
-      /opt/venv/bin/python scripts/kwok/kwok_test_generator.py \
+      '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
         --cluster-name '${KWOK_CLUSTER}' \
         --kwok-runtime '${KWOK_RUNTIME}' \
         --config-dir '${KWOK_CONFIG_DIR}' \
