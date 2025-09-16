@@ -4,6 +4,9 @@ set -euo pipefail
 # ---------- Defaults ----------
 CONTENT_DIR="${CONTENT_DIR:-/workspace}"
 
+CONTENT_DIR_WAIT_TIMEOUT_S="${CONTENT_DIR_WAIT_TIMEOUT:-30}" # seconds
+CONTENT_DIR_WAIT_INTERVAL_S="${CONTENT_DIR_WAIT_INTERVAL:-2}" # seconds
+
 BUILD_SCHEDULER="${BUILD_SCHEDULER:-false}" # if true, build the scheduler binary/image; otherwise assume pre-built
 
 REPO_OWNER="${REPO_OWNER:-henrikdchristensen}"
@@ -43,6 +46,23 @@ run_as(){ local u="$1"; shift; if [ "$(id -un)" = "$u" ]; then bash -lc "$*"; el
 TARGET_USER="${TARGET_USER:-$(pick_target_user)}"
 [ -n "${TARGET_USER}" ] || die "could not resolve target user"
 TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+
+wait_for_dir() {
+  local dir="${1:?}"; local timeout="${2:-}"; local interval="${3:-1}"
+  local start elapsed
+  start="$(date +%s)"
+  log wait "waiting for CONTENT_DIR='${dir}'"
+  while [ ! -d "$dir" ]; do
+    sleep "$interval"
+    if [ -n "$timeout" ]; then
+      elapsed="$(( $(date +%s) - start ))"
+      if [ "$elapsed" -ge "$timeout" ]; then
+        die "CONTENT_DIR not found after ${elapsed}s: ${dir}"
+      fi
+    fi
+  done
+  log ok "CONTENT_DIR available: ${dir}"
+}
 
 # Return absolute path: if input is empty => empty; if absolute => as-is; else => CONTENT_DIR/<input>
 to_abs_under_folder() {
@@ -271,6 +291,9 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# Ensure CONTENT_DIR exists before running any stage (respects --content-dir)
+wait_for_dir "${CONTENT_DIR}" "${CONTENT_DIR_WAIT_TIMEOUT_S}" "${CONTENT_DIR_WAIT_INTERVAL_S}"
 
 case "${cmd}" in
   setup-build) stage_setup; stage_build ;;
