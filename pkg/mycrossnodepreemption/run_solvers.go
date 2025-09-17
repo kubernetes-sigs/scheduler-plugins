@@ -4,11 +4,26 @@ package mycrossnodepreemption
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"k8s.io/klog/v2"
 )
+
+// helper near the top of run_solvers.go (or anywhere shared)
+func cloneScore(s Score) *Score {
+	var m map[string]int
+	if s.PlacedByPriority != nil {
+		m = make(map[string]int, len(s.PlacedByPriority))
+		for k, v := range s.PlacedByPriority {
+			m[k] = v
+		}
+	}
+	return &Score{
+		PlacedByPriority: m,
+		Evicted:          s.Evicted,
+		Moved:            s.Moved,
+	}
+}
 
 // runSolvers tries enabled solvers in order, keeping the best feasible improvement.
 // Returns: bestOut, whether anything was feasible, the best solver summary, and total duration (all attempts).
@@ -17,9 +32,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	phase Phase,
 	in SolverInput,
 	baseline Score,
-) (bestOut *SolverOutput, anyFeasible bool, bestSolverSummary SolverSummary, totalDuration time.Duration) {
-	start := time.Now()
-
+) (chosenOut *SolverOutput, anyFeasible bool, chosenSolverSummary SolverSummary) {
 	// Build cluster state
 	base := prepareState(in)
 
@@ -37,21 +50,13 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Status:   dfOut.Status,
 				Duration: dfDur,
 				Score:    dfScore,
-			}, time.Since(start)
+			}
 		}
 		klog.V(V2).InfoS(string(phase)+": direct-fit could not place all pods; run solvers", "duration", time.Since(dfStart))
 	}
 
+	// The list is ordered by preference.
 	attempts := []SolverAttempt{
-		{
-			Name:    "bfs",
-			Enabled: SolverBfsEnabled,
-			Timeout: SolverBfsTimeout,
-			Trials:  1,
-			Run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runSolverCommon(in, bfsPlan, "bfs", base), nil
-			},
-		},
 		{
 			Name:    "local-search",
 			Enabled: SolverLocalSearchEnabled,
@@ -59,6 +64,15 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Trials:  SolverLocalSearchMaxRestartsPerTarget,
 			Run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
 				return runSolverCommon(in, localSearchPlan, "local-search", base), nil
+			},
+		},
+		{
+			Name:    "bfs",
+			Enabled: SolverBfsEnabled,
+			Timeout: SolverBfsTimeout,
+			Trials:  1,
+			Run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
+				return runSolverCommon(in, bfsPlan, "bfs", base), nil
 			},
 		},
 		{
@@ -72,10 +86,12 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	var (
-		bestScore    Score
-		bestName     string
-		bestDuration time.Duration
+		chosenScore    Score
+		chosenName     string
+		chosenDuration time.Duration
 	)
+
+	currentTarget := baseline
 
 	// Log enabled solvers and their timeouts once (verbose only).
 	enabledNames := []string{}
@@ -97,6 +113,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		Duration time.Duration
 		Score    Score
 		CmpBase  int // -1 worse, 0 equal, 1 better
+		Status   string
 	}
 	var results []AttemptResult
 
@@ -112,6 +129,14 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		}
 		inAttempt.TimeoutMs = toMs
 		inAttempt.MaxTrials = att.Trials
+
+		// Provide "improve-from-here" thresholds to the solver.
+		inAttempt.UseHints = SolverUseHints
+		if SolverUseHints {
+			inAttempt.Hints = cloneScore(currentTarget)
+		} else {
+			inAttempt.Hints = nil
+		}
 
 		ctxAtt, cancel := context.WithTimeout(ctx, att.Timeout)
 		attStart := time.Now()
@@ -134,7 +159,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		dEv := sc.Evicted - baseline.Evicted
 		dMv := sc.Moved - baseline.Moved
 
-		if bestOut == nil {
+		if chosenOut == nil {
 			// First feasible candidate: compare vs baseline for logging.
 			switch IsImprovement(baseline, sc) {
 			case 1:
@@ -142,6 +167,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 					"attempt", i, "solver", att.Name, "duration", attDur,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
 					"deltaEvictions", dEv, "deltaMoves", dMv)
+				currentTarget = sc
 			case 0:
 				klog.V(V2).InfoS(string(phase)+": solver equal to baseline",
 					"attempt", i, "solver", att.Name, "duration", attDur,
@@ -153,87 +179,148 @@ func (pl *MyCrossNodePreemption) runSolvers(
 					"deltaEvictions", dEv, "deltaMoves", dMv)
 			}
 
-			bestOut, bestScore, bestName, bestDuration = out, sc, att.Name, attDur
-			results = append(results, AttemptResult{Name: att.Name, Duration: attDur, Score: sc, CmpBase: IsImprovement(baseline, sc)})
+			chosenOut, chosenScore, chosenName, chosenDuration = out, sc, att.Name, attDur
+			results = append(results, AttemptResult{
+				Name:     att.Name,
+				Duration: attDur,
+				Score:    sc,
+				CmpBase:  IsImprovement(baseline, sc),
+				Status:   out.Status,
+			})
 			continue
 		}
 
 		// Compare against the current best.
-		switch IsImprovement(bestScore, sc) {
+		switch IsImprovement(chosenScore, sc) {
 		case 1:
 			klog.V(V2).InfoS(string(phase)+": new leader",
-				"attempt", i, "solver", att.Name, "prevLeader", bestName, "duration", attDur,
-				"leaderPlacedByPri", sc.PlacedByPriority, "prevPlacedByPri", bestScore.PlacedByPriority,
-				"leaderEvictions", sc.Evicted, "prevEvictions", bestScore.Evicted,
-				"leaderMoves", sc.Moved, "prevMoves", bestScore.Moved)
-			bestOut, bestScore, bestName, bestDuration = out, sc, att.Name, attDur
-		case 0: // if equal; keep the first one
+				"attempt", i, "solver", att.Name, "prevLeader", chosenName, "duration", attDur,
+				"leaderPlacedByPri", sc.PlacedByPriority, "prevPlacedByPri", chosenScore.PlacedByPriority,
+				"leaderEvictions", sc.Evicted, "prevEvictions", chosenScore.Evicted,
+				"leaderMoves", sc.Moved, "prevMoves", chosenScore.Moved)
+			chosenOut, chosenScore, chosenName, chosenDuration = out, sc, att.Name, attDur
+			if IsImprovement(currentTarget, sc) == 1 {
+				currentTarget = sc
+			}
+		case 0: // tie with current leader; keep the first one as chosen
 			klog.V(V2).InfoS(string(phase)+": solver tied with leader",
-				"attempt", i, "solver", att.Name, "leader", bestName, "duration", attDur,
+				"attempt", i, "solver", att.Name, "leader", chosenName, "duration", attDur,
 				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
-			bestName = bestName + "=" + att.Name + " (" + bestName + " chosen)"
 		default:
 			klog.V(V2).InfoS(string(phase)+": solver worse than leader",
-				"attempt", i, "solver", att.Name, "leader", bestName, "duration", attDur,
-				"placedByPri", sc.PlacedByPriority, "leaderPlacedByPri", bestScore.PlacedByPriority,
-				"evictions", sc.Evicted, "leaderEvictions", bestScore.Evicted,
-				"moves", sc.Moved, "leaderMoves", bestScore.Moved)
+				"attempt", i, "solver", att.Name, "leader", chosenName, "duration", attDur,
+				"placedByPri", sc.PlacedByPriority, "leaderPlacedByPri", chosenScore.PlacedByPriority,
+				"evictions", sc.Evicted, "leaderEvictions", chosenScore.Evicted,
+				"moves", sc.Moved, "leaderMoves", chosenScore.Moved)
 		}
-		results = append(results, AttemptResult{Name: att.Name, Duration: attDur, Score: sc, CmpBase: IsImprovement(baseline, sc)})
+		results = append(results, AttemptResult{
+			Name:     att.Name,
+			Duration: attDur,
+			Score:    sc,
+			CmpBase:  IsImprovement(baseline, sc),
+			Status:   out.Status,
+		})
+	}
+
+	// If python was OPTIMAL and the chosen solver ties python's score,
+	// force the chosen solver's status to OPTIMAL in the summary we return/log.
+	chosenStatus := chosenOut.Status
+	pyIdx := -1
+	for i := range results {
+		if results[i].Name == "python" {
+			pyIdx = i
+			break
+		}
+	}
+	if pyIdx >= 0 && results[pyIdx].Status == "OPTIMAL" {
+		pyScore := results[pyIdx].Score
+		// chosen ties python?
+		if IsImprovement(pyScore, chosenScore) == 0 &&
+			IsImprovement(chosenScore, pyScore) == 0 {
+			chosenStatus = "OPTIMAL"
+		}
 	}
 
 	// Build best solver summary (if any)
-	if bestOut != nil {
-		bestSolverSummary = SolverSummary{
-			Name:     bestName,
-			Status:   bestOut.Status,
-			Duration: bestDuration,
-			Score:    bestScore,
+	if chosenOut != nil {
+		chosenSolverSummary = SolverSummary{
+			Name:     chosenName,
+			Status:   chosenStatus,
+			Duration: chosenDuration,
+			Score:    chosenScore,
 		}
 	}
 
-	// Emit a compact leaderboard (verbose only) across feasible solvers (best → worst vs baseline).
 	if len(results) > 0 {
 		type Row struct {
 			Name     string
 			Duration time.Duration
 			Score    Score
 			CmpBase  int
+			PrefIdx  int // attempt order index to keep the first one first for true ties
 		}
-		order := make([]Row, 0, len(results))
-		for _, r := range results {
-			order = append(order, Row{r.Name, r.Duration, r.Score, r.CmpBase})
+
+		// Build rows with attempt order as PrefIdx
+		ranking := make([]Row, 0, len(results))
+		for i, r := range results {
+			ranking = append(ranking, Row{
+				Name:     r.Name,
+				Duration: r.Duration,
+				Score:    r.Score,
+				CmpBase:  r.CmpBase,
+				PrefIdx:  i, // attempt order
+			})
 		}
-		// Sort: better-than-baseline first (stable among equals by duration asc), then equal, then worse.
-		sort.SliceStable(order, func(i, j int) bool {
-			if order[i].CmpBase != order[j].CmpBase {
-				return order[i].CmpBase > order[j].CmpBase // 1 > 0 > -1
+
+		// Partition into groups by CmpBase, keeping insertion (attempt) order.
+		better := make([]Row, 0, len(ranking))
+		equal := make([]Row, 0, len(ranking))
+		worse := make([]Row, 0, len(ranking))
+		for _, r := range ranking {
+			switch r.CmpBase {
+			case 1:
+				better = append(better, r)
+			case 0:
+				equal = append(equal, r)
+			default:
+				worse = append(worse, r)
 			}
-			return order[i].Duration < order[j].Duration
-		})
+		}
 
-		names := make([]string, len(order))
-		evs := make([]int, len(order))
-		mvs := make([]int, len(order))
-		cmps := make([]int, len(order))
-		dursMs := make([]int64, len(order))
+		// Concatenate: better → equal → worse, all in original attempt order.
+		ranking = append(append(better, equal...), worse...)
 
-		for i := range order {
-			names[i] = order[i].Name
-			evs[i] = order[i].Score.Evicted
-			mvs[i] = order[i].Score.Moved
-			cmps[i] = order[i].CmpBase
-			dursMs[i] = order[i].Duration.Milliseconds()
+		// Build printed arrays + tie markers
+		names := make([]string, len(ranking))
+		evs := make([]int, len(ranking))
+		mvs := make([]int, len(ranking))
+		cmps := make([]int, len(ranking))
+		dursUs := make([]int64, len(ranking))
+
+		for i := range ranking {
+			label := ranking[i].Name
+			if i > 0 {
+				// Mark as "(tie)" if this score equals the previous score.
+				if IsImprovement(ranking[i-1].Score, ranking[i].Score) == 0 &&
+					IsImprovement(ranking[i].Score, ranking[i-1].Score) == 0 {
+					label += " (tie)"
+				}
+			}
+
+			names[i] = label
+			evs[i] = ranking[i].Score.Evicted
+			mvs[i] = ranking[i].Score.Moved
+			cmps[i] = ranking[i].CmpBase
+			dursUs[i] = ranking[i].Duration.Microseconds()
 		}
 
 		klog.InfoS(string(phase)+": solver leaderboard",
-			"order", names,
-			"durationsMs", dursMs,
-			"best", bestSolverSummary.Name,
+			"ranking", names,
+			"durationsUs", dursUs,
 			"evictions", evs,
 			"moves", mvs,
-			"placedByPri", bestSolverSummary.Score.PlacedByPriority)
+			"placedByPri", chosenSolverSummary.Score.PlacedByPriority)
 	}
 
-	return bestOut, anyFeasible, bestSolverSummary, time.Since(start)
+	return chosenOut, anyFeasible, chosenSolverSummary
 }

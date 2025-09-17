@@ -32,17 +32,15 @@ TODO_HC
 
 ## TODOs
 
-- Upload already built binary to UCLOUD and run kwokctl create cluster with sudo. Also build the binary using: make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
-- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
-- Add a verifier of the solvers plan in IsImprovement.
 - Provide the best solution found so far to next solvers; so they have to improve from that.
-- Consider to limit the number of evictions and moves even though solver tries to minimize it. But maybe it reduces the search space? Use percentage of total pods when setting limits on the number of moves and evictions
+- Add a verifier of the solvers plan in IsImprovement (use the already made function).
+- Make the test plan.
+- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - Check SDU contract
 - Not sure my plugin will work if a pod is removed during plan execution
-  - Standalone pods deleted externally (not by your plan): You only recreate standalone pods that you evicted/targeted (they’re in targets). If a standalone you intended to move was deleted by someone else before you “resolve” it, it won’t end up in targets, so you won’t recreate it. Result: the “by name” check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.
-  - A workload is scaled down during the plan: Your completion check for workload quotas requires the desired counts to materialize. If the controller scaled down and won’t create more pods, the quotas won’t be consumed and the plan will sit “in progress” until the plan TTL cancels it.
+  - If a standalone we intended to move was deleted by someone else before you "resolve" it, it won't end up in targets, so you won’t recreate it. Result: the "by name" check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.
+  - If a workload is scaled down or completely removed during the plan, the completion check will fail and will only be completed at plan TTL.
 - Fix TODOs
-- The reason why distroless image needs root is that kubeconfig is under /root/.kube/config. Maybe we can add it to /usr/share/solver or similar?
 
 ## Later TODOs
 

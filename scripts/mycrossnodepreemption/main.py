@@ -41,9 +41,10 @@ def solve(instance: dict) -> dict:
     mode                = str(instance.get("mode", "lexi")).strip().lower()   # "weighted" or "lexi"
     workers             = _available_cpus() # set number of workers to the amount available
     use_decision_order  = False   # TODO_HC: not sure if needed
-    use_hints           = False  # TODO_HC: not sure if needed; but seems to improve EveryPreemptor and BatchPostFilter modes
+    use_hints           = bool(instance.get("use_hints", False))
+    hints               = instance.get("hints") if use_hints else None
     log_progress        = bool(instance.get("log_progress", False))
-    log_subsolvers      = bool(instance.get("log_progress", False))
+    log_subsolvers      = bool(instance.get("log_progress", False)) # we just use the same flag for now
 
     # --- De-dup by UID, prefer entries that have 'node' (running) ---
     by_uid = {}
@@ -227,6 +228,33 @@ def solve(instance: dict) -> dict:
                 if move[i] is not None:
                     m.Add(move[i] == 0)
         m.Add(sum(placed[i] for i in pending_idxs) >= 1)
+
+    # ---------------------- hard constraints hints (previous best solver's solution) -------------------
+    if use_hints and isinstance(hints, dict):
+        hp = (hints.get("placed_by_priority") or {})
+        max_ev = hints.get("evicted", None)
+        max_mv = hints.get("moved", None)
+
+        # Per-priority lower bounds on placed pods
+        # (keys are strings in Go: map[string]int → JSON)
+        priorities_all = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
+        for pr in priorities_all:
+            need = int(hp.get(str(pr), 0))
+            if need > 0:
+                idxs = [i for i in range(num_pods) if p_pri(i) == pr]
+                if idxs:
+                    m.Add(sum(placed[i] for i in idxs) >= need)
+
+        # Upper bound on evictions (running only)
+        if isinstance(max_ev, int):
+            m.Add(sum(evict[i] for i in running_idxs) <= max_ev)
+
+        # Upper bound on moves (running only)
+        if isinstance(max_mv, int):
+            move_terms_hint = [move[i] for i in running_idxs if move[i] is not None]
+            if move_terms_hint:
+                m.Add(sum(move_terms_hint) <= max_mv)
+            # else: no running pods → no move vars; nothing to add
 
     # ---------------------- decision strategies -------------------------
     # Order pods: sort by (CPU, MEM, PRI desc)

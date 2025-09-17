@@ -72,7 +72,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Solve ----------
-	bestOut, anyFeasible, bestSummary, solverDuration := pl.runSolvers(ctx, phase, in0, baseline)
+	bestOut, anyFeasible, chosenSolver := pl.runSolvers(ctx, phase, in0, baseline)
 
 	// Decide failure reason:
 	// - If BOTH solvers are infeasible (or nil) -> ErrNoOptimalOrFeasible
@@ -83,22 +83,22 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		return nil, ErrNoOptimalOrFeasible
 	}
 
-	switch IsImprovement(baseline, bestSummary.Score) {
+	switch IsImprovement(baseline, chosenSolver.Score) {
 	case 1: // bestScore better than baseline
 		// proceed
 	case 0: // bestScore equal to baseline
 		pl.leaveActive()
 		klog.ErrorS(ErrNoImprovement, string(phase)+": equal to baseline (no improvement)",
-			"placedByPri", bestSummary.Score.PlacedByPriority,
-			"evictions", bestSummary.Score.Evicted,
-			"moves", bestSummary.Score.Moved)
+			"placedByPri", chosenSolver.Score.PlacedByPriority,
+			"evictions", chosenSolver.Score.Evicted,
+			"moves", chosenSolver.Score.Moved)
 		return nil, ErrNoImprovement
 	case -1: // bestScore worse than baseline
 		pl.leaveActive()
 		klog.ErrorS(ErrNoImprovement, string(phase)+": worse than baseline",
-			"placedByPri", bestSummary.Score.PlacedByPriority,
-			"evictions", bestSummary.Score.Evicted,
-			"moves", bestSummary.Score.Moved)
+			"placedByPri", chosenSolver.Score.PlacedByPriority,
+			"evictions", chosenSolver.Score.Evicted,
+			"moves", chosenSolver.Score.Moved)
 		return nil, ErrNoImprovement
 	}
 
@@ -132,7 +132,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	var doc *StoredPlan
 	var ap *ActivePlan
 	var targetNode string
-	doc, ap, targetNode, err = pl.registerPlan(ctx, bestOut, bestSummary, preemptor, pods)
+	doc, ap, targetNode, err = pl.registerPlan(ctx, bestOut, chosenSolver, preemptor, pods)
 	if err != nil {
 		// keep single-preemptor blocked on error
 		if solveMode == SolveSingle && preemptor != nil {
@@ -162,29 +162,21 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	res := &FlowResult{
-		PlanID:         ap.ID,
-		TargetNode:     targetNode,
-		BatchSize:      len(batchedPods),
-		Moves:          len(doc.Moves),
-		Evicts:         len(doc.Evicts),
-		TotalPrePlan:   totalPrePlan,
-		TotalPostPlan:  totalPostPlan,
-		SolverStatus:   bestSummary.Status,
-		TotalDuration:  time.Since(start),
-		SolverDuration: solverDuration,
+		PlanID:        ap.ID,
+		TargetNode:    targetNode,
+		BatchSize:     len(batchedPods),
+		TotalPrePlan:  totalPrePlan,
+		TotalPostPlan: totalPostPlan,
+		ChosenSolver:  chosenSolver,
+		TotalDuration: time.Since(start),
 	}
 	klog.InfoS(string(phase)+": plan execution finished; waiting for settlement",
 		"planID", res.PlanID,
+		"chosenSolver", res.ChosenSolver,
 		"nominated", res.TargetNode,
 		"batchSize", res.BatchSize,
-		"moves", res.Moves,
-		"evicts", res.Evicts,
 		"totalPrePlan", res.TotalPrePlan,
-		"totalPostPlan", res.TotalPostPlan,
-		"solverStatus", res.SolverStatus,
-		"bestSolver", bestSummary.Name,
 		"totalDuration", res.TotalDuration,
-		"solverDuration", res.SolverDuration,
 	)
 
 	return res, nil

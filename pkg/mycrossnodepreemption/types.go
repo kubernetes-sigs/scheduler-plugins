@@ -192,6 +192,8 @@ type SolverInput struct {
 	Mode string `json:"solver_mode,omitempty"`
 	// Whether to use hints
 	UseHints bool `json:"use_hints,omitempty"`
+	// Thresholds/targets to improve from
+	Hints *Score `json:"hints,omitempty"`
 	// Number of parallel workers (0 = auto)
 	Workers int `json:"workers,omitempty"`
 	// Maximum number of trials (0 = unlimited)
@@ -350,18 +352,12 @@ type FlowResult struct {
 	TargetNode string
 	// Batch size (if any)
 	BatchSize int
-	// Number of moves
-	Moves int
-	// Number of evictions
-	Evicts int
 	// Total pods before plan execution
 	TotalPrePlan int
 	// Total pods after plan execution
 	TotalPostPlan int
-	// Status of the solver
-	SolverStatus string
-	// Duration of the solver
-	SolverDuration time.Duration
+	// Chosen solver
+	ChosenSolver SolverSummary
 	// Total duration of the flow
 	TotalDuration time.Duration
 }
