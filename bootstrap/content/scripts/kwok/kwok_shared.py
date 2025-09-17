@@ -142,20 +142,19 @@ def csv_append_row(
 # ---------- stats helpers ----------
 @dataclass
 class Snapshot:
-    cpu_run_util: float                    # running requests / total alloc CPU
-    mem_run_util: float                    # running requests / total alloc MEM
-    pods_scheduled: list[str]              # total running pods
-    pods_unscheduled: list[str]            # all not-running pods
-    pods_run_by_node: Dict[str,int]        # node -> running pods count
-    cpu_req_by_node: Dict[str,int]         # node -> m (Running & assigned only)
-    mem_req_by_node: Dict[str,int]         # node -> bytes (Running & assigned only)
+    cpu_run_util: float             # running requests / total alloc CPU
+    mem_run_util: float             # running requests / total alloc MEM
+    pods_running: list[str]         # total running pods
+    pods_unscheduled: list[str]     # all not-running pods
+    pods_run_by_node: Dict[str,int] # node -> running pods count
+    cpu_req_by_node: Dict[str,int]  # node -> m (Running & assigned only)
+    mem_req_by_node: Dict[str,int]  # node -> bytes (Running & assigned only)
 
 def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Snapshot:
-    _, scheduled_pairs, unscheduled = get_scheduled_and_unscheduled(
+    _, running, unscheduled = get_running_and_unscheduled(
         ctx, ns, expected=expected, settle_timeout=settle_timeout
     )
-    scheduled = [n for (n, _) in scheduled_pairs]
-
+    scheduled = [n for (n, _) in running]
     nodes = get_json_ctx(ctx, ["get","nodes","-o","json"])
     pods  = get_json_ctx(ctx, ["-n", ns, "get","pods","-o","json"])
 
@@ -201,7 +200,7 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
     return Snapshot(
         cpu_run_util=float(cpu_run_util),
         mem_run_util=float(mem_run_util),
-        pods_scheduled=scheduled,
+        pods_running=running,
         pods_unscheduled=unscheduled,
         pods_run_by_node=pods_run_by_node,
         cpu_req_by_node=cpu_req_m,
@@ -253,7 +252,7 @@ def _rfc3339_to_dt(s: str) -> datetime:
     except Exception:
         return datetime.min
 
-def get_scheduled_and_unscheduled(
+def get_running_and_unscheduled(
     ctx: str,
     ns: str,
     expected: int,
@@ -262,74 +261,37 @@ def get_scheduled_and_unscheduled(
 ) -> Tuple[str, List[Tuple[str, str]], List[str]]:
     """
     Poll pod events until we can decide:
-      - ("all_scheduled", [(pod, node), ...], [])
-      - ("some_unschedulable", [(pod, node), ...], [unschedulable_pods])
-      - ("timeout", [(pod, node), ...], [unschedulable_pods])
-    Decision is based on the latest event per pod name.
+      - ("all_running", [(pod, node), ...], [])
+      - ("some_unschedulable", [(pod, node), ...], [unscheduled_pods])
+      - ("timeout", [(pod, node), ...], [unscheduled_pods])
     """
-    node_from_msg = re.compile(r"\bto\s+([A-Za-z0-9._:-]+)\.?$")
-
     start = time.time()
     while True:
-        cmd = ["kubectl", "--context", ctx, "-n", ns,
-               "get", "events",
-               "--field-selector", "involvedObject.kind=Pod",
-               "-o", "json"]
-        try:
-            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            msg = (e.stdout or b"").decode("utf-8", "replace")
-            tail = msg[-1200:]
-            raise RuntimeError(
-                f"kubectl events failed: rc={e.returncode} cmd={' '.join(cmd)} output_tail={tail!r}"
-            ) from e
-        items = (json.loads(out) or {}).get("items", [])
+        pods_obj = get_json_ctx(ctx, ["-n", ns, "get", "pods", "-o", "json"])
+        pods = pods_obj.get("items", []) or []
 
-        # name -> (ts, state, node)
-        latest: Dict[str, tuple[datetime, str, str]] = {}
-
-        for ev in items:
-            inv = (ev.get("involvedObject") or {})
-            name = inv.get("name") or ""
+        created: List[str] = []
+        running: set[str] = set()
+        for p in pods:
+            md = p.get("metadata") or {}
+            st = p.get("status") or {}
+            name = md.get("name") or ""
             if not name:
                 continue
+            created.append(name)
+            if (st.get("phase") or "") == "Running":
+                running.add(name)
 
-            reason  = (ev.get("reason") or "").strip()
-            message = (ev.get("message") or "").strip()
-            ts = (_rfc3339_to_dt(ev.get("eventTime") or "")
-                  or _rfc3339_to_dt(ev.get("lastTimestamp") or "")
-                  or _rfc3339_to_dt((ev.get("metadata") or {}).get("creationTimestamp") or ""))
+        # "unscheduled" == created pods that are not Running
+        unschedulable = sorted([n for n in created if n not in running])
 
-            state = "other"
-            node = ""
-            if reason == "Scheduled":
-                state = "scheduled"
-                m = node_from_msg.search(message)
-                if m:
-                    node = m.group(1)
-            elif reason == "FailedScheduling":
-                state = "failed_scheduling"
-            elif reason == "Preempted":
-                state = "preempted"
-            elif "evict" in message.lower():
-                state = "preempted"
+        if len(running) >= expected:
+            return "all_running", running, []
 
-            prev = latest.get(name)
-            if (prev is None) or (ts > prev[0]):
-                latest[name] = (ts, state, node)
-
-        scheduled_pairs = sorted([(n, node) for n, (_, st, node) in latest.items() if st == "scheduled"], key=lambda x: x[0])
-        unschedulable = sorted([n for n, (_, st, _) in latest.items() if st in {"failed_scheduling", "preempted"}])
-
-        failed_like = len(unschedulable)
-
-        if len(scheduled_pairs) >= expected:
-            return "all_scheduled", scheduled_pairs, []
-
-        if (len(scheduled_pairs) + failed_like) >= expected and failed_like > 0:
-            return "some_unschedulable", scheduled_pairs, unschedulable
+        if (len(running) + len(unschedulable)) >= expected and len(unschedulable) > 0:
+            return "some_unschedulable", running, unschedulable
 
         if settle_timeout is not None and (time.time() - start) >= settle_timeout:
-            return "timeout", scheduled_pairs, unschedulable
+            return "timeout", running, unschedulable
 
         time.sleep(interval)

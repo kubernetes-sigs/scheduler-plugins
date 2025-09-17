@@ -23,7 +23,7 @@
 #   --count <int>                       Generate random seeds; -1=infinite
 #
 #   --test                              Test mode: requires --seed; runs each kwok-config and prints a per-config summary
-#                                       of scheduled vs unscheduled at the end. No results are saved in test mode.
+#                                       of running vs unscheduled at the end. No results are saved in test mode.
 ################################################################################
 
 import sys, csv, json, time, random, argparse, re, subprocess, tempfile, os, textwrap, hashlib, math, yaml, traceback, contextlib, fcntl, logging, shlex
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from kwok_shared import (
-    get_scheduled_and_unscheduled, get_json_ctx, stat_snapshot, dir_exists, file_exists,
+    get_running_and_unscheduled, get_json_ctx, stat_snapshot, dir_exists, file_exists,
     csv_append_row, qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
     MEM_UNIT_TABLE
 )
@@ -46,8 +46,8 @@ RESULTS_HEADER = [
     "node_cpu_m", "node_mem_b", "cpu_per_pod_m", "mem_per_pod_b",
     "util", "util_tolerance", "util_run_cpu", "util_run_mem", "cpu_m_run", "mem_b_run",
     "wait_mode", "wait_timeout_s", "settle_timeout_s",
-    "scheduled_count","unscheduled_count", "pods_run_by_node", "placed_by_priority",
-    "unscheduled", "scheduled",
+    "running_count","unscheduled_count", "pods_run_by_node", "placed_by_priority",
+    "unscheduled", "running",
     "pod_node",
 ]
 
@@ -838,7 +838,7 @@ class KwokTestGenerator:
                     sc = a.get("score") or {}
                     row[f"{s}_status"] = a.get("status", "")
                     row[f"{s}_duration_us"] = a.get("duration_us", "")
-                    row[f"{s}_placed_by_prio"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"))
+                    row[f"{s}_placed_by_prio"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
                     row[f"{s}_evictions"] = sc.get("evicted", "")
                     row[f"{s}_moves"] = sc.get("moved", "")
                 w.writerow(row)
@@ -1486,21 +1486,21 @@ class KwokTestGenerator:
         )
 
     def _print_seed_summary(self, cfg: Path, seed: int | None, 
-                            scheduled: int | None, unscheduled: int | None, 
+                            running: int | None, unscheduled: int | None, 
                             note: str = "") -> None:
         """
         Print a summary line for the run.
         """
         note = f" note='{note}'" if note else ""
-        scheduled_str = "-" if scheduled is None else str(scheduled)
+        running_str = "-" if running is None else str(running)
         unscheduled_str = "-" if unscheduled is None else str(unscheduled)
         LOG.info("\n------------------------------------------------- SEED SUMMARY -------------------------------------------------\n"
-                f"{cfg.name}  seed={seed}  scheduled={scheduled_str}  unscheduled={unscheduled_str}  {note}\n"
+                f"{cfg.name}  seed={seed}  running={running_str}  unscheduled={unscheduled_str}  {note}\n"
                 "----------------------------------------------------------------------------------------------------------------")
 
     @staticmethod
     def _build_pod_node_list(
-        scheduled_by_name: Dict[str, str],
+        running_by_name: Dict[str, str],
         unschedulable_names: List[str],
         standalone_specs: List[Dict[str, object]] | None,
         rs_specs: List[Dict[str, object]] | None,
@@ -1511,11 +1511,11 @@ class KwokTestGenerator:
         """
         by_standalone = {p["name"]: p for p in (standalone_specs or [])}
         by_rs = {r["name"]: r for r in (rs_specs or [])}
-        all_names = set(scheduled_by_name.keys()) | set(unschedulable_names)
+        all_names = set(running_by_name.keys()) | set(unschedulable_names)
 
         out: List[Dict[str, object]] = []
         for pname in sorted(all_names):
-            node = scheduled_by_name.get(pname, "")
+            node = running_by_name.get(pname, "")
             if pname in by_standalone:
                 spec = by_standalone[pname]
                 out.append({
@@ -1699,15 +1699,15 @@ class KwokTestGenerator:
         total_pods = max(0, tr.num_nodes * tr.pods_per_node)
 
         # ---------- util / tolerance ----------
-        if not (0.0 < tr.util <= 1.0):
-            errors.append(f"util must be in (0,1], got {tr.util}")
+        if tr.util < 0.0:
+            errors.append(f"util must be >= 0, got {tr.util}")
 
         if tr.util_tolerance < 0.0:
             errors.append(f"util_tolerance must be >= 0, got {tr.util_tolerance}")
         if tr.util_tolerance >= 1.0:
             errors.append(f"util_tolerance must be < 1, got {tr.util_tolerance}")
-        if (tr.util - tr.util_tolerance) < 0.0 or (tr.util + tr.util_tolerance) > 1.0:
-            errors.append(f"util ± util_tolerance must stay within [0,1] (got {tr.util} ± {tr.util_tolerance})")
+        if (tr.util - tr.util_tolerance) < 0.0:
+            errors.append(f"util - util_tolerance must be >= 0, got {tr.util} - {tr.util_tolerance} = {tr.util - tr.util_tolerance}")
 
         # ---------- priorities ----------
         prio_ok = False
@@ -1941,7 +1941,7 @@ class KwokTestGenerator:
 
             phase = "events_snapshot"
             LOG.info(f"phase={phase}")
-            _, scheduled_pairs, unschedulable_names = get_scheduled_and_unscheduled(
+            _, running, unschedulable = get_running_and_unscheduled(
                 self.ctx, ta.namespace, expected=ta.total_pods, settle_timeout=ta.settle_timeout_s
             )
 
@@ -1973,15 +1973,15 @@ class KwokTestGenerator:
                 "wait_mode": (ta.wait_mode or ""),
                 "wait_timeout_s": ta.wait_timeout_s,
                 "settle_timeout_s": ta.settle_timeout_s,
-                "scheduled_count": int(len(scheduled_pairs)),
-                "unscheduled_count": int(len(unschedulable_names)),
+                "running_count": int(len(running)),
+                "unscheduled_count": int(len(unschedulable)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
-                "placed_by_priority": json.dumps(placed_by_priority, separators=(",", ":")),
-                "unscheduled": "{" + ",".join(sorted(unschedulable_names)) + "}",
-                "scheduled": "{" + ",".join(sorted([name for (name, _) in scheduled_pairs])) + "}",
+                "placed_by_priority": json.dumps(placed_by_priority, separators=(",", ":"), sort_keys=True),
+                "unscheduled": "{" + ",".join(sorted(unschedulable)) + "}",
+                "running": "{" + ",".join(sorted([name for (name, _) in running])) + "}",
                 "pod_node": json.dumps(self._build_pod_node_list(
-                    {name: node for (name, node) in scheduled_pairs},
-                    unschedulable_names, pod_specs, rs_specs
+                    {name: node for (name, node) in running},
+                    unschedulable, pod_specs, rs_specs
                 ), separators=(",", ":")),
             }
             
@@ -2006,7 +2006,7 @@ class KwokTestGenerator:
             self._save_stats_csv(cfg, seed)
 
             LOG.info(f"done; took {time.time()-start_time:.1f}s")
-            self._print_seed_summary(cfg, seed, len(scheduled_pairs), len(unschedulable_names))
+            self._print_seed_summary(cfg, seed, len(running), len(unschedulable))
 
         except RuntimeError as e:
             # previously returned silently for some RuntimeErrors
@@ -2325,7 +2325,7 @@ def build_argparser() -> argparse.ArgumentParser:
     # test mode
     ap.add_argument("--test", action="store_true",
                     help="Test mode: requires --seed; runs each kwok-config and prints a per-config summary "
-                         "of scheduled vs unscheduled at the end. No results are saved in test mode.")
+                         "of running vs unscheduled at the end. No results are saved in test mode.")
     
     # logging
     ap.add_argument("--log-level", dest="log_level",

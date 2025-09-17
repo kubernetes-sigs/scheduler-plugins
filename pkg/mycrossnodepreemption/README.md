@@ -10,16 +10,16 @@ TODO_HC
 
 ## Open Questions
 
+## Closed Questions
+
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately
-- What to with batched pods, we do not succeed to bind on first try?
-- How to make large scale tests, and should I make a seperate test for the CP-SAT solver alone?
-- Faster algorithm using simple heuristics if solver fails - which strategy to use - simply swapping?
 - What to do with node-selectors, PDBs, and other rules.
   - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
 
-## TODOs General
+## TODOs
 
+- Make the test plan.
 - Write a proper README.md
 
 ## TODOs Test
@@ -30,23 +30,15 @@ TODO_HC
 - Test the plugin works across workload type.
 - Test CP-SAT vs. other solvers.
 
-## TODOs
-
-- Make the test plan.
-- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
-- Not sure my plugin will work if a pod is removed during plan execution
-  - If a standalone we intended to move was deleted by someone else before you "resolve" it, it won't end up in targets, so you won’t recreate it. Result: the "by name" check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.
-  - If a workload is scaled down or completely removed during the plan, the completion check will fail and will only be completed at plan TTL.
-- Fix TODOs
-
 ## Later TODOs
 
-- Only activate pods we need to schedule
 - Make use of design patterns where possible.
 - Create unit and integration tests.
-- Instead of having my own script for loading into kind, use the same method as done in Neri's repo, see his Makefile in root. Also, check his scheduler-config under manifests\optimizedpreemption
 - Find a better way to set verbose level.
 - Add more comments to the code.
+- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
+- We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
+- Fix TODOs
 
 ## Write
 

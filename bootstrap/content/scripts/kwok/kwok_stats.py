@@ -105,7 +105,7 @@ class KwokStats:
         self.printer("Cluster utilization, pod totals, and free resources")
         self.printer(self._totals_table(
             s.cpu_run_util, s.mem_run_util,
-            len(s.pods_scheduled), len(s.pods_unscheduled),
+            len(s.pods_running), len(s.pods_unscheduled),
             cpu_free_m, mem_free_b,
         ))
 
