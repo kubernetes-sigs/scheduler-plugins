@@ -185,27 +185,26 @@ func (pgMgr *PodGroupManager) ActivateSiblings(ctx context.Context, pod *corev1.
 		return
 	}
 	indexer := pgMgr.podInformer.GetIndexer()
-	podsObj, err := indexer.ByIndex(util.LabelIndexerName, pgFullName)
+	groupPods, err := podsBelongToGroup(indexer, pgFullName)
 	if err != nil {
 		lh.Error(err, "Failed to obtain pods belong to a PodGroup", "podGroup", pgFullName)
 		return
 	}
-	pods := make([]*corev1.Pod, 0, len(podsObj))
-
-	for i := range podsObj {
-		tmpPod := podsObj[i].(*corev1.Pod)
+	siblings := make([]*corev1.Pod, 0, len(groupPods))
+	for i := range groupPods {
+		tmpPod := groupPods[i]
 		if tmpPod.UID != pod.UID {
-			pods = append(pods, tmpPod)
+			siblings = append(siblings, tmpPod)
 		}
 	}
 
-	if len(pods) != 0 {
+	if len(siblings) != 0 {
 		if c, err := state.Read(framework.PodsToActivateKey); err == nil {
 			if s, ok := c.(*framework.PodsToActivate); ok {
 				s.Lock()
-				for _, pod := range pods {
-					namespacedName := GetNamespacedName(pod)
-					s.Map[namespacedName] = pod
+				for _, sibling := range siblings {
+					namespacedName := GetNamespacedName(sibling)
+					s.Map[namespacedName] = sibling
 				}
 				s.Unlock()
 			}
@@ -229,18 +228,14 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return fmt.Errorf("podGroup %v failed recently", pgFullName)
 	}
 	indexer := pgMgr.podInformer.GetIndexer()
-	podsObj, err := indexer.ByIndex(util.LabelIndexerName, pgFullName)
+	siblings, err := podsBelongToGroup(indexer, pgFullName)
 	if err != nil {
 		return fmt.Errorf("podLister list pods failed: %w", err)
 	}
-	pods := make([]*corev1.Pod, 0, len(podsObj))
-	for i := range podsObj {
-		pods = append(pods, podsObj[i].(*corev1.Pod))
-	}
 
-	if len(pods) < int(pg.Spec.MinMember) {
+	if len(siblings) < int(pg.Spec.MinMember) {
 		return fmt.Errorf("pre-filter pod %v cannot find enough sibling pods, "+
-			"current pods number: %v, minMember of group: %v", pod.Name, len(pods), pg.Spec.MinMember)
+			"current pods number: %v, minMember of group: %v", pod.Name, len(siblings), pg.Spec.MinMember)
 	}
 
 	if pg.Spec.MinResources == nil {
@@ -269,6 +264,45 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 	}
 	pgMgr.permittedPG.Add(pgFullName, pgFullName, *pgMgr.scheduleTimeout)
 	return nil
+}
+
+// podsBelongToGroup returns pods indexed by the PodGroup's full name. It falls back to a
+// linear scan when the expected label index is not registered on the informer.
+func podsBelongToGroup(indexer cache.Indexer, pgFullName string) ([]*corev1.Pod, error) {
+	if _, hasIndex := indexer.GetIndexers()[util.LabelIndexerName]; hasIndex {
+		podsObj, err := indexer.ByIndex(util.LabelIndexerName, pgFullName)
+		if err != nil {
+			return nil, err
+		}
+		return castPods(podsObj), nil
+	}
+
+	return filterPods(indexer.List(), pgFullName), nil
+}
+
+func castPods(objs []interface{}) []*corev1.Pod {
+	pods := make([]*corev1.Pod, 0, len(objs))
+	for i := range objs {
+		pod, ok := objs[i].(*corev1.Pod)
+		if ok {
+			pods = append(pods, pod)
+		}
+	}
+	return pods
+}
+
+func filterPods(objs []interface{}, pgFullName string) []*corev1.Pod {
+	pods := make([]*corev1.Pod, 0, len(objs))
+	for i := range objs {
+		pod, ok := objs[i].(*corev1.Pod)
+		if !ok {
+			continue
+		}
+		if util.GetPodGroupFullName(pod) == pgFullName {
+			pods = append(pods, pod)
+		}
+	}
+	return pods
 }
 
 // Permit permits a pod to run, if the minMember match, it would send a signal to chan.
