@@ -30,7 +30,6 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd/scheduler ./cmd/scheduler
 COPY pkg ./pkg
 COPY apis ./apis
-COPY manifests ./manifests
 
 ARG VERSION=v0.32.7
 
@@ -50,7 +49,7 @@ RUN ln -sf /usr/local/bin/python3 /usr/bin/python3
 # Create the venv using /usr/bin/python3 so the venv’s symlinks match distroless
 RUN /usr/bin/python3 -m venv /opt/venv
 
-COPY scripts/mycrossnodepreemption/requirements.txt /requirements.txt
+COPY bootstrap/content/scripts/python_solver/requirements.txt /requirements.txt
 
 RUN /opt/venv/bin/python -m pip install --upgrade pip \
     && /opt/venv/bin/pip install --no-cache-dir -r /requirements.txt
@@ -61,7 +60,7 @@ FROM ${DISTROLESS_PY} AS runtime
 WORKDIR /workspace
 
 COPY --from=pybuilder /opt/venv /opt/venv
-COPY scripts/mycrossnodepreemption/ /opt/solver/
+COPY bootstrap/content/scripts/python_solver/ /opt/solver/
 COPY --from=gobuilder /out/kube-scheduler /bin/kube-scheduler
 
 ENTRYPOINT []

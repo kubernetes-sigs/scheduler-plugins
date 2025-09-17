@@ -1,4 +1,0 @@
-cluster-name,config-dir,results-dir,seed-file
-kwok-a,data/configs/a,data/results/a,data/seeds/001.txt
-kwok-b,data/configs/b,data/results/b,data/seeds/001.txt
-kwok-a,data/configs/a,data/results/a,data/seeds/002.txt

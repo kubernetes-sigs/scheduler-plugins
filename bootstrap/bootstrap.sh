@@ -18,7 +18,7 @@ REPO_DIR="${REPO_DIR:-${CONTENT_DIR%/}/repo}"
 KWOK_CLUSTER="${KWOK_CLUSTER:-kwok1}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"  # binary | docker
 
-RESULTS_DIR="${RESULTS_DIR:-results}"      # can be relative to CONTENT_DIR
+RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
 KWOK_CONFIG_DIR="${KWOK_CONFIG_DIR:-}"     # can be relative to CONTENT_DIR
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 MATRIX_FILE="${MATRIX_FILE:-}"             # can be relative to CONTENT_DIR
@@ -201,10 +201,10 @@ stage_build() {
     set -euo pipefail
     install -d -m 0755 '${SOLVER_DIR}'
     install -d -m 0755 '${VENV_DIR}'
-    cp -a '${CONTENT_DIR}/scripts/mycrossnodepreemption/main.py' '${SOLVER_DIR}/main.py'
+    cp -a '${CONTENT_DIR}/scripts/python_solver/main.py' '${SOLVER_DIR}/main.py'
     python3 -m venv '${VENV_DIR}'
     '${VENV_DIR}/bin/python' -m pip install --upgrade pip
-    '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/mycrossnodepreemption/requirements.txt'
+    '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/python_solver/requirements.txt'
   "
   log ok "staged solver (venv @ ${VENV_DIR})"
 

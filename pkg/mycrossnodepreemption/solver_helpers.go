@@ -3,11 +3,16 @@
 package mycrossnodepreemption
 
 import (
+	"context"
+	"encoding/json"
 	"math"
 	"math/rand"
 	"sort"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
@@ -152,6 +157,71 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 		}
 	}
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
+}
+
+type SolverAttemptEvent struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	DurationUs int64  `json:"duration_us"`
+	Score      Score  `json:"score"`
+}
+
+type SolverRunEvent struct {
+	Timestamp_ns int64                `json:"timestamp_ns"`
+	Baseline     Score                `json:"baseline"`
+	Attempts     []SolverAttemptEvent `json:"attempts"`
+	Chosen       *SolverAttemptEvent  `json:"chosen,omitempty"`
+}
+
+const (
+	cmLeaderboardName      = "leaderboard"
+	cmLeaderboardNamespace = "leaderboard"
+	cmLeaderboardKey       = "runs.json" // JSON array of solverRunEvent
+)
+
+// append (create if missing) an entry to the ConfigMap ledger
+func (pl *MyCrossNodePreemption) appendLeaderboardCM(ctx context.Context, entry SolverRunEvent) {
+	cli := pl.Handle.ClientSet()
+	if cli == nil {
+		klog.V(1).Info("no clientset; skip leaderboard CM")
+		return
+	}
+	cms := cli.CoreV1().ConfigMaps(cmLeaderboardNamespace)
+	cm, err := cms.Get(ctx, cmLeaderboardName, metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			klog.ErrorS(err, "get CM failed", "namespace", cmLeaderboardNamespace, "name", cmLeaderboardName)
+			return
+		}
+		// create fresh
+		buf, _ := json.Marshal([]SolverRunEvent{entry})
+		cm = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmLeaderboardName,
+				Namespace: cmLeaderboardNamespace,
+			},
+			Data: map[string]string{cmLeaderboardKey: string(buf)},
+		}
+		if _, err := cms.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+			klog.ErrorS(err, "create CM failed", "namespace", cmLeaderboardNamespace, "name", cmLeaderboardName)
+		}
+		return
+	}
+	// update existing
+	var arr []SolverRunEvent
+	if s := cm.Data[cmLeaderboardKey]; s != "" {
+		_ = json.Unmarshal([]byte(s), &arr)
+		// best-effort
+	}
+	arr = append(arr, entry)
+	buf, _ := json.Marshal(arr)
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	cm.Data[cmLeaderboardKey] = string(buf)
+	if _, err := cms.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		klog.ErrorS(err, "update CM failed", "namespace", cmLeaderboardNamespace, "name", cmLeaderboardName)
+	}
 }
 
 // bestPlanAcrossTargets iterates targets (ordered by deficit for p) and

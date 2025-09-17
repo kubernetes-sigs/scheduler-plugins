@@ -322,5 +322,33 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			"placedByPri", chosenSolverSummary.Score.PlacedByPriority)
 	}
 
+	// Build attempts for ledger
+	evAttempts := make([]SolverAttemptEvent, 0, len(results))
+	for _, r := range results {
+		evAttempts = append(evAttempts, SolverAttemptEvent{
+			Name:       r.Name,
+			Status:     r.Status,
+			DurationUs: r.Duration.Microseconds(),
+			Score:      r.Score,
+		})
+	}
+
+	var evChosen *SolverAttemptEvent
+	if chosenOut != nil {
+		evChosen = &SolverAttemptEvent{
+			Name:       chosenName,
+			Status:     chosenStatus,
+			DurationUs: chosenDuration.Microseconds(),
+			Score:      chosenScore,
+		}
+	}
+
+	pl.appendLeaderboardCM(ctx, SolverRunEvent{
+		Timestamp_ns: time.Now().UnixNano(),
+		Baseline:     baseline,
+		Attempts:     evAttempts,
+		Chosen:       evChosen,
+	})
+
 	return chosenOut, anyFeasible, chosenSolverSummary
 }

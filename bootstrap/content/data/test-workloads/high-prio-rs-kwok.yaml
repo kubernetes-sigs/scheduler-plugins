@@ -1,0 +1,32 @@
+# kubectl scale rs/high-priority-rs -n test --timeout 2m --replicas=<desired_replicas>
+# needed to increase timeout
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: high-priority-rs
+  namespace: test
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: high-priority
+  template:
+    metadata:
+      labels:
+        app: high-priority
+    spec:
+      priorityClassName: p4
+      tolerations:
+        - key: "kwok.x-k8s.io/node"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: c
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests:
+              cpu: "3000m"
+              memory: "3000Mi"
+            limits:
+              cpu: "3000m"
+              memory: "3000Mi"
