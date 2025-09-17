@@ -32,11 +32,8 @@ TODO_HC
 
 ## TODOs
 
-- Provide the best solution found so far to next solvers; so they have to improve from that.
-- Add a verifier of the solvers plan in IsImprovement (use the already made function).
 - Make the test plan.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
-- Check SDU contract
 - Not sure my plugin will work if a pod is removed during plan execution
   - If a standalone we intended to move was deleted by someone else before you "resolve" it, it won't end up in targets, so you won’t recreate it. Result: the "by name" check in isPlanCompleted will keep failing (pod missing) until the plan TTL fires, at which point the plan is force-completed.
   - If a workload is scaled down or completely removed during the plan, the completion check will fail and will only be completed at plan TTL.
