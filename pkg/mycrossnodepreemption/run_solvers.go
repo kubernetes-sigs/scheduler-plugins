@@ -222,8 +222,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		})
 	}
 
-	// If python was OPTIMAL and the chosen solver ties python's score,
-	// force the chosen solver's status to OPTIMAL in the summary we return/log.
+	// If python was OPTIMAL and any of other solver tie python's score
+	// upgrade them to OPTIMAL too.
 	chosenStatus := chosenOut.Status
 	pyIdx := -1
 	for i := range results {
@@ -234,10 +234,18 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 	if pyIdx >= 0 && results[pyIdx].Status == "OPTIMAL" {
 		pyScore := results[pyIdx].Score
-		// chosen ties python?
-		if IsImprovement(pyScore, chosenScore) == 0 &&
-			IsImprovement(chosenScore, pyScore) == 0 {
+		// Upgrade attempt statuses for local-search/bfs that tie python.
+		for i := range results {
+			if results[i].Name != "python" && results[i].Status != "OPTIMAL" && IsImprovement(pyScore, results[i].Score) == 0 && IsImprovement(results[i].Score, pyScore) == 0 {
+				results[i].Status = "OPTIMAL"
+			}
+		}
+		// If a solver ties with python, mark it OPTIMAL
+		if (chosenName != "python") && IsImprovement(pyScore, chosenScore) == 0 && IsImprovement(chosenScore, pyScore) == 0 {
 			chosenStatus = "OPTIMAL"
+			if chosenOut != nil {
+				chosenOut.Status = "OPTIMAL"
+			}
 		}
 	}
 

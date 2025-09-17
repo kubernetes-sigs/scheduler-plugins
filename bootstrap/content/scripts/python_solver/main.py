@@ -235,7 +235,6 @@ def solve(instance: dict) -> dict:
         max_mv = hints.get("moved", None)
 
         # Per-priority lower bounds on placed pods
-        # (keys are strings in Go: map[string]int → JSON)
         priorities_all = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
         for pr in priorities_all:
             need = int(hp.get(str(pr), 0))

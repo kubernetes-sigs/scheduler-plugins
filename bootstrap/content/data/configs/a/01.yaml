@@ -45,6 +45,8 @@ componentsPatches:
         value: "15s"
       - name: PLAN_EXECUTION_TIMEOUT
         value: "600h" # 50s # TODO: set high to determine any potential issues
+      - name: SOLVER_USE_HINTS
+        value: "true"
       - name: SOLVER_PYTHON_ENABLED
         value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
