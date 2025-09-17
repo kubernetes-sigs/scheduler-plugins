@@ -257,13 +257,16 @@ def get_running_and_unscheduled(
     ns: str,
     expected: int,
     interval: float = 0.5,
-    settle_timeout: Optional[int] = None
+    settle_timeout: Optional[int] = None,
 ) -> Tuple[str, List[Tuple[str, str]], List[str]]:
     """
-    Poll pod events until we can decide:
+    Poll pods until we can decide:
       - ("all_running", [(pod, node), ...], [])
       - ("some_unschedulable", [(pod, node), ...], [unscheduled_pods])
       - ("timeout", [(pod, node), ...], [unscheduled_pods])
+
+    "running" is based on Pod.status.phase == "Running".
+    "unschedulable" is every created pod that's not Running.
     """
     start = time.time()
     while True:
@@ -271,27 +274,39 @@ def get_running_and_unscheduled(
         pods = pods_obj.get("items", []) or []
 
         created: List[str] = []
-        running: set[str] = set()
+        running_pairs: List[Tuple[str, str]] = []
+        running_names: set[str] = set()
+
         for p in pods:
             md = p.get("metadata") or {}
+            spec = p.get("spec") or {}
             st = p.get("status") or {}
             name = md.get("name") or ""
             if not name:
                 continue
+
             created.append(name)
+
             if (st.get("phase") or "") == "Running":
-                running.add(name)
+                node = spec.get("nodeName") or ""
+                running_names.add(name)
+                running_pairs.append((name, node))
+
+        # Deterministic ordering
+        running_pairs.sort(key=lambda t: t[0])
 
         # "unscheduled" == created pods that are not Running
-        unschedulable = sorted([n for n in created if n not in running])
+        unschedulable = sorted([n for n in created if n not in running_names])
 
-        if len(running) >= expected:
-            return "all_running", running, []
+        # Keep "success" logic identical to before (just using Running instead of events)
+        if len(running_pairs) >= expected:
+            return "all_running", running_pairs, []
 
-        if (len(running) + len(unschedulable)) >= expected and len(unschedulable) > 0:
-            return "some_unschedulable", running, unschedulable
+        # Created enough pods to decide, and some won't run
+        if (len(running_pairs) + len(unschedulable)) >= expected and len(unschedulable) > 0:
+            return "some_unschedulable", running_pairs, unschedulable
 
         if settle_timeout is not None and (time.time() - start) >= settle_timeout:
-            return "timeout", running, unschedulable
+            return "timeout", running_pairs, unschedulable
 
         time.sleep(interval)
