@@ -26,4 +26,4 @@ vendor
 __pycache__/
 .VSCodeCounter
 .vagrant/
-#bootstrap/content/data/results/
+bootstrap/content/data/results/
