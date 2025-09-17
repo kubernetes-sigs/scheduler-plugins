@@ -29,7 +29,6 @@ type PlanFunc func(
 	rng *rand.Rand,
 ) ([]MoveLite, bool)
 
-// TODO_HC: Replace MoveLite with NewPlacement
 type MoveLite struct {
 	UID  types.UID
 	From string
@@ -159,57 +158,58 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
-type SolverAttemptEvent struct {
+type SolverStats struct {
 	Name       string `json:"name"`
 	Status     string `json:"status"`
 	DurationUs int64  `json:"duration_us"`
 	Score      Score  `json:"score"`
 }
 
-type SolverRunEvent struct {
-	Timestamp_ns int64                `json:"timestamp_ns"`
-	Baseline     Score                `json:"baseline"`
-	Attempts     []SolverAttemptEvent `json:"attempts"`
-	Chosen       *SolverAttemptEvent  `json:"chosen,omitempty"`
+type ExportedStats struct {
+	Timestamp_ns int64         `json:"timestamp_ns"`
+	Baseline     Score         `json:"baseline"`
+	Attempts     []SolverStats `json:"attempts"`
+	Chosen       *SolverStats  `json:"chosen,omitempty"`
+	PlanStatus   PlanStatus    `json:"plan_status,omitempty"`
 }
 
 const (
-	cmLeaderboardName      = "leaderboard"
-	cmLeaderboardNamespace = "leaderboard"
-	cmLeaderboardKey       = "runs.json" // JSON array of solverRunEvent
+	cmExportedStatsName      = "stats"
+	cmExportedStatsNamespace = "stats"
+	cmExportedStatsKey       = "runs.json" // JSON array of solverRunEvent
 )
 
 // append (create if missing) an entry to the ConfigMap ledger
-func (pl *MyCrossNodePreemption) appendLeaderboardCM(ctx context.Context, entry SolverRunEvent) {
+func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry ExportedStats) {
 	cli := pl.Handle.ClientSet()
 	if cli == nil {
-		klog.V(1).Info("no clientset; skip leaderboard CM")
+		klog.V(1).Info("no clientset; skip stats CM")
 		return
 	}
-	cms := cli.CoreV1().ConfigMaps(cmLeaderboardNamespace)
-	cm, err := cms.Get(ctx, cmLeaderboardName, metav1.GetOptions{})
+	cms := cli.CoreV1().ConfigMaps(cmExportedStatsNamespace)
+	cm, err := cms.Get(ctx, cmExportedStatsName, metav1.GetOptions{})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
-			klog.ErrorS(err, "get CM failed", "namespace", cmLeaderboardNamespace, "name", cmLeaderboardName)
+			klog.ErrorS(err, "get CM failed", "namespace", cmExportedStatsNamespace, "name", cmExportedStatsName)
 			return
 		}
 		// create fresh
-		buf, _ := json.Marshal([]SolverRunEvent{entry})
+		buf, _ := json.Marshal([]ExportedStats{entry})
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      cmLeaderboardName,
-				Namespace: cmLeaderboardNamespace,
+				Name:      cmExportedStatsName,
+				Namespace: cmExportedStatsNamespace,
 			},
-			Data: map[string]string{cmLeaderboardKey: string(buf)},
+			Data: map[string]string{cmExportedStatsKey: string(buf)},
 		}
 		if _, err := cms.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
-			klog.ErrorS(err, "create CM failed", "namespace", cmLeaderboardNamespace, "name", cmLeaderboardName)
+			klog.ErrorS(err, "create CM failed", "namespace", cmExportedStatsNamespace, "name", cmExportedStatsName)
 		}
 		return
 	}
 	// update existing
-	var arr []SolverRunEvent
-	if s := cm.Data[cmLeaderboardKey]; s != "" {
+	var arr []ExportedStats
+	if s := cm.Data[cmExportedStatsKey]; s != "" {
 		_ = json.Unmarshal([]byte(s), &arr)
 		// best-effort
 	}
@@ -218,9 +218,9 @@ func (pl *MyCrossNodePreemption) appendLeaderboardCM(ctx context.Context, entry 
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	cm.Data[cmLeaderboardKey] = string(buf)
+	cm.Data[cmExportedStatsKey] = string(buf)
 	if _, err := cms.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-		klog.ErrorS(err, "update CM failed", "namespace", cmLeaderboardNamespace, "name", cmLeaderboardName)
+		klog.ErrorS(err, "update CM failed", "namespace", cmExportedStatsNamespace, "name", cmExportedStatsName)
 	}
 }
 

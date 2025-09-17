@@ -4,7 +4,6 @@ package mycrossnodepreemption
 
 import (
 	"context"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -48,7 +47,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		// needed in postfilter as we do not know if any pod was already in the middle of scheduling.
 		// TODO_HC: wait for pod and node cache has synced instead of sleeping.
 		// TODO_HC: not sure, however, if it is needed at all to sleep.
-		time.Sleep(1 * time.Second)
+		// time.Sleep(1 * time.Second)
 		res, err := pl.runFlow(ctx, PhasePostFilter, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {

@@ -222,9 +222,13 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		})
 	}
 
-	// If python was OPTIMAL and any of other solver tie python's score
-	// upgrade them to OPTIMAL too.
-	chosenStatus := chosenOut.Status
+	// If python was OPTIMAL and any of {local-search,bfs} tie python's score,
+	// upgrade their status to OPTIMAL. If the chosen solver is one of them,
+	// also upgrade chosenOut.Status so callers see OPTIMAL.
+	chosenStatus := ""
+	if chosenOut != nil {
+		chosenStatus = chosenOut.Status
+	}
 	pyIdx := -1
 	for i := range results {
 		if results[i].Name == "python" {
@@ -234,18 +238,18 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 	if pyIdx >= 0 && results[pyIdx].Status == "OPTIMAL" {
 		pyScore := results[pyIdx].Score
-		// Upgrade attempt statuses for local-search/bfs that tie python.
+		tiesPython := func(s Score) bool {
+			return IsImprovement(pyScore, s) == 0 && IsImprovement(s, pyScore) == 0
+		}
 		for i := range results {
-			if results[i].Name != "python" && results[i].Status != "OPTIMAL" && IsImprovement(pyScore, results[i].Score) == 0 && IsImprovement(results[i].Score, pyScore) == 0 {
+			if results[i].Name != "python" && tiesPython(results[i].Score) {
 				results[i].Status = "OPTIMAL"
 			}
 		}
-		// If a solver ties with python, mark it OPTIMAL
-		if (chosenName != "python") && IsImprovement(pyScore, chosenScore) == 0 && IsImprovement(chosenScore, pyScore) == 0 {
+		// If our chosen solver is local-search/bfs and ties python, mark it OPTIMAL.
+		if chosenOut != nil && (chosenName != "python") && tiesPython(chosenScore) {
 			chosenStatus = "OPTIMAL"
-			if chosenOut != nil {
-				chosenOut.Status = "OPTIMAL"
-			}
+			chosenOut.Status = "OPTIMAL"
 		}
 	}
 
@@ -331,9 +335,9 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	// Build attempts for ledger
-	evAttempts := make([]SolverAttemptEvent, 0, len(results))
+	evAttempts := make([]SolverStats, 0, len(results))
 	for _, r := range results {
-		evAttempts = append(evAttempts, SolverAttemptEvent{
+		evAttempts = append(evAttempts, SolverStats{
 			Name:       r.Name,
 			Status:     r.Status,
 			DurationUs: r.Duration.Microseconds(),
@@ -341,9 +345,9 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		})
 	}
 
-	var evChosen *SolverAttemptEvent
+	var evChosen *SolverStats
 	if chosenOut != nil {
-		evChosen = &SolverAttemptEvent{
+		evChosen = &SolverStats{
 			Name:       chosenName,
 			Status:     chosenStatus,
 			DurationUs: chosenDuration.Microseconds(),
@@ -351,12 +355,16 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		}
 	}
 
-	pl.appendLeaderboardCM(ctx, SolverRunEvent{
-		Timestamp_ns: time.Now().UnixNano(),
-		Baseline:     baseline,
-		Attempts:     evAttempts,
-		Chosen:       evChosen,
-	})
+	// Record stats if we had at least one feasible attempt.
+	if anyFeasible {
+		pl.appendStatsCM(ctx, ExportedStats{
+			Timestamp_ns: time.Now().UnixNano(),
+			Baseline:     baseline,
+			Attempts:     evAttempts,
+			Chosen:       evChosen,
+			PlanStatus:   PlanStatusActive,
+		})
+	}
 
 	return chosenOut, anyFeasible, chosenSolverSummary
 }

@@ -50,6 +50,7 @@ TODO_HC
 
 ## Write
 
+- Write about that we always recreate the cluster also when just running a new seed, as we do not know if any state in the cluster is preventing us from scheduling.
 - Write about that we did not use globally installed python packages due to PEP 668 in UCLOUD.
 - Write about dockerfile can't run distroless with nonroot
 - Write about the difference ways of running KWOK - binary, docker, etc.

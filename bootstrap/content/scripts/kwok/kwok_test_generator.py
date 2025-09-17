@@ -54,8 +54,8 @@ RESULTS_HEADER = [
 # Module-level logger handle (handlers configured later by setup_logging in main())
 LOG = logging.getLogger("kwok")
 
-CM_LEADERBOARD_NAME = "leaderboard"
-CM_LEADERBOARD_NAMESPACE = "leaderboard"
+CM_STATS_NAME = "stats"
+CM_STATS_NAMESPACE = "stats"
 
 # ====================================================================
 # YAML builders.
@@ -765,39 +765,39 @@ class KwokTestGenerator:
                 pass
         return seen
 
-    def _save_leaderboard_csv(self, cfg: Path, seed: int) -> None:
+    def _save_stats_csv(self, cfg: Path, seed: int) -> None:
         """
-        Snapshot the latest leaderboard ConfigMap into a CSV under results_dir.
+        Snapshot the latest stats ConfigMap into a CSV under results_dir.
         One wide row per run; fixed solver slots/columns for stable schema.
-        Respects --overwrite-leaderboard; skips if file exists unless the flag is set.
+        Respects --overwrite; skips if file exists unless the flag is set.
         """  
-        out_name = f"{cfg.stem}_{CM_LEADERBOARD_NAME}_seed-{seed}.csv"
+        out_name = f"{cfg.stem}_{CM_STATS_NAME}_seed-{seed}.csv"
         out_path = self.results_dir / out_name
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         if out_path.exists() and not self.args.overwrite:
             LOG.info(
-                "leaderboard export exists and overwrite disabled; skipping: %s "
+                "stats export exists and overwrite disabled; skipping: %s "
                 "(use --overwrite to replace)", out_path.name
             )
             return
         
-        LOG.info(f"cfg={cfg.stem}  seed={seed}  phase=save_leaderboard")
+        LOG.info(f"phase=save_stats")
 
         cm_obj = KwokTestGenerator._get_latest_configmap(
-            self.ctx, CM_LEADERBOARD_NAMESPACE, CM_LEADERBOARD_NAME,
+            self.ctx, CM_STATS_NAMESPACE, CM_STATS_NAME,
             accept_prefix=True, label_selector=None,
         )
         if cm_obj is None:
             LOG.warning("no ConfigMap matching %r found in ns=%r",
-                        CM_LEADERBOARD_NAME, CM_LEADERBOARD_NAMESPACE)
+                        CM_STATS_NAME, CM_STATS_NAMESPACE)
             return
 
         md = cm_obj.get("metadata") or {}
-        picked_name = md.get("name", CM_LEADERBOARD_NAME)
+        picked_name = md.get("name", CM_STATS_NAME)
         picked_ts = md.get("creationTimestamp", "")
         LOG.info("using ConfigMap %s (created %s) from ns=%s",
-                picked_name, picked_ts, CM_LEADERBOARD_NAMESPACE)
+                picked_name, picked_ts, CM_STATS_NAMESPACE)
 
         data = cm_obj.get("data") or {}
         runs_raw = data.get("runs.json", "[]")
@@ -806,16 +806,16 @@ class KwokTestGenerator:
             if not isinstance(runs, list):
                 runs = []
         except Exception:
-            LOG.warning("runs.json is not valid JSON; skipping leaderboard export for this seed")
+            LOG.warning(f"runs.json is not valid JSON; skipping {CM_STATS_NAME} export for this seed")
             return
         if not runs:
             return
-
+        
         solver_slots = ["local-search", "bfs", "python"]
         cols = []
         for s in solver_slots:
             cols += [f"{s}_status", f"{s}_duration_us", f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
-        header = ["timestamp_ns"] + cols
+        header = ["timestamp_ns", "plan_status"] + cols
 
         with open(out_path, "w", encoding="utf-8", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=header)
@@ -823,6 +823,7 @@ class KwokTestGenerator:
             for run in runs:
                 row = {
                     "timestamp_ns": run.get("timestamp_ns") or "",
+                    "plan_status": run.get("plan_status") or "",
                 }
                 attempts = {(a.get("name") or ""): a for a in (run.get("attempts") or [])}
                 for s in solver_slots:
@@ -842,7 +843,7 @@ class KwokTestGenerator:
                     row[f"{s}_moves"] = sc.get("moved", "")
                 w.writerow(row)
 
-        LOG.info("saved leaderboard to %s", out_path)
+        LOG.info(f"saved {CM_STATS_NAME} to %s", out_path)
 
     @staticmethod
     def _get_latest_configmap(
@@ -1063,7 +1064,7 @@ class KwokTestGenerator:
         LOG.info(f"all kwok nodes deleted in ctx={ctx}")
     
     @staticmethod
-    def _ensure_namespace(ctx: str, ns: str, *, recreate: bool = False, retries: int = 15, delay: float = 0.5) -> None:
+    def _ensure_namespace(ctx: str, ns: str, *, recreate: bool = False) -> None:
         """
         Ensure the namespace exists in the given context.
         If recreate=True, delete it first, then (re)create if missing.
@@ -1076,13 +1077,19 @@ class KwokTestGenerator:
         if rns.returncode != 0:
             KwokTestGenerator._run_kubectl_logged(ctx, "create", "ns", ns, check=True)
         LOG.info(f"namespace '{ns}' exists in ctx={ctx}")
-        
-        # Ensure the default serviceaccount exists in the namespace; before we exit
+    
+    @staticmethod
+    def _ensure_service_account(ctx: str, ns: str, sa: str, retries: int = 20, delay: float = 0.5) -> None:
+        """
+        Ensure the ServiceAccount exists in the given namespace.
+        If recreate=True, delete it first, then (re)create if missing.
+        """
+        LOG.info(f"ensuring service account '{sa}' in ns='{ns}'")
         for _ in range(1, retries + 1):
-            r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "sa", "default"],
+            r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "sa", sa],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if r.returncode == 0:
-                LOG.info(f"found default serviceaccount in ns '{ns}'")
+                LOG.info(f"found service account '{sa}' in ns '{ns}'")
                 break
             time.sleep(delay)
 
@@ -1866,18 +1873,48 @@ class KwokTestGenerator:
         exists = seed in seen
         save_allowed = (not self.args.test) and (self.args.overwrite or not exists)
         phase = "start"
-        LOG.info("phase=%s  cfg=%s  seed=%s", phase, cfg.stem, seed)
+        LOG.info(f"phase={phase}  cfg={cfg.stem}  seed={seed}")
         try:
             start_time = time.time()
             rng_layout = self._rng(seed, "layout", cfg.stem)
+            
+            # --- always recreate the cluster & nodes for each seed ---
+            phase = "ensure_cluster"
+            LOG.info(f"phase={phase}")
+            try:
+                KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.kwok_runtime, cfg, recreate=True)
+            except Exception as e:
+                tb = traceback.format_exc()
+                self._write_fail("seed", cfg, seed, phase, str(e), tb)
+                LOG.error(f"seed-failed; ensure cluster: {e}")
+                self._print_seed_summary(cfg, seed, None, None, "ensure cluster failed")
+                return
+
+            phase = "nodes"
+            LOG.info(f"phase={phase}")
+            try:
+                # Use per-seed applied config to size nodes
+                DEFAULT_POD_CAP = max(30, ta.pods_per_node * 3)
+                node_cpu_str = qty_to_mcpu_str(ta.node_m)   # e.g., "25000m"
+                node_mem_str = qty_to_bytes_str(ta.node_b)  # e.g., "34359738368B" (bytes is fine)
+                KwokTestGenerator._create_kwok_nodes(
+                    self.ctx, ta.num_nodes, node_cpu_str, node_mem_str, pods_cap=DEFAULT_POD_CAP
+                )
+            except Exception as e:
+                tb = traceback.format_exc()
+                self._write_fail("seed", cfg, seed, "nodes", str(e), tb)
+                LOG.error(f"seed-failed; nodes setup: {e}")
+                self._print_seed_summary(cfg, seed, None, None, "nodes setup failed")
+                return
 
             phase = "ensure_namespace"
-            LOG.info("phase=%s  cfg=%s  seed=%s", phase, cfg.stem, seed)
-            self._ensure_namespace(self.ctx, ta.namespace, recreate=True)
-            self._ensure_namespace(self.ctx, "leaderboard", recreate=False)
+            LOG.info(f"phase={phase}")
+            self._ensure_namespace(self.ctx, ta.namespace, recreate=False)
+            self._ensure_namespace(self.ctx, CM_STATS_NAMESPACE, recreate=False)
+            self._ensure_service_account(self.ctx, ta.namespace, "default")
 
             phase = "ensure_priority_classes"
-            LOG.info("phase=%s  cfg=%s  seed=%s", phase, cfg.stem, seed)
+            LOG.info(f"phase={phase}")
             self._ensure_priority_classes(self.ctx, ta.num_priorities, prefix="p", start=1, delete_extras=True)
 
             alloc_cpu_m = ta.node_m * ta.num_nodes
@@ -1886,7 +1923,7 @@ class KwokTestGenerator:
             tgt_b_cluster  = int(alloc_mem_b * ta.util)
 
             phase = "apply_workload"
-            LOG.info(f"cfg={cfg.stem}  seed={seed}  phase={phase}  mode={'RS' if ta.num_replicaset>0 else 'standalone'}")
+            LOG.info(f"phase={phase}  mode={'RS' if ta.num_replicaset>0 else 'standalone'}")
             pod_specs: list[dict] = []
             rs_specs:  list[dict] = []
             if ta.num_replicaset > 0:
@@ -1903,13 +1940,13 @@ class KwokTestGenerator:
                 pod_specs = self._apply_standalone_pods(cfg, seed, ta, rng_layout)
 
             phase = "events_snapshot"
-            LOG.info(f"cfg={cfg.stem}  seed={seed}  phase={phase}")
+            LOG.info(f"phase={phase}")
             _, scheduled_pairs, unschedulable_names = get_scheduled_and_unscheduled(
                 self.ctx, ta.namespace, expected=ta.total_pods, settle_timeout=ta.settle_timeout_s
             )
 
             phase = "stats_snapshot"
-            LOG.info(f"cfg={cfg.stem}  seed={seed}  phase={phase}")
+            LOG.info(f"phase={phase}")
             placed_by_priority = self._count_running_by_priority(self.ctx, ta.namespace)
             snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.total_pods, settle_timeout=ta.settle_timeout_s)
 
@@ -1949,26 +1986,26 @@ class KwokTestGenerator:
             }
             
             phase = "write_results"
-            LOG.info(f"cfg={cfg.stem}  seed={seed}  phase={phase}  rows=1")
+            LOG.info(f"phase={phase}")
 
             if save_allowed:
                 if self.args.overwrite and exists:
                     removed = self._remove_seed_from_results(cfg.stem, seed)
-                    LOG.info("overwrite enabled: removed %d existing row(s) for seed=%s", removed, seed)
+                    LOG.info(f"overwrite enabled: removed {removed} existing row(s) for seed={seed}")
 
                 dest_csv = self._pick_results_csv_to_write(cfg.stem, rows_to_add=1)
                 self._ensure_csv_with_header(dest_csv, RESULTS_HEADER)
                 csv_append_row(dest_csv, RESULTS_HEADER, result_row)
-                LOG.info(f"cfg={cfg.stem}  seed={seed}  appended to {dest_csv.name}")
+                LOG.info(f"appended to {dest_csv.name}")
             else:
-                LOG.info(f"cfg={cfg.stem}  seed={seed}  not saved (already exists; use --overwrite to replace)")
+                LOG.info(f"not saved (already exists; use --overwrite to replace)")
             
-            # --- save leaderboard ---
-            phase = "save_leaderboard"
-            LOG.info(f"cfg={cfg.stem}  seed={seed}  phase={phase}")
-            self._save_leaderboard_csv(cfg, seed)
-            
-            LOG.info(f"cfg={cfg.stem}  seed={seed}  done; took {time.time()-start_time:.1f}s")
+            # --- save stats ---
+            phase = "save_stats"
+            LOG.info(f"phase={phase}")
+            self._save_stats_csv(cfg, seed)
+
+            LOG.info(f"done; took {time.time()-start_time:.1f}s")
             self._print_seed_summary(cfg, seed, len(scheduled_pairs), len(unschedulable_names))
 
         except RuntimeError as e:
@@ -2065,29 +2102,6 @@ class KwokTestGenerator:
             return
 
         self.ctx = f"kwok-{self.args.cluster_name}"
-
-        try:
-            KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.kwok_runtime, cfg, recreate=True)
-        except Exception as e:
-            LOG.error(f"config-failed; ensure cluster {cfg}: {e}")
-            with open(self.failed_f, "a", encoding="utf-8") as f:
-                f.write(f"config\t{cfg}\t-\t{e}\n")
-            self._print_seed_summary(cfg, self.args.seed, None, None, "ensure cluster failed")
-            return
-
-        DEFAULT_POD_CAP = max(30, raw.pods_per_node * 3)
-        try:
-            LOG.info("phase=nodes: deleting old KWOK nodes …")
-            KwokTestGenerator._delete_kwok_nodes(self.ctx)
-            LOG.info("phase=nodes: creating KWOK nodes …")
-            KwokTestGenerator._create_kwok_nodes(self.ctx, raw.num_nodes, raw.node_cpu, raw.node_mem, pods_cap=DEFAULT_POD_CAP)
-            LOG.info("phase=nodes: done")
-        except Exception as e:
-            tb = traceback.format_exc()
-            self._write_fail("config", cfg, None, "nodes", str(e), tb)
-            LOG.error(f"config-failed; nodes setup: {e}")
-            self._print_seed_summary(cfg, self.args.seed, None, None, "nodes setup failed")
-            return
 
         seen = self._load_seen_results(cfg.stem)
         
@@ -2288,7 +2302,7 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--results-dir", dest="results_dir", default="./data/results",
                     help="Directory to store results CSV files (one per KWOK config)")  
     ap.add_argument("--overwrite", action="store_true",
-                    help="Replace any existing results for the same seed (results rows and leaderboard CSVs).")
+                    help="Replace any existing results for the same seed (results rows and stats CSVs).")
     
     # rotation
     ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=500000,

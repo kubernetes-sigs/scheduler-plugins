@@ -806,6 +806,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	}
 	klog.InfoS("deactivating active plan", "planID", ap.ID)
 	_ = pl.markPlanStatus(context.Background(), ap.ID, status)
+	_ = pl.markExportedStatsPlanStatus(context.Background(), status)
 	return true
 }
 
@@ -1196,6 +1197,48 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 		patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
 		_, err = pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
 			Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
+		return err
+	})
+}
+
+// markExportedStatsPlanStatus sets/updates the last run's "plan_status"
+// in the exported stats ConfigMap (namespace/name/key from solver_helpers.go).
+// Rules mirror markPlanStatus: once in a final state (Completed or Failed) we
+// don't change it; specifically we never overwrite Failed with Completed.
+func (pl *MyCrossNodePreemption) markExportedStatsPlanStatus(ctx context.Context, status PlanStatus) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		cms := pl.Client.CoreV1().ConfigMaps(cmExportedStatsNamespace)
+		cm, err := cms.Get(ctx, cmExportedStatsName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) || cm == nil {
+			return nil // nothing to do
+		}
+		if err != nil {
+			return err
+		}
+		raw := cm.Data[cmExportedStatsKey]
+		if raw == "" {
+			return nil
+		}
+		var runs []ExportedStats
+		if err := json.Unmarshal([]byte(raw), &runs); err != nil {
+			klog.ErrorS(err, "markExportedStatsLastPlanStatus: cannot decode runs.json")
+			return nil
+		}
+		if len(runs) == 0 {
+			return nil
+		}
+
+		prev := runs[len(runs)-1].PlanStatus
+		// Final is sticky. In particular, never set Completed if it was Failed.
+		if prev == PlanStatusCompleted || prev == PlanStatusFailed {
+			// already final; don't change
+		} else {
+			runs[len(runs)-1].PlanStatus = status
+		}
+
+		buf, _ := json.Marshal(runs)
+		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, cmExportedStatsKey, string(buf)))
+		_, err = cms.Patch(ctx, cmExportedStatsName, types.MergePatchType, patch, metav1.PatchOptions{})
 		return err
 	})
 }
