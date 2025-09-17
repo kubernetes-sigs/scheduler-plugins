@@ -1015,7 +1015,7 @@ class KwokTestGenerator:
             LOG.info(f"recreating kwok cluster '{cluster_name}'")
             # Protect kubeconfig edits during delete as well
             with KwokTestGenerator._kwok_cache_lock():
-                subprocess.run(["kwokctl", "delete", "cluster", "--name", cluster_name], check=False)
+                KwokTestGenerator._run_kwokctl_logged("delete", "cluster", "--name", cluster_name, check=False)
 
         # Guard the 'create cluster' step to avoid cache download races.
         if cfg_path and cfg_path.exists():
@@ -1051,7 +1051,7 @@ class KwokTestGenerator:
         Delete all KWOK nodes in the given context.
         """
         LOG.info(f"deleting all kwok nodes in ctx={ctx}...")
-        r = subprocess.run(["kubectl","--context",ctx,"get","nodes","-l","type=kwok","-o","json"],
+        r = subprocess.run(["kubectl", "--context", ctx, "get", "nodes", "-l", "type=kwok", "-o", "json"],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         if r.returncode != 0:
             return
@@ -1144,8 +1144,7 @@ class KwokTestGenerator:
                 continue
             # Only delete our own prefixed PCs, never system/global defaults, and only if not desired
             if name.startswith(prefix) and name not in desired and name not in system_names and not global_default:
-                subprocess.run(["kubectl","--context",ctx,"delete","priorityclass.scheduling.k8s.io", name],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                KwokTestGenerator._run_kubectl_logged(ctx, "delete", "priorityclass.scheduling.k8s.io", name, check=False)
 
     @staticmethod
     def _wait_each(ctx: str, kind: str, name: str, ns: str, timeout_sec: int, mode: str) -> int:
@@ -1171,7 +1170,7 @@ class KwokTestGenerator:
         """
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
-            r = subprocess.run(["kubectl","--context",ctx,"-n",ns,"get","pod",name,"-o","json"],
+            r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "pod", name, "-o", "json"],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
             if mode == "exist":
@@ -1215,7 +1214,7 @@ class KwokTestGenerator:
         while time.time() < deadline:
             desired = KwokTestGenerator._get_rs_spec_replicas(ctx, ns, rs_name)
 
-            r = subprocess.run(["kubectl","--context",ctx,"-n",ns,"get","pods","-l",f"app={rs_name}","-o","json"],
+            r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "pods", "-l", f"app={rs_name}", "-o", "json"],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             if r.returncode != 0:
                 time.sleep(0.5); continue
