@@ -4,10 +4,6 @@
 
 An improved cross-node preemption plugin that addresses the limitations of the default scheduler's preemption. This plugin implements efficient algorithms for cross-node preemption with optimization strategies.
 
-### Scheduling flow
-
-TODO_HC
-
 ## Build and Run
 
 ### Prerequisites
@@ -110,7 +106,28 @@ To delete the VM, run:
 vagrant destroy -f
 ```
 
-## Useful commands
+## Test scripts
+
+Some useful test scripts can be found in `bootstrap/content/scripts/kwok/`:
+
+- `kwok_test_generator.py`: Generates a KWOK cluster with random pods and runs the scheduler with the plugin.
+- `kwok_stats.py`: Gathers statistics from the KWOK cluster e.g. number of scheduled pods, current utilization, etc.
+
+## Plugin Description
+
+TODO_HC
+
+### Configuration of the plugin
+
+### Solvers
+
+#### Local-search solver
+
+#### BFS solver
+
+#### Python (CP-SAT) solver
+
+## Useful kubectl/kwokctl commands
 
 - Get all pods
 
@@ -149,17 +166,6 @@ vagrant destroy -f
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
 ```
-
-## Test
-
-```bash
-# Create cluster
-./kind-create-cluster.sh mycluster 3
-
-# Load plugins
-./kind-load-plugins.sh mycluster "MyCrossNodePreemption"
-```
-
 
 ## TODOs
 
@@ -220,8 +226,3 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 Lad os forestille os, at vi har fem legokasser fyldt med klodser i forskellige størrelser. Vi har netop købt nogle nye klodser, som vi gerne vil lægge ned i kasserne. Problemet er, at ingen af kasserne umiddelbart har plads nok, fordi de allerede næsten er fyldt. For at få plads kan vi derfor vælge at flytte nogle af de eksisterende klodser over i andre kasser, hvor der stadig er lidt ledig plads.
 
 Men her opstår en kaskadeeffekt: når vi flytter én klods fra kasse A til kasse B, kan vi være nødt til at flytte en anden klods fra kasse B videre til kasse C – og så fremdeles – før vi til sidst får frigjort nok plads til de nye klodser. Denne kædereaktion kan blive lang og kompliceret. Derfor er målet ikke kun at få plads til de nye klodser, men også at gøre det med så få flytninger som muligt.
-
-## Developed
-
-TODO_HC
-
