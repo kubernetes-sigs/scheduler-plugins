@@ -172,7 +172,7 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - Make the test plan.
 - Write a proper README.md
 
-## TODOs Test
+### Test
 
 - Test at which utilization the default scheduler stops to work properly.
 - Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
@@ -180,7 +180,7 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - Test the plugin works across workload type.
 - Test CP-SAT vs. other solvers.
 
-## Later TODOs
+## Later
 
 - Make use of design patterns where possible.
 - Create unit and integration tests.
@@ -190,7 +190,7 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
 - Fix TODOs
 
-## Write
+### Write
 
 - Write about that we always recreate the cluster also when just running a new seed, as we do not know if any state in the cluster is preventing us from scheduling.
 - Write about that we did not use globally installed python packages due to PEP 668 in UCLOUD.
@@ -212,16 +212,18 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
 - Write about that Optimizer is not deterministic, when having multiple workers. However, we need multiple workers, otherwise it is too slow.
 
-## Open Questions
+## Questions
 
-## Closed Questions
+### Open Questions
+
+### Closed Questions
 
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately
 - What to do with node-selectors, PDBs, and other rules.
   - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
 
-## Analogy
+## Analogy of the problem to be solved
 
 Lad os forestille os, at vi har fem legokasser fyldt med klodser i forskellige størrelser. Vi har netop købt nogle nye klodser, som vi gerne vil lægge ned i kasserne. Problemet er, at ingen af kasserne umiddelbart har plads nok, fordi de allerede næsten er fyldt. For at få plads kan vi derfor vælge at flytte nogle af de eksisterende klodser over i andre kasser, hvor der stadig er lidt ledig plads.
 
