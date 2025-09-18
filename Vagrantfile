@@ -16,10 +16,11 @@
     cd /home/vagrant/bootstrap
     find . -type f -name '*.sh' -print0 | xargs -0 -r sed -i 's/\r$//'
     /usr/bin/env bash ./bootstrap.sh all \
-      --build-scheduler=false \
+      --build-scheduler=true \
       --content-dir /home/vagrant/bootstrap/content \
+      --image-remote-tag henrikdc/master:dev \
       --kwok-cluster kwok-a \
-      --kwok-runtime binary \
+      --kwok-runtime docker \
       --kwok-config-dir data/configs/a \
       --results-dir data/results/a \
       --seed-file data/seeds/001.txt \

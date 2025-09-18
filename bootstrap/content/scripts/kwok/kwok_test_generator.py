@@ -2294,19 +2294,21 @@ def build_argparser() -> argparse.ArgumentParser:
     
     
     ap.add_argument("--cluster-name", dest="cluster_name", default="kwok1",
-                    help="KWOK cluster name")
+                    help="A unique KWOK cluster name (default: kwok1).")
     ap.add_argument("--kwok-runtime", dest="kwok_runtime", default="docker",
-                    help="KWOK runtime (binary or docker)")
+                    help="KWOK runtime 'binary' or 'docker' (default: docker). "
+                    "If 'binary' it is expected to be 'bin/kube-scheduler'. "
+                    "If 'docker', it is expected to have the tag 'localhost:5000/scheduler-plugins/kube-scheduler:dev'.")
     ap.add_argument("--config-dir", dest="config_dir", default=None,
                     help="Directory containing one or more KWOK config YAMLs")
     ap.add_argument("--results-dir", dest="results_dir", default="./data/results",
-                    help="Directory to store results CSV files (one per KWOK config)")  
+                    help="Directory to store results CSV files, one per KWOK config (default: ./data/results).")
     ap.add_argument("--overwrite", action="store_true",
                     help="Replace any existing results for the same seed (results rows and stats CSVs).")
     
     # rotation
-    ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=500000,
-                    help="Maximum number of data rows per results CSV before rotating to <name>_N.csv")
+    ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=50_0000,
+                    help="Maximum number of data rows per results CSV before rotating to <name>_N.csv (default 50.0000).")
 
     # seeds
     ap.add_argument("--seed", type=int, default=None,
@@ -2316,10 +2318,10 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--generate-seeds-to-file", dest="generate_seeds_to_file", default=None,
                     help="Write --count random seeds (one per line, no header) to this file, then exit. Cannot be combined with --seed/--seed-file.")
     ap.add_argument("--count", type=int, default=None,
-                    help="Generate random seeds; -1=infinite.")
+                    help="It will generate the specified number of random seeds; -1=infinite.")
     
     # matrix
-    ap.add_argument("--matrix-file", help="CSV with columns: cluster-name,kwok-runtime,config-dir,results-dir,seed-file")
+    ap.add_argument("--matrix-file", help="To reduce the number of required parameters to the script, a CSV file can be provided with the following columns: 'cluster-name,config-dir,results-dir,seed-file' (one row per run, and cluster-name must be unique).")
     ap.add_argument("--matrix-parallel", type=int, dest="matrix_parallel", default=1, help="Max concurrent runs when using --matrix-file (default 1).")
 
     # test mode
@@ -2330,7 +2332,7 @@ def build_argparser() -> argparse.ArgumentParser:
     # logging
     ap.add_argument("--log-level", dest="log_level",
                     default=os.environ.get("KWOK_LOG_LEVEL", "INFO"),
-                    help="Logging level (DEBUG, INFO, WARNING, ERROR). Default: INFO")
+                    help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO)")
 
     # Note: other args are provided in YAML per-config
     return ap

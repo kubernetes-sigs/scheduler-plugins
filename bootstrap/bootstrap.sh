@@ -13,10 +13,10 @@ REPO_OWNER="${REPO_OWNER:-henrikdchristensen}"
 REPO_NAME="${REPO_NAME:-scheduler-plugins}"
 REPO_BRANCH="${REPO_BRANCH:-henrikdc-cross-preemp}"
 REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}"
-REPO_DIR="${REPO_DIR:-${CONTENT_DIR%/}/repo}"
+REPO_DIR="${REPO_DIR:-repo}"              # can be relative to CONTENT_DIR
 
 KWOK_CLUSTER="${KWOK_CLUSTER:-kwok1}"
-KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"  # binary | docker
+KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"    # binary | docker
 
 RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
 KWOK_CONFIG_DIR="${KWOK_CONFIG_DIR:-}"     # can be relative to CONTENT_DIR
@@ -30,12 +30,15 @@ KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 GO_VERSION="${GO_VERSION:-1.24.3}"
 GO_ARCH="${GO_ARCH:-amd64}"
 
-SCHED_IMAGE_TAG="${SCHED_IMAGE_TAG:-localhost:5000/scheduler-plugins/kube-scheduler:dev}"
+IMAGE_REMOTE_TAG="${IMAGE_REMOTE_TAG:-localhost:5000/scheduler-plugins/kube-scheduler:dev}"
+IMAGE_TAG_RESOLVED="${IMAGE_TAG_RESOLVED:-${IMAGE_REMOTE_TAG}}"
 
 VENV_DIR="/opt/venv"
 SOLVER_DIR="/opt/solver"
 
-# ---------- Helpers ----------
+########################## Helpers ##########################
+#############################################################
+
 log(){ printf '[%s] %s\n' "$1" "$2"; }
 die(){ log error "$1"; exit 1; }
 
@@ -59,27 +62,25 @@ wait_for_dir() {
 }
 
 # Return absolute path: if input is empty => empty; if absolute => as-is; else => CONTENT_DIR/<input>
+# Return absolute path: if input is empty => empty; if absolute => as-is; else => CONTENT_DIR/<input>
 to_abs_under_folder() {
-  local p="${1:-}"
-  if [ -z "$p" ]; then
+  local path="${1:-}"
+  if [ -z "$path" ]; then
     echo ""
-  elif [[ "$p" = /* ]]; then
-    echo "$p"
+  elif [[ "$path" = /* ]]; then
+    echo "$path"
   else
-    echo "${CONTENT_DIR%/}/$p"
+    echo "${CONTENT_DIR%/}/$path"
   fi
 }
 
 # Normalize all user-provided paths against CONTENT_DIR
 resolve_paths_relative_to_folder() {
-  # Make sure CONTENT_DIR exists and is absolute
-  [ -d "$CONTENT_DIR" ] || die "CONTENT_DIR not found: $CONTENT_DIR"
-  CONTENT_DIR="$(cd "$CONTENT_DIR" && pwd -P)"
-
   KWOK_CONFIG_DIR="$(to_abs_under_folder "$KWOK_CONFIG_DIR")"
   RESULTS_DIR="$(to_abs_under_folder "$RESULTS_DIR")"
   SEED_FILE="$(to_abs_under_folder "$SEED_FILE")"
   MATRIX_FILE="$(to_abs_under_folder "$MATRIX_FILE")"
+  REPO_DIR="$(to_abs_under_folder "$REPO_DIR")"
 }
 
 print_cfg() {
@@ -94,14 +95,15 @@ print_cfg() {
     log cfg "KWOK_CONFIG_DIR=${KWOK_CONFIG_DIR:-<unset>}"
     log cfg "RESULTS_DIR=${RESULTS_DIR:-<unset>}"
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
+    log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
   fi
   if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "docker" ]; then
-    log cfg "SCHED_IMAGE_TAG=${SCHED_IMAGE_TAG}"
+    log cfg "IMAGE_REMOTE_TAG=${IMAGE_REMOTE_TAG}"
   fi
-  
 }
 
-# ---------- Stages ----------
+######################## Stage Setup ########################
+#############################################################
 stage_setup() {
   log init "setup starting"
 
@@ -112,19 +114,23 @@ stage_setup() {
     apt-get update
     apt-get install -y --no-install-recommends git ca-certificates curl make python3 python3-pip python3-venv"
 
-  # Clone only if we're going to build
+  # Clone only if we need to build
   if [ "${BUILD_SCHEDULER}" = "true" ]; then
     if [ ! -d "${REPO_DIR}/.git" ]; then
       cd '/tmp'
-      log init "cloning https://github.com/${REPO_OWNER}/${REPO_NAME}#${REPO_BRANCH}"
+      log init "cloning https://github.com/${REPO_OWNER}/${REPO_NAME}#${REPO_BRANCH} to ${REPO_DIR}"
+      run_root "install -d -m 0755 '$(dirname "${REPO_DIR}")'"
       run_root "git clone --branch '${REPO_BRANCH}' --single-branch '${REPO_URL}' '${REPO_DIR}'"
-      run_root "chown -R '${TARGET_USER}:${TARGET_USER}' '${REPO_DIR}'"
+      log ok "cloned repo to ${REPO_DIR}"
     else
+      log init "updating existing repo in ${REPO_DIR}"
       run_root "cd '${REPO_DIR}' && git fetch && git checkout '${REPO_BRANCH}' && git pull --ff-only || true"
+      log ok "updated repo in ${REPO_DIR}"
     fi
   fi
 
   # kubectl/kwokctl/kwok
+  log init "installing kubectl ${KUBECTL_VERSION}, kwokctl ${KWOK_VERSION}, kwok ${KWOK_VERSION}"
   run_root "
     cd /tmp
     curl -fsSLo kubectl https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl
@@ -138,10 +144,11 @@ stage_setup() {
   kubectl version --client=true >/dev/null 2>&1 || die "kubectl not installed"
   kwokctl --version >/dev/null 2>&1 || die "kwokctl not installed"
   kwok --version    >/dev/null 2>&1 || die "kwok not installed"
+  log ok "kubectl/kwokctl/kwok installed"
 
-  # --- Runtime prerequisites ---
+  # Docker (if needed)
   if [ "${KWOK_RUNTIME}" = "docker" ]; then
-    # Always ensure Docker is available for docker runtime (build or not)
+    log init "installing docker"
     run_root "
       install -m 0755 -d /etc/apt/keyrings
       if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
@@ -154,25 +161,12 @@ https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$UBUNTU
       systemctl enable --now docker
     "
     docker --version >/dev/null 2>&1 || die "docker not installed"
-    if ! id -nG "${TARGET_USER}" | tr ' ' '\n' | grep -qx docker; then
-      run_root "usermod -aG docker '${TARGET_USER}'"
-    fi
-
-    # If we're NOT building, ensure the scheduler image is present
-    if [ "${BUILD_SCHEDULER}" != "true" ]; then
-      if ! docker image inspect "${SCHED_IMAGE_TAG}" >/dev/null 2>&1; then
-        log warn "image '${SCHED_IMAGE_TAG}' not found locally; attempting docker pull"
-        if ! docker pull "${SCHED_IMAGE_TAG}"; then
-          die "KWOK_RUNTIME=docker but image '${SCHED_IMAGE_TAG}' not present and pull failed. \
-Place the image locally (docker load/tag) or set BUILD_SCHEDULER=true."
-        fi
-      fi
-      log ok "scheduler image present: ${SCHED_IMAGE_TAG}"
-    fi
+    log ok "docker installed"
   fi
 
-  # Build-time prerequisites for binary build only
+  # Go (if needed)
   if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "binary" ]; then
+    log init "installing Go ${GO_VERSION}"
     run_root "
       curl -fsSLo /tmp/go.tgz https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz
       rm -rf /usr/local/go
@@ -186,17 +180,21 @@ EOF_G
     "
     export PATH="/usr/local/go/bin:${PATH}"
     go version >/dev/null 2>&1 || die "go not installed"
+    log ok "Go installed"
   fi
-
-  log ok "setup complete"
+  
+  log ok "setup done"
 }
 
-
-# ---- stage_build: only build when BUILD_SCHEDULER=true; always set up venv ----
+######################## Stage Build ########################
+#############################################################
 stage_build() {
+  log init "build starting"
+
   resolve_paths_relative_to_folder
   print_cfg
 
+  log init "staging solver to ${SOLVER_DIR} (venv @ ${VENV_DIR})"
   run_root "
     set -euo pipefail
     install -d -m 0755 '${SOLVER_DIR}'
@@ -208,9 +206,10 @@ stage_build() {
   "
   log ok "staged solver (venv @ ${VENV_DIR})"
 
+  # Build scheduler (if needed)
   if [ "${BUILD_SCHEDULER}" = "true" ]; then
-    if [ "${KWOK_RUNTIME}" = "binary" ]; then
-      # Build kube-scheduler binary as TARGET_USER; copy under CONTENT_DIR/bin
+    if [ "${KWOK_RUNTIME}" = "binary" ]; then # build binary
+      log init "building kube-scheduler binary"
       run_root "
         set -euo pipefail
         export PATH=\"/usr/local/go/bin:\$PATH\"  # from setup stage
@@ -219,35 +218,50 @@ stage_build() {
         install -d -m 0755 '${CONTENT_DIR}/bin'
         install -m 0755 '${REPO_DIR}/bin/kube-scheduler' '${CONTENT_DIR}/bin/kube-scheduler'
       "
-      log ok "built kube-scheduler binary -> ${CONTENT_DIR}/bin/kube-scheduler"
-    else
-      # Build container image as TARGET_USER (requires docker group membership from setup)
+      log ok "built binary: ${CONTENT_DIR}/bin/kube-scheduler"
+    else # build docker image
+      log init "building kube-scheduler docker image"
       run_root "
         set -euo pipefail
         cd '${REPO_DIR}'
-        DOCKER_BUILDKIT=1 docker build -t '${SCHED_IMAGE_TAG}' -f build/scheduler/Dockerfile .
+        docker build -t '${IMAGE_TAG_RESOLVED}' -f build/scheduler/Dockerfile .
       "
-      log ok "built image: ${SCHED_IMAGE_TAG}"
+      log ok "built image: ${IMAGE_TAG_RESOLVED}"
     fi
   else
     # Not building: ensure the binary is present for binary runtime
-    if [ "${KWOK_RUNTIME}" = "binary" ]; then
+    if [ "${KWOK_RUNTIME}" = "binary" ]; then # binary
       run_root "test -x '${CONTENT_DIR}/bin/kube-scheduler'" \
         || die "KWOK_RUNTIME=binary but no prebuilt scheduler at '${CONTENT_DIR}/bin/kube-scheduler'. Set BUILD_SCHEDULER=true or place the binary there."
+    else # docker
+      if ! docker image inspect "${IMAGE_TAG_RESOLVED}" >/dev/null 2>&1; then
+        log warn "image '${IMAGE_TAG_RESOLVED}' not found locally; attempting docker pull"
+        if ! docker pull "${IMAGE_REMOTE_TAG}"; then
+          die "KWOK_RUNTIME=docker but image '${IMAGE_REMOTE_TAG}' not present and pull failed. \
+Place the image locally (docker load/tag) or set BUILD_SCHEDULER=true."
+        fi
+        docker tag "${IMAGE_REMOTE_TAG}" "${IMAGE_TAG_RESOLVED}"
+      fi
+      log ok "scheduler image present: ${IMAGE_TAG_RESOLVED}"
     fi
   fi
+
+  log ok "build done"
 }
 
-
+######################## Stage Test #########################
+#############################################################
 stage_test() {
+  log init "KWOK test starting"
   resolve_paths_relative_to_folder
   print_cfg
-
-  # KWOK helper requirements
+  log init "ensuring KWOK_CONFIG_DIR='${KWOK_CONFIG_DIR}' exists"
   run_root "'${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok/requirements.txt'"
+  log ok "KWOK_CONFIG_DIR='${KWOK_CONFIG_DIR}' exists"
 
   # Run: matrix mode vs single-run mode
   if [ -n "${MATRIX_FILE}" ]; then
+    log init "running in matrix mode"
     run_root "cd '${CONTENT_DIR}' && \
       chmod +x './bin/kube-scheduler' && \
       '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
@@ -255,6 +269,7 @@ stage_test() {
         --matrix-file '${MATRIX_FILE}' \
         --matrix-parallel '${MATRIX_PARALLEL}'"
   else
+    log init "running single test"
     run_root "cd '${CONTENT_DIR}' && \
       chmod +x './bin/kube-scheduler' && \
       '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
@@ -265,10 +280,11 @@ stage_test() {
         --seed-file '${SEED_FILE}'"
   fi
 
-  log ok "KWOK test done"
+  log ok "test done"
 }
 
-# ---------- Args & Dispatch ----------
+##################### Args and Dispatch #####################
+#############################################################
 cmd="all"
 case "${1-}" in all|setup-build|test) cmd="$1"; shift;; esac
 
@@ -278,6 +294,8 @@ while [ $# -gt 0 ]; do
     --build-scheduler)    BUILD_SCHEDULER="$2"; shift;;
     --content-dir=*)      CONTENT_DIR="${1#*=}";;
     --content-dir)        CONTENT_DIR="$2"; shift;;
+    --image-remote-tag=*) IMAGE_REMOTE_TAG="${1#*=}";;
+    --image-remote-tag)   IMAGE_REMOTE_TAG="$2"; shift;;
     --kwok-cluster=*)     KWOK_CLUSTER="${1#*=}";;
     --kwok-cluster)       KWOK_CLUSTER="$2"; shift;;
     --kwok-runtime=*)     KWOK_RUNTIME="${1#*=}";;
