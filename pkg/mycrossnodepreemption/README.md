@@ -1,14 +1,78 @@
-# MyCrossNodePreemption Plugin
 
-## Overview
+# Table of Contents
 
-An improved cross-node preemption plugin that addresses the limitations of the default scheduler's preemption. This plugin implements efficient algorithms for cross-node preemption with optimization strategies.
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+  - [Analogy of the problem to be solved](#analogy-of-the-problem-to-be-solved)
+  - [Plugin Description](#plugin-description)
+  - [Solvers](#solvers)
+- [Build and Run](#build-and-run)
+  - [Prerequisites](#prerequisites)
+  - [Build the Python environment (for Python solver)](#build-the-python-environment-for-python-solver)
+  - [Build the scheduler with the plugin](#build-the-scheduler-with-the-plugin)
+    - [Building the binary](#building-the-binary)
+    - [Building the docker image (recommended for faster builds)](#building-the-docker-image-recommended-for-faster-builds)
+  - [Run the scheduler with the plugin on a KWOK cluster (Automated)](#run-the-scheduler-with-the-plugin-on-a-kwok-cluster-automated)
+  - [Run the scheduler with the plugin on a KWOK cluster (Manual)](#run-the-scheduler-with-the-plugin-on-a-kwok-cluster-manual)
+  - [Run the scheduler with the plugin on a Kind cluster](#run-the-scheduler-with-the-plugin-on-a-kind-cluster)
+- [Bootstrap a VM](#bootstrap-a-vm)
+- [Test scripts](#test-scripts)
+- [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
+- [Install Metrics API in kind cluster](#install-metrics-api-in-kind-cluster)
+- [TODOs](#todos)
+  - [Test](#test)
+- [Later](#later)
+  - [Write](#write)
+- [Questions](#questions)
+  - [Open Questions](#open-questions)
+  - [Closed Questions](#closed-questions)
 
-## Build and Run
+# Overview
 
-### Prerequisites
+This project introduces an improved cross-node preemption plugin for Kubernetes that overcomes the limitations of the default scheduler’s preemption mechanism.
 
-The following tools are required (if Windows host, use WSL2 w/ e.g. Ubuntu):
+Whereas the default scheduler only preempts pods within a single node, this plugin is capable of reasoning across multiple nodes simultaneously. It implements efficient algorithms to decide which pods to move or evict, with the aim of admitting high-priority workloads while minimizing disruption.
+
+## Analogy of the problem to be solved
+
+Let's imagine we have five Lego boxes filled with bricks of different sizes. We've just bought some new bricks that we want to put into the boxes. The problem is that none of the boxes have enough free space, since they are already nearly full. To make room, we can choose to move some of the existing bricks into other boxes that still have a little free space.
+
+But here a cascade effect occurs: when we move one brick from box A to box B, we may need to move another brick from box B into box C – and so on – before we finally free up enough space for the new bricks. This chain reaction can become long and complicated. That’s why the goal is not only to make room for the new bricks, but also to do it with as few moves as possible.
+
+In Kubernetes, this is exactly the situation when high-priority pods need to be scheduled but the cluster is fragmented. The plugin's goal is to resolve this efficiently and fairly across the entire cluster.
+
+## Plugin Description
+
+The Cross-Node Preemption Plugin extends the Kubernetes scheduler with the ability to:
+
+- Perform cluster-wide reasoning: Instead of being limited to a single node, the plugin evaluates all nodes simultaneously when deciding how to schedule a pending pod.
+- Optimize across multiple strategies: It supports different solver back-ends (BFS search, local search, or external solvers like OR-Tools) to find feasible placements.
+- Reduce disruption: By modeling pod evictions and relocations, it aims to minimize the number of pods that must be preempted or moved.
+- Support multiple optimization modes:
+  - For every pod – re-optimize whenever a new pod arrives.
+  - In batches – group pending pods and solve them together.
+  - Continuously – keep optimizing placements as the workload evolves.
+- Integrate with scheduling phases: The plugin can be triggered at different points in the scheduling cycle (pre-enqueue or post-filter), making it adaptable to diverse workloads.
+
+In short, this plugin enhances Kubernetes scheduling by making cross-node preemption both possible and practical, while ensuring better resource utilization.
+
+The code of the plugin can be found in `pkg/mycrossnodepreemption/`.
+
+## Solvers
+
+The plugin includes three different solvers to find optimal or near-optimal preemption plans:
+
+1. **Swap-based local-search solver**: A fast heuristic solver that iteratively tries to relocate pods to free up space.
+2. **Breadth-First Search (BFS) solver**: An exhaustive solver that tries to free a node by exploring pod relocations. Each depth level in the search tree corresponds to one move of a pod.
+3. **Python (CP-SAT) solver**: A solver using Google's CP-SAT solver to find an optimal placement of pods. The code for this solver is located in `bootstrap/content/scripts/python_solver/main.py`.
+
+The first two solvers are implemented in Go, while the third solver is implemented in Python and requires a Python environment.
+
+# Build and Run
+
+## Prerequisites
+
+The following tools are required (if Windows host, use WSL2 w/ e.g. Ubuntu) to build and run the scheduler with the plugin:
 
 - git (tested with 2.43.0)
 - make (tested with 4.3)
@@ -18,13 +82,9 @@ The following tools are required (if Windows host, use WSL2 w/ e.g. Ubuntu):
 - kwok+kwokctl (tested with v0.7.0)
 - Go (tested with 1.24.3)
 
-Currently, it is only tested on amd64 architecture.
+Currently, it is only tested on amd64 architecture and some code may need to be modified to run on other architectures.
 
-### Build the scheduler with the plugin
-
-The scheduler with the plugin can be built either as a binary or as a docker image.
-
-Common steps to set up the python solver environment:
+## Build the Python environment (for Python solver)
 
 ```bash
 sudo install -d -m 0755 /opt/venv/
@@ -35,28 +95,35 @@ sudo /opt/venv/bin/python -m pip install --upgrade pip
 sudo /opt/venv/bin/pip install --no-cache-dir -r bootstrap/content/scripts/python_solver/requirements.txt
 ```
 
-#### Building the binary
+## Build the scheduler with the plugin
+
+The scheduler with the plugin can be built either as a binary or as a docker image.
+
+### Building the binary
+
+To build the binary, run the following command in the root of the repo:
 
 ```bash
 make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
 ```
 
-#### Building the docker image (recommended for faster builds)
+### Building the docker image (recommended for faster builds)
 
-To build the docker image, docker (tested with v28.3.2) and docker-buildx-plugin (tested with v0.25.0) must be installed.
+To build the docker image, docker (tested with v28.3.2) and docker-buildx-plugin (tested with v0.25.0) must be installed, then run the following command in the root of the repo:
 
 ```bash
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile .
 ```
 
-### Run the scheduler with the plugin on a KWOK cluster
+## Run the scheduler with the plugin on a KWOK cluster (Automated)
 
-The easist way is to use the provided test generator script which can be found in `bootstrap/content/scripts/kwok/kwok_test_generator.py`.
-It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin. It has a number of parameters, see the help:
+To run the scheduler with the plugin on a KWOK cluster, the easiest way is to use the provided test generator script (`bootstrap/content/scripts/kwok/kwok_test_generator.py`). It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin. It has a number of parameters, see the help:
 
 ```bash
 python3 bootstrap/content/scripts/kwok/kwok_test_generator.py --help
 ```
+
+## Run the scheduler with the plugin on a KWOK cluster (Manual)
 
 If you just want to test it manually on a KWOK cluster, first create a scheduler config (see `manifests/mycrossnodepreemption/scheduler-config.yaml`) and a cluster config file (see `bootstrap/content/data/configs/a/01.yaml`). Then create the cluster with kwokctl:
 
@@ -70,7 +137,7 @@ To delete the cluster, run:
 kwokctl delete cluster --name <cluster_name>
 ```
 
-### Run the scheduler with the plugin on a Kind cluster
+## Run the scheduler with the plugin on a Kind cluster
 
 To run the scheduler with the plugin on a Kind cluster, install docker (tested with v28.3.2) + docker-buildx-plugin (tested with v0.25.0) + Kind (tested with v0.20.0), and run the provided script `kind/kind-create-cluster.sh` to create a Kind cluster with some specified number of nodes:
 
@@ -84,9 +151,9 @@ Then load the scheduler image into the Kind cluster (it will also build the imag
 ./kind-load-plugins.sh <cluster_name>
 ```
 
-## Bootstrap a VM
+# Bootstrap a VM
 
-To bootstrap a VM with all prerequisites installed and running tests with KWOK, use the provided init script `bootstrap/bootstrap.sh`.
+To bootstrap a VM with all prerequisites installed and running tests with KWOK, use the provided init script `bootstrap/bootstrap.sh` and upload the content of the `bootstrap/content/`.
 
 To develop and test the init script it can be beneficial to run it in a VM. To make it easy, a Vagrantfile is provided in the root of the repo. It will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install Vagrant and VirtualBox, then run:
 
@@ -106,28 +173,14 @@ To delete the VM, run:
 vagrant destroy -f
 ```
 
-## Test scripts
+# Test scripts
 
 Some useful test scripts can be found in `bootstrap/content/scripts/kwok/`:
 
 - `kwok_test_generator.py`: Generates a KWOK cluster with random pods and runs the scheduler with the plugin.
 - `kwok_stats.py`: Gathers statistics from the KWOK cluster e.g. number of scheduled pods, current utilization, etc.
 
-## Plugin Description
-
-TODO_HC
-
-### Configuration of the plugin
-
-### Solvers
-
-#### Local-search solver
-
-#### BFS solver
-
-#### Python (CP-SAT) solver
-
-## Useful kubectl/kwokctl commands
+# Useful kubectl/kwokctl commands
 
 - Get all pods
 
@@ -160,19 +213,18 @@ TODO_HC
   kubectl --context <ctx> -n <namespace> get events --field-selector involvedObject.kind=Pod -o json | jq '.items[] | {name: .involvedObject.name, reason: .reason, message: .message}'
   ```
 
-## Install Metrics API in kind cluster
+# Install Metrics API in kind cluster
 
 ```bash
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
 ```
 
-## TODOs
+# TODOs
 
 - Make the test plan.
-- Write a proper README.md
 
-### Test
+## Test
 
 - Test at which utilization the default scheduler stops to work properly.
 - Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
@@ -180,7 +232,7 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - Test the plugin works across workload type.
 - Test CP-SAT vs. other solvers.
 
-## Later
+# Later
 
 - Make use of design patterns where possible.
 - Create unit and integration tests.
@@ -190,7 +242,7 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
 - Fix TODOs
 
-### Write
+## Write
 
 - Write about that we always recreate the cluster also when just running a new seed, as we do not know if any state in the cluster is preventing us from scheduling.
 - Write about that we did not use globally installed python packages due to PEP 668 in UCLOUD.
@@ -212,19 +264,13 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
 - Write about that Optimizer is not deterministic, when having multiple workers. However, we need multiple workers, otherwise it is too slow.
 
-## Questions
+# Questions
 
-### Open Questions
+## Open Questions
 
-### Closed Questions
+## Closed Questions
 
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately
 - What to do with node-selectors, PDBs, and other rules.
   - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
-
-## Analogy of the problem to be solved
-
-Lad os forestille os, at vi har fem legokasser fyldt med klodser i forskellige størrelser. Vi har netop købt nogle nye klodser, som vi gerne vil lægge ned i kasserne. Problemet er, at ingen af kasserne umiddelbart har plads nok, fordi de allerede næsten er fyldt. For at få plads kan vi derfor vælge at flytte nogle af de eksisterende klodser over i andre kasser, hvor der stadig er lidt ledig plads.
-
-Men her opstår en kaskadeeffekt: når vi flytter én klods fra kasse A til kasse B, kan vi være nødt til at flytte en anden klods fra kasse B videre til kasse C – og så fremdeles – før vi til sidst får frigjort nok plads til de nye klodser. Denne kædereaktion kan blive lang og kompliceret. Derfor er målet ikke kun at få plads til de nye klodser, men også at gøre det med så få flytninger som muligt.
