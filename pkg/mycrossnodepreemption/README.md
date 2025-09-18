@@ -222,7 +222,9 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 
 # TODOs
 
+- Remove TODOs.
 - Make the test plan.
+- Write scheduling framework section.
 
 ## Test
 
@@ -237,9 +239,9 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - Make use of design patterns where possible.
 - Create unit and integration tests.
 - Find a better way to set verbose level.
-- Add more comments to the code.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
+- Add more comments to the code.
 - Fix TODOs
 
 ## Write
