@@ -142,19 +142,20 @@ def csv_append_row(
 # ---------- stats helpers ----------
 @dataclass
 class Snapshot:
-    cpu_run_util: float             # running requests / total alloc CPU
-    mem_run_util: float             # running requests / total alloc MEM
-    pods_running: list[str]         # total running pods
-    pods_unscheduled: list[str]     # all not-running pods
-    pods_run_by_node: Dict[str,int] # node -> running pods count
-    cpu_req_by_node: Dict[str,int]  # node -> m (Running & assigned only)
-    mem_req_by_node: Dict[str,int]  # node -> bytes (Running & assigned only)
+    cpu_run_util: float                 # running requests / total alloc CPU
+    mem_run_util: float                 # running requests / total alloc MEM
+    pods_running: List[Tuple[str,str]]  # [(pod, node), ...] for Running pods
+    pods_unscheduled: List[str]         # not-Running pod names
+    pods_run_by_node: Dict[str,int]     # node -> running pods count
+    cpu_req_by_node: Dict[str,int]      # node -> mCPU (Running & assigned only)
+    mem_req_by_node: Dict[str,int]      # node -> bytes (Running & assigned only)
+    cpu_alloc_by_node: Dict[str,int]    # node -> allocatable mCPU
+    mem_alloc_by_node: Dict[str,int]    # node -> allocatable bytes
 
 def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Snapshot:
     _, running, unscheduled = get_running_and_unscheduled(
         ctx, ns, expected=expected, settle_timeout=settle_timeout
     )
-    scheduled = [n for (n, _) in running]
     nodes = get_json_ctx(ctx, ["get","nodes","-o","json"])
     pods  = get_json_ctx(ctx, ["-n", ns, "get","pods","-o","json"])
 
@@ -196,6 +197,9 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
     # Running utilization (0..1)
     cpu_run_util = (total_cpu_req_run_m / total_cpu_alloc_m) if total_cpu_alloc_m else 0.0
     mem_run_util = (total_mem_req_run_b / total_mem_alloc_b) if total_mem_alloc_b else 0.0
+    
+    cpu_alloc_by_node = {n:v[0] for n,v in alloc.items()}
+    mem_alloc_by_node = {n:v[1] for n,v in alloc.items()}
 
     return Snapshot(
         cpu_run_util=float(cpu_run_util),
@@ -205,6 +209,8 @@ def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Sn
         pods_run_by_node=pods_run_by_node,
         cpu_req_by_node=cpu_req_m,
         mem_req_by_node=mem_req_b,
+        cpu_alloc_by_node=cpu_alloc_by_node,
+        mem_alloc_by_node=mem_alloc_by_node,
     )
 
 def sum_pod_requests(pod: dict) -> tuple[int, int]:
