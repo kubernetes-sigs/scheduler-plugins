@@ -122,7 +122,7 @@ log "info" "Waiting for scheduler to be ready..."
 SCHED_POD="$(kubectl --context "$CONTEXT" -n kube-system get pods -o name | grep -m1 '^pod/kube-scheduler-')"
 kubectl --context "$CONTEXT" wait --for=condition=Ready -n kube-system "$SCHED_POD" --timeout=90s
 
-# RBAC for scheduler (TODO: might need to be more restrictive)
+# RBAC for scheduler
 log "info" "Creating cluster role binding for scheduler (cluster-admin to kube-scheduler)..."
 kubectl --context "$CONTEXT" create clusterrolebinding scheduler-admin \
   --clusterrole=cluster-admin --user=system:kube-scheduler 2>/dev/null || true
