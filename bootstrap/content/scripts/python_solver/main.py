@@ -228,31 +228,18 @@ def solve(instance: dict) -> dict:
                     m.Add(move[i] == 0)
         m.Add(sum(placed[i] for i in pending_idxs) >= 1)
 
-    # ---------------------- hard constraints from Go hints -------------------
+    # ---------------------- constraints from Go hints (min placed by priority only) -------------------
     if use_hints and isinstance(hints, dict):
         hp = (hints.get("placed_by_priority") or {})
-        max_ev = hints.get("evicted", None)
-        max_mv = hints.get("moved", None)
-
-        # Per-priority lower bounds on placed pods
-        priorities_all = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
-        for pr in priorities_all:
-            need = int(hp.get(str(pr), 0))
-            if need > 0:
-                idxs = [i for i in range(num_pods) if p_pri(i) == pr]
-                if idxs:
-                    m.Add(sum(placed[i] for i in idxs) >= need)
-
-        # Upper bound on evictions (running only)
-        if isinstance(max_ev, int):
-            m.Add(sum(evict[i] for i in running_idxs) <= max_ev)
-
-        # Upper bound on moves (running only)
-        if isinstance(max_mv, int):
-            move_terms_hint = [move[i] for i in running_idxs if move[i] is not None]
-            if move_terms_hint:
-                m.Add(sum(move_terms_hint) <= max_mv)
-            # else: no running pods → no move vars; nothing to add
+        if hp:
+            # Collect all priorities present in the instance
+            priorities_all = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
+            for pr in priorities_all:
+                need = int(hp.get(str(pr), 0))
+                if need > 0:
+                    idxs = [i for i in range(num_pods) if p_pri(i) == pr]
+                    if idxs:
+                        m.Add(sum(placed[i] for i in idxs) >= need)
     
     # ------------------------ solve (two modes) -------------------------
     solver = cp_model.CpSolver()

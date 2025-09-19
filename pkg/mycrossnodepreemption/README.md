@@ -22,7 +22,6 @@
 - [TODOs](#todos)
   - [Test](#test)
 - [Later](#later)
-  - [Write](#write)
 - [Questions](#questions)
   - [Open Questions](#open-questions)
   - [Closed Questions](#closed-questions)
@@ -241,28 +240,6 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
 - Fix TODOs
-
-## Write
-
-- Write about that we always recreate the cluster also when just running a new seed, as we do not know if any state in the cluster is preventing us from scheduling.
-- Write about that we did not use globally installed python packages due to PEP 668 in UCLOUD.
-- Write about dockerfile can't run distroless with nonroot
-- Write about the difference ways of running KWOK - binary, docker, etc.
-- Mention that I focus on plain CPU clusters as there can be other consideration when it comes to GPUs
-- Write about that we need hashlib for making sure we get the same seeds even when we make changes to the code.
-- Write about that when simulating standalone pods, then the scheduler might preempt it and we can no longer see it.
-- Write about Iterative deepening depth-first search
-- Write about that it were not possible to place a preemptor by workload cnts, needs to be done by name as we otherwise can let other pods of the same workload through the scheduling phase before the preemptor that hit the postfilter.
-- Write about that recreation always create a new uid therefore we place by name
-- Write about that the OptimizeForEvery@PreEnqueue cannot be deterministic as we do not determine which order the pods are taken.
-- Write something about watchdogTTL
-- Write something about the snapshotlister that it lags one scheduling cycle.
-- Write about cache calls instead of client calls. Faster and better. [See documentation](https://pkg.go.dev/k8s.io/client-go/tools/cache)
-- Write about deletion-cost and that it is hard to evict the right workload-owned pods, therefore I found the new eviction API.
-- Write about QueuingHints and that I end up using Pod Activator for reschedule queued pods.
-- Write about atomics and we only use configmap for debugging.
-- Write about Reserve/Unreserve and we use it for making sure pods gets scheduled to the node otherwise we can try again. We need this to ensure race conditions not happens. We cannot rely on snapshot alone.
-- Write about that Optimizer is not deterministic, when having multiple workers. However, we need multiple workers, otherwise it is too slow.
 
 # Questions
 
