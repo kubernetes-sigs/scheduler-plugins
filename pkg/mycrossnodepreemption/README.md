@@ -221,7 +221,6 @@ kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"a
 
 # TODOs
 
-- Make the IsPlanCompleted less restrictive, right now if a pod is removed during plan execution, the plan is considered failed. Instead, we should just check if all pods in the plan are still present. Also, the digest check should be modified.
 - Write report
 - Remove TODOs.
 - Make the test plan.

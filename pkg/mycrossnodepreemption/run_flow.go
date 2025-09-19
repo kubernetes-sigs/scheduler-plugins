@@ -64,7 +64,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// ----------------------------------------------------
 
 	// ---------- Build input + baseline + digest ----------
-	in0, baseline, d0, err := pl.buildInputAndBaseline(solveMode, nodes, pods, preemptor, batchedPods)
+	in0, baseline, err := pl.buildInputAndBaseline(solveMode, nodes, pods, preemptor, batchedPods)
 	if err != nil {
 		klog.ErrorS(err, string(phase)+": failed to build input/baseline")
 		pl.leaveActive()
@@ -102,18 +102,13 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 		return nil, ErrNoImprovement
 	}
 
-	// Digest recheck when in continuous mode to detect cluster drift between building -> solving -> applying.
-	// Applying needs to be at the same state as when we take the digest (cluster state).
+	// In continuous mode, allow benign drift; only skip if the plan is no longer applicable.
 	if phase == PhaseContinuous {
-		_, _, d1, err := pl.buildInputAndBaseline(solveMode, nodes, pods, preemptor, batchedPods)
-		if err != nil {
+		ok, why := pl.planStillApplicable(bestOut, nodes, pods)
+		if !ok {
+			klog.InfoS("Continuous: plan no longer applicable; skipping", "reason", why)
 			pl.leaveActive()
-			return nil, err
-		}
-		if d0 != d1 {
-			klog.InfoS(string(phase) + ": digest mismatch pre-apply; skipping")
-			pl.leaveActive()
-			return nil, ErrDigestMismatch
+			return nil, ErrDigestMismatch // reuse error; message logs the reason
 		}
 	}
 

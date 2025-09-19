@@ -107,7 +107,8 @@ func strategyToString() string {
 	case OptimizeInBatches:
 		a = "InBatches"
 	case OptimizeContinuously:
-		a = "Continuous"
+		a = "Continuously"
+		return a
 	}
 	b := "PreEnqueue"
 	if optimizeAtPostFilter() {
@@ -127,7 +128,7 @@ func parseCadence(s string) OptimizationCadenceMode {
 		return OptimizeContinuously
 	default:
 		klog.InfoS("Unknown ENV: OPTIMIZE_CADENCE value; defaulting to in_batches", "value", s)
-		return OptimizeContinuously
+		return OptimizeInBatches
 	}
 }
 
@@ -1583,14 +1584,112 @@ func (pl *MyCrossNodePreemption) buildInputAndBaseline(
 	pods []*v1.Pod, // <-- pre-fetched once per flow
 	preemptor *v1.Pod,
 	batched []*v1.Pod,
-) (SolverInput, Score, string, error) {
+) (SolverInput, Score, error) {
 	in, err := pl.buildSolverInput(mode, nodes, pods, preemptor, batched)
 	if err != nil {
-		return SolverInput{}, Score{}, "", err
+		return SolverInput{}, Score{}, err
 	}
 	baseline := computeBaselineFromInput(in)
-	digest := buildDigest(in)
-	return in, baseline, digest, nil
+	return in, baseline, nil
+}
+
+// planStillApplicable checks whether a SolverOutput (plan) can still be safely
+// applied on the *current* cluster state. It allows unrelated drift and only
+// insists that the concrete preconditions for the plan still hold.
+func (pl *MyCrossNodePreemption) planStillApplicable(
+	out *SolverOutput,
+	nodes []*v1.Node,
+	livePods []*v1.Pod,
+) (bool, string) {
+	if out == nil {
+		return false, "nil plan"
+	}
+
+	// Index live state
+	usable := map[string]bool{}
+	capCPU := map[string]int64{}
+	capMem := map[string]int64{}
+	for _, n := range nodes {
+		if isNodeUsable(n) {
+			usable[n.Name] = true
+			capCPU[n.Name] = n.Status.Allocatable.Cpu().MilliValue()
+			capMem[n.Name] = n.Status.Allocatable.Memory().Value()
+		}
+	}
+
+	type res struct{ cpu, mem int64 }
+	used := map[string]res{} // by node
+	pByUID := podsByUID(livePods)
+
+	addUse := func(node string, cpu, mem int64) {
+		u := used[node]
+		u.cpu += cpu
+		u.mem += mem
+		used[node] = u
+	}
+
+	// Tally current usage
+	for _, p := range livePods {
+		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
+			continue
+		}
+		addUse(p.Spec.NodeName, getPodCPURequest(p), getPodMemoryRequest(p))
+	}
+
+	// Simulate the plan on top of current usage:
+	// - Evictions free resources on their current node
+	for _, e := range out.Evictions {
+		p := pByUID[e.Pod.UID]
+		if p == nil || p.Spec.NodeName == "" {
+			// Already gone or pending now: keep going.
+			continue
+		}
+		// If a node became unusable, fail.
+		if !usable[p.Spec.NodeName] {
+			return false, fmt.Sprintf("evict node now unusable: %s", p.Spec.NodeName)
+		}
+		addUse(p.Spec.NodeName, -getPodCPURequest(p), -getPodMemoryRequest(p))
+	}
+
+	// - Moves/placements: check pod still where we expect (pending or src), then add to dst
+	for _, np := range out.Placements {
+		p := pByUID[np.Pod.UID]
+		if p == nil || p.DeletionTimestamp != nil {
+			return false, fmt.Sprintf("pod vanished: %s/%s", np.Pod.Namespace, np.Pod.Name)
+		}
+		// Source must still be consistent enough:
+		//   - if it was a move (FromNode != ""), pod should still be on that source
+		//   - if it was a new/pending placement (FromNode == ""), pod should still be pending
+		if np.FromNode != "" {
+			if p.Spec.NodeName != np.FromNode {
+				return false, fmt.Sprintf("move precondition changed for %s/%s: was on %q, now on %q",
+					p.Namespace, p.Name, np.FromNode, p.Spec.NodeName)
+			}
+			// remove from src (already accounted by evictions? No — moves are distinct)
+			addUse(np.FromNode, -getPodCPURequest(p), -getPodMemoryRequest(p))
+		} else {
+			// pending expected
+			if p.Spec.NodeName != "" {
+				return false, fmt.Sprintf("pending precondition changed for %s/%s: now bound to %q",
+					p.Namespace, p.Name, p.Spec.NodeName)
+			}
+		}
+
+		// Destination must still be usable & have capacity
+		if !usable[np.ToNode] {
+			return false, fmt.Sprintf("dest node now unusable: %s", np.ToNode)
+		}
+		addUse(np.ToNode, getPodCPURequest(p), getPodMemoryRequest(p))
+	}
+
+	// Check that every node remains within capacity
+	for node, u := range used {
+		if u.cpu > capCPU[node] || u.mem > capMem[node] {
+			return false, fmt.Sprintf("capacity exceeded on %s after sim: usedCPU=%d capCPU=%d usedMem=%d capMem=%d",
+				node, u.cpu, capCPU[node], u.mem, capMem[node])
+		}
+	}
+	return true, ""
 }
 
 // computeBaselineFromInput computes the baseline score from the solver input.
