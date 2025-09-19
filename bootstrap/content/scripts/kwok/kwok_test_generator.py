@@ -508,7 +508,7 @@ class KwokTestGenerator:
         return parts
 
     @staticmethod
-    def _gen_rs_specs( #TODO
+    def _gen_rs_specs(
         rng: random.Random,
         counts: list[int],
         c_lo: int, c_hi: int,

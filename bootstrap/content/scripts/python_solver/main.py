@@ -128,7 +128,6 @@ def solve(instance: dict) -> dict:
         lst = []
         for j in range(num_nodes):
             if n_cap_cpu_m(j) >= cpu_i and n_cap_mem_bytes(j) >= mem_i:
-                # TODO_HC: add affinity/anti-affinity checks here when you enable them
                 lst.append(j)
         eligible.append(lst)
 
