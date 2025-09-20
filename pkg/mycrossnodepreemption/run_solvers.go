@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -32,6 +33,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	phase Phase,
 	in SolverInput,
 	baseline Score,
+	nodes []*v1.Node,
+	pods []*v1.Pod,
 ) (chosenOut *SolverOutput, anyFeasible bool, chosenSolverSummary SolverSummary) {
 	// Build cluster state
 	base := prepareState(in)
@@ -154,6 +157,13 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				"attempt", i, "solver", att.Name, "durationUs", attDurUs, "timeoutMs", att.Timeout.Milliseconds(), "timeoutHintMs", toMs, "status", out.Status)
 			continue
 		}
+		ok, why := pl.planApplicable(out, nodes, pods)
+		if !ok {
+			klog.InfoS("Plan from solver is not applicable; skipping", "reason", why,
+				"attempt", i, "solver", att.Name, "durationUs", attDurUs, "timeoutMs", att.Timeout.Milliseconds(), "timeoutHintMs", toMs)
+			continue
+		}
+
 		anyFeasible = true
 		sc := computeSolverScore(inAttempt, out)
 		dEv := sc.Evicted - baseline.Evicted

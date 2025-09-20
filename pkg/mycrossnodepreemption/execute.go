@@ -10,9 +10,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// runFlow runs the full flow for the given phase (Continuous, Batch, Single).
+// execute runs the full flow for the given phase (Continuous, Batch, Single).
 // For Single phase, the singlePod must be provided (the preemptor).
-func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singlePod *v1.Pod) (*FlowResult, error) {
+func (pl *MyCrossNodePreemption) execute(ctx context.Context, phase Phase, singlePod *v1.Pod) (*FlowResult, error) {
 	// Continuous: do NOT take Active yet (we only take it if there is an improvement to apply).
 	// Batch/Single: take Active early because these modes block by design.
 	if phase != PhaseContinuous {
@@ -72,7 +72,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Solve ----------
-	bestOut, anyFeasible, chosenSolver := pl.runSolvers(ctx, phase, in0, baseline)
+	bestOut, anyFeasible, chosenSolver := pl.runSolvers(ctx, phase, in0, baseline, nodes, pods)
 
 	// Decide failure reason:
 	// - If BOTH solvers are infeasible (or nil) -> ErrNoOptimalOrFeasible
@@ -103,13 +103,11 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	}
 
 	// In continuous mode, allow benign drift; only skip if the plan is no longer applicable.
-	if phase == PhaseContinuous {
-		ok, why := pl.planStillApplicable(bestOut, nodes, pods)
-		if !ok {
-			klog.InfoS("Continuous: plan no longer applicable; skipping", "reason", why)
-			pl.leaveActive()
-			return nil, ErrDigestMismatch // reuse error; message logs the reason
-		}
+	ok, why := pl.planApplicable(bestOut, nodes, pods)
+	if !ok {
+		klog.InfoS("Plan is not applicable; skipping", "reason", why)
+		pl.leaveActive()
+		return nil, ErrDigestMismatch // reuse error; message logs the reason
 	}
 
 	// ---------- Take Active late for Continuous (only now that we know it's worth applying) ----------

@@ -4,13 +4,18 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -1004,4 +1009,528 @@ func (n *SolverNode) removePod(p *SolverPod) {
 		n.AllocMemBytes += p.ReqMemBytes
 		p.Node = ""
 	}
+}
+
+// computeSolverScore computes final Score from the snapshot given to the solver:
+//   - placed_by_priority: number of pods that were placed for each priority
+//   - evicted:            number of pods that were evicted
+//   - moved:              number of pods that were moved to a different node
+func computeSolverScore(in SolverInput, out *SolverOutput) Score {
+	if out == nil {
+		return Score{}
+	}
+
+	// Before-state (where) and priority by UID
+	origWhere := make(map[types.UID]string, len(in.Pods)+1)
+	pri := make(map[types.UID]int32, len(in.Pods)+1)
+	for _, sp := range in.Pods {
+		origWhere[sp.UID] = sp.Node
+		pri[sp.UID] = sp.Priority
+	}
+	if in.Preemptor != nil {
+		if _, ok := origWhere[in.Preemptor.UID]; !ok {
+			origWhere[in.Preemptor.UID] = "" // pending
+			pri[in.Preemptor.UID] = in.Preemptor.Priority
+		}
+	}
+
+	// After-state starts from orig, then apply placements for known UIDs
+	afterWhere := make(map[types.UID]string, len(origWhere))
+	for uid, w := range origWhere {
+		afterWhere[uid] = w
+	}
+	for _, plm := range out.Placements {
+		if plm.ToNode == "" {
+			continue
+		}
+		if _, known := afterWhere[plm.Pod.UID]; known {
+			afterWhere[plm.Pod.UID] = plm.ToNode
+		}
+	}
+
+	// Evicted
+	evicted := make(map[types.UID]struct{}, len(out.Evictions))
+	for _, e := range out.Evictions {
+		evicted[e.Pod.UID] = struct{}{}
+	}
+
+	// Placed by priority
+	placedByPri := map[string]int{}
+	for uid, after := range afterWhere {
+		if _, gone := evicted[uid]; gone {
+			continue
+		}
+		if after != "" {
+			key := strconv.Itoa(int(pri[uid]))
+			placedByPri[key] = placedByPri[key] + 1
+		}
+	}
+
+	// Moves
+	moves := 0
+	for uid, before := range origWhere {
+		if _, gone := evicted[uid]; gone {
+			continue
+		}
+		after := afterWhere[uid]
+		if before != "" && after != "" && before != after {
+			moves++
+		}
+	}
+
+	return Score{
+		PlacedByPriority: placedByPri,
+		Evicted:          len(evicted),
+		Moved:            moves,
+	}
+}
+
+// toSolverPod converts a Pod to a SolverPod.
+func toSolverPod(p *v1.Pod, node string) SolverPod {
+	return SolverPod{
+		UID:         p.UID,
+		Namespace:   p.Namespace,
+		Name:        p.Name,
+		ReqCPUm:     getPodCPURequest(p),
+		ReqMemBytes: getPodMemoryRequest(p),
+		Priority:    getPodPriority(p),
+		Node:        node,
+	}
+}
+
+// PreparedState holds the prepared cluster state for solvers.
+func prepareState(in SolverInput) *PreparedState {
+	nodes, pods, pending, order, pre := buildClusterState(in)
+	wl, single, mg := buildWorklist(pending, pre)
+	return &PreparedState{
+		Nodes:     nodes,
+		Pods:      pods,
+		Order:     order,
+		Preemptor: pre,
+		Worklist:  wl,
+		Single:    single,
+		MoveGate:  mg,
+	}
+}
+
+// IsSolverEnabled checks if any solver is enabled.
+func (pl *MyCrossNodePreemption) IsSolverEnabled() bool {
+	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
+}
+
+// IsSolverFeasible checks if the solver output is feasible.
+// OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
+// FEASIBLE means the solution is not perfect but still meets all constraints.
+func IsSolverFeasible(out *SolverOutput) bool {
+	return out != nil && (out.Status == "OPTIMAL" || out.Status == "FEASIBLE")
+}
+
+// fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.
+// If batched != nil, pending batched pods are appended with where="" (and preemptor can be nil).
+func (pl *MyCrossNodePreemption) fillNodesAndPods(
+	in *SolverInput,
+	nodes []*v1.Node,
+	pods []*v1.Pod,
+	preemptor *v1.Pod,
+	batched []*v1.Pod,
+	includePending bool,
+) error {
+	// Nodes
+	usable := map[string]bool{}
+	for _, n := range nodes {
+		if !isNodeUsable(n) {
+			continue
+		}
+		in.Nodes = append(in.Nodes, SolverNode{
+			Name:        n.Name,
+			CapCPUm:     n.Status.Allocatable.Cpu().MilliValue(),
+			CapMemBytes: n.Status.Allocatable.Memory().Value(),
+		})
+		usable[n.Name] = true
+	}
+	// Pods
+	preUID := ""
+	if preemptor != nil {
+		preUID = string(preemptor.UID)
+	}
+	seen := make(map[types.UID]bool, len(pods)+len(batched))
+	for _, p := range pods {
+		// Skip the preemptor (it is provided via in.Preemptor)
+		if string(p.UID) == preUID {
+			continue
+		}
+		where := p.Spec.NodeName
+		if where == "" {
+			// Only include pending pods when explicitly asked (cohort mode).
+			if !includePending {
+				continue
+			}
+		} else {
+			// If the pod is already bound to a node, ensure that node is usable.
+			if !usable[where] {
+				continue
+			}
+		}
+		sp := toSolverPod(p, where)
+		if p.Namespace == "kube-system" {
+			sp.Protected = true
+		}
+		if !seen[sp.UID] {
+			in.Pods = append(in.Pods, sp)
+			seen[sp.UID] = true
+		}
+	}
+	// Cohort: append the batched pending pods (where = ""), if requested
+	if includePending {
+		for _, p := range batched {
+			if p == nil {
+				continue
+			}
+			if string(p.UID) == preUID {
+				continue
+			}
+			sp := toSolverPod(p, "")
+			if p.Namespace == "kube-system" {
+				sp.Protected = true
+			}
+			if !seen[sp.UID] {
+				in.Pods = append(in.Pods, sp)
+				seen[sp.UID] = true
+			}
+		}
+	}
+	return nil
+}
+
+// buildSolverInput builds the common input for either batch or single.
+func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.Node, pods []*v1.Pod, preemptor *v1.Pod, batched []*v1.Pod) (SolverInput, error) {
+	in := SolverInput{
+		IgnoreAffinity: true,
+		LogProgress:    SolverLogProgress,
+		Nodes:          make([]SolverNode, 0),
+		Pods:           make([]SolverPod, 0),
+		Mode:           SolverMode,
+		TimeoutMs:      0, // will be filled outside
+	}
+	switch mode {
+	case SolveSingle:
+		if preemptor == nil {
+			return SolverInput{}, fmt.Errorf("SolveSingle requires preemptor")
+		}
+		pre := toSolverPod(preemptor, "")
+		in.Preemptor = &pre
+		if err := pl.fillNodesAndPods(&in, nodes, pods, preemptor, nil, false); err != nil {
+			return SolverInput{}, fmt.Errorf("fill (single): %w", err)
+		}
+	case SolveBatch:
+		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, batched, true); err != nil {
+			return SolverInput{}, fmt.Errorf("fill (batch): %w", err)
+		}
+	case SolveContinuously:
+		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, nil, true); err != nil {
+			return SolverInput{}, fmt.Errorf("fill (continuous): %w", err)
+		}
+	default:
+		return SolverInput{}, fmt.Errorf("unknown solve mode")
+	}
+	if len(in.Nodes) == 0 {
+		return SolverInput{}, fmt.Errorf("no usable Ready nodes available; waiting")
+	}
+	return in, nil
+}
+
+// comparePlaced returns 1 if a>b, -1 if a<b, 0 if equal (lexi by priority desc).
+func comparePlaced(a, b map[string]int) int {
+	keys := map[int]struct{}{}
+	for k := range a {
+		if v, err := strconv.Atoi(k); err == nil {
+			keys[v] = struct{}{}
+		}
+	}
+	for k := range b {
+		if v, err := strconv.Atoi(k); err == nil {
+			keys[v] = struct{}{}
+		}
+	}
+	prs := make([]int, 0, len(keys))
+	for k := range keys {
+		prs = append(prs, k)
+	}
+	// sort priorities descending
+	sort.Sort(sort.Reverse(sort.IntSlice(prs)))
+	for _, pr := range prs {
+		ai := a[strconv.Itoa(pr)]
+		bi := b[strconv.Itoa(pr)]
+		if ai != bi {
+			if ai > bi {
+				return 1
+			}
+			return -1
+		}
+	}
+	return 0
+}
+
+// cmpInt returns +1 if a<b (improvement because smaller is better),
+// -1 if a>b (worse), 0 if equal.
+func cmpInt(suggested, baseline int) int {
+	switch {
+	case suggested < baseline:
+		return 1
+	case suggested > baseline:
+		return -1
+	default:
+		return 0
+	}
+}
+
+// IsImprovement compares two scores lexicographically:
+// 1) More placed per priority (lexicographic map compare)
+// 2) Fewer evictions
+// 3) Fewer moves
+// Returns 1 if suggested is better, -1 if worse, 0 if equal.
+func IsImprovement(baseline, suggested Score) int {
+	// 1) Placed-by-priority (more is better)
+	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
+		klog.V(MyVerbosity).InfoS("Compare placed-by-priority", "result", cmp,
+			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
+		return cmp
+	}
+	// 2) Evictions (fewer is better)
+	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
+		klog.V(MyVerbosity).InfoS("Compare evictions", "result", cmp,
+			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
+		return cmp
+	}
+	// 3) Moves (fewer is better)
+	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
+		klog.V(MyVerbosity).InfoS("Compare moves", "result", cmp,
+			"suggested", suggested.Moved, "baseline", baseline.Moved)
+		return cmp
+	}
+	// Equal on all metrics
+	klog.V(MyVerbosity).InfoS("No change: equal on placed, evictions, and moves")
+	return 0
+}
+
+// buildInputAndBaseline builds the exact snapshot we send to the solver,
+// and returns the baseline and a digest for concurrency checks.
+func (pl *MyCrossNodePreemption) buildInputAndBaseline(
+	mode SolveMode,
+	nodes []*v1.Node, // <-- pre-fetched once per flow
+	pods []*v1.Pod, // <-- pre-fetched once per flow
+	preemptor *v1.Pod,
+	batched []*v1.Pod,
+) (SolverInput, Score, error) {
+	in, err := pl.buildSolverInput(mode, nodes, pods, preemptor, batched)
+	if err != nil {
+		return SolverInput{}, Score{}, err
+	}
+	baseline := computeBaselineFromInput(in)
+	return in, baseline, nil
+}
+
+// planApplicable checks whether a SolverOutput (plan) can still be safely
+// applied on the *current* cluster state. It allows unrelated drift and only
+// insists that the concrete preconditions for the plan still hold.
+func (pl *MyCrossNodePreemption) planApplicable(
+	out *SolverOutput,
+	nodes []*v1.Node,
+	livePods []*v1.Pod,
+) (bool, string) {
+	if out == nil {
+		return false, "nil plan"
+	}
+
+	// Index live state
+	usable := map[string]bool{}
+	capCPU := map[string]int64{}
+	capMem := map[string]int64{}
+	for _, n := range nodes {
+		if isNodeUsable(n) {
+			usable[n.Name] = true
+			capCPU[n.Name] = n.Status.Allocatable.Cpu().MilliValue()
+			capMem[n.Name] = n.Status.Allocatable.Memory().Value()
+		}
+	}
+
+	type res struct{ cpu, mem int64 }
+	used := map[string]res{} // by node
+	pByUID := podsByUID(livePods)
+
+	addUse := func(node string, cpu, mem int64) {
+		u := used[node]
+		u.cpu += cpu
+		u.mem += mem
+		used[node] = u
+	}
+
+	// Tally current usage
+	for _, p := range livePods {
+		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
+			continue
+		}
+		addUse(p.Spec.NodeName, getPodCPURequest(p), getPodMemoryRequest(p))
+	}
+
+	// Simulate the plan on top of current usage:
+	// - Evictions free resources on their current node
+	for _, e := range out.Evictions {
+		p := pByUID[e.Pod.UID]
+		if p == nil || p.Spec.NodeName == "" {
+			// Already gone or pending now: keep going.
+			continue
+		}
+		// If a node became unusable, fail.
+		if !usable[p.Spec.NodeName] {
+			return false, fmt.Sprintf("evict node now unusable: %s", p.Spec.NodeName)
+		}
+		addUse(p.Spec.NodeName, -getPodCPURequest(p), -getPodMemoryRequest(p))
+	}
+
+	// - Moves/placements: check pod still where we expect (pending or src), then add to dst
+	for _, np := range out.Placements {
+		p := pByUID[np.Pod.UID]
+		if p == nil || p.DeletionTimestamp != nil {
+			return false, fmt.Sprintf("pod vanished: %s/%s", np.Pod.Namespace, np.Pod.Name)
+		}
+		// Source must still be consistent enough:
+		//   - if it was a move (FromNode != ""), pod should still be on that source
+		//   - if it was a new/pending placement (FromNode == ""), pod should still be pending
+		if np.FromNode != "" {
+			if p.Spec.NodeName != np.FromNode {
+				return false, fmt.Sprintf("move precondition changed for %s/%s: was on %q, now on %q",
+					p.Namespace, p.Name, np.FromNode, p.Spec.NodeName)
+			}
+			// remove from src (already accounted by evictions? No — moves are distinct)
+			addUse(np.FromNode, -getPodCPURequest(p), -getPodMemoryRequest(p))
+		} else {
+			// pending expected
+			if p.Spec.NodeName != "" {
+				return false, fmt.Sprintf("pending precondition changed for %s/%s: now bound to %q",
+					p.Namespace, p.Name, p.Spec.NodeName)
+			}
+		}
+
+		// Destination must still be usable & have capacity
+		if !usable[np.ToNode] {
+			return false, fmt.Sprintf("dest node now unusable: %s", np.ToNode)
+		}
+		addUse(np.ToNode, getPodCPURequest(p), getPodMemoryRequest(p))
+	}
+
+	// Check that every node remains within capacity
+	for node, u := range used {
+		if u.cpu > capCPU[node] || u.mem > capMem[node] {
+			return false, fmt.Sprintf("capacity exceeded on %s after sim: usedCPU=%d capCPU=%d usedMem=%d capMem=%d",
+				node, u.cpu, capCPU[node], u.mem, capMem[node])
+		}
+	}
+	return true, ""
+}
+
+// computeBaselineFromInput computes the baseline score from the solver input.
+func computeBaselineFromInput(in SolverInput) Score {
+	placedByPri := map[string]int{}
+	for _, sp := range in.Pods {
+		if sp.Node == "" {
+			continue // pending doesn't count into "placed"
+		}
+		pr := strconv.Itoa(int(sp.Priority))
+		placedByPri[pr] = placedByPri[pr] + 1
+	}
+	return Score{
+		PlacedByPriority: placedByPri,
+		Evicted:          0,
+		Moved:            0,
+	}
+}
+
+// freshClone returns deep-ish cloned nodes/pods/order and re-materializes
+// the worklist against the cloned pods, so solvers can mutate safely.
+func (ps *PreparedState) freshClone() (
+	nodes map[string]*SolverNode,
+	pods map[types.UID]*SolverPod,
+	order []*SolverNode,
+	worklist []*SolverPod,
+) {
+	// 1) clone pods
+	pods = make(map[types.UID]*SolverPod, len(ps.Pods))
+	for uid, p0 := range ps.Pods {
+		cp := *p0
+		pods[uid] = &cp
+	}
+	// 2) clone nodes (+ wire cloned pods into cloned nodes)
+	nodes = make(map[string]*SolverNode, len(ps.Nodes))
+	order = make([]*SolverNode, 0, len(ps.Order))
+	for _, n0 := range ps.Order {
+		n := &SolverNode{
+			Name:          n0.Name,
+			CapCPUm:       n0.CapCPUm,
+			CapMemBytes:   n0.CapMemBytes,
+			Labels:        n0.Labels,
+			AllocCPUm:     n0.AllocCPUm,
+			AllocMemBytes: n0.AllocMemBytes,
+			Pods:          make(map[types.UID]*SolverPod, len(n0.Pods)),
+		}
+		for uid := range n0.Pods {
+			if p := pods[uid]; p != nil {
+				n.Pods[uid] = p
+				p.Node = n.Name // reflect current location
+			}
+		}
+		nodes[n.Name] = n
+		order = append(order, n)
+	}
+	// 3) project worklist to cloned pods by UID
+	worklist = make([]*SolverPod, len(ps.Worklist))
+	for i, p0 := range ps.Worklist {
+		worklist[i] = pods[p0.UID]
+	}
+	return
+}
+
+// buildDigest produces a deterministic hash of the snapshot that fed the solver input.
+// We use the already-normalized SolverInput (nodes/pods) for stability.
+func buildDigest(in SolverInput) string {
+	h := sha256.New()
+	// nodes sorted by name
+	ns := make([]SolverNode, len(in.Nodes))
+	copy(ns, in.Nodes)
+	sort.Slice(ns, func(i, j int) bool { return ns[i].Name < ns[j].Name })
+	for _, n := range ns {
+		h.Write([]byte(n.Name))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(n.CapCPUm, 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(n.CapMemBytes, 10)))
+		h.Write([]byte("\n"))
+	}
+	// pods sorted by UID
+	ps := make([]SolverPod, len(in.Pods))
+	copy(ps, in.Pods)
+	sort.Slice(ps, func(i, j int) bool { return ps[i].UID < ps[j].UID })
+	for _, p := range ps {
+		h.Write([]byte(p.UID))
+		h.Write([]byte("|"))
+		h.Write([]byte(p.Namespace))
+		h.Write([]byte("|"))
+		h.Write([]byte(p.Name))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(p.ReqCPUm, 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(p.ReqMemBytes, 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(strconv.FormatInt(int64(p.Priority), 10)))
+		h.Write([]byte("|"))
+		h.Write([]byte(p.Node))
+		h.Write([]byte("|"))
+		if p.Protected {
+			h.Write([]byte("1"))
+		} else {
+			h.Write([]byte("0"))
+		}
+		h.Write([]byte("\n"))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
