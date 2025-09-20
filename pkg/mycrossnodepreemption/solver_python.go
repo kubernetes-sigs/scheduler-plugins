@@ -16,7 +16,7 @@ import (
 
 func (pl *MyCrossNodePreemption) runSolverPython(ctx context.Context, in SolverInput) (*SolverOutput, error) {
 	raw, _ := json.Marshal(in)
-	klog.V(V2).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
+	klog.V(MyVerbosity).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
 
 	cmd := exec.CommandContext(ctx, SolverPythonBin, SolverPath)
 	cmd.Stdin = bytes.NewReader(raw)
@@ -38,7 +38,7 @@ func (pl *MyCrossNodePreemption) runSolverPython(ctx context.Context, in SolverI
 		buf := make([]byte, 0, 256*1024)
 		s.Buffer(buf, 1024*1024)
 		for s.Scan() {
-			klog.V(V2).Info("solver: " + s.Text())
+			klog.V(MyVerbosity).Info("solver: " + s.Text())
 		}
 		if err := s.Err(); err != nil {
 			klog.Info("solver scan failed: " + err.Error())

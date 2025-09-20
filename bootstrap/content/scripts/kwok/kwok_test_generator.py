@@ -2099,23 +2099,25 @@ class KwokTestGenerator:
 
         self.ctx = f"kwok-{self.args.cluster_name}"
         
-        # Decide results directory for this config
-        # If --results-dir is None:
-        #   results/<config-dir-name>/   (sibling to the config-dir)
-        # Else:
-        #   use the provided --results-dir path as-is.
-        cfg_dir_path = Path(self.args.config_dir).resolve()
-        cfg_dir_name = cfg_dir_path.name
+        # Resolve results dir:
+        # - If --results-dir is provided, use it as a base and place files directly there.
+        # - If omitted, place under <configs-parent>/results/<config-dir-name>/
+        cfg_dir_path = Path(self.args.config_dir).resolve()   # e.g., .../scripts/kwok/configs/baseline
+        cfg_dir_name = cfg_dir_path.name                      # e.g., "baseline"
+        configs_parent = cfg_dir_path.parent                  # e.g., .../scripts/kwok/configs
 
         if self.results_dir_arg:
+            # Honor explicit --results-dir exactly as provided
             rd = Path(self.results_dir_arg).resolve()
         else:
-            rd = cfg_dir_path.parent / "results" / cfg_dir_name
+            # results sits next to the top-level 'configs' folder:
+            # <configs_parent.parent>/results/<config-dir-name>/
+            rd = configs_parent.parent / "results" / cfg_dir_name
 
         rd.mkdir(parents=True, exist_ok=True)
         self.results_dir = rd
 
-        # failures file lives inside this folder
+        # failures file lives inside the chosen results dir
         self.failed_f = self.results_dir / "failed.csv"
         self.failed_f.touch(exist_ok=True)
 
@@ -2317,8 +2319,9 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--config-dir", dest="config_dir", default=None,
                     help="Directory containing one or more KWOK config YAMLs")
     ap.add_argument("--results-dir", dest="results_dir", default=None,
-                    help=("Directory to store results. If omitted, results go to "
-                        "<parent-of-config-dir>/results/<config-dir-name>/"))
+                    help=("Directory to store results. If omitted, results are written to "
+                        "<parent-of-CONFIGS>/results/<config-dir-name>/, where "
+                        "<parent-of-CONFIGS> is the directory that contains your 'configs' folder."))
     ap.add_argument("--overwrite", action="store_true",
                     help="Replace any existing results for the same seed (results rows and stats CSVs).")
     

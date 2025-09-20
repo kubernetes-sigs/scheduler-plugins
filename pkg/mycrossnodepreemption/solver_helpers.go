@@ -114,7 +114,7 @@ func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 
 // runSolverCommon runs a solver plan function on the input and prepared state.
 func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedState) *SolverOutput {
-	klog.V(V2).InfoS("Running solver", "tag", tag)
+	klog.V(MyVerbosity).InfoS("Running solver", "tag", tag)
 	nodes, pods, order, worklist := base.freshClone()
 	if len(worklist) == 0 {
 		return &SolverOutput{Status: "UNKNOWN"}

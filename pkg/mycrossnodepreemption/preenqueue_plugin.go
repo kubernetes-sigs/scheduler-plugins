@@ -19,24 +19,24 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 
 	if !pl.CachesWarm.Load() {
 		pl.Blocked.AddPod(pod)
-		klog.V(V2).Info("Caches not warmed up yet; skipping plugin logic")
+		klog.V(MyVerbosity).Info("Caches not warmed up yet; skipping plugin logic")
 		return framework.NewStatus(framework.Pending, "Caches not warmed up yet; skipping plugin logic")
 	}
 	_ = pl.pruneSetEntries(pl.Blocked)
 
 	switch pl.decideStrategy(PhasePreEnqueue) {
 	case DecidePassThrough:
-		klog.V(V2).InfoS("PreEnqueue: pass-through", "pod", klog.KObj(pod))
+		klog.V(MyVerbosity).InfoS("PreEnqueue: pass-through", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
 
 	case DecideBatch:
-		klog.V(V2).InfoS("PreEnqueue: batched pod", "pod", klog.KObj(pod))
+		klog.V(MyVerbosity).InfoS("PreEnqueue: batched pod", "pod", klog.KObj(pod))
 		pl.Batched.AddPod(pod)
 		return framework.NewStatus(framework.Pending, "PreEnqueue: batched pod")
 
 	case DecideBlockActive:
 		if !pl.allowedByActivePlan(pod) {
-			klog.V(V2).InfoS("PreEnqueue: active plan; blocking", "pod", klog.KObj(pod))
+			klog.V(MyVerbosity).InfoS("PreEnqueue: active plan; blocking", "pod", klog.KObj(pod))
 			pl.Blocked.AddPod(pod)
 			return framework.NewStatus(framework.Pending, "PreEnqueue: active plan; blocking")
 		}

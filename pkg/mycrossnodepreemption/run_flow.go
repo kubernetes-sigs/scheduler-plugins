@@ -17,7 +17,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singl
 	// Batch/Single: take Active early because these modes block by design.
 	if phase != PhaseContinuous {
 		if !pl.tryEnterActive() {
-			klog.V(V2).InfoS(string(phase) + ": another plan active; skipping")
+			klog.V(MyVerbosity).InfoS(string(phase) + ": another plan active; skipping")
 			return nil, ErrActiveInProgress
 		}
 	}

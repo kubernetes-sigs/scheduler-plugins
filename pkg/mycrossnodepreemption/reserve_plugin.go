@@ -39,7 +39,7 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	// Pass through placementByName pods; do not consume workload quota.
 	if ap.PlacementByName != nil {
 		if _, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok {
-			klog.V(V2).InfoS("Reserve: pod placed by name; allowing", "pod", klog.KObj(pod))
+			klog.V(MyVerbosity).InfoS("Reserve: pod placed by name; allowing", "pod", klog.KObj(pod))
 			return framework.NewStatus(framework.Success)
 		}
 	}
@@ -48,29 +48,29 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	// Otherwise, we need to check the workload quota.
 	wk, ok := topWorkload(pod)
 	if !ok {
-		klog.V(V2).InfoS("Reserve: pod not part of any workload; allowing", "pod", klog.KObj(pod))
+		klog.V(MyVerbosity).InfoS("Reserve: pod not part of any workload; allowing", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
 	}
 	workloadKey := wk.String()
 	allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[workloadKey]
 	if !ok {
-		klog.V(V2).InfoS("Reserve: workload not tracked", "pod", klog.KObj(pod), "node", node)
+		klog.V(MyVerbosity).InfoS("Reserve: workload not tracked", "pod", klog.KObj(pod), "node", node)
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not tracked")
 	}
 	workloadCntForNode, ok := allWorkloadCnts[node]
 	if !ok {
-		klog.V(V2).InfoS("Reserve: node not tracked", "pod", klog.KObj(pod), "node", node)
+		klog.V(MyVerbosity).InfoS("Reserve: node not tracked", "pod", klog.KObj(pod), "node", node)
 		return framework.NewStatus(framework.Unschedulable, "Reserve: node not tracked")
 	}
 
 	for {
 		currentCnt := workloadCntForNode.Load()
 		if currentCnt <= 0 {
-			klog.V(V2).InfoS("Reserve: workload node quota exhausted", "pod", klog.KObj(pod), "node", node)
+			klog.V(MyVerbosity).InfoS("Reserve: workload node quota exhausted", "pod", klog.KObj(pod), "node", node)
 			return framework.NewStatus(framework.Unschedulable, "Reserve: workload node quota exhausted")
 		}
 		if workloadCntForNode.CompareAndSwap(currentCnt, currentCnt-1) { // successfully reserved quota
-			klog.V(V2).InfoS("Reserve: workload node quota consumed", "pod", klog.KObj(pod), "node", node)
+			klog.V(MyVerbosity).InfoS("Reserve: workload node quota consumed", "pod", klog.KObj(pod), "node", node)
 			st.Write(rsReservationKey, &rsReservationState{key: reservationKey{rsKey: workloadKey, nodeName: node}})
 			return framework.NewStatus(framework.Success)
 		}
@@ -80,18 +80,18 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, _ string) {
 	v, err := st.Read(rsReservationKey)
 	if err != nil {
-		klog.V(V2).InfoS("Unreserve: failed to read reservation state", "pod", klog.KObj(pod))
+		klog.V(MyVerbosity).InfoS("Unreserve: failed to read reservation state", "pod", klog.KObj(pod))
 		return
 	}
 	reservationState, ok := v.(*rsReservationState)
 	if !ok {
-		klog.V(V2).InfoS("Unreserve: failed to cast reservation state", "pod", klog.KObj(pod))
+		klog.V(MyVerbosity).InfoS("Unreserve: failed to cast reservation state", "pod", klog.KObj(pod))
 		return
 	}
 
 	ap := pl.getActivePlan()
 	if ap == nil {
-		klog.V(V2).InfoS("Unreserve: no active plan", "pod", klog.KObj(pod))
+		klog.V(MyVerbosity).InfoS("Unreserve: no active plan", "pod", klog.KObj(pod))
 		return
 	}
 	if allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[reservationState.key.rsKey]; ok {

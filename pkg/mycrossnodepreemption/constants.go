@@ -11,8 +11,8 @@ const (
 	Name = "MyCrossNodePreemption"
 	// Version is the current version of the plugin.
 	Version = "v1.5.0"
-	// V2 is the klog verbosity level; set to 0 for extra verbose logging.
-	V2 = 2
+	// MyVerbosity is the klog verbosity level; set to 0 for extra verbose logging.
+	MyVerbosity = 2
 	// CacheWarmupSettleDelay is the duration to wait before proceeding after cache has warmed up.
 	CacheWarmupSettleDelay = 2 * time.Second
 	// =========================================================

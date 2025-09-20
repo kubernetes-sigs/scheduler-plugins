@@ -22,7 +22,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 		return nil, framework.NewStatus(framework.Success)
 	}
 	nodes, msg, ok := pl.allowedNodes(pod)
-	klog.V(V2).InfoS("Filter decision",
+	klog.V(MyVerbosity).InfoS("Filter decision",
 		"activePlan", ap != nil,
 		"pod", pod.Namespace+"/"+pod.Name,
 		"nodes", nodes.UnsortedList())
@@ -30,13 +30,13 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	switch {
 	case ok && nodes == nil:
 		// allowed, no pin
-		klog.V(V2).InfoS("PreFilter: allow", "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyVerbosity).InfoS("PreFilter: allow", "pod", klog.KObj(pod), "reason", msg)
 		return nil, framework.NewStatus(framework.Success)
 	case ok && nodes.Len() > 0:
-		klog.V(V2).InfoS("PreFilter: pin", "pod", klog.KObj(pod), "nodes", nodes.UnsortedList(), "reason", msg)
+		klog.V(MyVerbosity).InfoS("PreFilter: pin", "pod", klog.KObj(pod), "nodes", nodes.UnsortedList(), "reason", msg)
 		return &framework.PreFilterResult{NodeNames: nodes}, framework.NewStatus(framework.Success)
 	default: // not ok
-		klog.V(V2).InfoS("PreFilter: block", "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyVerbosity).InfoS("PreFilter: block", "pod", klog.KObj(pod), "reason", msg)
 		pl.Blocked.AddPod(pod)
 		return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: "+msg)
 	}

@@ -52,7 +52,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Score:      dfScore,
 			}
 		}
-		klog.V(V2).InfoS(string(phase)+": direct-fit could not place all pods; run solvers", "durationUs", time.Since(dfStart).Microseconds())
+		klog.V(MyVerbosity).InfoS(string(phase)+": direct-fit could not place all pods; run solvers", "durationUs", time.Since(dfStart).Microseconds())
 	}
 
 	// The list is ordered by preference.
@@ -103,7 +103,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		enabledNames = append(enabledNames, a.Name)
 		timeoutsMs = append(timeoutsMs, a.Timeout.Milliseconds())
 	}
-	klog.V(V2).InfoS(string(phase)+": solver attempts planned",
+	klog.V(MyVerbosity).InfoS(string(phase)+": solver attempts planned",
 		"enabled", enabledNames, "timeoutsMs", timeoutsMs,
 		"baselinePlacedByPri", baseline.PlacedByPriority,
 		"baselineEvictions", baseline.Evicted, "baselineMoves", baseline.Moved)
@@ -163,17 +163,17 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			// First feasible candidate: compare vs baseline for logging.
 			switch IsImprovement(baseline, sc) {
 			case 1:
-				klog.V(V2).InfoS(string(phase)+": solver improved over baseline",
+				klog.V(MyVerbosity).InfoS(string(phase)+": solver improved over baseline",
 					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
 					"deltaEvictions", dEv, "deltaMoves", dMv)
 				currentTarget = sc
 			case 0:
-				klog.V(V2).InfoS(string(phase)+": solver equal to baseline",
+				klog.V(MyVerbosity).InfoS(string(phase)+": solver equal to baseline",
 					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
 			default:
-				klog.V(V2).InfoS(string(phase)+": solver worse than baseline",
+				klog.V(MyVerbosity).InfoS(string(phase)+": solver worse than baseline",
 					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
 					"deltaEvictions", dEv, "deltaMoves", dMv)
@@ -193,7 +193,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// Compare against the current best.
 		switch IsImprovement(chosenScore, sc) {
 		case 1:
-			klog.V(V2).InfoS(string(phase)+": new leader",
+			klog.V(MyVerbosity).InfoS(string(phase)+": new leader",
 				"attempt", i, "solver", att.Name, "prevLeader", chosenName, "durationUs", attDurUs,
 				"leaderPlacedByPri", sc.PlacedByPriority, "prevPlacedByPri", chosenScore.PlacedByPriority,
 				"leaderEvictions", sc.Evicted, "prevEvictions", chosenScore.Evicted,
@@ -203,11 +203,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				currentTarget = sc
 			}
 		case 0: // tie with current leader; keep the first one as chosen
-			klog.V(V2).InfoS(string(phase)+": solver tied with leader",
+			klog.V(MyVerbosity).InfoS(string(phase)+": solver tied with leader",
 				"attempt", i, "solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
 				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
 		default:
-			klog.V(V2).InfoS(string(phase)+": solver worse than leader",
+			klog.V(MyVerbosity).InfoS(string(phase)+": solver worse than leader",
 				"attempt", i, "solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
 				"placedByPri", sc.PlacedByPriority, "leaderPlacedByPri", chosenScore.PlacedByPriority,
 				"evictions", sc.Evicted, "leaderEvictions", chosenScore.Evicted,
