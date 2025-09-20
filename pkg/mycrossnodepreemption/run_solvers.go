@@ -41,18 +41,18 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		dfStart := time.Now()
 		if dfOut := runSolverDirectFit(in, base); IsSolverFeasible(dfOut) {
 			dfScore := computeSolverScore(in, dfOut)
-			dfDur := time.Since(dfStart)
+			dfDurUs := time.Since(dfStart).Microseconds()
 			klog.InfoS(string(phase)+": direct-fit; skipping other solvers",
 				"placedByPri", dfScore.PlacedByPriority, "evictions", dfScore.Evicted, "moves", dfScore.Moved,
-				"duration", dfDur)
+				"durationUs", dfDurUs)
 			return dfOut, true, SolverSummary{
-				Name:     "direct-fit",
-				Status:   dfOut.Status,
-				Duration: dfDur,
-				Score:    dfScore,
+				Name:       "direct-fit",
+				Status:     dfOut.Status,
+				DurationUs: dfDurUs,
+				Score:      dfScore,
 			}
 		}
-		klog.V(V2).InfoS(string(phase)+": direct-fit could not place all pods; run solvers", "duration", time.Since(dfStart))
+		klog.V(V2).InfoS(string(phase)+": direct-fit could not place all pods; run solvers", "durationUs", time.Since(dfStart).Microseconds())
 	}
 
 	// The list is ordered by preference.
@@ -86,9 +86,9 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	var (
-		chosenScore    Score
-		chosenName     string
-		chosenDuration time.Duration
+		chosenScore      Score
+		chosenName       string
+		chosenDurationUs int64
 	)
 
 	currentTarget := baseline
@@ -109,11 +109,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		"baselineEvictions", baseline.Evicted, "baselineMoves", baseline.Moved)
 
 	type AttemptResult struct {
-		Name     string
-		Duration time.Duration
-		Score    Score
-		CmpBase  int // -1 worse, 0 equal, 1 better
-		Status   string
+		Name       string
+		DurationUs int64 // microseconds
+		Score      Score
+		CmpBase    int // -1 worse, 0 equal, 1 better
+		Status     string
 	}
 	var results []AttemptResult
 
@@ -142,16 +142,16 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		attStart := time.Now()
 		out, err := att.Run(ctxAtt, inAttempt)
 		cancel()
-		attDur := time.Since(attStart)
+		attDurUs := time.Since(attStart).Microseconds()
 
 		if err != nil {
 			klog.ErrorS(err, string(phase)+": solver failed",
-				"attempt", i, "solver", att.Name, "duration", attDur, "timeoutMs", att.Timeout.Milliseconds(), "timeoutHintMs", toMs)
+				"attempt", i, "solver", att.Name, "durationUs", attDurUs, "timeoutMs", att.Timeout.Milliseconds(), "timeoutHintMs", toMs)
 			continue
 		}
 		if !IsSolverFeasible(out) {
 			klog.InfoS(string(phase)+": solver infeasible",
-				"attempt", i, "solver", att.Name, "duration", attDur, "timeoutMs", att.Timeout.Milliseconds(), "timeoutHintMs", toMs, "status", out.Status)
+				"attempt", i, "solver", att.Name, "durationUs", attDurUs, "timeoutMs", att.Timeout.Milliseconds(), "timeoutHintMs", toMs, "status", out.Status)
 			continue
 		}
 		anyFeasible = true
@@ -164,28 +164,28 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			switch IsImprovement(baseline, sc) {
 			case 1:
 				klog.V(V2).InfoS(string(phase)+": solver improved over baseline",
-					"attempt", i, "solver", att.Name, "duration", attDur,
+					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
 					"deltaEvictions", dEv, "deltaMoves", dMv)
 				currentTarget = sc
 			case 0:
 				klog.V(V2).InfoS(string(phase)+": solver equal to baseline",
-					"attempt", i, "solver", att.Name, "duration", attDur,
+					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
 			default:
 				klog.V(V2).InfoS(string(phase)+": solver worse than baseline",
-					"attempt", i, "solver", att.Name, "duration", attDur,
+					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
 					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
 					"deltaEvictions", dEv, "deltaMoves", dMv)
 			}
 
-			chosenOut, chosenScore, chosenName, chosenDuration = out, sc, att.Name, attDur
+			chosenOut, chosenScore, chosenName, chosenDurationUs = out, sc, att.Name, attDurUs
 			results = append(results, AttemptResult{
-				Name:     att.Name,
-				Duration: attDur,
-				Score:    sc,
-				CmpBase:  IsImprovement(baseline, sc),
-				Status:   out.Status,
+				Name:       att.Name,
+				DurationUs: attDurUs,
+				Score:      sc,
+				CmpBase:    IsImprovement(baseline, sc),
+				Status:     out.Status,
 			})
 			continue
 		}
@@ -194,31 +194,31 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		switch IsImprovement(chosenScore, sc) {
 		case 1:
 			klog.V(V2).InfoS(string(phase)+": new leader",
-				"attempt", i, "solver", att.Name, "prevLeader", chosenName, "duration", attDur,
+				"attempt", i, "solver", att.Name, "prevLeader", chosenName, "durationUs", attDurUs,
 				"leaderPlacedByPri", sc.PlacedByPriority, "prevPlacedByPri", chosenScore.PlacedByPriority,
 				"leaderEvictions", sc.Evicted, "prevEvictions", chosenScore.Evicted,
 				"leaderMoves", sc.Moved, "prevMoves", chosenScore.Moved)
-			chosenOut, chosenScore, chosenName, chosenDuration = out, sc, att.Name, attDur
+			chosenOut, chosenScore, chosenName, chosenDurationUs = out, sc, att.Name, attDurUs
 			if IsImprovement(currentTarget, sc) == 1 {
 				currentTarget = sc
 			}
 		case 0: // tie with current leader; keep the first one as chosen
 			klog.V(V2).InfoS(string(phase)+": solver tied with leader",
-				"attempt", i, "solver", att.Name, "leader", chosenName, "duration", attDur,
+				"attempt", i, "solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
 				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
 		default:
 			klog.V(V2).InfoS(string(phase)+": solver worse than leader",
-				"attempt", i, "solver", att.Name, "leader", chosenName, "duration", attDur,
+				"attempt", i, "solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
 				"placedByPri", sc.PlacedByPriority, "leaderPlacedByPri", chosenScore.PlacedByPriority,
 				"evictions", sc.Evicted, "leaderEvictions", chosenScore.Evicted,
 				"moves", sc.Moved, "leaderMoves", chosenScore.Moved)
 		}
 		results = append(results, AttemptResult{
-			Name:     att.Name,
-			Duration: attDur,
-			Score:    sc,
-			CmpBase:  IsImprovement(baseline, sc),
-			Status:   out.Status,
+			Name:       att.Name,
+			DurationUs: attDurUs,
+			Score:      sc,
+			CmpBase:    IsImprovement(baseline, sc),
+			Status:     out.Status,
 		})
 	}
 
@@ -256,31 +256,31 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	// Build best solver summary (if any)
 	if chosenOut != nil {
 		chosenSolverSummary = SolverSummary{
-			Name:     chosenName,
-			Status:   chosenStatus,
-			Duration: chosenDuration,
-			Score:    chosenScore,
+			Name:       chosenName,
+			Status:     chosenStatus,
+			DurationUs: chosenDurationUs,
+			Score:      chosenScore,
 		}
 	}
 
 	if len(results) > 0 {
 		type Row struct {
-			Name     string
-			Duration time.Duration
-			Score    Score
-			CmpBase  int
-			PrefIdx  int // attempt order index to keep the first one first for true ties
+			Name       string
+			DurationUs int64
+			Score      Score
+			CmpBase    int
+			PrefIdx    int // attempt order index to keep the first one first for true ties
 		}
 
 		// Build rows with attempt order as PrefIdx
 		ranking := make([]Row, 0, len(results))
 		for i, r := range results {
 			ranking = append(ranking, Row{
-				Name:     r.Name,
-				Duration: r.Duration,
-				Score:    r.Score,
-				CmpBase:  r.CmpBase,
-				PrefIdx:  i, // attempt order
+				Name:       r.Name,
+				DurationUs: r.DurationUs,
+				Score:      r.Score,
+				CmpBase:    r.CmpBase,
+				PrefIdx:    i, // attempt order
 			})
 		}
 
@@ -323,7 +323,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			evs[i] = ranking[i].Score.Evicted
 			mvs[i] = ranking[i].Score.Moved
 			cmps[i] = ranking[i].CmpBase
-			dursUs[i] = ranking[i].Duration.Microseconds()
+			dursUs[i] = ranking[i].DurationUs
 		}
 
 		klog.InfoS(string(phase)+": solver leaderboard",
@@ -340,7 +340,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		evAttempts = append(evAttempts, SolverStats{
 			Name:       r.Name,
 			Status:     r.Status,
-			DurationUs: r.Duration.Microseconds(),
+			DurationUs: r.DurationUs,
 			Score:      r.Score,
 		})
 	}
@@ -350,7 +350,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		evChosen = &SolverStats{
 			Name:       chosenName,
 			Status:     chosenStatus,
-			DurationUs: chosenDuration.Microseconds(),
+			DurationUs: chosenDurationUs,
 			Score:      chosenScore,
 		}
 	}

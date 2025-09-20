@@ -15,7 +15,7 @@ spec:
       labels:
         app: high-priority
     spec:
-      priorityClassName: p4
+      priorityClassName: p3
       tolerations:
         - key: "kwok.x-k8s.io/node"
           operator: "Exists"
@@ -25,8 +25,8 @@ spec:
           image: registry.k8s.io/pause:3.9
           resources:
             requests:
-              cpu: "3000m"
-              memory: "3000Mi"
+              cpu: "500m"
+              memory: "1000Mi"
             limits:
-              cpu: "3000m"
-              memory: "3000Mi"
+              cpu: "500m"
+              memory: "1000Mi"

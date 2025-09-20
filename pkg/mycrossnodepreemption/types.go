@@ -254,8 +254,8 @@ type SolverSummary struct {
 	Name string `json:"name,omitempty"`
 	// Status of the solver
 	Status string `json:"status,omitempty"`
-	// Duration of the solver
-	Duration time.Duration `json:"duration,omitempty"`
+	// DurationUs of the solver
+	DurationUs int64 `json:"durationUs,omitempty"`
 	// Score of the solution
 	Score Score `json:"score,omitempty"`
 }
