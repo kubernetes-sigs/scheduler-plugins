@@ -11,12 +11,12 @@ import (
 
 // periodicOptimizeLoop runs the optimization loop at a regular interval.
 // It starts with an initial delay and then runs at a fixed interval.
-func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context, phase Phase) {
+func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context) {
+	label := strategyToString()
 	firstDelay := OptimizationInitialDelay
 	interval := OptimizationInterval
 	timer := time.NewTimer(firstDelay)
 	defer timer.Stop()
-	label := string(phase)
 	klog.InfoS(label+": first run scheduled", "in", firstDelay)
 	for {
 		select {
@@ -29,7 +29,7 @@ func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context, phase
 			}
 			klog.InfoS(label + ": cycle started")
 			// no singlePod in periodic modes
-			_, _ = pl.runFlow(context.Background(), phase, nil)
+			_, _ = pl.runFlow(context.Background(), nil)
 			timer.Reset(interval)
 			klog.InfoS(label+": next run", "in", interval)
 		}
@@ -45,14 +45,14 @@ func (pl *MyCrossNodePreemption) startLoops(ctx context.Context) {
 	if !pl.LoopsStarted.CompareAndSwap(false, true) {
 		return // already started
 	}
-	if optimizeInBatches() {
-		klog.InfoS("Loop: periodicOptimizeLoop started for InBatches")
-		go pl.periodicOptimizeLoop(ctx, PhaseBatch)
-	} else if optimizeContinuously() {
-		klog.InfoS("Loop: periodicOptimizeLoop started for Continuously")
-		go pl.periodicOptimizeLoop(ctx, PhaseContinuous)
-	} else if optimizeForEvery() && optimizeAtPreEnqueue() {
-		klog.InfoS("Loop: nudgeBlockedLoop started for ForEvery@PreEnqueue")
+	if optimizeBatch() {
+		klog.InfoS("Loop: periodicOptimizeLoop started for Batch")
+		go pl.periodicOptimizeLoop(ctx)
+	} else if optimizeContinuous() {
+		klog.InfoS("Loop: periodicOptimizeLoop started for Continuous")
+		go pl.periodicOptimizeLoop(ctx)
+	} else if optimizeEvery() && optimizeAtPreEnqueue() {
+		klog.InfoS("Loop: nudgeBlockedLoop started for Every@PreEnqueue")
 		go pl.nudgeBlockedLoop(ctx)
 	}
 }

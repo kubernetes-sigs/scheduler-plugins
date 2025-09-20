@@ -87,7 +87,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	pl.leaveActive()
 	// We do not activate blocked pods when we are in Every@PreEnqueue
 	// as it would lead to high contention; instead we periodically nudge them.
-	if !optimizeForEvery() || !optimizeAtPreEnqueue() {
+	if !optimizeEvery() || !optimizeAtPreEnqueue() {
 		pl.activateBlockedPods(0)
 	}
 	if ap.Cancel != nil {
@@ -368,7 +368,7 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
 // Mode: For-every: Single preemptor pod bound to target node (A) either in preenqueue or in postfilter, and all other pods in place (B, C)
-// Mode: In-batches: All pods bound to target nodes (only B, C).
+// Mode: Batch: All pods bound to target nodes (only B, C).
 // helpers.go
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
 	if ap == nil {

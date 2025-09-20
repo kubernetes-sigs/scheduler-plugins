@@ -86,8 +86,8 @@ The Cross-Node Preemption Plugin extends the Kubernetes scheduler with the abili
 - Reduce disruption: By modeling pod evictions and relocations, it aims to minimize the number of pods that must be preempted or moved.
 - Support multiple optimization modes:
   - For every pod – re-optimize whenever a new pod arrives.
-  - In batches – group pending pods and solve them together.
-  - Continuously – keep optimizing placements as the workload evolves.
+  - Batch – group pending pods and solve them together.
+  - Continuous – keep optimizing placements as the workload evolves.
 - Integrate with scheduling phases: The plugin can be triggered at different points in the scheduling cycle (pre-enqueue or post-filter), making it adaptable to diverse workloads.
 
 In short, this plugin enhances Kubernetes scheduling by making cross-node preemption both possible and practical, while ensuring better resource utilization.

@@ -41,7 +41,7 @@ const (
 	PlanPendingBindInterval = 250 * time.Millisecond
 	// PlansToRetain is the number of ConfigMaps plans to retain before the oldest are deleted.
 	PlansToRetain = 30
-	// NudgeBlockedInterval is how often to try waking one blocked pod when idle in ForEvery@PreEnqueue.
+	// NudgeBlockedInterval is how often to try waking one blocked pod when idle in Every@PreEnqueue.
 	// We need this functionality at this mode, as if we activate all blocked pods at once
 	// over and over again in onPlanSettled, we end up with a large waiting time in the queue.
 	NudgeBlockedInterval = 200 * time.Millisecond

@@ -1223,7 +1223,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.No
 		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, batched, true); err != nil {
 			return SolverInput{}, fmt.Errorf("fill (batch): %w", err)
 		}
-	case SolveContinuously:
+	case SolveContinuous:
 		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, nil, true); err != nil {
 			return SolverInput{}, fmt.Errorf("fill (continuous): %w", err)
 		}

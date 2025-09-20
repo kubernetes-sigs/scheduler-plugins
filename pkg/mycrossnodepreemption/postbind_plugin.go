@@ -39,8 +39,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		klog.V(MyVerbosity).InfoS("PostBind: still in progress", "planID", ap.ID, "pod", klog.KObj(pod))
 		return
 	}
-	if cur := pl.getActivePlan(); cur != nil && cur.ID == ap.ID {
-		klog.InfoS("plan completed", "planID", ap.ID)
-		pl.onPlanSettled(PlanStatusCompleted)
+	if pl.onPlanSettled(PlanStatusCompleted) {
+		klog.InfoS("PostBind: plan completed", "planID", ap.ID)
 	}
 }

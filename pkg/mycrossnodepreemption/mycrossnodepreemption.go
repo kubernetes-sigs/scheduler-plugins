@@ -56,17 +56,8 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", strategyToString())
 	klog.InfoS("Solver configuration", "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "timeout", SolverPythonTimeout.String())
 	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
-	if optimizeInBatches() || optimizeContinuously() {
+	if optimizeBatch() || optimizeContinuous() {
 		klog.InfoS("Loop configuration", "optimizationInterval", OptimizationInterval.String())
-	}
-
-	// Setup loops if needed by the optimization strategy
-	if optimizeInBatches() {
-		go pl.periodicOptimizeLoop(ctx, PhaseBatch)
-	} else if optimizeContinuously() {
-		go pl.periodicOptimizeLoop(ctx, PhaseContinuous)
-	} else if optimizeForEvery() && optimizeAtPreEnqueue() {
-		go pl.nudgeBlockedLoop(ctx)
 	}
 
 	return pl, nil

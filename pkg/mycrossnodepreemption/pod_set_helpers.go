@@ -77,8 +77,8 @@ func (pl *MyCrossNodePreemption) waitForInformersSyncedAndNodes(
 				pl.CachesWarm.Store(true)
 				klog.InfoS("Caches ready and usable node(s) detected")
 
-				// Avoid a surge in ForEvery@PreEnqueue; the idle nudge will trickle them.
-				if !(optimizeForEvery() && optimizeAtPreEnqueue()) {
+				// Avoid a surge in Every@PreEnqueue; the idle nudge will trickle them.
+				if !(optimizeEvery() && optimizeAtPreEnqueue()) {
 					_ = pl.activateBlockedPods(0) // activate all currently blocked
 				}
 				pl.startLoops(ctx)

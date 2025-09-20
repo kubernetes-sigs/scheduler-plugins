@@ -129,7 +129,7 @@ type SolveMode int
 const (
 	SolveBatch SolveMode = iota
 	SolveSingle
-	SolveContinuously
+	SolveContinuous
 )
 
 const (
