@@ -1451,6 +1451,23 @@ class KwokTestGenerator:
     ##############################################
     # ------------ Runner helpers ----------------
     ##############################################
+    def _pause(self, *, next_exists: bool = True) -> None:
+        """
+        Pause for Enter if --pause is set and another item is coming.
+        Skips if stdin is not a TTY (e.g., CI, redirection).
+        """
+        if not getattr(self.args, "pause", False):
+            return
+        if not next_exists:
+            return
+        if not sys.stdin.isatty():
+            LOG.info("[pause] requested but stdin is not a TTY; continuing.")
+            return
+        try:
+            input("[pause] Press Enter to continue (Ctrl+C to abort)... ")
+        except KeyboardInterrupt:
+            raise SystemExit("Aborted by user during pause.")
+    
     def _write_fail(self, category: str, cfg: Path, seed: int | None,
                     phase: str, message: str, details: str = "") -> None:
         """
@@ -2049,6 +2066,8 @@ class KwokTestGenerator:
             self._print_run_header(s, cfg.name, made + 1, to_make, cfg_idx, cfgs_total)
             rc = self._resolve_config_for_seed(raw, s)
             self._run_single_seed(cfg, seen, s, rc)
+            more_coming = (to_make == -1) or (made + 1 < to_make)
+            self._pause(next_exists=more_coming)
             if to_make != -1:
                 made += 1
         return
@@ -2074,6 +2093,7 @@ class KwokTestGenerator:
             s = int(s)
             rc = self._resolve_config_for_seed(raw, s)
             self._run_single_seed(cfg, seen, s, rc, self.args.seed_file)
+            self._pause(next_exists=(seed_idx < seeds_total))
         return
 
     def _run_for_config(self, cfg: Path, cfg_idx: int, cfgs_total: int) -> None:
@@ -2188,6 +2208,7 @@ class KwokTestGenerator:
                      f"config={cfg}\n"
                      "----------------------------------------------------------------------------------------------------------------")
             self._run_for_config(cfg, cfg_idx, cfgs_total)
+            self._pause(next_exists=(cfg_idx < cfgs_total))
 
 # ===============================================================
 # Logging
@@ -2324,7 +2345,9 @@ def build_argparser() -> argparse.ArgumentParser:
                         "<parent-of-CONFIGS> is the directory that contains your 'configs' folder."))
     ap.add_argument("--overwrite", action="store_true",
                     help="Replace any existing results for the same seed (results rows and stats CSVs).")
-    
+    ap.add_argument("--pause", action="store_true",
+                    help="Pause for Enter between seeds and between configs (interactive only; ignored with --matrix-file or non-TTY).")
+
     # rotation
     ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=50_0000,
                     help="Maximum number of data rows per results CSV before rotating to <name>_N.csv (default 50.0000).")
@@ -2361,6 +2384,10 @@ def main():
     Main entry point for the KWOK test generator.
     """
     args = build_argparser().parse_args()
+    
+    if args.matrix_file and args.pause:
+        LOG.info("Ignoring --pause because --matrix-file is in use.")
+        args.pause = False
 
     # Setup structured logging (matrix runner may provide a prefix via env)
     env_prefix = os.environ.get("KWOK_LOG_PREFIX") or f"[cluster={args.cluster_name}] "
