@@ -236,14 +236,10 @@ class KwokTestGenerator:
         self.args = args
         self.ctx: Optional[str] = None
         self.kwok_runtime: str = args.kwok_runtime
-        self.results_dir = Path(args.results_dir)
-        self.results_dir.mkdir(parents=True, exist_ok=True)
-        
+        self.results_dir_arg = args.results_dir
+        self.results_dir: Path | None = None
+        self.failed_f: Path | None = None
         self.max_rows_per_file = int(args.max_rows_per_file)
-        
-        # Always place failures under the results dir.
-        self.failed_f = self.results_dir / "failed.csv"
-        self.failed_f.touch(exist_ok=True)
 
     ######################################################
     # ---------- Parsing helpers ----------
@@ -2102,6 +2098,28 @@ class KwokTestGenerator:
             return
 
         self.ctx = f"kwok-{self.args.cluster_name}"
+        
+        # Decide results directory for this config
+        # If --results-dir is None:
+        #   results/<config-dir-name>/   (sibling to the config-dir)
+        # Else:
+        #   use the provided --results-dir path as-is.
+        cfg_dir_path = Path(self.args.config_dir).resolve()
+        cfg_dir_name = cfg_dir_path.name
+
+        if self.results_dir_arg:
+            rd = Path(self.results_dir_arg).resolve()
+        else:
+            rd = cfg_dir_path.parent / "results" / cfg_dir_name
+
+        rd.mkdir(parents=True, exist_ok=True)
+        self.results_dir = rd
+
+        # failures file lives inside this folder
+        self.failed_f = self.results_dir / "failed.csv"
+        self.failed_f.touch(exist_ok=True)
+
+        LOG.info(f"results-dir resolved to: {self.results_dir}")
 
         seen = self._load_seen_results(cfg.stem)
         
@@ -2237,14 +2255,12 @@ def run_matrix(args) -> int:
             "\n==================== MATRIX RUN {}/{} ====================\n"
             "[matrix] cluster-name={}\n"
             "[matrix] config-dir={}\n"
-            "[matrix] results-dir={}\n"
             "[matrix] seed-file={}\n"
             "------------------------------------------------------------------"
             .format(
                 idx, total,
                 row["cluster-name"],
                 row["config-dir"],
-                row["results-dir"],
                 row["seed-file"],
             ),
             flush=True,  # make sure it appears before the child prints
@@ -2256,7 +2272,6 @@ def run_matrix(args) -> int:
             "--cluster-name", row["cluster-name"],
             "--kwok-runtime", runtime,
             "--config-dir",   row["config-dir"],
-            "--results-dir",  row["results-dir"],
             "--seed-file",    row["seed-file"],
         ]
         if args.overwrite:
@@ -2301,8 +2316,9 @@ def build_argparser() -> argparse.ArgumentParser:
                     "If 'docker', it is expected to have the tag 'localhost:5000/scheduler-plugins/kube-scheduler:dev'.")
     ap.add_argument("--config-dir", dest="config_dir", default=None,
                     help="Directory containing one or more KWOK config YAMLs")
-    ap.add_argument("--results-dir", dest="results_dir", default="./data/results",
-                    help="Directory to store results CSV files, one per KWOK config (default: ./data/results).")
+    ap.add_argument("--results-dir", dest="results_dir", default=None,
+                    help=("Directory to store results. If omitted, results go to "
+                        "<parent-of-config-dir>/results/<config-dir-name>/"))
     ap.add_argument("--overwrite", action="store_true",
                     help="Replace any existing results for the same seed (results rows and stats CSVs).")
     

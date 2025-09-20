@@ -3,6 +3,12 @@
 
 - [Table of Contents](#table-of-contents)
 - [Overview](#overview)
+- [TODOs](#todos)
+  - [Test](#test)
+- [Later](#later)
+- [Questions](#questions)
+  - [Open Questions](#open-questions)
+  - [Closed Questions](#closed-questions)
   - [Analogy of the problem to be solved](#analogy-of-the-problem-to-be-solved)
   - [Plugin Description](#plugin-description)
   - [Solvers](#solvers)
@@ -19,18 +25,49 @@
 - [Test scripts](#test-scripts)
 - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
 - [Install Metrics API in kind cluster](#install-metrics-api-in-kind-cluster)
-- [TODOs](#todos)
-  - [Test](#test)
-- [Later](#later)
-- [Questions](#questions)
-  - [Open Questions](#open-questions)
-  - [Closed Questions](#closed-questions)
 
 # Overview
 
 This project introduces an improved cross-node preemption plugin for Kubernetes that overcomes the limitations of the default scheduler’s preemption mechanism.
 
 Whereas the default scheduler only preempts pods within a single node, this plugin is capable of reasoning across multiple nodes simultaneously. It implements efficient algorithms to decide which pods to move or evict, with the aim of admitting high-priority workloads while minimizing disruption.
+
+# TODOs
+
+- Write report
+- Remove TODOs.
+- Make the test plan.
+
+## Test
+
+- Test at which utilization the default scheduler stops to work properly.
+- Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
+- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
+- Test the plugin works across workload type.
+- Test CP-SAT vs. other solvers.
+
+# Later
+
+- Make use of design patterns where possible.
+- Create unit and integration tests.
+- Find a better way to set verbose level.
+- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
+- We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
+- Add more comments to the code.
+- Fix TODOs
+
+# Questions
+
+## Open Questions
+
+## Closed Questions
+
+- What to do with evicted and blocked pods - put them to queue or try again immediately?
+  - Jacopo: Fine, what i am doing now, by just letting them try again immediately
+- What to do with node-selectors, PDBs, and other rules.
+  - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
+
+
 
 ## Analogy of the problem to be solved
 
@@ -218,38 +255,3 @@ Some useful test scripts can be found in `bootstrap/content/scripts/kwok/`:
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 kubectl patch -n kube-system deployment metrics-server --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
 ```
-
-# TODOs
-
-- Write report
-- Remove TODOs.
-- Make the test plan.
-
-## Test
-
-- Test at which utilization the default scheduler stops to work properly.
-- Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
-- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
-- Test the plugin works across workload type.
-- Test CP-SAT vs. other solvers.
-
-# Later
-
-- Make use of design patterns where possible.
-- Create unit and integration tests.
-- Find a better way to set verbose level.
-- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
-- We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
-- Add more comments to the code.
-- Fix TODOs
-
-# Questions
-
-## Open Questions
-
-## Closed Questions
-
-- What to do with evicted and blocked pods - put them to queue or try again immediately?
-  - Jacopo: Fine, what i am doing now, by just letting them try again immediately
-- What to do with node-selectors, PDBs, and other rules.
-  - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
