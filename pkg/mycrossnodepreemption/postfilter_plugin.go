@@ -46,7 +46,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		// Make sure we have the correct node and pod information; needed in postfilter as we do not know if any pod was already in the middle of scheduling.
 		// TODO_HC: wait for pod and node cache has synced instead of sleeping. Not sure, however, if it is needed at all to sleep.
 		// time.Sleep(1 * time.Second)
-		res, err := pl.execute(ctx, PhasePostFilter, pending)
+		res, err := pl.runFlow(ctx, PhasePostFilter, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {
 				pl.Blocked.AddPod(pending)

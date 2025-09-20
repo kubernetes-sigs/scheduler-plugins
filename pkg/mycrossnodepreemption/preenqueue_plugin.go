@@ -44,7 +44,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 
 	case DecideEvery:
 		klog.InfoS("PreEnqueue: start", "pod", klog.KObj(pod))
-		_, err := pl.execute(ctx, PhasePreEnqueue, pod)
+		_, err := pl.runFlow(ctx, PhasePreEnqueue, pod)
 		if err != nil {
 			if err == ErrActiveInProgress {
 				pl.Blocked.AddPod(pod)

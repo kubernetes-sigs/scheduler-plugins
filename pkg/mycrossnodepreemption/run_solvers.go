@@ -32,17 +32,17 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	ctx context.Context,
 	phase Phase,
 	in SolverInput,
-	baseline Score,
 	nodes []*v1.Node,
 	pods []*v1.Pod,
 ) (chosenOut *SolverOutput, anyFeasible bool, chosenSolverSummary SolverSummary) {
 	// Build cluster state
-	base := prepareState(in)
+	baselineScore := buildBaselineScore(in)
+	baseState := buildState(in)
 
-	if optimizeAtPreEnqueue() && phase == PhasePreEnqueue {
+	if optimizeAtPreEnqueue() && phase.atPreEnqueue() {
 		// Direct-fit pre-pass
 		dfStart := time.Now()
-		if dfOut := runSolverDirectFit(in, base); IsSolverFeasible(dfOut) {
+		if dfOut := runSolverDirectFit(in, baseState); IsSolverFeasible(dfOut) {
 			dfScore := computeSolverScore(in, dfOut)
 			dfDurUs := time.Since(dfStart).Microseconds()
 			klog.InfoS(string(phase)+": direct-fit; skipping other solvers",
@@ -66,7 +66,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Timeout: SolverLocalSearchTimeout,
 			Trials:  SolverLocalSearchMaxRestartsPerTarget,
 			Run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runSolverCommon(in, localSearchPlan, "local-search", base), nil
+				return runSolverCommon(in, localSearchPlan, "local-search", baseState), nil
 			},
 		},
 		{
@@ -75,7 +75,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Timeout: SolverBfsTimeout,
 			Trials:  1,
 			Run: func(_ context.Context, in SolverInput) (*SolverOutput, error) {
-				return runSolverCommon(in, bfsPlan, "bfs", base), nil
+				return runSolverCommon(in, bfsPlan, "bfs", baseState), nil
 			},
 		},
 		{
@@ -94,7 +94,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		chosenDurationUs int64
 	)
 
-	currentTarget := baseline
+	currentTarget := baselineScore
 
 	// Log enabled solvers and their timeouts once (verbose only).
 	enabledNames := []string{}
@@ -108,8 +108,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 	klog.V(MyVerbosity).InfoS(string(phase)+": solver attempts planned",
 		"enabled", enabledNames, "timeoutsMs", timeoutsMs,
-		"baselinePlacedByPri", baseline.PlacedByPriority,
-		"baselineEvictions", baseline.Evicted, "baselineMoves", baseline.Moved)
+		"baselinePlacedByPri", baselineScore.PlacedByPriority,
+		"baselineEvictions", baselineScore.Evicted, "baselineMoves", baselineScore.Moved)
 
 	type AttemptResult struct {
 		Name       string
@@ -166,12 +166,12 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 		anyFeasible = true
 		sc := computeSolverScore(inAttempt, out)
-		dEv := sc.Evicted - baseline.Evicted
-		dMv := sc.Moved - baseline.Moved
+		dEv := sc.Evicted - baselineScore.Evicted
+		dMv := sc.Moved - baselineScore.Moved
 
 		if chosenOut == nil {
 			// First feasible candidate: compare vs baseline for logging.
-			switch IsImprovement(baseline, sc) {
+			switch IsImprovement(baselineScore, sc) {
 			case 1:
 				klog.V(MyVerbosity).InfoS(string(phase)+": solver improved over baseline",
 					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
@@ -194,7 +194,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Name:       att.Name,
 				DurationUs: attDurUs,
 				Score:      sc,
-				CmpBase:    IsImprovement(baseline, sc),
+				CmpBase:    IsImprovement(baselineScore, sc),
 				Status:     out.Status,
 			})
 			continue
@@ -227,7 +227,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Name:       att.Name,
 			DurationUs: attDurUs,
 			Score:      sc,
-			CmpBase:    IsImprovement(baseline, sc),
+			CmpBase:    IsImprovement(baselineScore, sc),
 			Status:     out.Status,
 		})
 	}
@@ -369,7 +369,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	if anyFeasible {
 		pl.appendStatsCM(ctx, ExportedStats{
 			Timestamp_ns: time.Now().UnixNano(),
-			Baseline:     baseline,
+			Baseline:     baselineScore,
 			Attempts:     evAttempts,
 			Chosen:       evChosen,
 			PlanStatus:   PlanStatusActive,

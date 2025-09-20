@@ -7,6 +7,43 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// OptimizationCadenceMode indicates how we optimize (for every pod, in batches, continuously).
+type OptimizationCadenceMode int
+
+const (
+	OptimizeForEvery OptimizationCadenceMode = iota
+	OptimizeInBatches
+	OptimizeContinuously
+)
+
+// OptimizationAtMode indicates at which scheduling phase to optimize.
+type OptimizationAtMode int
+
+const (
+	OptimizeAtPreEnqueue OptimizationAtMode = iota
+	OptimizeAtPostFilter
+)
+
+// StrategyDecision indicates the decision made by the plugin.
+type StrategyDecision int
+
+const (
+	DecidePassThrough StrategyDecision = iota
+	DecideBatch
+	DecideEvery
+	DecideBlockActive
+)
+
+// Phase indicates which phase of scheduling we are in.
+type Phase string
+
+const (
+	PhasePreEnqueue Phase = "PreEnqueue"
+	PhasePostFilter Phase = "PostFilter"
+	PhaseBatch      Phase = "BatchLoop"
+	PhaseContinuous Phase = "ContinuousLoop"
+)
+
 // optimizeForEvery is the optimizer cadence that optimizes for every new pod.
 func optimizeForEvery() bool { return OptimizeCadence == OptimizeForEvery }
 
@@ -27,6 +64,12 @@ func (phase Phase) atPreEnqueue() bool { return phase == PhasePreEnqueue }
 
 // atPostFilter returns true if the phase is PostFilter.
 func (phase Phase) atPostFilter() bool { return phase == PhasePostFilter }
+
+// atBatch returns true if the phase is BatchLoop.
+func (phase Phase) atBatch() bool { return phase == PhaseBatch }
+
+// atContinuous returns true if the phase is ContinuousLoop.
+func (phase Phase) atContinuous() bool { return phase == PhaseContinuous }
 
 // decideStrategy determines the optimization strategy based on the current phase.
 // Continuously mode, never blocks or batches pods.

@@ -29,7 +29,7 @@ func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context, phase
 			}
 			klog.InfoS(label + ": cycle started")
 			// no singlePod in periodic modes
-			_, _ = pl.execute(context.Background(), phase, nil)
+			_, _ = pl.runFlow(context.Background(), phase, nil)
 			timer.Reset(interval)
 			klog.InfoS(label+": next run", "in", interval)
 		}

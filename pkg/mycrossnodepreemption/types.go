@@ -121,45 +121,6 @@ type WorkloadKey struct {
 	Name string
 }
 
-// ===== Optimization types =====
-
-// OptimizationCadenceMode indicates how we optimize (for every pod, in batches, continuously).
-type OptimizationCadenceMode int
-
-const (
-	OptimizeForEvery OptimizationCadenceMode = iota
-	OptimizeInBatches
-	OptimizeContinuously
-)
-
-// OptimizationAtMode indicates at which scheduling phase to optimize.
-type OptimizationAtMode int
-
-const (
-	OptimizeAtPreEnqueue OptimizationAtMode = iota
-	OptimizeAtPostFilter
-)
-
-// StrategyDecision indicates the decision made by the plugin.
-type StrategyDecision int
-
-const (
-	DecidePassThrough StrategyDecision = iota
-	DecideBatch
-	DecideEvery
-	DecideBlockActive
-)
-
-// Phase indicates which phase of scheduling we are in.
-type Phase string
-
-const (
-	PhasePreEnqueue Phase = "PreEnqueue"
-	PhasePostFilter Phase = "PostFilter"
-	PhaseBatch      Phase = "BatchLoop"
-	PhaseContinuous Phase = "ContinuousLoop"
-)
-
 // ===== Solver types =====
 
 // SolveMode indicates the mode of solving.

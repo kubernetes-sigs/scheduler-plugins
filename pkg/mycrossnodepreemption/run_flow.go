@@ -10,12 +10,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// execute runs the full flow for the given phase (Continuous, Batch, Single).
+// runFlow runs the full flow for the given phase (Continuous, Batch, Single).
 // For Single phase, the singlePod must be provided (the preemptor).
-func (pl *MyCrossNodePreemption) execute(ctx context.Context, phase Phase, singlePod *v1.Pod) (*FlowResult, error) {
+func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, phase Phase, singlePod *v1.Pod) (*FlowResult, error) {
 	// Continuous: do NOT take Active yet (we only take it if there is an improvement to apply).
 	// Batch/Single: take Active early because these modes block by design.
-	if phase != PhaseContinuous {
+	if !phase.atContinuous() {
 		if !pl.tryEnterActive() {
 			klog.V(MyVerbosity).InfoS(string(phase) + ": another plan active; skipping")
 			return nil, ErrActiveInProgress
@@ -30,7 +30,6 @@ func (pl *MyCrossNodePreemption) execute(ctx context.Context, phase Phase, singl
 		preemptor   *v1.Pod
 		batchedPods []*v1.Pod
 	)
-
 	switch phase {
 	case PhaseContinuous:
 		solveMode = SolveContinuously
@@ -61,18 +60,17 @@ func (pl *MyCrossNodePreemption) execute(ctx context.Context, phase Phase, singl
 		klog.ErrorS(err, string(phase)+": failed to list pods")
 		return nil, err
 	}
-	// ----------------------------------------------------
 
-	// ---------- Build input + baseline + digest ----------
-	in0, baseline, err := pl.buildInputAndBaseline(solveMode, nodes, pods, preemptor, batchedPods)
+	// ---------- Build input ----------
+	solverInput, err := pl.buildSolverInput(solveMode, nodes, pods, preemptor, batchedPods)
 	if err != nil {
-		klog.ErrorS(err, string(phase)+": failed to build input/baseline")
+		klog.ErrorS(err, string(phase)+": failed to build solver input")
 		pl.leaveActive()
 		return nil, err
 	}
 
 	// ---------- Solve ----------
-	bestOut, anyFeasible, chosenSolver := pl.runSolvers(ctx, phase, in0, baseline, nodes, pods)
+	bestOut, anyFeasible, chosenSolver := pl.runSolvers(ctx, phase, solverInput, nodes, pods)
 
 	// Decide failure reason:
 	// - If BOTH solvers are infeasible (or nil) -> ErrNoOptimalOrFeasible
@@ -81,25 +79,6 @@ func (pl *MyCrossNodePreemption) execute(ctx context.Context, phase Phase, singl
 		pl.leaveActive()
 		klog.ErrorS(ErrNoOptimalOrFeasible, string(phase)+": no optimal/feasible solution from any solver")
 		return nil, ErrNoOptimalOrFeasible
-	}
-
-	switch IsImprovement(baseline, chosenSolver.Score) {
-	case 1: // bestScore better than baseline
-		// proceed
-	case 0: // bestScore equal to baseline
-		pl.leaveActive()
-		klog.ErrorS(ErrNoImprovement, string(phase)+": equal to baseline (no improvement)",
-			"placedByPri", chosenSolver.Score.PlacedByPriority,
-			"evictions", chosenSolver.Score.Evicted,
-			"moves", chosenSolver.Score.Moved)
-		return nil, ErrNoImprovement
-	case -1: // bestScore worse than baseline
-		pl.leaveActive()
-		klog.ErrorS(ErrNoImprovement, string(phase)+": worse than baseline",
-			"placedByPri", chosenSolver.Score.PlacedByPriority,
-			"evictions", chosenSolver.Score.Evicted,
-			"moves", chosenSolver.Score.Moved)
-		return nil, ErrNoImprovement
 	}
 
 	// In continuous mode, allow benign drift; only skip if the plan is no longer applicable.
@@ -111,7 +90,7 @@ func (pl *MyCrossNodePreemption) execute(ctx context.Context, phase Phase, singl
 	}
 
 	// ---------- Take Active late for Continuous (only now that we know it's worth applying) ----------
-	if phase == PhaseContinuous {
+	if phase.atContinuous() {
 		if !pl.tryEnterActive() {
 			klog.InfoS("Continuous: another plan active; skipping")
 			return nil, ErrActiveInProgress
@@ -150,7 +129,7 @@ func (pl *MyCrossNodePreemption) execute(ctx context.Context, phase Phase, singl
 		}
 	}
 
-	if phase == PhaseBatch {
+	if phase.atBatch() {
 		pl.activateBatchedPods(batchedPods, 0)
 	}
 

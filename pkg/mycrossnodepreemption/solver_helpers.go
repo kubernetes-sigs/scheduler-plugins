@@ -4,8 +4,6 @@ package mycrossnodepreemption
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -14,7 +12,6 @@ import (
 	"strconv"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -200,7 +197,7 @@ func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry Export
 		}
 		// create fresh
 		buf, _ := json.Marshal([]ExportedStats{entry})
-		cm = &corev1.ConfigMap{
+		cm = &v1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      cmExportedStatsName,
 				Namespace: cmExportedStatsNamespace,
@@ -1099,7 +1096,7 @@ func toSolverPod(p *v1.Pod, node string) SolverPod {
 }
 
 // PreparedState holds the prepared cluster state for solvers.
-func prepareState(in SolverInput) *PreparedState {
+func buildState(in SolverInput) *PreparedState {
 	nodes, pods, pending, order, pre := buildClusterState(in)
 	wl, single, mg := buildWorklist(pending, pre)
 	return &PreparedState{
@@ -1313,23 +1310,6 @@ func IsImprovement(baseline, suggested Score) int {
 	return 0
 }
 
-// buildInputAndBaseline builds the exact snapshot we send to the solver,
-// and returns the baseline and a digest for concurrency checks.
-func (pl *MyCrossNodePreemption) buildInputAndBaseline(
-	mode SolveMode,
-	nodes []*v1.Node, // <-- pre-fetched once per flow
-	pods []*v1.Pod, // <-- pre-fetched once per flow
-	preemptor *v1.Pod,
-	batched []*v1.Pod,
-) (SolverInput, Score, error) {
-	in, err := pl.buildSolverInput(mode, nodes, pods, preemptor, batched)
-	if err != nil {
-		return SolverInput{}, Score{}, err
-	}
-	baseline := computeBaselineFromInput(in)
-	return in, baseline, nil
-}
-
 // planApplicable checks whether a SolverOutput (plan) can still be safely
 // applied on the *current* cluster state. It allows unrelated drift and only
 // insists that the concrete preconditions for the plan still hold.
@@ -1429,8 +1409,8 @@ func (pl *MyCrossNodePreemption) planApplicable(
 	return true, ""
 }
 
-// computeBaselineFromInput computes the baseline score from the solver input.
-func computeBaselineFromInput(in SolverInput) Score {
+// buildBaselineScore computes the baseline score from the solver input.
+func buildBaselineScore(in SolverInput) Score {
 	placedByPri := map[string]int{}
 	for _, sp := range in.Pods {
 		if sp.Node == "" {
@@ -1488,49 +1468,4 @@ func (ps *PreparedState) freshClone() (
 		worklist[i] = pods[p0.UID]
 	}
 	return
-}
-
-// buildDigest produces a deterministic hash of the snapshot that fed the solver input.
-// We use the already-normalized SolverInput (nodes/pods) for stability.
-func buildDigest(in SolverInput) string {
-	h := sha256.New()
-	// nodes sorted by name
-	ns := make([]SolverNode, len(in.Nodes))
-	copy(ns, in.Nodes)
-	sort.Slice(ns, func(i, j int) bool { return ns[i].Name < ns[j].Name })
-	for _, n := range ns {
-		h.Write([]byte(n.Name))
-		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(n.CapCPUm, 10)))
-		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(n.CapMemBytes, 10)))
-		h.Write([]byte("\n"))
-	}
-	// pods sorted by UID
-	ps := make([]SolverPod, len(in.Pods))
-	copy(ps, in.Pods)
-	sort.Slice(ps, func(i, j int) bool { return ps[i].UID < ps[j].UID })
-	for _, p := range ps {
-		h.Write([]byte(p.UID))
-		h.Write([]byte("|"))
-		h.Write([]byte(p.Namespace))
-		h.Write([]byte("|"))
-		h.Write([]byte(p.Name))
-		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(p.ReqCPUm, 10)))
-		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(p.ReqMemBytes, 10)))
-		h.Write([]byte("|"))
-		h.Write([]byte(strconv.FormatInt(int64(p.Priority), 10)))
-		h.Write([]byte("|"))
-		h.Write([]byte(p.Node))
-		h.Write([]byte("|"))
-		if p.Protected {
-			h.Write([]byte("1"))
-		} else {
-			h.Write([]byte("0"))
-		}
-		h.Write([]byte("\n"))
-	}
-	return hex.EncodeToString(h.Sum(nil))
 }
