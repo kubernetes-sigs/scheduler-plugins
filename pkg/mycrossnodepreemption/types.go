@@ -233,7 +233,8 @@ type SolverAttempt struct {
 	Timeout time.Duration
 	// Number of trials (for local search)
 	Trials int
-	// Fudge factor for timing (in ms)
+	// Time that the solver is allowed to exceed the timeout (ms)
+	// Can be used to let the solver provide a final solution after timeout.
 	FudgeMs int64
 	// Function to run the solver attempt
 	Run func(ctx context.Context, in SolverInput) (*SolverOutput, error)
