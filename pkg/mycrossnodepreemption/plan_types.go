@@ -38,9 +38,12 @@ type StoredPlan struct {
 type PlanStatus string
 
 const (
-	PlanStatusActive    PlanStatus = "Active"
+	// Active status indicates the plan is currently being executed.
+	PlanStatusActive PlanStatus = "Active"
+	// Inactive status indicates the plan is not currently being executed.
 	PlanStatusCompleted PlanStatus = "Completed"
-	PlanStatusFailed    PlanStatus = "Failed"
+	// Failed status indicates the plan execution failed.
+	PlanStatusFailed PlanStatus = "Failed"
 )
 
 // WorkloadQuotas is a map of workloadKey -> node -> remaining count
