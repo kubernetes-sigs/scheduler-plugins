@@ -31,8 +31,6 @@ type MyCrossNodePreemption struct {
 	Batched *PodSet
 	// Mutex to wait for caches to warm up
 	CachesWarm atomic.Bool
-	// Ensures loops start exactly once after caches warm
-	LoopsStarted atomic.Bool
 }
 
 // ===== Plan types =====

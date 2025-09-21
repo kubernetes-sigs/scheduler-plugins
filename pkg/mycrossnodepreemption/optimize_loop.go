@@ -9,9 +9,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// periodicOptimizeLoop runs the optimization loop at a regular interval.
+// optimizeLoop runs the optimization loop at a regular interval.
 // It starts with an initial delay and then runs at a fixed interval.
-func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context) {
+func (pl *MyCrossNodePreemption) optimizeLoop(ctx context.Context) {
 	label := strategyToString()
 	firstDelay := OptimizationInitialDelay
 	interval := OptimizationInterval
@@ -42,11 +42,8 @@ func (pl *MyCrossNodePreemption) startLoops(ctx context.Context) {
 	if !pl.CachesWarm.Load() {
 		return
 	}
-	if !pl.LoopsStarted.CompareAndSwap(false, true) {
-		return // already started
-	}
 	if optimizeBatch() || optimizeContinuous() {
-		go pl.periodicOptimizeLoop(ctx)
+		go pl.optimizeLoop(ctx)
 	} else if optimizeEvery() && optimizeAtPreEnqueue() {
 
 		go pl.nudgeBlockedLoop(ctx)

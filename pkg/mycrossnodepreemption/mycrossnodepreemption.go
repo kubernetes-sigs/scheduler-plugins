@@ -53,7 +53,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 	// Plugin configuration
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", strategyToString())
-	klog.InfoS("Configuration", "planTimeout", PlanExecutionTimeout.String(), "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "solverTimeout", SolverPythonTimeout.String())
+	klog.InfoS("Plugin configuration", "planTimeout", PlanExecutionTimeout.String(), "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "solverTimeout", SolverPythonTimeout.String())
 	if optimizeBatch() || optimizeContinuous() {
 		klog.InfoS("Loop configuration", "optimizationInterval", OptimizationInterval.String())
 	}
