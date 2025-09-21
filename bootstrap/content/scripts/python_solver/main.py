@@ -14,6 +14,7 @@ def _available_cpus() -> int:
         return max(1, os.cpu_count() or 1)
 
 # ----------------------------- helpers ---------------------------------
+# TODO: reach here in this file
 
 STATUS_MAP = {
     cp_model.OPTIMAL:       "OPTIMAL",
