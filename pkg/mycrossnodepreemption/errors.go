@@ -5,6 +5,7 @@ package mycrossnodepreemption
 import "errors"
 
 var (
+	ErrNoSolverEnabled     = errors.New("no solver enabled")
 	ErrActiveInProgress    = errors.New("active plan in progress")
 	ErrSolver              = errors.New("solver failed")
 	ErrRegisterPlan        = errors.New("failed to register plan")

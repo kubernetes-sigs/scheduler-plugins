@@ -17,6 +17,8 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 	if !optimizeEvery() || !optimizeAtPreEnqueue() {
 		return
 	}
+	label := strategyToString()
+	klog.InfoS("NudgeBlockedLoop started for " + label)
 
 	base := NudgeBlockedInterval
 	delay := base

@@ -17,7 +17,7 @@ func (pl *MyCrossNodePreemption) periodicOptimizeLoop(ctx context.Context) {
 	interval := OptimizationInterval
 	timer := time.NewTimer(firstDelay)
 	defer timer.Stop()
-	klog.InfoS(label+": first run scheduled", "in", firstDelay)
+	klog.InfoS(label+": started, first run scheduled", "in", firstDelay)
 	for {
 		select {
 		case <-ctx.Done():
@@ -45,14 +45,10 @@ func (pl *MyCrossNodePreemption) startLoops(ctx context.Context) {
 	if !pl.LoopsStarted.CompareAndSwap(false, true) {
 		return // already started
 	}
-	if optimizeBatch() {
-		klog.InfoS("Loop: periodicOptimizeLoop started for Batch")
-		go pl.periodicOptimizeLoop(ctx)
-	} else if optimizeContinuous() {
-		klog.InfoS("Loop: periodicOptimizeLoop started for Continuous")
+	if optimizeBatch() || optimizeContinuous() {
 		go pl.periodicOptimizeLoop(ctx)
 	} else if optimizeEvery() && optimizeAtPreEnqueue() {
-		klog.InfoS("Loop: nudgeBlockedLoop started for Every@PreEnqueue")
+
 		go pl.nudgeBlockedLoop(ctx)
 	}
 }

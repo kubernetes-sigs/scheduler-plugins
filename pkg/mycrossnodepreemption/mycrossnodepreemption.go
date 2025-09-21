@@ -4,7 +4,6 @@ package mycrossnodepreemption
 
 import (
 	"context"
-	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -30,7 +29,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 	if !pl.IsSolverEnabled() { // ensure at least one solver is enabled
 		klog.Error("No solver is enabled")
-		return nil, fmt.Errorf("no solver is enabled")
+		return nil, ErrNoSolverEnabled
 	}
 
 	// Warm informers
@@ -54,8 +53,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 	// Plugin configuration
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", strategyToString())
-	klog.InfoS("Solver configuration", "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "timeout", SolverPythonTimeout.String())
-	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
+	klog.InfoS("Configuration", "planTimeout", PlanExecutionTimeout.String(), "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "solverTimeout", SolverPythonTimeout.String())
 	if optimizeBatch() || optimizeContinuous() {
 		klog.InfoS("Loop configuration", "optimizationInterval", OptimizationInterval.String())
 	}
