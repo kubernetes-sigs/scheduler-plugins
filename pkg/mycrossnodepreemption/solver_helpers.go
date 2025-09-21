@@ -162,6 +162,102 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
+// exportSolverStats exports a compact run record to the stats ConfigMap.
+// Only runs when `hadFeasible` is true.
+func (pl *MyCrossNodePreemption) exportSolverStats(
+	ctx context.Context,
+	label string,
+	baseline SolverScore,
+	best SolverResult,
+	attemptsFeasible []SolverResult,
+	hadFeasible bool,
+) {
+	if !hadFeasible {
+		return
+	}
+	attempts := make([]SolverResult, 0, len(attemptsFeasible))
+	for _, r := range attemptsFeasible {
+		attempts = append(attempts, summarizeAttempt(r))
+	}
+	entry := ExportedStats{
+		TimestampNs: time.Now().UnixNano(),
+		Best:        best.Name,
+		PlanStatus:  PlanStatusActive,
+		Baseline:    baseline,
+		Attempts:    attempts,
+	}
+	pl.appendStatsCM(ctx, entry)
+	klog.V(MyV).InfoS(label+": exported solver stats", "attempts", len(attempts), "best", best.Name)
+}
+
+// logLeaderboard prints a compact solver leaderboard relative to baseline.
+// It groups attempts as better/equal/worse vs baseline and tags adjacent ties.
+func (pl *MyCrossNodePreemption) logLeaderboard(
+	label string,
+	attempts []SolverResult,
+	baseline SolverScore,
+	best SolverResult,
+) {
+	if len(attempts) == 0 {
+		return
+	}
+
+	// Classify relative to baseline while preserving attempt order inside groups.
+	var better, equal, worse []SolverResult
+	for _, r := range attempts {
+		rr := SolverResult{
+			Name:       r.Name,
+			DurationUs: r.DurationUs,
+			Score:      r.Score,
+			Status:     r.Status,
+			CmpBase:    IsImprovement(baseline, r.Score),
+		}
+		switch rr.CmpBase {
+		case 1:
+			better = append(better, rr)
+		case 0:
+			equal = append(equal, rr)
+		default:
+			worse = append(worse, rr)
+		}
+	}
+	ranking := append(append(better, equal...), worse...)
+
+	// Tie helper
+	tied := func(a, b SolverScore) bool {
+		return IsImprovement(a, b) == 0 && IsImprovement(b, a) == 0
+	}
+
+	// Build log arrays
+	names := make([]string, len(ranking))
+	evictions := make([]int, len(ranking))
+	moves := make([]int, len(ranking))
+	durations := make([]int64, len(ranking))
+	for i := range ranking {
+		lbl := ranking[i].Name
+		if i > 0 && tied(ranking[i-1].Score, ranking[i].Score) {
+			lbl += " (tie)"
+		}
+		names[i] = lbl
+		evictions[i] = ranking[i].Score.Evicted
+		moves[i] = ranking[i].Score.Moved
+		durations[i] = ranking[i].DurationUs
+	}
+
+	placed := baseline.PlacedByPriority
+	if best.Name != "baseline" {
+		placed = best.Score.PlacedByPriority
+	}
+
+	klog.InfoS(label+": solver leaderboard",
+		"ranking", names,
+		"durationsUs", durations,
+		"evictions", evictions,
+		"moves", moves,
+		"placedByPri", placed,
+	)
+}
+
 // copy to a "summary": drop Output/CmpBase and fill Status from Output.
 func summarizeAttempt(r SolverResult) SolverResult {
 	status := r.Status

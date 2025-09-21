@@ -10,8 +10,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO: still needs some cleanup...
-
 // runSolvers tries enabled solvers in order, keeping the best feasible improvement.
 // Returns: bestOut, whether anything was feasible, the best solver summary, and total duration (all attempts).
 func (pl *MyCrossNodePreemption) runSolvers(
@@ -26,7 +24,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	baselineScore := buildBaselineScore(in)
 	baseState := buildState(in)
 
-	// ---- Direct-fit pre-pass: only accept if strictly better than baseline ----
+	// Direct-fit pre-pass: only accept if strictly better than baseline
 	if optimizeAtPreEnqueue() {
 		start := time.Now()
 		if out := runSolverDirectFit(in, baseState); HasSolverFeasibleResult(out.Status) {
@@ -186,72 +184,10 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	// Leaderboard
-	if len(attemptsFeasible) > 0 {
-		var better, equal, worse []SolverResult
-		// Loop over feasible attempts to classify vs baseline
-		for _, r := range attemptsFeasible {
-			rr := SolverResult{
-				Name:       r.Name,
-				DurationUs: r.DurationUs,
-				Score:      r.Score,
-				CmpBase:    IsImprovement(baselineScore, r.Score),
-				Status:     r.Status,
-			}
-			switch rr.CmpBase {
-			case 1:
-				better = append(better, rr)
-			case 0:
-				equal = append(equal, rr)
-			default:
-				worse = append(worse, rr)
-			}
-		}
-		// Build ranking: better first, then equal, then worse
-		ranking := append(append(better, equal...), worse...)
+	pl.logLeaderboard(label, attemptsFeasible, baselineScore, best)
 
-		// Loop over ranking to build display arrays
-		names := make([]string, len(ranking))
-		evictions := make([]int, len(ranking))
-		moves := make([]int, len(ranking))
-		durations := make([]int64, len(ranking))
-		for i := range ranking {
-			label := ranking[i].Name
-			if i > 0 &&
-				IsImprovement(ranking[i-1].Score, ranking[i].Score) == 0 &&
-				IsImprovement(ranking[i].Score, ranking[i-1].Score) == 0 {
-				label += " (tie)"
-			}
-			names[i] = label
-			evictions[i] = ranking[i].Score.Evicted
-			moves[i] = ranking[i].Score.Moved
-			durations[i] = ranking[i].DurationUs
-		}
-
-		// Placed by priority from baseline if not best
-		placed := baselineScore.PlacedByPriority
-		if best.Name != "baseline" {
-			placed = best.Score.PlacedByPriority
-		}
-		// Show leaderboard
-		klog.InfoS(label+": solver leaderboard",
-			"ranking", names, "durationsUs", durations, "evictions", evictions, "moves", moves, "placedByPri", placed)
-	}
-
-	// Stats ledger
-	if hadFeasibleSolver {
-		attemptsToExport := make([]SolverResult, 0, len(attemptsFeasible))
-		for _, r := range attemptsFeasible {
-			attemptsToExport = append(attemptsToExport, summarizeAttempt(r))
-		}
-		entry := ExportedStats{
-			TimestampNs: time.Now().UnixNano(),
-			Best:        best.Name,
-			PlanStatus:  PlanStatusActive,
-			Baseline:    baselineScore,
-			Attempts:    attemptsToExport,
-		}
-		pl.appendStatsCM(ctx, entry)
-	}
+	// If any feasible solver, export stats
+	pl.exportSolverStats(ctx, label, baselineScore, best, attemptsFeasible, hadFeasibleSolver)
 
 	return best, hadFeasibleSolver
 }
