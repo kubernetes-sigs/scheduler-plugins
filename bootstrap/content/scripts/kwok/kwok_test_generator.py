@@ -813,7 +813,7 @@ class KwokTestGenerator:
         cols = []
         for s in solver_slots:
             cols += [f"{s}_status", f"{s}_duration_us", f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
-        header = ["timestamp_ns", "plan_status"] + cols
+        header = ["timestamp_ns", "plan_status", "best"] + cols
 
         with open(out_path, "w", encoding="utf-8", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=header)
@@ -822,6 +822,7 @@ class KwokTestGenerator:
                 row = {
                     "timestamp_ns": run.get("timestamp_ns") or "",
                     "plan_status": run.get("plan_status") or "",
+                    "best": run.get("best") or "",
                 }
                 attempts = {(a.get("name") or ""): a for a in (run.get("attempts") or [])}
                 for s in solver_slots:

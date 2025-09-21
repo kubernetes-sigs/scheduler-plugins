@@ -163,11 +163,11 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 }
 
 type ExportedStats struct {
-	Timestamp_ns int64           `json:"timestamp_ns"`
-	Baseline     SolverScore     `json:"baseline"`
-	Attempts     []SolverSummary `json:"attempts"`
-	Chosen       *SolverSummary  `json:"chosen,omitempty"`
-	PlanStatus   PlanStatus      `json:"plan_status,omitempty"`
+	TimestampNs int64           `json:"timestamp_ns"`
+	Best        string          `json:"best,omitempty"`
+	PlanStatus  PlanStatus      `json:"plan_status,omitempty"`
+	Baseline    SolverScore     `json:"baseline"`
+	Attempts    []SolverSummary `json:"attempts"`
 }
 
 const (

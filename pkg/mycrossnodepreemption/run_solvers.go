@@ -90,6 +90,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	// We will record only feasible+applicable attempts for the leaderboard/ledger
 	var attemptsFeasible []SolverAttemptResult
 
+	// Loop over attempts
 	for _, att := range solverAttempts {
 		if !att.Enabled {
 			continue
@@ -97,11 +98,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 		// Per-attempt input & hints
 		inAttempt := in
-		toMs := att.Timeout.Milliseconds()
-		if att.FudgeMs > 0 && toMs > att.FudgeMs {
-			toMs -= att.FudgeMs
+		timeoutMs := att.Timeout.Milliseconds()
+		if att.FudgeMs > 0 && timeoutMs > att.FudgeMs {
+			timeoutMs -= att.FudgeMs
 		}
-		inAttempt.TimeoutMs = toMs
+		inAttempt.TimeoutMs = timeoutMs
 		inAttempt.MaxTrials = att.Trials
 		inAttempt.UseHints = SolverUseHints
 		if SolverUseHints {
@@ -137,19 +138,20 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		}
 		attemptsFeasible = append(attemptsFeasible, curr)
 
+		// New leader?
 		switch curr.CmpBase {
-		case 1:
+		case 1: // new best
 			klog.V(MyV).InfoS(label+": new leader",
 				"solver", att.Name, "prevLeader", best.Name, "durationUs", curr.DurationUs,
 				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", best.Score.PlacedByPriority,
 				"leaderEvictions", curr.Score.Evicted, "prevEvictions", best.Score.Evicted,
 				"leaderMoves", curr.Score.Moved, "prevMoves", best.Score.Moved)
 			best = curr
-		case 0:
+		case 0: // tie
 			klog.V(MyV).InfoS(label+": solver tied with leader",
 				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
 				"placedByPri", curr.Score.PlacedByPriority, "evictions", curr.Score.Evicted, "moves", curr.Score.Moved)
-		default:
+		default: // worse
 			klog.V(MyV).InfoS(label+": solver worse than leader",
 				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
 				"placedByPri", curr.Score.PlacedByPriority, "leaderPlacedByPri", best.Score.PlacedByPriority,
@@ -181,63 +183,61 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		}
 	}
 
-	// Leaderboard log (use best if improved; otherwise baseline)
+	// Leaderboard
 	if len(attemptsFeasible) > 0 {
-		// Partition by improvement vs baseline: better → equal → worse
-		type row struct {
-			Name       string
-			DurationUs int64
-			Score      SolverScore
-			CmpBase    int
-		}
-		var better, equal, worse []row
+		var better, equal, worse []SolverAttemptResult
+		// Loop over feasible attempts to classify vs baseline
 		for _, r := range attemptsFeasible {
-			r2 := row{r.Name, r.DurationUs, r.Score, IsImprovement(baselineScore, r.Score)}
-			switch r2.CmpBase {
+			result := SolverAttemptResult{Name: r.Name, DurationUs: r.DurationUs, Score: r.Score, CmpBase: IsImprovement(baselineScore, r.Score)}
+			switch result.CmpBase {
 			case 1:
-				better = append(better, r2)
+				better = append(better, result)
 			case 0:
-				equal = append(equal, r2)
+				equal = append(equal, result)
 			default:
-				worse = append(worse, r2)
+				worse = append(worse, result)
 			}
 		}
+		// Build ranking: better first, then equal, then worse
 		ranking := append(append(better, equal...), worse...)
 
+		// Loop over ranking to build display arrays
 		names := make([]string, len(ranking))
-		evs := make([]int, len(ranking))
-		mvs := make([]int, len(ranking))
-		durs := make([]int64, len(ranking))
+		evictions := make([]int, len(ranking))
+		moves := make([]int, len(ranking))
+		durations := make([]int64, len(ranking))
 		for i := range ranking {
-			lbl := ranking[i].Name
+			label := ranking[i].Name
 			if i > 0 &&
 				IsImprovement(ranking[i-1].Score, ranking[i].Score) == 0 &&
 				IsImprovement(ranking[i].Score, ranking[i-1].Score) == 0 {
-				lbl += " (tie)"
+				label += " (tie)"
 			}
-			names[i] = lbl
-			evs[i] = ranking[i].Score.Evicted
-			mvs[i] = ranking[i].Score.Moved
-			durs[i] = ranking[i].DurationUs
+			names[i] = label
+			evictions[i] = ranking[i].Score.Evicted
+			moves[i] = ranking[i].Score.Moved
+			durations[i] = ranking[i].DurationUs
 		}
 
+		// Placed by priority from baseline if not best
 		placed := baselineScore.PlacedByPriority
 		if best.Name != "baseline" {
 			placed = best.Score.PlacedByPriority
 		}
+		// Show leaderboard
 		klog.InfoS(label+": solver leaderboard",
-			"ranking", names, "durationsUs", durs, "evictions", evs, "moves", mvs, "placedByPri", placed)
+			"ranking", names, "durationsUs", durations, "evictions", evictions, "moves", moves, "placedByPri", placed)
 	}
 
-	// ---- Stats ledger ----
+	// Stats ledger
 	if hadFeasibleSolver {
-		evAttempts := make([]SolverSummary, 0, len(attemptsFeasible))
+		attemptsToExport := make([]SolverSummary, 0, len(attemptsFeasible))
 		for _, r := range attemptsFeasible {
 			status := ""
 			if r.Output != nil {
 				status = r.Output.Status
 			}
-			evAttempts = append(evAttempts, SolverSummary{
+			attemptsToExport = append(attemptsToExport, SolverSummary{
 				Name:       r.Name,
 				Status:     status,
 				DurationUs: r.DurationUs,
@@ -245,19 +245,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			})
 		}
 		entry := ExportedStats{
-			Timestamp_ns: time.Now().UnixNano(),
-			Baseline:     baselineScore,
-			Attempts:     evAttempts,
-		}
-		// Mark chosen only if improved
-		if best.Name != "baseline" && best.Output != nil {
-			entry.Chosen = &SolverSummary{
-				Name:       best.Name,
-				Status:     best.Output.Status,
-				DurationUs: best.DurationUs,
-				Score:      best.Score,
-			}
-			entry.PlanStatus = PlanStatusActive
+			TimestampNs: time.Now().UnixNano(),
+			Best:        best.Name,
+			PlanStatus:  PlanStatusActive,
+			Baseline:    baselineScore,
+			Attempts:    attemptsToExport,
 		}
 		pl.appendStatsCM(ctx, entry)
 	}
