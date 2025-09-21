@@ -63,7 +63,7 @@ func (pl *MyCrossNodePreemption) waitForInformersSyncedAndNodes(
 			case <-t.C:
 				nodes, err := pl.getNodes()
 				if err != nil {
-					klog.V(MyVerbosity).InfoS("Cache warm-up watcher: getNodes error; retrying", "err", err)
+					klog.V(MyV).InfoS("Cache warm-up watcher: getNodes error; retrying", "err", err)
 					continue
 				}
 				usable := false
@@ -74,7 +74,7 @@ func (pl *MyCrossNodePreemption) waitForInformersSyncedAndNodes(
 					}
 				}
 				if !usable {
-					klog.V(MyVerbosity).InfoS("Cache warm-up: waiting for a usable node")
+					klog.V(MyV).InfoS("Cache warm-up: waiting for a usable node")
 					continue
 				}
 
@@ -236,7 +236,7 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
 	// Activate and remove only those attempted
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		klog.V(MyVerbosity).InfoS("Activated blocked pods", "count", len(toAct), "max", max)
+		klog.V(MyV).InfoS("Activated blocked pods", "count", len(toAct), "max", max)
 		for _, it := range items[:limit] {
 			pl.Blocked.RemovePod(it.key.UID)
 		}
@@ -291,7 +291,7 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 	}
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		klog.V(MyVerbosity).InfoS("Activated batched pods", "count", len(toAct), "max", max)
+		klog.V(MyV).InfoS("Activated batched pods", "count", len(toAct), "max", max)
 		// Remove only the ones we just activated
 		for _, it := range items[:limit] {
 			pl.Batched.RemovePod(it.key.UID)
@@ -311,7 +311,7 @@ func (pl *MyCrossNodePreemption) pruneSetEntries(set *PodSet) int {
 		return cur.Spec.NodeName == "" // keep function: keep only pending pods
 	})
 	if removed > 0 {
-		klog.V(MyVerbosity).InfoS("Pruned stale entries", "removed", removed)
+		klog.V(MyV).InfoS("Pruned stale entries", "removed", removed)
 	}
 	return removed
 }

@@ -10,10 +10,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// TODO: Reach to here in this file...
-
-var _ framework.PreFilterPlugin = &MyCrossNodePreemption{}
-
 // PreFilter is called at the beginning of scheduling cycle.
 // It is used, here, to filter the node(s) that the pod can be (tried) scheduled on.
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
@@ -24,21 +20,18 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 		return nil, framework.NewStatus(framework.Success)
 	}
 	nodes, msg, ok := pl.allowedNodes(pod)
-	klog.V(MyVerbosity).InfoS("Filter decision",
-		"activePlan", ap != nil,
-		"pod", pod.Namespace+"/"+pod.Name,
-		"nodes", nodes.UnsortedList())
+	klog.V(MyV).InfoS("PreFilter: filter decision", "activePlan", ap != nil, "pod", pod.Namespace+"/"+pod.Name, "nodes", nodes.UnsortedList())
 
 	switch {
 	case ok && nodes == nil:
 		// allowed, no pin
-		klog.V(MyVerbosity).InfoS("PreFilter: allow", "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyV).InfoS("PreFilter: allow", "pod", klog.KObj(pod), "reason", msg)
 		return nil, framework.NewStatus(framework.Success)
 	case ok && nodes.Len() > 0:
-		klog.V(MyVerbosity).InfoS("PreFilter: pin", "pod", klog.KObj(pod), "nodes", nodes.UnsortedList(), "reason", msg)
+		klog.V(MyV).InfoS("PreFilter: pin", "pod", klog.KObj(pod), "nodes", nodes.UnsortedList(), "reason", msg)
 		return &framework.PreFilterResult{NodeNames: nodes}, framework.NewStatus(framework.Success)
 	default: // not ok
-		klog.V(MyVerbosity).InfoS("PreFilter: block", "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyV).InfoS("PreFilter: block", "pod", klog.KObj(pod), "reason", msg)
 		pl.Blocked.AddPod(pod)
 		return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: "+msg)
 	}
@@ -47,3 +40,5 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 func (pl *MyCrossNodePreemption) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
 }
+
+var _ framework.PreFilterPlugin = &MyCrossNodePreemption{}

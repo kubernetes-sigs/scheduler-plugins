@@ -27,18 +27,18 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		_, relevant = ap.WorkloadPerNodeCnts[wk.String()]
 	}
 	if !relevant {
-		klog.V(MyVerbosity).InfoS("PostBind: irrelevant", "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS("PostBind: irrelevant", "pod", klog.KObj(pod))
 		return
 	}
 
 	ok, err := pl.isPlanCompleted(ctx, ap, pod)
 	if err != nil {
 		//_ = pl.onPlanSettled(PlanStatusFailed)
-		klog.V(MyVerbosity).ErrorS(err, "PostBind: completion check failed")
+		klog.V(MyV).ErrorS(err, "PostBind: completion check failed")
 		return
 	}
 	if !ok {
-		klog.V(MyVerbosity).InfoS("PostBind: still in progress", "planID", ap.ID, "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS("PostBind: still in progress", "planID", ap.ID, "pod", klog.KObj(pod))
 		return
 	}
 	if pl.onPlanSettled(PlanStatusCompleted) {

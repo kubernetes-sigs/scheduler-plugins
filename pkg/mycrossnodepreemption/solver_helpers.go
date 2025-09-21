@@ -118,7 +118,7 @@ func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 
 // runSolverCommon runs a solver plan function on the input and prepared state.
 func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedState) *SolverOutput {
-	klog.V(MyVerbosity).InfoS("Running solver", "tag", tag)
+	klog.V(MyV).InfoS("Running solver", "tag", tag)
 	nodes, pods, order, worklist := base.freshClone()
 	if len(worklist) == 0 {
 		return &SolverOutput{Status: "UNKNOWN"}
@@ -1290,24 +1290,24 @@ func cmpInt(suggested, baseline int) int {
 func IsImprovement(baseline, suggested SolverScore) int {
 	// 1) Placed-by-priority (more is better)
 	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
-		klog.V(MyVerbosity).InfoS("Compare placed-by-priority", "result", cmp,
+		klog.V(MyV).InfoS("Compare placed-by-priority", "result", cmp,
 			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
 		return cmp
 	}
 	// 2) Evictions (fewer is better)
 	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
-		klog.V(MyVerbosity).InfoS("Compare evictions", "result", cmp,
+		klog.V(MyV).InfoS("Compare evictions", "result", cmp,
 			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
 		return cmp
 	}
 	// 3) Moves (fewer is better)
 	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
-		klog.V(MyVerbosity).InfoS("Compare moves", "result", cmp,
+		klog.V(MyV).InfoS("Compare moves", "result", cmp,
 			"suggested", suggested.Moved, "baseline", baseline.Moved)
 		return cmp
 	}
 	// Equal on all metrics
-	klog.V(MyVerbosity).InfoS("No change: equal on placed, evictions, and moves")
+	klog.V(MyV).InfoS("No change: equal on placed, evictions, and moves")
 	return 0
 }
 

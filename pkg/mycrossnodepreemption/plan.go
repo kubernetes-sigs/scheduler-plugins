@@ -119,16 +119,16 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	}
 
 	for _, mv := range sp.Moves {
-		klog.V(MyVerbosity).InfoS("Pod movement planned",
+		klog.V(MyV).InfoS("Pod movement planned",
 			"pod", mv.Pod.Namespace+"/"+mv.Pod.Name, "from", mv.FromNode, "to", mv.ToNode)
 	}
 	for _, e := range sp.Evicts {
-		klog.V(MyVerbosity).InfoS("Eviction planned",
+		klog.V(MyV).InfoS("Eviction planned",
 			"pod", e.Pod.Namespace+"/"+e.Pod.Name, "from", e.Node)
 	}
 
 	if len(targets) > 0 {
-		klog.V(MyVerbosity).InfoS("Evicting/awaiting targeted pods", "count", len(targets))
+		klog.V(MyV).InfoS("Evicting/awaiting targeted pods", "count", len(targets))
 
 		// 1) Evict with bounded parallelism + per-op timeout
 		{
@@ -172,7 +172,7 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 			g.Go(func() error {
 				opCtx, cancel := context.WithTimeout(gctx, 30*time.Second)
 				defer cancel()
-				klog.V(MyVerbosity).InfoS("Recreating standalone pod (no bind)", "pod", podRef(p))
+				klog.V(MyV).InfoS("Recreating standalone pod (no bind)", "pod", podRef(p))
 				if err := pl.recreatePod(opCtx, p, ""); err != nil {
 					return fmt.Errorf("recreate %s: %w", podRef(p), err)
 				}

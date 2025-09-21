@@ -342,19 +342,19 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTimeout, true, func(ctx context.Context) (bool, error) {
 		p, err := podsLister.Pods(ns).Get(name)
 		if apierrors.IsNotFound(err) { // pod not found; keep polling
-			klog.V(MyVerbosity).InfoS("Waiting for pending to appear in cache", "pod", ns+"/"+name)
+			klog.V(MyV).InfoS("Waiting for pending to appear in cache", "pod", ns+"/"+name)
 			return false, nil
 		}
 		if err != nil { // Lister error; keep polling
-			klog.V(MyVerbosity).InfoS("Lister error while waiting for pending", "pod", ns+"/"+name, "err", err)
+			klog.V(MyV).InfoS("Lister error while waiting for pending", "pod", ns+"/"+name, "err", err)
 			return false, nil
 		}
 		if p.UID != pending.UID { // waiting for matching pending UID
-			klog.V(MyVerbosity).InfoS("Waiting for matching pending UID", "pod", ns+"/"+name, "wantUID", pending.UID, "haveUID", p.UID)
+			klog.V(MyV).InfoS("Waiting for matching pending UID", "pod", ns+"/"+name, "wantUID", pending.UID, "haveUID", p.UID)
 			return false, nil
 		}
 		if p.Spec.NodeName == "" { // waiting for preemptor to bind
-			klog.V(MyVerbosity).InfoS("Waiting for pending to bind", "pod", ns+"/"+name)
+			klog.V(MyV).InfoS("Waiting for pending to bind", "pod", ns+"/"+name)
 			return false, nil
 		}
 		return true, nil
@@ -376,7 +376,7 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
 	if ap == nil {
 		// Plan got torn down concurrently; treat as "not completed yet" (retry later)
-		klog.V(MyVerbosity).InfoS("Plan completion check skipped: no active plan doc")
+		klog.V(MyV).InfoS("Plan completion check skipped: no active plan doc")
 		return false, nil
 	}
 
@@ -403,7 +403,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 			return false, err
 		}
 		if po.DeletionTimestamp != nil || po.Spec.NodeName != wantNode {
-			klog.V(MyVerbosity).InfoS("Plan incomplete: pinned pod mismatch", "pod", nsname, "expectedNode", wantNode, "haveNode", po.Spec.NodeName)
+			klog.V(MyV).InfoS("Plan incomplete: pinned pod mismatch", "pod", nsname, "expectedNode", wantNode, "haveNode", po.Spec.NodeName)
 			return false, nil
 		}
 	}
@@ -412,7 +412,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 	for wk, perNode := range ap.WorkloadPerNodeCnts {
 		for node, ctr := range perNode {
 			if ctr.Load() > 0 {
-				klog.V(MyVerbosity).InfoS("Plan incomplete: remaining quota", "workload", wk, "node", node, "remaining", ctr.Load())
+				klog.V(MyV).InfoS("Plan incomplete: remaining quota", "workload", wk, "node", node, "remaining", ctr.Load())
 				return false, nil
 			}
 		}

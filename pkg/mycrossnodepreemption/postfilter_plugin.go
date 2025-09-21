@@ -35,7 +35,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: no cross-node strategy enabled")
 
 	case DecideBatch:
-		klog.V(MyVerbosity).InfoS("PostFilter: batched pod", "pod", klog.KObj(pending))
+		klog.V(MyV).InfoS("PostFilter: batched pod", "pod", klog.KObj(pending))
 		pl.Batched.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: batched pod")
 
