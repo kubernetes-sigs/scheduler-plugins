@@ -11,6 +11,7 @@ import (
 )
 
 // TODO: Reach to here in this file...
+// TODO: Needs a big cleanup pass.
 
 // helper near the top of run_solvers.go (or anywhere shared)
 func cloneScore(s SolverScore) *SolverScore {
@@ -168,46 +169,53 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		}
 
 		anyFeasible = true
+		// inside the attempts loop in runSolvers(...)
 		sc := computeSolverScore(inAttempt, out)
+		cmpBase := IsImprovement(baselineScore, sc) // -1 worse, 0 equal, 1 better
+
+		// log per-attempt vs baseline (unchanged)
 		dEv := sc.Evicted - baselineScore.Evicted
 		dMv := sc.Moved - baselineScore.Moved
+		switch cmpBase {
+		case 1:
+			klog.InfoS(label+": solver improved over baseline",
+				"solver", att.Name, "durationUs", attDurUs,
+				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
+				"deltaEvictions", dEv, "deltaMoves", dMv)
+		case 0:
+			klog.V(MyV).InfoS(label+": solver equal to baseline",
+				"solver", att.Name, "durationUs", attDurUs,
+				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
+		default:
+			klog.V(MyV).InfoS(label+": solver worse than baseline",
+				"solver", att.Name, "durationUs", attDurUs,
+				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
+				"deltaEvictions", dEv, "deltaMoves", dMv)
+		}
 
+		// record this attempt for the leaderboard (unchanged)
+		results = append(results, AttemptResult{
+			Name:       att.Name,
+			DurationUs: attDurUs,
+			Score:      sc,
+			CmpBase:    cmpBase,
+			Status:     out.Status,
+		})
+
+		// Only allow a "first leader" if it strictly improves over baseline
 		if chosenOut == nil {
-			// First feasible candidate: compare vs baseline for logging.
-			switch IsImprovement(baselineScore, sc) {
-			case 1:
-				klog.V(MyV).InfoS(label+": solver improved over baseline",
-					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
-					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
-					"deltaEvictions", dEv, "deltaMoves", dMv)
-				currentTarget = sc
-			case 0:
-				klog.V(MyV).InfoS(label+": solver equal to baseline",
-					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
-					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
-			default:
-				klog.V(MyV).InfoS(label+": solver worse than baseline",
-					"attempt", i, "solver", att.Name, "durationUs", attDurUs,
-					"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved,
-					"deltaEvictions", dEv, "deltaMoves", dMv)
+			if cmpBase == 1 {
+				chosenOut, chosenScore, chosenName, chosenDurationUs = out, sc, att.Name, attDurUs
+				currentTarget = sc // hints target advances only when we actually improved
 			}
-
-			chosenOut, chosenScore, chosenName, chosenDurationUs = out, sc, att.Name, attDurUs
-			results = append(results, AttemptResult{
-				Name:       att.Name,
-				DurationUs: attDurUs,
-				Score:      sc,
-				CmpBase:    IsImprovement(baselineScore, sc),
-				Status:     out.Status,
-			})
 			continue
 		}
 
-		// Compare against the current best.
+		// Compare against the current best (unchanged)
 		switch IsImprovement(chosenScore, sc) {
 		case 1:
 			klog.V(MyV).InfoS(label+": new leader",
-				"attempt", i, "solver", att.Name, "prevLeader", chosenName, "durationUs", attDurUs,
+				"solver", att.Name, "prevLeader", chosenName, "durationUs", attDurUs,
 				"leaderPlacedByPri", sc.PlacedByPriority, "prevPlacedByPri", chosenScore.PlacedByPriority,
 				"leaderEvictions", sc.Evicted, "prevEvictions", chosenScore.Evicted,
 				"leaderMoves", sc.Moved, "prevMoves", chosenScore.Moved)
@@ -215,24 +223,17 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			if IsImprovement(currentTarget, sc) == 1 {
 				currentTarget = sc
 			}
-		case 0: // tie with current leader; keep the first one as chosen
+		case 0:
 			klog.V(MyV).InfoS(label+": solver tied with leader",
-				"attempt", i, "solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
+				"solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
 				"placedByPri", sc.PlacedByPriority, "evictions", sc.Evicted, "moves", sc.Moved)
 		default:
 			klog.V(MyV).InfoS(label+": solver worse than leader",
-				"attempt", i, "solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
+				"solver", att.Name, "leader", chosenName, "durationUs", attDurUs,
 				"placedByPri", sc.PlacedByPriority, "leaderPlacedByPri", chosenScore.PlacedByPriority,
 				"evictions", sc.Evicted, "leaderEvictions", chosenScore.Evicted,
 				"moves", sc.Moved, "leaderMoves", chosenScore.Moved)
 		}
-		results = append(results, AttemptResult{
-			Name:       att.Name,
-			DurationUs: attDurUs,
-			Score:      sc,
-			CmpBase:    IsImprovement(baselineScore, sc),
-			Status:     out.Status,
-		})
 	}
 
 	// If python was OPTIMAL and any of {local-search,bfs} tie python's score,
@@ -276,6 +277,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		}
 	}
 
+	// Find best solver leaderboard
 	if len(results) > 0 {
 		type Row struct {
 			Name       string
@@ -370,13 +372,16 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 	// Record stats if we had at least one feasible attempt.
 	if anyFeasible {
-		pl.appendStatsCM(ctx, ExportedStats{
+		entry := ExportedStats{
 			Timestamp_ns: time.Now().UnixNano(),
 			Baseline:     baselineScore,
 			Attempts:     evAttempts,
-			Chosen:       evChosen,
-			PlanStatus:   PlanStatusActive,
-		})
+		}
+		if evChosen != nil { // i.e., chosenOut != nil
+			entry.Chosen = evChosen
+			entry.PlanStatus = PlanStatusActive
+		}
+		pl.appendStatsCM(ctx, entry)
 	}
 
 	return chosenOut, anyFeasible, chosenSolverSummary

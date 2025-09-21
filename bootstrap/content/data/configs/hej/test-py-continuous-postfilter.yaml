@@ -7,9 +7,9 @@ node_cpu: 2400m
 node_mem: 32Gi
 util: 1.1
 util-tolerance: 0.01
-wait_mode: running      # one of: exist | ready | running | none
-wait_timeout: 5s       # e.g., 500ms, 10s, 2m, 1h
-settle_timeout: 3s      # same duration format
+wait_mode: exist      # one of: exist | ready | running | none
+wait_timeout: 2s       # e.g., 500ms, 10s, 2m, 1h
+settle_timeout: 15s      # same duration format
 ---
 kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
@@ -22,26 +22,16 @@ componentsPatches:
   - name: kube-scheduler
     extraEnvs:
       - name: OPTIMIZE_CADENCE
-        value: "batch" # choices: every, batch, continuous
+        value: "continuous" # choices: every, batch, continuous
       - name: OPTIMIZE_AT
         value: "postfilter" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL
         value: "10s"
       - name: OPTIMIZATION_INITIAL_DELAY
-        value: "5s"
+        value: "7s"
       - name: PLAN_EXECUTION_TIMEOUT
         value: "600h" # set high to determine any potential issues
-      - name: SOLVER_BFS_ENABLED
+      - name: SOLVER_PYTHON_ENABLED
         value: "true"
-      - name: SOLVER_BFS_TIMEOUT
-        value: "200ms"
-      - name: SOLVER_BFS_MAX_DEPTH
-        value: "5"
-      - name: SOLVER_BFS_MAX_VICTIMS_PER_NODE
-        value: "-1" # -1 (unlimited)
-      - name: SOLVER_BFS_MAX_DESTS_PER_LEVEL
-        value: "-1" # -1 (unlimited)
-      - name: SOLVER_BFS_MAX_SUCCESSORS_PER_STATE
-        value: "-1" # -1 (unlimited)
-      - name: SOLVER_BFS_MAX_FRONTIER_PER_DEPTH
-        value: "-1" # -1 (unlimited)
+      - name: SOLVER_PYTHON_TIMEOUT
+        value: "10s"

@@ -8,8 +8,8 @@ node_mem: 32Gi
 util: 1.1
 util-tolerance: 0.01
 wait_mode: running      # one of: exist | ready | running | none
-wait_timeout: 5s       # e.g., 500ms, 10s, 2m, 1h
-settle_timeout: 3s      # same duration format
+wait_timeout: 2s       # e.g., 500ms, 10s, 2m, 1h
+settle_timeout: 5s      # same duration format
 ---
 kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
