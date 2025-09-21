@@ -25,7 +25,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 
 	// Get the allowed allowedNodes for this pod.
 	allowedNodes, msg, ok := pl.allowedNodes(pod)
-	klog.V(MyV).InfoS("PreFilter: filter decision", "activePlan", ap != nil, "pod", pod.Namespace+"/"+pod.Name, "nodes", allowedNodes.UnsortedList())
+	klog.V(MyV).InfoS("PreFilter: filter decision", "activePlan", ap != nil, "pod", combineNsName(pod.Namespace, pod.Name), "nodes", allowedNodes.UnsortedList())
 	switch {
 	case ok && allowedNodes == nil:
 		// allowed, no pin

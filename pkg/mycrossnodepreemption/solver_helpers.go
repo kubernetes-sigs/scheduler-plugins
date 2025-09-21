@@ -1373,7 +1373,7 @@ func (pl *MyCrossNodePreemption) planApplicable(
 	for _, np := range out.Placements {
 		p := pByUID[np.Pod.UID]
 		if p == nil || p.DeletionTimestamp != nil {
-			return false, fmt.Sprintf("pod vanished: %s/%s", np.Pod.Namespace, np.Pod.Name)
+			return false, fmt.Sprintf("pod vanished: %s", combineNsName(np.Pod.Namespace, np.Pod.Name))
 		}
 		// Source must still be consistent enough:
 		//   - if it was a move (FromNode != ""), pod should still be on that source

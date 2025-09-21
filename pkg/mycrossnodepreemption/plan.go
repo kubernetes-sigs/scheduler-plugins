@@ -120,11 +120,11 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 
 	for _, mv := range sp.Moves {
 		klog.V(MyV).InfoS("Pod movement planned",
-			"pod", mv.Pod.Namespace+"/"+mv.Pod.Name, "from", mv.FromNode, "to", mv.ToNode)
+			"pod", combineNsName(mv.Pod.Namespace, mv.Pod.Name), "from", mv.FromNode, "to", mv.ToNode)
 	}
 	for _, e := range sp.Evicts {
 		klog.V(MyV).InfoS("Eviction planned",
-			"pod", e.Pod.Namespace+"/"+e.Pod.Name, "from", e.Node)
+			"pod", combineNsName(e.Pod.Namespace, e.Pod.Name), "from", e.Node)
 	}
 
 	if len(targets) > 0 {

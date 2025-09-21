@@ -220,15 +220,15 @@ func IsPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
 func (wk WorkloadKey) String() string {
 	switch wk.Kind {
 	case wkReplicaSet:
-		return "rs:" + wk.Namespace + "/" + wk.Name
+		return "rs:" + combineNsName(wk.Namespace, wk.Name)
 	case wkStatefulSet:
-		return "ss:" + wk.Namespace + "/" + wk.Name
+		return "ss:" + combineNsName(wk.Namespace, wk.Name)
 	case wkDaemonSet:
-		return "ds:" + wk.Namespace + "/" + wk.Name
+		return "ds:" + combineNsName(wk.Namespace, wk.Name)
 	case wkJob:
-		return "job:" + wk.Namespace + "/" + wk.Name
+		return "job:" + combineNsName(wk.Namespace, wk.Name)
 	default:
-		return wk.Namespace + "/" + wk.Name
+		return combineNsName(wk.Namespace, wk.Name)
 	}
 }
 
