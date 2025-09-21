@@ -161,15 +161,15 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 }
 
 type SolverStats struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	DurationUs int64  `json:"duration_us"`
-	Score      Score  `json:"score"`
+	Name       string      `json:"name"`
+	Status     string      `json:"status"`
+	DurationUs int64       `json:"duration_us"`
+	Score      SolverScore `json:"score"`
 }
 
 type ExportedStats struct {
 	Timestamp_ns int64         `json:"timestamp_ns"`
-	Baseline     Score         `json:"baseline"`
+	Baseline     SolverScore   `json:"baseline"`
 	Attempts     []SolverStats `json:"attempts"`
 	Chosen       *SolverStats  `json:"chosen,omitempty"`
 	PlanStatus   PlanStatus    `json:"plan_status,omitempty"`
@@ -1012,9 +1012,9 @@ func (n *SolverNode) removePod(p *SolverPod) {
 //   - placed_by_priority: number of pods that were placed for each priority
 //   - evicted:            number of pods that were evicted
 //   - moved:              number of pods that were moved to a different node
-func computeSolverScore(in SolverInput, out *SolverOutput) Score {
+func computeSolverScore(in SolverInput, out *SolverOutput) SolverScore {
 	if out == nil {
-		return Score{}
+		return SolverScore{}
 	}
 
 	// Before-state (where) and priority by UID
@@ -1075,7 +1075,7 @@ func computeSolverScore(in SolverInput, out *SolverOutput) Score {
 		}
 	}
 
-	return Score{
+	return SolverScore{
 		PlacedByPriority: placedByPri,
 		Evicted:          len(evicted),
 		Moved:            moves,
@@ -1286,7 +1286,7 @@ func cmpInt(suggested, baseline int) int {
 // 2) Fewer evictions
 // 3) Fewer moves
 // Returns 1 if suggested is better, -1 if worse, 0 if equal.
-func IsImprovement(baseline, suggested Score) int {
+func IsImprovement(baseline, suggested SolverScore) int {
 	// 1) Placed-by-priority (more is better)
 	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
 		klog.V(MyVerbosity).InfoS("Compare placed-by-priority", "result", cmp,
@@ -1410,7 +1410,7 @@ func (pl *MyCrossNodePreemption) planApplicable(
 }
 
 // buildBaselineScore computes the baseline score from the solver input.
-func buildBaselineScore(in SolverInput) Score {
+func buildBaselineScore(in SolverInput) SolverScore {
 	placedByPri := map[string]int{}
 	for _, sp := range in.Pods {
 		if sp.Node == "" {
@@ -1419,7 +1419,7 @@ func buildBaselineScore(in SolverInput) Score {
 		pr := strconv.Itoa(int(sp.Priority))
 		placedByPri[pr] = placedByPri[pr] + 1
 	}
-	return Score{
+	return SolverScore{
 		PlacedByPriority: placedByPri,
 		Evicted:          0,
 		Moved:            0,

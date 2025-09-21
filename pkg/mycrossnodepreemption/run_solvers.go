@@ -11,7 +11,7 @@ import (
 )
 
 // helper near the top of run_solvers.go (or anywhere shared)
-func cloneScore(s Score) *Score {
+func cloneScore(s SolverScore) *SolverScore {
 	var m map[string]int
 	if s.PlacedByPriority != nil {
 		m = make(map[string]int, len(s.PlacedByPriority))
@@ -19,7 +19,7 @@ func cloneScore(s Score) *Score {
 			m[k] = v
 		}
 	}
-	return &Score{
+	return &SolverScore{
 		PlacedByPriority: m,
 		Evicted:          s.Evicted,
 		Moved:            s.Moved,
@@ -90,7 +90,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	var (
-		chosenScore      Score
+		chosenScore      SolverScore
 		chosenName       string
 		chosenDurationUs int64
 	)
@@ -115,7 +115,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	type AttemptResult struct {
 		Name       string
 		DurationUs int64 // microseconds
-		Score      Score
+		Score      SolverScore
 		CmpBase    int // -1 worse, 0 equal, 1 better
 		Status     string
 	}
@@ -249,7 +249,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 	if pyIdx >= 0 && results[pyIdx].Status == "OPTIMAL" {
 		pyScore := results[pyIdx].Score
-		tiesPython := func(s Score) bool {
+		tiesPython := func(s SolverScore) bool {
 			return IsImprovement(pyScore, s) == 0 && IsImprovement(s, pyScore) == 0
 		}
 		for i := range results {
@@ -278,7 +278,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		type Row struct {
 			Name       string
 			DurationUs int64
-			Score      Score
+			Score      SolverScore
 			CmpBase    int
 			PrefIdx    int // attempt order index to keep the first one first for true ties
 		}

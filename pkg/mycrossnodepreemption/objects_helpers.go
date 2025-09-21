@@ -1,3 +1,5 @@
+// objects_helpers.go
+
 package mycrossnodepreemption
 
 import (
@@ -248,4 +250,24 @@ func topWorkload(p *v1.Pod) (WorkloadKey, bool) {
 		}
 	}
 	return WorkloadKey{}, false
+}
+
+// WorkloadKind represents the kind of workload.
+type WorkloadKind int
+
+const (
+	wkReplicaSet WorkloadKind = iota
+	wkStatefulSet
+	wkDaemonSet
+	wkJob
+)
+
+// WorkloadKey is a key to identify a workload.
+type WorkloadKey struct {
+	// What kind of workload
+	Kind WorkloadKind
+	// Namespace of the workload
+	Namespace string
+	// Name of the workload
+	Name string
 }

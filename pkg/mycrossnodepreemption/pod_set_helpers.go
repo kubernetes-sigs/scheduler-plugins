@@ -1,8 +1,11 @@
+// pod_set_helpers.go
+
 package mycrossnodepreemption
 
 import (
 	"context"
 	"sort"
+	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -309,4 +312,22 @@ func (pl *MyCrossNodePreemption) pruneSetEntries(set *PodSet) int {
 		klog.V(MyVerbosity).InfoS("Pruned stale entries", "removed", removed)
 	}
 	return removed
+}
+
+// PodSet is a thread-safe set of pods.
+type PodSet struct {
+	// mu protects the map
+	mu sync.RWMutex
+	// m maps pod UID to PodKey
+	m map[types.UID]PodKey
+}
+
+// PodKey is a minimal key for identifying a pod.
+type PodKey struct {
+	// Unique identifier for the pod
+	UID types.UID // for fast lookup, we only use types.UID as key (not as a string)
+	// Namespace of the pod
+	Namespace string
+	// Name of the pod
+	Name string
 }

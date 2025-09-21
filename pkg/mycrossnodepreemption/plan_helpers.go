@@ -125,7 +125,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	return nil
 }
 
-// TODO: Reach to here...
+// TODO: Reach to here in this file...
 // TODO: Reduce number of output parameters
 // buildPlan builds the evictions, movements, old placements, new placements, placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
 // from the output of the solver.

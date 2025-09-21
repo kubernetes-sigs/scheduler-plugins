@@ -155,3 +155,21 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 
 	return res, nil
 }
+
+// FlowResult represents the result of a scheduling flow.
+type FlowResult struct {
+	// ID of the plan (if any)
+	PlanID string
+	// Target node of the preemptor (if any)
+	TargetNode string
+	// Batch size (if any)
+	BatchSize int
+	// Total pods before plan execution
+	TotalPrePlan int
+	// Total pods after plan execution
+	TotalPostPlan int
+	// Chosen solver
+	ChosenSolver SolverSummary
+	// Total duration of the flow
+	TotalDuration time.Duration
+}
