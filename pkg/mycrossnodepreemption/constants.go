@@ -23,9 +23,6 @@ const (
 	// See Dockerfile for details.
 	SolverPath      = "/opt/solver/main.py"
 	SolverPythonBin = "/opt/venv/bin/python"
-	// SolverMode is the mode in which the solver operates.
-	// Choices: SolverModeLexi or SolverModeWeighted
-	SolverMode = SolverModeLexi
 	// SolverLogProgress is a flag that enables/disables logging of solver progress.
 	SolverLogProgress = false
 	// =========================================================

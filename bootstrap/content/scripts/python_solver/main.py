@@ -38,7 +38,6 @@ def solve(instance: dict) -> dict:
     # ---- options / params ----
     timeout_ms          = int(instance.get("timeout_ms", 3000))
     ignore_affinity     = bool(instance.get("ignore_affinity", True))  # TODO_HC: consider to use this
-    mode                = str(instance.get("mode", "lexi")).strip().lower()   # "weighted" or "lexi"
     workers             = _available_cpus() # set number of workers to the amount available
     use_hints           = bool(instance.get("use_hints", False))
     hints               = instance.get("hints") if use_hints else None
@@ -251,12 +250,7 @@ def solve(instance: dict) -> dict:
         print(line, file=sys.stderr, flush=True) if line else None
     )
     
-    if mode == "weighted":
-        st = _solve_weighted(m, solver, placed, evict, move, running_idxs, p_pri)
-    elif mode == "lexi":
-        st = _solve_lexi(m, solver, placed, evict, move, running_idxs, p_pri)
-    else:
-        return {"status": "ERROR", "message": f"unknown mode '{mode}', expected 'weighted' or 'lexi'"}
+    st = _solve_lexi(m, solver, placed, evict, move, running_idxs, p_pri)
 
     if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _encode_status(st)
@@ -301,23 +295,6 @@ def solve(instance: dict) -> dict:
         "placements": placements,
         "evictions": evictions,
     }
-
-# ---------------------- optimization modes -----------------------------
-def _solve_weighted(m, solver, placed, evict, move, running_idxs, p_pri):
-    """
-    Single-solve big-M objective:
-      Max sum(placed_i * W_PRIO * priority_i) - W_EVICT * sum(evict_running) - W_MOVE * sum(move_running)
-    """
-    W_PRIO  = 10_000_000
-    W_EVICT = 10_000
-    W_MOVE  = 1
-
-    reward_terms = [placed[i] * (W_PRIO * p_pri(i)) for i in range(len(placed))]
-    evict_terms  = [evict[i] for i in running_idxs]
-    move_terms   = [move[i] for i in running_idxs if move[i] is not None]
-
-    m.Maximize(sum(reward_terms) - W_EVICT * sum(evict_terms) - W_MOVE * sum(move_terms))
-    return solver.Solve(m)
 
 def _solve_lexi(m, solver, placed, evict, move, running_idxs, p_pri):
     """

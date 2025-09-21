@@ -20,11 +20,6 @@ const (
 	SolveContinuous
 )
 
-const (
-	SolverModeLexi     = "lexi"
-	SolverModeWeighted = "weighted"
-)
-
 // SolverInput is the input to a solver.
 type SolverInput struct {
 	// Preemptor pod (if any; single pod mode)
@@ -39,8 +34,6 @@ type SolverInput struct {
 	IgnoreAffinity bool `json:"ignore_affinity"`
 	// Log solver progress
 	LogProgress bool `json:"log_progress,omitempty"`
-	// Optimization mode: "lexi" or "weighted"
-	Mode string `json:"solver_mode,omitempty"`
 	// Whether to use hints
 	UseHints bool `json:"use_hints,omitempty"`
 	// Thresholds/targets to improve from

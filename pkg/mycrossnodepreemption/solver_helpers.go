@@ -1208,7 +1208,6 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.No
 		LogProgress:    SolverLogProgress,
 		Nodes:          make([]SolverNode, 0),
 		Pods:           make([]SolverPod, 0),
-		Mode:           SolverMode,
 		TimeoutMs:      0, // will be filled outside
 	}
 	switch mode {
