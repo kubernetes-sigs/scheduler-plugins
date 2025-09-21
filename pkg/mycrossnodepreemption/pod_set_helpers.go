@@ -15,6 +15,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// TODO: Reach to here in this file...
+
 // snapshotBatch returns a snapshot of the current batch of pods.
 func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
 	keys := pl.Batched.Snapshot()

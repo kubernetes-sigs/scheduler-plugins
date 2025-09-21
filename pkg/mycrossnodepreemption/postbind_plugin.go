@@ -10,6 +10,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
+// TODO: Reach to here in this file...
+
 // PostBind is called after a pod is bound to a node.
 // It is used to check if the active scheduling plan is still in progress.
 // postbind_plugin.go

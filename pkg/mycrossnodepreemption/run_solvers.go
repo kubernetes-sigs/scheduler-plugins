@@ -10,6 +10,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// TODO: Reach to here in this file...
+
 // helper near the top of run_solvers.go (or anywhere shared)
 func cloneScore(s SolverScore) *SolverScore {
 	var m map[string]int
