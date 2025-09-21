@@ -94,6 +94,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 		ap.Cancel() // stop the timeout watcher
 	}
 	klog.InfoS("deactivating active plan", "planID", ap.ID)
+	// Mark the plan status in ConfigMaps; ignore errors.
 	_ = pl.markPlanStatus(context.Background(), ap.ID, status)
 	_ = pl.markExportedStatsPlanStatus(context.Background(), status)
 	return true
@@ -124,6 +125,8 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	return nil
 }
 
+// TODO: Reach to here...
+// TODO: Reduce number of output parameters
 // buildPlan builds the evictions, movements, old placements, new placements, placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
 // from the output of the solver.
 func (pl *MyCrossNodePreemption) buildPlan(

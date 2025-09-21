@@ -10,6 +10,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
+//TODO_HC: needs cleanup
+
 // Only meaningful for Every@PreEnqueue
 // This function is needed as if we activate all blocked pods at once
 // over and over again in onPlanSettled, we end up with a large waiting time in the queue.
