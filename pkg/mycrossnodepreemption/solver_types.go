@@ -54,6 +54,24 @@ type SolverOutput struct {
 	Evictions []Placement `json:"evictions"`
 }
 
+// SolverNode represents a node in the cluster for the solver.
+type SolverNode struct {
+	// Name of the node
+	Name string `json:"name"`
+	// Total CPU capacity in millicores
+	CapCPUm int64 `json:"cap_cpu_m"`
+	// Total memory capacity in bytes
+	CapMemBytes int64 `json:"cap_mem_bytes"`
+	// Allocated (used) CPU in millicores (not serialized)
+	AllocCPUm int64 `json:"-"`
+	// Allocated (used) memory in bytes (not serialized)
+	AllocMemBytes int64 `json:"-"`
+	// Labels of the node
+	Labels map[string]string `json:"labels,omitempty"`
+	// Pods currently on the node (not serialized)
+	Pods map[types.UID]*SolverPod `json:"-"`
+}
+
 // SolverPod represents a pod for the solver.
 type SolverPod struct {
 	// Unique identifier for the pod
@@ -72,24 +90,6 @@ type SolverPod struct {
 	Protected bool `json:"protected,omitempty"`
 	// Current node of the pod (empty if new pod)
 	Node string `json:"node"`
-}
-
-// SolverNode represents a node in the cluster for the solver.
-type SolverNode struct {
-	// Name of the node
-	Name string `json:"name"`
-	// Total CPU capacity in millicores
-	CapCPUm int64 `json:"cap_cpu_m"`
-	// Total memory capacity in bytes
-	CapMemBytes int64 `json:"cap_mem_bytes"`
-	// Allocated (used) CPU in millicores (not serialized)
-	AllocCPUm int64 `json:"-"`
-	// Allocated (used) memory in bytes (not serialized)
-	AllocMemBytes int64 `json:"-"`
-	// Labels of the node
-	Labels map[string]string `json:"labels,omitempty"`
-	// Pods currently on the node (not serialized)
-	Pods map[types.UID]*SolverPod `json:"-"`
 }
 
 // SolverSummary summarizes the result of a solver attempt.

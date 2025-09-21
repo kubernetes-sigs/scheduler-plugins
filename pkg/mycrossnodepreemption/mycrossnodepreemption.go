@@ -46,7 +46,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	ssInf := f.Apps().V1().StatefulSets().Informer()
 	dsInf := f.Apps().V1().DaemonSets().Informer()
 	jobInf := f.Batch().V1().Jobs().Informer()
-	go pl.waitForInformersSyncedAndNodes(ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
+	go pl.waitForSchedulingReadiness(ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
 
 	// Ensure Active is set to false
 	pl.Active.Store(false)

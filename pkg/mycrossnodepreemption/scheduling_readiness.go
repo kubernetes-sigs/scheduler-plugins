@@ -8,10 +8,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO: Reach to here in this file...
-
-// waitForInformersSyncedAndNodes waits for all informers to sync and until a usable node is found.
-func (pl *MyCrossNodePreemption) waitForInformersSyncedAndNodes(
+// waitForSchedulingReadiness waits for all informers to sync and until a usable node is found.
+func (pl *MyCrossNodePreemption) waitForSchedulingReadiness(
 	ctx context.Context, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf cache.SharedIndexInformer,
 ) {
 	ok := cache.WaitForCacheSync(ctx.Done(),
