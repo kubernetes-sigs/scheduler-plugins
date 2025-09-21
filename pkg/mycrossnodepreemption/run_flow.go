@@ -12,7 +12,8 @@ import (
 
 // runFlow runs the flow for the given phase (Continuous, Batch, Single).
 // For Single phase, the singlePod must be provided (the preemptor).
-func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod) (*FlowResult, error) {
+// Returns the target node name for the preemptor pod (if any) and error (if any).
+func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod) (targetNode string, err error) {
 	label := strategyToString()
 
 	// Continuous: do NOT take Active yet (first take it after solver has the plan and there is an improvement to apply).
@@ -20,7 +21,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	if !optimizeContinuous() {
 		if !pl.tryEnterActive() {
 			klog.V(MyV).InfoS(label + ": another plan active; skipping")
-			return nil, ErrActiveInProgress
+			return "", ErrActiveInProgress
 		}
 	}
 
@@ -41,7 +42,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		if len(batchedPods) == 0 {
 			klog.InfoS(label + ": no batched pod(s) to schedule")
 			pl.leaveActive()
-			return nil, ErrNoop
+			return "", ErrNoop
 		}
 	} else { // Every
 		solveMode = SolveSingle
@@ -53,13 +54,13 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	if err != nil {
 		pl.leaveActive()
 		klog.ErrorS(err, label+": failed to list nodes")
-		return nil, err
+		return "", err
 	}
 	pods, err := pl.getPods()
 	if err != nil {
 		pl.leaveActive()
 		klog.ErrorS(err, label+": failed to list pods")
-		return nil, err
+		return "", err
 	}
 
 	// Run solvers
@@ -67,40 +68,35 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	if err != nil {
 		klog.ErrorS(err, label+": failed to build solver input")
 		pl.leaveActive()
-		return nil, err
+		return "", err
 	}
-	bestOut, anyFeasible, chosenSolver := pl.runSolvers(ctx, solverInput, nodes, pods)
-	// No improvement -> ErrNoImprovement
-	if bestOut == nil {
-		pl.leaveActive()
-		klog.InfoS(label + ": no solver improved over baseline; skipping")
-		return nil, ErrNoImprovement
-	}
+	bestSolver, anyFeasible := pl.runSolvers(ctx, solverInput, nodes, pods)
 	// Check if all solvers are infeasible -> ErrNoOptimalOrFeasible
 	if !anyFeasible {
 		pl.leaveActive()
 		klog.ErrorS(ErrNoOptimalOrFeasible, label+": no optimal/feasible solution from any solver")
-		return nil, ErrNoOptimalOrFeasible
+		return "", ErrNoOptimalOrFeasible
 	}
 
 	// Take Active late for Continuous (only now that we know it's worth applying a plan).
 	if optimizeContinuous() {
 		if !pl.tryEnterActive() {
 			klog.InfoS("Continuous: another plan active; skipping")
-			return nil, ErrActiveInProgress
+			return "", ErrActiveInProgress
 		}
 	}
 
 	// Count new and total pods. If no pending pods to be scheduled -> ErrNoop
-	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestOut, pods)
+	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestSolver.Output, pods)
 	if pendingScheduled == 0 {
 		klog.InfoS(label + ": no pending pod(s) to be scheduled; skipping")
+		pl.leaveActive()
 		pl.onPlanSettled(PlanStatusFailed)
-		return nil, ErrNoop
+		return "", ErrNoop
 	}
 
 	// Register and execute plan
-	plan, ap, targetNode, err := pl.registerPlan(ctx, bestOut, chosenSolver, preemptor, pods)
+	plan, ap, targetNode, err := pl.registerPlan(ctx, bestSolver, preemptor, pods)
 	if err != nil {
 		// keep single-preemptor blocked on error
 		if solveMode == SolveSingle && preemptor != nil {
@@ -108,7 +104,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		}
 		klog.ErrorS(err, label+": register plan failed")
 		pl.leaveActive()
-		return nil, ErrRegisterPlan
+		return "", ErrRegisterPlan
 	}
 
 	// Execute if there are moves/evictions
@@ -125,42 +121,21 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	}
 
 	// Build and return result
-	res := &FlowResult{
-		PlanID:        ap.ID,
-		TargetNode:    targetNode,
-		BatchSize:     len(batchedPods),
-		TotalPrePlan:  totalPrePlan,
-		TotalPostPlan: totalPostPlan,
-		ChosenSolver:  chosenSolver,
-		TotalDuration: time.Since(start),
+	bestSolverSummary := SolverSummary{
+		Name:       bestSolver.Name,
+		Status:     bestSolver.Output.Status,
+		DurationUs: bestSolver.DurationUs,
+		Score:      bestSolver.Score,
 	}
 	klog.InfoS(label+": plan execution finished; waiting for settlement",
-		"planID", res.PlanID,
-		"chosenSolver", res.ChosenSolver,
-		"nominated", res.TargetNode,
-		"batchSize", res.BatchSize,
-		"totalPrePlan", res.TotalPrePlan,
-		"totalPostPlan", res.TotalPostPlan,
-		"totalDuration", res.TotalDuration,
+		"planID", ap.ID,
+		"bestSolver", bestSolverSummary,
+		"nominated", targetNode,
+		"batchSize", len(batchedPods),
+		"totalPrePlan", totalPrePlan,
+		"totalPostPlan", totalPostPlan,
+		"totalDuration", time.Since(start),
 	)
 
-	return res, nil
-}
-
-// FlowResult represents the result of a scheduling flow.
-type FlowResult struct {
-	// ID of the plan (if any)
-	PlanID string
-	// Target node of the preemptor (if any)
-	TargetNode string
-	// Batch size (if any)
-	BatchSize int
-	// Total pods before plan execution
-	TotalPrePlan int
-	// Total pods after plan execution
-	TotalPostPlan int
-	// Chosen solver
-	ChosenSolver SolverSummary
-	// Total duration of the flow
-	TotalDuration time.Duration
+	return targetNode, nil
 }

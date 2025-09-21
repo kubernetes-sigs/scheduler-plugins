@@ -20,15 +20,21 @@ import (
 // registerPlan builds and registers a new plan as active, exporting it to a ConfigMap.
 func (pl *MyCrossNodePreemption) registerPlan(
 	ctx context.Context,
-	out *SolverOutput,
-	summary SolverSummary,
+	solver SolverAttemptResult,
 	preemptor *v1.Pod,
 	pods []*v1.Pod,
 ) (*StoredPlan, *ActivePlan, string, error) {
 
-	evicts, moves, oldPlacement, newPlacement, placementByName, workloadQuotas, nominated, err := pl.buildPlan(out, preemptor, pods)
+	evicts, moves, oldPlacement, newPlacement, placementByName, workloadQuotas, nominated, err := pl.buildPlan(solver.Output, preemptor, pods)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("build actions: %w", err)
+	}
+
+	solverSummary := SolverSummary{
+		Name:       solver.Name,
+		Status:     solver.Output.Status,
+		DurationUs: solver.DurationUs,
+		Score:      solver.Score,
 	}
 
 	doc := &StoredPlan{
@@ -38,7 +44,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		Status:               PlanStatusActive,
 		Evicts:               evicts,
 		Moves:                moves,
-		Solver:               summary,
+		Solver:               solverSummary,
 		OldPlacements:        oldPlacement,
 		NewPlacement:         newPlacement,
 		PlacementByName:      placementByName,

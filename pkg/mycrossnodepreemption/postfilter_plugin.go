@@ -42,7 +42,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 
 	case DecideEvery:
 		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
-		res, err := pl.runFlow(ctx, pending)
+		targetNode, err := pl.runFlow(ctx, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {
 				pl.Blocked.AddPod(pending)
@@ -57,7 +57,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 
 		// Return the result with the nominated node information which the scheduler will use to bind the pod.
 		return &framework.PostFilterResult{
-			NominatingInfo: &framework.NominatingInfo{NominatedNodeName: res.TargetNode, NominatingMode: framework.ModeOverride},
+			NominatingInfo: &framework.NominatingInfo{NominatedNodeName: targetNode, NominatingMode: framework.ModeOverride},
 		}, framework.NewStatus(framework.Success, "PostFilter: nominated after plan execution")
 
 	default:

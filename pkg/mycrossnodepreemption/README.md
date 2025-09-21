@@ -44,6 +44,7 @@ Whereas the default scheduler only preempts pods within a single node, this plug
   - Replace not understandable code
   - Use common functions
 - Write report
+- Consider to add a post-settle timeout so we get reliable results from the ConfigMaps.
 - Remove TODOs.
 - Make the test plan.
 

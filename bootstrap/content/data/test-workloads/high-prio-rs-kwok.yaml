@@ -6,7 +6,7 @@ metadata:
   name: high-priority-rs
   namespace: test
 spec:
-  replicas: 5
+  replicas: 6
   selector:
     matchLabels:
       app: high-priority
@@ -15,7 +15,7 @@ spec:
       labels:
         app: high-priority
     spec:
-      priorityClassName: p3
+      priorityClassName: p4
       tolerations:
         - key: "kwok.x-k8s.io/node"
           operator: "Exists"
@@ -25,8 +25,8 @@ spec:
           image: registry.k8s.io/pause:3.9
           resources:
             requests:
-              cpu: "500m"
-              memory: "1000Mi"
+              cpu: "300m"
+              memory: "500Mi"
             limits:
-              cpu: "500m"
-              memory: "1000Mi"
+              cpu: "300m"
+              memory: "500Mi"

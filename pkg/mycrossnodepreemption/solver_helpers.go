@@ -162,19 +162,12 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
-type SolverStats struct {
-	Name       string      `json:"name"`
-	Status     string      `json:"status"`
-	DurationUs int64       `json:"duration_us"`
-	Score      SolverScore `json:"score"`
-}
-
 type ExportedStats struct {
-	Timestamp_ns int64         `json:"timestamp_ns"`
-	Baseline     SolverScore   `json:"baseline"`
-	Attempts     []SolverStats `json:"attempts"`
-	Chosen       *SolverStats  `json:"chosen,omitempty"`
-	PlanStatus   PlanStatus    `json:"plan_status,omitempty"`
+	Timestamp_ns int64           `json:"timestamp_ns"`
+	Baseline     SolverScore     `json:"baseline"`
+	Attempts     []SolverSummary `json:"attempts"`
+	Chosen       *SolverSummary  `json:"chosen,omitempty"`
+	PlanStatus   PlanStatus      `json:"plan_status,omitempty"`
 }
 
 const (
@@ -1117,11 +1110,11 @@ func (pl *MyCrossNodePreemption) IsSolverEnabled() bool {
 	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
 }
 
-// IsSolverFeasible checks if the solver output is feasible.
+// HasSolverFeasibleResult checks if the solver output is feasible.
 // OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
 // FEASIBLE means the solution is not perfect but still meets all constraints.
-func IsSolverFeasible(out *SolverOutput) bool {
-	return out != nil && (out.Status == "OPTIMAL" || out.Status == "FEASIBLE")
+func HasSolverFeasibleResult(status string) bool {
+	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
 }
 
 // fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.
@@ -1469,4 +1462,20 @@ func (ps *PreparedState) freshClone() (
 		worklist[i] = pods[p0.UID]
 	}
 	return
+}
+
+// helper near the top of run_solvers.go (or anywhere shared)
+func cloneScore(s SolverScore) *SolverScore {
+	var m map[string]int
+	if s.PlacedByPriority != nil {
+		m = make(map[string]int, len(s.PlacedByPriority))
+		for k, v := range s.PlacedByPriority {
+			m[k] = v
+		}
+	}
+	return &SolverScore{
+		PlacedByPriority: m,
+		Evicted:          s.Evicted,
+		Moved:            s.Moved,
+	}
 }

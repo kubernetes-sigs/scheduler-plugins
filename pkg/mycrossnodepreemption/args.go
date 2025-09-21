@@ -22,7 +22,7 @@ var OptimizationInitialDelay = parseTime(getenv("OPTIMIZATION_INITIAL_DELAY", "1
 // ======= Solver settings =======
 
 // Whether solvers should receive and honor improvement hints.
-var SolverUseHints = parseBool(getenv("SOLVER_USE_HINTS", "true"))
+var SolverUseHints = parseBool(getenv("SOLVER_USE_HINTS", "false"))
 
 // SolverPythonEnabled indicates whether the Python solver is enabled.
 var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "false"))
