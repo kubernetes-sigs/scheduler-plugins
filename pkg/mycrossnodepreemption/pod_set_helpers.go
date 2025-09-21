@@ -18,10 +18,10 @@ func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
 	if len(keys) == 0 { // no pods in batch
 		return nil
 	}
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podsLister := pl.podsLister()
 	snapshot := make([]*v1.Pod, 0, len(keys))
 	for _, k := range keys {
-		if pod, err := podLister.Pods(k.Namespace).Get(k.Name); err == nil {
+		if pod, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil {
 			snapshot = append(snapshot, pod)
 		}
 	}
@@ -145,10 +145,10 @@ func (pl *MyCrossNodePreemption) pruneSet(set *PodSet, keep func(cur *v1.Pod) bo
 		return 0
 	}
 	snap := set.Snapshot()
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podsLister := pl.podsLister()
 	removed := 0
 	for uid, key := range snap {
-		cur, err := podLister.Pods(key.Namespace).Get(key.Name)
+		cur, err := podsLister.Pods(key.Namespace).Get(key.Name)
 		switch {
 		case apierrors.IsNotFound(err): // pod no longer exists; remove from set
 			set.RemovePod(uid)
@@ -186,9 +186,9 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
 		key PodKey
 	}
 	items := make([]item, 0, len(blockedPods))
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podsLister := pl.podsLister()
 	for _, k := range blockedPods {
-		if p, err := podLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
+		if p, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
 			items = append(items, item{p: p, key: k})
 		}
 	}
@@ -248,14 +248,14 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 		return
 	}
 	snap := pl.Batched.Snapshot()
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podsLister := pl.podsLister()
 	type item struct {
 		p   *v1.Pod
 		key PodKey
 	}
 	items := make([]item, 0, len(snap))
 	for _, k := range snap {
-		if p, err := podLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
+		if p, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
 			items = append(items, item{p: p, key: k})
 		}
 	}

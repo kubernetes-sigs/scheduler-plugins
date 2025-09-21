@@ -327,17 +327,17 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 	ctx context.Context,
 	pending *v1.Pod,
 ) (bool, error) {
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podsLister := pl.podsLister()
 	ns := pending.Namespace
 	name := pending.Name
 	// Single-shot check
-	p, err := podLister.Pods(ns).Get(name)
+	p, err := podsLister.Pods(ns).Get(name)
 	if err == nil && p.Spec.NodeName != "" {
 		return true, nil
 	}
 	// Poll until the cached pod is bound.
 	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTimeout, true, func(ctx context.Context) (bool, error) {
-		p, err := podLister.Pods(ns).Get(name)
+		p, err := podsLister.Pods(ns).Get(name)
 		if apierrors.IsNotFound(err) { // pod not found; keep polling
 			klog.V(MyVerbosity).InfoS("Waiting for pending to appear in cache", "pod", ns+"/"+name)
 			return false, nil
@@ -386,7 +386,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 		return false, fmt.Errorf("timed out waiting for pending pod to be bound in cache")
 	}
 
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podsLister := pl.podsLister()
 
 	// A) Standalone/preemptor pods planned to specific nodes must be there.
 	// Use the hydrated map from the active plan state: ns/name -> node.
@@ -395,7 +395,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 		if err != nil {
 			return false, err
 		}
-		po, err := podLister.Pods(ns).Get(name)
+		po, err := podsLister.Pods(ns).Get(name)
 		if err != nil {
 			return false, err
 		}

@@ -13,18 +13,29 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 )
+
+// nodesLister returns the NodeLister from the shared informer factory.
+func (pl *MyCrossNodePreemption) nodesLister() corev1listers.NodeLister {
+	return pl.Handle.SharedInformerFactory().Core().V1().Nodes().Lister()
+}
+
+// podsLister returns the PodsLister from the shared informer factory.
+func (pl *MyCrossNodePreemption) podsLister() corev1listers.PodLister {
+	return pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+}
 
 // getNodes returns a list of all nodes in the cluster.
 // Use the informer lister to avoid stale data from SnapshotLister.
 func (pl *MyCrossNodePreemption) getNodes() ([]*v1.Node, error) {
-	return pl.Handle.SharedInformerFactory().Core().V1().Nodes().Lister().List(labels.Everything())
+	return pl.nodesLister().List(labels.Everything())
 }
 
 // getPods returns a list of all pods in the cluster.
 // Use the informer lister to avoid stale data from SnapshotLister.
 func (pl *MyCrossNodePreemption) getPods() ([]*v1.Pod, error) {
-	return pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister().List(labels.Everything())
+	return pl.podsLister().List(labels.Everything())
 }
 
 // podRef returns a string representation of the pod's namespace and name.
@@ -77,13 +88,13 @@ func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Po
 	}
 
 	// Wait until all removed, or timeout
-	podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	podsLister := pl.podsLister()
 	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		if len(remaining) == 0 { // all pods are gone
 			return true, nil
 		}
 		for k := range remaining {
-			p, err := podLister.Pods(k.ns).Get(k.name)
+			p, err := podsLister.Pods(k.ns).Get(k.name)
 			if apierrors.IsNotFound(err) { // pod is gone
 				delete(remaining, k)
 				continue

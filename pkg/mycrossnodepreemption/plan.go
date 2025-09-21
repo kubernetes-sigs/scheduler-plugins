@@ -83,11 +83,11 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	defer overallCancel()
 
 	resolve := func(uid types.UID, ns, name string) *v1.Pod {
-		podLister := pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
-		if p, err := podLister.Pods(ns).Get(name); err == nil && p != nil && p.UID == uid {
+		podsLister := pl.podsLister()
+		if p, err := podsLister.Pods(ns).Get(name); err == nil && p != nil && p.UID == uid {
 			return p
 		}
-		if pods, err := podLister.Pods(ns).List(labels.Everything()); err == nil {
+		if pods, err := podsLister.Pods(ns).List(labels.Everything()); err == nil {
 			for _, p := range pods {
 				if p.UID == uid {
 					return p
