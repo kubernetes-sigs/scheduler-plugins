@@ -30,8 +30,6 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		return nil, nil, "", fmt.Errorf("build actions: %w", err)
 	}
 
-	solverSummary := summarizeAttempt(solver)
-
 	doc := &StoredPlan{
 		PluginVersion:        Version,
 		OptimizationStrategy: strategyToString(),
@@ -39,7 +37,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		Status:               PlanStatusActive,
 		Evicts:               evicts,
 		Moves:                moves,
-		Solver:               solverSummary,
+		Solver:               summarizeAttempt(solver),
 		OldPlacements:        oldPlacement,
 		NewPlacement:         newPlacement,
 		PlacementByName:      placementByName,
@@ -60,9 +58,10 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	// Unique plan id (and ConfigMap name)
 	id := fmt.Sprintf("plan-%d", time.Now().UnixNano())
 
+	// Set active plan
 	pl.setActivePlan(doc, id, pods)
 
-	// Export (JSON) to ConfigMap for audit
+	// Export plan for debugging purposes
 	if err := pl.exportPlanToConfigMap(ctx, id, doc); err != nil {
 		klog.ErrorS(err, "export plan failed (non-fatal)")
 	}
@@ -72,6 +71,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 
 // executePlan executes the given plan: evicting and recreating pods as needed.
 func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
+	// Current active plan
 	ap := pl.getActivePlan()
 
 	// Base context for I/O: keep any deadline, but ignore plan cancellation.
@@ -85,6 +85,7 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	overallCtx, overallCancel := context.WithTimeout(base, 5*time.Minute)
 	defer overallCancel()
 
+	// Pod resolver: from (uid,ns,name) to *v1.Pod
 	resolve := func(uid types.UID, ns, name string) *v1.Pod {
 		podsLister := pl.podsLister()
 		if p, err := podsLister.Pods(ns).Get(name); err == nil && p != nil && p.UID == uid {
