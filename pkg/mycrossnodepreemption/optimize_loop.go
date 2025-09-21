@@ -45,7 +45,6 @@ func (pl *MyCrossNodePreemption) startLoops(ctx context.Context) {
 	if optimizeBatch() || optimizeContinuous() {
 		go pl.optimizeLoop(ctx)
 	} else if optimizeEvery() && optimizeAtPreEnqueue() {
-
 		go pl.nudgeBlockedLoop(ctx)
 	}
 }

@@ -34,18 +34,22 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 		klog.V(MyV).InfoS("Reserve: pod not part of any workload; allowing", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
 	}
+	// Check if workload is tracked in the active plan.
 	workloadKey := wk.String()
 	allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[workloadKey]
 	if !ok {
 		klog.V(MyV).InfoS("Reserve: workload not tracked", "pod", klog.KObj(pod), "node", node)
 		return framework.NewStatus(framework.Unschedulable, "Reserve: workload not tracked")
 	}
+	// Check if node is tracked for this workload.
 	workloadCntForNode, ok := allWorkloadCnts[node]
 	if !ok {
 		klog.V(MyV).InfoS("Reserve: node not tracked", "pod", klog.KObj(pod), "node", node)
 		return framework.NewStatus(framework.Unschedulable, "Reserve: node not tracked")
 	}
 
+	// Try to consume workload quota for this pod on this node.
+	// We continue to try until we succeed or the quota is exhausted.
 	for {
 		currentCnt := workloadCntForNode.Load()
 		if currentCnt <= 0 {
@@ -61,12 +65,14 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 }
 
 func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, _ string) {
-	v, err := st.Read(rsReservationKey)
+	// Read reservation state
+	stateData, err := st.Read(rsReservationKey)
 	if err != nil {
 		klog.V(MyV).InfoS("Unreserve: failed to read reservation state", "pod", klog.KObj(pod))
 		return
 	}
-	reservationState, ok := v.(*rsReservationState)
+	// Get reservation info
+	reservationState, ok := stateData.(*rsReservationState)
 	if !ok {
 		klog.V(MyV).InfoS("Unreserve: failed to cast reservation state", "pod", klog.KObj(pod))
 		return
@@ -77,6 +83,7 @@ func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.Cy
 		klog.V(MyV).InfoS("Unreserve: no active plan", "pod", klog.KObj(pod))
 		return
 	}
+	// Return quota
 	if allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[reservationState.key.rsKey]; ok {
 		if ctr, ok := allWorkloadCnts[reservationState.key.nodeName]; ok {
 			ctr.Add(1) // return quota

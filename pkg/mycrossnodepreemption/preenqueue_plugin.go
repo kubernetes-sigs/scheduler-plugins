@@ -18,6 +18,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		return framework.NewStatus(framework.Success)
 	}
 
+	// If caches are not warm, block the pod
 	if !pl.CachesWarm.Load() {
 		pl.Blocked.AddPod(pod)
 		klog.V(MyV).Info("Caches not warmed up yet; skipping plugin logic")
@@ -27,6 +28,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 	// Just prune on every PreEnqueue call
 	_ = pl.pruneSetEntries(pl.Blocked)
 
+	// Decide strategy for this pod
 	switch pl.decideStrategy(PhasePreEnqueue) {
 
 	case DecidePassThrough:
@@ -50,16 +52,16 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		klog.InfoS("PreEnqueue: start", "pod", klog.KObj(pod))
 		_, err := pl.runFlow(ctx, pod)
 		if err != nil {
-			if err == ErrActiveInProgress {
+			switch err {
+			case ErrActiveInProgress:
 				pl.Blocked.AddPod(pod)
 				return framework.NewStatus(framework.Pending, "PreEnqueue: active plan in progress")
-			}
-			if err == ErrSolver {
+			case ErrSolver:
 				pl.Blocked.AddPod(pod)
 				return framework.NewStatus(framework.Pending, "PreEnqueue: solver failed")
+			default: // else ErrRegisterPlan
+				return framework.NewStatus(framework.Pending, "PreEnqueue: register plan failed")
 			}
-			// else ErrRegisterPlan
-			return framework.NewStatus(framework.Pending, "PreEnqueue: register plan failed")
 		}
 		return framework.NewStatus(framework.Success, "PreEnqueue: nominated after plan execution")
 	}

@@ -6,8 +6,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// TODO: Reach to here in this file...
-
 // Pod represents a pod with minimal info.
 type Pod struct {
 	// Unique identifier for the pod

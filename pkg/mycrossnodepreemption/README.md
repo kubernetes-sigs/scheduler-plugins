@@ -34,6 +34,13 @@ Whereas the default scheduler only preempts pods within a single node, this plug
 
 # TODOs
 
+- Clean up the code:
+  - Reduce code
+  - Switch case
+  - Proper logging
+  - Comments
+  - Proper variable names
+  - Replace not understandable code
 - Write report
 - Remove TODOs.
 - Make the test plan.

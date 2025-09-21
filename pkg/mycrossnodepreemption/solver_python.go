@@ -14,20 +14,20 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO: Reach to here in this file...
-
 func (pl *MyCrossNodePreemption) runSolverPython(ctx context.Context, in SolverInput) (*SolverOutput, error) {
-	raw, _ := json.Marshal(in)
+	rawInput, _ := json.Marshal(in)
 	klog.V(MyV).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
 
 	cmd := exec.CommandContext(ctx, SolverPythonBin, SolverPath)
-	cmd.Stdin = bytes.NewReader(raw)
+	cmd.Stdin = bytes.NewReader(rawInput)
 
 	// 1) Pipe stdout (JSON) and stderr (logs) separately
+	// Get stdout
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
+	// Get stderr
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stderr pipe: %w", err)

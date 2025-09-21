@@ -21,7 +21,8 @@ const (
 
 	// SolverPath is the path to the solver executable.
 	// See Dockerfile for details.
-	SolverPath      = "/opt/solver/main.py"
+	SolverPath = "/opt/solver/main.py"
+	// Path to the Python binary to use for running the solver.
 	SolverPythonBin = "/opt/venv/bin/python"
 	// SolverLogProgress is a flag that enables/disables logging of solver progress.
 	SolverLogProgress = false
