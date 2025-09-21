@@ -39,7 +39,7 @@ func (pl *MyCrossNodePreemption) PostFilter(
 		pl.Batched.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: batched pod")
 
-	case DecideBlockActive:
+	case DecideBlock:
 		pl.Blocked.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
 

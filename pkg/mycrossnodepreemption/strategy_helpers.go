@@ -41,8 +41,8 @@ const (
 	DecideBatch
 	// DecideEvery indicates we should optimize this new single pod.
 	DecideEvery
-	// DecideBlockActive indicates we block the pod due to an active plan.
-	DecideBlockActive
+	// DecideBlock indicates we block the pod due to an active plan.
+	DecideBlock
 )
 
 // Phase indicates which phase of scheduling we are in.
@@ -137,7 +137,7 @@ func (pl *MyCrossNodePreemption) decideStrategy(phase Phase) StrategyDecision {
 	// If not in continuous mode and there's an active plan, block all new pods.
 	ap := pl.getActivePlan()
 	if ap != nil {
-		return DecideBlockActive
+		return DecideBlock
 	}
 	// Modes: OptimizeBatch@PreEnqueue or OptimizeBatch@PostFilter
 	if optimizeBatch() {

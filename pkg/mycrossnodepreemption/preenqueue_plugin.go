@@ -10,10 +10,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// TODO: Reach to here in this file...
-
 // PreEnqueue is called before a pod is enqueued for scheduling.
 func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *framework.Status {
+
 	// Always allow kube-system pods
 	if pod.Namespace == "kube-system" {
 		return framework.NewStatus(framework.Success)
@@ -24,9 +23,12 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		klog.V(MyV).Info("Caches not warmed up yet; skipping plugin logic")
 		return framework.NewStatus(framework.Pending, "Caches not warmed up yet; skipping plugin logic")
 	}
+
+	// Just prune on every PreEnqueue call
 	_ = pl.pruneSetEntries(pl.Blocked)
 
 	switch pl.decideStrategy(PhasePreEnqueue) {
+
 	case DecidePassThrough:
 		klog.V(MyV).InfoS("PreEnqueue: pass-through", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
@@ -36,7 +38,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		pl.Batched.AddPod(pod)
 		return framework.NewStatus(framework.Pending, "PreEnqueue: batched pod")
 
-	case DecideBlockActive:
+	case DecideBlock:
 		if !pl.allowedByActivePlan(pod) {
 			klog.V(MyV).InfoS("PreEnqueue: active plan; blocking", "pod", klog.KObj(pod))
 			pl.Blocked.AddPod(pod)
