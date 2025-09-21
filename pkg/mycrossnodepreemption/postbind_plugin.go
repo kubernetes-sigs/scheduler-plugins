@@ -10,16 +10,17 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// TODO: Reach to here in this file...
-
 // PostBind is called after a pod is bound to a node.
 // It is used to check if the active scheduling plan is still in progress.
 // postbind_plugin.go
 func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, _ string) {
+	// Early exit if system pods or if no active plan
 	ap := pl.getActivePlan()
 	if pod.Namespace == "kube-system" || ap == nil {
 		return
 	}
+
+	// Check if the pod is relevant to the active plan
 	relevant := false
 	if _, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok {
 		relevant = true
@@ -31,9 +32,9 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		return
 	}
 
+	// Check if the plan is completed
 	ok, err := pl.isPlanCompleted(ctx, ap, pod)
 	if err != nil {
-		//_ = pl.onPlanSettled(PlanStatusFailed)
 		klog.V(MyV).ErrorS(err, "PostBind: completion check failed")
 		return
 	}
@@ -41,6 +42,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		klog.V(MyV).InfoS("PostBind: still in progress", "planID", ap.ID, "pod", klog.KObj(pod))
 		return
 	}
+	// Complete the plan
 	if pl.onPlanSettled(PlanStatusCompleted) {
 		klog.InfoS("PostBind: plan completed", "planID", ap.ID)
 	}
