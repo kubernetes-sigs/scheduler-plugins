@@ -38,7 +38,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		solveMode = SolveContinuous
 	} else if optimizeBatch() {
 		solveMode = SolveBatch
-		_ = pl.pruneSetEntries(pl.Batched)
+		_ = pl.pruneSet(pl.Batched, "Batched")
 		batchedPods = pl.snapshotBatch()
 		if len(batchedPods) == 0 {
 			klog.InfoS(label + ": no batched pod(s) to schedule")

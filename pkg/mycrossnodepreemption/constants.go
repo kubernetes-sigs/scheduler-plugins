@@ -34,7 +34,7 @@ const (
 	// For ease of use, it should match the kube-scheduler namespace.
 	PlanConfigMapNamespace = "kube-system"
 	// PlanConfigMapLabelKey is the name of the ConfigMap used for plan configuration.
-	PlanConfigMapLabelKey = "crossnode-plan"
+	PlanConfigMapLabelKey = "plan"
 	// PlanPendingBindInterval is the interval at which pending binds are retried.
 	PlanPendingBindInterval = 250 * time.Millisecond
 	// PlansToRetain is the number of ConfigMaps plans to retain before the oldest are deleted.

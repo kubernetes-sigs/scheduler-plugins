@@ -45,7 +45,7 @@ func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }
 
-// combineNsName combines namespace and name into a single string.
+// combineNsName combines namespace and name into a single string with a '/' separator.
 func combineNsName(ns, name string) string {
 	return fmt.Sprintf("%s/%s", ns, name)
 }

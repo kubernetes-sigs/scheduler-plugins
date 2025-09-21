@@ -37,10 +37,12 @@ Whereas the default scheduler only preempts pods within a single node, this plug
 - Clean up the code:
   - Reduce code
   - Switch case
+  - Sort functions based on usage from outside to inside
   - Proper logging
   - Comments
   - Proper variable names
   - Replace not understandable code
+  - Use common functions
 - Write report
 - Remove TODOs.
 - Make the test plan.
@@ -246,7 +248,7 @@ Some useful test scripts can be found in `bootstrap/content/scripts/kwok/`:
 - Getting saved solver plans from kube-scheduler
 
   ```bash
-  kubectl -n kube-system get cm -l crossnode-plan
+  kubectl -n kube-system get cm -l plan
   kubectl -n kube-system get cm <CM> -o jsonpath='{.data.plan\.json}' | jq .
   ```
 
