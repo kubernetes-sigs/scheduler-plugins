@@ -57,7 +57,7 @@ Whereas the default scheduler only preempts pods within a single node, this plug
 
 # Later
 
-- Make use of design patterns where possible.
+- Make use of SOLID and DRY principles as well as Design Patterns where possible.
 - Create unit and integration tests.
 - Find a better way to set verbose level.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
