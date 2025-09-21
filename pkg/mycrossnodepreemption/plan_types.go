@@ -23,7 +23,7 @@ type StoredPlan struct {
 	// Moved pods
 	Moves []NewPlacement `json:"moves,omitempty"`
 	// Solver summary (status & score)
-	Solver SolverSummary `json:"solver"`
+	Solver SolverResult `json:"solver"`
 	// All pods and their old placements
 	OldPlacements []Placement `json:"oldPlacements,omitempty"`
 	// All pods and their new placements

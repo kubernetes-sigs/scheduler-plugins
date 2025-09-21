@@ -162,12 +162,26 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
+// copy to a "summary": drop Output/CmpBase and fill Status from Output.
+func summarizeAttempt(r SolverResult) SolverResult {
+	status := r.Status
+	if status == "" && r.Output != nil {
+		status = r.Output.Status
+	}
+	return SolverResult{
+		Name:       r.Name,
+		Status:     status,
+		DurationUs: r.DurationUs,
+		Score:      r.Score,
+	}
+}
+
 type ExportedStats struct {
-	TimestampNs int64           `json:"timestamp_ns"`
-	Best        string          `json:"best,omitempty"`
-	PlanStatus  PlanStatus      `json:"plan_status,omitempty"`
-	Baseline    SolverScore     `json:"baseline"`
-	Attempts    []SolverSummary `json:"attempts"`
+	TimestampNs int64          `json:"timestamp_ns"`
+	Best        string         `json:"best,omitempty"`
+	PlanStatus  PlanStatus     `json:"plan_status,omitempty"`
+	Baseline    SolverScore    `json:"baseline"`
+	Attempts    []SolverResult `json:"attempts"`
 }
 
 const (

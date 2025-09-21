@@ -9,8 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// TODO: Reach to here in this file...
-
 // SolveMode indicates the mode of solving.
 type SolveMode int
 
@@ -92,18 +90,6 @@ type SolverPod struct {
 	Node string `json:"node"`
 }
 
-// SolverSummary summarizes the result of a solver attempt.
-type SolverSummary struct {
-	// Name of the solver used
-	Name string `json:"name,omitempty"`
-	// Status of the solver
-	Status string `json:"status,omitempty"`
-	// DurationUs of the solver
-	DurationUs int64 `json:"durationUs,omitempty"`
-	// Score of the solution
-	Score SolverScore `json:"score,omitempty"`
-}
-
 // SolverAttempt defines a solver attempt configuration and function.
 type SolverAttempt struct {
 	// Name of the solver attempt
@@ -121,12 +107,23 @@ type SolverAttempt struct {
 	Run func(ctx context.Context, in SolverInput) (*SolverOutput, error)
 }
 
-type SolverAttemptResult struct {
-	Name       string
-	DurationUs int64 // microseconds
-	Score      SolverScore
-	CmpBase    int // -1 worse, 0 equal, 1 better
-	Output     *SolverOutput
+// SolverResult is the result of a solver attempt.
+type SolverResult struct {
+	// Name of the solver attempt
+	Name string `json:"name,omitempty"`
+	// Status of the solver
+	// filled from Output.Status when present
+	Status string `json:"status,omitempty"`
+	// DurationUs of the solver
+	DurationUs int64 `json:"durationUs,omitempty"`
+	// Score of the solution
+	Score SolverScore `json:"score,omitempty"`
+
+	// In-memory only (not exported)
+	// Comparison vs previous leader (-1 worse, 0 tie, 1 better)
+	CmpBase int `json:"-"`
+	// Full detailed solver output (not exported)
+	Output *SolverOutput `json:"-"`
 }
 
 // SolverScore of a solver solution

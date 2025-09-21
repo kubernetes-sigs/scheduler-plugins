@@ -19,7 +19,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	in SolverInput,
 	nodes []*v1.Node,
 	pods []*v1.Pod,
-) (best SolverAttemptResult, hadFeasibleSolver bool) {
+) (best SolverResult, hadFeasibleSolver bool) {
 	label := strategyToString()
 
 	// Baseline + prepared state
@@ -31,13 +31,14 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		start := time.Now()
 		if out := runSolverDirectFit(in, baseState); HasSolverFeasibleResult(out.Status) {
 			score := computeSolverScore(in, out)
-			best = SolverAttemptResult{
+			best = SolverResult{
 				Name:       "direct-fit",
 				DurationUs: time.Since(start).Microseconds(),
 				Score:      score,
 				CmpBase:    1,
 				Output:     out,
 			}
+			best.Status = out.Status
 			klog.InfoS(label+": direct-fit; skipping other solvers",
 				"placedByPri", best.Score.PlacedByPriority, "evictions", best.Score.Evicted, "moves", best.Score.Moved, "durationUs", best.DurationUs)
 			return best, true
@@ -85,10 +86,10 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	klog.V(MyV).InfoS(label+": solver attempts planned", "enabled", enabled)
 
 	// Start with baseline as leader
-	best = SolverAttemptResult{Name: "baseline", Score: baselineScore}
+	best = SolverResult{Name: "baseline", Score: baselineScore}
 
 	// We will record only feasible+applicable attempts for the leaderboard/ledger
-	var attemptsFeasible []SolverAttemptResult
+	var attemptsFeasible []SolverResult
 
 	// Loop over attempts
 	for _, att := range solverAttempts {
@@ -129,12 +130,13 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// This attempt is feasible+applicable
 		hadFeasibleSolver = true
 		score := computeSolverScore(inAttempt, out)
-		curr := SolverAttemptResult{
+		curr := SolverResult{
 			Name:       att.Name,
 			Output:     out,
 			DurationUs: durUs,
 			Score:      score,
 			CmpBase:    IsImprovement(best.Score, score),
+			Status:     out.Status,
 		}
 		attemptsFeasible = append(attemptsFeasible, curr)
 
@@ -185,17 +187,23 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 	// Leaderboard
 	if len(attemptsFeasible) > 0 {
-		var better, equal, worse []SolverAttemptResult
+		var better, equal, worse []SolverResult
 		// Loop over feasible attempts to classify vs baseline
 		for _, r := range attemptsFeasible {
-			result := SolverAttemptResult{Name: r.Name, DurationUs: r.DurationUs, Score: r.Score, CmpBase: IsImprovement(baselineScore, r.Score)}
-			switch result.CmpBase {
+			rr := SolverResult{
+				Name:       r.Name,
+				DurationUs: r.DurationUs,
+				Score:      r.Score,
+				CmpBase:    IsImprovement(baselineScore, r.Score),
+				Status:     r.Status,
+			}
+			switch rr.CmpBase {
 			case 1:
-				better = append(better, result)
+				better = append(better, rr)
 			case 0:
-				equal = append(equal, result)
+				equal = append(equal, rr)
 			default:
-				worse = append(worse, result)
+				worse = append(worse, rr)
 			}
 		}
 		// Build ranking: better first, then equal, then worse
@@ -231,18 +239,9 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 	// Stats ledger
 	if hadFeasibleSolver {
-		attemptsToExport := make([]SolverSummary, 0, len(attemptsFeasible))
+		attemptsToExport := make([]SolverResult, 0, len(attemptsFeasible))
 		for _, r := range attemptsFeasible {
-			status := ""
-			if r.Output != nil {
-				status = r.Output.Status
-			}
-			attemptsToExport = append(attemptsToExport, SolverSummary{
-				Name:       r.Name,
-				Status:     status,
-				DurationUs: r.DurationUs,
-				Score:      r.Score,
-			})
+			attemptsToExport = append(attemptsToExport, summarizeAttempt(r))
 		}
 		entry := ExportedStats{
 			TimestampNs: time.Now().UnixNano(),

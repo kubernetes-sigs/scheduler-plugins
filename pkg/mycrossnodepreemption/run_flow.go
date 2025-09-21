@@ -121,12 +121,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	}
 
 	// Build and return result
-	bestSolverSummary := SolverSummary{
-		Name:       bestSolver.Name,
-		Status:     bestSolver.Output.Status,
-		DurationUs: bestSolver.DurationUs,
-		Score:      bestSolver.Score,
-	}
+	bestSolverSummary := summarizeAttempt(bestSolver)
 	klog.InfoS(label+": plan execution finished; waiting for settlement",
 		"planID", ap.ID,
 		"bestSolver", bestSolverSummary,
