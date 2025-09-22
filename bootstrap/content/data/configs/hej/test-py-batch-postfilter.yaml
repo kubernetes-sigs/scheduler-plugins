@@ -21,13 +21,13 @@ options:
 componentsPatches:
   - name: kube-scheduler
     extraEnvs:
-      - name: OPTIMIZE_CADENCE
-        value: "all_synch" # choices: every, all_synch, all_asynch
-      - name: OPTIMIZE_AT
-        value: "preenqueue" # choices: preenqueue, postfilter
-      - name: OPTIMIZATION_INTERVAL
+      - name: OPTIMIZE_MODE
+        value: "all_asynch" # choices: every, all_synch, all_asynch
+      - name: OPTIMIZE_HOOK_STAGE
+        value: "preenqueue" # choices: preenqueue, postfilter (not used in all_asynch mode)
+      - name: OPTIMIZE_INTERVAL
         value: "10s"
-      - name: OPTIMIZATION_INITIAL_DELAY
+      - name: OPTIMIZE_INITIAL_DELAY
         value: "7s"
       - name: PLAN_EXECUTION_TIMEOUT
         value: "600h" # set high to determine any potential issues

@@ -13,8 +13,8 @@ import (
 // It starts with an initial delay and then runs at a fixed interval.
 func (pl *MyCrossNodePreemption) optimizeLoop(ctx context.Context) {
 	strategy := strategyToString()
-	firstDelay := OptimizationInitialDelay
-	interval := OptimizationInterval
+	firstDelay := OptimizeInitialDelay
+	interval := OptimizeInterval
 	timer := time.NewTimer(firstDelay)
 	defer timer.Stop()
 	klog.InfoS(msg(strategy, InfoCycleStartedFirstRun), "in", firstDelay)

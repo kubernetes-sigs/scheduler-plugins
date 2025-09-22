@@ -1,38 +1,28 @@
 package mycrossnodepreemption
 
-// OptimizationMode indicates how we optimize
-type OptimizationMode int
+// Mode indicates how we optimize
+type OptimizeModeType int
 
 const (
-	// OptimizeEvery indicates we optimize for every new pod.
-	OptimizeEvery OptimizationMode = iota
-	// OptimizeAllSynch indicates we optimize all pods and blocks until done.
-	OptimizeAllSynch
-	// OptimizeAllAsynch indicates we optimize all pods but do not block (only while applying the plan).
+	// ModeEvery indicates we optimize for every new pod.
+	ModeEvery OptimizeModeType = iota
+	// ModeAllSynch indicates we optimize all pods and blocks until done.
+	ModeAllSynch
+	// ModeAllAsynch indicates we optimize all pods but do not block (only while applying the plan).
 	// OptimizeAt is ignored in this mode.
-	OptimizeAllAsynch
+	ModeAllAsynch
 )
 
-// OptimizationAt indicates at which scheduling phase to optimize.
-type OptimizationAt int
+// Stage indicates which stage of scheduling we are in.
+type StageType int
 
 const (
-	// OptimizeAtPreEnqueue indicates we optimize at the PreEnqueue phase.
-	OptimizeAtPreEnqueue OptimizationAt = iota
-	// OptimizeAtPostFilter indicates we optimize at the PostFilter phase.
-	OptimizeAtPostFilter
-)
-
-// Phase indicates which phase of scheduling we are in.
-type Phase int
-
-const (
-	// PhaseNone indicates we are not in a phase we care about.
-	PhaseNone Phase = iota // for periodic optimization
-	// PhasePreEnqueue indicates we are in the PreEnqueue phase.
-	PhasePreEnqueue
-	// PhasePostFilter indicates we are in the PostFilter phase.
-	PhasePostFilter
+	// StageNone indicates we are not in a stage we care about.
+	StageNone StageType = iota // for periodic optimization
+	// StagePreEnqueue indicates we are in the PreEnqueue stage.
+	StagePreEnqueue
+	// StagePostFilter indicates we are in the PostFilter stage.
+	StagePostFilter
 )
 
 // StrategyDecision indicates the decision made by the plugin.
@@ -41,10 +31,10 @@ type StrategyDecision int
 const (
 	// Let the pod pass through without optimization.
 	DecidePass StrategyDecision = iota
-	// Optimize this new single pod.
-	DecideEvery
 	// Block the pod until optimization is done.
-	DecideBlockWhileActive
+	DecideBlock
+	// Process this new single pod.
+	DecideProcess
 	// Set the pod as pending for later optimization.
-	DecidePending
+	DecideProcessLater
 )

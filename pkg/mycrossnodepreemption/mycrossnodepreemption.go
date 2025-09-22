@@ -54,7 +54,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", strategyToString())
 	klog.InfoS("Plugin configuration", "planTimeout", PlanExecutionTimeout.String(), "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "solverTimeout", SolverPythonTimeout.String())
 	if optimizeAllSynch() || optimizeAllAsynch() {
-		klog.InfoS("Loop configuration", "optimizationInterval", OptimizationInterval.String())
+		klog.InfoS("Loop configuration", "optimizationInterval", OptimizeInterval.String())
 	}
 
 	return pl, nil

@@ -6,18 +6,18 @@ package mycrossnodepreemption
 
 // OptimizeMode is the frequency at which optimization is performed.
 // Choices: "every", "all_synch", "all_asynch"
-var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_CADENCE", "all_synch"))
+var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_MODE", "all_synch"))
 
-// OptimizeAt is the action point that triggers optimization.
+// OptimizeHookStage is the action point that triggers optimization.
 // Choices: "preenqueue", "postfilter" (ignored in all_asynch mode)
-var OptimizeAt = parseOptimizeAt(getenv("OPTIMIZE_AT", "postfilter"))
+var OptimizeHookStage = parseOptimizeHookStage(getenv("OPTIMIZE_HOOK_STAGE", "postfilter"))
 
-// OptimizationInterval is the duration between consecutive optimization runs.
+// OptimizeInterval is the duration between consecutive optimization runs.
 // If a plan is actively being executed, the loop is skipped.
-var OptimizationInterval = parseTime(getenv("OPTIMIZATION_INTERVAL", "30s"))
+var OptimizeInterval = parseTime(getenv("OPTIMIZE_INTERVAL", "30s"))
 
-// OptimizationInitialDelay is the initial delay before the first optimization run.
-var OptimizationInitialDelay = parseTime(getenv("OPTIMIZATION_INITIAL_DELAY", "15s"))
+// OptimizeInitialDelay is the initial delay before the first optimization run.
+var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "15s"))
 
 // ======= Solver settings =======
 

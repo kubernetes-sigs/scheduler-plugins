@@ -15,7 +15,7 @@ import (
 // It is used, here, to place workload pods on the appropriate nodes as they are automatically created, therefore, placement by name cannot be done.
 func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, node string) *framework.Status {
 
-	phase := "Reserve"
+	stage := "Reserve"
 
 	ap := pl.getActivePlan()
 	if pod.Namespace == SystemNamespace || ap == nil {
@@ -25,7 +25,7 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	// Pass through placementByName pods; do not consume workload quota.
 	if ap.PlacementByName != nil {
 		if _, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok {
-			klog.V(MyV).InfoS(msg(phase, InfoPodPlacedByName), "pod", klog.KObj(pod))
+			klog.V(MyV).InfoS(msg(stage, InfoPodPlacedByName), "pod", klog.KObj(pod))
 			return framework.NewStatus(framework.Success)
 		}
 	}
@@ -34,21 +34,21 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	// Otherwise, we need to check the workload quota.
 	wk, ok := topWorkload(pod)
 	if !ok {
-		klog.V(MyV).InfoS(msg(phase, "pod not part of any workload; allowing"), "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(msg(stage, "pod not part of any workload; allowing"), "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
 	}
 	// Check if workload is tracked in the active plan.
 	workloadKey := wk.String()
 	allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[workloadKey]
 	if !ok {
-		klog.V(MyV).InfoS(msg(phase, "workload not tracked"), "pod", klog.KObj(pod), "node", node)
-		return framework.NewStatus(framework.Unschedulable, msg(phase, "workload not tracked"))
+		klog.V(MyV).InfoS(msg(stage, "workload not tracked"), "pod", klog.KObj(pod), "node", node)
+		return framework.NewStatus(framework.Unschedulable, msg(stage, "workload not tracked"))
 	}
 	// Check if node is tracked for this workload.
 	workloadCntForNode, ok := allWorkloadCnts[node]
 	if !ok {
-		klog.V(MyV).InfoS(msg(phase, "node not tracked"), "pod", klog.KObj(pod), "node", node)
-		return framework.NewStatus(framework.Unschedulable, msg(phase, "node not tracked"))
+		klog.V(MyV).InfoS(msg(stage, "node not tracked"), "pod", klog.KObj(pod), "node", node)
+		return framework.NewStatus(framework.Unschedulable, msg(stage, "node not tracked"))
 	}
 
 	// Try to consume workload quota for this pod on this node.
@@ -56,11 +56,11 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 	for {
 		currentCnt := workloadCntForNode.Load()
 		if currentCnt <= 0 {
-			klog.V(MyV).InfoS(msg(phase, "workload node quota exhausted"), "pod", klog.KObj(pod), "node", node)
-			return framework.NewStatus(framework.Unschedulable, msg(phase, "workload node quota exhausted"))
+			klog.V(MyV).InfoS(msg(stage, "workload node quota exhausted"), "pod", klog.KObj(pod), "node", node)
+			return framework.NewStatus(framework.Unschedulable, msg(stage, "workload node quota exhausted"))
 		}
 		if workloadCntForNode.CompareAndSwap(currentCnt, currentCnt-1) { // successfully reserved quota
-			klog.V(MyV).InfoS(msg(phase, "workload node quota consumed"), "pod", klog.KObj(pod), "node", node)
+			klog.V(MyV).InfoS(msg(stage, "workload node quota consumed"), "pod", klog.KObj(pod), "node", node)
 			st.Write(rsReservationKey, &rsReservationState{key: reservationKey{rsKey: workloadKey, nodeName: node}})
 			return framework.NewStatus(framework.Success)
 		}
@@ -69,24 +69,24 @@ func (pl *MyCrossNodePreemption) Reserve(ctx context.Context, st *framework.Cycl
 
 func (pl *MyCrossNodePreemption) Unreserve(ctx context.Context, st *framework.CycleState, pod *v1.Pod, _ string) {
 
-	phase := "Unreserve"
+	stage := "Unreserve"
 
 	// Read reservation state
 	stateData, err := st.Read(rsReservationKey)
 	if err != nil {
-		klog.V(MyV).InfoS(msg(phase, "failed to read reservation state"), "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(msg(stage, "failed to read reservation state"), "pod", klog.KObj(pod))
 		return
 	}
 	// Get reservation info
 	reservationState, ok := stateData.(*rsReservationState)
 	if !ok {
-		klog.V(MyV).InfoS(msg(phase, "failed to cast reservation state"), "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(msg(stage, "failed to cast reservation state"), "pod", klog.KObj(pod))
 		return
 	}
 
 	ap := pl.getActivePlan()
 	if ap == nil {
-		klog.V(MyV).InfoS(msg(phase, InfoNoActivePlan), "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(msg(stage, InfoNoActivePlan), "pod", klog.KObj(pod))
 		return
 	}
 	// Return quota

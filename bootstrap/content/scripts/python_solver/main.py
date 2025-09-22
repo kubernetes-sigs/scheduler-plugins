@@ -229,24 +229,49 @@ def solve(instance: dict) -> dict:
 
     # ---------------------- constraints from Go hints (min placed by priority only) -------------------
     if use_hints and isinstance(hints, dict):
-        hp = (hints.get("placed_by_priority") or {})
-        if hp:
-            # Collect all priorities present in the instance
-            priorities_all = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
-            for pr in priorities_all:
-                need = int(hp.get(str(pr), 0))
-                if need > 0:
-                    idxs = [i for i in range(num_pods) if p_pri(i) == pr]
-                    if idxs:
-                        m.Add(sum(placed[i] for i in idxs) >= need)
-    else: # if not use_hints then we should set a lower bound based on the current state
-        # Ensure we do not degrade the current state:
-        priorities_all = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
-        for pr in priorities_all:
-            idxs = [i for i in range(num_pods) if p_pri(i) == pr]
-            if idxs:
-                curr_placed = sum(1 for i in idxs if i in running_idxs)
-                m.Add(sum(placed[i] for i in idxs) >= curr_placed)
+        hp_raw = (hints.get("placed_by_priority") or {})
+        if hp_raw:
+            priorities_desc = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
+
+            # normalize hint keys -> int
+            hinted_exact = {int(k): int(v) for k, v in hp_raw.items()
+                            if str(k).lstrip("-").isdigit() and int(v) > 0}
+
+            # precompute indices + placeable cap + current baseline (running)
+            idxs_ge_map, cap_ge_map, baseline_ge_map = {}, {}, {}
+            for pr in priorities_desc:
+                idxs_ge = [i for i in range(num_pods) if p_pri(i) >= pr]
+                idxs_ge_map[pr] = idxs_ge
+                cap_ge_map[pr]  = sum(1 for i in idxs_ge if eligible[i])  # upper bound feasibility guard
+                baseline_ge_map[pr] = sum(1 for i in idxs_ge if i in running_idxs)
+
+            # cumulative ≥pr from exact-tier hints
+            need_cum = 0
+            for pr in priorities_desc:
+                need_cum += hinted_exact.get(pr, 0)
+
+                idxs_ge = idxs_ge_map[pr]
+                if not idxs_ge:
+                    continue
+
+                # Clamp to what’s placeable; also never below current baseline
+                need_clamped = min(need_cum, cap_ge_map[pr])
+                lb = max(baseline_ge_map[pr], need_clamped)
+
+                # In single-preemptor mode, don't let hints over-constrain tiers at/under the preemptor's priority
+                if single_preemptor_mode and pre_idx is not None and pr <= pre_pr:
+                    lb = baseline_ge_map[pr]  # keep non-degradation only
+
+                if lb > 0:
+                    m.Add(sum(placed[i] for i in idxs_ge) >= lb)
+    else:
+        # Non-degradation on cumulative tiers (safe for single-preemptor too)
+        priorities_desc = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
+        for pr in priorities_desc:
+            idxs_ge = [i for i in range(num_pods) if p_pri(i) >= pr]
+            baseline = sum(1 for i in idxs_ge if i in running_idxs)
+            if idxs_ge:
+                m.Add(sum(placed[i] for i in idxs_ge) >= baseline)
     
     # ------------------------ solve (two modes) -------------------------
     solver = cp_model.CpSolver()

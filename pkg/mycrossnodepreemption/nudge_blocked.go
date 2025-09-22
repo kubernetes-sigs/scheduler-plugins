@@ -14,13 +14,13 @@ import (
 // This function is needed as if we activate all blocked pods at once
 // over and over again in onPlanSettled, we end up with a large waiting time in the queue.
 func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
-	phase := "NudgeBlockedLoop"
+	label := "NudgeBlockedLoop"
 
 	if !optimizeEvery() || !optimizeAtPreEnqueue() {
 		return
 	}
 	strategy := strategyToString()
-	klog.InfoS(msg(phase, "started for "+strategy))
+	klog.InfoS(msg(label, "started for "+strategy))
 
 	base := NudgeBlockedInterval
 	delay := base
@@ -38,7 +38,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 		case <-timer.C:
 			// If caches are not warm, or a plan is active, or nothing blocked: skip and reset to base delay.
 			if !pl.CachesWarm.Load() {
-				klog.V(MyV).InfoS(msg(phase, InfoCachesNotWarmedUp))
+				klog.V(MyV).InfoS(msg(label, InfoCachesNotWarmedUp))
 				sameCount = 0
 				last = ""
 				delay = base
@@ -47,7 +47,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 			}
 			ap := pl.getActivePlan()
 			if ap != nil {
-				klog.V(MyV).InfoS(msg(phase, InfoActivePlanInProgress))
+				klog.V(MyV).InfoS(msg(label, InfoActivePlanInProgress))
 				sameCount = 0
 				last = ""
 				delay = base
@@ -56,7 +56,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 			}
 			pl.pruneSet(pl.BlockedWhileActive)
 			if pl.BlockedWhileActive == nil || pl.BlockedWhileActive.Size() == 0 {
-				klog.V(MyV).InfoS(msg(phase, InfoNoBlockedPods))
+				klog.V(MyV).InfoS(msg(label, InfoNoBlockedPods))
 				sameCount = 0
 				last = ""
 				delay = base
@@ -76,13 +76,13 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 					sameCount = 0
 					last = activated
 				}
-				klog.V(MyV).InfoS(msg(phase, "activated one blocked pod"),
+				klog.V(MyV).InfoS(msg(label, "activated one blocked pod"),
 					"uid", string(activated), "sameCount", sameCount)
 			} else {
 				// No activation; reset backoff
 				sameCount = 0
 				last = ""
-				klog.V(MyV).InfoS(msg(phase, "attempted activation but none selected; resetting backoff"))
+				klog.V(MyV).InfoS(msg(label, "attempted activation but none selected; resetting backoff"))
 			}
 
 			// Backoff: base + (sameCount * base/2), capped at 5*base (1s)

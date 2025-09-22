@@ -192,6 +192,7 @@ func (pl *MyCrossNodePreemption) logLeaderboard(
 		"evictions", evictions,
 		"moves", moves,
 		"placedByPri", placed,
+		"prevPlacedByPri", baseline.PlacedByPriority,
 	)
 }
 
