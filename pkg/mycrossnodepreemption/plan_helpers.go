@@ -89,6 +89,11 @@ func (pl *MyCrossNodePreemption) executePlan(plan *Plan) error {
 		return nil
 	}
 
+	if len(plan.Moves) == 0 && len(plan.Evicts) == 0 {
+		klog.V(MyV).Info("executePlan: plan has no moves or evictions; nothing to do")
+		return nil
+	}
+
 	// Log plan details
 	for _, mv := range plan.Moves {
 		klog.V(MyV).InfoS("Pod movement planned",

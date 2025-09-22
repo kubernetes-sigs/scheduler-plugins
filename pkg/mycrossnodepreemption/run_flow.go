@@ -108,11 +108,9 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	}
 
 	// Execute if there are moves/evictions
-	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
-		if err := pl.executePlan(plan); err != nil {
-			klog.ErrorS(err, "Plan execution failed")
-			pl.onPlanSettled(PlanStatusFailed)
-		}
+	if err := pl.executePlan(plan); err != nil {
+		klog.ErrorS(err, "Plan execution failed")
+		pl.onPlanSettled(PlanStatusFailed)
 	}
 
 	// If in Batch mode activate batched pods, now that the plan is in place.
