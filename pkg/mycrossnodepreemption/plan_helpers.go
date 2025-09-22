@@ -258,13 +258,13 @@ func (pl *MyCrossNodePreemption) resolvePod(uid types.UID, ns, name string) *v1.
 	return nil
 }
 
-// allowedByActivePlan returns true if the pod is allowed by the active plan.
+// IsPodAllowedByActivePlan returns true if the pod is allowed by the active plan.
 // Standalone/preemptor pods are allowed by exact name match.
 // For controller-owned pods, we allow only if the plan still has remaining
 // per-node quota for that workload. If the pod already targets a specific
 // node (NodeName set), we check that node's remaining quota; otherwise we
 // allow if ANY node for that workload has remaining > 0.
-func (pl *MyCrossNodePreemption) allowedByActivePlan(pod *v1.Pod) bool {
+func (pl *MyCrossNodePreemption) IsPodAllowedByActivePlan(pod *v1.Pod) bool {
 	ap := pl.getActivePlan()
 	if ap == nil {
 		return false
@@ -324,6 +324,9 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	return true
 }
 
+//TODO: reach here in this file
+
+// TODO: Try to unite configmap handling
 // exportPlanToConfigMap exports the given plan to a ConfigMap.
 func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	ctx context.Context,

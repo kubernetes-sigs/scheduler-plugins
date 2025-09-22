@@ -9,8 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from decimal import Decimal
 
-# TODO: reach here in this file
-
 MEM_UNIT_TABLE = {
     # bytes
     "": 1, "b": 1, "byte": 1, "bytes": 1,
