@@ -84,7 +84,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		}
 	}
 	if err := pl.exportPlanToConfigMap(ctx, id, storedPlan); err != nil {
-		klog.ErrorS(err, "export plan failed (non-fatal)")
+		klog.ErrorS(err, "export plan to ConfigMap failed")
 	}
 
 	return plan, pl.getActivePlan(), plan.NominatedNode, nil
@@ -94,22 +94,22 @@ func (pl *MyCrossNodePreemption) registerPlan(
 func (pl *MyCrossNodePreemption) executePlan(plan *Plan) error {
 	// Defensive: nothing to do
 	if plan == nil {
-		klog.V(MyV).Info("executePlan: no plan provided; nothing to do")
-		return nil
+		klog.V(MyV).ErrorS(ErrNoPlanProvided, InfoNoPlanProvided+" in executePlan", nil)
+		return ErrNoPlanProvided
 	}
 
 	if len(plan.Moves) == 0 && len(plan.Evicts) == 0 {
-		klog.V(MyV).Info("executePlan: plan has no moves or evictions; nothing to do")
-		return nil
+		klog.V(MyV).Info("plan has no moves or evictions; nothing to do")
+		return ErrNoop
 	}
 
 	// Log plan details
 	for _, mv := range plan.Moves {
-		klog.V(MyV).InfoS("Pod movement planned",
+		klog.V(MyV).InfoS("pod movement planned",
 			"pod", combineNsName(mv.Pod.Namespace, mv.Pod.Name), "from", mv.FromNode, "to", mv.ToNode)
 	}
 	for _, e := range plan.Evicts {
-		klog.V(MyV).InfoS("Eviction planned",
+		klog.V(MyV).InfoS("eviction planned",
 			"pod", combineNsName(e.Pod.Namespace, e.Pod.Name), "from", e.Node)
 	}
 
@@ -199,7 +199,7 @@ func (pl *MyCrossNodePreemption) recreateStandalonePods(ctx context.Context, tar
 		g.Go(func() error {
 			opCtx, cancel := context.WithTimeout(gctx, RecreateTimeout)
 			defer cancel()
-			klog.V(MyV).InfoS("executePlan: recreating standalone pod", "pod", podRef(pod))
+			klog.V(MyV).InfoS("recreating standalone pod", "pod", podRef(pod))
 			if err := pl.recreateStandalonePod(opCtx, pod, ""); err != nil {
 				return fmt.Errorf("recreate %s: %w", podRef(pod), err)
 			}
@@ -496,19 +496,19 @@ func (pl *MyCrossNodePreemption) waitPendingBound(ctx context.Context, pending *
 	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTimeout, true, func(ctx context.Context) (bool, error) {
 		p, err := podsLister.Pods(namespace).Get(name)
 		if apierrors.IsNotFound(err) { // pod not found; keep polling
-			klog.V(MyV).InfoS("Waiting for pending to appear in cache", "pod", podStr)
+			klog.V(MyV).InfoS("waiting for pending to appear in cache", "pod", podStr)
 			return false, nil
 		}
 		if err != nil { // Lister error; keep polling
-			klog.V(MyV).InfoS("Lister error while waiting for pending", "pod", podStr, "err", err)
+			klog.V(MyV).InfoS("lister error while waiting for pending", "pod", podStr, "err", err)
 			return false, nil
 		}
 		if p.UID != uid { // waiting for matching pending UID
-			klog.V(MyV).InfoS("Waiting for matching pending UID", "pod", podStr, "wantUID", uid, "haveUID", p.UID)
+			klog.V(MyV).InfoS("waiting for matching pending UID", "pod", podStr, "wantUID", uid, "haveUID", p.UID)
 			return false, nil
 		}
 		if p.Spec.NodeName == "" { // waiting for preemptor to bind
-			klog.V(MyV).InfoS("Waiting for pending to bind", "pod", podStr)
+			klog.V(MyV).InfoS("waiting for pending to bind", "pod", podStr)
 			return false, nil
 		}
 		return true, nil
@@ -527,7 +527,7 @@ func (pl *MyCrossNodePreemption) waitPendingBound(ctx context.Context, pending *
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
 	if ap == nil {
 		// Plan got down concurrently; treat as "not completed yet" (retry later)
-		klog.V(MyV).InfoS("Plan completion check skipped: no active plan doc")
+		klog.V(MyV).InfoS("plan completion check skipped: no active plan doc")
 		return false, nil
 	}
 
@@ -554,7 +554,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 			return false, err
 		}
 		if po.DeletionTimestamp != nil || po.Spec.NodeName != wantNode {
-			klog.V(MyV).InfoS("Plan incomplete: pinned pod mismatch", "pod", nsname, "expectedNode", wantNode, "haveNode", po.Spec.NodeName)
+			klog.V(MyV).InfoS("plan incomplete: pinned pod mismatch", "pod", nsname, "expectedNode", wantNode, "haveNode", po.Spec.NodeName)
 			return false, nil
 		}
 	}
@@ -563,7 +563,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 	for wk, perNode := range ap.WorkloadPerNodeCnts {
 		for node, ctr := range perNode {
 			if ctr.Load() > 0 {
-				klog.V(MyV).InfoS("Plan incomplete: remaining quota", "workload", wk, "node", node, "remaining", ctr.Load())
+				klog.V(MyV).InfoS("plan incomplete: remaining quota", "workload", wk, "node", node, "remaining", ctr.Load())
 				return false, nil
 			}
 		}
@@ -672,6 +672,7 @@ func buildWorkloadQuotasAtomics(wkQuotas WorkloadQuotas) WorkloadQuotasAtomics {
 func (pl *MyCrossNodePreemption) setActivePlan(plan *Plan, id string, _ []*v1.Pod) {
 	// Exit if no plan provided
 	if plan == nil {
+		klog.V(MyV).ErrorS(ErrNoPlanProvided, InfoNoPlanProvided+" in setActivePlan", nil)
 		return
 	}
 	// Cancel any previous plan's timeout watcher.
@@ -700,7 +701,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(plan *Plan, id string, _ []*v1.Po
 func (pl *MyCrossNodePreemption) allowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
 	ap := pl.getActivePlan()
 	if ap == nil {
-		return nil, "no active plan", true
+		return nil, InfoNoActivePlan, true
 	}
 
 	// Standalone/preemptor addressed by name.

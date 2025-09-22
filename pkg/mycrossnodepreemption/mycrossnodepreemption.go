@@ -28,7 +28,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	if !pl.IsSolverEnabled() { // ensure at least one solver is enabled
-		klog.Error("No solver is enabled")
+		klog.Error(ErrNoSolverEnabled)
 		return nil, ErrNoSolverEnabled
 	}
 

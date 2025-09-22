@@ -71,7 +71,7 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
 	// Activate and remove only those attempted
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		klog.V(MyV).InfoS("Activated blocked pods", "count", len(toAct), "max", max)
+		klog.V(MyV).InfoS("activated blocked pods", "count", len(toAct), "max", max)
 		for _, it := range items[:limit] {
 			pl.Blocked.RemovePod(it.key.UID)
 		}
@@ -122,7 +122,7 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 	}
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		klog.V(MyV).InfoS("Activated batched pods", "count", len(toAct), "max", max)
+		klog.V(MyV).InfoS("activated batched pods", "count", len(toAct), "max", max)
 		// Remove only the ones we just activated
 		for _, it := range items[:limit] {
 			pl.Batched.RemovePod(it.key.UID)
@@ -168,7 +168,7 @@ func (pl *MyCrossNodePreemption) pruneSet(set *PodSet, setName string) int {
 		}
 	}
 	if removed > 0 {
-		klog.V(MyV).InfoS("Pruned stale entries", "set", setName, "removed", removed)
+		klog.V(MyV).InfoS("pruned stale entries", "set", setName, "removed", removed)
 	}
 	return removed
 }

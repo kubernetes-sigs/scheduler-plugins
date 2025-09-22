@@ -12,26 +12,26 @@ import (
 // optimizeLoop runs the optimization loop at a regular interval.
 // It starts with an initial delay and then runs at a fixed interval.
 func (pl *MyCrossNodePreemption) optimizeLoop(ctx context.Context) {
-	label := strategyToString()
+	strategy := strategyToString()
 	firstDelay := OptimizationInitialDelay
 	interval := OptimizationInterval
 	timer := time.NewTimer(firstDelay)
 	defer timer.Stop()
-	klog.InfoS(label+": started, first run scheduled", "in", firstDelay)
+	klog.InfoS(strategy+": started, first run scheduled", "in", firstDelay)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
 			if !pl.CachesWarm.Load() {
-				klog.InfoS(label+": caches not warmed up yet; skipping", "nextTryIn", interval)
+				klog.InfoS(strategy+": caches not warmed up yet; skipping", "nextTryIn", interval)
 				continue
 			}
-			klog.InfoS(label + ": cycle started")
+			klog.InfoS(strategy + ": cycle started")
 			// no singlePod in periodic modes
 			_, _ = pl.runFlow(context.Background(), nil)
 			timer.Reset(interval)
-			klog.InfoS(label+": next run", "in", interval)
+			klog.InfoS(strategy+": next run", "in", interval)
 		}
 	}
 }

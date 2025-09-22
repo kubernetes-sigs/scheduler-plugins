@@ -36,7 +36,7 @@ func (pl *MyCrossNodePreemption) waitForPluginReadiness(
 			case <-t.C:
 				nodes, err := pl.getNodes()
 				if err != nil {
-					klog.V(MyV).InfoS("Cache warm-up watcher: getNodes error; retrying", "err", err)
+					klog.V(MyV).InfoS("cache warm-up watcher: getNodes error; retrying", "err", err)
 					continue
 				}
 				usable := false
@@ -47,13 +47,13 @@ func (pl *MyCrossNodePreemption) waitForPluginReadiness(
 					}
 				}
 				if !usable {
-					klog.V(MyV).InfoS("Cache warm-up: waiting for a usable node")
+					klog.V(MyV).InfoS("cache warm-up: waiting for a usable node")
 					continue
 				}
 
 				// We have at least one usable node—mark warm and (optionally) unblock.
 				pl.CachesWarm.Store(true)
-				klog.InfoS("Caches ready and usable node(s) detected")
+				klog.InfoS("caches ready and usable node(s) detected")
 
 				// Avoid a surge in Every@PreEnqueue; the idle nudge will trickle them.
 				if !(optimizeEvery() && optimizeAtPreEnqueue()) {

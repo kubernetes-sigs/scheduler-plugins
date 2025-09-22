@@ -18,7 +18,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	nodes []*v1.Node,
 	pods []*v1.Pod,
 ) (best SolverResult, hadFeasibleSolver bool) {
-	label := strategyToString()
+	strategy := strategyToString()
 
 	// Baseline + prepared state
 	baselineScore := buildBaselineScore(in)
@@ -37,11 +37,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Output:     out,
 			}
 			best.Status = out.Status
-			klog.InfoS(label+": direct-fit; skipping other solvers",
+			klog.InfoS(strategy+": direct-fit; skipping other solvers",
 				"placedByPri", best.Score.PlacedByPriority, "evictions", best.Score.Evicted, "moves", best.Score.Moved, "durationUs", best.DurationUs)
 			return best, true
 		}
-		klog.V(MyV).InfoS(label+": direct-fit could not place all pods; run solvers", "durationUs", time.Since(start).Microseconds())
+		klog.V(MyV).InfoS(strategy+": direct-fit could not place all pods; run solvers", "durationUs", time.Since(start).Microseconds())
 	}
 
 	// Ordered attempts
@@ -81,7 +81,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			enabled = append(enabled, a.Name)
 		}
 	}
-	klog.V(MyV).InfoS(label+": solver attempts planned", "enabled", enabled)
+	klog.V(MyV).InfoS(strategy+": solver attempts planned", "enabled", enabled)
 
 	// Start with baseline as leader
 	best = SolverResult{Name: "baseline", Score: baselineScore}
@@ -116,7 +116,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		durUs := time.Since(start).Microseconds()
 
 		if err != nil || !HasSolverFeasibleResult(out.Status) {
-			klog.InfoS(label+": solver failed", "solver", att.Name, "status", out.Status, "durationUs", durUs)
+			klog.InfoS(strategy+": solver failed", "solver", att.Name, "status", out.Status, "durationUs", durUs)
 			continue
 		}
 		ok, why := pl.planApplicable(out, nodes, pods)
@@ -141,18 +141,18 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// New leader?
 		switch curr.CmpBase {
 		case 1: // new best
-			klog.V(MyV).InfoS(label+": new leader",
+			klog.V(MyV).InfoS(strategy+": new leader",
 				"solver", att.Name, "prevLeader", best.Name, "durationUs", curr.DurationUs,
 				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", best.Score.PlacedByPriority,
 				"leaderEvictions", curr.Score.Evicted, "prevEvictions", best.Score.Evicted,
 				"leaderMoves", curr.Score.Moved, "prevMoves", best.Score.Moved)
 			best = curr
 		case 0: // tie
-			klog.V(MyV).InfoS(label+": solver tied with leader",
+			klog.V(MyV).InfoS(strategy+": solver tied with leader",
 				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
 				"placedByPri", curr.Score.PlacedByPriority, "evictions", curr.Score.Evicted, "moves", curr.Score.Moved)
 		default: // worse
-			klog.V(MyV).InfoS(label+": solver worse than leader",
+			klog.V(MyV).InfoS(strategy+": solver worse than leader",
 				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
 				"placedByPri", curr.Score.PlacedByPriority, "leaderPlacedByPri", best.Score.PlacedByPriority,
 				"evictions", curr.Score.Evicted, "leaderEvictions", best.Score.Evicted,
@@ -184,10 +184,10 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	// Leaderboard
-	pl.logLeaderboard(label, attemptsFeasible, baselineScore, best)
+	pl.logLeaderboard(strategy, attemptsFeasible, baselineScore, best)
 
 	// If any feasible solver, export stats
-	pl.exportSolverStats(ctx, label, baselineScore, best, attemptsFeasible, hadFeasibleSolver)
+	pl.exportSolverStats(ctx, strategy, baselineScore, best, attemptsFeasible, hadFeasibleSolver)
 
 	return best, hadFeasibleSolver
 }

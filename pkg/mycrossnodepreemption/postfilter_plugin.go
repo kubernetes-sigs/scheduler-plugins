@@ -13,14 +13,15 @@ import (
 // PostFilter is called after filtering a pod.
 // It is a replacement for the default preemption with cross-node preemption logic implemented.
 // It catch all pods not handled by the default scheduling.
-func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap,
-) (*framework.PostFilterResult, *framework.Status) {
+func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+
+	phaseLabel := "PostFilter"
 
 	// If active plan in progress, block the pod.
 	ap := pl.getActivePlan()
 	if ap != nil {
 		pl.Blocked.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
+		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoActivePlanInProgress)
 	}
 
 	// Prune Blocked set to remove deleted/assigned pods.
@@ -29,39 +30,39 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 	switch pl.decideStrategy(PhasePostFilter) {
 
 	case DecidePassThrough:
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "PostFilter: no strategy enabled")
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, phaseLabel+": "+InfoNoStrategyEnabled)
 
 	case DecideBatch:
-		klog.V(MyV).InfoS("PostFilter: batched pod", "pod", klog.KObj(pending))
+		klog.V(MyV).InfoS(phaseLabel+": "+InfoBatchPod, "pod", klog.KObj(pending))
 		pl.Batched.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: batched pod")
+		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoBatchPod)
 
 	case DecideBlock:
 		pl.Blocked.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
+		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoActivePlanInProgress)
 
 	case DecideEvery:
-		klog.InfoS("PostFilter: start", "pod", klog.KObj(pending))
+		klog.InfoS(phaseLabel+": start", "pod", klog.KObj(pending))
 		targetNode, err := pl.runFlow(ctx, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {
 				pl.Blocked.AddPod(pending)
-				return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: active plan in progress")
+				return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoActivePlanInProgress)
 			}
-			if err == ErrSolver {
-				return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: solver failed")
+			if err == ErrSolverFailed {
+				return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoSolverFailed)
 			}
 			// Else ErrRegisterPlan
-			return nil, framework.NewStatus(framework.Unschedulable, "PostFilter: register plan failed")
+			return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoRegisterPlanFailed)
 		}
 
 		// Return the result with the nominated node information which the scheduler will use to bind the pod.
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{NominatedNodeName: targetNode, NominatingMode: framework.ModeOverride},
-		}, framework.NewStatus(framework.Success, "PostFilter: nominated after plan execution")
+		}, framework.NewStatus(framework.Success, phaseLabel+": "+InfoNominatedAfterPlan)
 
 	default:
-		klog.Error("PostFilter: unexpected decision")
-		return nil, framework.NewStatus(framework.Error, "PostFilter: unexpected decision")
+		klog.Error(phaseLabel + ": unexpected decision")
+		return nil, framework.NewStatus(framework.Error, phaseLabel+": unexpected decision")
 	}
 }

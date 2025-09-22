@@ -14,11 +14,13 @@ import (
 // This function is needed as if we activate all blocked pods at once
 // over and over again in onPlanSettled, we end up with a large waiting time in the queue.
 func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
+	phaseLabel := "NudgeBlockedLoop"
+
 	if !optimizeEvery() || !optimizeAtPreEnqueue() {
 		return
 	}
-	label := strategyToString()
-	klog.InfoS("NudgeBlockedLoop started for " + label)
+	strategy := strategyToString()
+	klog.InfoS(phaseLabel + ": started for " + strategy)
 
 	base := NudgeBlockedInterval
 	delay := base
@@ -36,7 +38,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 		case <-timer.C:
 			// If caches are not warm, or a plan is active, or nothing blocked: skip and reset to base delay.
 			if !pl.CachesWarm.Load() {
-				klog.V(MyV).InfoS("Idle nudge: caches not warmed up yet; skipping")
+				klog.V(MyV).InfoS(phaseLabel + ": caches not warmed up yet; skipping")
 				sameCount = 0
 				last = ""
 				delay = base
@@ -45,7 +47,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 			}
 			ap := pl.getActivePlan()
 			if ap != nil {
-				klog.V(MyV).InfoS("Idle nudge: plan is active; skipping")
+				klog.V(MyV).InfoS(phaseLabel + ": " + InfoActivePlanInProgress + "; skipping")
 				sameCount = 0
 				last = ""
 				delay = base
@@ -53,7 +55,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 				continue
 			}
 			if pl.Blocked == nil || pl.Blocked.Size() == 0 {
-				klog.V(MyV).InfoS("Idle nudge: no blocked pods to activate")
+				klog.V(MyV).InfoS(phaseLabel + ": " + InfoNoBlockedPods + "; skipping")
 				sameCount = 0
 				last = ""
 				delay = base
@@ -73,13 +75,13 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 					sameCount = 0
 					last = activated
 				}
-				klog.V(MyV).InfoS("Idle nudge: activated one blocked pod",
+				klog.V(MyV).InfoS(phaseLabel+": activated one blocked pod",
 					"uid", string(activated), "sameCount", sameCount)
 			} else {
 				// No activation; reset backoff
 				sameCount = 0
 				last = ""
-				klog.V(MyV).InfoS("Idle nudge: attempted activation but none selected; resetting backoff")
+				klog.V(MyV).InfoS(phaseLabel + ": attempted activation but none selected; resetting backoff")
 			}
 
 			// Backoff: base + (sameCount * base/2), capped at 5*base (1s)

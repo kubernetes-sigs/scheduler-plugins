@@ -1,0 +1,25 @@
+package mycrossnodepreemption
+
+var (
+	InfoNoop                 = "no operation"
+	InfoNoActivePlan         = "no active plan"
+	InfoNoPlanProvided       = "no plan provided"
+	InfoActivePlanInProgress = "active plan is in progress"
+	InfoNoStrategyEnabled    = "no strategy enabled"
+	InfoBatchPod             = "batch pod"
+	InfoBlockPod             = "blocking pod"
+	InfoNoBatchedPods        = "no batched pods"
+	InfoNoBlockedPods        = "no blocked pods"
+	InfoPinPod               = "pin pod"
+	InfoAllowPod             = "allow pod"
+	InfoPlanCompleted        = "plan completed"
+	InfoSolverFailed         = "solver failed"
+	InfoNoSolverEnabled      = "no solver enabled"
+	InfoPlanCompletionFailed = "plan completion check failed"
+	InfoRegisterPlanFailed   = "register plan failed"
+	InfoPlanExecutionFailed  = "plan execution failed"
+	InfoNominatedAfterPlan   = "nominated after plan execution"
+	InfoNoPendingPods        = "no pending pods"
+	InfoNoOptimalOrFeasible  = "no optimal or feasible solution"
+	InfoNoImprovement        = "no improvement"
+)

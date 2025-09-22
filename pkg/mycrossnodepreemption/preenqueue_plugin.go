@@ -13,16 +13,18 @@ import (
 // PreEnqueue is called before a pod is enqueued for scheduling.
 func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *framework.Status {
 
+	phaseLabel := "PreEnqueue"
+
 	// Always allow kube-system pods
-	if pod.Namespace == "kube-system" {
+	if pod.Namespace == SystemNamespace {
 		return framework.NewStatus(framework.Success)
 	}
 
 	// If caches are not warm, block the pod
 	if !pl.CachesWarm.Load() {
 		pl.Blocked.AddPod(pod)
-		klog.V(MyV).Info("Caches not warmed up yet; skipping plugin logic")
-		return framework.NewStatus(framework.Pending, "Caches not warmed up yet; skipping plugin logic")
+		klog.V(MyV).Info(phaseLabel + ": Caches not warmed up yet; skipping plugin logic")
+		return framework.NewStatus(framework.Pending, phaseLabel+": Caches not warmed up yet; skipping plugin logic")
 	}
 
 	// Just prune on every PreEnqueue call
@@ -32,38 +34,38 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 	switch pl.decideStrategy(PhasePreEnqueue) {
 
 	case DecidePassThrough:
-		klog.V(MyV).InfoS("PreEnqueue: pass-through", "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(phaseLabel+": pass-through", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
 
 	case DecideBatch:
-		klog.V(MyV).InfoS("PreEnqueue: batched pod", "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(phaseLabel+": "+InfoBatchPod, "pod", klog.KObj(pod))
 		pl.Batched.AddPod(pod)
-		return framework.NewStatus(framework.Pending, "PreEnqueue: batched pod")
+		return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoBatchPod)
 
 	case DecideBlock:
 		if !pl.IsPodAllowedByActivePlan(pod) {
-			klog.V(MyV).InfoS("PreEnqueue: active plan; blocking", "pod", klog.KObj(pod))
+			klog.V(MyV).InfoS(phaseLabel+": "+InfoActivePlanInProgress+"; "+InfoBlockPod, "pod", klog.KObj(pod))
 			pl.Blocked.AddPod(pod)
-			return framework.NewStatus(framework.Pending, "PreEnqueue: active plan; blocking")
+			return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoActivePlanInProgress+"; "+InfoBlockPod)
 		}
 		return framework.NewStatus(framework.Success) // fallback
 
 	case DecideEvery:
-		klog.InfoS("PreEnqueue: start", "pod", klog.KObj(pod))
+		klog.InfoS(phaseLabel+": start", "pod", klog.KObj(pod))
 		_, err := pl.runFlow(ctx, pod)
 		if err != nil {
 			switch err {
 			case ErrActiveInProgress:
 				pl.Blocked.AddPod(pod)
-				return framework.NewStatus(framework.Pending, "PreEnqueue: active plan in progress")
-			case ErrSolver:
+				return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoActivePlanInProgress)
+			case ErrSolverFailed:
 				pl.Blocked.AddPod(pod)
-				return framework.NewStatus(framework.Pending, "PreEnqueue: solver failed")
+				return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoSolverFailed)
 			default: // else ErrRegisterPlan
-				return framework.NewStatus(framework.Pending, "PreEnqueue: register plan failed")
+				return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoRegisterPlanFailed)
 			}
 		}
-		return framework.NewStatus(framework.Success, "PreEnqueue: nominated after plan execution")
+		return framework.NewStatus(framework.Success, phaseLabel+": "+InfoNominatedAfterPlan)
 	}
 
 	return framework.NewStatus(framework.Success)

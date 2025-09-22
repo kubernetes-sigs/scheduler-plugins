@@ -15,10 +15,13 @@ import (
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
 // it is determined in Reserve plugin and will be retried again.
 func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+
+	phaseLabel := "PreFilter"
+
 	ap := pl.getActivePlan()
 
 	// Always allow kube-system pods and when no active plan exists.
-	if pod.Namespace == "kube-system" || ap == nil {
+	if pod.Namespace == SystemNamespace || ap == nil {
 		return nil, framework.NewStatus(framework.Success)
 	}
 
@@ -28,7 +31,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	if allowed != nil {
 		nodes = allowed.UnsortedList()
 	}
-	klog.V(MyV).InfoS("PreFilter: filter decision",
+	klog.V(MyV).InfoS(phaseLabel+": filter decision",
 		"activePlan", ap != nil,
 		"pod", combineNsName(pod.Namespace, pod.Name),
 		"nodes", nodes,
@@ -37,17 +40,17 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 
 	switch {
 	case ok && allowed == nil:
-		klog.V(MyV).InfoS("PreFilter: allow", "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyV).InfoS(phaseLabel+": "+InfoAllowPod, "pod", klog.KObj(pod), "reason", msg)
 		return nil, framework.NewStatus(framework.Success)
 
 	case ok && allowed.Len() > 0:
-		klog.V(MyV).InfoS("PreFilter: pin", "pod", klog.KObj(pod), "nodes", nodes, "reason", msg)
+		klog.V(MyV).InfoS(phaseLabel+": "+InfoPinPod, "pod", klog.KObj(pod), "nodes", nodes, "reason", msg)
 		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
 
 	default:
-		klog.V(MyV).InfoS("PreFilter: block", "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyV).InfoS(phaseLabel+": "+InfoBlockPod, "pod", klog.KObj(pod), "reason", msg)
 		pl.Blocked.AddPod(pod)
-		return nil, framework.NewStatus(framework.Unschedulable, "PreFilter: "+msg)
+		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+msg)
 	}
 }
 

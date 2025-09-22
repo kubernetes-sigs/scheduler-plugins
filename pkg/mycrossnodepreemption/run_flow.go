@@ -14,13 +14,13 @@ import (
 // For Single phase, the singlePod must be provided (the preemptor).
 // Returns the target node name for the preemptor pod (if any) and error (if any).
 func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod) (targetNode string, err error) {
-	label := strategyToString()
+	strategy := strategyToString()
 
 	// Continuous: do NOT take Active yet (first take it after solver has the plan and there is an improvement to apply).
 	// Batch/Single: take Active early because these modes block by design.
 	if !optimizeContinuous() {
 		if !pl.tryEnterActive() {
-			klog.V(MyV).InfoS(label + ": another plan active; skipping")
+			klog.V(MyV).InfoS(strategy + ": " + InfoActivePlanInProgress + "; skipping")
 			return "", ErrActiveInProgress
 		}
 	}
@@ -40,7 +40,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		_ = pl.pruneSet(pl.Batched, "Batched")
 		batchedPods = pl.snapshotBatch()
 		if len(batchedPods) == 0 {
-			klog.InfoS(label + ": no batched pod(s) to schedule")
+			klog.InfoS(strategy + ": " + InfoNoBatchedPods)
 			pl.leaveActive()
 			return "", ErrNoop
 		}
@@ -53,20 +53,20 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	nodes, err := pl.getNodes()
 	if err != nil {
 		pl.leaveActive()
-		klog.ErrorS(err, label+": failed to list nodes")
+		klog.ErrorS(err, strategy+": failed to list nodes")
 		return "", err
 	}
 	pods, err := pl.getPods()
 	if err != nil {
 		pl.leaveActive()
-		klog.ErrorS(err, label+": failed to list pods")
+		klog.ErrorS(err, strategy+": failed to list pods")
 		return "", err
 	}
 
 	// Run solvers
 	solverInput, err := pl.buildSolverInput(solveMode, nodes, pods, preemptor, batchedPods)
 	if err != nil {
-		klog.ErrorS(err, label+": failed to build solver input")
+		klog.ErrorS(err, strategy+": failed to build solver input")
 		pl.leaveActive()
 		return "", err
 	}
@@ -74,14 +74,14 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	// Check if all solvers are infeasible -> ErrNoOptimalOrFeasible
 	if !anyFeasible {
 		pl.leaveActive()
-		klog.ErrorS(ErrNoOptimalOrFeasible, label+": no optimal/feasible solution from any solver")
+		klog.ErrorS(ErrNoOptimalOrFeasible, strategy+": no optimal/feasible solution from any solver")
 		return "", ErrNoOptimalOrFeasible
 	}
 
 	// Take Active late for Continuous (only now that we know it's worth applying a plan).
 	if optimizeContinuous() {
 		if !pl.tryEnterActive() {
-			klog.InfoS("Continuous: another plan active; skipping")
+			klog.InfoS("Continuous: " + InfoActivePlanInProgress + "; skipping")
 			return "", ErrActiveInProgress
 		}
 	}
@@ -89,7 +89,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	// Count new and total pods. If no pending pods to be scheduled -> ErrNoop
 	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestSolver.Output, pods)
 	if pendingScheduled == 0 {
-		klog.InfoS(label + ": no pending pod(s) to be scheduled; skipping")
+		klog.InfoS(strategy + ": " + InfoNoPendingPods + "; skipping")
 		pl.leaveActive()
 		pl.onPlanSettled(PlanStatusFailed)
 		return "", ErrNoop
@@ -102,14 +102,14 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		if solveMode == SolveSingle && preemptor != nil {
 			pl.Blocked.AddPod(preemptor)
 		}
-		klog.ErrorS(err, label+": register plan failed")
+		klog.ErrorS(err, strategy+": "+InfoRegisterPlanFailed)
 		pl.leaveActive()
 		return "", ErrRegisterPlan
 	}
 
 	// Execute if there are moves/evictions
 	if err := pl.executePlan(plan); err != nil {
-		klog.ErrorS(err, "Plan execution failed")
+		klog.ErrorS(err, strategy+": "+InfoPlanExecutionFailed)
 		pl.onPlanSettled(PlanStatusFailed)
 	}
 
@@ -120,7 +120,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 
 	// Build and return result
 	bestSolverSummary := summarizeAttempt(bestSolver)
-	klog.InfoS(label+": plan execution finished; waiting for settlement",
+	klog.InfoS(strategy+": plan execution finished; waiting for settlement",
 		"planID", ap.ID,
 		"bestSolver", bestSolverSummary,
 		"nominated", targetNode,

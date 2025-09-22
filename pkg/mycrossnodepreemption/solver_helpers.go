@@ -1219,7 +1219,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 			}
 		}
 		sp := toSolverPod(p, where)
-		if p.Namespace == "kube-system" {
+		if p.Namespace == SystemNamespace {
 			sp.Protected = true
 		}
 		if !seen[sp.UID] {
@@ -1237,7 +1237,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 				continue
 			}
 			sp := toSolverPod(p, "")
-			if p.Namespace == "kube-system" {
+			if p.Namespace == SystemNamespace {
 				sp.Protected = true
 			}
 			if !seen[sp.UID] {
@@ -1342,24 +1342,24 @@ func cmpInt(suggested, baseline int) int {
 func IsImprovement(baseline, suggested SolverScore) int {
 	// 1) Placed-by-priority (more is better)
 	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
-		klog.V(MyV).InfoS("Compare placed-by-priority", "result", cmp,
+		klog.V(MyV).InfoS("compare placed-by-priority", "result", cmp,
 			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
 		return cmp
 	}
 	// 2) Evictions (fewer is better)
 	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
-		klog.V(MyV).InfoS("Compare evictions", "result", cmp,
+		klog.V(MyV).InfoS("compare evictions", "result", cmp,
 			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
 		return cmp
 	}
 	// 3) Moves (fewer is better)
 	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
-		klog.V(MyV).InfoS("Compare moves", "result", cmp,
+		klog.V(MyV).InfoS("compare moves", "result", cmp,
 			"suggested", suggested.Moved, "baseline", baseline.Moved)
 		return cmp
 	}
 	// Equal on all metrics
-	klog.V(MyV).InfoS("No change: equal on placed, evictions, and moves")
+	klog.V(MyV).InfoS("no change: equal on placed, evictions, and moves")
 	return 0
 }
 
