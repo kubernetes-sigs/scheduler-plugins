@@ -1448,7 +1448,6 @@ func cloneScore(s SolverScore) *SolverScore {
 	}
 }
 
-// TODO
 // exportSolverStats exports a compact run record to the stats ConfigMap.
 // Only runs when `hadFeasible` is true.
 func (pl *MyCrossNodePreemption) exportSolverStats(
@@ -1473,13 +1472,12 @@ func (pl *MyCrossNodePreemption) exportSolverStats(
 		Baseline:    baseline,
 		Attempts:    attempts,
 	}
-	pl.appendStatsCM(ctx, entry)
+	pl.appendSolverStatsCM(ctx, entry)
 	klog.V(MyV).InfoS(msg(label, "exported solver stats"), "attempts", len(attempts), "best", best.Name)
 }
 
-// TODO
 // append (create if missing) an entry to the ConfigMap ledger
-func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry ExportedSolverStats) {
+func (pl *MyCrossNodePreemption) appendSolverStatsCM(ctx context.Context, entry ExportedSolverStats) {
 	cli := pl.Handle.ClientSet()
 	if cli == nil {
 		klog.V(1).Info("no clientset; skip stats CM")
