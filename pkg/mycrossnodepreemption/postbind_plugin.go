@@ -31,7 +31,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		_, relevant = ap.WorkloadPerNodeCnts[wk.String()]
 	}
 	if !relevant {
-		klog.V(MyV).InfoS(phaseMsg(phase, "irrelevant"), "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(msg(phase, "irrelevant"), "pod", klog.KObj(pod))
 		return
 	}
 
@@ -42,11 +42,11 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		return
 	}
 	if !ok {
-		klog.V(MyV).InfoS(phaseMsg(phase, InfoActivePlanInProgress), "planID", ap.ID, "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(msg(phase, InfoActivePlanInProgress), "planID", ap.ID, "pod", klog.KObj(pod))
 		return
 	}
 	// Complete the plan
 	if pl.onPlanSettled(PlanStatusCompleted) {
-		klog.InfoS(phaseMsg(phase, InfoPlanCompleted), "planID", ap.ID)
+		klog.InfoS(msg(phase, InfoPlanCompleted), "planID", ap.ID)
 	}
 }

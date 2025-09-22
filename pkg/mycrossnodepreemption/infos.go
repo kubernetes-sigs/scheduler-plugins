@@ -20,6 +20,8 @@ var (
 	InfoNominatedAfterPlan      = "nominated after plan execution"
 	InfoNoPendingPods           = "no pending pods"
 	InfoNoPendingPodsToSchedule = "no pending pods to schedule"
-	InfoNoOptimalOrFeasible     = "no optimal or feasible solution"
+	InfoNoSolverSolution        = "no solver solution"
 	InfoNoImprovement           = "no improvement"
+	InfoCachesNotWarmedUp       = "caches not warmed up yet"
+	InfoPlanExecutionFinished   = "plan execution finished; waiting for settlement"
 )

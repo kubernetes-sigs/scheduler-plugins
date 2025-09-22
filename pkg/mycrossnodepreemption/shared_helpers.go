@@ -2,6 +2,6 @@
 
 package mycrossnodepreemption
 
-func phaseMsg(phase string, msg string) string {
-	return phase + ": " + msg
+func msg(messenger string, message string) string {
+	return messenger + ": " + message
 }

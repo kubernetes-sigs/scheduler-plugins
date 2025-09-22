@@ -27,11 +27,11 @@ func (pl *MyCrossNodePreemption) optimizeLoop(ctx context.Context) {
 				klog.InfoS(strategy+": caches not warmed up yet; skipping", "nextTryIn", interval)
 				continue
 			}
-			klog.InfoS(strategy + ": cycle started")
+			klog.InfoS(msg(strategy, "cycle started"))
 			// no singlePod in periodic modes
 			_, _ = pl.runFlow(context.Background(), nil)
 			timer.Reset(interval)
-			klog.InfoS(strategy+": next run", "in", interval)
+			klog.InfoS(msg(strategy, "next run"), "in", interval)
 		}
 	}
 }

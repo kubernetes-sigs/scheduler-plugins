@@ -21,42 +21,42 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 	ap := pl.getActivePlan()
 	if ap != nil {
 		pl.BlockedWhileActive.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, phaseMsg(phase, InfoActivePlanInProgress))
+		return nil, framework.NewStatus(framework.Unschedulable, msg(phase, InfoActivePlanInProgress))
 	}
 
 	switch pl.decideStrategy(PhasePostFilter) {
 
 	case DecidePass:
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, phaseMsg(phase, InfoNoStrategyEnabled))
+		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, msg(phase, InfoNoStrategyEnabled))
 
 	case DecidePending:
-		klog.V(MyV).InfoS(phaseMsg(phase, InfoPendingPod), "pod", klog.KObj(pending))
-		return nil, framework.NewStatus(framework.Unschedulable, phaseMsg(phase, InfoPendingPod))
+		klog.V(MyV).InfoS(msg(phase, InfoPendingPod), "pod", klog.KObj(pending))
+		return nil, framework.NewStatus(framework.Unschedulable, msg(phase, InfoPendingPod))
 
 	case DecideBlockWhileActive:
 		pl.BlockedWhileActive.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, phaseMsg(phase, InfoActivePlanInProgress))
+		return nil, framework.NewStatus(framework.Unschedulable, msg(phase, InfoActivePlanInProgress))
 
 	case DecideEvery:
-		klog.InfoS(phaseMsg(phase, "start"), "pod", klog.KObj(pending))
+		klog.InfoS(msg(phase, "start"), "pod", klog.KObj(pending))
 		targetNode, err := pl.runFlow(ctx, pending)
 		if err != nil {
 			switch err {
 			case ErrActiveInProgress: // we only keep the pod in the set if we get ErrActiveInProgress
 				pl.BlockedWhileActive.AddPod(pending)
-				return nil, framework.NewStatus(framework.Unschedulable, phaseMsg(phase, InfoActivePlanInProgress))
+				return nil, framework.NewStatus(framework.Unschedulable, msg(phase, InfoActivePlanInProgress))
 			default: // else
-				return nil, framework.NewStatus(framework.Unschedulable, phaseMsg(phase, InfoRegisterPlanFailed))
+				return nil, framework.NewStatus(framework.Unschedulable, msg(phase, InfoRegisterPlanFailed))
 			}
 		}
 
 		// Return the result with the nominated node information which the scheduler will use to bind the pod.
 		return &framework.PostFilterResult{
 			NominatingInfo: &framework.NominatingInfo{NominatedNodeName: targetNode, NominatingMode: framework.ModeOverride},
-		}, framework.NewStatus(framework.Success, phaseMsg(phase, InfoNominatedAfterPlan))
+		}, framework.NewStatus(framework.Success, msg(phase, InfoNominatedAfterPlan))
 
 	default:
-		klog.Error(phaseMsg(phase, "unexpected decision"))
-		return nil, framework.NewStatus(framework.Error, phaseMsg(phase, "unexpected decision"))
+		klog.Error(msg(phase, "unexpected decision"))
+		return nil, framework.NewStatus(framework.Error, msg(phase, "unexpected decision"))
 	}
 }
