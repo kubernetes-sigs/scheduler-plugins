@@ -136,6 +136,7 @@ type SolverScore struct {
 	Moved int `json:"moved,omitempty"`
 }
 
+// TODO
 // PreparedState is the prepared state for solving.
 type PreparedState struct {
 	// Whether we are in single-preemptor mode
@@ -219,9 +220,6 @@ type Delta struct {
 	// Delta in Memory (bytes)
 	Mem int64
 }
-
-// UIDSet is a set of pod UIDs.
-type UIDSet map[string]struct{}
 
 // ExportedSolverStats is the structure used to export solver run statistics.
 type ExportedSolverStats struct {

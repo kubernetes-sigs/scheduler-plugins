@@ -337,9 +337,8 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 
 // activatePlannedPending activates all live pending pods that the plan intends to place
 // (i.e., NewPlacement with FromNode == "" and ToNode != "").
-// It returns the UIDs it attempted to activate.
-func (pl *MyCrossNodePreemption) activatePlannedPending(plan *Plan, live []*v1.Pod) {
-	if plan == nil || len(plan.NewPlacements) == 0 || len(live) == 0 {
+func (pl *MyCrossNodePreemption) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
+	if plan == nil || len(plan.NewPlacements) == 0 || len(pods) == 0 {
 		return
 	}
 	// Build allow-set of UIDs for pending -> scheduled in this plan.
@@ -355,7 +354,7 @@ func (pl *MyCrossNodePreemption) activatePlannedPending(plan *Plan, live []*v1.P
 
 	// Collect matching, truly-pending pods from the live slice.
 	toAct := make(map[string]*v1.Pod, len(allow))
-	for _, p := range live {
+	for _, p := range pods {
 		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName != "" {
 			continue // must be pending and alive
 		}
@@ -776,17 +775,14 @@ func (pl *MyCrossNodePreemption) allowedNodes(pod *v1.Pod) (sets.Set[string], st
 //	pendingScheduled = # of currently-pending pods that got a placement in this plan
 //	totalPrePlan     = # of pods currently bound
 //	totalPostPlan    = runningNow - evicted + pendingScheduled
-func (pl *MyCrossNodePreemption) countNewAndTotalPods(
-	out *SolverOutput,
-	live []*v1.Pod, // <-- pre-fetched once per flow
-) (pendingScheduled, totalPrePlan, totalPostPlan int) {
+func (pl *MyCrossNodePreemption) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (pendingScheduled, totalPrePlan, totalPostPlan int) {
 	if out == nil {
 		return 0, 0, 0
 	}
 	totalPrePlan, pendingScheduled = 0, 0
 
-	pUID := podsByUID(live)
-	for _, p := range live {
+	pUID := podsByUID(pods)
+	for _, p := range pods {
 		if p == nil || p.DeletionTimestamp != nil {
 			continue
 		}

@@ -16,7 +16,7 @@ import (
 // it is determined in Reserve plugin and will be retried again.
 func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 
-	phaseLabel := "PreFilter"
+	phase := "PreFilter"
 
 	ap := pl.getActivePlan()
 
@@ -25,32 +25,32 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 		return nil, framework.NewStatus(framework.Success)
 	}
 
-	allowed, msg, ok := pl.allowedNodes(pod)
+	allowed, allowedMsg, ok := pl.allowedNodes(pod)
 
 	var nodes []string
 	if allowed != nil {
 		nodes = allowed.UnsortedList()
 	}
-	klog.V(MyV).InfoS(phaseLabel+": filter decision",
+	klog.V(MyV).InfoS(msg(phase, "filter decision"),
 		"activePlan", ap != nil,
 		"pod", combineNsName(pod.Namespace, pod.Name),
 		"nodes", nodes,
-		"reason", msg,
+		"reason", allowedMsg,
 	)
 
 	switch {
 	case ok && allowed == nil:
-		klog.V(MyV).InfoS(phaseLabel+": "+InfoAllowPod, "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyV).InfoS(msg(phase, InfoAllowPod), "pod", klog.KObj(pod), "reason", allowedMsg)
 		return nil, framework.NewStatus(framework.Success)
 
 	case ok && allowed.Len() > 0:
-		klog.V(MyV).InfoS(phaseLabel+": "+InfoPinPod, "pod", klog.KObj(pod), "nodes", nodes, "reason", msg)
+		klog.V(MyV).InfoS(msg(phase, InfoPinPod), "pod", klog.KObj(pod), "nodes", nodes, "reason", allowedMsg)
 		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
 
 	default:
-		klog.V(MyV).InfoS(phaseLabel+": "+InfoBlockPod, "pod", klog.KObj(pod), "reason", msg)
+		klog.V(MyV).InfoS(msg(phase, InfoBlockPod), "pod", klog.KObj(pod), "reason", allowedMsg)
 		pl.BlockedWhileActive.AddPod(pod)
-		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+msg)
+		return nil, framework.NewStatus(framework.Unschedulable, msg(phase, allowedMsg))
 	}
 }
 

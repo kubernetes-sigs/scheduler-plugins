@@ -73,7 +73,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	// Check if all solvers are infeasible -> ErrNoOptimalOrFeasible
 	if !anyFeasible {
 		pl.leaveActive()
-		klog.ErrorS(ErrNoSolverSolution, strategy+": "+InfoNoSolverSolution)
+		klog.ErrorS(ErrNoSolverSolution, msg(strategy, InfoNoSolverSolution))
 		return "", ErrNoSolverSolution
 	}
 
@@ -103,7 +103,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 
 	// Execute if there are moves/evictions
 	if err := pl.executePlan(plan); err != nil {
-		klog.ErrorS(err, strategy+": "+InfoPlanExecutionFailed)
+		klog.ErrorS(err, msg(strategy, InfoPlanExecutionFailed))
 		pl.onPlanSettled(PlanStatusFailed)
 	}
 

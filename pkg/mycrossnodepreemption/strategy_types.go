@@ -39,12 +39,12 @@ const (
 type StrategyDecision int
 
 const (
-	// We let the pod pass through without optimization.
+	// Let the pod pass through without optimization.
 	DecidePass StrategyDecision = iota
-	// We optimize this new single pod.
+	// Optimize this new single pod.
 	DecideEvery
-	// We block the pod
+	// Block the pod until optimization is done.
 	DecideBlockWhileActive
-	// We batch the pod for later optimization.
+	// Set the pod as pending for later optimization.
 	DecidePending
 )

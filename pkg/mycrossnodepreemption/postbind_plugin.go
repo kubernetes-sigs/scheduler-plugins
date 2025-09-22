@@ -38,7 +38,7 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 	// Check if the plan is completed
 	ok, err := pl.isPlanCompleted(ctx, ap, pod)
 	if err != nil {
-		klog.V(MyV).ErrorS(err, phase+": "+InfoPlanCompletionFailed)
+		klog.V(MyV).ErrorS(err, msg(phase, InfoPlanCompletionFailed))
 		return
 	}
 	if !ok {

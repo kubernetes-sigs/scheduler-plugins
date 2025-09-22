@@ -123,7 +123,7 @@ func (pl *MyCrossNodePreemption) exportSolverStats(
 		Attempts:    attempts,
 	}
 	pl.appendStatsCM(ctx, entry)
-	klog.V(MyV).InfoS(label+": exported solver stats", "attempts", len(attempts), "best", best.Name)
+	klog.V(MyV).InfoS(msg(label, "exported solver stats"), "attempts", len(attempts), "best", best.Name)
 }
 
 // TODO
@@ -186,7 +186,7 @@ func (pl *MyCrossNodePreemption) logLeaderboard(
 		placed = best.Score.PlacedByPriority
 	}
 
-	klog.InfoS(label+": solver leaderboard",
+	klog.InfoS(msg(label, "solver leaderboard"),
 		"ranking", names,
 		"durationsUs", durations,
 		"evictions", evictions,
@@ -1342,11 +1342,7 @@ func IsImprovement(baseline, suggested SolverScore) int {
 // planApplicable checks whether a SolverOutput (plan) can still be safely
 // applied on the *current* cluster state. It allows unrelated drift and only
 // insists that the concrete preconditions for the plan still hold.
-func (pl *MyCrossNodePreemption) planApplicable(
-	out *SolverOutput,
-	nodes []*v1.Node,
-	livePods []*v1.Pod,
-) (bool, string) {
+func (pl *MyCrossNodePreemption) planApplicable(out *SolverOutput, nodes []*v1.Node, pods []*v1.Pod) (bool, string) {
 	if out == nil {
 		return false, "nil plan"
 	}
@@ -1365,7 +1361,7 @@ func (pl *MyCrossNodePreemption) planApplicable(
 
 	type res struct{ cpu, mem int64 }
 	used := map[string]res{} // by node
-	pByUID := podsByUID(livePods)
+	pByUID := podsByUID(pods)
 
 	addUse := func(node string, cpu, mem int64) {
 		u := used[node]
@@ -1375,7 +1371,7 @@ func (pl *MyCrossNodePreemption) planApplicable(
 	}
 
 	// Tally current usage
-	for _, p := range livePods {
+	for _, p := range pods {
 		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
 			continue
 		}

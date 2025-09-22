@@ -76,26 +76,18 @@ func parseOptimizeAt(s string) OptimizationAt {
 }
 
 // decideStrategy determines the optimization strategy based on the current phase.
-// BatchAsynch mode, never blocks or batches pods.
-// Other modes, always block new pods, while actively optimizing.
-// If not actively optimizing:
-// BatchSynch@PreEnqueue and BatchSynch@PostFilter: batch new pods at phases PreEnqueue and PostFilter, respectively, and at other phases we let pods through.
-// OptimizeEvery@PreEnqueue and OptimizeEvery@PostFilter: optimize for every new pod at phases PreEnqueue and PostFilter, respectively, and at other phases we let pods through.
 func (pl *MyCrossNodePreemption) decideStrategy(phase Phase) StrategyDecision {
-	// If not in BatchAsynch mode and there's an active plan, block all new pods.
+	// If there's an active plan, block all new pods.
 	ap := pl.getActivePlan()
 	if ap != nil {
 		return DecideBlockWhileActive
 	}
-	// Modes: BatchSynch@PreEnqueue or BatchSynch@PostFilter
-	if optimizeAllSynch() {
-		if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
-			return DecidePending
-		}
-		return DecidePass // if not in the phase of optimization, allow all pods
+	// Modes: AllSynch@PreEnqueue or AllSynch@PostFilter
+	if optimizeAllSynch() && ((optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter())) {
+		return DecidePending
 	}
-	// Modes: BatchSynch@PreEnqueue or BatchSynch@PostFilter
-	if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
+	// Modes: Every@PreEnqueue or Every@PostFilter
+	if optimizeEvery() && ((optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter())) {
 		return DecideEvery // optimize for every new pod
 	}
 	return DecidePass // if not at the phase of optimization, allow all pods

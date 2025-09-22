@@ -37,11 +37,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Output:     out,
 			}
 			best.Status = out.Status
-			klog.InfoS(strategy+": direct-fit; skipping other solvers",
+			klog.InfoS(msg(strategy, "direct-fit; skipping other solvers"),
 				"placedByPri", best.Score.PlacedByPriority, "evictions", best.Score.Evicted, "moves", best.Score.Moved, "durationUs", best.DurationUs)
 			return best, true
 		}
-		klog.V(MyV).InfoS(strategy+": direct-fit could not place all pods; run solvers", "durationUs", time.Since(start).Microseconds())
+		klog.V(MyV).InfoS(msg(strategy, "direct-fit could not place all pods; run solvers"), "durationUs", time.Since(start).Microseconds())
 	}
 
 	// Ordered attempts
@@ -81,7 +81,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			enabled = append(enabled, a.Name)
 		}
 	}
-	klog.V(MyV).InfoS(strategy+": solver attempts planned", "enabled", enabled)
+	klog.V(MyV).InfoS(msg(strategy, "solver attempts planned"), "enabled", enabled)
 
 	// Start with baseline as leader
 	best = SolverResult{Name: "baseline", Score: baselineScore}
@@ -116,12 +116,12 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		durUs := time.Since(start).Microseconds()
 
 		if err != nil || !HasSolverFeasibleResult(out.Status) {
-			klog.V(MyV).InfoS(strategy+": "+InfoSolverFailed, "solver", att.Name, "status", out.Status, "durationUs", durUs)
+			klog.V(MyV).InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "status", out.Status, "durationUs", durUs)
 			continue
 		}
 		ok, why := pl.planApplicable(out, nodes, pods)
 		if !ok {
-			klog.InfoS("Plan from solver is not applicable; skipping", "solver", att.Name, "reason", why, "durationUs", durUs)
+			klog.InfoS(msg(strategy, InfoPlanNotApplicable), "solver", att.Name, "reason", why, "durationUs", durUs)
 			continue
 		}
 
@@ -141,18 +141,18 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// New leader?
 		switch curr.CmpBase {
 		case 1: // new best
-			klog.InfoS(strategy+": new leader",
+			klog.InfoS(msg(strategy, "new leader"),
 				"solver", att.Name, "prevLeader", best.Name, "durationUs", curr.DurationUs,
 				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", best.Score.PlacedByPriority,
 				"leaderEvictions", curr.Score.Evicted, "prevEvictions", best.Score.Evicted,
 				"leaderMoves", curr.Score.Moved, "prevMoves", best.Score.Moved)
 			best = curr // update leader
 		case 0: // tie
-			klog.V(MyV).InfoS(strategy+": solver tied with leader",
+			klog.V(MyV).InfoS(msg(strategy, "solver tied with leader"),
 				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
 				"placedByPri", curr.Score.PlacedByPriority, "evictions", curr.Score.Evicted, "moves", curr.Score.Moved)
 		default: // worse
-			klog.V(MyV).InfoS(strategy+": solver worse than leader",
+			klog.V(MyV).InfoS(msg(strategy, "solver worse than leader"),
 				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
 				"placedByPri", curr.Score.PlacedByPriority, "leaderPlacedByPri", best.Score.PlacedByPriority,
 				"evictions", curr.Score.Evicted, "leaderEvictions", best.Score.Evicted,

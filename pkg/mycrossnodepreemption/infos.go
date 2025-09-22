@@ -24,4 +24,9 @@ var (
 	InfoNoImprovement           = "no improvement"
 	InfoCachesNotWarmedUp       = "caches not warmed up yet"
 	InfoPlanExecutionFinished   = "plan execution finished; waiting for settlement"
+	InfoCycleStarted            = "cycle started"
+	InfoCycleStartedFirstRun    = "started; first run scheduled"
+	InfoCycleNextRun            = "next run"
+	InfoPodPlacedByName         = "pod placed by name"
+	InfoPlanNotApplicable       = "plan not applicable"
 )
