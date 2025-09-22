@@ -6,15 +6,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
@@ -77,45 +74,10 @@ func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) erro
 	return pl.Client.CoreV1().Pods(pod.Namespace).EvictV1(ctx, ev)
 }
 
-// waitPodsGone waits for the specified pods to be deleted from the cluster.
-func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
-	if len(pods) == 0 {
-		return nil
-	}
-
-	type key struct{ ns, name, uid string }
-	remaining := make(map[key]struct{}, len(pods))
-	for _, p := range pods {
-		remaining[key{ns: p.Namespace, name: p.Name, uid: string(p.UID)}] = struct{}{}
-	}
-
-	// Wait until all removed, or timeout
-	podsLister := pl.podsLister()
-	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		if len(remaining) == 0 { // all pods are gone
-			return true, nil
-		}
-		for k := range remaining {
-			p, err := podsLister.Pods(k.ns).Get(k.name)
-			if apierrors.IsNotFound(err) { // pod is gone
-				delete(remaining, k)
-				continue
-			}
-			if err != nil { // keep polling
-				return false, nil
-			}
-			if string(p.UID) != k.uid || p.DeletionTimestamp != nil { // recreated or terminating
-				delete(remaining, k)
-			}
-		}
-		return len(remaining) == 0, nil
-	})
-}
-
-// recreatePod creates a new pod with the same specifications as the original pod.
+// recreateStandalonePod creates a new pod with the same specifications as the original pod.
 // Needed for standalone pods as when they are evicted, they will not be recreated as they have no controllers.
 // UID, GenerateName, ResourceVersion, NodeName, NodeSelector are all set to none.
-func (pl *MyCrossNodePreemption) recreatePod(ctx context.Context, orig *v1.Pod, _ string) error {
+func (pl *MyCrossNodePreemption) recreateStandalonePod(ctx context.Context, orig *v1.Pod, _ string) error {
 	newPod := orig.DeepCopy()
 	newPod.UID = ""
 	newPod.GenerateName = ""

@@ -24,7 +24,7 @@ func (pl *MyCrossNodePreemption) waitForPluginReadiness(
 	// Start a background watcher that waits for a usable node.
 	// We immediately return so the caller can continue even if no usable nodes exist yet.
 	go func() {
-		t := time.NewTicker(200 * time.Millisecond)
+		t := time.NewTicker(PluginReadinessInterval)
 		defer t.Stop()
 
 		for {

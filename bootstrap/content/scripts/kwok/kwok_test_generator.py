@@ -57,7 +57,7 @@ RESULTS_HEADER = [
 LOG = logging.getLogger("kwok")
 
 CM_STATS_NAME = "stats"
-CM_STATS_NAMESPACE = "stats"
+CM_STATS_NAMESPACE = "kube-system"
 
 # ====================================================================
 # YAML builders.
@@ -1926,7 +1926,6 @@ class KwokTestGenerator:
             phase = "ensure_namespace"
             LOG.info(f"phase={phase}")
             self._ensure_namespace(self.ctx, ta.namespace, recreate=False)
-            self._ensure_namespace(self.ctx, CM_STATS_NAMESPACE, recreate=False)
             self._ensure_service_account(self.ctx, ta.namespace, "default")
 
             phase = "ensure_priority_classes"

@@ -21,70 +21,6 @@ import (
 
 // TODO: Reach to here in this file...
 
-// PlanFunc is a function that, given a pod and a target node, tries to find a plan.
-type PlanFunc func(
-	pending *SolverPod,
-	target *SolverNode,
-	nodes map[string]*SolverNode,
-	order []*SolverNode,
-	moveGate *int32,
-	movedUIDs map[types.UID]struct{},
-	trial int,
-	rng *rand.Rand,
-) ([]MoveLite, bool)
-
-type MoveLite struct {
-	UID  types.UID
-	From string
-	To   string
-}
-
-// TargetScore is used to order nodes by how well they can accommodate a pod.
-type TargetScore struct {
-	Node   *SolverNode
-	Score  float64 // max(defCPU/p.CPU, defMEM/p.MEM)
-	DefSum int64
-	Waste  int64
-}
-
-type VictimStrategy int
-
-const (
-	VictimsBFS   VictimStrategy = iota // coverage-first for BFS
-	VictimsLocal                       // relocatability-aware for local search
-)
-
-// VictimOptions holds options for getVictims.
-type VictimOptions struct {
-	Strategy     VictimStrategy
-	MoveGate     *int32                 // priority gate for moves
-	NeedCPU      int64                  // remaining CPU deficit on the active node
-	NeedMem      int64                  // remaining MEM deficit on the active node
-	Cap          int                    // max victims to return (0 = no cap)
-	Order        []*SolverNode          // required for VictimsLocal (to compute relocCount)
-	MovedUIDs    map[types.UID]struct{} // prefer already-moved in local
-	Rng          *rand.Rand             // for randomization (nil = none)
-	RandomizePct int                    // % of randomization of victim order (0 = none)
-}
-
-// Delta represents a change in CPU and Memory.
-type Delta struct {
-	CPU int64
-	Mem int64
-}
-
-// UIDSet is a set of pod UIDs.
-type UIDSet map[string]struct{}
-
-// Add adds a UID to the set.
-func (s UIDSet) Add(uid string) { s[uid] = struct{}{} }
-
-// Delete removes a UID from the set.
-func (s UIDSet) Delete(uid string) { delete(s, uid) }
-
-// Has checks if a UID is in the set.
-func (s UIDSet) Has(uid string) bool { _, ok := s[uid]; return ok }
-
 // runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
 func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	nodes, _, order, worklist := base.freshClone()
@@ -179,7 +115,7 @@ func (pl *MyCrossNodePreemption) exportSolverStats(
 	for _, r := range attemptsFeasible {
 		attempts = append(attempts, summarizeAttempt(r))
 	}
-	entry := ExportedStats{
+	entry := ExportedSolverStats{
 		TimestampNs: time.Now().UnixNano(),
 		Best:        best.Name,
 		PlanStatus:  PlanStatusActive,
@@ -272,51 +208,37 @@ func summarizeAttempt(r SolverResult) SolverResult {
 	}
 }
 
-type ExportedStats struct {
-	TimestampNs int64          `json:"timestamp_ns"`
-	Best        string         `json:"best,omitempty"`
-	PlanStatus  PlanStatus     `json:"plan_status,omitempty"`
-	Baseline    SolverScore    `json:"baseline"`
-	Attempts    []SolverResult `json:"attempts"`
-}
-
-const (
-	cmExportedStatsName      = "stats"
-	cmExportedStatsNamespace = "stats"
-	cmExportedStatsKey       = "runs.json" // JSON array of solverRunEvent
-)
-
 // append (create if missing) an entry to the ConfigMap ledger
-func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry ExportedStats) {
+func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry ExportedSolverStats) {
 	cli := pl.Handle.ClientSet()
 	if cli == nil {
 		klog.V(1).Info("no clientset; skip stats CM")
 		return
 	}
-	cms := cli.CoreV1().ConfigMaps(cmExportedStatsNamespace)
-	cm, err := cms.Get(ctx, cmExportedStatsName, metav1.GetOptions{})
+	cms := cli.CoreV1().ConfigMaps(SystemNamespace)
+	cm, err := cms.Get(ctx, SolverConfigMapExportedStatsName, metav1.GetOptions{})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
-			klog.ErrorS(err, "get CM failed", "namespace", cmExportedStatsNamespace, "name", cmExportedStatsName)
+			klog.ErrorS(err, "get CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
 			return
 		}
 		// create fresh
-		buf, _ := json.Marshal([]ExportedStats{entry})
+		buf, _ := json.Marshal([]ExportedSolverStats{entry})
 		cm = &v1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      cmExportedStatsName,
-				Namespace: cmExportedStatsNamespace,
+				Name:      SolverConfigMapExportedStatsName,
+				Namespace: SystemNamespace,
 			},
-			Data: map[string]string{cmExportedStatsKey: string(buf)},
+			Data: map[string]string{SolverExportedStatsKey: string(buf)},
 		}
 		if _, err := cms.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
-			klog.ErrorS(err, "create CM failed", "namespace", cmExportedStatsNamespace, "name", cmExportedStatsName)
+			klog.ErrorS(err, "create CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
 		}
 		return
 	}
 	// update existing
-	var arr []ExportedStats
-	if s := cm.Data[cmExportedStatsKey]; s != "" {
+	var arr []ExportedSolverStats
+	if s := cm.Data[SolverExportedStatsKey]; s != "" {
 		_ = json.Unmarshal([]byte(s), &arr)
 		// best-effort
 	}
@@ -325,9 +247,9 @@ func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry Export
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	cm.Data[cmExportedStatsKey] = string(buf)
+	cm.Data[SolverExportedStatsKey] = string(buf)
 	if _, err := cms.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-		klog.ErrorS(err, "update CM failed", "namespace", cmExportedStatsNamespace, "name", cmExportedStatsName)
+		klog.ErrorS(err, "update CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
 	}
 }
 

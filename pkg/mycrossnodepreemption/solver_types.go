@@ -4,6 +4,7 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -152,4 +153,87 @@ type PreparedState struct {
 	Worklist []*SolverPod
 	// Move gate for local search
 	MoveGate *int32
+}
+
+// PlanFunc is a function that, given a pod and a target node, tries to find a plan.
+type PlanFunc func(
+	pending *SolverPod,
+	target *SolverNode,
+	nodes map[string]*SolverNode,
+	order []*SolverNode,
+	moveGate *int32,
+	movedUIDs map[types.UID]struct{},
+	trial int,
+	rng *rand.Rand,
+) ([]MoveLite, bool)
+
+// Light representation of a pod move.
+type MoveLite struct {
+	// Unique identifier for the pod
+	UID types.UID
+	// Source node of the pod
+	From string
+	// Target node of the pod
+	To string
+}
+
+// TargetScore is used to order nodes by how well they can accommodate a pod.
+type TargetScore struct {
+	// Node is the solver node being scored.
+	Node *SolverNode
+	// Computed score values.
+	// max(defCPU/p.CPU, defMEM/p.MEM)
+	Score float64
+	// Deficit in CPU and Memory if placed on this node.
+	DefSum int64
+	// Waste in CPU and Memory if placed on this node.
+	Waste int64
+}
+
+// VictimOptions holds options for getVictims.
+// TODO
+type VictimOptions struct {
+	Strategy     VictimStrategy
+	MoveGate     *int32                 // priority gate for moves
+	NeedCPU      int64                  // remaining CPU deficit on the active node
+	NeedMem      int64                  // remaining MEM deficit on the active node
+	Cap          int                    // max victims to return (0 = no cap)
+	Order        []*SolverNode          // required for VictimsLocal (to compute relocCount)
+	MovedUIDs    map[types.UID]struct{} // prefer already-moved in local
+	Rng          *rand.Rand             // for randomization (nil = none)
+	RandomizePct int                    // % of randomization of victim order (0 = none)
+}
+
+// TODO
+type VictimStrategy int
+
+// TODO
+const (
+	VictimsBFS   VictimStrategy = iota // coverage-first for BFS
+	VictimsLocal                       // relocatability-aware for local search
+)
+
+// Delta represents a change in CPU and Memory.
+type Delta struct {
+	// Delta in CPU (millicores)
+	CPU int64
+	// Delta in Memory (bytes)
+	Mem int64
+}
+
+// UIDSet is a set of pod UIDs.
+type UIDSet map[string]struct{}
+
+// ExportedSolverStats is the structure used to export solver run statistics.
+type ExportedSolverStats struct {
+	// TimestampNs is the timestamp of the run in nanoseconds.
+	TimestampNs int64 `json:"timestamp_ns"`
+	// Best solver name
+	Best string `json:"best,omitempty"`
+	// Plan status
+	PlanStatus PlanStatus `json:"plan_status,omitempty"`
+	// Baseline score
+	Baseline SolverScore `json:"baseline"`
+	// Best score
+	Attempts []SolverResult `json:"attempts"`
 }

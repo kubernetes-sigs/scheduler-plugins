@@ -13,8 +13,14 @@ const (
 	Version = "v1.5.0"
 	// MyV is the klog verbosity level; set to 0 for extra verbose logging.
 	MyV = 2
+	// SystemNamespace is the namespace in which the plugin operates.
+	// Used to prevent deletion of configmaps when cleaning up pods for a new run.
+	// For ease of use, it should match the kube-scheduler namespace.
+	SystemNamespace = "kube-system"
 	// CacheWarmupSettleDelay is the duration to wait before proceeding after cache has warmed up.
 	CacheWarmupSettleDelay = 2 * time.Second
+	// PluginReadinessInterval is the interval at which the plugin checks for readiness.
+	PluginReadinessInterval = 200 * time.Millisecond
 	// =========================================================
 
 	// ================ Solver settings ========================
@@ -25,14 +31,13 @@ const (
 	// Path to the Python binary to use for running the solver.
 	SolverPythonBin = "/opt/venv/bin/python"
 	// SolverLogProgress is a flag that enables/disables logging of solver progress.
-	SolverLogProgress = false
+	SolverLogProgress                = false
+	SolverConfigMapExportedStatsName = "stats"
+	SolverExportedStatsKey           = "runs.json" // JSON array of solverRunEvent
 	// =========================================================
 
 	// ================ Plan settings ==========================
 
-	// PlanConfigMapNamespace is the namespace of the ConfigMap used for plan configuration.
-	// For ease of use, it should match the kube-scheduler namespace.
-	PlanConfigMapNamespace = "kube-system"
 	// PlanConfigMapLabelKey is the name of the ConfigMap used for plan configuration.
 	PlanConfigMapLabelKey = "plan"
 	// PlanPendingBindInterval is the interval at which pending binds are retried.
@@ -43,5 +48,19 @@ const (
 	// We need this functionality at this mode, as if we activate all blocked pods at once
 	// over and over again in onPlanSettled, we end up with a large waiting time in the queue.
 	NudgeBlockedInterval = 200 * time.Millisecond
+	// The overall timeout for plan execution.
+	PlanOverallTimeout = 5 * time.Minute
+	// Timeout for individual evict operations.
+	EvictTimeout = 30 * time.Second
+	// Timeout for individual recreate operations.
+	RecreateTimeout = 30 * time.Second
+	// Timeout for waiting for pods to be gone after eviction.
+	WaitPodsGoneTimeout = 1 * time.Minute
+	// Interval for waiting for pods to be gone after eviction.
+	WaitPodsGoneInterval = 200 * time.Millisecond
+	// Degree of parallelism for eviction operations.
+	EvictParallelism = 8
+	// Degree of parallelism for pod recreation operations.
+	RecreatePodParallelism = 8
 	// =========================================================
 )

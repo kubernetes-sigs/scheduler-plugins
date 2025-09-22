@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +33,223 @@ func (pl *MyCrossNodePreemption) tryEnterActive() bool {
 // leaveActive exits the active plan state.
 func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)
+}
+
+// registerPlan builds and registers a new plan as active, exporting it to a ConfigMap.
+func (pl *MyCrossNodePreemption) registerPlan(
+	ctx context.Context,
+	solver SolverResult,
+	preemptor *v1.Pod,
+	pods []*v1.Pod,
+) (*StoredPlan, *ActivePlan, string, error) {
+	// Build the plan from the solver output
+	plan, err := pl.buildPlan(solver.Output, preemptor, pods)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("build actions: %w", err)
+	}
+
+	// Unique plan id (and ConfigMap name)
+	id := fmt.Sprintf("plan-%d", time.Now().UnixNano())
+
+	// Set active plan
+	pl.setActivePlan(plan, id, pods)
+
+	// Store the plan in a ConfigMap for debugging/inspection purposes
+	storedPlan := &StoredPlan{
+		PluginVersion:        Version,
+		OptimizationStrategy: strategyToString(),
+		GeneratedAt:          time.Now().UTC(),
+		PlanStatus:           PlanStatusActive,
+		Plan:                 plan,
+		Solver:               summarizeAttempt(solver),
+	}
+	if preemptor != nil {
+		storedPlan.Preemptor = &Preemptor{
+			Pod: Pod{
+				UID:       preemptor.UID,
+				Namespace: preemptor.Namespace,
+				Name:      preemptor.Name,
+			},
+			NominatedNode: plan.NominatedNode,
+		}
+	}
+	if err := pl.exportPlanToConfigMap(ctx, id, storedPlan); err != nil {
+		klog.ErrorS(err, "export plan failed (non-fatal)")
+	}
+
+	return storedPlan, pl.getActivePlan(), plan.NominatedNode, nil
+}
+
+func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
+	// Defensive: nothing to do
+	if sp == nil || sp.Plan == nil {
+		klog.V(MyV).Info("executePlan: no plan provided; nothing to do")
+		return nil
+	}
+
+	// Log plan details
+	for _, mv := range sp.Plan.Moves {
+		klog.V(MyV).InfoS("Pod movement planned",
+			"pod", combineNsName(mv.Pod.Namespace, mv.Pod.Name), "from", mv.FromNode, "to", mv.ToNode)
+	}
+	for _, e := range sp.Plan.Evicts {
+		klog.V(MyV).InfoS("Eviction planned",
+			"pod", combineNsName(e.Pod.Namespace, e.Pod.Name), "from", e.Node)
+	}
+
+	ap := pl.getActivePlan()
+	var baseCtx context.Context
+	if ap != nil && ap.Ctx != nil {
+		baseCtx = context.WithoutCancel(ap.Ctx)
+	} else {
+		baseCtx = context.Background()
+	}
+	overallCtx, cancel := context.WithTimeout(baseCtx, PlanOverallTimeout)
+	defer cancel()
+
+	// 1) Resolve unique targets (pods that are moved or evicted)
+	seen := map[types.UID]bool{}
+	var targets []*v1.Pod
+	add := func(uid types.UID, ns, name string) {
+		if seen[uid] {
+			return
+		}
+		seen[uid] = true
+		if pod := pl.resolvePod(uid, ns, name); pod != nil {
+			targets = append(targets, pod)
+		}
+	}
+	for _, mv := range sp.Plan.Moves {
+		add(mv.Pod.UID, mv.Pod.Namespace, mv.Pod.Name)
+	}
+	for _, e := range sp.Plan.Evicts {
+		add(e.Pod.UID, e.Pod.Namespace, e.Pod.Name)
+	}
+
+	// 2) Evict targets (bounded parallelism), then wait for them to disappear in cache
+	if len(targets) > 0 {
+		klog.V(MyV).InfoS("executePlan: evicting targeted pods", "count", len(targets))
+		if err := pl.evictTargets(overallCtx, targets); err != nil {
+			return err
+		}
+		waitCtx, cancel := context.WithTimeout(overallCtx, WaitPodsGoneTimeout)
+		defer cancel()
+		if err := pl.waitPodsGone(waitCtx, targets); err != nil {
+			return fmt.Errorf("wait for targeted pods gone: %w", err)
+		}
+	}
+
+	// 3) Recreate standalone (non-controller) pods only
+	if err := pl.recreateStandalonePods(overallCtx, targets); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// evictTargets evicts all target pods with bounded parallelism and per-op timeouts.
+func (pl *MyCrossNodePreemption) evictTargets(ctx context.Context, targets []*v1.Pod) error {
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(EvictParallelism) // bounded parallelism
+
+	// Loop over targets and evict each in its own goroutine with timeout.
+	for _, pod := range targets {
+		g.Go(func() error {
+			opCtx, cancel := context.WithTimeout(gctx, EvictTimeout)
+			defer cancel()
+			if err := pl.evictPod(opCtx, pod); err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("evict %s: %w", podRef(pod), err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// recreateStandalonePods recreates only non-controller-owned pods (bounded parallelism).
+func (pl *MyCrossNodePreemption) recreateStandalonePods(ctx context.Context, targets []*v1.Pod) error {
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(RecreatePodParallelism) // bounded parallelism
+
+	// Loop over targets and recreate each standalone pod in its own goroutine with timeout.
+	for _, pod := range targets {
+		// Skip controller-owned pods (their controllers will recreate them)
+		if _, owned := topWorkload(pod); owned {
+			continue
+		}
+		g.Go(func() error {
+			opCtx, cancel := context.WithTimeout(gctx, RecreateTimeout)
+			defer cancel()
+			klog.V(MyV).InfoS("executePlan: recreating standalone pod", "pod", podRef(pod))
+			if err := pl.recreateStandalonePod(opCtx, pod, ""); err != nil {
+				return fmt.Errorf("recreate %s: %w", podRef(pod), err)
+			}
+			return nil
+		})
+	}
+	return g.Wait()
+}
+
+// waitTargetsGone waits until the evicted pods disappear from cache.
+func (pl *MyCrossNodePreemption) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
+	if len(pods) == 0 {
+		return nil
+	}
+
+	type key struct{ ns, name, uid string }
+	remaining := make(map[key]struct{}, len(pods))
+	for _, p := range pods {
+		remaining[key{ns: p.Namespace, name: p.Name, uid: string(p.UID)}] = struct{}{}
+	}
+
+	podsLister := pl.podsLister()
+
+	// Poll until all pods are gone or context is done.
+	return wait.PollUntilContextCancel(ctx, WaitPodsGoneInterval, true, func(ctx context.Context) (bool, error) {
+		if len(remaining) == 0 {
+			return true, nil
+		}
+		for k := range remaining {
+			p, err := podsLister.Pods(k.ns).Get(k.name)
+			switch {
+			case apierrors.IsNotFound(err):
+				delete(remaining, k)
+			case err != nil:
+				// transient lister error; keep polling
+				return false, nil
+			default:
+				// gone for our purposes if UID changed or deletion started
+				if string(p.UID) != k.uid || p.DeletionTimestamp != nil {
+					delete(remaining, k)
+				}
+			}
+		}
+		return len(remaining) == 0, nil
+	})
+}
+
+// resolvePod attempts to find the pod by matching UID and name,
+// falling back to scanning all pods in the namespace to find a matching UID.
+func (pl *MyCrossNodePreemption) resolvePod(uid types.UID, ns, name string) *v1.Pod {
+	podsLister := pl.podsLister()
+
+	// Fast path: direct get matches UID
+	if p, err := podsLister.Pods(ns).Get(name); err == nil && p != nil && p.UID == uid {
+		return p
+	}
+
+	// Fallback: scan namespace for matching UID (handles renames or stale name → UID)
+	if pods, err := podsLister.Pods(ns).List(labels.Everything()); err == nil {
+		for _, p := range pods {
+			if p.UID == uid {
+				return p
+			}
+		}
+	}
+	return nil
 }
 
 // allowedByActivePlan returns true if the pod is allowed by the active plan.
@@ -113,12 +331,12 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: PlanConfigMapNamespace,
+			Namespace: SystemNamespace,
 			Labels:    map[string]string{PlanConfigMapLabelKey: "true"},
 		},
 		Data: map[string]string{"plan.json": string(raw)},
 	}
-	if _, err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+	if _, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 		return err
 	}
 	_ = pl.pruneOldPlans(ctx, PlansToRetain)
@@ -317,7 +535,7 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 		if _, ok := keepSet[name]; ok {
 			continue
 		}
-		if err := pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
+		if err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).
 			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			klog.ErrorS(err, "Failed to delete old plan ConfigMap", "configMap", name)
 		}
@@ -436,7 +654,7 @@ func (pl *MyCrossNodePreemption) clearActivePlan() {
 // listPlans returns newest-first plan ConfigMaps found by label.
 func (pl *MyCrossNodePreemption) listPlans(_ context.Context) ([]v1.ConfigMap, error) {
 	sel := labels.SelectorFromSet(labels.Set{PlanConfigMapLabelKey: "true"})
-	configMapLister := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(PlanConfigMapNamespace)
+	configMapLister := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(SystemNamespace)
 	items, err := configMapLister.List(sel)
 	if err != nil {
 		return nil, err
@@ -455,7 +673,7 @@ func (pl *MyCrossNodePreemption) listPlans(_ context.Context) ([]v1.ConfigMap, e
 // If the plan is already in a final state (Completed/Failed), it won't be downgraded.
 func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName string, status PlanStatus) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		configMapLister := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(PlanConfigMapNamespace)
+		configMapLister := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(SystemNamespace)
 		cm, err := configMapLister.Get(cmName)
 		if apierrors.IsNotFound(err) || cm == nil {
 			return nil
@@ -489,7 +707,7 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 
 		b, _ := json.MarshalIndent(&sp, "", "  ")
 		patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
-		_, err = pl.Client.CoreV1().ConfigMaps(PlanConfigMapNamespace).
+		_, err = pl.Client.CoreV1().ConfigMaps(SystemNamespace).
 			Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
 		return err
 	})
@@ -501,19 +719,19 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 // don't change it; specifically we never overwrite Failed with Completed.
 func (pl *MyCrossNodePreemption) markExportedStatsPlanStatus(ctx context.Context, status PlanStatus) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cms := pl.Client.CoreV1().ConfigMaps(cmExportedStatsNamespace)
-		cm, err := cms.Get(ctx, cmExportedStatsName, metav1.GetOptions{})
+		cms := pl.Client.CoreV1().ConfigMaps(SystemNamespace)
+		cm, err := cms.Get(ctx, SolverConfigMapExportedStatsName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) || cm == nil {
 			return nil // nothing to do
 		}
 		if err != nil {
 			return err
 		}
-		raw := cm.Data[cmExportedStatsKey]
+		raw := cm.Data[SolverExportedStatsKey]
 		if raw == "" {
 			return nil
 		}
-		var runs []ExportedStats
+		var runs []ExportedSolverStats
 		if err := json.Unmarshal([]byte(raw), &runs); err != nil {
 			klog.ErrorS(err, "markExportedStatsLastPlanStatus: cannot decode runs.json")
 			return nil
@@ -531,8 +749,8 @@ func (pl *MyCrossNodePreemption) markExportedStatsPlanStatus(ctx context.Context
 		}
 
 		buf, _ := json.Marshal(runs)
-		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, cmExportedStatsKey, string(buf)))
-		_, err = cms.Patch(ctx, cmExportedStatsName, types.MergePatchType, patch, metav1.PatchOptions{})
+		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, SolverExportedStatsKey, string(buf)))
+		_, err = cms.Patch(ctx, SolverConfigMapExportedStatsName, types.MergePatchType, patch, metav1.PatchOptions{})
 		return err
 	})
 }
