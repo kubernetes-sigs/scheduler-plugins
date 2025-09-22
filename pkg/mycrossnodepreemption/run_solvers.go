@@ -116,7 +116,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		durUs := time.Since(start).Microseconds()
 
 		if err != nil || !HasSolverFeasibleResult(out.Status) {
-			klog.InfoS(strategy+": solver failed", "solver", att.Name, "status", out.Status, "durationUs", durUs)
+			klog.V(MyV).InfoS(strategy+": "+InfoSolverFailed, "solver", att.Name, "status", out.Status, "durationUs", durUs)
 			continue
 		}
 		ok, why := pl.planApplicable(out, nodes, pods)
@@ -146,7 +146,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", best.Score.PlacedByPriority,
 				"leaderEvictions", curr.Score.Evicted, "prevEvictions", best.Score.Evicted,
 				"leaderMoves", curr.Score.Moved, "prevMoves", best.Score.Moved)
-			best = curr
+			best = curr // update leader
 		case 0: // tie
 			klog.V(MyV).InfoS(strategy+": solver tied with leader",
 				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,

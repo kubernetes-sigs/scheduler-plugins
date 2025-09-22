@@ -239,6 +239,14 @@ def solve(instance: dict) -> dict:
                     idxs = [i for i in range(num_pods) if p_pri(i) == pr]
                     if idxs:
                         m.Add(sum(placed[i] for i in idxs) >= need)
+    else: # if not use_hints then we should set a lower bound based on the current state
+        # Ensure we do not degrade the current state:
+        priorities_all = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
+        for pr in priorities_all:
+            idxs = [i for i in range(num_pods) if p_pri(i) == pr]
+            if idxs:
+                curr_placed = sum(1 for i in idxs if i in running_idxs)
+                m.Add(sum(placed[i] for i in idxs) >= curr_placed)
     
     # ------------------------ solve (two modes) -------------------------
     solver = cp_model.CpSolver()

@@ -72,7 +72,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	// Check if all solvers are infeasible -> ErrNoOptimalOrFeasible
 	if !anyFeasible {
 		pl.leaveActive()
-		klog.ErrorS(ErrNoOptimalOrFeasible, strategy+": no optimal/feasible solution from any solver")
+		klog.ErrorS(ErrNoOptimalOrFeasible, strategy+": "+InfoNoOptimalOrFeasible)
 		return "", ErrNoOptimalOrFeasible
 	}
 

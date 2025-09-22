@@ -48,6 +48,7 @@ Whereas the default scheduler only preempts pods within a single node, this plug
 - Remove TODOs.
 - Make the test plan.
 - Write about that we need both the Blocked and Batched sets otherwise we can
+- Write about that we always set a lower bound based on priorities in optimal solver to prevent it providing a worse plan. If no hints provided then set it based on current state.
 
 ## Test
 
