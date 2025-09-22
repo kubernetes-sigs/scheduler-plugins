@@ -27,6 +27,7 @@
 ################################################################################
 
 import sys, csv, json, time, random, argparse, re, subprocess, tempfile, os, textwrap, hashlib, math, yaml, traceback, contextlib, fcntl, logging, shlex
+from urllib import request as _urlreq, error as _urlerr
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
@@ -364,6 +365,40 @@ class KwokTestGenerator:
             LOG.warning(f"invalid wait_mode for {key}: {s}, using default '{default}'")
             raise ValueError(f"Invalid wait_mode: {s}")
         return s
+
+    ######################################################
+    # ---------- Optimizer HTTP trigger ------------------
+    ######################################################
+    def _trigger_optimizer_http(self, url: str, *, timeout: float = 5.0, retries: int = 3, backoff_s: float = 0.5) -> tuple[int, str]:
+        """
+        POST the manual optimizer endpoint. Returns (status_code, body_str).
+        Retries on transient connection errors.
+        """
+        data = b""
+        headers = {
+            "Accept": "application/json",
+            "Content-Length": "0",
+        }
+        last_exc = None
+        for attempt in range(1, max(1, retries) + 1):
+            try:
+                req = _urlreq.Request(url, data=data, headers=headers, method="POST")
+                with _urlreq.urlopen(req, timeout=timeout) as resp:
+                    body = resp.read().decode("utf-8", errors="replace")
+                    return getattr(resp, "status", 200), body
+            except _urlerr.HTTPError as e:
+                # HTTP-level error (server responded with e.code)
+                try:
+                    body = e.read().decode("utf-8", errors="replace")
+                except Exception:
+                    body = str(e)
+                return e.code, body
+            except Exception as e:
+                last_exc = e
+                LOG.info(f"optimizer POST failed (attempt {attempt}/{retries}): {e}")
+                time.sleep(backoff_s * attempt)
+        # give a synthetic status if we never reached the server
+        return 0, f"connect-failed: {last_exc}"
     
     ######################################################
     # ---------- ConfigMap helpers -----------------------
@@ -1954,6 +1989,17 @@ class KwokTestGenerator:
             else:
                 pod_specs = self._apply_standalone_pods(cfg, seed, ta, rng_layout)
 
+            # Optionally trigger the optimizer
+            if self.args.trigger_optimizer:
+                phase = "trigger_optimizer"
+                LOG.info(f"phase={phase} url={self.args.optimizer_url}")
+                code, body = self._trigger_optimizer_http(self.args.optimizer_url)
+                # Log a compact, single-line body to avoid bloating logs
+                body_compact = (body or "").replace("\n", "\\n")
+                if len(body_compact) > 600:
+                    body_compact = body_compact[:600] + "...(truncated)"
+                LOG.info(f"optimizer_response code={code} body={body_compact}")
+
             phase = "events_snapshot"
             LOG.info(f"phase={phase}")
             _, running, unschedulable = get_running_and_unscheduled(
@@ -2377,6 +2423,14 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--log-level", dest="log_level",
                     default=os.environ.get("KWOK_LOG_LEVEL", "INFO"),
                     help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO)")
+
+    # manual HTTP optimizer trigger
+    ap.add_argument("--trigger-optimizer", dest="trigger_optimizer",
+                    action="store_true",
+                    help="After applying all pods for a seed, POST the manual optimizer endpoint.")
+    ap.add_argument("--optimizer-url", dest="optimizer_url",
+                    default=os.environ.get("OPTIMIZER_URL", "http://127.0.0.1:18080/optimize"),
+                    help="URL to POST for manual optimizer trigger (default: http://127.0.0.1:18080/optimize).")
 
     # Note: other args are provided in YAML per-config
     return ap
