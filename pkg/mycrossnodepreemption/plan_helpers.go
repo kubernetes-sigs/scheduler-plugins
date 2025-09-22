@@ -14,13 +14,13 @@ import (
 	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+
+	clientv1 "k8s.io/client-go/listers/core/v1"
 )
 
 // tryEnterActive attempts to enter the active plan state.
@@ -33,6 +33,16 @@ func (pl *MyCrossNodePreemption) tryEnterActive() bool {
 // leaveActive exits the active plan state.
 func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)
+}
+
+// getActivePlan returns the currently active plan, if any.
+func (pl *MyCrossNodePreemption) getActivePlan() *ActivePlan {
+	return pl.ActivePlan.Load()
+}
+
+// clearActivePlan clears the currently active plan, if any.
+func (pl *MyCrossNodePreemption) clearActivePlan() {
+	pl.ActivePlan.Store(nil)
 }
 
 // registerPlan builds and registers a new plan as active, exporting it to a ConfigMap.
@@ -324,32 +334,20 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	return true
 }
 
-//TODO: reach here in this file
-
-// TODO: Try to unite configmap handling
 // exportPlanToConfigMap exports the given plan to a ConfigMap.
-func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
-	ctx context.Context,
-	name string,
-	sp *StoredPlan,
-) error {
-	raw, err := json.MarshalIndent(sp, "", "  ")
-	if err != nil {
+func (pl *MyCrossNodePreemption) exportPlanToConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
+	doc := ConfigMapDoc{
+		Namespace: SystemNamespace,
+		Name:      name,
+		LabelKey:  PlanConfigMapLabelKey,
+		DataKey:   PlanConfigMapLabelKey + ".json",
+	}
+	if err := doc.ensureJson(ctx, pl.Client.CoreV1(), sp); err != nil {
 		return err
 	}
-	cm := &v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: SystemNamespace,
-			Labels:    map[string]string{PlanConfigMapLabelKey: "true"},
-		},
-		Data: map[string]string{PlanConfigMapLabelKey + ".json": string(raw)},
-	}
-	if _, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
-		return err
-	}
-	_ = pl.pruneOldPlans(ctx, PlansToRetain)
-	return nil
+	return pruneConfigMaps(ctx, pl.Client.CoreV1(), func(ns string) clientv1.ConfigMapNamespaceLister {
+		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
+	}, SystemNamespace, PlanConfigMapLabelKey, PlansToRetain)
 }
 
 // buildPlan builds the evictions, movements, old placements, new placements, placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
@@ -476,60 +474,7 @@ func (pl *MyCrossNodePreemption) buildPlan(out *SolverOutput, preemptor *v1.Pod,
 	}, nil
 }
 
-// pruneOldPlans removes old plans from the ConfigMap.
-func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) error {
-	if keep <= 0 {
-		return nil
-	}
-	items, err := pl.listPlans(ctx)
-	if err != nil {
-		return err
-	}
-	if len(items) <= keep {
-		return nil
-	}
-	latestIncomplete := ""
-	for i := range items {
-		raw := items[i].Data[PlanConfigMapLabelKey+".json"]
-		if raw == "" {
-			continue
-		}
-		var sp StoredPlan
-		if json.Unmarshal([]byte(raw), &sp) == nil {
-			if sp.PlanStatus != PlanStatusCompleted && sp.PlanStatus != PlanStatusFailed {
-				latestIncomplete = items[i].Name
-				break
-			}
-		}
-	}
-	keepSet := make(map[string]struct{}, keep)
-	for i := 0; i < len(items) && len(keepSet) < keep; i++ {
-		keepSet[items[i].Name] = struct{}{}
-	}
-	if latestIncomplete != "" {
-		if _, ok := keepSet[latestIncomplete]; !ok {
-			for i := keep - 1; i >= 0 && i < len(items); i-- {
-				if _, ok := keepSet[items[i].Name]; ok && items[i].Name != latestIncomplete {
-					delete(keepSet, items[i].Name)
-					break
-				}
-			}
-			keepSet[latestIncomplete] = struct{}{}
-		}
-	}
-	for i := range items {
-		name := items[i].Name
-		if _, ok := keepSet[name]; ok {
-			continue
-		}
-		if err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).
-			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-			klog.ErrorS(err, "Failed to delete old plan ConfigMap", "configMap", name)
-		}
-	}
-	return nil
-}
-
+// TODO
 // waitPendingBoundInCache waits for the pending pod to be bound in the cache.
 // By checking this for every pod we process in PostBind, we can be sure
 // we have the correct state in cache before completing the plan.
@@ -576,6 +521,7 @@ func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
 	return false, err
 }
 
+// TODO
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
 // Mode: For-every: Single preemptor pod bound to target node (A) either in preenqueue or in postfilter, and all other pods in place (B, C)
 // Mode: Batch: All pods bound to target nodes (only B, C).
@@ -628,120 +574,71 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 	return true, nil
 }
 
-// getActivePlan returns the currently active plan, if any.
-func (pl *MyCrossNodePreemption) getActivePlan() *ActivePlan {
-	return pl.ActivePlan.Load()
-}
-
-// clearActivePlan clears the currently active plan, if any.
-func (pl *MyCrossNodePreemption) clearActivePlan() {
-	pl.ActivePlan.Store(nil)
-}
-
-// listPlans returns newest-first plan ConfigMaps found by label.
-func (pl *MyCrossNodePreemption) listPlans(_ context.Context) ([]v1.ConfigMap, error) {
-	sel := labels.SelectorFromSet(labels.Set{PlanConfigMapLabelKey: "true"})
-	configMapLister := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(SystemNamespace)
-	items, err := configMapLister.List(sel)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]v1.ConfigMap, len(items))
-	for i := range items {
-		out[i] = *items[i].DeepCopy()
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreationTimestamp.Time.After(out[j].CreationTimestamp.Time)
-	})
-	return out, nil
-}
-
+// TODO
 // markPlanStatus sets the Status (Active/Completed/Failed) in the configMap.
 // If the plan is already in a final state (Completed/Failed), it won't be downgraded.
 func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName string, status PlanStatus) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		configMapLister := pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(SystemNamespace)
-		cm, err := configMapLister.Get(cmName)
-		if apierrors.IsNotFound(err) || cm == nil {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		raw := cm.Data[PlanConfigMapLabelKey+".json"]
-		if raw == "" {
-			return nil
-		}
-		var sp StoredPlan
-		if err := json.Unmarshal([]byte(raw), &sp); err != nil {
-			klog.ErrorS(err, "markPlanStatus: cannot decode plan.json", "configMap", cmName)
-			return nil
-		}
-
-		// If already final, don't overwrite with a different final status.
-		if sp.PlanStatus == PlanStatusCompleted || sp.PlanStatus == PlanStatusFailed {
-			return nil
-		}
-
-		// Set new status.
-		sp.PlanStatus = status
-
-		// If transitioning to a final state, stamp completion + duration (until all binds).
-		if status == PlanStatusCompleted || status == PlanStatusFailed {
-			now := time.Now().UTC()
-			sp.CompletedAt = &now
-		}
-
-		b, _ := json.MarshalIndent(&sp, "", "  ")
-		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, PlanConfigMapLabelKey+".json", string(b)))
-		_, err = pl.Client.CoreV1().ConfigMaps(SystemNamespace).
-			Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
-		return err
+	doc := ConfigMapDoc{
+		Namespace: SystemNamespace,
+		Name:      cmName,
+		LabelKey:  PlanConfigMapLabelKey,
+		DataKey:   PlanConfigMapLabelKey + ".json",
+	}
+	// Load → mutate → patch
+	raw, err := doc.readJson(func(ns string) clientv1.ConfigMapNamespaceLister {
+		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
 	})
+	if err != nil || len(raw) == 0 {
+		return err
+	}
+	var sp StoredPlan
+	if json.Unmarshal(raw, &sp) != nil {
+		return nil // best-effort
+	}
+	if sp.PlanStatus == PlanStatusCompleted || sp.PlanStatus == PlanStatusFailed {
+		return nil // final is sticky
+	}
+	sp.PlanStatus = status
+	if status == PlanStatusCompleted || status == PlanStatusFailed {
+		now := time.Now().UTC()
+		sp.CompletedAt = &now
+	}
+	return doc.patchJson(ctx, pl.Client.CoreV1(), &sp)
 }
 
+// TODO
 // markExportedStatsPlanStatus sets/updates the last run's "plan_status"
 // in the exported stats ConfigMap (namespace/name/key from solver_helpers.go).
 // Rules mirror markPlanStatus: once in a final state (Completed or Failed) we
 // don't change it; specifically we never overwrite Failed with Completed.
 func (pl *MyCrossNodePreemption) markExportedStatsPlanStatus(ctx context.Context, status PlanStatus) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cms := pl.Client.CoreV1().ConfigMaps(SystemNamespace)
-		cm, err := cms.Get(ctx, SolverConfigMapExportedStatsName, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) || cm == nil {
-			return nil // nothing to do
-		}
-		if err != nil {
-			return err
-		}
-		raw := cm.Data[SolverConfigMapLabelKey+".json"]
-		if raw == "" {
-			return nil
-		}
-		var runs []ExportedSolverStats
-		if err := json.Unmarshal([]byte(raw), &runs); err != nil {
-			klog.ErrorS(err, "markExportedStatsLastPlanStatus: cannot decode runs.json")
-			return nil
-		}
-		if len(runs) == 0 {
-			return nil
-		}
-
+	doc := ConfigMapDoc{
+		Namespace: SystemNamespace,
+		Name:      SolverConfigMapExportedStatsName,
+		LabelKey:  SolverConfigMapLabelKey,
+		DataKey:   SolverConfigMapLabelKey + ".json",
+	}
+	// Replace with a manual read-modify-write sequence since MutateJSON is not defined.
+	raw, err := doc.readJson(func(ns string) clientv1.ConfigMapNamespaceLister {
+		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
+	})
+	if err != nil || len(raw) == 0 {
+		return err
+	}
+	var runs []ExportedSolverStats
+	if json.Unmarshal(raw, &runs) != nil {
+		return nil // best-effort
+	}
+	if len(runs) > 0 {
 		prev := runs[len(runs)-1].PlanStatus
-		// Final is sticky. In particular, never set Completed if it was Failed.
-		if prev == PlanStatusCompleted || prev == PlanStatusFailed {
-			// already final; don't change
-		} else {
+		if prev != PlanStatusCompleted && prev != PlanStatusFailed {
 			runs[len(runs)-1].PlanStatus = status
 		}
-
-		buf, _ := json.Marshal(runs)
-		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, SolverConfigMapLabelKey+".json", string(buf)))
-		_, err = cms.Patch(ctx, SolverConfigMapExportedStatsName, types.MergePatchType, patch, metav1.PatchOptions{})
-		return err
-	})
+	}
+	return doc.patchJson(ctx, pl.Client.CoreV1(), &runs)
 }
 
+// TODO
 // watchPlanTimeout monitors the timeout for the given active plan.
 func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlan) {
 	<-ap.Ctx.Done()
@@ -758,6 +655,7 @@ func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlan) {
 	pl.onPlanSettled(PlanStatusFailed)
 }
 
+// TODO
 // buildWorkloadCntsAtomics converts WorkloadQuotas (int32) to WorkloadPerNodeCnts (atomic.Int32)
 // for faster concurrent access during plan execution.
 func buildWorkloadCntsAtomics(wkCnts WorkloadQuotas) WorkloadQuotasAtomics {
@@ -781,6 +679,7 @@ func buildWorkloadCntsAtomics(wkCnts WorkloadQuotas) WorkloadQuotasAtomics {
 	return nil
 }
 
+// TODO
 // setActivePlan sets the given stored plan as the active plan and initializes its counters,
 // deriving both WorkloadPerNodeCnts and PlacementByName solely from NewPlacements.
 // For controller-owned pods, quotas are keyed by the controller (e.g., ReplicaSet) name.
@@ -808,6 +707,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(plan *Plan, id string, _ []*v1.Po
 	go pl.watchPlanTimeout(ap)
 }
 
+// TODO
 // allowedNodes returns:
 // - node set to pin (non-nil) and Success, or
 // - nil and an appropriate framework.Status reason to block/allow.
@@ -844,6 +744,7 @@ func (pl *MyCrossNodePreemption) allowedNodes(pod *v1.Pod) (sets.Set[string], st
 	return nil, "pod not in active plan; block", false
 }
 
+// TODO
 // countNewAndTotalPods computes from the live cluster view and the solver output:
 //
 //	pendingScheduled = # of currently-pending pods that got a placement in this plan

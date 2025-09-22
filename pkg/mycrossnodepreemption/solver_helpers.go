@@ -4,7 +4,6 @@ package mycrossnodepreemption
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
@@ -14,13 +13,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	clientv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 )
 
-// TODO: Reach to here in this file...
-
+// TODO
 // runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
 func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	nodes, _, order, worklist := base.freshClone()
@@ -52,6 +50,7 @@ func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	return stableOutput("FEASIBLE", placements, nil, in)
 }
 
+// TODO
 // runSolverCommon runs a solver plan function on the input and prepared state.
 func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedState) *SolverOutput {
 	klog.V(MyV).InfoS("Running solver", "tag", tag)
@@ -98,6 +97,7 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
+// TODO
 // exportSolverStats exports a compact run record to the stats ConfigMap.
 // Only runs when `hadFeasible` is true.
 func (pl *MyCrossNodePreemption) exportSolverStats(
@@ -126,6 +126,7 @@ func (pl *MyCrossNodePreemption) exportSolverStats(
 	klog.V(MyV).InfoS(label+": exported solver stats", "attempts", len(attempts), "best", best.Name)
 }
 
+// TODO
 // logLeaderboard prints a compact solver leaderboard relative to baseline.
 // It groups attempts as better/equal/worse vs baseline and tags adjacent ties.
 func (pl *MyCrossNodePreemption) logLeaderboard(
@@ -194,6 +195,7 @@ func (pl *MyCrossNodePreemption) logLeaderboard(
 	)
 }
 
+// TODO
 // copy to a "summary": drop Output/CmpBase and fill Status from Output.
 func summarizeAttempt(r SolverResult) SolverResult {
 	status := r.Status
@@ -208,6 +210,7 @@ func summarizeAttempt(r SolverResult) SolverResult {
 	}
 }
 
+// TODO
 // append (create if missing) an entry to the ConfigMap ledger
 func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry ExportedSolverStats) {
 	cli := pl.Handle.ClientSet()
@@ -215,45 +218,34 @@ func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry Export
 		klog.V(1).Info("no clientset; skip stats CM")
 		return
 	}
-	cms := cli.CoreV1().ConfigMaps(SystemNamespace)
-	cm, err := cms.Get(ctx, SolverConfigMapExportedStatsName, metav1.GetOptions{})
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			klog.ErrorS(err, "get CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
-			return
-		}
-		// create fresh
-		buf, _ := json.Marshal([]ExportedSolverStats{entry})
-		cm = &v1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      SolverConfigMapExportedStatsName,
-				Namespace: SystemNamespace,
-				Labels:    map[string]string{SolverConfigMapLabelKey: "true"},
-			},
-			Data: map[string]string{SolverConfigMapLabelKey + ".json": string(buf)},
-		}
-		if _, err := cms.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
-			klog.ErrorS(err, "create CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
-		}
+	doc := ConfigMapDoc{
+		Namespace: SystemNamespace,
+		Name:      SolverConfigMapExportedStatsName,
+		LabelKey:  SolverConfigMapLabelKey,
+		DataKey:   SolverConfigMapLabelKey + ".json",
+	}
+
+	err := mutateJson(
+		ctx,
+		cli.CoreV1(),
+		func(ns string) clientv1.ConfigMapNamespaceLister {
+			return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
+		},
+		doc,
+		func(existing []ExportedSolverStats) ([]ExportedSolverStats, error) {
+			return append(existing, entry), nil
+		},
+	)
+	if apierrors.IsNotFound(err) {
+		_ = doc.ensureJson(ctx, cli.CoreV1(), []ExportedSolverStats{entry})
 		return
 	}
-	// update existing
-	var arr []ExportedSolverStats
-	if s := cm.Data[SolverConfigMapLabelKey+".json"]; s != "" {
-		_ = json.Unmarshal([]byte(s), &arr)
-		// best-effort
-	}
-	arr = append(arr, entry)
-	buf, _ := json.Marshal(arr)
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	cm.Data[SolverConfigMapLabelKey+".json"] = string(buf)
-	if _, err := cms.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-		klog.ErrorS(err, "update CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
+	if err != nil {
+		klog.ErrorS(err, "append solver stats failed")
 	}
 }
 
+// TODO
 // bestPlanAcrossTargets iterates targets (ordered by deficit for p) and
 // keeps the plan with the fewest moves. `planForTarget` should return the
 // candidate move list for that target (or !ok if no plan exists).
@@ -278,6 +270,7 @@ func bestPlanAcrossTargets(
 	return
 }
 
+// TODO
 // orderTargetsByDeficit orders nodes by how well they can accommodate pod p,
 // even if they can’t fit it directly.
 // The ordering is:
@@ -319,6 +312,7 @@ func orderTargetsByDeficit(order []*SolverNode, p *SolverPod) []*SolverNode {
 	return out
 }
 
+// TODO
 // podAllowedByPriority centralizes priority checks (strict: < vs <=).
 // Returns false if p is nil, protected or if gate is set and p.Priority is too high; true otherwise.
 func podAllowedByPriority(p *SolverPod, gate *int32, strict bool) bool {
@@ -334,6 +328,7 @@ func podAllowedByPriority(p *SolverPod, gate *int32, strict bool) bool {
 	return p.Priority <= *gate
 }
 
+// TODO
 // canMove returns true if pod p can be moved (not nil, not pending, not protected, below moveGate if any).
 func canMove(p *SolverPod, gate *int32) bool {
 	if p == nil || p.Node == "" {
@@ -342,6 +337,7 @@ func canMove(p *SolverPod, gate *int32) bool {
 	return podAllowedByPriority(p, gate, false)
 }
 
+// TODO
 // canEvict returns true if pod p can be evicted (not nil, not protected, below evictGate if any).
 func canEvict(p *SolverPod, gate *int32) bool {
 	return podAllowedByPriority(p, gate, true)
@@ -355,12 +351,14 @@ func addNodeDelta(m map[string]Delta, node string, deficitCPU, deficitMem int64)
 	m[node] = d
 }
 
+// TODO
 // addEdgeDelta adds +cpu/+mem to `from` and -cpu/-mem to `to` in the map.
 func addEdgeDelta(m map[string]Delta, from, to string, cpu, mem int64) {
 	addNodeDelta(m, from, +cpu, +mem)
 	addNodeDelta(m, to, -cpu, -mem)
 }
 
+// TODO
 // relocateViaPlan tries to relocate pod p to target via the given plan function.
 func relocateViaPlan(
 	plan PlanFunc,
@@ -405,6 +403,7 @@ func relocateViaPlan(
 	return commitPlan(p, bestTarget, bestMoves, nodes, pods, order, newPlacements, movedUIDs)
 }
 
+// TODO
 func getVictims(target *SolverNode, opts VictimOptions) []*SolverPod {
 	// filter by move gate / protected
 	cands := make([]*SolverPod, 0, len(target.Pods))
@@ -528,6 +527,7 @@ func getVictims(target *SolverNode, opts VictimOptions) []*SolverPod {
 	return cands
 }
 
+// TODO
 // commitPlan verifies & applies `moves`, records them in newPlacements/movedUIDs,
 // then places p on `target` (if it fits). If not, it falls back to bestDirectFit.
 // Returns true on success, false if the plan is invalid or placement fails.
@@ -562,6 +562,7 @@ func commitPlan(
 	return false
 }
 
+// TODO
 // placeOnePodCommon tries to place pod p using the given plan function.
 // It returns (feasible, triedEvicting).
 // If feasible is true, p was placed.
@@ -623,6 +624,7 @@ tryEvict:
 	return false, true
 }
 
+// TODO
 // buildClusterState builds the cluster state from the given solver input.
 // It returns:
 //   - map of node name → *NodeType
@@ -688,6 +690,7 @@ func buildClusterState(in SolverInput) (map[string]*SolverNode, map[types.UID]*S
 	return nodes, pods, pending, order, pre
 }
 
+// TODO
 // max64 returns the larger of a or b.
 func max64(a, b int64) int64 {
 	if a > b {
@@ -696,6 +699,7 @@ func max64(a, b int64) int64 {
 	return b
 }
 
+// TODO
 // min64 returns the smaller of a or b.
 func min64(a, b int64) int64 {
 	if a < b {
@@ -704,6 +708,7 @@ func min64(a, b int64) int64 {
 	return b
 }
 
+// TODO
 // stableOutput produces a stable SolverOutput from the given status, placements map, evictions list, and input.
 // The placements map is from pod UID to node name ("" means no placement).
 // The evictions list is a list of Placement structs indicating which pods to evict.
@@ -739,6 +744,7 @@ func stableOutput(status string, placements map[types.UID]string, evicts []Place
 	return &SolverOutput{Status: status, Placements: outPl, Evictions: evicts}
 }
 
+// TODO
 // pickLargestEnablingEviction picks the best pod to evict to enable placement of p.
 // It returns the pod to evict and the node it’s on, or nil, nil if no such pod exists.
 // The eviction gate is used to restrict which pods can be considered for eviction:
@@ -818,9 +824,11 @@ func pickLargestEnablingEviction(order []*SolverNode, p *SolverPod, evictGate *i
 	return cands[0].v, cands[0].on
 }
 
+// TODO
 // hasKey reports whether map m has key k.
 func hasKey(m map[types.UID]struct{}, k types.UID) bool { _, ok := m[k]; return ok }
 
+// TODO
 // buildOrigPlacements builds a map of pod UID → original node name from the current cluster state.
 func buildOrigPlacements(order []*SolverNode) map[types.UID]string {
 	orig := make(map[types.UID]string, 256)
@@ -834,6 +842,7 @@ func buildOrigPlacements(order []*SolverNode) map[types.UID]string {
 	return orig
 }
 
+// TODO
 // bestDirectFit finds the best-fit node for pod p in order.
 // It returns the node name and true if found, or "", false if not found.
 // Best-fit is defined as the node that minimizes CPU waste, then MEM waste,
@@ -854,6 +863,7 @@ func bestDirectFit(order []*SolverNode, p *SolverPod) (string, bool) {
 	return bestNode, bestNode != ""
 }
 
+// TODO
 // clusterHasSlack returns true iff the cluster has total enough free resources to potentially fit p.
 // The pod p may not fit on any single node, but if clusterHasSlack returns false, it means the cluster is
 // unable to accommodate p even with all resources considered.
@@ -866,6 +876,7 @@ func clusterHasSlack(order []*SolverNode, p *SolverPod) bool {
 	return cpu >= p.ReqCPUm && mem >= p.ReqMemBytes
 }
 
+// TODO
 // evictGateForPod returns the eviction gate for pod p.
 // In single-preemptor mode, the gate is the preemptor’s priority;
 // in batch mode, it’s p.Priority.
@@ -878,6 +889,7 @@ func evictGateForPod(p *SolverPod, single bool, pre *SolverPod) *int32 {
 	return &eg
 }
 
+// TODO
 // buildWorklist constructs the scheduling worklist for a solver and decides
 // whether we’re in **single-preemptor** mode or **batch** mode.
 //
@@ -937,6 +949,7 @@ func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, sing
 	return out, false, nil
 }
 
+// TODO
 // verifyPlan checks that the proposed plan is valid and applies it to the nodes/pods state.
 // It returns true if the plan was valid and applied, false otherwise.
 // The plan is valid if:
@@ -1010,11 +1023,13 @@ func verifyPlan(nodes map[string]*SolverNode, all map[types.UID]*SolverPod, move
 	return true
 }
 
+// TODO
 // canPodFit returns true iff the node has enough free resources to fit the given cpu/mem request.
 func (n *SolverNode) canPodFit(cpu, mem int64) bool {
 	return n.AllocCPUm >= cpu && n.AllocMemBytes >= mem
 }
 
+// TODO
 // addPod adds pod p to node n, updating free resources accordingly.
 func (n *SolverNode) addPod(p *SolverPod) {
 	n.AllocCPUm -= p.ReqCPUm
@@ -1026,6 +1041,7 @@ func (n *SolverNode) addPod(p *SolverPod) {
 	p.Node = n.Name
 }
 
+// TODO
 // removePod removes pod p from node n, updating free resources accordingly.
 func (n *SolverNode) removePod(p *SolverPod) {
 	if _, ok := n.Pods[p.UID]; ok {
@@ -1036,6 +1052,7 @@ func (n *SolverNode) removePod(p *SolverPod) {
 	}
 }
 
+// TODO
 // computeSolverScore computes final Score from the snapshot given to the solver:
 //   - placed_by_priority: number of pods that were placed for each priority
 //   - evicted:            number of pods that were evicted
@@ -1110,6 +1127,7 @@ func computeSolverScore(in SolverInput, out *SolverOutput) SolverScore {
 	}
 }
 
+// TODO
 // toSolverPod converts a Pod to a SolverPod.
 func toSolverPod(p *v1.Pod, node string) SolverPod {
 	return SolverPod{
@@ -1123,6 +1141,7 @@ func toSolverPod(p *v1.Pod, node string) SolverPod {
 	}
 }
 
+// TODO
 // PreparedState holds the prepared cluster state for solvers.
 func buildState(in SolverInput) *PreparedState {
 	nodes, pods, pending, order, pre := buildClusterState(in)
@@ -1138,11 +1157,13 @@ func buildState(in SolverInput) *PreparedState {
 	}
 }
 
+// TODO
 // IsSolverEnabled checks if any solver is enabled.
 func (pl *MyCrossNodePreemption) IsSolverEnabled() bool {
 	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
 }
 
+// TODO
 // HasSolverFeasibleResult checks if the solver output is feasible.
 // OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
 // FEASIBLE means the solution is not perfect but still meets all constraints.
@@ -1150,6 +1171,7 @@ func HasSolverFeasibleResult(status string) bool {
 	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
 }
 
+// TODO
 // fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.
 // If batched != nil, pending batched pods are appended with where="" (and preemptor can be nil).
 func (pl *MyCrossNodePreemption) fillNodesAndPods(
@@ -1227,6 +1249,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 	return nil
 }
 
+// TODO
 // buildSolverInput builds the common input for either batch or single.
 func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.Node, pods []*v1.Pod, preemptor *v1.Pod, batched []*v1.Pod) (SolverInput, error) {
 	in := SolverInput{
@@ -1263,6 +1286,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.No
 	return in, nil
 }
 
+// TODO
 // comparePlaced returns 1 if a>b, -1 if a<b, 0 if equal (lexi by priority desc).
 func comparePlaced(a, b map[string]int) int {
 	keys := map[int]struct{}{}
@@ -1295,6 +1319,7 @@ func comparePlaced(a, b map[string]int) int {
 	return 0
 }
 
+// TODO
 // cmpInt returns +1 if a<b (improvement because smaller is better),
 // -1 if a>b (worse), 0 if equal.
 func cmpInt(suggested, baseline int) int {
@@ -1308,6 +1333,7 @@ func cmpInt(suggested, baseline int) int {
 	}
 }
 
+// TODO
 // IsImprovement compares two scores lexicographically:
 // 1) More placed per priority (lexicographic map compare)
 // 2) Fewer evictions
@@ -1337,6 +1363,7 @@ func IsImprovement(baseline, suggested SolverScore) int {
 	return 0
 }
 
+// TODO
 // planApplicable checks whether a SolverOutput (plan) can still be safely
 // applied on the *current* cluster state. It allows unrelated drift and only
 // insists that the concrete preconditions for the plan still hold.
@@ -1436,6 +1463,7 @@ func (pl *MyCrossNodePreemption) planApplicable(
 	return true, ""
 }
 
+// TODO
 // buildBaselineScore computes the baseline score from the solver input.
 func buildBaselineScore(in SolverInput) SolverScore {
 	placedByPri := map[string]int{}
@@ -1453,6 +1481,7 @@ func buildBaselineScore(in SolverInput) SolverScore {
 	}
 }
 
+// TODO
 // freshClone returns deep-ish cloned nodes/pods/order and re-materializes
 // the worklist against the cloned pods, so solvers can mutate safely.
 func (ps *PreparedState) freshClone() (
@@ -1497,6 +1526,7 @@ func (ps *PreparedState) freshClone() (
 	return
 }
 
+// TODO
 // helper near the top of run_solvers.go (or anywhere shared)
 func cloneScore(s SolverScore) *SolverScore {
 	var m map[string]int
