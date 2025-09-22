@@ -89,7 +89,6 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	if pendingScheduled == 0 {
 		klog.InfoS(strategy + ": " + InfoNoPendingPodsToSchedule + "; skipping")
 		pl.leaveActive()
-		pl.onPlanSettled(PlanStatusFailed)
 		return "", ErrNoop
 	}
 
