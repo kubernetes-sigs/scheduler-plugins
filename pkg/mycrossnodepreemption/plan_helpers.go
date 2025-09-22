@@ -291,7 +291,7 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 		}
 		var sp StoredPlan
 		if json.Unmarshal([]byte(raw), &sp) == nil {
-			if sp.Status != PlanStatusCompleted && sp.Status != PlanStatusFailed {
+			if sp.PlanStatus != PlanStatusCompleted && sp.PlanStatus != PlanStatusFailed {
 				latestIncomplete = items[i].Name
 				break
 			}
@@ -474,12 +474,12 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 		}
 
 		// If already final, don't overwrite with a different final status.
-		if sp.Status == PlanStatusCompleted || sp.Status == PlanStatusFailed {
+		if sp.PlanStatus == PlanStatusCompleted || sp.PlanStatus == PlanStatusFailed {
 			return nil
 		}
 
 		// Set new status.
-		sp.Status = status
+		sp.PlanStatus = status
 
 		// If transitioning to a final state, stamp completion + duration (until all binds).
 		if status == PlanStatusCompleted || status == PlanStatusFailed {

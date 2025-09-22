@@ -6,19 +6,19 @@ import "time"
 
 type PlanBuild struct {
 	// Evicted pods
-	Evicts []Placement
+	Evicts []Placement `json:"evicts"`
 	// Moved pods
-	Moves []NewPlacement
+	Moves []NewPlacement `json:"moves"`
 	// All pods and their old placements
-	OldPlacements []Placement
+	OldPlacements []Placement `json:"oldPlacements"`
 	// All pods and their new placements
-	NewPlacements []NewPlacement
+	NewPlacements []NewPlacement `json:"newPlacements"`
 	// Placement by name for standalone pods: ns/name -> node
-	PlacementByName map[string]string
+	PlacementByName map[string]string `json:"placementByName"`
 	// Workload quotas for new placed pods that are part of a workload
-	WorkloadQuotas WorkloadQuotas
+	WorkloadQuotas WorkloadQuotas `json:"workloadQuotas"`
 	// Nominated node for the preemptor pod (if any)
-	NominatedNode string
+	NominatedNode string `json:"nominatedNode"`
 }
 
 // StoredPlan represents the plan to be executed.
@@ -31,24 +31,14 @@ type StoredPlan struct {
 	GeneratedAt time.Time `json:"generatedAt"`
 	// When the plan was completed (if ever)
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
-	// Status of the plan
-	Status PlanStatus `json:"status"`
-	// Single-preemptor metadata
-	Preemptor *Preemptor `json:"preemptor,omitempty"`
-	// Evicted pods
-	Evicts []Placement `json:"evicts,omitempty"`
-	// Moved pods
-	Moves []NewPlacement `json:"moves,omitempty"`
 	// Solver summary (status & score)
 	Solver SolverResult `json:"solver"`
-	// All pods and their old placements
-	OldPlacements []Placement `json:"oldPlacements,omitempty"`
-	// All pods and their new placements
-	NewPlacement []NewPlacement `json:"newPlacement,omitempty"`
-	// Placement by name for standalone pods: ns/name -> node
-	PlacementByName map[string]string `json:"placementsByName,omitempty"`
-	// Workload quotas for new placed pods that are part of a workload
-	WorkloadQuotas WorkloadQuotas `json:"workloadQuotas,omitempty"`
+	// Single-preemptor metadata
+	Preemptor *Preemptor `json:"preemptor,omitempty"`
+	// PlanStatus of the plan
+	PlanStatus PlanStatus `json:"plan_status"`
+	// The actual plan
+	Plan *PlanBuild `json:"plan"`
 }
 
 // PlanStatus represents the status of a plan.

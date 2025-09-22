@@ -95,8 +95,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		return "", ErrNoop
 	}
 
-	// Register and execute plan
-	plan, ap, targetNode, err := pl.registerPlan(ctx, bestSolver, preemptor, pods)
+	// Register and execute storedPlan
+	storedPlan, ap, targetNode, err := pl.registerPlan(ctx, bestSolver, preemptor, pods)
 	if err != nil {
 		// keep single-preemptor blocked on error
 		if solveMode == SolveSingle && preemptor != nil {
@@ -108,8 +108,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	}
 
 	// Execute if there are moves/evictions
-	if len(plan.Moves) > 0 || len(plan.Evicts) > 0 {
-		if err := pl.executePlan(plan); err != nil {
+	if len(storedPlan.Plan.Moves) > 0 || len(storedPlan.Plan.Evicts) > 0 {
+		if err := pl.executePlan(storedPlan); err != nil {
 			klog.ErrorS(err, "Plan execution failed")
 			pl.onPlanSettled(PlanStatusFailed)
 		}

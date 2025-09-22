@@ -32,14 +32,9 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		PluginVersion:        Version,
 		OptimizationStrategy: strategyToString(),
 		GeneratedAt:          time.Now().UTC(),
-		Status:               PlanStatusActive,
-		Evicts:               plan.Evicts,
-		Moves:                plan.Moves,
+		PlanStatus:           PlanStatusActive,
+		Plan:                 plan,
 		Solver:               summarizeAttempt(solver),
-		OldPlacements:        plan.OldPlacements,
-		NewPlacement:         plan.NewPlacements,
-		PlacementByName:      plan.PlacementByName,
-		WorkloadQuotas:       plan.WorkloadQuotas,
 	}
 
 	if preemptor != nil {
@@ -111,18 +106,18 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 			targets = append(targets, p)
 		}
 	}
-	for _, mv := range sp.Moves {
+	for _, mv := range sp.Plan.Moves {
 		add(mv.Pod.UID, mv.Pod.Namespace, mv.Pod.Name)
 	}
-	for _, e := range sp.Evicts {
+	for _, e := range sp.Plan.Evicts {
 		add(e.Pod.UID, e.Pod.Namespace, e.Pod.Name)
 	}
 
-	for _, mv := range sp.Moves {
+	for _, mv := range sp.Plan.Moves {
 		klog.V(MyV).InfoS("Pod movement planned",
 			"pod", combineNsName(mv.Pod.Namespace, mv.Pod.Name), "from", mv.FromNode, "to", mv.ToNode)
 	}
-	for _, e := range sp.Evicts {
+	for _, e := range sp.Plan.Evicts {
 		klog.V(MyV).InfoS("Eviction planned",
 			"pod", combineNsName(e.Pod.Namespace, e.Pod.Name), "from", e.Node)
 	}
