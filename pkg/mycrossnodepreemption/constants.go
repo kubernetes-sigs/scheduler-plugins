@@ -33,7 +33,7 @@ const (
 	// SolverLogProgress is a flag that enables/disables logging of solver progress.
 	SolverLogProgress                = false
 	SolverConfigMapExportedStatsName = "stats"
-	SolverExportedStatsKey           = "runs.json" // JSON array of solverRunEvent
+	SolverConfigMapLabelKey          = "runs"
 	// =========================================================
 
 	// ================ Plan settings ==========================

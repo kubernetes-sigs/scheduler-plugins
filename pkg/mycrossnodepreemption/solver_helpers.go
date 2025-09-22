@@ -228,8 +228,9 @@ func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry Export
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      SolverConfigMapExportedStatsName,
 				Namespace: SystemNamespace,
+				Labels:    map[string]string{SolverConfigMapLabelKey: "true"},
 			},
-			Data: map[string]string{SolverExportedStatsKey: string(buf)},
+			Data: map[string]string{SolverConfigMapLabelKey + ".json": string(buf)},
 		}
 		if _, err := cms.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 			klog.ErrorS(err, "create CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
@@ -238,7 +239,7 @@ func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry Export
 	}
 	// update existing
 	var arr []ExportedSolverStats
-	if s := cm.Data[SolverExportedStatsKey]; s != "" {
+	if s := cm.Data[SolverConfigMapLabelKey+".json"]; s != "" {
 		_ = json.Unmarshal([]byte(s), &arr)
 		// best-effort
 	}
@@ -247,7 +248,7 @@ func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry Export
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	cm.Data[SolverExportedStatsKey] = string(buf)
+	cm.Data[SolverConfigMapLabelKey+".json"] = string(buf)
 	if _, err := cms.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
 		klog.ErrorS(err, "update CM failed", "namespace", SystemNamespace, "name", SolverConfigMapExportedStatsName)
 	}

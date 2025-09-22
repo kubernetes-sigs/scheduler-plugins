@@ -80,8 +80,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	return plan, pl.getActivePlan(), plan.NominatedNode, nil
 }
 
-// TODO: Reach to here in this file...
-// executePlan executes the given stored plan: evicting and recreating pods as needed.
+// executePlan executes the given plan: evicting and recreating pods as needed.
 func (pl *MyCrossNodePreemption) executePlan(plan *Plan) error {
 	// Defensive: nothing to do
 	if plan == nil {
@@ -341,7 +340,7 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 			Namespace: SystemNamespace,
 			Labels:    map[string]string{PlanConfigMapLabelKey: "true"},
 		},
-		Data: map[string]string{"plan.json": string(raw)},
+		Data: map[string]string{PlanConfigMapLabelKey + ".json": string(raw)},
 	}
 	if _, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
 		return err
@@ -488,7 +487,7 @@ func (pl *MyCrossNodePreemption) pruneOldPlans(ctx context.Context, keep int) er
 	}
 	latestIncomplete := ""
 	for i := range items {
-		raw := items[i].Data["plan.json"]
+		raw := items[i].Data[PlanConfigMapLabelKey+".json"]
 		if raw == "" {
 			continue
 		}
@@ -666,7 +665,7 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 		if err != nil {
 			return err
 		}
-		raw := cm.Data["plan.json"]
+		raw := cm.Data[PlanConfigMapLabelKey+".json"]
 		if raw == "" {
 			return nil
 		}
@@ -691,7 +690,7 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 		}
 
 		b, _ := json.MarshalIndent(&sp, "", "  ")
-		patch := []byte(fmt.Sprintf(`{"data":{"plan.json":%q}}`, string(b)))
+		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, PlanConfigMapLabelKey+".json", string(b)))
 		_, err = pl.Client.CoreV1().ConfigMaps(SystemNamespace).
 			Patch(ctx, cmName, types.MergePatchType, patch, metav1.PatchOptions{})
 		return err
@@ -712,7 +711,7 @@ func (pl *MyCrossNodePreemption) markExportedStatsPlanStatus(ctx context.Context
 		if err != nil {
 			return err
 		}
-		raw := cm.Data[SolverExportedStatsKey]
+		raw := cm.Data[SolverConfigMapLabelKey+".json"]
 		if raw == "" {
 			return nil
 		}
@@ -734,7 +733,7 @@ func (pl *MyCrossNodePreemption) markExportedStatsPlanStatus(ctx context.Context
 		}
 
 		buf, _ := json.Marshal(runs)
-		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, SolverExportedStatsKey, string(buf)))
+		patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, SolverConfigMapLabelKey+".json", string(buf)))
 		_, err = cms.Patch(ctx, SolverConfigMapExportedStatsName, types.MergePatchType, patch, metav1.PatchOptions{})
 		return err
 	})
