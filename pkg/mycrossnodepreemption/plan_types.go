@@ -4,6 +4,23 @@ package mycrossnodepreemption
 
 import "time"
 
+type PlanBuild struct {
+	// Evicted pods
+	Evicts []Placement
+	// Moved pods
+	Moves []NewPlacement
+	// All pods and their old placements
+	OldPlacements []Placement
+	// All pods and their new placements
+	NewPlacements []NewPlacement
+	// Placement by name for standalone pods: ns/name -> node
+	PlacementByName map[string]string
+	// Workload quotas for new placed pods that are part of a workload
+	WorkloadQuotas WorkloadQuotas
+	// Nominated node for the preemptor pod (if any)
+	NominatedNode string
+}
+
 // StoredPlan represents the plan to be executed.
 type StoredPlan struct {
 	// Plugin version that generated the plan
@@ -31,7 +48,7 @@ type StoredPlan struct {
 	// Placement by name for standalone pods: ns/name -> node
 	PlacementByName map[string]string `json:"placementsByName,omitempty"`
 	// Workload quotas for new placed pods that are part of a workload
-	WorkloadQuotasDoc WorkloadQuotas `json:"workloadQuotas,omitempty"`
+	WorkloadQuotas WorkloadQuotas `json:"workloadQuotas,omitempty"`
 }
 
 // PlanStatus represents the status of a plan.

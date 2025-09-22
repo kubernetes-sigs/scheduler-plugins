@@ -15,8 +15,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO: Reach to here in this file...
-
 // registerPlan builds and registers a new plan as active, exporting it to a ConfigMap.
 func (pl *MyCrossNodePreemption) registerPlan(
 	ctx context.Context,
@@ -25,33 +23,33 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	pods []*v1.Pod,
 ) (*StoredPlan, *ActivePlan, string, error) {
 
-	evicts, moves, oldPlacement, newPlacement, placementByName, workloadQuotas, nominated, err := pl.buildPlan(solver.Output, preemptor, pods)
+	plan, err := pl.buildPlan(solver.Output, preemptor, pods)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("build actions: %w", err)
 	}
 
-	doc := &StoredPlan{
+	storedPlan := &StoredPlan{
 		PluginVersion:        Version,
 		OptimizationStrategy: strategyToString(),
 		GeneratedAt:          time.Now().UTC(),
 		Status:               PlanStatusActive,
-		Evicts:               evicts,
-		Moves:                moves,
+		Evicts:               plan.Evicts,
+		Moves:                plan.Moves,
 		Solver:               summarizeAttempt(solver),
-		OldPlacements:        oldPlacement,
-		NewPlacement:         newPlacement,
-		PlacementByName:      placementByName,
-		WorkloadQuotasDoc:    workloadQuotas,
+		OldPlacements:        plan.OldPlacements,
+		NewPlacement:         plan.NewPlacements,
+		PlacementByName:      plan.PlacementByName,
+		WorkloadQuotas:       plan.WorkloadQuotas,
 	}
 
 	if preemptor != nil {
-		doc.Preemptor = &Preemptor{
+		storedPlan.Preemptor = &Preemptor{
 			Pod: Pod{
 				UID:       preemptor.UID,
 				Namespace: preemptor.Namespace,
 				Name:      preemptor.Name,
 			},
-			NominatedNode: nominated,
+			NominatedNode: plan.NominatedNode,
 		}
 	}
 
@@ -59,14 +57,14 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	id := fmt.Sprintf("plan-%d", time.Now().UnixNano())
 
 	// Set active plan
-	pl.setActivePlan(doc, id, pods)
+	pl.setActivePlan(plan, id, pods)
 
 	// Export plan for debugging purposes
-	if err := pl.exportPlanToConfigMap(ctx, id, doc); err != nil {
+	if err := pl.exportPlanToConfigMap(ctx, id, storedPlan); err != nil {
 		klog.ErrorS(err, "export plan failed (non-fatal)")
 	}
 
-	return doc, pl.getActivePlan(), nominated, nil
+	return storedPlan, pl.getActivePlan(), plan.NominatedNode, nil
 }
 
 // executePlan executes the given plan: evicting and recreating pods as needed.
@@ -81,7 +79,7 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 	} else {
 		base = context.Background()
 	}
-	// Optional overall cap for this whole method.
+	// Overall cap for this whole method.
 	overallCtx, overallCancel := context.WithTimeout(base, 5*time.Minute)
 	defer overallCancel()
 

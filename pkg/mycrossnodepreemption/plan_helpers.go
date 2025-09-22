@@ -129,22 +129,9 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 // TODO: Reduce number of output parameters
 // buildPlan builds the evictions, movements, old placements, new placements, placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
 // from the output of the solver.
-func (pl *MyCrossNodePreemption) buildPlan(
-	out *SolverOutput,
-	preemptor *v1.Pod,
-	pods []*v1.Pod,
-) (
-	evicts []Placement,
-	moves []NewPlacement,
-	oldPlacements []Placement,
-	newPlacements []NewPlacement, // every new/moved placement (incl. preemptor)
-	placementByName map[string]string, // standalone pins
-	workloadQuotas WorkloadQuotas, // controller quotas
-	nominatedNode string,
-	err error,
-) {
+func (pl *MyCrossNodePreemption) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v1.Pod) (*PlanBuild, error) {
 	if out == nil {
-		return nil, nil, nil, nil, nil, nil, "", nil
+		return &PlanBuild{}, nil
 	}
 
 	// Index pods by UID
@@ -152,6 +139,16 @@ func (pl *MyCrossNodePreemption) buildPlan(
 	if preemptor != nil {
 		byUID[preemptor.UID] = preemptor
 	}
+
+	var (
+		evicts        []Placement
+		moves         []NewPlacement
+		oldPlacements []Placement
+		newPlacements []NewPlacement
+		nominatedNode string
+	)
+	placementByName := make(map[string]string)
+	workloadQuotas := make(WorkloadQuotas)
 
 	// Old placements (all currently running)
 	oldPlacements = oldPlacements[:0]
@@ -179,9 +176,6 @@ func (pl *MyCrossNodePreemption) buildPlan(
 			})
 		}
 	}
-
-	placementByName = make(map[string]string)
-	workloadQuotas = make(WorkloadQuotas)
 
 	// Pass over placements to build:
 	// - moves (running on a different node, non-preemptor)
@@ -266,7 +260,15 @@ func (pl *MyCrossNodePreemption) buildPlan(
 		workloadQuotas = nil
 	}
 
-	return evicts, moves, oldPlacements, newPlacements, placementByName, workloadQuotas, nominatedNode, nil
+	return &PlanBuild{
+		Evicts:          evicts,
+		Moves:           moves,
+		OldPlacements:   oldPlacements,
+		NewPlacements:   newPlacements,
+		PlacementByName: placementByName,
+		WorkloadQuotas:  workloadQuotas,
+		NominatedNode:   nominatedNode,
+	}, nil
 }
 
 // pruneOldPlans removes old plans from the ConfigMap.
@@ -577,12 +579,12 @@ func buildWorkloadCntsAtomics(wkCnts WorkloadQuotas) WorkloadQuotasAtomics {
 // setActivePlan sets the given stored plan as the active plan and initializes its counters,
 // deriving both WorkloadPerNodeCnts and PlacementByName solely from NewPlacements.
 // For controller-owned pods, quotas are keyed by the controller (e.g., ReplicaSet) name.
-func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string, _ []*v1.Pod) {
-	if sp == nil {
+func (pl *MyCrossNodePreemption) setActivePlan(plan *PlanBuild, id string, _ []*v1.Pod) {
+	if plan == nil {
 		return
 	}
 
-	workloadCnts := buildWorkloadCntsAtomics(sp.WorkloadQuotasDoc)
+	workloadCnts := buildWorkloadCntsAtomics(plan.WorkloadQuotas)
 	// Note: We just pass PlacementsByName directly
 
 	// Cancel any previous plan's timeout watcher.
@@ -593,7 +595,7 @@ func (pl *MyCrossNodePreemption) setActivePlan(sp *StoredPlan, id string, _ []*v
 	ap := &ActivePlan{
 		ID:                  id,
 		WorkloadPerNodeCnts: workloadCnts,
-		PlacementByName:     sp.PlacementByName,
+		PlacementByName:     plan.PlacementByName,
 		Ctx:                 ctxPlan,
 		Cancel:              cancel,
 	}

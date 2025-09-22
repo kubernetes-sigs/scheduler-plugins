@@ -10,8 +10,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-//TODO_HC: needs cleanup
-
 // Only meaningful for Every@PreEnqueue
 // This function is needed as if we activate all blocked pods at once
 // over and over again in onPlanSettled, we end up with a large waiting time in the queue.
@@ -63,7 +61,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 				continue
 			}
 
-			// Wake exactly one; activateBlockedPods now returns the UIDs it *attempted* to activate.
+			// Wake exactly one
 			tried := pl.activateBlockedPods(1)
 
 			var activated types.UID
@@ -78,13 +76,13 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 				klog.V(MyV).InfoS("Idle nudge: activated one blocked pod",
 					"uid", string(activated), "sameCount", sameCount)
 			} else {
-				// No activation (or ambiguous); reset backoff.
+				// No activation; reset backoff
 				sameCount = 0
 				last = ""
 				klog.V(MyV).InfoS("Idle nudge: attempted activation but none selected; resetting backoff")
 			}
 
-			// Backoff: base + (sameCount * base/2), capped at 5*base (1s).
+			// Backoff: base + (sameCount * base/2), capped at 5*base (1s)
 			extra := time.Duration(sameCount) * base / 2
 			const maxFactor = 5
 			if extra > time.Duration(maxFactor)*base {
