@@ -154,6 +154,20 @@ type PreparedState struct {
 	MoveGate *int32
 }
 
+// ExportedSolverStats is the structure used to export solver run statistics.
+type ExportedSolverStats struct {
+	// TimestampNs is the timestamp of the run in nanoseconds.
+	TimestampNs int64 `json:"timestamp_ns"`
+	// Best solver name
+	Best string `json:"best,omitempty"`
+	// Plan status
+	PlanStatus PlanStatus `json:"plan_status,omitempty"`
+	// Baseline score
+	Baseline SolverScore `json:"baseline"`
+	// Best score
+	Attempts []SolverResult `json:"attempts"`
+}
+
 // PlanFunc is a function that, given a pod and a target node, tries to find a plan.
 type PlanFunc func(
 	pending *SolverPod,
@@ -164,10 +178,10 @@ type PlanFunc func(
 	movedUIDs map[types.UID]struct{},
 	trial int,
 	rng *rand.Rand,
-) ([]MoveLite, bool)
+) ([]Move, bool)
 
-// Light representation of a pod move.
-type MoveLite struct {
+// Representation of a pod move.
+type Move struct {
 	// Unique identifier for the pod
 	UID types.UID
 	// Source node of the pod
@@ -218,18 +232,4 @@ type Delta struct {
 	CPU int64
 	// Delta in Memory (bytes)
 	Mem int64
-}
-
-// ExportedSolverStats is the structure used to export solver run statistics.
-type ExportedSolverStats struct {
-	// TimestampNs is the timestamp of the run in nanoseconds.
-	TimestampNs int64 `json:"timestamp_ns"`
-	// Best solver name
-	Best string `json:"best,omitempty"`
-	// Plan status
-	PlanStatus PlanStatus `json:"plan_status,omitempty"`
-	// Baseline score
-	Baseline SolverScore `json:"baseline"`
-	// Best score
-	Attempts []SolverResult `json:"attempts"`
 }

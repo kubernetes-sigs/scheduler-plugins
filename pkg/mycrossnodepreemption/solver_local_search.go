@@ -93,7 +93,7 @@ func localSearchPlan(
 	movedUIDs map[types.UID]struct{},
 	trial int,
 	rng *rand.Rand,
-) ([]MoveLite, bool) {
+) ([]Move, bool) {
 	return localSearchTryFreeTarget(
 		pending, target, order, moveGate, movedUIDs,
 		rng, SolverLocalSearchMaxMovesPerPlan,
@@ -108,7 +108,7 @@ func localSearchTryFreeTarget(
 	movedUIDs map[types.UID]struct{},
 	rng *rand.Rand,
 	capMoves int,
-) ([]MoveLite, bool) {
+) ([]Move, bool) {
 	needCPU := max64(0, pending.ReqCPUm-target.AllocCPUm)
 	needMem := max64(0, pending.ReqMemBytes-target.AllocMemBytes)
 	if needCPU == 0 && needMem == 0 {
@@ -117,7 +117,7 @@ func localSearchTryFreeTarget(
 
 	delta := map[string]Delta{}
 	chosen := map[types.UID]struct{}{}
-	moves := make([]MoveLite, 0, 8)
+	moves := make([]Move, 0, 8)
 
 	victims := getVictims(target, VictimOptions{
 		Strategy:     VictimsLocal,
@@ -152,7 +152,7 @@ func localSearchTryFreeTarget(
 			if capMoves > 0 && len(moves)+1 > capMoves {
 				return nil, false
 			}
-			moves = append(moves, MoveLite{UID: v.UID, From: target.Name, To: D.Name})
+			moves = append(moves, Move{UID: v.UID, From: target.Name, To: D.Name})
 			addDelta(delta, target.Name, D.Name, v.ReqCPUm, v.ReqMemBytes)
 			needCPU = max64(0, needCPU-v.ReqCPUm)
 			needMem = max64(0, needMem-v.ReqMemBytes)
@@ -171,8 +171,8 @@ func localSearchTryFreeTarget(
 				return nil, false
 			}
 			moves = append(moves,
-				MoveLite{UID: v.UID, From: target.Name, To: B.Name},
-				MoveLite{UID: q.UID, From: B.Name, To: target.Name},
+				Move{UID: v.UID, From: target.Name, To: B.Name},
+				Move{UID: q.UID, From: B.Name, To: target.Name},
 			)
 			da := delta[target.Name]
 			db := delta[B.Name]

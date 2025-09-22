@@ -576,8 +576,8 @@ func logLeaderboard(
 func bestPlanAcrossTargets(
 	p *SolverPod,
 	order []*SolverNode,
-	planForTarget func(t *SolverNode) (moves []MoveLite, ok bool),
-) (bestMoves []MoveLite, bestTarget string, ok bool) {
+	planForTarget func(t *SolverNode) (moves []Move, ok bool),
+) (bestMoves []Move, bestTarget string, ok bool) {
 	bestCount := math.MaxInt32
 	for _, t := range orderTargetsByDeficit(order, p) {
 		mvs, okT := planForTarget(t)
@@ -697,12 +697,12 @@ func relocateViaPlan(
 ) bool {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(target *SolverNode) ([]MoveLite, bool) {
+	bestMoves, bestTarget, ok := bestPlanAcrossTargets(p, order, func(target *SolverNode) ([]Move, bool) {
 		// Direct fit: fast path
 		if target.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
 			return nil, true
 		}
-		var best []MoveLite
+		var best []Move
 		bestCount := math.MaxInt32
 		for trial := 0; trial < maxTrials; trial++ {
 			mvs, ok := plan(p, target, nodes, order, moveGate, movedUIDs, trial, rng)
@@ -858,7 +858,7 @@ func getVictims(target *SolverNode, opts VictimOptions) []*SolverPod {
 func commitPlan(
 	p *SolverPod,
 	target string,
-	moves []MoveLite,
+	moves []Move,
 	nodes map[string]*SolverNode,
 	pods map[types.UID]*SolverPod,
 	order []*SolverNode,
@@ -1155,7 +1155,7 @@ func evictGateForPod(p *SolverPod, single bool, pre *SolverPod) *int32 {
 //   - no node ends up with negative free resources after all moves are applied
 //
 // If the plan is valid, it is applied in-place to the nodes and pods state.
-func verifyPlan(nodes map[string]*SolverNode, all map[types.UID]*SolverPod, moves []MoveLite) bool {
+func verifyPlan(nodes map[string]*SolverNode, all map[types.UID]*SolverPod, moves []Move) bool {
 	if len(moves) == 0 {
 		return true
 	}

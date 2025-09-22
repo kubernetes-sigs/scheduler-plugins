@@ -127,7 +127,7 @@ func bfsPlan(
 	_ map[types.UID]struct{},
 	_ int,
 	_ *rand.Rand,
-) ([]MoveLite, bool) {
+) ([]Move, bool) {
 	finalDest, ok := bfsTryFreeTarget(pending, target, nodes, moveGate)
 	if !ok {
 		return nil, false
@@ -307,7 +307,7 @@ func bfsStateKey(defs []Deficit, fd map[types.UID]string) string {
 
 // createMoves coalesces finalDest map into an ordered move list,
 // skipping no-ops and duplicates, sorted by UID.
-func createMoves(finalDest map[types.UID]string, orig map[types.UID]string) (moves []MoveLite) {
+func createMoves(finalDest map[types.UID]string, orig map[types.UID]string) (moves []Move) {
 	seen := map[types.UID]bool{}
 	uids := make([]types.UID, 0, len(finalDest))
 	for uid := range finalDest {
@@ -321,7 +321,7 @@ func createMoves(finalDest map[types.UID]string, orig map[types.UID]string) (mov
 			continue
 		}
 		if !seen[uid] {
-			moves = append(moves, MoveLite{UID: uid, From: from, To: to})
+			moves = append(moves, Move{UID: uid, From: from, To: to})
 			seen[uid] = true
 		}
 	}
