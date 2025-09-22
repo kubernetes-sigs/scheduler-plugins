@@ -322,7 +322,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	// We do not activate blocked pods when we are in Every@PreEnqueue
 	// as it would lead to high contention; instead we periodically nudge them.
 	if !optimizeEvery() || !optimizeAtPreEnqueue() {
-		pl.activatePods(pl.BlockedWhileActive, false, 0)
+		pl.activatePods(pl.BlockedWhileActive, false, -1)
 	}
 	if ap.Cancel != nil {
 		ap.Cancel() // stop the timeout watcher

@@ -13,17 +13,18 @@ import (
 
 // activateBlockedPods activates up to 'max' pods from the blocked set; clear only the ones activated.
 // It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
-func (pl *MyCrossNodePreemption) activatePods(podsSet *PodSet, removeActivated bool, max int) (tried []types.UID) {
+// if max <= 0, all pods are activated.
+func (pl *MyCrossNodePreemption) activatePods(podSet *PodSet, removeActivated bool, max int) (tried []types.UID) {
 	// Prune stale entries first
-	_ = pl.pruneSet(podsSet)
+	_ = pl.pruneSet(podSet)
 
 	// If no blocked pods, nothing to do
-	if podsSet == nil || podsSet.Size() == 0 {
+	if podSet == nil || podSet.Size() == 0 {
 		return
 	}
 
 	// Snapshot and resolve current Pod objects
-	blockedPods := podsSet.Snapshot()
+	blockedPods := podSet.Snapshot()
 	items := make([]PodSetItem, 0, len(blockedPods))
 	// Get current Pod objects so that we don't return stale/deleted ones.
 	podsLister := pl.podsLister()
@@ -69,11 +70,11 @@ func (pl *MyCrossNodePreemption) activatePods(podsSet *PodSet, removeActivated b
 
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		klog.InfoS("activated pods", "set", podsSet.Name, "count", len(toAct), "max", max)
+		klog.InfoS("activated pods", "set", podSet.Name, "count", len(toAct))
 		if removeActivated {
 			// Remove only the ones we just activated
 			for _, it := range items[:limit] {
-				podsSet.RemovePod(it.key.UID)
+				podSet.RemovePod(it.key.UID)
 			}
 		}
 	}
@@ -112,7 +113,7 @@ func (pl *MyCrossNodePreemption) pruneSet(podSet *PodSet) int {
 		}
 	}
 	if removed > 0 {
-		klog.V(MyV).InfoS("pruned stale entries", "removed", removed)
+		klog.V(MyV).InfoS("pruned stale entries", "set", podSet.Name, "removed", removed)
 	}
 	return removed
 }

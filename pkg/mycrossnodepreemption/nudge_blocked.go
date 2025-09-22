@@ -54,6 +54,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 				timer.Reset(delay)
 				continue
 			}
+			pl.pruneSet(pl.BlockedWhileActive)
 			if pl.BlockedWhileActive == nil || pl.BlockedWhileActive.Size() == 0 {
 				klog.V(MyV).InfoS(phaseLabel + ": " + InfoNoBlockedPods + "; skipping")
 				sameCount = 0
