@@ -474,39 +474,40 @@ func (pl *MyCrossNodePreemption) buildPlan(out *SolverOutput, preemptor *v1.Pod,
 	}, nil
 }
 
-// TODO
-// waitPendingBoundInCache waits for the pending pod to be bound in the cache.
+// waitPendingBound waits for the pending pod to be bound in the cache.
 // By checking this for every pod we process in PostBind, we can be sure
 // we have the correct state in cache before completing the plan.
-func (pl *MyCrossNodePreemption) waitPendingBoundInCache(
-	ctx context.Context,
-	pending *v1.Pod,
-) (bool, error) {
+func (pl *MyCrossNodePreemption) waitPendingBound(ctx context.Context, pending *v1.Pod) (bool, error) {
+
 	podsLister := pl.podsLister()
-	ns := pending.Namespace
+	namespace := pending.Namespace
 	name := pending.Name
+	uid := pending.UID
+	podStr := combineNsName(namespace, name)
+
 	// Single-shot check
-	p, err := podsLister.Pods(ns).Get(name)
+	p, err := podsLister.Pods(namespace).Get(name)
 	if err == nil && p.Spec.NodeName != "" {
 		return true, nil
 	}
+
 	// Poll until the cached pod is bound.
 	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTimeout, true, func(ctx context.Context) (bool, error) {
-		p, err := podsLister.Pods(ns).Get(name)
+		p, err := podsLister.Pods(namespace).Get(name)
 		if apierrors.IsNotFound(err) { // pod not found; keep polling
-			klog.V(MyV).InfoS("Waiting for pending to appear in cache", "pod", ns+"/"+name)
+			klog.V(MyV).InfoS("Waiting for pending to appear in cache", "pod", podStr)
 			return false, nil
 		}
 		if err != nil { // Lister error; keep polling
-			klog.V(MyV).InfoS("Lister error while waiting for pending", "pod", ns+"/"+name, "err", err)
+			klog.V(MyV).InfoS("Lister error while waiting for pending", "pod", podStr, "err", err)
 			return false, nil
 		}
-		if p.UID != pending.UID { // waiting for matching pending UID
-			klog.V(MyV).InfoS("Waiting for matching pending UID", "pod", ns+"/"+name, "wantUID", pending.UID, "haveUID", p.UID)
+		if p.UID != uid { // waiting for matching pending UID
+			klog.V(MyV).InfoS("Waiting for matching pending UID", "pod", podStr, "wantUID", uid, "haveUID", p.UID)
 			return false, nil
 		}
 		if p.Spec.NodeName == "" { // waiting for preemptor to bind
-			klog.V(MyV).InfoS("Waiting for pending to bind", "pod", ns+"/"+name)
+			klog.V(MyV).InfoS("Waiting for pending to bind", "pod", podStr)
 			return false, nil
 		}
 		return true, nil
@@ -534,7 +535,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 	}
 
 	// Wait until the pod is visible+bound in cache when relevant.
-	ok, err := pl.waitPendingBoundInCache(ctx, pod)
+	ok, err := pl.waitPendingBound(ctx, pod)
 	if err != nil {
 		return false, err
 	}
