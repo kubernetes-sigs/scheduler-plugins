@@ -41,7 +41,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 	solver SolverResult,
 	preemptor *v1.Pod,
 	pods []*v1.Pod,
-) (*StoredPlan, *ActivePlan, string, error) {
+) (*Plan, *ActivePlan, string, error) {
 	// Build the plan from the solver output
 	plan, err := pl.buildPlan(solver.Output, preemptor, pods)
 	if err != nil {
@@ -77,22 +77,24 @@ func (pl *MyCrossNodePreemption) registerPlan(
 		klog.ErrorS(err, "export plan failed (non-fatal)")
 	}
 
-	return storedPlan, pl.getActivePlan(), plan.NominatedNode, nil
+	return plan, pl.getActivePlan(), plan.NominatedNode, nil
 }
 
-func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
+// TODO: Reach to here in this file...
+// executePlan executes the given stored plan: evicting and recreating pods as needed.
+func (pl *MyCrossNodePreemption) executePlan(plan *Plan) error {
 	// Defensive: nothing to do
-	if sp == nil || sp.Plan == nil {
+	if plan == nil {
 		klog.V(MyV).Info("executePlan: no plan provided; nothing to do")
 		return nil
 	}
 
 	// Log plan details
-	for _, mv := range sp.Plan.Moves {
+	for _, mv := range plan.Moves {
 		klog.V(MyV).InfoS("Pod movement planned",
 			"pod", combineNsName(mv.Pod.Namespace, mv.Pod.Name), "from", mv.FromNode, "to", mv.ToNode)
 	}
-	for _, e := range sp.Plan.Evicts {
+	for _, e := range plan.Evicts {
 		klog.V(MyV).InfoS("Eviction planned",
 			"pod", combineNsName(e.Pod.Namespace, e.Pod.Name), "from", e.Node)
 	}
@@ -119,10 +121,10 @@ func (pl *MyCrossNodePreemption) executePlan(sp *StoredPlan) error {
 			targets = append(targets, pod)
 		}
 	}
-	for _, mv := range sp.Plan.Moves {
+	for _, mv := range plan.Moves {
 		add(mv.Pod.UID, mv.Pod.Namespace, mv.Pod.Name)
 	}
-	for _, e := range sp.Plan.Evicts {
+	for _, e := range plan.Evicts {
 		add(e.Pod.UID, e.Pod.Namespace, e.Pod.Name)
 	}
 
@@ -343,8 +345,6 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(
 	return nil
 }
 
-// TODO: Reach to here in this file...
-// TODO: Reduce number of output parameters
 // buildPlan builds the evictions, movements, old placements, new placements, placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
 // from the output of the solver.
 func (pl *MyCrossNodePreemption) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, error) {
@@ -457,26 +457,6 @@ func (pl *MyCrossNodePreemption) buildPlan(out *SolverOutput, preemptor *v1.Pod,
 		}
 		return moves[i].Pod.Name < moves[j].Pod.Name
 	})
-
-	// Nil out empties for cleaner JSON
-	if len(evicts) == 0 {
-		evicts = nil
-	}
-	if len(moves) == 0 {
-		moves = nil
-	}
-	if len(oldPlacements) == 0 {
-		oldPlacements = nil
-	}
-	if len(newPlacements) == 0 {
-		newPlacements = nil
-	}
-	if len(placementByName) == 0 {
-		placementByName = nil
-	}
-	if len(workloadQuotas) == 0 {
-		workloadQuotas = nil
-	}
 
 	return &Plan{
 		Evicts:          evicts,
