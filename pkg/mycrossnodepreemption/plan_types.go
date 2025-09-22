@@ -4,7 +4,7 @@ package mycrossnodepreemption
 
 import "time"
 
-type PlanBuild struct {
+type Plan struct {
 	// Evicted pods
 	Evicts []Placement `json:"evicts"`
 	// Moved pods
@@ -38,7 +38,7 @@ type StoredPlan struct {
 	// PlanStatus of the plan
 	PlanStatus PlanStatus `json:"plan_status"`
 	// The actual plan
-	Plan *PlanBuild `json:"plan"`
+	Plan *Plan `json:"plan"`
 }
 
 // PlanStatus represents the status of a plan.

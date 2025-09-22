@@ -25,7 +25,10 @@ type PodKey struct {
 	Name string
 }
 
+// PodSetItem represents an item in the PodSet.
 type PodSetItem struct {
-	p   *v1.Pod
+	// Pod pointer (if needed)
+	p *v1.Pod
+	// Key for identifying the pod
 	key PodKey
 }
