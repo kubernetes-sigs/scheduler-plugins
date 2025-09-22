@@ -57,5 +57,10 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		klog.InfoS("Loop configuration", "optimizationInterval", OptimizeInterval.String())
 	}
 
+	// Start manual HTTP server only in manual mode
+	if optimizeManualHttp() {
+		go pl.startManualHTTPServer(ctx, ManualHTTPAddr)
+	}
+
 	return pl, nil
 }

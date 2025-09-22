@@ -39,7 +39,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 
 	case DecideProcess:
 		klog.InfoS(msg(stage, "start"), "pod", klog.KObj(pending))
-		targetNode, err := pl.runFlow(ctx, pending)
+		plan, err := pl.runFlow(ctx, pending)
 		if err != nil {
 			switch err {
 			case ErrActiveInProgress: // we only keep the pod in the set if we get ErrActiveInProgress
@@ -52,7 +52,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 
 		// Return the result with the nominated node information which the scheduler will use to bind the pod.
 		return &framework.PostFilterResult{
-			NominatingInfo: &framework.NominatingInfo{NominatedNodeName: targetNode, NominatingMode: framework.ModeOverride},
+			NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.NominatedNode, NominatingMode: framework.ModeOverride},
 		}, framework.NewStatus(framework.Success, msg(stage, InfoNominatedAfterPlan))
 
 	default:

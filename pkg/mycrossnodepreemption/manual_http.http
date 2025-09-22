@@ -1,0 +1,19 @@
+// docker runtime:
+// docker run --rm --network container:kwok-kwok1-kube-scheduler curlimages/curl:8.9.1 -sS -w '\nHTTP:%{http_code}\n' -X POST http://127.0.0.1:18080/optimize
+
+// binary runtime: use below curl commands or use provided http file with VSCode REST Client extension
+// curl -sS -w '\nHTTP:%{http_code}\n' -X POST http://127.0.0.1:18080/optimize
+// curl -sS -w '\nHTTP:%{http_code}\n' -X POST http://127.0.0.1:18080/optimize
+
+# Localhost
+@baseUrl = http://localhost:18080
+
+###
+# Health check
+GET {{baseUrl}}/healthz
+Accept: text/plain
+
+###
+# Trigger optimization
+POST {{baseUrl}}/optimize
+Accept: application/json

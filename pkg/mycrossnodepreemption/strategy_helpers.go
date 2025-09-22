@@ -18,6 +18,9 @@ func optimizeAllSynch() bool { return OptimizeMode == ModeAllSynch }
 // optimizeAllAsynch is the optimizer cadence that tries to optimize continuous if the cluster state hasn't drift too much during solver optimization.
 func optimizeAllAsynch() bool { return OptimizeMode == ModeAllAsynch }
 
+// optimizeManualHttp collects like AllSynch but only optimizes when HTTP endpoint is called.
+func optimizeManualHttp() bool { return OptimizeMode == ModeManualHttp }
+
 // optimizeAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
 func optimizeAtPreEnqueue() bool { return OptimizeHookStage == StagePreEnqueue }
 
@@ -32,17 +35,25 @@ func (stage StageType) atPostFilter() bool { return stage == StagePostFilter }
 
 // strategyToString returns a string representation of the optimization mode.
 func strategyToString() string {
-	a := "Every"
+	var a string
 	switch OptimizeMode {
+	case ModeEvery:
+		a = "Every"
 	case ModeAllSynch:
 		a = "AllSynch"
 	case ModeAllAsynch:
-		a = "AllAsynch"
-		return a
+		return "AllAsynch" // At is ignored
+	case ModeManualHttp:
+		a = "ManualHttp"
+	default:
+		a = "AllSynch"
 	}
 	b := "PreEnqueue"
 	if optimizeAtPostFilter() {
 		b = "PostFilter"
+	}
+	if OptimizeMode == ModeAllAsynch {
+		return a
 	}
 	return fmt.Sprintf("%s/%s", a, b)
 }
@@ -56,6 +67,8 @@ func parseOptimizeMode(s string) OptimizeModeType {
 		return ModeAllSynch
 	case "all_asynch":
 		return ModeAllAsynch
+	case "manual_http":
+		return ModeManualHttp
 	default:
 		klog.InfoS("Unknown ENV: OPTIMIZE_CADENCE value; defaulting to 'batch'", "value", s)
 		return ModeAllSynch
@@ -86,7 +99,8 @@ func (pl *MyCrossNodePreemption) decideStrategy(stage StageType) StrategyDecisio
 	}
 
 	// Modes: AllSynch@PreEnqueue or AllSynch@PostFilter - always set pods to pending
-	if optimizeAllSynch() && ((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
+	if (optimizeAllSynch() || optimizeManualHttp()) &&
+		((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
 		return DecideProcessLater
 	}
 

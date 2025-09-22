@@ -22,7 +22,7 @@ componentsPatches:
   - name: kube-scheduler
     extraEnvs:
       - name: OPTIMIZE_MODE
-        value: "all_asynch" # choices: every, all_synch, all_asynch
+        value: "manual_http" # choices: every, all_synch, all_asynch, manual_http
       - name: OPTIMIZE_HOOK_STAGE
         value: "preenqueue" # choices: preenqueue, postfilter (not used in all_asynch mode)
       - name: OPTIMIZE_INTERVAL

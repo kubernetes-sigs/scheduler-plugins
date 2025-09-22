@@ -11,6 +11,8 @@ const (
 	// ModeAllAsynch indicates we optimize all pods but do not block (only while applying the plan).
 	// OptimizeAt is ignored in this mode.
 	ModeAllAsynch
+	// ModeManualHttp is the same as ModeAllSynch but only triggers manual optimization via HTTP.
+	ModeManualHttp
 )
 
 // Stage indicates which stage of scheduling we are in.

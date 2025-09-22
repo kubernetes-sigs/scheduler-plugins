@@ -30,6 +30,7 @@ func (pl *MyCrossNodePreemption) tryEnterActive() bool {
 	return pl.Active.CompareAndSwap(false, true)
 }
 
+// TODO: Somehow ensure only one deactivates the plan when it completes?
 // leaveActive exits the active plan state.
 func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)

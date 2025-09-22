@@ -19,6 +19,10 @@ var OptimizeInterval = parseTime(getenv("OPTIMIZE_INTERVAL", "30s"))
 // OptimizeInitialDelay is the initial delay before the first optimization run.
 var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "15s"))
 
+// Address the manual HTTP server should listen on (only used in ModeManualHttp).
+// Examples: ":18080", "0.0.0.0:18080"
+var ManualHTTPAddr = getenv("MANUAL_HTTP_ADDR", ":18080")
+
 // ======= Solver settings =======
 
 // Whether solvers should receive and honor improvement hints.

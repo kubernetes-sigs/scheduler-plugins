@@ -25,7 +25,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	baseState := buildState(in)
 
 	// Direct-fit pre-pass: only accept if strictly better than baseline
-	if optimizeAtPreEnqueue() {
+	if optimizeAtPreEnqueue() && optimizeEvery() {
 		start := time.Now()
 		if out := runSolverDirectFit(in, baseState); hasSolverFeasibleResult(out.Status) {
 			score := computeSolverScore(in, out)

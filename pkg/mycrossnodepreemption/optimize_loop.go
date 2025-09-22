@@ -31,7 +31,7 @@ func (pl *MyCrossNodePreemption) optimizeLoop(ctx context.Context) {
 			pendingCount := countPendingPods(pods)
 			klog.InfoS(msg(strategy, InfoCycleStarted), "pendingPods", pendingCount)
 			// no singlePod in periodic modes
-			_, _ = pl.runFlow(context.Background(), nil)
+			pl.runFlow(context.Background(), nil)
 			timer.Reset(interval)
 			klog.InfoS(msg(strategy, InfoCycleNextRun), "in", interval)
 		}
