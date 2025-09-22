@@ -97,6 +97,29 @@ func mutateJson[T any](
 	return doc.patchJson(ctx, cli, out)
 }
 
+// MutateRaw loads the JSON string at DataKey, lets 'mutate' transform it,
+// and writes the result back (pretty-printed). If mutate returns (nil, nil)
+// or the CM/key is missing, it's a no-op.
+func (d ConfigMapDoc) mutateRaw(
+	ctx context.Context,
+	cli corev1client.CoreV1Interface,
+	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
+	mutate func(raw []byte) ([]byte, error),
+) error {
+	raw, err := d.readJson(lister)
+	if err != nil || len(raw) == 0 {
+		return err // nil if missing -> no-op
+	}
+	newRaw, err := mutate(raw)
+	if err != nil || newRaw == nil {
+		return err // nil -> no-op
+	}
+	// Store as string (ConfigMap data values are strings).
+	patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, d.DataKey, string(newRaw)))
+	_, err = cli.ConfigMaps(d.Namespace).Patch(ctx, d.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	return err
+}
+
 // List CMs by label newest-first.
 func listConfigMaps(
 	_ context.Context,

@@ -328,9 +328,10 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 		ap.Cancel() // stop the timeout watcher
 	}
 	klog.InfoS("deactivating active plan", "planID", ap.ID)
-	// Mark the plan status in ConfigMaps; ignore errors.
-	_ = pl.markPlanStatus(context.Background(), ap.ID, status)
-	_ = pl.markExportedStatsPlanStatus(context.Background(), status)
+
+	// Mark the plan statuses in ConfigMaps
+	pl.markPlanStatuses(context.Background(), ap.ID, status)
+
 	return true
 }
 
@@ -571,70 +572,61 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 	return true, nil
 }
 
-// markPlanStatus sets the Status (Active/Completed/Failed) in the configMap.
-// If the plan is already in a final state (Completed/Failed), it won't be downgraded.
-func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName string, status PlanStatus) error {
-	doc := ConfigMapDoc{
+// markPlanStatuses updates the plan's own ConfigMap and the exported stats CM.
+//   - The plan CM is put into the requested status (unless already final).
+//   - The exported stats CM only updates the last run if it isn't already final.
+//     (Never overwrite Failed with Completed.)
+func (pl *MyCrossNodePreemption) markPlanStatuses(ctx context.Context, planCM string, status PlanStatus) {
+	lister := func(ns string) clientv1.ConfigMapNamespaceLister {
+		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
+	}
+
+	// 1) Update the per-plan ConfigMap (plan-%d).
+	planDoc := ConfigMapDoc{
 		Namespace: SystemNamespace,
-		Name:      cmName,
+		Name:      planCM,
 		LabelKey:  PlanConfigMapLabelKey,
 		DataKey:   PlanConfigMapLabelKey + ".json",
 	}
-	// Load -> mutate -> patch
-	raw, err := doc.readJson(func(ns string) clientv1.ConfigMapNamespaceLister {
-		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
+	_ = planDoc.mutateRaw(ctx, pl.Client.CoreV1(), lister, func(raw []byte) ([]byte, error) {
+		var sp StoredPlan
+		if err := json.Unmarshal(raw, &sp); err != nil {
+			return nil, nil // best-effort
+		}
+		if sp.PlanStatus == PlanStatusCompleted || sp.PlanStatus == PlanStatusFailed {
+			return nil, nil // final is sticky
+		}
+		sp.PlanStatus = status
+		if status == PlanStatusCompleted || status == PlanStatusFailed {
+			now := time.Now().UTC()
+			sp.CompletedAt = &now
+		}
+		b, _ := json.MarshalIndent(&sp, "", "  ")
+		return b, nil
 	})
-	if err != nil || len(raw) == 0 {
-		return err
-	}
-	var sp StoredPlan
-	if json.Unmarshal(raw, &sp) != nil {
-		return nil // best-effort
-	}
-	if sp.PlanStatus == PlanStatusCompleted || sp.PlanStatus == PlanStatusFailed {
-		return nil // final is sticky
-	}
-	sp.PlanStatus = status
-	if status == PlanStatusCompleted || status == PlanStatusFailed {
-		now := time.Now().UTC()
-		sp.CompletedAt = &now
-	}
-	return doc.patchJson(ctx, pl.Client.CoreV1(), &sp)
-}
 
-// TODO
-// markExportedStatsPlanStatus sets/updates the last run's "plan_status"
-// in the exported stats ConfigMap (namespace/name/key from solver_helpers.go).
-// Rules mirror markPlanStatus: once in a final state (Completed or Failed) we
-// don't change it; specifically we never overwrite Failed with Completed.
-func (pl *MyCrossNodePreemption) markExportedStatsPlanStatus(ctx context.Context, status PlanStatus) error {
-	doc := ConfigMapDoc{
+	// 2) Update the exported stats ledger (last entry only, unless already final).
+	statsDoc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      SolverConfigMapExportedStatsName,
 		LabelKey:  SolverConfigMapLabelKey,
 		DataKey:   SolverConfigMapLabelKey + ".json",
 	}
-	// Replace with a manual read-modify-write sequence since MutateJSON is not defined.
-	raw, err := doc.readJson(func(ns string) clientv1.ConfigMapNamespaceLister {
-		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
-	})
-	if err != nil || len(raw) == 0 {
-		return err
-	}
-	var runs []ExportedSolverStats
-	if json.Unmarshal(raw, &runs) != nil {
-		return nil // best-effort
-	}
-	if len(runs) > 0 {
+	_ = statsDoc.mutateRaw(ctx, pl.Client.CoreV1(), lister, func(raw []byte) ([]byte, error) {
+		var runs []ExportedSolverStats
+		if err := json.Unmarshal(raw, &runs); err != nil || len(runs) == 0 {
+			return nil, nil // best-effort / nothing to do
+		}
 		prev := runs[len(runs)-1].PlanStatus
 		if prev != PlanStatusCompleted && prev != PlanStatusFailed {
 			runs[len(runs)-1].PlanStatus = status
+			b, _ := json.MarshalIndent(runs, "", "  ")
+			return b, nil
 		}
-	}
-	return doc.patchJson(ctx, pl.Client.CoreV1(), &runs)
+		return nil, nil
+	})
 }
 
-// TODO
 // watchPlanTimeout monitors the timeout for the given active plan.
 func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlan) {
 	<-ap.Ctx.Done()
@@ -651,13 +643,12 @@ func (pl *MyCrossNodePreemption) watchPlanTimeout(ap *ActivePlan) {
 	pl.onPlanSettled(PlanStatusFailed)
 }
 
-// TODO
-// buildWorkloadCntsAtomics converts WorkloadQuotas (int32) to WorkloadPerNodeCnts (atomic.Int32)
+// buildWorkloadQuotasAtomics converts WorkloadQuotas (int32) to WorkloadPerNodeCnts (atomic.Int32)
 // for faster concurrent access during plan execution.
-func buildWorkloadCntsAtomics(wkCnts WorkloadQuotas) WorkloadQuotasAtomics {
+func buildWorkloadQuotasAtomics(wkQuotas WorkloadQuotas) WorkloadQuotasAtomics {
 	remaining := make(WorkloadQuotasAtomics) // workload -> node -> *atomic.Int32
-	if wkCnts != nil {
-		for wk, perNode := range wkCnts {
+	if wkQuotas != nil {
+		for wk, perNode := range wkQuotas {
 			if remaining[wk] == nil {
 				remaining[wk] = map[string]*atomic.Int32{}
 			}
@@ -675,66 +666,67 @@ func buildWorkloadCntsAtomics(wkCnts WorkloadQuotas) WorkloadQuotasAtomics {
 	return nil
 }
 
-// TODO
 // setActivePlan sets the given stored plan as the active plan and initializes its counters,
 // deriving both WorkloadPerNodeCnts and PlacementByName solely from NewPlacements.
 // For controller-owned pods, quotas are keyed by the controller (e.g., ReplicaSet) name.
 func (pl *MyCrossNodePreemption) setActivePlan(plan *Plan, id string, _ []*v1.Pod) {
+	// Exit if no plan provided
 	if plan == nil {
 		return
 	}
-
-	workloadCnts := buildWorkloadCntsAtomics(plan.WorkloadQuotas)
-	// Note: We just pass PlacementsByName directly
-
 	// Cancel any previous plan's timeout watcher.
 	if old := pl.getActivePlan(); old != nil && old.Cancel != nil {
 		old.Cancel()
 	}
+
+	// Build the new active plan state
 	ctxPlan, cancel := context.WithTimeout(context.Background(), PlanExecutionTimeout)
 	ap := &ActivePlan{
 		ID:                  id,
-		WorkloadPerNodeCnts: workloadCnts,
-		PlacementByName:     plan.PlacementByName,
+		WorkloadPerNodeCnts: buildWorkloadQuotasAtomics(plan.WorkloadQuotas),
+		PlacementByName:     plan.PlacementByName, // we just pass PlacementsByName directly
 		Ctx:                 ctxPlan,
 		Cancel:              cancel,
 	}
+
+	// Store the new active plan
 	pl.ActivePlan.Store(ap)
+
+	// Activate watcher for plan timeout
 	go pl.watchPlanTimeout(ap)
 }
 
-// TODO
-// allowedNodes returns:
-// - node set to pin (non-nil) and Success, or
-// - nil and an appropriate framework.Status reason to block/allow.
+// allowedNodes returns the set of nodes the pod is allowed to run on according to the active plan.
 func (pl *MyCrossNodePreemption) allowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
 	ap := pl.getActivePlan()
 	if ap == nil {
 		return nil, "no active plan", true
 	}
 
-	// Standalone/preemptor by name
-	if tgt, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok && tgt != "" {
-		return sets.New(tgt), "standalone; pin to planned node", true
+	// Standalone/preemptor addressed by name.
+	if node, present := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; present {
+		if node != "" {
+			return sets.New(node), "standalone; pin to planned node", true
+		}
+		return nil, "standalone; allowed by plan", true
 	}
 
-	// Workload quota routing
-	if wk, ok := topWorkload(pod); ok {
-		key := wk.String()
-		byNode, ok := ap.WorkloadPerNodeCnts[key]
-		if !ok || len(byNode) == 0 {
+	// Controller-owned: enforce per-workload per-node quotas.
+	if wk, owned := topWorkload(pod); owned {
+		perNode := ap.WorkloadPerNodeCnts[wk.String()]
+		if len(perNode) == 0 {
 			return nil, "workload not in active plan; block", false
 		}
-		nodesAllowed := sets.New[string]()
-		for node, ctr := range byNode {
+		allowed := sets.New[string]()
+		for node, ctr := range perNode {
 			if ctr.Load() > 0 {
-				nodesAllowed.Insert(node)
+				allowed.Insert(node)
 			}
 		}
-		if nodesAllowed.Len() == 0 {
+		if allowed.Len() == 0 {
 			return nil, "workload quotas exhausted; block", false
 		}
-		return nodesAllowed, "workload nodes allowed", true
+		return allowed, "workload nodes allowed", true
 	}
 
 	return nil, "pod not in active plan; block", false
