@@ -9,7 +9,7 @@ package mycrossnodepreemption
 var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_CADENCE", "all_synch"))
 
 // OptimizeAt is the action point that triggers optimization.
-// Choices: "preenqueue", "postfilter" (ignored in continuous mode)
+// Choices: "preenqueue", "postfilter" (ignored in all_asynch mode)
 var OptimizeAt = parseOptimizeAt(getenv("OPTIMIZE_AT", "postfilter"))
 
 // OptimizationInterval is the duration between consecutive optimization runs.

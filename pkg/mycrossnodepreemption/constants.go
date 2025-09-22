@@ -31,9 +31,11 @@ const (
 	// Path to the Python binary to use for running the solver.
 	SolverPythonBin = "/opt/venv/bin/python"
 	// SolverLogProgress is a flag that enables/disables logging of solver progress.
-	SolverLogProgress                = false
+	SolverLogProgress = false
+	// SolverConfigMapExportedStatsName is the name of the exported stats config map.
 	SolverConfigMapExportedStatsName = "stats"
-	SolverConfigMapLabelKey          = "runs"
+	// SolverConfigMapLabelKey is the label key used for solver configuration config maps.
+	SolverConfigMapLabelKey = "runs"
 	// =========================================================
 
 	// ================ Plan settings ==========================

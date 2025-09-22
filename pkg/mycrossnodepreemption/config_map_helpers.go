@@ -1,4 +1,4 @@
-// cmutil.go
+// config_map_helpers.go
 
 package mycrossnodepreemption
 
@@ -17,7 +17,7 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
-// Create or update CM, storing data as JSON at DataKey.
+// Create or update config map, storing data as JSON at DataKey.
 func (d ConfigMapDoc) ensureJson(ctx context.Context, cli corev1client.CoreV1Interface, data any) error {
 	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -60,7 +60,7 @@ func (d ConfigMapDoc) patchJson(ctx context.Context, cli corev1client.CoreV1Inte
 	return err
 }
 
-// Read DataKey; nil if CM or key missing.
+// Read DataKey; nil if config map or key missing.
 func (d ConfigMapDoc) readJson(
 	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
 ) ([]byte, error) {
@@ -97,9 +97,7 @@ func mutateJson[T any](
 	return doc.patchJson(ctx, cli, out)
 }
 
-// MutateRaw loads the JSON string at DataKey, lets 'mutate' transform it,
-// and writes the result back (pretty-printed). If mutate returns (nil, nil)
-// or the CM/key is missing, it's a no-op.
+// MutateRaw loads the JSON string at DataKey, 'mutate' it, and writes the result back.
 func (d ConfigMapDoc) mutateRaw(
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,
@@ -120,7 +118,7 @@ func (d ConfigMapDoc) mutateRaw(
 	return err
 }
 
-// List CMs by label newest-first.
+// List config maps by label newest-first.
 func listConfigMaps(
 	_ context.Context,
 	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
@@ -141,7 +139,7 @@ func listConfigMaps(
 	return out, nil
 }
 
-// Keep first K newest CMs for label, delete the rest.
+// Keep first K newest config maps for label, delete the rest.
 func pruneConfigMaps(
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,

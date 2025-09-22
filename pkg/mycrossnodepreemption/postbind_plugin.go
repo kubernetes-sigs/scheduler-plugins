@@ -15,7 +15,7 @@ import (
 // postbind_plugin.go
 func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, _ string) {
 
-	phaseLabel := "PostBind"
+	phase := "PostBind"
 
 	// Early exit if system pods or if no active plan
 	ap := pl.getActivePlan()
@@ -31,22 +31,22 @@ func (pl *MyCrossNodePreemption) PostBind(ctx context.Context, _ *framework.Cycl
 		_, relevant = ap.WorkloadPerNodeCnts[wk.String()]
 	}
 	if !relevant {
-		klog.V(MyV).InfoS(phaseLabel+": irrelevant", "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(phaseMsg(phase, "irrelevant"), "pod", klog.KObj(pod))
 		return
 	}
 
 	// Check if the plan is completed
 	ok, err := pl.isPlanCompleted(ctx, ap, pod)
 	if err != nil {
-		klog.V(MyV).ErrorS(err, phaseLabel+": "+InfoPlanCompletionFailed)
+		klog.V(MyV).ErrorS(err, phase+": "+InfoPlanCompletionFailed)
 		return
 	}
 	if !ok {
-		klog.V(MyV).InfoS(phaseLabel+": "+InfoActivePlanInProgress, "planID", ap.ID, "pod", klog.KObj(pod))
+		klog.V(MyV).InfoS(phaseMsg(phase, InfoActivePlanInProgress), "planID", ap.ID, "pod", klog.KObj(pod))
 		return
 	}
 	// Complete the plan
 	if pl.onPlanSettled(PlanStatusCompleted) {
-		klog.InfoS(phaseLabel+": "+InfoPlanCompleted, "planID", ap.ID)
+		klog.InfoS(phaseMsg(phase, InfoPlanCompleted), "planID", ap.ID)
 	}
 }

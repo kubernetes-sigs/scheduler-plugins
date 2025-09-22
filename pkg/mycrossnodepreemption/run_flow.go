@@ -95,10 +95,6 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	// Register and execute storedPlan
 	plan, ap, targetNode, err := pl.registerPlan(ctx, bestSolver, preemptor, pods)
 	if err != nil {
-		// keep single-preemptor blocked on error
-		if solveMode == SolveSingle && preemptor != nil {
-			pl.BlockedWhileActive.AddPod(preemptor)
-		}
 		klog.ErrorS(err, strategy+": "+InfoRegisterPlanFailed)
 		pl.leaveActive()
 		return "", ErrRegisterPlan
