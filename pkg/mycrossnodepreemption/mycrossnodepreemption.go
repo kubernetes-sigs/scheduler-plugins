@@ -21,10 +21,10 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	pl := &MyCrossNodePreemption{
-		Handle:  h,
-		Client:  client,
-		Blocked: newPodSet(),
-		Batched: newPodSet(),
+		Handle:             h,
+		Client:             client,
+		BlockedWhileActive: newPodSet(),
+		Batched:            newPodSet(),
 	}
 
 	if !pl.IsSolverEnabled() { // ensure at least one solver is enabled

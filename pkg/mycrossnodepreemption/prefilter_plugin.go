@@ -49,7 +49,7 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 
 	default:
 		klog.V(MyV).InfoS(phaseLabel+": "+InfoBlockPod, "pod", klog.KObj(pod), "reason", msg)
-		pl.Blocked.AddPod(pod)
+		pl.BlockedWhileActive.AddPod(pod)
 		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+msg)
 	}
 }

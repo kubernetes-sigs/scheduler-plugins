@@ -1227,7 +1227,6 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 			seen[sp.UID] = true
 		}
 	}
-	// Cohort: append the batched pending pods (where = ""), if requested
 	if includePending {
 		for _, p := range batched {
 			if p == nil {
@@ -1267,21 +1266,17 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.No
 		pre := toSolverPod(preemptor, "")
 		in.Preemptor = &pre
 		if err := pl.fillNodesAndPods(&in, nodes, pods, preemptor, nil, false); err != nil {
-			return SolverInput{}, fmt.Errorf("fill (single): %w", err)
+			return SolverInput{}, fmt.Errorf("fill all pods w/preemptor: %w", err)
 		}
-	case SolveBatch:
+	case SolveAll:
 		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, batched, true); err != nil {
-			return SolverInput{}, fmt.Errorf("fill (batch): %w", err)
-		}
-	case SolveContinuous:
-		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, nil, true); err != nil {
-			return SolverInput{}, fmt.Errorf("fill (continuous): %w", err)
+			return SolverInput{}, fmt.Errorf("fill all pods: %w", err)
 		}
 	default:
 		return SolverInput{}, fmt.Errorf("unknown solve mode")
 	}
 	if len(in.Nodes) == 0 {
-		return SolverInput{}, fmt.Errorf("no usable Ready nodes available; waiting")
+		return SolverInput{}, fmt.Errorf("no usable nodes available; waiting")
 	}
 	return in, nil
 }

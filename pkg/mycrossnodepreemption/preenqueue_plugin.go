@@ -22,18 +22,18 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 
 	// If caches are not warm, block the pod
 	if !pl.CachesWarm.Load() {
-		pl.Blocked.AddPod(pod)
+		pl.BlockedWhileActive.AddPod(pod)
 		klog.V(MyV).Info(phaseLabel + ": Caches not warmed up yet; skipping plugin logic")
 		return framework.NewStatus(framework.Pending, phaseLabel+": Caches not warmed up yet; skipping plugin logic")
 	}
 
 	// Just prune on every PreEnqueue call
-	_ = pl.pruneSet(pl.Blocked, "Blocked")
+	_ = pl.pruneSet(pl.BlockedWhileActive, "Blocked")
 
 	// Decide strategy for this pod
 	switch pl.decideStrategy(PhasePreEnqueue) {
 
-	case DecidePassThrough:
+	case DecidePass:
 		klog.V(MyV).InfoS(phaseLabel+": pass-through", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
 
@@ -42,10 +42,10 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		pl.Batched.AddPod(pod)
 		return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoBatchPod)
 
-	case DecideBlock:
+	case DecideBlockWhileActive:
 		if !pl.IsPodAllowedByActivePlan(pod) {
 			klog.V(MyV).InfoS(phaseLabel+": "+InfoActivePlanInProgress+"; "+InfoBlockPod, "pod", klog.KObj(pod))
-			pl.Blocked.AddPod(pod)
+			pl.BlockedWhileActive.AddPod(pod)
 			return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoActivePlanInProgress+"; "+InfoBlockPod)
 		}
 		return framework.NewStatus(framework.Success) // fallback
@@ -56,10 +56,10 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		if err != nil {
 			switch err {
 			case ErrActiveInProgress:
-				pl.Blocked.AddPod(pod)
+				pl.BlockedWhileActive.AddPod(pod)
 				return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoActivePlanInProgress)
 			case ErrSolverFailed:
-				pl.Blocked.AddPod(pod)
+				pl.BlockedWhileActive.AddPod(pod)
 				return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoSolverFailed)
 			default: // else ErrRegisterPlan
 				return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoRegisterPlanFailed)

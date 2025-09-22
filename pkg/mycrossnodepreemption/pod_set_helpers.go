@@ -15,15 +15,15 @@ import (
 // It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
 func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
 	// Prune stale entries first
-	_ = pl.pruneSet(pl.Blocked, "Blocked")
+	_ = pl.pruneSet(pl.BlockedWhileActive, "Blocked")
 
 	// If no blocked pods, nothing to do
-	if pl.Blocked == nil || pl.Blocked.Size() == 0 {
+	if pl.BlockedWhileActive == nil || pl.BlockedWhileActive.Size() == 0 {
 		return nil
 	}
 
 	// Snapshot and resolve current Pod objects
-	blockedPods := pl.Blocked.Snapshot()
+	blockedPods := pl.BlockedWhileActive.Snapshot()
 	items := make([]PodSetItem, 0, len(blockedPods))
 	// Get current Pod objects so that we don't return stale/deleted ones.
 	podsLister := pl.podsLister()
@@ -71,9 +71,9 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
 	// Activate and remove only those attempted
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		klog.V(MyV).InfoS("activated blocked pods", "count", len(toAct), "max", max)
+		klog.InfoS("activated blocked pods", "count", len(toAct), "max", max)
 		for _, it := range items[:limit] {
-			pl.Blocked.RemovePod(it.key.UID)
+			pl.BlockedWhileActive.RemovePod(it.key.UID)
 		}
 	}
 
@@ -209,14 +209,6 @@ func (s *PodSet) AddPod(p *v1.Pod) {
 func (s *PodSet) RemovePod(uid types.UID) {
 	s.mu.Lock()
 	delete(s.m, uid)
-	s.mu.Unlock()
-}
-
-// Clear removes all pods from the set.
-// Use mutex to protect the map such that only one goroutine can modify the map at a time.
-func (s *PodSet) Clear() {
-	s.mu.Lock()
-	s.m = make(map[types.UID]PodKey)
 	s.mu.Unlock()
 }
 

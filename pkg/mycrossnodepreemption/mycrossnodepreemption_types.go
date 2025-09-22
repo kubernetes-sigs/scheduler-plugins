@@ -21,7 +21,7 @@ type MyCrossNodePreemption struct {
 	// Currently active plan (if any)
 	ActivePlan atomic.Pointer[ActivePlan]
 	// Set of blocked pods
-	Blocked *PodSet
+	BlockedWhileActive *PodSet
 	// Set of batched pods
 	Batched *PodSet
 	// Mutex to wait for caches to warm up

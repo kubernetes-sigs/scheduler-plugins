@@ -1,14 +1,14 @@
 package mycrossnodepreemption
 
-// OptimizationMode indicates how we optimize (for every pod, batch, continuous).
+// OptimizationMode indicates how we optimize
 type OptimizationMode int
 
 const (
 	// OptimizeEvery indicates we optimize for every new pod.
 	OptimizeEvery OptimizationMode = iota
-	// OptimizeAllSynch indicates we optimize in batches.
+	// OptimizeAllSynch indicates we optimize all pods and blocks until done.
 	OptimizeAllSynch
-	// OptimizeAllAsynch indicates we optimize continuously.
+	// OptimizeAllAsynch indicates we optimize all pods but do not block (only while applying the plan).
 	// OptimizeAt is ignored in this mode.
 	OptimizeAllAsynch
 )
@@ -39,12 +39,12 @@ const (
 type StrategyDecision int
 
 const (
-	// DecidePassThrough indicates we let the pod pass through without optimization.
-	DecidePassThrough StrategyDecision = iota
-	// DecideBatch indicates we batch the pod for later optimization.
-	DecideBatch
-	// DecideEvery indicates we should optimize this new single pod.
+	// We let the pod pass through without optimization.
+	DecidePass StrategyDecision = iota
+	// We optimize this new single pod.
 	DecideEvery
-	// DecideBlock indicates we block the pod due to an active plan.
-	DecideBlock
+	// We block the pod
+	DecideBlockWhileActive
+	// We batch the pod for later optimization.
+	DecideBatch
 )

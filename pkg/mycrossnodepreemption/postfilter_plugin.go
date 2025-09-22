@@ -20,16 +20,16 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 	// If active plan in progress, block the pod.
 	ap := pl.getActivePlan()
 	if ap != nil {
-		pl.Blocked.AddPod(pending)
+		pl.BlockedWhileActive.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoActivePlanInProgress)
 	}
 
-	// Prune Blocked set to remove deleted/assigned pods.
-	_ = pl.pruneSet(pl.Blocked, "Blocked")
+	// Prune BlockedWhileActive set to remove deleted/assigned pods.
+	_ = pl.pruneSet(pl.BlockedWhileActive, "BlockedWhileActive")
 
 	switch pl.decideStrategy(PhasePostFilter) {
 
-	case DecidePassThrough:
+	case DecidePass:
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, phaseLabel+": "+InfoNoStrategyEnabled)
 
 	case DecideBatch:
@@ -37,8 +37,8 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 		pl.Batched.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoBatchPod)
 
-	case DecideBlock:
-		pl.Blocked.AddPod(pending)
+	case DecideBlockWhileActive:
+		pl.BlockedWhileActive.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoActivePlanInProgress)
 
 	case DecideEvery:
@@ -46,7 +46,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 		targetNode, err := pl.runFlow(ctx, pending)
 		if err != nil {
 			if err == ErrActiveInProgress {
-				pl.Blocked.AddPod(pending)
+				pl.BlockedWhileActive.AddPod(pending)
 				return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoActivePlanInProgress)
 			}
 			if err == ErrSolverFailed {

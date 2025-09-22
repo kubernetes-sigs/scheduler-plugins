@@ -24,7 +24,7 @@ componentsPatches:
       - name: OPTIMIZE_CADENCE
         value: "all_asynch" # choices: every, all_synch, all_asynch
       - name: OPTIMIZE_AT
-        value: "postfilter" # choices: preenqueue, postfilter
+        value: "preenqueue" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL
         value: "10s"
       - name: OPTIMIZATION_INITIAL_DELAY

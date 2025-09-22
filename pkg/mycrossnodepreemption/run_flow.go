@@ -33,10 +33,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		preemptor   *v1.Pod
 		batchedPods []*v1.Pod
 	)
-	if optimizeAllAsynch() { // Continuous
-		solveMode = SolveContinuous
-	} else if optimizeAllSynch() { // Batch
-		solveMode = SolveBatch
+	if optimizeAllAsynch() || optimizeAllSynch() { // Continuous
+		solveMode = SolveAll
 		_ = pl.pruneSet(pl.Batched, "Batched")
 		batchedPods = pl.snapshotBatch()
 		if len(batchedPods) == 0 {
@@ -100,7 +98,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	if err != nil {
 		// keep single-preemptor blocked on error
 		if solveMode == SolveSingle && preemptor != nil {
-			pl.Blocked.AddPod(preemptor)
+			pl.BlockedWhileActive.AddPod(preemptor)
 		}
 		klog.ErrorS(err, strategy+": "+InfoRegisterPlanFailed)
 		pl.leaveActive()
@@ -114,7 +112,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	}
 
 	// If in Batch mode activate batched pods, now that the plan is in place.
-	if optimizeAllSynch() {
+	if optimizeAllSynch() || optimizeAllAsynch() {
 		pl.activateBatchedPods(batchedPods, 0)
 	}
 
@@ -125,6 +123,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		"bestSolver", bestSolverSummary,
 		"nominated", targetNode,
 		"batchSize", len(batchedPods),
+		"pendingScheduled", pendingScheduled,
 		"totalPrePlan", totalPrePlan,
 		"totalPostPlan", totalPostPlan,
 		"totalDuration", time.Since(start),

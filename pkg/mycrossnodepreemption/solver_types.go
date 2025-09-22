@@ -14,9 +14,8 @@ import (
 type SolveMode int
 
 const (
-	SolveBatch SolveMode = iota
+	SolveAll SolveMode = iota
 	SolveSingle
-	SolveContinuous
 )
 
 // SolverInput is the input to a solver.

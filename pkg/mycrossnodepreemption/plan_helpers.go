@@ -100,7 +100,7 @@ func (pl *MyCrossNodePreemption) executePlan(plan *Plan) error {
 
 	if len(plan.Moves) == 0 && len(plan.Evicts) == 0 {
 		klog.V(MyV).Info("plan has no moves or evictions; nothing to do")
-		return ErrNoop
+		return nil
 	}
 
 	// Log plan details
