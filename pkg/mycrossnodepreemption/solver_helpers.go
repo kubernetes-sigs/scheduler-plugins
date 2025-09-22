@@ -191,7 +191,6 @@ func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	return stableOutput("FEASIBLE", placements, nil, in)
 }
 
-// TODO
 // buildBaselineScore computes the baseline score from the solver input.
 func buildBaselineScore(in SolverInput) SolverScore {
 	placedByPri := map[string]int{}
@@ -351,7 +350,6 @@ func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, sing
 	return out, false, nil
 }
 
-// TODO
 // isImprovement compares two scores lexicographically:
 // 1) More placed per priority (lexicographic map compare)
 // 2) Fewer evictions
@@ -364,24 +362,26 @@ func isImprovement(baseline, suggested SolverScore) int {
 			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
 		return cmp
 	}
+
 	// 2) Evictions (fewer is better)
 	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
 		klog.V(MyV).InfoS("compare evictions", "result", cmp,
 			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
 		return cmp
 	}
+
 	// 3) Moves (fewer is better)
 	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
 		klog.V(MyV).InfoS("compare moves", "result", cmp,
 			"suggested", suggested.Moved, "baseline", baseline.Moved)
 		return cmp
 	}
+
 	// Equal on all metrics
 	klog.V(MyV).InfoS("no change: equal on placed, evictions, and moves")
 	return 0
 }
 
-// TODO
 // hasSolverFeasibleResult checks if the solver output is feasible.
 // OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
 // FEASIBLE means the solution is not perfect but still meets all constraints.
@@ -500,7 +500,6 @@ func summarizeAttempt(r SolverResult) SolverResult {
 	}
 }
 
-// TODO
 // logLeaderboard prints a compact solver leaderboard relative to baseline.
 // It groups attempts as better/equal/worse vs baseline and tags adjacent ties.
 func logLeaderboard(

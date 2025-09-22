@@ -136,7 +136,6 @@ type SolverScore struct {
 	Moved int `json:"moved,omitempty"`
 }
 
-// TODO
 // PreparedState is the prepared state for solving.
 type PreparedState struct {
 	// Whether we are in single-preemptor mode
