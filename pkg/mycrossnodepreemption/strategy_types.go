@@ -1,15 +1,16 @@
 package mycrossnodepreemption
 
-// OptimizationCadence indicates how we optimize (for every pod, batch, continuous).
-type OptimizationCadence int
+// OptimizationMode indicates how we optimize (for every pod, batch, continuous).
+type OptimizationMode int
 
 const (
 	// OptimizeEvery indicates we optimize for every new pod.
-	OptimizeEvery OptimizationCadence = iota
-	// OptimizeBatch indicates we optimize in batches.
-	OptimizeBatch
-	// OptimizeContinuous indicates we optimize continuously.
-	OptimizeContinuous
+	OptimizeEvery OptimizationMode = iota
+	// OptimizeAllSynch indicates we optimize in batches.
+	OptimizeAllSynch
+	// OptimizeAllAsynch indicates we optimize continuously.
+	// OptimizeAt is ignored in this mode.
+	OptimizeAllAsynch
 )
 
 // OptimizationAt indicates at which scheduling phase to optimize.

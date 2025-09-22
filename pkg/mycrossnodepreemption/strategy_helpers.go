@@ -10,13 +10,13 @@ import (
 )
 
 // optimizeEvery is the optimizer cadence that optimizes for every new pod.
-func optimizeEvery() bool { return OptimizeCadence == OptimizeEvery }
+func optimizeEvery() bool { return OptimizeMode == OptimizeEvery }
 
-// optimizeBatch is the optimizer cadence that optimizes in batches.
-func optimizeBatch() bool { return OptimizeCadence == OptimizeBatch }
+// optimizeAllSynch is the optimizer cadence that optimizes all pods and blocks while optimizing.
+func optimizeAllSynch() bool { return OptimizeMode == OptimizeAllSynch }
 
-// optimizeContinuous is the optimizer cadence that tries to optimize continuous if the cluster state hasn't changed during solver optimization.
-func optimizeContinuous() bool { return OptimizeCadence == OptimizeContinuous }
+// optimizeAllAsynch is the optimizer cadence that tries to optimize continuous if the cluster state hasn't drift too much during solver optimization.
+func optimizeAllAsynch() bool { return OptimizeMode == OptimizeAllAsynch }
 
 // optimizeAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
 func optimizeAtPreEnqueue() bool { return OptimizeAt == OptimizeAtPreEnqueue }
@@ -33,11 +33,11 @@ func (phase Phase) atPostFilter() bool { return phase == PhasePostFilter }
 // strategyToString returns a string representation of the optimization mode.
 func strategyToString() string {
 	a := "Every"
-	switch OptimizeCadence {
-	case OptimizeBatch:
-		a = "Batch"
-	case OptimizeContinuous:
-		a = "Continuous"
+	switch OptimizeMode {
+	case OptimizeAllSynch:
+		a = "AllSynch"
+	case OptimizeAllAsynch:
+		a = "AllAsynch"
 		return a
 	}
 	b := "PreEnqueue"
@@ -47,18 +47,18 @@ func strategyToString() string {
 	return fmt.Sprintf("%s/%s", a, b)
 }
 
-// parseCadence parses a cadence string and returns the corresponding OptimizationCadenceMode.
-func parseCadence(s string) OptimizationCadence {
+// parseOptimizeMode parses a cadence string and returns the corresponding OptimizationCadenceMode.
+func parseOptimizeMode(s string) OptimizationMode {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "every":
 		return OptimizeEvery
-	case "batch":
-		return OptimizeBatch
-	case "continuous":
-		return OptimizeContinuous
+	case "all_synch":
+		return OptimizeAllSynch
+	case "all_asynch":
+		return OptimizeAllAsynch
 	default:
 		klog.InfoS("Unknown ENV: OPTIMIZE_CADENCE value; defaulting to 'batch'", "value", s)
-		return OptimizeBatch
+		return OptimizeAllSynch
 	}
 }
 
@@ -76,29 +76,29 @@ func parseOptimizeAt(s string) OptimizationAt {
 }
 
 // decideStrategy determines the optimization strategy based on the current phase.
-// Continuous mode, never blocks or batches pods.
+// BatchAsynch mode, never blocks or batches pods.
 // Other modes, always block new pods, while actively optimizing.
 // If not actively optimizing:
-// OptimizeBatch@PreEnqueue and OptimizeBatch@PostFilter: batch new pods at phases PreEnqueue and PostFilter, respectively, and at other phases we let pods through.
+// BatchSynch@PreEnqueue and BatchSynch@PostFilter: batch new pods at phases PreEnqueue and PostFilter, respectively, and at other phases we let pods through.
 // OptimizeEvery@PreEnqueue and OptimizeEvery@PostFilter: optimize for every new pod at phases PreEnqueue and PostFilter, respectively, and at other phases we let pods through.
 func (pl *MyCrossNodePreemption) decideStrategy(phase Phase) StrategyDecision {
-	// Mode: Continuous; never blocks or batches due to the optimizer.
-	if optimizeContinuous() {
+	// Mode: BatchAsynch; never blocks or batches due to the optimizer.
+	if optimizeAllAsynch() {
 		return DecidePassThrough
 	}
-	// If not in continuous mode and there's an active plan, block all new pods.
+	// If not in BatchAsynch mode and there's an active plan, block all new pods.
 	ap := pl.getActivePlan()
 	if ap != nil {
 		return DecideBlock
 	}
-	// Modes: OptimizeBatch@PreEnqueue or OptimizeBatch@PostFilter
-	if optimizeBatch() {
+	// Modes: BatchSynch@PreEnqueue or BatchSynch@PostFilter
+	if optimizeAllSynch() {
 		if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
 			return DecideBatch // batch new pods
 		}
 		return DecidePassThrough // if not in the phase of optimization, allow all pods
 	}
-	// Modes: OptimizeEvery@PreEnqueue or OptimizeEvery@PostFilter
+	// Modes: BatchSynch@PreEnqueue or BatchSynch@PostFilter
 	if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
 		return DecideEvery // optimize for every new pod
 	}

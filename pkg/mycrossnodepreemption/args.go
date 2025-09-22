@@ -4,9 +4,9 @@ package mycrossnodepreemption
 
 // ======= Optimality where/when settings =======
 
-// OptimizeCadence is the frequency at which optimization is performed.
-// Choices: "every", "batch", "continuous"
-var OptimizeCadence = parseCadence(getenv("OPTIMIZE_CADENCE", "batch"))
+// OptimizeMode is the frequency at which optimization is performed.
+// Choices: "every", "all_synch", "all_asynch"
+var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_CADENCE", "all_synch"))
 
 // OptimizeAt is the action point that triggers optimization.
 // Choices: "preenqueue", "postfilter" (ignored in continuous mode)

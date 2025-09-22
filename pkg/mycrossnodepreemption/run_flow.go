@@ -18,7 +18,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 
 	// Continuous: do NOT take Active yet (first take it after solver has the plan and there is an improvement to apply).
 	// Batch/Single: take Active early because these modes block by design.
-	if !optimizeContinuous() {
+	if !optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.V(MyV).InfoS(strategy + ": " + InfoActivePlanInProgress + "; skipping")
 			return "", ErrActiveInProgress
@@ -33,9 +33,9 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		preemptor   *v1.Pod
 		batchedPods []*v1.Pod
 	)
-	if optimizeContinuous() { // Continuous
+	if optimizeAllAsynch() { // Continuous
 		solveMode = SolveContinuous
-	} else if optimizeBatch() { // Batch
+	} else if optimizeAllSynch() { // Batch
 		solveMode = SolveBatch
 		_ = pl.pruneSet(pl.Batched, "Batched")
 		batchedPods = pl.snapshotBatch()
@@ -79,7 +79,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	}
 
 	// Take Active late for Continuous (only now that we know it's worth applying a plan).
-	if optimizeContinuous() {
+	if optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.InfoS("Continuous: " + InfoActivePlanInProgress + "; skipping")
 			return "", ErrActiveInProgress
@@ -114,7 +114,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	}
 
 	// If in Batch mode activate batched pods, now that the plan is in place.
-	if optimizeBatch() {
+	if optimizeAllSynch() {
 		pl.activateBatchedPods(batchedPods, 0)
 	}
 
