@@ -64,7 +64,7 @@ func (pl *MyCrossNodePreemption) nudgeBlockedLoop(ctx context.Context) {
 			}
 
 			// Wake exactly one
-			tried := pl.activateBlockedPods(1)
+			tried := pl.activatePods(pl.BlockedWhileActive, false, 1)
 
 			var activated types.UID
 			if len(tried) == 1 {

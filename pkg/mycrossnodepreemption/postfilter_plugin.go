@@ -25,7 +25,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 	}
 
 	// Prune BlockedWhileActive set to remove deleted/assigned pods.
-	_ = pl.pruneSet(pl.BlockedWhileActive, "BlockedWhileActive")
+	_ = pl.pruneSet(pl.BlockedWhileActive)
 
 	switch pl.decideStrategy(PhasePostFilter) {
 

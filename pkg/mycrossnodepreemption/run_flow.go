@@ -35,7 +35,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	)
 	if optimizeAllAsynch() || optimizeAllSynch() { // Continuous
 		solveMode = SolveAll
-		_ = pl.pruneSet(pl.Batched, "Batched")
+		_ = pl.pruneSet(pl.Batched)
 		batchedPods = pl.snapshotBatch()
 		if len(batchedPods) == 0 {
 			klog.InfoS(strategy + ": " + InfoNoBatchedPods)
@@ -111,9 +111,9 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		pl.onPlanSettled(PlanStatusFailed)
 	}
 
-	// If in Batch mode activate batched pods, now that the plan is in place.
+	// If in all modes activate the batched pods (now that the plan is in place).
 	if optimizeAllSynch() || optimizeAllAsynch() {
-		pl.activateBatchedPods(batchedPods, 0)
+		pl.activatePods(pl.Batched, true, 0)
 	}
 
 	// Build and return result

@@ -28,7 +28,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 	}
 
 	// Just prune on every PreEnqueue call
-	_ = pl.pruneSet(pl.BlockedWhileActive, "Blocked")
+	_ = pl.pruneSet(pl.BlockedWhileActive)
 
 	// Decide strategy for this pod
 	switch pl.decideStrategy(PhasePreEnqueue) {

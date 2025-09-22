@@ -13,17 +13,17 @@ import (
 
 // activateBlockedPods activates up to 'max' pods from the blocked set; clear only the ones activated.
 // It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
-func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
+func (pl *MyCrossNodePreemption) activatePods(podsSet *PodSet, cleanup bool, max int) (tried []types.UID) {
 	// Prune stale entries first
-	_ = pl.pruneSet(pl.BlockedWhileActive, "Blocked")
+	_ = pl.pruneSet(podsSet)
 
 	// If no blocked pods, nothing to do
-	if pl.BlockedWhileActive == nil || pl.BlockedWhileActive.Size() == 0 {
-		return nil
+	if podsSet == nil || podsSet.Size() == 0 {
+		return
 	}
 
 	// Snapshot and resolve current Pod objects
-	blockedPods := pl.BlockedWhileActive.Snapshot()
+	blockedPods := podsSet.Snapshot()
 	items := make([]PodSetItem, 0, len(blockedPods))
 	// Get current Pod objects so that we don't return stale/deleted ones.
 	podsLister := pl.podsLister()
@@ -33,7 +33,7 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
 		}
 	}
 	if len(items) == 0 {
-		return nil
+		return
 	}
 
 	// Sort by priority, then creation timestamp (older first), then name
@@ -62,78 +62,27 @@ func (pl *MyCrossNodePreemption) activateBlockedPods(max int) []types.UID {
 
 	// Build activation map and record "tried" UIDs
 	toAct := make(map[string]*v1.Pod, limit)
-	tried := make([]types.UID, 0, limit)
 	for _, it := range items[:limit] {
 		toAct[combineNsName(it.p.Namespace, it.p.Name)] = it.p
 		tried = append(tried, it.key.UID)
 	}
 
-	// Activate and remove only those attempted
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
-		klog.InfoS("activated blocked pods", "count", len(toAct), "max", max)
-		for _, it := range items[:limit] {
-			pl.BlockedWhileActive.RemovePod(it.key.UID)
-		}
-	}
-
-	return tried
-}
-
-// Activate up to 'max' pods from the batched set; remove only those that were activated
-// or explicitly provided via podsToRemove.
-func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max int) {
-	_ = pl.pruneSet(pl.Batched, "Batched")
-	if pl.Batched == nil || pl.Batched.Size() == 0 {
-		return
-	}
-	snap := pl.Batched.Snapshot()
-	podsLister := pl.podsLister()
-	items := make([]PodSetItem, 0, len(snap))
-	for _, k := range snap {
-		if p, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
-			items = append(items, PodSetItem{p: p, key: k})
-		}
-	}
-	if len(items) == 0 {
-		return
-	}
-	// Sort by priority and creation timestamp
-	sort.Slice(items, func(i, j int) bool {
-		pi := getPodPriority(items[i].p)
-		pj := getPodPriority(items[j].p)
-		if pi != pj {
-			return pi > pj
-		}
-		ti := items[i].p.GetCreationTimestamp().Time
-		tj := items[j].p.GetCreationTimestamp().Time
-		if ti.IsZero() || tj.IsZero() {
-			return items[i].p.GetName() < items[j].p.GetName()
-		}
-		return ti.Before(tj)
-	})
-	limit := len(items)
-	if max > 0 && max < limit {
-		limit = max
-	}
-	toAct := make(map[string]*v1.Pod, limit)
-	for _, it := range items[:limit] {
-		toAct[combineNsName(it.p.Namespace, it.p.Name)] = it.p
-	}
-	if len(toAct) > 0 {
-		pl.Handle.Activate(klog.Background(), toAct)
-		klog.V(MyV).InfoS("activated batched pods", "count", len(toAct), "max", max)
+		klog.InfoS("activated pods", "set", podsSet.Name, "count", len(toAct), "max", max)
 		// Remove only the ones we just activated
 		for _, it := range items[:limit] {
-			pl.Batched.RemovePod(it.key.UID)
+			podsSet.RemovePod(it.key.UID)
 		}
 	}
-	// If caller passes podsToRemove; remove them from the batched set
-	for _, p := range podsToRemove {
-		if p != nil {
-			pl.Batched.RemovePod(p.UID)
+	// If caller passes cleanup; remove all pods from the set
+	if cleanup {
+		podsToRemove := podsSet.Snapshot()
+		for _, p := range podsToRemove {
+			podsSet.RemovePod(p.UID)
 		}
 	}
+	return tried
 }
 
 // prunePending removes from `set` any pod that:
@@ -143,11 +92,11 @@ func (pl *MyCrossNodePreemption) activateBatchedPods(podsToRemove []*v1.Pod, max
 //   - is already bound (Spec.NodeName != "").
 //
 // It returns the number of entries removed.
-func (pl *MyCrossNodePreemption) pruneSet(set *PodSet, setName string) int {
-	if set == nil || set.Size() == 0 {
+func (pl *MyCrossNodePreemption) pruneSet(podSet *PodSet) int {
+	if podSet == nil || podSet.Size() == 0 {
 		return 0
 	}
-	snap := set.Snapshot()
+	snap := podSet.Snapshot()
 	podsLister := pl.podsLister()
 
 	removed := 0
@@ -155,20 +104,20 @@ func (pl *MyCrossNodePreemption) pruneSet(set *PodSet, setName string) int {
 		cur, err := podsLister.Pods(key.Namespace).Get(key.Name)
 		switch {
 		case apierrors.IsNotFound(err):
-			set.RemovePod(uid)
+			podSet.RemovePod(uid)
 			removed++
 		case err != nil:
 			// conservatively keep on lister error
 		default:
 			// drop if recreated, terminating, or not pending anymore
 			if string(cur.UID) != string(uid) || cur.DeletionTimestamp != nil || cur.Spec.NodeName != "" {
-				set.RemovePod(uid)
+				podSet.RemovePod(uid)
 				removed++
 			}
 		}
 	}
 	if removed > 0 {
-		klog.V(MyV).InfoS("pruned stale entries", "set", setName, "removed", removed)
+		klog.V(MyV).InfoS("pruned stale entries", "removed", removed)
 	}
 	return removed
 }
@@ -191,7 +140,7 @@ func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
 }
 
 // newPodSet creates a new PodSet.
-func newPodSet() *PodSet { return &PodSet{m: make(map[types.UID]PodKey)} }
+func newPodSet(name string) *PodSet { return &PodSet{Name: name, m: make(map[types.UID]PodKey)} }
 
 // AddPod adds a pod to the set.
 // Use mutex to protect the map such that only one goroutine can modify the map at a time.

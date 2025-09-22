@@ -9,6 +9,8 @@ import (
 
 // PodSet is a thread-safe set of pods.
 type PodSet struct {
+	// Name of the set (for logging)
+	Name string
 	// mu protects the map
 	mu sync.RWMutex
 	// m maps pod UID to PodKey

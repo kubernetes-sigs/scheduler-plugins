@@ -22,7 +22,7 @@ componentsPatches:
   - name: kube-scheduler
     extraEnvs:
       - name: OPTIMIZE_CADENCE
-        value: "all_asynch" # choices: every, all_synch, all_asynch
+        value: "all_synch" # choices: every, all_synch, all_asynch
       - name: OPTIMIZE_AT
         value: "preenqueue" # choices: preenqueue, postfilter
       - name: OPTIMIZATION_INTERVAL

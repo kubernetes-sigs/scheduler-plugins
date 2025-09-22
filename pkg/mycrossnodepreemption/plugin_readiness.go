@@ -57,7 +57,7 @@ func (pl *MyCrossNodePreemption) waitForPluginReadiness(
 
 				// Avoid a surge in Every@PreEnqueue; the idle nudge will trickle them.
 				if !(optimizeEvery() && optimizeAtPreEnqueue()) {
-					_ = pl.activateBlockedPods(0) // activate all currently blocked
+					pl.activatePods(pl.BlockedWhileActive, false, 0) // activate all currently blocked
 				}
 				pl.startLoops(ctx)
 
