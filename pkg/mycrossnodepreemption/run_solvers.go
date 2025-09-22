@@ -27,7 +27,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	// Direct-fit pre-pass: only accept if strictly better than baseline
 	if optimizeAtPreEnqueue() {
 		start := time.Now()
-		if out := runSolverDirectFit(in, baseState); HasSolverFeasibleResult(out.Status) {
+		if out := runSolverDirectFit(in, baseState); hasSolverFeasibleResult(out.Status) {
 			score := computeSolverScore(in, out)
 			best = SolverResult{
 				Name:       "direct-fit",
@@ -115,7 +115,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		cancel()
 		durUs := time.Since(start).Microseconds()
 
-		if err != nil || !HasSolverFeasibleResult(out.Status) {
+		if err != nil || !hasSolverFeasibleResult(out.Status) {
 			klog.V(MyV).InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "status", out.Status, "durationUs", durUs)
 			continue
 		}

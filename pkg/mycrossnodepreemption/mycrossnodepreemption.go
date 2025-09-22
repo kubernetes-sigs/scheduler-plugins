@@ -26,7 +26,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		BlockedWhileActive: newPodSet("BlockedWhileActive"),
 	}
 
-	if !pl.IsSolverEnabled() { // ensure at least one solver is enabled
+	if !pl.isSolverEnabled() { // ensure at least one solver is enabled
 		klog.Error(ErrNoSolverEnabled)
 		return nil, ErrNoSolverEnabled
 	}

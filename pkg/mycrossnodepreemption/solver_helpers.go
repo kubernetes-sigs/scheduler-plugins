@@ -1159,16 +1159,16 @@ func buildState(in SolverInput) *PreparedState {
 }
 
 // TODO
-// IsSolverEnabled checks if any solver is enabled.
-func (pl *MyCrossNodePreemption) IsSolverEnabled() bool {
+// isSolverEnabled checks if any solver is enabled.
+func (pl *MyCrossNodePreemption) isSolverEnabled() bool {
 	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
 }
 
 // TODO
-// HasSolverFeasibleResult checks if the solver output is feasible.
+// hasSolverFeasibleResult checks if the solver output is feasible.
 // OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
 // FEASIBLE means the solution is not perfect but still meets all constraints.
-func HasSolverFeasibleResult(status string) bool {
+func hasSolverFeasibleResult(status string) bool {
 	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
 }
 

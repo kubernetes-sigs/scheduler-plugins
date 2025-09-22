@@ -1,3 +1,5 @@
+// config_map_types.go
+
 package mycrossnodepreemption
 
 // ConfigMap document
