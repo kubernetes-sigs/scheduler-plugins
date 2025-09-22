@@ -11,4 +11,5 @@ var (
 	ErrNoSolverSolution = errors.New(InfoNoSolverSolution)
 	ErrNoop             = errors.New(InfoNoop)
 	ErrNoPlanProvided   = errors.New(InfoNoPlanProvided)
+	ErrNoUsableNodes    = errors.New(InfoNoUsableNodes)
 )

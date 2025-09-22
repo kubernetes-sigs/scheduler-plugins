@@ -133,7 +133,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Output:     out,
 			DurationUs: durUs,
 			Score:      score,
-			CmpBase:    IsImprovement(best.Score, score),
+			CmpBase:    isImprovement(best.Score, score),
 			Status:     out.Status,
 		}
 		attemptsFeasible = append(attemptsFeasible, curr)
@@ -171,7 +171,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	if pyIdx >= 0 && attemptsFeasible[pyIdx].Output != nil && attemptsFeasible[pyIdx].Output.Status == "OPTIMAL" {
 		pyScore := attemptsFeasible[pyIdx].Score
 		ties := func(s SolverScore) bool {
-			return IsImprovement(pyScore, s) == 0 && IsImprovement(s, pyScore) == 0
+			return isImprovement(pyScore, s) == 0 && isImprovement(s, pyScore) == 0
 		}
 		for i := range attemptsFeasible {
 			if attemptsFeasible[i].Name != "python" && ties(attemptsFeasible[i].Score) && attemptsFeasible[i].Output != nil {
@@ -184,7 +184,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	// Leaderboard
-	pl.logLeaderboard(strategy, attemptsFeasible, baselineScore, best)
+	logLeaderboard(strategy, attemptsFeasible, baselineScore, best)
 
 	// If any feasible solver, export stats
 	pl.exportSolverStats(ctx, strategy, baselineScore, best, attemptsFeasible, hadFeasibleSolver)

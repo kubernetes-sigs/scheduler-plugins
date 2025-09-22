@@ -33,4 +33,5 @@ var (
 	InfoPlanNotApplicable            = "plan not applicable"
 	InfoDeactivatingActivePlan       = "deactivating active plan"
 	InfoActivatingPlannedPendingPods = "activating planned pending pods"
+	InfoNoUsableNodes                = "no usable nodes available"
 )

@@ -11,9 +11,9 @@ import (
 )
 
 // runFlow runs the flow for the given phase (AllSynch, AllAsynch, Single).
-// For Single phase, the singlePod must be provided (the preemptor).
+// For Single phase, the preemptor must be provided.
 // Returns the target node name for the preemptor pod (if any) and error (if any).
-func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod) (targetNode string, err error) {
+func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod) (targetNode string, err error) {
 
 	strategy := strategyToString()
 
@@ -50,20 +50,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		return "", ErrNoop
 	}
 
-	// Optimize-specific setup
-	var (
-		solveMode SolveMode
-		preemptor *v1.Pod
-	)
-	if optimizeAllAsynch() || optimizeAllSynch() {
-		solveMode = SolveAll
-	} else { // Every
-		solveMode = SolveSingle
-		preemptor = singlePod
-	}
-
 	// Run solvers
-	solverInput, err := pl.buildSolverInput(solveMode, nodes, pods, preemptor)
+	solverInput, err := pl.buildSolverInput(nodes, pods, preemptor)
 	if err != nil {
 		klog.Error(msg(strategy, "failed to build solver input"))
 		pl.leaveActive()

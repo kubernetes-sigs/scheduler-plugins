@@ -14,18 +14,18 @@ import (
 // It is used, here, to filter the node(s) that the pod can be (tried) scheduled on.
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
 // it is determined in Reserve plugin and will be retried again.
-func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.CycleState, pending *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 
 	stage := "PreFilter"
 
 	ap := pl.getActivePlan()
 
 	// Always allow kube-system pods and when no active plan exists.
-	if pod.Namespace == SystemNamespace || ap == nil {
+	if pending.Namespace == SystemNamespace || ap == nil {
 		return nil, framework.NewStatus(framework.Success)
 	}
 
-	allowed, allowedMsg, ok := pl.allowedNodes(pod)
+	allowed, allowedMsg, ok := pl.allowedNodes(pending)
 
 	var nodes []string
 	if allowed != nil {
@@ -33,23 +33,23 @@ func (pl *MyCrossNodePreemption) PreFilter(ctx context.Context, st *framework.Cy
 	}
 	klog.V(MyV).InfoS(msg(stage, "filter decision"),
 		"activePlan", ap != nil,
-		"pod", combineNsName(pod.Namespace, pod.Name),
+		"pod", combineNsName(pending.Namespace, pending.Name),
 		"nodes", nodes,
 		"reason", allowedMsg,
 	)
 
 	switch {
 	case ok && allowed == nil:
-		klog.V(MyV).InfoS(msg(stage, InfoAllowPod), "pod", klog.KObj(pod), "reason", allowedMsg)
+		klog.V(MyV).InfoS(msg(stage, InfoAllowPod), "pod", klog.KObj(pending), "reason", allowedMsg)
 		return nil, framework.NewStatus(framework.Success)
 
 	case ok && allowed.Len() > 0:
-		klog.V(MyV).InfoS(msg(stage, InfoPinPod), "pod", klog.KObj(pod), "nodes", nodes, "reason", allowedMsg)
+		klog.V(MyV).InfoS(msg(stage, InfoPinPod), "pod", klog.KObj(pending), "nodes", nodes, "reason", allowedMsg)
 		return &framework.PreFilterResult{NodeNames: allowed}, framework.NewStatus(framework.Success)
 
 	default:
-		klog.V(MyV).InfoS(msg(stage, InfoBlockPod), "pod", klog.KObj(pod), "reason", allowedMsg)
-		pl.BlockedWhileActive.AddPod(pod)
+		klog.V(MyV).InfoS(msg(stage, InfoBlockPod), "pod", klog.KObj(pending), "reason", allowedMsg)
+		pl.BlockedWhileActive.AddPod(pending)
 		return nil, framework.NewStatus(framework.Unschedulable, msg(stage, allowedMsg))
 	}
 }

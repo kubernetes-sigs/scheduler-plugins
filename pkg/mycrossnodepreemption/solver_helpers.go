@@ -18,36 +18,98 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// TODO
-// runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
-func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
-	nodes, _, order, worklist := base.freshClone()
-	if len(worklist) == 0 {
-		return &SolverOutput{Status: "UNKNOWN"}
-	}
-	placements := make(map[types.UID]string, len(worklist))
+// isSolverEnabled checks if any solver is enabled.
+func (pl *MyCrossNodePreemption) isSolverEnabled() bool {
+	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
+}
 
-	stop := false
-	var stopAt int32
-	for _, p := range worklist {
-		if stop && p.Priority <= stopAt {
-			break
-		}
-		if to, ok := bestDirectFit(order, p); ok {
-			nodes[to].addPod(p)
-			placements[p.UID] = to
+// buildSolverInput builds the solver input from live nodes/pods (and optional preemptor)
+// in a single pass. It:
+//   - Filters to usable nodes only
+//   - Adds all RUNNING pods that are bound to usable nodes
+//   - Adds all PENDING pods
+//   - Excludes the preemptor from Pods (it is provided via in.Preemptor)
+//   - Marks preemptor as pending in the input
+func (pl *MyCrossNodePreemption) buildSolverInput(
+	nodes []*v1.Node,
+	pods []*v1.Pod,
+	preemptor *v1.Pod,
+) (SolverInput, error) {
+
+	in := SolverInput{
+		IgnoreAffinity: true,
+		LogProgress:    SolverLogProgress,
+		Nodes:          make([]SolverNode, 0, len(nodes)),
+		Pods:           make([]SolverPod, 0, len(pods)),
+		TimeoutMs:      0, // filled by caller
+	}
+
+	// ----- Nodes: keep only usable -----
+	usable := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		if !isNodeUsable(n) {
 			continue
 		}
-		if base.Single { // single-preemptor must place or fail
-			return stableOutput("INFEASIBLE", placements, nil, in)
+		in.Nodes = append(in.Nodes, SolverNode{
+			Name:        n.Name,
+			CapCPUm:     n.Status.Allocatable.Cpu().MilliValue(),
+			CapMemBytes: n.Status.Allocatable.Memory().Value(),
+		})
+		usable[n.Name] = true
+	}
+	if len(in.Nodes) == 0 {
+		return SolverInput{}, ErrNoUsableNodes
+	}
+
+	// ----- Preemptor: include as pending (not in Pods list) -----
+	preUID := ""
+	if preemptor != nil {
+		pre := toSolverPod(preemptor, "")
+		in.Preemptor = &pre
+		preUID = string(preemptor.UID)
+	}
+
+	// ----- Pods: add running-on-usable + all pending, skip preemptor -----
+	seen := make(map[types.UID]bool, len(pods))
+	for _, p := range pods {
+		if p == nil {
+			continue
 		}
-		stop = true
-		stopAt = p.Priority
+		if string(p.UID) == preUID {
+			// preemptor is represented via in.Preemptor, never duplicated in Pods
+			continue
+		}
+
+		where := p.Spec.NodeName
+		switch {
+		case where == "":
+			// pending → always include
+			sp := toSolverPod(p, "")
+			if p.Namespace == SystemNamespace {
+				sp.Protected = true
+			}
+			if !seen[sp.UID] {
+				in.Pods = append(in.Pods, sp)
+				seen[sp.UID] = true
+			}
+
+		default:
+			// running → include only if bound to a usable node
+			if !usable[where] {
+				continue
+			}
+			sp := toSolverPod(p, where)
+			if p.Namespace == SystemNamespace {
+				sp.Protected = true
+			}
+			if !seen[sp.UID] {
+				in.Pods = append(in.Pods, sp)
+				seen[sp.UID] = true
+			}
+		}
 	}
-	if len(placements) == 0 {
-		return &SolverOutput{Status: "INFEASIBLE"}
-	}
-	return stableOutput("FEASIBLE", placements, nil, in)
+
+	return in, nil
 }
 
 // TODO
@@ -98,38 +160,350 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 }
 
 // TODO
-// exportSolverStats exports a compact run record to the stats ConfigMap.
-// Only runs when `hadFeasible` is true.
-func (pl *MyCrossNodePreemption) exportSolverStats(
-	ctx context.Context,
-	label string,
-	baseline SolverScore,
-	best SolverResult,
-	attemptsFeasible []SolverResult,
-	hadFeasible bool,
-) {
-	if !hadFeasible {
-		return
+// runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
+func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
+	nodes, _, order, worklist := base.freshClone()
+	if len(worklist) == 0 {
+		return &SolverOutput{Status: "UNKNOWN"}
 	}
-	attempts := make([]SolverResult, 0, len(attemptsFeasible))
-	for _, r := range attemptsFeasible {
-		attempts = append(attempts, summarizeAttempt(r))
+	placements := make(map[types.UID]string, len(worklist))
+
+	stop := false
+	var stopAt int32
+	for _, p := range worklist {
+		if stop && p.Priority <= stopAt {
+			break
+		}
+		if to, ok := bestDirectFit(order, p); ok {
+			nodes[to].addPod(p)
+			placements[p.UID] = to
+			continue
+		}
+		if base.Single { // single-preemptor must place or fail
+			return stableOutput("INFEASIBLE", placements, nil, in)
+		}
+		stop = true
+		stopAt = p.Priority
 	}
-	entry := ExportedSolverStats{
-		TimestampNs: time.Now().UnixNano(),
-		Best:        best.Name,
-		PlanStatus:  PlanStatusActive,
-		Baseline:    baseline,
-		Attempts:    attempts,
+	if len(placements) == 0 {
+		return &SolverOutput{Status: "INFEASIBLE"}
 	}
-	pl.appendStatsCM(ctx, entry)
-	klog.V(MyV).InfoS(msg(label, "exported solver stats"), "attempts", len(attempts), "best", best.Name)
+	return stableOutput("FEASIBLE", placements, nil, in)
+}
+
+// TODO
+// buildBaselineScore computes the baseline score from the solver input.
+func buildBaselineScore(in SolverInput) SolverScore {
+	placedByPri := map[string]int{}
+	for _, sp := range in.Pods {
+		if sp.Node == "" {
+			continue // pending doesn't count into "placed"
+		}
+		pr := strconv.Itoa(int(sp.Priority))
+		placedByPri[pr] = placedByPri[pr] + 1
+	}
+	return SolverScore{
+		PlacedByPriority: placedByPri,
+		Evicted:          0,
+		Moved:            0,
+	}
+}
+
+// TODO
+// PreparedState holds the prepared cluster state for solvers.
+func buildState(in SolverInput) *PreparedState {
+	nodes, pods, pending, order, pre := buildClusterState(in)
+	wl, single, mg := buildWorklist(pending, pre)
+	return &PreparedState{
+		Nodes:     nodes,
+		Pods:      pods,
+		Order:     order,
+		Preemptor: pre,
+		Worklist:  wl,
+		Single:    single,
+		MoveGate:  mg,
+	}
+}
+
+// TODO
+// buildClusterState builds the cluster state from the given solver input.
+// It returns:
+//   - map of node name → *NodeType
+//   - map of pod UID → *PodType
+//   - slice of pending pods (to be scheduled)
+//   - slice of all nodes in lexicographical order by name
+//   - the preemptor pod if any (nil otherwise)
+func buildClusterState(in SolverInput) (map[string]*SolverNode, map[types.UID]*SolverPod, []*SolverPod, []*SolverNode, *SolverPod) {
+	// Nodes map + ordered slice
+	nodes := make(map[string]*SolverNode, len(in.Nodes))
+	order := make([]*SolverNode, 0, len(in.Nodes))
+	for i := range in.Nodes {
+		n := &SolverNode{
+			Name:          in.Nodes[i].Name,
+			CapCPUm:       in.Nodes[i].CapCPUm,
+			CapMemBytes:   in.Nodes[i].CapMemBytes,
+			Labels:        in.Nodes[i].Labels,
+			AllocCPUm:     in.Nodes[i].CapCPUm,
+			AllocMemBytes: in.Nodes[i].CapMemBytes,
+			Pods:          make(map[types.UID]*SolverPod, 32),
+		}
+		nodes[n.Name] = n
+		order = append(order, n)
+	}
+	sort.Slice(order, func(i, j int) bool { return order[i].Name < order[j].Name })
+
+	// Pods map + pending list (+ preemptor ptr if any)
+	pods := make(map[types.UID]*SolverPod, len(in.Pods)+1)
+	pending := make([]*SolverPod, 0, len(in.Pods))
+	var pre *SolverPod
+
+	if in.Preemptor != nil {
+		pi := *in.Preemptor // copy
+		pi.Node = ""        // ensure pending
+		pending = append(pending, &pi)
+		pre = &pi
+		pods[pi.UID] = pre
+	}
+
+	for i := range in.Pods {
+		sp := in.Pods[i]
+		p := &SolverPod{
+			UID:         sp.UID,
+			Namespace:   sp.Namespace,
+			Name:        sp.Name,
+			ReqCPUm:     sp.ReqCPUm,
+			ReqMemBytes: sp.ReqMemBytes,
+			Priority:    sp.Priority,
+			Protected:   sp.Protected,
+			Node:        sp.Node, // "where" in JSON
+		}
+		if p.Node == "" {
+			pending = append(pending, p)
+		}
+		pods[p.UID] = p
+		if p.Node != "" {
+			if n := nodes[p.Node]; n != nil {
+				n.addPod(p)
+			}
+		}
+	}
+
+	return nodes, pods, pending, order, pre
+}
+
+// TODO
+// buildWorklist constructs the scheduling worklist for a solver and decides
+// whether we’re in **single-preemptor** mode or **batch** mode.
+//
+// Modes
+//   - Single-preemptor mode: If `pre` is present, we return a slice containing
+//     only that pod, set `single=true`, and return `moveGate=&pre.Priority`.
+//     The move gate is used downstream to restrict relocations so that only
+//     pods with Priority ≤ *moveGate can be moved (while still honoring `Protected`).
+//     This matches the “don’t move pods above the preemptor’s priority” rule.
+//   - Batch mode: Otherwise we return **all** pending pods ordered big-first,
+//     `single=false`, and `moveGate=nil` (meaning moves are not priority-gated,
+//     still respecting `Protected`).
+//
+// Ordering (batch mode)
+//
+//	We sort pending pods to reduce fragmentation and front-load hard placements:
+//	  1) Priority DESC (higher first)
+//	  2) Size (CPUm*MemBytes) DESC
+//	  3) CPUm DESC
+//	  4) MemBytes DESC
+//	  5) UID ASC (stable tie-breaker for determinism)
+//
+// Returns
+//
+//	out:      ordered list of pods to try placing this cycle
+//	single:   true iff we’re in single-preemptor mode
+//	moveGate: pointer to the priority threshold for moves (non-nil in single
+//	          mode; nil in batch mode). The pointer is safe to return—Go will
+//	          heap-allocate `mg` as needed.
+func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, single bool, moveGate *int32) {
+	if pre != nil {
+		for _, p := range pending {
+			if p.UID == pre.UID {
+				mg := pre.Priority
+				return []*SolverPod{p}, true, &mg
+			}
+		}
+	}
+	out = append(out, pending...)
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Priority != b.Priority {
+			return a.Priority > b.Priority
+		}
+		sa, sb := a.ReqCPUm*a.ReqMemBytes, b.ReqCPUm*b.ReqMemBytes
+		if sa != sb {
+			return sa > sb
+		}
+		if a.ReqCPUm != b.ReqCPUm {
+			return a.ReqCPUm > b.ReqCPUm
+		}
+		if a.ReqMemBytes != b.ReqMemBytes {
+			return a.ReqMemBytes > b.ReqMemBytes
+		}
+		return a.UID < b.UID
+	})
+	return out, false, nil
+}
+
+// TODO
+// isImprovement compares two scores lexicographically:
+// 1) More placed per priority (lexicographic map compare)
+// 2) Fewer evictions
+// 3) Fewer moves
+// Returns 1 if suggested is better, -1 if worse, 0 if equal.
+func isImprovement(baseline, suggested SolverScore) int {
+	// 1) Placed-by-priority (more is better)
+	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
+		klog.V(MyV).InfoS("compare placed-by-priority", "result", cmp,
+			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
+		return cmp
+	}
+	// 2) Evictions (fewer is better)
+	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
+		klog.V(MyV).InfoS("compare evictions", "result", cmp,
+			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
+		return cmp
+	}
+	// 3) Moves (fewer is better)
+	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
+		klog.V(MyV).InfoS("compare moves", "result", cmp,
+			"suggested", suggested.Moved, "baseline", baseline.Moved)
+		return cmp
+	}
+	// Equal on all metrics
+	klog.V(MyV).InfoS("no change: equal on placed, evictions, and moves")
+	return 0
+}
+
+// TODO
+// hasSolverFeasibleResult checks if the solver output is feasible.
+// OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
+// FEASIBLE means the solution is not perfect but still meets all constraints.
+func hasSolverFeasibleResult(status string) bool {
+	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
+}
+
+// TODO
+// planApplicable checks whether a SolverOutput (plan) can still be safely
+// applied on the *current* cluster state. It allows unrelated drift and only
+// insists that the concrete preconditions for the plan still hold.
+func (pl *MyCrossNodePreemption) planApplicable(out *SolverOutput, nodes []*v1.Node, pods []*v1.Pod) (bool, string) {
+	if out == nil {
+		return false, "nil plan"
+	}
+
+	// Index live state
+	usable := map[string]bool{}
+	capCPU := map[string]int64{}
+	capMem := map[string]int64{}
+	for _, n := range nodes {
+		if isNodeUsable(n) {
+			usable[n.Name] = true
+			capCPU[n.Name] = n.Status.Allocatable.Cpu().MilliValue()
+			capMem[n.Name] = n.Status.Allocatable.Memory().Value()
+		}
+	}
+
+	type res struct{ cpu, mem int64 }
+	used := map[string]res{} // by node
+	pByUID := podsByUID(pods)
+
+	addUse := func(node string, cpu, mem int64) {
+		u := used[node]
+		u.cpu += cpu
+		u.mem += mem
+		used[node] = u
+	}
+
+	// Tally current usage
+	for _, p := range pods {
+		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
+			continue
+		}
+		addUse(p.Spec.NodeName, getPodCPURequest(p), getPodMemoryRequest(p))
+	}
+
+	// Simulate the plan on top of current usage:
+	// - Evictions free resources on their current node
+	for _, e := range out.Evictions {
+		p := pByUID[e.Pod.UID]
+		if p == nil || p.Spec.NodeName == "" {
+			// Already gone or pending now: keep going.
+			continue
+		}
+		// If a node became unusable, fail.
+		if !usable[p.Spec.NodeName] {
+			return false, fmt.Sprintf("evict node now unusable: %s", p.Spec.NodeName)
+		}
+		addUse(p.Spec.NodeName, -getPodCPURequest(p), -getPodMemoryRequest(p))
+	}
+
+	// - Moves/placements: check pod still where we expect (pending or src), then add to dst
+	for _, np := range out.Placements {
+		p := pByUID[np.Pod.UID]
+		if p == nil || p.DeletionTimestamp != nil {
+			return false, fmt.Sprintf("pod vanished: %s", combineNsName(np.Pod.Namespace, np.Pod.Name))
+		}
+		// Source must still be consistent enough:
+		//   - if it was a move (FromNode != ""), pod should still be on that source
+		//   - if it was a new/pending placement (FromNode == ""), pod should still be pending
+		if np.FromNode != "" {
+			if p.Spec.NodeName != np.FromNode {
+				return false, fmt.Sprintf("move precondition changed for %s/%s: was on %q, now on %q",
+					p.Namespace, p.Name, np.FromNode, p.Spec.NodeName)
+			}
+			// remove from src (already accounted by evictions? No — moves are distinct)
+			addUse(np.FromNode, -getPodCPURequest(p), -getPodMemoryRequest(p))
+		} else {
+			// pending expected
+			if p.Spec.NodeName != "" {
+				return false, fmt.Sprintf("pending precondition changed for %s/%s: now bound to %q",
+					p.Namespace, p.Name, p.Spec.NodeName)
+			}
+		}
+
+		// Destination must still be usable & have capacity
+		if !usable[np.ToNode] {
+			return false, fmt.Sprintf("dest node now unusable: %s", np.ToNode)
+		}
+		addUse(np.ToNode, getPodCPURequest(p), getPodMemoryRequest(p))
+	}
+
+	// Check that every node remains within capacity
+	for node, u := range used {
+		if u.cpu > capCPU[node] || u.mem > capMem[node] {
+			return false, fmt.Sprintf("capacity exceeded on %s after sim: usedCPU=%d capCPU=%d usedMem=%d capMem=%d",
+				node, u.cpu, capCPU[node], u.mem, capMem[node])
+		}
+	}
+	return true, ""
+}
+
+// TODO
+// copy to a "summary": drop Output/CmpBase and fill Status from Output.
+func summarizeAttempt(r SolverResult) SolverResult {
+	status := r.Status
+	if status == "" && r.Output != nil {
+		status = r.Output.Status
+	}
+	return SolverResult{
+		Name:       r.Name,
+		Status:     status,
+		DurationUs: r.DurationUs,
+		Score:      r.Score,
+	}
 }
 
 // TODO
 // logLeaderboard prints a compact solver leaderboard relative to baseline.
 // It groups attempts as better/equal/worse vs baseline and tags adjacent ties.
-func (pl *MyCrossNodePreemption) logLeaderboard(
+func logLeaderboard(
 	label string,
 	attempts []SolverResult,
 	baseline SolverScore,
@@ -147,7 +521,7 @@ func (pl *MyCrossNodePreemption) logLeaderboard(
 			DurationUs: r.DurationUs,
 			Score:      r.Score,
 			Status:     r.Status,
-			CmpBase:    IsImprovement(baseline, r.Score),
+			CmpBase:    isImprovement(baseline, r.Score),
 		}
 		switch rr.CmpBase {
 		case 1:
@@ -162,7 +536,7 @@ func (pl *MyCrossNodePreemption) logLeaderboard(
 
 	// Tie helper
 	tied := func(a, b SolverScore) bool {
-		return IsImprovement(a, b) == 0 && IsImprovement(b, a) == 0
+		return isImprovement(a, b) == 0 && isImprovement(b, a) == 0
 	}
 
 	// Build log arrays
@@ -194,56 +568,6 @@ func (pl *MyCrossNodePreemption) logLeaderboard(
 		"placedByPri", placed,
 		"prevPlacedByPri", baseline.PlacedByPriority,
 	)
-}
-
-// TODO
-// copy to a "summary": drop Output/CmpBase and fill Status from Output.
-func summarizeAttempt(r SolverResult) SolverResult {
-	status := r.Status
-	if status == "" && r.Output != nil {
-		status = r.Output.Status
-	}
-	return SolverResult{
-		Name:       r.Name,
-		Status:     status,
-		DurationUs: r.DurationUs,
-		Score:      r.Score,
-	}
-}
-
-// TODO
-// append (create if missing) an entry to the ConfigMap ledger
-func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry ExportedSolverStats) {
-	cli := pl.Handle.ClientSet()
-	if cli == nil {
-		klog.V(1).Info("no clientset; skip stats CM")
-		return
-	}
-	doc := ConfigMapDoc{
-		Namespace: SystemNamespace,
-		Name:      SolverConfigMapExportedStatsName,
-		LabelKey:  SolverConfigMapLabelKey,
-		DataKey:   SolverConfigMapLabelKey + ".json",
-	}
-
-	err := mutateJson(
-		ctx,
-		cli.CoreV1(),
-		func(ns string) clientv1.ConfigMapNamespaceLister {
-			return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
-		},
-		doc,
-		func(existing []ExportedSolverStats) ([]ExportedSolverStats, error) {
-			return append(existing, entry), nil
-		},
-	)
-	if apierrors.IsNotFound(err) {
-		_ = doc.ensureJson(ctx, cli.CoreV1(), []ExportedSolverStats{entry})
-		return
-	}
-	if err != nil {
-		klog.ErrorS(err, "append solver stats failed")
-	}
 }
 
 // TODO
@@ -370,7 +694,7 @@ func relocateViaPlan(
 	moveGate *int32,
 	movedUIDs map[types.UID]struct{},
 	newPlacements map[types.UID]string,
-	maxTrials int, // <-- added
+	maxTrials int,
 ) bool {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -626,72 +950,6 @@ tryEvict:
 }
 
 // TODO
-// buildClusterState builds the cluster state from the given solver input.
-// It returns:
-//   - map of node name → *NodeType
-//   - map of pod UID → *PodType
-//   - slice of pending pods (to be scheduled)
-//   - slice of all nodes in lexicographical order by name
-//   - the preemptor pod if any (nil otherwise)
-func buildClusterState(in SolverInput) (map[string]*SolverNode, map[types.UID]*SolverPod, []*SolverPod, []*SolverNode, *SolverPod) {
-	// Nodes map + ordered slice
-	nodes := make(map[string]*SolverNode, len(in.Nodes))
-	order := make([]*SolverNode, 0, len(in.Nodes))
-	for i := range in.Nodes {
-		n := &SolverNode{
-			Name:          in.Nodes[i].Name,
-			CapCPUm:       in.Nodes[i].CapCPUm,
-			CapMemBytes:   in.Nodes[i].CapMemBytes,
-			Labels:        in.Nodes[i].Labels,
-			AllocCPUm:     in.Nodes[i].CapCPUm,
-			AllocMemBytes: in.Nodes[i].CapMemBytes,
-			Pods:          make(map[types.UID]*SolverPod, 32),
-		}
-		nodes[n.Name] = n
-		order = append(order, n)
-	}
-	sort.Slice(order, func(i, j int) bool { return order[i].Name < order[j].Name })
-
-	// Pods map + pending list (+ preemptor ptr if any)
-	pods := make(map[types.UID]*SolverPod, len(in.Pods)+1)
-	pending := make([]*SolverPod, 0, len(in.Pods))
-	var pre *SolverPod
-
-	if in.Preemptor != nil {
-		pi := *in.Preemptor // copy
-		pi.Node = ""        // ensure pending
-		pending = append(pending, &pi)
-		pre = &pi
-		pods[pi.UID] = pre
-	}
-
-	for i := range in.Pods {
-		sp := in.Pods[i]
-		p := &SolverPod{
-			UID:         sp.UID,
-			Namespace:   sp.Namespace,
-			Name:        sp.Name,
-			ReqCPUm:     sp.ReqCPUm,
-			ReqMemBytes: sp.ReqMemBytes,
-			Priority:    sp.Priority,
-			Protected:   sp.Protected,
-			Node:        sp.Node, // "where" in JSON
-		}
-		if p.Node == "" {
-			pending = append(pending, p)
-		}
-		pods[p.UID] = p
-		if p.Node != "" {
-			if n := nodes[p.Node]; n != nil {
-				n.addPod(p)
-			}
-		}
-	}
-
-	return nodes, pods, pending, order, pre
-}
-
-// TODO
 // max64 returns the larger of a or b.
 func max64(a, b int64) int64 {
 	if a > b {
@@ -891,66 +1149,6 @@ func evictGateForPod(p *SolverPod, single bool, pre *SolverPod) *int32 {
 }
 
 // TODO
-// buildWorklist constructs the scheduling worklist for a solver and decides
-// whether we’re in **single-preemptor** mode or **batch** mode.
-//
-// Modes
-//   - Single-preemptor mode: If `pre` is present, we return a slice containing
-//     only that pod, set `single=true`, and return `moveGate=&pre.Priority`.
-//     The move gate is used downstream to restrict relocations so that only
-//     pods with Priority ≤ *moveGate can be moved (while still honoring `Protected`).
-//     This matches the “don’t move pods above the preemptor’s priority” rule.
-//   - Batch mode: Otherwise we return **all** pending pods ordered big-first,
-//     `single=false`, and `moveGate=nil` (meaning moves are not priority-gated,
-//     still respecting `Protected`).
-//
-// Ordering (batch mode)
-//
-//	We sort pending pods to reduce fragmentation and front-load hard placements:
-//	  1) Priority DESC (higher first)
-//	  2) Size (CPUm*MemBytes) DESC
-//	  3) CPUm DESC
-//	  4) MemBytes DESC
-//	  5) UID ASC (stable tie-breaker for determinism)
-//
-// Returns
-//
-//	out:      ordered list of pods to try placing this cycle
-//	single:   true iff we’re in single-preemptor mode
-//	moveGate: pointer to the priority threshold for moves (non-nil in single
-//	          mode; nil in batch mode). The pointer is safe to return—Go will
-//	          heap-allocate `mg` as needed.
-func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, single bool, moveGate *int32) {
-	if pre != nil {
-		for _, p := range pending {
-			if p.UID == pre.UID {
-				mg := pre.Priority
-				return []*SolverPod{p}, true, &mg
-			}
-		}
-	}
-	out = append(out, pending...)
-	sort.Slice(out, func(i, j int) bool {
-		a, b := out[i], out[j]
-		if a.Priority != b.Priority {
-			return a.Priority > b.Priority
-		}
-		sa, sb := a.ReqCPUm*a.ReqMemBytes, b.ReqCPUm*b.ReqMemBytes
-		if sa != sb {
-			return sa > sb
-		}
-		if a.ReqCPUm != b.ReqCPUm {
-			return a.ReqCPUm > b.ReqCPUm
-		}
-		if a.ReqMemBytes != b.ReqMemBytes {
-			return a.ReqMemBytes > b.ReqMemBytes
-		}
-		return a.UID < b.UID
-	})
-	return out, false, nil
-}
-
-// TODO
 // verifyPlan checks that the proposed plan is valid and applies it to the nodes/pods state.
 // It returns true if the plan was valid and applied, false otherwise.
 // The plan is valid if:
@@ -1143,126 +1341,6 @@ func toSolverPod(p *v1.Pod, node string) SolverPod {
 }
 
 // TODO
-// PreparedState holds the prepared cluster state for solvers.
-func buildState(in SolverInput) *PreparedState {
-	nodes, pods, pending, order, pre := buildClusterState(in)
-	wl, single, mg := buildWorklist(pending, pre)
-	return &PreparedState{
-		Nodes:     nodes,
-		Pods:      pods,
-		Order:     order,
-		Preemptor: pre,
-		Worklist:  wl,
-		Single:    single,
-		MoveGate:  mg,
-	}
-}
-
-// TODO
-// isSolverEnabled checks if any solver is enabled.
-func (pl *MyCrossNodePreemption) isSolverEnabled() bool {
-	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
-}
-
-// TODO
-// hasSolverFeasibleResult checks if the solver output is feasible.
-// OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
-// FEASIBLE means the solution is not perfect but still meets all constraints.
-func hasSolverFeasibleResult(status string) bool {
-	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
-}
-
-// TODO
-// fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.
-func (pl *MyCrossNodePreemption) fillNodesAndPods(
-	in *SolverInput,
-	nodes []*v1.Node,
-	pods []*v1.Pod,
-	preemptor *v1.Pod,
-	includePending bool,
-) error {
-	// Nodes
-	usable := map[string]bool{}
-	for _, n := range nodes {
-		if !isNodeUsable(n) {
-			continue
-		}
-		in.Nodes = append(in.Nodes, SolverNode{
-			Name:        n.Name,
-			CapCPUm:     n.Status.Allocatable.Cpu().MilliValue(),
-			CapMemBytes: n.Status.Allocatable.Memory().Value(),
-		})
-		usable[n.Name] = true
-	}
-	// Pods
-	preUID := ""
-	if preemptor != nil {
-		preUID = string(preemptor.UID)
-	}
-	seen := make(map[types.UID]bool, len(pods))
-	for _, p := range pods {
-		// Skip the preemptor (it is provided via in.Preemptor)
-		if string(p.UID) == preUID {
-			continue
-		}
-		where := p.Spec.NodeName
-		if where == "" {
-			// Only include pending pods when explicitly asked (cohort mode).
-			if !includePending {
-				continue
-			}
-		} else {
-			// If the pod is already bound to a node, ensure that node is usable.
-			if !usable[where] {
-				continue
-			}
-		}
-		sp := toSolverPod(p, where)
-		if p.Namespace == SystemNamespace {
-			sp.Protected = true
-		}
-		if !seen[sp.UID] {
-			in.Pods = append(in.Pods, sp)
-			seen[sp.UID] = true
-		}
-	}
-	return nil
-}
-
-// TODO
-// buildSolverInput builds the common input for either batch or single.
-func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.Node, pods []*v1.Pod, preemptor *v1.Pod) (SolverInput, error) {
-	in := SolverInput{
-		IgnoreAffinity: true,
-		LogProgress:    SolverLogProgress,
-		Nodes:          make([]SolverNode, 0),
-		Pods:           make([]SolverPod, 0),
-		TimeoutMs:      0, // will be filled outside
-	}
-	switch mode {
-	case SolveSingle:
-		if preemptor == nil {
-			return SolverInput{}, fmt.Errorf("SolveSingle requires preemptor")
-		}
-		pre := toSolverPod(preemptor, "")
-		in.Preemptor = &pre
-		if err := pl.fillNodesAndPods(&in, nodes, pods, preemptor, false); err != nil {
-			return SolverInput{}, fmt.Errorf("fill all pods w/preemptor: %w", err)
-		}
-	case SolveAll:
-		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, true); err != nil {
-			return SolverInput{}, fmt.Errorf("fill all pods: %w", err)
-		}
-	default:
-		return SolverInput{}, fmt.Errorf("unknown solve mode")
-	}
-	if len(in.Nodes) == 0 {
-		return SolverInput{}, fmt.Errorf("no usable nodes available; waiting")
-	}
-	return in, nil
-}
-
-// TODO
 // comparePlaced returns 1 if a>b, -1 if a<b, 0 if equal (lexi by priority desc).
 func comparePlaced(a, b map[string]int) int {
 	keys := map[int]struct{}{}
@@ -1306,150 +1384,6 @@ func cmpInt(suggested, baseline int) int {
 		return -1
 	default:
 		return 0
-	}
-}
-
-// TODO
-// IsImprovement compares two scores lexicographically:
-// 1) More placed per priority (lexicographic map compare)
-// 2) Fewer evictions
-// 3) Fewer moves
-// Returns 1 if suggested is better, -1 if worse, 0 if equal.
-func IsImprovement(baseline, suggested SolverScore) int {
-	// 1) Placed-by-priority (more is better)
-	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
-		klog.V(MyV).InfoS("compare placed-by-priority", "result", cmp,
-			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
-		return cmp
-	}
-	// 2) Evictions (fewer is better)
-	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
-		klog.V(MyV).InfoS("compare evictions", "result", cmp,
-			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
-		return cmp
-	}
-	// 3) Moves (fewer is better)
-	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
-		klog.V(MyV).InfoS("compare moves", "result", cmp,
-			"suggested", suggested.Moved, "baseline", baseline.Moved)
-		return cmp
-	}
-	// Equal on all metrics
-	klog.V(MyV).InfoS("no change: equal on placed, evictions, and moves")
-	return 0
-}
-
-// TODO
-// planApplicable checks whether a SolverOutput (plan) can still be safely
-// applied on the *current* cluster state. It allows unrelated drift and only
-// insists that the concrete preconditions for the plan still hold.
-func (pl *MyCrossNodePreemption) planApplicable(out *SolverOutput, nodes []*v1.Node, pods []*v1.Pod) (bool, string) {
-	if out == nil {
-		return false, "nil plan"
-	}
-
-	// Index live state
-	usable := map[string]bool{}
-	capCPU := map[string]int64{}
-	capMem := map[string]int64{}
-	for _, n := range nodes {
-		if isNodeUsable(n) {
-			usable[n.Name] = true
-			capCPU[n.Name] = n.Status.Allocatable.Cpu().MilliValue()
-			capMem[n.Name] = n.Status.Allocatable.Memory().Value()
-		}
-	}
-
-	type res struct{ cpu, mem int64 }
-	used := map[string]res{} // by node
-	pByUID := podsByUID(pods)
-
-	addUse := func(node string, cpu, mem int64) {
-		u := used[node]
-		u.cpu += cpu
-		u.mem += mem
-		used[node] = u
-	}
-
-	// Tally current usage
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
-			continue
-		}
-		addUse(p.Spec.NodeName, getPodCPURequest(p), getPodMemoryRequest(p))
-	}
-
-	// Simulate the plan on top of current usage:
-	// - Evictions free resources on their current node
-	for _, e := range out.Evictions {
-		p := pByUID[e.Pod.UID]
-		if p == nil || p.Spec.NodeName == "" {
-			// Already gone or pending now: keep going.
-			continue
-		}
-		// If a node became unusable, fail.
-		if !usable[p.Spec.NodeName] {
-			return false, fmt.Sprintf("evict node now unusable: %s", p.Spec.NodeName)
-		}
-		addUse(p.Spec.NodeName, -getPodCPURequest(p), -getPodMemoryRequest(p))
-	}
-
-	// - Moves/placements: check pod still where we expect (pending or src), then add to dst
-	for _, np := range out.Placements {
-		p := pByUID[np.Pod.UID]
-		if p == nil || p.DeletionTimestamp != nil {
-			return false, fmt.Sprintf("pod vanished: %s", combineNsName(np.Pod.Namespace, np.Pod.Name))
-		}
-		// Source must still be consistent enough:
-		//   - if it was a move (FromNode != ""), pod should still be on that source
-		//   - if it was a new/pending placement (FromNode == ""), pod should still be pending
-		if np.FromNode != "" {
-			if p.Spec.NodeName != np.FromNode {
-				return false, fmt.Sprintf("move precondition changed for %s/%s: was on %q, now on %q",
-					p.Namespace, p.Name, np.FromNode, p.Spec.NodeName)
-			}
-			// remove from src (already accounted by evictions? No — moves are distinct)
-			addUse(np.FromNode, -getPodCPURequest(p), -getPodMemoryRequest(p))
-		} else {
-			// pending expected
-			if p.Spec.NodeName != "" {
-				return false, fmt.Sprintf("pending precondition changed for %s/%s: now bound to %q",
-					p.Namespace, p.Name, p.Spec.NodeName)
-			}
-		}
-
-		// Destination must still be usable & have capacity
-		if !usable[np.ToNode] {
-			return false, fmt.Sprintf("dest node now unusable: %s", np.ToNode)
-		}
-		addUse(np.ToNode, getPodCPURequest(p), getPodMemoryRequest(p))
-	}
-
-	// Check that every node remains within capacity
-	for node, u := range used {
-		if u.cpu > capCPU[node] || u.mem > capMem[node] {
-			return false, fmt.Sprintf("capacity exceeded on %s after sim: usedCPU=%d capCPU=%d usedMem=%d capMem=%d",
-				node, u.cpu, capCPU[node], u.mem, capMem[node])
-		}
-	}
-	return true, ""
-}
-
-// TODO
-// buildBaselineScore computes the baseline score from the solver input.
-func buildBaselineScore(in SolverInput) SolverScore {
-	placedByPri := map[string]int{}
-	for _, sp := range in.Pods {
-		if sp.Node == "" {
-			continue // pending doesn't count into "placed"
-		}
-		pr := strconv.Itoa(int(sp.Priority))
-		placedByPri[pr] = placedByPri[pr] + 1
-	}
-	return SolverScore{
-		PlacedByPriority: placedByPri,
-		Evicted:          0,
-		Moved:            0,
 	}
 }
 
@@ -1512,5 +1446,69 @@ func cloneScore(s SolverScore) *SolverScore {
 		PlacedByPriority: m,
 		Evicted:          s.Evicted,
 		Moved:            s.Moved,
+	}
+}
+
+// TODO
+// exportSolverStats exports a compact run record to the stats ConfigMap.
+// Only runs when `hadFeasible` is true.
+func (pl *MyCrossNodePreemption) exportSolverStats(
+	ctx context.Context,
+	label string,
+	baseline SolverScore,
+	best SolverResult,
+	attemptsFeasible []SolverResult,
+	hadFeasible bool,
+) {
+	if !hadFeasible {
+		return
+	}
+	attempts := make([]SolverResult, 0, len(attemptsFeasible))
+	for _, r := range attemptsFeasible {
+		attempts = append(attempts, summarizeAttempt(r))
+	}
+	entry := ExportedSolverStats{
+		TimestampNs: time.Now().UnixNano(),
+		Best:        best.Name,
+		PlanStatus:  PlanStatusActive,
+		Baseline:    baseline,
+		Attempts:    attempts,
+	}
+	pl.appendStatsCM(ctx, entry)
+	klog.V(MyV).InfoS(msg(label, "exported solver stats"), "attempts", len(attempts), "best", best.Name)
+}
+
+// TODO
+// append (create if missing) an entry to the ConfigMap ledger
+func (pl *MyCrossNodePreemption) appendStatsCM(ctx context.Context, entry ExportedSolverStats) {
+	cli := pl.Handle.ClientSet()
+	if cli == nil {
+		klog.V(1).Info("no clientset; skip stats CM")
+		return
+	}
+	doc := ConfigMapDoc{
+		Namespace: SystemNamespace,
+		Name:      SolverConfigMapExportedStatsName,
+		LabelKey:  SolverConfigMapLabelKey,
+		DataKey:   SolverConfigMapLabelKey + ".json",
+	}
+
+	err := mutateJson(
+		ctx,
+		cli.CoreV1(),
+		func(ns string) clientv1.ConfigMapNamespaceLister {
+			return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
+		},
+		doc,
+		func(existing []ExportedSolverStats) ([]ExportedSolverStats, error) {
+			return append(existing, entry), nil
+		},
+	)
+	if apierrors.IsNotFound(err) {
+		_ = doc.ensureJson(ctx, cli.CoreV1(), []ExportedSolverStats{entry})
+		return
+	}
+	if err != nil {
+		klog.ErrorS(err, "append solver stats failed")
 	}
 }
