@@ -522,14 +522,10 @@ func (pl *MyCrossNodePreemption) waitPendingBound(ctx context.Context, pending *
 	return false, err
 }
 
-// TODO
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
-// Mode: For-every: Single preemptor pod bound to target node (A) either in preenqueue or in postfilter, and all other pods in place (B, C)
-// Mode: Batch: All pods bound to target nodes (only B, C).
-// helpers.go
 func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
 	if ap == nil {
-		// Plan got torn down concurrently; treat as "not completed yet" (retry later)
+		// Plan got down concurrently; treat as "not completed yet" (retry later)
 		klog.V(MyV).InfoS("Plan completion check skipped: no active plan doc")
 		return false, nil
 	}
@@ -546,7 +542,7 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 	podsLister := pl.podsLister()
 
 	// A) Standalone/preemptor pods planned to specific nodes must be there.
-	// Use the hydrated map from the active plan state: ns/name -> node.
+	// Use the map from the active plan state: ns/name -> node.
 	for nsname, wantNode := range ap.PlacementByName {
 		ns, name, err := splitNsName(nsname)
 		if err != nil {
@@ -575,7 +571,6 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 	return true, nil
 }
 
-// TODO
 // markPlanStatus sets the Status (Active/Completed/Failed) in the configMap.
 // If the plan is already in a final state (Completed/Failed), it won't be downgraded.
 func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName string, status PlanStatus) error {
@@ -585,7 +580,7 @@ func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, cmName stri
 		LabelKey:  PlanConfigMapLabelKey,
 		DataKey:   PlanConfigMapLabelKey + ".json",
 	}
-	// Load → mutate → patch
+	// Load -> mutate -> patch
 	raw, err := doc.readJson(func(ns string) clientv1.ConfigMapNamespaceLister {
 		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
 	})
