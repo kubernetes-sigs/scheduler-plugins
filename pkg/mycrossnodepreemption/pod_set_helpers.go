@@ -13,7 +13,7 @@ import (
 
 // activateBlockedPods activates up to 'max' pods from the blocked set; clear only the ones activated.
 // It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
-func (pl *MyCrossNodePreemption) activatePods(podsSet *PodSet, cleanup bool, max int) (tried []types.UID) {
+func (pl *MyCrossNodePreemption) activatePods(podsSet *PodSet, removeActivated bool, max int) (tried []types.UID) {
 	// Prune stale entries first
 	_ = pl.pruneSet(podsSet)
 
@@ -70,16 +70,11 @@ func (pl *MyCrossNodePreemption) activatePods(podsSet *PodSet, cleanup bool, max
 	if len(toAct) > 0 {
 		pl.Handle.Activate(klog.Background(), toAct)
 		klog.InfoS("activated pods", "set", podsSet.Name, "count", len(toAct), "max", max)
-		// Remove only the ones we just activated
-		for _, it := range items[:limit] {
-			podsSet.RemovePod(it.key.UID)
-		}
-	}
-	// If caller passes cleanup; remove all pods from the set
-	if cleanup {
-		podsToRemove := podsSet.Snapshot()
-		for _, p := range podsToRemove {
-			podsSet.RemovePod(p.UID)
+		if removeActivated {
+			// Remove only the ones we just activated
+			for _, it := range items[:limit] {
+				podsSet.RemovePod(it.key.UID)
+			}
 		}
 	}
 	return tried
@@ -120,23 +115,6 @@ func (pl *MyCrossNodePreemption) pruneSet(podSet *PodSet) int {
 		klog.V(MyV).InfoS("pruned stale entries", "removed", removed)
 	}
 	return removed
-}
-
-// snapshotBatch returns a snapshot of the current batch of pods.
-func (pl *MyCrossNodePreemption) snapshotBatch() []*v1.Pod {
-	keys := pl.Batched.Snapshot()
-	if len(keys) == 0 { // no pods in batch
-		return nil
-	}
-	// Get current Pod objects so that we don't return stale/deleted ones.
-	podsLister := pl.podsLister()
-	snapshot := make([]*v1.Pod, 0, len(keys))
-	for _, k := range keys {
-		if pod, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil {
-			snapshot = append(snapshot, pod)
-		}
-	}
-	return snapshot
 }
 
 // newPodSet creates a new PodSet.

@@ -335,6 +335,43 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	return true
 }
 
+// activatePlannedPending activates all live pending pods that the plan intends to place
+// (i.e., NewPlacement with FromNode == "" and ToNode != "").
+// It returns the UIDs it attempted to activate.
+func (pl *MyCrossNodePreemption) activatePlannedPending(plan *Plan, live []*v1.Pod) {
+	if plan == nil || len(plan.NewPlacements) == 0 || len(live) == 0 {
+		return
+	}
+	// Build allow-set of UIDs for pending -> scheduled in this plan.
+	allow := make(map[types.UID]struct{}, len(plan.NewPlacements))
+	for _, np := range plan.NewPlacements {
+		if np.FromNode == "" && np.ToNode != "" {
+			allow[np.Pod.UID] = struct{}{}
+		}
+	}
+	if len(allow) == 0 {
+		return
+	}
+
+	// Collect matching, truly-pending pods from the live slice.
+	toAct := make(map[string]*v1.Pod, len(allow))
+	for _, p := range live {
+		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName != "" {
+			continue // must be pending and alive
+		}
+		if _, ok := allow[p.UID]; !ok {
+			continue
+		}
+		key := combineNsName(p.Namespace, p.Name)
+		toAct[key] = p
+	}
+	if len(toAct) == 0 {
+		return
+	}
+	pl.Handle.Activate(klog.Background(), toAct)
+	klog.InfoS("activated planned pending pods", "count", len(toAct))
+}
+
 // exportPlanToConfigMap exports the given plan to a ConfigMap.
 func (pl *MyCrossNodePreemption) exportPlanToConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
 	doc := ConfigMapDoc{

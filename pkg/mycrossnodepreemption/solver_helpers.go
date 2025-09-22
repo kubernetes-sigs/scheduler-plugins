@@ -1173,13 +1173,11 @@ func HasSolverFeasibleResult(status string) bool {
 
 // TODO
 // fillNodesAndPods adds nodes/pods using SharedInformerFactory listers.
-// If batched != nil, pending batched pods are appended with where="" (and preemptor can be nil).
 func (pl *MyCrossNodePreemption) fillNodesAndPods(
 	in *SolverInput,
 	nodes []*v1.Node,
 	pods []*v1.Pod,
 	preemptor *v1.Pod,
-	batched []*v1.Pod,
 	includePending bool,
 ) error {
 	// Nodes
@@ -1200,7 +1198,7 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 	if preemptor != nil {
 		preUID = string(preemptor.UID)
 	}
-	seen := make(map[types.UID]bool, len(pods)+len(batched))
+	seen := make(map[types.UID]bool, len(pods))
 	for _, p := range pods {
 		// Skip the preemptor (it is provided via in.Preemptor)
 		if string(p.UID) == preUID {
@@ -1227,30 +1225,12 @@ func (pl *MyCrossNodePreemption) fillNodesAndPods(
 			seen[sp.UID] = true
 		}
 	}
-	if includePending {
-		for _, p := range batched {
-			if p == nil {
-				continue
-			}
-			if string(p.UID) == preUID {
-				continue
-			}
-			sp := toSolverPod(p, "")
-			if p.Namespace == SystemNamespace {
-				sp.Protected = true
-			}
-			if !seen[sp.UID] {
-				in.Pods = append(in.Pods, sp)
-				seen[sp.UID] = true
-			}
-		}
-	}
 	return nil
 }
 
 // TODO
 // buildSolverInput builds the common input for either batch or single.
-func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.Node, pods []*v1.Pod, preemptor *v1.Pod, batched []*v1.Pod) (SolverInput, error) {
+func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.Node, pods []*v1.Pod, preemptor *v1.Pod) (SolverInput, error) {
 	in := SolverInput{
 		IgnoreAffinity: true,
 		LogProgress:    SolverLogProgress,
@@ -1265,11 +1245,11 @@ func (pl *MyCrossNodePreemption) buildSolverInput(mode SolveMode, nodes []*v1.No
 		}
 		pre := toSolverPod(preemptor, "")
 		in.Preemptor = &pre
-		if err := pl.fillNodesAndPods(&in, nodes, pods, preemptor, nil, false); err != nil {
+		if err := pl.fillNodesAndPods(&in, nodes, pods, preemptor, false); err != nil {
 			return SolverInput{}, fmt.Errorf("fill all pods w/preemptor: %w", err)
 		}
 	case SolveAll:
-		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, batched, true); err != nil {
+		if err := pl.fillNodesAndPods(&in, nodes, pods, nil, true); err != nil {
 			return SolverInput{}, fmt.Errorf("fill all pods: %w", err)
 		}
 	default:

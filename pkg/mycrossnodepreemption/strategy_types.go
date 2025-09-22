@@ -46,5 +46,5 @@ const (
 	// We block the pod
 	DecideBlockWhileActive
 	// We batch the pod for later optimization.
-	DecideBatch
+	DecidePending
 )

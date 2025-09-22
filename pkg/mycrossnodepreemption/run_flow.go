@@ -27,26 +27,6 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 
 	start := time.Now()
 
-	// Optimize-specific setup
-	var (
-		solveMode   SolveMode
-		preemptor   *v1.Pod
-		batchedPods []*v1.Pod
-	)
-	if optimizeAllAsynch() || optimizeAllSynch() { // Continuous
-		solveMode = SolveAll
-		_ = pl.pruneSet(pl.Batched)
-		batchedPods = pl.snapshotBatch()
-		if len(batchedPods) == 0 {
-			klog.InfoS(strategy + ": " + InfoNoBatchedPods)
-			pl.leaveActive()
-			return "", ErrNoop
-		}
-	} else { // Every
-		solveMode = SolveSingle
-		preemptor = singlePod
-	}
-
 	// Fetch nodes and pods ONCE for this flow
 	nodes, err := pl.getNodes()
 	if err != nil {
@@ -61,8 +41,28 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		return "", err
 	}
 
+	// Count pending pods
+	pendingCount := countPendingPods(pods)
+
+	// Optimize-specific setup
+	var (
+		solveMode SolveMode
+		preemptor *v1.Pod
+	)
+	if optimizeAllAsynch() || optimizeAllSynch() {
+		solveMode = SolveAll
+		if pendingCount == 0 {
+			klog.InfoS(strategy + ": " + InfoNoPendingPods)
+			pl.leaveActive()
+			return "", ErrNoop
+		}
+	} else { // Every
+		solveMode = SolveSingle
+		preemptor = singlePod
+	}
+
 	// Run solvers
-	solverInput, err := pl.buildSolverInput(solveMode, nodes, pods, preemptor, batchedPods)
+	solverInput, err := pl.buildSolverInput(solveMode, nodes, pods, preemptor)
 	if err != nil {
 		klog.ErrorS(err, strategy+": failed to build solver input")
 		pl.leaveActive()
@@ -87,7 +87,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 	// Count new and total pods. If no pending pods to be scheduled -> ErrNoop
 	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestSolver.Output, pods)
 	if pendingScheduled == 0 {
-		klog.InfoS(strategy + ": " + InfoNoPendingPods + "; skipping")
+		klog.InfoS(strategy + ": " + InfoNoPendingPodsToSchedule + "; skipping")
 		pl.leaveActive()
 		pl.onPlanSettled(PlanStatusFailed)
 		return "", ErrNoop
@@ -111,9 +111,9 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		pl.onPlanSettled(PlanStatusFailed)
 	}
 
-	// If in all modes activate the batched pods (now that the plan is in place).
+	// If in all modes activate planned pending pods (now that the plan is in place).
 	if optimizeAllSynch() || optimizeAllAsynch() {
-		pl.activatePods(pl.Batched, true, 0)
+		pl.activatePlannedPending(plan, pods)
 	}
 
 	// Build and return result
@@ -122,7 +122,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, singlePod *v1.Pod)
 		"planID", ap.ID,
 		"bestSolver", bestSolverSummary,
 		"nominated", targetNode,
-		"batchSize", len(batchedPods),
+		"pending", pendingCount,
 		"pendingScheduled", pendingScheduled,
 		"totalPrePlan", totalPrePlan,
 		"totalPostPlan", totalPostPlan,

@@ -141,7 +141,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// New leader?
 		switch curr.CmpBase {
 		case 1: // new best
-			klog.V(MyV).InfoS(strategy+": new leader",
+			klog.InfoS(strategy+": new leader",
 				"solver", att.Name, "prevLeader", best.Name, "durationUs", curr.DurationUs,
 				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", best.Score.PlacedByPriority,
 				"leaderEvictions", curr.Score.Evicted, "prevEvictions", best.Score.Evicted,

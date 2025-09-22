@@ -90,16 +90,9 @@ func (pl *MyCrossNodePreemption) decideStrategy(phase Phase) StrategyDecision {
 	// Modes: BatchSynch@PreEnqueue or BatchSynch@PostFilter
 	if optimizeAllSynch() {
 		if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {
-			return DecideBatch // batch new pods
+			return DecidePending
 		}
 		return DecidePass // if not in the phase of optimization, allow all pods
-	}
-	// Mode: BatchAsynch; never blocks or batches due to the optimizer.
-	if optimizeAllAsynch() {
-		if phase.atPostFilter() {
-			return DecideBatch // we batch it so that we can pass it to the solver
-		}
-		return DecidePass // allow all pods
 	}
 	// Modes: BatchSynch@PreEnqueue or BatchSynch@PostFilter
 	if (optimizeAtPreEnqueue() && phase.atPreEnqueue()) || (optimizeAtPostFilter() && phase.atPostFilter()) {

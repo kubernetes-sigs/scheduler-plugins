@@ -27,9 +27,6 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		return framework.NewStatus(framework.Pending, phaseLabel+": Caches not warmed up yet; skipping plugin logic")
 	}
 
-	// Just prune on every PreEnqueue call
-	_ = pl.pruneSet(pl.BlockedWhileActive)
-
 	// Decide strategy for this pod
 	switch pl.decideStrategy(PhasePreEnqueue) {
 
@@ -37,10 +34,9 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pod *v1.Pod) *f
 		klog.V(MyV).InfoS(phaseLabel+": pass-through", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success)
 
-	case DecideBatch:
-		klog.V(MyV).InfoS(phaseLabel+": "+InfoBatchPod, "pod", klog.KObj(pod))
-		pl.Batched.AddPod(pod)
-		return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoBatchPod)
+	case DecidePending:
+		klog.V(MyV).InfoS(phaseLabel+": "+InfoPendingPod, "pod", klog.KObj(pod))
+		return framework.NewStatus(framework.Pending, phaseLabel+": "+InfoPendingPod)
 
 	case DecideBlockWhileActive:
 		if !pl.IsPodAllowedByActivePlan(pod) {

@@ -56,6 +56,23 @@ func splitNsName(nsname string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
+// countPendingPods returns the number of pods that are currently pending (alive and unbound).
+func countPendingPods(pods []*v1.Pod) int {
+	if len(pods) == 0 {
+		return 0
+	}
+	n := 0
+	for _, p := range pods {
+		if p == nil || p.DeletionTimestamp != nil {
+			continue
+		}
+		if p.Spec.NodeName == "" {
+			n++
+		}
+	}
+	return n
+}
+
 // evictPod evicts a pod from the cluster using the eviction API.
 // grace is set to 0 for immediate eviction.
 func (pl *MyCrossNodePreemption) evictPod(ctx context.Context, pod *v1.Pod) error {

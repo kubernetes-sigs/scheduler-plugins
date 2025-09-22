@@ -24,18 +24,14 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoActivePlanInProgress)
 	}
 
-	// Prune BlockedWhileActive set to remove deleted/assigned pods.
-	_ = pl.pruneSet(pl.BlockedWhileActive)
-
 	switch pl.decideStrategy(PhasePostFilter) {
 
 	case DecidePass:
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, phaseLabel+": "+InfoNoStrategyEnabled)
 
-	case DecideBatch:
-		klog.V(MyV).InfoS(phaseLabel+": "+InfoBatchPod, "pod", klog.KObj(pending))
-		pl.Batched.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoBatchPod)
+	case DecidePending:
+		klog.V(MyV).InfoS(phaseLabel+": "+InfoPendingPod, "pod", klog.KObj(pending))
+		return nil, framework.NewStatus(framework.Unschedulable, phaseLabel+": "+InfoPendingPod)
 
 	case DecideBlockWhileActive:
 		pl.BlockedWhileActive.AddPod(pending)

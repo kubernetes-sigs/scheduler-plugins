@@ -24,7 +24,6 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		Handle:             h,
 		Client:             client,
 		BlockedWhileActive: newPodSet("blockedWhileActive"),
-		Batched:            newPodSet("batched"),
 	}
 
 	if !pl.IsSolverEnabled() { // ensure at least one solver is enabled
