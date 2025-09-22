@@ -8,8 +8,6 @@ from tabulate import tabulate
 
 from kwok_shared import stat_snapshot, qty_to_mcpu_str
 
-# TODO: reach here in this file
-
 class KwokStats:
     def __init__(self, ctx: str, ns: str, expected: int, settle_timeout: float,
                  printer: Callable[[str], None] = print):
