@@ -49,7 +49,7 @@ RESULTS_HEADER = [
     "mem_per_pod_b_lo", "mem_per_pod_b_hi",
     "util", "util_run_cpu", "util_run_mem", "cpu_m_run", "mem_b_run",
     "wait_mode", "wait_timeout_s", "settle_timeout_s",
-    "running_count", "unscheduled_count", "pods_run_by_node", "placed_by_priority",
+    "running_count", "unscheduled_count", "pods_run_by_node", "running_placed_by_priority", "unschedulable_by_priority",
     "unscheduled", "running",
     "pod_node",
 ]
@@ -997,18 +997,20 @@ class KwokTestGenerator:
             return None
 
     @staticmethod
-    def _count_running_by_priority(ctx: str, ns: str) -> Dict[str, int]:
+    def _count_running_and_unscheduled_by_priority(ctx: str, ns: str) -> Dict[str, int]:
         """
-        Count running pods by their priority class in the given namespace.
+        Count running and unscheduled pods by their priority class in the given namespace.
         """
-        out: Dict[str, int] = {}
+        running: Dict[str, int] = {}
+        unscheduled: Dict[str, int] = {}
         pods = get_json_ctx(ctx, ["-n", ns, "get", "pods", "-o", "json"]).get("items", [])
         for p in pods:
-            if (p.get("status") or {}).get("phase", "") != "Running":
-                continue
             pc = (p.get("spec") or {}).get("priorityClassName") or ""
-            out[pc] = out.get(pc, 0) + 1
-        return out
+            if (p.get("status") or {}).get("phase", "") != "Running":
+                unscheduled[pc] = unscheduled.get(pc, 0) + 1
+            else:
+                running[pc] = running.get(pc, 0) + 1
+        return running, unscheduled
 
     ##############################################
     # ------------ Seed helpers -----------------
@@ -1538,7 +1540,7 @@ class KwokTestGenerator:
 
             phase = "stats_snapshot"
             LOG.info(f"phase={phase}")
-            placed_by_priority = self._count_running_by_priority(self.ctx, ta.namespace)
+            running_placed_by_priority, unscheduled_placed_by_priority = self._count_running_and_unscheduled_by_priority(self.ctx, ta.namespace)
             snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods, settle_timeout=ta.settle_timeout_s)
 
             result_row = {
@@ -1569,7 +1571,8 @@ class KwokTestGenerator:
                 "running_count": int(len(running)),
                 "unscheduled_count": int(len(unschedulable)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
-                "placed_by_priority": json.dumps(placed_by_priority, separators=(",", ":"), sort_keys=True),
+                "running_placed_by_priority": json.dumps(running_placed_by_priority, separators=(",", ":"), sort_keys=True),
+                "unschedulable_by_priority": json.dumps(unscheduled_placed_by_priority, separators=(",", ":"), sort_keys=True),
                 "unscheduled": "{" + ",".join(sorted(unschedulable)) + "}",
                 "running": "{" + ",".join(sorted([name for (name, _) in running])) + "}",
                 "pod_node": json.dumps(self._build_pod_node_list(
