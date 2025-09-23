@@ -66,7 +66,8 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 			resp.Status = "no-solution"
 			resp.Error = ErrNoSolverSolution.Error()
 		default:
-			resp.Status = "ok"
+			resp.Status = "error"
+			resp.Error = err.Error()
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})

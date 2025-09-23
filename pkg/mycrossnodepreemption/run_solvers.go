@@ -115,8 +115,12 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		cancel()
 		durUs := time.Since(start).Microseconds()
 
-		if err != nil || !hasSolverFeasibleResult(out.Status) {
-			klog.V(MyV).InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "status", out.Status, "durationUs", durUs)
+		if err != nil || out == nil || !hasSolverFeasibleResult(out.Status) {
+			statusStr := ""
+			if out != nil {
+				statusStr = out.Status
+			}
+			klog.V(MyV).InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "err", err, "status", statusStr, "durationUs", durUs)
 			continue
 		}
 		ok, why := pl.planApplicable(out, nodes, pods)

@@ -99,7 +99,7 @@ func (pl *MyCrossNodePreemption) decideStrategy(stage StageType) StrategyDecisio
 	}
 
 	// Modes: AllSynch@PreEnqueue or AllSynch@PostFilter - always set pods to pending
-	if optimizeAllSynch() && ((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
+	if (optimizeAllSynch() || optimizeManualAllSynch()) && ((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
 		return DecideProcessLater
 	}
 

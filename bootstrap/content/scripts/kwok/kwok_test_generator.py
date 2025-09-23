@@ -2235,6 +2235,12 @@ class KwokTestGenerator:
         if self.args.seed_file:
             file_exists(self.args.seed_file)
         dir_exists(self.args.config_dir)
+        
+        # --- check kwok runtime vs. trigger-optimizer ---
+        if self.args.trigger_optimizer and not self.args.optimizer_url:
+            raise SystemExit("--trigger-optimizer requires --optimizer-url")
+        if self.args.trigger_optimizer and self.args.kwok_runtime != "binary":
+            raise SystemExit("--trigger-optimizer requires --kwok-runtime=binary")
 
         # --- test-mode constraints ---
         if self.args.test:
@@ -2429,8 +2435,8 @@ def build_argparser() -> argparse.ArgumentParser:
                     action="store_true",
                     help="After applying all pods for a seed, POST the manual optimizer endpoint.")
     ap.add_argument("--optimizer-url", dest="optimizer_url",
-                    default=os.environ.get("OPTIMIZER_URL", "http://127.0.0.1:18080/optimize"),
-                    help="URL to POST for manual optimizer trigger (default: http://127.0.0.1:18080/optimize).")
+                    default=os.environ.get("OPTIMIZER_URL", "http://localhost:18080/optimize"),
+                    help="URL to POST for manual optimizer trigger (default: http://localhost:18080/optimize).")
 
     # Note: other args are provided in YAML per-config
     return ap
