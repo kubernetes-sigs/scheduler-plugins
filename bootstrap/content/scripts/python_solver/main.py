@@ -52,7 +52,7 @@ class CPSATSolver:
         # --- Options/Parameters ------------------------
         #################################################
         timeout_ms          = int(instance.get("timeout_ms", 3000))
-        ignore_affinity     = bool(instance.get("ignore_affinity", True))  # TODO_HC: consider to use this
+        ignore_affinity     = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
         workers             = self._available_cpus() # set number of workers to the amount available
         use_hints           = bool(instance.get("use_hints", False))
         hints               = instance.get("hints") if use_hints else None
