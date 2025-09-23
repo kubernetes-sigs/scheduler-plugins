@@ -112,7 +112,7 @@ func (pl *MyCrossNodePreemption) buildSolverInput(
 	return in, nil
 }
 
-// TODO
+// TODO: check and cleanup
 // runSolverCommon runs a solver plan function on the input and prepared state.
 func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedState) *SolverOutput {
 	klog.V(MyV).InfoS("Running solver", "tag", tag)
@@ -159,8 +159,8 @@ func runSolverCommon(in SolverInput, plan PlanFunc, tag string, base *PreparedSt
 	return stableOutput("FEASIBLE", newPlacements, evicts, in)
 }
 
-// TODO
 // runSolverDirectFit tries to place pods by direct-fit only (no evictions, no moves).
+// Used as a fast pre-check and fallback.
 func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	nodes, _, order, worklist := base.freshClone()
 	if len(worklist) == 0 {
@@ -191,6 +191,26 @@ func runSolverDirectFit(in SolverInput, base *PreparedState) *SolverOutput {
 	return stableOutput("FEASIBLE", placements, nil, in)
 }
 
+// bestDirectFit finds the best-fit node for pod p in order.
+// It returns the node name and true if found, or "", false if not found.
+// Best-fit is defined as the node that minimizes CPU waste, then MEM waste,
+// then lexicographically by node name.
+func bestDirectFit(order []*SolverNode, p *SolverPod) (string, bool) {
+	bestNode := ""
+	bestCPUWaste := int64(math.MaxInt64)
+	bestMEMWaste := int64(math.MaxInt64)
+	for _, n := range order {
+		if n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
+			cw := n.AllocCPUm - p.ReqCPUm
+			mw := n.AllocMemBytes - p.ReqMemBytes
+			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && n.Name < bestNode))) {
+				bestNode, bestCPUWaste, bestMEMWaste = n.Name, cw, mw
+			}
+		}
+	}
+	return bestNode, bestNode != ""
+}
+
 // buildBaselineScore computes the baseline score from the solver input.
 func buildBaselineScore(in SolverInput) SolverScore {
 	placedByPri := map[string]int{}
@@ -208,7 +228,7 @@ func buildBaselineScore(in SolverInput) SolverScore {
 	}
 }
 
-// TODO
+// TODO: check and cleanup
 // PreparedState holds the prepared cluster state for solvers.
 func buildState(in SolverInput) *PreparedState {
 	nodes, pods, pending, order, pre := buildClusterState(in)
@@ -224,7 +244,7 @@ func buildState(in SolverInput) *PreparedState {
 	}
 }
 
-// TODO
+// TODO: check and cleanup
 // buildClusterState builds the cluster state from the given solver input.
 // It returns:
 //   - map of node name → *NodeType
@@ -290,7 +310,7 @@ func buildClusterState(in SolverInput) (map[string]*SolverNode, map[types.UID]*S
 	return nodes, pods, pending, order, pre
 }
 
-// TODO
+// TODO: check and cleanup
 // buildWorklist constructs the scheduling worklist for a solver and decides
 // whether we’re in **single-preemptor** mode or **batch** mode.
 //
@@ -383,15 +403,15 @@ func isImprovement(baseline, suggested SolverScore) int {
 }
 
 // hasSolverFeasibleResult checks if the solver output is feasible.
-// OPTIMAL means the solution is perfect and meets all constraints (note there can be multiple optimal solutions and that the solver is non-deterministic).
+// OPTIMAL means the solution is perfect and meets all constraints
+// (Note there can be multiple optimal solutions and that the solver is non-deterministic).
 // FEASIBLE means the solution is not perfect but still meets all constraints.
 func hasSolverFeasibleResult(status string) bool {
 	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
 }
 
-// TODO
 // planApplicable checks whether a SolverOutput (plan) can still be safely
-// applied on the *current* cluster state. It allows unrelated drift and only
+// applied on the current cluster state. It allows unrelated drift and only
 // insists that the concrete preconditions for the plan still hold.
 func (pl *MyCrossNodePreemption) planApplicable(out *SolverOutput, nodes []*v1.Node, pods []*v1.Pod) (bool, string) {
 	if out == nil {
@@ -485,7 +505,6 @@ func (pl *MyCrossNodePreemption) planApplicable(out *SolverOutput, nodes []*v1.N
 	return true, ""
 }
 
-// TODO
 // copy to a "summary": drop Output/CmpBase and fill Status from Output.
 func summarizeAttempt(r SolverResult) SolverResult {
 	status := r.Status
@@ -569,7 +588,7 @@ func logLeaderboard(
 	)
 }
 
-// TODO
+// TODO: check and cleanup
 // bestPlanAcrossTargets iterates targets (ordered by deficit for p) and
 // keeps the plan with the fewest moves. `planForTarget` should return the
 // candidate move list for that target (or !ok if no plan exists).
@@ -594,7 +613,7 @@ func bestPlanAcrossTargets(
 	return
 }
 
-// TODO
+// TODO: check and cleanup
 // orderTargetsByDeficit orders nodes by how well they can accommodate pod p,
 // even if they can’t fit it directly.
 // The ordering is:
@@ -636,7 +655,7 @@ func orderTargetsByDeficit(order []*SolverNode, p *SolverPod) []*SolverNode {
 	return out
 }
 
-// TODO
+// TODO: check and cleanup
 // podAllowedByPriority centralizes priority checks (strict: < vs <=).
 // Returns false if p is nil, protected or if gate is set and p.Priority is too high; true otherwise.
 func podAllowedByPriority(p *SolverPod, gate *int32, strict bool) bool {
@@ -652,7 +671,7 @@ func podAllowedByPriority(p *SolverPod, gate *int32, strict bool) bool {
 	return p.Priority <= *gate
 }
 
-// TODO
+// TODO: check and cleanup
 // canMove returns true if pod p can be moved (not nil, not pending, not protected, below moveGate if any).
 func canMove(p *SolverPod, gate *int32) bool {
 	if p == nil || p.Node == "" {
@@ -661,7 +680,7 @@ func canMove(p *SolverPod, gate *int32) bool {
 	return podAllowedByPriority(p, gate, false)
 }
 
-// TODO
+// TODO: check and cleanup
 // canEvict returns true if pod p can be evicted (not nil, not protected, below evictGate if any).
 func canEvict(p *SolverPod, gate *int32) bool {
 	return podAllowedByPriority(p, gate, true)
@@ -675,14 +694,14 @@ func addNodeDelta(m map[string]Delta, node string, deficitCPU, deficitMem int64)
 	m[node] = d
 }
 
-// TODO
+// TODO: check and cleanup
 // addEdgeDelta adds +cpu/+mem to `from` and -cpu/-mem to `to` in the map.
 func addEdgeDelta(m map[string]Delta, from, to string, cpu, mem int64) {
 	addNodeDelta(m, from, +cpu, +mem)
 	addNodeDelta(m, to, -cpu, -mem)
 }
 
-// TODO
+// TODO: check and cleanup
 // relocateViaPlan tries to relocate pod p to target via the given plan function.
 func relocateViaPlan(
 	plan PlanFunc,
@@ -727,7 +746,7 @@ func relocateViaPlan(
 	return commitPlan(p, bestTarget, bestMoves, nodes, pods, order, newPlacements, movedUIDs)
 }
 
-// TODO
+// TODO: check and cleanup
 func getVictims(target *SolverNode, opts VictimOptions) []*SolverPod {
 	// filter by move gate / protected
 	cands := make([]*SolverPod, 0, len(target.Pods))
@@ -851,7 +870,7 @@ func getVictims(target *SolverNode, opts VictimOptions) []*SolverPod {
 	return cands
 }
 
-// TODO
+// TODO: check and cleanup
 // commitPlan verifies & applies `moves`, records them in newPlacements/movedUIDs,
 // then places p on `target` (if it fits). If not, it falls back to bestDirectFit.
 // Returns true on success, false if the plan is invalid or placement fails.
@@ -886,7 +905,7 @@ func commitPlan(
 	return false
 }
 
-// TODO
+// TODO: check and cleanup
 // placeOnePodCommon tries to place pod p using the given plan function.
 // It returns (feasible, triedEvicting).
 // If feasible is true, p was placed.
@@ -948,7 +967,7 @@ tryEvict:
 	return false, true
 }
 
-// TODO
+// TODO: check and cleanup
 // max64 returns the larger of a or b.
 func max64(a, b int64) int64 {
 	if a > b {
@@ -957,7 +976,7 @@ func max64(a, b int64) int64 {
 	return b
 }
 
-// TODO
+// TODO: check and cleanup
 // min64 returns the smaller of a or b.
 func min64(a, b int64) int64 {
 	if a < b {
@@ -966,7 +985,7 @@ func min64(a, b int64) int64 {
 	return b
 }
 
-// TODO
+// TODO: check and cleanup
 // stableOutput produces a stable SolverOutput from the given status, placements map, evictions list, and input.
 // The placements map is from pod UID to node name ("" means no placement).
 // The evictions list is a list of Placement structs indicating which pods to evict.
@@ -1002,7 +1021,7 @@ func stableOutput(status string, placements map[types.UID]string, evicts []Place
 	return &SolverOutput{Status: status, Placements: outPl, Evictions: evicts}
 }
 
-// TODO
+// TODO: check and cleanup
 // pickLargestEnablingEviction picks the best pod to evict to enable placement of p.
 // It returns the pod to evict and the node it’s on, or nil, nil if no such pod exists.
 // The eviction gate is used to restrict which pods can be considered for eviction:
@@ -1082,11 +1101,11 @@ func pickLargestEnablingEviction(order []*SolverNode, p *SolverPod, evictGate *i
 	return cands[0].v, cands[0].on
 }
 
-// TODO
+// TODO: check and cleanup
 // hasKey reports whether map m has key k.
 func hasKey(m map[types.UID]struct{}, k types.UID) bool { _, ok := m[k]; return ok }
 
-// TODO
+// TODO: check and cleanup
 // buildOrigPlacements builds a map of pod UID → original node name from the current cluster state.
 func buildOrigPlacements(order []*SolverNode) map[types.UID]string {
 	orig := make(map[types.UID]string, 256)
@@ -1100,28 +1119,7 @@ func buildOrigPlacements(order []*SolverNode) map[types.UID]string {
 	return orig
 }
 
-// TODO
-// bestDirectFit finds the best-fit node for pod p in order.
-// It returns the node name and true if found, or "", false if not found.
-// Best-fit is defined as the node that minimizes CPU waste, then MEM waste,
-// then lexicographically by node name.
-func bestDirectFit(order []*SolverNode, p *SolverPod) (string, bool) {
-	bestNode := ""
-	bestCPUWaste := int64(math.MaxInt64)
-	bestMEMWaste := int64(math.MaxInt64)
-	for _, n := range order {
-		if n.canPodFit(p.ReqCPUm, p.ReqMemBytes) {
-			cw := n.AllocCPUm - p.ReqCPUm
-			mw := n.AllocMemBytes - p.ReqMemBytes
-			if cw < bestCPUWaste || (cw == bestCPUWaste && (mw < bestMEMWaste || (mw == bestMEMWaste && n.Name < bestNode))) {
-				bestNode, bestCPUWaste, bestMEMWaste = n.Name, cw, mw
-			}
-		}
-	}
-	return bestNode, bestNode != ""
-}
-
-// TODO
+// TODO: check and cleanup
 // clusterHasSlack returns true iff the cluster has total enough free resources to potentially fit p.
 // The pod p may not fit on any single node, but if clusterHasSlack returns false, it means the cluster is
 // unable to accommodate p even with all resources considered.
@@ -1134,7 +1132,7 @@ func clusterHasSlack(order []*SolverNode, p *SolverPod) bool {
 	return cpu >= p.ReqCPUm && mem >= p.ReqMemBytes
 }
 
-// TODO
+// TODO: check and cleanup
 // evictGateForPod returns the eviction gate for pod p.
 // In single-preemptor mode, the gate is the preemptor’s priority;
 // in batch mode, it’s p.Priority.
@@ -1147,7 +1145,7 @@ func evictGateForPod(p *SolverPod, single bool, pre *SolverPod) *int32 {
 	return &eg
 }
 
-// TODO
+// TODO: check and cleanup
 // verifyPlan checks that the proposed plan is valid and applies it to the nodes/pods state.
 // It returns true if the plan was valid and applied, false otherwise.
 // The plan is valid if:
@@ -1221,13 +1219,13 @@ func verifyPlan(nodes map[string]*SolverNode, all map[types.UID]*SolverPod, move
 	return true
 }
 
-// TODO
+// TODO: check and cleanup
 // canPodFit returns true iff the node has enough free resources to fit the given cpu/mem request.
 func (n *SolverNode) canPodFit(cpu, mem int64) bool {
 	return n.AllocCPUm >= cpu && n.AllocMemBytes >= mem
 }
 
-// TODO
+// TODO: check and cleanup
 // addPod adds pod p to node n, updating free resources accordingly.
 func (n *SolverNode) addPod(p *SolverPod) {
 	n.AllocCPUm -= p.ReqCPUm
@@ -1239,7 +1237,7 @@ func (n *SolverNode) addPod(p *SolverPod) {
 	p.Node = n.Name
 }
 
-// TODO
+// TODO: check and cleanup
 // removePod removes pod p from node n, updating free resources accordingly.
 func (n *SolverNode) removePod(p *SolverPod) {
 	if _, ok := n.Pods[p.UID]; ok {
@@ -1250,7 +1248,7 @@ func (n *SolverNode) removePod(p *SolverPod) {
 	}
 }
 
-// TODO
+// TODO: check and cleanup
 // computeSolverScore computes final Score from the snapshot given to the solver:
 //   - placed_by_priority: number of pods that were placed for each priority
 //   - evicted:            number of pods that were evicted
@@ -1325,7 +1323,7 @@ func computeSolverScore(in SolverInput, out *SolverOutput) SolverScore {
 	}
 }
 
-// TODO
+// TODO: check and cleanup
 // toSolverPod converts a Pod to a SolverPod.
 func toSolverPod(p *v1.Pod, node string) SolverPod {
 	return SolverPod{
@@ -1339,7 +1337,7 @@ func toSolverPod(p *v1.Pod, node string) SolverPod {
 	}
 }
 
-// TODO
+// TODO: check and cleanup
 // comparePlaced returns 1 if a>b, -1 if a<b, 0 if equal (lexi by priority desc).
 func comparePlaced(a, b map[string]int) int {
 	keys := map[int]struct{}{}
@@ -1372,7 +1370,7 @@ func comparePlaced(a, b map[string]int) int {
 	return 0
 }
 
-// TODO
+// TODO: check and cleanup
 // cmpInt returns +1 if a<b (improvement because smaller is better),
 // -1 if a>b (worse), 0 if equal.
 func cmpInt(suggested, baseline int) int {
@@ -1386,7 +1384,7 @@ func cmpInt(suggested, baseline int) int {
 	}
 }
 
-// TODO
+// TODO: check and cleanup
 // freshClone returns deep-ish cloned nodes/pods/order and re-materializes
 // the worklist against the cloned pods, so solvers can mutate safely.
 func (ps *PreparedState) freshClone() (
@@ -1431,7 +1429,7 @@ func (ps *PreparedState) freshClone() (
 	return
 }
 
-// TODO
+// TODO: check and cleanup
 // helper near the top of run_solvers.go (or anywhere shared)
 func cloneScore(s SolverScore) *SolverScore {
 	var m map[string]int

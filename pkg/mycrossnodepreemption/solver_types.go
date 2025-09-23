@@ -203,8 +203,8 @@ type TargetScore struct {
 	Waste int64
 }
 
+// TODO: check and cleanup
 // VictimOptions holds options for getVictims.
-// TODO
 type VictimOptions struct {
 	Strategy     VictimStrategy
 	MoveGate     *int32                 // priority gate for moves
@@ -217,10 +217,10 @@ type VictimOptions struct {
 	RandomizePct int                    // % of randomization of victim order (0 = none)
 }
 
-// TODO
+// TODO: check and cleanup
 type VictimStrategy int
 
-// TODO
+// TODO: check and cleanup
 const (
 	VictimsBFS   VictimStrategy = iota // coverage-first for BFS
 	VictimsLocal                       // relocatability-aware for local search
