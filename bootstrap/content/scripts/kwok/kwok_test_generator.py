@@ -38,8 +38,6 @@ from kwok_shared import (
     MEM_UNIT_TABLE
 )
 
-# TODO: reach here in this file
-
 # ===============================================================
 # Constants
 # ===============================================================
@@ -371,7 +369,7 @@ class KwokTestGenerator:
     ######################################################
     def _trigger_optimizer_http(self, url: str, *, timeout: float = 5.0, retries: int = 3, backoff_s: float = 0.5) -> tuple[int, str]:
         """
-        POST the manual optimizer endpoint. Returns (status_code, body_str).
+        POST optimizer endpoint. Returns (status_code, body_str).
         Retries on transient connection errors.
         """
         data = b""
@@ -487,11 +485,11 @@ class KwokTestGenerator:
         if interval is not None:
             return interval, False # validated already; just use it
         LOG.info(f"auto-generating interval for target {target} over {total_pods} pods (cap_each={cap_each})")
-        auto = KwokTestGenerator._gen_interval(target, total_pods, cap_each=cap_each, jitter=jitter)
+        auto = KwokTestGenerator._autogen_interval(target, total_pods, cap_each=cap_each, jitter=jitter)
         return auto, True
     
     @staticmethod
-    def _gen_interval(total: int, n: int, *, cap_each: Optional[int], jitter: float = 0.4) -> Tuple[int,int]:
+    def _autogen_interval(total: int, n: int, *, cap_each: Optional[int], jitter: float = 0.4) -> Tuple[int,int]:
         """
         Build a [lo, hi] around the mean so that n*lo <= total <= n*hi.
         cap_each (e.g. node capacity for that resource) is optional.
@@ -540,6 +538,7 @@ class KwokTestGenerator:
         rng.shuffle(parts)
         return parts
 
+    #TODO: maybe one could do this smarter?
     @staticmethod
     def _gen_rs_specs(
         rng: random.Random,
@@ -711,7 +710,7 @@ class KwokTestGenerator:
             return KwokTestGenerator._gen_random_parts(total_pods, num_replicaset, lo, hi, rng)
         
         # if no interval for replicas was provided, auto-generate one
-        lo, hi = KwokTestGenerator._gen_interval(
+        lo, hi = KwokTestGenerator._autogen_interval(
             total_pods, num_replicaset, cap_each=None, jitter=0.4
         )
         lo = max(1, lo)
@@ -982,7 +981,6 @@ class KwokTestGenerator:
         """Apply a YAML configuration to the cluster, logging kubectl output with worker prefix."""
         return KwokTestGenerator._run_kubectl_logged(ctx, "apply", "-f", "-", input_bytes=yaml_text.encode(), check=True)
     
-    # ---------- Cross-process lock to protect kwokctl cache downloads ----------
     @staticmethod
     @contextlib.contextmanager
     def _kwok_cache_lock():
@@ -1612,6 +1610,7 @@ class KwokTestGenerator:
 
         tr = TestConfigRaw(source_file=cfg_path)
         tr.namespace      = KwokTestGenerator._get_str_from_dict(runner_doc, "namespace", tr.namespace)
+        
         tr.num_nodes      = KwokTestGenerator._get_int_from_dict(runner_doc, "num_nodes", tr.num_nodes)
         tr.pods_per_node  = KwokTestGenerator._get_int_from_dict(runner_doc, "pods_per_node", tr.pods_per_node)
 
@@ -1620,6 +1619,7 @@ class KwokTestGenerator:
 
         tr.util           = KwokTestGenerator._get_float_from_dict(runner_doc, "util", tr.util)
         tr.util_tolerance = KwokTestGenerator._get_float_from_dict(runner_doc, "util_tolerance", tr.util_tolerance)
+        
         tr.wait_mode      = KwokTestGenerator._get_wait_mode_from_dict(runner_doc, "wait_mode", tr.wait_mode)
         tr.wait_timeout   = KwokTestGenerator._get_str_from_dict(runner_doc, "wait_timeout", tr.wait_timeout)
         tr.settle_timeout = KwokTestGenerator._get_str_from_dict(runner_doc, "settle_timeout", tr.settle_timeout)
