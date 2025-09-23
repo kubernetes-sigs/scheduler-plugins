@@ -3,11 +3,11 @@ namespace: test
 num_nodes: 4
 num_pods: 16
 num_priorities: [2, 4]
-cpu_per_pod: ["100m","1500m"]   # in millicores
-mem_per_pod: ["128Mi","2048Mi"] # in bytes
+cpu_per_pod: ["100m","1000m"]   # e.g. 100m, 1
+mem_per_pod: ["128Mi","1024Mi"] # e.g. 128Mi, 1Gi
 util: 1.1
 num_replicaset: [1, 4]
-num_replicas_per_rs_set: [5, 6]
+num_replicas_per_rs_set: [2, 8]
 wait_mode: exist      # one of: exist | ready | running | none
 wait_timeout: 2s       # e.g., 500ms, 10s, 2m, 1h
 settle_timeout: 15s      # same duration format

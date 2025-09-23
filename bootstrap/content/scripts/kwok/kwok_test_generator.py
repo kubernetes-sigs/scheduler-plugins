@@ -47,9 +47,12 @@ RESULTS_HEADER = [
     "node_cpu_m", "node_mem_b",
     "cpu_per_pod_m_lo", "cpu_per_pod_m_hi",
     "mem_per_pod_b_lo", "mem_per_pod_b_hi",
-    "util", "util_run_cpu", "util_run_mem", "cpu_m_run", "mem_b_run",
+    "util", "util_run_cpu", "util_run_mem",
+    "cpu_m_run", "mem_b_run",
     "wait_mode", "wait_timeout_s", "settle_timeout_s",
-    "running_count", "unscheduled_count", "pods_run_by_node", "running_placed_by_priority", "unschedulable_by_priority",
+    "running_count", "unscheduled_count",
+    "pods_run_by_node",
+    "running_placed_by_priority", "unschedulable_by_priority",
     "unscheduled", "running",
     "pod_node",
 ]
@@ -221,12 +224,12 @@ class TestConfigApplied:
     wait_timeout_s: int
     settle_timeout_s: int
     
-    # Randomly drawn values
-    pod_cpu_parts_m: List[int] | None = None
-    pod_mem_parts_b: List[int] | None = None
+    # Pod spec parts
+    pod_parts_cpu_m: List[int] | None = None
+    pod_parts_mem_b: List[int] | None = None
     rs_replicas: List[int] | None = None
-    rs_cpu_template_m: List[int] | None = None
-    rs_mem_template_b: List[int] | None = None
+    rs_parts_cpu_m: List[int] | None = None
+    rs_parts_mem_b: List[int] | None = None
 
     source_file: Optional[Path] = field(default=None, repr=False)
 
@@ -442,6 +445,7 @@ class KwokTestGenerator:
         if lo < 1 or hi < lo:
             raise ValueError(f"invalid replicas_cnt_interval: {replicas_cnt_interval}")
         # Quick feasibility guard (avoids surprising clamp on the last set)
+        # TODO: Move the validation to validate_config
         min_need = num_replicaset * lo
         max_cap  = num_replicaset * hi
         if not (min_need <= num_pods <= max_cap):
@@ -463,8 +467,10 @@ class KwokTestGenerator:
                 x = rng.randint(min_i, max_i)
             sizes.append(x)
             remaining -= x
-        # Optional: remove positional bias
+        
+        # Shuffle to remove positional bias
         rng.shuffle(sizes)
+        
         return sizes
 
     ######################################################
@@ -916,17 +922,17 @@ class KwokTestGenerator:
     ##############################################
     # ------------ Workload application --------
     ##############################################
-    def _apply_standalone_pods(self, ta: TestConfigApplied, rng_layout: random.Random) -> List[Dict[str, object]]:
+    def _apply_standalone_pods(self, ta: TestConfigApplied, rng: random.Random) -> List[Dict[str, object]]:
         """
         Create standalone pods in the given namespace with the specified specs.
         Returns a list of pod specs created.
         """
-        cpu_parts = ta.pod_cpu_parts_m
-        mem_parts = ta.pod_mem_parts_b
+        cpu_parts = ta.pod_parts_cpu_m
+        mem_parts = ta.pod_parts_mem_b
         specs: List[Dict[str, object]] = []
         names: List[str] = []
         for i in range(ta.num_pods):
-            prio = rng_layout.randint(1, max(1, ta.num_priorities))
+            prio = rng.randint(1, max(1, ta.num_priorities))
             pc = f"p{prio}"
             name = f"pod-{i+1:03d}-{pc}"
             cpu_m = max(1, int(cpu_parts[i]))
@@ -951,8 +957,8 @@ class KwokTestGenerator:
         """
         specs = []
         replicas = ta.rs_replicas
-        cpu_x    = ta.rs_cpu_template_m
-        mem_x    = ta.rs_mem_template_b
+        cpu_x    = ta.rs_parts_cpu_m
+        mem_x    = ta.rs_parts_mem_b
         for i, count in enumerate(replicas, start=1):
             prio = rng.randint(1, max(1, ta.num_priorities))
             pc = f"p{prio}"
@@ -1044,9 +1050,7 @@ class KwokTestGenerator:
         Pick num_replicaset for the given seed in [lo,hi] interval.
         If interval is None or empty, returns 0.
         """
-        lo, hi = interval
-        rng = KwokTestGenerator._rng(seed, "num_replicaset", lo, hi, num_pods)
-        return rng.randint(lo, hi)
+
 
     @staticmethod
     def _pick_num_priorities_for_seed(seed: int, interval: Tuple[int, int]) -> int:
@@ -1054,9 +1058,7 @@ class KwokTestGenerator:
         Pick num_priorities for the given seed in [lo,hi] interval.
         If interval is None or empty, returns 1.
         """
-        lo, hi = interval
-        rng = KwokTestGenerator._rng(seed, "num_priorities", lo, hi)
-        return rng.randint(lo, hi)
+       
 
     # ------------------------- Config I/O -------------------------
     @staticmethod
@@ -1184,6 +1186,7 @@ class KwokTestGenerator:
         if tr.util <= 0.0:
             errors.append("util must be > 0")
 
+        #TODO: Improve this and fix the validation of rs properties
         if not isinstance(tr.num_priorities, tuple) or len(tr.num_priorities) != 2:
             errors.append("num_priorities must be provided (fixed number or [lo,hi])")
         else:
@@ -1264,74 +1267,78 @@ class KwokTestGenerator:
             raise SystemExit("One or more configs failed validation; see messages above and fix them.")
         LOG.info(f"all configs validated successfully.")
     
-    def _resolve_config_for_seed(self, raw: TestConfigRaw, seed_int: int) -> TestConfigApplied:
+    def _resolve_config_for_seed(self, tr: TestConfigRaw, seed_int: int) -> TestConfigApplied:
         """
         Resolve the raw config into a fully specified applied config for the given seed.
         """
-        wait_mode, wait_timeout_s, settle_timeout_s = self._parse_waits(raw)
+        wait_mode, wait_timeout_s, settle_timeout_s = self._parse_waits(tr)
 
-        # pick per-seed knobs
-        num_prios  = self._pick_num_priorities_for_seed(seed_int, raw.num_priorities)
-        num_rs     = self._pick_num_replicaset_for_seed(seed_int, raw.num_replicaset, raw.num_pods)
-
+        # num_priorities
+        num_prios_lo, num_prios_hi = tr.num_priorities
+        num_prios = self._rng(seed_int, "num_priorities", num_prios_lo, num_prios_hi).randint(num_prios_lo, num_prios_hi)
+        
+        # num_replicaset
+        num_rs_lo, num_rs_hi = tr.num_replicaset
+        num_rs = self._rng(seed_int, "num_replicaset", num_rs_lo, num_rs_hi).randint(num_rs_lo, num_rs_hi)
+        
         # intervals -> ints
-        cpu_iv_m = (qty_to_mcpu_int(raw.cpu_per_pod[0]), qty_to_mcpu_int(raw.cpu_per_pod[1]))
-        mem_iv_b = (qty_to_bytes_int(raw.mem_per_pod[0]), qty_to_bytes_int(raw.mem_per_pod[1]))
+        cpu_m = (qty_to_mcpu_int(tr.cpu_per_pod[0]), qty_to_mcpu_int(tr.cpu_per_pod[1]))
+        mem_b = (qty_to_bytes_int(tr.mem_per_pod[0]), qty_to_bytes_int(tr.mem_per_pod[1]))
 
-        rng = self._rng(seed_int, "parts", raw.source_file.stem if raw.source_file else "cfg")
+        rng_rs_sizes = self._rng(seed_int, "rs-sizes")
+        rng_rs_cpu   = self._rng(seed_int, "rs-cpu")
+        rng_rs_mem   = self._rng(seed_int, "rs-mem")
+        rng_pod_cpu  = self._rng(seed_int, "pod-cpu")
+        rng_pod_mem  = self._rng(seed_int, "pod-mem")
 
-        if num_rs > 0: # RS mode
-            # 1) choose RS replica counts
-            replica_sets = self._gen_rs_sizes(
-                raw.num_pods, num_rs, rng, replicas_cnt_interval=raw.num_replicas_per_rs_set
-            )
-            # 2) draw one (cpu,mem) template per RS from the same intervals
-            rs_cpu = [rng.randint(cpu_iv_m[0], cpu_iv_m[1]) for _ in replica_sets]
-            rs_mem = [rng.randint(mem_iv_b[0], mem_iv_b[1]) for _ in replica_sets]
-            # 3) expand to a full per-pod list by repeating each RS's template 'replicas[i]' times
+        # Pod sizes
+        if num_rs > 0:  # RS mode
+            replica_sets = self._gen_rs_sizes(tr.num_pods, num_rs, rng_rs_sizes, replicas_cnt_interval=tr.num_replicas_per_rs_set)
+            rs_cpu = [rng_rs_cpu.randint(cpu_m[0], cpu_m[1]) for _ in replica_sets]
+            rs_mem = [rng_rs_mem.randint(mem_b[0], mem_b[1]) for _ in replica_sets]
             cpu_parts = [v for i, v in enumerate(rs_cpu) for _ in range(replica_sets[i])]
             mem_parts = [v for i, v in enumerate(rs_mem) for _ in range(replica_sets[i])]
-        else: # Standalone
-            cpu_parts = [rng.randint(cpu_iv_m[0], cpu_iv_m[1]) for _ in range(raw.num_pods)]
-            mem_parts = [rng.randint(mem_iv_b[0], mem_iv_b[1]) for _ in range(raw.num_pods)]
+        else:  # Standalone
+            cpu_parts = [rng_pod_cpu.randint(cpu_m[0], cpu_m[1]) for _ in range(tr.num_pods)]
+            mem_parts = [rng_pod_mem.randint(mem_b[0], mem_b[1]) for _ in range(tr.num_pods)]
 
-        # Size nodes based on the pods generated above
+        # Node sizes based on pods above and target utilization
         sum_cpu, sum_mem = sum(cpu_parts), sum(mem_parts)
-        max_cpu, max_mem = (max(cpu_parts) if cpu_parts else 1), (max(mem_parts) if mem_parts else 1)
-        util = max(1e-9, float(raw.util)) # avoid division by zero
+        max_cpu_m, max_mem_b = (max(cpu_parts) if cpu_parts else 1), (max(mem_parts) if mem_parts else 1)
+        util = max(1e-9, float(tr.util)) # avoid division by zero
         total_cap_cpu = int(math.ceil(sum_cpu / util))
         total_cap_mem = int(math.ceil(sum_mem / util))
-        per_node_m = max(max_cpu, int(math.ceil(total_cap_cpu / raw.num_nodes)))
-        per_node_b = max(max_mem, int(math.ceil(total_cap_mem / raw.num_nodes)))
+        per_node_m = max(max_cpu_m, int(math.ceil(total_cap_cpu / tr.num_nodes)))
+        per_node_b = max(max_mem_b, int(math.ceil(total_cap_mem / tr.num_nodes)))
 
         # Set final used intervals based on what we actually drew
-        used_cpu_iv = (min(cpu_parts) if cpu_parts else cpu_iv_m[0], max_cpu)
-        used_mem_iv = (min(mem_parts) if mem_parts else mem_iv_b[0], max_mem)
+        cpu_m_used = (min(cpu_parts) if cpu_parts else cpu_m[0], max_cpu_m)
+        mem_b_used = (min(mem_parts) if mem_parts else mem_b[0], max_mem_b)
 
         ta = TestConfigApplied(
-            namespace=raw.namespace,
-            num_nodes=raw.num_nodes,
-            num_pods=raw.num_pods,
+            namespace=tr.namespace,
+            num_nodes=tr.num_nodes,
+            num_pods=tr.num_pods,
             node_cpu_m=per_node_m,
             node_mem_b=per_node_b,
             num_priorities=num_prios,
             num_replicaset=num_rs,
-            num_replicas_per_rs_set=raw.num_replicas_per_rs_set,
-            util=raw.util,
-            cpu_per_pod_m=used_cpu_iv,
-            mem_per_pod_b=used_mem_iv,
+            num_replicas_per_rs_set=tr.num_replicas_per_rs_set,
+            util=tr.util,
+            cpu_per_pod_m=cpu_m_used,
+            mem_per_pod_b=mem_b_used,
             wait_mode=wait_mode,
             wait_timeout_s=wait_timeout_s,
             settle_timeout_s=settle_timeout_s,
-            source_file=raw.source_file,
-            pod_cpu_parts_m=cpu_parts,
-            pod_mem_parts_b=mem_parts,
+            source_file=tr.source_file,
+            pod_parts_cpu_m=cpu_parts,
+            pod_parts_mem_b=mem_parts,
         )
         # Only add RS fields if RS are used
         if num_rs > 0:
             ta.rs_replicas = replica_sets
-            ta.rs_cpu_template_m = rs_cpu
-            ta.rs_mem_template_b = rs_mem
+            ta.rs_parts_cpu_m = rs_cpu
+            ta.rs_parts_mem_b = rs_mem
 
         return ta
     
@@ -1473,7 +1480,7 @@ class KwokTestGenerator:
         LOG.info(f"phase={phase}  cfg={cfg.stem}  seed={seed}")
         try:
             start_time = time.time()
-            rng_layout = self._rng(seed, "layout", cfg.stem)
+            rng = self._rng(seed, "base")
 
             # cluster
             phase = "ensure_cluster"
@@ -1519,9 +1526,9 @@ class KwokTestGenerator:
             pod_specs: list[dict] = []
             rs_specs:  list[dict] = []
             if ta.num_replicaset > 0:
-                rs_specs = self._apply_replicasets(ta, rng_layout)
+                rs_specs = self._apply_replicasets(ta, rng)
             else:
-                pod_specs = self._apply_standalone_pods(ta, rng_layout)
+                pod_specs = self._apply_standalone_pods(ta, rng)
 
             # Optionally trigger the optimizer
             if self.args.trigger_optimizer:
@@ -1621,8 +1628,8 @@ class KwokTestGenerator:
             raise SystemExit("--generate-seeds-to-file requires --count >= 1")
         if self.args.seed is not None or self.args.seed_file:
             raise SystemExit("--generate-seeds-to-file cannot be combined with --seed or --seed-file")
-        base = int(time.time_ns())
-        rng = KwokTestGenerator._rng(base, "seed-file")
+        time = int(time.time_ns())
+        rng = self._rng(time, "base") # random source
         seeds = [(rng.getrandbits(63) or 1) for _ in range(int(self.args.count))]
         outp = Path(self.args.generate_seeds_to_file)
         outp.parent.mkdir(parents=True, exist_ok=True)
@@ -1631,18 +1638,18 @@ class KwokTestGenerator:
                 f.write(f"{s}\n")
         LOG.info("wrote %d seeds to %s", len(seeds), outp)
 
-    def _run_count_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, raw: TestConfigRaw, seen: set[int]) -> None:
+    def _run_count_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, tr: TestConfigRaw, seen: set[int]) -> None:
         """
         Run the generator for configuration(s) files and a seed count. If count=-1, run indefinitely.
         """
         to_make = int(self.args.count)
-        base = int(time.time_ns())
-        rng = KwokTestGenerator._rng(base, "seed-stream", self.args.cluster_name)
+        time = int(time.time_ns())
+        rng = self._rng(time, "base")
         made = 0
         while to_make == -1 or made < to_make:
             s = rng.getrandbits(63) or 1
             self._print_run_header(s, cfg.name, made + 1, to_make, cfg_idx, cfgs_total)
-            rc = self._resolve_config_for_seed(raw, s)
+            rc = self._resolve_config_for_seed(tr, s)
             self._run_single_seed(cfg, seen, s, rc)
             more_coming = (to_make == -1) or (made + 1 < to_make)
             self._pause(next_exists=more_coming)
@@ -1650,17 +1657,17 @@ class KwokTestGenerator:
                 made += 1
         return
 
-    def _run_seed_single_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, raw: TestConfigRaw, seen: set[int]) -> None:
+    def _run_seed_single_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, tr: TestConfigRaw, seen: set[int]) -> None:
         """
         Run the generator for configuration(s) files and a single seed.
         """
         s = int(self.args.seed)
         self._print_run_header(s, cfg.name, 1, 1, cfg_idx, cfgs_total)
-        rc = self._resolve_config_for_seed(raw, s)
+        rc = self._resolve_config_for_seed(tr, s)
         self._run_single_seed(cfg, seen, s, rc)
         return
 
-    def _run_seed_file_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, raw: TestConfigRaw, seen: set[int]) -> None:
+    def _run_seed_file_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, tr: TestConfigRaw, seen: set[int]) -> None:
         """
         Run the generator for a specific configuration and seeds from a file.
         """
@@ -1669,7 +1676,7 @@ class KwokTestGenerator:
         for seed_idx, s in enumerate(seeds_list, start=1):
             self._print_run_header(s, cfg.name, seed_idx, seeds_total, cfg_idx, cfgs_total)
             s = int(s)
-            rc = self._resolve_config_for_seed(raw, s)
+            rc = self._resolve_config_for_seed(tr, s)
             self._run_single_seed(cfg, seen, s, rc, self.args.seed_file)
             self._pause(next_exists=(seed_idx < seeds_total))
         return
