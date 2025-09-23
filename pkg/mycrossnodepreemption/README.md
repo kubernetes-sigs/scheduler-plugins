@@ -5,6 +5,8 @@
 - [Overview](#overview)
 - [TODOs](#todos)
   - [Test](#test)
+    - [Initial Test Setup](#initial-test-setup)
+    - [Later Tests](#later-tests)
 - [Later](#later)
 - [Questions](#questions)
   - [Open Questions](#open-questions)
@@ -57,6 +59,27 @@ Whereas the default scheduler only preempts pods within a single node, this plug
 - Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
 - Test the plugin works across workload type.
 - Test CP-SAT vs. other solvers.
+
+### Initial Test Setup
+
+- Mode: Optimize manually via http as we want to run the solver after applying all pods.
+- HookStage: PostFilter
+- Without hints
+- Solver: Python
+- Python Timeout: 1s, 10s, 20s
+- num_nodes: 4, 8, 16 (or 12)
+- pods_per_node: 4, 8
+- num_priorities: 2, 3, 5 (see paper)
+- util: 0.9, 0.95, 1.0, 1.05 (maybe also 1.1)
+- node_cpu: 
+- node_mem:
+
+### Later Tests
+
+- Compare with other solvers.
+- Compare with other modes.
+- Compare with other hook stages.
+- Compare with hints.
 
 # Later
 

@@ -1,12 +1,13 @@
 kind: KwokRunConfiguration
 namespace: test
 num_nodes: 4
-pods_per_node: 4
-num_priorities: 4
-node_cpu: 2400m
-node_mem: 32Gi
+num_pods: 16
+num_priorities: [2, 4]
+cpu_per_pod: ["100m","1500m"]   # in millicores
+mem_per_pod: ["128Mi","2048Mi"] # in bytes
 util: 1.1
-util-tolerance: 0.01
+num_replicaset: [1, 4]
+num_replicas_per_rs_set: [5, 6]
 wait_mode: exist      # one of: exist | ready | running | none
 wait_timeout: 2s       # e.g., 500ms, 10s, 2m, 1h
 settle_timeout: 15s      # same duration format
@@ -22,7 +23,7 @@ componentsPatches:
   - name: kube-scheduler
     extraEnvs:
       - name: OPTIMIZE_MODE
-        value: "manual_all_synch" # choices: every, all_synch, all_asynch, manual_all_synch
+        value: "all_synch" # choices: every, all_synch, all_asynch, manual_all_synch
       - name: OPTIMIZE_HOOK_STAGE
         value: "preenqueue" # choices: preenqueue, postfilter (not used in all_asynch mode)
       - name: OPTIMIZE_INTERVAL
