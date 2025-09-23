@@ -1,4 +1,4 @@
-// manual_http.go
+// http.go
 
 package mycrossnodepreemption
 
@@ -20,7 +20,7 @@ type HttpResponse struct {
 	PendingBefore int    `json:"pendingBefore"`
 }
 
-func (pl *MyCrossNodePreemption) startManualHTTPServer(ctx context.Context, addr string) {
+func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr string) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +76,7 @@ func (pl *MyCrossNodePreemption) startManualHTTPServer(ctx context.Context, addr
 		Handler: mux,
 	}
 
-	klog.InfoS("Manual HTTP mode server started", "addr", addr, "mode", strategyToString())
+	klog.InfoS("HTTP server started", "addr", addr, "mode", strategyToString())
 
 	go func() {
 		<-ctx.Done()
@@ -87,7 +87,7 @@ func (pl *MyCrossNodePreemption) startManualHTTPServer(ctx context.Context, addr
 
 	// Intentionally log errors; do not return them (plugin must stay alive).
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		klog.ErrorS(err, "manual HTTP server exited unexpectedly")
+		klog.ErrorS(err, "HTTP server exited unexpectedly")
 	}
 }
 

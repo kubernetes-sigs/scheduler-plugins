@@ -18,8 +18,8 @@ func optimizeAllSynch() bool { return OptimizeMode == ModeAllSynch }
 // optimizeAllAsynch is the optimizer cadence that tries to optimize continuous if the cluster state hasn't drift too much during solver optimization.
 func optimizeAllAsynch() bool { return OptimizeMode == ModeAllAsynch }
 
-// optimizeManualHttp collects like AllSynch but only optimizes when HTTP endpoint is called.
-func optimizeManualHttp() bool { return OptimizeMode == ModeManualHttp }
+// optimizeManual collects like AllSynch but only optimizes when HTTP endpoint is called.
+func optimizeManualAllSynch() bool { return OptimizeMode == ModeManualAllSynch }
 
 // optimizeAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
 func optimizeAtPreEnqueue() bool { return OptimizeHookStage == StagePreEnqueue }
@@ -43,8 +43,8 @@ func strategyToString() string {
 		a = "AllSynch"
 	case ModeAllAsynch:
 		return "AllAsynch" // At is ignored
-	case ModeManualHttp:
-		a = "ManualHttp"
+	case ModeManualAllSynch:
+		a = "ManualAllSynch"
 	default:
 		a = "AllSynch"
 	}
@@ -67,8 +67,8 @@ func parseOptimizeMode(s string) OptimizeModeType {
 		return ModeAllSynch
 	case "all_asynch":
 		return ModeAllAsynch
-	case "manual_http":
-		return ModeManualHttp
+	case "manual_all_synch":
+		return ModeManualAllSynch
 	default:
 		klog.InfoS("Unknown ENV: OPTIMIZE_CADENCE value; defaulting to 'batch'", "value", s)
 		return ModeAllSynch
@@ -99,8 +99,7 @@ func (pl *MyCrossNodePreemption) decideStrategy(stage StageType) StrategyDecisio
 	}
 
 	// Modes: AllSynch@PreEnqueue or AllSynch@PostFilter - always set pods to pending
-	if (optimizeAllSynch() || optimizeManualHttp()) &&
-		((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
+	if optimizeAllSynch() && ((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
 		return DecideProcessLater
 	}
 

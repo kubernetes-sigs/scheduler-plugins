@@ -96,7 +96,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	}
 
 	// If in all modes activate planned pending pods (now that the plan is in place).
-	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualHttp() {
+	if optimizeAllSynch() || optimizeAllAsynch() {
 		pl.activatePlannedPending(plan, pods)
 	}
 
