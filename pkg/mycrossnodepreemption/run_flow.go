@@ -31,14 +31,14 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	// Fetch nodes and pods ONCE for this flow
 	nodes, err := pl.getNodes()
 	if err != nil {
-		pl.leaveActive()
 		klog.Error(msg(strategy, "failed to list nodes"))
+		pl.leaveActive()
 		return nil, err
 	}
 	pods, err := pl.getPods()
 	if err != nil {
-		pl.leaveActive()
 		klog.Error(msg(strategy, "failed to list pods"))
+		pl.leaveActive()
 		return nil, err
 	}
 
@@ -60,8 +60,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	bestSolver, anyFeasible := pl.runSolvers(ctx, solverInput, nodes, pods)
 	// Check if all solvers are infeasible -> ErrNoOptimalOrFeasible
 	if !anyFeasible {
-		pl.leaveActive()
 		klog.Error(msg(strategy, InfoNoSolverSolution))
+		pl.leaveActive()
 		return nil, ErrNoSolverSolution
 	}
 
@@ -85,7 +85,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	plan, ap, err := pl.registerPlan(ctx, bestSolver, preemptor, pods)
 	if err != nil {
 		klog.Error(msg(strategy, InfoRegisterPlanFailed))
-		pl.leaveActive()
+		pl.onPlanSettled(PlanStatusFailed)
 		return nil, ErrRegisterPlan
 	}
 
@@ -93,6 +93,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if err := pl.executePlan(plan); err != nil {
 		klog.Error(msg(strategy, InfoPlanExecutionFailed))
 		pl.onPlanSettled(PlanStatusFailed)
+		return nil, ErrPlanExecutionFailed
 	}
 
 	// If in all modes activate planned pending pods (now that the plan is in place).
