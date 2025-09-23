@@ -30,7 +30,6 @@ func (pl *MyCrossNodePreemption) tryEnterActive() bool {
 	return pl.Active.CompareAndSwap(false, true)
 }
 
-// TODO: Somehow ensure only one deactivates the plan when it completes?
 // leaveActive exits the active plan state.
 func (pl *MyCrossNodePreemption) leaveActive() {
 	pl.Active.Store(false)
@@ -42,8 +41,11 @@ func (pl *MyCrossNodePreemption) getActivePlan() *ActivePlan {
 }
 
 // clearActivePlan clears the currently active plan, if any.
-func (pl *MyCrossNodePreemption) clearActivePlan() {
-	pl.ActivePlan.Store(nil)
+func (pl *MyCrossNodePreemption) tryClearActivePlan(ap *ActivePlan) bool {
+	if ap == nil {
+		return false
+	}
+	return pl.ActivePlan.CompareAndSwap(ap, nil)
 }
 
 // buildPlan builds the evictions, movements, old placements, new placements, placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
@@ -499,18 +501,21 @@ func (pl *MyCrossNodePreemption) isPlanCompleted(ctx context.Context, ap *Active
 // onPlanSettled is called when a plan is settled (i.e., all its actions are completed).
 func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	ap := pl.getActivePlan()
-	if ap == nil {
+	// Win-or-lose: swap the ActivePlan pointer from 'ap' to nil.
+	// Only the winner proceeds with teardown.
+	if !pl.tryClearActivePlan(ap) {
 		return false
 	}
-	pl.clearActivePlan()
-	pl.leaveActive()
+
+	// Winner zone: do the one-time teardown.
+	pl.leaveActive() // flip Active=false
+	if ap.Cancel != nil {
+		ap.Cancel() // stop timeout watcher
+	}
 	// We do not activate blocked pods when we are in Every@PreEnqueue
 	// as it would lead to high contention; instead we periodically nudge them.
 	if !optimizeEvery() || !optimizeAtPreEnqueue() {
 		pl.activatePods(pl.BlockedWhileActive, false, -1)
-	}
-	if ap.Cancel != nil {
-		ap.Cancel() // stop the timeout watcher
 	}
 	klog.InfoS(InfoDeactivatingActivePlan, "planID", ap.ID)
 
