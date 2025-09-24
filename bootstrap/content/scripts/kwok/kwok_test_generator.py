@@ -8,7 +8,7 @@
 #
 #   --config-dir <dir>                  Directory containing one or more KWOK config YAMLs (default: "./kwok_configs")
 #
-#   --results-dir <dir>                 Directory to store results CSV files (default: "./results")
+#   --results-dir <dir>                 Directory to store results CSV files (default: "<config-dir>/results")
 #
 #   --max-rows-per-file <int>           Maximum rows per CSV file before rotation (default: 500000)
 #
@@ -1685,19 +1685,15 @@ class KwokTestGenerator:
         self.ctx = f"kwok-{self.args.cluster_name}"
 
         # Resolve results dir:
-        # - If --results-dir is provided, use it as a base and place files directly there.
-        # - If omitted, place under <configs-parent>/results/<config-dir-name>/
+        # - If --results-dir is provided, use it exactly.
+        # - If omitted, place under <config-dir>/results/
         cfg_dir_path = Path(self.args.config_dir).resolve()
-        cfg_dir_name = cfg_dir_path.name
-        configs_parent = cfg_dir_path.parent
 
         if self.results_dir_arg:
             # Honor explicit --results-dir exactly as provided
             rd = Path(self.results_dir_arg).resolve()
         else:
-            # results sits next to the top-level 'configs' folder:
-            # <configs_parent.parent>/results/<config-dir-name>/
-            rd = configs_parent.parent / "results" / cfg_dir_name
+            rd = cfg_dir_path / "results"
 
         rd.mkdir(parents=True, exist_ok=True)
         self.results_dir = rd
@@ -1895,7 +1891,7 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--config-dir", dest="config_dir", default=None, help="Directory containing one or more KWOK config YAMLs")
     ap.add_argument("--results-dir", dest="results_dir", default=None,
                     help=("Directory to store results. If omitted, results are written to "
-                          "<parent-of-CONFIGS>/results/<config-dir-name>/"))
+                          "<config-dir>/results/"))
     ap.add_argument("--overwrite", action="store_true", help="Replace any existing results for the same seed.")
     ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=500000,
                     help="Maximum number of data rows per results CSV before rotating (default 500000).")
