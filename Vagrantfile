@@ -20,7 +20,7 @@
       --content-dir /home/vagrant/bootstrap/content \
       --image-remote-tag henrikdc/master:dev \
       --kwok-cluster kwok-a \
-      --kwok-runtime docker \
+      --kwok-runtime binary \
       --kwok-config-dir data/configs/a \
       --results-dir data/results/a \
       --seed-file data/seeds/001.txt \
@@ -31,4 +31,4 @@ end
 
 # NOTE: REMEMBER TO BUILD BEFORE VAGRANT UP, if not using prebuilt scheduler
 
-# UCLOUD: --build-scheduler false --content-dir /work/content --kwok-runtime binary --matrix-file data/jobs/2025-09-24/baseline_n4_p16_u090-01.csv
+# UCLOUD: --build-scheduler false --content-dir /work/<content-dir> --kwok-runtime binary --matrix-file data/jobs/2025-09-24/baseline_n4_p16_u090-01.csv

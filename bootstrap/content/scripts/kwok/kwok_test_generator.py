@@ -1814,7 +1814,7 @@ def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
 ##############################################
 # ------------ Matrix runner -----------------
 ##############################################
-REQUIRED_COLS = ["cluster-name", "config-dir", "results-dir", "seed-file"]
+MATRIX_REQUIRED_COLS = ["cluster-name", "config-dir", "seed-file"]
 
 def run_matrix(args) -> int:
     def _read_csv_matrix(path: str):
@@ -1823,12 +1823,12 @@ def run_matrix(args) -> int:
             rdr = csv.DictReader(f)
             if rdr.fieldnames is None:
                 raise SystemExit(f"[matrix] CSV {path} has no header")
-            missing = [c for c in REQUIRED_COLS if c not in rdr.fieldnames]
+            missing = [c for c in MATRIX_REQUIRED_COLS if c not in rdr.fieldnames]
             if missing:
                 raise SystemExit(f"[matrix] CSV {path} missing required columns: {', '.join(missing)}")
             for i, row in enumerate(rdr, 2):
                 cleaned = {k: (row.get(k, "") or "").strip() for k in rdr.fieldnames}
-                for c in REQUIRED_COLS:
+                for c in MATRIX_REQUIRED_COLS:
                     if not cleaned[c]:
                         raise SystemExit(f"[matrix] {path}:{i} column '{c}' is empty")
                 cleaned["_lineno"] = i
