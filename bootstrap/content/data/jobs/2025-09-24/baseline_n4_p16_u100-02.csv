@@ -1,2 +1,2 @@
-cluster-name,config-dir,seed-file
-kwok-a,data/configs/2025-09-24/baseline_n4_p16_u100,data/seeds/2025-09-24-02.txt
+cluster-name,config-dir,seed-file,results-dir
+kwok-a,data/configs/2025-09-24/baseline_n4_p16_u100,data/seeds/2025-09-24-02.txt,data/results/2025-09-24/baseline_n4_p16_u100-02

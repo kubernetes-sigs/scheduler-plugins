@@ -231,11 +231,7 @@ stage_build() {
   else
     # Not building: ensure the binary is present for binary runtime
     if [ "${KWOK_RUNTIME}" = "binary" ]; then # binary
-      if [ -f "${CONTENT_DIR}/bin/kube-scheduler" ]; then
-        run_root "chmod +x '${CONTENT_DIR}/bin/kube-scheduler'"
-      fi
-      # Now require it to be executable
-      run_root "test -x '${CONTENT_DIR}/bin/kube-scheduler'" \
+      run_root "chmod +x '${CONTENT_DIR}/bin/kube-scheduler'" \
         || die "KWOK_RUNTIME=binary but no prebuilt scheduler at '${CONTENT_DIR}/bin/kube-scheduler'. Set BUILD_SCHEDULER=true or place the binary there."
     else # docker
       if ! docker image inspect "${IMAGE_TAG_RESOLVED}" >/dev/null 2>&1; then
@@ -259,9 +255,7 @@ stage_test() {
   log init "KWOK test starting"
   resolve_paths_relative_to_folder
   print_cfg
-  log init "ensuring KWOK_CONFIG_DIR='${KWOK_CONFIG_DIR}' exists"
   run_root "'${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok/requirements.txt'"
-  log ok "KWOK_CONFIG_DIR='${KWOK_CONFIG_DIR}' exists"
 
   # Run: matrix mode vs single-run mode
   if [ -n "${MATRIX_FILE}" ]; then

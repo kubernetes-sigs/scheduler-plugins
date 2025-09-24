@@ -1814,7 +1814,7 @@ def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
 ##############################################
 # ------------ Matrix runner -----------------
 ##############################################
-MATRIX_REQUIRED_COLS = ["cluster-name", "config-dir", "seed-file"]
+MATRIX_REQUIRED_COLS = ["cluster-name", "config-dir", "seed-file", "results-dir"]
 
 def run_matrix(args) -> int:
     def _read_csv_matrix(path: str):
@@ -1843,8 +1843,9 @@ def run_matrix(args) -> int:
             "[matrix] cluster-name={}\n"
             "[matrix] config-dir={}\n"
             "[matrix] seed-file={}\n"
+            "[matrix] results-dir={}\n"
             "------------------------------------------------------------------"
-            .format(idx, total, row["cluster-name"], row["config-dir"], row["seed-file"]),
+            .format(idx, total, row["cluster-name"], row["config-dir"], row["seed-file"], row["results-dir"]),
             flush=True,
         )
         cmd = [
@@ -1853,6 +1854,7 @@ def run_matrix(args) -> int:
             "--kwok-runtime", runtime,
             "--config-dir",   row["config-dir"],
             "--seed-file",    row["seed-file"],
+            "--results-dir",  row["results-dir"],
         ]
         if args.overwrite:
             cmd.append("--overwrite")
@@ -1904,7 +1906,7 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--count", type=int, default=None, help="Generate the specified number of random seeds; -1=infinite.")
     
     # matrix
-    ap.add_argument("--matrix-file", help="CSV with columns: cluster-name,config-dir,results-dir,seed-file.")
+    ap.add_argument("--matrix-file", help="To use this functionality stand in the root of 'content' folder. CSV with columns: cluster-name,config-dir,results-dir,seed-file.")
     ap.add_argument("--matrix-parallel", type=int, dest="matrix_parallel", default=1, help="Max concurrent runs when using --matrix-file (default 1).")
     
     # test
