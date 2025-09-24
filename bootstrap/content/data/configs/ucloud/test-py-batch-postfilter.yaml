@@ -1,7 +1,7 @@
 kind: KwokRunConfiguration
 namespace: test
-num_nodes: 4
-num_pods: 12
+num_nodes: 4 # 4, 8, 16
+num_pods: 12 # 
 num_priorities: 4 # either a single integer or a range [lo, hi]
 cpu_per_pod: "100m"   # e.g. 100m, 1
 mem_per_pod: ["128Mi","1024Mi"] # e.g. 128Mi, 1Gi

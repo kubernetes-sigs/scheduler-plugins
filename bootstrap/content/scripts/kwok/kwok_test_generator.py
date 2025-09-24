@@ -43,7 +43,7 @@ from kwok_shared import (
 RESULTS_HEADER = [
     "timestamp", "kwok_config", "seed_file", "seed",
     "num_nodes", "num_pods", "num_priorities", "num_replicaset",
-    "num_replicas_per_rs_set_lo", "num_replicas_per_rs_set_hi",
+    "num_replicas_per_rs_lo", "num_replicas_per_rs_hi",
     "node_cpu_m", "node_mem_b",
     "cpu_per_pod_m_lo", "cpu_per_pod_m_hi",
     "mem_per_pod_b_lo", "mem_per_pod_b_hi",
@@ -184,8 +184,7 @@ class TestConfigRaw:
     num_priorities: Optional[Tuple[int, int]] = None
 
     # replicaset (optional; if omitted, plain pods are created)
-    num_replicaset: Optional[Tuple[int, int]] = None              # e.g., (2, 8)
-    num_replicas_per_rs_set: Optional[Tuple[int, int]] = None     # e.g., (3, 50)
+    num_replicas_per_rs: Optional[Tuple[int, int]] = None     # e.g., (3, 50)
 
     # per-pod intervals (K8s quantities as strings)
     cpu_per_pod: Optional[Tuple[str, str]] = None  # e.g., ("100m","1500m")
@@ -215,8 +214,8 @@ class TestConfigApplied:
     
     num_priorities: int
     
-    num_replicaset: int     
-    num_replicas_per_rs_set: Optional[Tuple[int, int]]
+    num_replicaset: int
+    num_replicas_per_rs: Optional[Tuple[int, int]]
     
     util: float
 
@@ -227,7 +226,7 @@ class TestConfigApplied:
     # Pod spec parts
     pod_parts_cpu_m: List[int] | None = None
     pod_parts_mem_b: List[int] | None = None
-    rs_replicas: List[int] | None = None
+    rs_sets: List[int] | None = None
     rs_parts_cpu_m: List[int] | None = None
     rs_parts_mem_b: List[int] | None = None
 
@@ -430,94 +429,25 @@ class KwokTestGenerator:
     ######################################################
     # ---------- RS helpers ------------------------------
     ######################################################
-    def _pick_feasible_num_rs(
-        rng: random.Random,
-        num_pods: int,
-        num_rs_interval: Tuple[int, int],
-        per_rs_interval: Tuple[int, int],
-    ) -> int:
-        lo_rs, hi_rs = num_rs_interval
-        lo_rps, hi_rps = per_rs_interval
-
-        # k must satisfy: ceil(N/hi_rps) <= k <= floor(N/lo_rps)
-        k_lo_feas = math.ceil(num_pods / hi_rps)
-        k_hi_feas = math.floor(num_pods / lo_rps)
-
-        pick_lo = max(lo_rs, k_lo_feas)
-        pick_hi = min(hi_rs, k_hi_feas)
-
-        if pick_lo > pick_hi:
-            raise ValueError(
-                f"Infeasible: need num_replicaset in [{k_lo_feas},{k_hi_feas}] "
-                f"to hit num_pods={num_pods} with per-RS in [{lo_rps},{hi_rps}], "
-                f"but interval is [{lo_rs},{hi_rs}]."
-            )
-        return rng.randint(pick_lo, pick_hi)
-
     @staticmethod
-    def _gen_rs_sizes(
-        num_pods: int,
-        num_replicaset: int,
-        rng: random.Random,
-        replicas_cnt_interval: Optional[Tuple[int, int]] = None,
-        *,
-        min_replicas_floor: int = 1,   # RS with 0 replicas is fine
-        allow_drift: bool = True,      # drift bounds only if needed to hit the sum
-    ) -> List[int]:
+    def _gen_rs_sizes(rng: random.Random, num_pods: int, replicas_per_set: tuple[int, int]) -> list[int]:
         """
-        Partition `num_pods` into exactly `num_replicaset` parts.
-        Prefer keeping each part within [lo, hi]. If that's impossible,
-        minimally 'drift' the tighter bound while keeping k fixed.
-        Never raises; always returns sizes that sum to num_pods.
+        Sequentially pick RS sizes. Each iteration = one ReplicaSet.
+        Sizes are drawn uniformly in [lo, hi], capped at the remaining pods.
+        The last RS may be < lo (intentional drift) to exactly hit num_pods.
         """
-        if not replicas_cnt_interval:
-            lo, hi = 1, num_pods  # unconstrained but positive by default
-        else:
-            lo, hi = int(replicas_cnt_interval[0]), int(replicas_cnt_interval[1])
-
-        k = max(1, int(num_replicaset))
-        N = int(num_pods)
-        lo = max(min_replicas_floor, lo)
-        hi = max(lo, hi)
-
-        # Check feasibility with current bounds
-        min_sum = k * lo
-        max_sum = k * hi
-
-        new_lo, new_hi = lo, hi
-        if N < min_sum and allow_drift:
-            deficit = min_sum - N
-            drift_down = (deficit + k - 1) // k  # ceil(deficit/k)
-            new_lo = max(min_replicas_floor, lo - drift_down)
-        elif N > max_sum and allow_drift:
-            overflow = N - max_sum
-            drift_up = (overflow + k - 1) // k  # ceil(overflow/k)
-            new_hi = hi + drift_up
-
-        # feasible: k*new_lo <= N <= k*new_hi
-        sizes = [new_lo] * k
-        slack = N - k * new_lo
-        span = new_hi - new_lo
-
-        # Bounded random composition
-        for i in range(k):
-            if slack == 0:
-                break
-            remain = k - i - 1
-            # Ensure future feasibility
-            max_future = remain * span
-            low_i = max(0, slack - max_future)
-            high_i = min(span, slack)
-            inc_i = rng.randint(low_i, high_i)
-            sizes[i] += inc_i
-            slack -= inc_i
-
-        if slack > 0:  # put any leftover slack in the last part
-            sizes[-1] += slack
-
-        rng.shuffle(sizes) # remove positional bias
-        return sizes
-
+        lo, hi = int(replicas_per_set[0]), int(replicas_per_set[1])
+        rs_sizes: list[int] = []
+        remaining = num_pods
+        while remaining > 0:
+            # Bound the draw to what's left
+            hi_now = min(hi, remaining)
+            lo_now = 1 if remaining <= hi else min(lo, hi_now)
+            # Draw and append
+            rs_size = rng.randint(lo_now, hi_now)
+            rs_sizes.append(rs_size)
+            remaining -= rs_size
+        return rs_sizes
 
     ######################################################
     # ---------- CSV helpers & results helpers -----------
@@ -1027,7 +957,7 @@ class KwokTestGenerator:
         Returns a list of replicaset specs created.
         """
         specs = []
-        replicas = ta.rs_replicas
+        replicas = ta.rs_sets
         cpu_x    = ta.rs_parts_cpu_m
         mem_x    = ta.rs_parts_mem_b
         for i, count in enumerate(replicas, start=1):
@@ -1224,13 +1154,9 @@ class KwokTestGenerator:
         if raw_mem:
             tr.mem_per_pod = KwokTestGenerator._parse_qty_interval(raw_mem)
 
-        raw_nr = KwokTestGenerator._normalize_interval(runner_doc, ("num_replicaset","num_replicaset_lo","num_replicaset_hi"))
-        if raw_nr:
-            tr.num_replicaset = self._parse_int_interval(raw_nr, min_lo=0)
-
-        raw_rps = KwokTestGenerator._normalize_interval(runner_doc, ("num_replicas_per_rs_set","num_replicas_per_rs_set_lo","num_replicas_per_rs_set_hi"))
+        raw_rps = KwokTestGenerator._normalize_interval(runner_doc, ("num_replicas_per_rs","num_replicas_per_rs_lo","num_replicas_per_rs_hi"))
         if raw_rps:
-            tr.num_replicas_per_rs_set = self._parse_int_interval(raw_rps, min_lo=1)
+            tr.num_replicas_per_rs = self._parse_int_interval(raw_rps, min_lo=1)
 
         return tr
 
@@ -1257,9 +1183,10 @@ class KwokTestGenerator:
         if tr.util <= 0.0:
             errors.append("util must be > 0")
 
+        # Priority check
         if not isinstance(tr.num_priorities, tuple) or len(tr.num_priorities) != 2:
             errors.append("num_priorities must be provided (fixed number or [lo,hi])")
-        else: # check interval
+        else:
             try:
                 lo_prio = int(tr.num_priorities[0])
                 hi_prio = int(tr.num_priorities[1])
@@ -1270,24 +1197,16 @@ class KwokTestGenerator:
             except Exception:
                 errors.append("num_priorities interval must contain integers")
 
-        if tr.num_replicas_per_rs_set is not None and tr.num_replicaset is None:
-            errors.append("num_replicaset must be provided when num_replicas_per_rs_set is provided")
-        if tr.num_replicaset is not None:
+        # Replicaset check
+        if tr.num_replicas_per_rs is not None:
             try:
-                lo_rs = int(tr.num_replicaset[0]); hi_rs = int(tr.num_replicaset[1])
-                lo_rps = int(tr.num_replicas_per_rs_set[0]); hi_rps = int(tr.num_replicas_per_rs_set[1])
-
-                # Broad bound (already present)
-                min_need = lo_rs * lo_rps
-                max_cap  = hi_rs * hi_rps
-                if not (min_need <= tr.num_pods <= max_cap):
-                    errors.append(
-                        f"num_replicaset=[{lo_rs},{hi_rs}] and per-RS [{lo_rps},{hi_rps}] "
-                        f"don't accommodate num_pods={tr.num_pods}; num_pods must be in [{min_need},{max_cap}]."
-                    )
+                lo_rps = int(tr.num_replicas_per_rs[0])
+                hi_rps = int(tr.num_replicas_per_rs[1])
+                if lo_rps < 1 or hi_rps < lo_rps:
+                    errors.append("num_replicas_per_rs must satisfy 1 <= lo <= hi")
             except Exception:
-                errors.append("num_replicaset/num_replicas_per_rs_set intervals must contain integers")
-
+                errors.append("num_replicas_per_rs interval must contain integers")
+        
         # quantities
         if tr.cpu_per_pod is not None:
             try:
@@ -1343,24 +1262,19 @@ class KwokTestGenerator:
         # intervals -> ints
         cpu_m = (qty_to_mcpu_int(tr.cpu_per_pod[0]), qty_to_mcpu_int(tr.cpu_per_pod[1]))
         mem_b = (qty_to_bytes_int(tr.mem_per_pod[0]), qty_to_bytes_int(tr.mem_per_pod[1]))
-        
-        # num_replicaset
-        num_rs = 0
-        if tr.num_replicaset is not None: 
-            num_rs_lo, num_rs_hi = tr.num_replicaset
-            rng_rs       = self._rng(seed_int, "num_replicaset", num_rs_lo, num_rs_hi)
-            num_rs = rng_rs.randint(num_rs_lo, num_rs_hi)
 
         # Pod sizes
-        if num_rs > 0:  # RS mode
+        rs_sets: list[int] = []
+        rs_cpu = rs_mem = None
+        if tr.num_replicas_per_rs is not None:  # RS mode
             rng_rs_sizes = self._rng(seed_int, "rs-sizes")
             rng_rs_cpu   = self._rng(seed_int, "rs-cpu")
             rng_rs_mem   = self._rng(seed_int, "rs-mem")
-            replica_sets = self._gen_rs_sizes(tr.num_pods, num_rs, rng_rs_sizes, tr.num_replicas_per_rs_set)
-            rs_cpu = [rng_rs_cpu.randint(cpu_m[0], cpu_m[1]) for _ in replica_sets]
-            rs_mem = [rng_rs_mem.randint(mem_b[0], mem_b[1]) for _ in replica_sets]
-            cpu_parts = [v for i, v in enumerate(rs_cpu) for _ in range(replica_sets[i])]
-            mem_parts = [v for i, v in enumerate(rs_mem) for _ in range(replica_sets[i])]
+            rs_sets = self._gen_rs_sizes(rng_rs_sizes, tr.num_pods, tr.num_replicas_per_rs)
+            rs_cpu = [rng_rs_cpu.randint(cpu_m[0], cpu_m[1]) for _ in rs_sets]
+            rs_mem = [rng_rs_mem.randint(mem_b[0], mem_b[1]) for _ in rs_sets]
+            cpu_parts = [v for i, v in enumerate(rs_cpu) for _ in range(rs_sets[i])]
+            mem_parts = [v for i, v in enumerate(rs_mem) for _ in range(rs_sets[i])]
         else:  # Standalone
             rng_pod_cpu = self._rng(seed_int, "pod-cpu")
             rng_pod_mem = self._rng(seed_int, "pod-mem")
@@ -1380,6 +1294,7 @@ class KwokTestGenerator:
         cpu_m_used = (min(cpu_parts) if cpu_parts else cpu_m[0], max_cpu_m)
         mem_b_used = (min(mem_parts) if mem_parts else mem_b[0], max_mem_b)
 
+        num_rs_sets = len(rs_sets)
         ta = TestConfigApplied(
             namespace=tr.namespace,
             num_nodes=tr.num_nodes,
@@ -1387,8 +1302,8 @@ class KwokTestGenerator:
             node_cpu_m=per_node_m,
             node_mem_b=per_node_b,
             num_priorities=num_prios,
-            num_replicaset=num_rs,
-            num_replicas_per_rs_set=tr.num_replicas_per_rs_set,
+            num_replicaset=num_rs_sets,
+            num_replicas_per_rs=tr.num_replicas_per_rs,
             util=tr.util,
             cpu_per_pod_m=cpu_m_used,
             mem_per_pod_b=mem_b_used,
@@ -1400,8 +1315,8 @@ class KwokTestGenerator:
             pod_parts_mem_b=mem_parts,
         )
         # Only add RS fields if RS are used
-        if num_rs > 0:
-            ta.rs_replicas = replica_sets
+        if num_rs_sets > 0:
+            ta.rs_sets = rs_sets
             ta.rs_parts_cpu_m = rs_cpu
             ta.rs_parts_mem_b = rs_mem
 
@@ -1624,8 +1539,8 @@ class KwokTestGenerator:
                 "num_pods": ta.num_pods,
                 "num_priorities": ta.num_priorities,
                 "num_replicaset": ta.num_replicaset,
-                "num_replicas_per_rs_set_lo": KwokTestGenerator._split_interval(ta.num_replicas_per_rs_set)[0],
-                "num_replicas_per_rs_set_hi": KwokTestGenerator._split_interval(ta.num_replicas_per_rs_set)[1],
+                "num_replicas_per_rs_lo": KwokTestGenerator._split_interval(ta.num_replicas_per_rs)[0],
+                "num_replicas_per_rs_hi": KwokTestGenerator._split_interval(ta.num_replicas_per_rs)[1],
                 "node_cpu_m": int(ta.node_cpu_m),
                 "node_mem_b": int(ta.node_mem_b),
                 "cpu_per_pod_m_lo": KwokTestGenerator._split_interval(ta.cpu_per_pod_m)[0],
@@ -1693,8 +1608,8 @@ class KwokTestGenerator:
             raise SystemExit("--generate-seeds-to-file requires --count >= 1")
         if self.args.seed is not None or self.args.seed_file:
             raise SystemExit("--generate-seeds-to-file cannot be combined with --seed or --seed-file")
-        time = int(time.time_ns())
-        rng = self._rng(time, "base") # random source
+        now_ns = int(time.time_ns())
+        rng = self._rng(now_ns, "base")
         seeds = [(rng.getrandbits(63) or 1) for _ in range(int(self.args.count))]
         outp = Path(self.args.generate_seeds_to_file)
         outp.parent.mkdir(parents=True, exist_ok=True)
@@ -1708,8 +1623,8 @@ class KwokTestGenerator:
         Run the generator for configuration(s) files and a seed count. If count=-1, run indefinitely.
         """
         to_make = int(self.args.count)
-        time = int(time.time_ns())
-        rng = self._rng(time, "base")
+        now_ns = int(time.time_ns())
+        rng = self._rng(now_ns, "base")
         made = 0
         while to_make == -1 or made < to_make:
             s = rng.getrandbits(63) or 1
