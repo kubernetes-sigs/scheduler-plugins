@@ -543,8 +543,6 @@ class KwokTestGenerator:
             LOG.info("stats export exists and overwrite disabled; skipping: %s (use --overwrite to replace)", out_path.name)
             return
 
-        LOG.info("phase=save_stats")
-
         cm_obj = KwokTestGenerator._get_latest_configmap(
             self.ctx, CM_STATS_NAMESPACE, CM_STATS_NAME,
             accept_prefix=True, label_selector=None,
