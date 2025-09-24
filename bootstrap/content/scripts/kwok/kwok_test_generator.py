@@ -620,13 +620,13 @@ class KwokTestGenerator:
             accept_prefix=True, label_selector=None,
         )
         if cm_obj is None:
-            LOG.warning("no ConfigMap matching %r found in ns=%r", CM_STATS_NAME, CM_STATS_NAMESPACE)
+            LOG.warning("no config map matching %r found in ns=%r", CM_STATS_NAME, CM_STATS_NAMESPACE)
             return
 
         md = cm_obj.get("metadata") or {}
         picked_name = md.get("name", CM_STATS_NAME)
         picked_ts = md.get("creationTimestamp", "")
-        LOG.info("using ConfigMap %s (created %s) from ns=%s", picked_name, picked_ts, CM_STATS_NAMESPACE)
+        LOG.info("using config map %s (created %s) from ns=%s", picked_name, picked_ts, CM_STATS_NAMESPACE)
 
         data = cm_obj.get("data") or {}
         runs_raw = data.get("runs.json", "[]")
@@ -643,7 +643,7 @@ class KwokTestGenerator:
         solver_slots = ["local-search", "bfs", "python"]
         header = ["timestamp_ns", "plan_status", "best"]
         for s in solver_slots:
-            header += [f"{s}_status", f"{s}_duration_us", f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
+            header += [f"{s}_status", f"{s}_stage", f"{s}_duration_us", f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
 
         with open(out_path, "w", encoding="utf-8", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=header)
@@ -658,10 +658,11 @@ class KwokTestGenerator:
                 for s in solver_slots:
                     a = attempts.get(s)
                     if not a:
-                        row[f"{s}_status"] = row[f"{s}_duration_us"] = row[f"{s}_placed_by_prio"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
+                        row[f"{s}_status"] = row[f"{s}_stage"] = row[f"{s}_duration_us"] = row[f"{s}_placed_by_prio"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
                         continue
                     sc = a.get("score") or {}
                     row[f"{s}_status"] = a.get("status", "")
+                    row[f"{s}_stage"] = a.get("stage", "")
                     row[f"{s}_duration_us"] = a.get("duration_us", "")
                     row[f"{s}_placed_by_prio"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
                     row[f"{s}_evictions"] = sc.get("evicted", "")
@@ -671,41 +672,65 @@ class KwokTestGenerator:
         LOG.info("saved %s", out_path)
 
     @staticmethod
-    def _get_latest_configmap(ctx: str, ns: str, base_name: str, *, label_selector: str | None = None, accept_prefix: bool = True) -> dict | None:
+    def _get_latest_configmap(
+        ctx: str,
+        ns: str,
+        base_name: str,
+        *,
+        label_selector: Optional[str] = None,
+        accept_prefix: bool = True,
+        retries: int = 10,
+        sleep_seconds: float = 0.5,
+    ) -> Optional[Dict[str, Any]]:
         """
-        Get the latest ConfigMap in the given namespace matching the base_name or label_selector.
+        Get the latest ConfigMap in the given namespace matching base_name or label_selector.
+        If no match is found (or kubectl fails), retry up to `retries` times with a pause in between.
         """
-        args = ["kubectl", "--context", ctx, "-n", ns, "get", "cm"]
-        if label_selector:
-            args += ["-l", label_selector]
-        args += ["-o", "json"]
-        r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-        if r.returncode != 0:
-            return None
-        try:
-            items = (json.loads(r.stdout.decode("utf-8", errors="replace")) or {}).get("items", [])
-        except Exception:
-            return None
-
-        def _matches(item: dict) -> bool:
-            name = ((item.get("metadata") or {}).get("name") or "")
+        def _run_once() -> Optional[Dict[str, Any]]:
+            args = ["kubectl", "--context", ctx, "-n", ns, "get", "cm"]
             if label_selector:
-                return True
-            if name == base_name:
-                return True
-            return accept_prefix and name.startswith(f"{base_name}-")
+                args += ["-l", label_selector]
+            args += ["-o", "json"]
 
-        cand = [it for it in items if _matches(it)]
-        if not cand:
-            return None
+            r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            if r.returncode != 0:
+                return None
 
-        def _key(item: dict):
-            md = item.get("metadata") or {}
-            ts = md.get("creationTimestamp", "")
-            rv = md.get("resourceVersion", "0")
-            return (ts, rv)
+            try:
+                items = (json.loads(r.stdout.decode("utf-8", errors="replace")) or {}).get("items", [])
+            except Exception:
+                return None
 
-        return max(cand, key=_key)
+            def _matches(item: Dict[str, Any]) -> bool:
+                name = ((item.get("metadata") or {}).get("name") or "")
+                if label_selector:
+                    return True
+                if name == base_name:
+                    return True
+                return accept_prefix and name.startswith(f"{base_name}-")
+
+            cand = [it for it in items if _matches(it)]
+            if not cand:
+                return None
+
+            def _key(item: Dict[str, Any]):
+                md = item.get("metadata") or {}
+                ts = md.get("creationTimestamp", "")
+                rv = md.get("resourceVersion", "0")
+                return (ts, rv)
+
+            return max(cand, key=_key)
+
+        # First attempt + retries
+        attempts = retries + 1
+        for i in range(attempts):
+            result = _run_once()
+            if result is not None:
+                return result
+            if i < attempts - 1:
+                time.sleep(sleep_seconds)
+
+        return None
 
     ##############################################
     # ------------ KWOK / kubectl helpers --------
@@ -1320,14 +1345,14 @@ class KwokTestGenerator:
         mem_b = (qty_to_bytes_int(tr.mem_per_pod[0]), qty_to_bytes_int(tr.mem_per_pod[1]))
         
         # num_replicaset
-        num_rs = None
+        num_rs = 0
         if tr.num_replicaset is not None: 
             num_rs_lo, num_rs_hi = tr.num_replicaset
             rng_rs       = self._rng(seed_int, "num_replicaset", num_rs_lo, num_rs_hi)
             num_rs = rng_rs.randint(num_rs_lo, num_rs_hi)
 
         # Pod sizes
-        if num_rs is not None:  # RS mode
+        if num_rs > 0:  # RS mode
             rng_rs_sizes = self._rng(seed_int, "rs-sizes")
             rng_rs_cpu   = self._rng(seed_int, "rs-cpu")
             rng_rs_mem   = self._rng(seed_int, "rs-mem")
@@ -1375,7 +1400,7 @@ class KwokTestGenerator:
             pod_parts_mem_b=mem_parts,
         )
         # Only add RS fields if RS are used
-        if num_rs is not None:
+        if num_rs > 0:
             ta.rs_replicas = replica_sets
             ta.rs_parts_cpu_m = rs_cpu
             ta.rs_parts_mem_b = rs_mem
@@ -1640,7 +1665,7 @@ class KwokTestGenerator:
                 LOG.info(f"appended to {dest_csv.name}")
             else:
                 LOG.info("not saved (already exists; use --overwrite to replace)")
-
+            
             phase = "save_stats"
             LOG.info(f"phase={phase}")
             self._save_stats_csv(cfg, seed)

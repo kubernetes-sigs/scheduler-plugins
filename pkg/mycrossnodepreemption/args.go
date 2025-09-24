@@ -25,6 +25,9 @@ var HTTPAddr = getenv("HTTP_ADDR", ":18080")
 
 // ======= Solver settings =======
 
+// Save failed attempts to config map (for debugging)
+var SolverSaveAllAttempts = parseBool(getenv("SOLVER_SAVE_FAILED_ATTEMPTS", "true"))
+
 // Whether solvers should receive and honor improvement hints.
 var SolverUseHints = parseBool(getenv("SOLVER_USE_HINTS", "false"))
 

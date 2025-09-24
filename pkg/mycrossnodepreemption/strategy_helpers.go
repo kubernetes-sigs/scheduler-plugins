@@ -77,8 +77,8 @@ func parseOptimizeMode(s string) OptimizeModeType {
 
 // parseOptimizeHookStage parses an optimization "at" string and returns the corresponding OptimizationAtMode.
 func parseOptimizeHookStage(s string) StageType {
-	if optimizeAllSynch() {
-		return StagePostFilter // in AllSynch mode, we always collect pods at PostFilter
+	if optimizeAllAsynch() {
+		return StagePostFilter // in AllAsynch mode, we always collect pods at PostFilter
 	}
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "preenqueue":

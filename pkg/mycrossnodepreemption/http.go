@@ -62,9 +62,9 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 			resp.Error = ErrActiveInProgress.Error()
 		case ErrNoop:
 			resp.Status = "noop"
-		case ErrNoSolverSolution:
-			resp.Status = "no-solution"
-			resp.Error = ErrNoSolverSolution.Error()
+		case ErrNoImprovingSolutionFromAnySolver:
+			resp.Status = "no-improving-solution"
+			resp.Error = ErrNoImprovingSolutionFromAnySolver.Error()
 		default:
 			resp.Status = "error"
 			resp.Error = err.Error()

@@ -2,7 +2,7 @@ kind: KwokRunConfiguration
 namespace: test
 num_nodes: 4
 num_pods: 12
-num_priorities: [2, 4] # either a single integer or a range [lo, hi]
+num_priorities: 4 # either a single integer or a range [lo, hi]
 cpu_per_pod: "100m"   # e.g. 100m, 1
 mem_per_pod: ["128Mi","1024Mi"] # e.g. 128Mi, 1Gi
 util: 1.1
@@ -35,4 +35,8 @@ componentsPatches:
       - name: SOLVER_PYTHON_ENABLED
         value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
+        value: "10s"
+      - name: SOLVER_LOCAL_SEARCH_ENABLED
+        value: "true"
+      - name: SOLVER_LOCAL_SEARCH_TIMEOUT
         value: "10s"

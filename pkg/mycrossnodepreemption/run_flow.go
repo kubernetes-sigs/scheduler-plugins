@@ -57,12 +57,12 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 		pl.leaveActive()
 		return nil, err
 	}
-	bestSolver, anyFeasible := pl.runSolvers(ctx, solverInput, nodes, pods)
+	bestSolver, anyFeasibleImproving := pl.runSolvers(ctx, solverInput, nodes, pods)
 	// Check if all solvers are infeasible -> ErrNoOptimalOrFeasible
-	if !anyFeasible {
-		klog.Error(msg(strategy, InfoNoSolverSolution))
+	if !anyFeasibleImproving {
+		klog.Error(msg(strategy, InfoNoImprovingSolutionFromAnySolver))
 		pl.leaveActive()
-		return nil, ErrNoSolverSolution
+		return nil, ErrNoImprovingSolutionFromAnySolver
 	}
 
 	// Take Active late for AllSynch (only now that we know it's worth applying a plan).

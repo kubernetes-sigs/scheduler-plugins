@@ -12,6 +12,7 @@ const (
 	// Version is the current version of the plugin.
 	Version = "v1.5.0"
 	// MyV is the klog verbosity level; set to 0 for extra verbose logging.
+	// Cannot be added to args.go as it needs to be a constant for build tags.
 	MyV = 2
 	// SystemNamespace is the namespace in which the plugin operates.
 	// Used to prevent deletion of configmaps when cleaning up pods for a new run.

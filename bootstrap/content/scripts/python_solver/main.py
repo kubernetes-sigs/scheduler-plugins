@@ -4,20 +4,23 @@
 
 import os
 import sys, json
+from typing import Optional, Union
 from ortools.sat.python import cp_model
 
-class CPSATSolver:
-    #################################################
-    # --- Constants ---------------------------------
-    #################################################
-    STATUS_MAP = {
-        cp_model.OPTIMAL:       "OPTIMAL",
-        cp_model.FEASIBLE:      "FEASIBLE",
-        cp_model.INFEASIBLE:    "INFEASIBLE",
-        cp_model.MODEL_INVALID: "MODEL_INVALID",
-        cp_model.UNKNOWN:       "UNKNOWN",
-    }
+#################################################
+# --- Constants ---------------------------------
+#################################################
+STATUS_MAP = {
+    cp_model.OPTIMAL:       "OPTIMAL",
+    cp_model.FEASIBLE:      "FEASIBLE",
+    cp_model.INFEASIBLE:    "INFEASIBLE",
+    cp_model.MODEL_INVALID: "MODEL_INVALID",
+    cp_model.UNKNOWN:       "UNKNOWN",
+}
+NO_NODES = "NO_NODES"
+NO_PODS = "NO_PODS"
 
+class CPSATSolver:
     #################################################
     # --- Helpers -----------------------------------
     #################################################
@@ -30,12 +33,17 @@ class CPSATSolver:
             return max(1, os.cpu_count() or 1)
 
     @classmethod
-    def _status_str(cls, st: int) -> str:
-        return cls.STATUS_MAP.get(st, "UNKNOWN")
+    def _status_str(cls, st: Union[int, str]) -> str:
+        if isinstance(st, str):
+            return st
+        return STATUS_MAP.get(st, "UNKNOWN")
 
     @classmethod
-    def _encode_status(cls, st: int) -> dict:
-        return {"status": cls._status_str(st)}
+    def _encode_status(cls, st: Union[int, str], stage: Optional[str] = None) -> dict:
+        d = {"status": cls._status_str(st)}
+        if stage is not None:
+            d["stage"] = stage
+        return d
 
     def solve(self, instance: dict) -> dict:
         #################################################
@@ -46,7 +54,7 @@ class CPSATSolver:
         preemptor   = instance.get("preemptor") or None
 
         if not nodes:
-            return {"status": "no nodes", "placements": [], "evictions": []}
+            return self._encode_status(NO_NODES)
 
         #################################################
         # --- Options/Parameters ------------------------
@@ -111,7 +119,7 @@ class CPSATSolver:
         num_nodes = len(nodes)
         num_pods  = len(pods)
         if num_pods == 0:
-            return {"status": "no pods", "placements": [], "evictions": []}
+            return self._encode_status(NO_PODS)
 
         node_idx = {n["name"]: j for j, n in enumerate(nodes)}
 
@@ -242,7 +250,6 @@ class CPSATSolver:
                 elif p_priority(i) == preemptor_priority:
                     model.Add(placed[i] == 1)
                     model.Add(evict[i] == 0)
-
                 else:
                     # Lower-priority than preemptor:
                     # no extra guard — solver may move or evict as needed
@@ -307,7 +314,7 @@ class CPSATSolver:
                 model.Add(sum(placed[i] for i in idxs_ge) >= baseline)
         
         #################################################
-        # --- Solve -------------------------------------
+        # --- Solver Options ----------------------------
         #################################################
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = max(1, timeout_ms / 1000.0)
@@ -319,10 +326,54 @@ class CPSATSolver:
             print(line, file=sys.stderr, flush=True) if line else None
         )
         
-        # More solvers could be tried here if needed
-        st = self._solve_lexi(model, solver, placed, evict, move, running_idxs, p_priority)
-        if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return self._encode_status(st)
+        #################################################
+        # --- Lexicographic Objective -------------------
+        #################################################
+        """
+        Lexicographic objective:
+          1) maximize placed count per priority tier (high->low)
+          2) minimize evictions of running pods
+          3) minimize moves of running pods
+        """
+        # Stage 1: maximize placed by priority tier (higher first)
+        num_pods = len(placed)
+        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
+        for priority in priorities:
+            idxs = [i for i in range(num_pods) if p_priority(i) == priority]
+            if not idxs:
+                continue
+            placed_count = model.NewIntVar(0, len(idxs), f"placed_count_priority{priority}")
+            model.Add(placed_count == sum(placed[i] for i in idxs))
+            model.Maximize(placed_count)
+            status = solver.Solve(model)
+            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                return self._encode_status(status, "stage_1: maximize_placed_by_priority") # return immediately if no solution
+            # Freeze that tier’s optimum
+            model.Add(placed_count == int(solver.Value(placed_count)))
+
+        # Stage 2: minimize evictions (running only)
+        total_evict = model.NewIntVar(0, len(running_idxs), "total_evict_running")
+        model.Add(total_evict == sum(evict[i] for i in running_idxs))
+        model.Minimize(total_evict)
+        status = solver.Solve(model)
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            return self._encode_status(status, "stage_2: minimize_evictions") # return immediately if no solution
+        model.Add(total_evict == int(solver.Value(total_evict)))
+
+        # Stage 3: minimize moves (running only)
+        move_terms = [move[i] for i in running_idxs if move[i] is not None]
+        max_moves  = len(move_terms)
+        total_moves = model.NewIntVar(0, max_moves, "total_moves_running")
+        if move_terms:
+            model.Add(total_moves == sum(move_terms))
+        else:
+            model.Add(total_moves == 0)
+        model.Minimize(total_moves)
+        
+        # Solve and status
+        status = solver.Solve(model)
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            return self._encode_status(status, "stage_3: minimize_moves") # return immediately if no solution
 
         #################################################
         # --- Extract and Return Plan -------------------
@@ -363,67 +414,29 @@ class CPSATSolver:
 
         # Return status, placements, evictions
         return {
-            "status": self._status_str(st),
+            "status": self._status_str(status),
             "placements": placements,
             "evictions": evictions,
         }
-
-    #################################################
-    # --- Lexicographic Objective -------------------
-    #################################################
-    def _solve_lexi(self, model, solver, placed, evict, move, running_idxs, p_pri):
-        """
-        Lexicographic objective:
-          1) maximize placed count per priority tier (high->low)
-          2) minimize evictions of running pods
-          3) minimize moves of running pods
-        """
-        # Stage 1: maximize placed by priority tier (higher first)
-        num_pods = len(placed)
-        priorities = sorted({p_pri(i) for i in range(num_pods)}, reverse=True)
-        for priority in priorities:
-            idxs = [i for i in range(num_pods) if p_pri(i) == priority]
-            if not idxs:
-                continue
-            placed_count = model.NewIntVar(0, len(idxs), f"placed_count_priority{priority}")
-            model.Add(placed_count == sum(placed[i] for i in idxs))
-            model.Maximize(placed_count)
-            status = solver.Solve(model)
-            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                return status
-            # Freeze that tier’s optimum
-            model.Add(placed_count == int(solver.Value(placed_count)))
-
-        # Stage 2: minimize evictions (running only)
-        total_evict = model.NewIntVar(0, len(running_idxs), "total_evict_running")
-        model.Add(total_evict == sum(evict[i] for i in running_idxs))
-        model.Minimize(total_evict)
-        status = solver.Solve(model)
-        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return status
-        model.Add(total_evict == int(solver.Value(total_evict)))
-
-        # Stage 3: minimize moves (running only)
-        move_terms = [move[i] for i in running_idxs if move[i] is not None]
-        max_moves  = len(move_terms)
-        total_moves = model.NewIntVar(0, max_moves, "total_moves_running")
-        if move_terms:
-            model.Add(total_moves == sum(move_terms))
-        else:
-            model.Add(total_moves == 0)
-        model.Minimize(total_moves)
-        return solver.Solve(model)
-
 
 #################################################
 # --- Main --------------------------------------
 #################################################
 def main():
-    raw = sys.stdin.read()
-    inst = json.loads(raw or "{}")
-    solver = CPSATSolver()
-    out = solver.solve(inst if isinstance(inst, dict) else {})
-    print(json.dumps(out))
+    try:
+        raw = sys.stdin.read()
+        inst = json.loads(raw or "{}")
+        solver = CPSATSolver()
+        out = solver.solve(inst if isinstance(inst, dict) else {})
+        print(json.dumps(out))
+    except Exception as e:
+        # Always return a JSON object and exit 0 so Go doesn't see "status 1"
+        err = {"status": "PYTHON_EXCEPTION", "error": str(e)}
+        try:
+            print(json.dumps(err))
+        except Exception:
+            # last resort
+            print('{"status":"PYTHON_EXCEPTION","error":"unserializable error"}')
 
 if __name__ == "__main__":
     main()
