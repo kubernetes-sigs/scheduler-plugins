@@ -1854,8 +1854,11 @@ def run_matrix(args) -> int:
             "--seed-file",    row["seed-file"],
             "--results-dir",  row["results-dir"],
         ]
+        # forward flags
         if args.overwrite:
             cmd.append("--overwrite")
+        if args.trigger_optimizer:
+            cmd.append("--trigger-optimizer")
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env["KWOK_LOG_PREFIX"] = f"[worker {idx}/{total} cluster={row['cluster-name']}] "

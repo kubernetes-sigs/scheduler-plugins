@@ -97,6 +97,11 @@ print_cfg() {
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
   fi
+  if [ -n "${TRIGGER_OPTIMIZER}" ]; then
+    log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
+  else
+    log cfg "TRIGGER_OPTIMIZER=<unset>"
+  fi
   if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "docker" ]; then
     log cfg "IMAGE_REMOTE_TAG=${IMAGE_REMOTE_TAG}"
   fi
@@ -257,6 +262,12 @@ stage_test() {
   print_cfg
   run_root "'${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok/requirements.txt'"
 
+  # Build optional flag string
+  TRIGGER_OPTIMIZER_FLAG=""
+  if [ -n "${TRIGGER_OPTIMIZER}" ]; then
+    TRIGGER_OPTIMIZER_FLAG="--trigger-optimizer"
+  fi
+
   # Run: matrix mode vs single-run mode
   if [ -n "${MATRIX_FILE}" ]; then
     log init "running in matrix mode"
@@ -265,7 +276,8 @@ stage_test() {
       '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
         --kwok-runtime '${KWOK_RUNTIME}' \
         --matrix-file '${MATRIX_FILE}' \
-        --matrix-parallel '${MATRIX_PARALLEL}'"
+        --matrix-parallel '${MATRIX_PARALLEL}' \
+        ${TRIGGER_OPTIMIZER_FLAG}"
   else
     log init "running single test"
     run_root "cd '${CONTENT_DIR}' && \
@@ -275,7 +287,8 @@ stage_test() {
         --kwok-runtime '${KWOK_RUNTIME}' \
         --config-dir '${KWOK_CONFIG_DIR}' \
         --results-dir '${RESULTS_DIR}' \
-        --seed-file '${SEED_FILE}'"
+        --seed-file '${SEED_FILE}' \
+        ${TRIGGER_OPTIMIZER_FLAG}"
   fi
 
   log ok "test done"
@@ -304,6 +317,8 @@ while [ $# -gt 0 ]; do
     --results-dir)        RESULTS_DIR="$2"; shift;;
     --seed-file=*)        SEED_FILE="${1#*=}";;
     --seed-file)          SEED_FILE="$2"; shift;;
+    --trigger-optimizer=*)  TRIGGER_OPTIMIZER="${1#*=}";;
+    --trigger-optimizer)    TRIGGER_OPTIMIZER="$2"; shift;;
     --matrix-file=*)      MATRIX_FILE="${1#*=}";;
     --matrix-file)        MATRIX_FILE="$2"; shift;;
     --matrix-parallel=*)  MATRIX_PARALLEL="${1#*=}";;
