@@ -16,7 +16,7 @@
     cd /home/vagrant/bootstrap
     find . -type f -name '*.sh' -print0 | xargs -0 -r sed -i 's/\r$//'
     /usr/bin/env bash ./bootstrap.sh all \
-      --build-scheduler=true \
+      --build-scheduler=false \
       --content-dir /home/vagrant/bootstrap/content \
       --image-remote-tag henrikdc/master:dev \
       --kwok-cluster kwok-a \
@@ -24,9 +24,11 @@
       --kwok-config-dir data/configs/a \
       --results-dir data/results/a \
       --seed-file data/seeds/001.txt \
-      --matrix-file data/matrix-file.csv \
+      --matrix-file data/jobs/2025-09-24/baseline_n4_p16_u090-01.csv \
       --matrix-parallel 1
   SHELL
 end
 
-# UCLOUD: --build-scheduler false --content-dir /work/content --kwok-runtime binary --matrix-file matrix-file.csv
+# NOTE: REMEMBER TO BUILD BEFORE VAGRANT UP, if not using prebuilt scheduler
+
+# UCLOUD: --build-scheduler false --content-dir /work/content --kwok-runtime binary --matrix-file data/jobs/2025-09-24/baseline_n4_p16_u090-01.csv

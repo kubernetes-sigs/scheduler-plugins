@@ -1,0 +1,2 @@
+timestamp_ns,plan_status,best,local-search_status,local-search_stage,local-search_duration_us,local-search_placed_by_prio,local-search_evictions,local-search_moves,bfs_status,bfs_stage,bfs_duration_us,bfs_placed_by_prio,bfs_evictions,bfs_moves,python_status,python_stage,python_duration_us,python_placed_by_prio,python_evictions,python_moves
+1758711854775364659,Completed,python,INFEASIBLE,,,{},,,,,,,,,OPTIMAL,,,"{""2"":3,""3"":1,""4"":4}",,
