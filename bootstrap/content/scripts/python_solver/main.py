@@ -271,7 +271,7 @@ class CPSATSolver:
             model.Add(sum(placed[i] for i in pending_idxs) >= 1)
 
         #################################################
-        # --- Hints (placed_by_priority) Constraints ----
+        # --- Placed by Priority Constraints ------------
         #################################################
         # External hints (placed_by_priority) constraints
         if use_hints and isinstance(hints, dict):
@@ -281,37 +281,62 @@ class CPSATSolver:
                     if str(k).lstrip("-").isdigit() and int(v) > 0}
             if exact:
                 # priorities present in the instance, high -> low
-                prios = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
+                priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
                 # build cumulative >=pr demand from exact-tier hints
                 cum_need = {}
                 acc = 0
-                for pr in prios:
-                    acc += exact.get(pr, 0)
-                    cum_need[pr] = acc
-                for pr in prios:
-                    idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
+                for priority in priorities:
+                    acc += exact.get(priority, 0)
+                    cum_need[priority] = acc
+                for priority in priorities:
+                    idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
                     if not idxs_ge:
                         continue
                     # feasibility guards
                     cap_ge  = sum(1 for i in idxs_ge if eligible_nodes[i]) # placeable upper bound
                     base_ge = sum(1 for i in idxs_ge if i in running_idxs) # non-degradation baseline
-                    need_ge = cum_need.get(pr, 0)
+                    need_ge = cum_need.get(priority, 0)
                     # lower bound for this tier
                     lower_bound = max(base_ge, min(need_ge, cap_ge))
                     # in single-preemptor mode, don't push tiers at/under the preemptor
-                    if single_preemptor_mode and preemptor_idx is not None and pr <= preemptor_priority:
+                    if single_preemptor_mode and preemptor_idx is not None and priority <= preemptor_priority:
                         lower_bound = base_ge
                     if lower_bound > 0:
                         model.Add(sum(placed[i] for i in idxs_ge) >= lower_bound)
         # If no hints, enforce non-degradation per priority tier
         else:
-            prios = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
-            for pr in prios:
-                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
+            priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True) # priorities: high->low
+            for priority in priorities:
+                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
                 if not idxs_ge:
                     continue
-                baseline = sum(1 for i in idxs_ge if i in running_idxs)
-                model.Add(sum(placed[i] for i in idxs_ge) >= baseline)
+                base_ge = sum(1 for i in idxs_ge if i in running_idxs)
+                # weak constraint: non-degradation at ≥priority
+                # to avoid trivial empty solution
+                model.Add(sum(placed[i] for i in idxs_ge) >= base_ge)
+        
+        # Require at least one strict improvement on some priority tier
+        # To avoid trivial solutions that do not improve anything
+        improved_at = [] # improved_at[priority] == 1 means strictly improved at ≥pr
+        for priority in priorities:
+            # If you have single-preemptor rules and want to forbid improving ≥ preemptor tier:
+            if single_preemptor_mode and preemptor_idx is not None and priority >= preemptor_priority:
+                continue
+            # Get indices of pods at this tier or above
+            idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
+            if not idxs_ge: # no pods at this tier
+                continue
+            # Current baseline at this tier (running count)
+            base_ge = sum(1 for i in idxs_ge if i in running_idxs)
+            # Strictly improved at ≥pr"
+            improved = model.NewBoolVar(f"strict_improve_ge_{priority}")
+            # If imp==1, enforce ≥ base+1 at that tier
+            # +1 means one more placement than current running count at that tier
+            model.Add(sum(placed[i] for i in idxs_ge) >= base_ge + 1).OnlyEnforceIf(improved)
+            # If imp==0, no extra requirement for that tier (non-degradation already applies)
+            improved_at.append(improved)
+        if improved_at:
+            model.AddBoolOr(improved_at) # at least one tier must strictly improve.
         
         #################################################
         # --- Solver Options ----------------------------

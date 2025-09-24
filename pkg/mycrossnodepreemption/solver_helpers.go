@@ -375,6 +375,7 @@ func buildWorklist(pending []*SolverPod, pre *SolverPod) (out []*SolverPod, sing
 // 2) Fewer evictions
 // 3) Fewer moves
 // Returns 1 if suggested is better, -1 if worse, 0 if equal.
+// Returns as soon as a difference is found.
 func isImprovement(baseline, suggested SolverScore) int {
 	// 1) Placed-by-priority (more is better)
 	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
@@ -1337,27 +1338,28 @@ func toSolverPod(p *v1.Pod, node string) SolverPod {
 	}
 }
 
-// TODO: check and cleanup
 // comparePlaced returns 1 if a>b, -1 if a<b, 0 if equal (lexi by priority desc).
 func comparePlaced(a, b map[string]int) int {
 	keys := map[int]struct{}{}
-	for k := range a {
-		if v, err := strconv.Atoi(k); err == nil {
-			keys[v] = struct{}{}
+	for key := range a {
+		if value, err := strconv.Atoi(key); err == nil {
+			keys[value] = struct{}{}
 		}
 	}
-	for k := range b {
-		if v, err := strconv.Atoi(k); err == nil {
-			keys[v] = struct{}{}
+	for key := range b {
+		if value, err := strconv.Atoi(key); err == nil {
+			keys[value] = struct{}{}
 		}
 	}
-	prs := make([]int, 0, len(keys))
+	priorities := make([]int, 0, len(keys))
 	for k := range keys {
-		prs = append(prs, k)
+		priorities = append(priorities, k)
 	}
-	// sort priorities descending
-	sort.Sort(sort.Reverse(sort.IntSlice(prs)))
-	for _, pr := range prs {
+	// returns as soon as a difference is found starting from highest prio
+	// meaning that placing more high-prio pods is better
+	// (even if it means placing fewer low-prio pods, we trust the solver to optimize that)
+	sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
+	for _, pr := range priorities {
 		ai := a[strconv.Itoa(pr)]
 		bi := b[strconv.Itoa(pr)]
 		if ai != bi {

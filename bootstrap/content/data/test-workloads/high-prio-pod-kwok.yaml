@@ -14,8 +14,8 @@ spec:
     image: registry.k8s.io/pause:3.9
     resources:
       requests:
-        cpu: "500m"
-        memory: "1Gi"
+        cpu: "100m"
+        memory: "100Mi"
       limits:
-        cpu: "500m"
-        memory: "1Gi"
+        cpu: "100m"
+        memory: "100Mi"

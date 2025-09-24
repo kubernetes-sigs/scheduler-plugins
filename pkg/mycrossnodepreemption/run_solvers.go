@@ -150,18 +150,16 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Status:     out.Status,
 			Stage:      out.Stage,
 		}
-		hasPlacement := len(out.Placements) > 0
 
-		if improvedOverBaseline <= 0 || !hasPlacement {
+		if improvedOverBaseline <= 0 {
 			// Feasible but not improving (or no actual placement) — ignore as a candidate.
-			klog.V(MyV).InfoS(
+			klog.InfoS(
 				msg(strategy, "feasible but not improving; discard"),
 				"solver", att.Name,
 				"placedByPri", score.PlacedByPriority,
 				"baselinePlacedByPri", baselineScore.PlacedByPriority,
 				"evictions", score.Evicted, "baselineEvictions", baselineScore.Evicted,
 				"moves", score.Moved, "baselineMoves", baselineScore.Moved,
-				"hasPlacement", hasPlacement,
 				"durationUs", durUs,
 			)
 			curr.CmpBase = 0 // mark as non-improving
@@ -178,7 +176,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// New leader?
 		switch curr.CmpBase {
 		case 1: // new best
-			klog.InfoS(msg(strategy, "new leader"),
+			klog.V(MyV).InfoS(msg(strategy, "new leader"),
 				"solver", att.Name, "prevLeader", best.Name, "durationUs", curr.DurationUs,
 				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", best.Score.PlacedByPriority,
 				"leaderEvictions", curr.Score.Evicted, "prevEvictions", best.Score.Evicted,
