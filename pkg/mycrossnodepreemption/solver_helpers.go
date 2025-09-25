@@ -18,8 +18,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// isSolverEnabled checks if any solver is enabled.
-func (pl *MyCrossNodePreemption) isSolverEnabled() bool {
+// isAnySolverEnabled checks if any solver is enabled.
+func (pl *MyCrossNodePreemption) isAnySolverEnabled() bool {
 	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
 }
 
@@ -226,6 +226,23 @@ func buildBaselineScore(in SolverInput) SolverScore {
 		Evicted:          0,
 		Moved:            0,
 	}
+}
+
+// solverConfigArgs builds a list of key-value pairs representing the active solver configuration.
+func solverConfigArgs() []any {
+	args := make([]any, 0, 10)
+	if SolverPythonEnabled {
+		args = append(args, "pythonSolver", true, "pythonTimeout", SolverPythonTimeout.String())
+	}
+	if SolverBfsEnabled {
+		args = append(args, "bfsSolver", true, "bfsTimeout", SolverBfsTimeout.String())
+	}
+	if SolverLocalSearchEnabled {
+		args = append(args, "localSearchSolver", true, "localSearchTimeout", SolverLocalSearchTimeout.String())
+	}
+	// Always include shared flags
+	args = append(args, "useHints", SolverUseHints, "saveFailedAttempts", SolverSaveAllAttempts)
+	return args
 }
 
 // TODO: check and cleanup

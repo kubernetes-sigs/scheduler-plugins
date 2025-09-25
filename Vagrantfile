@@ -26,7 +26,8 @@
       --seed-file data/seeds/001.txt \
       --matrix-file data/jobs/2025-09-25/all_synch_python_n4_p16_u090-01.csv \
       --matrix-parallel 1 \
-      --trigger-optimizer true
+      --trigger-optimizer true \
+      --save-scheduler-logs true
   SHELL
 end
 

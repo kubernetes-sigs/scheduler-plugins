@@ -26,7 +26,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		BlockedWhileActive: newPodSet("BlockedWhileActive"),
 	}
 
-	if !pl.isSolverEnabled() { // ensure at least one solver is enabled
+	if !pl.isAnySolverEnabled() { // ensure at least one solver is enabled
 		klog.Error(ErrNoSolverEnabled)
 		return nil, ErrNoSolverEnabled
 	}
@@ -52,10 +52,8 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 	// Plugin configuration
 	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", strategyToString())
-	klog.InfoS("Plugin configuration", "planTimeout", PlanExecutionTimeout.String(), "pythonSolver", SolverPythonEnabled, "bfsSolver", SolverBfsEnabled, "localSearchSolver", SolverLocalSearchEnabled, "solverTimeout", SolverPythonTimeout.String())
-	if optimizeAllSynch() || optimizeAllAsynch() {
-		klog.InfoS("Loop configuration", "optimizationInterval", OptimizeInterval.String())
-	}
+	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
+	klog.InfoS("Solver configuration", solverConfigArgs()...)
 
 	// Start HTTP server for manual triggering
 	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualAllSynch() {

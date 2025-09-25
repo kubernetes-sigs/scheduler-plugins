@@ -77,7 +77,7 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 		Handler: mux,
 	}
 
-	klog.InfoS("HTTP server started", "addr", addr, "mode", strategyToString())
+	klog.InfoS("HTTP server started", "addr", addr)
 
 	go func() {
 		<-ctx.Done()

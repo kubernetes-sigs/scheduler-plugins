@@ -25,6 +25,7 @@
 #                                       of running vs unscheduled at the end. No results are saved in test mode.
 ################################################################################
 
+import cmd
 import sys, csv, json, time, random, argparse, re, subprocess, tempfile, os, textwrap, hashlib, math, yaml, traceback, contextlib, fcntl, logging, shlex
 from urllib import request as _urlreq, error as _urlerr
 from dataclasses import dataclass, field
@@ -918,6 +919,35 @@ class KwokTestGenerator:
         LOG.warning(f"timeout waiting for RS '{rs_name}' in ns '{ns}' to have desired pods {mode}")
         return last_count
 
+    def _save_scheduler_logs(self, cfg: Path, seed: int) -> None:
+        """
+        Save kube-scheduler logs for the current KWOK cluster to results dir.
+        File: <results-dir>/<cfg.stem>_kube-scheduler_seed-<seed>.log
+        """
+        assert self.results_dir is not None, "results_dir must be resolved before saving logs"
+        out_path = self.results_dir / f"{cfg.stem}_kube-scheduler_seed-{seed}.log"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # only save if not exists or overwrite is enabled
+        if out_path.exists() and not self.args.overwrite:
+            LOG.info("scheduler log exists and overwrite disabled; skipping: %s (use --overwrite to replace)", out_path.name)
+            return
+
+        try:
+            # We capture the raw output for a clean log file (no prefixed 'kwokctl>' lines)
+            r = subprocess.run(
+                ["kwokctl", "logs", "kube-scheduler", "--name", self.args.cluster_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            data = r.stdout or b""
+            with open(out_path, "wb") as fh:
+                fh.write(data)
+            LOG.info("saved scheduler logs to %s (rc=%d, %d bytes)", out_path.name, r.returncode, len(data))
+        except Exception as e:
+            LOG.warning("failed saving scheduler logs: %s", e)
+
     ##############################################
     # ------------ Workload application --------
     ##############################################
@@ -1320,6 +1350,11 @@ class KwokTestGenerator:
 
         return ta
     
+
+
+
+
+    
     ##############################################
     # ------------ Runner helpers ----------------
     ##############################################
@@ -1583,6 +1618,11 @@ class KwokTestGenerator:
             LOG.info(f"phase={phase}")
             self._save_stats_csv(cfg, seed)
 
+            if self.args.save_scheduler_logs:
+                phase = "save_scheduler_logs"
+                LOG.info(f"phase={phase}")
+                self._save_scheduler_logs(cfg, seed)
+
             LOG.info(f"done; took {time.time()-start_time:.1f}s")
             self._print_seed_summary(cfg, seed, len(running), len(unschedulable))
 
@@ -1779,7 +1819,43 @@ class KwokTestGenerator:
 # ===============================================================
 # Logging
 # ===============================================================
-class _PrefixFilter(logging.Filter):
+def _format_args_block(args) -> str:
+    # Keep a stable, explicit order
+    fields = [
+        ("cluster_name", args.cluster_name),
+        ("kwok_runtime", args.kwok_runtime),
+        ("config_dir", args.config_dir),
+        ("results_dir", args.results_dir),
+        ("overwrite", args.overwrite),
+        ("max_rows_per_file", args.max_rows_per_file),
+        ("seed", args.seed),
+        ("seed_file", args.seed_file),
+        ("generate_seeds_to_file", args.generate_seeds_to_file),
+        ("count", args.count),
+        ("matrix_file", args.matrix_file),
+        ("matrix_parallel", args.matrix_parallel),
+        ("test", args.test),
+        ("save_scheduler_logs", args.save_scheduler_logs),
+        ("trigger_optimizer", args.trigger_optimizer),
+        ("optimizer_url", (args.optimizer_url if getattr(args, "trigger_optimizer", False) else "<unused>")),
+        ("pause", args.pause),
+        ("log_level", args.log_level),
+    ]
+    pad = max(len(k) for k, _ in fields)
+    def _fmt(v):
+        return "<unset>" if v in (None, "") else str(v)
+    lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
+    return "\n".join(lines)
+
+def log_args_in_use(args, *, use_logger: bool = True) -> None:
+    block = _format_args_block(args)
+    header = "\n==================== ARGS IN USE ====================\n"
+    footer = "\n====================================================="
+    if use_logger:
+        LOG.info("%s%s%s", header, block, footer)
+    else:
+        print(f"{header}{block}{footer}", flush=True)
+class PrefixFilter(logging.Filter):
     """
     Injects a static 'prefix' field into each LogRecord.
     """
@@ -1804,7 +1880,7 @@ def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
     h = logging.StreamHandler(stream=sys.stdout)
     fmt = logging.Formatter("%(asctime)s %(prefix)s%(message)s", datefmt="%H:%M:%S")
     h.setFormatter(fmt)
-    h.addFilter(_PrefixFilter(prefix))
+    h.addFilter(PrefixFilter(prefix))
     logger.addHandler(h)
     logging.captureWarnings(True)
     return logger
@@ -1815,6 +1891,8 @@ def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
 MATRIX_REQUIRED_COLS = ["cluster-name", "config-dir", "seed-file", "results-dir"]
 
 def run_matrix(args) -> int:
+    log_args_in_use(args, use_logger=False)
+    
     def _read_csv_matrix(path: str):
         rows = []
         with open(path, "r", encoding="utf-8") as f:
@@ -1859,6 +1937,8 @@ def run_matrix(args) -> int:
             cmd.append("--overwrite")
         if args.trigger_optimizer:
             cmd.append("--trigger-optimizer")
+        if args.save_scheduler_logs:
+            cmd.append("--save-scheduler-logs")
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env["KWOK_LOG_PREFIX"] = f"[worker {idx}/{total} cluster={row['cluster-name']}] "
@@ -1912,6 +1992,10 @@ def build_argparser() -> argparse.ArgumentParser:
     
     # test
     ap.add_argument("--test", action="store_true", help="Test mode: requires --seed; prints summary only; no results are saved.")
+
+    # scheduler logs
+    ap.add_argument("--save-scheduler-logs", dest="save_scheduler_logs", action="store_true",
+                    help="After save_stats for each seed, save 'kwokctl logs kube-scheduler --name <cluster>' to results dir as <config-stem>_kube-scheduler_seed-<seed>.log")
     
     # logging
     ap.add_argument("--log-level", dest="log_level", default=os.environ.get("KWOK_LOG_LEVEL", "INFO"),
@@ -1940,6 +2024,9 @@ def main():
 
     env_prefix = os.environ.get("KWOK_LOG_PREFIX") or f"[cluster={args.cluster_name}] "
     _ = setup_logging(env_prefix, args.log_level)
+    
+    # Show args in use at startup (normal or matrix path)
+    log_args_in_use(args, use_logger=True)
 
     runner = KwokTestGenerator(args)
 

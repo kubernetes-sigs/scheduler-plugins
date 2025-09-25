@@ -12,6 +12,8 @@ import (
 // optimizeLoop runs the optimization loop at a regular interval.
 // It starts with an initial delay and then runs at a fixed interval.
 func (pl *MyCrossNodePreemption) optimizeLoop(ctx context.Context) {
+	klog.InfoS("Loop configuration", "optimizationInterval", OptimizeInterval.String())
+
 	strategy := strategyToString()
 	firstDelay := OptimizeInitialDelay
 	interval := OptimizeInterval
@@ -24,7 +26,7 @@ func (pl *MyCrossNodePreemption) optimizeLoop(ctx context.Context) {
 			return
 		case <-timer.C:
 			if !pl.CachesWarm.Load() {
-				klog.InfoS(msg(strategy, InfoCachesNotWarmedUp), "nextTryIn", interval)
+				klog.InfoS(msg(strategy, InfoCachesNotWarmedUp), "nextIn", interval)
 				continue
 			}
 			pods, _ := pl.getPods()

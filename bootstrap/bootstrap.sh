@@ -27,6 +27,8 @@ MATRIX_PARALLEL="${MATRIX_PARALLEL:-1}"    # number of parallel tests in matrix
 
 TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
 
+SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
+
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 
@@ -104,6 +106,11 @@ print_cfg() {
     log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
   else
     log cfg "TRIGGER_OPTIMIZER=<unset>"
+  fi
+  if [ -n "${SAVE_SCHEDULER_LOGS:-}" ]; then
+    log cfg "SAVE_SCHEDULER_LOGS=${SAVE_SCHEDULER_LOGS}"
+  else
+    log cfg "SAVE_SCHEDULER_LOGS=<unset>"
   fi
   if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "docker" ]; then
     log cfg "IMAGE_REMOTE_TAG=${IMAGE_REMOTE_TAG}"
@@ -265,96 +272,141 @@ stage_test() {
   print_cfg
   run_root "'${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok/requirements.txt'"
 
-  # Build optional flag string
-  TRIGGER_OPTIMIZER_FLAG=""
-  if [ -n "${TRIGGER_OPTIMIZER:-}" ]; then
-    TRIGGER_OPTIMIZER_FLAG="--trigger-optimizer"
+  # Build flags to forward to kwok_test_generator.py
+  local passthru; passthru="$(build_passthrough_flags)"
+
+  # Build the argv list once, only adding args the user actually set
+  local args=()
+  [ -n "${KWOK_RUNTIME:-}"    ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
+  [ -n "${KWOK_CLUSTER:-}"    ] && args+=( --cluster-name "${KWOK_CLUSTER}" )
+  [ -n "${KWOK_CONFIG_DIR:-}" ] && args+=( --config-dir "${KWOK_CONFIG_DIR}" )
+  [ -n "${RESULTS_DIR:-}"     ] && args+=( --results-dir "${RESULTS_DIR}" )
+  [ -n "${SEED_FILE:-}"       ] && args+=( --seed-file "${SEED_FILE}" )
+  [ -n "${MATRIX_FILE:-}"     ] && args+=( --matrix-file "${MATRIX_FILE}" )
+  [ -n "${MATRIX_PARALLEL:-}" ] && args+=( --matrix-parallel "${MATRIX_PARALLEL}" )
+
+  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs)
+  # shellcheck disable=SC2206
+  local pass_flags=( ${passthru} )
+  args+=( "${pass_flags[@]}" )
+
+  # Quote the entire argv safely for a nested bash -lc
+  local quoted_args=""
+  if ((${#args[@]})); then
+    printf -v quoted_args '%q ' "${args[@]}"
   fi
 
-  # Run: matrix mode vs single-run mode
-  if [ -n "${MATRIX_FILE}" ]; then
-    log init "running in matrix mode"
-    run_root "cd '${CONTENT_DIR}' && \
-      chmod +x './bin/kube-scheduler' && \
-      '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
-        --kwok-runtime '${KWOK_RUNTIME}' \
-        --matrix-file '${MATRIX_FILE}' \
-        --matrix-parallel '${MATRIX_PARALLEL}' \
-        ${TRIGGER_OPTIMIZER_FLAG}"
-  else
-    log init "running single test"
-    run_root "cd '${CONTENT_DIR}' && \
-      chmod +x './bin/kube-scheduler' && \
-      '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py \
-        --cluster-name '${KWOK_CLUSTER}' \
-        --kwok-runtime '${KWOK_RUNTIME}' \
-        --config-dir '${KWOK_CONFIG_DIR}' \
-        --results-dir '${RESULTS_DIR}' \
-        --seed-file '${SEED_FILE}' \
-        ${TRIGGER_OPTIMIZER_FLAG}"
-  fi
+  # Run the tests
+  run_root "
+    cd '${CONTENT_DIR}' && \
+    chmod +x './bin/kube-scheduler' && \
+    '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py ${quoted_args}
+  "
 
   log ok "test done"
 }
 
 ##################### Args and Dispatch #####################
 #############################################################
-cmd="all"
-case "${1-}" in all|setup-build|test) cmd="$1"; shift;; esac
+# ---------- Flag spec + parser ----------
+# FORMAT per line: name|VAR|kind|pass
+# kind: "flag" (boolean) or "value" (needs a value)
+# pass: the flag to forward ("" to disable)
+FLAGS_SPEC=(
+  "build-scheduler|BUILD_SCHEDULER|value|"
+  "content-dir|CONTENT_DIR|value|"
+  "image-remote-tag|IMAGE_REMOTE_TAG|value|"
+  "kwok-cluster|KWOK_CLUSTER|value|"
+  "kwok-runtime|KWOK_RUNTIME|value|"
+  "kwok-config-dir|KWOK_CONFIG_DIR|value|"
+  "results-dir|RESULTS_DIR|value|"
+  "seed-file|SEED_FILE|value|"
+  "matrix-file|MATRIX_FILE|value|"
+  "matrix-parallel|MATRIX_PARALLEL|value|"
+  "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
+  "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
+)
 
-need_value() {
-  # usage: need_value "$1" "$#"
-  local opt="$1"
-  if [ "$2" -lt 2 ]; then
-    die "missing value for ${opt}"
-  fi
+get_spec_field() { # usage: get_spec_field "<name>" <idx>
+  local name="$1" idx="$2" row IFS='|'
+  for row in "${FLAGS_SPEC[@]}"; do
+    read -r n var kind pass <<<"$row"
+    if [ "$n" = "$name" ]; then
+      case "$idx" in
+        0) echo "$n"   ;; 1) echo "$var" ;;
+        2) echo "$kind";; 3) echo "$pass";;
+      esac
+      return 0
+    fi
+  done
+  return 1
 }
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --build-scheduler=*)  BUILD_SCHEDULER="${1#*=}";;
-    --build-scheduler)    need_value "$1" "$#"; BUILD_SCHEDULER="$2"; shift;;
-    --content-dir=*)      CONTENT_DIR="${1#*=}";;
-    --content-dir)        need_value "$1" "$#"; CONTENT_DIR="$2"; shift;;
-    --image-remote-tag=*) IMAGE_REMOTE_TAG="${1#*=}";;
-    --image-remote-tag)   need_value "$1" "$#"; IMAGE_REMOTE_TAG="$2"; shift;;
-    --kwok-cluster=*)     KWOK_CLUSTER="${1#*=}";;
-    --kwok-cluster)       need_value "$1" "$#"; KWOK_CLUSTER="$2"; shift;;
-    --kwok-runtime=*)     KWOK_RUNTIME="${1#*=}";;
-    --kwok-runtime)       need_value "$1" "$#"; KWOK_RUNTIME="$2"; shift;;
-    --kwok-config-dir=*)  KWOK_CONFIG_DIR="${1#*=}";;
-    --kwok-config-dir)    need_value "$1" "$#"; KWOK_CONFIG_DIR="$2"; shift;;
-    --results-dir=*)      RESULTS_DIR="${1#*=}";;
-    --results-dir)        need_value "$1" "$#"; RESULTS_DIR="$2"; shift;;
-    --seed-file=*)        SEED_FILE="${1#*=}";;
-    --seed-file)          need_value "$1" "$#"; SEED_FILE="$2"; shift;;
-    --matrix-file=*)      MATRIX_FILE="${1#*=}";;
-    --matrix-file)        need_value "$1" "$#"; MATRIX_FILE="$2"; shift;;
-    --matrix-parallel=*)  MATRIX_PARALLEL="${1#*=}";;
-    --matrix-parallel)    need_value "$1" "$#"; MATRIX_PARALLEL="$2"; shift;;
+set_var() { # set shell var by name under set -u
+  local var="$1" val="$2"
+  printf -v "$var" '%s' "$val"
+}
 
-    # Flag-style (no value) or optional value:
-    --trigger-optimizer)
-      # If the next token exists and isn't another flag, treat it as the value; else default to "true"
-      if [ "$#" -ge 2 ] && [[ "${2}" != --* ]]; then
-        TRIGGER_OPTIMIZER="$2"
-        shift
-      else
-        TRIGGER_OPTIMIZER="true"
+parse_cli_using_spec() {
+  # Also supports a leading subcommand (all|setup-build|test)
+  case "${1-}" in all|setup-build|test) cmd="$1"; shift;; esac
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --*=*)
+        opt="${1%%=*}"; val="${1#*=}"; opt="${opt#--}"
+        if ! var="$(get_spec_field "$opt" 1)"; then die "unknown argument: --$opt"; fi
+        kind="$(get_spec_field "$opt" 2)"
+        set_var "$var" "${val}"
+        ;;
+      --*)
+        opt="${1#--}"
+        if ! var="$(get_spec_field "$opt" 1)"; then die "unknown argument: --$opt"; fi
+        kind="$(get_spec_field "$opt" 2)"
+        if [ "$kind" = "flag" ]; then
+          if [ "$#" -ge 2 ] && [[ "$2" != --* ]] && [[ "$2" =~ ^(true|false)$ ]]; then
+            set_var "$var" "$2"; shift
+          else
+            set_var "$var" "true"
+          fi
+        else
+          [ "$#" -ge 2 ] || die "missing value for --$opt"
+          set_var "$var" "$2"; shift
+        fi
+        ;;
+      --) shift; break ;;   # explicit end-of-options
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+    shift
+  done
+}
+
+build_passthrough_flags() {
+  local out=() row
+  local OLDIFS="$IFS"
+  IFS='|'
+  for row in "${FLAGS_SPEC[@]}"; do
+    # shellcheck disable=SC2034  # some fields unused in this loop
+    read -r name var kind pass <<<"$row"
+    [ -n "$pass" ] || continue
+    if [ "$kind" = "flag" ]; then
+      if [ -n "${!var:-}" ] && [ "${!var}" != "false" ]; then
+        out+=("$pass")
       fi
-      ;;
-    --trigger-optimizer=*)
-      TRIGGER_OPTIMIZER="${1#*=}"
-      ;;
+    fi
+  done
+  IFS="$OLDIFS"
+  # print one per line so caller can split on whitespace safely
+  printf '%s\n' "${out[@]}"
+}
 
-    *)
-      die "unknown argument: $1"
-      ;;
-  esac
-  shift
-done
+# -------- Parse first, THEN wait for CONTENT_DIR --------
+cmd="all"
+parse_cli_using_spec "$@"
 
-# Ensure CONTENT_DIR exists before running any stage (respects --content-dir)
+# Ensure CONTENT_DIR exists after any --content-dir override
 wait_for_dir "${CONTENT_DIR}" "${CONTENT_DIR_WAIT_TIMEOUT_S}" "${CONTENT_DIR_WAIT_INTERVAL_S}"
 
 case "${cmd}" in
