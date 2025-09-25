@@ -3,14 +3,9 @@ namespace: test
 num_nodes: 8 # 4, 8, 16
 # test for pods_per_node: 4, 8
 # num_pods = num_nodes * pods_per_node
-# for 4 pods_per_node:
-#  - 4 nodes: 16
-#  - 8 nodes: 32
-#  - 16 nodes: 64
-# for 8 pods_per_node:
-#  - 4 nodes: 32
-#  - 8 nodes: 64
-#  - 16 nodes: 128
+# 4 nodes: 16, 32 pods
+# 8 nodes: 32, 64 pods
+# 16 nodes: 64, 128 pods
 num_pods: 16
 num_priorities: [2, 5] # either a single integer or a range [lo, hi]
 cpu_per_pod: ["100m", "1000m"]   # e.g. 100m, 1 (1000m = 1 core)

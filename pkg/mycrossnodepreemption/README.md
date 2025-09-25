@@ -66,11 +66,11 @@ The code of the plugin can be found in `pkg/mycrossnodepreemption/`.
 
 The plugin includes three different solvers to find optimal or near-optimal preemption plans:
 
-1. **Swap-based local-search solver**: A fast heuristic solver that iteratively tries to relocate pods to free up space.
-2. **Breadth-First Search (BFS) solver**: An exhaustive solver that tries to free a node by exploring pod relocations. Each depth level in the search tree corresponds to one move of a pod.
-3. **Python (CP-SAT) solver**: A solver using Google's CP-SAT solver to find an optimal placement of pods. The code for this solver is located in `bootstrap/content/scripts/python_solver/main.py`.
+1. **Python (CP-SAT) solver**: A solver using Google's CP-SAT solver to find an optimal placement of pods. The code for this solver is located in `bootstrap/content/scripts/python_solver/main.py`.
+2. **Swap-based local-search solver**: A fast heuristic solver that iteratively tries to relocate pods to free up space.
+3. **Breadth-First Search (BFS) solver**: An exhaustive solver that tries to free a node by exploring pod relocations. Each depth level in the search tree corresponds to one move of a pod.
 
-The first two solvers are implemented in Go, while the third solver is implemented in Python and requires a Python environment.
+The last two solvers are implemented in Go, while the first solver is implemented in Python and requires a Python environment as it uses the CP-SAT solver from Google's OR-Tools.
 
 ## Build and Run
 
@@ -197,11 +197,10 @@ To run tests on UCloud:
 5) If you want to be able to SSH into the instance, add your public SSH key to 'SSH Keys' under 'Resources'.
 6) Create a Terminal instance with Ubuntu 22.04. A illustration is shown below:
 
-   ![UCloud Terminal Instance](./bootstrap/ucloud_terminal_settings_example.png)
-
-TODO
+   ![UCloud Terminal Instance](./ucloud_terminal_settings_example.png)
 
 7) Submit the instance and wait until it is running.
+8) To save the results use the App 'Archiver' and select the folder uploaded in step 4 which should now hold the results. Note if you also want to save the stdout from the instance save the file located under Files -> Jobs -> <job_id> -> stdout-0.log.
 
 ### Useful kubectl/kwokctl commands
 
@@ -241,6 +240,10 @@ TODO
 - Clean up the code:
   - Reduce code
   - Switch case
+  - Early return
+  - Default values
+  - Remove magic numbers
+  - Follow DRY, SOLID principles and Design Patterns where possible.
   - Sort functions based on usage from outside to inside
   - Proper logging
   - Comments
@@ -248,7 +251,6 @@ TODO
   - Replace not understandable code
   - Use common functions
 - Write report
-- Consider to add a post-settle timeout so we get reliable results from the ConfigMaps.
 - Remove TODOs.
 - Make the test plan.
 - Write about that we need both the Blocked and Batched sets otherwise we can
@@ -256,12 +258,10 @@ TODO
 
 ### Later TODOs
 
-- Make use of SOLID and DRY principles as well as Design Patterns where possible.
 - Create unit and integration tests.
 - Find a better way to set verbose level.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
-- Add more comments to the code.
 - Fix TODOs
 
 ## Test
