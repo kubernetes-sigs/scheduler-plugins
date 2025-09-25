@@ -367,36 +367,31 @@ class KwokTestGenerator:
     ######################################################
     # ---------- Optimizer HTTP trigger ------------------
     ######################################################
-    def _trigger_optimizer_http(self, url: str, *, timeout: float = 5.0, retries: int = 3, backoff_s: float = 0.5) -> tuple[int, str]:
+    def _trigger_optimizer_http(self, url: str, *, timeout: float = 60.0) -> tuple[int, str]:
         """
         POST optimizer endpoint. Returns (status_code, body_str).
-        Retries on transient connection errors.
         """
         data = b""
         headers = {
             "Accept": "application/json",
             "Content-Length": "0",
         }
-        last_exc = None
-        for attempt in range(1, max(1, retries) + 1):
+        try:
+            req = _urlreq.Request(url, data=data, headers=headers, method="POST")
+            with _urlreq.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                return getattr(resp, "status", 200), body
+        except _urlerr.HTTPError as e:
+            # HTTP-level error (server responded with e.code)
             try:
-                req = _urlreq.Request(url, data=data, headers=headers, method="POST")
-                with _urlreq.urlopen(req, timeout=timeout) as resp:
-                    body = resp.read().decode("utf-8", errors="replace")
-                    return getattr(resp, "status", 200), body
-            except _urlerr.HTTPError as e:
-                # HTTP-level error (server responded with e.code)
-                try:
-                    body = e.read().decode("utf-8", errors="replace")
-                except Exception:
-                    body = str(e)
-                return e.code, body
-            except Exception as e:
-                last_exc = e
-                LOG.info(f"optimizer POST failed (attempt {attempt}/{retries}): {e}")
-                time.sleep(backoff_s * attempt)
+                body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                body = str(e)
+            return e.code, body
+        except Exception as e:
+            LOG.info(f"optimizer POST failed: {e}")
         # give a synthetic status if we never reached the server
-        return 0, f"connect-failed: {last_exc}"
+        return 0, f"connect-failed: {e}"
 
     def _get_active_http(self, url: str, *, timeout: float = 3.0) -> tuple[int, str]:
         """
