@@ -257,11 +257,11 @@ class KwokTestGenerator:
         Returns (wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s).
         """
         wait_pod_mode = None if tr.wait_pod_mode in (None, "none", "None", "") else str(tr.wait_pod_mode)
-        wait_pod_timeout_s = KwokTestGenerator._parse_timeout_s(tr.wait_pod_timeout)
-        settle_timeout_min_s = KwokTestGenerator._parse_timeout_s(tr.settle_timeout_min)
+        wait_pod_timeout_s = KwokTestGenerator._parse_timeout_s(tr.wait_pod_timeout, default=5)
+        settle_timeout_min_s = KwokTestGenerator._parse_timeout_s(tr.settle_timeout_min, default=2)
         # Make settle_timeout_max optional in configs: if missing/empty -> 0 (disabled)
         settle_timeout_max_s = 0 if tr.settle_timeout_max in (None, "", "none", "None") \
-            else KwokTestGenerator._parse_timeout_s(tr.settle_timeout_max)
+            else KwokTestGenerator._parse_timeout_s(tr.settle_timeout_max, default=12)
         return wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s
 
     @staticmethod
@@ -292,12 +292,12 @@ class KwokTestGenerator:
         return (parts[0], parts[1])
 
     @staticmethod
-    def _parse_timeout_s(t:str | None) -> int:
+    def _parse_timeout_s(t:str | None, default: int = 60) -> int:
         """
         Parse a timeout string into seconds.
         """
         if not t:
-            return 60
+            return default
         try:
             if t.endswith("ms"): return max(1, int(int(t[:-2]) / 1000))
             if t.endswith("s"):  return int(t[:-1])
@@ -305,7 +305,7 @@ class KwokTestGenerator:
             if t.endswith("h"):  return int(t[:-1]) * 3600
             return int(t)
         except Exception:
-            return 60
+            return default
 
     @staticmethod
     def _get_timestamp() -> str:
