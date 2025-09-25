@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ---------- Defaults ----------
+########################## Defaults ##########################
+#############################################################
 CONTENT_DIR="${CONTENT_DIR:-/workspace}"
 
 CONTENT_DIR_WAIT_TIMEOUT_S="${CONTENT_DIR_WAIT_TIMEOUT:-30}" # seconds
@@ -23,6 +24,8 @@ KWOK_CONFIG_DIR="${KWOK_CONFIG_DIR:-}"     # can be relative to CONTENT_DIR
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 MATRIX_FILE="${MATRIX_FILE:-}"             # can be relative to CONTENT_DIR
 MATRIX_PARALLEL="${MATRIX_PARALLEL:-1}"    # number of parallel tests in matrix
+
+TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
 
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
@@ -97,7 +100,7 @@ print_cfg() {
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
   fi
-  if [ -n "${TRIGGER_OPTIMIZER}" ]; then
+  if [ -n "${TRIGGER_OPTIMIZER:-}" ]; then
     log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
   else
     log cfg "TRIGGER_OPTIMIZER=<unset>"
@@ -264,7 +267,7 @@ stage_test() {
 
   # Build optional flag string
   TRIGGER_OPTIMIZER_FLAG=""
-  if [ -n "${TRIGGER_OPTIMIZER}" ]; then
+  if [ -n "${TRIGGER_OPTIMIZER:-}" ]; then
     TRIGGER_OPTIMIZER_FLAG="--trigger-optimizer"
   fi
 
@@ -299,31 +302,54 @@ stage_test() {
 cmd="all"
 case "${1-}" in all|setup-build|test) cmd="$1"; shift;; esac
 
-while [ $# -gt 0 ]; do
+need_value() {
+  # usage: need_value "$1" "$#"
+  local opt="$1"
+  if [ "$2" -lt 2 ]; then
+    die "missing value for ${opt}"
+  fi
+}
+
+while [ "$#" -gt 0 ]; do
   case "$1" in
     --build-scheduler=*)  BUILD_SCHEDULER="${1#*=}";;
-    --build-scheduler)    BUILD_SCHEDULER="$2"; shift;;
+    --build-scheduler)    need_value "$1" "$#"; BUILD_SCHEDULER="$2"; shift;;
     --content-dir=*)      CONTENT_DIR="${1#*=}";;
-    --content-dir)        CONTENT_DIR="$2"; shift;;
+    --content-dir)        need_value "$1" "$#"; CONTENT_DIR="$2"; shift;;
     --image-remote-tag=*) IMAGE_REMOTE_TAG="${1#*=}";;
-    --image-remote-tag)   IMAGE_REMOTE_TAG="$2"; shift;;
+    --image-remote-tag)   need_value "$1" "$#"; IMAGE_REMOTE_TAG="$2"; shift;;
     --kwok-cluster=*)     KWOK_CLUSTER="${1#*=}";;
-    --kwok-cluster)       KWOK_CLUSTER="$2"; shift;;
+    --kwok-cluster)       need_value "$1" "$#"; KWOK_CLUSTER="$2"; shift;;
     --kwok-runtime=*)     KWOK_RUNTIME="${1#*=}";;
-    --kwok-runtime)       KWOK_RUNTIME="$2"; shift;;
+    --kwok-runtime)       need_value "$1" "$#"; KWOK_RUNTIME="$2"; shift;;
     --kwok-config-dir=*)  KWOK_CONFIG_DIR="${1#*=}";;
-    --kwok-config-dir)    KWOK_CONFIG_DIR="$2"; shift;;
+    --kwok-config-dir)    need_value "$1" "$#"; KWOK_CONFIG_DIR="$2"; shift;;
     --results-dir=*)      RESULTS_DIR="${1#*=}";;
-    --results-dir)        RESULTS_DIR="$2"; shift;;
+    --results-dir)        need_value "$1" "$#"; RESULTS_DIR="$2"; shift;;
     --seed-file=*)        SEED_FILE="${1#*=}";;
-    --seed-file)          SEED_FILE="$2"; shift;;
-    --trigger-optimizer=*)  TRIGGER_OPTIMIZER="${1#*=}";;
-    --trigger-optimizer)    TRIGGER_OPTIMIZER="$2"; shift;;
+    --seed-file)          need_value "$1" "$#"; SEED_FILE="$2"; shift;;
     --matrix-file=*)      MATRIX_FILE="${1#*=}";;
-    --matrix-file)        MATRIX_FILE="$2"; shift;;
+    --matrix-file)        need_value "$1" "$#"; MATRIX_FILE="$2"; shift;;
     --matrix-parallel=*)  MATRIX_PARALLEL="${1#*=}";;
-    --matrix-parallel)    MATRIX_PARALLEL="$2"; shift;;
-    *) die "unknown argument: $1";;
+    --matrix-parallel)    need_value "$1" "$#"; MATRIX_PARALLEL="$2"; shift;;
+
+    # Flag-style (no value) or optional value:
+    --trigger-optimizer)
+      # If the next token exists and isn't another flag, treat it as the value; else default to "true"
+      if [ "$#" -ge 2 ] && [[ "${2}" != --* ]]; then
+        TRIGGER_OPTIMIZER="$2"
+        shift
+      else
+        TRIGGER_OPTIMIZER="true"
+      fi
+      ;;
+    --trigger-optimizer=*)
+      TRIGGER_OPTIMIZER="${1#*=}"
+      ;;
+
+    *)
+      die "unknown argument: $1"
+      ;;
   esac
   shift
 done

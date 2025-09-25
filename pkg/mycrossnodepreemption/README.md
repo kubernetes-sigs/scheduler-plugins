@@ -26,6 +26,7 @@
 - [Bootstrap a VM](#bootstrap-a-vm)
 - [Test scripts](#test-scripts)
 - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
+- [UCloud](#ucloud)
 - [Install Metrics API in kind cluster](#install-metrics-api-in-kind-cluster)
 
 # Overview
@@ -283,6 +284,20 @@ Some useful test scripts can be found in `bootstrap/content/scripts/kwok/`:
   ```bash
   kubectl --context <ctx> -n <namespace> get events --field-selector involvedObject.kind=Pod -o json | jq '.items[] | {name: .involvedObject.name, reason: .reason, message: .message}'
   ```
+
+# UCloud
+
+To run tests on UCloud:
+
+1) Make sure the `bootstrap.sh` under `bootstrap/` is in Unix format (LF). If not, run `dos2unix bootstrap/bootstrap.sh`.
+2) Copy the content of `bootstrap` folder (including `bootstrap.sh` and `content/` in it) and rename it to whatever you like.
+3) Upload it to UCloud under 'Files'.
+4) If you want to be able to SSH into the instance, add your public SSH key to 'SSH Keys' under 'Resources'.
+5) Create a Terminal instance with Ubuntu 22.04. A illustration is shown below:
+
+   ![UCloud Terminal Instance](./bootstrap/ucloud_terminal_settings_example.png)
+
+6) Submit the instance and wait until it is running.
 
 # Install Metrics API in kind cluster
 
