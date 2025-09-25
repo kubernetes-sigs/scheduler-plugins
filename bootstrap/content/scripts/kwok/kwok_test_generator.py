@@ -34,7 +34,7 @@ from typing import Optional, Tuple, List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from kwok_shared import (
-    get_running_and_unscheduled, get_json_ctx, stat_snapshot, dir_exists, file_exists,
+    get_json_ctx, stat_snapshot, dir_exists, file_exists,
     csv_append_row, qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int
 )
 
@@ -486,7 +486,7 @@ class KwokTestGenerator:
                 segs.append((int(m.group(1)), p))
         return sorted(segs, key=lambda t: t[0])
 
-    def _pick_results_csv_to_write(self, stem: str, rows_to_add: int = 1) -> Path:
+    def _pick_results_to_write(self, stem: str, rows_to_add: int = 1) -> Path:
         """
         Choose a segment to write 'rows_to_add' rows to.
         - Creates '<stem>_1.csv' if no segments exist.
@@ -530,7 +530,7 @@ class KwokTestGenerator:
                 pass
         return seen
 
-    def _save_stats_csv(self, cfg: Path, seed: int) -> None:
+    def _save_solver_stats(self, cfg: Path, seed: int) -> None:
         """
         Snapshot the latest stats ConfigMap into a CSV under results_dir.
         One wide row per run; fixed solver slots/columns for stable schema.
@@ -1554,15 +1554,15 @@ class KwokTestGenerator:
                     body_compact = body_compact[:600] + "...(truncated)"
                 LOG.info(f"optimizer_response code={code} body={body_compact}")
 
-            phase = "events_snapshot"
-            LOG.info(f"phase={phase}")
-            _, running, unschedulable = get_running_and_unscheduled(self.ctx, ta.namespace, expected=ta.num_pods, settle_timeout=ta.settle_timeout_s)
-
-            phase = "stats_snapshot"
+            phase = "wait_settle"
+            LOG.info(f"phase={phase} timeout={ta.settle_timeout_s}s")
+            if ta.settle_timeout_s > 0:
+                time.sleep(ta.settle_timeout_s)
+            
+            phase = "status_snapshot"
             LOG.info(f"phase={phase}")
             running_placed_by_priority, unscheduled_placed_by_priority = self._count_running_and_unscheduled_by_priority(self.ctx, ta.namespace)
-            snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods, settle_timeout=ta.settle_timeout_s)
-
+            snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
             result_row = {
                 "timestamp": self._get_timestamp(),
                 "kwok_config": str(cfg),
@@ -1588,16 +1588,16 @@ class KwokTestGenerator:
                 "wait_mode": (ta.wait_mode or ""),
                 "wait_timeout_s": ta.wait_timeout_s,
                 "settle_timeout_s": ta.settle_timeout_s,
-                "running_count": int(len(running)),
-                "unscheduled_count": int(len(unschedulable)),
+                "running_count": int(len(snap.pods_running)),
+                "unscheduled_count": int(len(snap.pods_unscheduled)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
                 "running_placed_by_priority": json.dumps(running_placed_by_priority, separators=(",", ":"), sort_keys=True),
                 "unschedulable_by_priority": json.dumps(unscheduled_placed_by_priority, separators=(",", ":"), sort_keys=True),
-                "unscheduled": "{" + ",".join(sorted(unschedulable)) + "}",
-                "running": "{" + ",".join(sorted([name for (name, _) in running])) + "}",
+                "unscheduled": "{" + ",".join(sorted(snap.pods_unscheduled)) + "}",
+                "running": "{" + ",".join(sorted([name for (name, _) in snap.pods_running])) + "}",
                 "pod_node": json.dumps(self._build_pod_node_list(
-                    {name: node for (name, node) in running},
-                    unschedulable, pod_specs, rs_specs
+                    {name: node for (name, node) in snap.pods_running},
+                    snap.pods_unscheduled, pod_specs, rs_specs
                 ), separators=(",", ":")),
             }
 
@@ -1607,16 +1607,16 @@ class KwokTestGenerator:
                 if self.args.overwrite and exists:
                     removed = self._remove_seed_from_results(cfg.stem, seed)
                     LOG.info(f"overwrite enabled: removed {removed} existing row(s) for seed={seed}")
-                dest_csv = self._pick_results_csv_to_write(cfg.stem, rows_to_add=1)
+                dest_csv = self._pick_results_to_write(cfg.stem, rows_to_add=1)
                 self._ensure_csv_with_header(dest_csv, RESULTS_HEADER)
                 csv_append_row(dest_csv, RESULTS_HEADER, result_row)
                 LOG.info(f"appended to {dest_csv.name}")
             else:
                 LOG.info("not saved (already exists; use --overwrite to replace)")
             
-            phase = "save_stats"
+            phase = "save_solver_stats"
             LOG.info(f"phase={phase}")
-            self._save_stats_csv(cfg, seed)
+            self._save_solver_stats(cfg, seed)
 
             if self.args.save_scheduler_logs:
                 phase = "save_scheduler_logs"
@@ -1624,7 +1624,7 @@ class KwokTestGenerator:
                 self._save_scheduler_logs(cfg, seed)
 
             LOG.info(f"done; took {time.time()-start_time:.1f}s")
-            self._print_seed_summary(cfg, seed, len(running), len(unschedulable))
+            self._print_seed_summary(cfg, seed, len(snap.pods_running), len(snap.pods_unscheduled))
 
         except RuntimeError as e:
             tb = traceback.format_exc()

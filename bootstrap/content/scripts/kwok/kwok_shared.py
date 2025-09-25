@@ -146,10 +146,8 @@ class Snapshot:
     cpu_alloc_by_node: Dict[str,int]    # node -> allocatable mCPU
     mem_alloc_by_node: Dict[str,int]    # node -> allocatable bytes
 
-def stat_snapshot(ctx: str, ns: str, expected: int, settle_timeout: float) -> Snapshot:
-    _, running, unscheduled = get_running_and_unscheduled(
-        ctx, ns, expected=expected, settle_timeout=settle_timeout
-    )
+def stat_snapshot(ctx: str, ns: str, expected: int) -> Snapshot:
+    _, running, unscheduled = get_running_and_unscheduled(ctx, ns, expected)
     nodes = get_json_ctx(ctx, ["get","nodes","-o","json"])
     pods  = get_json_ctx(ctx, ["-n", ns, "get","pods","-o","json"])
 
@@ -257,7 +255,7 @@ def get_running_and_unscheduled(
     ns: str,
     expected: int,
     interval: float = 0.5,
-    settle_timeout: Optional[int] = None,
+    timeout: Optional[int] = 3,
 ) -> Tuple[str, List[Tuple[str, str]], List[str]]:
     """
     Poll pods until we can decide:
@@ -306,7 +304,7 @@ def get_running_and_unscheduled(
         if (len(running_pairs) + len(unschedulable)) >= expected and len(unschedulable) > 0:
             return "some_unschedulable", running_pairs, unschedulable
 
-        if settle_timeout is not None and (time.time() - start) >= settle_timeout:
+        if timeout is not None and (time.time() - start) >= timeout:
             return "timeout", running_pairs, unschedulable
 
         time.sleep(interval)

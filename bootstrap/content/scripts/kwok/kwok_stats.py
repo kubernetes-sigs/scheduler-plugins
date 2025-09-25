@@ -81,7 +81,7 @@ class KwokStats:
         return tabulate(rows, headers=headers, tablefmt="fancy_grid", stralign="right")
 
     def run(self) -> None:
-        s = stat_snapshot(self.ctx, ns=self.ns, expected=self.expected, settle_timeout=self.settle_timeout)
+        s = stat_snapshot(self.ctx, ns=self.ns, expected=self.expected)
 
         # cluster totals for FREE = alloc − running
         tot_cpu_alloc_m = sum(s.cpu_alloc_by_node.values())
@@ -91,7 +91,7 @@ class KwokStats:
         cpu_free_m = max(0, tot_cpu_alloc_m - tot_cpu_req_m)
         mem_free_b = max(0, tot_mem_alloc_b - tot_mem_req_b)
 
-        self.printer(f"[kwok-stats] context={self.ctx} namespace={self.ns} expected={self.expected} settle_timeout={self.settle_timeout}s")
+        self.printer(f"[kwok-stats] context={self.ctx} namespace={self.ns} expected={self.expected}")
         self.printer("")
         self.printer("Pods running and per-node utilization/free resources")
         self.printer(self._node_table(
