@@ -50,7 +50,7 @@ RESULTS_HEADER = [
     "mem_per_pod_b_lo", "mem_per_pod_b_hi",
     "util", "util_run_cpu", "util_run_mem",
     "cpu_m_run", "mem_b_run",
-    "wait_mode", "wait_timeout_s", "settle_timeout_s",
+    "wait_pod_mode", "wait_pod_timeout_s", "settle_timeout_min_s", "settle_timeout_max_s",
     "running_count", "unscheduled_count",
     "pods_run_by_node",
     "running_placed_by_priority", "unschedulable_by_priority",
@@ -195,9 +195,10 @@ class TestConfigRaw:
     util: float = 0.0
 
     # waits
-    wait_mode: Optional[str] = None     # None/"none","exist","ready","running"
-    wait_timeout: Optional[str] = None  # "5s"
-    settle_timeout: Optional[str] = None
+    wait_pod_mode: Optional[str] = None     # None/"none","exist","ready","running"
+    wait_pod_timeout: Optional[str] = None  # "5s"
+    settle_timeout_min: Optional[str] = None # minimum time to wait after we have applied all pods
+    settle_timeout_max: Optional[str] = None # if set, the script will call the /active endpoint until this timeout
 
     source_file: Optional[Path] = field(default=None, repr=False)
 
@@ -220,9 +221,10 @@ class TestConfigApplied:
     
     util: float
 
-    wait_mode: Optional[str]
-    wait_timeout_s: int
-    settle_timeout_s: int
+    wait_pod_mode: Optional[str]
+    wait_pod_timeout_s: int
+    settle_timeout_min_s: int
+    settle_timeout_max_s: int
     
     # Pod spec parts
     pod_parts_cpu_m: List[int] | None = None
@@ -249,15 +251,18 @@ class KwokTestGenerator:
     ######################################################
     # ---------- Parsing helpers ----------
     ######################################################
-    def _parse_waits(self, tr: TestConfigRaw) -> tuple[Optional[str], int, int]:
+    def _parse_waits(self, tr: TestConfigRaw) -> tuple[Optional[str], int, int, int]:
         """
         Parse and default the wait parameters from the raw config.
-        Returns (wait_mode, wait_timeout_s, settle_timeout_s).
+        Returns (wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s).
         """
-        wait_mode = None if tr.wait_mode in (None, "none", "None", "") else str(tr.wait_mode)
-        wait_timeout_s = KwokTestGenerator._parse_timeout_s(tr.wait_timeout)
-        settle_timeout_s = KwokTestGenerator._parse_timeout_s(tr.settle_timeout)
-        return wait_mode, wait_timeout_s, settle_timeout_s
+        wait_pod_mode = None if tr.wait_pod_mode in (None, "none", "None", "") else str(tr.wait_pod_mode)
+        wait_pod_timeout_s = KwokTestGenerator._parse_timeout_s(tr.wait_pod_timeout)
+        settle_timeout_min_s = KwokTestGenerator._parse_timeout_s(tr.settle_timeout_min)
+        # Make settle_timeout_max optional in configs: if missing/empty -> 0 (disabled)
+        settle_timeout_max_s = 0 if tr.settle_timeout_max in (None, "", "none", "None") \
+            else KwokTestGenerator._parse_timeout_s(tr.settle_timeout_max)
+        return wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s
 
     @staticmethod
     def _parse_int_interval(s: Optional[str], *, min_lo: int = 1) -> Optional[Tuple[int, int]]:
@@ -345,7 +350,7 @@ class KwokTestGenerator:
         return s if s else default
 
     @staticmethod
-    def _get_wait_mode_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> Optional[str]:
+    def _get_wait_pod_mode_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> Optional[str]:
         """
         Get the wait mode from the document, returning None for empty values.
         """
@@ -356,7 +361,7 @@ class KwokTestGenerator:
         if s.lower() in ("", "none"):
             return None
         if s not in ("exist", "ready", "running"):
-            raise ValueError(f"Invalid wait_mode: {s}")
+            raise ValueError(f"Invalid wait_pod_mode: {s}")
         return s
 
     ######################################################
@@ -392,6 +397,25 @@ class KwokTestGenerator:
                 time.sleep(backoff_s * attempt)
         # give a synthetic status if we never reached the server
         return 0, f"connect-failed: {last_exc}"
+
+    def _get_active_http(self, url: str, *, timeout: float = 3.0) -> tuple[int, str]:
+        """
+        GET /active endpoint. Returns (status_code, body_str).
+        No retries here; the wait-loop handles transient errors.
+        """
+        try:
+            req = _urlreq.Request(url, method="GET", headers={"Accept": "application/json"})
+            with _urlreq.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                return getattr(resp, "status", 200), body
+        except _urlerr.HTTPError as e:
+            try:
+                body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                body = str(e)
+            return e.code, body
+        except Exception as e:
+            return 0, f"connect-failed: {e}"
     
     ######################################################
     # ---------- Seed derivation --------------
@@ -919,6 +943,45 @@ class KwokTestGenerator:
         LOG.warning(f"timeout waiting for RS '{rs_name}' in ns '{ns}' to have desired pods {mode}")
         return last_count
 
+    def _wait_for_inactive_scheduler(self, url: str, timeout_s: int, *, poll_initial_s: float = 0.5, poll_interval_s: float = 1.5) -> bool:
+        """
+        Poll the /active endpoint until it reports Active=false or until timeout.
+        Returns True if became inactive; False if timed out or endpoint unreachable.
+        poll_initial_s: initial poll interval in seconds (default 0.5s)
+        poll_interval_s: maximum poll interval in seconds (default 1.5s)
+        """
+        deadline = time.time() + max(0, int(timeout_s))
+        interval = float(poll_initial_s)
+        last_log = 0.0
+
+        while time.time() < deadline:
+            code, body = self._get_active_http(url)
+            inactive_now = None
+            if code == 200 and body:
+                try:
+                    data = json.loads(body)
+                    # server struct: { Active: bool, ... }
+                    active = bool(data.get("Active", data.get("active", True)))
+                    inactive_now = (active is False)
+                except Exception:
+                    inactive_now = None
+
+            if inactive_now is True:
+                LOG.info(f"optimizer is inactive; proceeding")
+                return True
+
+            now = time.time()
+            if now - last_log > 2:
+                LOG.info("waiting for optimizer to become inactive... code=%s body=%s", code, (body[:200] + ("..." if len(body) > 200 else "")) if isinstance(body, str) else body)
+                last_log = now
+
+            time.sleep(interval)
+            interval = poll_interval_s
+
+        LOG.warning("wait_for_inactive timed out after %ss; continuing", timeout_s)
+        return False
+
+
     def _save_scheduler_logs(self, cfg: Path, seed: int) -> None:
         """
         Save kube-scheduler logs for the current KWOK cluster to results dir.
@@ -971,11 +1034,11 @@ class KwokTestGenerator:
             KwokTestGenerator._apply_yaml(self.ctx, yaml_kwok_pod(ta.namespace, name, cpu_m_str, mem_b_str, pc))
             names.append(name)
             specs.append({"name": name, "cpu_m": cpu_m, "mem_b": mem_b, "priority": pc})
-            if ta.wait_mode == "running":
-                _ = KwokTestGenerator._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_timeout_s, ta.wait_mode)
-        if ta.wait_mode in ("exist", "ready"):
+            if ta.wait_pod_mode == "running":
+                _ = KwokTestGenerator._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
+        if ta.wait_pod_mode in ("exist", "ready"):
             for name in names:
-                _ = KwokTestGenerator._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_timeout_s, ta.wait_mode)
+                _ = KwokTestGenerator._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
         LOG.info(f"created {len(specs)} standalone pods")
         return specs
 
@@ -1002,11 +1065,11 @@ class KwokTestGenerator:
             self._apply_yaml(self.ctx, yaml_kwok_rs(ta.namespace, rsname, 0, cpu_m_str, mem_b_str, pc))
             for r in range(1, int(count) + 1):
                 self._scale_replicaset(self.ctx, ta.namespace, rsname, r)
-                if ta.wait_mode == "running":
-                    _ = self._wait_rs_pods(self.ctx, rsname, ta.namespace, ta.wait_timeout_s, ta.wait_mode)
-        if ta.wait_mode in ("exist", "ready"):
+                if ta.wait_pod_mode == "running":
+                    _ = self._wait_rs_pods(self.ctx, rsname, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
+        if ta.wait_pod_mode in ("exist", "ready"):
             for spec in specs:
-                _ = self._wait_each(self.ctx, "rs", spec["name"], ta.namespace, ta.wait_timeout_s, ta.wait_mode)
+                _ = self._wait_each(self.ctx, "rs", spec["name"], ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
         LOG.info(f"created {len(specs)} ReplicaSets with total {sum(s['replicas'] for s in specs)} (=num_pods)")
         return specs
 
@@ -1166,9 +1229,10 @@ class KwokTestGenerator:
 
         tr.util           = KwokTestGenerator._get_float_from_dict(runner_doc, "util", tr.util)
 
-        tr.wait_mode      = self._get_wait_mode_from_dict(runner_doc, "wait_mode", tr.wait_mode)
-        tr.wait_timeout   = self._get_str_from_dict(runner_doc, "wait_timeout", tr.wait_timeout)
-        tr.settle_timeout = self._get_str_from_dict(runner_doc, "settle_timeout", tr.settle_timeout)
+        tr.wait_pod_mode      = self._get_wait_pod_mode_from_dict(runner_doc, "wait_pod_mode", tr.wait_pod_mode)
+        tr.wait_pod_timeout   = self._get_str_from_dict(runner_doc, "wait_pod_timeout", tr.wait_pod_timeout)
+        tr.settle_timeout_min = self._get_str_from_dict(runner_doc, "settle_timeout_min", tr.settle_timeout_min)
+        tr.settle_timeout_max = self._get_str_from_dict(runner_doc, "settle_timeout_max", tr.settle_timeout_max)
 
         raw_np = KwokTestGenerator._normalize_interval(runner_doc, ("num_priorities","num_priorities_lo","num_priorities_hi"))
         if raw_np:
@@ -1281,7 +1345,7 @@ class KwokTestGenerator:
         """
         Resolve the raw config into a fully specified applied config for the given seed.
         """
-        wait_mode, wait_timeout_s, settle_timeout_s = self._parse_waits(tr)
+        wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s = self._parse_waits(tr)
 
         # num_priorities
         num_prios_lo, num_prios_hi = tr.num_priorities
@@ -1335,9 +1399,10 @@ class KwokTestGenerator:
             util=tr.util,
             cpu_per_pod_m=cpu_m_used,
             mem_per_pod_b=mem_b_used,
-            wait_mode=wait_mode,
-            wait_timeout_s=wait_timeout_s,
-            settle_timeout_s=settle_timeout_s,
+            wait_pod_mode=wait_pod_mode,
+            wait_pod_timeout_s=wait_pod_timeout_s,
+            settle_timeout_min_s=settle_timeout_min_s,
+            settle_timeout_max_s=settle_timeout_max_s,
             source_file=tr.source_file,
             pod_parts_cpu_m=cpu_parts,
             pod_parts_mem_b=mem_parts,
@@ -1555,9 +1620,15 @@ class KwokTestGenerator:
                 LOG.info(f"optimizer_response code={code} body={body_compact}")
 
             phase = "wait_settle"
-            LOG.info(f"phase={phase} timeout={ta.settle_timeout_s}s")
-            if ta.settle_timeout_s > 0:
-                time.sleep(ta.settle_timeout_s)
+            LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
+            time.sleep(ta.settle_timeout_min_s)
+            if ta.settle_timeout_max_s > 0:
+                LOG.info(f"waiting for inactive scheduler (max {ta.settle_timeout_max_s}s)")
+                # Prefer active-wait if an endpoint is configured; otherwise fall back to sleep.
+                if getattr(self.args, "active_url", None):
+                    became_inactive = self._wait_for_inactive_scheduler(self.args.active_url, ta.settle_timeout_max_s)
+                    if not became_inactive:
+                        LOG.info("did not observe inactive within settle-timeout; proceeding")
             
             phase = "status_snapshot"
             LOG.info(f"phase={phase}")
@@ -1585,9 +1656,10 @@ class KwokTestGenerator:
                 "util_run_mem": f"{snap.mem_run_util:.3f}",
                 "cpu_m_run": int(sum(snap.cpu_req_by_node.values())),
                 "mem_b_run": int(sum(snap.mem_req_by_node.values())),
-                "wait_mode": (ta.wait_mode or ""),
-                "wait_timeout_s": ta.wait_timeout_s,
-                "settle_timeout_s": ta.settle_timeout_s,
+                "wait_pod_mode": (ta.wait_pod_mode or ""),
+                "wait_pod_timeout_s": ta.wait_pod_timeout_s,
+                "settle_timeout_min_s": ta.settle_timeout_min_s,
+                "settle_timeout_max_s": ta.settle_timeout_max_s,
                 "running_count": int(len(snap.pods_running)),
                 "unscheduled_count": int(len(snap.pods_unscheduled)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
@@ -1838,6 +1910,7 @@ def _format_args_block(args) -> str:
         ("save_scheduler_logs", args.save_scheduler_logs),
         ("trigger_optimizer", args.trigger_optimizer),
         ("optimizer_url", (args.optimizer_url if getattr(args, "trigger_optimizer", False) else "<unused>")),
+        ("active_url", args.active_url),
         ("pause", args.pause),
         ("log_level", args.log_level),
     ]
@@ -2009,6 +2082,8 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="After applying all pods for a seed, POST the manual optimizer endpoint.")
     ap.add_argument("--optimizer-url", dest="optimizer_url", default="http://localhost:18080/optimize",
                     help="URL to POST for manual optimizer trigger (default: http://localhost:18080/optimize).")
+    ap.add_argument("--active-url", dest="active_url", default="http://localhost:18080/active",
+                    help="URL to GET for optimizer active state (default: http://localhost:18080/active)")
 
     return ap
 

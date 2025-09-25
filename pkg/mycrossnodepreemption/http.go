@@ -32,6 +32,17 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	mux.HandleFunc("/active", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		resp := HttpResponse{
+			Active: pl.Active.Load(),
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+
 	mux.HandleFunc("/optimize", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

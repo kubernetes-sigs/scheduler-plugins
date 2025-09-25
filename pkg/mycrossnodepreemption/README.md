@@ -24,6 +24,7 @@
     - [Running test jobs on UCloud](#running-test-jobs-on-ucloud)
     - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
   - [TODOs](#todos)
+    - [TODO test](#todo-test)
     - [Later TODOs](#later-todos)
   - [Test](#test)
     - [Later Tests](#later-tests)
@@ -237,6 +238,11 @@ TODO
   ```
 
 ## TODOs
+
+### TODO test
+
+- Change the coloumns of wait_mode to wait_pod_mode and wait_timeout to wait_pod_timeout in the test config files.
+- Replace the settle_timeout with a min and max timeout.
 
 - Clean up the code:
   - Reduce code

@@ -7,8 +7,8 @@ node_cpu: 2400m
 node_mem: 32Gi
 util: 1.1
 util-tolerance: 0.01
-wait_mode: exist      # one of: exist | ready | running | none
-wait_timeout: 2s       # e.g., 500ms, 10s, 2m, 1h
+wait_pod_mode: exist      # one of: exist | ready | running | none
+wait_pod_timeout: 2s       # e.g., 500ms, 10s, 2m, 1h
 settle_timeout: 15s      # same duration format
 ---
 kind: KwokctlConfiguration
