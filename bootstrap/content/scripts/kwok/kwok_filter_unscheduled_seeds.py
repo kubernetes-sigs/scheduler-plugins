@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import csv, argparse, sys
 from pathlib import Path
+from typing import Tuple
 
 def to_int_safe(s) -> int:
     try:
@@ -8,13 +9,13 @@ def to_int_safe(s) -> int:
     except Exception:
         return 0
 
-def filter_one_csv(inp: Path, overwrite: bool=False) -> int:
+def filter_one_csv(inp: Path, overwrite: bool=False) -> Tuple[int, int]:
     """
     Filter a single CSV to rows with unscheduled_count > 0.
     Writes next to the input:
       - <stem>_filtered.csv
       - <stem>_filtered_seeds.txt  (one seed per line, no header)
-    Returns kept row count, or -1 if skipped.
+    Returns (kept, total) row counts, or (-1, 0) if skipped.
     """
     out_csv   = inp.with_name(f"{inp.stem}_filtered.csv")
     out_seeds = inp.with_name(f"{inp.stem}_filtered_seeds.txt")
@@ -33,17 +34,18 @@ def filter_one_csv(inp: Path, overwrite: bool=False) -> int:
 
     if not need_csv and not need_seeds:
         print(f"[skip] csv and seeds exists → {inp}", file=sys.stderr)
-        return -1
+        return (-1, 0)
 
     with inp.open("r", encoding="utf-8", newline="") as fin:
         rdr = csv.DictReader(fin)
         if rdr.fieldnames is None:
-            print(f"[skip] {inp} has no header", file=sys.stderr); return -1
+            print(f"[skip] {inp} has no header", file=sys.stderr); return (-1, 0)
         if "unscheduled_count" not in rdr.fieldnames:
-            print(f"[skip] {inp} missing 'unscheduled_count' column", file=sys.stderr); return -1
+            print(f"[skip] {inp} missing 'unscheduled_count' column", file=sys.stderr); return (-1, 0)
 
         have_seed_col = "seed" in rdr.fieldnames
         kept = 0
+        total = 0
         seeds: list[str] = []
 
         # Open writer for filtered CSV only if needed
@@ -57,6 +59,7 @@ def filter_one_csv(inp: Path, overwrite: bool=False) -> int:
 
         try:
             for row in rdr:
+                total += 1
                 if to_int_safe(row.get("unscheduled_count")) > 0:
                     if w is not None:
                         w.writerow(row)
@@ -80,14 +83,17 @@ def filter_one_csv(inp: Path, overwrite: bool=False) -> int:
 
     # Status
     bits = []
-    bits.append(f"→ [csv-created] kept {kept} rows" if need_csv else "→ [csv exists]")
+    bits.append(f"→ [csv-created] kept {kept}/{total} rows" if need_csv else "→ [csv exists]")
     if have_seed_col:
-        bits.append(f"→ [seeds-created] {len(seeds)} lines" if need_seeds else "→ [seeds exists]")
+        if need_seeds:
+            bits.append(f"→ [seeds-created] {len(seeds)} line(s)")
+        else:
+            bits.append("→ [seeds exists]")
     else:
         bits.append("no 'seed' column")
 
     print(f"[ok] {inp} " + ", ".join(bits))
-    return kept
+    return (kept, total)
 
 def main():
     ap = argparse.ArgumentParser(description="Recursively filter CSVs to rows with unscheduled_count>0 and emit seed lists.")
@@ -101,16 +107,22 @@ def main():
     
     total_files = 0
     total_kept = 0
-    for inp in root.rglob("*.csv"):
-        # Skip failed.csv and anything file already filtered
-        if inp.name.lower() == "failed.csv" or inp.name.lower().endswith("_filtered.csv") or inp.name.lower().endswith("_filtered_seeds.txt"):
-            continue
-        total_files += 1
-        kept = filter_one_csv(inp, overwrite=args.overwrite)
-        if kept and kept > 0:
-            total_kept += kept
+    total_rows = 0
 
-    print(f"\nDone. Scanned {total_files} CSV file(s). Total kept rows across outputs: {total_kept}")
+    for inp in root.rglob("*.csv"):
+        # Skip failed.csv and any already-produced outputs
+        low = inp.name.lower()
+        if low == "failed.csv" or low.endswith("_filtered.csv") or low.endswith("_filtered_seeds.txt"):
+            continue
+
+        total_files += 1
+        kept, rows = filter_one_csv(inp, overwrite=args.overwrite)
+        if kept >= 0:
+            total_rows += rows
+            if kept > 0:
+                total_kept += kept
+
+    print(f"\nDone. Scanned {total_files} CSV file(s). Total kept rows: {total_kept}/{total_rows}")
 
 if __name__ == "__main__":
     main()

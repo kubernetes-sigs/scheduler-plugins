@@ -27,6 +27,8 @@ MATRIX_PARALLEL="${MATRIX_PARALLEL:-1}"    # number of parallel tests in matrix
 
 TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
 
+SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
+
 SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
 
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
@@ -106,6 +108,11 @@ print_cfg() {
     log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
   else
     log cfg "TRIGGER_OPTIMIZER=<unset>"
+  fi
+  if [ -n "${SAVE_SOLVER_STATS:-}" ]; then
+    log cfg "SAVE_SOLVER_STATS=${SAVE_SOLVER_STATS}"
+  else
+    log cfg "SAVE_SOLVER_STATS=<unset>"
   fi
   if [ -n "${SAVE_SCHEDULER_LOGS:-}" ]; then
     log cfg "SAVE_SCHEDULER_LOGS=${SAVE_SCHEDULER_LOGS}"
@@ -324,6 +331,7 @@ FLAGS_SPEC=(
   "matrix-file|MATRIX_FILE|value|"
   "matrix-parallel|MATRIX_PARALLEL|value|"
   "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
+  "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
 )
 

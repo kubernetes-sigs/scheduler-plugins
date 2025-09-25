@@ -1686,9 +1686,10 @@ class KwokTestGenerator:
             else:
                 LOG.info("not saved (already exists; use --overwrite to replace)")
             
-            phase = "save_solver_stats"
-            LOG.info(f"phase={phase}")
-            self._save_solver_stats(cfg, seed)
+            if self.args.save_solver_stats:
+                phase = "save_solver_stats"
+                LOG.info(f"phase={phase}")
+                self._save_solver_stats(cfg, seed)
 
             if self.args.save_scheduler_logs:
                 phase = "save_scheduler_logs"
@@ -1907,6 +1908,7 @@ def _format_args_block(args) -> str:
         ("matrix_file", args.matrix_file),
         ("matrix_parallel", args.matrix_parallel),
         ("test", args.test),
+        ("save_solver_stats", args.save_solver_stats),
         ("save_scheduler_logs", args.save_scheduler_logs),
         ("trigger_optimizer", args.trigger_optimizer),
         ("optimizer_url", (args.optimizer_url if getattr(args, "trigger_optimizer", False) else "<unused>")),
@@ -2010,6 +2012,8 @@ def run_matrix(args) -> int:
             cmd.append("--overwrite")
         if args.trigger_optimizer:
             cmd.append("--trigger-optimizer")
+        if args.save_solver_stats:
+            cmd.append("--save-solver-stats")
         if args.save_scheduler_logs:
             cmd.append("--save-scheduler-logs")
         env = os.environ.copy()
@@ -2066,6 +2070,10 @@ def build_argparser() -> argparse.ArgumentParser:
     # test
     ap.add_argument("--test", action="store_true", help="Test mode: requires --seed; prints summary only; no results are saved.")
 
+    # solver stats
+    ap.add_argument("--save-solver-stats", dest="save_solver_stats", action="store_true",
+                    help="Save solver stats for each seed, saved to results dir")
+    
     # scheduler logs
     ap.add_argument("--save-scheduler-logs", dest="save_scheduler_logs", action="store_true",
                     help="After save_stats for each seed, save 'kwokctl logs kube-scheduler --name <cluster>' to results dir as <config-stem>_kube-scheduler_seed-<seed>.log")
