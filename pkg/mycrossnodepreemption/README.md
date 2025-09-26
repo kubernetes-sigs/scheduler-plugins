@@ -12,6 +12,7 @@
   - [Build and Run](#build-and-run)
     - [Prerequisites](#prerequisites)
     - [Build the Python environment (for Python solver)](#build-the-python-environment-for-python-solver)
+    - [Copy the Python solver to solver location](#copy-the-python-solver-to-solver-location)
     - [Build the scheduler with the plugin](#build-the-scheduler-with-the-plugin)
       - [Building the binary](#building-the-binary)
       - [Building the docker image (recommended for faster builds)](#building-the-docker-image-recommended-for-faster-builds)
@@ -92,11 +93,18 @@ Currently, it is only tested on amd64 architecture and some code may need to be 
 
 ```bash
 sudo install -d -m 0755 /opt/venv/
-sudo install -d -m 0755 /opt/solver/
-sudo cp -a bootstrap/content/scripts/python_solver/main.py /opt/solver/main.py
 sudo python3 -m venv /opt/venv/
 sudo /opt/venv/bin/python -m pip install --upgrade pip
 sudo /opt/venv/bin/pip install --no-cache-dir -r bootstrap/content/scripts/python_solver/requirements.txt
+```
+
+### Copy the Python solver to solver location
+
+NOTE: If you modify the Python solver code, you need to copy it again.
+
+```bash
+sudo install -d -m 0755 /opt/solver/
+sudo cp -a bootstrap/content/scripts/python_solver/main.py /opt/solver/main.py
 ```
 
 ### Build the scheduler with the plugin
@@ -129,7 +137,11 @@ python3 bootstrap/content/scripts/kwok/kwok_test_generator.py --help
 
 ### Run the plugin on a KWOK cluster (Manual)
 
-If you just want to test it manually on a KWOK cluster, first create a scheduler config (see `manifests/mycrossnodepreemption/scheduler-config.yaml`) and a cluster config file (see `bootstrap/content/data/configs/a/01.yaml`). Then create the cluster with kwokctl:
+If you just want to test it manually on a KWOK cluster, first create a scheduler config (see `manifests/mycrossnodepreemption/scheduler-config.yaml`) and a cluster config file (see `bootstrap/content/data/configs/a/01.yaml`). 
+
+NOTE: Make sure you have the latest binary or docker image of the scheduler with the plugin built (see above). Also make sure the latest Python solver is copied to `/opt/solver/main.py` (see above).
+
+Then create the cluster with kwokctl:
 
 ```bash
 kwokctl create cluster --name <cluster_name> --runtime <docker/binary> --config <path/to/cluster-config.yaml>
