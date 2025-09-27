@@ -273,6 +273,7 @@ To run tests on UCloud:
 
 - Create unit and integration tests.
 - Find a better way to set verbose level.
+- Consider to add a permit plugin for proper gang-scheduling to prevent not fully implemented plans.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
 - Fix TODOs
