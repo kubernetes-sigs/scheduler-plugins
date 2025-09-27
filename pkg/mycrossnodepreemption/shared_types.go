@@ -21,9 +21,9 @@ type NewPlacement struct {
 	// Pod being placed
 	Pod Pod `json:"pod"`
 	// Previous node of the pod; empty if new pod
-	FromNode string `json:"fromNode,omitempty"`
+	FromNode string `json:"from_node,omitempty"`
 	// New node of the pod
-	ToNode string `json:"toNode"`
+	ToNode string `json:"to_node"`
 }
 
 // Placement represents a pod placement on a node.

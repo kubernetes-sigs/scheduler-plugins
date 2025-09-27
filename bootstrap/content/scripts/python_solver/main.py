@@ -421,8 +421,8 @@ class CPSATSolver:
                             "namespace": p_namespace(i),
                             "name": p_name(i),
                         },
-                        "fromNode": nodes[orig_j]["name"] if orig_j is not None else "",
-                        "toNode": nodes[chosen_j]["name"],
+                        "from_node": nodes[orig_j]["name"] if orig_j is not None else "",
+                        "to_node": nodes[chosen_j]["name"],
                     })
 
         # Return status, placements, evictions
