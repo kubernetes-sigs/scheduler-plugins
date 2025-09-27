@@ -13,11 +13,11 @@ import (
 
 type HttpResponse struct {
 	Status        string        `json:"status"`
-	DurationMs    int64         `json:"durationMs"`
+	DurationMs    int64         `json:"duration_ms"`
 	Error         string        `json:"error,omitempty"`
 	Active        bool          `json:"active"`
-	BestSolver    *SolverResult `json:"bestSolver,omitempty"`
-	PendingBefore int           `json:"pendingBefore"`
+	BestSolver    *SolverResult `json:"best_solver,omitempty"`
+	PendingBefore int           `json:"pending_before"`
 }
 
 func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr string) {

@@ -464,7 +464,7 @@ class KwokTestGenerator:
           - 'best'
           - '<best_name>_status'
           - '<best_name>_duration_us'
-          - '<best_name>_placed_by_prio' (compact JSON)
+          - '<best_name>_placed_by_priority'
           - '<best_name>_evictions'
           - '<best_name>_moves'
         """
@@ -472,7 +472,7 @@ class KwokTestGenerator:
         if not isinstance(payload, dict):
             return out
         # Go JSON likely uses camel-cased top-level fields per HttpResponse struct.
-        best = KwokTestGenerator._json_get(payload, "bestSolver", "BestSolver", default=None)
+        best = KwokTestGenerator._json_get(payload, "best_solver", "BestSolver", default=None)
         if not isinstance(best, dict):
             return out
         name = KwokTestGenerator._json_get(best, "name", "Name", default="") or ""
@@ -480,16 +480,16 @@ class KwokTestGenerator:
             out["best"] = str(name)
         # Per-best solver columns (if we know the name)
         if name:
-            status = KwokTestGenerator._json_get(best, "status", "Status", default="")
-            dur_us = KwokTestGenerator._json_get(best, "durationUs", "DurationUs", default="")
-            score  = KwokTestGenerator._json_get(best, "score", "Score", default={}) or {}
+            status = KwokTestGenerator._json_get(best, "status", default="")
+            dur_us = KwokTestGenerator._json_get(best, "duration_us", default="")
+            score  = KwokTestGenerator._json_get(best, "score", default={}) or {}
             placed = {}
             try:
-                placed = KwokTestGenerator._json_get(score, "placedByPriority", "PlacedByPriority", default={}) or {}
+                placed = KwokTestGenerator._json_get(score, "placed_by_priority", default={}) or {}
             except Exception:
                 placed = {}
-            evicted = KwokTestGenerator._json_get(score, "evicted", "Evicted", default="")
-            moved   = KwokTestGenerator._json_get(score, "moved", "Moved", default="")
+            evicted = KwokTestGenerator._json_get(score, "evicted", default="")
+            moved   = KwokTestGenerator._json_get(score, "moved", default="")
 
             # normalize/canonicalize
             try:
@@ -504,7 +504,7 @@ class KwokTestGenerator:
             slot = str(name)
             out[f"{slot}_status"] = str(status)
             out[f"{slot}_duration_us"] = str(dur_us)
-            out[f"{slot}_placed_by_prio"] = placed_str
+            out[f"{slot}_placed_by_priority"] = placed_str
             out[f"{slot}_evictions"] = str(evicted)
             out[f"{slot}_moves"] = str(moved)
         return out
@@ -674,7 +674,7 @@ class KwokTestGenerator:
         header = ["timestamp_ns", "plan_status", "best"]
         for s in solver_slots:
             header += [f"{s}_status", f"{s}_duration_us",
-                    f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
+                    f"{s}_placed_by_priority", f"{s}_evictions", f"{s}_moves"]
 
         rows: list[dict] = []
         for run in runs:
@@ -688,12 +688,12 @@ class KwokTestGenerator:
                 a = attempts.get(s)
                 if not a:
                     row[f"{s}_status"] = row[f"{s}_duration_us"] = ""
-                    row[f"{s}_placed_by_prio"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
+                    row[f"{s}_placed_by_priority"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
                     continue
                 sc = a.get("score") or {}
                 row[f"{s}_status"] = a.get("status", "")
                 row[f"{s}_duration_us"] = a.get("duration_us", "")
-                row[f"{s}_placed_by_prio"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
+                row[f"{s}_placed_by_priority"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
                 row[f"{s}_evictions"] = sc.get("evicted", "")
                 row[f"{s}_moves"] = sc.get("moved", "")
             rows.append(row)
@@ -1504,10 +1504,6 @@ class KwokTestGenerator:
             ta.rs_parts_mem_b = rs_mem
 
         return ta
-    
-
-
-
 
     
     ##############################################

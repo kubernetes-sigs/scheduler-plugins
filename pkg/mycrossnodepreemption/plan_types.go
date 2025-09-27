@@ -10,27 +10,27 @@ type Plan struct {
 	// Moved pods
 	Moves []NewPlacement `json:"moves"`
 	// All pods and their old placements
-	OldPlacements []Placement `json:"oldPlacements"`
+	OldPlacements []Placement `json:"old_placements"`
 	// All pods and their new placements
-	NewPlacements []NewPlacement `json:"newPlacements"`
+	NewPlacements []NewPlacement `json:"new_placements"`
 	// Placement by name for standalone pods: ns/name -> node
-	PlacementByName map[string]string `json:"placementByName"`
+	PlacementByName map[string]string `json:"placement_by_name"`
 	// Workload quotas for new placed pods that are part of a workload
-	WorkloadQuotas WorkloadQuotas `json:"workloadQuotas"`
+	WorkloadQuotas WorkloadQuotas `json:"workload_quotas"`
 	// Nominated node for the preemptor pod (if any)
-	NominatedNode string `json:"nominatedNode"`
+	NominatedNode string `json:"nominated_node,omitempty"`
 }
 
 // StoredPlan represents the plan to be executed.
 type StoredPlan struct {
 	// Plugin version that generated the plan
-	PluginVersion string `json:"pluginVersion"`
+	PluginVersion string `json:"plugin_version"`
 	// The optimization mode used
-	OptimizationStrategy string `json:"optimizationStrategy"`
+	OptimizationStrategy string `json:"optimization_strategy"`
 	// When the plan was generated
-	GeneratedAt time.Time `json:"generatedAt"`
+	GeneratedAt time.Time `json:"generated_at"`
 	// When the plan was completed (if ever)
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	// Solver summary (status & score)
 	Solver SolverResult `json:"solver"`
 	// Single-preemptor metadata
@@ -61,5 +61,5 @@ type Preemptor struct {
 	// Pod being preempted
 	Pod Pod `json:"pod"`
 	// Nominated node for the preemptor pod
-	NominatedNode string `json:"nominatedNode"`
+	NominatedNode string `json:"nominated_node"`
 }
