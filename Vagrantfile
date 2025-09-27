@@ -24,11 +24,12 @@
       --kwok-config-dir data/configs/a \
       --results-dir data/results/a \
       --seed-file data/seeds/001.txt \
-      --matrix-file data/jobs/2025-09-25/all_synch_python_n4_p16_u090-01.csv \
+      --matrix-file data/jobs/tmp/matrix-file.csv \
       --matrix-parallel 1 \
       --trigger-optimizer true \
       --save-solver-stats true \
-      --save-scheduler-logs true
+      --save-scheduler-logs true \
+      --append-solver-stats "python_status,python_duration_us" \
   SHELL
 end
 

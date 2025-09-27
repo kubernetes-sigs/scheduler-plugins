@@ -38,13 +38,6 @@ class CPSATSolver:
             return st
         return STATUS_MAP.get(st, "UNKNOWN")
 
-    @classmethod
-    def _encode_status(cls, st: Union[int, str], stage: Optional[str] = None) -> dict:
-        d = {"status": cls._status_str(st)}
-        if stage is not None:
-            d["stage"] = stage
-        return d
-
     def solve(self, instance: dict) -> dict:
         #################################################
         # --- Read Input --------------------------------
@@ -54,18 +47,21 @@ class CPSATSolver:
         preemptor   = instance.get("preemptor") or None
 
         if not nodes:
-            return self._encode_status(NO_NODES)
+            return {"status": self._status_str(NO_NODES)}
 
         #################################################
         # --- Options/Parameters ------------------------
         #################################################
-        timeout_ms          = int(instance.get("timeout_ms", 3000))
-        ignore_affinity     = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
-        workers             = self._available_cpus() # set number of workers to the amount available
-        use_hints           = bool(instance.get("use_hints", False))
-        hints               = instance.get("hints") if use_hints else None
-        log_progress        = bool(instance.get("log_progress", False))
-        log_subsolvers      = bool(instance.get("log_progress", False))
+        timeout_ms              = int(instance.get("timeout_ms", 3000))
+        ignore_affinity         = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
+        workers                 = self._available_cpus() # set number of workers to the amount available
+        use_hints               = bool(instance.get("use_hints", False))
+        # If use_strictly_improving is true, accept a plan only if it is strictly better than the current state under the objective. 
+        # This prevents no-op plans but may reject globally optimal plans whose objective ties the baseline. Set False to allow equal-score solutions.
+        use_strictly_improving = bool(instance.get("use_strictly_improving", True)) # TODO: Input interface doesn't implement this yet, however we enforce it
+        hints                   = instance.get("hints") if use_hints else None
+        log_progress            = bool(instance.get("log_progress", False))
+        log_subsolvers          = bool(instance.get("log_progress", False))
 
         #################################################
         # --- Ensure Pods from Input --------------------
@@ -119,7 +115,7 @@ class CPSATSolver:
         num_nodes = len(nodes)
         num_pods  = len(pods)
         if num_pods == 0:
-            return self._encode_status(NO_PODS)
+            return {"status": self._status_str(NO_PODS)}
 
         node_idx = {n["name"]: j for j, n in enumerate(nodes)}
 
@@ -315,38 +311,39 @@ class CPSATSolver:
                 # to avoid trivial empty solution
                 model.Add(sum(placed[i] for i in idxs_ge) >= base_ge)
         
-        # Require at least one strict improvement on some priority tier
-        # To avoid trivial solutions that do not improve anything
-        improved_at = [] # improved_at[priority] == 1 means strictly improved at ≥pr
-        for priority in priorities:
-            # If you have single-preemptor rules and want to forbid improving ≥ preemptor tier:
-            if single_preemptor_mode and preemptor_idx is not None and priority >= preemptor_priority:
-                continue
-            # Get indices of pods at this tier or above
-            idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
-            if not idxs_ge: # no pods at this tier
-                continue
-            # Current baseline at this tier (running count)
-            base_ge = sum(1 for i in idxs_ge if i in running_idxs)
-            # Strictly improved at ≥pr"
-            improved = model.NewBoolVar(f"strict_improve_ge_{priority}")
-            # If imp==1, enforce ≥ base+1 at that tier
-            # +1 means one more placement than current running count at that tier
-            model.Add(sum(placed[i] for i in idxs_ge) >= base_ge + 1).OnlyEnforceIf(improved)
-            # If imp==0, no extra requirement for that tier (non-degradation already applies)
-            improved_at.append(improved)
-        if improved_at:
-            model.AddBoolOr(improved_at) # at least one tier must strictly improve.
+        if use_strictly_improving:
+            # Require at least one strict improvement on some priority tier
+            # To avoid trivial solutions that do not improve anything
+            improved_at = [] # improved_at[priority] == 1 means strictly improved at ≥pr
+            for priority in priorities:
+                # If you have single-preemptor rules and want to forbid improving ≥ preemptor tier:
+                if single_preemptor_mode and preemptor_idx is not None and priority >= preemptor_priority:
+                    continue
+                # Get indices of pods at this tier or above
+                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
+                if not idxs_ge: # no pods at this tier
+                    continue
+                # Current baseline at this tier (running count)
+                base_ge = sum(1 for i in idxs_ge if i in running_idxs)
+                # Strictly improved at ≥pr"
+                improved = model.NewBoolVar(f"strict_improve_ge_{priority}")
+                # If imp==1, enforce ≥ base+1 at that tier
+                # +1 means one more placement than current running count at that tier
+                model.Add(sum(placed[i] for i in idxs_ge) >= base_ge + 1).OnlyEnforceIf(improved)
+                # If imp==0, no extra requirement for that tier (non-degradation already applies)
+                improved_at.append(improved)
+            if improved_at:
+                model.AddBoolOr(improved_at) # at least one tier must strictly improve.
         
         #################################################
         # --- Solver Options ----------------------------
         #################################################
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = max(1, timeout_ms / 1000.0)
-        solver.parameters.num_search_workers  = max(1, workers)
+        solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
+        solver.parameters.num_search_workers        = max(1, workers)
         solver.parameters.log_search_progress       = log_progress
         solver.parameters.log_subsolver_statistics  = log_subsolvers
-        solver.parameters.log_to_stdout = False  # KEEP False → logs go to stderr
+        solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
         solver.log_callback = lambda line: (
             print(line, file=sys.stderr, flush=True) if line else None
         )
@@ -370,20 +367,11 @@ class CPSATSolver:
             placed_count = model.NewIntVar(0, len(idxs), f"placed_count_priority{priority}")
             model.Add(placed_count == sum(placed[i] for i in idxs))
             model.Maximize(placed_count)
-            status = solver.Solve(model)
-            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                return self._encode_status(status, "stage_1: maximize_placed_by_priority") # return immediately if no solution
-            # Freeze that tier’s optimum
-            model.Add(placed_count == int(solver.Value(placed_count)))
 
         # Stage 2: minimize evictions (running only)
         total_evict = model.NewIntVar(0, len(running_idxs), "total_evict_running")
         model.Add(total_evict == sum(evict[i] for i in running_idxs))
         model.Minimize(total_evict)
-        status = solver.Solve(model)
-        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return self._encode_status(status, "stage_2: minimize_evictions") # return immediately if no solution
-        model.Add(total_evict == int(solver.Value(total_evict)))
 
         # Stage 3: minimize moves (running only)
         move_terms = [move[i] for i in running_idxs if move[i] is not None]
@@ -395,10 +383,10 @@ class CPSATSolver:
             model.Add(total_moves == 0)
         model.Minimize(total_moves)
         
-        # Solve and status
+        # Final: Solve and status
         status = solver.Solve(model)
-        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return self._encode_status(status, "stage_3: minimize_moves") # return immediately if no solution
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE): # return only status if no solution
+            return {"status": self._status_str(status)}
 
         #################################################
         # --- Extract and Return Plan -------------------

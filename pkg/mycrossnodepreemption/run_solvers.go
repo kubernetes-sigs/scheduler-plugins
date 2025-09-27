@@ -4,6 +4,7 @@ package mycrossnodepreemption
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -126,15 +127,15 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: "FAILED"})
 			continue
 		} else if !hasSolverFeasibleResult(out.Status) {
-			klog.InfoS(msg(strategy, InfoNoFeasibleOrOptimalSolution), "solver", att.Name, "status", out.Status, "stage", out.Stage, "durationUs", durUs)
-			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: out.Status, Stage: out.Stage})
+			klog.InfoS(msg(strategy, InfoNoFeasibleOrOptimalSolution), "solver", att.Name, "status", out.Status, "durationUs", durUs)
+			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: out.Status})
 			continue
 		}
 		// Check if plan
 		ok, why := pl.planApplicable(out, nodes, pods)
 		if !ok {
 			klog.InfoS(msg(strategy, InfoPlanNotApplicable), "solver", att.Name, "reason", why, "durationUs", durUs)
-			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: "INFEASIBLE", Stage: "NOT-APPLICABLE"})
+			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: "INFEASIBLE"})
 			continue
 		}
 
@@ -148,13 +149,13 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Score:      score,
 			CmpBase:    improvedOverBaseline,
 			Status:     out.Status,
-			Stage:      out.Stage,
 		}
 
 		if improvedOverBaseline <= 0 {
 			// Feasible but not improving (or no actual placement) — ignore as a candidate.
+			statusStr := out.Status
 			klog.InfoS(
-				msg(strategy, "feasible but not improving; discard"),
+				msg(strategy, fmt.Sprintf("%s but not improving; discard", statusStr)),
 				"solver", att.Name,
 				"placedByPri", score.PlacedByPriority,
 				"baselinePlacedByPri", baselineScore.PlacedByPriority,
@@ -163,7 +164,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				"durationUs", durUs,
 			)
 			curr.CmpBase = 0 // mark as non-improving
-			curr.Status = "FEASIBLE-NOT-IMPROVING"
+			curr.Status = statusStr + "-NOT-IMPROVING"
 			attemptsFeasibleAll = append(attemptsFeasibleAll, curr)
 			continue
 		}

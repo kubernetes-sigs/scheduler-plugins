@@ -577,6 +577,7 @@ func logLeaderboard(
 
 	// Build log arrays
 	names := make([]string, len(ranking))
+	statuses := make([]string, len(ranking))
 	evictions := make([]int, len(ranking))
 	moves := make([]int, len(ranking))
 	durations := make([]int64, len(ranking))
@@ -586,6 +587,7 @@ func logLeaderboard(
 			lbl += " (tie)"
 		}
 		names[i] = lbl
+		statuses[i] = ranking[i].Status
 		evictions[i] = ranking[i].Score.Evicted
 		moves[i] = ranking[i].Score.Moved
 		durations[i] = ranking[i].DurationUs
@@ -596,8 +598,10 @@ func logLeaderboard(
 		placed = best.Score.PlacedByPriority
 	}
 
-	klog.InfoS(msg(label, "solver leaderboard"),
+	klog.InfoS(
+		msg(label, "solver leaderboard"),
 		"ranking", names,
+		"status", statuses,
 		"durationsUs", durations,
 		"evictions", evictions,
 		"moves", moves,

@@ -21,15 +21,27 @@ KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"    # binary | docker
 
 RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
 KWOK_CONFIG_DIR="${KWOK_CONFIG_DIR:-}"     # can be relative to CONTENT_DIR
+SEED="${SEED:-}"
+COUNT="${COUNT:-}"
+GENERATE_SEEDS_TO_FILE="${GENERATE_SEEDS_TO_FILE:-}"
+TEST="${TEST:-}"
+OVERWRITE="${OVERWRITE:-}"
+MAX_ROWS_PER_FILE="${MAX_ROWS_PER_FILE:-}"
+LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 MATRIX_FILE="${MATRIX_FILE:-}"             # can be relative to CONTENT_DIR
 MATRIX_PARALLEL="${MATRIX_PARALLEL:-1}"    # number of parallel tests in matrix
 
 TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
+OPTIMIZER_URL="${OPTIMIZER_URL:-}"
+ACTIVE_URL="${ACTIVE_URL:-}"
+PAUSE="${PAUSE:-}"
 
 SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
 
 SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
+
+APPEND_SOLVER_STATS="${APPEND_SOLVER_STATS:-}"
 
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
@@ -102,10 +114,19 @@ print_cfg() {
     log cfg "KWOK_CONFIG_DIR=${KWOK_CONFIG_DIR:-<unset>}"
     log cfg "RESULTS_DIR=${RESULTS_DIR:-<unset>}"
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
+    log cfg "SEED=${SEED:-<unset>}"
+    log cfg "COUNT=${COUNT:-<unset>}"
+    log cfg "GENERATE_SEEDS_TO_FILE=${GENERATE_SEEDS_TO_FILE:-<unset>}"
+    log cfg "OVERWRITE=${OVERWRITE:-<unset>}"
+    log cfg "MAX_ROWS_PER_FILE=${MAX_ROWS_PER_FILE:-<unset>}"
+    log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
+    log cfg "PAUSE=${PAUSE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
   fi
   if [ -n "${TRIGGER_OPTIMIZER:-}" ]; then
     log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
+    log cfg "OPTIMIZER_URL=${OPTIMIZER_URL:-<unset>}"
+    log cfg "ACTIVE_URL=${ACTIVE_URL:-<unset>}"
   else
     log cfg "TRIGGER_OPTIMIZER=<unset>"
   fi
@@ -118,6 +139,11 @@ print_cfg() {
     log cfg "SAVE_SCHEDULER_LOGS=${SAVE_SCHEDULER_LOGS}"
   else
     log cfg "SAVE_SCHEDULER_LOGS=<unset>"
+  fi
+  if [ -n "${APPEND_SOLVER_STATS:-}" ]; then
+    log cfg "APPEND_SOLVER_STATS=${APPEND_SOLVER_STATS}"
+  else
+    log cfg "APPEND_SOLVER_STATS=<unset>"
   fi
   if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "docker" ]; then
     log cfg "IMAGE_REMOTE_TAG=${IMAGE_REMOTE_TAG}"
@@ -289,8 +315,23 @@ stage_test() {
   [ -n "${KWOK_CONFIG_DIR:-}" ] && args+=( --config-dir "${KWOK_CONFIG_DIR}" )
   [ -n "${RESULTS_DIR:-}"     ] && args+=( --results-dir "${RESULTS_DIR}" )
   [ -n "${SEED_FILE:-}"       ] && args+=( --seed-file "${SEED_FILE}" )
+  [ -n "${SEED:-}"            ] && args+=( --seed "${SEED}" )
+  [ -n "${COUNT:-}"           ] && args+=( --count "${COUNT}" )
+  [ -n "${GENERATE_SEEDS_TO_FILE:-}" ] && args+=( --generate-seeds-to-file "${GENERATE_SEEDS_TO_FILE}" )
+  [ -n "${MAX_ROWS_PER_FILE:-}" ] && args+=( --max-rows-per-file "${MAX_ROWS_PER_FILE}" )
+  [ -n "${LOG_LEVEL:-}"       ] && args+=( --log-level "${LOG_LEVEL}" )
   [ -n "${MATRIX_FILE:-}"     ] && args+=( --matrix-file "${MATRIX_FILE}" )
   [ -n "${MATRIX_PARALLEL:-}" ] && args+=( --matrix-parallel "${MATRIX_PARALLEL}" )
+  # Optimizer URLs (only used if --trigger-optimizer is set, but safe to always pass if provided)
+  [ -n "${OPTIMIZER_URL:-}"   ] && args+=( --optimizer-url "${OPTIMIZER_URL}" )
+  [ -n "${ACTIVE_URL:-}"      ] && args+=( --active-url "${ACTIVE_URL}" )
+  # Append solver stats: allow comma or space separated, pass each as its own flag
+  if [ -n "${APPEND_SOLVER_STATS:-}" ]; then
+    # expand commas to spaces, then iterate
+    for spec in ${APPEND_SOLVER_STATS//,/ }; do
+      [ -n "${spec}" ] && args+=( --append-solver-stats "${spec}" )
+    done
+  fi
 
   # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs)
   # shellcheck disable=SC2206
@@ -328,11 +369,20 @@ FLAGS_SPEC=(
   "kwok-config-dir|KWOK_CONFIG_DIR|value|"
   "results-dir|RESULTS_DIR|value|"
   "seed-file|SEED_FILE|value|"
+  "seed|SEED|value|"
+  "count|COUNT|value|"
+  "generate-seeds-to-file|GENERATE_SEEDS_TO_FILE|value|"
   "matrix-file|MATRIX_FILE|value|"
   "matrix-parallel|MATRIX_PARALLEL|value|"
+  "max-rows-per-file|MAX_ROWS_PER_FILE|value|"
   "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
   "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
+  "append-solver-stats|APPEND_SOLVER_STATS|value|"
+  "test|TEST|flag|--test"
+  "overwrite|OVERWRITE|flag|--overwrite"
+  "pause|PAUSE|flag|--pause"
+  "log-level|LOG_LEVEL|value|"
 )
 
 get_spec_field() { # usage: get_spec_field "<name>" <idx>

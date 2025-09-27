@@ -610,7 +610,7 @@ class KwokTestGenerator:
         solver_slots = ["local-search", "bfs", "python"]
         header = ["timestamp_ns", "plan_status", "best"]
         for s in solver_slots:
-            header += [f"{s}_status", f"{s}_stage", f"{s}_duration_us",
+            header += [f"{s}_status", f"{s}_duration_us",
                     f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
 
         rows: list[dict] = []
@@ -624,12 +624,11 @@ class KwokTestGenerator:
             for s in solver_slots:
                 a = attempts.get(s)
                 if not a:
-                    row[f"{s}_status"] = row[f"{s}_stage"] = row[f"{s}_duration_us"] = ""
+                    row[f"{s}_status"] = row[f"{s}_duration_us"] = ""
                     row[f"{s}_placed_by_prio"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
                     continue
                 sc = a.get("score") or {}
                 row[f"{s}_status"] = a.get("status", "")
-                row[f"{s}_stage"] = a.get("stage", "")
                 row[f"{s}_duration_us"] = a.get("duration_us", "")
                 row[f"{s}_placed_by_prio"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
                 row[f"{s}_evictions"] = sc.get("evicted", "")
@@ -2079,6 +2078,16 @@ def run_matrix(args) -> int:
             cmd.append("--save-solver-stats")
         if args.save_scheduler_logs:
             cmd.append("--save-scheduler-logs")
+        # forward log level & max rows for consistency
+        if args.log_level:
+            cmd += ["--log-level", args.log_level]
+        if args.max_rows_per_file:
+            cmd += ["--max-rows-per-file", str(args.max_rows_per_file)]
+        # forward append-solver-stats (supports repeated & comma-separated)
+        append_specs = KwokTestGenerator._normalize_append_specs(args)
+        for src_col, out_col in append_specs:
+            spec = f"{src_col}:{out_col}" if out_col.startswith("solver_stats_last_") is False else src_col if out_col == f"solver_stats_last_{src_col}" else f"{src_col}:{out_col}"
+            cmd += ["--append-solver-stats", spec]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env["KWOK_LOG_PREFIX"] = f"[worker {idx}/{total} cluster={row['cluster-name']}] "
@@ -2165,7 +2174,8 @@ def build_argparser() -> argparse.ArgumentParser:
         help=("Append last-row values from solver stats. "
             "Format: col[:outcol]. May be repeated or comma-separated. "
             "Examples: --append-solver-stats best "
-            "--append-solver-stats bfs_duration_us:bfs_last_us")
+            "--append-solver-stats bfs_duration_us:bfs_last_us "
+            "--append-solver-stats best,bfs_duration_us:bfs_last_us")
     )
 
     return ap

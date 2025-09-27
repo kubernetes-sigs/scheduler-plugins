@@ -46,8 +46,6 @@ type SolverInput struct {
 type SolverOutput struct {
 	// Status of the solver (failed/infeasible/feasible/optimal)
 	Status string `json:"status"`
-	// Stage at which the solver failed (if any)
-	Stage string `json:"stage,omitempty"`
 	// Pod placements (new or moved)
 	Placements []NewPlacement `json:"placements"`
 	// Evicted pods
@@ -116,8 +114,6 @@ type SolverResult struct {
 	// Status of the solver
 	// filled from Output.Status when present
 	Status string `json:"status,omitempty"`
-	// filled from Output.Stage when present
-	Stage string `json:"stage,omitempty"`
 	// DurationUs of the solver
 	DurationUs int64 `json:"duration_us,omitempty"`
 	// Score of the solution
