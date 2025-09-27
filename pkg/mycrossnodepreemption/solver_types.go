@@ -119,7 +119,7 @@ type SolverResult struct {
 	// filled from Output.Stage when present
 	Stage string `json:"stage,omitempty"`
 	// DurationUs of the solver
-	DurationUs int64 `json:"durationUs,omitempty"`
+	DurationUs int64 `json:"duration_us,omitempty"`
 	// Score of the solution
 	Score SolverScore `json:"score,omitempty"`
 

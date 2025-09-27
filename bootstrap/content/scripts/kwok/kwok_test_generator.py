@@ -364,6 +364,41 @@ class KwokTestGenerator:
             raise ValueError(f"Invalid wait_pod_mode: {s}")
         return s
 
+    @staticmethod
+    def _normalize_append_specs(args) -> list[tuple[str, str]]:
+        """
+        Parse --append-solver-stats entries into a list of (src_col, out_col).
+        Accepts repeated flags and/or comma-separated items.
+        Format per item: "col" or "col:outcol".
+        Default outcol = f"solver_stats_last_{col}".
+        """
+        seen = set()
+        specs: list[tuple[str, str]] = []
+
+        def _push(src: str, out: str | None):
+            src = (src or "").strip()
+            if not src:
+                return
+            out_norm = (out or f"solver_stats_last_{src}").strip()
+            key = (src, out_norm)
+            if key not in seen:
+                seen.add(key)
+                specs.append(key)
+
+        multi = args.append_solver_stats_multi or []
+        for item in multi:
+            if not item:
+                continue
+            parts = [p.strip() for p in str(item).split(",") if p.strip()]
+            for p in parts:
+                if ":" in p:
+                    s, o = p.split(":", 1)
+                    _push(s, o)
+                else:
+                    _push(p, None)
+
+        return specs
+
     ######################################################
     # ---------- Optimizer HTTP trigger ------------------
     ######################################################
@@ -549,32 +584,18 @@ class KwokTestGenerator:
                 pass
         return seen
 
-    def _save_solver_stats(self, cfg: Path, seed: int) -> None:
+    def _get_solver_stats_from_configmap(self) -> tuple[list[str], list[dict]]:
         """
-        Snapshot the latest stats ConfigMap into a CSV under results_dir.
-        One wide row per run; fixed solver slots/columns for stable schema.
-        Respects --overwrite; skips if file exists unless the flag is set.
+        Read latest stats ConfigMap and build (header, rows) for the solver-stats CSV.
+        Pure read: no disk writes. Returns (header, rows); rows may be empty.
         """
-        out_name = f"{cfg.stem}_{CM_STATS_NAME}_seed-{seed}.csv"
-        out_path = self.results_dir / out_name
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if out_path.exists() and not self.args.overwrite:
-            LOG.info("stats export exists and overwrite disabled; skipping: %s (use --overwrite to replace)", out_path.name)
-            return
-
         cm_obj = KwokTestGenerator._get_latest_configmap(
             self.ctx, CM_STATS_NAMESPACE, CM_STATS_NAME,
             accept_prefix=True, label_selector=None,
         )
         if cm_obj is None:
             LOG.warning("no config map matching %r found in ns=%r", CM_STATS_NAME, CM_STATS_NAMESPACE)
-            return
-
-        md = cm_obj.get("metadata") or {}
-        picked_name = md.get("name", CM_STATS_NAME)
-        picked_ts = md.get("creationTimestamp", "")
-        LOG.info("using config map %s (created %s) from ns=%s", picked_name, picked_ts, CM_STATS_NAMESPACE)
+            return [], []
 
         data = cm_obj.get("data") or {}
         runs_raw = data.get("runs.json", "[]")
@@ -583,42 +604,71 @@ class KwokTestGenerator:
             if not isinstance(runs, list):
                 runs = []
         except Exception:
-            LOG.warning("runs.json is not valid JSON; skipping stats export for this seed")
-            return
-        if not runs:
-            return
+            LOG.warning("runs.json is not valid JSON; skipping stats collect")
+            return [], []
 
         solver_slots = ["local-search", "bfs", "python"]
         header = ["timestamp_ns", "plan_status", "best"]
         for s in solver_slots:
-            header += [f"{s}_status", f"{s}_stage", f"{s}_duration_us", f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
+            header += [f"{s}_status", f"{s}_stage", f"{s}_duration_us",
+                    f"{s}_placed_by_prio", f"{s}_evictions", f"{s}_moves"]
 
-        with open(out_path, "w", encoding="utf-8", newline="") as fh:
-            w = csv.DictWriter(fh, fieldnames=header)
-            w.writeheader()
-            for run in runs:
-                row = {
-                    "timestamp_ns": run.get("timestamp_ns") or "",
-                    "plan_status": run.get("plan_status") or "",
-                    "best": run.get("best") or "",
-                }
-                attempts = {(a.get("name") or ""): a for a in (run.get("attempts") or [])}
-                for s in solver_slots:
-                    a = attempts.get(s)
-                    if not a:
-                        row[f"{s}_status"] = row[f"{s}_stage"] = row[f"{s}_duration_us"] = row[f"{s}_placed_by_prio"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
-                        continue
-                    sc = a.get("score") or {}
-                    row[f"{s}_status"] = a.get("status", "")
-                    row[f"{s}_stage"] = a.get("stage", "")
-                    row[f"{s}_duration_us"] = a.get("duration_us", "")
-                    row[f"{s}_placed_by_prio"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
-                    row[f"{s}_evictions"] = sc.get("evicted", "")
-                    row[f"{s}_moves"] = sc.get("moved", "")
-                w.writerow(row)
+        rows: list[dict] = []
+        for run in runs:
+            row = {
+                "timestamp_ns": run.get("timestamp_ns") or "",
+                "plan_status": run.get("plan_status") or "",
+                "best": run.get("best") or "",
+            }
+            attempts = {(a.get("name") or ""): a for a in (run.get("attempts") or [])}
+            for s in solver_slots:
+                a = attempts.get(s)
+                if not a:
+                    row[f"{s}_status"] = row[f"{s}_stage"] = row[f"{s}_duration_us"] = ""
+                    row[f"{s}_placed_by_prio"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
+                    continue
+                sc = a.get("score") or {}
+                row[f"{s}_status"] = a.get("status", "")
+                row[f"{s}_stage"] = a.get("stage", "")
+                row[f"{s}_duration_us"] = a.get("duration_us", "")
+                row[f"{s}_placed_by_prio"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
+                row[f"{s}_evictions"] = sc.get("evicted", "")
+                row[f"{s}_moves"] = sc.get("moved", "")
+            rows.append(row)
 
-        LOG.info("saved %s", out_path)
+        return header, rows
 
+    def _write_solver_stats_csv(self, cfg: Path, seed: int, header: list[str], rows: list[dict]) -> None:
+        """
+        Write solver-stats CSV to results dir. No-op if header/rows empty.
+        """
+        if not header:
+            LOG.warning("skip write solver-stats: empty header")
+            return
+        out_path = self.results_dir / f"{cfg.stem}_{CM_STATS_NAME}_seed-{seed}.csv"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(out_path, "w", encoding="utf-8", newline="") as fh:
+                w = csv.DictWriter(fh, fieldnames=header)
+                w.writeheader()
+                for r in rows:
+                    w.writerow(r)
+            LOG.info("saved %s", out_path.name)
+        except Exception as e:
+            LOG.warning("failed writing %s: %s", out_path.name, e)
+    
+    @staticmethod
+    def _extract_last_from_rows(rows: list[dict], col: str) -> str:
+        if not rows:
+            return ""
+        v = rows[-1].get(col, "")
+        if v is None:
+            return ""
+        # If the value is structured, serialize; otherwise stringify and trim
+        if isinstance(v, (dict, list)):
+            return json.dumps(v, separators=(",", ":"), sort_keys=True)
+        return str(v).strip()
+        
     @staticmethod
     def _get_latest_configmap(
         ctx: str,
@@ -1624,11 +1674,26 @@ class KwokTestGenerator:
                     became_inactive = self._wait_for_inactive_scheduler(self.args.active_url, ta.settle_timeout_max_s)
                     if not became_inactive:
                         LOG.info("did not observe inactive within settle-timeout; proceeding")
-            
+
             phase = "status_snapshot"
             LOG.info(f"phase={phase}")
             running_placed_by_priority, unscheduled_placed_by_priority = self._count_running_and_unscheduled_by_priority(self.ctx, ta.namespace)
             snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
+
+            phase = "solver_stats"
+            solver_stats_header: list[str] | None = None
+            solver_stats_rows: list[dict] | None = None
+
+            append_specs = KwokTestGenerator._normalize_append_specs(self.args)
+
+            # Collect once if needed (save and/or append)
+            if self.args.save_solver_stats or append_specs:
+                solver_stats_header, solver_stats_rows = self._get_solver_stats_from_configmap()
+                if solver_stats_header is None: solver_stats_header = []
+                if solver_stats_rows is None: solver_stats_rows = []
+                if self.args.save_solver_stats:
+                    self._write_solver_stats_csv(cfg, seed, solver_stats_header, solver_stats_rows)
+
             result_row = {
                 "timestamp": self._get_timestamp(),
                 "kwok_config": str(cfg),
@@ -1667,6 +1732,13 @@ class KwokTestGenerator:
                     snap.pods_unscheduled, pod_specs, rs_specs
                 ), separators=(",", ":")),
             }
+            if append_specs:
+                hdr_set = set(solver_stats_header or [])
+                for src_col, out_col in append_specs:
+                    if solver_stats_header and src_col not in hdr_set:
+                        LOG.warning("requested stats col '%s' not present in collected header", src_col)
+                    val = self._extract_last_from_rows(solver_stats_rows or [], src_col)
+                    result_row[out_col] = val
 
             phase = "write_results"
             LOG.info(f"phase={phase}")
@@ -1680,11 +1752,6 @@ class KwokTestGenerator:
                 LOG.info(f"appended to {dest_csv.name}")
             else:
                 LOG.info("not saved (already exists; use --overwrite to replace)")
-            
-            if self.args.save_solver_stats:
-                phase = "save_solver_stats"
-                LOG.info(f"phase={phase}")
-                self._save_solver_stats(cfg, seed)
 
             if self.args.save_scheduler_logs:
                 phase = "save_scheduler_logs"
@@ -1910,6 +1977,7 @@ def _format_args_block(args) -> str:
         ("active_url", args.active_url),
         ("pause", args.pause),
         ("log_level", args.log_level),
+        ("append_solver_stats_multi", args.append_solver_stats_multi),
     ]
     pad = max(len(k) for k, _ in fields)
     def _fmt(v):
@@ -2087,6 +2155,18 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="URL to POST for manual optimizer trigger (default: http://localhost:18080/optimize).")
     ap.add_argument("--active-url", dest="active_url", default="http://localhost:18080/active",
                     help="URL to GET for optimizer active state (default: http://localhost:18080/active)")
+    
+    # Append stats column
+    ap.add_argument(
+        "--append-solver-stats",
+        dest="append_solver_stats_multi",
+        action="append",
+        default=None,
+        help=("Append last-row values from solver stats. "
+            "Format: col[:outcol]. May be repeated or comma-separated. "
+            "Examples: --append-solver-stats best "
+            "--append-solver-stats bfs_duration_us:bfs_last_us")
+    )
 
     return ap
 
@@ -2095,7 +2175,11 @@ def main():
     Main entry point for the KWOK test generator.
     """
     args = build_argparser().parse_args()
-
+    append_specs = KwokTestGenerator._normalize_append_specs(args)
+    for _, outcol in append_specs:
+        if outcol not in RESULTS_HEADER:
+            RESULTS_HEADER.append(outcol)
+    
     if args.matrix_file and args.pause:
         LOG.info("Ignoring --pause because --matrix-file is in use.")
         args.pause = False
