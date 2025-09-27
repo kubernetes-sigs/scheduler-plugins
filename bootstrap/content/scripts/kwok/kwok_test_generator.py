@@ -385,7 +385,7 @@ class KwokTestGenerator:
                 seen.add(key)
                 specs.append(key)
 
-        multi = args.append_solver_stats_multi or []
+        multi = args.append_solver_stats or []
         for item in multi:
             if not item:
                 continue
@@ -880,7 +880,7 @@ class KwokTestGenerator:
         for _ in range(1, retries + 1):
             r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "sa", sa], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if r.returncode == 0:
-                LOG.info(f"found servicef account '{sa}' in ns '{ns}'")
+                LOG.info(f"found service-account '{sa}' in ns '{ns}'")
                 break
             time.sleep(delay)
 
@@ -1180,35 +1180,18 @@ class KwokTestGenerator:
                         seeds.append(int(s))
         return seeds
 
-    @staticmethod
-    def _pick_num_replicaset_for_seed(seed: int, interval: Optional[Tuple[int, int]], num_pods: int) -> int:
-        """
-        Pick num_replicaset for the given seed in [lo,hi] interval.
-        If interval is None or empty, returns 0.
-        """
-
-
-    @staticmethod
-    def _pick_num_priorities_for_seed(seed: int, interval: Tuple[int, int]) -> int:
-        """
-        Pick num_priorities for the given seed in [lo,hi] interval.
-        If interval is None or empty, returns 1.
-        """
-       
-
     # ------------------------- Config I/O -------------------------
     @staticmethod
-    def _get_kwok_configs(dir_path: str) -> List[Path]:
+    def _get_kwok_config_file(path: str) -> Path:
         """
-        Get all KWOK configuration files from the specified directory.
+        Validate and return the single KWOK configuration file.
         """
-        cfg_dir = Path(dir_path)
-        if not cfg_dir.exists():
-            raise SystemExit(f"--config-dir not found: {cfg_dir}")
-        cfgs = sorted([p for p in cfg_dir.glob("**/*") if p.is_file() and p.suffix.lower() in (".yaml", ".yml")])
-        if not cfgs:
-            raise SystemExit("No KWOK configs found (must be at least one).")
-        return cfgs
+        p = Path(path)
+        if not p.exists() or not p.is_file():
+            raise SystemExit(f"--config-file not found: {p}")
+        if p.suffix.lower() not in (".yaml", ".yml"):
+            raise SystemExit(f"--config-file must be a YAML file: {p}")
+        return p
 
     @staticmethod
     def _normalize_interval(doc: Dict[str, Any], key_combo: Tuple[str, str, str], *, allow_none: bool = True) -> Optional[str]:
@@ -1839,6 +1822,7 @@ class KwokTestGenerator:
         """
         try:
             raw = self._load_run_config(cfg)
+            log_config_raw(raw, use_logger=True)
         except Exception as e:
             LOG.error(f"config-failed {cfg}: {e}")
             with open(self.failed_f, "a", encoding="utf-8") as f:
@@ -1858,14 +1842,11 @@ class KwokTestGenerator:
 
         # Resolve results dir:
         # - If --results-dir is provided, use it exactly.
-        # - If omitted, place under <config-dir>/results/
-        cfg_dir_path = Path(self.args.config_dir).resolve()
-
+        # - If omitted, use ./results relative to CWD.
         if self.results_dir_arg:
-            # Honor explicit --results-dir exactly as provided
             rd = Path(self.results_dir_arg).resolve()
         else:
-            rd = cfg_dir_path / "results"
+            rd = Path("./results").resolve()
 
         rd.mkdir(parents=True, exist_ok=True)
         self.results_dir = rd
@@ -1906,8 +1887,8 @@ class KwokTestGenerator:
             return
 
         # Check arguments
-        if not self.args.config_dir:
-            raise SystemExit("--config-dir is required")
+        if not self.args.matrix_file and not self.args.config_file: # matrix mode doesn't need --config-file here
+            raise SystemExit("--config-file is required (unless --matrix-file is used)")
         if self.args.seed is not None and self.args.seed < 1:
             raise SystemExit("--seed must be a positive integer")
         if self.args.seed_file and self.args.count is not None:
@@ -1917,11 +1898,12 @@ class KwokTestGenerator:
         if self.args.count is not None and self.args.count < -1:
             raise SystemExit("--count must be -1 (infinite) or a positive integer")
 
-        # --- check seed file and config dir ---
+        # --- check seed file and config file ---
         if self.args.seed_file:
             file_exists(self.args.seed_file)
-        dir_exists(self.args.config_dir)
-        
+        if not self.args.matrix_file:
+            file_exists(self.args.config_file)
+
         # --- check kwok runtime vs. trigger-optimizer ---
         if self.args.trigger_optimizer and not self.args.optimizer_url:
             raise SystemExit("--trigger-optimizer requires --optimizer-url")
@@ -1936,29 +1918,71 @@ class KwokTestGenerator:
                 raise SystemExit("--test cannot be combined with --count or --seed-file")
 
         seed_file_str = ", seed-file=" + self.args.seed_file if self.args.seed_file else ""
-        LOG.info(f"starting; cluster={self.args.cluster_name}  runtime={self.args.kwok_runtime}, config-dir={self.args.config_dir}{seed_file_str}")
+        LOG.info(f"starting; cluster={self.args.cluster_name}  runtime={self.args.kwok_runtime}, config-file={self.args.config_file}{seed_file_str}")
 
-        cfgs = self._get_kwok_configs(self.args.config_dir)
-        cfgs_total = len(cfgs)
-        self._validate_all_configs(cfgs)
-
-        LOG.info(f"configs={cfgs_total}")
-        for cfg_idx, cfg in enumerate(cfgs, start=1):
-            LOG.info(f"\n================================================ CONFIG RUN {cfg_idx}/{cfgs_total} ================================================\n"
-                     f"config={cfg}\n"
-                     "----------------------------------------------------------------------------------------------------------------")
-            self._run_for_config(cfg, cfg_idx, cfgs_total)
-            self._pause(next_exists=(cfg_idx < cfgs_total))
+        cfg = self._get_kwok_config_file(self.args.config_file)
+        self._validate_all_configs([cfg])
+        LOG.info("configs=1")
+        LOG.info(f"\n================================================ CONFIG RUN ===================================================\n"
+                 f"config={cfg}\n"
+                 "----------------------------------------------------------------------------------------------------------------")
+        self._run_for_config(cfg, 1, 1)
 
 # ===============================================================
 # Logging
 # ===============================================================
+def _format_testconfigraw_block(tr: "TestConfigRaw") -> str:
+    """
+    Produce a stable, readable block of the raw config values as parsed from YAML.
+    """
+    def _fmt_interval(v):
+        if v is None:
+            return "<unset>"
+        if isinstance(v, (tuple, list)) and len(v) == 2:
+            return f"{v[0]},{v[1]}"
+        return str(v)
+
+    fields = [
+        ("source_file", getattr(tr, "source_file", None)),
+        ("namespace", tr.namespace),
+        ("num_nodes", tr.num_nodes),
+        ("num_pods", tr.num_pods),
+
+        ("num_priorities", _fmt_interval(tr.num_priorities)),
+
+        ("num_replicas_per_rs", _fmt_interval(tr.num_replicas_per_rs)),
+
+        ("cpu_per_pod", _fmt_interval(tr.cpu_per_pod)),
+        ("mem_per_pod", _fmt_interval(tr.mem_per_pod)),
+
+        ("util", tr.util),
+
+        ("wait_pod_mode", tr.wait_pod_mode or "<unset>"),
+        ("wait_pod_timeout", tr.wait_pod_timeout or "<unset>"),
+        ("settle_timeout_min", tr.settle_timeout_min or "<unset>"),
+        ("settle_timeout_max", tr.settle_timeout_max or "<unset>"),
+    ]
+    pad = max(len(k) for k, _ in fields)
+    def _fmt(v):
+        return "<unset>" if v in (None, "") else str(v)
+    lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
+    return "\n".join(lines)
+
+def log_config_raw(tr: "TestConfigRaw", *, use_logger: bool = True) -> None:
+    block = _format_testconfigraw_block(tr)
+    header = "\n================================================ CONFIG (RAW) ================================================\n"
+    footer = "\n=============================================================================================================="
+    if use_logger:
+        LOG.info("%s%s%s", header, block, footer)
+    else:
+        print(f"{header}{block}{footer}", flush=True)
+
 def _format_args_block(args) -> str:
     # Keep a stable, explicit order
     fields = [
         ("cluster_name", args.cluster_name),
         ("kwok_runtime", args.kwok_runtime),
-        ("config_dir", args.config_dir),
+        ("config_file", args.config_file),
         ("results_dir", args.results_dir),
         ("overwrite", args.overwrite),
         ("max_rows_per_file", args.max_rows_per_file),
@@ -1967,7 +1991,6 @@ def _format_args_block(args) -> str:
         ("generate_seeds_to_file", args.generate_seeds_to_file),
         ("count", args.count),
         ("matrix_file", args.matrix_file),
-        ("matrix_parallel", args.matrix_parallel),
         ("test", args.test),
         ("save_solver_stats", args.save_solver_stats),
         ("save_scheduler_logs", args.save_scheduler_logs),
@@ -1976,7 +1999,7 @@ def _format_args_block(args) -> str:
         ("active_url", args.active_url),
         ("pause", args.pause),
         ("log_level", args.log_level),
-        ("append_solver_stats_multi", args.append_solver_stats_multi),
+        ("append_solver_stats", args.append_solver_stats),
     ]
     pad = max(len(k) for k, _ in fields)
     def _fmt(v):
@@ -1984,10 +2007,10 @@ def _format_args_block(args) -> str:
     lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
     return "\n".join(lines)
 
-def log_args_in_use(args, *, use_logger: bool = True) -> None:
+def log_args(args, *, use_logger: bool = True) -> None:
     block = _format_args_block(args)
-    header = "\n==================== ARGS IN USE ====================\n"
-    footer = "\n====================================================="
+    header = "\n================================================ ARGS ================================================\n"
+    footer = "\n======================================================================================================"
     if use_logger:
         LOG.info("%s%s%s", header, block, footer)
     else:
@@ -2025,11 +2048,9 @@ def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
 ##############################################
 # ------------ Matrix runner -----------------
 ##############################################
-MATRIX_REQUIRED_COLS = ["cluster-name", "config-dir", "seed-file", "results-dir"]
+MATRIX_REQUIRED_COLS = ["config-file", "seed-file", "results-dir"]
 
 def run_matrix(args) -> int:
-    log_args_in_use(args, use_logger=False)
-    
     def _read_csv_matrix(path: str):
         rows = []
         with open(path, "r", encoding="utf-8") as f:
@@ -2050,62 +2071,38 @@ def run_matrix(args) -> int:
             raise SystemExit(f"[matrix] CSV {path} is empty")
         return rows
 
-    def _run_one_row(runtime: str, row: dict, idx: int, total: int) -> int:
+    def _run_one_row(row: dict, idx: int, total: int) -> int:
         print(
-            "\n==================== MATRIX RUN {}/{} ====================\n"
-            "[matrix] cluster-name={}\n"
-            "[matrix] config-dir={}\n"
-            "[matrix] seed-file={}\n"
-            "[matrix] results-dir={}\n"
-            "------------------------------------------------------------------"
-            .format(idx, total, row["cluster-name"], row["config-dir"], row["seed-file"], row["results-dir"]),
+            f"\n======================= MATRIX RUN {idx}/{total} =========================\n"
+            f"[matrix] config-file={row['config-file']}\n"
+            f"[matrix] seed-file={row['seed-file']}\n"
+            f"[matrix] results-dir={row['results-dir']}\n"
+            "------------------------------------------------------------------",
             flush=True,
         )
-        cmd = [
-            sys.executable, "-u", os.path.abspath(__file__),
-            "--cluster-name", row["cluster-name"],
-            "--kwok-runtime", runtime,
-            "--config-dir",   row["config-dir"],
-            "--seed-file",    row["seed-file"],
-            "--results-dir",  row["results-dir"],
-        ]
-        # forward flags
-        if args.overwrite:
-            cmd.append("--overwrite")
-        if args.trigger_optimizer:
-            cmd.append("--trigger-optimizer")
-        if args.save_solver_stats:
-            cmd.append("--save-solver-stats")
-        if args.save_scheduler_logs:
-            cmd.append("--save-scheduler-logs")
-        # forward log level & max rows for consistency
-        if args.log_level:
-            cmd += ["--log-level", args.log_level]
-        if args.max_rows_per_file:
-            cmd += ["--max-rows-per-file", str(args.max_rows_per_file)]
-        # forward append-solver-stats (supports repeated & comma-separated)
-        append_specs = KwokTestGenerator._normalize_append_specs(args)
-        for src_col, out_col in append_specs:
-            spec = f"{src_col}:{out_col}" if out_col.startswith("solver_stats_last_") is False else src_col if out_col == f"solver_stats_last_{src_col}" else f"{src_col}:{out_col}"
-            cmd += ["--append-solver-stats", spec]
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env["KWOK_LOG_PREFIX"] = f"[worker {idx}/{total} cluster={row['cluster-name']}] "
-        print("[matrix] exec:", " ".join(cmd), flush=True)
-        return subprocess.run(cmd, check=False, env=env).returncode
+        # Clone a shallow args namespace
+        ns = argparse.Namespace(**vars(args))
+        ns.config_file  = row["config-file"]
+        ns.seed_file    = row["seed-file"]
+        ns.results_dir  = row["results-dir"]
+        ns.matrix_file = None # remove matrix_file to avoid recursion
+        # Run directly
+        runner = KwokTestGenerator(ns)
+        log_args(ns, use_logger=False)
+        try:
+            runner.run()
+            return 0
+        except SystemExit as e:
+            return int(e.code) if isinstance(e.code, int) else 1
 
     rows = _read_csv_matrix(args.matrix_file)
     total = len(rows)
-    rcodes = []
-    if args.matrix_parallel > 1:
-        with ThreadPoolExecutor(max_workers=args.matrix_parallel) as pool:
-            futs = [pool.submit(_run_one_row, args.kwok_runtime, r, i, total) for i, r in enumerate(rows, start=1)]
-            for fut in as_completed(futs):
-                rcodes.append(fut.result())
-    else:
-        for i, r in enumerate(rows, start=1):
-            rcodes.append(_run_one_row(args.kwok_runtime, r, i, total))
-    return 0 if all(r == 0 for r in rcodes) else 1
+    overall_rc = 0
+    for idx, row in enumerate(rows, start=1):
+        rc = _run_one_row(row, idx, total)
+        if rc != 0:
+            overall_rc = rc  # remember last non-zero status
+    return overall_rc
 
 ##############################################
 # ------------ CLI ---------------------------
@@ -2120,10 +2117,9 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--cluster-name", dest="cluster_name", default="kwok1", help="A unique KWOK cluster name (default: kwok1).")
     ap.add_argument("--kwok-runtime", dest="kwok_runtime", default="docker",
                     help="KWOK runtime 'binary' or 'docker' (default: docker).")
-    ap.add_argument("--config-dir", dest="config_dir", default=None, help="Directory containing one or more KWOK config YAMLs")
+    ap.add_argument("--config-file", dest="config_file", help="Path to a single KWOK config YAML")
     ap.add_argument("--results-dir", dest="results_dir", default=None,
-                    help=("Directory to store results. If omitted, results are written to "
-                          "<config-dir>/results/"))
+                    help=("Directory to store results. If omitted, results are written to ./results/<config-stem>/"))
     ap.add_argument("--overwrite", action="store_true", help="Replace any existing results for the same seed.")
     ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=500000,
                     help="Maximum number of data rows per results CSV before rotating (default 500000).")
@@ -2136,8 +2132,7 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--count", type=int, default=None, help="Generate the specified number of random seeds; -1=infinite.")
     
     # matrix
-    ap.add_argument("--matrix-file", help="To use this functionality stand in the root of 'content' folder. CSV with columns: cluster-name,config-dir,results-dir,seed-file.")
-    ap.add_argument("--matrix-parallel", type=int, dest="matrix_parallel", default=1, help="Max concurrent runs when using --matrix-file (default 1).")
+    ap.add_argument("--matrix-file", help="CSV with columns: config-file,seed-file,results-dir.")
     
     # test
     ap.add_argument("--test", action="store_true", help="Test mode: requires --seed; prints summary only; no results are saved.")
@@ -2166,17 +2161,12 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="URL to GET for optimizer active state (default: http://localhost:18080/active)")
     
     # Append stats column
-    ap.add_argument(
-        "--append-solver-stats",
-        dest="append_solver_stats_multi",
-        action="append",
-        default=None,
-        help=("Append last-row values from solver stats. "
-            "Format: col[:outcol]. May be repeated or comma-separated. "
-            "Examples: --append-solver-stats best "
-            "--append-solver-stats bfs_duration_us:bfs_last_us "
-            "--append-solver-stats best,bfs_duration_us:bfs_last_us")
-    )
+    ap.add_argument("--append-solver-stats", dest="append_solver_stats", action="append", default=None,
+                    help=("Append last-row values from solver stats. "
+                        "Format: col[:outcol]. May be repeated or comma-separated. "
+                        "Examples: --append-solver-stats best "
+                        "--append-solver-stats bfs_duration_us:bfs_last_us "
+                        "--append-solver-stats best,bfs_duration_us:bfs_last_us"))
 
     return ap
 
@@ -2190,20 +2180,14 @@ def main():
         if outcol not in RESULTS_HEADER:
             RESULTS_HEADER.append(outcol)
     
-    if args.matrix_file and args.pause:
-        LOG.info("Ignoring --pause because --matrix-file is in use.")
-        args.pause = False
-
     env_prefix = os.environ.get("KWOK_LOG_PREFIX") or f"[cluster={args.cluster_name}] "
     _ = setup_logging(env_prefix, args.log_level)
     
-    # Show args in use at startup (normal or matrix path)
-    log_args_in_use(args, use_logger=True)
-
-    runner = KwokTestGenerator(args)
-
     if args.matrix_file and args.kwok_runtime:
         sys.exit(run_matrix(args))
+    
+    log_args(args, use_logger=True)
+    runner = KwokTestGenerator(args)
 
     runner.run()
 

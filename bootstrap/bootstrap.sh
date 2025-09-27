@@ -20,7 +20,7 @@ KWOK_CLUSTER="${KWOK_CLUSTER:-kwok1}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"    # binary | docker
 
 RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
-KWOK_CONFIG_DIR="${KWOK_CONFIG_DIR:-}"     # can be relative to CONTENT_DIR
+KWOK_CONFIG_FILE="${KWOK_CONFIG_FILE:-}"   # can be relative to CONTENT_DIR
 SEED="${SEED:-}"
 COUNT="${COUNT:-}"
 GENERATE_SEEDS_TO_FILE="${GENERATE_SEEDS_TO_FILE:-}"
@@ -30,7 +30,6 @@ MAX_ROWS_PER_FILE="${MAX_ROWS_PER_FILE:-}"
 LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 MATRIX_FILE="${MATRIX_FILE:-}"             # can be relative to CONTENT_DIR
-MATRIX_PARALLEL="${MATRIX_PARALLEL:-1}"    # number of parallel tests in matrix
 
 TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
 OPTIMIZER_URL="${OPTIMIZER_URL:-}"
@@ -95,7 +94,7 @@ to_abs_under_folder() {
 
 # Normalize all user-provided paths against CONTENT_DIR
 resolve_paths_relative_to_folder() {
-  KWOK_CONFIG_DIR="$(to_abs_under_folder "$KWOK_CONFIG_DIR")"
+  KWOK_CONFIG_FILE="$(to_abs_under_folder "$KWOK_CONFIG_FILE")"
   RESULTS_DIR="$(to_abs_under_folder "$RESULTS_DIR")"
   SEED_FILE="$(to_abs_under_folder "$SEED_FILE")"
   MATRIX_FILE="$(to_abs_under_folder "$MATRIX_FILE")"
@@ -108,10 +107,9 @@ print_cfg() {
   log cfg "KWOK_RUNTIME=${KWOK_RUNTIME}"
   if [ -n "${MATRIX_FILE}" ]; then
     log cfg "MATRIX_FILE=${MATRIX_FILE:-<unset>}"
-    log cfg "MATRIX_PARALLEL=${MATRIX_PARALLEL}"
   else
     log cfg "KWOK_CLUSTER=${KWOK_CLUSTER:-<unset>}"
-    log cfg "KWOK_CONFIG_DIR=${KWOK_CONFIG_DIR:-<unset>}"
+    log cfg "KWOK_CONFIG_FILE=${KWOK_CONFIG_FILE:-<unset>}"
     log cfg "RESULTS_DIR=${RESULTS_DIR:-<unset>}"
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
     log cfg "SEED=${SEED:-<unset>}"
@@ -312,7 +310,7 @@ stage_test() {
   local args=()
   [ -n "${KWOK_RUNTIME:-}"    ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
   [ -n "${KWOK_CLUSTER:-}"    ] && args+=( --cluster-name "${KWOK_CLUSTER}" )
-  [ -n "${KWOK_CONFIG_DIR:-}" ] && args+=( --config-dir "${KWOK_CONFIG_DIR}" )
+  [ -n "${KWOK_CONFIG_FILE:-}" ] && args+=( --config-file "${KWOK_CONFIG_FILE}" )
   [ -n "${RESULTS_DIR:-}"     ] && args+=( --results-dir "${RESULTS_DIR}" )
   [ -n "${SEED_FILE:-}"       ] && args+=( --seed-file "${SEED_FILE}" )
   [ -n "${SEED:-}"            ] && args+=( --seed "${SEED}" )
@@ -321,7 +319,6 @@ stage_test() {
   [ -n "${MAX_ROWS_PER_FILE:-}" ] && args+=( --max-rows-per-file "${MAX_ROWS_PER_FILE}" )
   [ -n "${LOG_LEVEL:-}"       ] && args+=( --log-level "${LOG_LEVEL}" )
   [ -n "${MATRIX_FILE:-}"     ] && args+=( --matrix-file "${MATRIX_FILE}" )
-  [ -n "${MATRIX_PARALLEL:-}" ] && args+=( --matrix-parallel "${MATRIX_PARALLEL}" )
   # Optimizer URLs (only used if --trigger-optimizer is set, but safe to always pass if provided)
   [ -n "${OPTIMIZER_URL:-}"   ] && args+=( --optimizer-url "${OPTIMIZER_URL}" )
   [ -n "${ACTIVE_URL:-}"      ] && args+=( --active-url "${ACTIVE_URL}" )
@@ -366,14 +363,13 @@ FLAGS_SPEC=(
   "image-remote-tag|IMAGE_REMOTE_TAG|value|"
   "kwok-cluster|KWOK_CLUSTER|value|"
   "kwok-runtime|KWOK_RUNTIME|value|"
-  "kwok-config-dir|KWOK_CONFIG_DIR|value|"
+  "kwok-config-file|KWOK_CONFIG_FILE|value|"
   "results-dir|RESULTS_DIR|value|"
   "seed-file|SEED_FILE|value|"
   "seed|SEED|value|"
   "count|COUNT|value|"
   "generate-seeds-to-file|GENERATE_SEEDS_TO_FILE|value|"
   "matrix-file|MATRIX_FILE|value|"
-  "matrix-parallel|MATRIX_PARALLEL|value|"
   "max-rows-per-file|MAX_ROWS_PER_FILE|value|"
   "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
   "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"

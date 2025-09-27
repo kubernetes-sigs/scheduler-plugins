@@ -1,0 +1,2 @@
+cluster-name,config-dir,seed-file,results-dir
+kwok-a,data/configs/all_synch_python_n8_p32_u095,data/seeds/baseline_n8_p32_u095_filtered_seeds.txt,data/results/all_synch_python_n8_p32_u095-01

@@ -21,11 +21,10 @@
       --image-remote-tag henrikdc/master:dev \
       --kwok-cluster kwok-a \
       --kwok-runtime binary \
-      --kwok-config-dir data/configs/a \
+      --kwok-config-file data/configs/kwok_config.yaml \
       --results-dir data/results/a \
       --seed-file data/seeds/001.txt \
       --matrix-file data/jobs/tmp/matrix-file.csv \
-      --matrix-parallel 1 \
       --trigger-optimizer true \
       --save-solver-stats true \
       --save-scheduler-logs true \
