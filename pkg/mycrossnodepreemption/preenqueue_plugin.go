@@ -48,7 +48,7 @@ func (pl *MyCrossNodePreemption) PreEnqueue(ctx context.Context, pending *v1.Pod
 
 	case DecideProcess:
 		klog.InfoS(msg(stage, "start"), "pod", klog.KObj(pending))
-		_, err := pl.runFlow(ctx, pending)
+		_, _, err := pl.runFlow(ctx, pending)
 		if err != nil {
 			switch err {
 			case ErrActiveInProgress: // we only keep the pod in the set if we get ErrActiveInProgress

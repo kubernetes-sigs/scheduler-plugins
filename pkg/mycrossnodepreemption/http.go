@@ -12,12 +12,12 @@ import (
 )
 
 type HttpResponse struct {
-	Status        string `json:"status"`
-	Message       string `json:"message,omitempty"`
-	DurationMs    int64  `json:"durationMs"`
-	Active        bool   `json:"active"`
-	Error         string `json:"error,omitempty"`
-	PendingBefore int    `json:"pendingBefore"`
+	Status        string        `json:"status"`
+	DurationMs    int64         `json:"durationMs"`
+	Error         string        `json:"error,omitempty"`
+	Active        bool          `json:"active"`
+	BestSolver    *SolverResult `json:"bestSolver,omitempty"`
+	PendingBefore int           `json:"pendingBefore"`
 }
 
 func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr string) {
@@ -54,7 +54,6 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 		}
 		if !pl.CachesWarm.Load() {
 			resp.Status = "not-ready"
-			resp.Message = "caches not warmed up"
 			resp.DurationMs = time.Since(start).Milliseconds()
 			writeJSON(w, http.StatusPreconditionFailed, resp)
 			return
@@ -63,19 +62,16 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 		pods, _ := pl.getPods()
 		resp.PendingBefore = countPendingPods(pods)
 
-		_, err := pl.runFlow(context.Background(), nil)
+		_, bestSolver, err := pl.runFlow(context.Background(), nil)
+		if bestSolver != nil {
+			resp.BestSolver = bestSolver
+		}
 		resp.DurationMs = time.Since(start).Milliseconds()
 		switch err {
 		case nil:
 			resp.Status = "ok"
 		case ErrActiveInProgress:
 			resp.Status = "busy"
-			resp.Error = ErrActiveInProgress.Error()
-		case ErrNoop:
-			resp.Status = "noop"
-		case ErrNoSolutionFromAnySolver:
-			resp.Status = "no-solution"
-			resp.Error = ErrNoSolutionFromAnySolver.Error()
 		default:
 			resp.Status = "error"
 			resp.Error = err.Error()

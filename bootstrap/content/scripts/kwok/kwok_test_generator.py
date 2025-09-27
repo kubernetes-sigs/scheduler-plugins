@@ -247,6 +247,7 @@ class KwokTestGenerator:
         self.results_dir: Path | None = None
         self.failed_f: Path | None = None
         self.max_rows_per_file = int(args.max_rows_per_file)
+        self.last_optimize_json: dict[str, Any] | None = None
 
     ######################################################
     # ---------- Parsing helpers ----------
@@ -446,7 +447,69 @@ class KwokTestGenerator:
             return e.code, body
         except Exception as e:
             return 0, f"connect-failed: {e}"
-    
+
+    @staticmethod
+    def _json_get(d: dict, *keys: str, default: Any = None) -> Any:
+        """Helper: try a list of key spellings (different casings)."""
+        for k in keys:
+            if k in d:
+                return d[k]
+        return default
+
+    @staticmethod
+    def _http_stats_from_optimize_payload(payload: dict[str, Any]) -> dict[str, str]:
+        """
+        Build a dict of solver-stats columns from /optimize response JSON.
+        Only includes fields we can confidently derive:
+          - 'best'
+          - '<best_name>_status'
+          - '<best_name>_duration_us'
+          - '<best_name>_placed_by_prio' (compact JSON)
+          - '<best_name>_evictions'
+          - '<best_name>_moves'
+        """
+        out: dict[str, str] = {}
+        if not isinstance(payload, dict):
+            return out
+        # Go JSON likely uses camel-cased top-level fields per HttpResponse struct.
+        best = KwokTestGenerator._json_get(payload, "bestSolver", "BestSolver", default=None)
+        if not isinstance(best, dict):
+            return out
+        name = KwokTestGenerator._json_get(best, "name", "Name", default="") or ""
+        if name:
+            out["best"] = str(name)
+        # Per-best solver columns (if we know the name)
+        if name:
+            status = KwokTestGenerator._json_get(best, "status", "Status", default="")
+            dur_us = KwokTestGenerator._json_get(best, "durationUs", "DurationUs", default="")
+            score  = KwokTestGenerator._json_get(best, "score", "Score", default={}) or {}
+            placed = {}
+            try:
+                placed = KwokTestGenerator._json_get(score, "placedByPriority", "PlacedByPriority", default={}) or {}
+            except Exception:
+                placed = {}
+            evicted = KwokTestGenerator._json_get(score, "evicted", "Evicted", default="")
+            moved   = KwokTestGenerator._json_get(score, "moved", "Moved", default="")
+
+            # normalize/canonicalize
+            try:
+                placed_str = json.dumps(placed, separators=(",", ":"), sort_keys=True)
+            except Exception:
+                placed_str = ""
+            if status is None: status = ""
+            if dur_us is None: dur_us = ""
+            if evicted is None: evicted = ""
+            if moved is None: moved = ""
+
+            slot = str(name)
+            out[f"{slot}_status"] = str(status)
+            out[f"{slot}_duration_us"] = str(dur_us)
+            out[f"{slot}_placed_by_prio"] = placed_str
+            out[f"{slot}_evictions"] = str(evicted)
+            out[f"{slot}_moves"] = str(moved)
+        return out
+
+
     ######################################################
     # ---------- Seed derivation --------------
     ######################################################
@@ -1645,6 +1708,13 @@ class KwokTestGenerator:
                 if len(body_compact) > 600:
                     body_compact = body_compact[:600] + "...(truncated)"
                 LOG.info(f"optimizer_response code={code} body={body_compact}")
+                # Best-effort parse and remember JSON for later append use
+                self._last_optimize_json = None
+                if code and isinstance(body, str) and body.strip().startswith("{"):
+                    try:
+                        self._last_optimize_json = json.loads(body)
+                    except Exception:
+                        self._last_optimize_json = None
 
             phase = "wait_settle"
             LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
@@ -1707,20 +1777,32 @@ class KwokTestGenerator:
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
                 "running_placed_by_priority": json.dumps(running_placed_by_priority, separators=(",", ":"), sort_keys=True),
                 "unschedulable_by_priority": json.dumps(unscheduled_placed_by_priority, separators=(",", ":"), sort_keys=True),
-                "unscheduled": "{" + ",".join(sorted(snap.pods_unscheduled)) + "}",
-                "running": "{" + ",".join(sorted([name for (name, _) in snap.pods_running])) + "}",
-                "pod_node": json.dumps(self._build_pod_node_list(
-                    {name: node for (name, node) in snap.pods_running},
-                    snap.pods_unscheduled, pod_specs, rs_specs
-                ), separators=(",", ":")),
             }
+            # Append other results
             if append_specs:
-                hdr_set = set(solver_stats_header or [])
-                for src_col, out_col in append_specs:
-                    if solver_stats_header and src_col not in hdr_set:
-                        LOG.warning("requested stats col '%s' not present in collected header", src_col)
-                    val = self._extract_last_from_rows(solver_stats_rows or [], src_col)
-                    result_row[out_col] = val
+                requested_cols = [src for (src, _) in append_specs]
+                http_kv: dict[str, str] = {}
+                http_ok = False
+                # If we triggered optimizer and have a parsed response, try to satisfy requested cols from it
+                if self.args.trigger_optimizer and self._last_optimize_json:
+                    http_kv = self._http_stats_from_optimize_payload(self._last_optimize_json)
+                    http_ok = all(col in http_kv for col in requested_cols)
+                    if http_ok:
+                        LOG.info("append-solver-stats: using HTTP /optimize response values")
+                    else:
+                        LOG.info("append-solver-stats: HTTP response did not provide all requested cols; falling back to ConfigMap")
+                if http_ok:
+                    for src_col, out_col in append_specs:
+                        result_row[out_col] = http_kv.get(src_col, "")
+                else:
+                    hdr_set = set(solver_stats_header or [])
+                    for src_col, out_col in append_specs:
+                        if solver_stats_header and src_col not in hdr_set:
+                            LOG.warning("requested stats col '%s' not present in collected header", src_col)
+                        result_row[out_col] = self._extract_last_from_rows(solver_stats_rows or [], src_col)
+            result_row["unscheduled"] = "{" + ",".join(sorted(snap.pods_unscheduled)) + "}"
+            result_row["running"] = "{" + ",".join(sorted([name for (name, _) in snap.pods_running])) + "}"
+            result_row["pod_node"] = json.dumps(self._build_pod_node_list({name: node for (name, node) in snap.pods_running}, snap.pods_unscheduled, pod_specs, rs_specs), separators=(",", ":"))
 
             phase = "write_results"
             LOG.info(f"phase={phase}")
