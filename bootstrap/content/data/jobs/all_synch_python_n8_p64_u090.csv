@@ -1,0 +1,2 @@
+config-file,seed-file,results-dir
+data/configs/all_synch_python_n8_p64_u090.yaml,data/seeds/baseline_n8_p64_u090_filtered_seeds.txt,data/results/all_synch_python_n8_p64_u090
