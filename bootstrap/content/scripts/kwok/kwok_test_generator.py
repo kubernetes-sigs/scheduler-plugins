@@ -25,7 +25,7 @@
 #                                       of running vs unscheduled at the end. No results are saved in test mode.
 ################################################################################
 
-import sys, csv, json, time, random, argparse, re, subprocess, tempfile, os, hashlib, math, yaml, traceback, contextlib, fcntl, logging, shlex
+import sys, csv, json, time, random, argparse, re, subprocess, tempfile, os, hashlib, math, yaml, traceback, contextlib, fcntl, logging, shlex, shutil
 from urllib import request as _urlreq, error as _urlerr
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,6 +45,7 @@ from kwok_helpers import (
 # ===============================================================
 RESULTS_HEADER = [
     "timestamp", "kwok_config", "seed_file", "seed",
+    "error", "best_solver",
     "num_nodes", "num_pods", "num_priorities", "num_replicaset",
     "num_replicas_per_rs_lo", "num_replicas_per_rs_hi",
     "node_cpu_m", "node_mem_b",
@@ -53,7 +54,6 @@ RESULTS_HEADER = [
     "util", "util_run_cpu", "util_run_mem",
     "cpu_m_run", "mem_b_run",
     "wait_pod_mode", "wait_pod_timeout_s", "settle_timeout_min_s", "settle_timeout_max_s",
-    "best_solver_name", "best_solver_status", "best_solver_duration_us",
     "running_count", "unscheduled_count",
     "pods_run_by_node",
     "running_placed_by_priority", "unschedulable_by_priority",
@@ -181,44 +181,44 @@ class KwokTestGenerator:
                             seed_idx: int, seeds_total: int):
         """
         Delete stale completion_* and write a new one:
-        completion_<time>_configs<left-of-total>_seeds<left-of-total>
+        completion_<time>_configs<at-of-total>_seeds<at-of-total>
         """
         if not self.results_dir:
             return
         try:
             # delete any prior completion_* markers
             for p in self.results_dir.glob("completion_*"):
-                try: p.unlink()
-                except OSError: pass
-
-            # figure "left"
-            cfgs_done = max(0, cfg_idx - 1)
-            cfgs_left = max(0, cfgs_total - cfgs_done)
-
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+            # What we're currently AT
+            cfgs_at = max(0, int(cfg_idx))
+            cfgs_total = max(0, int(cfgs_total))
             if seeds_total and seeds_total > 0:
-                seeds_done = max(0, seed_idx - 1)
-                seeds_left = max(0, seeds_total - seeds_done)
+                seeds_at = max(0, int(seed_idx))
+                seeds_total = int(seeds_total)
             else:
-                # unknown seeds total – show "unknown-of-unknown"
-                seeds_left = -1
+                # Unknown/infinite seed count: keep total as -1, show current index
+                seeds_at = max(0, int(seed_idx))
                 seeds_total = -1
-
             if eta_epoch is None:
-                time_part = "unknown"
+                time_part = "eta-unknown"
             else:
-                # make filename-safe stamp (no ':'), local time
                 time_part = time.strftime("%Y%m%d-%H%M%S", time.localtime(eta_epoch))
-
-            fname = f"completion_{time_part}_configs{cfgs_left}-of-{cfgs_total}_seeds{seeds_left}-of-{seeds_total}"
+            fname = (
+                f"completion_{time_part}"
+                f"_configs-{cfgs_at}-of-{cfgs_total}"
+                f"_seeds-{seeds_at}-of-{seeds_total}"
+            )
             fpath = self.results_dir / fname
-
             # write a tiny payload
             with open(fpath, "w", encoding="utf-8") as fh:
                 payload = {
-                    "eta_epoch": (int(eta_epoch) if isinstance(eta_epoch, (int, float)) else None),
+                    "eta_epoch": int(eta_epoch) if isinstance(eta_epoch, (int, float)) else None,
                     "eta_iso": (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(eta_epoch)) if eta_epoch else None),
-                    "configs_left": cfgs_left, "configs_total": cfgs_total,
-                    "seeds_left": seeds_left, "seeds_total": seeds_total,
+                    "configs_at": cfgs_at, "configs_total": cfgs_total,
+                    "seeds_at": seeds_at,   "seeds_total": seeds_total,
                 }
                 fh.write(json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n")
         except Exception:
@@ -322,29 +322,37 @@ class KwokTestGenerator:
         """
         Build a dict of solver-stats columns from /optimize response JSON.
         Only includes fields we can confidently derive:
-          - 'best'
-          - '<best_name>_status'
-          - '<best_name>_duration_us'
-          - '<best_name>_placed_by_priority'
-          - '<best_name>_evictions'
-          - '<best_name>_moves'
+        - 'best'
+        - '<best_name>_status'
+        - '<best_name>_duration_us'
+        - '<best_name>_placed_by_priority'
+        - '<best_name>_evictions'
+        - '<best_name>_moves'
+        - 'optimization_error'
         """
         out: dict[str, str] = {}
         if not isinstance(payload, dict):
             return out
+
+        # read error from several possible keys
+        opt_err = KwokTestGenerator._json_get(payload, "error", default="")
+        if opt_err is None:
+            opt_err = ""
+        out["error"] = str(opt_err).strip()
+
         # Go JSON likely uses camel-cased top-level fields per HttpResponse struct.
-        best = KwokTestGenerator._json_get(payload, "best_solver", "BestSolver", default=None)
-        if not isinstance(best, dict):
+        bestSolver = KwokTestGenerator._json_get(payload, "best_solver", default=None)
+        if not isinstance(bestSolver, dict):
             return out
-        name = KwokTestGenerator._json_get(best, "name", "Name", default="") or ""
+
+        name = KwokTestGenerator._json_get(bestSolver, "name", default="") or ""
         if name:
-            out["best"] = str(name)
-        # Per-best solver columns (if we know the name)
+            out["best_solver"] = str(name)
+
         if name:
-            status = KwokTestGenerator._json_get(best, "status", default="")
-            dur_us = KwokTestGenerator._json_get(best, "duration_us", default="")
-            score  = KwokTestGenerator._json_get(best, "score", default={}) or {}
-            placed = {}
+            status = KwokTestGenerator._json_get(bestSolver, "status", default="")
+            dur_us = KwokTestGenerator._json_get(bestSolver, "duration_us", default="")
+            score  = KwokTestGenerator._json_get(bestSolver, "score", default={}) or {}
             try:
                 placed = KwokTestGenerator._json_get(score, "placed_by_priority", default={}) or {}
             except Exception:
@@ -352,7 +360,6 @@ class KwokTestGenerator:
             evicted = KwokTestGenerator._json_get(score, "evicted", default="")
             moved   = KwokTestGenerator._json_get(score, "moved", default="")
 
-            # normalize/canonicalize
             try:
                 placed_str = json.dumps(placed, separators=(",", ":"), sort_keys=True)
             except Exception:
@@ -368,8 +375,8 @@ class KwokTestGenerator:
             out[f"{slot}_placed_by_priority"] = placed_str
             out[f"{slot}_evictions"] = str(evicted)
             out[f"{slot}_moves"] = str(moved)
-        return out
 
+        return out
 
     ######################################################
     # ---------- Seed derivation --------------
@@ -421,46 +428,119 @@ class KwokTestGenerator:
     ######################################################
     # ---------- CSV helpers & results helpers -----------
     ######################################################
-    def _get_best_solver_fields(
+    @staticmethod
+    def _prune_non_values(d: dict) -> dict:
+        """
+        Remove keys whose values are '', None, {}, or [].
+        Keep 0/False since those can be meaningful.
+        """
+        out = {}
+        for k, v in d.items():
+            if v is None:
+                continue
+            if v == "":
+                continue
+            if isinstance(v, (dict, list)) and len(v) == 0:
+                continue
+            out[k] = v
+        return out
+
+    @staticmethod
+    def _csv_read_header(path: Path) -> list[str] | None:
+        """Return the header row for a CSV file, or None if unreadable/empty."""
+        try:
+            with open(path, "r", encoding="utf-8", newline="") as fh:
+                rdr = csv.reader(fh)
+                row = next(rdr, None)
+                if row is None:
+                    return None
+                # normalize by stripping surrounding spaces
+                return [c.strip() for c in row]
+        except Exception:
+            return None
+
+    def _purge_mismatched_csv(self, path: Path, expected_header: list[str]) -> bool:
+        """
+        If file exists and header != expected_header and --overwrite is set,
+        delete the file and return True. Otherwise, return False.
+        """
+        if not path.exists():
+            return False
+        actual = self._csv_read_header(path) or []
+        exp_norm = [c.strip() for c in expected_header]
+        if actual != exp_norm and getattr(self.args, "overwrite", False):
+            try:
+                path.unlink()
+                LOG.info("deleted CSV with mismatched header (overwrite=true): %s", path.name)
+                return True
+            except OSError as e:
+                LOG.warning("failed to delete mismatched CSV %s: %s", path.name, e)
+        return False
+    
+    def _get_best_solver(
         self,
         solver_stats_header: list[str] | None,
         solver_stats_rows: list[dict] | None,
-    ) -> tuple[str, str, int | str]:
+    ) -> tuple[dict, str]:
         """
-        Returns (best_name, best_status, best_dur_us).
-        Prefers the fresh HTTP /optimize payload; falls back to the latest ConfigMap row.
-        best_dur_us is an int when available, otherwise ''.
+        Build a compact best-solver object for the CSV single-column, and return (obj, error).
         """
-        best_name = ""
-        best_status = ""
-        best_dur_us: int | str = ""
+        best = {
+            "name": "",
+            "status": "",
+            "duration_us": "",
+            "placed_by_priority": {},
+            "evictions": "",
+            "moves": "",
+        }
+        error = ""
 
-        # 1) Prefer HTTP /optimize payload
+        # 1) Prefer fresh /optimize JSON if available
         if self.last_optimize_json:
             try:
                 http_kv = self._http_solver_stats_from_optimize_payload(self.last_optimize_json)
-                best_name = (http_kv.get("best") or "").strip()
-                if best_name:
-                    best_status = str(http_kv.get(f"{best_name}_status", "") or "")
-                    best_dur_us = coerce_int_field(http_kv.get(f"{best_name}_duration_us"))
+                error = (http_kv.get("error") or "").strip()
+                name = (http_kv.get("best_solver") or "").strip()
+                if name:
+                    best["name"] = name
+                    best["status"] = str(http_kv.get(f"{name}_status", "") or "")
+                    best["duration_us"] = coerce_int_field(http_kv.get(f"{name}_duration_us"))
+                    placed_raw = http_kv.get(f"{name}_placed_by_priority", "") or "{}"
+                    try:
+                        best["placed_by_priority"] = json.loads(placed_raw) if isinstance(placed_raw, str) else (placed_raw or {})
+                    except Exception:
+                        best["placed_by_priority"] = {}
+                    best["evictions"] = http_kv.get(f"{name}_evictions", "")
+                    best["moves"] = http_kv.get(f"{name}_moves", "")
             except Exception:
-                # fall through to ConfigMap
-                pass
+                pass  # fall through to ConfigMap
 
-        # 2) Fall back to latest ConfigMap stats (last row)
-        if not best_name:
+        # 2) Fall back to latest ConfigMap row if needed
+        if (not best["name"]) or (error == ""):
             if solver_stats_header is None or solver_stats_rows is None:
                 h, rows = self._get_solver_stats_from_configmap()
                 solver_stats_header = h or []
                 solver_stats_rows = rows or []
             if solver_stats_rows:
                 last = solver_stats_rows[-1]
-                best_name = (last.get("best") or "").strip()
-                if best_name:
-                    best_status = str(last.get(f"{best_name}_status", "") or "")
-                    best_dur_us = coerce_int_field(last.get(f"{best_name}_duration_us"))
+                if not best["name"]:
+                    name = (last.get("best_solver") or "").strip()
+                    if name:
+                        best["name"] = name
+                        best["status"] = str(last.get(f"{name}_status", "") or "")
+                        best["duration_us"] = coerce_int_field(last.get(f"{name}_duration_us"))
+                        placed_raw = last.get(f"{name}_placed_by_priority", "") or "{}"
+                        try:
+                            best["placed_by_priority"] = json.loads(placed_raw) if isinstance(placed_raw, str) else (placed_raw or {})
+                        except Exception:
+                            best["placed_by_priority"] = {}
+                        best["evictions"] = last.get(f"{name}_evictions", "")
+                        best["moves"] = last.get(f"{name}_moves", "")
+                if error == "":
+                    error = str(last.get("error", "") or "").strip()
 
-        return best_name, best_status, best_dur_us
+        best = self._prune_non_values(best)
+        return best, error
 
     def _result_segments(self, stem: str) -> list[tuple[int, Path]]:
         """
@@ -480,8 +560,16 @@ class KwokTestGenerator:
         - Creates '<stem>_1.csv' if no segments exist.
         - Rotates to '<stem>_<last+1>.csv' when current_rows + rows_to_add > limit.
         Always ensures the header on the chosen file.
+        Also: when --overwrite is set, delete any existing segment whose header
+        does not match RESULTS_HEADER.
         """
+        # Purge any segments with mismatched headers if overwrite=true
         segs = self._result_segments(stem)
+        for _, p in list(segs):
+            self._purge_mismatched_csv(p, RESULTS_HEADER)
+        # Re-enumerate after potential deletions
+        segs = self._result_segments(stem)
+
         if not segs:
             target = self.results_dir / f"{stem}_1.csv"
             ensure_csv_with_header(target, RESULTS_HEADER)
@@ -542,31 +630,37 @@ class KwokTestGenerator:
             return [], []
 
         solver_slots = ["local-search", "bfs", "python"]
-        header = ["timestamp_ns", "plan_status", "best"]
-        for s in solver_slots:
-            header += [f"{s}_status", f"{s}_duration_us",
-                    f"{s}_placed_by_priority", f"{s}_evictions", f"{s}_moves"]
+        header = ["timestamp_ns", "error", "best_solver"] + solver_slots
 
         rows: list[dict] = []
         for run in runs:
             row = {
                 "timestamp_ns": run.get("timestamp_ns") or "",
-                "plan_status": run.get("plan_status") or "",
-                "best": run.get("best") or "",
+                "error": run.get("error") or "",
+                "best_solver": run.get("best_solver") or "",
             }
+
             attempts = {(a.get("name") or ""): a for a in (run.get("attempts") or [])}
+
             for s in solver_slots:
                 a = attempts.get(s)
                 if not a:
-                    row[f"{s}_status"] = row[f"{s}_duration_us"] = ""
-                    row[f"{s}_placed_by_priority"] = row[f"{s}_evictions"] = row[f"{s}_moves"] = ""
+                    # leave empty string if solver wasn't attempted in this run
+                    row[s] = ""
                     continue
+
                 sc = a.get("score") or {}
-                row[f"{s}_status"] = a.get("status", "")
-                row[f"{s}_duration_us"] = a.get("duration_us", "")
-                row[f"{s}_placed_by_priority"] = json.dumps(sc.get("placed_by_priority") or {}, separators=(",", ":"), sort_keys=True)
-                row[f"{s}_evictions"] = sc.get("evicted", "")
-                row[f"{s}_moves"] = sc.get("moved", "")
+                solver_obj = {
+                    "status": a.get("status", ""),
+                    "duration_us": a.get("duration_us", ""),
+                    "placed_by_priority": sc.get("placed_by_priority") or {},
+                    "evictions": sc.get("evicted", ""),
+                    "moves": sc.get("moved", ""),
+                }
+
+                solver_obj = KwokTestGenerator._prune_non_values(solver_obj)
+                row[s] = json.dumps(solver_obj, separators=(",", ":"), sort_keys=True)
+
             rows.append(row)
 
         return header, rows
@@ -574,12 +668,17 @@ class KwokTestGenerator:
     def _write_solver_stats_csv(self, cfg: Path, seed: int, header: list[str], rows: list[dict]) -> None:
         """
         Write solver-stats CSV to results dir. No-op if header/rows empty.
+        When --overwrite is set, delete an existing file if its header does not match 'header'.
         """
         if not header:
             LOG.warning("skip write solver-stats: empty header")
             return
         out_path = self.results_dir / f"{cfg.stem}_{CM_SOLVER_STATS_NAME}_seed-{seed}.csv"
         out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # NEW: purge mismatched header if overwrite true
+        self._purge_mismatched_csv(out_path, header)
+
         try:
             with open(out_path, "w", encoding="utf-8", newline="") as fh:
                 w = csv.DictWriter(fh, fieldnames=header)
@@ -962,11 +1061,11 @@ class KwokTestGenerator:
 
     def _save_scheduler_logs(self, cfg: Path, seed: int) -> None:
         """
-        Save kube-scheduler logs for the current KWOK cluster to results dir.
-        File: <results-dir>/<cfg.stem>_kube-scheduler_seed-<seed>.log
+        Save scheduler logs for the current KWOK cluster to results dir.
+        File: <results-dir>/<cfg.stem>_scheduler-logs_seed-<seed>.log
         """
         assert self.results_dir is not None, "results_dir must be resolved before saving logs"
-        out_path = self.results_dir / f"{cfg.stem}_kube-scheduler_seed-{seed}.log"
+        out_path = self.results_dir / f"{cfg.stem}_scheduler-logs_seed-{seed}.log"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         
         # only save if not exists or overwrite is enabled
@@ -1404,6 +1503,7 @@ class KwokTestGenerator:
             ("config_file", args.config_file),
             ("results_dir", args.results_dir),
             ("overwrite", args.overwrite),
+            ("clean_results", args.clean_results),
             ("max_rows_per_file", args.max_rows_per_file),
             ("seed", args.seed),
             ("seed_file", args.seed_file),
@@ -1438,6 +1538,42 @@ class KwokTestGenerator:
     ##############################################
     # ------------ Runner helpers ----------------
     ##############################################
+    def _clean_results_dir(self) -> None:
+        """
+        Delete all files and subdirectories in results_dir (but not the dir itself).
+        Safety checks included to avoid dangerous paths.
+        """
+        rd = self.results_dir
+        if not rd:
+            return
+        try:
+            rd = rd.resolve()
+        except Exception:
+            LOG.warning("could not resolve results_dir; skipping clean")
+            return
+        # Safety checks
+        if not rd.exists():
+            LOG.info("results_dir %s does not exist; nothing to clean", rd)
+            return
+        if not rd.is_dir():
+            LOG.warning("results_dir %s is not a directory; skipping clean", rd)
+            return
+        # Guard against root ("/") just in case
+        if rd == rd.anchor:
+            LOG.error("refusing to clean the filesystem root (%s)", rd)
+            return
+        deleted = 0
+        for entry in rd.iterdir():
+            try:
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink(missing_ok=True)
+                deleted += 1
+            except Exception as e:
+                LOG.warning("failed to delete %s: %s", entry, e)
+        LOG.info("cleaned %d item(s) from %s", deleted, rd)
+    
     def _pause(self, *, next_exists: bool = True) -> None:
         """
         Pause for Enter if --pause is set and another item is coming.
@@ -1667,14 +1803,14 @@ class KwokTestGenerator:
                 self._write_solver_stats_csv(cfg, seed, solver_stats_header, solver_stats_rows)
             
             # Best solver
-            best_name, best_status, best_dur_us = self._get_best_solver_fields(
-                solver_stats_header, solver_stats_rows
-            )
+            best_solver, error = self._get_best_solver(solver_stats_header, solver_stats_rows)
             result_row = {
                 "timestamp": get_timestamp(),
                 "kwok_config": str(cfg),
                 "seed_file": seed_file,
                 "seed": str(seed),
+                "error": error,
+                "best_solver": json.dumps(best_solver, separators=(",", ":"), sort_keys=True),
                 "num_nodes": ta.num_nodes,
                 "num_pods": ta.num_pods,
                 "num_priorities": ta.num_priorities,
@@ -1696,9 +1832,6 @@ class KwokTestGenerator:
                 "wait_pod_timeout_s": ta.wait_pod_timeout_s,
                 "settle_timeout_min_s": ta.settle_timeout_min_s,
                 "settle_timeout_max_s": ta.settle_timeout_max_s,
-                "best_solver_name": best_name,
-                "best_solver_status": best_status,
-                "best_solver_duration_us": best_dur_us,
                 "running_count": int(len(snap.pods_running)),
                 "unscheduled_count": int(len(snap.pods_unscheduled)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
@@ -1865,6 +1998,9 @@ class KwokTestGenerator:
 
         rd.mkdir(parents=True, exist_ok=True)
         self.results_dir = rd
+        if getattr(self.args, "clean_results", False):
+            LOG.info("clean-results requested: deleting all contents of %s", self.results_dir)
+            self._clean_results_dir()
 
         # failures file lives in results dir
         self.failed_f = self.results_dir / "failed.csv"
@@ -2025,7 +2161,9 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--overwrite", action="store_true", help="Replace any existing results for the same seed.")
     ap.add_argument("--max-rows-per-file", dest="max_rows_per_file", type=int, default=500000,
                     help="Maximum number of data rows per results CSV before rotating (default 500000).")
-    
+    ap.add_argument("--clean-results", dest="clean_results", action="store_true",
+                    help="Before running, delete all contents of --results-dir.")
+
     # seeds
     ap.add_argument("--seed", type=int, default=None, help="Run exactly this seed (per kwok-config)")
     ap.add_argument("--seed-file", dest="seed_file", default=None, help="Path to seeds file (CSV with 'seed' col or newline list).")

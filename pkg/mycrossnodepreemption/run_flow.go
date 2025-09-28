@@ -22,23 +22,27 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if !optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.V(MyV).InfoS(msg(strategy, InfoActivePlanInProgress))
+			pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrActiveInProgress.Error(), &SolverResult{Name: "baseline"}, nil)
 			return nil, nil, ErrActiveInProgress
 		}
 	}
 
 	start := time.Now()
+	baselineResult := SolverResult{Name: "baseline"}
 
 	// Fetch nodes and pods ONCE for this flow
 	nodes, err := pl.getNodes()
 	if err != nil {
 		klog.Error(msg(strategy, "failed to list nodes"))
 		pl.leaveActive()
+		pl.exportSolverStatsConfigMap(ctx, strategy, nil, err.Error(), &baselineResult, nil)
 		return nil, nil, err
 	}
 	pods, err := pl.getPods()
 	if err != nil {
 		klog.Error(msg(strategy, "failed to list pods"))
 		pl.leaveActive()
+		pl.exportSolverStatsConfigMap(ctx, strategy, nil, err.Error(), &baselineResult, nil)
 		return nil, nil, err
 	}
 
@@ -47,6 +51,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if pendingPostPlan == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPods))
 		pl.leaveActive()
+		pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrNoPendingPods.Error(), &baselineResult, nil)
 		return nil, nil, ErrNoPendingPods
 	}
 
@@ -55,13 +60,17 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if err != nil {
 		klog.Error(msg(strategy, "failed to build solver input"))
 		pl.leaveActive()
+		pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrNoPendingPods.Error(), &baselineResult, nil)
 		return nil, nil, err
 	}
-	bestSolver, anyFeasibleImproving := pl.runSolvers(ctx, solverInput, nodes, pods)
+
+	bestSolver, hadImproving, attempts, baselineScore := pl.runSolvers(ctx, solverInput, nodes, pods)
+
 	// Check if all solvers are infeasible
-	if !anyFeasibleImproving {
+	if !hadImproving {
 		klog.Error(msg(strategy, InfoNoImprovingSolutionFromAnySolver))
 		pl.leaveActive()
+		pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrNoImprovingSolutionFromAnySolver.Error(), &SolverResult{Name: "baseline"}, nil)
 		return nil, &bestSolver, ErrNoImprovingSolutionFromAnySolver
 	}
 
@@ -69,6 +78,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
+			pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrActiveInProgress.Error(), &bestSolver, attempts)
 			return nil, nil, ErrActiveInProgress
 		}
 	}
@@ -78,6 +88,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if pendingScheduled == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPodsToSchedule))
 		pl.leaveActive()
+		pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrNoPendingPodsToSchedule.Error(), &bestSolver, attempts)
 		return nil, &bestSolver, ErrNoPendingPodsToSchedule
 	}
 
@@ -86,6 +97,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if err != nil {
 		klog.Error(msg(strategy, InfoRegisterPlanFailed))
 		pl.onPlanSettled(PlanStatusFailed)
+		pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrRegisterPlan.Error(), &bestSolver, attempts)
 		return nil, &bestSolver, ErrRegisterPlan
 	}
 
@@ -93,6 +105,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if err := pl.executePlan(plan); err != nil {
 		klog.Error(msg(strategy, InfoPlanExecutionFailed))
 		pl.onPlanSettled(PlanStatusFailed)
+		pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrPlanExecutionFailed.Error(), &bestSolver, attempts)
 		return nil, &bestSolver, ErrPlanExecutionFailed
 	}
 
@@ -100,6 +113,8 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualAllSynch() {
 		pl.activatePlannedPending(plan, pods)
 	}
+
+	pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, "", &bestSolver, attempts)
 
 	// Build and return result
 	bestSolverSummary := summarizeAttempt(bestSolver)

@@ -18,12 +18,12 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	in SolverInput,
 	nodes []*v1.Node,
 	pods []*v1.Pod,
-) (best SolverResult, hadFeasibleImprovingSolver bool) {
+) (best SolverResult, hadFeasibleImprovingSolver bool, attempts []SolverResult, baselineScore SolverScore) {
 	hadFeasibleImprovingSolver = false
 	strategy := strategyToString()
 
 	// Baseline + prepared state
-	baselineScore := buildBaselineScore(in)
+	baselineScore = buildBaselineScore(in)
 	baseState := buildState(in)
 
 	// Direct-fit pre-pass: only accept if strictly better than baseline
@@ -37,11 +37,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Score:      score,
 				CmpBase:    1,
 				Output:     out,
+				Status:     out.Status,
 			}
-			best.Status = out.Status
 			klog.InfoS(msg(strategy, "direct-fit; skipping other solvers"),
 				"placedByPri", best.Score.PlacedByPriority, "evictions", best.Score.Evicted, "moves", best.Score.Moved, "durationUs", best.DurationUs)
-			return best, true
+			return best, true, []SolverResult{best}, baselineScore
 		}
 		klog.V(MyV).InfoS(msg(strategy, "direct-fit could not place all pods; run solvers"), "durationUs", time.Since(start).Microseconds())
 	}
@@ -196,19 +196,14 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		}
 	}
 
-	// =====================================
-	// === Logging & Export ================
-	// =====================================
-
 	// Leaderboard
 	logLeaderboard(strategy, attemptsFeasibleImproving, baselineScore, best)
 
-	// Export solver attempts
 	if SolverSaveAllAttempts {
-		pl.exportSolverStats(ctx, strategy, baselineScore, best, attemptsFeasibleAll, hadFeasibleImprovingSolver)
+		attempts = attemptsFeasibleAll
 	} else {
-		pl.exportSolverStats(ctx, strategy, baselineScore, best, attemptsFeasibleImproving, hadFeasibleImprovingSolver)
+		attempts = attemptsFeasibleImproving
 	}
 
-	return best, hadFeasibleImprovingSolver
+	return best, hadFeasibleImprovingSolver, attempts, baselineScore
 }

@@ -1469,32 +1469,35 @@ func cloneScore(s SolverScore) *SolverScore {
 	}
 }
 
-// exportSolverStats exports a compact run record to the stats ConfigMap.
+// exportSolverStatsConfigMap exports a compact run record to the stats ConfigMap.
 // Only runs when `hadFeasible` is true.
-func (pl *MyCrossNodePreemption) exportSolverStats(
+func (pl *MyCrossNodePreemption) exportSolverStatsConfigMap(
 	ctx context.Context,
-	label string,
-	baseline SolverScore,
-	best SolverResult,
-	attemptsFeasible []SolverResult,
-	hadFeasible bool,
+	strategy string,
+	baseline *SolverScore,
+	err string,
+	best *SolverResult,
+	attempts []SolverResult,
 ) {
-	if !hadFeasible {
-		return
+	// Build summarized attempts to keep payload lean
+	slim := make([]SolverResult, 0, len(attempts))
+	for _, r := range attempts {
+		slim = append(slim, summarizeAttempt(r))
 	}
-	attempts := make([]SolverResult, 0, len(attemptsFeasible))
-	for _, r := range attemptsFeasible {
-		attempts = append(attempts, summarizeAttempt(r))
-	}
+
 	entry := ExportedSolverStats{
 		TimestampNs: time.Now().UnixNano(),
-		Best:        best.Name,
-		PlanStatus:  PlanStatusActive,
+		BestSolver:  best.Name,
+		Error:       err,
 		Baseline:    baseline,
-		Attempts:    attempts,
+		Attempts:    slim,
 	}
 	pl.appendSolverStatsCM(ctx, entry)
-	klog.V(MyV).InfoS(msg(label, "exported solver stats"), "attempts", len(attempts), "best", best.Name)
+	klog.V(MyV).InfoS(msg(strategy, "exported solver stats"),
+		"attempts", len(slim),
+		"bestSolver", best.Name,
+		"error", err,
+	)
 }
 
 // append (create if missing) an entry to the ConfigMap ledger

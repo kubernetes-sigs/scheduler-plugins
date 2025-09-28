@@ -28,6 +28,7 @@
       --trigger-optimizer true \
       --save-solver-stats true \
       --save-scheduler-logs true \
+      --clean-results true \
   SHELL
 end
 

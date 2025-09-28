@@ -67,32 +67,18 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 			resp.BestSolver = bestSolver
 		}
 		resp.DurationMs = time.Since(start).Milliseconds()
+		if err != nil {
+			resp.Error = err.Error()
+		}
 		switch err {
 		case nil:
 			resp.Status = "ok"
 		case ErrActiveInProgress:
 			resp.Status = "busy"
-			// Force a BUSY result to be returned to the caller
-			resp.BestSolver = &SolverResult{
-				Name:       "N/A",
-				Status:     "BUSY",
-				DurationUs: 0,
-			}
 		case ErrNoImprovingSolutionFromAnySolver, ErrNoPendingPodsToSchedule, ErrNoPendingPods:
 			resp.Status = "noop"
-			// Force a NOOP result to be returned to the caller
-			if resp.BestSolver == nil {
-				resp.BestSolver = &SolverResult{
-					Name:       "N/A",
-					Status:     "NOOP",
-					DurationUs: 0,
-				}
-			} else {
-				resp.BestSolver.Status += "-NOOP"
-			}
 		default:
 			resp.Status = "error"
-			resp.Error = err.Error()
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})

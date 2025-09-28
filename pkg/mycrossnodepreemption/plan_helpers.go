@@ -264,7 +264,7 @@ func (pl *MyCrossNodePreemption) registerPlan(
 			NominatedNode: plan.NominatedNode,
 		}
 	}
-	if err := pl.exportPlanToConfigMap(ctx, id, storedPlan); err != nil {
+	if err := pl.exportPlanConfigMap(ctx, id, storedPlan); err != nil {
 		klog.ErrorS(err, "export plan to ConfigMap failed")
 	}
 
@@ -520,7 +520,7 @@ func (pl *MyCrossNodePreemption) onPlanSettled(status PlanStatus) bool {
 	klog.InfoS(InfoDeactivatingActivePlan, "planID", ap.ID)
 
 	// Mark the plan statuses in ConfigMaps
-	pl.markPlanStatuses(context.Background(), ap.ID, status)
+	pl.markPlanStatus(context.Background(), ap.ID, status)
 
 	return true
 }
@@ -736,8 +736,8 @@ func (pl *MyCrossNodePreemption) waitPendingBound(ctx context.Context, pending *
 	return false, err
 }
 
-// exportPlanToConfigMap exports the given plan to a ConfigMap.
-func (pl *MyCrossNodePreemption) exportPlanToConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
+// exportPlanConfigMap exports the given plan to a ConfigMap.
+func (pl *MyCrossNodePreemption) exportPlanConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
 	doc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      name,
@@ -756,12 +756,10 @@ func (pl *MyCrossNodePreemption) exportPlanToConfigMap(ctx context.Context, name
 //   - The plan CM is put into the requested status (unless already final).
 //   - The exported stats CM only updates the last run if it isn't already final.
 //     (Never overwrite Failed with Completed.)
-func (pl *MyCrossNodePreemption) markPlanStatuses(ctx context.Context, planCM string, status PlanStatus) {
+func (pl *MyCrossNodePreemption) markPlanStatus(ctx context.Context, planCM string, status PlanStatus) {
 	lister := func(ns string) clientv1.ConfigMapNamespaceLister {
 		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
 	}
-
-	// 1) Update the per-plan ConfigMap (plan-%d).
 	planDoc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      planCM,
@@ -783,27 +781,6 @@ func (pl *MyCrossNodePreemption) markPlanStatuses(ctx context.Context, planCM st
 		}
 		b, _ := json.MarshalIndent(&sp, "", "  ")
 		return b, nil
-	})
-
-	// 2) Update the exported stats ledger (last entry only, unless already final).
-	statsDoc := ConfigMapDoc{
-		Namespace: SystemNamespace,
-		Name:      SolverConfigMapExportedStatsName,
-		LabelKey:  SolverConfigMapLabelKey,
-		DataKey:   SolverConfigMapLabelKey + ".json",
-	}
-	_ = statsDoc.mutateRaw(ctx, pl.Client.CoreV1(), lister, func(raw []byte) ([]byte, error) {
-		var runs []ExportedSolverStats
-		if err := json.Unmarshal(raw, &runs); err != nil || len(runs) == 0 {
-			return nil, nil // best-effort / nothing to do
-		}
-		prev := runs[len(runs)-1].PlanStatus
-		if prev != PlanStatusCompleted && prev != PlanStatusFailed {
-			runs[len(runs)-1].PlanStatus = status
-			b, _ := json.MarshalIndent(runs, "", "  ")
-			return b, nil
-		}
-		return nil, nil
 	})
 }
 

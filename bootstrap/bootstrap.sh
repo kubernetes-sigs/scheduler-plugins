@@ -40,6 +40,8 @@ SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
 
 SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
 
+CLEAN_RESULTS="${CLEAN_RESULTS:-}" 
+
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 
@@ -118,6 +120,7 @@ print_cfg() {
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
+    log cfg "CLEAN_RESULTS=${CLEAN_RESULTS:-<unset>}"
   fi
   if [ -n "${TRIGGER_OPTIMIZER:-}" ]; then
     log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
@@ -362,6 +365,7 @@ FLAGS_SPEC=(
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
   "test|TEST|flag|--test"
   "overwrite|OVERWRITE|flag|--overwrite"
+  "clean-results|CLEAN_RESULTS|flag|--clean-results"
   "pause|PAUSE|flag|--pause"
   "log-level|LOG_LEVEL|value|"
 )

@@ -159,13 +159,13 @@ type ExportedSolverStats struct {
 	// TimestampNs is the timestamp of the run in nanoseconds.
 	TimestampNs int64 `json:"timestamp_ns"`
 	// Best solver name
-	Best string `json:"best,omitempty"`
-	// Plan status
-	PlanStatus PlanStatus `json:"plan_status,omitempty"`
+	BestSolver string `json:"best_solver,omitempty"`
+	// Error (if any)
+	Error string `json:"error,omitempty"`
 	// Baseline score
-	Baseline SolverScore `json:"baseline"`
+	Baseline *SolverScore `json:"baseline,omitempty"`
 	// Best score
-	Attempts []SolverResult `json:"attempts"`
+	Attempts []SolverResult `json:"attempts,omitempty"`
 }
 
 // PlanFunc is a function that, given a pod and a target node, tries to find a plan.
