@@ -249,6 +249,7 @@ To run tests on UCloud:
 
 ## TODOs
 
+- Remember to add: --trigger-optimizer --save-solver-stats --save-scheduler-logs
 - Clean up the code:
   - Reduce code
   - Switch case
