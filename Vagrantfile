@@ -28,7 +28,6 @@
       --trigger-optimizer true \
       --save-solver-stats true \
       --save-scheduler-logs true \
-      --append-solver-stats "python_status,python_duration_us" \
   SHELL
 end
 

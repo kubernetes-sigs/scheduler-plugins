@@ -2,8 +2,8 @@
 
 # kwok_shared.py
 
-import time, subprocess, json, csv, re
-from typing import List, Dict, Tuple, Optional
+import time, subprocess, json, csv, re, logging, textwrap, sys
+from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,7 +22,277 @@ MEM_UNIT_TABLE = {
     "gi": 1024**3, "gib": 1024**3,
 }
 
-# ---------- quantity helpers ----------
+
+# ====================================================================
+# YAML builders.
+# Due to proper indentation, we keep them outside class
+# ====================================================================
+def yaml_priority_class(name: str, value: int) -> str:
+    return textwrap.dedent(f"""\
+    apiVersion: scheduling.k8s.io/v1
+    kind: PriorityClass
+    metadata:
+      name: {name}
+    value: {value}
+    preemptionPolicy: PreemptLowerPriority
+    globalDefault: false
+    description: "pod priority {value}"
+    ---
+    """)
+
+def yaml_kwok_node(name: str, cpu: str, mem: str, pods_cap: int) -> str:
+    return textwrap.dedent(f"""\
+    apiVersion: v1
+    kind: Node
+    metadata:
+      name: {name}
+      annotations:
+        kwok.x-k8s.io/node: "fake"
+      labels:
+        kubernetes.io/hostname: "{name}"
+        kubernetes.io/os: "linux"
+        kubernetes.io/arch: "amd64"
+        node-role.kubernetes.io/agent: ""
+        type: "kwok"
+    spec:
+      taints:
+      - key: kwok.x-k8s.io/node
+        value: "fake"
+        effect: NoSchedule
+    status:
+      capacity:
+        cpu: "{cpu}"
+        memory: "{mem}"
+        pods: {pods_cap}
+      allocatable:
+        cpu: "{cpu}"
+        memory: "{mem}"
+        pods: {pods_cap}
+      nodeInfo:
+        architecture: amd64
+        kubeletVersion: fake
+        kubeProxyVersion: fake
+        operatingSystem: linux
+      phase: Running
+    ---
+    """)
+
+def yaml_kwok_rs(ns: str, rs_name: str, replicas: int, cpu: str, mem: str, pc: str) -> str:
+    return textwrap.dedent(f"""\
+    apiVersion: apps/v1
+    kind: ReplicaSet
+    metadata:
+      name: {rs_name}
+      namespace: {ns}
+    spec:
+      replicas: {replicas}
+      selector:
+        matchLabels:
+          app: {rs_name}
+      template:
+        metadata:
+          labels:
+            app: {rs_name}
+        spec:
+          priorityClassName: {pc}
+          restartPolicy: Always
+          tolerations:
+          - key: "kwok.x-k8s.io/node"
+            operator: "Exists"
+            effect: "NoSchedule"
+          containers:
+          - name: filler
+            image: registry.k8s.io/pause:3.9
+            resources:
+              requests: {{cpu: "{cpu}", memory: "{mem}"}}
+              limits:   {{cpu: "{cpu}", memory: "{mem}"}}
+    ---
+    """)
+
+def yaml_kwok_pod(ns: str, name: str, cpu: str, mem: str, pc: str) -> str:
+    return textwrap.dedent(f"""\
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: {name}
+      namespace: {ns}
+    spec:
+      restartPolicy: Always
+      priorityClassName: {pc}
+      tolerations:
+      - key: "kwok.x-k8s.io/node"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: filler
+        image: registry.k8s.io/pause:3.9
+        resources:
+          requests: {{cpu: "{cpu}", memory: "{mem}"}}
+          limits:   {{cpu: "{cpu}", memory: "{mem}"}}
+    ---
+    """)
+
+def get_timestamp() -> str:
+    """
+    Get the current timestamp as a string.
+    """
+    return time.strftime("%Y/%m/%d/%H:%M:%S", time.localtime())
+
+
+##############################################
+# ------------ Logging helpers----------------
+##############################################
+
+class PrefixFilter(logging.Filter):
+    """
+    Injects a static 'prefix' field into each LogRecord.
+    """
+    def __init__(self, prefix: str):
+        super().__init__()
+        self.prefix = prefix
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.prefix = self.prefix
+        return True
+
+def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
+    """
+    Configure the module logger.
+    - prefix: shown before every message (e.g. '[worker 2/5 cluster=kwok1] ').
+    - level:  DEBUG/INFO/WARNING/ERROR/CRITICAL (case-insensitive).
+    """
+    lvl = getattr(logging, str(level).upper(), logging.INFO)
+    logger = logging.getLogger("kwok")
+    logger.propagate = False
+    logger.setLevel(lvl)
+    logger.handlers.clear()
+    h = logging.StreamHandler(stream=sys.stdout)
+    fmt = logging.Formatter("%(asctime)s %(prefix)s%(message)s", datefmt="%H:%M:%S")
+    h.setFormatter(fmt)
+    h.addFilter(PrefixFilter(prefix))
+    logger.addHandler(h)
+    logging.captureWarnings(True)
+    return logger
+
+##############################################
+# ------------ Parser helpers----------------
+##############################################
+def normalize_interval(doc: Dict[str, Any], key_combo: Tuple[str, str, str], *, allow_none: bool = True) -> Optional[str]:
+    """
+    Normalize a (single) or (lo, hi) interval from the document.
+    It first checks for 'single' key; if not found, it looks for 'lo_key' and 'hi_key'.
+    Returns "lo,hi" or "" if not found (or None if allow_none and not found).
+    """
+    single, lo_key, hi_key = key_combo
+    if single in doc and doc[single] is not None:
+        v = doc[single]
+        if isinstance(v, (int, float)):
+            return str(int(v))
+        if isinstance(v, str):
+            s = v.strip()
+            if s:
+                return s
+        elif isinstance(v, (list, tuple)) and len(v) == 2:
+            return f"{str(v[0]).strip()},{str(v[1]).strip()}"
+        elif isinstance(v, dict):
+            lo = str(v.get("lo", "")).strip()
+            hi = str(v.get("hi", "")).strip()
+            if lo and hi:
+                return f"{lo},{hi}"
+    lo = str(doc.get(lo_key, "")).strip()
+    hi = str(doc.get(hi_key, "")).strip()
+    if lo and hi:
+        return f"{lo},{hi}"
+    return None if allow_none else ""
+
+def split_interval(t: Optional[Tuple[int, int]]) -> tuple[str, str]:
+    """Return (lo, hi) as strings; empty strings if None."""
+    if not t:
+        return "", ""
+    return str(int(t[0])), str(int(t[1]))
+
+def coerce_int_field(v):
+    """Return an int if v looks numeric, else empty string for CSV."""
+    if v is None:
+        return ""
+    if isinstance(v, (int, float)):
+        return int(v)
+    s = str(v).strip().replace(",", "")
+    m = re.search(r"-?\d+", s)
+    return int(m.group()) if m else ""
+
+def parse_int_interval(s: Optional[str], *, min_lo: int = 1) -> Optional[Tuple[int, int]]:
+    """
+    Parse a string interval "lo,hi" or "x" into a (lo, hi) tuple.
+    Returns None if s is None or empty.
+    Ensures lo >= min_lo and hi >= lo.
+    """
+    if not s:
+        return None
+    parts = [x.strip() for x in str(s).split(",", 1)]
+    if len(parts) == 1:
+        lo = hi = int(parts[0])
+    else:
+        lo, hi = int(parts[0]), int(parts[1])
+    lo = max(min_lo, lo)
+    hi = max(lo, hi)
+    return lo, hi
+
+def parse_qty_interval(s: Optional[str]) -> Optional[Tuple[str, str]]:
+    if not s:
+        return None
+    parts = [x.strip() for x in s.split(",", 1)]
+    if len(parts) == 1:
+        return (parts[0], parts[0])
+    return (parts[0], parts[1])
+
+def parse_timeout_s(t:str | None, default: int = 60) -> int:
+    """
+    Parse a timeout string into seconds.
+    """
+    if not t:
+        return default
+    try:
+        if t.endswith("ms"): return max(1, int(int(t[:-2]) / 1000))
+        if t.endswith("s"):  return int(t[:-1])
+        if t.endswith("m"):  return int(t[:-1]) * 60
+        if t.endswith("h"):  return int(t[:-1]) * 3600
+        return int(t)
+    except Exception:
+        return default
+
+def get_int_from_dict(doc: Dict[str, Any], key: str, default: int) -> int:
+    """
+    Get an integer value from the document, returning a default if not found or invalid.
+    """
+    v = doc.get(key, default)
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+def get_float_from_dict(doc: Dict[str, Any], key: str, default: float) -> float:
+    """
+    Get a float value from the document, returning a default if not found or invalid.
+    """
+    v = doc.get(key, default)
+    try:
+        return float(v)
+    except Exception:
+        return default
+
+def get_str_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> Optional[str]:
+    """
+    Get a string value from the document, returning a default if not found or empty.
+    """
+    v = doc.get(key, default)
+    if v is None:
+        return default
+    s = str(v).strip()
+    return s if s else default
+
+##############################################
+# ------------ Quantity helpers----------------
+##############################################
 def qty_to_mcpu_int(token: str) -> int:
     """
     Convert any CPU quantity to millicores.
@@ -72,8 +342,9 @@ def qty_to_bytes_str(b: int) -> str:
     """Return bytes as a decimal quantity string for K8s."""
     return str(int(max(1, b)))
 
-# ---------- kubectl helpers ----------
-
+##############################################
+# ------------ kubectl helpers----------------
+##############################################
 def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     """
     Get the JSON output from a kubectl command.
@@ -92,8 +363,9 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
         ) from e
     return json.loads(out)
 
-# ---------- file I/O helpers ----------
-
+##############################################
+# ------------ File I/O helpers----------------
+##############################################
 def dir_exists(dir_path: str) -> None:
     p = Path(dir_path)
     if not p.exists():
@@ -113,27 +385,59 @@ def file_exists(file: Optional[str]) -> None:
     except Exception as e:
         raise SystemExit(f"--seed-file not readable: {f} ({e})")
 
+##############################################
+# ------------ CSV helpers----------------
+##############################################
+def ensure_csv_with_header(path: Path, header: List[str]) -> None:
+    """
+    Ensure the CSV file exists with the given header.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            csv.DictWriter(f, fieldnames=header).writeheader()
+
+def count_csv_rows(path: Path) -> int:
+    """
+    Count data rows (excluding header).
+    """
+    if not path.exists():
+        return 0
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        rd = csv.DictReader(f)
+        return sum(1 for _ in rd)
+
 def csv_append_row(
     file_path: str | Path,
-    header: List[str],
+    header: list[str],
     row: dict,
 ) -> None:
     """
-    Append a single row to a CSV/TSV file, writing the header if the file is new/empty.
-    - Creates parent dirs.
-    - Ignores extra keys in 'row' not present in header (extrasaction='ignore').
-    - Uses configurable delimiter (default ',').
+    Append a row to CSV, writing the header if the file is new.
+    Rules:
+      - Reject if 'row' contains any keys not in 'header'.
+      - Missing header fields are written as empty strings.
+      - File column order always follows 'header' (incoming row order ignored).
     """
     p = Path(file_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-
+    header_set = set(header)
+    row_keys = set(row.keys())
+    extra = row_keys - header_set
+    if extra:
+        raise ValueError(f"Row contains fields not in header: {sorted(extra)}")
+    # Build in header order; fill missing with ""
+    safe_row = {k: ("" if row.get(k) is None else row.get(k, "")) for k in header}
     with open(p, "a", encoding="utf-8", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=header)
-        wr.writeheader() if f.tell() == 0 else None
-        wr.writerow(row)
+        if f.tell() == 0:
+            wr.writeheader()
+        wr.writerow(safe_row)
         f.flush()
 
-# ---------- stats helpers ----------
+##############################################
+# ------------ Stats helpers----------------
+##############################################
 @dataclass
 class Snapshot:
     cpu_run_util: float                 # running requests / total alloc CPU

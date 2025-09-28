@@ -40,8 +40,6 @@ SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
 
 SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
 
-APPEND_SOLVER_STATS="${APPEND_SOLVER_STATS:-}"
-
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 
@@ -137,11 +135,6 @@ print_cfg() {
     log cfg "SAVE_SCHEDULER_LOGS=${SAVE_SCHEDULER_LOGS}"
   else
     log cfg "SAVE_SCHEDULER_LOGS=<unset>"
-  fi
-  if [ -n "${APPEND_SOLVER_STATS:-}" ]; then
-    log cfg "APPEND_SOLVER_STATS=${APPEND_SOLVER_STATS}"
-  else
-    log cfg "APPEND_SOLVER_STATS=<unset>"
   fi
   if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "docker" ]; then
     log cfg "IMAGE_REMOTE_TAG=${IMAGE_REMOTE_TAG}"
@@ -322,13 +315,6 @@ stage_test() {
   # Optimizer URLs (only used if --trigger-optimizer is set, but safe to always pass if provided)
   [ -n "${OPTIMIZER_URL:-}"   ] && args+=( --optimizer-url "${OPTIMIZER_URL}" )
   [ -n "${ACTIVE_URL:-}"      ] && args+=( --active-url "${ACTIVE_URL}" )
-  # Append solver stats: allow comma or space separated, pass each as its own flag
-  if [ -n "${APPEND_SOLVER_STATS:-}" ]; then
-    # expand commas to spaces, then iterate
-    for spec in ${APPEND_SOLVER_STATS//,/ }; do
-      [ -n "${spec}" ] && args+=( --append-solver-stats "${spec}" )
-    done
-  fi
 
   # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs)
   # shellcheck disable=SC2206
@@ -374,7 +360,6 @@ FLAGS_SPEC=(
   "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
   "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
-  "append-solver-stats|APPEND_SOLVER_STATS|value|"
   "test|TEST|flag|--test"
   "overwrite|OVERWRITE|flag|--overwrite"
   "pause|PAUSE|flag|--pause"

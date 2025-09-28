@@ -34,7 +34,7 @@ const (
 	// SolverLogProgress is a flag that enables/disables logging of solver progress.
 	SolverLogProgress = false
 	// SolverConfigMapExportedStatsName is the name of the exported stats config map.
-	SolverConfigMapExportedStatsName = "stats"
+	SolverConfigMapExportedStatsName = "solver-stats"
 	// SolverConfigMapLabelKey is the label key used for solver configuration config maps.
 	SolverConfigMapLabelKey = "runs"
 	// =========================================================

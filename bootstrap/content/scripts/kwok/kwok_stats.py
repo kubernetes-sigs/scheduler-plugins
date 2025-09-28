@@ -6,7 +6,7 @@ import argparse
 from typing import Callable
 from tabulate import tabulate
 
-from kwok_shared import stat_snapshot, qty_to_mcpu_str
+from kwok_helpers import stat_snapshot, qty_to_mcpu_str
 
 class KwokStats:
     def __init__(self, ctx: str, ns: str, expected: int, settle_timeout: float,

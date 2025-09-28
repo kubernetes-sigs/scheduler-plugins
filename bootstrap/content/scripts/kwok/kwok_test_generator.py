@@ -25,17 +25,19 @@
 #                                       of running vs unscheduled at the end. No results are saved in test mode.
 ################################################################################
 
-import cmd
-import sys, csv, json, time, random, argparse, re, subprocess, tempfile, os, textwrap, hashlib, math, yaml, traceback, contextlib, fcntl, logging, shlex
+import sys, csv, json, time, random, argparse, re, subprocess, tempfile, os, hashlib, math, yaml, traceback, contextlib, fcntl, logging, shlex
 from urllib import request as _urlreq, error as _urlerr
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from kwok_shared import (
-    get_json_ctx, stat_snapshot, dir_exists, file_exists,
-    csv_append_row, qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int
+from kwok_helpers import (
+    get_json_ctx, stat_snapshot, file_exists,
+    csv_append_row, count_csv_rows, ensure_csv_with_header,
+    qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
+    yaml_kwok_node, yaml_kwok_pod, yaml_kwok_rs, yaml_priority_class,
+    get_timestamp, setup_logging,
+    normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s, get_int_from_dict, get_float_from_dict, get_str_from_dict, coerce_int_field, split_interval
 )
 
 # ===============================================================
@@ -51,6 +53,7 @@ RESULTS_HEADER = [
     "util", "util_run_cpu", "util_run_mem",
     "cpu_m_run", "mem_b_run",
     "wait_pod_mode", "wait_pod_timeout_s", "settle_timeout_min_s", "settle_timeout_max_s",
+    "best_solver_name", "best_solver_status", "best_solver_duration_us",
     "running_count", "unscheduled_count",
     "pods_run_by_node",
     "running_placed_by_priority", "unschedulable_by_priority",
@@ -61,117 +64,8 @@ RESULTS_HEADER = [
 # Module-level logger handle (handlers configured later by setup_logging in main())
 LOG = logging.getLogger("kwok")
 
-CM_STATS_NAME = "stats"
-CM_STATS_NAMESPACE = "kube-system"
-
-# ====================================================================
-# YAML builders.
-# Due to proper indentation, we keep them outside class
-# ====================================================================
-def yaml_priority_class(name: str, value: int) -> str:
-    return textwrap.dedent(f"""\
-    apiVersion: scheduling.k8s.io/v1
-    kind: PriorityClass
-    metadata:
-      name: {name}
-    value: {value}
-    preemptionPolicy: PreemptLowerPriority
-    globalDefault: false
-    description: "pod priority {value}"
-    ---
-    """)
-
-def yaml_kwok_node(name: str, cpu: str, mem: str, pods_cap: int) -> str:
-    return textwrap.dedent(f"""\
-    apiVersion: v1
-    kind: Node
-    metadata:
-      name: {name}
-      annotations:
-        kwok.x-k8s.io/node: "fake"
-      labels:
-        kubernetes.io/hostname: "{name}"
-        kubernetes.io/os: "linux"
-        kubernetes.io/arch: "amd64"
-        node-role.kubernetes.io/agent: ""
-        type: "kwok"
-    spec:
-      taints:
-      - key: kwok.x-k8s.io/node
-        value: "fake"
-        effect: NoSchedule
-    status:
-      capacity:
-        cpu: "{cpu}"
-        memory: "{mem}"
-        pods: {pods_cap}
-      allocatable:
-        cpu: "{cpu}"
-        memory: "{mem}"
-        pods: {pods_cap}
-      nodeInfo:
-        architecture: amd64
-        kubeletVersion: fake
-        kubeProxyVersion: fake
-        operatingSystem: linux
-      phase: Running
-    ---
-    """)
-
-def yaml_kwok_rs(ns: str, rs_name: str, replicas: int, cpu: str, mem: str, pc: str) -> str:
-    return textwrap.dedent(f"""\
-    apiVersion: apps/v1
-    kind: ReplicaSet
-    metadata:
-      name: {rs_name}
-      namespace: {ns}
-    spec:
-      replicas: {replicas}
-      selector:
-        matchLabels:
-          app: {rs_name}
-      template:
-        metadata:
-          labels:
-            app: {rs_name}
-        spec:
-          priorityClassName: {pc}
-          restartPolicy: Always
-          tolerations:
-          - key: "kwok.x-k8s.io/node"
-            operator: "Exists"
-            effect: "NoSchedule"
-          containers:
-          - name: filler
-            image: registry.k8s.io/pause:3.9
-            resources:
-              requests: {{cpu: "{cpu}", memory: "{mem}"}}
-              limits:   {{cpu: "{cpu}", memory: "{mem}"}}
-    ---
-    """)
-
-def yaml_kwok_pod(ns: str, name: str, cpu: str, mem: str, pc: str) -> str:
-    return textwrap.dedent(f"""\
-    apiVersion: v1
-    kind: Pod
-    metadata:
-      name: {name}
-      namespace: {ns}
-    spec:
-      restartPolicy: Always
-      priorityClassName: {pc}
-      tolerations:
-      - key: "kwok.x-k8s.io/node"
-        operator: "Exists"
-        effect: "NoSchedule"
-      containers:
-      - name: filler
-        image: registry.k8s.io/pause:3.9
-        resources:
-          requests: {{cpu: "{cpu}", memory: "{mem}"}}
-          limits:   {{cpu: "{cpu}", memory: "{mem}"}}
-    ---
-    """)
+CM_SOLVER_STATS_NAME = "solver-stats"
+CM_SOLVER_STATS_NAMESPACE = "kube-system"
 
 # ===============================================================
 # Data classes
@@ -242,12 +136,99 @@ class KwokTestGenerator:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.ctx: Optional[str] = None
-        self.kwok_runtime: str = args.kwok_runtime
-        self.results_dir_arg = args.results_dir
         self.results_dir: Path | None = None
         self.failed_f: Path | None = None
         self.max_rows_per_file = int(args.max_rows_per_file)
         self.last_optimize_json: dict[str, Any] | None = None
+
+    ######################################################
+    # ---------- ETA helpers ----------
+    ######################################################
+    def _init_eta_state(self):
+        """Call once per config before running any seeds."""
+        self._eta_started_at = time.time()
+        self._seed_durations: list[float] = []
+
+    def _record_seed_duration(self, started_at: float):
+        """Call after a seed finishes (success or fail)."""
+        try:
+            self._seed_durations.append(max(0.0, time.time() - started_at))
+        except Exception:
+            pass
+
+    def _estimate_eta_epoch(self, cfg_idx: int, cfgs_total: int,
+                            seed_idx: int, seeds_total: int) -> float | None:
+        """
+        Return an epoch seconds ETA, or None if not enough info.
+        """
+        if not self._seed_durations:
+            return None
+        avg = sum(self._seed_durations) / max(1, len(self._seed_durations))
+        if seeds_total is None or seeds_total <= 0:
+            # unknown/infinite
+            return None
+        seeds_done = max(0, seed_idx - 1)
+        seeds_left_current = max(0, seeds_total - seeds_done)
+        cfgs_done = max(0, cfg_idx - 1)
+        cfgs_left = max(0, cfgs_total - cfgs_done)
+        future_configs_left = max(0, cfgs_left - 1)  # exclude current
+        seeds_left_future = future_configs_left * seeds_total
+        remaining_seeds_overall = seeds_left_current + seeds_left_future
+        return time.time() + remaining_seeds_overall * avg
+
+    def _write_completion_file(self, eta_epoch: float | None,
+                            cfg_idx: int, cfgs_total: int,
+                            seed_idx: int, seeds_total: int):
+        """
+        Delete stale completion_* and write a new one:
+        completion_<time>_configs<left-of-total>_seeds<left-of-total>
+        """
+        if not self.results_dir:
+            return
+        try:
+            # delete any prior completion_* markers
+            for p in self.results_dir.glob("completion_*"):
+                try: p.unlink()
+                except OSError: pass
+
+            # figure "left"
+            cfgs_done = max(0, cfg_idx - 1)
+            cfgs_left = max(0, cfgs_total - cfgs_done)
+
+            if seeds_total and seeds_total > 0:
+                seeds_done = max(0, seed_idx - 1)
+                seeds_left = max(0, seeds_total - seeds_done)
+            else:
+                # unknown seeds total – show "unknown-of-unknown"
+                seeds_left = -1
+                seeds_total = -1
+
+            if eta_epoch is None:
+                time_part = "unknown"
+            else:
+                # make filename-safe stamp (no ':'), local time
+                time_part = time.strftime("%Y%m%d-%H%M%S", time.localtime(eta_epoch))
+
+            fname = f"completion_{time_part}_configs{cfgs_left}-of-{cfgs_total}_seeds{seeds_left}-of-{seeds_total}"
+            fpath = self.results_dir / fname
+
+            # write a tiny payload
+            with open(fpath, "w", encoding="utf-8") as fh:
+                payload = {
+                    "eta_epoch": (int(eta_epoch) if isinstance(eta_epoch, (int, float)) else None),
+                    "eta_iso": (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(eta_epoch)) if eta_epoch else None),
+                    "configs_left": cfgs_left, "configs_total": cfgs_total,
+                    "seeds_left": seeds_left, "seeds_total": seeds_total,
+                }
+                fh.write(json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n")
+        except Exception:
+            # best-effort; don't break the run for ETA issues
+            pass
+
+    def _update_completion_marker(self, cfg_idx: int, cfgs_total: int,
+                                seed_idx: int, seeds_total: int):
+        eta_epoch = self._estimate_eta_epoch(cfg_idx, cfgs_total, seed_idx, seeds_total)
+        self._write_completion_file(eta_epoch, cfg_idx, cfgs_total, seed_idx, seeds_total)
 
     ######################################################
     # ---------- Parsing helpers ----------
@@ -258,97 +239,12 @@ class KwokTestGenerator:
         Returns (wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s).
         """
         wait_pod_mode = None if tr.wait_pod_mode in (None, "none", "None", "") else str(tr.wait_pod_mode)
-        wait_pod_timeout_s = KwokTestGenerator._parse_timeout_s(tr.wait_pod_timeout, default=5)
-        settle_timeout_min_s = KwokTestGenerator._parse_timeout_s(tr.settle_timeout_min, default=2)
+        wait_pod_timeout_s = parse_timeout_s(tr.wait_pod_timeout, default=5)
+        settle_timeout_min_s = parse_timeout_s(tr.settle_timeout_min, default=2)
         # Make settle_timeout_max optional in configs: if missing/empty -> 0 (disabled)
         settle_timeout_max_s = 0 if tr.settle_timeout_max in (None, "", "none", "None") \
-            else KwokTestGenerator._parse_timeout_s(tr.settle_timeout_max, default=12)
+            else parse_timeout_s(tr.settle_timeout_max, default=12)
         return wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s
-
-    @staticmethod
-    def _parse_int_interval(s: Optional[str], *, min_lo: int = 1) -> Optional[Tuple[int, int]]:
-        """
-        Parse a string interval "lo,hi" or "x" into a (lo, hi) tuple.
-        Returns None if s is None or empty.
-        Ensures lo >= min_lo and hi >= lo.
-        """
-        if not s:
-            return None
-        parts = [x.strip() for x in str(s).split(",", 1)]
-        if len(parts) == 1:
-            lo = hi = int(parts[0])
-        else:
-            lo, hi = int(parts[0]), int(parts[1])
-        lo = max(min_lo, lo)
-        hi = max(lo, hi)
-        return lo, hi
-
-    @staticmethod
-    def _parse_qty_interval(s: Optional[str]) -> Optional[Tuple[str, str]]:
-        if not s:
-            return None
-        parts = [x.strip() for x in s.split(",", 1)]
-        if len(parts) == 1:
-            return (parts[0], parts[0])
-        return (parts[0], parts[1])
-
-    @staticmethod
-    def _parse_timeout_s(t:str | None, default: int = 60) -> int:
-        """
-        Parse a timeout string into seconds.
-        """
-        if not t:
-            return default
-        try:
-            if t.endswith("ms"): return max(1, int(int(t[:-2]) / 1000))
-            if t.endswith("s"):  return int(t[:-1])
-            if t.endswith("m"):  return int(t[:-1]) * 60
-            if t.endswith("h"):  return int(t[:-1]) * 3600
-            return int(t)
-        except Exception:
-            return default
-
-    @staticmethod
-    def _get_timestamp() -> str:
-        """
-        Get the current timestamp as a string.
-        """
-        return time.strftime("%Y/%m/%d/%H:%M:%S", time.localtime())
-
-    @staticmethod
-    def _get_int_from_dict(doc: Dict[str, Any], key: str, default: int) -> int:
-        """
-        Get an integer value from the document, returning a default if not found or invalid.
-        """
-        v = doc.get(key, default)
-        try:
-            return int(v)
-        except Exception:
-            LOG.warning(f"invalid int for {key}: {v}, using default {default}")
-            return default
-
-    @staticmethod
-    def _get_float_from_dict(doc: Dict[str, Any], key: str, default: float) -> float:
-        """
-        Get a float value from the document, returning a default if not found or invalid.
-        """
-        v = doc.get(key, default)
-        try:
-            return float(v)
-        except Exception:
-            LOG.warning(f"invalid float for {key}: {v}, using default {default}")
-            return default
-
-    @staticmethod
-    def _get_str_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> Optional[str]:
-        """
-        Get a string value from the document, returning a default if not found or empty.
-        """
-        v = doc.get(key, default)
-        if v is None:
-            return default
-        s = str(v).strip()
-        return s if s else default
 
     @staticmethod
     def _get_wait_pod_mode_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> Optional[str]:
@@ -364,41 +260,6 @@ class KwokTestGenerator:
         if s not in ("exist", "ready", "running"):
             raise ValueError(f"Invalid wait_pod_mode: {s}")
         return s
-
-    @staticmethod
-    def _normalize_append_specs(args) -> list[tuple[str, str]]:
-        """
-        Parse --append-solver-stats entries into a list of (src_col, out_col).
-        Accepts repeated flags and/or comma-separated items.
-        Format per item: "col" or "col:outcol".
-        Default outcol = f"solver_stats_last_{col}".
-        """
-        seen = set()
-        specs: list[tuple[str, str]] = []
-
-        def _push(src: str, out: str | None):
-            src = (src or "").strip()
-            if not src:
-                return
-            out_norm = (out or f"solver_stats_last_{src}").strip()
-            key = (src, out_norm)
-            if key not in seen:
-                seen.add(key)
-                specs.append(key)
-
-        multi = args.append_solver_stats or []
-        for item in multi:
-            if not item:
-                continue
-            parts = [p.strip() for p in str(item).split(",") if p.strip()]
-            for p in parts:
-                if ":" in p:
-                    s, o = p.split(":", 1)
-                    _push(s, o)
-                else:
-                    _push(p, None)
-
-        return specs
 
     ######################################################
     # ---------- Optimizer HTTP trigger ------------------
@@ -457,7 +318,7 @@ class KwokTestGenerator:
         return default
 
     @staticmethod
-    def _http_stats_from_optimize_payload(payload: dict[str, Any]) -> dict[str, str]:
+    def _http_solver_stats_from_optimize_payload(payload: dict[str, Any]) -> dict[str, str]:
         """
         Build a dict of solver-stats columns from /optimize response JSON.
         Only includes fields we can confidently derive:
@@ -535,16 +396,6 @@ class KwokTestGenerator:
         return random.Random(KwokTestGenerator._derive_seed(base_seed, *labels))
 
     ######################################################
-    # ---------- Interval helpers ----------
-    ######################################################
-    @staticmethod
-    def _split_interval(t: Optional[Tuple[int, int]]) -> tuple[str, str]:
-        """Return (lo, hi) as strings; empty strings if None."""
-        if not t:
-            return "", ""
-        return str(int(t[0])), str(int(t[1]))
-
-    ######################################################
     # ---------- RS helpers ------------------------------
     ######################################################
     @staticmethod
@@ -570,26 +421,46 @@ class KwokTestGenerator:
     ######################################################
     # ---------- CSV helpers & results helpers -----------
     ######################################################
-    @staticmethod
-    def _ensure_csv_with_header(path: Path, header: List[str]) -> None:
+    def _get_best_solver_fields(
+        self,
+        solver_stats_header: list[str] | None,
+        solver_stats_rows: list[dict] | None,
+    ) -> tuple[str, str, int | str]:
         """
-        Ensure the CSV file exists with the given header.
+        Returns (best_name, best_status, best_dur_us).
+        Prefers the fresh HTTP /optimize payload; falls back to the latest ConfigMap row.
+        best_dur_us is an int when available, otherwise ''.
         """
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if not path.exists():
-            with open(path, "w", encoding="utf-8", newline="") as f:
-                csv.DictWriter(f, fieldnames=header).writeheader()
+        best_name = ""
+        best_status = ""
+        best_dur_us: int | str = ""
 
-    @staticmethod
-    def _count_csv_rows(path: Path) -> int:
-        """
-        Count data rows (excluding header).
-        """
-        if not path.exists():
-            return 0
-        with open(path, "r", encoding="utf-8", newline="") as f:
-            rd = csv.DictReader(f)
-            return sum(1 for _ in rd)
+        # 1) Prefer HTTP /optimize payload
+        if self.last_optimize_json:
+            try:
+                http_kv = self._http_solver_stats_from_optimize_payload(self.last_optimize_json)
+                best_name = (http_kv.get("best") or "").strip()
+                if best_name:
+                    best_status = str(http_kv.get(f"{best_name}_status", "") or "")
+                    best_dur_us = coerce_int_field(http_kv.get(f"{best_name}_duration_us"))
+            except Exception:
+                # fall through to ConfigMap
+                pass
+
+        # 2) Fall back to latest ConfigMap stats (last row)
+        if not best_name:
+            if solver_stats_header is None or solver_stats_rows is None:
+                h, rows = self._get_solver_stats_from_configmap()
+                solver_stats_header = h or []
+                solver_stats_rows = rows or []
+            if solver_stats_rows:
+                last = solver_stats_rows[-1]
+                best_name = (last.get("best") or "").strip()
+                if best_name:
+                    best_status = str(last.get(f"{best_name}_status", "") or "")
+                    best_dur_us = coerce_int_field(last.get(f"{best_name}_duration_us"))
+
+        return best_name, best_status, best_dur_us
 
     def _result_segments(self, stem: str) -> list[tuple[int, Path]]:
         """
@@ -613,22 +484,22 @@ class KwokTestGenerator:
         segs = self._result_segments(stem)
         if not segs:
             target = self.results_dir / f"{stem}_1.csv"
-            self._ensure_csv_with_header(target, RESULTS_HEADER)
+            ensure_csv_with_header(target, RESULTS_HEADER)
             LOG.info(f"starting new segment: {target.name}")
             return target
 
         last_idx, last_path = segs[-1]
-        rows = self._count_csv_rows(last_path)
+        rows = count_csv_rows(last_path)
 
         # Rotate if we would exceed the limit with this write.
         if rows + rows_to_add > self.max_rows_per_file:
             next_path = self.results_dir / f"{stem}_{last_idx + 1}.csv"
-            self._ensure_csv_with_header(next_path, RESULTS_HEADER)
+            ensure_csv_with_header(next_path, RESULTS_HEADER)
             LOG.info(f"{last_path.name} is full ({rows}/{self.max_rows_per_file}); switching to {next_path.name}")
             return next_path
 
         # Otherwise use the last segment
-        self._ensure_csv_with_header(last_path, RESULTS_HEADER)
+        ensure_csv_with_header(last_path, RESULTS_HEADER)
         return last_path
 
     def _load_seen_results(self, stem: str) -> set[int]:
@@ -653,11 +524,11 @@ class KwokTestGenerator:
         Pure read: no disk writes. Returns (header, rows); rows may be empty.
         """
         cm_obj = KwokTestGenerator._get_latest_configmap(
-            self.ctx, CM_STATS_NAMESPACE, CM_STATS_NAME,
+            self.ctx, CM_SOLVER_STATS_NAMESPACE, CM_SOLVER_STATS_NAME,
             accept_prefix=True, label_selector=None,
         )
         if cm_obj is None:
-            LOG.warning("no config map matching %r found in ns=%r", CM_STATS_NAME, CM_STATS_NAMESPACE)
+            LOG.warning("no config map matching %r found in ns=%r", CM_SOLVER_STATS_NAME, CM_SOLVER_STATS_NAMESPACE)
             return [], []
 
         data = cm_obj.get("data") or {}
@@ -707,7 +578,7 @@ class KwokTestGenerator:
         if not header:
             LOG.warning("skip write solver-stats: empty header")
             return
-        out_path = self.results_dir / f"{cfg.stem}_{CM_STATS_NAME}_seed-{seed}.csv"
+        out_path = self.results_dir / f"{cfg.stem}_{CM_SOLVER_STATS_NAME}_seed-{seed}.csv"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(out_path, "w", encoding="utf-8", newline="") as fh:
@@ -1257,35 +1128,6 @@ class KwokTestGenerator:
         return p
 
     @staticmethod
-    def _normalize_interval(doc: Dict[str, Any], key_combo: Tuple[str, str, str], *, allow_none: bool = True) -> Optional[str]:
-        """
-        Normalize a (single) or (lo, hi) interval from the document.
-        It first checks for 'single' key; if not found, it looks for 'lo_key' and 'hi_key'.
-        Returns "lo,hi" or "" if not found (or None if allow_none and not found).
-        """
-        single, lo_key, hi_key = key_combo
-        if single in doc and doc[single] is not None:
-            v = doc[single]
-            if isinstance(v, (int, float)):
-                return str(int(v))
-            if isinstance(v, str):
-                s = v.strip()
-                if s:
-                    return s
-            elif isinstance(v, (list, tuple)) and len(v) == 2:
-                return f"{str(v[0]).strip()},{str(v[1]).strip()}"
-            elif isinstance(v, dict):
-                lo = str(v.get("lo", "")).strip()
-                hi = str(v.get("hi", "")).strip()
-                if lo and hi:
-                    return f"{lo},{hi}"
-        lo = str(doc.get(lo_key, "")).strip()
-        hi = str(doc.get(hi_key, "")).strip()
-        if lo and hi:
-            return f"{lo},{hi}"
-        return None if allow_none else ""
-
-    @staticmethod
     def _pick_runner_doc(docs: List[Any]) -> Dict[str, Any]:
         """
         Pick the KwokRunConfiguration document from the list of YAML documents.
@@ -1314,31 +1156,31 @@ class KwokTestGenerator:
 
         tr = TestConfigRaw(source_file=cfg_path)
         tr.namespace      = KwokTestGenerator._get_str(runner_doc, "namespace", tr.namespace)
-        tr.num_nodes      = KwokTestGenerator._get_int_from_dict(runner_doc, "num_nodes", tr.num_nodes)
-        tr.num_pods       = KwokTestGenerator._get_int_from_dict(runner_doc, "num_pods", tr.num_pods)
+        tr.num_nodes      = get_int_from_dict(runner_doc, "num_nodes", tr.num_nodes)
+        tr.num_pods       = get_int_from_dict(runner_doc, "num_pods", tr.num_pods)
 
-        tr.util           = KwokTestGenerator._get_float_from_dict(runner_doc, "util", tr.util)
+        tr.util           = get_float_from_dict(runner_doc, "util", tr.util)
 
         tr.wait_pod_mode      = self._get_wait_pod_mode_from_dict(runner_doc, "wait_pod_mode", tr.wait_pod_mode)
-        tr.wait_pod_timeout   = self._get_str_from_dict(runner_doc, "wait_pod_timeout", tr.wait_pod_timeout)
-        tr.settle_timeout_min = self._get_str_from_dict(runner_doc, "settle_timeout_min", tr.settle_timeout_min)
-        tr.settle_timeout_max = self._get_str_from_dict(runner_doc, "settle_timeout_max", tr.settle_timeout_max)
+        tr.wait_pod_timeout   = get_str_from_dict(runner_doc, "wait_pod_timeout", tr.wait_pod_timeout)
+        tr.settle_timeout_min = get_str_from_dict(runner_doc, "settle_timeout_min", tr.settle_timeout_min)
+        tr.settle_timeout_max = get_str_from_dict(runner_doc, "settle_timeout_max", tr.settle_timeout_max)
 
-        raw_np = KwokTestGenerator._normalize_interval(runner_doc, ("num_priorities","num_priorities_lo","num_priorities_hi"))
+        raw_np = normalize_interval(runner_doc, ("num_priorities","num_priorities_lo","num_priorities_hi"))
         if raw_np:
-            tr.num_priorities = self._parse_int_interval(raw_np, min_lo=2)
+            tr.num_priorities = parse_int_interval(raw_np, min_lo=2)
 
-        raw_cpu = KwokTestGenerator._normalize_interval(runner_doc, ("cpu_per_pod","cpu_per_pod_lo","cpu_per_pod_hi"))
+        raw_cpu = normalize_interval(runner_doc, ("cpu_per_pod","cpu_per_pod_lo","cpu_per_pod_hi"))
         if raw_cpu:
-            tr.cpu_per_pod = KwokTestGenerator._parse_qty_interval(raw_cpu)
+            tr.cpu_per_pod = parse_qty_interval(raw_cpu)
 
-        raw_mem = KwokTestGenerator._normalize_interval(runner_doc, ("mem_per_pod","mem_per_pod_lo","mem_per_pod_hi"))
+        raw_mem = normalize_interval(runner_doc, ("mem_per_pod","mem_per_pod_lo","mem_per_pod_hi"))
         if raw_mem:
-            tr.mem_per_pod = KwokTestGenerator._parse_qty_interval(raw_mem)
+            tr.mem_per_pod = parse_qty_interval(raw_mem)
 
-        raw_rps = KwokTestGenerator._normalize_interval(runner_doc, ("num_replicas_per_rs","num_replicas_per_rs_lo","num_replicas_per_rs_hi"))
+        raw_rps = normalize_interval(runner_doc, ("num_replicas_per_rs","num_replicas_per_rs_lo","num_replicas_per_rs_hi"))
         if raw_rps:
-            tr.num_replicas_per_rs = self._parse_int_interval(raw_rps, min_lo=1)
+            tr.num_replicas_per_rs = parse_int_interval(raw_rps, min_lo=1)
 
         return tr
 
@@ -1505,6 +1347,93 @@ class KwokTestGenerator:
 
         return ta
 
+    # ===============================================================
+    # Logging
+    # ===============================================================
+    def _format_testconfigraw_block(tr: "TestConfigRaw") -> str:
+        """
+        Produce a stable, readable block of the raw config values as parsed from YAML.
+        """
+        def _fmt_interval(v):
+            if v is None:
+                return "<unset>"
+            if isinstance(v, (tuple, list)) and len(v) == 2:
+                return f"{v[0]},{v[1]}"
+            return str(v)
+
+        fields = [
+            ("source_file", getattr(tr, "source_file", None)),
+            ("namespace", tr.namespace),
+            ("num_nodes", tr.num_nodes),
+            ("num_pods", tr.num_pods),
+
+            ("num_priorities", _fmt_interval(tr.num_priorities)),
+
+            ("num_replicas_per_rs", _fmt_interval(tr.num_replicas_per_rs)),
+
+            ("cpu_per_pod", _fmt_interval(tr.cpu_per_pod)),
+            ("mem_per_pod", _fmt_interval(tr.mem_per_pod)),
+
+            ("util", tr.util),
+
+            ("wait_pod_mode", tr.wait_pod_mode or "<unset>"),
+            ("wait_pod_timeout", tr.wait_pod_timeout or "<unset>"),
+            ("settle_timeout_min", tr.settle_timeout_min or "<unset>"),
+            ("settle_timeout_max", tr.settle_timeout_max or "<unset>"),
+        ]
+        pad = max(len(k) for k, _ in fields)
+        def _fmt(v):
+            return "<unset>" if v in (None, "") else str(v)
+        lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
+        return "\n".join(lines)
+
+    def _log_config_raw(tr: "TestConfigRaw", *, use_logger: bool = True) -> None:
+        block = KwokTestGenerator._format_testconfigraw_block(tr)
+        header = "\n================================================ CONFIG (RAW) ================================================\n"
+        footer = "\n=============================================================================================================="
+        if use_logger:
+            LOG.info("%s%s%s", header, block, footer)
+        else:
+            print(f"{header}{block}{footer}", flush=True)
+
+    def _format_args_block(args) -> str:
+        # Keep a stable, explicit order
+        fields = [
+            ("cluster_name", args.cluster_name),
+            ("kwok_runtime", args.kwok_runtime),
+            ("config_file", args.config_file),
+            ("results_dir", args.results_dir),
+            ("overwrite", args.overwrite),
+            ("max_rows_per_file", args.max_rows_per_file),
+            ("seed", args.seed),
+            ("seed_file", args.seed_file),
+            ("generate_seeds_to_file", args.generate_seeds_to_file),
+            ("count", args.count),
+            ("matrix_file", args.matrix_file),
+            ("test", args.test),
+            ("save_solver_stats", args.save_solver_stats),
+            ("save_scheduler_logs", args.save_scheduler_logs),
+            ("trigger_optimizer", args.trigger_optimizer),
+            ("optimizer_url", (args.optimizer_url if getattr(args, "trigger_optimizer", False) else "<unused>")),
+            ("active_url", args.active_url),
+            ("pause", args.pause),
+            ("log_level", args.log_level),
+        ]
+        pad = max(len(k) for k, _ in fields)
+        def _fmt(v):
+            return "<unset>" if v in (None, "") else str(v)
+        lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
+        return "\n".join(lines)
+
+    def _log_args(args, *, use_logger: bool = True) -> None:
+        block = KwokTestGenerator._format_args_block(args)
+        header = "\n================================================ ARGS ================================================\n"
+        footer = "\n======================================================================================================"
+        if use_logger:
+            LOG.info("%s%s%s", header, block, footer)
+        else:
+            print(f"{header}{block}{footer}", flush=True)
+
     
     ##############################################
     # ------------ Runner helpers ----------------
@@ -1650,7 +1579,7 @@ class KwokTestGenerator:
             phase = "ensure_cluster"
             LOG.info(f"phase={phase}")
             try:
-                KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.kwok_runtime, cfg, recreate=True)
+                KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.args.kwok_runtime, cfg, recreate=True)
             except Exception as e:
                 tb = traceback.format_exc()
                 self._write_fail("seed", cfg, seed, phase, str(e), tb)
@@ -1705,12 +1634,12 @@ class KwokTestGenerator:
                     body_compact = body_compact[:600] + "...(truncated)"
                 LOG.info(f"optimizer_response code={code} body={body_compact}")
                 # Best-effort parse and remember JSON for later append use
-                self._last_optimize_json = None
+                self.last_optimize_json = None
                 if code and isinstance(body, str) and body.strip().startswith("{"):
                     try:
-                        self._last_optimize_json = json.loads(body)
+                        self.last_optimize_json = json.loads(body)
                     except Exception:
-                        self._last_optimize_json = None
+                        self.last_optimize_json = None
 
             phase = "wait_settle"
             LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
@@ -1732,18 +1661,17 @@ class KwokTestGenerator:
             solver_stats_header: list[str] | None = None
             solver_stats_rows: list[dict] | None = None
 
-            append_specs = KwokTestGenerator._normalize_append_specs(self.args)
-
             # Collect once if needed (save and/or append)
-            if self.args.save_solver_stats or append_specs:
+            if self.args.save_solver_stats:
                 solver_stats_header, solver_stats_rows = self._get_solver_stats_from_configmap()
-                if solver_stats_header is None: solver_stats_header = []
-                if solver_stats_rows is None: solver_stats_rows = []
-                if self.args.save_solver_stats:
-                    self._write_solver_stats_csv(cfg, seed, solver_stats_header, solver_stats_rows)
-
+                self._write_solver_stats_csv(cfg, seed, solver_stats_header, solver_stats_rows)
+            
+            # Best solver
+            best_name, best_status, best_dur_us = self._get_best_solver_fields(
+                solver_stats_header, solver_stats_rows
+            )
             result_row = {
-                "timestamp": self._get_timestamp(),
+                "timestamp": get_timestamp(),
                 "kwok_config": str(cfg),
                 "seed_file": seed_file,
                 "seed": str(seed),
@@ -1751,14 +1679,14 @@ class KwokTestGenerator:
                 "num_pods": ta.num_pods,
                 "num_priorities": ta.num_priorities,
                 "num_replicaset": ta.num_replicaset,
-                "num_replicas_per_rs_lo": KwokTestGenerator._split_interval(ta.num_replicas_per_rs)[0],
-                "num_replicas_per_rs_hi": KwokTestGenerator._split_interval(ta.num_replicas_per_rs)[1],
+                "num_replicas_per_rs_lo": split_interval(ta.num_replicas_per_rs)[0],
+                "num_replicas_per_rs_hi": split_interval(ta.num_replicas_per_rs)[1],
                 "node_cpu_m": int(ta.node_cpu_m),
                 "node_mem_b": int(ta.node_mem_b),
-                "cpu_per_pod_m_lo": KwokTestGenerator._split_interval(ta.cpu_per_pod_m)[0],
-                "cpu_per_pod_m_hi": KwokTestGenerator._split_interval(ta.cpu_per_pod_m)[1],
-                "mem_per_pod_b_lo": KwokTestGenerator._split_interval(ta.mem_per_pod_b)[0],
-                "mem_per_pod_b_hi": KwokTestGenerator._split_interval(ta.mem_per_pod_b)[1],
+                "cpu_per_pod_m_lo": split_interval(ta.cpu_per_pod_m)[0],
+                "cpu_per_pod_m_hi": split_interval(ta.cpu_per_pod_m)[1],
+                "mem_per_pod_b_lo": split_interval(ta.mem_per_pod_b)[0],
+                "mem_per_pod_b_hi": split_interval(ta.mem_per_pod_b)[1],
                 "util": f"{ta.util:.3f}",
                 "util_run_cpu": f"{snap.cpu_run_util:.3f}",
                 "util_run_mem": f"{snap.mem_run_util:.3f}",
@@ -1768,37 +1696,18 @@ class KwokTestGenerator:
                 "wait_pod_timeout_s": ta.wait_pod_timeout_s,
                 "settle_timeout_min_s": ta.settle_timeout_min_s,
                 "settle_timeout_max_s": ta.settle_timeout_max_s,
+                "best_solver_name": best_name,
+                "best_solver_status": best_status,
+                "best_solver_duration_us": best_dur_us,
                 "running_count": int(len(snap.pods_running)),
                 "unscheduled_count": int(len(snap.pods_unscheduled)),
                 "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
                 "running_placed_by_priority": json.dumps(running_placed_by_priority, separators=(",", ":"), sort_keys=True),
                 "unschedulable_by_priority": json.dumps(unscheduled_placed_by_priority, separators=(",", ":"), sort_keys=True),
+                "unscheduled": "{" + ",".join(sorted(snap.pods_unscheduled)) + "}",
+                "running": "{" + ",".join(sorted([name for (name, _) in snap.pods_running])) + "}",
+                "pod_node": json.dumps(self._build_pod_node_list({name: node for (name, node) in snap.pods_running}, snap.pods_unscheduled, pod_specs, rs_specs), separators=(",", ":")),
             }
-            # Append other results
-            if append_specs:
-                requested_cols = [src for (src, _) in append_specs]
-                http_kv: dict[str, str] = {}
-                http_ok = False
-                # If we triggered optimizer and have a parsed response, try to satisfy requested cols from it
-                if self.args.trigger_optimizer and self._last_optimize_json:
-                    http_kv = self._http_stats_from_optimize_payload(self._last_optimize_json)
-                    http_ok = all(col in http_kv for col in requested_cols)
-                    if http_ok:
-                        LOG.info("append-solver-stats: using HTTP /optimize response values")
-                    else:
-                        LOG.info("append-solver-stats: HTTP response did not provide all requested cols; falling back to ConfigMap")
-                if http_ok:
-                    for src_col, out_col in append_specs:
-                        result_row[out_col] = http_kv.get(src_col, "")
-                else:
-                    hdr_set = set(solver_stats_header or [])
-                    for src_col, out_col in append_specs:
-                        if solver_stats_header and src_col not in hdr_set:
-                            LOG.warning("requested stats col '%s' not present in collected header", src_col)
-                        result_row[out_col] = self._extract_last_from_rows(solver_stats_rows or [], src_col)
-            result_row["unscheduled"] = "{" + ",".join(sorted(snap.pods_unscheduled)) + "}"
-            result_row["running"] = "{" + ",".join(sorted([name for (name, _) in snap.pods_running])) + "}"
-            result_row["pod_node"] = json.dumps(self._build_pod_node_list({name: node for (name, node) in snap.pods_running}, snap.pods_unscheduled, pod_specs, rs_specs), separators=(",", ":"))
 
             phase = "write_results"
             LOG.info(f"phase={phase}")
@@ -1807,7 +1716,7 @@ class KwokTestGenerator:
                     removed = self._remove_seed_from_results(cfg.stem, seed)
                     LOG.info(f"overwrite enabled: removed {removed} existing row(s) for seed={seed}")
                 dest_csv = self._pick_results_to_write(cfg.stem, rows_to_add=1)
-                self._ensure_csv_with_header(dest_csv, RESULTS_HEADER)
+                ensure_csv_with_header(dest_csv, RESULTS_HEADER)
                 csv_append_row(dest_csv, RESULTS_HEADER, result_row)
                 LOG.info(f"appended to {dest_csv.name}")
             else:
@@ -1861,9 +1770,20 @@ class KwokTestGenerator:
         made = 0
         while to_make == -1 or made < to_make:
             s = rng.getrandbits(63) or 1
-            self._print_run_header(s, cfg.name, made + 1, to_make, cfg_idx, cfgs_total)
-            rc = self._resolve_config_for_seed(tr, s)
-            self._run_single_seed(cfg, seen, s, rc)
+            seed_idx = made + 1
+            seeds_total = to_make  # may be -1
+
+            self._print_run_header(s, cfg.name, seed_idx, to_make, cfg_idx, cfgs_total)
+            self._update_completion_marker(cfg_idx, cfgs_total, seed_idx, seeds_total)
+
+            started_at = time.time()
+            try:
+                rc = self._resolve_config_for_seed(tr, s)
+                self._run_single_seed(cfg, seen, s, rc)
+            finally:
+                self._record_seed_duration(started_at)
+                self._update_completion_marker(cfg_idx, cfgs_total, seed_idx + 1, seeds_total)
+
             more_coming = (to_make == -1) or (made + 1 < to_make)
             self._pause(next_exists=more_coming)
             if to_make != -1:
@@ -1876,8 +1796,17 @@ class KwokTestGenerator:
         """
         s = int(self.args.seed)
         self._print_run_header(s, cfg.name, 1, 1, cfg_idx, cfgs_total)
-        rc = self._resolve_config_for_seed(tr, s)
-        self._run_single_seed(cfg, seen, s, rc)
+        self._update_completion_marker(cfg_idx, cfgs_total, 1, 1)
+
+        started_at = time.time()
+        try:
+            rc = self._resolve_config_for_seed(tr, s)
+            self._run_single_seed(cfg, seen, s, rc)
+        finally:
+            # record duration and update marker AFTER seed
+            self._record_seed_duration(started_at)
+            # After finishing seed 1/1, seeds_left becomes 0
+            self._update_completion_marker(cfg_idx, cfgs_total, 2, 1)
         return
 
     def _run_seed_file_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, tr: TestConfigRaw, seen: set[int]) -> None:
@@ -1888,9 +1817,17 @@ class KwokTestGenerator:
         seeds_total = len(seeds_list)
         for seed_idx, s in enumerate(seeds_list, start=1):
             self._print_run_header(s, cfg.name, seed_idx, seeds_total, cfg_idx, cfgs_total)
+            self._update_completion_marker(cfg_idx, cfgs_total, seed_idx, seeds_total)
+
             s = int(s)
-            rc = self._resolve_config_for_seed(tr, s)
-            self._run_single_seed(cfg, seen, s, rc, self.args.seed_file)
+            started_at = time.time()
+            try:
+                rc = self._resolve_config_for_seed(tr, s)
+                self._run_single_seed(cfg, seen, s, rc, self.args.seed_file)
+            finally:
+                self._record_seed_duration(started_at)
+                self._update_completion_marker(cfg_idx, cfgs_total, seed_idx + 1, seeds_total)
+
             self._pause(next_exists=(seed_idx < seeds_total))
         return
 
@@ -1900,7 +1837,7 @@ class KwokTestGenerator:
         """
         try:
             raw = self._load_run_config(cfg)
-            log_config_raw(raw, use_logger=True)
+            KwokTestGenerator._log_config_raw(raw, use_logger=True)
         except Exception as e:
             LOG.error(f"config-failed {cfg}: {e}")
             with open(self.failed_f, "a", encoding="utf-8") as f:
@@ -1921,19 +1858,20 @@ class KwokTestGenerator:
         # Resolve results dir:
         # - If --results-dir is provided, use it exactly.
         # - If omitted, use ./results relative to CWD.
-        if self.results_dir_arg:
-            rd = Path(self.results_dir_arg).resolve()
+        if self.args.results_dir:
+            rd = Path(self.args.results_dir).resolve()
         else:
             rd = Path("./results").resolve()
 
         rd.mkdir(parents=True, exist_ok=True)
         self.results_dir = rd
 
-        # failures file lives inside the chosen results dir
+        # failures file lives in results dir
         self.failed_f = self.results_dir / "failed.csv"
-        self.failed_f.touch(exist_ok=True)
 
         LOG.info(f"results-dir resolved to: {self.results_dir}")
+        
+        self._init_eta_state()
 
         seen = self._load_seen_results(cfg.stem)
 
@@ -2000,128 +1938,12 @@ class KwokTestGenerator:
 
         cfg = self._get_kwok_config_file(self.args.config_file)
         self._validate_all_configs([cfg])
-        LOG.info("configs=1")
-        LOG.info(f"\n================================================ CONFIG RUN ===================================================\n"
+        cfg_idx = getattr(self.args, "matrix_idx", 1)
+        cfgs_total = getattr(self.args, "matrix_total", 1)
+        LOG.info(f"\n================================================ CONFIG RUN {cfg_idx}/{cfgs_total} ===================================================\n"
                  f"config={cfg}\n"
                  "----------------------------------------------------------------------------------------------------------------")
-        self._run_for_config(cfg, 1, 1)
-
-# ===============================================================
-# Logging
-# ===============================================================
-def _format_testconfigraw_block(tr: "TestConfigRaw") -> str:
-    """
-    Produce a stable, readable block of the raw config values as parsed from YAML.
-    """
-    def _fmt_interval(v):
-        if v is None:
-            return "<unset>"
-        if isinstance(v, (tuple, list)) and len(v) == 2:
-            return f"{v[0]},{v[1]}"
-        return str(v)
-
-    fields = [
-        ("source_file", getattr(tr, "source_file", None)),
-        ("namespace", tr.namespace),
-        ("num_nodes", tr.num_nodes),
-        ("num_pods", tr.num_pods),
-
-        ("num_priorities", _fmt_interval(tr.num_priorities)),
-
-        ("num_replicas_per_rs", _fmt_interval(tr.num_replicas_per_rs)),
-
-        ("cpu_per_pod", _fmt_interval(tr.cpu_per_pod)),
-        ("mem_per_pod", _fmt_interval(tr.mem_per_pod)),
-
-        ("util", tr.util),
-
-        ("wait_pod_mode", tr.wait_pod_mode or "<unset>"),
-        ("wait_pod_timeout", tr.wait_pod_timeout or "<unset>"),
-        ("settle_timeout_min", tr.settle_timeout_min or "<unset>"),
-        ("settle_timeout_max", tr.settle_timeout_max or "<unset>"),
-    ]
-    pad = max(len(k) for k, _ in fields)
-    def _fmt(v):
-        return "<unset>" if v in (None, "") else str(v)
-    lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
-    return "\n".join(lines)
-
-def log_config_raw(tr: "TestConfigRaw", *, use_logger: bool = True) -> None:
-    block = _format_testconfigraw_block(tr)
-    header = "\n================================================ CONFIG (RAW) ================================================\n"
-    footer = "\n=============================================================================================================="
-    if use_logger:
-        LOG.info("%s%s%s", header, block, footer)
-    else:
-        print(f"{header}{block}{footer}", flush=True)
-
-def _format_args_block(args) -> str:
-    # Keep a stable, explicit order
-    fields = [
-        ("cluster_name", args.cluster_name),
-        ("kwok_runtime", args.kwok_runtime),
-        ("config_file", args.config_file),
-        ("results_dir", args.results_dir),
-        ("overwrite", args.overwrite),
-        ("max_rows_per_file", args.max_rows_per_file),
-        ("seed", args.seed),
-        ("seed_file", args.seed_file),
-        ("generate_seeds_to_file", args.generate_seeds_to_file),
-        ("count", args.count),
-        ("matrix_file", args.matrix_file),
-        ("test", args.test),
-        ("save_solver_stats", args.save_solver_stats),
-        ("save_scheduler_logs", args.save_scheduler_logs),
-        ("trigger_optimizer", args.trigger_optimizer),
-        ("optimizer_url", (args.optimizer_url if getattr(args, "trigger_optimizer", False) else "<unused>")),
-        ("active_url", args.active_url),
-        ("pause", args.pause),
-        ("log_level", args.log_level),
-        ("append_solver_stats", args.append_solver_stats),
-    ]
-    pad = max(len(k) for k, _ in fields)
-    def _fmt(v):
-        return "<unset>" if v in (None, "") else str(v)
-    lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
-    return "\n".join(lines)
-
-def log_args(args, *, use_logger: bool = True) -> None:
-    block = _format_args_block(args)
-    header = "\n================================================ ARGS ================================================\n"
-    footer = "\n======================================================================================================"
-    if use_logger:
-        LOG.info("%s%s%s", header, block, footer)
-    else:
-        print(f"{header}{block}{footer}", flush=True)
-class PrefixFilter(logging.Filter):
-    """
-    Injects a static 'prefix' field into each LogRecord.
-    """
-    def __init__(self, prefix: str):
-        super().__init__()
-        self.prefix = prefix
-    def filter(self, record: logging.LogRecord) -> bool:
-        record.prefix = self.prefix
-        return True
-
-def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
-    """
-    Configure the module logger.
-    - prefix: shown before every message (e.g. '[worker 2/5 cluster=kwok1] ').
-    - level:  DEBUG/INFO/WARNING/ERROR/CRITICAL (case-insensitive).
-    """
-    lvl = getattr(logging, str(level).upper(), logging.INFO)
-    logger = logging.getLogger("kwok")
-    logger.propagate = False
-    logger.setLevel(lvl)
-    logger.handlers.clear()
-    h = logging.StreamHandler(stream=sys.stdout)
-    fmt = logging.Formatter("%(asctime)s %(prefix)s%(message)s", datefmt="%H:%M:%S")
-    h.setFormatter(fmt)
-    h.addFilter(PrefixFilter(prefix))
-    logger.addHandler(h)
-    logging.captureWarnings(True)
-    return logger
+        self._run_for_config(cfg, cfg_idx, cfgs_total)
 
 ##############################################
 # ------------ Matrix runner -----------------
@@ -2163,10 +1985,12 @@ def run_matrix(args) -> int:
         ns.config_file  = row["config-file"]
         ns.seed_file    = row["seed-file"]
         ns.results_dir  = row["results-dir"]
-        ns.matrix_file = None # remove matrix_file to avoid recursion
+        ns.matrix_file  = None # remove matrix_file to avoid recursion
+        ns.matrix_idx   = idx
+        ns.matrix_total = total
         # Run directly
         runner = KwokTestGenerator(ns)
-        log_args(ns, use_logger=False)
+        KwokTestGenerator._log_args(ns, use_logger=False)
         try:
             runner.run()
             return 0
@@ -2237,14 +2061,6 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="URL to POST for manual optimizer trigger (default: http://localhost:18080/optimize).")
     ap.add_argument("--active-url", dest="active_url", default="http://localhost:18080/active",
                     help="URL to GET for optimizer active state (default: http://localhost:18080/active)")
-    
-    # Append stats column
-    ap.add_argument("--append-solver-stats", dest="append_solver_stats", action="append", default=None,
-                    help=("Append last-row values from solver stats. "
-                        "Format: col[:outcol]. May be repeated or comma-separated. "
-                        "Examples: --append-solver-stats best "
-                        "--append-solver-stats bfs_duration_us:bfs_last_us "
-                        "--append-solver-stats best,bfs_duration_us:bfs_last_us"))
 
     return ap
 
@@ -2253,18 +2069,14 @@ def main():
     Main entry point for the KWOK test generator.
     """
     args = build_argparser().parse_args()
-    append_specs = KwokTestGenerator._normalize_append_specs(args)
-    for _, outcol in append_specs:
-        if outcol not in RESULTS_HEADER:
-            RESULTS_HEADER.append(outcol)
     
     env_prefix = os.environ.get("KWOK_LOG_PREFIX") or f"[cluster={args.cluster_name}] "
     _ = setup_logging(env_prefix, args.log_level)
     
     if args.matrix_file and args.kwok_runtime:
         sys.exit(run_matrix(args))
-    
-    log_args(args, use_logger=True)
+
+    KwokTestGenerator._log_args(args, use_logger=True)
     runner = KwokTestGenerator(args)
 
     runner.run()
