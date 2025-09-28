@@ -287,8 +287,8 @@ class KwokTestGenerator:
             return e.code, body
         except Exception as e:
             LOG.info(f"optimizer POST failed: {e}")
-        # give a synthetic status if we never reached the server
-        return 0, f"connect-failed: {e}"
+            # give a synthetic status if we never reached the server
+            return 0, f"connect-failed: {e}"
 
     def _get_active_http(self, url: str, *, timeout: float = 3.0) -> tuple[int, str]:
         """
