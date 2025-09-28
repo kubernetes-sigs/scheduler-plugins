@@ -1,2 +1,2 @@
 config-file,seed-file,results-dir
-data/configs/all_synch_python_nodes8_pods32_prio4_util095.yaml,data/seeds/baseline_nodes8_pods32_prio4_util095_filtered.txt,data/results/all_synch_python_nodes8_pods32_prio4_util095
+data/configs/all_synch_python_nodes8_pods32_prio4_util095.yaml,data/seeds/baseline_nodes8_pods32_prio4_util095_filtered_seeds.txt,data/results/all_synch_python_nodes8_pods32_prio4_util095

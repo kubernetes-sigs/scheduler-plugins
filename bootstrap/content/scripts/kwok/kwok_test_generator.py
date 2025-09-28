@@ -144,6 +144,62 @@ class KwokTestGenerator:
     ######################################################
     # ---------- ETA helpers ----------
     ######################################################
+    @staticmethod
+    def _fmt_hms(seconds: int) -> str:
+        seconds = max(0, int(seconds))
+        h, r = divmod(seconds, 3600)
+        m, s = divmod(r, 60)
+        parts = []
+        if h: parts.append(f"{h}h")
+        if m: parts.append(f"{m}m")
+        if s or not parts: parts.append(f"{s}s")
+        return "".join(parts)
+
+    def _log_eta_summary(self, cfg_idx: int, cfgs_total: int,
+                         next_seed_idx: int, seeds_total: int) -> None:
+        """
+        Log a single concise ETA line. next_seed_idx is the seed we are about to start
+        (i.e., seeds completed so far = next_seed_idx - 1).
+        """
+        eta_epoch = self._estimate_eta_epoch(cfg_idx, cfgs_total, next_seed_idx, seeds_total)
+        header = "\n================================================ ETA ================================================\n"
+        footer = "\n====================================================================================================="
+        if seeds_total is None or seeds_total <= 0:
+            block = "ETA: unknown (seed count is unlimited)."
+            LOG.info("%s%s%s", header, block, footer)
+            return
+        if not self._seed_durations:
+            block = "ETA: collecting first duration sample..."
+            LOG.info("%s%s%s", header, block, footer)
+            return
+        avg = sum(self._seed_durations) / max(1, len(self._seed_durations))
+        seeds_done = max(0, next_seed_idx - 1)
+        seeds_left_current = max(0, seeds_total - seeds_done)
+        cfgs_done = max(0, cfg_idx - 1)
+        cfgs_left = max(0, cfgs_total - cfgs_done)
+        # exclude current cfg from "future" so current seeds_left_current stand alone
+        future_configs_left = max(0, cfgs_left - 1)
+        seeds_left_future = future_configs_left * seeds_total
+        if eta_epoch is None:
+            block = "ETA: not enough data yet (done %d/%d seeds in cfg %d/%d)." % (
+                seeds_done, seeds_total, cfg_idx, cfgs_total
+            )
+            LOG.info("%s%s%s", header, block, footer)
+            return
+        now = time.time()
+        left_s = max(0, int(round(eta_epoch - now)))
+        eta_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(eta_epoch))
+        total_seeds_left = seeds_left_current + seeds_left_future
+        block = (
+            "ETA %s (in %s) | cfgs left: cur=%d, fut=%d | seeds left: cur=%d, fut=%d, total=%d | avg/seed=%.1fs (%d sample%s)"
+        ) % (
+            eta_str, self._fmt_hms(left_s),
+            cfgs_left, future_configs_left,
+            seeds_left_current, seeds_left_future, total_seeds_left,
+            avg, len(self._seed_durations), "" if len(self._seed_durations) == 1 else "s"
+        )
+        LOG.info("%s%s%s", header, block, footer)
+
     def _init_eta_state(self):
         """Call once per config before running any seeds."""
         self._eta_started_at = time.time()
@@ -1860,7 +1916,7 @@ class KwokTestGenerator:
                 LOG.info(f"phase={phase}")
                 self._save_scheduler_logs(cfg, seed)
 
-            LOG.info(f"done; took {time.time()-start_time:.1f}s")
+            LOG.info(f"seed run done; took {time.time()-start_time:.1f}s")
             self._print_seed_summary(cfg, seed, len(snap.pods_running), len(snap.pods_unscheduled))
 
         except RuntimeError as e:
@@ -1916,6 +1972,7 @@ class KwokTestGenerator:
             finally:
                 self._record_seed_duration(started_at)
                 self._update_completion_marker(cfg_idx, cfgs_total, seed_idx + 1, seeds_total)
+                self._log_eta_summary(cfg_idx, cfgs_total, seed_idx + 1, seeds_total)
 
             more_coming = (to_make == -1) or (made + 1 < to_make)
             self._pause(next_exists=more_coming)
@@ -1940,6 +1997,7 @@ class KwokTestGenerator:
             self._record_seed_duration(started_at)
             # After finishing seed 1/1, seeds_left becomes 0
             self._update_completion_marker(cfg_idx, cfgs_total, 2, 1)
+            self._log_eta_summary(cfg_idx, cfgs_total, 2, 1)
         return
 
     def _run_seed_file_path(self, cfg: Path, cfg_idx: int, cfgs_total: int, tr: TestConfigRaw, seen: set[int]) -> None:
@@ -1960,6 +2018,7 @@ class KwokTestGenerator:
             finally:
                 self._record_seed_duration(started_at)
                 self._update_completion_marker(cfg_idx, cfgs_total, seed_idx + 1, seeds_total)
+                self._log_eta_summary(cfg_idx, cfgs_total, seed_idx + 1, seeds_total)
 
             self._pause(next_exists=(seed_idx < seeds_total))
         return
