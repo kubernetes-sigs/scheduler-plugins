@@ -1323,7 +1323,7 @@ class KwokTestGenerator:
 
         raw_np = normalize_interval(runner_doc, ("num_priorities","num_priorities_lo","num_priorities_hi"))
         if raw_np:
-            tr.num_priorities = parse_int_interval(raw_np, min_lo=2)
+            tr.num_priorities = parse_int_interval(raw_np, min_lo=1)
 
         raw_cpu = normalize_interval(runner_doc, ("cpu_per_pod","cpu_per_pod_lo","cpu_per_pod_hi"))
         if raw_cpu:
