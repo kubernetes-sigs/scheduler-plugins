@@ -249,6 +249,8 @@ To run tests on UCloud:
 
 ## TODOs
 
+- QoS classes are currently ignored: BestEffort, Burstable, Guaranteed. We currently assume all pods are Guaranteed Pods. See also <https://medium.com/@muppedaanvesh/a-hands-on-guide-to-kubernetes-qos-classes-%EF%B8%8F-571b5f8f7e58>
+- Quotas and LimitsRanges are currently ignored. See also <https://medium.com/codex/what-you-need-to-know-to-debug-a-preempted-pod-on-kubernetes-1c956eec3f35>
 - Remember to add: --trigger-optimizer --save-solver-stats --save-scheduler-logs
 - Clean up the code:
   - Reduce code
