@@ -1,2 +1,0 @@
-cluster-name,config-dir,seed-file,results-dir
-kwok-a,data/configs/2025-09-25/all_synch_python_n8_p32_u100,data/seeds/baseline_n8_p32_u100_filtered_seeds.txt,data/results/2025-09-25/all_synch_python_n8_p32_u100-01
