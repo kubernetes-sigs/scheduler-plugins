@@ -11,7 +11,7 @@
 2025-09-29-baseline_nodes4_pods32_prio2_util095 (ID: 5304345)
 2025-09-29-baseline_nodes4_pods32_prio2_util100 (ID: 5304351)
 
-2025-09-29-baseline_nodes4_pods32_prio4_util090 (ID: 5304866)
+2025-09-29-baseline_nodes4_pods32_prio4_util090 (ID: 5304866) - failed
 2025-09-29-baseline_nodes4_pods32_prio4_util095 (ID: 5304356)
 2025-09-29-baseline_nodes4_pods32_prio4_util100 (ID: 5304357)
 
