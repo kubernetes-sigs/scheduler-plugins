@@ -84,12 +84,18 @@
     2025-09-29-baseline_nodes16_pods128_prio1_util100 (ID: )
     2025-09-29-baseline_nodes16_pods128_prio1_util105 (ID: )
 
-    2025-09-29-baseline_nodes16_pods128_prio2_util090 (Folder: 2025-09-29, ID: 5303742) 18.51
+    2025-09-29-baseline_nodes16_pods128_prio2_util090 (Folder: 2025-09-29, ID: 5303742) 18.39
     2025-09-29-baseline_nodes16_pods128_prio2_util095 (Folder: 2025-09-29, ID: 5303747) 20.00
     2025-09-29-baseline_nodes16_pods128_prio2_util100 (Folder: 2025-09-29, ID: 5303753) 22.37
     2025-09-29-baseline_nodes16_pods128_prio2_util105 (ID: )
 
-    2025-09-29-baseline_nodes16_pods128_prio4_util090 (Folder: 2025-09-29, ID: 5303757) 17.29
-    2025-09-29-baseline_nodes16_pods128_prio4_util095 (Folder: 2025-09-29, ID: 5303758) 17.25
-    2025-09-29-baseline_nodes16_pods128_prio4_util100 (Folder: 2025-09-29, ID: 5304874) 23.53
+    2025-09-29-baseline_nodes16_pods128_prio4_util090 (Folder: 2025-09-29, ID: 5303757) 17.56
+    2025-09-29-baseline_nodes16_pods128_prio4_util095 (Folder: 2025-09-29, ID: 5303758) 17.49
+    2025-09-29-baseline_nodes16_pods128_prio4_util100 (Folder: 2025-09-29-3, ID: 5304874) 23.53
     2025-09-29-baseline_nodes16_pods128_prio4_util105 (ID: )
+
+
+
+
+
+2025-10-01-all_synch_python_nodes4_pods16_prio2_util090 (ID: 5307123)
