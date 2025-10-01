@@ -25,7 +25,7 @@
     2025-09-29-baseline_nodes4_pods32_prio2_util100 (Folder: 2025-09-29-2, ID: 5304351) - done
     2025-09-29-baseline_nodes4_pods32_prio2_util105 (ID: )
 
-    2025-09-29-baseline_nodes4_pods32_prio4_util090 (Folder: 2025-09-29-3, ID: 5305675) 02.50 tommorow
+    2025-09-29-baseline_nodes4_pods32_prio4_util090 (Folder: 2025-09-29-3, ID: 5305675) - done
     2025-09-29-baseline_nodes4_pods32_prio4_util095 (Folder: 2025-09-29-2, ID: 5304356) - done
     2025-09-29-baseline_nodes4_pods32_prio4_util100 (Folder: 2025-09-29-2, ID: 5304357) - done
     2025-09-29-baseline_nodes4_pods32_prio4_util105 (ID: )
@@ -52,14 +52,14 @@
     2025-09-29-baseline_nodes8_pods64_prio1_util100 (ID: )
     2025-09-29-baseline_nodes8_pods64_prio1_util105 (ID: )
 
-    2025-09-29-baseline_nodes8_pods64_prio2_util090 (Folder: 2025-09-29-3, ID: 5304932) 03.00 tomorrow
-    2025-09-29-baseline_nodes8_pods64_prio2_util095 (Folder: 2025-09-29-3, ID: 5304938) 04.47 tomorrow
-    2025-09-29-baseline_nodes8_pods64_prio2_util100 (Folder: 2025-09-29-3, ID: 5304939) 05.06 tomorrow
+    2025-09-29-baseline_nodes8_pods64_prio2_util090 (Folder: 2025-09-29-3, ID: 5304932) - done
+    2025-09-29-baseline_nodes8_pods64_prio2_util095 (Folder: 2025-09-29-3, ID: 5304938) - done
+    2025-09-29-baseline_nodes8_pods64_prio2_util100 (Folder: 2025-09-29-3, ID: 5304939) 05.00
     2025-09-29-baseline_nodes8_pods64_prio2_util105 (ID: )
 
-    2025-09-29-baseline_nodes8_pods64_prio4_util090 (Folder: 2025-09-29-3, ID: 5304945) 03.00 tomorrow
-    2025-09-29-baseline_nodes8_pods64_prio4_util095 (Folder: 2025-09-29-3, ID: 5304947) 03.00 tomorrow
-    2025-09-29-baseline_nodes8_pods64_prio4_util100 (Folder: 2025-09-29-3, ID: 5304948) 04.35 tomorrow
+    2025-09-29-baseline_nodes8_pods64_prio4_util090 (Folder: 2025-09-29-3, ID: 5304945) - done
+    2025-09-29-baseline_nodes8_pods64_prio4_util095 (Folder: 2025-09-29-3, ID: 5304947) - done
+    2025-09-29-baseline_nodes8_pods64_prio4_util100 (Folder: 2025-09-29-3, ID: 5304948) - done
     2025-09-29-baseline_nodes8_pods64_prio4_util105 (ID: )
 
 16 nodes, 64 pods:
