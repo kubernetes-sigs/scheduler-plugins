@@ -18,6 +18,7 @@ package noderesourcetopology
 
 import (
 	v1 "k8s.io/api/core/v1"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -32,7 +33,7 @@ const (
 	maxDistanceValue = 255
 )
 
-func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *framework.Status) {
+func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *fwk.Status) {
 	maxNUMANodesCount := 0
 	allContainersMinAvgDistance := true
 	// the order how TopologyManager asks for hint is important so doing it in the same order
@@ -70,7 +71,7 @@ func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) 
 	return normalizeScore(maxNUMANodesCount, allContainersMinAvgDistance, info.topologyManager.MaxNUMANodes), nil
 }
 
-func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *framework.Status) {
+func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64, *fwk.Status) {
 	resources := util.GetPodEffectiveRequest(pod)
 	// if a pod requests only non NUMA resources return max score
 	if onlyNonNUMAResources(info.numaNodes, resources) {
