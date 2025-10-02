@@ -1247,24 +1247,70 @@ class KwokTestGenerator:
     @staticmethod
     def _read_seeds_file(path: Path) -> List[int]:
         """
-        Read seed values from a file.
+        TXT:
+          - One integer per line (whitespace allowed).
+          - Empty lines and lines starting with '#' are ignored.
+          - Non-integer lines are skipped (logged at DEBUG).
+        CSV:
+          - Requires a 'seed' column (case-insensitive) -> else raise ValueError.
+          - Each non-empty seed cell must be a positive integer -> else raise ValueError.
+          - Empty cells are ignored.
+        Returns: de-duplicated, order-preserving list of positive ints.
         """
         seeds: List[int] = []
+        seen: set[int] = set()
+        def _add(n: int):
+            if n is None or n <= 0:
+                return
+            if n not in seen:
+                seen.add(n)
+                seeds.append(n)
         if not path.exists():
-            return seeds
+            raise ValueError(f"seed-file not found: {path}")
         if path.suffix.lower() == ".csv":
-            with open(path, "r", encoding="utf-8", newline="") as f:
-                rd = csv.DictReader(f)
-                for row in rd:
-                    s = (row.get("seed") or "").strip()
-                    if s:
-                        seeds.append(int(s))
+            try:
+                with open(path, "r", encoding="utf-8", newline="") as f:
+                    rdr = csv.DictReader(f)
+                    if rdr.fieldnames is None:
+                        raise ValueError(f"CSV seed-file has no header: {path}")
+                    seed_key = next((c for c in rdr.fieldnames if (c or "").strip().lower() == "seed"), None)
+                    if not seed_key:
+                        raise ValueError(f"CSV seed-file missing required 'seed' column: {path}")
+                    line_no = 1  # header
+                    for row in rdr:
+                        line_no += 1
+                        raw = (row.get(seed_key) or "").strip()
+                        if raw == "":
+                            continue  # allow blank seed cells
+                        try:
+                            val = int(raw)
+                        except Exception:
+                            raise ValueError(f"Invalid integer in 'seed' at {path}:{line_no}: {raw!r}")
+                        if val <= 0:
+                            raise ValueError(f"Non-positive seed at {path}:{line_no}: {val}")
+                        _add(val)
+            except ValueError:
+                raise
+            except Exception as e:
+                raise ValueError(f"Failed reading CSV seed-file {path}: {e}")
         else:
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    s = line.strip()
-                    if s:
-                        seeds.append(int(s))
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for i, line in enumerate(f, 1):
+                        s = line.strip()
+                        if not s or s.startswith("#"):
+                            continue
+                        try:
+                            _add(int(s))
+                        except Exception:
+                            LOG.debug("seed-file %s:%d ignored non-integer line: %r", path, i, s[:120])
+                            continue
+            except Exception as e:
+                raise ValueError(f"Failed reading seed-file {path}: {e}")
+        if not seeds:
+            LOG.warning("no seeds parsed from %s", path)
+        else:
+            LOG.info("parsed %d seed(s) from %s", len(seeds), path)
         return seeds
 
     # ------------------------- Config I/O -------------------------

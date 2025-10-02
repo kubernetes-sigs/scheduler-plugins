@@ -111,9 +111,8 @@
 2025-10-01-all_synch_python_nodes4_pods16_prio2_util100 (Folder: 2025-10-01-04, ID: 5307125) - done
 2025-10-01-all_synch_python_nodes4_pods16_prio4_util100 (Folder: 2025-10-01-04, ID: 5307129) - done
 
-2025-10-01-all_synch_python_nodes8_pods32_prio4_util090 (Folder: 2025-10-01-04, ID: 5307139) 09:57:03
-2025-10-02-baseline_failed-jobs (Folder: 2025-10-02-01,ID: 5307229) 10:41:40
-2025-10-01-all_synch_python_nodes8_pods32_prio2_util090 (Folder: 2025-10-01-04, ID: 5307136) 10:52:24
+2025-10-01-all_synch_python_nodes8_pods32_prio4_util090 (Folder: 2025-10-01-04, ID: 5307139) - done
+2025-10-01-all_synch_python_nodes8_pods32_prio2_util090 (Folder: 2025-10-01-04, ID: 5307136) - done
 
 2025-10-01-all_synch_python_nodes4_pods32_prio4_util100 (Folder: 2025-10-01-04, ID: 5307135) 12:54:03 
 2025-10-01-all_synch_python_nodes4_pods32_prio2_util100 (Folder: 2025-10-01-04, ID: 5307132) 13:26:39
@@ -121,6 +120,7 @@
 2025-10-01-all_synch_python_nodes8_pods32_prio2_util095 (Folder: 2025-10-01-04, ID: 5307137) 14:09:25
 
 2025-10-01-all_synch_python_nodes8_pods32_prio4_util100 (Folder: 2025-10-01-04, ID: 5307141) 15:05:15
+025-10-02-baseline_failed-jobs is now running (ID: 5307440) 15:12
 2025-10-01-all_synch_python_nodes8_pods32_prio2_util100 (Folder: 2025-10-01-04, ID: 5307138) 15:34:36
 
 2025-10-01-all_synch_python_nodes8_pods64_prio4_util095 (Folder: 2025-10-01-04, ID: 5307146) 18:27:13
