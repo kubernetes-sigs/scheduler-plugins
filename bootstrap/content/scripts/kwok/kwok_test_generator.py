@@ -2313,8 +2313,8 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--generate-seeds-to-file", dest="generate_seeds_to_file", default=None,
                     help="Write --count random seeds (one per line, no header) to this file, then exit.")
     ap.add_argument("--count", type=int, default=None, help="Generate the specified number of random seeds; -1=infinite.")
-    ap.add_argument("--retries", type=int, default=3,
-                    help="If a seed fails, retry this many times before recording as failed (default: 3).")
+    ap.add_argument("--retries", type=int, default=5,
+                    help="If a seed fails, retry this many times before recording as failed (default: 5).")
     # matrix
     ap.add_argument("--matrix-file", help="CSV with columns: config-file,seed-file,results-dir.")
     
