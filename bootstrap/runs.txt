@@ -125,12 +125,12 @@
 2025-10-01-all_synch_python_nodes8_pods64_prio4_util095 (Folder: 2025-10-01-04, ID: 5307146) - done
 2025-10-01-all_synch_python_nodes8_pods64_prio2_util095 (Folder: 2025-10-01-04, ID: 5307143) - done
 
-2025-10-01-all_synch_python_nodes8_pods64_prio2_util100 (Folder: 2025-10-01-04, ID: 5307144) 00.00
-2025-10-01-all_synch_python_nodes8_pods64_prio4_util100 (Folder: 2025-10-01-04, ID: 5307147) 00:35
+2025-10-01-all_synch_python_nodes8_pods64_prio2_util100 (Folder: 2025-10-01-04, ID: 5307144) - done
+2025-10-01-all_synch_python_nodes8_pods64_prio4_util100 (Folder: 2025-10-01-04, ID: 5307147) - done
 
-2025-10-02-all_synch_python_nodes16_pods128_prio2_util090 (Folder: 2025-10-02-02, ID: 5307758) 2025-10-03T08:53:33 
-2025-10-02-all_synch_python_nodes16_pods128_prio2_util095 (Folder: 2025-10-02-02, ID: 5307759) 2025-10-04T21:07:01
-2025-10-02-all_synch_python_nodes16_pods128_prio2_util100 (Folder: 2025-10-02-02, ID: 5307760) 2025-10-05T04:56:09
-2025-10-02-all_synch_python_nodes16_pods128_prio4_util090 (Folder: 2025-10-02-02, ID: 5307761) 2025-10-03T05:33:59
-2025-10-02-all_synch_python_nodes16_pods128_prio4_util095 (Folder: 2025-10-02-02, ID: 5307762) 2025-10-04T22:54:53
-2025-10-02-all_synch_python_nodes16_pods128_prio4_util100 (Folder: 2025-10-02-02, ID: 5307763) 2025-10-05T02:51:39
+2025-10-02-all_synch_python_nodes16_pods128_prio2_util090 (Folder: 2025-10-02-02, ID: 5307758) 08.25
+2025-10-02-all_synch_python_nodes16_pods128_prio2_util095 (Folder: 2025-10-02-02, ID: 5307759) 2025-10-04 19:55:53 (in 37h39m9s)
+2025-10-02-all_synch_python_nodes16_pods128_prio2_util100 (Folder: 2025-10-02-02, ID: 5307760) 2025-10-05 04:56:28 (in 46h38m56s)
+2025-10-02-all_synch_python_nodes16_pods128_prio4_util090 (Folder: 2025-10-02-02, ID: 5307761) - done
+2025-10-02-all_synch_python_nodes16_pods128_prio4_util095 (Folder: 2025-10-02-02, ID: 5307762) 2025-10-04 22:00:37 (in 39h40m58s)
+2025-10-02-all_synch_python_nodes16_pods128_prio4_util100 (Folder: 2025-10-02-02, ID: 5307763) 2025-10-05 04:47:12 (in 46h32m34s)
