@@ -721,14 +721,15 @@ class KwokTestGenerator:
 
     def _write_solver_stats_csv(self, cfg: Path, seed: int, header: list[str], rows: list[dict]) -> None:
         """
-        Write solver-stats CSV to results dir. No-op if header/rows empty.
+        Write solver-stats CSV to results_dir/solver-stats. No-op if header/rows empty.
         When --overwrite is set, delete an existing file if its header does not match 'header'.
         """
         if not header:
             LOG.warning("skip write solver-stats: empty header")
             return
-        out_path = self.results_dir / f"{CM_SOLVER_STATS_NAME}_seed-{seed}.csv"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_dir = (self.results_dir / "solver-stats")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{CM_SOLVER_STATS_NAME}_seed-{seed}.csv"
 
         # NEW: purge mismatched header if overwrite true
         self._purge_mismatched_csv(out_path, header)
@@ -739,9 +740,9 @@ class KwokTestGenerator:
                 w.writeheader()
                 for r in rows:
                     w.writerow(r)
-            LOG.info("saved %s", out_path.name)
+            LOG.info("saved solver-stats to %s", out_path)
         except Exception as e:
-            LOG.warning("failed writing %s: %s", out_path.name, e)
+            LOG.warning("failed writing %s: %s", out_path, e)
     
     @staticmethod
     def _extract_last_from_rows(rows: list[dict], col: str) -> str:
@@ -1115,12 +1116,13 @@ class KwokTestGenerator:
 
     def _save_scheduler_logs(self, cfg: Path, seed: int) -> None:
         """
-        Save scheduler logs for the current KWOK cluster to results dir.
-        File: <results-dir>/<cfg.stem>_scheduler-logs_seed-<seed>.log
+        Save scheduler logs for the current KWOK cluster to results_dir/scheduler-logs.
+        File: <results-dir>/scheduler-logs/scheduler-logs_seed-<seed>.log
         """
         assert self.results_dir is not None, "results_dir must be resolved before saving logs"
-        out_path = self.results_dir / f"scheduler-logs_seed-{seed}.log"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_dir = (self.results_dir / "scheduler-logs")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"scheduler-logs_seed-{seed}.log"
         
         # only save if not exists or overwrite is enabled
         if out_path.exists() and not self.args.overwrite:
@@ -1138,7 +1140,7 @@ class KwokTestGenerator:
             data = r.stdout or b""
             with open(out_path, "wb") as fh:
                 fh.write(data)
-            LOG.info("saved scheduler logs to %s (rc=%d, %d bytes)", out_path.name, r.returncode, len(data))
+            LOG.info("saved scheduler logs to %s (rc=%d, %d bytes)", out_path, r.returncode, len(data))
         except Exception as e:
             LOG.warning("failed saving scheduler logs: %s", e)
 
@@ -2323,11 +2325,11 @@ def build_argparser() -> argparse.ArgumentParser:
 
     # solver stats
     ap.add_argument("--save-solver-stats", dest="save_solver_stats", action="store_true",
-                    help="Save solver stats for each seed, saved to results dir")
+                    help="Save solver stats for each seed under <results-dir>/solver-stats")
     
     # scheduler logs
     ap.add_argument("--save-scheduler-logs", dest="save_scheduler_logs", action="store_true",
-                    help="After save_stats for each seed, save 'kwokctl logs kube-scheduler --name <cluster>' to results dir as <config-stem>_kube-scheduler_seed-<seed>.log")
+                    help="After saving stats for each seed, save 'kwokctl logs kube-scheduler --name <cluster>' under <results-dir>/scheduler-logs as scheduler-logs_seed-<seed>.log")
     
     # logging
     ap.add_argument("--log-level", dest="log_level", default=os.environ.get("KWOK_LOG_LEVEL", "INFO"),
