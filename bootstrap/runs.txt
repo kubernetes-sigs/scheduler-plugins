@@ -132,8 +132,8 @@
 2025-10-01-all_synch_python_nodes8_pods64_prio4_util100 (Folder: 2025-10-01-04, ID: 5307147) - done
 
 2025-10-02-all_synch_python_nodes16_pods128_prio2_util090 (Folder: 2025-10-02-02, ID: 5307758) - done
-2025-10-02-all_synch_python_nodes16_pods128_prio2_util095 (Folder: 2025-10-02-02, ID: 5307759) 2025-10-04 20:13:18 (in 28h3m52s)
-2025-10-02-all_synch_python_nodes16_pods128_prio2_util100 (Folder: 2025-10-02-02, ID: 5307760) 2025-10-05 04:33:30 (in 36h22m54s)
+2025-10-02-all_synch_python_nodes16_pods128_prio2_util095 (Folder: 2025-10-02-02, ID: 5307759) 2025-10-04 18:58:48 (in 11h18s)
+2025-10-02-all_synch_python_nodes16_pods128_prio2_util100 (Folder: 2025-10-02-02, ID: 5307760) 2025-10-05 04:09:12 (in 20h9m37s)
 2025-10-02-all_synch_python_nodes16_pods128_prio4_util090 (Folder: 2025-10-02-02, ID: 5307761) - done
-2025-10-02-all_synch_python_nodes16_pods128_prio4_util095 (Folder: 2025-10-02-02, ID: 5307762) 2025-10-04 21:45:07 (in 29h34m8s)
-2025-10-02-all_synch_python_nodes16_pods128_prio4_util100 (Folder: 2025-10-02-02, ID: 5307763) 2025-10-05 04:24:44 (in 36h13m28s)
+2025-10-02-all_synch_python_nodes16_pods128_prio4_util095 (Folder: 2025-10-02-02, ID: 5307762) 2025-10-04 21:43:37 (in 13h43m56s)
+2025-10-02-all_synch_python_nodes16_pods128_prio4_util100 (Folder: 2025-10-02-02, ID: 5307763) 2025-10-05 03:58:50 (in 19h57m12s)
