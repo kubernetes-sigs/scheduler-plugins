@@ -12,12 +12,14 @@ import (
 )
 
 type HttpResponse struct {
-	Status        string        `json:"status"`
-	DurationMs    int64         `json:"duration_ms"`
-	Error         string        `json:"error,omitempty"`
-	Active        bool          `json:"active"`
-	BestSolver    *SolverResult `json:"best_solver,omitempty"`
-	PendingBefore int           `json:"pending_before"`
+	Status        string         `json:"status"`
+	DurationMs    int64          `json:"duration_ms"`
+	Error         string         `json:"error,omitempty"`
+	Active        bool           `json:"active"`
+	Baseline      *SolverScore   `json:"baseline,omitempty"`
+	BestName      string         `json:"best_name,omitempty"`
+	Attempts      []SolverResult `json:"attempts,omitempty"`
+	PendingBefore int            `json:"pending_before"`
 }
 
 func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr string) {
@@ -62,10 +64,10 @@ func (pl *MyCrossNodePreemption) startHTTPServer(ctx context.Context, addr strin
 		pods, _ := pl.getPods()
 		resp.PendingBefore = countPendingPods(pods)
 
-		_, bestSolver, err := pl.runFlow(context.Background(), nil)
-		if bestSolver != nil {
-			resp.BestSolver = bestSolver
-		}
+		_, baseline, bestName, _, attempts, err := pl.runFlow(context.Background(), nil)
+		resp.Baseline = baseline
+		resp.BestName = bestName
+		resp.Attempts = attempts
 		resp.DurationMs = time.Since(start).Milliseconds()
 		if err != nil {
 			resp.Error = err.Error()

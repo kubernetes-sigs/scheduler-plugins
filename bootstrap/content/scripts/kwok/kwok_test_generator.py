@@ -34,7 +34,7 @@ from collections import namedtuple
 
 from kwok_helpers import (
     get_json_ctx, stat_snapshot, file_exists,
-    csv_append_row, count_csv_rows, ensure_csv_with_header,
+    csv_append_row, ensure_csv_with_header,
     qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
     yaml_kwok_node, yaml_kwok_pod, yaml_kwok_rs, yaml_priority_class,
     get_timestamp, setup_logging,
@@ -48,7 +48,7 @@ _DeferredFail = namedtuple("_DeferredFail", "category cfg seed phase message det
 
 RESULTS_HEADER = [
     "timestamp", "kwok_config", "seed_file", "seed",
-    "error", "best_solver",
+    "error", "baseline", "best_name", "attempts",
     "num_nodes", "num_pods", "num_priorities", "num_replicaset",
     "num_replicas_per_rs_lo", "num_replicas_per_rs_hi",
     "node_cpu_m", "node_mem_b",
@@ -403,18 +403,18 @@ class KwokTestGenerator:
         out["error"] = str(opt_err).strip()
 
         # Go JSON likely uses camel-cased top-level fields per HttpResponse struct.
-        bestSolver = KwokTestGenerator._json_get(payload, "best_solver", default=None)
-        if not isinstance(bestSolver, dict):
+        bestName = KwokTestGenerator._json_get(payload, "best_name", default=None)
+        if not isinstance(bestName, dict):
             return out
 
-        name = KwokTestGenerator._json_get(bestSolver, "name", default="") or ""
+        name = KwokTestGenerator._json_get(bestName, "name", default="") or ""
         if name:
-            out["best_solver"] = str(name)
+            out["best_name"] = str(name)
 
         if name:
-            status = KwokTestGenerator._json_get(bestSolver, "status", default="")
-            dur_us = KwokTestGenerator._json_get(bestSolver, "duration_us", default="")
-            score  = KwokTestGenerator._json_get(bestSolver, "score", default={}) or {}
+            status = KwokTestGenerator._json_get(bestName, "status", default="")
+            dur_us = KwokTestGenerator._json_get(bestName, "duration_us", default="")
+            score  = KwokTestGenerator._json_get(bestName, "score", default={}) or {}
             try:
                 placed = KwokTestGenerator._json_get(score, "placed_by_priority", default={}) or {}
             except Exception:
@@ -538,71 +538,6 @@ class KwokTestGenerator:
             except OSError as e:
                 LOG.warning("failed to delete mismatched CSV %s: %s", path.name, e)
         return False
-    
-    def _get_best_solver(
-        self,
-        solver_stats_header: list[str] | None,
-        solver_stats_rows: list[dict] | None,
-    ) -> tuple[dict, str]:
-        """
-        Build a compact best-solver object for the CSV single-column, and return (obj, error).
-        """
-        best = {
-            "name": "",
-            "status": "",
-            "duration_us": "",
-            "placed_by_priority": {},
-            "evictions": "",
-            "moves": "",
-        }
-        error = ""
-
-        # 1) Prefer fresh /optimize JSON if available
-        if self.last_optimize_json:
-            try:
-                http_kv = self._http_solver_stats_from_optimize_payload(self.last_optimize_json)
-                error = (http_kv.get("error") or "").strip()
-                name = (http_kv.get("best_solver") or "").strip()
-                if name:
-                    best["name"] = name
-                    best["status"] = str(http_kv.get(f"{name}_status", "") or "")
-                    best["duration_us"] = coerce_int_field(http_kv.get(f"{name}_duration_us"))
-                    placed_raw = http_kv.get(f"{name}_placed_by_priority", "") or "{}"
-                    try:
-                        best["placed_by_priority"] = json.loads(placed_raw) if isinstance(placed_raw, str) else (placed_raw or {})
-                    except Exception:
-                        best["placed_by_priority"] = {}
-                    best["evictions"] = http_kv.get(f"{name}_evictions", "")
-                    best["moves"] = http_kv.get(f"{name}_moves", "")
-            except Exception:
-                pass  # fall through to ConfigMap
-
-        # 2) Fall back to latest ConfigMap row if needed
-        if (not best["name"]) or (error == ""):
-            if solver_stats_header is None or solver_stats_rows is None:
-                h, rows = self._get_solver_stats_from_configmap()
-                solver_stats_header = h or []
-                solver_stats_rows = rows or []
-            if solver_stats_rows:
-                last = solver_stats_rows[-1]
-                if not best["name"]:
-                    name = (last.get("best_solver") or "").strip()
-                    if name:
-                        best["name"] = name
-                        best["status"] = str(last.get(f"{name}_status", "") or "")
-                        best["duration_us"] = coerce_int_field(last.get(f"{name}_duration_us"))
-                        placed_raw = last.get(f"{name}_placed_by_priority", "") or "{}"
-                        try:
-                            best["placed_by_priority"] = json.loads(placed_raw) if isinstance(placed_raw, str) else (placed_raw or {})
-                        except Exception:
-                            best["placed_by_priority"] = {}
-                        best["evictions"] = last.get(f"{name}_evictions", "")
-                        best["moves"] = last.get(f"{name}_moves", "")
-                if error == "":
-                    error = str(last.get("error", "") or "").strip()
-
-        best = self._prune_non_values(best)
-        return best, error
 
     def _results_csv(self) -> Path:
         """
@@ -659,6 +594,72 @@ class KwokTestGenerator:
                     w.writerow({k: r.get(k, "") for k in RESULTS_HEADER})
             LOG.info("pruned %d row(s) for seed=%s from %s", removed, seed, path.name)
         return removed
+    
+    def _get_attempts_and_best(
+        self,
+    ) -> tuple[list[dict], str, str, dict]:
+        """
+        Return (baseline, best_name, attempts, error).
+        Priority:
+        (1) fresh /optimize JSON if available
+        (2) latest runs.json from ConfigMap
+        """
+        attempts: list[dict] = []
+        best_name: str = ""
+        error: str = ""
+        baseline: dict = {}
+        # (1) From the last /optimize payload
+        if self.last_optimize_json and isinstance(self.last_optimize_json, dict):
+            try:
+                error = str(self.last_optimize_json.get("error", "") or "")
+                best_name = str(self.last_optimize_json.get("best_name", "") or "")
+                raw_attempts = self.last_optimize_json.get("attempts") or []
+                if isinstance(raw_attempts, list):
+                    attempts = raw_attempts
+                bl = self.last_optimize_json.get("baseline") or {}
+                if isinstance(bl, dict):
+                    baseline = bl
+            except Exception:
+                pass
+
+        if attempts and best_name:
+            return baseline, best_name, attempts, error
+
+        # (2) Fallback to ConfigMap runs.json
+        cm = KwokTestGenerator._get_latest_configmap(
+            self.ctx, CM_SOLVER_STATS_NAMESPACE, CM_SOLVER_STATS_NAME,
+            accept_prefix=True, label_selector=None,
+        )
+        if cm is None:
+            # FIX: keep return order consistent
+            return baseline, best_name, attempts, error
+
+        data = cm.get("data") or {}
+        runs_raw = data.get("runs.json", "[]")
+        try:
+            runs = json.loads(runs_raw) or []
+        except Exception:
+            runs = []
+
+        if not isinstance(runs, list) or not runs:
+            # FIX: keep return order consistent
+            return baseline, best_name, attempts, error
+
+        last = runs[-1] or {}
+        try:
+            error = str(last.get("error", "") or error)
+            best_name = str(last.get("best_name", "") or best_name)
+            raw_attempts = last.get("attempts") or []
+            if isinstance(raw_attempts, list):
+                attempts = raw_attempts
+            bl = last.get("baseline") or {}
+            if isinstance(bl, dict):
+                baseline = bl
+        except Exception:
+            pass
+
+        return baseline, best_name, attempts, error
+
 
     def _get_solver_stats_from_configmap(self) -> tuple[list[str], list[dict]]:
         """
@@ -684,16 +685,26 @@ class KwokTestGenerator:
             return [], []
 
         solver_slots = ["local-search", "bfs", "python"]
-        header = ["timestamp_ns", "error", "best_solver"] + solver_slots
+        header = ["timestamp_ns", "error", "best_name", "baseline"] + solver_slots
 
         rows: list[dict] = []
         for run in runs:
             row = {
                 "timestamp_ns": run.get("timestamp_ns") or "",
                 "error": run.get("error") or "",
-                "best_solver": run.get("best_solver") or "",
+                "best_name": run.get("best_name") or "",
             }
-
+            # Serialize baseline (if present) into a single JSON cell.
+            # Keep it compact and prune empty fields for readability.
+            baseline = run.get("baseline") or {}
+            if not isinstance(baseline, dict):
+                baseline = {}
+            baseline = KwokTestGenerator._prune_non_values(baseline)
+            try:
+                row["baseline"] = json.dumps(baseline, separators=(",", ":"), sort_keys=True) if baseline else ""
+            except Exception:
+                row["baseline"] = ""
+            
             attempts = {(a.get("name") or ""): a for a in (run.get("attempts") or [])}
 
             for s in solver_slots:
@@ -1843,9 +1854,14 @@ class KwokTestGenerator:
                 rs_specs = self._apply_replicasets(ta, rng)
             else:
                 pod_specs = self._apply_standalone_pods(ta, rng)
+            
+
 
             # Optionally trigger the optimizer
             if self.args.trigger_optimizer:
+                phase = "wait_settle_before_optimizer"
+                LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
+                time.sleep(ta.settle_timeout_min_s)
                 phase = "trigger_optimizer"
                 LOG.info(f"phase={phase} url={self.args.optimizer_url}")
                 code, body = self._trigger_optimizer_http(self.args.optimizer_url)
@@ -1862,7 +1878,7 @@ class KwokTestGenerator:
                     except Exception:
                         self.last_optimize_json = None
 
-            phase = "wait_settle"
+            phase = "wait_settle_before_check"
             LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
             time.sleep(ta.settle_timeout_min_s)
             if ta.settle_timeout_max_s > 0:
@@ -1897,15 +1913,17 @@ class KwokTestGenerator:
                 solver_stats_header, solver_stats_rows = self._get_solver_stats_from_configmap()
                 self._write_solver_stats_csv(cfg, seed, solver_stats_header, solver_stats_rows)
             
-            # Best solver
-            best_solver, error = self._get_best_solver(solver_stats_header, solver_stats_rows)
+            # Attempts (all) + best name
+            baseline, best_name, attempts, error = self._get_attempts_and_best()
             result_row = {
                 "timestamp": get_timestamp(),
                 "kwok_config": str(cfg),
                 "seed_file": seed_file,
                 "seed": str(seed),
                 "error": error,
-                "best_solver": json.dumps(best_solver, separators=(",", ":"), sort_keys=True),
+                "baseline": json.dumps(baseline, separators=(",", ":"), sort_keys=True),
+                "best_name": best_name,
+                "attempts": json.dumps(attempts, separators=(",", ":"), sort_keys=True),
                 "num_nodes": ta.num_nodes,
                 "num_pods": ta.num_pods,
                 "num_priorities": ta.num_priorities,

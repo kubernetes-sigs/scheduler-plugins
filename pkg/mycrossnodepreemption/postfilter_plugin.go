@@ -39,7 +39,7 @@ func (pl *MyCrossNodePreemption) PostFilter(ctx context.Context, _ *framework.Cy
 
 	case DecideProcess:
 		klog.InfoS(msg(stage, "start"), "pod", klog.KObj(pending))
-		plan, _, err := pl.runFlow(ctx, pending)
+		plan, _, _, _, _, err := pl.runFlow(ctx, pending)
 		if err != nil {
 			switch err {
 			case ErrActiveInProgress: // we only keep the pod in the set if we get ErrActiveInProgress

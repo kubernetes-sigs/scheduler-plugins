@@ -13,114 +13,108 @@ import (
 // runFlow runs the flow for the given phase (AllSynch, AllAsynch, Single).
 // For Single phase, the preemptor must be provided.
 // Returns the target node name for the preemptor pod (if any) and error (if any).
-func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverResult, error) {
-
+func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
 	strategy := strategyToString()
 
-	// Continuous: do NOT take Active yet (first take it after solver has the plan and there is an improvement to apply).
-	// Batch/Single: take Active early because these modes block by design.
+	// Batch/Single: take Active early. Continuous: take it later (only if worth applying).
 	if !optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.V(MyV).InfoS(msg(strategy, InfoActivePlanInProgress))
-			pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrActiveInProgress.Error(), &SolverResult{Name: "baseline"}, nil)
-			return nil, nil, ErrActiveInProgress
+			return nil, nil, "", nil, nil, ErrActiveInProgress
 		}
 	}
 
 	start := time.Now()
-	baselineResult := SolverResult{Name: "baseline"}
 
-	// Fetch nodes and pods ONCE for this flow
+	// Fetch cluster view once
 	nodes, err := pl.getNodes()
 	if err != nil {
 		klog.Error(msg(strategy, "failed to list nodes"))
 		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, nil, err.Error(), &baselineResult, nil)
-		return nil, nil, err
+		return nil, nil, "", nil, nil, err
 	}
 	pods, err := pl.getPods()
 	if err != nil {
 		klog.Error(msg(strategy, "failed to list pods"))
 		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, nil, err.Error(), &baselineResult, nil)
-		return nil, nil, err
+		return nil, nil, "", nil, nil, err
 	}
 
-	// Count pending pods
+	// Build input and run solvers
+	inp, err := pl.buildSolverInput(nodes, pods, preemptor)
+	if err != nil {
+		klog.Error(msg(strategy, "failed to build solver input"))
+		pl.leaveActive()
+		return nil, nil, "", nil, nil, err
+	}
+
+	baselineScore := buildBaselineScore(inp)
+
+	// Nothing to do?
 	pendingPostPlan := countPendingPods(pods)
 	if pendingPostPlan == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPods))
 		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrNoPendingPods.Error(), &baselineResult, nil)
-		return nil, nil, ErrNoPendingPods
+		return nil, baselineScore, "baseline", nil, nil, ErrNoPendingPods
 	}
 
-	// Run solvers
-	solverInput, err := pl.buildSolverInput(nodes, pods, preemptor)
-	if err != nil {
-		klog.Error(msg(strategy, "failed to build solver input"))
-		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrNoPendingPods.Error(), &baselineResult, nil)
-		return nil, nil, err
-	}
+	bestName, hadImproving, bestAttempt, attempts := pl.runSolvers(ctx, inp, nodes, pods, baselineScore)
 
-	bestSolver, hadImproving, attempts, baselineScore := pl.runSolvers(ctx, solverInput, nodes, pods)
-
-	// Check if all solvers are infeasible
+	// If nothing improved, export + exit (still return attempts for observability)
 	if !hadImproving {
 		klog.Error(msg(strategy, InfoNoImprovingSolutionFromAnySolver))
 		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, nil, ErrNoImprovingSolutionFromAnySolver.Error(), &SolverResult{Name: "baseline"}, nil)
-		return nil, &bestSolver, ErrNoImprovingSolutionFromAnySolver
+		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrNoImprovingSolutionFromAnySolver.Error())
+		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoImprovingSolutionFromAnySolver
 	}
 
-	// Take Active late for AllSynch (only now that we know it's worth applying a plan).
+	// Continuous: take Active now that we know it’s worth applying.
 	if optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
-			pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrActiveInProgress.Error(), &bestSolver, attempts)
-			return nil, nil, ErrActiveInProgress
+			pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrActiveInProgress.Error())
+			return nil, nil, "", nil, nil, ErrActiveInProgress
 		}
 	}
 
-	// Count new and total pods and return if no pending pods is to be scheduled
-	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestSolver.Output, pods)
+	// How much is actually schedulable?
+	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestAttempt.Output, pods)
 	if pendingScheduled == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPodsToSchedule))
 		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrNoPendingPodsToSchedule.Error(), &bestSolver, attempts)
-		return nil, &bestSolver, ErrNoPendingPodsToSchedule
+		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrNoPendingPodsToSchedule.Error())
+		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoPendingPodsToSchedule
 	}
 
-	// Register and execute storedPlan
-	plan, ap, err := pl.registerPlan(ctx, bestSolver, preemptor, pods)
+	// Register and execute plan
+	plan, ap, err := pl.registerPlan(ctx, *bestAttempt, preemptor, pods)
 	if err != nil {
 		klog.Error(msg(strategy, InfoRegisterPlanFailed))
 		pl.onPlanSettled(PlanStatusFailed)
-		pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrRegisterPlan.Error(), &bestSolver, attempts)
-		return nil, &bestSolver, ErrRegisterPlan
+		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrRegisterPlan.Error())
+		return nil, baselineScore, bestName, bestAttempt, attempts, ErrRegisterPlan
 	}
-
-	// Execute if there are moves/evictions
 	if err := pl.executePlan(plan); err != nil {
 		klog.Error(msg(strategy, InfoPlanExecutionFailed))
 		pl.onPlanSettled(PlanStatusFailed)
-		pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, ErrPlanExecutionFailed.Error(), &bestSolver, attempts)
-		return nil, &bestSolver, ErrPlanExecutionFailed
+		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrPlanExecutionFailed.Error())
+		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanExecutionFailed
 	}
 
-	// If in all modes activate planned pending pods (now that the plan is in place).
+	// Activate planned pending (if applicable)
 	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualAllSynch() {
 		pl.activatePlannedPending(plan, pods)
 	}
 
-	pl.exportSolverStatsConfigMap(ctx, strategy, &baselineScore, "", &bestSolver, attempts)
+	// Export stats (success)
+	pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, "")
 
-	// Build and return result
-	bestSolverSummary := summarizeAttempt(bestSolver)
-	klog.InfoS(msg(strategy, InfoPlanExecutionFinished),
+	// Log summary
+	bestSummary := summarizeAttempt(*bestAttempt)
+	klog.InfoS(
+		msg(strategy, InfoPlanExecutionFinished),
 		"planID", ap.ID,
-		"bestSolver", bestSolverSummary,
+		"bestAttempt", bestSummary,
 		"pendingPostPlan", pendingPostPlan,
 		"pendingScheduled", pendingScheduled,
 		"totalPrePlan", totalPrePlan,
@@ -128,6 +122,5 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 		"totalDuration", time.Since(start),
 	)
 
-	// Return the stored plan for inspection (if needed)
-	return plan, &bestSolver, nil
+	return plan, baselineScore, bestName, bestAttempt, attempts, nil
 }

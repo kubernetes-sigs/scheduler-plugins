@@ -158,10 +158,10 @@ type PreparedState struct {
 type ExportedSolverStats struct {
 	// TimestampNs is the timestamp of the run in nanoseconds.
 	TimestampNs int64 `json:"timestamp_ns"`
-	// Best solver name
-	BestSolver string `json:"best_solver,omitempty"`
 	// Error (if any)
 	Error string `json:"error,omitempty"`
+	// Best solver name
+	BestName string `json:"best_name,omitempty"`
 	// Baseline score
 	Baseline *SolverScore `json:"baseline,omitempty"`
 	// Best score

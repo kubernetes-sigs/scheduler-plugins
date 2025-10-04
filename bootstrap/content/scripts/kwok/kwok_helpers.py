@@ -369,21 +369,21 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
 def dir_exists(dir_path: str) -> None:
     p = Path(dir_path)
     if not p.exists():
-        raise SystemExit(f"{p} not found: {p}")
+        raise SystemExit(f"directory not found: {p}")
     if not p.is_dir():
-        raise SystemExit(f"{p} is not a directory")
+        raise SystemExit(f"directory not found or not a directory: {p}")
 
 def file_exists(file: Optional[str]) -> None:
     if not file:
         return
     f = Path(file)
     if not f.exists() or not f.is_file():
-        raise SystemExit(f"--seed-file not found or not a regular file: {f}")
+        raise SystemExit(f"file not found or not a regular file: {f}")
     try:
         with open(f, "r", encoding="utf-8"):
             pass
     except Exception as e:
-        raise SystemExit(f"--seed-file not readable: {f} ({e})")
+        raise SystemExit(f"file not readable: {f} ({e})")
 
 ##############################################
 # ------------ CSV helpers----------------

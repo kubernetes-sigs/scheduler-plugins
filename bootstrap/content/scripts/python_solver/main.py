@@ -58,7 +58,7 @@ class CPSATSolver:
         use_hints               = bool(instance.get("use_hints", False))
         # If use_strictly_improving is true, accept a plan only if it is strictly better than the current state under the objective. 
         # This prevents no-op plans but may reject globally optimal plans whose objective ties the baseline. Set False to allow equal-score solutions.
-        use_strictly_improving = bool(instance.get("use_strictly_improving", True)) # TODO: Input interface doesn't implement this yet, however we enforce it
+        use_strictly_improving = bool(instance.get("use_strictly_improving", False)) # TODO: Input interface doesn't implement this yet, however we enforce it
         hints                   = instance.get("hints") if use_hints else None
         log_progress            = bool(instance.get("log_progress", False))
         log_subsolvers          = bool(instance.get("log_progress", False))

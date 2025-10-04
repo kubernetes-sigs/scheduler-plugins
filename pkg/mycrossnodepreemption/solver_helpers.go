@@ -212,7 +212,7 @@ func bestDirectFit(order []*SolverNode, p *SolverPod) (string, bool) {
 }
 
 // buildBaselineScore computes the baseline score from the solver input.
-func buildBaselineScore(in SolverInput) SolverScore {
+func buildBaselineScore(in SolverInput) *SolverScore {
 	placedByPri := map[string]int{}
 	for _, sp := range in.Pods {
 		if sp.Node == "" {
@@ -221,7 +221,7 @@ func buildBaselineScore(in SolverInput) SolverScore {
 		pr := strconv.Itoa(int(sp.Priority))
 		placedByPri[pr] = placedByPri[pr] + 1
 	}
-	return SolverScore{
+	return &SolverScore{
 		PlacedByPriority: placedByPri,
 		Evicted:          0,
 		Moved:            0,
@@ -546,7 +546,8 @@ func logLeaderboard(
 	best SolverResult,
 ) {
 	if len(attempts) == 0 {
-		return
+		// still include baseline-only view
+		attempts = nil
 	}
 
 	// Classify relative to baseline while preserving attempt order inside groups.
@@ -568,6 +569,17 @@ func logLeaderboard(
 			worse = append(worse, rr)
 		}
 	}
+
+	// Include the baseline as an entry, and make it the first among equals.
+	baselineEntry := SolverResult{
+		Name:       "baseline",
+		Status:     "BASELINE",
+		DurationUs: 0,
+		Score:      baseline,
+		CmpBase:    0,
+	}
+	equal = append([]SolverResult{baselineEntry}, equal...)
+
 	ranking := append(append(better, equal...), worse...)
 
 	// Tie helper
@@ -1475,9 +1487,9 @@ func (pl *MyCrossNodePreemption) exportSolverStatsConfigMap(
 	ctx context.Context,
 	strategy string,
 	baseline *SolverScore,
-	err string,
-	best *SolverResult,
+	best string,
 	attempts []SolverResult,
+	err string,
 ) {
 	// Build summarized attempts to keep payload lean
 	slim := make([]SolverResult, 0, len(attempts))
@@ -1487,7 +1499,7 @@ func (pl *MyCrossNodePreemption) exportSolverStatsConfigMap(
 
 	entry := ExportedSolverStats{
 		TimestampNs: time.Now().UnixNano(),
-		BestSolver:  best.Name,
+		BestName:    best,
 		Error:       err,
 		Baseline:    baseline,
 		Attempts:    slim,
@@ -1495,7 +1507,7 @@ func (pl *MyCrossNodePreemption) exportSolverStatsConfigMap(
 	pl.appendSolverStatsCM(ctx, entry)
 	klog.V(MyV).InfoS(msg(strategy, "exported solver stats"),
 		"attempts", len(slim),
-		"bestSolver", best.Name,
+		"bestAttempt", best,
 		"error", err,
 	)
 }

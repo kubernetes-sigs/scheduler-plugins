@@ -18,12 +18,12 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	in SolverInput,
 	nodes []*v1.Node,
 	pods []*v1.Pod,
-) (best SolverResult, hadFeasibleImprovingSolver bool, attempts []SolverResult, baselineScore SolverScore) {
+	baselineScore *SolverScore,
+) (best string, hadFeasibleImprovingSolver bool, bestAttempt *SolverResult, attempts []SolverResult) {
 	hadFeasibleImprovingSolver = false
 	strategy := strategyToString()
 
 	// Baseline + prepared state
-	baselineScore = buildBaselineScore(in)
 	baseState := buildState(in)
 
 	// Direct-fit pre-pass: only accept if strictly better than baseline
@@ -31,7 +31,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		start := time.Now()
 		if out := runSolverDirectFit(in, baseState); hasSolverFeasibleResult(out.Status) {
 			score := computeSolverScore(in, out)
-			best = SolverResult{
+			bestAttempt = &SolverResult{
 				Name:       "direct-fit",
 				DurationUs: time.Since(start).Microseconds(),
 				Score:      score,
@@ -40,8 +40,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Status:     out.Status,
 			}
 			klog.InfoS(msg(strategy, "direct-fit; skipping other solvers"),
-				"placedByPri", best.Score.PlacedByPriority, "evictions", best.Score.Evicted, "moves", best.Score.Moved, "durationUs", best.DurationUs)
-			return best, true, []SolverResult{best}, baselineScore
+				"placedByPri", bestAttempt.Score.PlacedByPriority, "evictions", bestAttempt.Score.Evicted, "moves", bestAttempt.Score.Moved, "durationUs", bestAttempt.DurationUs)
+			return bestAttempt.Name, true, bestAttempt, nil
 		}
 		klog.V(MyV).InfoS(msg(strategy, "direct-fit could not place all pods; run solvers"), "durationUs", time.Since(start).Microseconds())
 	}
@@ -88,11 +88,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	klog.V(MyV).InfoS(msg(strategy, "solver attempts planned"), "enabled", enabled)
 
 	// Start with baseline as leader
-	best = SolverResult{Name: "baseline", Score: baselineScore}
-
-	// We will record only feasible+applicable attempts for the leaderboard/ledger
-	var attemptsFeasibleImproving []SolverResult
-	var attemptsFeasibleAll []SolverResult
+	bestAttempt = &SolverResult{Name: "baseline", Score: *baselineScore}
 
 	// =====================================
 	// === Run Attempts ====================
@@ -112,7 +108,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		inAttempt.MaxTrials = att.Trials
 		inAttempt.UseHints = SolverUseHints
 		if SolverUseHints {
-			inAttempt.Hints = cloneScore(best.Score)
+			inAttempt.Hints = cloneScore(bestAttempt.Score)
 		}
 
 		// Run with timeout
@@ -122,26 +118,49 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		cancel()
 		durUs := time.Since(start).Microseconds()
 
-		if err != nil || out == nil {
+		if err != nil && out != nil {
 			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "err", err, "durationUs", durUs)
-			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: "FAILED"})
+			attempts = append(attempts, SolverResult{
+				Name:       att.Name,
+				DurationUs: durUs,
+				Status:     out.Status,
+				Score:      computeSolverScore(inAttempt, out),
+			})
+			continue
+		} else if err != nil {
+			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "err", err, "durationUs", durUs)
+			attempts = append(attempts, SolverResult{
+				Name:       att.Name,
+				DurationUs: durUs,
+				Status:     "failed-no-output",
+			})
 			continue
 		} else if !hasSolverFeasibleResult(out.Status) {
 			klog.InfoS(msg(strategy, InfoNoFeasibleOrOptimalSolution), "solver", att.Name, "status", out.Status, "durationUs", durUs)
-			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: out.Status})
+			attempts = append(attempts, SolverResult{
+				Name:       att.Name,
+				DurationUs: durUs,
+				Status:     out.Status,
+				Score:      computeSolverScore(inAttempt, out),
+			})
 			continue
 		}
 		// Check if plan
 		ok, why := pl.planApplicable(out, nodes, pods)
 		if !ok {
 			klog.InfoS(msg(strategy, InfoPlanNotApplicable), "solver", att.Name, "reason", why, "durationUs", durUs)
-			attemptsFeasibleAll = append(attemptsFeasibleAll, SolverResult{Name: att.Name, DurationUs: durUs, Status: "INFEASIBLE"})
+			attempts = append(attempts, SolverResult{
+				Name:       att.Name,
+				DurationUs: durUs,
+				Status:     out.Status,
+				Score:      computeSolverScore(inAttempt, out),
+			})
 			continue
 		}
 
 		// Check if improving over baseline
 		score := computeSolverScore(inAttempt, out)
-		improvedOverBaseline := isImprovement(baselineScore, score)
+		improvedOverBaseline := isImprovement(*baselineScore, score)
 		curr := SolverResult{
 			Name:       att.Name,
 			Output:     out,
@@ -153,9 +172,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 		if improvedOverBaseline <= 0 {
 			// Feasible but not improving (or no actual placement) — ignore as a candidate.
-			statusStr := out.Status
 			klog.InfoS(
-				msg(strategy, fmt.Sprintf("%s but not improving; discard", statusStr)),
+				msg(strategy, fmt.Sprintf("%s but not improving; discard", out.Status)),
 				"solver", att.Name,
 				"placedByPri", score.PlacedByPriority,
 				"baselinePlacedByPri", baselineScore.PlacedByPriority,
@@ -164,46 +182,38 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				"durationUs", durUs,
 			)
 			curr.CmpBase = 0 // mark as non-improving
-			curr.Status = statusStr + "-NOT-IMPROVING"
-			attemptsFeasibleAll = append(attemptsFeasibleAll, curr)
+			attempts = append(attempts, curr)
 			continue
 		}
 
 		// From here on we have a strictly improving plan with actual placements
 		hadFeasibleImprovingSolver = true
-		attemptsFeasibleImproving = append(attemptsFeasibleImproving, curr)
-		attemptsFeasibleAll = append(attemptsFeasibleAll, curr)
+		attempts = append(attempts, curr)
 
 		// New leader?
 		switch curr.CmpBase {
-		case 1: // new best
+		case 1:
 			klog.V(MyV).InfoS(msg(strategy, "new leader"),
-				"solver", att.Name, "prevLeader", best.Name, "durationUs", curr.DurationUs,
-				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", best.Score.PlacedByPriority,
-				"leaderEvictions", curr.Score.Evicted, "prevEvictions", best.Score.Evicted,
-				"leaderMoves", curr.Score.Moved, "prevMoves", best.Score.Moved)
-			best = curr // update leader
+				"solver", att.Name, "prevLeader", bestAttempt.Name, "durationUs", curr.DurationUs,
+				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", bestAttempt.Score.PlacedByPriority,
+				"leaderEvictions", curr.Score.Evicted, "prevEvictions", bestAttempt.Score.Evicted,
+				"leaderMoves", curr.Score.Moved, "prevMoves", bestAttempt.Score.Moved)
+			bestAttempt = &curr // update leader
 		case 0: // tie
 			klog.V(MyV).InfoS(msg(strategy, "solver tied with leader"),
-				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
+				"solver", att.Name, "leader", bestAttempt.Name, "durationUs", curr.DurationUs,
 				"placedByPri", curr.Score.PlacedByPriority, "evictions", curr.Score.Evicted, "moves", curr.Score.Moved)
 		default: // worse
 			klog.V(MyV).InfoS(msg(strategy, "solver worse than leader"),
-				"solver", att.Name, "leader", best.Name, "durationUs", curr.DurationUs,
-				"placedByPri", curr.Score.PlacedByPriority, "leaderPlacedByPri", best.Score.PlacedByPriority,
-				"evictions", curr.Score.Evicted, "leaderEvictions", best.Score.Evicted,
-				"moves", curr.Score.Moved, "leaderMoves", best.Score.Moved)
+				"solver", att.Name, "leader", bestAttempt.Name, "durationUs", curr.DurationUs,
+				"placedByPri", curr.Score.PlacedByPriority, "leaderPlacedByPri", bestAttempt.Score.PlacedByPriority,
+				"evictions", curr.Score.Evicted, "leaderEvictions", bestAttempt.Score.Evicted,
+				"moves", curr.Score.Moved, "leaderMoves", bestAttempt.Score.Moved)
 		}
 	}
 
 	// Leaderboard
-	logLeaderboard(strategy, attemptsFeasibleImproving, baselineScore, best)
+	logLeaderboard(strategy, attempts, *baselineScore, *bestAttempt)
 
-	if SolverSaveAllAttempts {
-		attempts = attemptsFeasibleAll
-	} else {
-		attempts = attemptsFeasibleImproving
-	}
-
-	return best, hadFeasibleImprovingSolver, attempts, baselineScore
+	return bestAttempt.Name, hadFeasibleImprovingSolver, bestAttempt, attempts
 }
