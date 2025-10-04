@@ -16,7 +16,8 @@ import (
 func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
 	strategy := strategyToString()
 
-	// Batch/Single: take Active early. Continuous: take it later (only if worth applying).
+	// Batch/Single: take Active early.
+	// Continuous: take Active later (only if we can worth apply the plan after solving).
 	if !optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.V(MyV).InfoS(msg(strategy, InfoActivePlanInProgress))
@@ -47,12 +48,12 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 		pl.leaveActive()
 		return nil, nil, "", nil, nil, err
 	}
-
+	// Compute baseline score
 	baselineScore := buildBaselineScore(inp)
 
-	// Nothing to do?
-	pendingPostPlan := countPendingPods(pods)
-	if pendingPostPlan == 0 {
+	// Nothing to do
+	pendingPrePlan := countPendingPods(pods)
+	if pendingPrePlan == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPods))
 		pl.leaveActive()
 		return nil, baselineScore, "baseline", nil, nil, ErrNoPendingPods
@@ -60,7 +61,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 
 	bestName, hadImproving, bestAttempt, attempts := pl.runSolvers(ctx, inp, nodes, pods, baselineScore)
 
-	// If nothing improved, export + exit (still return attempts for observability)
+	// Check if anything was feasible and improving
 	if !hadImproving {
 		klog.Error(msg(strategy, InfoNoImprovingSolutionFromAnySolver))
 		pl.leaveActive()
@@ -115,7 +116,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 		msg(strategy, InfoPlanExecutionFinished),
 		"planID", ap.ID,
 		"bestAttempt", bestSummary,
-		"pendingPostPlan", pendingPostPlan,
+		"pendingPrePlan", pendingPrePlan,
 		"pendingScheduled", pendingScheduled,
 		"totalPrePlan", totalPrePlan,
 		"totalPostPlan", totalPostPlan,

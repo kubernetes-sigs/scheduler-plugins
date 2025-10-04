@@ -23,7 +23,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	hadFeasibleImprovingSolver = false
 	strategy := strategyToString()
 
-	// Baseline + prepared state
+	// Prepared state
 	baseState := buildState(in)
 
 	// Direct-fit pre-pass: only accept if strictly better than baseline
@@ -118,8 +118,8 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		cancel()
 		durUs := time.Since(start).Microseconds()
 
-		if err != nil && out != nil {
-			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "err", err, "durationUs", durUs)
+		if err != nil && out != nil { // error with output
+			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "status", out.Status, "err", err, "durationUs", durUs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
 				DurationUs: durUs,
@@ -127,7 +127,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Score:      computeSolverScore(inAttempt, out),
 			})
 			continue
-		} else if err != nil {
+		} else if err != nil { // error with no output
 			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "err", err, "durationUs", durUs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
@@ -135,7 +135,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Status:     "failed-no-output",
 			})
 			continue
-		} else if !hasSolverFeasibleResult(out.Status) {
+		} else if !hasSolverFeasibleResult(out.Status) { // no feasible or optimal solution
 			klog.InfoS(msg(strategy, InfoNoFeasibleOrOptimalSolution), "solver", att.Name, "status", out.Status, "durationUs", durUs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
@@ -145,10 +145,11 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			})
 			continue
 		}
-		// Check if plan
+
+		// Check if plan is actually applicable on the current cluster state
 		ok, why := pl.planApplicable(out, nodes, pods)
 		if !ok {
-			klog.InfoS(msg(strategy, InfoPlanNotApplicable), "solver", att.Name, "reason", why, "durationUs", durUs)
+			klog.InfoS(msg(strategy, InfoPlanNotApplicable), "solver", att.Name, "status", out.Status, "reason", why, "durationUs", durUs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
 				DurationUs: durUs,
@@ -186,7 +187,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			continue
 		}
 
-		// From here on we have a strictly improving plan with actual placements
+		// From here, we have a strictly improving plan with actual placements
 		hadFeasibleImprovingSolver = true
 		attempts = append(attempts, curr)
 
