@@ -730,7 +730,7 @@ class KwokTestGenerator:
 
         return header, rows
 
-    def _write_solver_stats_csv(self, cfg: Path, seed: int, header: list[str], rows: list[dict]) -> None:
+    def _write_solver_stats_csv(self, cfg: Path, seed: int, header: list[str], rows: list[dict], *, run_idx: int = 1) -> None:
         """
         Write solver-stats CSV to results_dir/solver-stats. No-op if header/rows empty.
         When --overwrite is set, delete an existing file if its header does not match 'header'.
@@ -740,10 +740,19 @@ class KwokTestGenerator:
             return
         out_dir = (self.results_dir / "solver-stats")
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{CM_SOLVER_STATS_NAME}_seed-{seed}.csv"
+        # No timestamp in filename; include run index. Prune if collides.
+        out_path = out_dir / f"{CM_SOLVER_STATS_NAME}_seed-{seed}_run-{run_idx}.csv"
 
-        # NEW: purge mismatched header if overwrite true
-        self._purge_mismatched_csv(out_path, header)
+        # Purge old file if header mismatched (when overwrite), and *always* prune on run_idx collision.
+        if out_path.exists():
+            try:
+                out_path.unlink()
+                LOG.info("pruned existing solver-stats (collision on run_idx): %s", out_path.name)
+            except OSError as e:
+                LOG.warning("failed to prune existing solver-stats %s: %s", out_path.name, e)
+        else:
+            # If it doesn't exist, still enforce header compatibility policy via helper (no-op if missing)
+            self._purge_mismatched_csv(out_path, header)
 
         try:
             with open(out_path, "w", encoding="utf-8", newline="") as fh:
@@ -1125,20 +1134,22 @@ class KwokTestGenerator:
         return False
 
 
-    def _save_scheduler_logs(self, cfg: Path, seed: int) -> None:
+    def _save_scheduler_logs(self, cfg: Path, seed: int, *, run_idx: int = 1) -> None:
         """
         Save scheduler logs for the current KWOK cluster to results_dir/scheduler-logs.
-        File: <results-dir>/scheduler-logs/scheduler-logs_seed-<seed>.log
+        File: <results-dir>/scheduler-logs/scheduler-logs_seed-<seed>_run-<run_idx>.log
         """
         assert self.results_dir is not None, "results_dir must be resolved before saving logs"
         out_dir = (self.results_dir / "scheduler-logs")
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"scheduler-logs_seed-{seed}.log"
-        
-        # only save if not exists or overwrite is enabled
-        if out_path.exists() and not self.args.overwrite:
-            LOG.info("scheduler log exists and overwrite disabled; skipping: %s (use --overwrite to replace)", out_path.name)
-            return
+        # No timestamp in filename; include run index. Always prune on collision.
+        out_path = out_dir / f"scheduler-logs_seed-{seed}_run-{run_idx}.log"
+        if out_path.exists():
+            try:
+                out_path.unlink()
+                LOG.info("pruned existing scheduler log (collision on run_idx): %s", out_path.name)
+            except OSError as e:
+                LOG.warning("failed pruning existing scheduler log %s: %s", out_path.name, e)
 
         try:
             # We capture the raw output for a clean log file (no prefixed 'kwokctl>' lines)
@@ -1622,6 +1633,7 @@ class KwokTestGenerator:
             ("seed_file", args.seed_file),
             ("generate_seeds_to_file", args.generate_seeds_to_file),
             ("count", args.count),
+            ("repeats", args.repeats),
             ("matrix_file", args.matrix_file),
             ("test", args.test),
             ("save_solver_stats", args.save_solver_stats),
@@ -1789,7 +1801,7 @@ class KwokTestGenerator:
                  "----------------------------------------------------------------------------------------------------------------")
 
     # ------------------------- Single seed run -------------------------
-    def _run_single_seed(self, cfg: Path, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None) -> bool:
+    def _run_single_seed(self, cfg: Path, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
         """
         Run a single seed with the given applied config.
         Returns True on success, False on failure.
@@ -1911,7 +1923,7 @@ class KwokTestGenerator:
             # Collect once if needed (save and/or append)
             if self.args.save_solver_stats:
                 solver_stats_header, solver_stats_rows = self._get_solver_stats_from_configmap()
-                self._write_solver_stats_csv(cfg, seed, solver_stats_header, solver_stats_rows)
+                self._write_solver_stats_csv(cfg, seed, solver_stats_header, solver_stats_rows, run_idx=run_idx)
             
             # Attempts (all) + best name
             baseline, best_name, attempts, error = self._get_attempts_and_best()
@@ -1970,7 +1982,7 @@ class KwokTestGenerator:
             if self.args.save_scheduler_logs:
                 phase = "save_scheduler_logs"
                 LOG.info(f"phase={phase}")
-                self._save_scheduler_logs(cfg, seed)
+                self._save_scheduler_logs(cfg, seed, run_idx=run_idx)
 
             LOG.info(f"seed run done; took {time.time()-start_time:.1f}s")
             self._print_seed_summary(cfg, seed, running_count, unsched_count)
@@ -1989,12 +2001,12 @@ class KwokTestGenerator:
             return False
 
     # ------------------------- Multi-seed runners -------------------------
-    def _run_single_seed_with_retries(self, cfg: Path, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None) -> None:
+    def _run_single_seed_with_retries(self, cfg: Path, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
         # Short-circuit: skip existing when not overwriting
         if (seed in seen) and (not self.args.overwrite):
             self._print_seed_summary(cfg, seed, None, None, "skip (exists; use --overwrite to replace)")
             LOG.info("skip seed=%s because it already exists and --overwrite is not set", seed)
-            return
+            return True
         max_attempts = max(1, int(getattr(self.args, "retries", 0)) + 1)
         overall_started = time.time()
         last_attempt = 0
@@ -2007,14 +2019,14 @@ class KwokTestGenerator:
             # If overwriting, remove old rows before the first *successful* save; do it right before we save
             # We handle removal inside the success block below.
 
-            ok = self._run_single_seed(cfg, seen, seed, ta, seed_file)
+            ok = self._run_single_seed(cfg, seen, seed, ta, seed_file, run_idx=run_idx)
 
             if ok:
                 # If overwrite=true and there were rows, prune then append (we append inside _run_single_seed already)
                 LOG.info("seed=%s succeeded on attempt %d; total %.1fs", seed, attempt, time.time() - overall_started)
                 self._suppress_fail_log = False
                 self._deferred_fail = None
-                return
+                return True
             else:
                 LOG.warning("seed=%s failed on attempt %d/%d", seed, attempt, max_attempts)
 
@@ -2025,6 +2037,7 @@ class KwokTestGenerator:
             self._deferred_fail = None
             self._write_fail(df.category, df.cfg, df.seed, df.phase, df.message, df.details)
         LOG.error("seed=%s failed after %d attempt(s); total %.1fs", seed, last_attempt, time.time() - overall_started)
+        return False
 
     def _run_gen_seeds(self):
         """
@@ -2063,7 +2076,16 @@ class KwokTestGenerator:
             started_at = time.time()
             try:
                 rc = self._resolve_config_for_seed(tr, s)
-                self._run_single_seed_with_retries(cfg, seen, s, rc)
+                # Accumulate successful repeats
+                target_repeats = max(1, int(getattr(self.args, "repeats", 1)))
+                successes = 0
+                while successes < target_repeats:
+                    run_idx = successes + 1
+                    ok = self._run_single_seed_with_retries(cfg, seen, s, rc, run_idx=run_idx)
+                    if ok:
+                        successes += 1
+                    if successes < target_repeats:
+                        self._pause(next_exists=True)
             finally:
                 self._record_seed_duration(started_at)
                 self._update_completion_marker(cfg_idx - 1, cfgs_total, made + 1, seeds_total)
@@ -2089,7 +2111,15 @@ class KwokTestGenerator:
         started_at = time.time()
         try:
             rc = self._resolve_config_for_seed(tr, s)
-            self._run_single_seed_with_retries(cfg, seen, s, rc)
+            target_repeats = max(1, int(getattr(self.args, "repeats", 1)))
+            successes = 0
+            while successes < target_repeats:
+                run_idx = successes + 1
+                ok = self._run_single_seed_with_retries(cfg, seen, s, rc, run_idx=run_idx)
+                if ok:
+                    successes += 1
+                if successes < target_repeats:
+                    self._pause(next_exists=True)
         finally:
             self._record_seed_duration(started_at)
             self._update_completion_marker(cfg_idx - 1, cfgs_total, 1, 1)
@@ -2110,7 +2140,15 @@ class KwokTestGenerator:
             started_at = time.time()
             try:
                 rc = self._resolve_config_for_seed(tr, s)
-                self._run_single_seed_with_retries(cfg, seen, s, rc, self.args.seed_file)
+                target_repeats = max(1, int(getattr(self.args, "repeats", 1)))
+                successes = 0
+                while successes < target_repeats:
+                    run_idx = successes + 1
+                    ok = self._run_single_seed_with_retries(cfg, seen, s, rc, self.args.seed_file, run_idx=run_idx)
+                    if ok:
+                        successes += 1
+                    if successes < target_repeats:
+                        self._pause(next_exists=True)
             finally:
                 self._record_seed_duration(started_at)
                 self._update_completion_marker(cfg_idx - 1, cfgs_total, seed_idx, seeds_total)
@@ -2335,6 +2373,11 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--count", type=int, default=None, help="Generate the specified number of random seeds; -1=infinite.")
     ap.add_argument("--retries", type=int, default=5,
                     help="If a seed fails, retry this many times before recording as failed (default: 5).")
+    ap.add_argument("--repeats", type=int, default=1,
+                    help=("Number of successful runs to collect per seed (default: 1). "
+                          "Each successful repeat writes per-run artifacts named with _run-<idx> and prunes "
+                          "any existing file that collides with that name. Failed repeats are retried per --retries "
+                          "and do not count toward this number."))
     # matrix
     ap.add_argument("--matrix-file", help="CSV with columns: config-file,seed-file,results-dir.")
     

@@ -1,0 +1,72 @@
+What can make scheduling non-deterministic
+1) Concurrency & timing
+
+Parallelism > 1: parallel Filter/Score runs race to produce the first “good enough” node; tiny timing shifts change outcomes.
+
+Informer/cache timing: list/watch events arrive in different interleavings; the scheduler snapshot can differ across runs.
+
+Backoffs & retries: exponential backoff timers fire at slightly different moments; queue ordering changes.
+
+Timeouts (VolumeBinding, plugin timeouts): a call that barely times out in one run and not in another flips a decision.
+
+2) Data ordering & tie-breaking
+
+Go map iteration: if your plugin iterates over maps, order is randomized between processes.
+
+Unstable set/heap ordering in plugins: any use of sets/heaps without explicit secondary sort keys will yield different ties.
+
+Equal scores: when multiple nodes tie, the final tie-break can depend on internal iteration order unless you explicitly sort (by name) at the last step.
+
+3) Default framework plugins that inject variability
+
+PodTopologySpread (defaulting type = System): when a Pod doesn’t declare spread constraints, the system-applied rules can prefer different nodes based on current spread; tiny previous placements change the “best” target next time.
+
+InterPodAffinity/AntiAffinity: matching depends on current pods; a small placement change early cascades.
+
+ImageLocality: whether an image is present on a node (pull cache) can differ run-to-run.
+
+NodeResourcesBalancedAllocation / LeastAllocated: resource rounding and near-ties can flip on small prior placements.
+
+4) External cluster drift
+
+Background controllers (descheduler, eviction manager) moving/evicting pods.
+
+Node conditions/taints changing (e.g., brief memory pressure).
+
+PV binding timing (VolumeBinding) and storage topology becoming ready at slightly different moments.
+
+CNI / readiness jitter causing some nodes/pods to become schedulable a bit earlier/later.
+
+Set parallelism: 1 (you already confirmed current value is 16).
+
+Fix the candidate set: set percentageOfNodesToScore: 100 (not 0/auto) so sampling never varies.
+
+Stabilize tie-breaks: after scoring, sort by (score desc, nodeName asc) before picking the winner. Do this inside your plugin if it chooses among equals.
+
+Deterministic data structures: never iterate Go maps for decisions; copy keys to a slice and sort.Strings(...).
+
+Disable/neutralize variability you don’t want:
+
+If spread isn’t part of the experiment, set PodTopologySpread defaulting to None (or add explicit, constant constraints on all pods).
+
+Pin ImageLocality by pre-pulling images everywhere, or disable its influence (weight 0).
+
+Keep DefaultPreemption disabled (you already do) to avoid asynchronous disruptions.
+
+Freeze the cluster state:
+
+No autoscaler/descheduler.
+
+No taint/label churn.
+
+Pre-create PVs/PVCs (or avoid storage) to remove VolumeBinding timing.
+
+Control pod submission order: create the exact same manifests in the exact same order and wait for stabilization between batches.
+
+Make plugin time logic fixed: avoid wall-clock dependent behavior; use deterministic iteration and fixed seeds if any randomness is used.
+
+Increase verbosity (--v=4) and audit:
+
+Confirm computed “nodes to score”, candidate lists, and final sorted order per step.
+
+Log the final tie-break inputs (scores, node names) for reproducibility.

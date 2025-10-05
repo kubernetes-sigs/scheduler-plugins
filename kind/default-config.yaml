@@ -1,0 +1,234 @@
+{
+  "componentconfig": {
+    "apiVersion": "kubescheduler.config.k8s.io/v1",
+    "Parallelism": 16,
+    "LeaderElection": {
+      "LeaderElect": true,
+      "LeaseDuration": "15s",
+      "RenewDeadline": "10s",
+      "RetryPeriod": "2s",
+      "ResourceLock": "leases",
+      "ResourceName": "kube-scheduler",
+      "ResourceNamespace": "kube-system"
+    },
+    "ClientConnection": {
+      "Kubeconfig": "/etc/kubernetes/scheduler.conf",
+      "AcceptContentTypes": "",
+      "ContentType": "application/vnd.kubernetes.protobuf",
+      "QPS": 50,
+      "Burst": 100
+    },
+    "EnableProfiling": true,
+    "EnableContentionProfiling": true,
+    "PercentageOfNodesToScore": 0,
+    "PodInitialBackoffSeconds": 1,
+    "PodMaxBackoffSeconds": 10,
+    "Profiles": [
+      {
+        "SchedulerName": "default-scheduler",
+        "PercentageOfNodesToScore": null,
+        "Plugins": {
+          "PreEnqueue": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "QueueSort": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "PreFilter": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Filter": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "PostFilter": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "PreScore": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Score": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Reserve": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Permit": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "PreBind": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Bind": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "PostBind": {
+            "Enabled": null,
+            "Disabled": null
+          },
+          "MultiPoint": {
+            "Enabled": [
+              {
+                "Name": "SchedulingGates",
+                "Weight": 0
+              },
+              {
+                "Name": "PrioritySort",
+                "Weight": 0
+              },
+              {
+                "Name": "NodeUnschedulable",
+                "Weight": 0
+              },
+              {
+                "Name": "NodeName",
+                "Weight": 0
+              },
+              {
+                "Name": "TaintToleration",
+                "Weight": 3
+              },
+              {
+                "Name": "NodeAffinity",
+                "Weight": 2
+              },
+              {
+                "Name": "NodePorts",
+                "Weight": 0
+              },
+              {
+                "Name": "NodeResourcesFit",
+                "Weight": 1
+              },
+              {
+                "Name": "VolumeRestrictions",
+                "Weight": 0
+              },
+              {
+                "Name": "NodeVolumeLimits",
+                "Weight": 0
+              },
+              {
+                "Name": "VolumeBinding",
+                "Weight": 0
+              },
+              {
+                "Name": "VolumeZone",
+                "Weight": 0
+              },
+              {
+                "Name": "PodTopologySpread",
+                "Weight": 2
+              },
+              {
+                "Name": "InterPodAffinity",
+                "Weight": 2
+              },
+              {
+                "Name": "DefaultPreemption",
+                "Weight": 0
+              },
+              {
+                "Name": "NodeResourcesBalancedAllocation",
+                "Weight": 1
+              },
+              {
+                "Name": "ImageLocality",
+                "Weight": 1
+              },
+              {
+                "Name": "DefaultBinder",
+                "Weight": 0
+              }
+            ],
+            "Disabled": null
+          }
+        },
+        "PluginConfig": [
+          {
+            "Name": "DefaultPreemption",
+            "Args": {
+              "MinCandidateNodesPercentage": 10,
+              "MinCandidateNodesAbsolute": 100
+            }
+          },
+          {
+            "Name": "InterPodAffinity",
+            "Args": {
+              "HardPodAffinityWeight": 1,
+              "IgnorePreferredTermsOfExistingPods": false
+            }
+          },
+          {
+            "Name": "NodeAffinity",
+            "Args": {
+              "AddedAffinity": null
+            }
+          },
+          {
+            "Name": "NodeResourcesBalancedAllocation",
+            "Args": {
+              "Resources": [
+                {
+                  "Name": "cpu",
+                  "Weight": 1
+                },
+                {
+                  "Name": "memory",
+                  "Weight": 1
+                }
+              ]
+            }
+          },
+          {
+            "Name": "NodeResourcesFit",
+            "Args": {
+              "IgnoredResources": null,
+              "IgnoredResourceGroups": null,
+              "ScoringStrategy": {
+                "Type": "LeastAllocated",
+                "Resources": [
+                  {
+                    "Name": "cpu",
+                    "Weight": 1
+                  },
+                  {
+                    "Name": "memory",
+                    "Weight": 1
+                  }
+                ],
+                "RequestedToCapacityRatio": null
+              }
+            }
+          },
+          {
+            "Name": "PodTopologySpread",
+            "Args": {
+              "DefaultConstraints": null,
+              "DefaultingType": "System"
+            }
+          },
+          {
+            "Name": "VolumeBinding",
+            "Args": {
+              "BindTimeoutSeconds": 600,
+              "Shape": null
+            }
+          }
+        ]
+      }
+    ],
+    "Extenders": null,
+    "DelayCacheUntilActive": false
+  }
+}

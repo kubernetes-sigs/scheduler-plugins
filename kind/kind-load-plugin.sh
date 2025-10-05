@@ -55,7 +55,6 @@ profiles:
     multiPoint:
       disabled:
         - name: DefaultPreemption
-
 EOF"
 
 # Build new Docker image with plugins
@@ -94,18 +93,16 @@ spec:
     - --leader-elect=true
     - --v=0 # verbosity level
     env:
-    - name: OPTIMIZE_CADENCE
-      value: \"for_every\"
+    - name: OPTIMIZE_MODE
+      value: \"all_synch\"
     - name: OPTIMIZE_AT
-      value: \"preenqueue\"
+      value: \"postfilter\"
     - name: OPTIMIZATION_INTERVAL
       value: \"30s\"
     - name: OPTIMIZATION_INITIAL_DELAY
       value: \"15s\"
     - name: PLAN_EXECUTION_TIMEOUT
       value: \"600h\"
-    - name: SOLVER_USE_HINTS
-      value: \"true\"
     - name: SOLVER_PYTHON_ENABLED
       value: \"true\"
     - name: SOLVER_PYTHON_TIMEOUT
