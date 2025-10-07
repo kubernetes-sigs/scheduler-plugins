@@ -2,16 +2,9 @@
 
 apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
-parallelism: 1
-percentageOfNodesToScore: 100
 profiles:
 - schedulerName: default-scheduler
-  percentageOfNodesToScore: 100
   plugins:
-    score:
-      enabled:
-        - name: MyScoreBreaker
-          weight: 1
     preEnqueue:
       enabled:
         - name: MyCrossNodePreemption

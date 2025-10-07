@@ -16,17 +16,16 @@ REPO_BRANCH="${REPO_BRANCH:-henrikdc-cross-preemp}"
 REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}"
 REPO_DIR="${REPO_DIR:-repo}"              # can be relative to CONTENT_DIR
 
-KWOK_CLUSTER="${KWOK_CLUSTER:-kwok1}"
+CLUSTER_NAME="${CLUSTER_NAME:-kwok1}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"    # binary | docker
 
 RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
-KWOK_CONFIG_FILE="${KWOK_CONFIG_FILE:-}"   # can be relative to CONTENT_DIR
+CONFIG_FILE="${CONFIG_FILE:-}"   # can be relative to CONTENT_DIR
 SEED="${SEED:-}"
 COUNT="${COUNT:-}"
-GENERATE_SEEDS_TO_FILE="${GENERATE_SEEDS_TO_FILE:-}"
+GEN_SEEDS_TO_FILE="${GEN_SEEDS_TO_FILE:-}"
 TEST="${TEST:-}"
 OVERWRITE="${OVERWRITE:-}"
-MAX_ROWS_PER_FILE="${MAX_ROWS_PER_FILE:-}"
 LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 MATRIX_FILE="${MATRIX_FILE:-}"             # can be relative to CONTENT_DIR
@@ -35,6 +34,8 @@ TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
 OPTIMIZER_URL="${OPTIMIZER_URL:-}"
 ACTIVE_URL="${ACTIVE_URL:-}"
 PAUSE="${PAUSE:-}"
+
+SEEDS_NOT_ALL_RUNNING="${SEEDS_NOT_ALL_RUNNING:-0}" # int: how many seeds can be allowed to not reach all pods running (0=all must reach all running)
 
 SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
 
@@ -80,7 +81,6 @@ wait_for_dir() {
 }
 
 # Return absolute path: if input is empty => empty; if absolute => as-is; else => CONTENT_DIR/<input>
-# Return absolute path: if input is empty => empty; if absolute => as-is; else => CONTENT_DIR/<input>
 to_abs_under_folder() {
   local path="${1:-}"
   if [ -z "$path" ]; then
@@ -94,7 +94,7 @@ to_abs_under_folder() {
 
 # Normalize all user-provided paths against CONTENT_DIR
 resolve_paths_relative_to_folder() {
-  KWOK_CONFIG_FILE="$(to_abs_under_folder "$KWOK_CONFIG_FILE")"
+  CONFIG_FILE="$(to_abs_under_folder "$CONFIG_FILE")"
   RESULTS_DIR="$(to_abs_under_folder "$RESULTS_DIR")"
   SEED_FILE="$(to_abs_under_folder "$SEED_FILE")"
   MATRIX_FILE="$(to_abs_under_folder "$MATRIX_FILE")"
@@ -108,15 +108,14 @@ print_cfg() {
   if [ -n "${MATRIX_FILE}" ]; then
     log cfg "MATRIX_FILE=${MATRIX_FILE:-<unset>}"
   else
-    log cfg "KWOK_CLUSTER=${KWOK_CLUSTER:-<unset>}"
-    log cfg "KWOK_CONFIG_FILE=${KWOK_CONFIG_FILE:-<unset>}"
+    log cfg "CLUSTER_NAME=${CLUSTER_NAME:-<unset>}"
+    log cfg "CONFIG_FILE=${CONFIG_FILE:-<unset>}"
     log cfg "RESULTS_DIR=${RESULTS_DIR:-<unset>}"
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
     log cfg "SEED=${SEED:-<unset>}"
     log cfg "COUNT=${COUNT:-<unset>}"
-    log cfg "GENERATE_SEEDS_TO_FILE=${GENERATE_SEEDS_TO_FILE:-<unset>}"
+    log cfg "GEN_SEEDS_TO_FILE=${GEN_SEEDS_TO_FILE:-<unset>}"
     log cfg "OVERWRITE=${OVERWRITE:-<unset>}"
-    log cfg "MAX_ROWS_PER_FILE=${MAX_ROWS_PER_FILE:-<unset>}"
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
@@ -304,22 +303,23 @@ stage_test() {
 
   # Build the argv list once, only adding args the user actually set
   local args=()
-  [ -n "${KWOK_RUNTIME:-}"    ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
-  [ -n "${KWOK_CLUSTER:-}"    ] && args+=( --cluster-name "${KWOK_CLUSTER}" )
-  [ -n "${KWOK_CONFIG_FILE:-}" ] && args+=( --config-file "${KWOK_CONFIG_FILE}" )
-  [ -n "${RESULTS_DIR:-}"     ] && args+=( --results-dir "${RESULTS_DIR}" )
-  [ -n "${SEED_FILE:-}"       ] && args+=( --seed-file "${SEED_FILE}" )
-  [ -n "${SEED:-}"            ] && args+=( --seed "${SEED}" )
-  [ -n "${COUNT:-}"           ] && args+=( --count "${COUNT}" )
-  [ -n "${GENERATE_SEEDS_TO_FILE:-}" ] && args+=( --generate-seeds-to-file "${GENERATE_SEEDS_TO_FILE}" )
-  [ -n "${MAX_ROWS_PER_FILE:-}" ] && args+=( --max-rows-per-file "${MAX_ROWS_PER_FILE}" )
-  [ -n "${LOG_LEVEL:-}"       ] && args+=( --log-level "${LOG_LEVEL}" )
-  [ -n "${MATRIX_FILE:-}"     ] && args+=( --matrix-file "${MATRIX_FILE}" )
-  # Optimizer URLs (only used if --trigger-optimizer is set, but safe to always pass if provided)
-  [ -n "${OPTIMIZER_URL:-}"   ] && args+=( --optimizer-url "${OPTIMIZER_URL}" )
-  [ -n "${ACTIVE_URL:-}"      ] && args+=( --active-url "${ACTIVE_URL}" )
+  [ -n "${KWOK_RUNTIME:-}"     ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
+  [ -n "${CLUSTER_NAME:-}"     ] && args+=( --cluster-name "${CLUSTER_NAME}" )
+  [ -n "${CONFIG_FILE:-}" ] && args+=( --config-file "${CONFIG_FILE}" )
+  [ -n "${RESULTS_DIR:-}"      ] && args+=( --results-dir "${RESULTS_DIR}" )
+  [ -n "${SEED_FILE:-}"        ] && args+=( --seed-file "${SEED_FILE}" )
+  [ -n "${SEED:-}"             ] && args+=( --seed "${SEED}" )
+  [ -n "${COUNT:-}"            ] && args+=( --count "${COUNT}" )
+  [ -n "${GEN_SEEDS_TO_FILE:-}" ] && args+=( --gen-seeds-to-file "${GEN_SEEDS_TO_FILE}" )
+  [ -n "${LOG_LEVEL:-}"        ] && args+=( --log-level "${LOG_LEVEL}" )
+  [ -n "${MATRIX_FILE:-}"      ] && args+=( --matrix-file "${MATRIX_FILE}" )
+  [ -n "${OPTIMIZER_URL:-}"    ] && args+=( --optimizer-url "${OPTIMIZER_URL}" )
+  [ -n "${ACTIVE_URL:-}"       ] && args+=( --active-url "${ACTIVE_URL}" )
+  [ -n "${RETRIES:-}"          ] && args+=( --retries "${RETRIES}" )
+  [ -n "${REPEATS:-}"          ] && args+=( --repeats "${REPEATS}" )
+  [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ] && args+=( --seeds-not-all-running "${SEEDS_NOT_ALL_RUNNING}" )
 
-  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs)
+  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --overwrite, --clean-results, --pause)
   # shellcheck disable=SC2206
   local pass_flags=( ${passthru} )
   args+=( "${pass_flags[@]}" )
@@ -333,7 +333,7 @@ stage_test() {
   # Run the tests
   run_root "
     cd '${CONTENT_DIR}' && \
-    chmod +x './bin/kube-scheduler' && \
+    { [ '${KWOK_RUNTIME}' != 'binary' ] || chmod +x './bin/kube-scheduler'; } && \
     '${VENV_DIR}/bin/python' scripts/kwok/kwok_test_generator.py ${quoted_args}
   "
 
@@ -350,20 +350,23 @@ FLAGS_SPEC=(
   "build-scheduler|BUILD_SCHEDULER|value|"
   "content-dir|CONTENT_DIR|value|"
   "image-remote-tag|IMAGE_REMOTE_TAG|value|"
-  "kwok-cluster|KWOK_CLUSTER|value|"
+  "cluster-name|CLUSTER_NAME|value|"
   "kwok-runtime|KWOK_RUNTIME|value|"
-  "kwok-config-file|KWOK_CONFIG_FILE|value|"
+  "config-file|CONFIG_FILE|value|"
   "results-dir|RESULTS_DIR|value|"
   "seed-file|SEED_FILE|value|"
   "seed|SEED|value|"
   "count|COUNT|value|"
-  "generate-seeds-to-file|GENERATE_SEEDS_TO_FILE|value|"
+  "gen-seeds-to-file|GEN_SEEDS_TO_FILE|value|"
   "matrix-file|MATRIX_FILE|value|"
-  "max-rows-per-file|MAX_ROWS_PER_FILE|value|"
   "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
+  "optimizer-url|OPTIMIZER_URL|value|"
+  "active-url|ACTIVE_URL|value|"
   "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
-  "test|TEST|flag|--test"
+  "retries|RETRIES|value|"
+  "repeats|REPEATS|value|"
+  "seeds-not-all-running|SEEDS_NOT_ALL_RUNNING|value|"  # now a value (int), not a bare flag
   "overwrite|OVERWRITE|flag|--overwrite"
   "clean-results|CLEAN_RESULTS|flag|--clean-results"
   "pause|PAUSE|flag|--pause"
@@ -399,7 +402,6 @@ parse_cli_using_spec() {
       --*=*)
         opt="${1%%=*}"; val="${1#*=}"; opt="${opt#--}"
         if ! var="$(get_spec_field "$opt" 1)"; then die "unknown argument: --$opt"; fi
-        kind="$(get_spec_field "$opt" 2)"
         set_var "$var" "${val}"
         ;;
       --*)
@@ -418,9 +420,7 @@ parse_cli_using_spec() {
         fi
         ;;
       --) shift; break ;;   # explicit end-of-options
-      *)
-        die "unknown argument: $1"
-        ;;
+      *) die "unknown argument: $1" ;;
     esac
     shift
   done
@@ -457,3 +457,5 @@ case "${cmd}" in
   test)        stage_test ;;
   all)         stage_setup; stage_build; stage_test ;;
 esac
+
+exit 0
