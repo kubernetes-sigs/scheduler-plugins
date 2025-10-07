@@ -26,6 +26,9 @@ options:
   kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
 componentsPatches:
   - name: kube-scheduler
+    extraArgs:
+      - key: v
+        value: "10"
     extraEnvs:
       - name: OPTIMIZE_MODE
         value: "manual_all_synch" # choices: every, all_synch, all_asynch, manual_all_synch

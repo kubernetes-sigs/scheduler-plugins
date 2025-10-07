@@ -59,6 +59,7 @@ func (pl *MyCrossNodePreemption) runFlow(ctx context.Context, preemptor *v1.Pod)
 		return nil, baselineScore, "baseline", nil, nil, ErrNoPendingPods
 	}
 
+	klog.InfoS(msg(strategy, "starting solvers"), "pending", pendingPrePlan, "totalPods", len(pods), "nodes", len(nodes))
 	bestName, hadImproving, bestAttempt, attempts := pl.runSolvers(ctx, inp, nodes, pods, baselineScore)
 
 	// Check if anything was feasible and improving

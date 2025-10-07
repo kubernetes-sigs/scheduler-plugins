@@ -24,6 +24,7 @@
     - [Bootstrap a VM](#bootstrap-a-vm)
     - [Running test jobs on UCloud](#running-test-jobs-on-ucloud)
     - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
+  - [Agenda](#agenda)
   - [TODOs](#todos)
     - [Later TODOs](#later-todos)
   - [Test](#test)
@@ -247,8 +248,25 @@ To run tests on UCloud:
   kubectl --context <ctx> -n <namespace> get events --field-selector involvedObject.kind=Pod -o json | jq '.items[] | {name: .involvedObject.name, reason: .reason, message: .message}'
   ```
 
+## Agenda
+
+1. The non-deterministic behavior observed during tests now appears to be resolved (after some fighting 😄) by:
+   1. Setting 'parallelism' to 1 preventing concurrent scheduling.
+   2. Adding a simple scoring plugin that breaks ties based on node names.
+   Now, pods are scheduled in the same order and to the same nodes in repeated tests.
+2. Report:
+   1. What do you think about the current 'Introduction' and 'Background' sections?
+   2. My idea for subsections for the 'State of the art' section.
+3. Discuss results sent earlier.
+4. Discuss TODOs and next steps.
+   1. Gang scheduling (all-or-nothing strategy): As I see it, we can't fully implement this approach because we also perform pod preemption, which prevents us from reverting to the previous cluster state.
+      However, we can consider to add a permit plugin to make all planned pods schedule together, but yet again, we can't revert to the old state if something goes wrong.
+   2. Some configuration possibilities within Kubernetes is currently ignored, e.g. node-selectors, PDBs, Quotas, LimitsRanges, etc.
+      Is that okay, and just write about it, or do we need to implement them?
+
 ## TODOs
 
+- Write about the non-determism when we activate blocked pods. The order in which they are activated matters. We can consider to sort them based on priority and creation time.
 - Write about that gang-scheduling (all-or-nothing strategy) doesn't really make sense in our case as we also preempt pods meaning we therefore cannot revert to the old state. However, we can consider to add a permit plugin to make all planned pods schedule together (but still due it does not implement an all-or-nothing strategy, as we have preemptions).
 - QoS classes are currently ignored: BestEffort, Burstable, Guaranteed. We currently assume all pods are Guaranteed Pods. See also <https://medium.com/@muppedaanvesh/a-hands-on-guide-to-kubernetes-qos-classes-%EF%B8%8F-571b5f8f7e58>
 - Quotas and LimitsRanges are currently ignored. See also <https://medium.com/codex/what-you-need-to-know-to-debug-a-preempted-pod-on-kubernetes-1c956eec3f35>

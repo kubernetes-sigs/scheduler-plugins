@@ -20,12 +20,15 @@ settle_timeout_max: 12s     # set a little higher than timeout of solvers
 kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
 options:
-  kubeSchedulerConfig: manifests/mycrossnodepreemption/scheduler-config.yaml
+  kubeSchedulerConfig: manifests/mycrossnodepreemption/scheduler-config-a.yaml
   # We decide runtime (binary vs. docker) via --runtime command line flag when creating the cluster.
   kubeSchedulerBinary: bin/kube-scheduler
   kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
 componentsPatches:
   - name: kube-scheduler
+    extraArgs:
+      - key: v
+        value: "10"
     extraEnvs:
       - name: OPTIMIZE_MODE
         value: "manual_all_synch" # choices: every, all_synch, all_asynch, manual_all_synch

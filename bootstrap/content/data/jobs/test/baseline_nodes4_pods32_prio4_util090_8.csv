@@ -1,0 +1,2 @@
+config-file,seed-file,results-dir
+data/configs/baseline/baseline_nodes4_pods32_prio4_util090.yaml,data/seeds/baseline_all_8.txt,data/results/baseline_nodes4_pods32_prio4_util090_8
