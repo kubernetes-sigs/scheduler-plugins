@@ -72,9 +72,15 @@ class CPSATSolver:
         solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
         solver.parameters.num_search_workers        = max(1, workers)
         solver.parameters.log_search_progress       = log_progress
+        #solver.parameters.search_branching = cp_model.PORTFOLIO_SEARCH
+        #solver.parameters.cp_model_presolve = False
+        #solver.parameters.cp_model_probing_level = 1  # 0=off, 1=basic, 2=aggressive
+        #solver.parameters.max_presolve_iterations = 1
+        #solver.parameters.linearization_level = 2
+        #solver.parameters.keep_all_feasible_solutions_in_presolve = True
         solver.parameters.log_subsolver_statistics  = log_subsolvers
         solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
-        solver.parameters.relative_gap_limit        = 0.05 # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
+        solver.parameters.relative_gap_limit        = 0.00 # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
         solver.log_callback = lambda line: (
             print(line, file=sys.stderr, flush=True) if line else None
         )
@@ -93,22 +99,22 @@ class CPSATSolver:
         # We may have multiple records for the same pod UID.
         # Therefore we keep only one record per UID, preferring
         # the first one that is currently assigned to a node (if any).
-        by_uid = {}
+        pod_by_uid = {}
         for p in pods:
             uid = p.get("uid")
             if not uid:
                 continue
-            old = by_uid.get(uid)
+            old = pod_by_uid.get(uid)
             if old is None:
                 # First time we see this UID: store it.
-                by_uid[uid] = p
+                pod_by_uid[uid] = p
                 continue
             # Prefer a record that shows the pod is assigned to a node.
             old_has_node = bool((old.get("node") or "").strip())
             new_has_node = bool((p.get("node")  or "").strip())
             # Only upgrade from "no node" -> "has node".
             if new_has_node and not old_has_node:
-                by_uid[uid] = p
+                pod_by_uid[uid] = p
 
         #################################################
         # --- Single-Preemptor Setup --------------------
@@ -120,8 +126,8 @@ class CPSATSolver:
         if isinstance(preemptor, dict) and preemptor.get("uid"):
             preemptor_uid = preemptor["uid"]
             single_preemptor_mode = True
-            if preemptor_uid not in by_uid:
-                by_uid[preemptor_uid] = {
+            if preemptor_uid not in pod_by_uid:
+                pod_by_uid[preemptor_uid] = {
                     "uid": preemptor["uid"],
                     "namespace": preemptor.get("namespace","default"),
                     "name": preemptor.get("name","preemptor"),
@@ -135,7 +141,7 @@ class CPSATSolver:
         #################################################
         # --- Freeze nodes and pods and quick checks ----
         #################################################
-        pods = list(by_uid.values())
+        pods = list(pod_by_uid.values())
         num_nodes = len(nodes)
         num_pods  = len(pods)
         if num_pods == 0:
@@ -197,24 +203,23 @@ class CPSATSolver:
         #################################################
         # placed (bool) - whether model places pod i somewhere
         # assign (bool) - whether model places pod i on node j (only for eligible nodes)
-        # move   (bool) - whether model moves pod i (only for running pods)
         placed = [model.NewBoolVar(f"placed_{i}") for i in range(num_pods)]
-        assign = [[model.NewBoolVar(f"assign_{i}_{j}") for j in eligible_nodes[i]] for i in range(num_pods)]
-        move = [model.NewBoolVar(f"move_{i}") if i in running_idxs else None for i in range(num_pods)]
+        assign = [[model.NewBoolVar(f"assign_{i}_{j}") for j in eligible_nodes[i]]
+            for i in range(num_pods)]
         
         #################################################
         # --- Common Constraints ------------------------
         #################################################
         ### Node constraints - capacity per node
+        eligible_pos = [{j: pos for pos, j in enumerate(eligible_nodes[i])}
+                for i in range(num_pods)]
         for j in range(num_nodes):
-            cap_cpu_terms = []
-            cap_mem_terms = []
-            # Sum over i node j in eligible[i]
+            cap_cpu_terms, cap_mem_terms = [], []
             for i in range(num_pods):
-                if j in eligible_nodes[i]:
-                    idx = eligible_nodes[i].index(j)
-                    cap_cpu_terms.append(assign[i][idx] * p_req_cpu_m(i))
-                    cap_mem_terms.append(assign[i][idx] * p_req_mem_bytes(i))
+                pos = eligible_pos[i].get(j)
+                if pos is not None:
+                    cap_cpu_terms.append(assign[i][pos] * p_req_cpu_m(i))
+                    cap_mem_terms.append(assign[i][pos] * p_req_mem_bytes(i))
             if cap_cpu_terms:
                 model.Add(sum(cap_cpu_terms) <= n_cap_cpu_m(j))
                 model.Add(sum(cap_mem_terms) <= n_cap_mem_bytes(j))
@@ -223,266 +228,216 @@ class CPSATSolver:
         for i in range(num_pods):
             if eligible_nodes[i]:
                 model.Add(sum(assign[i]) == placed[i])
-            else: # cannot be placed
+            else:
                 model.Add(placed[i] == 0)
 
         ### Move constraints - only for running pods
         for i in running_idxs:
             orig = p_node_j(i)
-            model.Add(move[i] <= placed[i])
-            if orig in eligible_nodes[i]: # if place, either moved or stayed on orig
-                idx = eligible_nodes[i].index(orig)
-                model.Add(move[i] + assign[i][idx] <= 1)
-                model.Add(placed[i] <= move[i] + assign[i][idx])
-            else: # can't stay on original -> moving iff place
-                model.Add(move[i] == placed[i])
-            # Protected pods must stay put (no move)
+            pos  = eligible_pos[i].get(orig)
+            # "stay or move" coupling is implicit with <=1 assignment.
+            # If protected & running: force stay if possible
             if p_protected(i):
-                model.Add(placed[i] == 1)
-                if move[i] is not None:
-                    model.Add(move[i] == 0)
+                if pos is not None:
+                    model.Add(assign[i][pos] == 1)   # must stay
+                else:
+                    # protected but cannot stay: infeasible → early return?
+                    return {"status": "MODEL_INVALID"}
 
         #################################################
         # --- Mode Specific Constraints -----------------
         #################################################
         # Single-preemptor mode:
         if single_preemptor_mode and preemptor_idx is not None:
-            # Preemptor must be place
-            model.Add(placed[preemptor_idx] == 1)
+            # Single-preemptor must be placed
+            model.Add(sum(assign[preemptor_idx]) == 1)
         # Batch mode
         else:
             # There must be at least one placement of pending pods
             # (weak constraint to avoid trivial empty solution)
             # Below we will enforce non-degradation on priorities
-            model.Add(sum(placed[i] for i in pending_idxs) >= 1)
+            if pending_idxs:
+                model.Add(sum(placed[i] for i in pending_idxs) >= 1)
 
         #################################################
         # --- Placed by Priority Constraints ------------
         #################################################
-        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True) # priorities: high->low
-        
-        # External hints (placed_by_priority) constraints
+        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
+
+        # Hints path that used placed[i] → switch to sums of assign
         if use_hints and isinstance(hints, dict):
             raw = hints.get("placed_by_priority") or {}
-            # normalize to int keys/values, ignore non-positive
             exact = {int(k): int(v) for k, v in raw.items()
                     if str(k).lstrip("-").isdigit() and int(v) > 0}
             if exact:
-                # build cumulative >=pr demand from exact-tier hints
-                cum_need = {}
-                acc = 0
-                for priority in priorities:
-                    acc += exact.get(priority, 0)
-                    cum_need[priority] = acc
-                for priority in priorities:
-                    idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
-                    if not idxs_ge:
-                        continue
-                    # feasibility guards
-                    cap_ge  = sum(1 for i in idxs_ge if eligible_nodes[i]) # placeable upper bound
-                    base_ge = sum(1 for i in idxs_ge if i in running_idxs) # non-degradation baseline
-                    need_ge = cum_need.get(priority, 0)
-                    # lower bound for this tier
+                cum_need, acc = {}, 0
+                for pr in priorities:
+                    acc += exact.get(pr, 0)
+                    cum_need[pr] = acc
+                for pr in priorities:
+                    idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
+                    if not idxs_ge: continue
+                    cap_ge  = sum(1 for i in idxs_ge if eligible_nodes[i])
+                    base_ge = sum(1 for i in idxs_ge if i in running_idxs)
+                    need_ge = cum_need.get(pr, 0)
                     lower_bound = max(base_ge, min(need_ge, cap_ge))
-                    # in single-preemptor mode, don't push tiers at/under the preemptor
-                    if single_preemptor_mode and preemptor_idx is not None and priority <= preemptor_priority:
+                    if single_preemptor_mode and preemptor_idx is not None and pr <= preemptor_priority:
                         lower_bound = base_ge
                     if lower_bound > 0:
                         model.Add(sum(placed[i] for i in idxs_ge) >= lower_bound)
-        
-        # If no hints, enforce non-degradation per priority tier
         else:
-            for priority in priorities:
-                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
-                if not idxs_ge:
+            # Non-degradation (no hints)
+            for pr in priorities:
+                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
+                if not idxs_ge: 
                     continue
                 base_ge = sum(1 for i in idxs_ge if i in running_idxs)
-                # weak constraint: non-degradation at ≥priority
-                # to avoid trivial empty solution
-                model.Add(sum(placed[i] for i in idxs_ge) >= base_ge)
-        
-        # Enforce at least one tier to strictly improve
+                model.Add(sum(placed[i] for i in idxs_ge) >= base_ge)   # <- placed_b
+
+        # Strict improvement
         if use_strictly_improving:
-            # Require at least one strict improvement on some priority tier
-            # To avoid trivial solutions that do not improve anything
-            improved_at = [] # improved_at[priority] == 1 means strictly improved at ≥pr
-            for priority in priorities:
-                # If you have single-preemptor rules and want to forbid improving ≥ preemptor tier:
-                if single_preemptor_mode and preemptor_idx is not None and priority >= preemptor_priority:
+            improved_at = []
+            for pr in priorities:
+                if single_preemptor_mode and preemptor_idx is not None and pr >= preemptor_priority:
                     continue
-                # Get indices of pods at this tier or above
-                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
-                if not idxs_ge: # no pods at this tier
+                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
+                if not idxs_ge: 
                     continue
-                # Current baseline at this tier (running count)
                 base_ge = sum(1 for i in idxs_ge if i in running_idxs)
-                # Strictly improved at ≥pr"
-                improved = model.NewBoolVar(f"strict_improve_ge_{priority}")
-                # If imp==1, enforce ≥ base+1 at that tier
-                # +1 means one more placement than current running count at that tier
-                model.Add(sum(placed[i] for i in idxs_ge) >= base_ge + 1).OnlyEnforceIf(improved)
-                # If imp==0, no extra requirement for that tier (non-degradation already applies)
+                improved = model.NewBoolVar(f"strict_improve_ge_{pr}")
+                model.Add(sum(placed[i] for i in idxs_ge) >= base_ge + 1).OnlyEnforceIf(improved)  # <- placed_b
                 improved_at.append(improved)
             if improved_at:
-                model.AddBoolOr(improved_at) # at least one tier must strictly improve.
+                model.AddBoolOr(improved_at)
 
         #################################################
         # --- Symmetry breaking (optional, safe)---------
         #################################################
+        for i in range(num_pods):
+            model.AddDecisionStrategy(assign[i], cp_model.CHOOSE_FIRST, cp_model.SELECT_MAX_VALUE)
+
         if use_symmetry_breaking:
-            # Signatures for equivalence
-            def _pod_signature(i):
-                return (
-                    p_req_cpu_m(i),
-                    p_req_mem_bytes(i),
-                    p_priority(i),
-                    bool(p_protected(i)),
-                )
-
-            def _node_signature(j):
-                return (
-                    n_cap_cpu_m(j),
-                    n_cap_mem_bytes(j),
-                    # If you add labels: tuple(sorted(nodes[j].get("labels", {}).items()))
-                )
-
-            # Precompute a stable eligible list tuple for comparison
-            eligible_tuple = [tuple(eligible_nodes[i]) for i in range(num_pods)]
-
-            # ---------- (A) Equivalent nodes: non-decreasing loads ----------
-            # This one is generally safe.
-            node_cpu_load = [None] * num_nodes
-            node_mem_load = [None] * num_nodes
+            # node loads from assignments
+            node_cpu_load = []
             for j in range(num_nodes):
-                cpu_terms, mem_terms = [], []
+                terms = []
                 for i in range(num_pods):
-                    if j in eligible_nodes[i]:
-                        idx = eligible_nodes[i].index(j)
-                        cpu_terms.append(assign[i][idx] * p_req_cpu_m(i))
-                        mem_terms.append(assign[i][idx] * p_req_mem_bytes(i))
-                node_cpu_load[j] = model.NewIntVar(0, n_cap_cpu_m(j), f"cpu_load_node_{j}")
-                node_mem_load[j] = model.NewIntVar(0, n_cap_mem_bytes(j), f"mem_load_node_{j}")
-                model.Add(node_cpu_load[j] == (sum(cpu_terms) if cpu_terms else 0))
-                model.Add(node_mem_load[j] == (sum(mem_terms) if mem_terms else 0))
+                    pos = eligible_pos[i].get(j)
+                    if pos is not None:
+                        terms.append(assign[i][pos] * p_req_cpu_m(i))
+                v = model.NewIntVar(0, n_cap_cpu_m(j), f"cpu_load_node_{j}")
+                model.Add(v == (sum(terms) if terms else 0))
+                node_cpu_load.append(v)
 
+            # baseline: protected-staying + singleton-domain pods
+            base_cpu = [0] * num_nodes
+            for i in range(num_pods):
+                dom = eligible_nodes[i]
+                if p_protected(i) and p_node_j(i) in dom:
+                    base_cpu[p_node_j(i)] += p_req_cpu_m(i)
+                elif len(dom) == 1:
+                    base_cpu[dom[0]] += p_req_cpu_m(i)
+
+            # free load per node and chain within equivalent groups
+            free_cpu = []
             for j in range(num_nodes):
-                sigj = _node_signature(j)
-                for k in range(j + 1, num_nodes):
-                    if _node_signature(k) == sigj:
-                        model.Add(node_cpu_load[j] <= node_cpu_load[k])
-                        model.Add(node_mem_load[j] <= node_mem_load[k])
+                v = model.NewIntVar(0, n_cap_cpu_m(j), f"free_cpu_{j}")
+                model.Add(v == node_cpu_load[j] - base_cpu[j])
+                free_cpu.append(v)
 
-            # ---------- (B) Equivalent pods: guarded lex ordering on one-hots ----------
-            # Apply only to: pending, non-protected, same priority, identical eligibility lists.
-            # This avoids conflicts with fixed placements and domain differences.
-            # For p1 < p2, enforce that p1 picks an equal/earlier node than p2 (lex).
-            for p1 in range(num_pods):
-                if p_protected(p1) or (p_node_j(p1) is not None):
-                    continue  # skip fixed/protected/running
-                sig1 = _pod_signature(p1)
-                elig1 = eligible_tuple[p1]
-                if not elig1:
-                    continue  # unplaceable → nothing to order
-                for p2 in range(p1 + 1, num_pods):
-                    if p_protected(p2) or (p_node_j(p2) is not None):
-                        continue
-                    if _pod_signature(p2) != sig1:
-                        continue
-                    if eligible_tuple[p2] != elig1:
-                        continue  # domains differ → do not couple
+            def node_signature_for_sb(j):
+                domain_mask = tuple(eligible_pos[i].get(j) is not None for i in range(num_pods))
+                return (n_cap_cpu_m(j), n_cap_mem_bytes(j), base_cpu[j], domain_mask)
 
-                    # Guard by both placed
-                    both_placed = model.NewBoolVar(f"both_placed_{p1}_{p2}")
-                    # both_placed ⇔ (placed[p1] & placed[p2])
-                    # Implement as both_placed <= placed[p1], both_placed <= placed[p2], and
-                    # placed[p1] + placed[p2] - 1 <= both_placed
-                    model.Add(both_placed <= placed[p1])
-                    model.Add(both_placed <= placed[p2])
-                    model.Add(placed[p1] + placed[p2] - 1 <= both_placed)
+            groups = {}
+            for j in range(num_nodes):
+                groups.setdefault(node_signature_for_sb(j), []).append(j)
 
-                    # Lex (prefix) ordering on their assignment vectors
-                    # Let a1[t] = assign[p1][t], a2[t] = assign[p2][t] aligned over identical eligible lists
-                    # For each prefix k: sum_{t<=k} a1[t] >= sum_{t<=k} a2[t]  (only if both placed)
-                    for k in range(len(elig1)):
-                        lhs = sum(assign[p1][t] for t in range(k + 1))
-                        rhs = sum(assign[p2][t] for t in range(k + 1))
-                        # lhs >= rhs when both placed; otherwise no restriction
-                        model.Add(lhs >= rhs).OnlyEnforceIf(both_placed)
+            for group in groups.values():
+                group.sort()
+                for a, b in zip(group, group[1:]):
+                    model.Add(free_cpu[a] <= free_cpu[b])
+            
+            # Within equivalent pods, prefer lower-indexed to get assigned first
+            chosen_idx = []
+            for i in range(num_pods):
+                L = len(eligible_nodes[i])
+                if L == 0:
+                    chosen_idx.append(None)
+                    continue
+                ci = model.NewIntVar(0, L, f"chosen_idx_{i}")
+                chosen_idx.append(ci)
+                model.Add(ci == 0).OnlyEnforceIf(placed[i].Not())
+                for t in range(L):
+                    model.Add(ci == t + 1).OnlyEnforceIf(assign[i][t])
 
-                
+            def pod_sig(i):
+                return (p_req_cpu_m(i), p_req_mem_bytes(i), p_priority(i), tuple(eligible_nodes[i]))
+
+            classes = {}
+            for i in range(num_pods):
+                if p_protected(i) or p_node_j(i) is not None or not eligible_nodes[i]:
+                    continue
+                classes.setdefault(pod_sig(i), []).append(i)
+
+            for idxs in classes.values():
+                idxs.sort()
+                for a, b in zip(idxs, idxs[1:]):
+                    model.Add(chosen_idx[a] <= chosen_idx[b]).OnlyEnforceIf([placed[a], placed[b]])
+        
         #################################################
         # --- Lexicographic optimization (sequential) ---
         # Order per tier (≥priority):
         #   1) maximize placed
         #   2) minimize moves (running only)
         #################################################
+        def move_term(i):
+            pos = eligible_pos[i].get(p_node_j(i))
+            return placed[i] if pos is None else placed[i] - assign[i][pos]
+
+        def tier_moves_expr(pr):
+            idxs = [i for i in running_idxs if p_priority(i) >= pr]
+            return sum(move_term(i) for i in idxs)
+
+        def _apply_solution_as_hint():
+            # Clear previous hints and push only the assign[] decisions
+            model.ClearHints()
+            for i in range(num_pods):
+                for local, _ in enumerate(eligible_nodes[i]):
+                    model.AddHint(assign[i][local], int(solver.Value(assign[i][local])))
         
         # Helper to set objective and solve one sub-stage.
         def _solve_stage(obj_expr, sense: str) -> int:
-            # set objective
-            if sense == "max":
-                model.Maximize(obj_expr)
-            else:
-                model.Minimize(obj_expr)
-            # give only the remaining time to this stage
+            if sense == "max": model.Maximize(obj_expr)
+            else:              model.Minimize(obj_expr)
             rem = _remaining_seconds()
             if rem is not None:
-                # CP-SAT accepts fractional seconds; keep a tiny epsilon if almost zero
-                solver.parameters.max_time_in_seconds = max(1e-3, rem-0.05)
-            # if rem is None, we leave the param unchanged => unlimited
+                solver.parameters.max_time_in_seconds = max(1e-3, rem - 0.05)
             return solver.Solve(model)
-        
-        # Build cumulative placed count vars: placed_ge[pr] = #placed with priority ≥ pr
-        placed_ge: dict[int, cp_model.IntVar] = {}
+
+        placement_all_optimal = True
         for pr in priorities:
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
-            if not idxs_ge:
+            if not idxs_ge: 
                 continue
-            v = model.NewIntVar(0, len(idxs_ge), f"placed_ge_{pr}")
-            model.Add(v == sum(placed[i] for i in idxs_ge))
-            placed_ge[pr] = v
 
-        # Build cumulative moves-by-priority: moves_ge[pr] = #moves among running pods with priority ≥ pr
-        moves_ge: dict[int, cp_model.IntVar] = {}
-        for pr in priorities:
-            idxs_ge_running = [i for i in running_idxs if p_priority(i) >= pr]
-            v = model.NewIntVar(0, len(idxs_ge_running), f"moves_ge_{pr}")
-            if idxs_ge_running:
-                model.Add(v == sum(move[i] for i in idxs_ge_running))
-            else:
-                model.Add(v == 0)
-            moves_ge[pr] = v
-        move_terms = [move[i] for i in running_idxs if move[i] is not None]
-        total_moves = model.NewIntVar(0, len(move_terms), "total_moves")
-        if move_terms:
-            model.Add(total_moves == sum(move_terms))
-        else:
-            model.Add(total_moves == 0)
-
-        active_tiers = [pr for pr in priorities if pr in placed_ge]
-        if not active_tiers:
-            return {"status": self._status_str("NO_TIERS")}
-
-        # (A) Maximize cumulative placements at ≥ priority, one tier at a time
-        # Lock each tier's plateau before moving to the next tier.
-        placement_all_optimal = True
-        
-        for pr in active_tiers:
-            # 1) Maximize placements at ≥pr
-            status = _solve_stage(placed_ge[pr], "max")
+            placed_expr = sum(placed[i] for i in idxs_ge)
+            status = _solve_stage(placed_expr, "max")
             if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 return {"status": self._status_str(status)}
             if status != cp_model.OPTIMAL:
                 placement_all_optimal = False
-            best_placed = solver.Value(placed_ge[pr])
-            model.Add(placed_ge[pr] == best_placed)  # lock plateau
+            best_placed = solver.Value(placed_expr)
+            model.Add(placed_expr == best_placed)
+            _apply_solution_as_hint()
 
-            # 2) Minimize moves at ≥pr (protect high-priority moves first)
-            status = _solve_stage(moves_ge[pr], "min")
+            moves_expr = tier_moves_expr(pr)
+            status = _solve_stage(moves_expr, "min")
             if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 return {"status": self._status_str(status)}
-            best_moves = solver.Value(moves_ge[pr])
-            model.Add(moves_ge[pr] == best_moves)  # lock moves at this tier
+            best_moves = solver.Value(moves_expr)
+            model.Add(moves_expr == best_moves)
+            _apply_solution_as_hint()
 
         # compute final status per your rule
         if placement_all_optimal and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -493,21 +448,18 @@ class CPSATSolver:
         #################################################
         # --- Extract and Return Plan -------------------
         #################################################
-        placements = []
-        evictions  = []
-
+        placements, evictions = [], []
         for i in range(num_pods):
             was_running = (p_node_j(i) is not None)
-            now_placed  = int(solver.Value(placed[i])) == 1
-            if was_running and not now_placed:
+            placed_now = (solver.Value(placed[i]) == 1)
+            if was_running and not placed_now:
                 evictions.append({
                     "pod": {"uid": p_uid(i), "namespace": p_namespace(i), "name": p_name(i)},
                     "node": nodes[p_node_j(i)]["name"],
                 })
                 continue
-            # Placed pods
-            if int(solver.Value(placed[i])) == 1 and eligible_nodes[i]:
-                # find the chosen node among eligible list
+
+            if placed_now and eligible_nodes[i]:
                 chosen_j = None
                 for local, j in enumerate(eligible_nodes[i]):
                     if int(solver.Value(assign[i][local])) == 1:
@@ -515,15 +467,11 @@ class CPSATSolver:
                         break
                 if chosen_j is None:
                     continue
-                orig_j = p_node_j(i) # None for pending pods
-                # Emit placement only if this pod is pending OR it actually moved
-                if orig_j is None or (move[i] is not None and int(solver.Value(move[i])) == 1):
+                orig_j = p_node_j(i)
+                moved = (orig_j is None) or (eligible_pos[i].get(orig_j) is None) or (chosen_j != orig_j)
+                if moved:
                     placements.append({
-                        "pod": {
-                            "uid": p_uid(i),
-                            "namespace": p_namespace(i),
-                            "name": p_name(i),
-                        },
+                        "pod": {"uid": p_uid(i), "namespace": p_namespace(i), "name": p_name(i)},
                         "from_node": nodes[orig_j]["name"] if orig_j is not None else "",
                         "to_node": nodes[chosen_j]["name"],
                     })
