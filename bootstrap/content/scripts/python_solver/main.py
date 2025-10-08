@@ -74,7 +74,7 @@ class CPSATSolver:
         solver.parameters.log_search_progress       = log_progress
         solver.parameters.log_subsolver_statistics  = log_subsolvers
         solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
-        solver.parameters.relative_gap_limit        = 0.00 # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
+        solver.parameters.relative_gap_limit        = 0.05 # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
         solver.log_callback = lambda line: (
             print(line, file=sys.stderr, flush=True) if line else None
         )

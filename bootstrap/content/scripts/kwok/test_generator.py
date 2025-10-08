@@ -1119,7 +1119,7 @@ class KwokTestGenerator:
         instance = {
             "timeout_ms": int(self.args.solver_timeout_ms),
             "ignore_affinity": True,
-            "log_progress": False,
+            "log_progress": True,
             "use_hints": False,
             "hints": None,
             "workers": 0,
@@ -1136,18 +1136,32 @@ class KwokTestGenerator:
                 json.dump(instance, f, indent=2)
 
         cmd = shlex.split(self.args.solver_cmd)
-
         t0 = time.time()
-        proc = subprocess.run(
+        completed = subprocess.run(
             cmd,
             input=json.dumps(instance).encode("utf-8"),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
         )
+        out_b = completed.stdout or b""
+        err_b = completed.stderr or b""
+        
         elapsed_ms = int((time.time() - t0) * 1000)
 
-        out = proc.stdout.decode("utf-8", errors="replace").strip()
+        out = out_b.decode("utf-8", errors="replace").strip()
+        err = err_b.decode("utf-8", errors="replace").strip()
+
+        # Show raw IO once after process end
+        if self.args.show_solver_exitlog:
+            if err:
+                print("[solver:stderr]", file=sys.stderr)
+                print(err, file=sys.stderr)
+            if out:
+                print("[solver:stdout]")
+                print(out)
+
+        # Parse JSON from stdout
         try:
             resp = json.loads(out) if out else {}
         except Exception:
@@ -1160,10 +1174,9 @@ class KwokTestGenerator:
                 json.dump(resp, f, indent=2)
 
         LOG.info(
-            "direct-solver: status=%s placements=%d evictions=%d time_ms=%d",
+            "direct-solver: status=%s placements=%d time_ms=%d",
             resp.get("status"),
             len(resp.get("placements", []) or []),
-            len(resp.get("evictions", []) or []),
             elapsed_ms,
         )
 
@@ -2559,6 +2572,9 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="If set, write the exact JSON sent to the solver to this path.")
     ap.add_argument("--export-solver-output", dest="export_solver_output", type=Path, default=None,
                     help="If set, write the solver JSON response to this path.")
+    ap.add_argument("--show-solver-exitlog", action="store_true",
+                    help="After the solver exits, print its raw stdout/stderr once (useful if not streaming)."
+    )
 
     return ap
 
