@@ -938,56 +938,102 @@ class KwokTestGenerator:
     ##############################################
     # ------------ Workload helpers ------------
     ##############################################
+    def _make_standalone_pod_specs_only(self, rng, ta) -> list[dict]:
+        """
+        Build standalone pod specs (name/req_cpu_m/req_mem_bytes/priority) without applying to a cluster.
+        Naming mirrors _apply_standalone_pods: pod-<idx>-p<prio>.
+        Uses the already resolved parts from TestConfigApplied.
+        """
+        specs: list[dict] = []
+        n = len(ta.pod_parts_cpu_m)
+        for i in range(n):
+            prio = rng.randint(1, max(1, ta.num_priorities))
+            name = f"pod-{i+1:03d}-p{prio}"
+            specs.append({
+                "name": name,
+                "priority": int(prio),
+                "req_cpu_m": int(ta.pod_parts_cpu_m[i]),
+                "req_mem_bytes": int(ta.pod_parts_mem_b[i]),
+            })
+        return specs
+
+    def _make_replicaset_specs_only(self, rng, ta) -> list[dict]:
+        """
+        Build ReplicaSet specs (name/req_cpu_m/req_mem_bytes/priority/replicas) without applying.
+        Naming mirrors _apply_replicasets: rs-<idx>-p<prio>.
+        Uses rs_sets + rs_parts_* from TestConfigApplied.
+        """
+        rs_specs: list[dict] = []
+        if not getattr(ta, "rs_sets", None):
+            return rs_specs
+        for idx, replicas in enumerate(ta.rs_sets, start=1):
+            prio = rng.randint(1, max(1, ta.num_priorities))
+            name = f"rs-{idx:02d}-p{prio}"
+            rs_specs.append({
+                "name": name,
+                "priority": int(prio),
+                "req_cpu_m": int(ta.rs_parts_cpu_m[idx-1]),
+                "req_mem_bytes": int(ta.rs_parts_mem_b[idx-1]),
+                "replicas": int(replicas),
+            })
+        return rs_specs
+    
     def _apply_standalone_pods(self, ta: TestConfigApplied, rng: random.Random) -> List[Dict[str, object]]:
         """
         Create standalone pods in the given namespace with the specified specs.
-        Returns a list of pod specs created.
+        Returns a list of pod specs created. In direct mode, just returns specs (no cluster work).
         """
-        cpu_parts = ta.pod_parts_cpu_m
-        mem_parts = ta.pod_parts_mem_b
-        specs: List[Dict[str, object]] = []
+        # 1) Generate specs once (single source of truth)
+        specs = self._make_standalone_pod_specs_only(rng, ta)
+
+        # 2) Direct mode? don't touch the cluster
+        if self.args.direct_solving:
+            return specs
+
+        # 3) Normal mode: convert specs -> YAML & apply
         names: List[str] = []
-        for i in range(ta.num_pods):
-            prio = rng.randint(1, max(1, ta.num_priorities))
-            pc = f"p{prio}"
-            name = f"pod-{i+1:03d}-{pc}"
-            cpu_m = max(1, int(cpu_parts[i]))
-            mem_b = max(1, int(mem_parts[i]))
-            cpu_m_str = qty_to_mcpu_str(cpu_m)
-            mem_b_str = qty_to_bytes_str(mem_b)
-            KwokTestGenerator._apply_yaml(self.ctx, yaml_kwok_pod(ta.namespace, name, cpu_m_str, mem_b_str, pc))
-            names.append(name)
-            specs.append({"name": name, "cpu_m": cpu_m, "mem_b": mem_b, "priority": pc})
-            if ta.wait_pod_mode == "running":
-                _ = KwokTestGenerator._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
-        if ta.wait_pod_mode in ("exist", "ready"):
+        for s in specs:
+            pc = f"p{int(s['priority'])}"
+            cpu_m_str = qty_to_mcpu_str(int(s["req_cpu_m"]))
+            mem_b_str = qty_to_bytes_str(int(s["req_mem_bytes"]))
+            self._apply_yaml(self.ctx, yaml_kwok_pod(ta.namespace, s["name"], cpu_m_str, mem_b_str, pc))
+            names.append(s["name"])
+
+        # Wait (as before)
+        if ta.wait_pod_mode == "running":
             for name in names:
                 _ = KwokTestGenerator._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
-        LOG.info(f"created {len(specs)} standalone pods")
+        elif ta.wait_pod_mode in ("exist", "ready"):
+            for name in names:
+                _ = KwokTestGenerator._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
+
+        LOG.info("created %d standalone pods", len(specs))
+        # For compatibility with the rest of the pipeline, return a normalized list
+        # (keep field names you already used elsewhere if needed)
         return specs
 
     def _apply_replicasets(self, ta: TestConfigApplied, rng: random.Random) -> List[Dict[str, object]]:
         """
         Create ReplicaSets in the given namespace with the specified specs.
-        Returns a list of replicaset specs created.
+        Returns a list of replicaset specs created. In direct mode, just returns specs (no cluster work).
         """
-        specs = []
-        replicas = ta.rs_sets
-        cpu_x    = ta.rs_parts_cpu_m
-        mem_x    = ta.rs_parts_mem_b
-        for i, count in enumerate(replicas, start=1):
-            prio = rng.randint(1, max(1, ta.num_priorities))
-            pc = f"p{prio}"
-            rsname = f"rs-{i:02d}-{pc}"
-            cpu_m_str = qty_to_mcpu_str(int(cpu_x[i-1]))
-            mem_b_str = qty_to_bytes_str(int(mem_x[i-1]))
-            specs.append({
-                "name": rsname, "replicas": int(count),
-                "cpu_m": int(cpu_x[i-1]), "mem_b": int(mem_x[i-1]), "priority": pc
-            })
-            self._apply_yaml(self.ctx, yaml_kwok_rs(ta.namespace, rsname, count, cpu_m_str, mem_b_str, pc))
-            _ = self._wait_rs_pods(self.ctx, rsname, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
-        LOG.info(f"created {len(specs)} ReplicaSets with total {sum(s['replicas'] for s in specs)} (=num_pods)")
+        # 1) Generate specs once (single source of truth)
+        specs = self._make_replicaset_specs_only(rng, ta)
+
+        # 2) Direct mode? don't touch the cluster
+        if self.args.direct_solving:
+            return specs
+
+        # 3) Normal mode: convert specs -> YAML & apply
+        for s in specs:
+            pc = f"p{int(s['priority'])}"
+            cpu_m_str = qty_to_mcpu_str(int(s["req_cpu_m"]))
+            mem_b_str = qty_to_bytes_str(int(s["req_mem_bytes"]))
+            self._apply_yaml(self.ctx, yaml_kwok_rs(ta.namespace, s["name"], int(s["replicas"]), cpu_m_str, mem_b_str, pc))
+            _ = self._wait_rs_pods(self.ctx, s["name"], ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
+
+        LOG.info("created %d ReplicaSets with total %d (=num_pods)",
+                len(specs), sum(int(s['replicas']) for s in specs))
         return specs
 
     @staticmethod
@@ -1030,6 +1076,103 @@ class KwokTestGenerator:
             return int((json.loads(r.stdout).get("spec") or {}).get("replicas") or 0)
         except Exception:
             return None
+
+    ######################################################
+    # ---------- Solve directly ------------------
+    ######################################################
+    def _solve_direct_from_specs(self, ta, seed, pod_specs, rs_specs) -> tuple[dict, dict]:
+        # Build nodes (numeric capacities)
+        nodes = [{
+            "name": f"node-{j}",
+            "cap_cpu_m": int(ta.node_cpu_m),
+            "cap_mem_bytes": int(ta.node_mem_b),
+        } for j in range(ta.num_nodes)]
+
+        # Expand pods; keep uid -> priority map for stats
+        pods = []
+        uid_to_priority: dict[str,int] = {}
+        uid_counter = 0
+
+        def _emit(name, prio, cpu_m, mem_b):
+            nonlocal uid_counter
+            uid_counter += 1
+            uid = f"pod-{seed}-{uid_counter}"
+            pods.append({
+                "uid": uid,
+                "namespace": ta.namespace,
+                "name": name,
+                "req_cpu_m": int(cpu_m),
+                "req_mem_bytes": int(mem_b),
+                "priority": int(prio),
+                "protected": False,
+                "node": "",
+            })
+            uid_to_priority[uid] = int(prio)
+
+        for s in pod_specs:
+            _emit(s["name"], s["priority"], s["req_cpu_m"], s["req_mem_bytes"])
+
+        for rs in rs_specs:
+            for r in range(int(rs["replicas"])):
+                _emit(f'{rs["name"]}-{r}', rs["priority"], rs["req_cpu_m"], rs["req_mem_bytes"])
+
+        instance = {
+            "timeout_ms": int(self.args.solver_timeout_ms),
+            "ignore_affinity": True,
+            "log_progress": False,
+            "use_hints": False,
+            "hints": None,
+            "workers": 0,
+            "max_trials": 0,
+            "preemptor": None,
+            "nodes": nodes,
+            "pods": pods,
+        }
+
+        # Export input if requested
+        if self.args.export_solver_input:
+            Path(self.args.export_solver_input).parent.mkdir(parents=True, exist_ok=True)
+            with open(self.args.export_solver_input, "w", encoding="utf-8") as f:
+                json.dump(instance, f, indent=2)
+
+        cmd = shlex.split(self.args.solver_cmd)
+
+        t0 = time.time()
+        proc = subprocess.run(
+            cmd,
+            input=json.dumps(instance).encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        elapsed_ms = int((time.time() - t0) * 1000)
+
+        out = proc.stdout.decode("utf-8", errors="replace").strip()
+        try:
+            resp = json.loads(out) if out else {}
+        except Exception:
+            resp = {"status": "PY_SOLVER_STDOUT_PARSE_ERROR", "raw": out}
+
+        # Export output if requested
+        if self.args.export_solver_output:
+            Path(self.args.export_solver_output).parent.mkdir(parents=True, exist_ok=True)
+            with open(self.args.export_solver_output, "w", encoding="utf-8") as f:
+                json.dump(resp, f, indent=2)
+
+        LOG.info(
+            "direct-solver: status=%s placements=%d evictions=%d time_ms=%d",
+            resp.get("status"),
+            len(resp.get("placements", []) or []),
+            len(resp.get("evictions", []) or []),
+            elapsed_ms,
+        )
+
+        meta = {
+            "uid_to_priority": uid_to_priority,
+            "total_pods": len(pods),
+            "elapsed_ms": elapsed_ms,
+        }
+        return resp, meta
 
     ######################################################
     # ---------- Optimizer HTTP helpers ------------------
@@ -1746,213 +1889,331 @@ class KwokTestGenerator:
     ##############################################
     # ------------ Seed Run ----------------
     ##############################################
-    # ------ Single seed run ---------------------
-    def _run_single_seed(self, cfg: Path, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
+    def _execute_seed_direct(self, cfg: Path, seed: int, ta: "TestConfigApplied") -> bool:
         """
-        Run a single seed with the given applied config.
-        Returns True on success, False on failure.
+        Direct solving path (no cluster). Generates specs, calls the Python solver,
+        writes a compact CSV row, prints a summary with solver status + stats.
         """
+        from collections import Counter
+
+        phase = "direct_generate_specs"
+        LOG.info("phase=%s (no cluster work)", phase)
+        rng = seeded_random(seed, "base")
+
+        pod_specs: list[dict] = []
+        rs_specs:  list[dict] = []
+        if ta.num_replicaset > 0:
+            rs_specs = self._make_replicaset_specs_only(rng, ta)
+        else:
+            pod_specs = self._make_standalone_pod_specs_only(rng, ta)
+
+        phase = "direct_call_solver"
+        LOG.info("phase=%s", phase)
+        resp, meta = self._solve_direct_from_specs(ta, seed, pod_specs, rs_specs)
+
+        status = resp.get("status", "UNKNOWN")
+        placements = resp.get("placements", []) or []
+        placed_total = len(placements)
+        total_pods = int(meta.get("total_pods", 0))
+        unscheduled_total = max(0, total_pods - placed_total)
+        elapsed_ms = int(meta.get("elapsed_ms", 0))
+
+        # placed by priority
+        uid_to_priority: dict = meta.get("uid_to_priority", {})
+        placed_by_priority = Counter()
+        for pl in placements:
+            pod = pl.get("pod", {})
+            uid = pod.get("uid") or ""
+            pr = uid_to_priority.get(uid)
+            if pr is not None:
+                placed_by_priority[int(pr)] += 1
+
+        # Nice, stable per-priority view (high→low)
+        per_prio_str = ", ".join(
+            f"{p}:{placed_by_priority.get(p,0)}"
+            for p in sorted(set(uid_to_priority.values()), reverse=True)
+        )
+
+        LOG.info(
+            "solver status=%s time_ms=%d  placed=%d/%d  unscheduled=%d  placed_by_priority={%s}",
+            status, elapsed_ms, placed_total, total_pods, unscheduled_total, per_prio_str
+        )
+
+        phase = "direct_stats"
+        LOG.info("phase=%s", phase)
+
+        # Console summary line
+        self._print_seed_summary(
+            cfg, seed,
+            running=placed_total,
+            unscheduled=unscheduled_total,
+            note=f"direct-solving status={status} time_ms={elapsed_ms} placed_by_prio={{ {per_prio_str} }}"
+        )
+
+        # (Optional) append a compact CSV row for direct mode
+        row = {
+            "timestamp": get_timestamp(),
+            "kwok_config": str(cfg),
+            "seed_file": "",  # direct mode
+            "seed": str(seed),
+            "error": "",
+            "baseline": "{}",          # not applicable in direct mode
+            "best_name": "direct",     # label
+            "attempts": "[]",          # not applicable
+            "num_nodes": ta.num_nodes,
+            "num_pods": total_pods,
+            "num_priorities": ta.num_priorities,
+            "num_replicaset": ta.num_replicaset,
+            "num_replicas_per_rs_lo": split_interval(ta.num_replicas_per_rs)[0],
+            "num_replicas_per_rs_hi": split_interval(ta.num_replicas_per_rs)[1],
+            "node_cpu_m": int(ta.node_cpu_m),
+            "node_mem_b": int(ta.node_mem_b),
+            "cpu_per_pod_m_lo": split_interval(ta.cpu_per_pod_m)[0],
+            "cpu_per_pod_m_hi": split_interval(ta.cpu_per_pod_m)[1],
+            "mem_per_pod_b_lo": split_interval(ta.mem_per_pod_b)[0],
+            "mem_per_pod_b_hi": split_interval(ta.mem_per_pod_b)[1],
+            "util": f"{ta.util:.3f}",
+            "util_run_cpu": "",  # no cluster snapshot in direct mode
+            "util_run_mem": "",
+            "cpu_m_run": 0,
+            "mem_b_run": 0,
+            "wait_pod_mode": ta.wait_pod_mode or "",
+            "wait_pod_timeout_s": ta.wait_pod_timeout_s,
+            "settle_timeout_min_s": ta.settle_timeout_min_s,
+            "settle_timeout_max_s": ta.settle_timeout_max_s,
+            "running_count": int(placed_total),
+            "unscheduled_count": int(unscheduled_total),
+            "pods_run_by_node": "{}",              # no node snapshot in direct mode
+            "running_placed_by_prio": json.dumps({str(k): v for k, v in placed_by_priority.items()}, separators=(",",":"), sort_keys=True),
+            "unschedulable_by_prio": "{}",         # not computed in direct mode
+            "unscheduled": "{}",                   # names not tracked here
+            "running": "{}",                       # names not tracked here
+            "pod_node": "[]",                      # not tracked here
+        }
+        # Ensure header and append
+        self._append_result_csv(row)
+
+        return True
+
+
+    def _execute_seed_on_cluster(
+        self,
+        cfg: Path,
+        seen: set[int],
+        seed: int,
+        ta: "TestConfigApplied",
+        seed_file: Optional[str],
+        *,
+        run_idx: int = 1,
+    ) -> bool:
+        """
+        Full KWOK path: cluster creation, nodes, namespace/PC, apply workload,
+        optional optimizer trigger, settle, snapshot, CSV row, artifacts.
+        Mirrors the logic you had in _run_single_seed before.
+        """
+        phase = "start"
+        LOG.info(f"phase={phase}  cfg={cfg.stem}  seed={seed}")
+        start_time = time.time()
+        rng = seeded_random(seed, "base")
+
+        # cluster
+        phase = "ensure_cluster"
+        LOG.info(f"phase={phase}")
+        try:
+            KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.args.kwok_runtime, cfg, recreate=True)
+        except Exception as e:
+            tb = traceback.format_exc()
+            self._write_fail("seed", cfg, seed, phase, str(e), tb)
+            LOG.error(f"seed-failed; ensure cluster: {e}")
+            self._print_seed_summary(cfg, seed, None, None, "ensure cluster failed")
+            return False
+
+        # nodes
+        phase = "nodes"
+        LOG.info(f"phase={phase}")
+        try:
+            DEFAULT_POD_CAP = max(30, ta.num_pods * 3)
+            node_cpu_str = qty_to_mcpu_str(ta.node_cpu_m)
+            node_mem_str = qty_to_bytes_str(ta.node_mem_b)
+            LOG.info("sizing nodes: per-node cpu=%s, mem=%s", node_cpu_str, node_mem_str)
+            KwokTestGenerator._create_kwok_nodes(self.ctx, ta.num_nodes, node_cpu_str, node_mem_str, pods_cap=DEFAULT_POD_CAP)
+        except Exception as e:
+            tb = traceback.format_exc()
+            self._write_fail("seed", cfg, seed, "nodes", str(e), tb)
+            LOG.error(f"seed-failed; nodes setup: {e}")
+            self._print_seed_summary(cfg, seed, None, None, "nodes setup failed")
+            return False
+
+        # namespace & PCs
+        phase = "ensure_namespace"
+        LOG.info(f"phase={phase}")
+        self._ensure_namespace(self.ctx, ta.namespace)
+        self._ensure_service_account(self.ctx, ta.namespace, "default")
+
+        phase = "ensure_priority_classes"
+        LOG.info(f"phase={phase}")
+        self._ensure_priority_classes(self.ctx, ta.num_priorities, prefix="p", start=1)
+
+        # workload
+        phase = "apply_workload"
+        LOG.info(f"phase={phase}  mode={'RS' if ta.num_replicaset>0 else 'standalone'}")
+        pod_specs: list[dict] = []
+        rs_specs:  list[dict] = []
+        if ta.num_replicaset > 0:
+            rs_specs = self._apply_replicasets(ta, rng)
+        else:
+            pod_specs = self._apply_standalone_pods(ta, rng)
+
+        # optionally trigger the optimizer
+        if self.args.trigger_optimizer:
+            phase = "wait_settle_before_optimizer"
+            LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
+            time.sleep(ta.settle_timeout_min_s)
+            phase = "trigger_optimizer"
+            LOG.info(f"phase={phase} url={self.args.optimizer_url}")
+            code, body = self._trigger_optimizer_http(self.args.optimizer_url)
+            body_compact = (body or "").replace("\n", "\\n")
+            if len(body_compact) > 600:
+                body_compact = body_compact[:600] + "...(truncated)"
+            LOG.info(f"optimizer_response code={code} body={body_compact}")
+            self.last_optimize_json = None
+            if code and isinstance(body, str) and body.strip().startswith("{"):
+                try:
+                    self.last_optimize_json = json.loads(body)
+                except Exception:
+                    self.last_optimize_json = None
+
+        # wait & settle
+        phase = "wait_settle_before_check"
+        LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
+        time.sleep(ta.settle_timeout_min_s)
+        if ta.settle_timeout_max_s > 0 and getattr(self.args, "active_url", None):
+            LOG.info(f"waiting for inactive scheduler (max {ta.settle_timeout_max_s}s)")
+            _ = self._wait_optimizer_inactive_http(self.args.active_url, ta.settle_timeout_max_s)
+
+        # status snapshot
+        phase = "status_snapshot"
+        LOG.info(f"phase={phase}")
+        snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
+
+        # validate counts
+        running_count = len(snap.pods_running)
+        unsched_count = len(snap.pods_unscheduled)
+        if running_count + unsched_count != ta.num_pods:
+            phase = "snapshot_validation"
+            self._write_fail("seed", cfg, seed, phase,
+                            f"pod count mismatch: expected {ta.num_pods}, got {running_count}+{unsched_count}={running_count+unsched_count}")
+            LOG.warning("treating seed as failure: pod count mismatch: expected %d, got %d+%d=%d",
+                        ta.num_pods, running_count, unsched_count, running_count+unsched_count)
+            self._print_seed_summary(cfg, seed, running_count, unsched_count, "pod count mismatch")
+            return False
+
+        # optionally skip “all running”
+        if unsched_count == 0 and self.args.seeds_not_all_running not in (None, -1) and self.args.seeds_not_all_running > 0:
+            single_seed_mode = (self.args.seed is not None and self.args.seed_file is None and self.args.count is None)
+            under_limit = (self._saved_not_all_running < self.args.seeds_not_all_running)
+            if single_seed_mode or under_limit:
+                self._record_skipped_all_running_seed(cfg, seed, seed_file, running_count)
+                self._print_seed_summary(cfg, seed, running_count, unsched_count, "skipped (all pods running)")
+                LOG.info("skipped saving seed=%s (all pods running)", seed)
+                return True
+
+        # attempts / baseline (unchanged)
+        baseline, best_name, attempts, error = self._get_solver_attempts()
+
+        result_row = {
+            "timestamp": get_timestamp(),
+            "kwok_config": str(cfg),
+            "seed_file": seed_file,
+            "seed": str(seed),
+            "error": error,
+            "baseline": json.dumps(baseline, separators=(",", ":"), sort_keys=True),
+            "best_name": best_name,
+            "attempts": json.dumps(attempts, separators=(",", ":"), sort_keys=True),
+            "num_nodes": ta.num_nodes,
+            "num_pods": ta.num_pods,
+            "num_priorities": ta.num_priorities,
+            "num_replicaset": ta.num_replicaset,
+            "num_replicas_per_rs_lo": split_interval(ta.num_replicas_per_rs)[0],
+            "num_replicas_per_rs_hi": split_interval(ta.num_replicas_per_rs)[1],
+            "node_cpu_m": int(ta.node_cpu_m),
+            "node_mem_b": int(ta.node_mem_b),
+            "cpu_per_pod_m_lo": split_interval(ta.cpu_per_pod_m)[0],
+            "cpu_per_pod_m_hi": split_interval(ta.cpu_per_pod_m)[1],
+            "mem_per_pod_b_lo": split_interval(ta.mem_per_pod_b)[0],
+            "mem_per_pod_b_hi": split_interval(ta.mem_per_pod_b)[1],
+            "util": f"{ta.util:.3f}",
+            "util_run_cpu": f"{snap.cpu_run_util:.3f}",
+            "util_run_mem": f"{snap.mem_run_util:.3f}",
+            "cpu_m_run": int(sum(snap.cpu_req_by_node.values())),
+            "mem_b_run": int(sum(snap.mem_req_by_node.values())),
+            "wait_pod_mode": (ta.wait_pod_mode or ""),
+            "wait_pod_timeout_s": ta.wait_pod_timeout_s,
+            "settle_timeout_min_s": ta.settle_timeout_min_s,
+            "settle_timeout_max_s": ta.settle_timeout_max_s,
+            "running_count": int(running_count),
+            "unscheduled_count": int(unsched_count),
+            "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
+            "running_placed_by_prio": json.dumps(snap.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
+            "unschedulable_by_prio": json.dumps(snap.unschedulable_by_prio, separators=(",", ":"), sort_keys=True),
+            "unscheduled": "{" + ",".join(sorted(snap.pods_unscheduled)) + "}",
+            "running": "{" + ",".join(sorted([name for (name, _) in snap.pods_running])) + "}",
+            "pod_node": json.dumps(self._build_pod_node_list(
+                {name: node for (name, node) in snap.pods_running},
+                snap.pods_unscheduled, pod_specs, rs_specs
+            ), separators=(",", ":")),
+        }
+
+        phase = "write_results"
+        LOG.info(f"phase={phase}")
         exists = seed in seen
-        # If it already exists and overwrite is false, skip only when we don't want repeats
+        if self.args.overwrite and exists and (self.args.repeats <= 1):
+            removed = self._remove_seed_from_results(seed)
+            LOG.info("overwrite: removed %d existing row(s) for seed=%s", removed, seed)
+        self._append_result_csv(result_row)
+        LOG.info("appended to %s", self.results_f)
+
+        self._saved_not_all_running += 1
+
+        if self.args.save_solver_stats:
+            phase = "solver_stats"
+            LOG.info(f"phase={phase}")
+            self._write_solver_stats_json(seed, run_idx)
+
+        if self.args.save_scheduler_logs:
+            phase = "save_scheduler_logs"
+            LOG.info(f"phase={phase}")
+            self._save_scheduler_logs(seed, run_idx=run_idx)
+
+        LOG.info(f"seed run done; took {time.time()-start_time:.1f}s")
+        self._print_seed_summary(cfg, seed, running_count, unsched_count)
+        return True
+
+    def _run_single_seed(
+        self,
+        cfg: Path,
+        seen: set[int],
+        seed: int,
+        ta: "TestConfigApplied",
+        seed_file: Optional[str] = None,
+        *,
+        run_idx: int = 1
+    ) -> bool:
+        """
+        Dispatcher that picks the execution path and handles overwrite/exists
+        skip semantics common to both paths.
+        """
+        # existing-row skip: keep same behavior
+        exists = seed in seen
         if exists and (not self.args.overwrite) and (self.args.repeats <= 1):
             self._print_seed_summary(cfg, seed, None, None, "skip (exists; use --overwrite to replace)")
             LOG.info("skip seed=%s because it already exists and --overwrite is not set", seed)
             return True
-        phase = "start"
-        LOG.info(f"phase={phase}  cfg={cfg.stem}  seed={seed}")
-        try:
-            start_time = time.time()
-            rng = seeded_random(seed, "base")
 
-            # cluster
-            phase = "ensure_cluster"
-            LOG.info(f"phase={phase}")
-            try:
-                KwokTestGenerator._ensure_kwok_cluster(self.ctx, self.args.kwok_runtime, cfg, recreate=True)
-            except Exception as e:
-                tb = traceback.format_exc()
-                self._write_fail("seed", cfg, seed, phase, str(e), tb)
-                LOG.error(f"seed-failed; ensure cluster: {e}")
-                self._print_seed_summary(cfg, seed, None, None, "ensure cluster failed")
-                return False
-
-            # nodes
-            phase = "nodes"
-            LOG.info(f"phase={phase}")
-            try:
-                DEFAULT_POD_CAP = max(30, ta.num_pods * 3)
-                node_cpu_str = qty_to_mcpu_str(ta.node_cpu_m)
-                node_mem_str = qty_to_bytes_str(ta.node_mem_b)
-                LOG.info("sizing nodes: per-node cpu=%s, mem=%s", node_cpu_str, node_mem_str)
-                KwokTestGenerator._create_kwok_nodes(self.ctx, ta.num_nodes, node_cpu_str, node_mem_str, pods_cap=DEFAULT_POD_CAP)
-            except Exception as e:
-                tb = traceback.format_exc()
-                self._write_fail("seed", cfg, seed, "nodes", str(e), tb)
-                LOG.error(f"seed-failed; nodes setup: {e}")
-                self._print_seed_summary(cfg, seed, None, None, "nodes setup failed")
-                return False
-
-            # namespace & PCs
-            phase = "ensure_namespace"
-            LOG.info(f"phase={phase}")
-            self._ensure_namespace(self.ctx, ta.namespace)
-            self._ensure_service_account(self.ctx, ta.namespace, "default")
-
-            phase = "ensure_priority_classes"
-            LOG.info(f"phase={phase}")
-            self._ensure_priority_classes(self.ctx, ta.num_priorities, prefix="p", start=1)
-
-            # workload
-            phase = "apply_workload"
-            LOG.info(f"phase={phase}  mode={'RS' if ta.num_replicaset>0 else 'standalone'}")
-            pod_specs: list[dict] = []
-            rs_specs:  list[dict] = []
-            if ta.num_replicaset > 0:
-                rs_specs = self._apply_replicasets(ta, rng)
-            else:
-                pod_specs = self._apply_standalone_pods(ta, rng)
-            
-            # optionally trigger the optimizer
-            if self.args.trigger_optimizer:
-                phase = "wait_settle_before_optimizer"
-                LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
-                time.sleep(ta.settle_timeout_min_s)
-                phase = "trigger_optimizer"
-                LOG.info(f"phase={phase} url={self.args.optimizer_url}")
-                code, body = self._trigger_optimizer_http(self.args.optimizer_url)
-                # Log a compact, single-line body to avoid bloating logs
-                body_compact = (body or "").replace("\n", "\\n")
-                if len(body_compact) > 600:
-                    body_compact = body_compact[:600] + "...(truncated)"
-                LOG.info(f"optimizer_response code={code} body={body_compact}")
-                # Best-effort parse and remember JSON for later append use
-                self.last_optimize_json = None
-                if code and isinstance(body, str) and body.strip().startswith("{"):
-                    try:
-                        self.last_optimize_json = json.loads(body)
-                    except Exception:
-                        self.last_optimize_json = None
-
-            # wait & settle
-            phase = "wait_settle_before_check"
-            LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
-            time.sleep(ta.settle_timeout_min_s)
-            if ta.settle_timeout_max_s > 0:
-                LOG.info(f"waiting for inactive scheduler (max {ta.settle_timeout_max_s}s)")
-                # Prefer active-wait if an endpoint is configured; otherwise fall back to sleep.
-                if getattr(self.args, "active_url", None):
-                    became_inactive = self._wait_optimizer_inactive_http(self.args.active_url, ta.settle_timeout_max_s)
-                    if not became_inactive:
-                        LOG.info("did not observe inactive within settle-timeout; proceeding")
-
-            # status snapshot
-            phase = "status_snapshot"
-            LOG.info(f"phase={phase}")
-            snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
-            
-            # require at least one running pod to consider the seed successful
-            running_count = len(snap.pods_running)
-            unsched_count = len(snap.pods_unscheduled)
-            if running_count+unsched_count != ta.num_pods:
-                phase = "snapshot_validation"
-                self._write_fail("seed", cfg, seed, phase, f"pod count mismatch: expected {ta.num_pods}, got {running_count}+{unsched_count}={running_count+unsched_count}")
-                LOG.warning("treating seed as failure: pod count mismatch: expected %d, got %d+%d=%d", ta.num_pods, running_count, unsched_count, running_count+unsched_count)
-                self._print_seed_summary(cfg, seed, running_count, unsched_count, "pod count mismatch")
-                return False
-
-            # if requested, skip seed if all pods are running
-            if unsched_count == 0 and self.args.seeds_not_all_running is not None and self.args.seeds_not_all_running > 0:
-                single_seed_mode = (self.args.seed is not None and self.args.seed_file is None and self.args.count is None)
-                under_limit = (self.args.seeds_not_all_running > 0 and
-                                self._saved_not_all_running < self.args.seeds_not_all_running)
-                if single_seed_mode or under_limit:
-                    self._record_skipped_all_running_seed(cfg, seed, seed_file, running_count)
-                    self._print_seed_summary(cfg, seed, running_count, unsched_count, "skipped (all pods running)")
-                    LOG.info("skipped saving seed=%s (all pods running)", seed)
-                    return True
-            
-            # Attempts (all) + best name
-            baseline, best_name, attempts, error = self._get_solver_attempts()
-            result_row = {
-                "timestamp": get_timestamp(),
-                "kwok_config": str(cfg),
-                "seed_file": seed_file,
-                "seed": str(seed),
-                "error": error,
-                "baseline": json.dumps(baseline, separators=(",", ":"), sort_keys=True),
-                "best_name": best_name,
-                "attempts": json.dumps(attempts, separators=(",", ":"), sort_keys=True),
-                "num_nodes": ta.num_nodes,
-                "num_pods": ta.num_pods,
-                "num_priorities": ta.num_priorities,
-                "num_replicaset": ta.num_replicaset,
-                "num_replicas_per_rs_lo": split_interval(ta.num_replicas_per_rs)[0],
-                "num_replicas_per_rs_hi": split_interval(ta.num_replicas_per_rs)[1],
-                "node_cpu_m": int(ta.node_cpu_m),
-                "node_mem_b": int(ta.node_mem_b),
-                "cpu_per_pod_m_lo": split_interval(ta.cpu_per_pod_m)[0],
-                "cpu_per_pod_m_hi": split_interval(ta.cpu_per_pod_m)[1],
-                "mem_per_pod_b_lo": split_interval(ta.mem_per_pod_b)[0],
-                "mem_per_pod_b_hi": split_interval(ta.mem_per_pod_b)[1],
-                "util": f"{ta.util:.3f}",
-                "util_run_cpu": f"{snap.cpu_run_util:.3f}",
-                "util_run_mem": f"{snap.mem_run_util:.3f}",
-                "cpu_m_run": int(sum(snap.cpu_req_by_node.values())),
-                "mem_b_run": int(sum(snap.mem_req_by_node.values())),
-                "wait_pod_mode": (ta.wait_pod_mode or ""),
-                "wait_pod_timeout_s": ta.wait_pod_timeout_s,
-                "settle_timeout_min_s": ta.settle_timeout_min_s,
-                "settle_timeout_max_s": ta.settle_timeout_max_s,
-                "running_count": int(running_count),
-                "unscheduled_count": int(unsched_count),
-                "pods_run_by_node": json.dumps(snap.pods_run_by_node, separators=(",", ":")),
-                "running_placed_by_prio": json.dumps(snap.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
-                "unschedulable_by_prio": json.dumps(snap.unschedulable_by_prio, separators=(",", ":"), sort_keys=True),
-                "unscheduled": "{" + ",".join(sorted(snap.pods_unscheduled)) + "}",
-                "running": "{" + ",".join(sorted([name for (name, _) in snap.pods_running])) + "}",
-                "pod_node": json.dumps(self._build_pod_node_list({name: node for (name, node) in snap.pods_running}, snap.pods_unscheduled, pod_specs, rs_specs), separators=(",", ":")),
-            }
-
-            phase = "write_results"
-            LOG.info(f"phase={phase}")
-            # When overwriting and NOT collecting repeats, replace old rows.
-            # When repeats > 1, keep previous rows so each repeat is a separate entry.
-            if self.args.overwrite and exists and (self.args.repeats <= 1):
-                removed = self._remove_seed_from_results(seed)
-                LOG.info("overwrite: removed %d existing row(s) for seed=%s", removed, seed)
-            self._append_result_csv(result_row)
-            LOG.info("appended to %s", self.results_f)
-
-            self._saved_not_all_running += 1
-
-            # save solver stats
-            if self.args.save_solver_stats:
-                phase = "solver_stats"
-                LOG.info(f"phase={phase}")
-                self._write_solver_stats_json(seed, run_idx)
-
-            # save scheduler logs
-            if self.args.save_scheduler_logs:
-                phase = "save_scheduler_logs"
-                LOG.info(f"phase={phase}")
-                self._save_scheduler_logs(seed, run_idx=run_idx)
-
-            # seed run done
-            LOG.info(f"seed run done; took {time.time()-start_time:.1f}s")
-            self._print_seed_summary(cfg, seed, running_count, unsched_count)
-            return True
-
-        except RuntimeError as e:
-            tb = traceback.format_exc()
-            self._write_fail("seed", cfg, seed, phase, str(e), tb)
-            LOG.info(f"seed-runtime-error  cfg={cfg.stem} seed={seed}  phase={phase}: {e}")
-            return False
-        except Exception as e:
-            tb = traceback.format_exc()
-            self._write_fail("seed", cfg, seed, phase, str(e), tb)
-            LOG.error(f"seed-exception-error  cfg={cfg.stem}  seed={seed}  phase={phase}: {e}")
-            self._print_seed_summary(cfg, seed, None, None, f"error: {e}")
-            return False
+        if self.args.direct_solving:
+            return self._execute_seed_direct(cfg, seed, ta)
+        else:
+            return self._execute_seed_on_cluster(cfg, seen, seed, ta, seed_file, run_idx=run_idx)
 
     # ------ Single seed run with retries ---------------------
     def _run_single_seed_with_retries(self, cfg: Path, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
@@ -2035,8 +2296,8 @@ class KwokTestGenerator:
         cfg_idx = getattr(self.args, "matrix_idx", 1)
         cfgs_total = getattr(self.args, "matrix_total", 1)
         LOG.info(f"\n================================================ CONFIG RUN {cfg_idx}/{cfgs_total} ===================================================\n"
-                 f"config={cfg}\n"
-                 "----------------------------------------------------------------------------------------------------------------")
+                    f"config={cfg}\n"
+                    f"----------------------------------------------------------------------------------------------------------------")
         try:
             raw = self._load_run_config(cfg)
             KwokTestGenerator._log_config_raw(raw, use_logger=True)
@@ -2286,6 +2547,18 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="URL to POST for manual optimizer trigger (default: http://localhost:18080/optimize).")
     ap.add_argument("--active-url", dest="active_url", default="http://localhost:18080/active",
                     help="URL to GET for optimizer active state (default: http://localhost:18080/active)")
+    
+    # Direct solver
+    ap.add_argument("--direct-solving", dest="direct_solving", action="store_true",
+                    help="Bypass cluster use; directly call the Python solver with generated nodes/pods.")
+    ap.add_argument("--solver-timeout-ms", dest="solver_timeout_ms", type=int, default=10000,
+                    help="Timeout for the Python solver (milliseconds).")
+    ap.add_argument("--solver-cmd", dest="solver_cmd", type=str, default="python3 scripts/python_solver/main.py",
+                    help="Command to run the Python solver. It must read JSON from stdin and write JSON to stdout.")
+    ap.add_argument("--export-solver-input", dest="export_solver_input", type=Path, default=None,
+                    help="If set, write the exact JSON sent to the solver to this path.")
+    ap.add_argument("--export-solver-output", dest="export_solver_output", type=Path, default=None,
+                    help="If set, write the solver JSON response to this path.")
 
     return ap
 
