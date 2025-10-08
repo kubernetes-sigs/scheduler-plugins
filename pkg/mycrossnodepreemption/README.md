@@ -130,10 +130,10 @@ docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/sch
 
 ### Run the plugin on a KWOK cluster (Automated)
 
-To run the scheduler with the plugin on a KWOK cluster, the easiest way is to use the provided test generator script (`bootstrap/content/scripts/kwok/kwok_test_generator.py`). It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin. It has a number of parameters, see the help:
+To run the scheduler with the plugin on a KWOK cluster, the easiest way is to use the provided test generator script (`bootstrap/content/scripts/kwok/test_generator.py`). It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin. It has a number of parameters, see the help:
 
 ```bash
-python3 bootstrap/content/scripts/kwok/kwok_test_generator.py --help
+python3 bootstrap/content/scripts/kwok/test_generator.py --help
 ```
 
 ### Run the plugin on a KWOK cluster (Manual)
@@ -174,8 +174,8 @@ Then load the scheduler image into the Kind cluster (it will also build the imag
 
 Some useful test scripts can be found in `bootstrap/content/scripts/kwok/`:
 
-- `kwok_test_generator.py`: Generates a KWOK cluster with random pods and runs the scheduler with the plugin.
-- `kwok_stats.py`: Gathers statistics from the KWOK cluster e.g. number of scheduled pods, current utilization, etc.
+- `test_generator.py`: Generates a KWOK cluster with random pods and runs the scheduler with the plugin.
+- `stats.py`: Gathers statistics from the KWOK cluster e.g. number of scheduled pods, current utilization, etc.
 
 ### Bootstrap a VM
 

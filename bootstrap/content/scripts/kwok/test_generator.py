@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# kwok_test_generator.py
+# test_generator.py
 
 import sys, os, shutil, argparse, math, time, random, csv, json, logging, yaml, subprocess, tempfile, traceback, contextlib, fcntl, shlex
 from dataclasses import dataclass, field
@@ -8,7 +8,7 @@ from collections import namedtuple
 from pathlib import Path
 from urllib import request as _urlreq, error as _urlerr
 
-from kwok_helpers import (
+from helpers import (
     seeded_random,
     get_timestamp, setup_logging,
     stat_snapshot,
@@ -121,8 +121,6 @@ class KwokTestGenerator:
         self._results_csv_path: Path | None = None
         self._suppress_fail_log: bool = False
         self._failure: _Failure | None = None
-        self._seeds_not_all_running_limit: int = max(0, int(args.seeds_not_all_running or 0))
-        self._seeds_not_all_running_used: int = 0
         self._saved_not_all_running: int = 0
         self._skipped_all_running_seeds_csv_path: Path | None = None
 
@@ -182,8 +180,8 @@ class KwokTestGenerator:
         footer = "\n====================================================================================================="
 
         # Show "not-all-running" segment only if a limit is set
-        if self._seeds_not_all_running_limit > 0:
-            left = max(0, int(self._seeds_not_all_running_limit) - int(getattr(self, "_saved_not_all_running", 0)))
+        if self.args.seeds_not_all_running is not None and self.args.seeds_not_all_running > 0:
+            left = max(0, int(self.args.seeds_not_all_running) - int(getattr(self, "_saved_not_all_running", 0)))
             not_all_seg = f" | seeds-not-all-running-left={left}"
         else:
             not_all_seg = ""
@@ -364,31 +362,21 @@ class KwokTestGenerator:
                 LOG.warning("failed to delete mismatched CSV %s: %s", path.name, e)
         return False
 
-    def _ensure_results_csv(self) -> Path:
-        """
-        Ensure results CSV with header.
-        """
-        assert self.results_dir is not None, "results_dir must be set"
-        if self._results_csv_path is None:
-            self._results_csv_path = self.results_dir / "results.csv"
-            # If header mismatch and overwrite -> delete
-            self._purge_mismatched_csv(self._results_csv_path, RESULTS_HEADER)
-            ensure_csv_with_header(self._results_csv_path, RESULTS_HEADER)
-        return self._results_csv_path
-
     def _append_result_csv(self, row: dict) -> None:
-        path = self._ensure_results_csv()
-        ensure_csv_with_header(path, RESULTS_HEADER)
-        csv_append_row(path, RESULTS_HEADER, row)
+        assert self.results_dir is not None, "results_dir must be set"
+        # If header mismatch and --overwrite: delete the old file
+        self._purge_mismatched_csv(self.results_f, RESULTS_HEADER)
+        ensure_csv_with_header(self.results_f, RESULTS_HEADER)
+        csv_append_row(self.results_f, RESULTS_HEADER, row)
 
     def _load_seen_results(self) -> set[int]:
-        """
-        Read all seeds from results csv (if present).
-        """
         seen: set[int] = set()
-        path = self._ensure_results_csv()
+        assert self.results_dir is not None, "results_dir must be set"
+        self.results_f = self.results_dir / "results.csv"
+        if not self.results_f.exists():
+            return seen
         try:
-            with open(path, "r", encoding="utf-8", newline="") as fh:
+            with open(self.results_f, "r", encoding="utf-8", newline="") as fh:
                 for r in csv.DictReader(fh):
                     s = (r.get("seed") or "").strip()
                     if s:
@@ -398,26 +386,23 @@ class KwokTestGenerator:
         return seen
 
     def _remove_seed_from_results(self, seed: int) -> int:
-        """
-        Remove all rows for `seed` from results csv (overwrite mode).
-        """
-        path = self._ensure_results_csv()
-        if not path.exists():
+        assert self.results_dir is not None, "results_dir must be set"
+        if not self.results_f.exists():
             return 0
         try:
-            with open(path, "r", encoding="utf-8", newline="") as fh:
+            with open(self.results_f, "r", encoding="utf-8", newline="") as fh:
                 rows = list(csv.DictReader(fh))
         except Exception:
             return 0
         keep = [r for r in rows if (r.get("seed") or "").strip() != str(seed)]
         removed = len(rows) - len(keep)
         if removed > 0:
-            with open(path, "w", encoding="utf-8", newline="") as fh:
+            with open(self.results_f, "w", encoding="utf-8", newline="") as fh:
                 w = csv.DictWriter(fh, fieldnames=RESULTS_HEADER)
                 w.writeheader()
                 for r in keep:
                     w.writerow({k: r.get(k, "") for k in RESULTS_HEADER})
-            LOG.info("pruned %d row(s) for seed=%s from %s", removed, seed, path.name)
+            LOG.info("pruned %d row(s) for seed=%s from %s", removed, seed, self.results_f)
         return removed
     
     def _clean_results_dir(self) -> None:
@@ -518,7 +503,7 @@ class KwokTestGenerator:
 
         return baseline, best_name, attempts, error
 
-    def _write_solver_stats_csv(self, seed: int, run_idx: int = 1) -> None:
+    def _write_solver_stats_json(self, seed: int, run_idx: int = 1) -> None:
         """
         Fetch runs.json from the latest solver-stats ConfigMap and dump it verbatim.
         No CSV. No splitting. Exactly what the ConfigMap has, written to a .json file.
@@ -1734,7 +1719,7 @@ class KwokTestGenerator:
                 successes = 0
                 while successes < target_repeats:
                     # If we already met the quota, stop
-                    if self._seeds_not_all_running_limit > 0 and self._saved_not_all_running >= self._seeds_not_all_running_limit:
+                    if self.args.seeds_not_all_running > 0 and self._saved_not_all_running >= self.args.seeds_not_all_running:
                         break
                     run_idx = successes + 1
                     ok = self._run_single_seed_with_retries(cfg, seen, s, rc, self.args.seed_file, run_idx=run_idx)
@@ -1748,8 +1733,8 @@ class KwokTestGenerator:
                 self._eta_summary(cfg_idx, cfgs_total, seed_idx + 1, seeds_total)
 
             # Stop if we hit the saved quota
-            if self._seeds_not_all_running_limit > 0 and self._saved_not_all_running >= self._seeds_not_all_running_limit:
-                LOG.info("reached save quota (%d); moving to next config", self._seeds_not_all_running_limit)
+            if self.args.seeds_not_all_running > 0 and self._saved_not_all_running >= self.args.seeds_not_all_running:
+                LOG.info("reached save quota (%d); moving to next config", self.args.seeds_not_all_running)
                 break
 
             self._pause(next_exists=(seed_idx < seeds_total))
@@ -1875,13 +1860,12 @@ class KwokTestGenerator:
                 return False
 
             # if requested, skip seed if all pods are running
-            if unsched_count == 0:
+            if unsched_count == 0 and self.args.seeds_not_all_running is not None and self.args.seeds_not_all_running > 0:
                 single_seed_mode = (self.args.seed is not None and self.args.seed_file is None and self.args.count is None)
-                under_limit = (self._seeds_not_all_running_limit > 0 and
-                                self._saved_not_all_running < self._seeds_not_all_running_limit)
+                under_limit = (self.args.seeds_not_all_running > 0 and
+                                self._saved_not_all_running < self.args.seeds_not_all_running)
                 if single_seed_mode or under_limit:
                     self._record_skipped_all_running_seed(cfg, seed, seed_file, running_count)
-                    # REMOVED: self._seeds_not_all_running_used += 1  (that was wrong)
                     self._print_seed_summary(cfg, seed, running_count, unsched_count, "skipped (all pods running)")
                     LOG.info("skipped saving seed=%s (all pods running)", seed)
                     return True
@@ -1935,15 +1919,15 @@ class KwokTestGenerator:
                 removed = self._remove_seed_from_results(seed)
                 LOG.info("overwrite: removed %d existing row(s) for seed=%s", removed, seed)
             self._append_result_csv(result_row)
-            LOG.info("appended to %s", self._ensure_results_csv().name)
-            
+            LOG.info("appended to %s", self.results_f)
+
             self._saved_not_all_running += 1
 
             # save solver stats
             if self.args.save_solver_stats:
                 phase = "solver_stats"
                 LOG.info(f"phase={phase}")
-                self._write_solver_stats_csv(seed, run_idx)
+                self._write_solver_stats_json(seed, run_idx)
 
             # save scheduler logs
             if self.args.save_scheduler_logs:
@@ -2083,26 +2067,23 @@ class KwokTestGenerator:
         if getattr(self.args, "clean_results", False):
             LOG.info("clean-results requested: deleting all contents of %s", self.results_dir)
             self._clean_results_dir()
+        self.results_f = self.results_dir / "results.csv"
 
         # failures file lives in results dir
         self.failed_f = self.results_dir / "failed.csv"
 
-        # ensure skipped file is initialized (header)
-        _ = self._skipped_all_running_csv()
-
         LOG.info(f"results-dir resolved to: {self.results_dir}")
-        
-        self._seeds_not_all_running_used = 0
         
         self._eta_init()
 
-        _ = self._ensure_results_csv()
         seen = self._load_seen_results()
         
         # enter count mode when only --seeds-not-all-running is provided
+        if self.args.seeds_not_all_running is not None and self.args.seeds_not_all_running != -1 and self.args.seeds_not_all_running < 1:
+            raise SystemExit("--seeds-not-all-running must be -1 (infinite) or >= 1")
         if (self.args.seed is None and not self.args.seed_file and self.args.count is None
-            and self._seeds_not_all_running_limit > 0):
-            self.args.count = self._seeds_not_all_running_limit
+            and self.args.seeds_not_all_running > 0):
+            self.args.count = self.args.seeds_not_all_running
             LOG.info("no --seed/--seed-file/--count provided; defaulting --count=%d from --seeds-not-all-running", self.args.count)
 
         # single-seed path
@@ -2271,7 +2252,7 @@ def build_argparser() -> argparse.ArgumentParser:
                             "Each successful repeat writes per-run artifacts named with _run-<idx> and prunes "
                             "any existing file that collides with that name. Failed repeats are retried per --retries "
                             "and do not count toward this number."))
-    ap.add_argument("--seeds-not-all-running", dest="seeds_not_all_running", type=int, default=0,
+    ap.add_argument("--seeds-not-all-running", dest="seeds_not_all_running", type=int, default=None,
                     help=("If >0, save save up to this many seeds where not all pods are running. "
                             "In --count mode the value is capped to --count (except -1), "
                             "and in --seed-file mode it's capped to the number of seeds in the file. "
