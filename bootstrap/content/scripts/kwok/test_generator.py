@@ -1034,7 +1034,7 @@ class KwokTestGenerator:
     ######################################################
     # ---------- Optimizer HTTP helpers ------------------
     ######################################################
-    def _trigger_optimizer_http(self, url: str, *, timeout: float = 60.0) -> tuple[int, str]:
+    def _trigger_optimizer_http(self, url: str, *, timeout: float = 120.0) -> tuple[int, str]:
         """
         POST /optimize endpoint. Returns (status_code, body_str).
         Timeout should be long enough to allow the solver to run.
@@ -1089,6 +1089,7 @@ class KwokTestGenerator:
         
         deadline = time.time() + max(0, int(timeout_s))
         interval = float(poll_initial_s)
+        time.sleep(interval)
         last_log = 0.0
         
         while time.time() < deadline:
@@ -1752,8 +1753,8 @@ class KwokTestGenerator:
         Returns True on success, False on failure.
         """
         exists = seed in seen
-        # If it already exists and overwrite is false, skip the whole run
-        if exists and not self.args.overwrite:
+        # If it already exists and overwrite is false, skip only when we don't want repeats
+        if exists and (not self.args.overwrite) and (self.args.repeats <= 1):
             self._print_seed_summary(cfg, seed, None, None, "skip (exists; use --overwrite to replace)")
             LOG.info("skip seed=%s because it already exists and --overwrite is not set", seed)
             return True
@@ -1914,8 +1915,9 @@ class KwokTestGenerator:
 
             phase = "write_results"
             LOG.info(f"phase={phase}")
-            # Ensure single results.csv and overwrite old rows for this seed if requested
-            if self.args.overwrite and exists:
+            # When overwriting and NOT collecting repeats, replace old rows.
+            # When repeats > 1, keep previous rows so each repeat is a separate entry.
+            if self.args.overwrite and exists and (self.args.repeats <= 1):
                 removed = self._remove_seed_from_results(seed)
                 LOG.info("overwrite: removed %d existing row(s) for seed=%s", removed, seed)
             self._append_result_csv(result_row)
@@ -1954,8 +1956,9 @@ class KwokTestGenerator:
 
     # ------ Single seed run with retries ---------------------
     def _run_single_seed_with_retries(self, cfg: Path, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
-        # Short-circuit: skip existing when not overwriting
-        if (seed in seen) and (not self.args.overwrite):
+        # Short-circuit: skip existing when not overwriting.
+        # Allow repeats to append additional rows even if the seed already exists.
+        if (seed in seen) and (not self.args.overwrite) and (self.args.repeats <= 1):
             self._print_seed_summary(cfg, seed, None, None, "skip (exists; use --overwrite to replace)")
             LOG.info("skip seed=%s because it already exists and --overwrite is not set", seed)
             return True

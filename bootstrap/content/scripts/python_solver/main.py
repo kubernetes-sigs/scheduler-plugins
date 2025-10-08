@@ -2,9 +2,8 @@
 
 # main.py
 
-import os
-import sys, json
-from typing import Optional, Union
+import os, time, sys, json
+from typing import Union
 from ortools.sat.python import cp_model
 
 #################################################
@@ -39,6 +38,8 @@ class CPSATSolver:
         return STATUS_MAP.get(st, "UNKNOWN")
 
     def solve(self, instance: dict) -> dict:
+        _started_at = time.monotonic()
+        
         #################################################
         # --- Read Input --------------------------------
         #################################################
@@ -58,10 +59,33 @@ class CPSATSolver:
         use_hints               = bool(instance.get("use_hints", False))
         # If use_strictly_improving is true, accept a plan only if it is strictly better than the current state under the objective. 
         # This prevents no-op plans but may reject globally optimal plans whose objective ties the baseline. Set False to allow equal-score solutions.
-        use_strictly_improving = bool(instance.get("use_strictly_improving", False)) # TODO: Input interface doesn't implement this yet, however we enforce it
+        use_strictly_improving  = bool(instance.get("use_strictly_improving", False)) # TODO: Input interface doesn't implement this yet, however we enforce it
+        use_symmetry_breaking   = bool(instance.get("symmetry_breaking", False))
         hints                   = instance.get("hints") if use_hints else None
         log_progress            = bool(instance.get("log_progress", False))
         log_subsolvers          = bool(instance.get("log_progress", False))
+
+        #################################################
+        # --- Solver Options ----------------------------
+        #################################################
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
+        solver.parameters.num_search_workers        = max(1, workers)
+        solver.parameters.log_search_progress       = log_progress
+        solver.parameters.log_subsolver_statistics  = log_subsolvers
+        solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
+        solver.parameters.relative_gap_limit        = 0.05 # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
+        solver.log_callback = lambda line: (
+            print(line, file=sys.stderr, flush=True) if line else None
+        )
+
+        # Single global deadline (timeout_ms <= 0 means "no limit")
+        _deadline_s = (_started_at + (timeout_ms / 1000.0)) if timeout_ms and timeout_ms > 0 else None
+        def _remaining_seconds() -> float | None:
+            """Return remaining seconds until the global deadline, or None if unlimited."""
+            if _deadline_s is None:
+                return None
+            return max(0.0, _deadline_s - time.monotonic())
 
         #################################################
         # --- Ensure Pods from Input --------------------
@@ -116,7 +140,6 @@ class CPSATSolver:
         num_pods  = len(pods)
         if num_pods == 0:
             return {"status": self._status_str(NO_PODS)}
-
         node_idx = {n["name"]: j for j, n in enumerate(nodes)}
 
         #################################################
@@ -173,11 +196,9 @@ class CPSATSolver:
         # --- Decision Variables ------------------------
         #################################################
         # placed (bool) - whether model places pod i somewhere
-        # evict  (bool) - whether model evicts pod i
         # assign (bool) - whether model places pod i on node j (only for eligible nodes)
         # move   (bool) - whether model moves pod i (only for running pods)
         placed = [model.NewBoolVar(f"placed_{i}") for i in range(num_pods)]
-        evict  = [model.NewBoolVar(f"evict_{i}")  for i in range(num_pods)]
         assign = [[model.NewBoolVar(f"assign_{i}_{j}") for j in eligible_nodes[i]] for i in range(num_pods)]
         move = [model.NewBoolVar(f"move_{i}") if i in running_idxs else None for i in range(num_pods)]
         
@@ -205,14 +226,6 @@ class CPSATSolver:
             else: # cannot be placed
                 model.Add(placed[i] == 0)
 
-        ### Running and pending pods constraints
-        for i in running_idxs:
-            # either placed somewhere or evicted
-            model.Add(placed[i] + evict[i] == 1)
-        for i in pending_idxs:
-            # pending pods cannot be evicted
-            model.Add(evict[i] == 0)
-
         ### Move constraints - only for running pods
         for i in running_idxs:
             orig = p_node_j(i)
@@ -223,44 +236,21 @@ class CPSATSolver:
                 model.Add(placed[i] <= move[i] + assign[i][idx])
             else: # can't stay on original -> moving iff place
                 model.Add(move[i] == placed[i])
+            # Protected pods must stay put (no move)
+            if p_protected(i):
+                model.Add(placed[i] == 1)
+                if move[i] is not None:
+                    model.Add(move[i] == 0)
 
         #################################################
         # --- Mode Specific Constraints -----------------
         #################################################
         # Single-preemptor mode:
         if single_preemptor_mode and preemptor_idx is not None:
-            # Preemptor must be place and never evicted
+            # Preemptor must be place
             model.Add(placed[preemptor_idx] == 1)
-            model.Add(evict[preemptor_idx]  == 0)
-            preemptor_priority = p_priority(preemptor_idx)
-            for i in running_idxs:
-                # Higher priority than the preemptor (or explicitly protected):
-                # Cannot be evicted, cannot be moved
-                if p_protected(i) or p_priority(i) > preemptor_priority:
-                    model.Add(placed[i] == 1)
-                    model.Add(evict[i] == 0)
-                    if move[i] is not None:
-                        model.Add(move[i] == 0) # cannot be moved
-                # Equal priority to the preemptor:
-                # Cannot be evicted, but can be moved
-                elif p_priority(i) == preemptor_priority:
-                    model.Add(placed[i] == 1)
-                    model.Add(evict[i] == 0)
-                else:
-                    # Lower-priority than preemptor:
-                    # no extra guard — solver may move or evict as needed
-                    pass
-        # Batch mode (no single preemptor)
+        # Batch mode
         else:
-            for i in running_idxs:
-                # Protected pods must stay put (no evict, no move)
-                # Allow move all running pods no matter their priority
-                # Note: lexi_solve will ensure few moves and evicts.
-                if p_protected(i):
-                    model.Add(evict[i] == 0)
-                    model.Add(placed[i] == 1)
-                    if move[i] is not None:
-                        model.Add(move[i] == 0)
             # There must be at least one placement of pending pods
             # (weak constraint to avoid trivial empty solution)
             # Below we will enforce non-degradation on priorities
@@ -269,6 +259,8 @@ class CPSATSolver:
         #################################################
         # --- Placed by Priority Constraints ------------
         #################################################
+        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True) # priorities: high->low
+        
         # External hints (placed_by_priority) constraints
         if use_hints and isinstance(hints, dict):
             raw = hints.get("placed_by_priority") or {}
@@ -276,8 +268,6 @@ class CPSATSolver:
             exact = {int(k): int(v) for k, v in raw.items()
                     if str(k).lstrip("-").isdigit() and int(v) > 0}
             if exact:
-                # priorities present in the instance, high -> low
-                priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
                 # build cumulative >=pr demand from exact-tier hints
                 cum_need = {}
                 acc = 0
@@ -299,9 +289,9 @@ class CPSATSolver:
                         lower_bound = base_ge
                     if lower_bound > 0:
                         model.Add(sum(placed[i] for i in idxs_ge) >= lower_bound)
+        
         # If no hints, enforce non-degradation per priority tier
         else:
-            priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True) # priorities: high->low
             for priority in priorities:
                 idxs_ge = [i for i in range(num_pods) if p_priority(i) >= priority]
                 if not idxs_ge:
@@ -311,6 +301,7 @@ class CPSATSolver:
                 # to avoid trivial empty solution
                 model.Add(sum(placed[i] for i in idxs_ge) >= base_ge)
         
+        # Enforce at least one tier to strictly improve
         if use_strictly_improving:
             # Require at least one strict improvement on some priority tier
             # To avoid trivial solutions that do not improve anything
@@ -334,59 +325,170 @@ class CPSATSolver:
                 improved_at.append(improved)
             if improved_at:
                 model.AddBoolOr(improved_at) # at least one tier must strictly improve.
+
+        #################################################
+        # --- Symmetry breaking (optional, safe)---------
+        #################################################
+        if use_symmetry_breaking:
+            # Signatures for equivalence
+            def _pod_signature(i):
+                return (
+                    p_req_cpu_m(i),
+                    p_req_mem_bytes(i),
+                    p_priority(i),
+                    bool(p_protected(i)),
+                )
+
+            def _node_signature(j):
+                return (
+                    n_cap_cpu_m(j),
+                    n_cap_mem_bytes(j),
+                    # If you add labels: tuple(sorted(nodes[j].get("labels", {}).items()))
+                )
+
+            # Precompute a stable eligible list tuple for comparison
+            eligible_tuple = [tuple(eligible_nodes[i]) for i in range(num_pods)]
+
+            # ---------- (A) Equivalent nodes: non-decreasing loads ----------
+            # This one is generally safe.
+            node_cpu_load = [None] * num_nodes
+            node_mem_load = [None] * num_nodes
+            for j in range(num_nodes):
+                cpu_terms, mem_terms = [], []
+                for i in range(num_pods):
+                    if j in eligible_nodes[i]:
+                        idx = eligible_nodes[i].index(j)
+                        cpu_terms.append(assign[i][idx] * p_req_cpu_m(i))
+                        mem_terms.append(assign[i][idx] * p_req_mem_bytes(i))
+                node_cpu_load[j] = model.NewIntVar(0, n_cap_cpu_m(j), f"cpu_load_node_{j}")
+                node_mem_load[j] = model.NewIntVar(0, n_cap_mem_bytes(j), f"mem_load_node_{j}")
+                model.Add(node_cpu_load[j] == (sum(cpu_terms) if cpu_terms else 0))
+                model.Add(node_mem_load[j] == (sum(mem_terms) if mem_terms else 0))
+
+            for j in range(num_nodes):
+                sigj = _node_signature(j)
+                for k in range(j + 1, num_nodes):
+                    if _node_signature(k) == sigj:
+                        model.Add(node_cpu_load[j] <= node_cpu_load[k])
+                        model.Add(node_mem_load[j] <= node_mem_load[k])
+
+            # ---------- (B) Equivalent pods: guarded lex ordering on one-hots ----------
+            # Apply only to: pending, non-protected, same priority, identical eligibility lists.
+            # This avoids conflicts with fixed placements and domain differences.
+            # For p1 < p2, enforce that p1 picks an equal/earlier node than p2 (lex).
+            for p1 in range(num_pods):
+                if p_protected(p1) or (p_node_j(p1) is not None):
+                    continue  # skip fixed/protected/running
+                sig1 = _pod_signature(p1)
+                elig1 = eligible_tuple[p1]
+                if not elig1:
+                    continue  # unplaceable → nothing to order
+                for p2 in range(p1 + 1, num_pods):
+                    if p_protected(p2) or (p_node_j(p2) is not None):
+                        continue
+                    if _pod_signature(p2) != sig1:
+                        continue
+                    if eligible_tuple[p2] != elig1:
+                        continue  # domains differ → do not couple
+
+                    # Guard by both placed
+                    both_placed = model.NewBoolVar(f"both_placed_{p1}_{p2}")
+                    # both_placed ⇔ (placed[p1] & placed[p2])
+                    # Implement as both_placed <= placed[p1], both_placed <= placed[p2], and
+                    # placed[p1] + placed[p2] - 1 <= both_placed
+                    model.Add(both_placed <= placed[p1])
+                    model.Add(both_placed <= placed[p2])
+                    model.Add(placed[p1] + placed[p2] - 1 <= both_placed)
+
+                    # Lex (prefix) ordering on their assignment vectors
+                    # Let a1[t] = assign[p1][t], a2[t] = assign[p2][t] aligned over identical eligible lists
+                    # For each prefix k: sum_{t<=k} a1[t] >= sum_{t<=k} a2[t]  (only if both placed)
+                    for k in range(len(elig1)):
+                        lhs = sum(assign[p1][t] for t in range(k + 1))
+                        rhs = sum(assign[p2][t] for t in range(k + 1))
+                        # lhs >= rhs when both placed; otherwise no restriction
+                        model.Add(lhs >= rhs).OnlyEnforceIf(both_placed)
+
+                
+        #################################################
+        # --- Lexicographic optimization (sequential) ---
+        # Order per tier (≥priority):
+        #   1) maximize placed
+        #   2) minimize moves (running only)
+        #################################################
         
-        #################################################
-        # --- Solver Options ----------------------------
-        #################################################
-        solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
-        solver.parameters.num_search_workers        = max(1, workers)
-        solver.parameters.log_search_progress       = log_progress
-        solver.parameters.log_subsolver_statistics  = log_subsolvers
-        solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
-        solver.log_callback = lambda line: (
-            print(line, file=sys.stderr, flush=True) if line else None
-        )
+        # Helper to set objective and solve one sub-stage.
+        def _solve_stage(obj_expr, sense: str) -> int:
+            # set objective
+            if sense == "max":
+                model.Maximize(obj_expr)
+            else:
+                model.Minimize(obj_expr)
+            # give only the remaining time to this stage
+            rem = _remaining_seconds()
+            if rem is not None:
+                # CP-SAT accepts fractional seconds; keep a tiny epsilon if almost zero
+                solver.parameters.max_time_in_seconds = max(1e-3, rem-0.05)
+            # if rem is None, we leave the param unchanged => unlimited
+            return solver.Solve(model)
         
-        #################################################
-        # --- Lexicographic Objective -------------------
-        #################################################
-        """
-        Lexicographic objective:
-          1) maximize placed count per priority tier (high->low)
-          2) minimize evictions of running pods
-          3) minimize moves of running pods
-        """
-        # Stage 1: maximize placed by priority tier (higher first)
-        num_pods = len(placed)
-        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
-        for priority in priorities:
-            idxs = [i for i in range(num_pods) if p_priority(i) == priority]
-            if not idxs:
+        # Build cumulative placed count vars: placed_ge[pr] = #placed with priority ≥ pr
+        placed_ge: dict[int, cp_model.IntVar] = {}
+        for pr in priorities:
+            idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
+            if not idxs_ge:
                 continue
-            placed_count = model.NewIntVar(0, len(idxs), f"placed_count_priority{priority}")
-            model.Add(placed_count == sum(placed[i] for i in idxs))
-            model.Maximize(placed_count)
+            v = model.NewIntVar(0, len(idxs_ge), f"placed_ge_{pr}")
+            model.Add(v == sum(placed[i] for i in idxs_ge))
+            placed_ge[pr] = v
 
-        # Stage 2: minimize evictions (running only)
-        total_evict = model.NewIntVar(0, len(running_idxs), "total_evict_running")
-        model.Add(total_evict == sum(evict[i] for i in running_idxs))
-        model.Minimize(total_evict)
-
-        # Stage 3: minimize moves (running only)
+        # Build cumulative moves-by-priority: moves_ge[pr] = #moves among running pods with priority ≥ pr
+        moves_ge: dict[int, cp_model.IntVar] = {}
+        for pr in priorities:
+            idxs_ge_running = [i for i in running_idxs if p_priority(i) >= pr]
+            v = model.NewIntVar(0, len(idxs_ge_running), f"moves_ge_{pr}")
+            if idxs_ge_running:
+                model.Add(v == sum(move[i] for i in idxs_ge_running))
+            else:
+                model.Add(v == 0)
+            moves_ge[pr] = v
         move_terms = [move[i] for i in running_idxs if move[i] is not None]
-        max_moves  = len(move_terms)
-        total_moves = model.NewIntVar(0, max_moves, "total_moves_running")
+        total_moves = model.NewIntVar(0, len(move_terms), "total_moves")
         if move_terms:
             model.Add(total_moves == sum(move_terms))
         else:
             model.Add(total_moves == 0)
-        model.Minimize(total_moves)
+
+        active_tiers = [pr for pr in priorities if pr in placed_ge]
+        if not active_tiers:
+            return {"status": self._status_str("NO_TIERS")}
+
+        # (A) Maximize cumulative placements at ≥ priority, one tier at a time
+        # Lock each tier's plateau before moving to the next tier.
+        placement_all_optimal = True
         
-        # Final: Solve and status
-        status = solver.Solve(model)
-        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE): # return only status if no solution
-            return {"status": self._status_str(status)}
+        for pr in active_tiers:
+            # 1) Maximize placements at ≥pr
+            status = _solve_stage(placed_ge[pr], "max")
+            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                return {"status": self._status_str(status)}
+            if status != cp_model.OPTIMAL:
+                placement_all_optimal = False
+            best_placed = solver.Value(placed_ge[pr])
+            model.Add(placed_ge[pr] == best_placed)  # lock plateau
+
+            # 2) Minimize moves at ≥pr (protect high-priority moves first)
+            status = _solve_stage(moves_ge[pr], "min")
+            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                return {"status": self._status_str(status)}
+            best_moves = solver.Value(moves_ge[pr])
+            model.Add(moves_ge[pr] == best_moves)  # lock moves at this tier
+
+        # compute final status per your rule
+        if placement_all_optimal and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            final_status = cp_model.OPTIMAL
+        else:
+            final_status = status
 
         #################################################
         # --- Extract and Return Plan -------------------
@@ -395,8 +497,9 @@ class CPSATSolver:
         evictions  = []
 
         for i in range(num_pods):
-            # Evicted pods
-            if int(solver.Value(evict[i])) == 1:
+            was_running = (p_node_j(i) is not None)
+            now_placed  = int(solver.Value(placed[i])) == 1
+            if was_running and not now_placed:
                 evictions.append({
                     "pod": {"uid": p_uid(i), "namespace": p_namespace(i), "name": p_name(i)},
                     "node": nodes[p_node_j(i)]["name"],
@@ -427,7 +530,7 @@ class CPSATSolver:
 
         # Return status, placements, evictions
         return {
-            "status": self._status_str(status),
+            "status": self._status_str(final_status),
             "placements": placements,
             "evictions": evictions,
         }

@@ -1,0 +1,15 @@
+# sched-cc.yaml
+
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+parallelism: 1
+profiles:
+- schedulerName: default-scheduler
+  plugins:
+    score:
+      enabled:
+        - name: MyScoreBreaker
+          weight: 1
+    multiPoint:
+      disabled:
+        - name: DefaultPreemption
