@@ -40,6 +40,12 @@ type SolverInput struct {
 	Workers int `json:"workers,omitempty"`
 	// Maximum number of trials (0 = unlimited)
 	MaxTrials int `json:"max_trials,omitempty"` // for local search
+	// Gap to optimality (0.0 = ignore)
+	GapLimit float64 `json:"gap_limit,omitempty"`
+	// Guaranteed fraction of time for all tiers (0.0-1.0)
+	GuaranteedTierFraction float64 `json:"guaranteed_tier_fraction,omitempty"`
+	// Fraction of a tier's budget for moves (0.0-1.0)
+	MoveFractionOfTier float64 `json:"move_fraction_of_tier,omitempty"`
 }
 
 // SolverOutput is the output from a solver.
@@ -50,6 +56,10 @@ type SolverOutput struct {
 	Placements []NewPlacement `json:"placements"`
 	// Evicted pods
 	Evictions []Placement `json:"evictions"`
+	// Stages of the solver
+	Stages []SolverStage `json:"stages,omitempty"`
+	// Duration in microseconds of the solver
+	DurationUs int64 `json:"duration_us,omitempty"`
 }
 
 // SolverNode represents a node in the cluster for the solver.
@@ -94,11 +104,16 @@ type SolverPod struct {
 // solver_types.go
 
 type SolverAttempt struct {
-	Name    string
+	// Name of the solver attempt
+	Name string
+	// Whether the solver attempt is enabled
 	Enabled bool
+	// Timeout for the solver attempt
 	Timeout time.Duration
-	Trials  int
-	Run     func(ctx context.Context, in SolverInput) (*SolverOutput, error)
+	// Number of trials the solver attempt should perform
+	Trials int
+	// Function to run the solver attempt
+	Run func(ctx context.Context, in SolverInput) (*SolverOutput, error)
 }
 
 // SolverResult is the result of a solver attempt.
@@ -112,6 +127,8 @@ type SolverResult struct {
 	DurationUs int64 `json:"duration_us,omitempty"`
 	// Score of the solution
 	Score SolverScore `json:"score,omitempty"`
+	// Stages of the solver
+	Stages []SolverStage `json:"stages,omitempty"`
 
 	// In-memory only (not exported)
 	// Comparison vs previous leader (-1 worse, 0 tie, 1 better)
@@ -128,6 +145,19 @@ type SolverScore struct {
 	Evicted int `json:"evicted,omitempty"`
 	// Number of moved pods (lower is better)
 	Moved int `json:"moved,omitempty"`
+}
+
+type SolverStage struct {
+	// Tier of the solver stage (0 = placement, 1..n = moves)
+	Tier int `json:"tier"`
+	// Name of the solver stage (e.g. "place" vs "moves")
+	Stage string `json:"stage"`
+	// Status of the solver stage
+	Status string `json:"status"`
+	// Duration of the solver stage
+	DurationUs int64 `json:"duration_us"`
+	// The ratio gap to optimality (if known)
+	RelativeGap string `json:"relative_gap,omitempty"`
 }
 
 // PreparedState is the prepared state for solving.

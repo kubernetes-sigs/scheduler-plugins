@@ -110,8 +110,15 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 		// Build attempt context with timeout + grace
 		ctxDur := att.Timeout
-		if att.Name == "python" && SolverPythonGraceMs > 0 {
-			ctxDur += time.Duration(SolverPythonGraceMs) * time.Millisecond
+
+		// Python specific parameters
+		if att.Name == "python" {
+			inAttempt.GapLimit = SolverPythonGapLimit
+			inAttempt.GuaranteedTierFraction = SolverPythonGuaranteedTierFraction
+			inAttempt.MoveFractionOfTier = SolverPythonMoveFractionOfTier
+			if SolverPythonGraceMs > 0 { // increase context duration by grace for python due to I/O overhead
+				ctxDur += time.Duration(SolverPythonGraceMs) * time.Millisecond
+			}
 		}
 
 		ctxAtt, cancel := context.WithTimeout(ctx, ctxDur)
@@ -127,6 +134,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				DurationUs: durUs,
 				Status:     out.Status,
 				Score:      computeSolverScore(inAttempt, out),
+				Stages:     out.Stages,
 			})
 			continue
 		} else if err != nil { // error with no output
@@ -144,6 +152,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				DurationUs: durUs,
 				Status:     out.Status,
 				Score:      computeSolverScore(inAttempt, out),
+				Stages:     out.Stages,
 			})
 			continue
 		}
@@ -157,6 +166,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				DurationUs: durUs,
 				Status:     out.Status,
 				Score:      computeSolverScore(inAttempt, out),
+				Stages:     out.Stages,
 			})
 			continue
 		}
@@ -171,6 +181,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Score:      score,
 			CmpBase:    improvedOverBaseline,
 			Status:     out.Status,
+			Stages:     out.Stages,
 		}
 
 		if improvedOverBaseline <= 0 {
@@ -216,6 +227,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 	}
 
 	// Leaderboard
+	bestAttempt.Stages = nil
 	logLeaderboard(strategy, attempts, *baselineScore, *bestAttempt)
 
 	return bestAttempt.Name, hadFeasibleImprovingSolver, bestAttempt, attempts

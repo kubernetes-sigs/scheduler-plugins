@@ -18,7 +18,7 @@ func (pl *MyCrossNodePreemption) runSolverPython(ctx context.Context, in SolverI
 	rawInput, _ := json.Marshal(in)
 	klog.V(MyV).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
 
-	cmd := exec.CommandContext(ctx, SolverPythonBin, SolverPath) // ctx already includes grace
+	cmd := exec.CommandContext(ctx, SolverPythonBin, SolverPath)
 	cmd.Stdin = bytes.NewReader(rawInput)
 
 	stdout, err := cmd.StdoutPipe()

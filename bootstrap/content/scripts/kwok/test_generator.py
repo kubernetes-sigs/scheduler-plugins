@@ -23,7 +23,7 @@ from helpers import (
 # ===============================================================
 RESULTS_HEADER = [
     "timestamp", "kwok_config", "seed_file", "seed",
-    "error", "baseline", "best_name", "attempts",
+    "error", "baseline", "best_name","best_score", "best_duration_us", "best_status",
     "num_nodes", "num_pods", "num_priorities", "num_replicaset",
     "num_replicas_per_rs_lo", "num_replicas_per_rs_hi",
     "node_cpu_m", "node_mem_b",
@@ -37,6 +37,7 @@ RESULTS_HEADER = [
     "running_placed_by_prio", "unschedulable_by_prio",
     "unscheduled", "running",
     "pod_node",
+    "solver_attempts",
 ]
 
 # Module-level logger handle (handlers configured later by setup_logging in main())
@@ -180,7 +181,7 @@ class KwokTestGenerator:
         footer = "\n====================================================================================================="
 
         # Show "not-all-running" segment only if a limit is set
-        if self.args.seeds_not_all_running is not None and self.args.seeds_not_all_running > 0:
+        if self.args.seeds_not_all_running > 0:
             left = max(0, int(self.args.seeds_not_all_running) - int(getattr(self, "_saved_not_all_running", 0)))
             not_all_seg = f" | seeds-not-all-running-left={left}"
         else:
@@ -323,6 +324,44 @@ class KwokTestGenerator:
     ######################################################
     # ---------- CSV helpers & results helpers -----------
     ######################################################
+    @staticmethod
+    def _extract_best_attempt_fields(best_name: str, attempts: list[dict]) -> tuple[float | None, int | None, str]:
+        """
+        Prefer the attempt with name == best_name; otherwise use the one with the
+        highest numeric 'score'. Return (best_score, best_duration_us, best_status).
+        """
+        if not isinstance(attempts, list) or not attempts:
+            return None, None, ""
+        best_attempt = None
+        if best_name:
+            for a in attempts:
+                if str(a.get("name")) == best_name:
+                    best_attempt = a
+                    break
+        if best_attempt is None:
+            return None, None, ""
+        # parse fields
+        best_score = None
+        try:
+            v = best_attempt.get("score")
+            if v is not None:
+                best_score = float(v)
+        except Exception:
+            pass
+        best_duration_us = None
+        try:
+            v = best_attempt.get("duration_us")
+            if v is not None:
+                best_duration_us = int(v)
+        except Exception:
+            # allow float-like strings
+            try:
+                best_duration_us = int(float(best_attempt.get("duration_us")))
+            except Exception:
+                pass
+        best_status = str(best_attempt.get("status") or "")
+        return best_score, best_duration_us, best_status
+
     def _skipped_all_running_csv(self) -> Path:
         assert self.results_dir is not None, "results_dir must be set"
         if self._skipped_all_running_seeds_csv_path is None:
@@ -474,7 +513,6 @@ class KwokTestGenerator:
             accept_prefix=True, label_selector=None,
         )
         if cm is None:
-            # FIX: keep return order consistent
             return baseline, best_name, attempts, error
 
         data = cm.get("data") or {}
@@ -485,7 +523,6 @@ class KwokTestGenerator:
             runs = []
 
         if not isinstance(runs, list) or not runs:
-            # FIX: keep return order consistent
             return baseline, best_name, attempts, error
 
         last = runs[-1] or {}
@@ -1080,7 +1117,8 @@ class KwokTestGenerator:
     ######################################################
     # ---------- Solve directly ------------------
     ######################################################
-    def _preplace_running_pods(self, ta, pods, nodes, run_util: float, seed: int) -> dict:
+    @staticmethod
+    def _preplace_running_pods(pods, nodes, run_util: float, seed: int) -> None:
         """
         Deterministic, simple pre-placement:
         - Greedy largest-first; stable shuffle for strict ties using *the same seed*
@@ -1184,22 +1222,6 @@ class KwokTestGenerator:
                 "mem_util_vs_target": min(1.0, safe_div(t["mem_used"], t["mem_target"])),
             })
 
-        totals = {
-            "cpu_used": tot_cpu_used,
-            "mem_used": tot_mem_used,
-            "cpu_cap": tot_cpu_cap,
-            "mem_cap": tot_mem_cap,
-            "cpu_target": tot_cpu_target,
-            "mem_target": tot_mem_target,
-            "cpu_util": safe_div(tot_cpu_used, tot_cpu_cap),
-            "mem_util": safe_div(tot_mem_used, tot_mem_cap),
-            "cpu_util_vs_target": min(1.0, safe_div(tot_cpu_used, tot_cpu_target)),
-            "mem_util_vs_target": min(1.0, safe_div(tot_mem_used, tot_mem_target)),
-        }
-
-        return {"per_node": per_node, "totals": totals}
-
-        
     def _solve_direct_from_specs(self, ta, seed, pod_specs, rs_specs) -> tuple[dict, dict]:
         # Build nodes (numeric capacities)
         nodes = [{
@@ -1238,10 +1260,8 @@ class KwokTestGenerator:
 
         # --- Pre-place some pods as already running (direct mode only) ---
         run_util = float(getattr(self.args, "direct_running_util", 0.0) or 0.0)
-        res = self._preplace_running_pods(ta, pods, nodes, run_util, seed)
-        run_cpu_util = res.get("totals", {}).get("cpu_util", 0.0)
-        run_mem_util = res.get("totals", {}).get("mem_util", 0.0)
-        LOG.info("pre-placed pods with util=%.3f (seed=%d)", run_util, seed)
+        self._preplace_running_pods(pods, nodes, run_util, seed)
+        LOG.info("pre-placed pods with target_util=%.3f (seed=%d)", run_util, seed)
 
         instance = {
             "timeout_ms": int(self.args.solver_timeout_ms),
@@ -1302,7 +1322,7 @@ class KwokTestGenerator:
                 json.dump(resp, f, indent=2)
 
         LOG.info(
-            "direct-solver: status=%s placements=%d time_ms=%d",
+            "direct-solver: status=%s placements=%d duration_ms=%d",
             resp.get("status"),
             len(resp.get("placements", []) or []),
             elapsed_ms,
@@ -1938,7 +1958,7 @@ class KwokTestGenerator:
         to_make = int(self.args.count)  # target number of SAVED rows; -1 = infinite
         now_ns = int(time.time_ns())
         rng = seeded_random(now_ns, "base")
-        made = 0  # attempts (still useful for ETA/logs)
+        made = 0
 
         while to_make == -1 or self._saved_not_all_running < to_make:
             s = rng.getrandbits(63) or 1
@@ -2118,7 +2138,7 @@ class KwokTestGenerator:
         status = resp.get("status", "UNKNOWN")
         elapsed_ms = int(meta.get("elapsed_ms", 0))
         LOG.info(
-            "solver status=%s time_ms=%d  running=%d/%d  unscheduled=%d  "
+            "solver status=%s duration_ms=%d  running=%d/%d  unscheduled=%d  "
             "running_by_priority={%s}  evicted=%d  moved=%d  new=%d  "
             "old_cpu_util=%.3f old_mem_util=%.3f  util_cpu=%.3f util_mem=%.3f",
             status,
@@ -2145,53 +2165,6 @@ class KwokTestGenerator:
                 f"util_cpu={util_run_cpu:.3f} (old_cpu_util={old_cpu_util:.3f}) util_mem={util_run_mem:.3f} (old_mem_util={old_mem_util:.3f})"
             ),
         )
-
-        # (Optional) append a compact CSV row for direct mode
-        row = {
-            "timestamp": get_timestamp(),
-            "kwok_config": str(cfg),
-            "seed_file": "",  # direct mode
-            "seed": str(seed),
-            "error": "",
-            "baseline": "{}",          # not applicable in direct mode
-            "best_name": "direct",     # label
-            "attempts": "[]",          # not applicable
-            "num_nodes": ta.num_nodes,
-            "num_pods": total_pods,
-            "num_priorities": ta.num_priorities,
-            "num_replicaset": ta.num_replicaset,
-            "num_replicas_per_rs_lo": split_interval(ta.num_replicas_per_rs)[0],
-            "num_replicas_per_rs_hi": split_interval(ta.num_replicas_per_rs)[1],
-            "node_cpu_m": int(ta.node_cpu_m),
-            "node_mem_b": int(ta.node_mem_b),
-            "cpu_per_pod_m_lo": split_interval(ta.cpu_per_pod_m)[0],
-            "cpu_per_pod_m_hi": split_interval(ta.cpu_per_pod_m)[1],
-            "mem_per_pod_b_lo": split_interval(ta.mem_per_pod_b)[0],
-            "mem_per_pod_b_hi": split_interval(ta.mem_per_pod_b)[1],
-            "util": f"{ta.util:.3f}",
-            "util_run_cpu": f"{util_run_cpu:.3f}",
-            "util_run_mem": f"{util_run_mem:.3f}",
-            "cpu_m_run": 0,
-            "mem_b_run": 0,
-            "wait_pod_mode": ta.wait_pod_mode or "",
-            "wait_pod_timeout_s": ta.wait_pod_timeout_s,
-            "settle_timeout_min_s": ta.settle_timeout_min_s,
-            "settle_timeout_max_s": ta.settle_timeout_max_s,
-            "running_count":  int(running_count),
-            "unscheduled_count": int(unscheduled_total),
-            "pods_run_by_node": "{}",              # no node snapshot in direct mode
-            "running_placed_by_prio": json.dumps(
-                {str(k): v for k, v in running_by_prio.items()},
-                separators=(",", ":"), sort_keys=True
-            ),
-            "unschedulable_by_prio": "{}",         # not computed in direct mode
-            "unscheduled": "{}",                   # names not tracked here
-            "running": "{}",                       # names not tracked here
-            "pod_node": "[]",                      # not tracked here
-        }
-        # Ensure header and append
-        self._append_result_csv(row)
-
         return True
 
 
@@ -2308,7 +2281,7 @@ class KwokTestGenerator:
             return False
 
         # optionally skip “all running”
-        if unsched_count == 0 and self.args.seeds_not_all_running not in (None, -1) and self.args.seeds_not_all_running > 0:
+        if unsched_count == 0 and self.args.seeds_not_all_running > 0:
             single_seed_mode = (self.args.seed is not None and self.args.seed_file is None and self.args.count is None)
             under_limit = (self._saved_not_all_running < self.args.seeds_not_all_running)
             if single_seed_mode or under_limit:
@@ -2317,8 +2290,9 @@ class KwokTestGenerator:
                 LOG.info("skipped saving seed=%s (all pods running)", seed)
                 return True
 
-        # attempts / baseline (unchanged)
+        # attempts / baseline / stages
         baseline, best_name, attempts, error = self._get_solver_attempts()
+        best_score, best_duration_us, best_status = self._extract_best_attempt_fields(best_name, attempts)
 
         result_row = {
             "timestamp": get_timestamp(),
@@ -2327,8 +2301,10 @@ class KwokTestGenerator:
             "seed": str(seed),
             "error": error,
             "baseline": json.dumps(baseline, separators=(",", ":"), sort_keys=True),
-            "best_name": best_name,
-            "attempts": json.dumps(attempts, separators=(",", ":"), sort_keys=True),
+            "best_name": best_name,           
+            "best_score": (best_score if best_score is not None else ""),
+            "best_duration_us": (int(best_duration_us) if best_duration_us is not None else ""),
+            "best_status": (best_status or ""),
             "num_nodes": ta.num_nodes,
             "num_pods": ta.num_pods,
             "num_priorities": ta.num_priorities,
@@ -2361,6 +2337,7 @@ class KwokTestGenerator:
                 {name: node for (name, node) in snap.pods_running},
                 snap.pods_unscheduled, pod_specs, rs_specs
             ), separators=(",", ":")),
+            "solver_attempts": json.dumps(attempts, separators=(",", ":"), sort_keys=True),
         }
 
         phase = "write_results"
@@ -2538,12 +2515,12 @@ class KwokTestGenerator:
         LOG.info(f"results-dir resolved to: {self.results_dir}")
         
         self._eta_init()
-
+        
         seen = self._load_seen_results()
         
         # enter count mode when only --seeds-not-all-running is provided
-        if self.args.seeds_not_all_running is not None and self.args.seeds_not_all_running != -1 and self.args.seeds_not_all_running < 1:
-            raise SystemExit("--seeds-not-all-running must be -1 (infinite) or >= 1")
+        if self.args.seeds_not_all_running not in (-1, 0) and self.args.seeds_not_all_running < 1:
+            raise SystemExit("--seeds-not-all-running must be -1 (infinite), 0 (disabled), or >= 1")
         if (self.args.seed is None and not self.args.seed_file and self.args.count is None
             and self.args.seeds_not_all_running > 0):
             self.args.count = self.args.seeds_not_all_running
@@ -2715,7 +2692,7 @@ def build_argparser() -> argparse.ArgumentParser:
                             "Each successful repeat writes per-run artifacts named with _run-<idx> and prunes "
                             "any existing file that collides with that name. Failed repeats are retried per --retries "
                             "and do not count toward this number."))
-    ap.add_argument("--seeds-not-all-running", dest="seeds_not_all_running", type=int, default=None,
+    ap.add_argument("--seeds-not-all-running", dest="seeds_not_all_running", type=int, default=0,
                     help=("If >0, save save up to this many seeds where not all pods are running. "
                             "In --count mode the value is capped to --count (except -1), "
                             "and in --seed-file mode it's capped to the number of seeds in the file. "
@@ -2760,7 +2737,7 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="If set, write the solver JSON response to this path.")
     ap.add_argument("--show-solver-exitlog", action="store_true",
                     help="After the solver exits, print its raw stdout/stderr once (useful if not streaming).")
-    ap.add_argument("--direct-running-util", dest="direct_running_util", type=float, default=0.0,
+    ap.add_argument("--direct-running-util", dest="direct_running_util", type=float, default=1.0,
                     help="Direct mode only: pre-place pods as already running up to this per-node utilization (0..1).")
 
     return ap

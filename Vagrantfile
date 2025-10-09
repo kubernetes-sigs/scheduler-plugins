@@ -18,13 +18,10 @@
     /usr/bin/env bash ./bootstrap.sh all \
       --build-scheduler=false \
       --content-dir /home/vagrant/bootstrap/content \
-      --image-remote-tag henrikdc/master:dev \
-      --kwok-cluster kwok-a \
+      --cluster-name kwok1 \
       --kwok-runtime binary \
-      --kwok-config-file data/configs/kwok_config.yaml \
       --results-dir data/results/a \
-      --seed-file data/seeds/001.txt \
-      --matrix-file data/jobs/tmp/matrix-file.csv \
+      --matrix-file data/jobs/tmp/matrix-file_10_40.csv \
       --trigger-optimizer true \
       --save-solver-stats true \
       --save-scheduler-logs true \

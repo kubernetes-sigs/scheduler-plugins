@@ -232,7 +232,7 @@ func buildBaselineScore(in SolverInput) *SolverScore {
 func solverConfigArgs() []any {
 	args := make([]any, 0, 10)
 	if SolverPythonEnabled {
-		args = append(args, "pythonSolver", true, "pythonTimeout", SolverPythonTimeout.String())
+		args = append(args, "pythonSolver", true, "pythonTimeout", SolverPythonTimeout.String(), "pythonGapLimit", fmt.Sprintf("%.2f", SolverPythonGapLimit), "pythonGuaranteedTierFraction", fmt.Sprintf("%.2f", SolverPythonGuaranteedTierFraction), "pythonMoveFractionOfTier", fmt.Sprintf("%.2f", SolverPythonMoveFractionOfTier))
 	}
 	if SolverBfsEnabled {
 		args = append(args, "bfsSolver", true, "bfsTimeout", SolverBfsTimeout.String())
@@ -534,6 +534,7 @@ func summarizeAttempt(r SolverResult) SolverResult {
 		Status:     status,
 		DurationUs: r.DurationUs,
 		Score:      r.Score,
+		Stages:     r.Stages,
 	}
 }
 

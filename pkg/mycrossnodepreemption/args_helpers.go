@@ -28,6 +28,18 @@ func parseInt(s string) int {
 	return v
 }
 
+// parseFloat parses a float string and returns the corresponding float64 value.
+func parseFloat(s string, lLimit float64, uLimit float64) float64 {
+	v, _ := strconv.ParseFloat(s, 64)
+	if v < lLimit {
+		return lLimit
+	}
+	if v > uLimit {
+		return uLimit
+	}
+	return v
+}
+
 // parseTime parses a duration string and returns the corresponding time.Duration.
 func parseTime(s string) time.Duration {
 	if d, err := time.ParseDuration(s); err == nil {

@@ -38,8 +38,17 @@ var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "false"))
 // SolverPythonTimeout is the timeout for the python solver to complete.
 var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "10s"))
 
-// grace
-var SolverPythonGraceMs = parseInt(getenv("SOLVER_PYTHON_GRACE_MS", "1000"))
+// SolverPythonGapLimit is the gap to optimality for the python solver (0.00 = optimal).
+var SolverPythonGapLimit = parseFloat(getenv("SOLVER_PYTHON_GAP_LIMIT", "0.00"), 0.00, 1.00)
+
+// SolverPythonGuaranteedTierFraction is the guaranteed fraction of time for all tiers (0.00-1.00).
+var SolverPythonGuaranteedTierFraction = parseFloat(getenv("SOLVER_PYTHON_GUARANTEED_TIER_FRACTION", "0.40"), 0.00, 1.00)
+
+// SolverPythonMoveFractionOfTier is the fraction of a tier's budget for moves (0.00-1.00).
+var SolverPythonMoveFractionOfTier = parseFloat(getenv("SOLVER_PYTHON_MOVE_FRACTION_OF_TIER", "0.30"), 0.00, 1.00)
+
+// SolverPythonGraceMs is the grace period for the python solver (ms).
+var SolverPythonGraceMs = parseInt(getenv("SOLVER_PYTHON_GRACE_MS", "2000"))
 
 // SolverBfsEnabled indicates whether the BFS solver is enabled.
 var SolverBfsEnabled = parseBool(getenv("SOLVER_BFS_ENABLED", "false"))

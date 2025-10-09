@@ -64,7 +64,7 @@ class CPSATSolver:
         return STATUS_MAP.get(st, "UNKNOWN")
 
     @staticmethod
-    def _rel_gap(sense: str, obj: float, bound: float) -> float:
+    def _relative_gap(sense: str, obj: float, bound: float) -> float:
         # For max: gap = (bound - obj) / max(1, |obj|)
         # For min: gap = (obj   - bound) / max(1, |obj|)
         if obj is None or bound is None:
@@ -91,39 +91,35 @@ class CPSATSolver:
         #################################################
         # --- Options/Parameters ------------------------
         #################################################
-        timeout_ms              = int(instance.get("timeout_ms", 3000)) - 200
-        ignore_affinity         = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
-        workers                 = self._available_cpus() # set number of workers to the amount available
-        use_hints               = bool(instance.get("use_hints", False))
+        timeout_ms               = int(instance.get("timeout_ms", 3000)) - 200
+        ignore_affinity          = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
+        # workers                  = self._available_cpus() # set number of workers to the amount available
+        use_hints                = bool(instance.get("use_hints", False))
         # If use_strictly_improving is true, accept a plan only if it is strictly better than the current state under the objective. 
         # This prevents no-op plans but may reject globally optimal plans whose objective ties the baseline. Set False to allow equal-score solutions.
-        use_strictly_improving  = bool(instance.get("use_strictly_improving", False)) # TODO: Input interface doesn't implement this yet, however we enforce it
-        use_symmetry_breaking   = bool(instance.get("symmetry_breaking", False))
-        hints                   = instance.get("hints") if use_hints else None
-        log_progress            = bool(instance.get("log_progress", False))
-        log_subsolvers          = bool(instance.get("log_progress", False))
+        use_strictly_improving   = bool(instance.get("use_strictly_improving", False)) # TODO: Input interface doesn't implement this yet, however we enforce it
+        use_symmetry_breaking    = bool(instance.get("symmetry_breaking", False))
+        hints                    = instance.get("hints") if use_hints else None
+        log_progress             = bool(instance.get("log_progress", False))
+        log_subsolvers           = bool(instance.get("log_progress", False))
+        guaranteed_tier_fraction = float(instance.get("guaranteed_tier_fraction", 0.4)) # guranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers.
+        move_fraction_of_tier    = float(instance.get("move_fraction_of_tier", 0.3)) # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves.
+        
+        SAFETY_PADDING_SEC  = 0.05
 
         #################################################
         # --- Solver Options ----------------------------
         #################################################
         solver = cp_model.CpSolver()
-        # solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
-        solver.parameters.num_search_workers        = max(1, workers)
+        # solver.parameters.num_search_workers        = max(1, workers)
         solver.parameters.log_search_progress       = log_progress
-        #solver.parameters.cp_model_presolve = False
         solver.parameters.log_subsolver_statistics  = log_subsolvers
         solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
-        solver.parameters.relative_gap_limit        = 0.00 # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
+        solver.parameters.relative_gap_limit        = float(instance.get("gap_limit", 0.00)) # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
+        #solver.parameters.cp_model_presolve = False
         solver.log_callback = lambda line: (
             print(line, file=sys.stderr, flush=True) if line else None
         )
-        
-        stages: list[dict] = []
-        
-        # Replace your old deadline/min-slice logic with:
-        GUARANTEED_FRAC     = 0.4  # guranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers.
-        MOVES_SHARE         = 0.30  # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves.
-        SAFETY_PADDING_SEC  = 0.05
 
         #################################################
         # --- Ensure Pods from Input --------------------
@@ -378,7 +374,7 @@ class CPSATSolver:
         tiers_remaining = max(1, len(effective_tiers))
 
         # Global pools
-        reserved_total   = usable_sec * max(0.0, min(1.0, GUARANTEED_FRAC))  # guaranteed pool for all tiers
+        reserved_total   = usable_sec * max(0.0, min(1.0, guaranteed_tier_fraction))  # guaranteed pool for all tiers
         unreserved_pool  = max(0.0, usable_sec - reserved_total)             # free pool, first tier can burn it
         floor_left       = reserved_total                                     # remaining guaranteed pool
 
@@ -418,7 +414,7 @@ class CPSATSolver:
             try:
                 obj = solver.ObjectiveValue()
                 bnd = solver.BestObjectiveBound()
-                result["relative_gap"] = self._rel_gap(sense, obj, bnd)
+                result["relative_gap"] = self._relative_gap(sense, obj, bnd)
             except Exception:
                 pass
 
@@ -426,6 +422,7 @@ class CPSATSolver:
 
         # --- Main per-tier loop (place then moves) ---
         st = cp_model.UNKNOWN
+        stages: list[dict] = []
 
         for pr in effective_tiers:
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
@@ -447,19 +444,19 @@ class CPSATSolver:
                 continue
 
             # Split tier budget into place/moves by MOVES_SHARE
-            place_cap = tier_cap * (1.0 - MOVES_SHARE)
+            place_cap = tier_cap * (1.0 - move_fraction_of_tier)
 
             # ---------- PLACEMENT ----------
             placed_expr = sum(placed[i] for i in idxs_ge)
             reserve_place = run_stage(placed_expr, "max", place_cap)
             st = reserve_place["status"]
             time_spent_place = reserve_place["time_spent"]
-
+            
             stages.append({
                 "tier": pr,
                 "stage": "place",
                 "status": self._status_str(st),
-                "time_ms": round(time_spent_place * 1000),
+                "duration_ms": round(time_spent_place * 1000),
                 "relative_gap": f"{reserve_place['relative_gap']:.4f}",
             })
             if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -494,7 +491,7 @@ class CPSATSolver:
                     "tier": pr,
                     "stage": "moves",
                     "status": self._status_str(st),
-                    "time_ms": round(time_spent_moves * 1000),
+                    "duration_ms": round(time_spent_moves * 1000),
                     "relative_gap": f"{reserve_moves['relative_gap']:.4f}",
                 })
                 if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -567,8 +564,8 @@ class CPSATSolver:
             "placements": placements,
             "evictions": evictions,
             "stages": stages,
-            "total_time_ms": round(total_time * 1000),
-            "overall_status": overall_status,
+            "duration_ms": round(total_time * 1000),
+            "status": overall_status,
         }
 
 #################################################
