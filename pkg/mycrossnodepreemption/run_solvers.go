@@ -73,8 +73,9 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			Enabled: SolverPythonEnabled,
 			Timeout: SolverPythonTimeout,
 			Trials:  1,
-			FudgeMs: 200,
-			Run:     pl.runSolverPython,
+			Run: func(ctx context.Context, in SolverInput) (*SolverOutput, error) {
+				return pl.runSolverPython(ctx, in)
+			},
 		},
 	}
 
@@ -100,21 +101,22 @@ func (pl *MyCrossNodePreemption) runSolvers(
 
 		// Per-attempt input & hints
 		inAttempt := in
-		timeoutMs := att.Timeout.Milliseconds()
-		if att.FudgeMs > 0 && timeoutMs > att.FudgeMs {
-			timeoutMs -= att.FudgeMs
-		}
-		inAttempt.TimeoutMs = timeoutMs
+		inAttempt.TimeoutMs = att.Timeout.Milliseconds() // ← no grace added here
 		inAttempt.MaxTrials = att.Trials
 		inAttempt.UseHints = SolverUseHints
 		if SolverUseHints {
 			inAttempt.Hints = cloneScore(bestAttempt.Score)
 		}
 
-		// Run with timeout
-		ctxAtt, cancel := context.WithTimeout(ctx, att.Timeout)
+		// Build attempt context with timeout + grace
+		ctxDur := att.Timeout
+		if att.Name == "python" && SolverPythonGraceMs > 0 {
+			ctxDur += time.Duration(SolverPythonGraceMs) * time.Millisecond
+		}
+
+		ctxAtt, cancel := context.WithTimeout(ctx, ctxDur)
 		start := time.Now()
-		out, err := att.Run(ctxAtt, inAttempt)
+		out, err := att.Run(ctxAtt, inAttempt) // grace is ignored by non-python
 		cancel()
 		durUs := time.Since(start).Microseconds()
 

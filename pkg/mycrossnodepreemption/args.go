@@ -38,6 +38,9 @@ var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "false"))
 // SolverPythonTimeout is the timeout for the python solver to complete.
 var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "10s"))
 
+// grace
+var SolverPythonGraceMs = parseInt(getenv("SOLVER_PYTHON_GRACE_MS", "1000"))
+
 // SolverBfsEnabled indicates whether the BFS solver is enabled.
 var SolverBfsEnabled = parseBool(getenv("SOLVER_BFS_ENABLED", "false"))
 

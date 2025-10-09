@@ -1080,6 +1080,126 @@ class KwokTestGenerator:
     ######################################################
     # ---------- Solve directly ------------------
     ######################################################
+    def _preplace_running_pods(self, ta, pods, nodes, run_util: float, seed: int) -> dict:
+        """
+        Deterministic, simple pre-placement:
+        - Greedy largest-first; stable shuffle for strict ties using *the same seed*
+        - Pack into nodes 0..N-1
+        - Never exceed per-node CPU/MEM targets (cap * run_util)
+        - Returns a metrics dict with per-node and total running utilization.
+        """
+        # Per-node target budgets (always build so we can return zeros cleanly)
+        targets = []
+        for nd in nodes:
+            cpu_cap = int(nd["cap_cpu_m"])
+            mem_cap = int(nd["cap_mem_bytes"])
+            targets.append({
+                "name": nd["name"],
+                "cpu_cap": cpu_cap,
+                "mem_cap": mem_cap,
+                "cpu_target": int(cpu_cap * max(0.0, run_util)),
+                "mem_target": int(mem_cap * max(0.0, run_util)),
+                "cpu_used": 0,
+                "mem_used": 0,
+            })
+
+        if run_util > 0.0:
+            # Largest-first by (cpu, mem); tie-break with SAME seed
+            rng = seeded_random(seed, "preplace-simple")
+            idx = list(range(len(pods)))
+            idx.sort(key=lambda i: (pods[i]["req_cpu_m"], pods[i]["req_mem_bytes"]), reverse=True)
+
+            # Break strict ties deterministically
+            i = 0
+            while i < len(idx):
+                j = i + 1
+                ci = pods[idx[i]]["req_cpu_m"]; mi = pods[idx[i]]["req_mem_bytes"]
+                while j < len(idx):
+                    cj = pods[idx[j]]["req_cpu_m"]; mj = pods[idx[j]]["req_mem_bytes"]
+                    if (ci, mi) != (cj, mj):
+                        break
+                    j += 1
+                if j - i > 1:
+                    group = idx[i:j]
+                    rng.shuffle(group)
+                    idx[i:j] = group
+                i = j
+
+            def can_fit(t, p):
+                return ((t["cpu_used"] + p["req_cpu_m"] <= t["cpu_target"]) and
+                        (t["mem_used"] + p["req_mem_bytes"] <= t["mem_target"]))
+
+            def all_met():
+                for t in targets:
+                    if t["cpu_used"] < t["cpu_target"] or t["mem_used"] < t["mem_target"]:
+                        return False
+                return True
+
+            # Greedy pack
+            for k in idx:
+                p = pods[k]
+                if p.get("node"):
+                    continue  # respect prior assignment if any
+                placed = False
+                for t in targets:
+                    if can_fit(t, p):
+                        p["node"] = t["name"]  # mark as already running
+                        t["cpu_used"] += p["req_cpu_m"]
+                        t["mem_used"] += p["req_mem_bytes"]
+                        placed = True
+                        break
+                if placed and all_met():
+                    break
+
+        # ----- Build and return utilization metrics -----
+        def safe_div(a, b):
+            return (a / b) if b and b > 0 else 0.0
+
+        per_node = []
+        tot_cpu_used = tot_mem_used = 0
+        tot_cpu_cap = tot_mem_cap = 0
+        tot_cpu_target = tot_mem_target = 0
+
+        for t in targets:
+            tot_cpu_used   += t["cpu_used"]
+            tot_mem_used   += t["mem_used"]
+            tot_cpu_cap    += t["cpu_cap"]
+            tot_mem_cap    += t["mem_cap"]
+            tot_cpu_target += t["cpu_target"]
+            tot_mem_target += t["mem_target"]
+
+            per_node.append({
+                "name": t["name"],
+                "cpu_used": t["cpu_used"],
+                "mem_used": t["mem_used"],
+                "cpu_cap": t["cpu_cap"],
+                "mem_cap": t["mem_cap"],
+                "cpu_target": t["cpu_target"],
+                "mem_target": t["mem_target"],
+                # actual running util vs capacity
+                "cpu_util": safe_div(t["cpu_used"], t["cpu_cap"]),
+                "mem_util": safe_div(t["mem_used"], t["mem_cap"]),
+                # progress vs target (may exceed 1.0 only if targets==0 and used>0; capped)
+                "cpu_util_vs_target": min(1.0, safe_div(t["cpu_used"], t["cpu_target"])),
+                "mem_util_vs_target": min(1.0, safe_div(t["mem_used"], t["mem_target"])),
+            })
+
+        totals = {
+            "cpu_used": tot_cpu_used,
+            "mem_used": tot_mem_used,
+            "cpu_cap": tot_cpu_cap,
+            "mem_cap": tot_mem_cap,
+            "cpu_target": tot_cpu_target,
+            "mem_target": tot_mem_target,
+            "cpu_util": safe_div(tot_cpu_used, tot_cpu_cap),
+            "mem_util": safe_div(tot_mem_used, tot_mem_cap),
+            "cpu_util_vs_target": min(1.0, safe_div(tot_cpu_used, tot_cpu_target)),
+            "mem_util_vs_target": min(1.0, safe_div(tot_mem_used, tot_mem_target)),
+        }
+
+        return {"per_node": per_node, "totals": totals}
+
+        
     def _solve_direct_from_specs(self, ta, seed, pod_specs, rs_specs) -> tuple[dict, dict]:
         # Build nodes (numeric capacities)
         nodes = [{
@@ -1116,6 +1236,13 @@ class KwokTestGenerator:
             for r in range(int(rs["replicas"])):
                 _emit(f'{rs["name"]}-{r}', rs["priority"], rs["req_cpu_m"], rs["req_mem_bytes"])
 
+        # --- Pre-place some pods as already running (direct mode only) ---
+        run_util = float(getattr(self.args, "direct_running_util", 0.0) or 0.0)
+        res = self._preplace_running_pods(ta, pods, nodes, run_util, seed)
+        run_cpu_util = res.get("totals", {}).get("cpu_util", 0.0)
+        run_mem_util = res.get("totals", {}).get("mem_util", 0.0)
+        LOG.info("pre-placed pods with 'run_cpu_util=%.3f' and 'run_mem_util=%.3f' (seed=%d)", run_cpu_util, run_mem_util, seed)
+
         instance = {
             "timeout_ms": int(self.args.solver_timeout_ms),
             "ignore_affinity": True,
@@ -1135,6 +1262,7 @@ class KwokTestGenerator:
             with open(self.args.export_solver_input, "w", encoding="utf-8") as f:
                 json.dump(instance, f, indent=2)
 
+        LOG.info("solving directly with %d nodes and %d pods (seed=%d)", len(nodes), len(pods), seed)
         cmd = shlex.split(self.args.solver_cmd)
         t0 = time.time()
         completed = subprocess.run(
@@ -1180,9 +1308,26 @@ class KwokTestGenerator:
             elapsed_ms,
         )
 
+        initial_running_uids = {p["uid"] for p in pods if (p.get("node") or "").strip()}
+        uid_to_priority = {}
+        uid_to_cpu = {}
+        uid_to_mem = {}
+        for p in pods:
+            uid_to_priority[p["uid"]] = int(p.get("priority", 0))
+            uid_to_cpu[p["uid"]] = int(p["req_cpu_m"])
+            uid_to_mem[p["uid"]] = int(p["req_mem_bytes"])
+
+        total_node_cpu = sum(int(n["cap_cpu_m"]) for n in nodes)
+        total_node_mem = sum(int(n["cap_mem_bytes"]) for n in nodes)
+
         meta = {
             "uid_to_priority": uid_to_priority,
+            "uid_to_cpu": uid_to_cpu,
+            "uid_to_mem": uid_to_mem,
+            "initial_running_uids": list(initial_running_uids),
             "total_pods": len(pods),
+            "total_node_cpu": total_node_cpu,
+            "total_node_mem": total_node_mem,
             "elapsed_ms": elapsed_ms,
         }
         return resp, meta
@@ -1924,43 +2069,81 @@ class KwokTestGenerator:
         LOG.info("phase=%s", phase)
         resp, meta = self._solve_direct_from_specs(ta, seed, pod_specs, rs_specs)
 
-        status = resp.get("status", "UNKNOWN")
         placements = resp.get("placements", []) or []
-        placed_total = len(placements)
+        evictions  = resp.get("evictions", [])  or []
+
+        initial_running_uids = set(meta.get("initial_running_uids", []))
+        uid_to_priority = meta.get("uid_to_priority", {})
+        uid_to_cpu = meta.get("uid_to_cpu", {})
+        uid_to_mem = meta.get("uid_to_mem", {})
         total_pods = int(meta.get("total_pods", 0))
-        unscheduled_total = max(0, total_pods - placed_total)
-        elapsed_ms = int(meta.get("elapsed_ms", 0))
+        total_node_cpu = int(meta.get("total_node_cpu", 0)) or 1
+        total_node_mem = int(meta.get("total_node_mem", 0)) or 1
 
-        # placed by priority
-        uid_to_priority: dict = meta.get("uid_to_priority", {})
-        placed_by_priority = Counter()
-        for pl in placements:
-            pod = pl.get("pod", {})
-            uid = pod.get("uid") or ""
-            pr = uid_to_priority.get(uid)
-            if pr is not None:
-                placed_by_priority[int(pr)] += 1
+        evicted_uids = {e["pod"]["uid"] for e in evictions if "pod" in e and "uid" in e["pod"]}
+        new_from_pending_uids = {
+            pl["pod"]["uid"]
+            for pl in placements
+            if "pod" in pl and "uid" in pl["pod"] and (pl.get("from_node") or "") == ""
+        }
+        
+        moved_from_running_uids = {
+            pl["pod"]["uid"]
+            for pl in placements
+            if "pod" in pl and "uid" in pl["pod"] and (pl.get("from_node") or "") != ""
+        }
 
-        # Nice, stable per-priority view (high→low)
+        final_running_uids = (initial_running_uids - evicted_uids) | new_from_pending_uids
+        old_run_cpu = sum(uid_to_cpu.get(u, 0) for u in initial_running_uids)
+        old_run_mem = sum(uid_to_mem.get(u, 0) for u in initial_running_uids)
+        old_cpu_util = old_run_cpu / total_node_cpu if total_node_cpu else 0.0
+        old_mem_util = old_run_mem / total_node_mem if total_node_mem else 0.0
+        running_count = len(final_running_uids)
+        unscheduled_total = max(0, total_pods - running_count)
+
+        # placed-by-priority over FINAL running set
+        from collections import Counter
+        running_by_prio = Counter(uid_to_priority.get(u, 0) for u in final_running_uids)
+
+        # runtime utilization over FINAL running set
+        run_cpu = sum(uid_to_cpu.get(u, 0) for u in final_running_uids)
+        run_mem = sum(uid_to_mem.get(u, 0) for u in final_running_uids)
+        util_run_cpu = run_cpu / total_node_cpu
+        util_run_mem = run_mem / total_node_mem
+
         per_prio_str = ", ".join(
-            f"{p}:{placed_by_priority.get(p,0)}"
+            f"{p}:{running_by_prio.get(p,0)}"
             for p in sorted(set(uid_to_priority.values()), reverse=True)
         )
-
+        status = resp.get("status", "UNKNOWN")
+        elapsed_ms = int(meta.get("elapsed_ms", 0))
         LOG.info(
-            "solver status=%s time_ms=%d  placed=%d/%d  unscheduled=%d  placed_by_priority={%s}",
-            status, elapsed_ms, placed_total, total_pods, unscheduled_total, per_prio_str
+            "solver status=%s time_ms=%d  running=%d/%d  unscheduled=%d  "
+            "running_by_priority={%s}  evicted=%d  moved=%d  new=%d  "
+            "old_cpu_util=%.3f old_mem_util=%.3f  util_cpu=%.3f util_mem=%.3f",
+            status,
+            elapsed_ms,
+            running_count, total_pods, unscheduled_total,
+            per_prio_str,
+            len(evicted_uids),
+            len(moved_from_running_uids),
+            len(new_from_pending_uids),
+            old_cpu_util, old_mem_util,
+            util_run_cpu, util_run_mem,
         )
-
         phase = "direct_stats"
         LOG.info("phase=%s", phase)
 
         # Console summary line
         self._print_seed_summary(
             cfg, seed,
-            running=placed_total,
+            running=running_count,
             unscheduled=unscheduled_total,
-            note=f"direct-solving status={status} time_ms={elapsed_ms} placed_by_prio={{ {per_prio_str} }}"
+            note=(
+                f"direct-solving status={status} time_ms={elapsed_ms} "
+                f"evicted={len(evicted_uids)} moved={len(moved_from_running_uids)} new={len(new_from_pending_uids)} running_by_priority={{ {per_prio_str} }} "
+                f"util_cpu={util_run_cpu:.3f} (old_cpu_util={old_cpu_util:.3f}) util_mem={util_run_mem:.3f} (old_mem_util={old_mem_util:.3f})"
+            ),
         )
 
         # (Optional) append a compact CSV row for direct mode
@@ -1986,18 +2169,21 @@ class KwokTestGenerator:
             "mem_per_pod_b_lo": split_interval(ta.mem_per_pod_b)[0],
             "mem_per_pod_b_hi": split_interval(ta.mem_per_pod_b)[1],
             "util": f"{ta.util:.3f}",
-            "util_run_cpu": "",  # no cluster snapshot in direct mode
-            "util_run_mem": "",
+            "util_run_cpu": f"{util_run_cpu:.3f}",
+            "util_run_mem": f"{util_run_mem:.3f}",
             "cpu_m_run": 0,
             "mem_b_run": 0,
             "wait_pod_mode": ta.wait_pod_mode or "",
             "wait_pod_timeout_s": ta.wait_pod_timeout_s,
             "settle_timeout_min_s": ta.settle_timeout_min_s,
             "settle_timeout_max_s": ta.settle_timeout_max_s,
-            "running_count": int(placed_total),
+            "running_count":  int(running_count),
             "unscheduled_count": int(unscheduled_total),
             "pods_run_by_node": "{}",              # no node snapshot in direct mode
-            "running_placed_by_prio": json.dumps({str(k): v for k, v in placed_by_priority.items()}, separators=(",",":"), sort_keys=True),
+            "running_placed_by_prio": json.dumps(
+                {str(k): v for k, v in running_by_prio.items()},
+                separators=(",", ":"), sort_keys=True
+            ),
             "unschedulable_by_prio": "{}",         # not computed in direct mode
             "unscheduled": "{}",                   # names not tracked here
             "running": "{}",                       # names not tracked here
@@ -2573,8 +2759,9 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--export-solver-output", dest="export_solver_output", type=Path, default=None,
                     help="If set, write the solver JSON response to this path.")
     ap.add_argument("--show-solver-exitlog", action="store_true",
-                    help="After the solver exits, print its raw stdout/stderr once (useful if not streaming)."
-    )
+                    help="After the solver exits, print its raw stdout/stderr once (useful if not streaming).")
+    ap.add_argument("--direct-running-util", dest="direct_running_util", type=float, default=0.0,
+                    help="Direct mode only: pre-place pods as already running up to this per-node utilization (0..1).")
 
     return ap
 

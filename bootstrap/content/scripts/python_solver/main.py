@@ -19,6 +19,32 @@ STATUS_MAP = {
 NO_NODES = "NO_NODES"
 NO_PODS = "NO_PODS"
 
+class TimeBudget:
+    def __init__(self, total_sec: float, safety_pad_sec: float, min_frac: float):
+        self.total   = max(0.0, total_sec)
+        self.safety  = max(0.0, safety_pad_sec)
+        self.min_req = max(0.0, min_frac) * self.total  # 5% floor of the original total
+        self.used    = 0.0
+
+    def remaining(self) -> float:
+        # Never spend past (total - safety)
+        return max(0.0, self.total - self.safety - self.used)
+
+    def next_slice(self, stages_left: int) -> float:
+        if stages_left <= 0:
+            return 0.0
+        rem = self.remaining()
+        if rem <= 0.0:
+            return 0.0
+        fair = rem / stages_left
+        # Give the stage at least the 5% floor, but never more than what's left.
+        slc = min(rem, max(self.min_req, fair))
+        # If the slice is negligible, skip the solve.
+        if slc <= 1e-3:
+            return 0.0
+        self.used += slc
+        return slc
+
 class CPSATSolver:
     #################################################
     # --- Helpers -----------------------------------
@@ -53,7 +79,7 @@ class CPSATSolver:
         #################################################
         # --- Options/Parameters ------------------------
         #################################################
-        timeout_ms              = int(instance.get("timeout_ms", 3000))
+        timeout_ms              = int(instance.get("timeout_ms", 3000)) - 200
         ignore_affinity         = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
         workers                 = self._available_cpus() # set number of workers to the amount available
         use_hints               = bool(instance.get("use_hints", False))
@@ -72,26 +98,21 @@ class CPSATSolver:
         solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
         solver.parameters.num_search_workers        = max(1, workers)
         solver.parameters.log_search_progress       = log_progress
-        #solver.parameters.search_branching = cp_model.PORTFOLIO_SEARCH
         #solver.parameters.cp_model_presolve = False
-        #solver.parameters.cp_model_probing_level = 1  # 0=off, 1=basic, 2=aggressive
-        #solver.parameters.max_presolve_iterations = 1
-        #solver.parameters.linearization_level = 2
-        #solver.parameters.keep_all_feasible_solutions_in_presolve = True
         solver.parameters.log_subsolver_statistics  = log_subsolvers
         solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
         solver.parameters.relative_gap_limit        = 0.00 # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
         solver.log_callback = lambda line: (
             print(line, file=sys.stderr, flush=True) if line else None
         )
+        
+        # Replace your old deadline/min-slice logic with:
+        SAFETY_PADDING_SEC = 0.05
+        total_sec = max(0.0, timeout_ms / 1000.0)
 
-        # Single global deadline (timeout_ms <= 0 means "no limit")
-        _deadline_s = (_started_at + (timeout_ms / 1000.0)) if timeout_ms and timeout_ms > 0 else None
-        def _remaining_seconds() -> float | None:
-            """Return remaining seconds until the global deadline, or None if unlimited."""
-            if _deadline_s is None:
-                return None
-            return max(0.0, _deadline_s - time.monotonic())
+        budget = TimeBudget(total_sec=total_sec,
+                        safety_pad_sec=SAFETY_PADDING_SEC,
+                        min_frac=0.05)  # 5%
 
         #################################################
         # --- Ensure Pods from Input --------------------
@@ -264,6 +285,9 @@ class CPSATSolver:
         #################################################
         priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
 
+        def _is_placeable(i: int) -> bool:
+            return len(eligible_nodes[i]) > 0
+
         # Hints path that used placed[i] → switch to sums of assign
         if use_hints and isinstance(hints, dict):
             raw = hints.get("placed_by_priority") or {}
@@ -278,7 +302,7 @@ class CPSATSolver:
                     idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
                     if not idxs_ge: continue
                     cap_ge  = sum(1 for i in idxs_ge if eligible_nodes[i])
-                    base_ge = sum(1 for i in idxs_ge if i in running_idxs)
+                    base_ge = sum(1 for i in idxs_ge if i in running_idxs and _is_placeable(i))
                     need_ge = cum_need.get(pr, 0)
                     lower_bound = max(base_ge, min(need_ge, cap_ge))
                     if single_preemptor_mode and preemptor_idx is not None and pr <= preemptor_priority:
@@ -291,7 +315,7 @@ class CPSATSolver:
                 idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
                 if not idxs_ge: 
                     continue
-                base_ge = sum(1 for i in idxs_ge if i in running_idxs)
+                base_ge = sum(1 for i in idxs_ge if i in running_idxs and _is_placeable(i))
                 model.Add(sum(placed[i] for i in idxs_ge) >= base_ge)   # <- placed_b
 
         # Strict improvement
@@ -303,7 +327,7 @@ class CPSATSolver:
                 idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
                 if not idxs_ge: 
                     continue
-                base_ge = sum(1 for i in idxs_ge if i in running_idxs)
+                base_ge = sum(1 for i in idxs_ge if i in running_idxs and _is_placeable(i))
                 improved = model.NewBoolVar(f"strict_improve_ge_{pr}")
                 model.Add(sum(placed[i] for i in idxs_ge) >= base_ge + 1).OnlyEnforceIf(improved)  # <- placed_b
                 improved_at.append(improved)
@@ -311,11 +335,14 @@ class CPSATSolver:
                 model.AddBoolOr(improved_at)
 
         #################################################
-        # --- Symmetry breaking (optional, safe)---------
+        # --- Decision strategy ---------
         #################################################
         for i in range(num_pods):
             model.AddDecisionStrategy(assign[i], cp_model.CHOOSE_FIRST, cp_model.SELECT_MAX_VALUE)
-
+            
+        #################################################
+        # --- Symmetry breaking (optional, safe)---------
+        #################################################
         if use_symmetry_breaking:
             # node loads from assignments
             node_cpu_load = []
@@ -393,11 +420,12 @@ class CPSATSolver:
         #################################################
         def move_term(i):
             pos = eligible_pos[i].get(p_node_j(i))
+            # 1 if pod i is placed somewhere else than its original node; 0 if it stays; also 1 if it was pending and gets placed
             return placed[i] if pos is None else placed[i] - assign[i][pos]
 
         def tier_moves_expr(pr):
             idxs = [i for i in running_idxs if p_priority(i) >= pr]
-            return sum(move_term(i) for i in idxs)
+            return sum(move_term(i) for i in idxs) if idxs else 0
 
         def _apply_solution_as_hint():
             # Clear previous hints and push only the assign[] decisions
@@ -405,53 +433,76 @@ class CPSATSolver:
             for i in range(num_pods):
                 for local, _ in enumerate(eligible_nodes[i]):
                     model.AddHint(assign[i][local], int(solver.Value(assign[i][local])))
-        
+
         # Helper to set objective and solve one sub-stage.
-        def _solve_stage(obj_expr, sense: str) -> int:
-            if sense == "max": model.Maximize(obj_expr)
-            else:              model.Minimize(obj_expr)
-            rem = _remaining_seconds()
-            if rem is not None:
-                solver.parameters.max_time_in_seconds = max(1e-3, rem - 0.05)
+        def _solve_stage(obj_expr, sense: str, stages_left: int) -> int:
+            # Configure objective
+            if sense == "max":
+                model.Maximize(obj_expr)
+            else:
+                model.Minimize(obj_expr)
+
+            # Ask the budget for this stage’s slice
+            per_stage = budget.next_slice(stages_left)
+            if per_stage <= 0.0:
+                return cp_model.UNKNOWN
+
+            solver.parameters.max_time_in_seconds = per_stage
             return solver.Solve(model)
 
-        placement_all_optimal = True
+        final_status = None
+        stages_left = len(priorities) * 2
         for pr in priorities:
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
-            if not idxs_ge: 
+            if not idxs_ge:
+                stages_left -= 2
                 continue
 
+            # ---- placed stage ----
             placed_expr = sum(placed[i] for i in idxs_ge)
-            status = _solve_stage(placed_expr, "max")
-            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                return {"status": self._status_str(status)}
-            if status != cp_model.OPTIMAL:
-                placement_all_optimal = False
+            status = _solve_stage(placed_expr, "max", stages_left)
+            stages_left -= 1
             best_placed = solver.Value(placed_expr)
-            model.Add(placed_expr == best_placed)
+            if final_status is None:
+                final_status = status
+            
+            if status == cp_model.OPTIMAL:
+                model.Add(placed_expr == best_placed)
+            elif status == cp_model.FEASIBLE:
+                model.Add(placed_expr >= best_placed)
+            else:
+                break
+            # Downgrade OPTIMAL→FEASIBLE if we had any feasible stage before
+            if final_status == cp_model.OPTIMAL and status == cp_model.FEASIBLE:
+                final_status = cp_model.FEASIBLE
             _apply_solution_as_hint()
 
+            # ---- moves stage ----
             moves_expr = tier_moves_expr(pr)
-            status = _solve_stage(moves_expr, "min")
-            if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                return {"status": self._status_str(status)}
-            best_moves = solver.Value(moves_expr)
-            model.Add(moves_expr == best_moves)
+            status = _solve_stage(moves_expr, "min", stages_left)
+            stages_left -= 1
+            model.Add(moves_expr == solver.Value(moves_expr))
+            # Downgrade OPTIMAL→FEASIBLE if we had any feasible stage before
+            if final_status == cp_model.OPTIMAL and status == cp_model.FEASIBLE:
+                final_status = cp_model.FEASIBLE
             _apply_solution_as_hint()
 
-        # compute final status per your rule
-        if placement_all_optimal and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            final_status = cp_model.OPTIMAL
-        else:
-            final_status = status
-
-        #################################################
-        # --- Extract and Return Plan -------------------
-        #################################################
+        # ------------- Extract and Return Plan -------------
         placements, evictions = [], []
+
+        def _chosen_node(i) -> int | None:
+            for local, j in enumerate(eligible_nodes[i]):
+                if int(solver.Value(assign[i][local])) == 1:
+                    return j
+            return None
+
+        def _placed_now(i) -> bool:
+            return bool(int(solver.Value(placed[i])) == 1)
+
         for i in range(num_pods):
             was_running = (p_node_j(i) is not None)
-            placed_now = (solver.Value(placed[i]) == 1)
+            placed_now  = _placed_now(i)
+
             if was_running and not placed_now:
                 evictions.append({
                     "pod": {"uid": p_uid(i), "namespace": p_namespace(i), "name": p_name(i)},
@@ -460,11 +511,7 @@ class CPSATSolver:
                 continue
 
             if placed_now and eligible_nodes[i]:
-                chosen_j = None
-                for local, j in enumerate(eligible_nodes[i]):
-                    if int(solver.Value(assign[i][local])) == 1:
-                        chosen_j = j
-                        break
+                chosen_j = _chosen_node(i)
                 if chosen_j is None:
                     continue
                 orig_j = p_node_j(i)
@@ -476,7 +523,6 @@ class CPSATSolver:
                         "to_node": nodes[chosen_j]["name"],
                     })
 
-        # Return status, placements, evictions
         return {
             "status": self._status_str(final_status),
             "placements": placements,

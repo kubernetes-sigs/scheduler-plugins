@@ -91,20 +91,14 @@ type SolverPod struct {
 }
 
 // SolverAttempt defines a solver attempt configuration and function.
+// solver_types.go
+
 type SolverAttempt struct {
-	// Name of the solver attempt
-	Name string
-	// Whether the solver attempt is enabled
+	Name    string
 	Enabled bool
-	// Timeout for the solver attempt
 	Timeout time.Duration
-	// Number of solver trials to try
-	Trials int
-	// Time that the solver is allowed to exceed the timeout (ms)
-	// Can be used to let the solver provide a final solution after timeout.
-	FudgeMs int64
-	// Function to run the solver attempt
-	Run func(ctx context.Context, in SolverInput) (*SolverOutput, error)
+	Trials  int
+	Run     func(ctx context.Context, in SolverInput) (*SolverOutput, error)
 }
 
 // SolverResult is the result of a solver attempt.
