@@ -10,11 +10,11 @@ from ortools.sat.python import cp_model
 # --- Constants ---------------------------------
 #################################################
 STATUS_MAP = {
-    cp_model.OPTIMAL:       "OPTIMAL",
-    cp_model.FEASIBLE:      "FEASIBLE",
-    cp_model.INFEASIBLE:    "INFEASIBLE",
-    cp_model.MODEL_INVALID: "MODEL_INVALID",
     cp_model.UNKNOWN:       "UNKNOWN",
+    cp_model.MODEL_INVALID: "MODEL_INVALID",
+    cp_model.INFEASIBLE:    "INFEASIBLE",
+    cp_model.FEASIBLE:      "FEASIBLE",
+    cp_model.OPTIMAL:       "OPTIMAL",
 }
 NO_NODES = "NO_NODES"
 NO_PODS = "NO_PODS"
@@ -63,6 +63,18 @@ class CPSATSolver:
             return st
         return STATUS_MAP.get(st, "UNKNOWN")
 
+    @staticmethod
+    def _rel_gap(sense: str, obj: float, bound: float) -> float:
+        # For max: gap = (bound - obj) / max(1, |obj|)
+        # For min: gap = (obj   - bound) / max(1, |obj|)
+        if obj is None or bound is None:
+            return None
+        denom = max(1.0, abs(obj))
+        if sense == "max":
+            return max(0.0, (bound - obj) / denom)
+        else:
+            return max(0.0, (obj - bound) / denom)
+
     def solve(self, instance: dict) -> dict:
         _started_at = time.monotonic()
         
@@ -106,9 +118,11 @@ class CPSATSolver:
             print(line, file=sys.stderr, flush=True) if line else None
         )
         
+        stages: list[dict] = []
+        
         # Replace your old deadline/min-slice logic with:
-        GUARANTEED_FRAC     = 0.00  # guranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers.
-        MOVES_SHARE         = 0.00  # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves.
+        GUARANTEED_FRAC     = 0.4  # guranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers.
+        MOVES_SHARE         = 0.30  # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves.
         SAFETY_PADDING_SEC  = 0.05
 
         #################################################
@@ -336,78 +350,6 @@ class CPSATSolver:
         #################################################
         for i in range(num_pods):
             model.AddDecisionStrategy(assign[i], cp_model.CHOOSE_FIRST, cp_model.SELECT_MAX_VALUE)
-            
-        #################################################
-        # --- Symmetry breaking (optional, safe)---------
-        #################################################
-        if use_symmetry_breaking:
-            # node loads from assignments
-            node_cpu_load = []
-            for j in range(num_nodes):
-                terms = []
-                for i in range(num_pods):
-                    pos = eligible_pos[i].get(j)
-                    if pos is not None:
-                        terms.append(assign[i][pos] * p_req_cpu_m(i))
-                v = model.NewIntVar(0, n_cap_cpu_m(j), f"cpu_load_node_{j}")
-                model.Add(v == (sum(terms) if terms else 0))
-                node_cpu_load.append(v)
-
-            # baseline: protected-staying + singleton-domain pods
-            base_cpu = [0] * num_nodes
-            for i in range(num_pods):
-                dom = eligible_nodes[i]
-                if p_protected(i) and p_node_j(i) in dom:
-                    base_cpu[p_node_j(i)] += p_req_cpu_m(i)
-                elif len(dom) == 1:
-                    base_cpu[dom[0]] += p_req_cpu_m(i)
-
-            # free load per node and chain within equivalent groups
-            free_cpu = []
-            for j in range(num_nodes):
-                v = model.NewIntVar(0, n_cap_cpu_m(j), f"free_cpu_{j}")
-                model.Add(v == node_cpu_load[j] - base_cpu[j])
-                free_cpu.append(v)
-
-            def node_signature_for_sb(j):
-                domain_mask = tuple(eligible_pos[i].get(j) is not None for i in range(num_pods))
-                return (n_cap_cpu_m(j), n_cap_mem_bytes(j), base_cpu[j], domain_mask)
-
-            groups = {}
-            for j in range(num_nodes):
-                groups.setdefault(node_signature_for_sb(j), []).append(j)
-
-            for group in groups.values():
-                group.sort()
-                for a, b in zip(group, group[1:]):
-                    model.Add(free_cpu[a] <= free_cpu[b])
-            
-            # Within equivalent pods, prefer lower-indexed to get assigned first
-            chosen_idx = []
-            for i in range(num_pods):
-                L = len(eligible_nodes[i])
-                if L == 0:
-                    chosen_idx.append(None)
-                    continue
-                ci = model.NewIntVar(0, L, f"chosen_idx_{i}")
-                chosen_idx.append(ci)
-                model.Add(ci == 0).OnlyEnforceIf(placed[i].Not())
-                for t in range(L):
-                    model.Add(ci == t + 1).OnlyEnforceIf(assign[i][t])
-
-            def pod_sig(i):
-                return (p_req_cpu_m(i), p_req_mem_bytes(i), p_priority(i), tuple(eligible_nodes[i]))
-
-            classes = {}
-            for i in range(num_pods):
-                if p_protected(i) or p_node_j(i) is not None or not eligible_nodes[i]:
-                    continue
-                classes.setdefault(pod_sig(i), []).append(i)
-
-            for idxs in classes.values():
-                idxs.sort()
-                for a, b in zip(idxs, idxs[1:]):
-                    model.Add(chosen_idx[a] <= chosen_idx[b]).OnlyEnforceIf([placed[a], placed[b]])
         
         #################################################
         # --- Lexicographic optimization (sequential) ---
@@ -444,26 +386,46 @@ class CPSATSolver:
             # wall guard with safety pad
             return max(0.0, deadline - time.monotonic() - SAFETY_PADDING_SEC)
 
-        def run_stage(obj_expr, sense: str, cap_sec: float) -> tuple[int, float]:
-            """Run one CP-SAT stage (max/min obj) with a hard cap; return (status, actual_spent_sec)."""
+        def run_stage(obj_expr, sense: str, cap_sec: float) -> dict:
+            """Run one CP-SAT stage with a hard cap.
+                Returns a dict: {status, spent, objective_value, best_objective_bound, relative_gap}."""
+            result = {
+                "status": cp_model.UNKNOWN,
+                "time_spent": 0.0,
+                "relative_gap": None, # ratio of (bound - obj) / max(1, |obj|)
+            }
             if cap_sec <= 1e-3:
-                return (cp_model.UNKNOWN, 0.0)
+                return result
+
             if sense == "max":
                 model.Maximize(obj_expr)
             else:
                 model.Minimize(obj_expr)
-            # Clamp by actual wall remaining
+
             budget = min(cap_sec, remaining_wall())
             if budget <= 1e-3:
-                return (cp_model.UNKNOWN, 0.0)
+                return result
+
             t0 = time.monotonic()
             solver.parameters.max_time_in_seconds = budget
             st = solver.Solve(model)
-            spent = min(budget, max(0.0, time.monotonic() - t0))  # use actual elapsed time
-            return (st, spent)
+            time_spent = min(budget, max(0.0, time.monotonic() - t0))
+
+            result["status"] = st
+            result["time_spent"] = time_spent
+
+            # Pull objective/ bound when the model had an objective.
+            try:
+                obj = solver.ObjectiveValue()
+                bnd = solver.BestObjectiveBound()
+                result["relative_gap"] = self._rel_gap(sense, obj, bnd)
+            except Exception:
+                pass
+
+            return result
 
         # --- Main per-tier loop (place then moves) ---
-        final_status = None
+        st = cp_model.UNKNOWN
 
         for pr in effective_tiers:
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
@@ -478,7 +440,7 @@ class CPSATSolver:
             # Minimum guaranteed for this tier = equal share of what's left in the guaranteed pool
             tier_min = floor_left / max(1, tiers_remaining)
 
-            # This tier can use: its guaranteed minimum + the whole unreserved pool (greedy)
+            # This tier can use: its guaranteed minimum + the whole unreserved pool
             tier_cap = min(rem_wall, tier_min + unreserved_pool)
             if tier_cap <= 1e-3:
                 tiers_remaining = max(0, tiers_remaining - 1)
@@ -486,14 +448,20 @@ class CPSATSolver:
 
             # Split tier budget into place/moves by MOVES_SHARE
             place_cap = tier_cap * (1.0 - MOVES_SHARE)
-            moves_cap = tier_cap - place_cap
 
             # ---------- PLACEMENT ----------
             placed_expr = sum(placed[i] for i in idxs_ge)
-            st, spent_place = run_stage(placed_expr, "max", place_cap)
-            # Track status
-            if final_status is None or st != cp_model.OPTIMAL:
-                final_status = st
+            reserve_place = run_stage(placed_expr, "max", place_cap)
+            st = reserve_place["status"]
+            time_spent_place = reserve_place["time_spent"]
+
+            stages.append({
+                "tier": pr,
+                "stage": "place",
+                "status": self._status_str(st),
+                "time_ms": round(time_spent_place * 1000),
+                "relative_gap": f"{reserve_place['relative_gap']:.4f}",
+            })
             if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 break
             best_placed = solver.Value(placed_expr)
@@ -501,14 +469,14 @@ class CPSATSolver:
             _apply_solution_as_hint()
 
             # pools deduction
-            use_unres = min(unreserved_pool, spent_place)
-            unreserved_pool -= use_unres
-            floor_left      = max(0.0, floor_left - (spent_place - use_unres))
+            use_unreserve = min(unreserved_pool, time_spent_place)
+            unreserved_pool -= use_unreserve
+            floor_left      = max(0.0, floor_left - (time_spent_place - use_unreserve))
 
 
             # ---------- MOVES ----------
             # Let moves use whatever remains of this tier's cap (including any unused "placement" share)
-            rem_tier = max(0.0, tier_cap - spent_place)
+            rem_tier = max(0.0, tier_cap - time_spent_place)
             if remaining_wall() > 1e-3 and rem_tier > 1e-3:
                 def move_term(i):
                     pos = eligible_pos[i].get(p_node_j(i))
@@ -518,19 +486,26 @@ class CPSATSolver:
                 moves_expr = sum(move_term(i) for i in running_ge) if running_ge else 0
                 
                 # cap moves by both remaining wall and remaining tier budget
-                st, spent_moves = run_stage(moves_expr, "min", min(rem_tier, remaining_wall()))
+                reserve_moves = run_stage(moves_expr, "min", min(rem_tier, remaining_wall()))
+                st = reserve_moves["status"]
+                time_spent_moves = reserve_moves["time_spent"]
 
-                if final_status is None or st != cp_model.OPTIMAL:
-                    final_status = st
+                stages.append({
+                    "tier": pr,
+                    "stage": "moves",
+                    "status": self._status_str(st),
+                    "time_ms": round(time_spent_moves * 1000),
+                    "relative_gap": f"{reserve_moves['relative_gap']:.4f}",
+                })
                 if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                     break
                 model.Add(moves_expr == solver.Value(moves_expr))
                 _apply_solution_as_hint()
 
                 # pools deduction for moves
-                use_unres = min(unreserved_pool, spent_moves)
-                unreserved_pool -= use_unres
-                floor_left      = max(0.0, floor_left - (spent_moves - use_unres))
+                use_unreserve = min(unreserved_pool, time_spent_moves)
+                unreserved_pool -= use_unreserve
+                floor_left      = max(0.0, floor_left - (time_spent_moves - use_unreserve))
 
             # decrement tiers remaining
             tiers_remaining = max(0, tiers_remaining - 1)
@@ -571,10 +546,29 @@ class CPSATSolver:
                         "to_node": nodes[chosen_j]["name"],
                     })
 
+        total_time = max(0.0, time.monotonic() - _started_at)
+        
+        # To make sure the solver don't flip an NOT OPTIMAL solution to OPTIMAL
+        seen = {s["status"] for s in stages}
+        if "MODEL_INVALID" in seen:
+            overall_status = "MODEL_INVALID"
+        elif "UNKNOWN" in seen:
+            overall_status = "UNKNOWN"
+        elif "INFEASIBLE" in seen:
+            overall_status = "INFEASIBLE"
+        elif "FEASIBLE" in seen:
+            overall_status = "FEASIBLE"
+        elif seen:  # all OPTIMAL
+            overall_status = "OPTIMAL"
+        else:
+            overall_status = self._status_str(st)
+        
         return {
-            "status": self._status_str(final_status),
             "placements": placements,
             "evictions": evictions,
+            "stages": stages,
+            "total_time_ms": round(total_time * 1000),
+            "overall_status": overall_status,
         }
 
 #################################################

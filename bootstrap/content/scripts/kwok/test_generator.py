@@ -2140,7 +2140,7 @@ class KwokTestGenerator:
             running=running_count,
             unscheduled=unscheduled_total,
             note=(
-                f"direct-solving status={status} time_ms={elapsed_ms} "
+                f"direct-solving status={status} exec_time_ms={elapsed_ms} "
                 f"evicted={len(evicted_uids)} moved={len(moved_from_running_uids)} new={len(new_from_pending_uids)} running_by_priority={{ {per_prio_str} }} "
                 f"util_cpu={util_run_cpu:.3f} (old_cpu_util={old_cpu_util:.3f}) util_mem={util_run_mem:.3f} (old_mem_util={old_mem_util:.3f})"
             ),
