@@ -79,7 +79,7 @@ class CPSATSolver:
         #################################################
         # --- Options/Parameters ------------------------
         #################################################
-        timeout_ms              = int(instance.get("timeout_ms", 3000)) - 200
+        timeout_ms              = int(instance.get("timeout_ms", 3000))
         ignore_affinity         = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
         workers                 = self._available_cpus() # set number of workers to the amount available
         use_hints               = bool(instance.get("use_hints", False))
@@ -107,12 +107,9 @@ class CPSATSolver:
         )
         
         # Replace your old deadline/min-slice logic with:
-        SAFETY_PADDING_SEC = 0.05
-        total_sec = max(0.0, timeout_ms / 1000.0)
-
-        budget = TimeBudget(total_sec=total_sec,
-                        safety_pad_sec=SAFETY_PADDING_SEC,
-                        min_frac=0.05)  # 5%
+        GUARANTEED_FRAC     = 0.60  # 60% of total time is guaranteed across all tiers
+        MOVES_SHARE         = 0.40  # of a tier's budget: 40% moves, 60% placement
+        SAFETY_PADDING_SEC  = 0.05
 
         #################################################
         # --- Ensure Pods from Input --------------------
@@ -423,10 +420,6 @@ class CPSATSolver:
             # 1 if pod i is placed somewhere else than its original node; 0 if it stays; also 1 if it was pending and gets placed
             return placed[i] if pos is None else placed[i] - assign[i][pos]
 
-        def tier_moves_expr(pr):
-            idxs = [i for i in running_idxs if p_priority(i) >= pr]
-            return sum(move_term(i) for i in idxs) if idxs else 0
-
         def _apply_solution_as_hint():
             # Clear previous hints and push only the assign[] decisions
             model.ClearHints()
@@ -434,58 +427,106 @@ class CPSATSolver:
                 for local, _ in enumerate(eligible_nodes[i]):
                     model.AddHint(assign[i][local], int(solver.Value(assign[i][local])))
 
-        # Helper to set objective and solve one sub-stage.
-        def _solve_stage(obj_expr, sense: str, stages_left: int) -> int:
-            # Configure objective
+        total_sec  = max(0.0, timeout_ms / 1000.0)
+        usable_sec = max(0.0, total_sec - SAFETY_PADDING_SEC)
+        deadline   = time.monotonic() + total_sec
+
+        # Build effective_tiers as you already do...
+        effective_tiers = [pr for pr in priorities if any(p_priority(i) >= pr for i in range(num_pods))]
+        tiers_remaining = max(1, len(effective_tiers))
+
+        # Global pools
+        reserved_total   = usable_sec * max(0.0, min(1.0, GUARANTEED_FRAC))  # guaranteed pool for all tiers
+        unreserved_pool  = max(0.0, usable_sec - reserved_total)             # free pool, first tier can burn it
+        floor_left       = reserved_total                                     # remaining guaranteed pool
+
+        def remaining_wall() -> float:
+            # wall guard with safety pad
+            return max(0.0, deadline - time.monotonic() - SAFETY_PADDING_SEC)
+
+        def run_stage(obj_expr, sense: str, cap_sec: float) -> tuple[int, float]:
+            """Run one CP-SAT stage (max/min obj) with a hard cap; return (status, actual_spent_sec)."""
+            if cap_sec <= 1e-3:
+                return (cp_model.UNKNOWN, 0.0)
             if sense == "max":
                 model.Maximize(obj_expr)
             else:
                 model.Minimize(obj_expr)
+            # Clamp by actual wall remaining
+            budget = min(cap_sec, remaining_wall())
+            if budget <= 1e-3:
+                return (cp_model.UNKNOWN, 0.0)
+            t0 = time.monotonic()
+            solver.parameters.max_time_in_seconds = budget
+            st = solver.Solve(model)
+            spent = min(budget, max(0.0, time.monotonic() - t0))  # use actual elapsed time
+            return (st, spent)
 
-            # Ask the budget for this stage’s slice
-            per_stage = budget.next_slice(stages_left)
-            if per_stage <= 0.0:
-                return cp_model.UNKNOWN
-
-            solver.parameters.max_time_in_seconds = per_stage
-            return solver.Solve(model)
-
+        # --- Main per-tier loop (place then moves) ---
         final_status = None
-        stages_left = len(priorities) * 2
-        for pr in priorities:
+
+        for pr in effective_tiers:
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
             if not idxs_ge:
-                stages_left -= 2
+                tiers_remaining = max(0, tiers_remaining - 1)
                 continue
 
-            # ---- placed stage ----
-            placed_expr = sum(placed[i] for i in idxs_ge)
-            status = _solve_stage(placed_expr, "max", stages_left)
-            stages_left -= 1
-            best_placed = solver.Value(placed_expr)
-            if final_status is None:
-                final_status = status
-            
-            if status == cp_model.OPTIMAL:
-                model.Add(placed_expr == best_placed)
-            elif status == cp_model.FEASIBLE:
-                model.Add(placed_expr >= best_placed)
-            else:
+            rem_wall = remaining_wall()
+            if rem_wall <= 0.0:
                 break
-            # Downgrade OPTIMAL→FEASIBLE if we had any feasible stage before
-            if final_status == cp_model.OPTIMAL and status == cp_model.FEASIBLE:
-                final_status = cp_model.FEASIBLE
+
+            # Minimum guaranteed for this tier = equal share of what's left in the guaranteed pool
+            tier_min = floor_left / max(1, tiers_remaining)
+
+            # This tier can use: its guaranteed minimum + the whole unreserved pool (greedy)
+            tier_cap = min(rem_wall, tier_min + unreserved_pool)
+            if tier_cap <= 1e-3:
+                tiers_remaining = max(0, tiers_remaining - 1)
+                continue
+
+            # Split tier budget into place/moves by MOVES_SHARE
+            place_cap = tier_cap * (1.0 - MOVES_SHARE)
+            moves_cap = tier_cap - place_cap
+
+            # ---------- PLACEMENT STAGE ----------
+            placed_expr = sum(placed[i] for i in idxs_ge)
+            st, spent = run_stage(placed_expr, "max", place_cap)
+            # Track status
+            if final_status is None or st != cp_model.OPTIMAL:
+                final_status = st
+            if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                break
+            best_placed = solver.Value(placed_expr)
+            model.Add(placed_expr == best_placed if st == cp_model.OPTIMAL else placed_expr >= best_placed)
             _apply_solution_as_hint()
 
-            # ---- moves stage ----
-            moves_expr = tier_moves_expr(pr)
-            status = _solve_stage(moves_expr, "min", stages_left)
-            stages_left -= 1
+            # Deduct spent from pools: burn unreserved first, then guaranteed
+            use_unres = min(unreserved_pool, spent)
+            unreserved_pool -= use_unres
+            floor_left      = max(0.0, floor_left - (spent - use_unres))
+
+            # ---------- MOVES STAGE ----------
+            def move_term(i):
+                pos = eligible_pos[i].get(p_node_j(i))
+                return placed[i] if pos is None else placed[i] - assign[i][pos]
+
+            running_ge = [i for i in running_idxs if p_priority(i) >= pr]
+            moves_expr = sum(move_term(i) for i in running_ge) if running_ge else 0
+
+            st, spent = run_stage(moves_expr, "min", min(moves_cap, remaining_wall()))
+            if final_status is None or st != cp_model.OPTIMAL:
+                final_status = st
+            if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                break
             model.Add(moves_expr == solver.Value(moves_expr))
-            # Downgrade OPTIMAL→FEASIBLE if we had any feasible stage before
-            if final_status == cp_model.OPTIMAL and status == cp_model.FEASIBLE:
-                final_status = cp_model.FEASIBLE
             _apply_solution_as_hint()
+
+            # Deduct spent from pools (same policy)
+            use_unres = min(unreserved_pool, spent)
+            unreserved_pool -= use_unres
+            floor_left      = max(0.0, floor_left - (spent - use_unres))
+
+            tiers_remaining = max(0, tiers_remaining - 1)
 
         # ------------- Extract and Return Plan -------------
         placements, evictions = [], []
