@@ -1241,7 +1241,7 @@ class KwokTestGenerator:
         res = self._preplace_running_pods(ta, pods, nodes, run_util, seed)
         run_cpu_util = res.get("totals", {}).get("cpu_util", 0.0)
         run_mem_util = res.get("totals", {}).get("mem_util", 0.0)
-        LOG.info("pre-placed pods with 'run_cpu_util=%.3f' and 'run_mem_util=%.3f' (seed=%d)", run_cpu_util, run_mem_util, seed)
+        LOG.info("pre-placed pods with util=%.3f (seed=%d)", run_util, seed)
 
         instance = {
             "timeout_ms": int(self.args.solver_timeout_ms),

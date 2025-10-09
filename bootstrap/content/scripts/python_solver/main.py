@@ -79,7 +79,7 @@ class CPSATSolver:
         #################################################
         # --- Options/Parameters ------------------------
         #################################################
-        timeout_ms              = int(instance.get("timeout_ms", 3000))
+        timeout_ms              = int(instance.get("timeout_ms", 3000)) - 200
         ignore_affinity         = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
         workers                 = self._available_cpus() # set number of workers to the amount available
         use_hints               = bool(instance.get("use_hints", False))
@@ -95,7 +95,7 @@ class CPSATSolver:
         # --- Solver Options ----------------------------
         #################################################
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
+        # solver.parameters.max_time_in_seconds       = max(1, timeout_ms / 1000.0)
         solver.parameters.num_search_workers        = max(1, workers)
         solver.parameters.log_search_progress       = log_progress
         #solver.parameters.cp_model_presolve = False
@@ -107,8 +107,8 @@ class CPSATSolver:
         )
         
         # Replace your old deadline/min-slice logic with:
-        GUARANTEED_FRAC     = 0.60  # 60% of total time is guaranteed across all tiers
-        MOVES_SHARE         = 0.40  # of a tier's budget: 40% moves, 60% placement
+        GUARANTEED_FRAC     = 0.00  # guranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers.
+        MOVES_SHARE         = 0.00  # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves.
         SAFETY_PADDING_SEC  = 0.05
 
         #################################################
@@ -488,9 +488,9 @@ class CPSATSolver:
             place_cap = tier_cap * (1.0 - MOVES_SHARE)
             moves_cap = tier_cap - place_cap
 
-            # ---------- PLACEMENT STAGE ----------
+            # ---------- PLACEMENT ----------
             placed_expr = sum(placed[i] for i in idxs_ge)
-            st, spent = run_stage(placed_expr, "max", place_cap)
+            st, spent_place = run_stage(placed_expr, "max", place_cap)
             # Track status
             if final_status is None or st != cp_model.OPTIMAL:
                 final_status = st
@@ -500,32 +500,39 @@ class CPSATSolver:
             model.Add(placed_expr == best_placed if st == cp_model.OPTIMAL else placed_expr >= best_placed)
             _apply_solution_as_hint()
 
-            # Deduct spent from pools: burn unreserved first, then guaranteed
-            use_unres = min(unreserved_pool, spent)
+            # pools deduction
+            use_unres = min(unreserved_pool, spent_place)
             unreserved_pool -= use_unres
-            floor_left      = max(0.0, floor_left - (spent - use_unres))
+            floor_left      = max(0.0, floor_left - (spent_place - use_unres))
 
-            # ---------- MOVES STAGE ----------
-            def move_term(i):
-                pos = eligible_pos[i].get(p_node_j(i))
-                return placed[i] if pos is None else placed[i] - assign[i][pos]
 
-            running_ge = [i for i in running_idxs if p_priority(i) >= pr]
-            moves_expr = sum(move_term(i) for i in running_ge) if running_ge else 0
+            # ---------- MOVES ----------
+            # Let moves use whatever remains of this tier's cap (including any unused "placement" share)
+            rem_tier = max(0.0, tier_cap - spent_place)
+            if remaining_wall() > 1e-3 and rem_tier > 1e-3:
+                def move_term(i):
+                    pos = eligible_pos[i].get(p_node_j(i))
+                    return placed[i] if pos is None else placed[i] - assign[i][pos]
 
-            st, spent = run_stage(moves_expr, "min", min(moves_cap, remaining_wall()))
-            if final_status is None or st != cp_model.OPTIMAL:
-                final_status = st
-            if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                break
-            model.Add(moves_expr == solver.Value(moves_expr))
-            _apply_solution_as_hint()
+                running_ge = [i for i in running_idxs if p_priority(i) >= pr]
+                moves_expr = sum(move_term(i) for i in running_ge) if running_ge else 0
+                
+                # cap moves by both remaining wall and remaining tier budget
+                st, spent_moves = run_stage(moves_expr, "min", min(rem_tier, remaining_wall()))
 
-            # Deduct spent from pools (same policy)
-            use_unres = min(unreserved_pool, spent)
-            unreserved_pool -= use_unres
-            floor_left      = max(0.0, floor_left - (spent - use_unres))
+                if final_status is None or st != cp_model.OPTIMAL:
+                    final_status = st
+                if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                    break
+                model.Add(moves_expr == solver.Value(moves_expr))
+                _apply_solution_as_hint()
 
+                # pools deduction for moves
+                use_unres = min(unreserved_pool, spent_moves)
+                unreserved_pool -= use_unres
+                floor_left      = max(0.0, floor_left - (spent_moves - use_unres))
+
+            # decrement tiers remaining
             tiers_remaining = max(0, tiers_remaining - 1)
 
         # ------------- Extract and Return Plan -------------
