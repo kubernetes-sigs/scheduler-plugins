@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-print_completions.py — list KWOK run completion summaries (simplified).
+eta.py — list KWOK run ETA summaries (simplified).
 
 - Always recurses into subdirectories
 - Always prints plain text
@@ -9,7 +9,7 @@ print_completions.py — list KWOK run completion summaries (simplified).
 - Accepts at most one directory argument (defaults to ".")
 
 Looks for files named like:
-  completion_<YYYYMMDD-HHMMSS|eta-unknown>_configs-<at>-of-<total>_seeds-<at>-of-<total>
+  eta_<YYYYMMDD-HHMMSS|eta-unknown>_configs-<at>-of-<total>_seeds-<at>-of-<total>
 and also reads one-line JSON payloads inside those files if present.
 """
 
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 FNAME_RE = re.compile(
-    r"^completion_(?P<timestr>(eta-unknown|[0-9]{8}-[0-9]{6}))"
+    r"^eta_(?P<timestr>(eta-unknown|[0-9]{8}-[0-9]{6}))"
     r"_configs-(?P<cfg_at>\d+)-of-(?P<cfg_total>\d+)"
     r"_seeds-(?P<seed_at>-?\d+)-of-(?P<seed_total>-?\d+)$"
 )
@@ -88,12 +88,12 @@ def merge_info(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
             out[k] = v
     return out
 
-def find_completion_files(root: Path) -> List[Path]:
-    return [p for p in root.rglob("completion_*") if p.is_file()]
+def find_eta_files(root: Path) -> List[Path]:
+    return [p for p in root.rglob("eta_*") if p.is_file()]
 
 def collect(root: Path) -> List[Dict[str, Any]]:
     entries: List[Dict[str, Any]] = []
-    files = find_completion_files(root)
+    files = find_eta_files(root)
     for p in files:
         base = parse_filename(p)
         js = read_json_payload(p)
@@ -139,7 +139,7 @@ def fmt_plain(e: Dict[str, Any]) -> str:
 def main():
     # One optional directory argument (default ".")
     if len(sys.argv) > 2:
-        print("Usage: print_completions.py [DIR]", file=sys.stderr)
+        print("Usage: eta.py [DIR]", file=sys.stderr)
         sys.exit(2)
     root = Path(sys.argv[1] if len(sys.argv) == 2 else ".").resolve()
 
@@ -147,7 +147,7 @@ def main():
     entries = sort_entries(entries)
 
     if not entries:
-        print("No completion_* files found.", file=sys.stderr)
+        print("No eta_* files found.", file=sys.stderr)
         return
 
     for e in entries:

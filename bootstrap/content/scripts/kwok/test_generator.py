@@ -23,7 +23,7 @@ from helpers import (
 # ===============================================================
 RESULTS_HEADER = [
     "timestamp", "kwok_config", "seed_file", "seed",
-    "error", "baseline", "best_name","best_score", "best_duration_us", "best_status",
+    "error", "baseline", "best_name","best_score", "best_duration_ms", "best_status",
     "num_nodes", "num_pods", "num_priorities", "num_replicaset",
     "num_replicas_per_rs_lo", "num_replicas_per_rs_hi",
     "node_cpu_m", "node_mem_b",
@@ -328,7 +328,7 @@ class KwokTestGenerator:
     def _extract_best_attempt_fields(best_name: str, attempts: list[dict]) -> tuple[float | None, int | None, str]:
         """
         Prefer the attempt with name == best_name; otherwise use the one with the
-        highest numeric 'score'. Return (best_score, best_duration_us, best_status).
+        highest numeric 'score'. Return (best_score, best_duration_ms, best_status).
         """
         if not isinstance(attempts, list) or not attempts:
             return None, None, ""
@@ -348,19 +348,19 @@ class KwokTestGenerator:
                 best_score = float(v)
         except Exception:
             pass
-        best_duration_us = None
+        best_duration_ms = None
         try:
-            v = best_attempt.get("duration_us")
+            v = best_attempt.get("duration_ms")
             if v is not None:
-                best_duration_us = int(v)
+                best_duration_ms = int(v)
         except Exception:
             # allow float-like strings
             try:
-                best_duration_us = int(float(best_attempt.get("duration_us")))
+                best_duration_ms = int(float(best_attempt.get("duration_ms")))
             except Exception:
                 pass
         best_status = str(best_attempt.get("status") or "")
-        return best_score, best_duration_us, best_status
+        return best_score, best_duration_ms, best_status
 
     def _skipped_all_running_csv(self) -> Path:
         assert self.results_dir is not None, "results_dir must be set"
@@ -2290,7 +2290,7 @@ class KwokTestGenerator:
 
         # attempts / baseline / stages
         baseline, best_name, attempts, error = self._get_solver_attempts()
-        best_score, best_duration_us, best_status = self._extract_best_attempt_fields(best_name, attempts)
+        best_score, best_duration_ms, best_status = self._extract_best_attempt_fields(best_name, attempts)
 
         result_row = {
             "timestamp": get_timestamp(),
@@ -2301,7 +2301,7 @@ class KwokTestGenerator:
             "baseline": json.dumps(baseline, separators=(",", ":"), sort_keys=True),
             "best_name": best_name,           
             "best_score": (best_score if best_score is not None else ""),
-            "best_duration_us": (int(best_duration_us) if best_duration_us is not None else ""),
+            "best_duration_ms": (int(best_duration_ms) if best_duration_ms is not None else ""),
             "best_status": (best_status or ""),
             "num_nodes": ta.num_nodes,
             "num_pods": ta.num_pods,

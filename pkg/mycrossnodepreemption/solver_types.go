@@ -52,8 +52,8 @@ type SolverOutput struct {
 	Evictions []Placement `json:"evictions"`
 	// Stages of the solver
 	Stages []SolverStage `json:"stages,omitempty"`
-	// Duration in microseconds of the solver
-	DurationUs int64 `json:"duration_us,omitempty"`
+	// Duration in milliseconds of the solver
+	DurationMs int64 `json:"duration_ms,omitempty"`
 }
 
 // SolverNode represents a node in the cluster for the solver.
@@ -117,8 +117,8 @@ type SolverResult struct {
 	// Status of the solver
 	// filled from Output.Status when present
 	Status string `json:"status,omitempty"`
-	// DurationUs of the solver
-	DurationUs int64 `json:"duration_us,omitempty"`
+	// DurationMs of the solver
+	DurationMs int64 `json:"duration_ms,omitempty"`
 	// Score of the solution
 	Score SolverScore `json:"score,omitempty"`
 	// Stages of the solver
@@ -149,7 +149,7 @@ type SolverStage struct {
 	// Status of the solver stage
 	Status string `json:"status"`
 	// Duration of the solver stage
-	DurationUs int64 `json:"duration_us"`
+	DurationMs int64 `json:"duration_ms"`
 	// The ratio gap to optimality (if known)
 	RelativeGap string `json:"relative_gap,omitempty"`
 }

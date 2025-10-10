@@ -33,14 +33,14 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			score := computeSolverScore(in, out)
 			bestAttempt = &SolverResult{
 				Name:       "direct-fit",
-				DurationUs: time.Since(start).Microseconds(),
+				DurationMs: time.Since(start).Milliseconds(),
 				Score:      score,
 				CmpBase:    1,
 				Output:     out,
 				Status:     out.Status,
 			}
 			klog.InfoS(msg(strategy, "direct-fit; skipping other solvers"),
-				"placedByPri", bestAttempt.Score.PlacedByPriority, "evictions", bestAttempt.Score.Evicted, "moves", bestAttempt.Score.Moved, "durationUs", bestAttempt.DurationUs)
+				"placedByPri", bestAttempt.Score.PlacedByPriority, "evictions", bestAttempt.Score.Evicted, "moves", bestAttempt.Score.Moved, "durationMs", bestAttempt.DurationMs)
 			return bestAttempt.Name, true, bestAttempt, nil
 		}
 		klog.V(MyV).InfoS(msg(strategy, "direct-fit could not place all pods; run solvers"), "durationUs", time.Since(start).Microseconds())
@@ -121,31 +121,31 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		start := time.Now()
 		out, err := att.Run(ctxAtt, inAttempt) // grace is ignored by non-python
 		cancel()
-		durUs := time.Since(start).Microseconds()
+		durMs := time.Since(start).Milliseconds()
 
 		if err != nil && out != nil { // error with output
-			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "status", out.Status, "err", err, "durationUs", durUs)
+			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "status", out.Status, "err", err, "durationMs", durMs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
-				DurationUs: durUs,
+				DurationMs: durMs,
 				Status:     out.Status,
 				Score:      computeSolverScore(inAttempt, out),
 				Stages:     out.Stages,
 			})
 			continue
 		} else if err != nil { // error with no output
-			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "err", err, "durationUs", durUs)
+			klog.InfoS(msg(strategy, InfoSolverFailed), "solver", att.Name, "err", err, "durationMs", durMs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
-				DurationUs: durUs,
+				DurationMs: durMs,
 				Status:     "failed-no-output",
 			})
 			continue
 		} else if !hasSolverFeasibleResult(out.Status) { // no feasible or optimal solution
-			klog.InfoS(msg(strategy, InfoNoFeasibleOrOptimalSolution), "solver", att.Name, "status", out.Status, "durationUs", durUs)
+			klog.InfoS(msg(strategy, InfoNoFeasibleOrOptimalSolution), "solver", att.Name, "status", out.Status, "durationMs", durMs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
-				DurationUs: durUs,
+				DurationMs: durMs,
 				Status:     out.Status,
 				Score:      computeSolverScore(inAttempt, out),
 				Stages:     out.Stages,
@@ -156,10 +156,10 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		// Check if plan is actually applicable on the current cluster state
 		ok, why := pl.planApplicable(out, nodes, pods)
 		if !ok {
-			klog.InfoS(msg(strategy, InfoPlanNotApplicable), "solver", att.Name, "status", out.Status, "reason", why, "durationUs", durUs)
+			klog.InfoS(msg(strategy, InfoPlanNotApplicable), "solver", att.Name, "status", out.Status, "reason", why, "durationMs", durMs)
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
-				DurationUs: durUs,
+				DurationMs: durMs,
 				Status:     out.Status,
 				Score:      computeSolverScore(inAttempt, out),
 				Stages:     out.Stages,
@@ -173,7 +173,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		curr := SolverResult{
 			Name:       att.Name,
 			Output:     out,
-			DurationUs: durUs,
+			DurationMs: durMs,
 			Score:      score,
 			CmpBase:    improvedOverBaseline,
 			Status:     out.Status,
@@ -189,7 +189,7 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				"baselinePlacedByPri", baselineScore.PlacedByPriority,
 				"evictions", score.Evicted, "baselineEvictions", baselineScore.Evicted,
 				"moves", score.Moved, "baselineMoves", baselineScore.Moved,
-				"durationUs", durUs,
+				"durationMs", durMs,
 			)
 			curr.CmpBase = 0 // mark as non-improving
 			attempts = append(attempts, curr)
@@ -204,18 +204,18 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		switch curr.CmpBase {
 		case 1:
 			klog.V(MyV).InfoS(msg(strategy, "new leader"),
-				"solver", att.Name, "prevLeader", bestAttempt.Name, "durationUs", curr.DurationUs,
+				"solver", att.Name, "prevLeader", bestAttempt.Name, "durationMs", curr.DurationMs,
 				"leaderPlacedByPri", curr.Score.PlacedByPriority, "prevPlacedByPri", bestAttempt.Score.PlacedByPriority,
 				"leaderEvictions", curr.Score.Evicted, "prevEvictions", bestAttempt.Score.Evicted,
 				"leaderMoves", curr.Score.Moved, "prevMoves", bestAttempt.Score.Moved)
 			bestAttempt = &curr // update leader
 		case 0: // tie
 			klog.V(MyV).InfoS(msg(strategy, "solver tied with leader"),
-				"solver", att.Name, "leader", bestAttempt.Name, "durationUs", curr.DurationUs,
+				"solver", att.Name, "leader", bestAttempt.Name, "durationMs", curr.DurationMs,
 				"placedByPri", curr.Score.PlacedByPriority, "evictions", curr.Score.Evicted, "moves", curr.Score.Moved)
 		default: // worse
 			klog.V(MyV).InfoS(msg(strategy, "solver worse than leader"),
-				"solver", att.Name, "leader", bestAttempt.Name, "durationUs", curr.DurationUs,
+				"solver", att.Name, "leader", bestAttempt.Name, "durationMs", curr.DurationMs,
 				"placedByPri", curr.Score.PlacedByPriority, "leaderPlacedByPri", bestAttempt.Score.PlacedByPriority,
 				"evictions", curr.Score.Evicted, "leaderEvictions", bestAttempt.Score.Evicted,
 				"moves", curr.Score.Moved, "leaderMoves", bestAttempt.Score.Moved)

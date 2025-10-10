@@ -532,7 +532,7 @@ func summarizeAttempt(r SolverResult) SolverResult {
 	return SolverResult{
 		Name:       r.Name,
 		Status:     status,
-		DurationUs: r.DurationUs,
+		DurationMs: r.DurationMs,
 		Score:      r.Score,
 		Stages:     r.Stages,
 	}
@@ -556,7 +556,7 @@ func logLeaderboard(
 	for _, r := range attempts {
 		rr := SolverResult{
 			Name:       r.Name,
-			DurationUs: r.DurationUs,
+			DurationMs: r.DurationMs,
 			Score:      r.Score,
 			Status:     r.Status,
 			CmpBase:    isImprovement(baseline, r.Score),
@@ -575,7 +575,7 @@ func logLeaderboard(
 	baselineEntry := SolverResult{
 		Name:       "baseline",
 		Status:     "BASELINE",
-		DurationUs: 0,
+		DurationMs: 0,
 		Score:      baseline,
 		CmpBase:    0,
 	}
@@ -603,7 +603,7 @@ func logLeaderboard(
 		statuses[i] = ranking[i].Status
 		evictions[i] = ranking[i].Score.Evicted
 		moves[i] = ranking[i].Score.Moved
-		durations[i] = ranking[i].DurationUs
+		durations[i] = ranking[i].DurationMs
 	}
 
 	placed := baseline.PlacedByPriority

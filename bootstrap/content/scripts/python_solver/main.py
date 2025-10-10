@@ -104,6 +104,7 @@ class CPSATSolver:
         # --- Solver setup ------------------------------
         #################################################
         solver = cp_model.CpSolver()
+        solver.parameters.num_search_workers        = 0 # 0 = all available cores
         solver.parameters.relative_gap_limit        = float(instance.get("gap_limit", 0.00)) # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
         solver.parameters.log_search_progress       = log_progress
         solver.parameters.log_subsolver_statistics  = log_progress
@@ -114,8 +115,7 @@ class CPSATSolver:
                 print(line, file=sys.stderr, flush=True) if line else None
             )
 
-        # Other parameters you may consider to tune:
-        # solver.parameters.num_search_workers # default: all available. Can sometimes be beneficial to limit this.
+        # Other parameters we may consider to tune:
         # solver.parameters.cp_model_presolve # default True
 
         #################################################
