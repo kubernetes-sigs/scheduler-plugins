@@ -117,9 +117,10 @@ class CPSATSolver:
         solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
         solver.parameters.relative_gap_limit        = float(instance.get("gap_limit", 0.00)) # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
         #solver.parameters.cp_model_presolve = False
-        solver.log_callback = lambda line: (
-            print(line, file=sys.stderr, flush=True) if line else None
-        )
+        if log_progress or log_subsolvers: # log_callback only if we want to; can slow down the solver quite a bit
+            solver.log_callback = lambda line: (
+                print(line, file=sys.stderr, flush=True) if line else None
+            )
 
         #################################################
         # --- Ensure Pods from Input --------------------

@@ -48,7 +48,7 @@ var SolverPythonGuaranteedTierFraction = parseFloat(getenv("SOLVER_PYTHON_GUARAN
 var SolverPythonMoveFractionOfTier = parseFloat(getenv("SOLVER_PYTHON_MOVE_FRACTION_OF_TIER", "0.30"), 0.00, 1.00)
 
 // SolverPythonGraceMs is the grace period for the python solver (ms).
-var SolverPythonGraceMs = parseInt(getenv("SOLVER_PYTHON_GRACE_MS", "2000"))
+var SolverPythonGraceMs = parseInt(getenv("SOLVER_PYTHON_GRACE_MS", "1000"))
 
 // SolverBfsEnabled indicates whether the BFS solver is enabled.
 var SolverBfsEnabled = parseBool(getenv("SOLVER_BFS_ENABLED", "false"))
