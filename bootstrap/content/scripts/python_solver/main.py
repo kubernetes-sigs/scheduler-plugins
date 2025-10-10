@@ -56,9 +56,6 @@ class CPSATSolver:
             - preemptor: optional dict with uid, namespace, name, req_cpu_m, req_mem_bytes, priority, protected
             - timeout_ms: int, total timeout in milliseconds (default 3000)
             - ignore_affinity: bool, whether to ignore affinity constraints (default True)
-            - use_hints: bool, whether to use hints (default False)
-            - hints: optional dict with hints data
-            - symmetry_breaking: bool, whether to use symmetry breaking (default False)
             - log_progress: bool, whether to log progress (default False)
             - log_subsolvers: bool, whether to log subsolver statistics (default False)
             - guaranteed_tier_fraction: float in [0.0, 1.0], fraction of time guaranteed for all tiers (default 0.4)

@@ -103,10 +103,6 @@ func (pl *MyCrossNodePreemption) runSolvers(
 		inAttempt := in
 		inAttempt.TimeoutMs = att.Timeout.Milliseconds() // ← no grace added here
 		inAttempt.MaxTrials = att.Trials
-		inAttempt.UseHints = SolverUseHints
-		if SolverUseHints {
-			inAttempt.Hints = cloneScore(bestAttempt.Score)
-		}
 
 		// Build attempt context with timeout + grace
 		ctxDur := att.Timeout

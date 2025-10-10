@@ -32,12 +32,6 @@ type SolverInput struct {
 	IgnoreAffinity bool `json:"ignore_affinity"`
 	// Log solver progress
 	LogProgress bool `json:"log_progress,omitempty"`
-	// Whether to use hints
-	UseHints bool `json:"use_hints,omitempty"`
-	// Thresholds/targets to improve from
-	Hints *SolverScore `json:"hints,omitempty"`
-	// Number of parallel workers (0 = auto)
-	Workers int `json:"workers,omitempty"`
 	// Maximum number of trials (0 = unlimited)
 	MaxTrials int `json:"max_trials,omitempty"` // for local search
 	// Gap to optimality (0.0 = ignore)

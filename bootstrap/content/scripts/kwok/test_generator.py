@@ -1266,9 +1266,7 @@ class KwokTestGenerator:
         instance = {
             "timeout_ms": int(self.args.solver_timeout_ms),
             "ignore_affinity": True,
-            "log_progress": True,
-            "use_hints": False,
-            "hints": None,
+            "log_progress": True, # can slow down the solver quite a bit
             "workers": 0,
             "max_trials": 0,
             "preemptor": None,
