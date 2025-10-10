@@ -339,7 +339,7 @@ class CPSATSolver:
         #########################
         # Solver helpers
         #########################
-        def move_term(i):
+        def _move_term(i):
             """
             Expression for whether pod i is moved (1) or not (0).
             """
@@ -357,12 +357,27 @@ class CPSATSolver:
                 for local, _ in enumerate(eligible_nodes[i]):
                     model.AddHint(assign[i][local], int(solver.Value(assign[i][local])))
 
-        def remaining_wall() -> float:
+        def _remaining_wall() -> float:
             """
             Remaining wall time in seconds, with safety padding.
             """
             # wall guard with safety pad
             return max(0.0, deadline - time.monotonic() - SAFETY_PADDING_SEC)
+
+        def _chosen_node(i) -> int | None:
+            """
+            Return the chosen node index for pod i, or None if not placed.
+            """
+            for local, j in enumerate(eligible_nodes[i]):
+                if int(solver.Value(assign[i][local])) == 1:
+                    return j
+            return None
+
+        def _placed_now(i) -> bool:
+            """
+            Return whether pod i is currently placed.
+            """
+            return bool(int(solver.Value(placed[i])) == 1)
 
         def run_stage(obj_expr, sense: str, cap_sec: float) -> dict:
             """
@@ -382,7 +397,7 @@ class CPSATSolver:
             else:
                 model.Minimize(obj_expr)
 
-            budget = min(cap_sec, remaining_wall())
+            budget = min(cap_sec, _remaining_wall())
             if budget <= 1e-3:
                 return result
 
@@ -403,21 +418,6 @@ class CPSATSolver:
                 pass
 
             return result
-
-        def _chosen_node(i) -> int | None:
-            """
-            Return the chosen node index for pod i, or None if not placed.
-            """
-            for local, j in enumerate(eligible_nodes[i]):
-                if int(solver.Value(assign[i][local])) == 1:
-                    return j
-            return None
-
-        def _placed_now(i) -> bool:
-            """
-            Return whether pod i is currently placed.
-            """
-            return bool(int(solver.Value(placed[i])) == 1)
 
         #########################
         # Time management
@@ -445,7 +445,7 @@ class CPSATSolver:
             if not idxs_ge:
                 tiers_remaining = max(0, tiers_remaining - 1)
                 continue
-            rem_wall = remaining_wall()
+            rem_wall = _remaining_wall()
             if rem_wall <= 0.0:
                 break
             # Minimum guaranteed for this tier = equal share of what's left in the guaranteed pool
@@ -484,15 +484,15 @@ class CPSATSolver:
             # --- MOVES stage ----------
             # Let moves use whatever remains of this tier's cap (including any unused "placement" share)
             rem_tier = max(0.0, tier_cap - time_spent_place)
-            if remaining_wall() > 1e-3 and rem_tier > 1e-3:
-                def move_term(i):
+            if _remaining_wall() > 1e-3 and rem_tier > 1e-3:
+                def _move_term(i):
                     pos = eligible_pos[i].get(p_node_j(i))
                     return placed[i] if pos is None else placed[i] - assign[i][pos]
                 running_ge = [i for i in running_idxs if p_priority(i) >= pr]
-                moves_expr = sum(move_term(i) for i in running_ge) if running_ge else 0
+                moves_expr = sum(_move_term(i) for i in running_ge) if running_ge else 0
                 
                 # cap moves by both remaining wall and remaining tier budget
-                reserve_moves = run_stage(moves_expr, "min", min(rem_tier, remaining_wall()))
+                reserve_moves = run_stage(moves_expr, "min", min(rem_tier, _remaining_wall()))
                 st = reserve_moves["status"]
                 time_spent_moves = reserve_moves["time_spent"]
                 stages.append({
