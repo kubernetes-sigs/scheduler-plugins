@@ -2,7 +2,7 @@
 
 # main.py
 
-import os, time, sys, json
+import time, sys, json
 from typing import Union
 from ortools.sat.python import cp_model
 
@@ -192,7 +192,10 @@ class CPSATSolver:
             w = pods[i].get("node") or ""
             return node_idx.get(w) if w else None
 
-        # Index of preemptor if present
+        #################################################
+        # --- Get preemptor, running/pending indices ----
+        #################################################
+        # Index of preemptor
         preemptor_idx = None
         preemptor_priority  = None
         if single_preemptor_mode:
@@ -204,7 +207,7 @@ class CPSATSolver:
             if preemptor_idx is None:
                 single_preemptor_mode = False # fallback if not found
 
-        # Indices of "running now" vs "pending"
+        # Indices of running vs pending pods
         running_idxs = [i for i in range(num_pods) if p_node_j(i) is not None]
         pending_idxs = [i for i in range(num_pods) if p_node_j(i) is None]
 
