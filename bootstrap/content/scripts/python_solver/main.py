@@ -97,8 +97,8 @@ class CPSATSolver:
         # This prevents no-op plans but may reject globally optimal plans whose objective ties the baseline. Set False to allow equal-score solutions.
         use_strictly_improving   = bool(instance.get("use_strictly_improving", False)) # TODO: Input interface doesn't implement this yet, however we enforce it
         log_progress             = bool(instance.get("log_progress", False))
-        guaranteed_tier_fraction = float(instance.get("guaranteed_tier_fraction", 0.4)) # guranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers.
-        move_fraction_of_tier    = float(instance.get("move_fraction_of_tier", 0.3)) # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves.
+        guaranteed_tier_fraction = float(instance.get("guaranteed_tier_fraction", 0.6)) # guaranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers. Default value of 0.6 is estimated through experiments.
+        move_fraction_of_tier    = float(instance.get("move_fraction_of_tier", 0.5)) # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves. Default value of 0.5 is estimated through experiments.
 
         #################################################
         # --- Solver setup ------------------------------

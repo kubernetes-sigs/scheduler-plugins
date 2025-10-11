@@ -1,2 +1,0 @@
-config-file,seed-file,results-dir
-data/configs/fraction_of_timeout/all_synch_python_nodes16_pods128_prio4_util105_10_90_030.yaml,data/seeds/test.txt,data/results/fraction_of_timeout/all_synch_python_nodes16_pods128_prio4_util105_10_90_030

@@ -36,4 +36,4 @@ componentsPatches:
       - name: SOLVER_PYTHON_ENABLED
         value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
-        value: "1s" # 1s, 10s, 20s
+        value: "10s" # 1s, 10s, 20s
