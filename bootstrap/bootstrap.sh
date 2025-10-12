@@ -22,17 +22,13 @@ KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"    # binary | docker
 RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
 CONFIG_FILE="${CONFIG_FILE:-}"   # can be relative to CONTENT_DIR
 SEED="${SEED:-}"
-COUNT="${COUNT:-}"
-GEN_SEEDS_TO_FILE="${GEN_SEEDS_TO_FILE:-}"
-TEST="${TEST:-}"
 OVERWRITE="${OVERWRITE:-}"
 LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
-MATRIX_FILE="${MATRIX_FILE:-}"             # can be relative to CONTENT_DIR
+JOB_FILE="${JOB_FILE:-}"                     # can be relative to CONTENT_DIR
 
 TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
-OPTIMIZER_URL="${OPTIMIZER_URL:-}"
-ACTIVE_URL="${ACTIVE_URL:-}"
+
 PAUSE="${PAUSE:-}"
 
 SEEDS_NOT_ALL_RUNNING="${SEEDS_NOT_ALL_RUNNING:-0}" # int: how many seeds can be allowed to not reach all pods running (0=all must reach all running)
@@ -113,8 +109,6 @@ print_cfg() {
     log cfg "RESULTS_DIR=${RESULTS_DIR:-<unset>}"
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
     log cfg "SEED=${SEED:-<unset>}"
-    log cfg "COUNT=${COUNT:-<unset>}"
-    log cfg "GEN_SEEDS_TO_FILE=${GEN_SEEDS_TO_FILE:-<unset>}"
     log cfg "OVERWRITE=${OVERWRITE:-<unset>}"
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
@@ -123,8 +117,6 @@ print_cfg() {
   fi
   if [ -n "${TRIGGER_OPTIMIZER:-}" ]; then
     log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
-    log cfg "OPTIMIZER_URL=${OPTIMIZER_URL:-<unset>}"
-    log cfg "ACTIVE_URL=${ACTIVE_URL:-<unset>}"
   else
     log cfg "TRIGGER_OPTIMIZER=<unset>"
   fi
@@ -303,20 +295,15 @@ stage_test() {
 
   # Build the argv list once, only adding args the user actually set
   local args=()
-  [ -n "${KWOK_RUNTIME:-}"     ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
-  [ -n "${CLUSTER_NAME:-}"     ] && args+=( --cluster-name "${CLUSTER_NAME}" )
-  [ -n "${CONFIG_FILE:-}" ] && args+=( --config-file "${CONFIG_FILE}" )
-  [ -n "${RESULTS_DIR:-}"      ] && args+=( --results-dir "${RESULTS_DIR}" )
-  [ -n "${SEED_FILE:-}"        ] && args+=( --seed-file "${SEED_FILE}" )
-  [ -n "${SEED:-}"             ] && args+=( --seed "${SEED}" )
-  [ -n "${COUNT:-}"            ] && args+=( --count "${COUNT}" )
-  [ -n "${GEN_SEEDS_TO_FILE:-}" ] && args+=( --gen-seeds-to-file "${GEN_SEEDS_TO_FILE}" )
-  [ -n "${LOG_LEVEL:-}"        ] && args+=( --log-level "${LOG_LEVEL}" )
-  [ -n "${MATRIX_FILE:-}"      ] && args+=( --matrix-file "${MATRIX_FILE}" )
-  [ -n "${OPTIMIZER_URL:-}"    ] && args+=( --optimizer-url "${OPTIMIZER_URL}" )
-  [ -n "${ACTIVE_URL:-}"       ] && args+=( --active-url "${ACTIVE_URL}" )
-  [ -n "${RETRIES:-}"          ] && args+=( --retries "${RETRIES}" )
-  [ -n "${REPEATS:-}"          ] && args+=( --repeats "${REPEATS}" )
+  [ -n "${KWOK_RUNTIME:-}"          ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
+  [ -n "${CLUSTER_NAME:-}"          ] && args+=( --cluster-name "${CLUSTER_NAME}" )
+  [ -n "${CONFIG_FILE:-}"           ] && args+=( --config-file "${CONFIG_FILE}" )
+  [ -n "${RESULTS_DIR:-}"           ] && args+=( --results-dir "${RESULTS_DIR}" )
+  [ -n "${SEED_FILE:-}"             ] && args+=( --seed-file "${SEED_FILE}" )
+  [ -n "${SEED:-}"                  ] && args+=( --seed "${SEED}" )
+  [ -n "${REPEATS:-}"               ] && args+=( --repeats "${REPEATS}" )
+  [ -n "${LOG_LEVEL:-}"             ] && args+=( --log-level "${LOG_LEVEL}" )
+  [ -n "${JOB_FILE:-}"              ] && args+=( --job-file "${JOB_FILE}" )
   [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ] && args+=( --seeds-not-all-running "${SEEDS_NOT_ALL_RUNNING}" )
 
   # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --overwrite, --clean-results, --pause)
@@ -356,16 +343,11 @@ FLAGS_SPEC=(
   "results-dir|RESULTS_DIR|value|"
   "seed-file|SEED_FILE|value|"
   "seed|SEED|value|"
-  "count|COUNT|value|"
-  "gen-seeds-to-file|GEN_SEEDS_TO_FILE|value|"
-  "matrix-file|MATRIX_FILE|value|"
+  "repeats|REPEATS|value|"
+  "job-file|JOB_FILE|value|"
   "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
-  "optimizer-url|OPTIMIZER_URL|value|"
-  "active-url|ACTIVE_URL|value|"
   "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
-  "retries|RETRIES|value|"
-  "repeats|REPEATS|value|"
   "seeds-not-all-running|SEEDS_NOT_ALL_RUNNING|value|"  # now a value (int), not a bare flag
   "overwrite|OVERWRITE|flag|--overwrite"
   "clean-results|CLEAN_RESULTS|flag|--clean-results"
