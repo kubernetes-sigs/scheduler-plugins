@@ -2,10 +2,10 @@
 
 # kwok_shared.py
 
-import hashlib, random
 import time, subprocess, json, csv, re, logging, textwrap, sys
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from decimal import Decimal
 
@@ -142,6 +142,7 @@ def get_timestamp() -> str:
 ##############################################
 # ------------ Logging helpers----------------
 ##############################################
+
 class PrefixFilter(logging.Filter):
     """
     Injects a static 'prefix' field into each LogRecord.
@@ -209,6 +210,16 @@ def split_interval(t: Optional[Tuple[int, int]]) -> tuple[str, str]:
         return "", ""
     return str(int(t[0])), str(int(t[1]))
 
+def coerce_int_field(v):
+    """Return an int if v looks numeric, else empty string for CSV."""
+    if v is None:
+        return ""
+    if isinstance(v, (int, float)):
+        return int(v)
+    s = str(v).strip().replace(",", "")
+    m = re.search(r"-?\d+", s)
+    return int(m.group()) if m else ""
+
 def parse_int_interval(s: Optional[str], *, min_lo: int = 1) -> Optional[Tuple[int, int]]:
     """
     Parse a string interval "lo,hi" or "x" into a (lo, hi) tuple.
@@ -249,19 +260,6 @@ def parse_timeout_s(t:str | None, default: int = 60) -> int:
     except Exception:
         return default
 
-def coerce_bool(v, default=False):
-    if v is None: return default
-    if isinstance(v, bool): return v
-    s = str(v).strip().lower()
-    if s in ("1","true","yes","y","on"): return True
-    if s in ("0","false","no","n","off"): return False
-    return default
-
-def get_str(v):
-    if v is None: return None
-    s = str(v).strip()
-    return s if s else None
-
 def get_int_from_dict(doc: Dict[str, Any], key: str, default: int) -> int:
     """
     Get an integer value from the document, returning a default if not found or invalid.
@@ -291,6 +289,7 @@ def get_str_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> 
         return default
     s = str(v).strip()
     return s if s else default
+
 ##############################################
 # ------------ Quantity helpers----------------
 ##############################################
@@ -370,38 +369,25 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
 def dir_exists(dir_path: str) -> None:
     p = Path(dir_path)
     if not p.exists():
-        raise SystemExit(f"directory not found: {p}")
+        raise SystemExit(f"{p} not found: {p}")
     if not p.is_dir():
-        raise SystemExit(f"directory not found or not a directory: {p}")
+        raise SystemExit(f"{p} is not a directory")
 
 def file_exists(file: Optional[str]) -> None:
     if not file:
         return
     f = Path(file)
     if not f.exists() or not f.is_file():
-        raise SystemExit(f"file not found or not a regular file: {f}")
+        raise SystemExit(f"--seed-file not found or not a regular file: {f}")
     try:
         with open(f, "r", encoding="utf-8"):
             pass
     except Exception as e:
-        raise SystemExit(f"file not readable: {f} ({e})")
+        raise SystemExit(f"--seed-file not readable: {f} ({e})")
 
 ##############################################
 # ------------ CSV helpers----------------
 ##############################################
-def csv_read_header(path: Path) -> list[str] | None:
-    """Return the header row for a CSV file, or None if unreadable/empty."""
-    try:
-        with open(path, "r", encoding="utf-8", newline="") as fh:
-            rdr = csv.reader(fh)
-            row = next(rdr, None)
-            if row is None:
-                return None
-            # normalize by stripping surrounding spaces
-            return [c.strip() for c in row]
-    except Exception:
-        return None
-
 def ensure_csv_with_header(path: Path, header: List[str]) -> None:
     """
     Ensure the CSV file exists with the given header.
@@ -449,28 +435,6 @@ def csv_append_row(
         wr.writerow(safe_row)
         f.flush()
 
-######################################################
-# ---------- Seed helpers --------------
-######################################################
-def derive_seed(base_seed: int, *labels: object, nbytes: int = 16) -> int:
-    """
-    Deterministically derive a child seed from a base seed and a sequence of labels.
-    This is to make sure that changes in one part of the code do not affect RNG streams in other parts.
-    """
-    h = hashlib.blake2b(digest_size=nbytes)
-    # fixed-width encode base to keep derivations stable
-    h.update(int(base_seed).to_bytes(16, "big", signed=False))
-    for lab in labels:
-        h.update(b"\x00")  # separator
-        h.update(str(lab).encode("utf-8"))
-    return int.from_bytes(h.digest(), "big")
-
-def seeded_random(base_seed: int, *labels: object) -> random.Random:
-    """
-    Convenience: Random() seeded from _derive_seed(base_seed, *labels).
-    """
-    return random.Random(derive_seed(base_seed, *labels))
-
 ##############################################
 # ------------ Stats helpers----------------
 ##############################################
@@ -485,8 +449,6 @@ class Snapshot:
     mem_req_by_node: Dict[str,int]      # node -> bytes (Running & assigned only)
     cpu_alloc_by_node: Dict[str,int]    # node -> allocatable mCPU
     mem_alloc_by_node: Dict[str,int]    # node -> allocatable bytes
-    running_placed_by_prio: Dict[str,int] = None  # priorityClassName -> count (Running only)
-    unschedulable_by_prio: Dict[str,int] = None  # priorityClassName
 
 def stat_snapshot(ctx: str, ns: str, expected: int) -> Snapshot:
     _, running, unscheduled = get_running_and_unscheduled(ctx, ns, expected)
@@ -503,36 +465,32 @@ def stat_snapshot(ctx: str, ns: str, expected: int) -> Snapshot:
             qty_to_bytes_int(a.get("memory","0")),
         )
 
+    # Totals for util calc
     total_cpu_alloc_m = sum(v[0] for v in alloc.values())
     total_mem_alloc_b = sum(v[1] for v in alloc.values())
 
+    # Per-node running attribution
     cpu_req_m = {n:0 for n in alloc}
     mem_req_b = {n:0 for n in alloc}
     pods_run_by_node = {n:0 for n in alloc}
 
-    running_by_prio: Dict[str,int] = {}
-    unsched_by_prio: Dict[str,int] = {}
-
     for p in pods["items"]:
         phase = (p.get("status",{}) or {}).get("phase","")
         node  = (p.get("spec",{}) or {}).get("nodeName","")
-        pc    = (p.get("spec",{}) or {}).get("priorityClassName","") or ""
 
-        if phase == "Running":
-            running_by_prio[pc] = running_by_prio.get(pc, 0) + 1
-            if node in pods_run_by_node:
-                pods_run_by_node[node] += 1
-        else:
-            unsched_by_prio[pc] = unsched_by_prio.get(pc, 0) + 1
+        if phase == "Running" and node in pods_run_by_node:
+            pods_run_by_node[node] += 1
 
         rcpu, rmem = sum_pod_requests(p)
         if node and node in alloc and phase == "Running":
             cpu_req_m[node] += rcpu
             mem_req_b[node] += rmem
 
+    # Running-only totals
     total_cpu_req_run_m = sum(cpu_req_m.values())
     total_mem_req_run_b = sum(mem_req_b.values())
 
+    # Running utilization (0..1)
     cpu_run_util = (total_cpu_req_run_m / total_cpu_alloc_m) if total_cpu_alloc_m else 0.0
     mem_run_util = (total_mem_req_run_b / total_mem_alloc_b) if total_mem_alloc_b else 0.0
     
@@ -549,8 +507,6 @@ def stat_snapshot(ctx: str, ns: str, expected: int) -> Snapshot:
         mem_req_by_node=mem_req_b,
         cpu_alloc_by_node=cpu_alloc_by_node,
         mem_alloc_by_node=mem_alloc_by_node,
-        running_placed_by_prio=running_by_prio,
-        unschedulable_by_prio=unsched_by_prio,
     )
 
 def sum_pod_requests(pod: dict) -> tuple[int, int]:
@@ -584,6 +540,19 @@ def compute_stat_totals(alloc: Dict[str,Tuple[int,int]], cpu_req_by_node: Dict[s
     tot_cpu_req_run = sum(cpu_req_by_node.values())      # mCPU
     tot_mem_req_run_b = sum(mem_req_by_node.values())    # bytes
     return tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b
+
+def _rfc3339_to_dt(s: str) -> datetime:
+    """
+    Convert an RFC3339 formatted string to a datetime object.
+    Handle "2025-03-04T12:34:56Z" and "2025-03-04T12:34:56.123456Z"
+    """
+    if not s:
+        return datetime.min
+    s = s.strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        return datetime.min
 
 def get_running_and_unscheduled(
     ctx: str,
