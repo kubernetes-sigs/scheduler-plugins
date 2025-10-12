@@ -93,7 +93,7 @@ resolve_paths_relative_to_folder() {
   CONFIG_FILE="$(to_abs_under_folder "$CONFIG_FILE")"
   RESULTS_DIR="$(to_abs_under_folder "$RESULTS_DIR")"
   SEED_FILE="$(to_abs_under_folder "$SEED_FILE")"
-  MATRIX_FILE="$(to_abs_under_folder "$MATRIX_FILE")"
+  JOB_FILE="$(to_abs_under_folder "$JOB_FILE")"
   REPO_DIR="$(to_abs_under_folder "$REPO_DIR")"
 }
 
@@ -101,8 +101,8 @@ print_cfg() {
   log cfg "BUILD_SCHEDULER=${BUILD_SCHEDULER}"
   log cfg "CONTENT_DIR=${CONTENT_DIR}"
   log cfg "KWOK_RUNTIME=${KWOK_RUNTIME}"
-  if [ -n "${MATRIX_FILE}" ]; then
-    log cfg "MATRIX_FILE=${MATRIX_FILE:-<unset>}"
+  if [ -n "${JOB_FILE}" ]; then
+    log cfg "JOB_FILE=${JOB_FILE:-<unset>}"
   else
     log cfg "CLUSTER_NAME=${CLUSTER_NAME:-<unset>}"
     log cfg "CONFIG_FILE=${CONFIG_FILE:-<unset>}"
