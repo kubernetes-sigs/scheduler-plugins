@@ -2,8 +2,11 @@
 
 # kwok_shared.py
 
+import contextlib
+import fcntl
+import os
 import hashlib, random
-import time, subprocess, json, csv, re, logging, textwrap, sys
+import time, subprocess, json, csv, re, logging, textwrap, sys, yaml
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,9 +27,16 @@ MEM_UNIT_TABLE = {
 
 
 # ====================================================================
-# YAML builders.
+# YAML helpers.
 # Due to proper indentation, we keep them outside class
 # ====================================================================
+def read_yaml_doc(path: Path) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        docs = list(yaml.safe_load_all(f))
+    if not docs or len(docs) != 1 or not isinstance(docs[0], dict):
+        raise SystemExit(f"expected exactly one YAML document in {path}; got {len(docs) if docs is not None else 0}")
+    return docs[0]
+
 def yaml_priority_class(name: str, value: int) -> str:
     return textwrap.dedent(f"""\
     apiVersion: scheduling.k8s.io/v1
@@ -138,6 +148,18 @@ def get_timestamp() -> str:
     """
     return time.strftime("%Y/%m/%d/%H:%M:%S", time.localtime())
 
+def format_hms(seconds: int) -> str:
+    """
+    Format seconds into a human-readable string.
+    """
+    seconds = max(0, int(seconds))
+    h, r = divmod(seconds, 3600)
+    m, s = divmod(r, 60)
+    parts = []
+    if h: parts.append(f"{h}h")
+    if m: parts.append(f"{m}m")
+    if s or not parts: parts.append(f"{s}s")
+    return "".join(parts)
 
 ##############################################
 # ------------ Logging helpers----------------
@@ -291,6 +313,7 @@ def get_str_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> 
         return default
     s = str(v).strip()
     return s if s else default
+
 ##############################################
 # ------------ Quantity helpers----------------
 ##############################################
@@ -363,6 +386,28 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
             f"kubectl failed: rc={e.returncode} cmd={' '.join(cmd)} output_tail={tail!r}"
         ) from e
     return json.loads(out)
+
+##############################################
+# ------------ kwokctl helpers----------------
+##############################################
+@contextlib.contextmanager
+def kwok_cache_lock():
+    """
+    Take an exclusive lock so only one process runs 'kwokctl create cluster'
+    at a time, avoiding races in ~/.kwok/cache when downloading binaries.
+    Override lock path via env KWOK_CACHE_LOCK if desired.
+    """
+    lock_path = os.environ.get("KWOK_CACHE_LOCK", "/tmp/kwokctl-cache.lock")
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o666)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 ##############################################
 # ------------ File I/O helpers----------------

@@ -11,13 +11,13 @@ from urllib import request as _urlreq, error as _urlerr
 
 from helpers import (
     seeded_random,
-    get_timestamp, setup_logging,
+    get_timestamp, setup_logging, format_hms,
     stat_snapshot,
     file_exists, csv_append_row, ensure_csv_with_header, csv_read_header,
     qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
-    yaml_kwok_node, yaml_priority_class, yaml_kwok_pod, yaml_kwok_rs,
+    read_yaml_doc, yaml_kwok_node, yaml_priority_class, yaml_kwok_pod, yaml_kwok_rs,
     normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s, get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict, split_interval,
-    coerce_bool
+    coerce_bool, kwok_cache_lock,
 )
 
 # ===============================================================
@@ -51,6 +51,7 @@ CM_SOLVER_STATS_NAMESPACE = "kube-system"
 RETRIES_ON_FAIL = 5
 
 OPTIMIZER_URL = "http://localhost:18080/optimize"
+TRIGGER_OPTIMIZER_TIMEOUT_S = 60
 ACTIVE_URL = "http://localhost:18080/active"
 
 SOLVER_CMD = "python3 scripts/python_solver/main.py"
@@ -133,208 +134,18 @@ class KwokTestGenerator:
         self.failure: _Failure | None = None
         self.saved_not_all_running: int = 0
         self.skipped_all_running_seeds_csv_path: Path | None = None
-        self.override_runner_doc: dict = {}
-
-    ######################################################
-    # ---------- Job file support ----------
-    ######################################################
-    @staticmethod
-    def _update_config_doc(dst: dict, src: dict) -> dict:
-        """
-        Recursively update dst with src.
-        """
-        for k, v in (src or {}).items():
-            if isinstance(v, dict) and isinstance(dst.get(k), dict):
-                KwokTestGenerator._update_config_doc(dst[k], v)
-            else:
-                dst[k] = v
-        return dst
-
-    @staticmethod
-    def read_yaml_doc(path: Path) -> dict:
-        with open(path, "r", encoding="utf-8") as f:
-            docs = list(yaml.safe_load_all(f))
-        if not docs or len(docs) != 1 or not isinstance(docs[0], dict):
-            raise SystemExit(f"expected exactly one YAML document in {path}; got {len(docs) if docs is not None else 0}")
-        return docs[0]
-
-    @staticmethod
-    def merge_job_into_args(args: argparse.Namespace, job: dict) -> tuple[argparse.Namespace, dict]:
-        """
-        Merge job fields into args, but CLI keeps highest priority.
-        Returns (updated_args, override_config_dict).
-        """
-        # Map simple fields
-        jf_cluster_name         = get_str(job.get("cluster-name"))
-        jf_kwok_runtime         = get_str(job.get("kwok-runtime"))
-        jf_overwrite            = coerce_bool(job.get("overwrite"), default=False)
-        jf_config_file          = get_str(job.get("config-file"))
-        jf_seed                 = job.get("seed")  # can be int or None
-        jf_seed_file            = get_str(job.get("seed-file"))
-        jf_count                = job.get("count")  # may be int
-        js_repeats              = job.get("repeats")  # may be int
-        jf_results_dir          = get_str(job.get("results-dir"))
-        js_clean_results        = coerce_bool(job.get("clean-results"), default=False)
-        jf_snar                 = job.get("seeds-not-all-running")
-        jf_save_solver_stats    = coerce_bool(job.get("save-solver-stats"), default=False)
-        jf_save_scheduler_logs  = coerce_bool(job.get("save-scheduler-logs"), default=False)
-        jf_log_level            = get_str(job.get("log-level"))
-        jf_trigger_optimizer    = coerce_bool(job.get("trigger-optimizer"), default=False)
-        jf_override_cfg         = job.get("override-config") or {}
-        jf_override_kwokctl     = job.get("override-kwokctl") or {}
-
-        # CLI priority: only fill when CLI didn't set a value
-        if not getattr(args, "cluster_name", None) and jf_cluster_name:
-            args.cluster_name = jf_cluster_name
-        if not getattr(args, "kwok_runtime", None) and jf_kwok_runtime:
-            args.kwok_runtime = jf_kwok_runtime
-        if not getattr(args, "config_file", None) and jf_config_file:
-            args.config_file = jf_config_file
-        if not getattr(args, "seed_file", None) and jf_seed_file:
-            args.seed_file = jf_seed_file
-        if getattr(args, "seed", None) is None and isinstance(jf_seed, int):
-            args.seed = jf_seed
-        if getattr(args, "count", None) is None and isinstance(jf_count, int):
-            args.count = jf_count
-        if getattr(args, "repeats", None) is None and isinstance(js_repeats, int):
-            args.repeats = js_repeats
-        if not getattr(args, "results_dir", None) and jf_results_dir:
-            args.results_dir = jf_results_dir
-        if not getattr(args, "clean_results", False):
-            args.clean_results = js_clean_results
-        if (getattr(args, "seeds_not_all_running", None) in (None, 0)) and isinstance(jf_snar, int):
-            args.seeds_not_all_running = jf_snar
-        if not getattr(args, "save_solver_stats", False):
-            args.save_solver_stats = jf_save_solver_stats
-        if not getattr(args, "save_scheduler_logs", False):
-            args.save_scheduler_logs = jf_save_scheduler_logs
-        if not getattr(args, "log_level", None) and jf_log_level:
-            args.log_level = jf_log_level
-        if not getattr(args, "trigger_optimizer", False):
-            args.trigger_optimizer = jf_trigger_optimizer
-        if not getattr(args, "overwrite", False):
-            args.overwrite = bool(jf_overwrite)
-
-        return args, {"runner": jf_override_cfg, "kwokctl": jf_override_kwokctl}
-
-    @staticmethod
-    def _merge_components_patches(base_list: list, patch_list: list) -> list:
-        """
-        Merge componentsPatches by 'name'; merge 'extraEnvs' by env 'name'.
-        Other keys under a component are shallow-merged (patch wins).
-        """
-        by_name = { (item.get("name") or ""): dict(item) for item in (base_list or []) if isinstance(item, dict) }
-        for inc in (patch_list or []):
-            if not isinstance(inc, dict): 
-                continue
-            name = inc.get("name") or ""
-            if name in by_name:
-                merged = by_name[name]
-                # merge extraEnvs specially
-                if "extraEnvs" in inc and isinstance(inc["extraEnvs"], list):
-                    cur = {e.get("name"): e for e in (merged.get("extraEnvs") or []) if isinstance(e, dict)}
-                    for e in inc["extraEnvs"]:
-                        if isinstance(e, dict) and e.get("name"):
-                            cur[e["name"]] = e  # replace by name
-                    merged["extraEnvs"] = list(cur.values())
-                # shallow-merge other keys (patch wins)
-                for k, v in inc.items():
-                    if k == "extraEnvs" or k == "name":
-                        continue
-                    merged[k] = v
-                by_name[name] = merged
-            else:
-                by_name[name] = dict(inc)
-        return list(by_name.values())
-
-    @staticmethod
-    def _deep_merge_kwokctl(dst: dict, src: dict) -> dict:
-        for k, v in (src or {}).items():
-            if k == "componentsPatches" and isinstance(v, list):
-                base = dst.get(k) if isinstance(dst.get(k), list) else []
-                dst[k] = KwokTestGenerator._merge_components_patches(base, v)
-            elif isinstance(v, dict) and isinstance(dst.get(k), dict):
-                KwokTestGenerator._deep_merge_kwokctl(dst[k], v)
-            else:
-                dst[k] = v
-        return dst
-
-
-    @staticmethod
-    def ensure_default_args(args: argparse.Namespace) -> None:
-        if not getattr(args, "cluster_name", None):
-            args.cluster_name = "kwok1"
-        if not getattr(args, "kwok_runtime", None):
-            args.kwok_runtime = "docker"
-        if not getattr(args, "retries", None):
-            args.retries = 1
-        if not getattr(args, "log_level", None):
-            args.log_level = "INFO"
-        if not getattr(args, "solver_timeout_ms", None):
-            args.solver_timeout_ms = 10000
-        if not getattr(args, "direct_running_util", None):
-            args.direct_running_util = 1.0
-
-        # check args
-        if not args.config_file:
-            raise SystemExit("--config-file is required (from CLI or job-file)")
-        if not args.results_dir:
-            raise SystemExit("--results-dir is required (from CLI or job-file)")
-        # one of seed/seed-file/count/sn-a-r must be present (same semantics as before)
-        if args.seed is None and not args.seed_file and args.count is None:
-            if int(getattr(args, "seeds_not_all_running", 0) or 0) == 0:
-                raise SystemExit("Provide --seed, --seed-file, --count, or seeds-not-all-running in job-file")
-            if args.seeds_not_all_running > 0:
-                args.count = args.seeds_not_all_running
-                LOG.info("no --seed/--seed-file/--count provided; defaulting --count=%d from --seeds-not-all-running", args.count)
-        if args.seed is not None and args.seed < 1:
-            raise SystemExit("--seed must be a positive integer")
-        if args.seed_file and args.count is not None:
-            raise SystemExit("--seed-file cannot be used with --count")
-        if args.seed is not None and args.count is not None:
-            raise SystemExit("--seed cannot be used with --count")
-        if args.count is not None and args.count < -1:
-            raise SystemExit("--count must be -1 (infinite) or a positive integer")
-        if args.seeds_not_all_running not in (-1, 0) and args.seeds_not_all_running < 1:
-            raise SystemExit("--seeds-not-all-running must be -1 (infinite), 0 (disabled), or >= 1")
-
-        # --- check seed file and config file ---
-        if args.seed_file:
-            file_exists(args.seed_file)
-        if not file_exists(args.config_file):
-            raise SystemExit(f"--config-file not found: {args.config_file}")
-
-        # --- check kwok runtime vs. trigger-optimizer ---
-        if args.trigger_optimizer and args.kwok_runtime != "binary":
-            raise SystemExit("--trigger-optimizer requires --kwok-runtime=binary")
+        self.override_config_doc: dict = {}
 
     ######################################################
     # ---------- ETA helpers ----------
     ######################################################
-    @staticmethod
-    def _fmt_hms(seconds: int) -> str:
-        """
-        Format seconds into a human-readable string.
-        """
-        seconds = max(0, int(seconds))
-        h, r = divmod(seconds, 3600)
-        m, s = divmod(r, 60)
-        parts = []
-        if h: parts.append(f"{h}h")
-        if m: parts.append(f"{m}m")
-        if s or not parts: parts.append(f"{s}s")
-        return "".join(parts)
-    
     def _eta_init(self):
         """Call once per config to reset the seed durations."""
         self._seed_durations: list[float] = []
 
     def _eta_record_seed_duration(self, started_at: float):
         """Called after a seed finishes (success or fail)."""
-        try:
-            self._seed_durations.append(max(0.0, time.time() - started_at))
-        except Exception:
-            pass
+        self._seed_durations.append(max(0.0, time.time() - started_at))
 
     def _eta_estimation(self, seed_idx: int, seeds_total: int) -> float | None:
         """
@@ -356,31 +167,26 @@ class KwokTestGenerator:
         eta_epoch = self._eta_estimation(next_seed_idx, seeds_total)
         header = "\n================================================ ETA ================================================\n"
         footer = "\n====================================================================================================="
-
         # Show "not-all-running" segment only if a limit is set
         if self.args.seeds_not_all_running > 0:
-            left = max(0, int(self.args.seeds_not_all_running) - int(getattr(self, "_saved_not_all_running", 0)))
+            left = max(0, self.args.seeds_not_all_running - self.saved_not_all_running)
             not_all_seg = f" | seeds-not-all-running-left={left}"
         else:
             not_all_seg = ""
-
         # Handle unlimited/unknown seed count
         if seeds_total is None or seeds_total <= 0:
             block = "ETA: unknown (seed count is unlimited)."
             LOG.info("%s%s%s", header, block, footer)
             return
-
         # Handle no samples yet
         if not self._seed_durations:
             block = "ETA: collecting first duration sample..." + not_all_seg
             LOG.info("%s%s%s", header, block, footer)
             return
-
         # Compute averages and counts
         avg = sum(self._seed_durations) / max(1, len(self._seed_durations))
         seeds_done = max(0, next_seed_idx - 1)
         seeds_left = max(0, seeds_total - seeds_done)
-
         # If not enough data to estimate ETA, show progress only
         if eta_epoch is None:
             block = (
@@ -389,19 +195,12 @@ class KwokTestGenerator:
             block += not_all_seg + "."
             LOG.info("%s%s%s", header, block, footer)
             return
-
         # Create the ETA string and log
         now = time.time()
         left_s = max(0, int(round(eta_epoch - now)))
         eta_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(eta_epoch))
         block = ("ETA %s (in %s) | seeds left: %d%s | avg/seed=%.1fs (%d sample%s)") % (
-            eta_str,
-            self._fmt_hms(left_s),
-            seeds_left,
-            not_all_seg,
-            avg,
-            len(self._seed_durations),
-            "" if len(self._seed_durations) == 1 else "s",
+            eta_str, format_hms(left_s), seeds_left, not_all_seg, avg, len(self._seed_durations), "" if len(self._seed_durations) == 1 else "s",
         )
         LOG.info("%s%s%s", header, block, footer)
 
@@ -419,7 +218,6 @@ class KwokTestGenerator:
                     p.unlink()
                 except OSError:
                     pass
-            
             # what we're currently AT
             if seeds_total and seeds_total > 0:
                 seeds_at = max(0, int(seed_idx))
@@ -436,7 +234,6 @@ class KwokTestGenerator:
                 f"_seeds-{seeds_at}-of-{seeds_total}"
             )
             fpath = self.results_dir / fname
-            
             # write a tiny payload
             with open(fpath, "w", encoding="utf-8") as fh:
                 payload = {
@@ -466,7 +263,6 @@ class KwokTestGenerator:
         wait_pod_mode = None if tr.wait_pod_mode in (None, "none", "None", "") else str(tr.wait_pod_mode)
         wait_pod_timeout_s = parse_timeout_s(tr.wait_pod_timeout, default=5)
         settle_timeout_min_s = parse_timeout_s(tr.settle_timeout_min, default=2)
-        # Make settle_timeout_max optional in configs: if missing/empty -> 0 (disabled)
         settle_timeout_max_s = 0 if tr.settle_timeout_max in (None, "", "none", "None") \
             else parse_timeout_s(tr.settle_timeout_max, default=12)
         return wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s
@@ -817,7 +613,6 @@ class KwokTestGenerator:
                 LOG.info("pruned existing scheduler log (collision on run_idx): %s", out_path.name)
             except OSError as e:
                 LOG.warning("failed pruning existing scheduler log %s: %s", out_path.name, e)
-
         try:
             # We capture the raw output for a clean log file (no prefixed 'kwokctl>' lines)
             r = subprocess.run(
@@ -885,7 +680,7 @@ class KwokTestGenerator:
     @staticmethod
     def _run_kubectl_logged(ctx: str, *args: str, input_bytes: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess:
         """
-        Run `kubectl --context <ctx> <args...>` and stream its combined output into LOG (DEBUG).
+        Run `kubectl --context <ctx> <args...>` and stream its combined output into LOG.
         Returns a CompletedProcess-like object. Raises CalledProcessError if check=True and rc!=0.
         """
         cmd = ["kubectl", "--context", ctx, *args]
@@ -901,7 +696,7 @@ class KwokTestGenerator:
     @staticmethod
     def _run_kwokctl_logged(*args: str, input_bytes: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess:
         """
-        Run `kwokctl <args...>` and stream its combined output into LOG (INFO).
+        Run `kwokctl <args...>` and stream its combined output into LOG.
         """
         cmd = ["kwokctl", *args]
         LOG.debug("exec: %s", " ".join(shlex.quote(c) for c in cmd))
@@ -921,33 +716,9 @@ class KwokTestGenerator:
         return KwokTestGenerator._run_kubectl_logged(ctx, "apply", "-f", "-", input_bytes=yaml_text.encode(), check=True)
 
     @staticmethod
-    @contextlib.contextmanager
-    def _kwok_cache_lock():
-        """
-        Take an exclusive lock so only one process runs 'kwokctl create cluster'
-        at a time, avoiding races in ~/.kwok/cache when downloading binaries.
-        Override lock path via env KWOK_CACHE_LOCK if desired.
-        """
-        lock_path = os.environ.get("KWOK_CACHE_LOCK", "/tmp/kwokctl-cache.lock")
-        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
-        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o666)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
-        finally:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            finally:
-                os.close(fd)
-
-    @staticmethod
     def _prepare_kwokctl_config_file(src: Path) -> tuple[Path, Path | None]:
         """
         Prepare a KWOK configuration file for kwokctl.
-        If the source file contains multiple documents, pick the one with kind=KwokctlConfiguration
-        and apiVersion starting with config.kwok.x-k8s.io/. If not found, return (src, None).
-        Otherwise, write the chosen document to a temp file and return (tempfile, tempfile).
-        The caller is responsible for cleaning up the temp file if returned.
         """
         try:
             with open(src, "r", encoding="utf-8") as f:
@@ -978,16 +749,14 @@ class KwokTestGenerator:
         """
         cluster_name = name_or_ctx[len("kwok-"):] if name_or_ctx.startswith("kwok-") else name_or_ctx
         cfg_path = Path(kwok_config) if kwok_config else None
-
         if recreate:
             LOG.info(f"recreating kwok cluster '{cluster_name}'")
-            with KwokTestGenerator._kwok_cache_lock():
+            with kwok_cache_lock():
                 KwokTestGenerator._run_kwokctl_logged("delete", "cluster", "--name", cluster_name, check=False)
-
         if cfg_path and cfg_path.exists():
             cfg_for_kwokctl, tmp_to_cleanup = KwokTestGenerator._prepare_kwokctl_config_file(cfg_path)
             try:
-                with KwokTestGenerator._kwok_cache_lock():
+                with kwok_cache_lock():
                     KwokTestGenerator._run_kwokctl_logged("create", "cluster", "--name", cluster_name, "--config", str(cfg_for_kwokctl), "--runtime", kwok_runtime)
             finally:
                 if tmp_to_cleanup and tmp_to_cleanup.exists():
@@ -996,7 +765,7 @@ class KwokTestGenerator:
         else:
             if cfg_path and not cfg_path.exists():
                 LOG.warning(f"kwok-config='{cfg_path}' not found; creating with defaults")
-            with KwokTestGenerator._kwok_cache_lock():
+            with kwok_cache_lock():
                 KwokTestGenerator._run_kwokctl_logged("create", "cluster", "--name", cluster_name, "--runtime", kwok_runtime)
 
     @staticmethod
@@ -1004,9 +773,7 @@ class KwokTestGenerator:
         """
         Create KWOK nodes kwok-node-1..kwok-node-N with the given capacity.
         """
-        node_yaml = "".join(yaml_kwok_node(f"kwok-node-{i}", node_cpu, node_mem, pods_cap) for i in range(1, num_nodes + 1))
-        if node_yaml:
-            KwokTestGenerator._apply_yaml(ctx, node_yaml)
+        KwokTestGenerator._apply_yaml(ctx, "".join(yaml_kwok_node(f"kwok-node-{i}", node_cpu, node_mem, pods_cap) for i in range(1, num_nodes + 1)))
 
     @staticmethod
     def _ensure_namespace(ctx: str, ns: str) -> None:
@@ -1014,11 +781,9 @@ class KwokTestGenerator:
         Ensure the namespace exists in the given context.
         If recreate=True, delete it first, then (re)create if missing.
         """
-        LOG.info(f"ensuring namespace '{ns}' in ctx={ctx}")
         rns = subprocess.run(["kubectl", "--context", ctx, "get", "ns", ns], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if rns.returncode != 0:
             KwokTestGenerator._run_kubectl_logged(ctx, "create", "ns", ns, check=True)
-        LOG.info(f"namespace '{ns}' exists in ctx={ctx}")
 
     @staticmethod
     def _ensure_service_account(ctx: str, ns: str, sa: str, retries: int = 20, delay: float = 0.5) -> None:
@@ -1026,11 +791,9 @@ class KwokTestGenerator:
         Ensure the ServiceAccount exists in the given namespace.
         If recreate=True, delete it first, then (re)create if missing.
         """
-        LOG.info(f"ensuring service account '{sa}' in ns='{ns}'")
         for _ in range(1, retries + 1):
             r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "sa", sa], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if r.returncode == 0:
-                LOG.info(f"found service-account '{sa}' in ns '{ns}'")
                 break
             time.sleep(delay)
 
@@ -1040,11 +803,7 @@ class KwokTestGenerator:
         Ensure PriorityClasses {prefix}{i} for i in [start, start+num_priorities).
         If delete_extras=True, remove any of our prefixed PCs outside that set.
         """
-        pcs_yaml = "".join(yaml_priority_class(f"{prefix}{v}", v) for v in range(start, start + num_priorities))
-        LOG.info(f"ensuring {num_priorities} PriorityClasses")
-        if pcs_yaml:
-            KwokTestGenerator._apply_yaml(ctx, pcs_yaml)
-        LOG.info(f"ensured {num_priorities} PriorityClasses")
+        KwokTestGenerator._apply_yaml(ctx, "".join(yaml_priority_class(f"{prefix}{v}", v) for v in range(start, start + num_priorities)))
 
     @staticmethod
     def _wait_each(ctx: str, kind: str, name: str, ns: str, timeout_sec: int, mode: str) -> int:
@@ -1071,15 +830,12 @@ class KwokTestGenerator:
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
             r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "pod", name, "-o", "json"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-
             if mode == "exist":
                 if r.returncode == 0:
                     return 1
                 time.sleep(0.5); continue
-
             if r.returncode != 0:
                 time.sleep(0.5); continue
-
             try:
                 pod = json.loads(r.stdout)
                 phase = (pod.get("status") or {}).get("phase") or ""
@@ -1516,7 +1272,7 @@ class KwokTestGenerator:
     ######################################################
     # ---------- Optimizer HTTP helpers ------------------
     ######################################################
-    def _trigger_optimizer_http(self, url: str, *, timeout: float = 120.0) -> tuple[int, str]:
+    def _trigger_optimizer_http(self) -> tuple[int, str]:
         """
         POST /optimize endpoint. Returns (status_code, body_str).
         Timeout should be long enough to allow the solver to run.
@@ -1527,8 +1283,8 @@ class KwokTestGenerator:
             "Content-Length": "0",
         }
         try:
-            req = _urlreq.Request(url, data=data, headers=headers, method="POST")
-            with _urlreq.urlopen(req, timeout=timeout) as resp:
+            req = _urlreq.Request(OPTIMIZER_URL, data=data, headers=headers, method="POST")
+            with _urlreq.urlopen(req, timeout=TRIGGER_OPTIMIZER_TIMEOUT_S) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
                 return getattr(resp, "status", 200), body
         except _urlerr.HTTPError as e:
@@ -1550,7 +1306,6 @@ class KwokTestGenerator:
         poll_initial_s: initial poll interval in seconds (default 0.5s)
         poll_interval_s: maximum poll interval in seconds (default 1.5s)
         """
-
         def get_optimizer_active_status_http(url: str, *, timeout: float = 3.0) -> tuple[int, str]:
             """
             GET /active endpoint. Returns (status_code, body_str).
@@ -1605,17 +1360,13 @@ class KwokTestGenerator:
     # ------------ Logging helpers -----------------
     ##############################################
     @staticmethod
-    def _format_testconfigraw_block(tr: "TestConfigRaw") -> str:
-        """
-        Produce a stable, readable block of the raw config values as parsed from YAML.
-        """
+    def _log_config_raw(tr: "TestConfigRaw") -> None:
         def _fmt_interval(v):
             if v is None:
                 return "<unset>"
             if isinstance(v, (tuple, list)) and len(v) == 2:
                 return f"{v[0]},{v[1]}"
             return str(v)
-
         fields = [
             ("source_file", getattr(tr, "source_file", None)),
             ("namespace", tr.namespace),
@@ -1635,17 +1386,13 @@ class KwokTestGenerator:
         def _fmt(v):
             return "<unset>" if v in (None, "") else str(v)
         lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
-        return "\n".join(lines)
-
-    @staticmethod
-    def _log_config_raw(tr: "TestConfigRaw") -> None:
-        block = KwokTestGenerator._format_testconfigraw_block(tr)
-        header = "\n================================================ CONFIG (RAW) ================================================\n"
+        block = "\n".join(lines)
+        header = "\n================================================ CONFIG ================================================\n"
         footer = "\n=============================================================================================================="
         LOG.info("%s%s%s", header, block, footer)
 
     @staticmethod
-    def _format_args_block(args) -> str:
+    def log_args(args) -> None:
         # Keep a stable, explicit order
         fields = [
             ("cluster_name", args.cluster_name),
@@ -1670,11 +1417,7 @@ class KwokTestGenerator:
         def _fmt(v):
             return "<unset>" if v in (None, "") else str(v)
         lines = [f"{k.rjust(pad)} = {_fmt(v)}" for k, v in fields]
-        return "\n".join(lines)
-
-    @staticmethod
-    def log_args(args) -> None:
-        block = KwokTestGenerator._format_args_block(args)
+        block = "\n".join(lines)
         header = "\n================================================ ARGS ================================================\n"
         footer = "\n======================================================================================================"
         LOG.info("%s%s%s", header, block, footer)
@@ -1685,14 +1428,10 @@ class KwokTestGenerator:
     @staticmethod
     def _read_seeds_file(path: Path) -> List[int]:
         """
-        TXT:
-          - One integer per line (whitespace allowed).
-          - Empty lines and lines starting with '#' are ignored.
-          - Non-integer lines are skipped (logged at DEBUG).
-        CSV:
-          - Requires a 'seed' column (case-insensitive) -> else raise ValueError.
-          - Each non-empty seed cell must be a positive integer -> else raise ValueError.
-          - Empty cells are ignored.
+        Read seeds from a txt file. Format:
+        - One integer per line (whitespace allowed).
+        - Empty lines and lines starting with '#' are ignored.
+        - Non-integer lines are skipped (logged at DEBUG).
         Returns: de-duplicated, order-preserving list of positive ints.
         """
         seeds: List[int] = []
@@ -1705,46 +1444,19 @@ class KwokTestGenerator:
                 seeds.append(n)
         if not path.exists():
             raise ValueError(f"seed-file not found: {path}")
-        if path.suffix.lower() == ".csv":
-            try:
-                with open(path, "r", encoding="utf-8", newline="") as f:
-                    rdr = csv.DictReader(f)
-                    if rdr.fieldnames is None:
-                        raise ValueError(f"CSV seed-file has no header: {path}")
-                    seed_key = next((c for c in rdr.fieldnames if (c or "").strip().lower() == "seed"), None)
-                    if not seed_key:
-                        raise ValueError(f"CSV seed-file missing required 'seed' column: {path}")
-                    line_no = 1  # header
-                    for row in rdr:
-                        line_no += 1
-                        raw = (row.get(seed_key) or "").strip()
-                        if raw == "":
-                            continue  # allow blank seed cells
-                        try:
-                            val = int(raw)
-                        except Exception:
-                            raise ValueError(f"Invalid integer in 'seed' at {path}:{line_no}: {raw!r}")
-                        if val <= 0:
-                            raise ValueError(f"Non-positive seed at {path}:{line_no}: {val}")
-                        _add(val)
-            except ValueError:
-                raise
-            except Exception as e:
-                raise ValueError(f"Failed reading CSV seed-file {path}: {e}")
-        else:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    for i, line in enumerate(f, 1):
-                        s = line.strip()
-                        if not s or s.startswith("#"):
-                            continue
-                        try:
-                            _add(int(s))
-                        except Exception:
-                            LOG.debug("seed-file %s:%d ignored non-integer line: %r", path, i, s[:120])
-                            continue
-            except Exception as e:
-                raise ValueError(f"Failed reading seed-file {path}: {e}")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for i, line in enumerate(f, 1):
+                    s = line.strip()
+                    if not s or s.startswith("#"):
+                        continue
+                    try:
+                        _add(int(s))
+                    except Exception:
+                        LOG.debug("seed-file %s:%d ignored non-integer line: %r", path, i, s[:120])
+                        continue
+        except Exception as e:
+            raise ValueError(f"Failed reading seed-file {path}: {e}")
         if not seeds:
             LOG.warning("no seeds parsed from %s", path)
         else:
@@ -1756,7 +1468,7 @@ class KwokTestGenerator:
     ##############################################
     def _load_config(self, cfg_path: Path, override_doc: dict | None = None) -> TestConfigRaw:
         """
-        Load the runner configuration from the given YAML file.
+        Load the configuration from the given YAML file.
         """
         config_doc = KwokTestGenerator._read_yaml_file(cfg_path)
         
@@ -2327,12 +2039,17 @@ class KwokTestGenerator:
             self._print_seed_summary(cfg, seed, None, None, "nodes setup failed")
             return False
 
-        # namespace & PCs
+        # namespace
         phase = "ensure_namespace"
         LOG.info(f"phase={phase}")
         self._ensure_namespace(self.ctx, ta.namespace)
+        
+        # service account
+        phase = "ensure_service_account"
+        LOG.info(f"phase={phase}")
         self._ensure_service_account(self.ctx, ta.namespace, "default")
 
+        # priority classes
         phase = "ensure_priority_classes"
         LOG.info(f"phase={phase}")
         self._ensure_priority_classes(self.ctx, ta.num_priorities, prefix="p", start=1)
@@ -2347,14 +2064,15 @@ class KwokTestGenerator:
         else:
             pod_specs = self._apply_standalone_pods(ta, rng)
 
-        # optionally trigger the optimizer
+        # (optionally) trigger the optimizer
         if self.args.trigger_optimizer:
             phase = "wait_settle_before_optimizer"
             LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
             time.sleep(ta.settle_timeout_min_s)
+            
             phase = "trigger_optimizer"
-            LOG.info(f"phase={phase} url={OPTIMIZER_URL}")
-            code, body = self._trigger_optimizer_http(OPTIMIZER_URL)
+            LOG.info(f"phase={phase} url={OPTIMIZER_URL}; waiting for response (timeout {HTTP_TIMEOUT}s)")
+            code, body = self._trigger_optimizer_http()
             body_compact = (body or "").replace("\n", "\\n")
             if len(body_compact) > 600:
                 body_compact = body_compact[:600] + "...(truncated)"
@@ -2539,6 +2257,170 @@ class KwokTestGenerator:
         LOG.error("seed=%s failed after %d attempt(s); total %.1fs", seed, last_attempt, time.time() - overall_started)
         return False
 
+    ######################################################
+    # ---------- Job file --------------------------------
+    ######################################################
+    @staticmethod
+    def _update_config_doc(dst: dict, src: dict) -> dict:
+        """
+        Recursively update dst with src.
+        """
+        for k, v in (src or {}).items():
+            if isinstance(v, dict) and isinstance(dst.get(k), dict):
+                KwokTestGenerator._update_config_doc(dst[k], v)
+            else:
+                dst[k] = v
+        return dst
+
+    @staticmethod
+    def merge_job_fields_into_args(args: argparse.Namespace, job: dict) -> tuple[argparse.Namespace, dict]:
+        """
+        Merge job fields into args, but CLI keeps highest priority.
+        Returns (updated_args, override_config_dict).
+        """
+        # Map simple fields
+        jf_cluster_name         = get_str(job.get("cluster-name"))
+        jf_kwok_runtime         = get_str(job.get("kwok-runtime"))
+        jf_overwrite            = coerce_bool(job.get("overwrite"), default=False)
+        jf_config_file          = get_str(job.get("config-file"))
+        jf_seed                 = job.get("seed")  # can be int or None
+        jf_seed_file            = get_str(job.get("seed-file"))
+        jf_count                = job.get("count")  # may be int
+        js_repeats              = job.get("repeats")  # may be int
+        jf_results_dir          = get_str(job.get("results-dir"))
+        js_clean_results        = coerce_bool(job.get("clean-results"), default=False)
+        jf_snar                 = job.get("seeds-not-all-running")
+        jf_save_solver_stats    = coerce_bool(job.get("save-solver-stats"), default=False)
+        jf_save_scheduler_logs  = coerce_bool(job.get("save-scheduler-logs"), default=False)
+        jf_log_level            = get_str(job.get("log-level"))
+        jf_trigger_optimizer    = coerce_bool(job.get("trigger-optimizer"), default=False)
+        jf_override_cfg         = job.get("override-config") or {}
+        jf_override_kwokctl     = job.get("override-kwokctl") or {}
+
+        # CLI priority: only fill when CLI didn't set a value
+        if not getattr(args, "cluster_name", None) and jf_cluster_name:
+            args.cluster_name = jf_cluster_name
+        if not getattr(args, "kwok_runtime", None) and jf_kwok_runtime:
+            args.kwok_runtime = jf_kwok_runtime
+        if not getattr(args, "config_file", None) and jf_config_file:
+            args.config_file = jf_config_file
+        if not getattr(args, "seed_file", None) and jf_seed_file:
+            args.seed_file = jf_seed_file
+        if getattr(args, "seed", None) is None and isinstance(jf_seed, int):
+            args.seed = jf_seed
+        if getattr(args, "count", None) is None and isinstance(jf_count, int):
+            args.count = jf_count
+        if getattr(args, "repeats", None) is None and isinstance(js_repeats, int):
+            args.repeats = js_repeats
+        if not getattr(args, "results_dir", None) and jf_results_dir:
+            args.results_dir = jf_results_dir
+        if not getattr(args, "clean_results", False):
+            args.clean_results = js_clean_results
+        if (getattr(args, "seeds_not_all_running", None) in (None, 0)) and isinstance(jf_snar, int):
+            args.seeds_not_all_running = jf_snar
+        if not getattr(args, "save_solver_stats", False):
+            args.save_solver_stats = jf_save_solver_stats
+        if not getattr(args, "save_scheduler_logs", False):
+            args.save_scheduler_logs = jf_save_scheduler_logs
+        if not getattr(args, "log_level", None) and jf_log_level:
+            args.log_level = jf_log_level
+        if not getattr(args, "trigger_optimizer", False):
+            args.trigger_optimizer = jf_trigger_optimizer
+        if not getattr(args, "overwrite", False):
+            args.overwrite = bool(jf_overwrite)
+
+        return args, {"config": jf_override_cfg, "kwokctl": jf_override_kwokctl}
+
+    @staticmethod
+    def _merge_kwokctl_components_patches(base_list: list, patch_list: list) -> list:
+        """
+        Merge componentsPatches by 'name'; merge 'extraEnvs' by env 'name'.
+        Other keys under a component are shallow-merged (patch wins).
+        """
+        by_name = { (item.get("name") or ""): dict(item) for item in (base_list or []) if isinstance(item, dict) }
+        for inc in (patch_list or []):
+            if not isinstance(inc, dict): 
+                continue
+            name = inc.get("name") or ""
+            if name in by_name:
+                merged = by_name[name]
+                # merge extraEnvs specially
+                if "extraEnvs" in inc and isinstance(inc["extraEnvs"], list):
+                    cur = {e.get("name"): e for e in (merged.get("extraEnvs") or []) if isinstance(e, dict)}
+                    for e in inc["extraEnvs"]:
+                        if isinstance(e, dict) and e.get("name"):
+                            cur[e["name"]] = e  # replace by name
+                    merged["extraEnvs"] = list(cur.values())
+                # shallow-merge other keys (patch wins)
+                for k, v in inc.items():
+                    if k == "extraEnvs" or k == "name":
+                        continue
+                    merged[k] = v
+                by_name[name] = merged
+            else:
+                by_name[name] = dict(inc)
+        return list(by_name.values())
+
+    @staticmethod
+    def _deep_merge_kwokctl(dst: dict, src: dict) -> dict:
+        for k, v in (src or {}).items():
+            if k == "componentsPatches" and isinstance(v, list):
+                base = dst.get(k) if isinstance(dst.get(k), list) else []
+                dst[k] = KwokTestGenerator._merge_kwokctl_components_patches(base, v)
+            elif isinstance(v, dict) and isinstance(dst.get(k), dict):
+                KwokTestGenerator._deep_merge_kwokctl(dst[k], v)
+            else:
+                dst[k] = v
+        return dst
+
+    @staticmethod
+    def ensure_default_args(args: argparse.Namespace) -> None:
+        if not getattr(args, "cluster_name", None):
+            args.cluster_name = "kwok1"
+        if not getattr(args, "kwok_runtime", None):
+            args.kwok_runtime = "docker"
+        if not getattr(args, "retries", None):
+            args.retries = 1
+        if not getattr(args, "log_level", None):
+            args.log_level = "INFO"
+        if not getattr(args, "solver_timeout_ms", None):
+            args.solver_timeout_ms = 10000
+        if not getattr(args, "direct_running_util", None):
+            args.direct_running_util = 1.0
+
+        # check args
+        if not args.config_file:
+            raise SystemExit("--config-file is required (from CLI or job-file)")
+        if not args.results_dir:
+            raise SystemExit("--results-dir is required (from CLI or job-file)")
+        # one of seed/seed-file/count/sn-a-r must be present (same semantics as before)
+        if args.seed is None and not args.seed_file and args.count is None:
+            if int(getattr(args, "seeds_not_all_running", 0) or 0) == 0:
+                raise SystemExit("Provide --seed, --seed-file, --count, or seeds-not-all-running in job-file")
+            if args.seeds_not_all_running > 0:
+                args.count = args.seeds_not_all_running
+                LOG.info("no --seed/--seed-file/--count provided; defaulting --count=%d from --seeds-not-all-running", args.count)
+        if args.seed is not None and args.seed < 1:
+            raise SystemExit("--seed must be a positive integer")
+        if args.seed_file and args.count is not None:
+            raise SystemExit("--seed-file cannot be used with --count")
+        if args.seed is not None and args.count is not None:
+            raise SystemExit("--seed cannot be used with --count")
+        if args.count is not None and args.count < -1:
+            raise SystemExit("--count must be -1 (infinite) or a positive integer")
+        if args.seeds_not_all_running not in (-1, 0) and args.seeds_not_all_running < 1:
+            raise SystemExit("--seeds-not-all-running must be -1 (infinite), 0 (disabled), or >= 1")
+
+        # --- check seed file and config file ---
+        if args.seed_file:
+            file_exists(args.seed_file)
+        if not file_exists(args.config_file):
+            raise SystemExit(f"--config-file not found: {args.config_file}")
+
+        # --- check kwok runtime vs. trigger-optimizer ---
+        if args.trigger_optimizer and args.kwok_runtime != "binary":
+            raise SystemExit("--trigger-optimizer requires --kwok-runtime=binary")
+
     ##############################################
     # ------------ Main Runner -------------------
     ##############################################
@@ -2553,7 +2435,7 @@ class KwokTestGenerator:
 
         cfg_file = Path(self.args.config_file)
         try:
-            raw = self._load_config(cfg_file, getattr(self, "override_runner_doc", None))
+            raw = self._load_config(cfg_file, getattr(self, "override_config_doc", None))
             KwokTestGenerator._log_config_raw(raw)
         except Exception as e:
             LOG.error(f"config-failed {cfg_file}: {e}")
@@ -2579,7 +2461,7 @@ class KwokTestGenerator:
         self.failed_f  = self.results_dir / "failed.csv"
 
         # now load config & validate
-        raw = self._load_config(cfg_file, getattr(self, "override_runner_doc", None))
+        raw = self._load_config(cfg_file, getattr(self, "override_config_doc", None))
         
         if getattr(self.args, "clean_results", False):
             LOG.info("clean-results requested: deleting all contents of %s", self.results_dir)
@@ -2701,8 +2583,8 @@ def main():
         p = Path(args.job_file)
         if not p.exists():
             raise SystemExit(f"--job-file not found: {p}")
-        job = KwokTestGenerator.read_yaml_doc(p)
-        args, override_doc = KwokTestGenerator.merge_job_into_args(args, job)
+        job = read_yaml_doc(p)
+        args, override_doc = KwokTestGenerator.merge_job_fields_into_args(args, job)
 
     # If neither CLI nor job-file provided a value, set args defaults
     KwokTestGenerator.ensure_default_args(args)
@@ -2713,7 +2595,7 @@ def main():
     # Runner
     runner = KwokTestGenerator(args)
     if override_doc is not None:
-        runner.override_runner_doc = override_doc.get("runner", {})
+        runner.override_config_doc = override_doc.get("config", {})
         runner.override_kwokctl_doc = override_doc.get("kwokctl", {})
     runner.run()
     
