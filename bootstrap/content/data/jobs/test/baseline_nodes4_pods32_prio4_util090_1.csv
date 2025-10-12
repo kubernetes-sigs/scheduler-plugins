@@ -1,2 +1,0 @@
-config-file,results-dir,seed-file,seeds-not-all-running
-data/configs/baseline/baseline_nodes4_pods32_prio4_util090.yaml,data/results/baseline_nodes4_pods32_prio4_util090_1,data/seeds/seeds-1.txt,25
