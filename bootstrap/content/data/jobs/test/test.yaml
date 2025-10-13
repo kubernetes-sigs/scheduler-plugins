@@ -1,25 +1,15 @@
 config-file: data/configs/all_synch_python/all_synch_python_nodes4_pods16_prio4_util105_time10.yaml
 seed-file: data/seeds/test.txt
-results-dir: data/results/all_synch_python_nodes4_pods16_prio4_util105_time10
-kwok-runtime: binary
+results-dir: data/results/hej-test
 save-scheduler-logs: true
 save-solver-stats: true
 overwrite: true
-trigger-optimizer: true
+solver-trigger: true
 override-config:
   namespace: hej-test
-  num_nodes: 4
-  num_pods: 12
-  num_priorities: 3 # either a single integer or a range [lo, hi]
-  componentsPatches:
-      extraEnvs:
-        - name: OPTIMIZE_MODE
-          value: "manual_all_synch" # choices: every, all_synch, all_asynch, manual_all_synch
-        - name: OPTIMIZE_HOOK_STAGE
-          value: "postfilter" # choices: preenqueue, postfilter (not used in all_asynch mode)
-        - name: PLAN_EXECUTION_TIMEOUT
-          value: "600h" # set high to determine any potential issues
-        - name: SOLVER_PYTHON_ENABLED
-          value: "true"
-        - name: SOLVER_PYTHON_TIMEOUT
-          value: "1s" # 1s, 10s, 20s
+  num_nodes: 16
+  num_pods: 64
+  num_priorities: 4
+override-kwokctl-envs:
+  - name: SOLVER_PYTHON_TIMEOUT
+    value: "5s"
