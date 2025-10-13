@@ -12,16 +12,14 @@ from pathlib import Path
 from urllib import request as _urlreq, error as _urlerr
 
 from helpers import (
-    seeded_random,
-    get_timestamp, setup_logging, format_hms,
+    seeded_random, generate_seeds,
+    get_timestamp, setup_logging, format_hms, make_header_footer, get_git_info,
     stat_snapshot,
     csv_append_row, csv_read_header,
     qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
-    yaml_kwok_node, yaml_priority_class, yaml_kwok_pod, yaml_kwok_rs,
-    normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s, get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict,
-    coerce_bool, kwok_cache_lock,
-    make_header_footer, get_git_info,
-    generate_seeds,
+    kwok_cache_lock, yaml_kwok_node, yaml_priority_class, yaml_kwok_pod, yaml_kwok_rs,
+    normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s,
+    get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict, coerce_bool,
 )
 
 # ===============================================================
@@ -64,7 +62,7 @@ SOLVER_CMD = "python3 scripts/python_solver/main.py"
 # ===============================================================
 @dataclass
 class TestConfigRaw:
-    # namespace / topology (from YAML)
+    # topology
     namespace: str = ""
     num_nodes: int = 0
     num_pods: int = 0
@@ -88,23 +86,24 @@ class TestConfigRaw:
 
 @dataclass
 class TestConfigApplied:
+    # topology
     namespace: str
-    
     num_nodes: int
     num_pods: int
+    num_priorities: int
     
+    # replicaset
+    num_replicaset: int
+    num_replicas_per_rs: Optional[Tuple[int, int]]
+    
+    # utilization
     node_cpu_m: int
     node_mem_b: int
     cpu_per_pod_m: Tuple[int, int]
     mem_per_pod_b: Tuple[int, int]
-    
-    num_priorities: int
-    
-    num_replicaset: int
-    num_replicas_per_rs: Optional[Tuple[int, int]]
-    
     util: float
-
+    
+    # waits
     wait_pod_mode: Optional[str]
     wait_pod_timeout_s: int
     settle_timeout_min_s: int
