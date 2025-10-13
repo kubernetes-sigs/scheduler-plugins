@@ -560,7 +560,7 @@ class KwokTestGenerator:
         # Node sizes based on pods above and target utilization
         sum_cpu, sum_mem = sum(cpu_parts), sum(mem_parts)
         max_cpu_m, max_mem_b = (max(cpu_parts) if cpu_parts else 1), (max(mem_parts) if mem_parts else 1)
-        util = max(1e-9, float(tr.util)) # avoid division by zero
+        util = max(1e-9, float(tr.util)) # avoid division by zero #TODO: move the max check in parser
         total_cap_cpu = int(math.ceil(sum_cpu / util))
         total_cap_mem = int(math.ceil(sum_mem / util))
         per_node_m = max(max_cpu_m, int(math.ceil(total_cap_cpu / tr.num_nodes)))
@@ -864,20 +864,20 @@ class KwokTestGenerator:
                 time_part = "eta-unknown"
             else:
                 time_part = time.strftime("%Y%m%d-%H%M%S", time.localtime(eta_epoch))
-            fname = (
+            file_name = (
                 f"eta_{time_part}"
                 f"_seeds-{seeds_at}-of-{seeds_total}"
             )
-            fpath = self.output_dir_resolved / fname
+            file_path = self.output_dir_resolved / file_name
             # write a tiny payload
-            with open(fpath, "w", encoding="utf-8") as fh:
+            with open(file_path, "w", encoding="utf-8") as fh:
                 payload = {
                     "eta_epoch": int(eta_epoch) if isinstance(eta_epoch, (int, float)) else None,
                     "eta_iso": (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(eta_epoch)) if eta_epoch is not None else None),
                     "seeds_at": seeds_at,   "seeds_total": seeds_total,
                 }
                 fh.write(json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n")
-        except Exception:  # best-effort; don't break the run for ETA issues
+        except Exception:
             pass
 
     def _eta_update_marker(self, seed_idx: int, seeds_total: int):
@@ -1129,8 +1129,10 @@ class KwokTestGenerator:
         return False
 
     def _load_seen_results_csv(self) -> set[int]:
+        """
+        Load previous results
+        """
         seen: set[int] = set()
-        
         if not self.results_f.exists():
             return seen
         try:
@@ -1204,7 +1206,6 @@ class KwokTestGenerator:
                     baseline_score = bl
             except Exception:
                 pass
-
         if attempts and best_name:
             return baseline_score, best_name, attempts, error
 
@@ -1215,17 +1216,14 @@ class KwokTestGenerator:
         )
         if cm is None:
             return baseline_score, best_name, attempts, error
-
         data = cm.get("data") or {}
         runs_raw = data.get("runs.json", "[]")
         try:
             runs = json.loads(runs_raw) or []
         except Exception:
             runs = []
-
         if not isinstance(runs, list) or not runs:
             return baseline_score, best_name, attempts, error
-
         last = runs[-1] or {}
         try:
             error = str(last.get("error", "") or error)
@@ -1238,13 +1236,11 @@ class KwokTestGenerator:
                 baseline_score = bl
         except Exception:
             pass
-
         return baseline_score, best_name, attempts, error
 
     def _write_solver_stats_json(self, seed: int, run_idx: int = 1) -> None:
         """
-        Fetch runs.json from the latest solver-stats ConfigMap and dump it verbatim.
-        No CSV. No splitting. Exactly what the ConfigMap has, written to a .json file.
+        Fetch runs.json from the latest solver-stats ConfigMap and dump it as-is.
         """
         # Find the latest matching ConfigMap
         cm_obj = self._get_latest_configmap(
@@ -1290,11 +1286,9 @@ class KwokTestGenerator:
             if label_selector:
                 args += ["-l", label_selector]
             args += ["-o", "json"]
-
             r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             if r.returncode != 0:
                 return None
-
             try:
                 items = (json.loads(r.stdout.decode("utf-8", errors="replace")) or {}).get("items", [])
             except Exception:
@@ -1444,6 +1438,9 @@ class KwokTestGenerator:
 
     @staticmethod
     def _ensure_kwok_cluster(cluster_name: str, kwok_runtime: str, config_doc: dict | None = None, recreate: bool = True) -> None:
+        """
+        Create a kwok cluster.
+        """
         if recreate:
             LOG.info("recreating kwok cluster '%s'", cluster_name)
             with kwok_cache_lock():
@@ -1725,10 +1722,8 @@ class KwokTestGenerator:
                 "mem_target": int(int(n["cap_mem_bytes"]) * max(0.0, run_util)),
                 "cpu_used": 0, "mem_used": 0,
             } for n in nodes]
-
             if run_util <= 0.0:
                 return
-
             # Deterministic tie-breaker (no group-shuffle loop)
             idx = list(range(len(pods)))
             tiebreak = [
