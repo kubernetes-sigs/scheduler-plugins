@@ -175,8 +175,8 @@ class KwokTestGenerator:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.workload_config_doc = None
+        self.workload_config: TestConfigRaw | None = None
         self.kwokctl_config_doc = None
-        self.config = None
         self.job_doc = None
         override_wl_config = None
         override_kwokctl_envs = None
@@ -212,9 +212,9 @@ class KwokTestGenerator:
                 raise SystemExit(f"{wl_path}: expected a WorkloadConfiguration document")
         if override_wl_config:
             self.workload_config_doc = self._merge_doc(self.workload_config_doc, override_wl_config)
-        self.workload_config_doc = self._parse_config_doc(self.workload_config_doc, override_wl_config)
-        self._log_workload_config(self.workload_config_doc)
-        ok, msg = self._validate_workload_config(self.workload_config_doc)
+        self.workload_config = self._parse_config_doc(self.workload_config_doc, override_wl_config)
+        self._log_workload_config(self.workload_config)
+        ok, msg = self._validate_workload_config(self.workload_config)
         if not ok:
             raise SystemExit(f"config-failed {wl_path}: {msg}")
         
@@ -293,7 +293,7 @@ class KwokTestGenerator:
                     "kwokctl_config_file": self.args.kwokctl_config_file,
                 },
                 "inputs": {
-                    "cli-args": sys.argv[1:],
+                    "cli-cmd": "python3 " + " ".join(shlex.quote(a) for a in sys.argv),
                     "job": self.job_doc if self.job_doc else {},
                     "workload": asdict(self.workload_config_doc) if is_dataclass(self.workload_config_doc) else self.workload_config_doc,
                     "kwokctl": self.kwokctl_config_doc,
@@ -1678,7 +1678,7 @@ class KwokTestGenerator:
         """
         Resolve the raw config into a fully specified applied config for the given seed.
         """
-        tr = self.workload_config_doc
+        tr = self.workload_config
         
         wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s = self._parse_waits(tr)
 
