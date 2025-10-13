@@ -4,7 +4,6 @@
 --config-file
 --results-dir
 --overwrite
---clean-results
 --pause
 --log-level
 

@@ -3,7 +3,7 @@ seed-file: data/seeds/test.txt
 results-dir: data/results/hej-test
 save-scheduler-logs: true
 save-solver-stats: true
-overwrite: false
+overwrite: true
 solver-trigger: true
 override-config:
   namespace: hej-test

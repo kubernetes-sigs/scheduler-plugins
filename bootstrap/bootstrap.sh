@@ -27,7 +27,7 @@ LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 JOB_FILE="${JOB_FILE:-}"                     # can be relative to CONTENT_DIR
 
-TRIGGER_OPTIMIZER="${TRIGGER_OPTIMIZER:-}"
+SOLVER_TRIGGER="${SOLVER_TRIGGER:-}"
 
 PAUSE="${PAUSE:-}"
 
@@ -36,8 +36,6 @@ SEEDS_NOT_ALL_RUNNING="${SEEDS_NOT_ALL_RUNNING:-0}" # int: how many seeds can be
 SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
 
 SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
-
-CLEAN_RESULTS="${CLEAN_RESULTS:-}" 
 
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
@@ -113,12 +111,11 @@ print_cfg() {
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
-    log cfg "CLEAN_RESULTS=${CLEAN_RESULTS:-<unset>}"
   fi
-  if [ -n "${TRIGGER_OPTIMIZER:-}" ]; then
-    log cfg "TRIGGER_OPTIMIZER=${TRIGGER_OPTIMIZER}"
+  if [ -n "${SOLVER_TRIGGER:-}" ]; then
+    log cfg "SOLVER_TRIGGER=${SOLVER_TRIGGER}"
   else
-    log cfg "TRIGGER_OPTIMIZER=<unset>"
+    log cfg "SOLVER_TRIGGER=<unset>"
   fi
   if [ -n "${SAVE_SOLVER_STATS:-}" ]; then
     log cfg "SAVE_SOLVER_STATS=${SAVE_SOLVER_STATS}"
@@ -306,7 +303,7 @@ stage_test() {
   [ -n "${JOB_FILE:-}"              ] && args+=( --job-file "${JOB_FILE}" )
   [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ] && args+=( --seeds-not-all-running "${SEEDS_NOT_ALL_RUNNING}" )
 
-  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --overwrite, --clean-results, --pause)
+  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --overwrite, --pause)
   # shellcheck disable=SC2206
   local pass_flags=( ${passthru} )
   args+=( "${pass_flags[@]}" )
@@ -345,12 +342,11 @@ FLAGS_SPEC=(
   "seed|SEED|value|"
   "repeats|REPEATS|value|"
   "job-file|JOB_FILE|value|"
-  "trigger-optimizer|TRIGGER_OPTIMIZER|flag|--trigger-optimizer"
+  "solver-trigger|SOLVER_TRIGGER|flag|--solver-trigger"
   "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
   "seeds-not-all-running|SEEDS_NOT_ALL_RUNNING|value|"  # now a value (int), not a bare flag
   "overwrite|OVERWRITE|flag|--overwrite"
-  "clean-results|CLEAN_RESULTS|flag|--clean-results"
   "pause|PAUSE|flag|--pause"
   "log-level|LOG_LEVEL|value|"
 )
