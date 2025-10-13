@@ -23,6 +23,7 @@ RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
 CONFIG_FILE="${CONFIG_FILE:-}"   # can be relative to CONTENT_DIR
 SEED="${SEED:-}"
 OVERWRITE="${OVERWRITE:-}"
+CLEAN_START="${CLEAN_START:-}"
 LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 JOB_FILE="${JOB_FILE:-}"                     # can be relative to CONTENT_DIR
@@ -108,6 +109,7 @@ print_cfg() {
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
     log cfg "SEED=${SEED:-<unset>}"
     log cfg "OVERWRITE=${OVERWRITE:-<unset>}"
+    log cfg "CLEAN_START=${CLEAN_START:-<unset>}"
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
@@ -303,7 +305,7 @@ stage_test() {
   [ -n "${JOB_FILE:-}"              ] && args+=( --job-file "${JOB_FILE}" )
   [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ] && args+=( --seeds-not-all-running "${SEEDS_NOT_ALL_RUNNING}" )
 
-  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --overwrite, --pause)
+  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --clean-start, --pause)
   # shellcheck disable=SC2206
   local pass_flags=( ${passthru} )
   args+=( "${pass_flags[@]}" )
@@ -347,6 +349,7 @@ FLAGS_SPEC=(
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
   "seeds-not-all-running|SEEDS_NOT_ALL_RUNNING|value|"  # now a value (int), not a bare flag
   "overwrite|OVERWRITE|flag|--overwrite"
+  "clean-start|CLEAN_START|flag|--clean-start"
   "pause|PAUSE|flag|--pause"
   "log-level|LOG_LEVEL|value|"
 )

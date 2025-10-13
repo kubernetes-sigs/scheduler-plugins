@@ -3,7 +3,7 @@
 --job-file
 --config-file
 --results-dir
---overwrite
+--clean-start
 --pause
 --log-level
 

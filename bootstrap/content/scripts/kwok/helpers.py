@@ -205,8 +205,8 @@ def make_header_footer(msg: str, width: int = 100, border: str = "=") -> Tuple[s
     w = max(width, len(inner))               # ensure width fits the message
     left = (w - len(inner)) // 2
     right = w - len(inner) - left
-    header = f"\n{border * left}{inner}{border * right}\n"
-    footer = f"\n{border * w}\n"
+    header = f"{border * left}{inner}{border * right}"
+    footer = f"{border * w}"
     return header, footer
 
 ##############################################

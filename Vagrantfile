@@ -26,6 +26,7 @@
       --save-solver-stats true \
       --save-scheduler-logs true \
       --overwrite true \
+      --clean-start true \
   SHELL
 end
 
