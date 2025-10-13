@@ -2,8 +2,11 @@
 
 # kwok_shared.py
 
+import contextlib
+import fcntl
+import os
 import hashlib, random
-import time, subprocess, json, csv, re, logging, textwrap, sys
+import time, subprocess, json, csv, re, logging, textwrap, sys, yaml
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,9 +27,14 @@ MEM_UNIT_TABLE = {
 
 
 # ====================================================================
-# YAML builders.
+# YAML helpers.
 # Due to proper indentation, we keep them outside class
 # ====================================================================
+def read_yaml_docs(path: Path) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        docs = list(yaml.safe_load_all(f))
+    return docs
+
 def yaml_priority_class(name: str, value: int) -> str:
     return textwrap.dedent(f"""\
     apiVersion: scheduling.k8s.io/v1
@@ -138,11 +146,22 @@ def get_timestamp() -> str:
     """
     return time.strftime("%Y/%m/%d/%H:%M:%S", time.localtime())
 
+def format_hms(seconds: int) -> str:
+    """
+    Format seconds into a human-readable string.
+    """
+    seconds = max(0, int(seconds))
+    h, r = divmod(seconds, 3600)
+    m, s = divmod(r, 60)
+    parts = []
+    if h: parts.append(f"{h}h")
+    if m: parts.append(f"{m}m")
+    if s or not parts: parts.append(f"{s}s")
+    return "".join(parts)
 
 ##############################################
 # ------------ Logging helpers----------------
 ##############################################
-
 class PrefixFilter(logging.Filter):
     """
     Injects a static 'prefix' field into each LogRecord.
@@ -172,6 +191,23 @@ def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
     logger.addHandler(h)
     logging.captureWarnings(True)
     return logger
+
+def make_header_footer(msg: str, width: int = 100, border: str = "=") -> Tuple[str, str]:
+    """
+    Build a centered header line with `msg` between border chars and a matching-width footer line.
+    If `msg` is longer than `width`, the width expands to fit it.
+    Example:
+    >>> h, f = get_header_footer("Running tests")
+    >>> print(h, " ... stuff ... ", f, sep="")
+    """
+    msg = str(msg).strip().replace("\n", " ")
+    inner = f" {msg} "                       # space padding around the message
+    w = max(width, len(inner))               # ensure width fits the message
+    left = (w - len(inner)) // 2
+    right = w - len(inner) - left
+    header = f"\n{border * left}{inner}{border * right}\n"
+    footer = f"\n{border * w}\n"
+    return header, footer
 
 ##############################################
 # ------------ Parser helpers----------------
@@ -250,13 +286,18 @@ def parse_timeout_s(t:str | None, default: int = 60) -> int:
     except Exception:
         return default
 
-def get_str_from_dict(doc: Dict[str, Any], key: str, default: str) -> str:
-    """
-    Get a string value from the document, or return default if missing/empty.
-    """
-    v = doc.get(key, default)
+def coerce_bool(v, default=False):
+    if v is None: return default
+    if isinstance(v, bool): return v
+    s = str(v).strip().lower()
+    if s in ("1","true","yes","y","on"): return True
+    if s in ("0","false","no","n","off"): return False
+    return default
+
+def get_str(v):
+    if v is None: return None
     s = str(v).strip()
-    return s if s else default
+    return s if s else None
 
 def get_int_from_dict(doc: Dict[str, Any], key: str, default: int) -> int:
     """
@@ -287,6 +328,7 @@ def get_str_from_dict(doc: Dict[str, Any], key: str, default: Optional[str]) -> 
         return default
     s = str(v).strip()
     return s if s else default
+
 ##############################################
 # ------------ Quantity helpers----------------
 ##############################################
@@ -361,26 +403,43 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     return json.loads(out)
 
 ##############################################
+# ------------ kwokctl helpers----------------
+##############################################
+@contextlib.contextmanager
+def kwok_cache_lock():
+    """
+    Take an exclusive lock so only one process runs 'kwokctl create cluster'
+    at a time, avoiding races in ~/.kwok/cache when downloading binaries.
+    Override lock path via env KWOK_CACHE_LOCK if desired.
+    """
+    lock_path = os.environ.get("KWOK_CACHE_LOCK", "/tmp/kwokctl-cache.lock")
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o666)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+##############################################
 # ------------ File I/O helpers----------------
 ##############################################
-def dir_exists(dir_path: str) -> None:
+def dir_exists(dir_path: str) -> bool:
     p = Path(dir_path)
-    if not p.exists():
-        raise SystemExit(f"directory not found: {p}")
-    if not p.is_dir():
-        raise SystemExit(f"directory not found or not a directory: {p}")
+    if not p.exists() or not p.is_dir():
+        return False
+    return True
 
-def file_exists(file: Optional[str]) -> None:
+def file_exists(file: Optional[str]) -> bool:
     if not file:
-        return
+        return False
     f = Path(file)
     if not f.exists() or not f.is_file():
-        raise SystemExit(f"file not found or not a regular file: {f}")
-    try:
-        with open(f, "r", encoding="utf-8"):
-            pass
-    except Exception as e:
-        raise SystemExit(f"file not readable: {f} ({e})")
+        return False
+    return True
 
 ##############################################
 # ------------ CSV helpers----------------
@@ -466,6 +525,71 @@ def seeded_random(base_seed: int, *labels: object) -> random.Random:
     Convenience: Random() seeded from _derive_seed(base_seed, *labels).
     """
     return random.Random(derive_seed(base_seed, *labels))
+
+def generate_seeds(gen_seeds_to_file: Optional[List[str]]) -> None:
+    """
+    Generate random seeds and if requested, write them to one or multiple files.
+    Modes:
+    --generate-seeds-to-file PATH NUM
+    --generate-seeds-to-file PATH NUM PARTS
+    If PARTS provided and PATH contains '{i}', substitute it with 1..PARTS.
+    Else, create PATH_part-<i>(.ext)
+    """
+    argsv = gen_seeds_to_file
+    if not argsv or len(argsv) not in (2, 3):
+        raise SystemExit("--gen-seeds-to-file requires PATH NUM [PARTS]")
+    path_str, num_str = argsv[0], argsv[1]
+    try:
+        total = int(num_str)
+    except Exception:
+        raise SystemExit("--gen-seeds-to-file: NUM must be an integer")
+    if total < 1:
+        raise SystemExit("--gen-seeds-to-file: NUM must be >= 1")
+    parts = 1
+    if len(argsv) == 3:
+        try:
+            parts = int(argsv[2])
+        except Exception:
+            raise SystemExit("--gen-seeds-to-file: PARTS must be an integer")
+        if parts < 1:
+            raise SystemExit("--gen-seeds-to-file: PARTS must be >= 1")
+        if parts > total:
+            raise SystemExit("--gen-seeds-to-file: PARTS cannot exceed NUM")
+    # RNG + seeds
+    now_ns = int(time.time_ns())
+    r = seeded_random(now_ns, "base")
+    seeds = [(r.getrandbits(63) or 1) for _ in range(total)]
+    # Split even-ish across parts
+    base = total // parts
+    rem = total % parts
+    def _resolve_out(i: int) -> Path:
+        if "{i}" in path_str:
+            return Path(path_str.replace("{i}", str(i)))
+        # No template; if multiple parts, add _part-i before extension inline
+        p = Path(path_str)
+        if parts > 1:
+            if p.suffix:
+                return p.with_name(f"{p.stem}-{i}{p.suffix}")
+            else:
+                return p.with_name(f"{p.name}-{i}")
+        return p  # single file
+    # Ensure parent dir of first output exists
+    first_out = _resolve_out(1)
+    first_out.parent.mkdir(parents=True, exist_ok=True)
+    offset = 0
+    written_total = 0
+    for i in range(1, parts + 1):
+        size = base + (1 if i <= rem else 0)
+        chunk = seeds[offset:offset + size]
+        offset += size
+        outp = _resolve_out(i)
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        with open(outp, "w", encoding="utf-8", newline="") as f:
+            for s in chunk:
+                f.write(f"{s}\n")
+        print(f"wrote {len(chunk)} seeds to {outp}")
+        written_total += len(chunk)
+    print(f"wrote {written_total} seeds across {parts} file(s)")
 
 ##############################################
 # ------------ Stats helpers----------------

@@ -21,7 +21,7 @@
       --cluster-name kwok1 \
       --kwok-runtime binary \
       --results-dir data/results/a \
-      --matrix-file data/jobs/tmp/matrix-file_10_40.csv \
+      --job-file data/jobs/tmp/job-file_10_40.csv \
       --trigger-optimizer true \
       --save-solver-stats true \
       --save-scheduler-logs true \

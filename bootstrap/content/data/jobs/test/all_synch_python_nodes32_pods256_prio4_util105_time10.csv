@@ -1,2 +1,0 @@
-config-file,seed-file,results-dir
-data/configs/all_synch_python/all_synch_python_nodes32_pods256_prio4_util105_time10.yaml,data/seeds/test.txt,data/results/all_synch_python_nodes32_pods256_prio4_util105_time10

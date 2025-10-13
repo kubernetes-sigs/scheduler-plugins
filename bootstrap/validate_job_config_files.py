@@ -83,7 +83,7 @@ def validate_csv(csv_path: Path) -> list[str]:
     return issues
 
 # ---------- YAML validation ----------
-def extract_runner_doc(docs):
+def extract_config_doc(docs):
     for d in docs:
         if isinstance(d, dict) and d.get("kind") == "KwokRunConfiguration":
             return d
@@ -103,7 +103,7 @@ def validate_yaml(yaml_path: Path) -> list[str]:
         docs = list(yaml.safe_load_all(yaml_path.read_text(encoding="utf-8")))
     except Exception as e:
         return [f"YAML parse error: {e}"]
-    rd = extract_runner_doc(docs)
+    rd = extract_config_doc(docs)
 
     if "num_nodes" in rd and rd["num_nodes"] != exp["nodes"]:
         issues.append(f"num_nodes exp={exp['nodes']} act={rd['num_nodes']}")

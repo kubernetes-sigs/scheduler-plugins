@@ -1,0 +1,15 @@
+config-file: data/configs/all_synch_python/all_synch_python_nodes4_pods16_prio4_util105_time10.yaml
+seed-file: data/seeds/test.txt
+results-dir: data/results/hej-test
+save-scheduler-logs: true
+save-solver-stats: true
+overwrite: true
+solver-trigger: true
+override-config:
+  namespace: hej-test
+  num_nodes: 16
+  num_pods: 64
+  num_priorities: 4
+override-kwokctl-envs:
+  - name: SOLVER_PYTHON_TIMEOUT
+    value: "5s"
