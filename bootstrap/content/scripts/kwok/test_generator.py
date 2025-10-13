@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # test_generator.py
 
-import sys, os, copy, shutil, argparse, math, time, random, csv, json, logging, yaml, subprocess, tempfile, traceback, shlex
+import sys, os, copy, shutil, argparse, math, time, random, \
+    csv, json, logging, yaml, subprocess, tempfile, traceback, shlex
 from argparse import BooleanOptionalAction
 from dataclasses import dataclass, is_dataclass, asdict
 from typing import Optional, Tuple, List, Dict, Any, Mapping, Iterable
@@ -43,7 +44,7 @@ RESULTS_HEADER = [
     "pod_node_new", "pod_node_old",
 ]
 
-LOGGER_NAME = "kwok"
+LOGGER_NAME = "test-generator"
 LOG = logging.getLogger(LOGGER_NAME)
 
 CM_SOLVER_STATS_NAME = "solver-stats"
@@ -51,7 +52,7 @@ CM_SOLVER_STATS_NAMESPACE = "kube-system"
 
 RETRIES_ON_FAIL = 5
 
-SOLVER_TRIGGER_URL = "http://localhost:18080/optimize"
+SOLVER_TRIGGER_URL = "http://localhost:18080/solve"
 SOLVER_TRIGGER_TIMEOUT_S = 60
 SOLVER_ACTIVE_URL = "http://localhost:18080/active"
 
@@ -126,8 +127,8 @@ def build_argparser() -> argparse.ArgumentParser:
     # general
     ap.add_argument("--cluster-name", dest="cluster_name", default=None,
                     help="A unique KWOK cluster name (default: kwok1).")
-    ap.add_argument("--kwok-runtime", dest="kwok_runtime", default=None,
-                    help="KWOK runtime 'binary' or 'docker'.")
+    ap.add_argument("--kwok-runtime", dest="kwok_runtime", default=None, choices=["binary","docker"],
+                    help="KWOK runtime")
     ap.add_argument("--job-file", dest="job_file", default=None,
                     help="Path to a YAML job file describing one job and optional in-memory config overrides.")
     ap.add_argument("--workload-config-file", dest="workload_config_file", required=False,
@@ -262,13 +263,347 @@ class KwokTestGenerator:
 
         # General state
         self.ctx = f"kwok-{self.args.cluster_name}" # "kwok-" is the default prefix used by kwokctl
-        self.seen_results: set[int] = self._load_seen_results() # seeds already in results.csv; used for skipping
+        self.seen_results: set[int] = self._load_seen_results_csv() # seeds already in results.csv; used for skipping
         self.seed_durations: list[float] = [] # durations of completed seeds, for ETA estimation
         self.saved_not_all_running: int = 0 # number of seeds saved where not all pods are running
         self.last_solver_result: dict[str, Any] | None = None # last solver result, for --solver-directly
         self.suppress_fail_log: bool = False # if true, suppress writing to failed.csv (used when just checking config)
         self.failure: _Failure | None = None # if suppress_fail_log is true, store the failure here instead
 
+    ##############################################
+    # ------------ Args helpers ------------------
+    ##############################################
+    @staticmethod
+    def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
+        """
+        Ensure all args have a value (either from CLI or job file or default)
+        """
+        if getattr(args, "cluster_name", None) is None:
+            args.cluster_name = "kwok1"
+        if getattr(args, "kwok_runtime", None) is None:
+            args.kwok_runtime = "binary"
+        if getattr(args, "job_file", None) is None:
+            args.job_file = None
+        if getattr(args, "workload_config_file", None) is None:
+            args.workload_config_file = None
+        if getattr(args, "kwokctl_config_file", None) is None:
+            args.kwokctl_config_file = None
+        if getattr(args, "output_dir", None) is None:
+            args.output_dir = "./output"
+
+        # booleans now default to None -> set final defaults here
+        if getattr(args, "clean_start", None) is None:
+            args.clean_start = False
+        if getattr(args, "re_run_seeds", None) is None:
+            args.re_run_seeds = False
+        if getattr(args, "pause", None) is None:
+            args.pause = False
+        if getattr(args, "log_level", None) is None:
+            args.log_level = "INFO"
+
+        if getattr(args, "seed", None) is None:
+            args.seed = None
+        if getattr(args, "seed_file", None) is None:
+            args.seed_file = None
+        if getattr(args, "count", None) is None:
+            args.count = None
+        if getattr(args, "repeats", None) is None:
+            args.repeats = 1
+        if getattr(args, "seeds_not_all_running", None) is None:
+            args.seeds_not_all_running = 0
+
+        if getattr(args, "meta", None) is None:
+            args.meta = None
+
+        if getattr(args, "save_solver_stats", None) is None:
+            args.save_solver_stats = False
+        if getattr(args, "save_scheduler_logs", None) is None:
+            args.save_scheduler_logs = False
+        if getattr(args, "solver_trigger", None) is None:
+            args.solver_trigger = False
+
+        if getattr(args, "solver_directly", None) is None:
+            args.solver_directly = False
+        if getattr(args, "solver_timeout_ms", None) is None:
+            args.solver_timeout_ms = 10000
+        if getattr(args, "solver_input_export", None) is None:
+            args.solver_input_export = None
+        if getattr(args, "solver_output_export", None) is None:
+            args.solver_output_export = None
+        if getattr(args, "solver_directly_running_target_util", None) is None:
+            args.solver_directly_running_target_util = 0.0
+
+        # check args
+        if not args.workload_config_file or not args.kwokctl_config_file:
+            raise SystemExit("--workload-config-file and --kwokctl-config-file are both required (CLI or job-file)")
+        if args.seed is None and not args.seed_file and args.count is None:
+            if args.seeds_not_all_running == 0:
+                raise SystemExit("Provide --seed, --seed-file, --count, or seeds-not-all-running in job-file")
+            if args.seeds_not_all_running > 0:
+                args.count = args.seeds_not_all_running
+                LOG.info("no --seed/--seed-file/--count provided; defaulting --count=%d from --seeds-not-all-running", args.count)
+        if args.seed is not None and args.seed_file:
+            raise SystemExit("--seed cannot be used with --seed-file")
+        if args.seed is not None and args.count is not None:
+            raise SystemExit("--seed cannot be used with --count")
+        if args.seed_file and args.count is not None:
+            raise SystemExit("--seed-file cannot be used with --count")
+        if args.seed is not None and args.seed < 1:
+            raise SystemExit("--seed must be a positive integer")
+        if args.count is not None and args.count < -1:
+            raise SystemExit("--count must be -1 (infinite) or a positive integer")
+        if args.seeds_not_all_running not in (-1, 0) and args.seeds_not_all_running < 1:
+            raise SystemExit("--seeds-not-all-running must be -1 (infinite), 0 (disabled), or >= 1")
+
+        # --- check seed file and config file ---
+        seed_path = Path(args.seed_file).resolve() if args.seed_file else None
+        if args.seed_file:
+            if not seed_path.exists():
+                raise SystemExit(f"--seed-file not found: {seed_path}")
+        wl_path = Path(args.workload_config_file).resolve()
+        kwokctl_path = Path(args.kwokctl_config_file).resolve()
+        if not wl_path.exists():
+            raise SystemExit(f"--workload-config-file not found: {wl_path}")
+        if not kwokctl_path.exists():
+            raise SystemExit(f"--kwokctl-config-file not found: {kwokctl_path}")
+
+        # --- check kwok runtime vs. solver-trigger ---
+        if args.solver_trigger and args.kwok_runtime != "binary":
+            raise SystemExit("--solver-trigger requires --kwok-runtime=binary")
+        
+        return args
+
+    ##############################################
+    # ------------ Seed helpers -----------------
+    ##############################################
+    @staticmethod
+    def _read_seeds_file(path: Path) -> List[int]:
+        """
+        Read seeds from a txt file. Format:
+        - One integer per line (whitespace allowed).
+        - Empty lines and lines starting with '#' are ignored.
+        - Non-integer lines are skipped (logged at DEBUG).
+        Returns: de-duplicated, order-preserving list of positive ints.
+        """
+        seeds: List[int] = []
+        seen: set[int] = set()
+        def _add(n: int):
+            if n is None or n <= 0:
+                return
+            if n not in seen:
+                seen.add(n)
+                seeds.append(n)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for i, line in enumerate(f, 1):
+                    s = line.strip()
+                    if not s or s.startswith("#"):
+                        continue
+                    try:
+                        _add(int(s))
+                    except Exception:
+                        LOG.debug("seed-file %s:%d ignored non-integer line: %r", path, i, s[:120])
+                        continue
+        except Exception as e:
+            raise ValueError(f"Failed reading seed-file {path}: {e}")
+        if not seeds:
+            LOG.warning("no seeds parsed from %s", path)
+        else:
+            LOG.info("parsed %d seed(s) from %s", len(seeds), path)
+        return seeds
+
+    ##############################################
+    # ------------ Config helpers ----------------
+    ##############################################
+    def _parse_config_doc(self, config_doc: dict, override: dict | None = None) -> TestConfigRaw:
+        """
+        Parse a single test-generator config document (already loaded from YAML)
+        into TestConfigRaw. Optionally apply an in-memory override first.
+        """
+        if override:
+            config_doc = self._merge_doc(dict(config_doc), dict(override))
+
+        tr = TestConfigRaw()
+
+        tr.namespace          = get_str_from_dict(config_doc, "namespace", tr.namespace)
+        tr.num_nodes          = get_int_from_dict(config_doc, "num_nodes", tr.num_nodes)
+        tr.num_pods           = get_int_from_dict(config_doc, "num_pods", tr.num_pods)
+
+        tr.util               = get_float_from_dict(config_doc, "util", tr.util)
+
+        tr.wait_pod_mode      = self._get_wait_pod_mode_from_dict(config_doc, "wait_pod_mode", tr.wait_pod_mode)
+        tr.wait_pod_timeout   = get_str_from_dict(config_doc, "wait_pod_timeout", tr.wait_pod_timeout)
+        tr.settle_timeout_min = get_str_from_dict(config_doc, "settle_timeout_min", tr.settle_timeout_min)
+        tr.settle_timeout_max = get_str_from_dict(config_doc, "settle_timeout_max", tr.settle_timeout_max)
+
+        raw_np = normalize_interval(config_doc, ("num_priorities","num_priorities_lo","num_priorities_hi"))
+        if raw_np:
+            tr.num_priorities = parse_int_interval(raw_np, min_lo=1)
+
+        raw_cpu = normalize_interval(config_doc, ("cpu_per_pod","cpu_per_pod_lo","cpu_per_pod_hi"))
+        if raw_cpu:
+            tr.cpu_per_pod = parse_qty_interval(raw_cpu)
+
+        raw_mem = normalize_interval(config_doc, ("mem_per_pod","mem_per_pod_lo","mem_per_pod_hi"))
+        if raw_mem:
+            tr.mem_per_pod = parse_qty_interval(raw_mem)
+
+        raw_rps = normalize_interval(config_doc, ("num_replicas_per_rs","num_replicas_per_rs_lo","num_replicas_per_rs_hi"))
+        if raw_rps:
+            tr.num_replicas_per_rs = parse_int_interval(raw_rps, min_lo=1)
+
+        return tr
+
+    @staticmethod
+    def _validate_workload_config(tr: TestConfigRaw) -> tuple[bool, str]:
+        """
+        Validate the raw config. Do NOT raise; return (ok, aggregated_message).
+        All checks live here and we accumulate *all* failures.
+        """
+        errors: list[str] = []
+        
+        # Basic checks
+        if not tr.namespace or not str(tr.namespace).strip():
+            errors.append("namespace must be a non-empty string")
+        if tr.num_nodes < 1:
+            errors.append("num_nodes must be >= 1")
+        if tr.num_pods < 1:
+            errors.append("num_pods must be >= 1")
+
+        # Utilization
+        if tr.util <= 0.0:
+            errors.append("util must be > 0")
+
+        # Priority check
+        if not isinstance(tr.num_priorities, tuple) or len(tr.num_priorities) != 2:
+            errors.append("num_priorities must be provided (fixed number or [lo,hi])")
+        else:
+            try:
+                lo_prio = int(tr.num_priorities[0])
+                hi_prio = int(tr.num_priorities[1])
+                if lo_prio < 1:
+                    errors.append("num_priorities_lo must be >= 1")
+                if hi_prio < lo_prio:
+                    errors.append("num_priorities interval must satisfy lo <= hi")
+            except Exception:
+                errors.append("num_priorities interval must contain integers")
+
+        # Replicaset check
+        if tr.num_replicas_per_rs is not None:
+            try:
+                lo_rps = int(tr.num_replicas_per_rs[0])
+                hi_rps = int(tr.num_replicas_per_rs[1])
+                if lo_rps < 1 or hi_rps < lo_rps:
+                    errors.append("num_replicas_per_rs must satisfy 1 <= lo <= hi")
+            except Exception:
+                errors.append("num_replicas_per_rs interval must contain integers")
+        
+        # Quantities
+        if tr.cpu_per_pod is None or tr.mem_per_pod is None:
+            errors.append("cpu_per_pod and mem_per_pod must be provided")
+        if tr.cpu_per_pod is not None:
+            try:
+                c_lo = qty_to_mcpu_int(tr.cpu_per_pod[0])
+                c_hi = qty_to_mcpu_int(tr.cpu_per_pod[1])
+                if c_lo < 1 or c_hi < c_lo:
+                    errors.append("cpu_per_pod must satisfy 1m <= lo <= hi")
+            except Exception:
+                errors.append(f"cpu_per_pod has invalid quantities: {tr.cpu_per_pod!r}")
+        if tr.mem_per_pod is not None:
+            try:
+                m_lo = qty_to_bytes_int(tr.mem_per_pod[0])
+                m_hi = qty_to_bytes_int(tr.mem_per_pod[1])
+                if m_lo < 1 or m_hi < m_lo:
+                    errors.append("mem_per_pod must satisfy 1B <= lo <= hi")
+            except Exception:
+                errors.append(f"mem_per_pod has invalid quantities: {tr.mem_per_pod!r}")
+
+        ok = (len(errors) == 0)
+        
+        return ok, ("\n".join(errors) if errors else "")
+    
+    def _resolve_config_for_seed(self, seed_int: int) -> TestConfigApplied:
+        """
+        Resolve the raw config into a fully specified applied config for the given seed.
+        """
+        tr = self.workload_config
+        
+        wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s = self._parse_waits(tr)
+
+        # num_priorities
+        num_prios_lo, num_prios_hi = tr.num_priorities
+        num_prios = seeded_random(seed_int, "num_priorities", num_prios_lo, num_prios_hi).randint(num_prios_lo, num_prios_hi)
+
+        # intervals -> ints
+        cpu_m = (qty_to_mcpu_int(tr.cpu_per_pod[0]), qty_to_mcpu_int(tr.cpu_per_pod[1]))
+        mem_b = (qty_to_bytes_int(tr.mem_per_pod[0]), qty_to_bytes_int(tr.mem_per_pod[1]))
+
+        # Pod sizes
+        rs_sets: list[int] = []
+        rs_cpu = rs_mem = None
+        if tr.num_replicas_per_rs is not None: # RS mode
+            rng_rs_sizes = seeded_random(seed_int, "rs-sizes")
+            rng_rs_cpu   = seeded_random(seed_int, "rs-cpu")
+            rng_rs_mem   = seeded_random(seed_int, "rs-mem")
+            rs_sets = self._gen_rs_sizes(rng_rs_sizes, tr.num_pods, tr.num_replicas_per_rs)
+            rs_cpu = [rng_rs_cpu.randint(cpu_m[0], cpu_m[1]) for _ in rs_sets]
+            rs_mem = [rng_rs_mem.randint(mem_b[0], mem_b[1]) for _ in rs_sets]
+            cpu_parts = [v for i, v in enumerate(rs_cpu) for _ in range(rs_sets[i])]
+            mem_parts = [v for i, v in enumerate(rs_mem) for _ in range(rs_sets[i])]
+        else: # standalone
+            rng_pod_cpu = seeded_random(seed_int, "pod-cpu")
+            rng_pod_mem = seeded_random(seed_int, "pod-mem")
+            cpu_parts = [rng_pod_cpu.randint(cpu_m[0], cpu_m[1]) for _ in range(tr.num_pods)]
+            mem_parts = [rng_pod_mem.randint(mem_b[0], mem_b[1]) for _ in range(tr.num_pods)]
+
+        # Node sizes based on pods above and target utilization
+        sum_cpu, sum_mem = sum(cpu_parts), sum(mem_parts)
+        max_cpu_m, max_mem_b = (max(cpu_parts) if cpu_parts else 1), (max(mem_parts) if mem_parts else 1)
+        util = max(1e-9, float(tr.util)) # avoid division by zero
+        total_cap_cpu = int(math.ceil(sum_cpu / util))
+        total_cap_mem = int(math.ceil(sum_mem / util))
+        per_node_m = max(max_cpu_m, int(math.ceil(total_cap_cpu / tr.num_nodes)))
+        per_node_b = max(max_mem_b, int(math.ceil(total_cap_mem / tr.num_nodes)))
+
+        # Set final used intervals based on what we actually drew
+        cpu_m_used = (min(cpu_parts) if cpu_parts else cpu_m[0], max_cpu_m)
+        mem_b_used = (min(mem_parts) if mem_parts else mem_b[0], max_mem_b)
+
+        num_rs_sets = len(rs_sets)
+        
+        ta = TestConfigApplied(
+            namespace=tr.namespace,
+            num_nodes=tr.num_nodes,
+            num_pods=tr.num_pods,
+            num_priorities=num_prios,
+            num_replicaset=num_rs_sets,
+            num_replicas_per_rs=tr.num_replicas_per_rs,
+            cpu_per_pod_m=cpu_m_used,
+            mem_per_pod_b=mem_b_used,
+            
+            util=tr.util,
+            
+            wait_pod_mode=wait_pod_mode,
+            wait_pod_timeout_s=wait_pod_timeout_s,
+            
+            settle_timeout_min_s=settle_timeout_min_s,
+            settle_timeout_max_s=settle_timeout_max_s,
+            
+            node_cpu_m=per_node_m,
+            node_mem_b=per_node_b,
+            
+            pod_parts_cpu_m=cpu_parts,
+            pod_parts_mem_b=mem_parts,
+        )
+        
+        # Only add RS fields if RS are used
+        if num_rs_sets > 0:
+            ta.rs_sets = rs_sets
+            ta.rs_parts_cpu_m = rs_cpu
+            ta.rs_parts_mem_b = rs_mem
+
+        return ta
+    
     ##############################################
     # ------------ Logging helpers -----------------
     ##############################################
@@ -582,6 +917,138 @@ class KwokTestGenerator:
         return s
 
     ######################################################
+    # ---------- Job file helpers ------------------------
+    ######################################################
+    @staticmethod
+    def _merge_doc(dst: dict, src: dict) -> dict:
+        """
+        Merge src into dst (both dicts) and return dst. Shallow only.
+        """
+        for k, v in (src or {}).items():
+            dst[k] = v
+        return dst
+
+    @staticmethod
+    def merge_job_fields_into_args(args: argparse.Namespace, job: dict) -> tuple[argparse.Namespace, dict]:
+        # Map fields from job
+        jf_cluster_name          = get_str(job.get("cluster-name"))
+        jf_kwok_runtime          = get_str(job.get("kwok-runtime"))
+        jf_workload_config_file  = get_str(job.get("workload-config-file"))
+        jf_kwokctl_config_file   = get_str(job.get("kwokctl-config-file"))
+        jf_output_dir            = get_str(job.get("output-dir"))
+        jf_clean_start           = coerce_bool(job.get("clean-start"), default=None)
+        jf_re_run_seeds          = coerce_bool(job.get("re-run-seeds"), default=None)
+        jf_log_level             = get_str(job.get("log-level"))
+
+        jf_seed                  = job.get("seed")
+        jf_seed_file             = get_str(job.get("seed-file"))
+        jf_count                 = job.get("count")
+        jf_repeats               = job.get("repeats")
+        jf_snar                  = job.get("seeds-not-all-running")
+
+        jf_save_solver_stats     = coerce_bool(job.get("save-solver-stats"), default=None)
+        jf_save_scheduler_logs   = coerce_bool(job.get("save-scheduler-logs"), default=None)
+
+        jf_solver_trigger        = coerce_bool(job.get("solver-trigger"), default=None)
+
+        jf_override_cfg          = job.get("override-config") or {}
+        jf_override_kwokctl_envs = job.get("override-kwokctl-envs") or []
+
+        # CLI priority: only fill when CLI value is None
+        if getattr(args, "cluster_name", None) is None and jf_cluster_name:
+            args.cluster_name = jf_cluster_name
+        if getattr(args, "kwok_runtime", None) is None and jf_kwok_runtime:
+            args.kwok_runtime = jf_kwok_runtime
+        if getattr(args, "workload_config_file", None) is None and jf_workload_config_file:
+            args.workload_config_file = jf_workload_config_file
+        if getattr(args, "kwokctl_config_file", None) is None and jf_kwokctl_config_file:
+            args.kwokctl_config_file = jf_kwokctl_config_file
+        if getattr(args, "seed_file", None) is None and jf_seed_file:
+            args.seed_file = jf_seed_file
+        if getattr(args, "seed", None) is None and isinstance(jf_seed, int):
+            args.seed = jf_seed
+        if getattr(args, "count", None) is None and isinstance(jf_count, int):
+            args.count = jf_count
+        if getattr(args, "repeats", None) is None and isinstance(jf_repeats, int):
+            args.repeats = jf_repeats
+        if getattr(args, "output_dir", None) is None and jf_output_dir:
+            args.output_dir = jf_output_dir
+        if getattr(args, "seeds_not_all_running", None) is None and isinstance(jf_snar, int):
+            args.seeds_not_all_running = jf_snar
+
+        if getattr(args, "save_solver_stats", None) is None and jf_save_solver_stats is not None:
+            args.save_solver_stats = jf_save_solver_stats
+        if getattr(args, "save_scheduler_logs", None) is None and jf_save_scheduler_logs is not None:
+            args.save_scheduler_logs = jf_save_scheduler_logs
+        if getattr(args, "log_level", None) is None and jf_log_level:
+            args.log_level = jf_log_level
+        if getattr(args, "solver_trigger", None) is None and jf_solver_trigger is not None:
+            args.solver_trigger = jf_solver_trigger
+        if getattr(args, "clean_start", None) is None and jf_clean_start is not None:
+            args.clean_start = jf_clean_start
+        if getattr(args, "re_run_seeds", None) is None and jf_re_run_seeds is not None:
+            args.re_run_seeds = jf_re_run_seeds
+
+        return args, {"config": jf_override_cfg, "kwokctl_envs": jf_override_kwokctl_envs}
+
+    @staticmethod
+    def _merge_kwokctl_envs(doc: dict, add_envs: Iterable[Mapping[str, Any]] | None, component: str = "kube-scheduler") -> dict:
+        """
+        Return a copy of `doc` with extraEnvs for `component` merged by env 'name'.
+        - Items in `add_envs` override/insert existing envs.
+        - Ensures componentsPatches and the component entry exist.
+        - Sorts components and envs by name for stability.
+        """
+        d = copy.deepcopy(doc) if isinstance(doc, dict) else {}
+        # Normalize inputs
+        add = [
+            e for e in (add_envs or [])
+            if isinstance(e, Mapping) and e.get("name")
+        ]
+        if not add:
+            return d
+        # Ensure componentsPatches is a list of dicts
+        cps = [c for c in (d.get("componentsPatches") or []) if isinstance(c, dict)]
+        d["componentsPatches"] = cps  # normalize back on the copy
+        # Get or create the target component patch
+        comp = next((c for c in cps if c.get("name") == component), None)
+        if comp is None:
+            comp = {"name": component}
+            cps.append(comp)
+        # Merge by name
+        cur = [e for e in (comp.get("extraEnvs") or []) if isinstance(e, dict) and e.get("name")]
+        env_by_name = {e["name"]: copy.deepcopy(e) for e in cur}
+        env_by_name.update({e["name"]: copy.deepcopy(e) for e in add})
+        comp["extraEnvs"] = [env_by_name[k] for k in sorted(env_by_name)]
+        cps.sort(key=lambda c: c.get("name", ""))
+        return d
+
+    @staticmethod
+    def _get_kwokctl_envs(doc: dict, component: str = "kube-scheduler") -> dict[str, object] | None:
+        """
+        Return a dict of env name -> value for the kube-scheduler component from doc,
+        or None if not found.
+        """
+        cps = doc.get("componentsPatches") or []
+        for c in cps:
+            if isinstance(c, dict) and c.get("name") == component:
+                raw_envs = c.get("extraEnvs") or []
+                env_map: dict[str, object] = {}
+                for e in raw_envs:
+                    if not isinstance(e, dict): 
+                        continue
+                    name = (e.get("name") or "").strip()
+                    if not name:
+                        continue
+                    if "value" in e and e.get("value") not in (None, ""):
+                        env_map[name] = e["value"]
+                    else:
+                        env_map[name] = None
+                # sort by name for stability
+                return dict(sorted(env_map.items(), key=lambda kv: kv[0]))
+        return None
+
+    ######################################################
     # ---------- Skipped all running seeds ---------------
     ######################################################
     def _record_skipped_all_running_seed(self, seed: int, running_count: int) -> None:
@@ -663,7 +1130,7 @@ class KwokTestGenerator:
                 LOG.warning("failed to delete mismatched CSV %s: %s", path.name, e)
         return False
 
-    def _load_seen_results(self) -> set[int]:
+    def _load_seen_results_csv(self) -> set[int]:
         seen: set[int] = set()
         
         if not self.results_f.exists():
@@ -681,8 +1148,9 @@ class KwokTestGenerator:
     @staticmethod
     def _extract_best_attempt_fields(best_name: str, attempts: list[dict]) -> tuple[float | None, int | None, str]:
         """
-        Prefer the attempt with name == best_name; otherwise use the one with the
-        highest numeric 'score'. Return (best_score, best_duration_ms, best_status).
+        From the attempts list, find the one with name==best_name and extract
+        (best_score, best_duration_ms, best_status). If not found or invalid input,
+        return (None, None, "").
         """
         # check for empty input
         if not isinstance(attempts, list) or not attempts:
@@ -800,7 +1268,7 @@ class KwokTestGenerator:
             # Always clean-start the per-run file
             with open(out_path, "w", encoding="utf-8") as fh:
                 fh.write(runs_raw)
-            LOG.info("saved solver-stats JSON to %s", out_path)
+            LOG.info("saved solver-stats to %s", out_path)
         except Exception as e:
             LOG.warning("failed writing %s: %s", out_path, e)
     
@@ -879,7 +1347,6 @@ class KwokTestGenerator:
             except OSError as e:
                 LOG.warning("failed pruning existing scheduler log %s: %s", out_path.name, e)
         try:
-            # We capture the raw output for a clean log file (no prefixed 'kwokctl>' lines)
             r = subprocess.run(
                 ["kwokctl", "logs", "kube-scheduler", "--name", self.args.cluster_name],
                 stdout=subprocess.PIPE,
@@ -889,7 +1356,7 @@ class KwokTestGenerator:
             data = r.stdout or b""
             with open(out_path, "wb") as fh:
                 fh.write(data)
-            LOG.info("saved scheduler logs to %s (rc=%d, %d bytes)", out_path, r.returncode, len(data))
+            LOG.info("saved scheduler logs to %s", out_path)
         except Exception as e:
             LOG.warning("failed saving scheduler logs: %s", e)
 
@@ -907,7 +1374,6 @@ class KwokTestGenerator:
         by_standalone = {p["name"]: p for p in (standalone_specs or [])}
         by_rs = {r["name"]: r for r in (rs_specs or [])}
         all_names = set(running_by_name.keys()) | set(unschedulable_names)
-
         out: List[Dict[str, object]] = []
         for pname in sorted(all_names):
             node = running_by_name.get(pname, "")
@@ -915,14 +1381,12 @@ class KwokTestGenerator:
                 spec = by_standalone[pname]
                 out.append({
                     "name": pname,
-                    "cpu_m": int(spec["cpu_m"]),
-                    "mem_b": int(spec["mem_b"]),
+                    "cpu_m": int(spec["req_cpu_m"]),
+                    "mem_b": int(spec["req_mem_bytes"]),
                     "priority": str(spec["priority"]),
                     "node": node,
                 })
             else:
-                # Infer RS name: pick the longest RS name that is a prefix of the pod name
-                # followed by a hyphen (handles names that themselves contain hyphens).
                 rsname = ""
                 if by_rs:
                     for candidate in sorted(by_rs.keys(), key=len, reverse=True):
@@ -932,8 +1396,8 @@ class KwokTestGenerator:
                 r = by_rs.get(rsname, {})
                 out.append({
                     "name": pname,
-                    "cpu_m": int(r.get("cpu_m", 0)),
-                    "mem_b": int(r.get("mem_b", 0)),
+                    "cpu_m": int(r.get("req_cpu_m", 0)),
+                    "mem_b": int(r.get("req_mem_bytes", 0)),
                     "priority": str(r.get("priority", "")),
                     "node": node,
                 })
@@ -974,7 +1438,7 @@ class KwokTestGenerator:
         return r
 
     @staticmethod
-    def _apply_yaml(ctx:str, yaml_text:str) -> subprocess.CompletedProcess:
+    def _kubectl_apply_yaml(ctx: str, yaml_text: str) -> subprocess.CompletedProcess:
         """
         Apply a YAML configuration to the cluster, logging kubectl output with worker prefix.
         """
@@ -983,7 +1447,7 @@ class KwokTestGenerator:
     @staticmethod
     def _ensure_kwok_cluster(cluster_name: str, kwok_runtime: str, config_doc: dict | None = None, recreate: bool = True) -> None:
         if recreate:
-            LOG.info(f"recreating kwok cluster '{cluster_name}'")
+            LOG.info("recreating kwok cluster '%s'", cluster_name)
             with kwok_cache_lock():
                 KwokTestGenerator._run_kwokctl_logged("delete", "cluster", "--name", cluster_name, check=False)
         tf = tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml")
@@ -994,9 +1458,7 @@ class KwokTestGenerator:
         cfg_for_kwokctl = Path(tf.name)
         try:
             with kwok_cache_lock():
-                KwokTestGenerator._run_kwokctl_logged(
-                    "create", "cluster", "--name", cluster_name, "--config", str(cfg_for_kwokctl), "--runtime", kwok_runtime
-                )
+                KwokTestGenerator._run_kwokctl_logged("create", "cluster", "--name", cluster_name, "--config", str(cfg_for_kwokctl), "--runtime", kwok_runtime)
         finally:
             if cfg_for_kwokctl.exists():
                 try: os.unlink(cfg_for_kwokctl)
@@ -1007,13 +1469,12 @@ class KwokTestGenerator:
         """
         Create KWOK nodes kwok-node-1..kwok-node-N with the given capacity.
         """
-        KwokTestGenerator._apply_yaml(ctx, "".join(yaml_kwok_node(f"kwok-node-{i}", node_cpu, node_mem, pods_cap) for i in range(1, num_nodes + 1)))
+        KwokTestGenerator._kubectl_apply_yaml(ctx, "".join(yaml_kwok_node(f"kwok-node-{i}", node_cpu, node_mem, pods_cap) for i in range(1, num_nodes + 1)))
 
     @staticmethod
     def _ensure_namespace(ctx: str, ns: str) -> None:
         """
         Ensure the namespace exists in the given context.
-        If recreate=True, delete it first, then (re)create if missing.
         """
         rns = subprocess.run(["kubectl", "--context", ctx, "get", "ns", ns], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if rns.returncode != 0:
@@ -1023,7 +1484,6 @@ class KwokTestGenerator:
     def _ensure_service_account(ctx: str, ns: str, sa: str, retries: int = 20, delay: float = 0.5) -> None:
         """
         Ensure the ServiceAccount exists in the given namespace.
-        If recreate=True, delete it first, then (re)create if missing.
         """
         for _ in range(1, retries + 1):
             r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "sa", sa], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1037,7 +1497,7 @@ class KwokTestGenerator:
         Ensure PriorityClasses {prefix}{i} for i in [start, start+num_priorities).
         If delete_extras=True, remove any of our prefixed PCs outside that set.
         """
-        KwokTestGenerator._apply_yaml(ctx, "".join(yaml_priority_class(f"{prefix}{v}", v) for v in range(start, start + num_priorities)))
+        KwokTestGenerator._kubectl_apply_yaml(ctx, "".join(yaml_priority_class(f"{prefix}{v}", v) for v in range(start, start + num_priorities)))
 
     @staticmethod
     def _wait_each(ctx: str, kind: str, name: str, ns: str, timeout_sec: int, mode: str) -> int:
@@ -1067,9 +1527,11 @@ class KwokTestGenerator:
             if mode == "exist":
                 if r.returncode == 0:
                     return 1
-                time.sleep(0.5); continue
+                time.sleep(0.5)
+                continue
             if r.returncode != 0:
-                time.sleep(0.5); continue
+                time.sleep(0.5)
+                continue
             try:
                 pod = json.loads(r.stdout)
                 phase = (pod.get("status") or {}).get("phase") or ""
@@ -1081,9 +1543,9 @@ class KwokTestGenerator:
                     return 1
             except Exception:
                 pass
-            LOG.info(f"waiting on pod to be {mode}")
+            LOG.info("waiting on pod to be %s", mode)
             time.sleep(0.5)
-        LOG.warning(f"timeout waiting for pod '{name}' in ns '{ns}' to be {mode}")
+        LOG.warning("timeout waiting for pod '%s' in ns '%s' to be %s", name, ns, mode)
         return 0
 
     @staticmethod
@@ -1102,7 +1564,8 @@ class KwokTestGenerator:
             desired = KwokTestGenerator._get_rs_spec_replicas(ctx, ns, rs_name)
             r = subprocess.run(["kubectl", "--context", ctx, "-n", ns, "get", "pods", "-l", f"app={rs_name}", "-o", "json"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             if r.returncode != 0:
-                time.sleep(0.5); continue
+                time.sleep(0.5)
+                continue
             try:
                 podlist = json.loads(r.stdout).get("items", [])
                 if mode == "exist":
@@ -1124,7 +1587,7 @@ class KwokTestGenerator:
                 pass
             LOG.info("waiting on rs=%s to be %s; desired=%s current=%s", rs_name, mode, desired, last_count)
             time.sleep(0.5)
-        LOG.warning(f"timeout waiting for RS '{rs_name}' in ns '{ns}' to have desired pods {mode}")
+        LOG.warning("timeout waiting for RS '%s' in ns '%s' to have desired pods %s", rs_name, ns, mode)
         return last_count
 
     ##############################################
@@ -1132,9 +1595,8 @@ class KwokTestGenerator:
     ##############################################
     def _make_standalone_pod_specs_only(self, rng, ta) -> list[dict]:
         """
-        Build standalone pod specs (name/req_cpu_m/req_mem_bytes/priority) without applying to a cluster.
-        Naming mirrors _apply_standalone_pods: pod-<idx>-p<prio>.
-        Uses the already resolved parts from TestConfigApplied.
+        Build standalone pod specs by splitting pod_parts_cpu_m and pod_parts_mem_b.
+        Each pod gets a random priority in [1, num_priorities].
         """
         specs: list[dict] = []
         n = len(ta.pod_parts_cpu_m)
@@ -1151,9 +1613,8 @@ class KwokTestGenerator:
 
     def _make_replicaset_specs_only(self, rng, ta) -> list[dict]:
         """
-        Build ReplicaSet specs (name/req_cpu_m/req_mem_bytes/priority/replicas) without applying.
-        Naming mirrors _apply_replicasets: rs-<idx>-p<prio>.
-        Uses rs_sets + rs_parts_* from TestConfigApplied.
+        Build ReplicaSet specs by randomly splitting num_pods into sets of sizes in replicas_per_set.
+        Each RS gets a random priority in [1, num_priorities].
         """
         rs_specs: list[dict] = []
         if not getattr(ta, "rs_sets", None):
@@ -1172,15 +1633,14 @@ class KwokTestGenerator:
 
     def _apply_standalone_pods(self, ta: TestConfigApplied, specs: list[dict]) -> None:
         """
-        Create standalone pods in the given namespace with the specified specs.
-        Returns a list of pod specs created. In direct mode, just returns specs (no cluster work).
+        Apply standalone pods via kubectl in the given namespace with the specified specs.
         """
         names: List[str] = []
         for s in specs:
             pc = f"p{int(s['priority'])}"
             cpu_m_str = qty_to_mcpu_str(int(s["req_cpu_m"]))
             mem_b_str = qty_to_bytes_str(int(s["req_mem_bytes"]))
-            self._apply_yaml(self.ctx, yaml_kwok_pod(ta.namespace, s["name"], cpu_m_str, mem_b_str, pc))
+            self._kubectl_apply_yaml(self.ctx, yaml_kwok_pod(ta.namespace, s["name"], cpu_m_str, mem_b_str, pc))
             names.append(s["name"])
         # Wait (as before)
         if ta.wait_pod_mode == "running":
@@ -1193,17 +1653,16 @@ class KwokTestGenerator:
 
     def _apply_replicasets(self, ta: TestConfigApplied, specs: list[dict]) -> None:
         """
-        Create ReplicaSets in the given namespace with the specified specs.
-        Returns a list of replicaset specs created. In direct mode, just returns specs (no cluster work).
+        Apply ReplicaSets via kubectl in the given namespace with the specified specs.
         """
         for s in specs:
             pc = f"p{int(s['priority'])}"
             cpu_m_str = qty_to_mcpu_str(int(s["req_cpu_m"]))
             mem_b_str = qty_to_bytes_str(int(s["req_mem_bytes"]))
-            self._apply_yaml(self.ctx, yaml_kwok_rs(ta.namespace, s["name"], int(s["replicas"]), cpu_m_str, mem_b_str, pc))
-            _ = self._wait_rs_pods(self.ctx, s["name"], ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
-        LOG.info("created %d ReplicaSets with total %d (=num_pods)",
-                len(specs), sum(int(s['replicas']) for s in specs))
+            self._kubectl_apply_yaml(self.ctx, yaml_kwok_rs(ta.namespace, s["name"], int(s["replicas"]), cpu_m_str, mem_b_str, pc))
+            if ta.wait_pod_mode in ("exist", "ready", "running"):
+                _ = self._wait_rs_pods(self.ctx, s["name"], ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
+        LOG.info("created %d ReplicaSets with total %d (=num_pods)", len(specs), sum(int(s['replicas']) for s in specs))
 
     @staticmethod
     def _gen_rs_sizes(rng: random.Random, num_pods: int, replicas_per_set: tuple[int, int]) -> list[int]:
@@ -1225,15 +1684,6 @@ class KwokTestGenerator:
             remaining -= rs_size
         return rs_sizes
 
-    # TODO: delete if not needed
-    @staticmethod
-    def _scale_replicaset(ctx: str, ns: str, rs_name: str, replicas: int) -> None:
-        """
-        Scale a ReplicaSet to a desired replica count.
-        Used to deterministically create pods one-by-one.
-        """
-        KwokTestGenerator._run_kubectl_logged(ctx, "-n", ns, "scale", "replicaset", rs_name, f"--replicas={replicas}", check=True)
-
     @staticmethod
     def _get_rs_spec_replicas(ctx: str, ns: str, rs_name: str) -> Optional[int]:
         """
@@ -1251,123 +1701,73 @@ class KwokTestGenerator:
     # ---------- Solver helpers ------------------
     ######################################################
     def _solver_directly(self, ta, seed, pod_specs, rs_specs) -> tuple[dict, dict]:
-        def preplace_running_pods(pods, nodes, run_util: float, seed: int) -> None:
-            """
-            Deterministic, simple pre-placement:
-            - Greedy largest-first; stable shuffle for strict ties using the same seed
-            - Pack into nodes 0..N-1
-            - Never exceed per-node CPU/MEM targets (cap * run_util)
-            - Returns a metrics dict with per-node and total running utilization.
-            """
-            # Per-node target budgets (always build so we can return zeros cleanly)
-            targets = []
-            for nd in nodes:
-                cpu_cap = int(nd["cap_cpu_m"])
-                mem_cap = int(nd["cap_mem_bytes"])
-                targets.append({
-                    "name": nd["name"],
-                    "cpu_cap": cpu_cap,
-                    "mem_cap": mem_cap,
-                    "cpu_target": int(cpu_cap * max(0.0, run_util)),
-                    "mem_target": int(mem_cap * max(0.0, run_util)),
-                    "cpu_used": 0,
-                    "mem_used": 0,
-                })
+        """
+        Directly call the solver script with the given specs and return its result.
+        Returns (solver_result, metrics).
+        """
+        def _preplace_running_pods(pods, nodes, run_util: float, seed: int) -> None:
+            # Build per-node targets
+            targets = [{
+                "name": n["name"],
+                "cpu_target": int(int(n["cap_cpu_m"]) * max(0.0, run_util)),
+                "mem_target": int(int(n["cap_mem_bytes"]) * max(0.0, run_util)),
+                "cpu_used": 0, "mem_used": 0,
+            } for n in nodes]
 
-            if run_util > 0.0:
-                # Largest-first by (cpu, mem); tie-break with SAME seed
-                rng = seeded_random(seed, "preplace-simple")
-                idx = list(range(len(pods)))
-                idx.sort(key=lambda i: (pods[i]["req_cpu_m"], pods[i]["req_mem_bytes"]), reverse=True)
+            if run_util <= 0.0:
+                return
 
-                # Break strict ties deterministically
-                i = 0
-                while i < len(idx):
-                    j = i + 1
-                    ci = pods[idx[i]]["req_cpu_m"]; mi = pods[idx[i]]["req_mem_bytes"]
-                    while j < len(idx):
-                        cj = pods[idx[j]]["req_cpu_m"]; mj = pods[idx[j]]["req_mem_bytes"]
-                        if (ci, mi) != (cj, mj):
-                            break
-                        j += 1
-                    if j - i > 1:
-                        group = idx[i:j]
-                        rng.shuffle(group)
-                        idx[i:j] = group
-                    i = j
+            # Deterministic tie-breaker (no group-shuffle loop)
+            idx = list(range(len(pods)))
+            tiebreak = [
+                seeded_random(seed, f"preplace-{i}-{pods[i]['req_cpu_m']}-{pods[i]['req_mem_bytes']}").random()
+                for i in idx
+            ]
+            idx.sort(key=lambda i: (-pods[i]["req_cpu_m"], -pods[i]["req_mem_bytes"], tiebreak[i]))
 
-                def can_fit(t, p):
-                    return ((t["cpu_used"] + p["req_cpu_m"] <= t["cpu_target"]) and
-                            (t["mem_used"] + p["req_mem_bytes"] <= t["mem_target"]))
+            def can_fit(t, p):
+                return (t["cpu_used"] + p["req_cpu_m"] <= t["cpu_target"] and
+                        t["mem_used"] + p["req_mem_bytes"] <= t["mem_target"])
 
-                def all_met():
-                    for t in targets:
-                        if t["cpu_used"] < t["cpu_target"] or t["mem_used"] < t["mem_target"]:
-                            return False
-                    return True
+            def all_met():
+                return all(t["cpu_used"] >= t["cpu_target"] and t["mem_used"] >= t["mem_target"] for t in targets)
 
-                # Greedy pack
-                for k in idx:
-                    p = pods[k]
-                    if p.get("node"):
-                        continue  # respect prior assignment if any
-                    placed = False
-                    for t in targets:
-                        if can_fit(t, p):
-                            p["node"] = t["name"]  # mark as already running
-                            t["cpu_used"] += p["req_cpu_m"]
-                            t["mem_used"] += p["req_mem_bytes"]
-                            placed = True
-                            break
-                    if placed and all_met():
+            for k in idx:
+                p = pods[k]
+                if p.get("node"):
+                    continue
+                for t in targets:
+                    if can_fit(t, p):
+                        p["node"] = t["name"]
+                        t["cpu_used"] += p["req_cpu_m"]
+                        t["mem_used"] += p["req_mem_bytes"]
+                        if all_met():
+                            return
                         break
 
-            def safe_div(a, b):
-                return (a / b) if b and b > 0 else 0.0
+        def _write_json(path: Path | None, obj: dict) -> None:
+            if not path:
+                return
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(obj, f, indent=2)
 
-            per_node = []
-            tot_cpu_used = tot_mem_used = 0
-            tot_cpu_cap = tot_mem_cap = 0
-            tot_cpu_target = tot_mem_target = 0
-
-            for t in targets:
-                tot_cpu_used   += t["cpu_used"]
-                tot_mem_used   += t["mem_used"]
-                tot_cpu_cap    += t["cpu_cap"]
-                tot_mem_cap    += t["mem_cap"]
-                tot_cpu_target += t["cpu_target"]
-                tot_mem_target += t["mem_target"]
-
-                per_node.append({
-                    "name": t["name"],
-                    "cpu_used": t["cpu_used"],
-                    "mem_used": t["mem_used"],
-                    "cpu_cap": t["cpu_cap"],
-                    "mem_cap": t["mem_cap"],
-                    "cpu_target": t["cpu_target"],
-                    "mem_target": t["mem_target"],
-                    # actual running util vs capacity
-                    "cpu_util": safe_div(t["cpu_used"], t["cpu_cap"]),
-                    "mem_util": safe_div(t["mem_used"], t["mem_cap"]),
-                    # progress vs target (may exceed 1.0 only if targets==0 and used>0; capped)
-                    "cpu_util_vs_target": min(1.0, safe_div(t["cpu_used"], t["cpu_target"])),
-                    "mem_util_vs_target": min(1.0, safe_div(t["mem_used"], t["mem_target"])),
-                })
-        
+        # Nodes
         nodes = [{
             "name": f"node-{j}",
             "cap_cpu_m": int(ta.node_cpu_m),
             "cap_mem_bytes": int(ta.node_mem_b),
         } for j in range(ta.num_nodes)]
+
+        # Pods (emit standalone and RS replicas)
         pods = []
-        uid_to_priority: dict[str,int] = {}
         uid_counter = 0
+
         def emit(name, prio, cpu_m, mem_b):
             nonlocal uid_counter
             uid_counter += 1
-            uid = f"pod-{seed}-{uid_counter}"
             pods.append({
-                "uid": uid,
+                "uid": f"pod-{seed}-{uid_counter}",
                 "namespace": ta.namespace,
                 "name": name,
                 "req_cpu_m": int(cpu_m),
@@ -1376,83 +1776,55 @@ class KwokTestGenerator:
                 "protected": False,
                 "node": "",
             })
-            uid_to_priority[uid] = int(prio)
 
         for s in pod_specs:
             emit(s["name"], s["priority"], s["req_cpu_m"], s["req_mem_bytes"])
-
         for rs in rs_specs:
             for r in range(int(rs["replicas"])):
                 emit(f'{rs["name"]}-{r}', rs["priority"], rs["req_cpu_m"], rs["req_mem_bytes"])
 
         # Pre-place some pods as already running
         run_util = self.args.solver_directly_running_target_util
-        preplace_running_pods(pods, nodes, run_util, seed)
+        _preplace_running_pods(pods, nodes, run_util, seed)
         LOG.info("pre-placed pods with target_util=%.3f (seed=%d)", run_util, seed)
 
+        # Build instance & (optional) export input
         instance = {
             "timeout_ms": int(self.args.solver_timeout_ms),
             "ignore_affinity": True,
-            "log_progress": True, # can slow down the solver quite a bit
+            "log_progress": True,
             "preemptor": None,
             "nodes": nodes,
             "pods": pods,
         }
+        _write_json(self.args.solver_input_export, instance)
 
-        # Export input if requested
-        if self.args.solver_input_export:
-            Path(self.args.solver_input_export).parent.mkdir(parents=True, exist_ok=True)
-            with open(self.args.solver_input_export, "w", encoding="utf-8") as f:
-                json.dump(instance, f, indent=2)
-
+        # Run solver
         LOG.info("solving directly with %d nodes and %d pods (seed=%d)", len(nodes), len(pods), seed)
-        cmd = shlex.split(SOLVER_CMD)
         t0 = time.time()
         completed = subprocess.run(
-            cmd,
+            shlex.split(SOLVER_CMD),
             input=json.dumps(instance).encode("utf-8"),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
         )
-        out_b = completed.stdout or b""
-        err_b = completed.stderr or b""
-        
         elapsed_ms = int((time.time() - t0) * 1000)
-
-        out = out_b.decode("utf-8", errors="replace").strip()
-        err = err_b.decode("utf-8", errors="replace").strip()
-
-        # Parse JSON from stdout
+        out = (completed.stdout or b"").decode("utf-8", errors="replace").strip()
         try:
             resp = json.loads(out) if out else {}
         except Exception:
             resp = {"status": "PY_SOLVER_STDOUT_PARSE_ERROR", "raw": out}
 
-        # Export output if requested
-        if self.args.solver_output_export:
-            Path(self.args.solver_output_export).parent.mkdir(parents=True, exist_ok=True)
-            with open(self.args.solver_output_export, "w", encoding="utf-8") as f:
-                json.dump(resp, f, indent=2)
+        _write_json(self.args.solver_output_export, resp)
+        LOG.info("direct-solver: status=%s placements=%d duration_ms=%d",
+                resp.get("status"), len(resp.get("placements", []) or []), elapsed_ms)
 
-        LOG.info(
-            "direct-solver: status=%s placements=%d duration_ms=%d",
-            resp.get("status"),
-            len(resp.get("placements", []) or []),
-            elapsed_ms,
-        )
-
+        # Metrics/meta
         initial_running_uids = {p["uid"] for p in pods if (p.get("node") or "").strip()}
-        uid_to_priority = {}
-        uid_to_cpu = {}
-        uid_to_mem = {}
-        for p in pods:
-            uid_to_priority[p["uid"]] = int(p.get("priority", 0))
-            uid_to_cpu[p["uid"]] = int(p["req_cpu_m"])
-            uid_to_mem[p["uid"]] = int(p["req_mem_bytes"])
-
-        total_node_cpu = sum(int(n["cap_cpu_m"]) for n in nodes)
-        total_node_mem = sum(int(n["cap_mem_bytes"]) for n in nodes)
+        uid_to_priority = {p["uid"]: int(p.get("priority", 0)) for p in pods}
+        uid_to_cpu      = {p["uid"]: int(p["req_cpu_m"]) for p in pods}
+        uid_to_mem      = {p["uid"]: int(p["req_mem_bytes"]) for p in pods}
 
         meta = {
             "uid_to_priority": uid_to_priority,
@@ -1460,15 +1832,15 @@ class KwokTestGenerator:
             "uid_to_mem": uid_to_mem,
             "initial_running_uids": list(initial_running_uids),
             "total_pods": len(pods),
-            "total_node_cpu": total_node_cpu,
-            "total_node_mem": total_node_mem,
+            "total_node_cpu": sum(int(n["cap_cpu_m"]) for n in nodes),
+            "total_node_mem": sum(int(n["cap_mem_bytes"]) for n in nodes),
             "elapsed_ms": elapsed_ms,
         }
         return resp, meta
 
     def _solver_trigger_http(self) -> tuple[int, str]:
         """
-        POST /optimize endpoint. Returns (status_code, body_str).
+        POST /solve endpoint. Returns (status_code, body_str).
         Timeout should be long enough to allow the solver to run.
         """
         data = b""
@@ -1488,7 +1860,7 @@ class KwokTestGenerator:
                 body = str(e)
             return e.code, body
         except Exception as e:
-            LOG.info(f"solver POST failed: {e}")
+            LOG.info("solver POST failed %s", e)
             return 0, f"connect-failed: {e}"
 
     def _wait_solver_inactive_http(self, url: str, timeout_s: int, *, poll_initial_s: float = 0.5, poll_interval_s: float = 1.5, resp_strip_length: int = 200) -> bool:
@@ -1532,7 +1904,7 @@ class KwokTestGenerator:
                 except Exception:
                     inactive_now = None
             if inactive_now is True:
-                LOG.info(f"solver is inactive; proceeding")
+                LOG.info("solver is inactive; proceeding")
                 return True
             now = time.time()
             if now - last_log > 2:
@@ -1545,238 +1917,7 @@ class KwokTestGenerator:
         return False
 
     ##############################################
-    # ------------ Seed helpers -----------------
-    ##############################################
-    @staticmethod
-    def _read_seeds_file(path: Path) -> List[int]:
-        """
-        Read seeds from a txt file. Format:
-        - One integer per line (whitespace allowed).
-        - Empty lines and lines starting with '#' are ignored.
-        - Non-integer lines are skipped (logged at DEBUG).
-        Returns: de-duplicated, order-preserving list of positive ints.
-        """
-        seeds: List[int] = []
-        seen: set[int] = set()
-        def _add(n: int):
-            if n is None or n <= 0:
-                return
-            if n not in seen:
-                seen.add(n)
-                seeds.append(n)
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                for i, line in enumerate(f, 1):
-                    s = line.strip()
-                    if not s or s.startswith("#"):
-                        continue
-                    try:
-                        _add(int(s))
-                    except Exception:
-                        LOG.debug("seed-file %s:%d ignored non-integer line: %r", path, i, s[:120])
-                        continue
-        except Exception as e:
-            raise ValueError(f"Failed reading seed-file {path}: {e}")
-        if not seeds:
-            LOG.warning("no seeds parsed from %s", path)
-        else:
-            LOG.info("parsed %d seed(s) from %s", len(seeds), path)
-        return seeds
-
-    ##############################################
-    # ------------ Config helpers ----------------
-    ##############################################
-    def _parse_config_doc(self, config_doc: dict, override: dict | None = None) -> TestConfigRaw:
-        """
-        Parse a single test-generator config document (already loaded from YAML)
-        into TestConfigRaw. Optionally apply an in-memory override first.
-        """
-        if override:
-            config_doc = self._merge_doc(dict(config_doc), dict(override))
-
-        tr = TestConfigRaw()
-
-        tr.namespace          = get_str_from_dict(config_doc, "namespace", tr.namespace)
-        tr.num_nodes          = get_int_from_dict(config_doc, "num_nodes", tr.num_nodes)
-        tr.num_pods           = get_int_from_dict(config_doc, "num_pods", tr.num_pods)
-
-        tr.util               = get_float_from_dict(config_doc, "util", tr.util)
-
-        tr.wait_pod_mode      = self._get_wait_pod_mode_from_dict(config_doc, "wait_pod_mode", tr.wait_pod_mode)
-        tr.wait_pod_timeout   = get_str_from_dict(config_doc, "wait_pod_timeout", tr.wait_pod_timeout)
-        tr.settle_timeout_min = get_str_from_dict(config_doc, "settle_timeout_min", tr.settle_timeout_min)
-        tr.settle_timeout_max = get_str_from_dict(config_doc, "settle_timeout_max", tr.settle_timeout_max)
-
-        raw_np = normalize_interval(config_doc, ("num_priorities","num_priorities_lo","num_priorities_hi"))
-        if raw_np:
-            tr.num_priorities = parse_int_interval(raw_np, min_lo=1)
-
-        raw_cpu = normalize_interval(config_doc, ("cpu_per_pod","cpu_per_pod_lo","cpu_per_pod_hi"))
-        if raw_cpu:
-            tr.cpu_per_pod = parse_qty_interval(raw_cpu)
-
-        raw_mem = normalize_interval(config_doc, ("mem_per_pod","mem_per_pod_lo","mem_per_pod_hi"))
-        if raw_mem:
-            tr.mem_per_pod = parse_qty_interval(raw_mem)
-
-        raw_rps = normalize_interval(config_doc, ("num_replicas_per_rs","num_replicas_per_rs_lo","num_replicas_per_rs_hi"))
-        if raw_rps:
-            tr.num_replicas_per_rs = parse_int_interval(raw_rps, min_lo=1)
-
-        return tr
-
-    @staticmethod
-    def _validate_workload_config(tr: TestConfigRaw) -> tuple[bool, str]:
-        """
-        Validate the raw config. Do NOT raise; return (ok, aggregated_message).
-        All checks live here and we accumulate *all* failures.
-        """
-        errors: list[str] = []
-        
-        # Basic checks
-        if not tr.namespace or not str(tr.namespace).strip():
-            errors.append("namespace must be a non-empty string")
-        if tr.num_nodes < 1:
-            errors.append("num_nodes must be >= 1")
-        if tr.num_pods < 1:
-            errors.append("num_pods must be >= 1")
-
-        # Utilization
-        if tr.util <= 0.0:
-            errors.append("util must be > 0")
-
-        # Priority check
-        if not isinstance(tr.num_priorities, tuple) or len(tr.num_priorities) != 2:
-            errors.append("num_priorities must be provided (fixed number or [lo,hi])")
-        else:
-            try:
-                lo_prio = int(tr.num_priorities[0])
-                hi_prio = int(tr.num_priorities[1])
-                if lo_prio < 2:
-                    errors.append("num_priorities_lo must be >= 2")
-                if hi_prio < lo_prio:
-                    errors.append("num_priorities interval must satisfy lo <= hi")
-            except Exception:
-                errors.append("num_priorities interval must contain integers")
-
-        # Replicaset check
-        if tr.num_replicas_per_rs is not None:
-            try:
-                lo_rps = int(tr.num_replicas_per_rs[0])
-                hi_rps = int(tr.num_replicas_per_rs[1])
-                if lo_rps < 1 or hi_rps < lo_rps:
-                    errors.append("num_replicas_per_rs must satisfy 1 <= lo <= hi")
-            except Exception:
-                errors.append("num_replicas_per_rs interval must contain integers")
-        
-        # Quantities
-        if tr.cpu_per_pod is None or tr.mem_per_pod is None:
-            errors.append("cpu_per_pod and mem_per_pod must be provided")
-        if tr.cpu_per_pod is not None:
-            try:
-                c_lo = qty_to_mcpu_int(tr.cpu_per_pod[0])
-                c_hi = qty_to_mcpu_int(tr.cpu_per_pod[1])
-                if c_lo < 1 or c_hi < c_lo:
-                    errors.append("cpu_per_pod must satisfy 1m <= lo <= hi")
-            except Exception:
-                errors.append(f"cpu_per_pod has invalid quantities: {tr.cpu_per_pod!r}")
-        if tr.mem_per_pod is not None:
-            try:
-                m_lo = qty_to_bytes_int(tr.mem_per_pod[0])
-                m_hi = qty_to_bytes_int(tr.mem_per_pod[1])
-                if m_lo < 1 or m_hi < m_lo:
-                    errors.append("mem_per_pod must satisfy 1B <= lo <= hi")
-            except Exception:
-                errors.append(f"mem_per_pod has invalid quantities: {tr.mem_per_pod!r}")
-
-        ok = (len(errors) == 0)
-        
-        return ok, ("\n".join(errors) if errors else "")
-    
-    def _resolve_config_for_seed(self, seed_int: int) -> TestConfigApplied:
-        """
-        Resolve the raw config into a fully specified applied config for the given seed.
-        """
-        tr = self.workload_config
-        
-        wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s = self._parse_waits(tr)
-
-        # num_priorities
-        num_prios_lo, num_prios_hi = tr.num_priorities
-        num_prios = seeded_random(seed_int, "num_priorities", num_prios_lo, num_prios_hi).randint(num_prios_lo, num_prios_hi)
-
-        # intervals -> ints
-        cpu_m = (qty_to_mcpu_int(tr.cpu_per_pod[0]), qty_to_mcpu_int(tr.cpu_per_pod[1]))
-        mem_b = (qty_to_bytes_int(tr.mem_per_pod[0]), qty_to_bytes_int(tr.mem_per_pod[1]))
-
-        # Pod sizes
-        rs_sets: list[int] = []
-        rs_cpu = rs_mem = None
-        if tr.num_replicas_per_rs is not None: # RS mode
-            rng_rs_sizes = seeded_random(seed_int, "rs-sizes")
-            rng_rs_cpu   = seeded_random(seed_int, "rs-cpu")
-            rng_rs_mem   = seeded_random(seed_int, "rs-mem")
-            rs_sets = self._gen_rs_sizes(rng_rs_sizes, tr.num_pods, tr.num_replicas_per_rs)
-            rs_cpu = [rng_rs_cpu.randint(cpu_m[0], cpu_m[1]) for _ in rs_sets]
-            rs_mem = [rng_rs_mem.randint(mem_b[0], mem_b[1]) for _ in rs_sets]
-            cpu_parts = [v for i, v in enumerate(rs_cpu) for _ in range(rs_sets[i])]
-            mem_parts = [v for i, v in enumerate(rs_mem) for _ in range(rs_sets[i])]
-        else: # standalone
-            rng_pod_cpu = seeded_random(seed_int, "pod-cpu")
-            rng_pod_mem = seeded_random(seed_int, "pod-mem")
-            cpu_parts = [rng_pod_cpu.randint(cpu_m[0], cpu_m[1]) for _ in range(tr.num_pods)]
-            mem_parts = [rng_pod_mem.randint(mem_b[0], mem_b[1]) for _ in range(tr.num_pods)]
-
-        # Node sizes based on pods above and target utilization
-        sum_cpu, sum_mem = sum(cpu_parts), sum(mem_parts)
-        max_cpu_m, max_mem_b = (max(cpu_parts) if cpu_parts else 1), (max(mem_parts) if mem_parts else 1)
-        util = max(1e-9, float(tr.util)) # avoid division by zero
-        total_cap_cpu = int(math.ceil(sum_cpu / util))
-        total_cap_mem = int(math.ceil(sum_mem / util))
-        per_node_m = max(max_cpu_m, int(math.ceil(total_cap_cpu / tr.num_nodes)))
-        per_node_b = max(max_mem_b, int(math.ceil(total_cap_mem / tr.num_nodes)))
-
-        # Set final used intervals based on what we actually drew
-        cpu_m_used = (min(cpu_parts) if cpu_parts else cpu_m[0], max_cpu_m)
-        mem_b_used = (min(mem_parts) if mem_parts else mem_b[0], max_mem_b)
-
-        num_rs_sets = len(rs_sets)
-        
-        ta = TestConfigApplied(
-            namespace=tr.namespace,
-            num_nodes=tr.num_nodes,
-            num_pods=tr.num_pods,
-            num_priorities=num_prios,
-            num_replicaset=num_rs_sets,
-            num_replicas_per_rs=tr.num_replicas_per_rs,
-            cpu_per_pod_m=cpu_m_used,
-            mem_per_pod_b=mem_b_used,
-            
-            util=tr.util,
-            
-            wait_pod_mode=wait_pod_mode,
-            wait_pod_timeout_s=wait_pod_timeout_s,
-            
-            settle_timeout_min_s=settle_timeout_min_s,
-            settle_timeout_max_s=settle_timeout_max_s,
-            
-            node_cpu_m=per_node_m,
-            node_mem_b=per_node_b,
-            
-            pod_parts_cpu_m=cpu_parts,
-            pod_parts_mem_b=mem_parts,
-        )
-        
-        # Only add RS fields if RS are used
-        if num_rs_sets > 0:
-            ta.rs_sets = rs_sets
-            ta.rs_parts_cpu_m = rs_cpu
-            ta.rs_parts_mem_b = rs_mem
-
-        return ta
-
-    ##############################################
-    # ------------ Runner helpers ----------------
+    # ------------ Seed run helpers --------------
     ##############################################
     def _pause(self, *, next_exists: bool = True) -> None:
         """
@@ -1795,7 +1936,7 @@ class KwokTestGenerator:
 
     def run_mode_single_seed(self) -> None:
         """
-        Run the generator for configuration(s) files and a single seed.
+        Run the generator for a single specific seed.
         """
         seen = self.seen_results
         seed = int(self.args.seed)
@@ -1825,21 +1966,21 @@ class KwokTestGenerator:
             self._eta_record_seed_duration(started_at)
             self._eta_update_marker(1, 1)
             self._eta_summary(2, 1)
-        
         self._eta_update_marker(1, 1)
 
     def run_mode_count(self) -> None:
+        """
+        Run the generator for a specific number of random seeds.
+        """
         seen = self.seen_results
         to_make = int(self.args.count)
         now_ns = int(time.time_ns())
         rng = seeded_random(now_ns, "base")
         made = 0
-
         def keep_running():
             if to_make == -1:
                 return True
             return made < to_make
-
         while keep_running():
             seed = rng.getrandbits(63) or 1
             if (not self.args.re_run_seeds) and (seed in seen):
@@ -1868,17 +2009,15 @@ class KwokTestGenerator:
                 self._eta_summary(seed_idx + 1, seeds_total if to_make != -1 else -1)
 
             self._pause(next_exists=keep_running())
-
         self._eta_update_marker(made, to_make if to_make != -1 else -1)
 
     def run_mode_seed_file(self) -> None:
         """
-        Run the generator for a specific configuration and seeds from a file.
+        Run the generator for a list of seeds from a file.
         """
         seen = self.seen_results
         seeds_list = self._read_seeds_file(Path(self.args.seed_file))
         seeds_total = len(seeds_list)
-        
         for seed_idx, seed in enumerate(seeds_list, start=1):
             if (not self.args.re_run_seeds) and (seed in seen):
                 LOG.info("seed=%d already in %s; skipping (use --re-run-seeds to re-run seed)", seed, self.results_f.name)
@@ -1908,24 +2047,53 @@ class KwokTestGenerator:
                 self._eta_record_seed_duration(started_at)
                 self._eta_update_marker(seed_idx, seeds_total)
                 self._eta_summary(seed_idx + 1, seeds_total)
-
             if self.args.seeds_not_all_running > 0 and self.saved_not_all_running >= self.args.seeds_not_all_running:
                 LOG.info("reached number of seeds-not-all-running quota (%d); stopping", self.args.seeds_not_all_running)
                 break
-
             self._pause(next_exists=(seed_idx < seeds_total))
-
         self._eta_update_marker(min(seed_idx, seeds_total), seeds_total)
 
+    def _run_single_seed(self, seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
+        """
+        Run a single seed, possibly with retries on failure.
+        """
+        retries = max(0, RETRIES_ON_FAIL)
+        max_attempts = 1 + retries
+        overall_started = time.time()
+        last_attempt = 0
+        for attempt in range(1, max_attempts + 1):
+            last_attempt = attempt
+            LOG.info("attempt %d/%d for seed=%s", attempt, max_attempts, seed)
+            self.suppress_fail_log = (attempt < max_attempts)
+            self.failure = None
+
+            ok = self._execute_seed_direct(seed, ta) if self.args.solver_directly \
+                else self._execute_seed_on_cluster(seed, ta, run_idx=run_idx)
+
+            if ok:
+                LOG.info("seed=%s succeeded on attempt %d; total %.1fs", seed, attempt, time.time() - overall_started)
+                self.suppress_fail_log = False
+                self.failure = None
+                return True
+            else:
+                LOG.warning("seed=%s failed on attempt %d/%d", seed, attempt, max_attempts)
+
+        self.suppress_fail_log = False
+        if self.failure:
+            df = self.failure
+            self.failure = None
+            self._record_failure(df.category, df.seed, df.phase, df.message, df.details)
+        LOG.error("seed=%s failed after %d attempt(s); total %.1fs", seed, last_attempt, time.time() - overall_started)
+        return False
+
     ##############################################
-    # ------------ Seed Run ----------------
+    # ------------ Seed execution ----------------
     ##############################################
     def _execute_seed_direct(self, seed: int, ta: "TestConfigApplied") -> bool:
         """
-        Direct solving path (no cluster). Generates specs, calls the Python solver,
-        writes a compact CSV row, prints a summary with solver status + stats.
+        Direct solving path (no cluster). Generates specs, calls the Python solver and logs stats.
         """
-        phase = "direct_generate_specs"
+        phase = "generate_specs"
         LOG.info("phase=%s (no cluster work)", phase)
         rng = seeded_random(seed, "base")
 
@@ -1936,7 +2104,7 @@ class KwokTestGenerator:
         else:
             pod_specs = self._make_standalone_pod_specs_only(rng, ta)
 
-        phase = "direct_call_solver"
+        phase = "call_solver"
         LOG.info("phase=%s", phase)
         resp, meta = self._solver_directly(ta, seed, pod_specs, rs_specs)
 
@@ -2001,7 +2169,7 @@ class KwokTestGenerator:
             old_cpu_util, old_mem_util,
             util_run_cpu, util_run_mem,
         )
-        phase = "direct_stats"
+        phase = "stats"
         LOG.info("phase=%s", phase)
 
         # Console summary line
@@ -2019,28 +2187,28 @@ class KwokTestGenerator:
     def _execute_seed_on_cluster(self, seed, ta, *, run_idx: int = 1) -> bool:
         """
         Full KWOK path: cluster creation, nodes, namespace/PC, apply workload,
-        optional solver trigger, settle, snapshot, CSV row, artifacts.
+        with optional solver trigger.
         """
         phase = "start"
-        LOG.info(f"phase={phase}  seed={seed}")
+        LOG.info("phase=%s  seed=%s", phase, seed)
         start_time = time.time()
         rng = seeded_random(seed, "base")
 
         # cluster
         phase = "ensure_cluster"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         try:
             self._ensure_kwok_cluster(self.args.cluster_name, self.args.kwok_runtime, self.kwokctl_config_doc, recreate=True)
         except Exception as e:
             tb = traceback.format_exc()
             self._record_failure("seed", seed, phase, str(e), tb)
-            LOG.error(f"seed-failed; ensure cluster: {e}")
+            LOG.error("seed-failed; ensure cluster: %s", e)
             self._log_seed_summary(seed, "ensure cluster failed")
             return False
 
         # nodes
         phase = "nodes"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         try:
             DEFAULT_POD_CAP = max(30, ta.num_pods * 3)
             node_cpu_str = qty_to_mcpu_str(ta.node_cpu_m)
@@ -2050,28 +2218,28 @@ class KwokTestGenerator:
         except Exception as e:
             tb = traceback.format_exc()
             self._record_failure("seed", seed, "nodes", str(e), tb)
-            LOG.error(f"seed-failed; nodes setup: {e}")
+            LOG.error("seed-failed; nodes setup: %s", e)
             self._log_seed_summary(seed, "nodes setup failed")
             return False
 
         # namespace
         phase = "ensure_namespace"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         self._ensure_namespace(self.ctx, ta.namespace)
         
         # service account
         phase = "ensure_service_account"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         self._ensure_service_account(self.ctx, ta.namespace, "default")
 
         # priority classes
         phase = "ensure_priority_classes"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         self._ensure_priority_classes(self.ctx, ta.num_priorities, prefix="p", start=1)
 
         # workload
         phase = "apply_workload"
-        LOG.info(f"phase={phase}  mode={'RS' if ta.num_replicaset>0 else 'standalone'}")
+        LOG.info("phase=%s  mode=%s", phase, 'RS' if ta.num_replicaset>0 else 'standalone')
         pod_specs: list[dict] = []
         rs_specs:  list[dict] = []
         if ta.num_replicaset > 0:
@@ -2083,11 +2251,11 @@ class KwokTestGenerator:
 
         # minimal wait for pods to appear
         phase = "wait_settle_before_solver"
-        LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
+        LOG.info("phase=%s timeout_min=%ss", phase, ta.settle_timeout_min_s)
         time.sleep(ta.settle_timeout_min_s)
         
         phase = "status_snapshot_before_solver"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         old_snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
         running_count_old = len(old_snap.pods_running)
         unsched_count_old = len(old_snap.pods_unscheduled)
@@ -2095,12 +2263,12 @@ class KwokTestGenerator:
         # (optionally) trigger the solver
         if self.args.solver_trigger:
             phase = "solver_trigger"
-            LOG.info(f"phase={phase} url={SOLVER_TRIGGER_URL}; waiting for response (timeout {SOLVER_TRIGGER_TIMEOUT_S}s)")
+            LOG.info("phase=%s url=%s; waiting for response (timeout %ss)", phase, SOLVER_TRIGGER_URL, SOLVER_TRIGGER_TIMEOUT_S)
             code, body = self._solver_trigger_http()
             body_compact = (body or "").replace("\n", "\\n")
             if len(body_compact) > 600:
                 body_compact = body_compact[:600] + "...(truncated)"
-            LOG.info(f"solver_response code={code} body={body_compact}")
+            LOG.info("solver_response code=%s body=%s", code, body_compact)
             self.last_solver_result = None
             if code and isinstance(body, str) and body.strip().startswith("{"):
                 try:
@@ -2110,15 +2278,15 @@ class KwokTestGenerator:
 
         # wait & settle
         phase = "wait_settle_before_check"
-        LOG.info(f"phase={phase} timeout_min={ta.settle_timeout_min_s}s")
+        LOG.info("phase=%s timeout_min=%ss", phase, ta.settle_timeout_min_s)
         time.sleep(ta.settle_timeout_min_s)
         if ta.settle_timeout_max_s > 0:
-            LOG.info(f"waiting for inactive scheduler (max {ta.settle_timeout_max_s}s)")
+            LOG.info("waiting for inactive scheduler (max %ss)", ta.settle_timeout_max_s)
             _ = self._wait_solver_inactive_http(SOLVER_ACTIVE_URL, ta.settle_timeout_max_s)
 
         # status snapshot
         phase = "status_snapshot_after_settle"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         new_snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
         running_count_new = len(new_snap.pods_running)
         unsched_count_new = len(new_snap.pods_unscheduled)
@@ -2178,8 +2346,8 @@ class KwokTestGenerator:
             "unscheduled_count_new": int(unsched_count_new),
             "unscheduled_count_old": int(unsched_count_old),
             
-            "pods_run_by_node_new": json.dumps(old_snap.pods_run_by_node, separators=(",", ":")),
-            "pods_run_by_node_old": json.dumps(new_snap.pods_run_by_node, separators=(",", ":")),
+            "pods_run_by_node_new": json.dumps(new_snap.pods_run_by_node, separators=(",", ":")),
+            "pods_run_by_node_old": json.dumps(old_snap.pods_run_by_node, separators=(",", ":")),
             
             "running_placed_by_prio_new": json.dumps(new_snap.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
             "running_placed_by_prio_old": json.dumps(old_snap.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
@@ -2204,285 +2372,37 @@ class KwokTestGenerator:
         }
 
         phase = "write_results"
-        LOG.info(f"phase={phase}")
+        LOG.info("phase=%s", phase)
         self._append_result_csv(result_row)
         LOG.info("appended to %s", self.results_f)
 
         if self.args.save_solver_stats:
             phase = "solver_stats"
-            LOG.info(f"phase={phase}")
+            LOG.info("phase=%s", phase)
             self._write_solver_stats_json(seed, run_idx)
 
         if self.args.save_scheduler_logs:
             phase = "save_scheduler_logs"
-            LOG.info(f"phase={phase}")
+            LOG.info("phase=%s", phase)
             self._save_scheduler_logs(seed, run_idx=run_idx)
 
-        LOG.info(f"seed run done; took {time.time()-start_time:.1f}s")
+        LOG.info("seed run done; took %ss", time.time()-start_time)
         self._log_seed_summary(seed, note=f"running={running_count_new} unscheduled={unsched_count_new}")
         return True
 
-    def _run_single_seed(self, seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
-        max_attempts = max(1, RETRIES_ON_FAIL, 0) + 1
-        overall_started = time.time()
-        last_attempt = 0
-        for attempt in range(1, max_attempts + 1):
-            last_attempt = attempt
-            LOG.info("attempt %d/%d for seed=%s", attempt, max_attempts, seed)
-            self.suppress_fail_log = (attempt < max_attempts)
-            self.failure = None
-
-            ok = self._execute_seed_direct(seed, ta) if self.args.solver_directly \
-                else self._execute_seed_on_cluster(seed, ta, run_idx=run_idx)
-
-            if ok:
-                LOG.info("seed=%s succeeded on attempt %d; total %.1fs", seed, attempt, time.time() - overall_started)
-                self.suppress_fail_log = False
-                self.failure = None
-                return True
-            else:
-                LOG.warning("seed=%s failed on attempt %d/%d", seed, attempt, max_attempts)
-
-        self.suppress_fail_log = False
-        if self.failure:
-            df = self.failure
-            self.failure = None
-            self._record_failure(df.category, df.seed, df.phase, df.message, df.details)
-        LOG.error("seed=%s failed after %d attempt(s); total %.1fs", seed, last_attempt, time.time() - overall_started)
-        return False
-
     ######################################################
-    # ---------- Job file helpers ------------------------
+    # ---------- Main runner -----------------------------
     ######################################################
-    @staticmethod
-    def _merge_doc(dst: dict, src: dict) -> dict:
+    def run(self):
         """
-        Recursively update dst with src.
-        If dst doesn't have the key, add it, else clean-start.
+        Run the appropriate path (pass through already-seen seeds)
         """
-        for k, v in (src or {}).items():
-            dst[k] = v
-        return dst
-
-    @staticmethod
-    def merge_job_fields_into_args(args: argparse.Namespace, job: dict) -> tuple[argparse.Namespace, dict]:
-        # Map fields from job
-        jf_cluster_name          = get_str(job.get("cluster-name"))
-        jf_kwok_runtime          = get_str(job.get("kwok-runtime"))
-        jf_workload_config_file  = get_str(job.get("workload-config-file"))
-        jf_kwokctl_config_file   = get_str(job.get("kwokctl-config-file"))
-        jf_output_dir            = get_str(job.get("output-dir"))
-        jf_clean_start           = coerce_bool(job.get("clean-start"), default=None)
-        jf_re_run_seeds          = coerce_bool(job.get("re-run-seeds"), default=None)
-        jf_log_level             = get_str(job.get("log-level"))
-
-        jf_seed                  = job.get("seed")
-        jf_seed_file             = get_str(job.get("seed-file"))
-        jf_count                 = job.get("count")
-        jf_repeats               = job.get("repeats")
-        jf_snar                  = job.get("seeds-not-all-running")
-
-        jf_save_solver_stats     = coerce_bool(job.get("save-solver-stats"), default=None)
-        jf_save_scheduler_logs   = coerce_bool(job.get("save-scheduler-logs"), default=None)
-
-        jf_solver_trigger        = coerce_bool(job.get("solver-trigger"), default=None)
-
-        jf_override_cfg          = job.get("override-config") or {}
-        jf_override_kwokctl_envs = job.get("override-kwokctl-envs") or []
-
-        # CLI priority: only fill when CLI value is None
-        if getattr(args, "cluster_name", None) is None and jf_cluster_name:
-            args.cluster_name = jf_cluster_name
-        if getattr(args, "kwok_runtime", None) is None and jf_kwok_runtime:
-            args.kwok_runtime = jf_kwok_runtime
-        if getattr(args, "workload_config_file", None) is None and jf_workload_config_file:
-            args.workload_config_file = jf_workload_config_file
-        if getattr(args, "kwokctl_config_file", None) is None and jf_kwokctl_config_file:
-            args.kwokctl_config_file = jf_kwokctl_config_file
-        if getattr(args, "seed_file", None) is None and jf_seed_file:
-            args.seed_file = jf_seed_file
-        if getattr(args, "seed", None) is None and isinstance(jf_seed, int):
-            args.seed = jf_seed
-        if getattr(args, "count", None) is None and isinstance(jf_count, int):
-            args.count = jf_count
-        if getattr(args, "repeats", None) is None and isinstance(jf_repeats, int):
-            args.repeats = jf_repeats
-        if getattr(args, "output_dir", None) is None and jf_output_dir:
-            args.output_dir = jf_output_dir
-        if getattr(args, "seeds_not_all_running", None) is None and isinstance(jf_snar, int):
-            args.seeds_not_all_running = jf_snar
-
-        if getattr(args, "save_solver_stats", None) is None and jf_save_solver_stats is not None:
-            args.save_solver_stats = jf_save_solver_stats
-        if getattr(args, "save_scheduler_logs", None) is None and jf_save_scheduler_logs is not None:
-            args.save_scheduler_logs = jf_save_scheduler_logs
-        if getattr(args, "log_level", None) is None and jf_log_level:
-            args.log_level = jf_log_level
-        if getattr(args, "solver_trigger", None) is None and jf_solver_trigger is not None:
-            args.solver_trigger = jf_solver_trigger
-        if getattr(args, "clean_start", None) is None and jf_clean_start is not None:
-            args.clean_start = jf_clean_start
-        if getattr(args, "re_run_seeds", None) is None and jf_re_run_seeds is not None:
-            args.re_run_seeds = jf_re_run_seeds
-
-        return args, {"config": jf_override_cfg, "kwokctl_envs": jf_override_kwokctl_envs}
-
-
-    @staticmethod
-    def _merge_kwokctl_envs(doc: dict, add_envs: Iterable[Mapping[str, Any]] | None, component: str = "kube-scheduler") -> dict:
-        """
-        Return a copy of `doc` with extraEnvs for `component` merged by env 'name'.
-        - Items in `add_envs` override/insert existing envs.
-        - Ensures componentsPatches and the component entry exist.
-        - Sorts components and envs by name for stability.
-        """
-        d = copy.deepcopy(doc) if isinstance(doc, dict) else {}
-        # Normalize inputs
-        add = [
-            e for e in (add_envs or [])
-            if isinstance(e, Mapping) and e.get("name")
-        ]
-        if not add:
-            return d
-        # Ensure componentsPatches is a list of dicts
-        cps = [c for c in (d.get("componentsPatches") or []) if isinstance(c, dict)]
-        d["componentsPatches"] = cps  # normalize back on the copy
-        # Get or create the target component patch
-        comp = next((c for c in cps if c.get("name") == component), None)
-        if comp is None:
-            comp = {"name": component}
-            cps.append(comp)
-        # Current valid envs
-        cur = [e for e in (comp.get("extraEnvs") or []) if isinstance(e, dict) and e.get("name")]
-        # Merge by env name (incoming overrides existing)
-        env_by_name = {e["name"]: copy.deepcopy(e) for e in cur}
-        env_by_name.update({e["name"]: copy.deepcopy(e) for e in add})
-        # Stable sort: envs and components
-        comp["extraEnvs"] = [env_by_name[k] for k in sorted(env_by_name)]
-        cps.sort(key=lambda c: c.get("name", ""))
-        return d
-
-    @staticmethod
-    def _get_kwokctl_envs(doc: dict) -> dict[str, object] | None:
-        """
-        Return effective extraEnvs for kube-scheduler as a dict:
-        { "<NAME>": "<value>" | {"valueFrom": {...}} | None }
-        Keys are sorted for stable output. Returns None if not present.
-        """
-        cps = doc.get("componentsPatches") or []
-        for c in cps:
-            if isinstance(c, dict) and c.get("name") == "kube-scheduler":
-                raw_envs = c.get("extraEnvs") or []
-                env_map: dict[str, object] = {}
-                for e in raw_envs:
-                    if not isinstance(e, dict): 
-                        continue
-                    name = (e.get("name") or "").strip()
-                    if not name:
-                        continue
-                    if "value" in e and e.get("value") not in (None, ""):
-                        env_map[name] = e["value"]
-                    else:
-                        env_map[name] = None
-                # sort by name for stability
-                return dict(sorted(env_map.items(), key=lambda kv: kv[0]))
-        return None
-
-    def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
-        if getattr(args, "cluster_name", None) is None:
-            args.cluster_name = "kwok1"
-        if getattr(args, "kwok_runtime", None) is None:
-            args.kwok_runtime = "binary"
-        if getattr(args, "job_file", None) is None:
-            args.job_file = None
-        if getattr(args, "workload_config_file", None) is None:
-            args.workload_config_file = None
-        if getattr(args, "kwokctl_config_file", None) is None:
-            args.kwokctl_config_file = None
-        if getattr(args, "output_dir", None) is None:
-            args.output_dir = "./output"
-
-        # booleans now default to None -> set final defaults here
-        if getattr(args, "clean_start", None) is None:
-            args.clean_start = False
-        if getattr(args, "re_run_seeds", None) is None:
-            args.re_run_seeds = False
-        if getattr(args, "pause", None) is None:
-            args.pause = False
-        if getattr(args, "log_level", None) is None:
-            args.log_level = "INFO"
-
-        if getattr(args, "seed", None) is None:
-            args.seed = None
-        if getattr(args, "seed_file", None) is None:
-            args.seed_file = None
-        if getattr(args, "count", None) is None:
-            args.count = None
-        if getattr(args, "repeats", None) is None:
-            args.repeats = 1
-        if getattr(args, "seeds_not_all_running", None) is None:
-            args.seeds_not_all_running = 0
-
-        if getattr(args, "meta", None) is None:
-            args.meta = None
-
-        if getattr(args, "save_solver_stats", None) is None:
-            args.save_solver_stats = False
-        if getattr(args, "save_scheduler_logs", None) is None:
-            args.save_scheduler_logs = False
-        if getattr(args, "solver_trigger", None) is None:
-            args.solver_trigger = False
-
-        if getattr(args, "solver_directly", None) is None:
-            args.solver_directly = False
-        if getattr(args, "solver_timeout_ms", None) is None:
-            args.solver_timeout_ms = 10000
-        if getattr(args, "solver_input_export", None) is None:
-            args.solver_input_export = None
-        if getattr(args, "solver_output_export", None) is None:
-            args.solver_output_export = None
-        if getattr(args, "solver_directly_running_target_util", None) is None:
-            args.solver_directly_running_target_util = 0.0
-
-        # check args
-        if not args.workload_config_file or not args.kwokctl_config_file:
-            raise SystemExit("--workload-config-file and --kwokctl-config-file are both required (CLI or job-file)")
-        if args.seed is None and not args.seed_file and args.count is None:
-            if args.seeds_not_all_running == 0:
-                raise SystemExit("Provide --seed, --seed-file, --count, or seeds-not-all-running in job-file")
-            if args.seeds_not_all_running > 0:
-                args.count = args.seeds_not_all_running
-                LOG.info("no --seed/--seed-file/--count provided; defaulting --count=%d from --seeds-not-all-running", args.count)
-        if args.seed is not None and args.seed_file:
-            raise SystemExit("--seed cannot be used with --seed-file")
-        if args.seed is not None and args.count is not None:
-            raise SystemExit("--seed cannot be used with --count")
-        if args.seed_file and args.count is not None:
-            raise SystemExit("--seed-file cannot be used with --count")
-        if args.seed is not None and args.seed < 1:
-            raise SystemExit("--seed must be a positive integer")
-        if args.count is not None and args.count < -1:
-            raise SystemExit("--count must be -1 (infinite) or a positive integer")
-        if args.seeds_not_all_running not in (-1, 0) and args.seeds_not_all_running < 1:
-            raise SystemExit("--seeds-not-all-running must be -1 (infinite), 0 (disabled), or >= 1")
-
-        # --- check seed file and config file ---
-        seed_path = Path(args.seed_file).resolve() if args.seed_file else None
-        if args.seed_file:
-            if not seed_path.exists():
-                raise SystemExit(f"--seed-file not found: {seed_path}")
-        wl_path = Path(args.workload_config_file).resolve()
-        kwokctl_path = Path(args.kwokctl_config_file).resolve()
-        if not wl_path.exists():
-            raise SystemExit(f"--workload-config-file not found: {wl_path}")
-        if not kwokctl_path.exists():
-            raise SystemExit(f"--kwokctl-config-file not found: {kwokctl_path}")
-
-        # --- check kwok runtime vs. solver-trigger ---
-        if args.solver_trigger and args.kwok_runtime != "binary":
-            raise SystemExit("--solver-trigger requires --kwok-runtime=binary")
-        
-        return args
+        if self.args.seed is not None:
+            self.run_mode_single_seed()
+        elif self.args.count is not None and int(self.args.count) >= -1:
+            self.run_mode_count()
+        elif self.args.seed_file:
+            self.run_mode_seed_file()
 
 def main():
     # Parse args
@@ -2495,14 +2415,7 @@ def main():
 
     # TestGenerator instance
     test_generator = KwokTestGenerator(args)
-    
-    # Run the appropriate path (pass through already-seen seeds)
-    if test_generator.args.seed is not None:
-        test_generator.run_mode_single_seed()
-    elif test_generator.args.count is not None and int(test_generator.args.count) >= -1:
-        test_generator.run_mode_count()
-    elif test_generator.args.seed_file:
-        test_generator.run_mode_seed_file()
+    test_generator.run()
 
     print("done.")
 
