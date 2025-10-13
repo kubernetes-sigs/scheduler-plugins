@@ -4,6 +4,7 @@
 import sys, os, copy, shutil, argparse, math, time, random, \
     csv, json, logging, yaml, subprocess, tempfile, traceback, shlex
 from argparse import BooleanOptionalAction
+from importlib import metadata as importlib_metadata
 from dataclasses import dataclass, is_dataclass, asdict
 from typing import Optional, Tuple, List, Dict, Any, Mapping, Iterable
 from collections import namedtuple, Counter
@@ -1705,6 +1706,20 @@ class KwokTestGenerator:
         Directly call the solver script with the given specs and return its result.
         Returns (solver_result, metrics).
         """
+        def _assert_solver_requirements() -> None:
+            """
+            Fail fast if required Python packages for the solver are not available
+            in the *current* interpreter. Exact pin check: ortools==9.14.6206
+            """
+            dist = "ortools"
+            required = "9.14.6206"
+            try:
+                installed = importlib_metadata.version(dist)  # raises PackageNotFoundError if missing
+            except importlib_metadata.PackageNotFoundError:
+                raise SystemExit(f"[solver] Missing requirement: {dist}=={required}\n")
+            if installed != required:
+                raise SystemExit(f"[solver] Version mismatch for {dist}: required {required}, found {installed}\n")
+         
         def _preplace_running_pods(pods, nodes, run_util: float, seed: int) -> None:
             # Build per-node targets
             targets = [{
@@ -1751,7 +1766,10 @@ class KwokTestGenerator:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(obj, f, indent=2)
-
+        
+        # Check requirements
+        _assert_solver_requirements()
+        
         # Nodes
         nodes = [{
             "name": f"node-{j}",
