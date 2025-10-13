@@ -1,0 +1,37 @@
+kind: KwokRunConfiguration
+namespace: test
+num_nodes: 4
+pods_per_node: 4
+num_priorities: 4
+node_cpu: 2400m
+node_mem: 32Gi
+util: 1.1
+util-tolerance: 0.01
+wait_pod_mode: exist      # one of: exist | ready | running | none
+wait_pod_timeout: 2s       # e.g., 500ms, 10s, 2m, 1h
+settle_timeout: 15s      # same duration format
+---
+kind: KwokctlConfiguration
+apiVersion: config.kwok.x-k8s.io/v1alpha1
+options:
+  kubeSchedulerConfig: manifests/mycrossnodepreemption/scheduler-config.yaml
+  # We decide runtime (binary vs. docker) via --runtime command line flag when creating the cluster.
+  kubeSchedulerBinary: bin/kube-scheduler
+  kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
+componentsPatches:
+  - name: kube-scheduler
+    extraEnvs:
+      - name: OPTIMIZE_CADENCE
+        value: "continuous" # choices: every, batch, continuous
+      - name: OPTIMIZE_AT
+        value: "postfilter" # choices: preenqueue, postfilter
+      - name: OPTIMIZATION_INTERVAL
+        value: "10s"
+      - name: OPTIMIZATION_INITIAL_DELAY
+        value: "7s"
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # set high to determine any potential issues
+      - name: SOLVER_PYTHON_ENABLED
+        value: "true"
+      - name: SOLVER_PYTHON_TIMEOUT
+        value: "10s"

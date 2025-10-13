@@ -25,7 +25,7 @@ from helpers import (
 # Constants
 # ===============================================================
 RESULTS_HEADER = [
-    "timestamp", "job_file", "config_file", "seed_file", "seed",
+    "timestamp", "job_file", "workload_config_file", "kwokctl_config_file", "seed_file", "seed",
     "kwokctl_envs",
     "error", "baseline", "best_name","best_score", "best_duration_ms", "best_status",
     "num_nodes", "num_pods", "num_priorities", "num_replicaset",
@@ -134,7 +134,10 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="KWOK runtime 'binary' or 'docker' (default: docker).")
     ap.add_argument("--job-file", dest="job_file", default=None,
                     help="Path to a YAML job file describing one job and optional in-memory config overrides.")
-    ap.add_argument("--config-file", dest="config_file", help="Path to a single KWOK config YAML")
+    ap.add_argument("--workload-config-file", dest="workload_config_file",
+                    help="Path to a single workload YAML (WorkloadConfiguration)", required=False)
+    ap.add_argument("--kwokctl-config-file", dest="kwokctl_config_file",
+                    help="Path to a single KwokctlConfiguration YAML", required=False)
     ap.add_argument("--results-dir", dest="results_dir", default=None,
                     help=("Directory to store results. If omitted, results are written to ./results"))
     ap.add_argument("--overwrite", dest="overwrite", action="store_true",
@@ -215,14 +218,19 @@ class KwokTestGenerator:
         
         self.log_args(self.args)
 
-        cfg_path = Path(self.args.config_file).resolve()
-        
-        config_doc, kwokctl_doc = self._read_combined_config(cfg_path)
-        
-        # Kwokctl doc (required)
-        self.kwokctl_config_doc = kwokctl_doc
-        if self.kwokctl_config_doc is None:
-            raise SystemExit(f"{cfg_path}: missing KwokctlConfiguration document")
+        wl_path = Path(self.args.workload_config_file).resolve()
+        kwokctl_path = Path(self.args.kwokctl_config_file).resolve()
+
+        # Load single-doc files
+        with open(wl_path, "r", encoding="utf-8") as f:
+            config_doc = yaml.safe_load(f)
+            if not isinstance(config_doc, dict) or config_doc.get("kind") != "WorkloadConfiguration":
+                raise SystemExit(f"{wl_path}: expected a WorkloadConfiguration document")
+        with open(kwokctl_path, "r", encoding="utf-8") as f:
+            self.kwokctl_config_doc = yaml.safe_load(f)
+        if not isinstance(self.kwokctl_config_doc, dict) or not (self.kwokctl_config_doc.get("kind") == "KwokctlConfiguration" and
+                str(self.kwokctl_config_doc.get("apiVersion", "")).startswith("config.kwok.x-k8s.io/")):
+            raise SystemExit(f"{kwokctl_path}: expected a KwokctlConfiguration document")
         if self.override_kwokctl_envs:
             self.kwokctl_config_doc = self._merge_kwokctl_envs(self.kwokctl_config_doc, self.override_kwokctl_envs)
         kwokctl_envs = self._get_kwokctl_envs(self.kwokctl_config_doc)
@@ -258,9 +266,10 @@ class KwokTestGenerator:
     ##############################################
     def combined_job_config_seed_str(self) -> str:
         jf_str = f"job_file={self.args.job_file}" if self.args.job_file else ""
-        config_str = f"config_file={self.args.config_file}"
+        wl_str = f"workload_config_file={self.args.workload_config_file}"
+        kwokctl_str = f"kwokctl_config_file={self.args.kwokctl_config_file}"
         seed_file_str = f"seed_file={self.args.seed_file}" if self.args.seed_file else ""
-        str_combined = "\n".join(s for s in (jf_str, config_str, seed_file_str) if s)
+        str_combined = "\n".join(s for s in (jf_str, wl_str, kwokctl_str, seed_file_str) if s)
         return str_combined
 
     @staticmethod
@@ -301,7 +310,8 @@ class KwokTestGenerator:
         fields = [
             ("cluster_name", args.cluster_name),
             ("kwok_runtime", args.kwok_runtime),
-            ("config_file", args.config_file),
+            ("workload_config_file", args.workload_config_file),
+            ("kwokctl_config_file", args.kwokctl_config_file),
             ("results_dir", args.results_dir),
             ("clean_start", args.clean_start),
             ("log_level", args.log_level),
@@ -1516,35 +1526,6 @@ class KwokTestGenerator:
     ##############################################
     # ------------ Config helpers ----------------
     ##############################################
-    @staticmethod
-    def _read_combined_config(path: Path) -> Tuple[dict, Optional[dict]]:
-        """
-        Load a multi-doc YAML that contains:
-        - one 'test-generator' doc (first non-KwokctlConfiguration mapping),
-        - one optional KwokctlConfiguration doc.
-
-        Returns (test_doc, kwokctl_doc_or_none).
-
-        Raises if a suitable test doc is not found.
-        """
-        test_doc = None
-        kwok_doc = None
-        with open(path, "r", encoding="utf-8") as f:
-            for d in yaml.safe_load_all(f):
-                if not isinstance(d, dict):
-                    continue
-                if (d.get("kind") == "KwokctlConfiguration"
-                    and str(d.get("apiVersion", "")).startswith("config.kwok.x-k8s.io/")):
-                    if kwok_doc is None:
-                        kwok_doc = d
-                    continue
-                # First non-kwokctl mapping becomes the test doc
-                if test_doc is None:
-                    test_doc = d
-        if test_doc is None:
-            raise SystemExit(f"{path}: missing test-generator config doc (first non-KwokctlConfiguration document).")
-        return test_doc, kwok_doc
-    
     def _parse_config_doc(self, config_doc: dict, override: dict | None = None) -> TestConfigRaw:
         """
         Parse a single test-generator config document (already loaded from YAML)
@@ -2104,7 +2085,8 @@ class KwokTestGenerator:
             "timestamp": get_timestamp(),
             
             "job_file": self.args.job_file,
-            "config_file": self.args.config_file,
+            "workload_config_file": self.args.workload_config_file,
+            "kwokctl_config_file": self.args.kwokctl_config_file,
             "seed_file": self.args.seed_file,
             "seed": str(seed),
 
@@ -2235,7 +2217,8 @@ class KwokTestGenerator:
         # Map fields
         jf_cluster_name             = get_str(job.get("cluster-name"))
         jf_kwok_runtime             = get_str(job.get("kwok-runtime"))
-        jf_config_file              = get_str(job.get("config-file"))
+        jf_workload_config_file     = get_str(job.get("workload-config-file"))
+        jf_kwokctl_config_file      = get_str(job.get("kwokctl-config-file"))
         jf_results_dir              = get_str(job.get("results-dir"))
         jf_clean_start              = coerce_bool(job.get("clean-start"), default=False)
         jf_log_level                = get_str(job.get("log-level"))
@@ -2259,8 +2242,10 @@ class KwokTestGenerator:
             args.cluster_name = jf_cluster_name
         if not getattr(args, "kwok_runtime", None) and jf_kwok_runtime:
             args.kwok_runtime = jf_kwok_runtime
-        if not getattr(args, "config_file", None) and jf_config_file:
-            args.config_file = jf_config_file
+        if not getattr(args, "workload_config_file", None) and jf_workload_config_file:
+            args.workload_config_file = jf_workload_config_file
+        if not getattr(args, "kwokctl_config_file", None) and jf_kwokctl_config_file:
+            args.kwokctl_config_file = jf_kwokctl_config_file
         if not getattr(args, "seed_file", None) and jf_seed_file:
             args.seed_file = jf_seed_file
         if getattr(args, "seed", None) is None and isinstance(jf_seed, int):
@@ -2353,8 +2338,10 @@ class KwokTestGenerator:
             args.cluster_name = "kwok1"
         if not getattr(args, "kwok_runtime", None):
             args.kwok_runtime = "binary"
-        if not getattr(args, "config_file", None):
-            args.config_file = None
+        if not getattr(args, "workload_config_file", None):
+            args.workload_config_file = None
+        if not getattr(args, "kwokctl_config_file", None):
+            args.kwokctl_config_file = None
         if not getattr(args, "results_dir", None):
             args.results_dir = "./results"
         if not getattr(args, "clean_start", None):
@@ -2403,8 +2390,8 @@ class KwokTestGenerator:
             args.solver_directly_running_target_util = 0.0
 
         # check args
-        if not args.config_file:
-            raise SystemExit("--config-file is required (from CLI or job-file)")
+        if not args.workload_config_file or not args.kwokctl_config_file:
+            raise SystemExit("--workload-config-file and --kwokctl-config-file are both required (CLI or job-file)")
         if args.seed is None and not args.seed_file and args.count is None:
             if args.seeds_not_all_running == 0:
                 raise SystemExit("Provide --seed, --seed-file, --count, or seeds-not-all-running in job-file")
@@ -2428,9 +2415,12 @@ class KwokTestGenerator:
         seed_path = Path(args.seed_file).resolve() if args.seed_file else None
         if args.seed_file:
             file_exists(seed_path)
-        cfg_path = Path(args.config_file).resolve()
-        if not file_exists(cfg_path):
-            raise SystemExit(f"--config-file not found: {cfg_path}")
+        wl_path = Path(args.workload_config_file).resolve()
+        kwokctl_path = Path(args.kwokctl_config_file).resolve()
+        if not file_exists(wl_path):
+            raise SystemExit(f"--workload-config-file not found: {wl_path}")
+        if not file_exists(kwokctl_path):
+            raise SystemExit(f"--kwokctl-config-file not found: {kwokctl_path}")
 
         # --- check kwok runtime vs. solver-trigger ---
         if args.solver_trigger and args.kwok_runtime != "binary":
