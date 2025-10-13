@@ -412,18 +412,18 @@ class KwokTestGenerator:
         with open(self.failed_f, "a", encoding="utf-8") as f:
             f.write(line + "\n")
 
-    def _print_run(self, seed: int | None, seed_idx: int, seeds_total: int) -> None:
+    def _log_seed_run(self, seed: int | None, seed_idx: int, seeds_total: int) -> None:
         """
-        Print a header for the seed run.
+        Log seed run.
         """
         seed_str = "unlimited" if seeds_total <= -1 else f"{seed_idx}/{seeds_total}"
         header, footer = make_header_footer(f"SEED RUN {seed_str}")
         combined_str = self.combined_job_config_seed_str()
         LOG.info("\n%s\nseed=%s\n%s\n%s", header, str(seed), combined_str, footer)
 
-    def _print_summary(self, seed: int, note: str = "") -> None:
+    def _log_seed_summary(self, seed: int, note: str = "") -> None:
         """
-        Print a summary line for the run.
+        Log a summary for the given seed.
         """
         note = f"note='{note}'" if note else ""
         header, footer = make_header_footer(f"SEED SUMMARY")
@@ -1782,12 +1782,12 @@ class KwokTestGenerator:
         seed = int(self.args.seed)
         # Skip if already present and not overwriting
         if (not self.args.overwrite) and (seed in seen):
-            self._print_run(seed, 1, 1)
+            self._log_seed_run(seed, 1, 1)
             LOG.info("seed=%d already in %s; skipping (use --overwrite to re-run)", seed, self.results_f.name)
             self._eta_update_marker(1, 1)
             self._eta_summary(2, 1)
             return
-        self._print_run(seed, 1, 1)
+        self._log_seed_run(seed, 1, 1)
         self._eta_update_marker(0, 1)
         started_at = time.time()
         try:
@@ -1828,7 +1828,7 @@ class KwokTestGenerator:
                 continue
             seed_idx = made + 1
             seeds_total = to_make
-            self._print_run(seed, seed_idx, seeds_total if to_make != -1 else -1)
+            self._log_seed_run(seed, seed_idx, seeds_total if to_make != -1 else -1)
             self._eta_update_marker(made, seeds_total if to_make != -1 else -1)
             started_at = time.time()
             try:
@@ -1866,7 +1866,7 @@ class KwokTestGenerator:
                 self._eta_update_marker(seed_idx, seeds_total)
                 self._eta_summary(seed_idx + 1, seeds_total)
                 continue
-            self._print_run(seed, seed_idx, seeds_total)
+            self._log_seed_run(seed, seed_idx, seeds_total)
             self._eta_update_marker(seed_idx - 1, seeds_total)
             seed = int(seed)
             started_at = time.time()
@@ -1986,7 +1986,7 @@ class KwokTestGenerator:
         LOG.info("phase=%s", phase)
 
         # Console summary line
-        self._print_summary(
+        self._log_seed_summary(
             seed,
             note=(
                 f"direct-solving status={status} exec_time_ms={elapsed_ms} "
@@ -2016,7 +2016,7 @@ class KwokTestGenerator:
             tb = traceback.format_exc()
             self._record_failure("seed", seed, phase, str(e), tb)
             LOG.error(f"seed-failed; ensure cluster: {e}")
-            self._print_summary(seed, "ensure cluster failed")
+            self._log_seed_summary(seed, "ensure cluster failed")
             return False
 
         # nodes
@@ -2032,7 +2032,7 @@ class KwokTestGenerator:
             tb = traceback.format_exc()
             self._record_failure("seed", seed, "nodes", str(e), tb)
             LOG.error(f"seed-failed; nodes setup: {e}")
-            self._print_summary(seed, "nodes setup failed")
+            self._log_seed_summary(seed, "nodes setup failed")
             return False
 
         # namespace
@@ -2104,7 +2104,7 @@ class KwokTestGenerator:
                             f"pod count mismatch: expected {ta.num_pods}, got {running_count}+{unsched_count}={running_count+unsched_count}")
             LOG.warning("treating seed as failure: pod count mismatch: expected %d, got %d+%d=%d",
                         ta.num_pods, running_count, unsched_count, running_count+unsched_count)
-            self._print_summary(seed, note=f"pod count mismatch: expected total={ta.num_pods}, got running={running_count} unscheduled={unsched_count}; running+unscheduled={running_count+unsched_count}")
+            self._log_seed_summary(seed, note=f"pod count mismatch: expected total={ta.num_pods}, got running={running_count} unscheduled={unsched_count}; running+unscheduled={running_count+unsched_count}")
             return False
 
         # (optionally) skip-all-running
@@ -2113,7 +2113,7 @@ class KwokTestGenerator:
             if under_limit:
                 self.saved_not_all_running += 1
                 self._record_skipped_all_running_seed(seed, running_count)
-                self._print_summary(seed, "skipped (all pods running)")
+                self._log_seed_summary(seed, "skipped (all pods running)")
                 LOG.info("skipped saving seed=%s (all pods running)", seed)
                 return True
 
@@ -2171,7 +2171,7 @@ class KwokTestGenerator:
             self._save_scheduler_logs(seed, run_idx=run_idx)
 
         LOG.info(f"seed run done; took {time.time()-start_time:.1f}s")
-        self._print_summary(seed, note=f"running={running_count} unscheduled={unsched_count}")
+        self._log_seed_summary(seed, note=f"running={running_count} unscheduled={unsched_count}")
         return True
 
     def _run_single_seed(self, seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
