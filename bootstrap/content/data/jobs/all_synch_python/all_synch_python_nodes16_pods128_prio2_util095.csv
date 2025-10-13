@@ -1,2 +1,0 @@
-config-file,seed-file,results-dir
-data/configs/all_synch_python/all_synch_python_nodes16_pods128_prio2_util095.yaml,data/seeds/baseline_nodes16_pods128_prio2_util095_filtered_seeds.txt,data/results/all_synch_python_nodes16_pods128_prio2_util095

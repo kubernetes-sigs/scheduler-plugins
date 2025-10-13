@@ -227,7 +227,7 @@ class KwokTestGenerator:
         self.output_dir_resolved = self._prepare_output_dir()
         self.results_f = self.output_dir_resolved / "results.csv"
         self.failed_f  = self.output_dir_resolved / "failed.csv"
-        self.skipped_all_running_f = self.output_dir_resolved / "skipped_all_running.csv"
+        self.skipped_all_running_f = self.output_dir_resolved / "skipped_all_running.txt"
         self.solver_stats_dir = self.output_dir_resolved / "solver-stats"
         self.scheduler_logs_dir = self.output_dir_resolved / "scheduler-logs"
         
@@ -896,10 +896,10 @@ class KwokTestGenerator:
         Returns (wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s).
         """
         wait_pod_mode = None if tr.wait_pod_mode in (None, "none", "None", "") else str(tr.wait_pod_mode)
-        wait_pod_timeout_s = parse_timeout_s(tr.wait_pod_timeout, default=5)
+        wait_pod_timeout_s = parse_timeout_s(tr.wait_pod_timeout, default=3)
         settle_timeout_min_s = parse_timeout_s(tr.settle_timeout_min, default=2)
         settle_timeout_max_s = 0 if tr.settle_timeout_max in (None, "", "none", "None") \
-            else parse_timeout_s(tr.settle_timeout_max, default=12)
+            else parse_timeout_s(tr.settle_timeout_max, default=0)
         return wait_pod_mode, wait_pod_timeout_s, settle_timeout_min_s, settle_timeout_max_s
 
     @staticmethod
@@ -1052,20 +1052,17 @@ class KwokTestGenerator:
     ######################################################
     # ---------- Skipped all running seeds ---------------
     ######################################################
-    def _record_skipped_all_running_seed(self, seed: int, running_count: int) -> None:
+    def _record_skipped_all_running_seed(self, seed: int) -> None:
         """
         Record a skipped seed when all pods are running.
+        Writes a single seed per line to a plain .txt file (no timestamp).
         """
         try:
-            header = ["timestamp", "seed", "running_count"]
-            if not self.skipped_all_running_f.exists():
-                with open(self.skipped_all_running_f, "w", encoding="utf-8", newline="") as fh:
-                    w = csv.writer(fh)
-                    w.writerow(header)
-            with open(self.skipped_all_running_f, "a", encoding="utf-8", newline="") as fh:
-                w = csv.writer(fh)
-                w.writerow([get_timestamp(), str(seed), str(running_count)])
-            LOG.info("all pods running; skipped seed added to %s: seed=%s", self.skipped_all_running_f.name, seed)
+            self.skipped_all_running_f.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.skipped_all_running_f, "a", encoding="utf-8") as fh:
+                fh.write(f"{int(seed)}\n")
+            LOG.info("all pods running; skipped seed appended to %s: seed=%s",
+                    self.skipped_all_running_f.name, seed)
         except Exception as e:
             LOG.warning("failed to record skipped seed: %s", e)
 
@@ -2324,7 +2321,7 @@ class KwokTestGenerator:
             under_limit = (self.saved_not_all_running < self.args.seeds_not_all_running)
             if under_limit:
                 self.saved_not_all_running += 1
-                self._record_skipped_all_running_seed(seed, running_count_new)
+                self._record_skipped_all_running_seed(seed)
                 self._log_seed_summary(seed, "skipped (all pods running)")
                 LOG.info("skipped saving seed=%s (all pods running)", seed)
                 return True

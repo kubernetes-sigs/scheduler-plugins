@@ -1,0 +1,16 @@
+workload-config-file: data/workload-configs/base.yaml
+kwokctl-config-file: data/kwokctl-configs/all_synch_python.yaml
+seed-file: data/seeds/test.txt
+results-dir: data/results/all_synch_python_nodes4_pods16_prio2_util090
+save-scheduler-logs: true
+save-solver-stats: true
+solver-trigger: true
+override-config:
+  settle_timeout_max: 12s
+  num_nodes: 4
+  num_pods: 16
+  num_priorities: 2
+  util: 0.90
+override-kwokctl-envs:
+  - name: SOLVER_PYTHON_TIMEOUT
+    value: "5s"
