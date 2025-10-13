@@ -1,5 +1,5 @@
-workload-config-file: data/workload-configs/base.yaml
-kwokctl-config-file: data/kwokctl-configs/all_synch_python.yaml
+workload-config-file: data/configs-workload/base.yaml
+kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
 seed-file: data/seeds/test.txt
 results-dir: data/results/all_synch_python_nodes4_pods16_prio2_util090
 save-scheduler-logs: true
