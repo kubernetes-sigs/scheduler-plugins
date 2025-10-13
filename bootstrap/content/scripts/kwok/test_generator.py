@@ -44,8 +44,8 @@ RESULTS_HEADER = [
     "solver_attempts",
 ]
 
-# Module-level logger handle (handlers configured later by setup_logging in main())
-LOG = logging.getLogger("kwok")
+LOGGER_NAME = "kwok"
+LOG = logging.getLogger(LOGGER_NAME)
 
 CM_SOLVER_STATS_NAME = "solver-stats"
 CM_SOLVER_STATS_NAMESPACE = "kube-system"
@@ -139,7 +139,7 @@ def build_argparser() -> argparse.ArgumentParser:
                     help=("Directory to store results. If omitted, results are written to ./results"))
     ap.add_argument("--overwrite", dest="overwrite", action="store_true",
                     help="Overwrite (re-run) seeds that already exist in results.csv. "
-                         "If not set, seeds already present in results.csv are skipped.")
+                        "If not set, seeds already present in results.csv are skipped.")
     ap.add_argument("--clean-start", dest="clean_start", action="store_true", help="Remove old results and start fresh.")
     ap.add_argument("--pause", action="store_true", help="Pause for Enter between seeds and between configs.")
     ap.add_argument("--log-level", dest="log_level", default=None,
@@ -211,7 +211,7 @@ class KwokTestGenerator:
         self.args = self.ensure_default_args(self.args)
         
         # Setup logging
-        _ = setup_logging(prefix="[test-generator] ", level=args.log_level)
+        setup_logging(name=LOGGER_NAME, prefix="[test-generator] ", level=args.log_level)
         
         self.log_args(self.args)
 

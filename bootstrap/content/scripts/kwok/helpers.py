@@ -173,14 +173,14 @@ class PrefixFilter(logging.Filter):
         record.prefix = self.prefix
         return True
 
-def setup_logging(prefix: str, level: str = "INFO") -> logging.Logger:
+def setup_logging(name: str, prefix: str, level: str = "INFO") -> logging.Logger:
     """
     Configure the module logger.
     - prefix: shown before every message (e.g. '[worker 2/5 cluster=kwok1] ').
     - level:  DEBUG/INFO/WARNING/ERROR/CRITICAL (case-insensitive).
     """
     lvl = getattr(logging, str(level).upper(), logging.INFO)
-    logger = logging.getLogger("kwok")
+    logger = logging.getLogger(name)
     logger.propagate = False
     logger.setLevel(lvl)
     logger.handlers.clear()
