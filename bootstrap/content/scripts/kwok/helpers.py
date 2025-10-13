@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
+# helpers.py
 
-# kwok_shared.py
 import os, sys, time, random, subprocess, json, csv, re, logging, textwrap, hashlib, fcntl, contextlib
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
@@ -197,6 +197,27 @@ def make_header_footer(msg: str, width: int = 100, border: str = "=") -> Tuple[s
     header = f"{border * left}{inner}{border * right}"
     footer = f"{border * w}"
     return header, footer
+
+def get_git_info(cwd: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Collect basic git info for reproducibility. Best effort; returns empty on failure.
+    """
+    info: Dict[str, Any] = {}
+    def _run(cmd: List[str]) -> Optional[str]:
+        try:
+            r = subprocess.run(cmd, cwd=str(cwd) if cwd else None, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+            if r.returncode == 0:
+                return (r.stdout or b"").decode("utf-8", errors="replace").strip()
+        except Exception:
+            pass
+        return None
+    commit = _run(["git", "rev-parse", "HEAD"])
+    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    r = subprocess.run(["git", "status", "--porcelain"], cwd=str(cwd) if cwd else None,
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+    if commit is not None: info["commit"] = commit
+    if branch is not None: info["branch"] = branch
+    return info
 
 ##############################################
 # ------------ Parser helpers----------------
@@ -419,15 +440,6 @@ def csv_read_header(path: Path) -> list[str] | None:
             return [c.strip() for c in row]
     except Exception:
         return None
-
-def ensure_csv_with_header(path: Path, header: List[str]) -> None:
-    """
-    Ensure the CSV file exists with the given header.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        with open(path, "w", encoding="utf-8", newline="") as f:
-            csv.DictWriter(f, fieldnames=header).writeheader()
 
 def csv_append_row(
     file_path: str | Path,

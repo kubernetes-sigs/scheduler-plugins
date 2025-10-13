@@ -4,7 +4,7 @@ seed-file: data/seeds/test.txt
 results-dir: data/results/hej-test
 save-scheduler-logs: true
 save-solver-stats: true
-clean-start: true
+clean-start: false
 re-run-seeds: false
 solver-trigger: true
 override-config:
