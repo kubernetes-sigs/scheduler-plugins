@@ -26,7 +26,7 @@ from helpers import (
 # ===============================================================
 RESULTS_HEADER = [
     "timestamp", "job_file", "config_file", "seed_file", "seed",
-    "kwokctl_envs", #TODO: implement me; should contain all the extraEnvs from kwokctl config
+    "kwokctl_envs",
     "error", "baseline", "best_name","best_score", "best_duration_ms", "best_status",
     "num_nodes", "num_pods", "num_priorities", "num_replicaset",
     "num_replicas_per_rs_lo", "num_replicas_per_rs_hi",
@@ -141,9 +141,7 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--config-file", dest="config_file", help="Path to a single KWOK config YAML")
     ap.add_argument("--results-dir", dest="results_dir", default=None,
                     help=("Directory to store results. If omitted, results are written to ./results"))
-    ap.add_argument("--overwrite", action="store_true", help="Replace any existing results for the same seed.")
-    ap.add_argument("--clean-results", dest="clean_results", action="store_true",
-                    help="Before running, delete all contents of --results-dir.")
+    ap.add_argument("--overwrite", action="store_true", help="Remove old results and start fresh.")
     ap.add_argument("--pause", action="store_true", help="Pause for Enter between seeds and between configs.")
     ap.add_argument("--log-level", dest="log_level", default=None,
                     help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO)")
@@ -238,17 +236,12 @@ class KwokTestGenerator:
         # Print args after merge
         self.log_args(self.args)
         
-        if self.args.clean_results:
-            LOG.info("clean-results requested: deleting all contents of %s", self.args.results_dir)
-            self._clean_results_dir()
-        
         self.ctx = f"kwok-{self.args.cluster_name}"
         self.args = args
         
         self.saved_not_all_running: int = 0
-        
-        self.results_dir_resolved = Path(self.args.results_dir).resolve()
-        self.results_dir_resolved.mkdir(parents=True, exist_ok=True)
+
+        self.results_dir_resolved = self._prepare_results_dir()
         self.results_f = self.results_dir_resolved / "results.csv"
         self.failed_f  = self.results_dir_resolved / "failed.csv"
         self.skipped_all_running_f = self.results_dir_resolved / "skipped_all_running.csv"
@@ -549,6 +542,31 @@ class KwokTestGenerator:
     ######################################################
     # ---------- CSV helpers & results helpers -----------
     ######################################################
+    def _prepare_results_dir(self) -> Path:
+        rd = Path(self.args.results_dir).resolve()
+        if self.args.overwrite:
+            # overwrite means: nuke old dir and start clean
+            if rd.exists():
+                shutil.rmtree(rd)
+            rd.mkdir(parents=True, exist_ok=True)
+            LOG.info("overwrite=true: recreated results dir at %s", rd)
+            return rd
+
+        # overwrite=false: dir must not exist or must be empty
+        if rd.exists():
+            has_any = any(rd.iterdir())
+            if has_any:
+                raise SystemExit(
+                    f"--results-dir {rd} is not empty. "
+                    f"Use --overwrite."
+                )
+            # empty dir is fine
+            rd.mkdir(parents=True, exist_ok=True)
+        else:
+            rd.mkdir(parents=True, exist_ok=True)
+
+        return rd
+    
     def _append_result_csv(self, row: dict) -> None:
         self._purge_mismatched_results_csv(self.results_f, RESULTS_HEADER)
         ensure_csv_with_header(self.results_f, RESULTS_HEADER)
@@ -586,45 +604,6 @@ class KwokTestGenerator:
         except Exception:
             pass
         return seen
-
-    def _remove_seed_from_results(self, seed: int) -> int:
-        if not self.results_f.exists():
-            return 0
-        try:
-            with open(self.results_f, "r", encoding="utf-8", newline="") as fh:
-                rows = list(csv.DictReader(fh))
-        except Exception:
-            return 0
-        keep = [r for r in rows if (r.get("seed") or "").strip() != str(seed)]
-        removed = len(rows) - len(keep)
-        if removed > 0:
-            with open(self.results_f, "w", encoding="utf-8", newline="") as fh:
-                w = csv.DictWriter(fh, fieldnames=RESULTS_HEADER)
-                w.writeheader()
-                for r in keep:
-                    w.writerow({k: r.get(k, "") for k in RESULTS_HEADER})
-            LOG.info("pruned %d row(s) for seed=%s from %s", removed, seed, self.results_f)
-        return removed
-    
-    def _clean_results_dir(self) -> None:
-        """
-        Delete all files and subdirectories in results_dir (but not the dir itself).
-        """
-        rd = self.results_dir_resolved
-        if rd == rd.anchor:
-            LOG.error("refusing to clean the filesystem root (%s)", rd)
-            return
-        deleted = 0
-        for entry in rd.iterdir():
-            try:
-                if entry.is_dir():
-                    shutil.rmtree(entry)
-                else:
-                    entry.unlink(missing_ok=True)
-                deleted += 1
-            except Exception as e:
-                LOG.warning("failed to delete %s: %s", entry, e)
-        LOG.info("cleaned %d item(s) from %s", deleted, rd)
 
     @staticmethod
     def _extract_best_attempt_fields(best_name: str, attempts: list[dict]) -> tuple[float | None, int | None, str]:
@@ -1816,7 +1795,7 @@ class KwokTestGenerator:
 
         self._eta_update_marker(made, to_make if to_make != -1 else -1)
 
-    def _run_seed_file_path(self, seen: set[int]) -> None:
+    def _run_seed_file_path(self) -> None:
         """
         Run the generator for a specific configuration and seeds from a file.
         """
@@ -1837,7 +1816,7 @@ class KwokTestGenerator:
                     if self.args.seeds_not_all_running > 0 and self.saved_not_all_running >= self.args.seeds_not_all_running:
                         break
                     run_idx = successes + 1
-                    ok = self._run_single_seed(seen, seed, resolved_config, self.args.seed_file, run_idx=run_idx)
+                    ok = self._run_single_seed(seed, resolved_config, self.args.seed_file, run_idx=run_idx)
                     if ok:
                         successes += 1
                     if successes < target_repeats:
@@ -1954,7 +1933,7 @@ class KwokTestGenerator:
         )
         return True
 
-    def _execute_seed_on_cluster(self, seen_seeds, seed, ta, *, run_idx: int = 1) -> bool:
+    def _execute_seed_on_cluster(self, seed, ta, *, run_idx: int = 1) -> bool:
         """
         Full KWOK path: cluster creation, nodes, namespace/PC, apply workload,
         optional solver trigger, settle, snapshot, CSV row, artifacts.
@@ -2144,11 +2123,6 @@ class KwokTestGenerator:
 
         phase = "write_results"
         LOG.info(f"phase={phase}")
-        exists = seed in seen_seeds
-        # if overwriting, remove all existing rows for this seed before appending the new one
-        if self.args.overwrite and exists and (self.args.repeats <= 1):
-            removed = self._remove_seed_from_results(seed)
-            LOG.info("overwrite: removed %d existing row(s) for seed=%s", removed, seed)
         self._append_result_csv(result_row)
         LOG.info("appended to %s", self.results_f)
 
@@ -2168,34 +2142,19 @@ class KwokTestGenerator:
         self._print_summary(seed, note=f"running={running_count} unscheduled={unsched_count}")
         return True
 
-    def _run_single_seed(self, seen: set[int], seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
-        # Short-circuit: skip existing when not overwriting.
-        # Allow repeats to append additional rows even if the seed already exists.
-        if (seed in seen) and (not self.args.overwrite) and (self.args.repeats <= 1):
-            self._print_summary(seed, "skip (exists; use --overwrite to replace)")
-            LOG.info("skip seed=%s because it already exists and --overwrite is not set", seed)
-            return True
+    def _run_single_seed(self, seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
         max_attempts = max(1, RETRIES_ON_FAIL, 0) + 1
         overall_started = time.time()
         last_attempt = 0
         for attempt in range(1, max_attempts + 1):
             last_attempt = attempt
             LOG.info("attempt %d/%d for seed=%s", attempt, max_attempts, seed)
-            # Suppress fail-file writes for all but the final attempt
             self.suppress_fail_log = (attempt < max_attempts)
             self.failure = None
-            # If overwriting, remove old rows before the first *successful* save; do it right before we save
-            # We handle removal inside the success block below.
-            
-            exists = seed in seen
-            if exists and (not self.args.overwrite) and (self.args.repeats <= 1):
-                self._print_summary(seed, "skip (exists; use --overwrite to replace)")
-                LOG.info("skip seed=%s because it already exists and --overwrite is not set", seed)
-                return True
-            if self.args.solver_directly:
-                ok = self._execute_seed_direct(seed, ta)
-            else:
-                ok = self._execute_seed_on_cluster(seen, seed, ta, run_idx=run_idx)
+
+            ok = self._execute_seed_direct(seed, ta) if self.args.solver_directly \
+                else self._execute_seed_on_cluster(seed, ta, run_idx=run_idx)
+
             if ok:
                 LOG.info("seed=%s succeeded on attempt %d; total %.1fs", seed, attempt, time.time() - overall_started)
                 self.suppress_fail_log = False
@@ -2203,7 +2162,7 @@ class KwokTestGenerator:
                 return True
             else:
                 LOG.warning("seed=%s failed on attempt %d/%d", seed, attempt, max_attempts)
-        # If we get here, all attempts failed. Flush the last deferred fail line now.
+
         self.suppress_fail_log = False
         if self.failure:
             df = self.failure
@@ -2237,7 +2196,6 @@ class KwokTestGenerator:
         jf_config_file              = get_str(job.get("config-file"))
         jf_results_dir              = get_str(job.get("results-dir"))
         jf_overwrite                = coerce_bool(job.get("overwrite"), default=False)
-        jf_clean_results            = coerce_bool(job.get("clean-results"), default=False)
         jf_log_level                = get_str(job.get("log-level"))
         
         jf_seed                     = job.get("seed")  # can be int or None
@@ -2271,8 +2229,6 @@ class KwokTestGenerator:
             args.repeats = jf_repeats
         if not getattr(args, "results_dir", None) and jf_results_dir:
             args.results_dir = jf_results_dir
-        if not getattr(args, "clean_results", False):
-            args.clean_results = jf_clean_results
         if (getattr(args, "seeds_not_all_running", None) in (None, 0)) and isinstance(jf_snar, int):
             args.seeds_not_all_running = jf_snar
         if not getattr(args, "save_solver_stats", False):
@@ -2466,19 +2422,17 @@ class KwokTestGenerator:
         """
         LOG.info(f"starting test-generator: {self.combined_job_config_seed_str()}")
 
-        seen = self._load_seen_results()
-
         # single-seed path
         if self.args.seed is not None:
-            self._run_seed_single_path(seen)
+            self._run_seed_single_path()
             return
         # count path
         if self.args.count is not None and int(self.args.count) >= -1:
-            self._run_count_path(seen)
+            self._run_count_path()
             return
         # seed-file path
         if self.args.seed_file:
-            self._run_seed_file_path(seen)
+            self._run_seed_file_path()
             return
 
 def main():
