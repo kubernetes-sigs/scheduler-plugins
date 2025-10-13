@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 
 # kwok_shared.py
-
-import contextlib
-import fcntl
-import os
-import hashlib, random
-import time, subprocess, json, csv, re, logging, textwrap, sys, yaml
+import os, sys, time, random, subprocess, json, csv, re, logging, textwrap, hashlib, fcntl, contextlib
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,16 +20,10 @@ MEM_UNIT_TABLE = {
     "gi": 1024**3, "gib": 1024**3,
 }
 
-
 # ====================================================================
 # YAML helpers.
 # Due to proper indentation, we keep them outside class
 # ====================================================================
-def read_yaml_docs(path: Path) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        docs = list(yaml.safe_load_all(f))
-    return docs
-
 def yaml_priority_class(name: str, value: int) -> str:
     return textwrap.dedent(f"""\
     apiVersion: scheduling.k8s.io/v1
@@ -240,12 +229,6 @@ def normalize_interval(doc: Dict[str, Any], key_combo: Tuple[str, str, str], *, 
         return f"{lo},{hi}"
     return None if allow_none else ""
 
-def split_interval(t: Optional[Tuple[int, int]]) -> tuple[str, str]:
-    """Return (lo, hi) as strings; empty strings if None."""
-    if not t:
-        return "", ""
-    return str(int(t[0])), str(int(t[1]))
-
 def parse_int_interval(s: Optional[str], *, min_lo: int = 1) -> Optional[Tuple[int, int]]:
     """
     Parse a string interval "lo,hi" or "x" into a (lo, hi) tuple.
@@ -382,7 +365,7 @@ def qty_to_bytes_str(b: int) -> str:
     return str(int(max(1, b)))
 
 ##############################################
-# ------------ kubectl helpers----------------
+# ------------ kubectl/kwokctl helpers -------
 ##############################################
 def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
     """
@@ -402,9 +385,6 @@ def get_json_ctx(ctx: str, base_cmd: list[str]) -> dict:
         ) from e
     return json.loads(out)
 
-##############################################
-# ------------ kwokctl helpers----------------
-##############################################
 @contextlib.contextmanager
 def kwok_cache_lock():
     """
@@ -423,23 +403,6 @@ def kwok_cache_lock():
             fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
-
-##############################################
-# ------------ File I/O helpers----------------
-##############################################
-def dir_exists(dir_path: str) -> bool:
-    p = Path(dir_path)
-    if not p.exists() or not p.is_dir():
-        return False
-    return True
-
-def file_exists(file: Optional[str]) -> bool:
-    if not file:
-        return False
-    f = Path(file)
-    if not f.exists() or not f.is_file():
-        return False
-    return True
 
 ##############################################
 # ------------ CSV helpers----------------
@@ -465,16 +428,6 @@ def ensure_csv_with_header(path: Path, header: List[str]) -> None:
     if not path.exists():
         with open(path, "w", encoding="utf-8", newline="") as f:
             csv.DictWriter(f, fieldnames=header).writeheader()
-
-def count_csv_rows(path: Path) -> int:
-    """
-    Count data rows (excluding header).
-    """
-    if not path.exists():
-        return 0
-    with open(path, "r", encoding="utf-8", newline="") as f:
-        rd = csv.DictReader(f)
-        return sum(1 for _ in rd)
 
 def csv_append_row(
     file_path: str | Path,
@@ -694,16 +647,6 @@ def sum_pod_requests(pod: dict) -> tuple[int, int]:
         init_mem_max_b = max(init_mem_max_b, qty_to_bytes_int(req.get("memory","0")))
 
     return cpu_sum + init_cpu_max, mem_sum_b + init_mem_max_b
-
-def compute_stat_totals(alloc: Dict[str,Tuple[int,int]], cpu_req_by_node: Dict[str,int], mem_req_by_node: Dict[str,int]) -> tuple[int, int, int, int]:
-    """
-    Compute total cluster resource usage statistics.
-    """
-    tot_cpu_alloc = sum(v[0] for v in alloc.values())    # mCPU
-    tot_mem_alloc_b = sum(v[1] for v in alloc.values())  # bytes
-    tot_cpu_req_run = sum(cpu_req_by_node.values())      # mCPU
-    tot_mem_req_run_b = sum(mem_req_by_node.values())    # bytes
-    return tot_cpu_alloc, tot_mem_alloc_b, tot_cpu_req_run, tot_mem_req_run_b
 
 def get_running_and_unscheduled(
     ctx: str,

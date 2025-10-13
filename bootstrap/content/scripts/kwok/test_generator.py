@@ -13,10 +13,10 @@ from helpers import (
     seeded_random,
     get_timestamp, setup_logging, format_hms,
     stat_snapshot,
-    file_exists, csv_append_row, ensure_csv_with_header, csv_read_header,
+    csv_append_row, ensure_csv_with_header, csv_read_header,
     qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
-    read_yaml_docs, yaml_kwok_node, yaml_priority_class, yaml_kwok_pod, yaml_kwok_rs,
-    normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s, get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict, split_interval,
+    yaml_kwok_node, yaml_priority_class, yaml_kwok_pod, yaml_kwok_rs,
+    normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s, get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict,
     coerce_bool, kwok_cache_lock,
     make_header_footer,
     generate_seeds,
@@ -119,31 +119,38 @@ def build_argparser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Generator of KWOK test clusters and workloads.")
 
     # general
-    ap.add_argument("--cluster-name", dest="cluster_name", default=None, help="A unique KWOK cluster name (default: kwok1).")
-    ap.add_argument("--kwok-runtime", dest="kwok_runtime", default=None, help="KWOK runtime 'binary' or 'docker'.")
-    ap.add_argument("--job-file", dest="job_file", default=None, help="Path to a YAML job file describing one job and optional in-memory config overrides.")
-    ap.add_argument("--workload-config-file", dest="workload_config_file", required=False, help="Path to a single workload YAML (WorkloadConfiguration)")
-    ap.add_argument("--kwokctl-config-file", dest="kwokctl_config_file", required=False, help="Path to a single KwokctlConfiguration YAML")
-    ap.add_argument("--output-dir", dest="output_dir", default=None, help="Directory to store outputs/results. If omitted, outputs are written to ./output")
-
-    # IMPORTANT: use BooleanOptionalAction and default=None to detect presence
-    ap.add_argument("--overwrite", dest="overwrite", action=BooleanOptionalAction, default=None,
-                    help="Overwrite (re-run) seeds that already exist in results.csv.")
+    ap.add_argument("--cluster-name", dest="cluster_name", default=None,
+                    help="A unique KWOK cluster name (default: kwok1).")
+    ap.add_argument("--kwok-runtime", dest="kwok_runtime", default=None,
+                    help="KWOK runtime 'binary' or 'docker'.")
+    ap.add_argument("--job-file", dest="job_file", default=None,
+                    help="Path to a YAML job file describing one job and optional in-memory config overrides.")
+    ap.add_argument("--workload-config-file", dest="workload_config_file", required=False,
+                    help="Path to a single workload YAML (WorkloadConfiguration)")
+    ap.add_argument("--kwokctl-config-file", dest="kwokctl_config_file", required=False,
+                    help="Path to a single KwokctlConfiguration YAML")
+    ap.add_argument("--output-dir", dest="output_dir", default=None,
+                    help="Directory to store outputs/results. If omitted, outputs are written to ./output")
+    ap.add_argument("--re-run-seeds", dest="re_run_seeds", action=BooleanOptionalAction, default=None,
+                    help="Re-run seeds that already exist in results.csv.")
     ap.add_argument("--clean-start", dest="clean_start", action=BooleanOptionalAction, default=None,
-                    help="Remove old results and start fresh.")
+                    help="Remove old outputs and start fresh.")
     ap.add_argument("--pause", dest="pause", action=BooleanOptionalAction, default=None,
-                    help="Pause for Enter between seeds and between configs.")
-
-    ap.add_argument("--log-level", dest="log_level", default=None, help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO)")
-
+                    help="Pause for Enter between seeds.")
+    ap.add_argument("--log-level", dest="log_level", default=None,
+                    help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO)")
     ap.add_argument("--gen-seeds-to-file", dest="gen_seeds_to_file", nargs="+", metavar="PATH NUM [PARTS]",
                     help=("Write NUM random seeds to PATH, then exit. Optionally split into PARTS files..."))
 
     # seeds
-    ap.add_argument("--seed", type=int, default=None, help="Run exactly this seed (per kwok-config)")
-    ap.add_argument("--seed-file", dest="seed_file", default=None, help="Path to seeds file (CSV with 'seed' col or newline list).")
-    ap.add_argument("--count", type=int, default=None, help="Generate the specified number of random seeds; -1=infinite.")
-    ap.add_argument("--repeats", type=int, default=None, help="Number of successful runs to collect per seed (default: 1).")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="Run exactly this seed (per kwok-config)")
+    ap.add_argument("--seed-file", dest="seed_file", default=None,
+                    help="Path to seeds file (CSV with 'seed' col or newline list).")
+    ap.add_argument("--count", type=int, default=None,
+                    help="Generate the specified number of random seeds; -1=infinite.")
+    ap.add_argument("--repeats", type=int, default=None,
+                    help="Number of successful runs to collect per seed (default: 1).")
     ap.add_argument("--seeds-not-all-running", dest="seeds_not_all_running", type=int, default=None,
                     help=("If >0, save up to this many seeds where not all pods are running..."))
 
@@ -160,9 +167,12 @@ def build_argparser() -> argparse.ArgumentParser:
     # Direct solver
     ap.add_argument("--solver-directly", dest="solver_directly", action=BooleanOptionalAction, default=None,
                     help="Bypass cluster use; directly call the Python solver with generated nodes/pods.")
-    ap.add_argument("--solver-timeout-ms", dest="solver_timeout_ms", type=int, default=None, help="Timeout for the Python solver (milliseconds).")
-    ap.add_argument("--solver-input-export", dest="solver_input_export", type=Path, default=None, help="If set, write the exact JSON sent to the solver to this path.")
-    ap.add_argument("--solver-output-export", dest="solver_output_export", type=Path, default=None, help="If set, write the solver JSON response to this path.")
+    ap.add_argument("--solver-timeout-ms", dest="solver_timeout_ms", type=int, default=None,
+                    help="Timeout for the Python solver (milliseconds).")
+    ap.add_argument("--solver-input-export", dest="solver_input_export", type=Path, default=None,
+                    help="If set, write the exact JSON sent to the solver to this path.")
+    ap.add_argument("--solver-output-export", dest="solver_output_export", type=Path, default=None,
+                    help="If set, write the solver JSON response to this path.")
     ap.add_argument("--solver-directly-running-target-util", dest="solver_directly_running_target_util", type=float, default=None,
                     help="Direct mode only: pre-place pods up to this per-node utilization (0..1).")
 
@@ -187,10 +197,13 @@ class KwokTestGenerator:
             if not job_path.exists():
                 raise SystemExit(f"--job-file not found: {job_path}")
             try:
-                self.job_doc = read_yaml_docs(job_path)[0]
-            except Exception:
-                self.job_doc = None
-            self.args, override = self.merge_job_fields_into_args(self.args, self.job_doc)
+                with open(job_path, "r", encoding="utf-8") as f:
+                    self.job_doc = yaml.safe_load(f) or {}
+                if not isinstance(self.job_doc, dict):
+                    raise SystemExit(f"--job-file must be a YAML mapping/object, got {type(self.job_doc).__name__}")
+            except Exception as e:
+                raise SystemExit(f"--job-file parse error for {job_path}: {e}")
+            self.args, override = self.merge_job_fields_into_args(self.args, self.job_doc or {})
             override_wl_config = override.get("config", {})
             override_kwokctl_envs = override.get("kwokctl_envs", [])
 
@@ -356,6 +369,7 @@ class KwokTestGenerator:
             ("kwokctl_config_file", args.kwokctl_config_file),
             ("output_dir", args.output_dir),
             ("clean_start", args.clean_start),
+            ("re_run_seeds", args.re_run_seeds),
             ("log_level", args.log_level),
             
             ("gen_seeds_to_file", args.gen_seeds_to_file),
@@ -604,13 +618,13 @@ class KwokTestGenerator:
     
     def _append_result_csv(self, row: dict) -> None:
         """
-        Append a row to results.csv. If --overwrite is set and there's an
+        Append a row to results.csv. If --re-run-seeds is set and there's an
         existing row(s) with the same seed, those rows are removed first.
         """
         self._purge_mismatched_results_csv(self.results_f, RESULTS_HEADER)
         ensure_csv_with_header(self.results_f, RESULTS_HEADER)
         seed_str = str(row.get("seed") or "").strip()
-        if self.args.overwrite and self.results_f.exists() and seed_str:
+        if self.args.re_run_seeds and self.results_f.exists() and seed_str:
             try:
                 # Read all rows, filter out same-seed rows, rewrite file
                 with open(self.results_f, "r", encoding="utf-8", newline="") as fh:
@@ -621,9 +635,9 @@ class KwokTestGenerator:
                     w.writeheader()
                     for r in rows:
                         w.writerow(r)
-                LOG.info("overwrite=true: removed prior rows for seed=%s from %s", seed_str, self.results_f.name)
+                LOG.info("re-run-seeds=true: removed prior rows for seed=%s from %s", seed_str, self.results_f.name)
             except Exception as e:
-                LOG.warning("overwrite prune failed for seed=%s: %s", seed_str, e)
+                LOG.warning("re-run-seeds prune failed for seed=%s: %s", seed_str, e)
         csv_append_row(self.results_f, RESULTS_HEADER, row)
 
     def _purge_mismatched_results_csv(self, path: Path, expected_header: list[str]) -> bool:
@@ -1781,9 +1795,9 @@ class KwokTestGenerator:
         seen = self.seen_results
         seed = int(self.args.seed)
         # Skip if already present and not overwriting
-        if (not self.args.overwrite) and (seed in seen):
+        if (not self.args.re_run_seeds) and (seed in seen):
             self._log_seed_run(seed, 1, 1)
-            LOG.info("seed=%d already in %s; skipping (use --overwrite to re-run)", seed, self.results_f.name)
+            LOG.info("seed=%d already in %s; skipping (use --re-run-seeds to re-run seed)", seed, self.results_f.name)
             self._eta_update_marker(1, 1)
             self._eta_summary(2, 1)
             return
@@ -1823,7 +1837,7 @@ class KwokTestGenerator:
 
         while keep_running():
             seed = rng.getrandbits(63) or 1
-            if (not self.args.overwrite) and (seed in seen):
+            if (not self.args.re_run_seeds) and (seed in seen):
                 # silently pick another seed (we're in random mode)
                 continue
             seed_idx = made + 1
@@ -1861,8 +1875,8 @@ class KwokTestGenerator:
         seeds_total = len(seeds_list)
         
         for seed_idx, seed in enumerate(seeds_list, start=1):
-            if (not self.args.overwrite) and (seed in seen):
-                LOG.info("seed=%d already in %s; skipping (use --overwrite to re-run)", seed, self.results_f.name)
+            if (not self.args.re_run_seeds) and (seed in seen):
+                LOG.info("seed=%d already in %s; skipping (use --re-run-seeds to re-run seed)", seed, self.results_f.name)
                 self._eta_update_marker(seed_idx, seeds_total)
                 self._eta_summary(seed_idx + 1, seeds_total)
                 continue
@@ -2225,6 +2239,7 @@ class KwokTestGenerator:
         jf_kwokctl_config_file   = get_str(job.get("kwokctl-config-file"))
         jf_output_dir            = get_str(job.get("output-dir"))
         jf_clean_start           = coerce_bool(job.get("clean-start"), default=None)
+        jf_re_run_seeds          = coerce_bool(job.get("re-run-seeds"), default=None)
         jf_log_level             = get_str(job.get("log-level"))
 
         jf_seed                  = job.get("seed")
@@ -2273,6 +2288,8 @@ class KwokTestGenerator:
             args.solver_trigger = jf_solver_trigger
         if getattr(args, "clean_start", None) is None and jf_clean_start is not None:
             args.clean_start = jf_clean_start
+        if getattr(args, "re_run_seeds", None) is None and jf_re_run_seeds is not None:
+            args.re_run_seeds = jf_re_run_seeds
 
         return args, {"config": jf_override_cfg, "kwokctl_envs": jf_override_kwokctl_envs}
 
@@ -2354,8 +2371,8 @@ class KwokTestGenerator:
         # booleans now default to None -> set final defaults here
         if getattr(args, "clean_start", None) is None:
             args.clean_start = False
-        if getattr(args, "overwrite", None) is None:
-            args.overwrite = False
+        if getattr(args, "re_run_seeds", None) is None:
+            args.re_run_seeds = False
         if getattr(args, "pause", None) is None:
             args.pause = False
         if getattr(args, "log_level", None) is None:
@@ -2418,12 +2435,13 @@ class KwokTestGenerator:
         # --- check seed file and config file ---
         seed_path = Path(args.seed_file).resolve() if args.seed_file else None
         if args.seed_file:
-            file_exists(seed_path)
+            if not seed_path.exists():
+                raise SystemExit(f"--seed-file not found: {seed_path}")
         wl_path = Path(args.workload_config_file).resolve()
         kwokctl_path = Path(args.kwokctl_config_file).resolve()
-        if not file_exists(wl_path):
+        if not wl_path.exists():
             raise SystemExit(f"--workload-config-file not found: {wl_path}")
-        if not file_exists(kwokctl_path):
+        if not kwokctl_path.exists():
             raise SystemExit(f"--kwokctl-config-file not found: {kwokctl_path}")
 
         # --- check kwok runtime vs. solver-trigger ---

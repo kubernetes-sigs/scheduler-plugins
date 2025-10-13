@@ -22,7 +22,7 @@ KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"    # binary | docker
 RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
 CONFIG_FILE="${CONFIG_FILE:-}"   # can be relative to CONTENT_DIR
 SEED="${SEED:-}"
-OVERWRITE="${OVERWRITE:-}"
+RE_RUN_SEEDS="${RE_RUN_SEEDS:-}"
 CLEAN_START="${CLEAN_START:-}"
 LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
@@ -108,7 +108,7 @@ print_cfg() {
     log cfg "RESULTS_DIR=${RESULTS_DIR:-<unset>}"
     log cfg "SEED_FILE=${SEED_FILE:-<unset>}"
     log cfg "SEED=${SEED:-<unset>}"
-    log cfg "OVERWRITE=${OVERWRITE:-<unset>}"
+    log cfg "RE_RUN_SEEDS=${RE_RUN_SEEDS:-<unset>}"
     log cfg "CLEAN_START=${CLEAN_START:-<unset>}"
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
@@ -348,7 +348,7 @@ FLAGS_SPEC=(
   "save-solver-stats|SAVE_SOLVER_STATS|flag|--save-solver-stats"
   "save-scheduler-logs|SAVE_SCHEDULER_LOGS|flag|--save-scheduler-logs"
   "seeds-not-all-running|SEEDS_NOT_ALL_RUNNING|value|"  # now a value (int), not a bare flag
-  "overwrite|OVERWRITE|flag|--overwrite"
+  "re-run-seeds|RE_RUN_SEEDS|flag|--re-run-seeds"
   "clean-start|CLEAN_START|flag|--clean-start"
   "pause|PAUSE|flag|--pause"
   "log-level|LOG_LEVEL|value|"

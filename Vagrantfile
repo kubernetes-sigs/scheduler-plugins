@@ -25,7 +25,7 @@
       --trigger-optimizer true \
       --save-solver-stats true \
       --save-scheduler-logs true \
-      --overwrite true \
+      --re-run-seeds true \
       --clean-start true \
   SHELL
 end

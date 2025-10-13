@@ -5,7 +5,7 @@ results-dir: data/results/hej-test
 save-scheduler-logs: true
 save-solver-stats: true
 clean-start: true
-overwrite: false
+re-run-seeds: false
 solver-trigger: true
 override-config:
   namespace: hej-test
