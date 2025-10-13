@@ -27,7 +27,7 @@ from helpers import (
 # ===============================================================
 RESULTS_HEADER = [
     "timestamp", "seed",
-    "error", "baseline", "best_name","best_score", "best_duration_ms", "best_status",
+    "error", "baseline_score", "best_name","best_score", "best_duration_ms", "best_status",
     "solver_attempts",
     "util_run_cpu_new", "util_run_cpu_old", 
     "util_run_mem_new", "util_run_mem_old",
@@ -724,7 +724,7 @@ class KwokTestGenerator:
         attempts: list[dict] = []
         best_name: str = ""
         error: str = ""
-        baseline: dict = {}
+        baseline_score: dict = {}
         # (1) From the last /optimize payload
         if self.last_solver_result and isinstance(self.last_solver_result, dict):
             try:
@@ -735,12 +735,12 @@ class KwokTestGenerator:
                     attempts = raw_attempts
                 bl = self.last_solver_result.get("baseline") or {}
                 if isinstance(bl, dict):
-                    baseline = bl
+                    baseline_score = bl
             except Exception:
                 pass
 
         if attempts and best_name:
-            return baseline, best_name, attempts, error
+            return baseline_score, best_name, attempts, error
 
         # (2) Fallback to ConfigMap runs.json
         cm = self._get_latest_configmap(
@@ -748,7 +748,7 @@ class KwokTestGenerator:
             accept_prefix=True, label_selector=None,
         )
         if cm is None:
-            return baseline, best_name, attempts, error
+            return baseline_score, best_name, attempts, error
 
         data = cm.get("data") or {}
         runs_raw = data.get("runs.json", "[]")
@@ -758,7 +758,7 @@ class KwokTestGenerator:
             runs = []
 
         if not isinstance(runs, list) or not runs:
-            return baseline, best_name, attempts, error
+            return baseline_score, best_name, attempts, error
 
         last = runs[-1] or {}
         try:
@@ -769,11 +769,11 @@ class KwokTestGenerator:
                 attempts = raw_attempts
             bl = last.get("baseline") or {}
             if isinstance(bl, dict):
-                baseline = bl
+                baseline_score = bl
         except Exception:
             pass
 
-        return baseline, best_name, attempts, error
+        return baseline_score, best_name, attempts, error
 
     def _write_solver_stats_json(self, seed: int, run_idx: int = 1) -> None:
         """
@@ -2144,21 +2144,21 @@ class KwokTestGenerator:
                 return True
 
         # attempts / baseline / stages
-        baseline, best_name, attempts, error = self._get_solver_attempts()
-        best_score, best_duration_ms, best_status = self._extract_best_attempt_fields(best_name, attempts)
+        baseline_score, best_solver_name, solver_attempts, error = self._get_solver_attempts()
+        best_solver_score, best_solver_duration_ms, best_solver_status = self._extract_best_attempt_fields(best_solver_name, solver_attempts)
 
         result_row = {
             "timestamp": get_timestamp(),
             "seed": str(seed),
             "error": error,
             
-            "baseline": json.dumps(baseline, separators=(",", ":"), sort_keys=True),
-            "best_name": best_name,           
-            "best_score": (best_score if best_score is not None else ""),
-            "best_duration_ms": (int(best_duration_ms) if best_duration_ms is not None else ""),
-            "best_status": (best_status or ""),
+            "best_solver_name": best_solver_name,
+            "baseline_score": json.dumps(baseline_score, separators=(",", ":"), sort_keys=True),
+            "best_solver_score": (best_solver_score if best_solver_score is not None else ""),
+            "best_solver_duration_ms": (int(best_solver_duration_ms) if best_solver_duration_ms is not None else ""),
+            "best_solver_status": (best_solver_status or ""),
             
-            "solver_attempts": json.dumps(attempts, separators=(",", ":"), sort_keys=True),
+            "solver_attempts": json.dumps(solver_attempts, separators=(",", ":"), sort_keys=True),
             
             "util_run_cpu_new": f"{new_snap.cpu_run_util:.3f}",
             "util_run_cpu_old": f"{old_snap.cpu_run_util:.3f}",
