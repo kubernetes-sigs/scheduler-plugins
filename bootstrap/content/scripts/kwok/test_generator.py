@@ -210,7 +210,7 @@ class KwokTestGenerator:
             except Exception as e:
                 raise SystemExit(f"--job-file parse error for {job_path}: {e}")
             self.args, override = self.merge_job_fields_into_args(self.args, self.job_doc or {})
-            override_workload_config = override.get("config", {})
+            override_workload_config = override.get("workload_config", {})
             override_kwokctl_envs = override.get("kwokctl_envs", [])
 
         # Ensure defaults args
@@ -931,28 +931,28 @@ class KwokTestGenerator:
     @staticmethod
     def merge_job_fields_into_args(args: argparse.Namespace, job: dict) -> tuple[argparse.Namespace, dict]:
         # Map fields from job
-        jf_cluster_name          = get_str(job.get("cluster-name"))
-        jf_kwok_runtime          = get_str(job.get("kwok-runtime"))
-        jf_workload_config_file  = get_str(job.get("workload-config-file"))
-        jf_kwokctl_config_file   = get_str(job.get("kwokctl-config-file"))
-        jf_output_dir            = get_str(job.get("output-dir"))
-        jf_clean_start           = coerce_bool(job.get("clean-start"), default=None)
-        jf_re_run_seeds          = coerce_bool(job.get("re-run-seeds"), default=None)
-        jf_log_level             = get_str(job.get("log-level"))
+        jf_cluster_name             = get_str(job.get("cluster-name"))
+        jf_kwok_runtime             = get_str(job.get("kwok-runtime"))
+        jf_workload_config_file     = get_str(job.get("workload-config-file"))
+        jf_kwokctl_config_file      = get_str(job.get("kwokctl-config-file"))
+        jf_output_dir               = get_str(job.get("output-dir"))
+        jf_clean_start              = coerce_bool(job.get("clean-start"), default=None)
+        jf_re_run_seeds             = coerce_bool(job.get("re-run-seeds"), default=None)
+        jf_log_level                = get_str(job.get("log-level"))
 
-        jf_seed                  = job.get("seed")
-        jf_seed_file             = get_str(job.get("seed-file"))
-        jf_count                 = job.get("count")
-        jf_repeats               = job.get("repeats")
-        jf_snar                  = job.get("seeds-not-all-running")
+        jf_seed                     = job.get("seed")
+        jf_seed_file                = get_str(job.get("seed-file"))
+        jf_count                    = job.get("count")
+        jf_repeats                  = job.get("repeats")
+        jf_seeds_not_all_running    = job.get("seeds-not-all-running")
 
-        jf_save_solver_stats     = coerce_bool(job.get("save-solver-stats"), default=None)
-        jf_save_scheduler_logs   = coerce_bool(job.get("save-scheduler-logs"), default=None)
+        jf_save_solver_stats        = coerce_bool(job.get("save-solver-stats"), default=None)
+        jf_save_scheduler_logs      = coerce_bool(job.get("save-scheduler-logs"), default=None)
 
-        jf_solver_trigger        = coerce_bool(job.get("solver-trigger"), default=None)
+        jf_solver_trigger           = coerce_bool(job.get("solver-trigger"), default=None)
 
-        jf_override_cfg          = job.get("override-config") or {}
-        jf_override_kwokctl_envs = job.get("override-kwokctl-envs") or []
+        jf_override_workload_config = job.get("override-workload-config") or {}
+        jf_override_kwokctl_envs    = job.get("override-kwokctl-envs") or []
 
         # CLI priority: only fill when CLI value is None
         if getattr(args, "cluster_name", None) is None and jf_cluster_name:
@@ -973,8 +973,8 @@ class KwokTestGenerator:
             args.repeats = jf_repeats
         if getattr(args, "output_dir", None) is None and jf_output_dir:
             args.output_dir = jf_output_dir
-        if getattr(args, "seeds_not_all_running", None) is None and isinstance(jf_snar, int):
-            args.seeds_not_all_running = jf_snar
+        if getattr(args, "seeds_not_all_running", None) is None and isinstance(jf_seeds_not_all_running, int):
+            args.seeds_not_all_running = jf_seeds_not_all_running
 
         if getattr(args, "save_solver_stats", None) is None and jf_save_solver_stats is not None:
             args.save_solver_stats = jf_save_solver_stats
@@ -989,7 +989,7 @@ class KwokTestGenerator:
         if getattr(args, "re_run_seeds", None) is None and jf_re_run_seeds is not None:
             args.re_run_seeds = jf_re_run_seeds
 
-        return args, {"config": jf_override_cfg, "kwokctl_envs": jf_override_kwokctl_envs}
+        return args, {"workload_config": jf_override_workload_config, "kwokctl_envs": jf_override_kwokctl_envs}
 
     @staticmethod
     def _merge_kwokctl_envs(doc: dict, add_envs: Iterable[Mapping[str, Any]] | None, component: str = "kube-scheduler") -> dict:

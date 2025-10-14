@@ -32,7 +32,7 @@ SOLVER_TRIGGER="${SOLVER_TRIGGER:-}"
 
 PAUSE="${PAUSE:-}"
 
-SEEDS_NOT_ALL_RUNNING="${SEEDS_NOT_ALL_RUNNING:-0}" # int: how many seeds can be allowed to not reach all pods running (0=all must reach all running)
+SEEDS_NOT_ALL_RUNNING="${SEEDS_NOT_ALL_RUNNING:-}" # int: how many seeds can be allowed to not reach all pods running (0=all must reach all running)
 
 SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
 
@@ -113,6 +113,11 @@ print_cfg() {
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
+  fi
+  if [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ]; then
+    log cfg "SEEDS_NOT_ALL_RUNNING=${SEEDS_NOT_ALL_RUNNING}"
+  else
+    log cfg "SEEDS_NOT_ALL_RUNNING=<unset>"
   fi
   if [ -n "${SOLVER_TRIGGER:-}" ]; then
     log cfg "SOLVER_TRIGGER=${SOLVER_TRIGGER}"

@@ -28,4 +28,5 @@ __pycache__/
 .vagrant/
 bootstrap/content/repo/
 output/
+results/
 eta*

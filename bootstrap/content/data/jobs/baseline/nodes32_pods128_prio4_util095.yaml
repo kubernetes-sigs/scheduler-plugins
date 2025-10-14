@@ -1,0 +1,10 @@
+workload-config-file: data/configs-workload/base.yaml
+kwokctl-config-file: data/configs-kwokctl/baseline-deterministic.yaml
+seed-file: data/seeds/seeds.txt
+output-dir: results/baseline/nodes32_pods128_prio4_util095
+seeds-not-all-running: 100
+override-workload-config:
+  num_nodes: 32
+  num_pods: 128
+  num_priorities: 4
+  util: 0.95
