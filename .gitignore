@@ -30,3 +30,5 @@ bootstrap/content/repo/
 output/
 results/
 eta*
+results.csv
+*.log
