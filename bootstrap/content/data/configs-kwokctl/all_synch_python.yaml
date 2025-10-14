@@ -2,7 +2,6 @@ kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
 options:
   kubeSchedulerConfig: manifests/mycrossnodepreemption/plugin-scheduler-config.yaml
-  # We decide runtime (binary vs. docker) via --runtime command line flag when creating the cluster.
   kubeSchedulerBinary: bin/kube-scheduler
   kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
 componentsPatches:

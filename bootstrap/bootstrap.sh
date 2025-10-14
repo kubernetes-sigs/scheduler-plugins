@@ -16,7 +16,7 @@ REPO_BRANCH="${REPO_BRANCH:-henrikdc-cross-preemp}"
 REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}"
 REPO_DIR="${REPO_DIR:-repo}"              # can be relative to CONTENT_DIR
 
-CLUSTER_NAME="${CLUSTER_NAME:-kwok1}"
+CLUSTER_NAME="${CLUSTER_NAME:-}"
 KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"    # binary | docker
 
 RESULTS_DIR="${RESULTS_DIR:-}"             # can be relative to CONTENT_DIR
@@ -27,6 +27,8 @@ CLEAN_START="${CLEAN_START:-}"
 LOG_LEVEL="${LOG_LEVEL:-}"
 SEED_FILE="${SEED_FILE:-}"                 # can be relative to CONTENT_DIR
 JOB_FILE="${JOB_FILE:-}"                     # can be relative to CONTENT_DIR
+
+DEFAULT_SCHEDULER="${DEFAULT_SCHEDULER:-}" # if true, use the default kube-scheduler instead of the custom one
 
 SOLVER_TRIGGER="${SOLVER_TRIGGER:-}"
 
@@ -114,6 +116,7 @@ print_cfg() {
     log cfg "PAUSE=${PAUSE:-<unset>}"
     log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
   fi
+  log cfg "DEFAULT_SCHEDULER=${DEFAULT_SCHEDULER:-<unset>}"
   if [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ]; then
     log cfg "SEEDS_NOT_ALL_RUNNING=${SEEDS_NOT_ALL_RUNNING}"
   else
@@ -309,6 +312,7 @@ stage_test() {
   [ -n "${LOG_LEVEL:-}"             ] && args+=( --log-level "${LOG_LEVEL}" )
   [ -n "${JOB_FILE:-}"              ] && args+=( --job-file "${JOB_FILE}" )
   [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ] && args+=( --seeds-not-all-running "${SEEDS_NOT_ALL_RUNNING}" )
+  [ -n "${DEFAULT_SCHEDULER:-}"    ] && args+=( --default-scheduler "${DEFAULT_SCHEDULER}" )
 
   # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --clean-start, --pause)
   # shellcheck disable=SC2206
@@ -357,6 +361,7 @@ FLAGS_SPEC=(
   "clean-start|CLEAN_START|flag|--clean-start"
   "pause|PAUSE|flag|--pause"
   "log-level|LOG_LEVEL|value|"
+  "default-scheduler|DEFAULT_SCHEDULER|flag|--default-scheduler"
 )
 
 get_spec_field() { # usage: get_spec_field "<name>" <idx>

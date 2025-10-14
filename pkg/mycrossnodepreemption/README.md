@@ -249,6 +249,7 @@ To run tests on UCloud:
 
 ## TODOs
 
+- Use pluginConfig with args instead of hardcoding values. See [scheduler-config.yaml](https://github.com/AlleNeri/scheduler-plugins/blob/dev-optimizedpreemption/manifests/optimizedpreemption/scheduler-config.yaml)
 - Update paper with results and remove Z3 descriptions
 - Jacopo: Fine to just talk about the missing configuration options possible within k8s.
 - Jacopo: Dont add gang scheduling.

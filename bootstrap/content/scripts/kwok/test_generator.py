@@ -29,18 +29,18 @@ RESULTS_HEADER = [
     "timestamp", "seed",
     "error", "baseline_score", "best_solver_name","best_solver_score", "best_solver_duration_ms", "best_solver_status",
     "solver_attempts",
-    "util_run_cpu_new", "util_run_cpu_old", 
-    "util_run_mem_new", "util_run_mem_old",
-    "cpu_m_run_new", "cpu_m_run_old",
-    "mem_b_run_new", "mem_b_run_old",
-    "running_count_new", "running_count_old",
-    "unscheduled_count_new", "unscheduled_count_old",
-    "pods_run_by_node_new", "pods_run_by_node_old",
-    "running_placed_by_prio_new", "running_placed_by_prio_old",
-    "unschedulable_by_prio_new", "unschedulable_by_prio_old",
-    "unscheduled_pods_new", "unscheduled_pods_old",
-    "running_pods_new", "running_pods_old",
-    "pod_node_new", "pod_node_old",
+    "util_run_cpu_now", "util_run_cpu_before", 
+    "util_run_mem_now", "util_run_mem_before",
+    "cpu_m_run_now", "cpu_m_run_before",
+    "mem_b_run_now", "mem_b_run_before",
+    "running_count_now", "running_count_before",
+    "unscheduled_count_now", "unscheduled_count_before",
+    "pods_run_by_node_now", "pods_run_by_node_before",
+    "running_placed_by_prio_now", "running_placed_by_prio_before",
+    "unschedulable_by_prio_now", "unschedulable_by_prio_before",
+    "unscheduled_pods_now", "unscheduled_pods_before",
+    "running_pods_now", "running_pods_before",
+    "pod_node_now", "pod_node_before",
 ]
 
 LOGGER_NAME = "test-generator"
@@ -135,6 +135,8 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="Path to a single workload YAML (WorkloadConfiguration)")
     ap.add_argument("--kwokctl-config-file", dest="kwokctl_config_file", required=False,
                     help="Path to a single KwokctlConfiguration YAML")
+    ap.add_argument("--default-scheduler", dest="default_scheduler", action=BooleanOptionalAction, default=None,
+                    help="If True, some phases will be skipped, e.g. calling inactive/active endpoints. However, it will still wait the same amount of time.")
     ap.add_argument("--output-dir", dest="output_dir", default=None,
                     help="Directory to store outputs/results. If omitted, outputs are written to ./output")
     ap.add_argument("--re-run-seeds", dest="re_run_seeds", action=BooleanOptionalAction, default=None,
@@ -226,7 +228,8 @@ class KwokTestGenerator:
         self.output_dir_resolved = self._prepare_output_dir()
         self.results_f = self.output_dir_resolved / "results.csv"
         self.failed_f  = self.output_dir_resolved / "failed.csv"
-        self.skipped_all_running_f = self.output_dir_resolved / "skipped_all_running.txt"
+        self.seeds_all_running_f = self.output_dir_resolved / "seeds-all-running.txt"
+        self.seeds_not_all_running_f = self.output_dir_resolved / "seeds-not-all-running.txt"
         self.solver_stats_dir = self.output_dir_resolved / "solver-stats"
         self.scheduler_logs_dir = self.output_dir_resolved / "scheduler-logs"
         
@@ -266,6 +269,7 @@ class KwokTestGenerator:
         self.seen_results: set[int] = self._load_seen_results_csv() # seeds already in results.csv; used for skipping
         self.seed_durations: list[float] = [] # durations of completed seeds, for ETA estimation
         self.saved_not_all_running: int = 0 # number of seeds saved where not all pods are running
+        self.quota_reached: bool = False
         self.last_solver_result: dict[str, Any] | None = None # last solver result, for --solver-directly
         self.suppress_fail_log: bool = False # if true, suppress writing to failed.csv (used when just checking config)
         self.failure: _Failure | None = None # if suppress_fail_log is true, store the failure here instead
@@ -300,6 +304,8 @@ class KwokTestGenerator:
             args.pause = False
         if getattr(args, "log_level", None) is None:
             args.log_level = "INFO"
+        if getattr(args, "default_scheduler", None) is None:
+            args.default_scheduler = False
 
         if getattr(args, "seed", None) is None:
             args.seed = None
@@ -368,6 +374,15 @@ class KwokTestGenerator:
             raise SystemExit(f"--kwokctl-config-file not found: {kwokctl_path}")
 
         # --- check kwok runtime vs. solver-trigger ---
+        if args.default_scheduler:
+            if args.save_solver_stats:
+                raise SystemExit("--save-solver-stats cannot be used with --default-scheduler")
+            if args.save_scheduler_logs:
+                raise SystemExit("--save-scheduler-logs cannot be used with --default-scheduler")
+            if args.solver_trigger:
+                raise SystemExit("--solver-trigger cannot be used with --default-scheduler")
+            if args.solver_directly:
+                raise SystemExit("--solver-directly cannot be used with --default-scheduler")
         if args.solver_trigger and args.kwok_runtime != "binary":
             raise SystemExit("--solver-trigger requires --kwok-runtime=binary")
         
@@ -702,6 +717,7 @@ class KwokTestGenerator:
             ("clean_start", args.clean_start),
             ("re_run_seeds", args.re_run_seeds),
             ("log_level", args.log_level),
+            ("default_scheduler", args.default_scheduler),
             
             ("gen_seeds_to_file", args.gen_seeds_to_file),
             ("seed", args.seed),
@@ -939,6 +955,7 @@ class KwokTestGenerator:
         jf_clean_start              = coerce_bool(job.get("clean-start"), default=None)
         jf_re_run_seeds             = coerce_bool(job.get("re-run-seeds"), default=None)
         jf_log_level                = get_str(job.get("log-level"))
+        jf_default_scheduler        = get_str(job.get("default-scheduler"))
 
         jf_seed                     = job.get("seed")
         jf_seed_file                = get_str(job.get("seed-file"))
@@ -982,6 +999,8 @@ class KwokTestGenerator:
             args.save_scheduler_logs = jf_save_scheduler_logs
         if getattr(args, "log_level", None) is None and jf_log_level:
             args.log_level = jf_log_level
+        if getattr(args, "default_scheduler", None) is None and jf_default_scheduler:
+            args.default_scheduler = jf_default_scheduler
         if getattr(args, "solver_trigger", None) is None and jf_solver_trigger is not None:
             args.solver_trigger = jf_solver_trigger
         if getattr(args, "clean_start", None) is None and jf_clean_start is not None:
@@ -1049,21 +1068,20 @@ class KwokTestGenerator:
         return None
 
     ######################################################
-    # ---------- Skipped all running seeds ---------------
+    # ---------- Seed outcome tracking -------------------
     ######################################################
-    def _record_skipped_all_running_seed(self, seed: int) -> None:
+    def _record_seed_outcome(self, *, seed: int, all_running: bool) -> None:
         """
-        Record a skipped seed when all pods are running.
-        Writes a single seed per line to a plain .txt file (no timestamp).
+        Append the seed to the appropriate outcome file.
         """
+        path = self.seeds_all_running_f if all_running else self.seeds_not_all_running_f
         try:
-            self.skipped_all_running_f.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.skipped_all_running_f, "a", encoding="utf-8") as fh:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as fh:
                 fh.write(f"{int(seed)}\n")
-            LOG.info("all pods running; skipped seed appended to %s: seed=%s",
-                    self.skipped_all_running_f.name, seed)
+            LOG.info("recorded seed=%s to %s", seed, path.name)
         except Exception as e:
-            LOG.warning("failed to record skipped seed: %s", e)
+            LOG.warning("failed to record seed outcome: %s", e)
 
     ######################################################
     # ---------- CSV helpers & results helpers -----------
@@ -1963,7 +1981,7 @@ class KwokTestGenerator:
             resolved_config = self._resolve_config_for_seed(seed)
             target_repeats = max(1, self.args.repeats)
             successes = 0
-            while successes < target_repeats:
+            while successes < target_repeats and (not self.quota_reached):
                 run_idx = successes + 1
                 ok = self._run_single_seed(seed, resolved_config, run_idx=run_idx)
                 if ok:
@@ -1987,6 +2005,9 @@ class KwokTestGenerator:
         rng = seeded_random(now_ns, "base")
         made = 0
         def keep_running():
+            # stop if external quota has been reached
+            if self.quota_reached:
+                return False
             if to_make == -1:
                 return True
             return made < to_make
@@ -2028,6 +2049,8 @@ class KwokTestGenerator:
         seeds_list = self._read_seeds_file(Path(self.args.seed_file))
         seeds_total = len(seeds_list)
         for seed_idx, seed in enumerate(seeds_list, start=1):
+            if self.quota_reached:
+                break
             if (not self.args.re_run_seeds) and (seed in seen):
                 LOG.info("seed=%d already in %s; skipping (use --re-run-seeds to re-run seed)", seed, self.results_f.name)
                 self._eta_update_marker(seed_idx, seeds_total)
@@ -2042,9 +2065,6 @@ class KwokTestGenerator:
                 target_repeats = max(1, self.args.repeats)
                 successes = 0
                 while successes < target_repeats:
-                    # If we already met the quota, stop
-                    if self.args.seeds_not_all_running > 0 and self.saved_not_all_running >= self.args.seeds_not_all_running:
-                        break
                     run_idx = successes + 1
                     ok = self._run_single_seed(seed, resolved_config, self.args.seed_file, run_idx=run_idx)
                     if ok:
@@ -2056,10 +2076,8 @@ class KwokTestGenerator:
                 self._eta_record_seed_duration(started_at)
                 self._eta_update_marker(seed_idx, seeds_total)
                 self._eta_summary(seed_idx + 1, seeds_total)
-            if self.args.seeds_not_all_running > 0 and self.saved_not_all_running >= self.args.seeds_not_all_running:
-                LOG.info("reached number of seeds-not-all-running quota (%d); stopping", self.args.seeds_not_all_running)
-                break
-            self._pause(next_exists=(seed_idx < seeds_total))
+            if not self.quota_reached:
+                self._pause(next_exists=(seed_idx < seeds_total))
         self._eta_update_marker(min(seed_idx, seeds_total), seeds_total)
 
     def _run_single_seed(self, seed: int, ta: TestConfigApplied, seed_file: Optional[str] = None, *, run_idx: int = 1) -> bool:
@@ -2265,12 +2283,12 @@ class KwokTestGenerator:
         
         phase = "status_snapshot_before_solver"
         LOG.info("phase=%s", phase)
-        old_snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
-        running_count_old = len(old_snap.pods_running)
-        unsched_count_old = len(old_snap.pods_unscheduled)
+        snap_before = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
+        running_count_before = len(snap_before.pods_running)
+        unsched_count_before = len(snap_before.pods_unscheduled)
         
         # (optionally) trigger the solver
-        if self.args.solver_trigger:
+        if self.args.solver_trigger and not self.args.default_scheduler:
             phase = "solver_trigger"
             LOG.info("phase=%s url=%s; waiting for response (timeout %ss)", phase, SOLVER_TRIGGER_URL, SOLVER_TRIGGER_TIMEOUT_S)
             code, body = self._solver_trigger_http()
@@ -2290,39 +2308,38 @@ class KwokTestGenerator:
         LOG.info("phase=%s timeout_min=%ss", phase, ta.settle_timeout_min_s)
         time.sleep(ta.settle_timeout_min_s)
         if ta.settle_timeout_max_s > 0:
-            LOG.info("waiting for inactive scheduler (max %ss)", ta.settle_timeout_max_s)
-            _ = self._wait_solver_inactive_http(SOLVER_ACTIVE_URL, ta.settle_timeout_max_s)
+            if not self.args.default_scheduler:
+                LOG.info("waiting for inactive scheduler (max %ss)", ta.settle_timeout_max_s)
+                self._wait_solver_inactive_http(SOLVER_ACTIVE_URL, ta.settle_timeout_max_s)
+            else:
+                time.sleep(ta.settle_timeout_max_s)
 
         # status snapshot
         phase = "status_snapshot_after_settle"
         LOG.info("phase=%s", phase)
-        new_snap = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
-        running_count_new = len(new_snap.pods_running)
-        unsched_count_new = len(new_snap.pods_unscheduled)
+        snap_now = stat_snapshot(self.ctx, ta.namespace, expected=ta.num_pods)
+        running_count_now = len(snap_now.pods_running)
+        unsched_count_now = len(snap_now.pods_unscheduled)
         
         # validate counts
-        if running_count_new + unsched_count_new != ta.num_pods:
+        if running_count_now + unsched_count_now != ta.num_pods:
             phase = "snapshot_validation"
             self._record_failure("seed", seed, phase,
-                            f"pod count mismatch: expected {ta.num_pods}, got {running_count_new}+{unsched_count_new}={running_count_new+unsched_count_new}")
+                            f"pod count mismatch: expected {ta.num_pods}, got {running_count_now}+{unsched_count_now}={running_count_now+unsched_count_now}")
             LOG.warning("treating seed as failure: pod count mismatch: expected %d, got %d+%d=%d",
-                        ta.num_pods, running_count_new, unsched_count_new, running_count_new+unsched_count_new)
-            self._log_seed_summary(seed, note=f"pod count mismatch: expected total={ta.num_pods}, got running={running_count_new} unscheduled={unsched_count_new}; running+unscheduled={running_count_new+unsched_count_new}")
+                        ta.num_pods, running_count_now, unsched_count_now, running_count_now+unsched_count_now)
+            self._log_seed_summary(seed, note=f"pod count mismatch: expected total={ta.num_pods}, got running={running_count_now} unscheduled={unsched_count_now}; running+unscheduled={running_count_now+unsched_count_now}")
             return False
 
-        # (optionally) skip-all-running
-        if unsched_count_new == 0 and self.args.seeds_not_all_running > 0:
-            under_limit = (self.saved_not_all_running < self.args.seeds_not_all_running)
-            if under_limit:
-                self.saved_not_all_running += 1
-                self._record_skipped_all_running_seed(seed)
-                self._log_seed_summary(seed, "skipped (all pods running)")
-                LOG.info("skipped saving seed=%s (all pods running)", seed)
-                return True
-
         # attempts / baseline / stages
-        baseline_score, best_solver_name, solver_attempts, error = self._get_solver_attempts()
-        best_solver_score, best_solver_duration_ms, best_solver_status = self._extract_best_attempt_fields(best_solver_name, solver_attempts)
+        if self.args.default_scheduler:
+            baseline_score, best_solver_name, solver_attempts, error = {}, "", [], ""
+        else:
+            baseline_score, best_solver_name, solver_attempts, error = self._get_solver_attempts()
+        if best_solver_name and solver_attempts:
+            best_solver_score, best_solver_duration_ms, best_solver_status = self._extract_best_attempt_fields(best_solver_name, solver_attempts)
+        else:
+            best_solver_score = best_solver_duration_ms = best_solver_status = None
 
         result_row = {
             "timestamp": get_timestamp(),
@@ -2337,46 +2354,46 @@ class KwokTestGenerator:
             
             "solver_attempts": json.dumps(solver_attempts, separators=(",", ":"), sort_keys=True),
             
-            "util_run_cpu_new": f"{new_snap.cpu_run_util:.3f}",
-            "util_run_cpu_old": f"{old_snap.cpu_run_util:.3f}",
+            "util_run_cpu_now": f"{snap_now.cpu_run_util:.3f}",
+            "util_run_cpu_before": f"{snap_before.cpu_run_util:.3f}",
             
-            "util_run_mem_new": f"{new_snap.mem_run_util:.3f}",
-            "util_run_mem_old": f"{old_snap.mem_run_util:.3f}",
+            "util_run_mem_now": f"{snap_now.mem_run_util:.3f}",
+            "util_run_mem_before": f"{snap_before.mem_run_util:.3f}",
             
-            "cpu_m_run_new": int(sum(new_snap.cpu_req_by_node.values())),
-            "cpu_m_run_old": int(sum(old_snap.cpu_req_by_node.values())),
-            
-            "mem_b_run_new": int(sum(new_snap.mem_req_by_node.values())),
-            "mem_b_run_old": int(sum(old_snap.mem_req_by_node.values())),
-            
-            "running_count_new": int(running_count_new),
-            "running_count_old": int(running_count_old),
-            
-            "unscheduled_count_new": int(unsched_count_new),
-            "unscheduled_count_old": int(unsched_count_old),
-            
-            "pods_run_by_node_new": json.dumps(new_snap.pods_run_by_node, separators=(",", ":")),
-            "pods_run_by_node_old": json.dumps(old_snap.pods_run_by_node, separators=(",", ":")),
-            
-            "running_placed_by_prio_new": json.dumps(new_snap.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
-            "running_placed_by_prio_old": json.dumps(old_snap.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
-            
-            "unschedulable_by_prio_new": json.dumps(new_snap.unschedulable_by_prio, separators=(",", ":"), sort_keys=True),
-            "unschedulable_by_prio_old": json.dumps(old_snap.unschedulable_by_prio, separators=(",", ":"), sort_keys=True),
+            "cpu_m_run_now": int(sum(snap_now.cpu_req_by_node.values())),
+            "cpu_m_run_before": int(sum(snap_before.cpu_req_by_node.values())),
 
-            "unscheduled_pods_new": "{" + ",".join(sorted(new_snap.pods_unscheduled)) + "}",
-            "unscheduled_pods_old": "{" + ",".join(sorted(old_snap.pods_unscheduled)) + "}",
+            "mem_b_run_now": int(sum(snap_now.mem_req_by_node.values())),
+            "mem_b_run_before": int(sum(snap_before.mem_req_by_node.values())),
+
+            "running_count_now": int(running_count_now),
+            "running_count_before": int(running_count_before),
             
-            "running_pods_new": "{" + ",".join(sorted([name for (name, _) in new_snap.pods_running])) + "}",
-            "running_pods_old": "{" + ",".join(sorted([name for (name, _) in old_snap.pods_running])) + "}",
+            "unscheduled_count_now": int(unsched_count_now),
+            "unscheduled_count_before": int(unsched_count_before),
             
-            "pod_node_new": json.dumps(self._build_pod_node_list(
-                {name: node for (name, node) in new_snap.pods_running},
-                new_snap.pods_unscheduled, pod_specs, rs_specs
+            "pods_run_by_node_now": json.dumps(snap_now.pods_run_by_node, separators=(",", ":")),
+            "pods_run_by_node_before": json.dumps(snap_before.pods_run_by_node, separators=(",", ":")),
+            
+            "running_placed_by_prio_now": json.dumps(snap_now.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
+            "running_placed_by_prio_before": json.dumps(snap_before.running_placed_by_prio, separators=(",", ":"), sort_keys=True),
+            
+            "unschedulable_by_prio_now": json.dumps(snap_now.unschedulable_by_prio, separators=(",", ":"), sort_keys=True),
+            "unschedulable_by_prio_before": json.dumps(snap_before.unschedulable_by_prio, separators=(",", ":"), sort_keys=True),
+
+            "unscheduled_pods_now": "{" + ",".join(sorted(snap_now.pods_unscheduled)) + "}",
+            "unscheduled_pods_before": "{" + ",".join(sorted(snap_before.pods_unscheduled)) + "}",
+            
+            "running_pods_now": "{" + ",".join(sorted([name for (name, _) in snap_now.pods_running])) + "}",
+            "running_pods_before": "{" + ",".join(sorted([name for (name, _) in snap_before.pods_running])) + "}",
+            
+            "pod_node_now": json.dumps(self._build_pod_node_list(
+                {name: node for (name, node) in snap_now.pods_running},
+                snap_now.pods_unscheduled, pod_specs, rs_specs
             ), separators=(",", ":")),
-            "pod_node_old": json.dumps(self._build_pod_node_list(
-                {name: node for (name, node) in old_snap.pods_running},
-                old_snap.pods_unscheduled, pod_specs, rs_specs
+            "pod_node_before": json.dumps(self._build_pod_node_list(
+                {name: node for (name, node) in snap_before.pods_running},
+                snap_before.pods_unscheduled, pod_specs, rs_specs
             ), separators=(",", ":")),
         }
 
@@ -2394,9 +2411,19 @@ class KwokTestGenerator:
             phase = "save_scheduler_logs"
             LOG.info("phase=%s", phase)
             self._save_scheduler_logs(seed, run_idx=run_idx)
+        
+        all_running_now = (unsched_count_now == 0)
+        self._record_seed_outcome(seed=seed, all_running=all_running_now)
+        # If a limit is specified, stop
+        if not all_running_now and self.args.seeds_not_all_running > 0:
+            self.saved_not_all_running += 1
+            LOG.info("seeds-not-all-running progress: %d / %d", self.saved_not_all_running, self.args.seeds_not_all_running)
+            if self.saved_not_all_running >= self.args.seeds_not_all_running:
+                LOG.info("reached seeds-not-all-running quota (%d); stopping.", self.args.seeds_not_all_running)
+                self.quota_reached = True # Signal runners to stop gracefully.
 
         LOG.info("seed run done; took %ss", time.time()-start_time)
-        self._log_seed_summary(seed, note=f"running={running_count_new} unscheduled={unsched_count_new}")
+        self._log_seed_summary(seed, note=f"running={running_count_now} unscheduled={unsched_count_now}")
         return True
 
     ######################################################

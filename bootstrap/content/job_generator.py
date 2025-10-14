@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # generate_job_yamls.py
-import argparse, itertools, os, pathlib
-from typing import Any, Dict, Iterable, List, Optional
-import yaml
+import argparse, itertools, os, pathlib, yaml
+from typing import Any, Dict, Iterable, Optional
 
 # --------------------------- Helpers ---------------------------
 
@@ -22,11 +21,11 @@ def time_tag(seconds: int) -> str:
 def ensure_trailing_s(seconds: int) -> str:
     return f"{int(seconds)}s"
 
-def make_filename(prefix: str, nodes: int, pods: int, prio: int, util: float, timeout_s: Optional[int]) -> str:
+def make_filename(prefix: str, nodes: int, pods: int, prio: int, util: float, timeout_s: Optional[int], file_type: str) -> str:
     base = f"{prefix}nodes{nodes}_pods{pods}_prio{prio}_util{util_tag(util)}"
     if timeout_s is not None:
         base += f"_timeout{time_tag(timeout_s)}"
-    return base + ".yaml"
+    return base + f".{file_type}"
 
 def make_output_dir(root: str, prefix: str, nodes: int, pods: int, prio: int, util: float, timeout_s: Optional[int]) -> str:
     leaf = f"{prefix}nodes{nodes}_pods{pods}_prio{prio}_util{util_tag(util)}"
@@ -76,12 +75,15 @@ def main():
     # Top-level defaults
     p.add_argument("--workload-config-file", type=str, required=True, help="Default workload config file.")
     p.add_argument("--kwokctl-config-file", type=str, required=True, help="Default kwokctl config file.")
-    p.add_argument("--seed-file", type=str, required=True, help="Default seed file.")
+    p.add_argument("--seed-file", type=str, required=True,
+                    help="Seed file path or directory. If a directory is given (doesn't end with .txt), a seed file name will be generated per YAML inside that directory.")
 
     # Default None so they are omitted unless passed (become True)
     p.add_argument("--save-scheduler-logs", action="store_true", default=None)
     p.add_argument("--save-solver-stats", action="store_true", default=None)
     p.add_argument("--solver-trigger", action="store_true", default=None)
+    p.add_argument("--default-scheduler", action="store_true", default=None,
+                    help="If set, uses the default kube-scheduler instead of the custom one.")
 
     # Parameter grids (space-separated lists)
     p.add_argument("--num-nodes", type=int, nargs="+", required=True)
@@ -93,7 +95,7 @@ def main():
 
     # Extra top-level numeric field
     p.add_argument("--seeds-not-all-running", type=int, default=None,
-                   help="If set, writes 'seeds-not-all-running: <int>' at top-level.")
+                    help="If set, writes 'seeds-not-all-running: <int>' at top-level.")
 
     args = p.parse_args()
 
@@ -109,9 +111,12 @@ def main():
         args.num_nodes, args.avg_pods_per_node, args.num_priorities, args.utils, timeouts
     ):
         num_pods = int(nodes) * int(pods_per_node)
+        
+        # if seed-file doesnt end with .txt, use make_filename to generate a seed file name
+
 
         # Filenames on disk
-        fname = make_filename(args.prefix, nodes, num_pods, prio, u, t)
+        fname = make_filename(args.prefix, nodes, num_pods, prio, u, t, "yaml")
         yaml_path = fs_root / fname
 
         if yaml_path.exists() and not args.overwrite:
@@ -122,7 +127,14 @@ def main():
         # 'output-dir' inside YAML (based on --output-dir)
         per_file_output_dir_yaml = make_output_dir(args.output_dir, args.prefix, nodes, num_pods, prio, u, t)
         per_file_output_dir_yaml = normalize_to_data_jobs(per_file_output_dir_yaml)
-
+        
+        if not args.seed_file.endswith(".txt"):
+            if not args.seed_file.endswith("/"):
+                args.seed_file += "/"
+            seed_file = args.seed_file + make_filename(args.prefix, nodes, num_pods, prio, u, t, "txt")
+        else:
+            seed_file = args.seed_file
+        
         # Build YAML document
         override_workload_cfg: Dict[str, Any] = {
             "num_nodes": int(nodes),
@@ -134,13 +146,15 @@ def main():
         doc: Dict[str, Any] = {
             "workload-config-file": args.workload_config_file,
             "kwokctl-config-file": args.kwokctl_config_file,
-            "seed-file": args.seed_file,
+            "seed-file": seed_file,
             "output-dir": per_file_output_dir_yaml,
-            # raw argparse values; prune_nones will remove None entries
+            # prune_nones will remove None entries
             "save-scheduler-logs": args.save_scheduler_logs,
             "save-solver-stats": args.save_solver_stats,
             "solver-trigger": args.solver_trigger,
             "seeds-not-all-running": args.seeds_not_all_running,
+            "default-scheduler": args.default_scheduler,
+            # overrides section
             "override-workload-config": override_workload_cfg,
         }
 

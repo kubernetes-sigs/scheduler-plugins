@@ -1,0 +1,10 @@
+workload-config-file: data/configs-workload/base.yaml
+kwokctl-config-file: data/configs-kwokctl/default.yaml
+seed-file: data/seeds/nodes8_pods32_prio2_util095.txt
+output-dir: results/default/nodes8_pods32_prio2_util095
+default-scheduler: true
+override-workload-config:
+  num_nodes: 8
+  num_pods: 32
+  num_priorities: 2
+  util: 0.95

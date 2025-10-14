@@ -1,0 +1,11 @@
+workload-config-file: data/configs-workload/base.yaml
+kwokctl-config-file: data/configs-kwokctl/default-deterministic.yaml
+seed-file: data/seeds/seeds_all.txt
+output-dir: results/default-deterministic/nodes8_pods32_prio4_util100
+seeds-not-all-running: 100
+default-scheduler: true
+override-workload-config:
+  num_nodes: 8
+  num_pods: 32
+  num_priorities: 4
+  util: 1.0

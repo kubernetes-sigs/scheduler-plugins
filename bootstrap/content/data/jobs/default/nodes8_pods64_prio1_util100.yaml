@@ -1,0 +1,10 @@
+workload-config-file: data/configs-workload/base.yaml
+kwokctl-config-file: data/configs-kwokctl/default.yaml
+seed-file: data/seeds/nodes8_pods64_prio1_util100.txt
+output-dir: results/default/nodes8_pods64_prio1_util100
+default-scheduler: true
+override-workload-config:
+  num_nodes: 8
+  num_pods: 64
+  num_priorities: 1
+  util: 1.0
