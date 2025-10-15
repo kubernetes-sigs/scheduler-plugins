@@ -31,6 +31,7 @@
   - [Questions](#questions)
     - [Open Questions](#open-questions)
     - [Closed Questions](#closed-questions)
+  - [Generate jobs](#generate-jobs)
 
 ## Overview
 
@@ -313,3 +314,88 @@ To run tests on UCloud:
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately
 - What to do with node-selectors, PDBs, and other rules.
   - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
+
+## Generate jobs
+
+Deterministic jobs with default scheduler:
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/default-deterministic \
+--output-dir results/default-deterministic \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default-deterministic.yaml \
+--seed-file data/seeds/seeds_all.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 1.00 1.05 \
+--seeds-not-all-running 100 \
+--default-scheduler
+```
+
+Default scheduler jobs:
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/default \
+--output-dir results/default \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default.yaml \
+--seed-file data/seeds/seeds_100.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--default-scheduler
+```
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/default \
+--output-dir results/default \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default.yaml \
+--seed-file data/seeds/ \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--default-scheduler
+```
+
+Python solver jobs:
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/all_synch_python \
+--output-dir results/all_synch_python \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
+--seed-file data/seeds/ \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 \
+--timeouts 1 10 20 \
+--save-scheduler-logs \
+--save-solver-stats \
+--solver-trigger
+```
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/all_synch_python \
+--output-dir results/all_synch_python \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
+--seed-file data/seeds/seeds_100.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--timeouts 1 10 20 \
+--save-scheduler-logs \
+--save-solver-stats \
+--solver-trigger
+```

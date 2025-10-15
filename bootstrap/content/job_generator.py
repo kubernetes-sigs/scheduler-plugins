@@ -131,7 +131,7 @@ def main():
         if not args.seed_file.endswith(".txt"):
             if not args.seed_file.endswith("/"):
                 args.seed_file += "/"
-            seed_file = args.seed_file + make_filename(args.prefix, nodes, num_pods, prio, u, t, "txt")
+            seed_file = args.seed_file + make_filename(args.prefix, nodes, num_pods, prio, u, None, "txt")
         else:
             seed_file = args.seed_file
         

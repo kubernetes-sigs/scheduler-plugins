@@ -859,7 +859,7 @@ class KwokTestGenerator:
     def _eta_write_file(self, eta_epoch: float | None, seed_idx: int, seeds_total: int):
         """
         Delete stale eta_* and write a new one:
-        eta_<time>_configs<at-of-total>_seeds<at-of-total>
+        eta_<time>_seeds-<at>-of-<total>[_snar-<left>]
         """
         try:
             # delete any prior eta_* markers
@@ -868,29 +868,47 @@ class KwokTestGenerator:
                     p.unlink()
                 except OSError:
                     pass
-            # what we're currently AT
+
+            # progress we're currently AT
             if seeds_total and seeds_total > 0:
                 seeds_at = max(0, int(seed_idx))
                 seeds_total = int(seeds_total)
-            else: # unknown/infinite seed count: keep total as -1, show current index
+            else:  # unknown/infinite seed count
                 seeds_at = max(0, int(seed_idx))
                 seeds_total = -1
-            if eta_epoch is None:
-                time_part = "eta-unknown"
+
+            # time part
+            time_part = "eta-unknown" if eta_epoch is None \
+                else time.strftime("%Y%m%d-%H%M%S", time.localtime(eta_epoch))
+
+            # snar (seeds-not-all-running) part
+            snar_total = int(self.args.seeds_not_all_running or 0)
+            if snar_total > 0:
+                snar_left = max(0, snar_total - int(self.saved_not_all_running))
+                snar_suffix = f"_snar-{snar_left}"
             else:
-                time_part = time.strftime("%Y%m%d-%H%M%S", time.localtime(eta_epoch))
+                snar_left = None
+                snar_suffix = ""
+
             file_name = (
                 f"eta_{time_part}"
                 f"_seeds-{seeds_at}-of-{seeds_total}"
+                f"{snar_suffix}"
             )
             file_path = self.output_dir_resolved / file_name
+
             # write a tiny payload
             with open(file_path, "w", encoding="utf-8") as fh:
                 payload = {
                     "eta_epoch": int(eta_epoch) if isinstance(eta_epoch, (int, float)) else None,
-                    "eta_iso": (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(eta_epoch)) if eta_epoch is not None else None),
-                    "seeds_at": seeds_at,   "seeds_total": seeds_total,
+                    "eta_iso": (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(eta_epoch))
+                                if eta_epoch is not None else None),
+                    "seeds_at": seeds_at,
+                    "seeds_total": seeds_total,
                 }
+                if snar_total > 0:
+                    payload["snar_total"] = snar_total
+                    payload["snar_left"] = snar_left
                 fh.write(json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n")
         except Exception:
             pass
@@ -2277,7 +2295,7 @@ class KwokTestGenerator:
             self._apply_standalone_pods(ta, pod_specs)
 
         # minimal wait for pods to appear
-        phase = "wait_settle_before_solver"
+        phase = "wait_settle_before_first_check"
         LOG.info("phase=%s timeout_min=%ss", phase, ta.settle_timeout_min_s)
         time.sleep(ta.settle_timeout_min_s)
         
@@ -2304,7 +2322,7 @@ class KwokTestGenerator:
                     self.last_solver_result = None
 
         # wait & settle
-        phase = "wait_settle_before_check"
+        phase = "wait_settle_before_second_check"
         LOG.info("phase=%s timeout_min=%ss", phase, ta.settle_timeout_min_s)
         time.sleep(ta.settle_timeout_min_s)
         if ta.settle_timeout_max_s > 0:

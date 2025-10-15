@@ -1,6 +1,6 @@
 workload-config-file: data/configs-workload/base.yaml
 kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
-seed-file: data/seeds/nodes16_pods64_prio2_util095_timeout01.txt
+seed-file: data/seeds/nodes16_pods64_prio2_util095.txt
 output-dir: results/all_synch_python/nodes16_pods64_prio2_util095_timeout01
 save-scheduler-logs: true
 save-solver-stats: true

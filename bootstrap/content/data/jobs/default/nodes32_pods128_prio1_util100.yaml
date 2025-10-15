@@ -1,6 +1,6 @@
 workload-config-file: data/configs-workload/base.yaml
 kwokctl-config-file: data/configs-kwokctl/default.yaml
-seed-file: data/seeds/nodes32_pods128_prio1_util100.txt
+seed-file: data/seeds/seeds_100.txt
 output-dir: results/default/nodes32_pods128_prio1_util100
 default-scheduler: true
 override-workload-config:
