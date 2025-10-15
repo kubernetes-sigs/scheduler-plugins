@@ -1,411 +1,83 @@
-missing jobs:
+in progress:
 
-2025-10-14-01:
-- 2025-10-14-default-det-nodes32_pods256_prio4_util090 (ID: 5314242)
-- 2025-10-14-default-det-nodes32_pods256_prio2_util090 (ID: 5314236)
-- 2025-10-14-default-det-nodes32_pods256_prio1_util090 (ID: 5314232)
+    default-deterministic/nodes32_pods256_prio1_util090  (ID: 5315284)
+    default-deterministic/nodes32_pods256_prio2_util090  (ID: 5315286)
+    default-deterministic/nodes32_pods256_prio4_util090  (ID: 5315287)
 
-- 2025-10-14-default-det-nodes16_pods128_prio4_util090 (ID: 5314215)
-- 2025-10-14-default-det-nodes16_pods128_prio2_util090 (ID: 5314211)
-- 2025-10-14-default-det-nodes16_pods128_prio1_util090 (ID: 5314207)
+waiting on deterministic-results:
 
-- 2025-10-14-default-det-nodes8_pods64_prio4_util090 (ID: 5314191)
-- 2025-10-14-default-det-nodes8_pods64_prio2_util090 (ID: 5314187)
-- 2025-10-14-default-det-nodes8_pods64_prio1_util090 (ID: 5314183)
+    default/nodes32_pods256_prio1_util090
+    default/nodes32_pods256_prio2_util090
+    default/nodes32_pods256_prio4_util090
 
+    all_synch_python/nodes32_pods256_prio1_util090_timeout01 
+    all_synch_python/nodes32_pods256_prio1_util090_timeout10 
+    all_synch_python/nodes32_pods256_prio1_util090_timeout20 
 
-Remember to check that the new run contains all the results as in the other organization folder
+    all_synch_python/nodes32_pods256_prio2_util090_timeout01 
+    all_synch_python/nodes32_pods256_prio2_util090_timeout10 
+    all_synch_python/nodes32_pods256_prio2_util090_timeout20 
 
-
-
-
-
-
-
-
+    all_synch_python/nodes32_pods256_prio4_util090_timeout01 
+    all_synch_python/nodes32_pods256_prio4_util090_timeout10 
+    all_synch_python/nodes32_pods256_prio4_util090_timeout20 
 
 
 
+ready to be started:
+
+    default/nodes4_pods32_prio4_util090 
+
+    all_synch_python/nodes4_pods32_prio4_util090_timeout01 
+    all_synch_python/nodes4_pods32_prio4_util090_timeout10 
+    all_synch_python/nodes4_pods32_prio4_util090_timeout20 
+
+    default/nodes8_pods64_prio1_util090 
+    default/nodes8_pods64_prio2_util090  
+    default/nodes8_pods64_prio4_util090 
+
+    default/nodes16_pods128_prio1_util090  
+    default/nodes16_pods128_prio2_util090 
+    default/nodes16_pods128_prio4_util090
+
+    all_synch_python/nodes8_pods64_prio1_util090_timeout01 
+    all_synch_python/nodes8_pods64_prio1_util090_timeout10  
+    all_synch_python/nodes8_pods64_prio1_util090_timeout20 
+
+    all_synch_python/nodes8_pods64_prio2_util090_timeout01 
+    all_synch_python/nodes8_pods64_prio2_util090_timeout10 
+    all_synch_python/nodes8_pods64_prio2_util090_timeout20 
+
+    all_synch_python/nodes8_pods64_prio4_util090_timeout01 
+    all_synch_python/nodes8_pods64_prio4_util090_timeout10 
+    all_synch_python/nodes8_pods64_prio4_util090_timeout20 
+
+    all_synch_python/nodes4_pods32_prio2_util090_timeout01 
+    all_synch_python/nodes4_pods32_prio2_util090_timeout10 
+    all_synch_python/nodes4_pods32_prio2_util090_timeout20 
+
+    all_synch_python/nodes4_pods32_prio2_util095_timeout01 
+    all_synch_python/nodes4_pods32_prio2_util095_timeout10 
+    all_synch_python/nodes4_pods32_prio2_util095_timeout20 
+
+    all_synch_python/nodes4_pods32_prio2_util100_timeout01 
+    all_synch_python/nodes4_pods32_prio2_util100_timeout10 
+    all_synch_python/nodes4_pods32_prio2_util100_timeout20 
+
+    all_synch_python/nodes16_pods128_prio1_util090_timeout01 
+    all_synch_python/nodes16_pods128_prio1_util090_timeout10 
+    all_synch_python/nodes16_pods128_prio1_util090_timeout20 
+
+    all_synch_python/nodes16_pods128_prio2_util090_timeout01 
+    all_synch_python/nodes16_pods128_prio2_util090_timeout10 
+    all_synch_python/nodes16_pods128_prio2_util090_timeout20 
+
+    all_synch_python/nodes16_pods128_prio4_util090_timeout01 
+    all_synch_python/nodes16_pods128_prio4_util090_timeout10 
+    all_synch_python/nodes16_pods128_prio4_util090_timeout20 
 
 
-
-
-
-
-
-
-
-
-
-Check up on these runs - should not be 98
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio4_util090/eta_eta-unknown_seeds-98-of-98  |  ETA: unknown  |  seeds 98/98
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util090_timeout10/eta_20251015-094233_seeds-98-of-98  |  ETA: 2025-10-15T09:42:33 (in 0s)  |  seeds 98/98
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util090_timeout01/eta_20251015-094302_seeds-98-of-98  |  ETA: 2025-10-15T09:43:02 (in 0s)  |  seeds 98/98
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util090_timeout20/eta_20251015-094343_seeds-98-of-98  |  ETA: 2025-10-15T09:43:43 (in 0s)  |  seeds 98/98
-
-default - done:
-
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio4_util095/eta_20251015-091320_seeds-100-of-100  |  ETA: 2025-10-15T09:13:20 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio2_util095/eta_20251015-091340_seeds-100-of-100  |  ETA: 2025-10-15T09:13:40 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio1_util095/eta_20251015-091432_seeds-100-of-100  |  ETA: 2025-10-15T09:14:32 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio4_util090/eta_20251015-092111_seeds-100-of-100  |  ETA: 2025-10-15T09:21:11 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio2_util090/eta_20251015-092142_seeds-100-of-100  |  ETA: 2025-10-15T09:21:42 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio4_util095/eta_20251015-092329_seeds-100-of-100  |  ETA: 2025-10-15T09:23:29 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio1_util090/eta_20251015-092447_seeds-100-of-100  |  ETA: 2025-10-15T09:24:47 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio2_util095/eta_20251015-100618_seeds-100-of-100  |  ETA: 2025-10-15T10:06:18 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio4_util095/eta_20251015-100411_seeds-100-of-100  |  ETA: 2025-10-15T10:04:11 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio1_util095/eta_20251015-100807_seeds-100-of-100  |  ETA: 2025-10-15T10:08:07 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio2_util095/eta_20251015-092608_seeds-100-of-100  |  ETA: 2025-10-15T09:26:08 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio1_util095/eta_20251015-093000_seeds-100-of-100  |  ETA: 2025-10-15T09:30:00 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio4_util105/eta_20251015-111735_seeds-214-of-500  |  ETA: 2025-10-15T11:17:35 (in 31m39s)  |  seeds 214/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio2_util100/eta_20251015-112017_seeds-211-of-500  |  ETA: 2025-10-15T11:20:17 (in 34m21s)  |  seeds 211/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio4_util100/eta_20251015-111726_seeds-216-of-500  |  ETA: 2025-10-15T11:17:26 (in 31m30s)  |  seeds 216/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio2_util105/eta_20251015-112413_seeds-210-of-500  |  ETA: 2025-10-15T11:24:13 (in 38m17s)  |  seeds 210/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio2_util100/eta_20251015-114350_seeds-186-of-500  |  ETA: 2025-10-15T11:43:50 (in 57m54s)  |  seeds 186/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio1_util105/eta_20251015-113553_seeds-200-of-500  |  ETA: 2025-10-15T11:35:53 (in 49m57s)  |  seeds 200/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio4_util100/eta_20251015-114004_seeds-187-of-500  |  ETA: 2025-10-15T11:40:04 (in 54m8s)  |  seeds 187/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio4_util105/eta_20251015-114859_seeds-183-of-500  |  ETA: 2025-10-15T11:48:59 (in 1h3m3s)  |  seeds 183/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio2_util105/eta_20251015-115044_seeds-182-of-500  |  ETA: 2025-10-15T11:50:44 (in 1h4m48s)  |  seeds 182/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio1_util100/eta_20251015-115355_seeds-185-of-500  |  ETA: 2025-10-15T11:53:55 (in 1h7m59s)  |  seeds 185/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio1_util105/eta_20251015-120002_seeds-178-of-500  |  ETA: 2025-10-15T12:00:02 (in 1h14m6s)  |  seeds 178/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio2_util100/eta_20251015-120025_seeds-169-of-500  |  ETA: 2025-10-15T12:00:25 (in 1h14m29s)  |  seeds 169/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio4_util105/eta_20251015-120037_seeds-168-of-500  |  ETA: 2025-10-15T12:00:37 (in 1h14m41s)  |  seeds 168/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio1_util100/eta_20251015-115424_seeds-161-of-500  |  ETA: 2025-10-15T11:54:24 (in 1h8m28s)  |  seeds 161/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio2_util105/eta_20251015-120609_seeds-165-of-500  |  ETA: 2025-10-15T12:06:09 (in 1h20m13s)  |  seeds 165/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio4_util100/eta_20251015-115731_seeds-171-of-500  |  ETA: 2025-10-15T11:57:31 (in 1h11m35s)  |  seeds 171/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio1_util100/eta_20251015-121213_seeds-162-of-500  |  ETA: 2025-10-15T12:12:13 (in 1h26m17s)  |  seeds 162/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio1_util105/eta_20251015-121905_seeds-157-of-500  |  ETA: 2025-10-15T12:19:05 (in 1h33m9s)  |  seeds 157/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio4_util100/eta_20251015-125013_seeds-137-of-500  |  ETA: 2025-10-15T12:50:13 (in 2h4m17s)  |  seeds 137/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio2_util100/eta_20251015-125849_seeds-135-of-500  |  ETA: 2025-10-15T12:58:49 (in 2h12m53s)  |  seeds 135/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio4_util105/eta_20251015-130334_seeds-132-of-500  |  ETA: 2025-10-15T13:03:34 (in 2h17m38s)  |  seeds 132/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio2_util105/eta_20251015-131036_seeds-130-of-500  |  ETA: 2025-10-15T13:10:36 (in 2h24m40s)  |  seeds 130/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio4_util100/eta_20251015-131053_seeds-121-of-500  |  ETA: 2025-10-15T13:10:53 (in 2h24m57s)  |  seeds 121/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio1_util100/eta_20251015-131507_seeds-131-of-500  |  ETA: 2025-10-15T13:15:07 (in 2h29m11s)  |  seeds 131/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio4_util105/eta_20251015-132148_seeds-120-of-500  |  ETA: 2025-10-15T13:21:48 (in 2h35m52s)  |  seeds 120/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio2_util100/eta_20251015-132440_seeds-118-of-500  |  ETA: 2025-10-15T13:24:40 (in 2h38m44s)  |  seeds 118/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio2_util105/eta_20251015-132919_seeds-115-of-500  |  ETA: 2025-10-15T13:29:19 (in 2h43m23s)  |  seeds 115/500
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio1_util105/eta_20251015-132945_seeds-124-of-500  |  ETA: 2025-10-15T13:29:45 (in 2h43m49s)  |  seeds 124/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio1_util100/eta_20251015-134052_seeds-115-of-500  |  ETA: 2025-10-15T13:40:52 (in 2h54m56s)  |  seeds 115/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio1_util105/eta_20251015-135129_seeds-111-of-500  |  ETA: 2025-10-15T13:51:29 (in 3h5m33s)  |  seeds 111/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio4_util100/eta_20251015-145051_seeds-169-of-500  |  ETA: 2025-10-15T14:50:51 (in 4h4m55s)  |  seeds 169/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio4_util105/eta_20251015-145947_seeds-164-of-500  |  ETA: 2025-10-15T14:59:47 (in 4h13m51s)  |  seeds 164/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio2_util100/eta_20251015-150016_seeds-166-of-500  |  ETA: 2025-10-15T15:00:16 (in 4h14m20s)  |  seeds 166/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio2_util105/eta_20251015-151337_seeds-159-of-500  |  ETA: 2025-10-15T15:13:37 (in 4h27m41s)  |  seeds 159/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio1_util100/eta_20251015-151744_seeds-160-of-500  |  ETA: 2025-10-15T15:17:44 (in 4h31m48s)  |  seeds 160/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio4_util100/eta_20251015-152006_seeds-155-of-500  |  ETA: 2025-10-15T15:20:06 (in 4h34m10s)  |  seeds 155/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio2_util100/eta_20251015-153602_seeds-149-of-500  |  ETA: 2025-10-15T15:36:02 (in 4h50m6s)  |  seeds 149/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio4_util105/eta_20251015-153700_seeds-148-of-500  |  ETA: 2025-10-15T15:37:00 (in 4h51m4s)  |  seeds 148/500
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods128_prio1_util105/eta_20251015-154825_seeds-150-of-500  |  ETA: 2025-10-15T15:48:25 (in 5h2m29s)  |  seeds 150/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio2_util105/eta_20251015-155459_seeds-143-of-500  |  ETA: 2025-10-15T15:54:59 (in 5h9m3s)  |  seeds 143/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio1_util100/eta_20251015-160558_seeds-141-of-500  |  ETA: 2025-10-15T16:05:58 (in 5h20m2s)  |  seeds 141/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods128_prio1_util105/eta_20251015-163934_seeds-132-of-500  |  ETA: 2025-10-15T16:39:34 (in 5h53m38s)  |  seeds 132/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio4_util100/eta_20251015-183442_seeds-119-of-500  |  ETA: 2025-10-15T18:34:42 (in 7h48m46s)  |  seeds 119/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio2_util100/eta_20251015-190100_seeds-112-of-500  |  ETA: 2025-10-15T19:01:00 (in 8h15m4s)  |  seeds 112/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio4_util105/eta_20251015-190252_seeds-114-of-500  |  ETA: 2025-10-15T19:02:52 (in 8h16m56s)  |  seeds 114/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio1_util100/eta_20251015-193358_seeds-108-of-500  |  ETA: 2025-10-15T19:33:58 (in 8h48m2s)  |  seeds 108/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio2_util105/eta_20251015-193900_seeds-107-of-500  |  ETA: 2025-10-15T19:39:00 (in 8h53m4s)  |  seeds 107/500
-/work/Home/2025-10-14-02/content/results/default/nodes32_pods256_prio1_util105/eta_20251015-203629_seeds-100-of-500  |  ETA: 2025-10-15T20:36:29 (in 9h50m33s)  |  seeds 100/500
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio1_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio1_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio2_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio2_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio4_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods16_prio4_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio1_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio1_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio2_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio2_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes4_pods32_prio4_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio1_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio1_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio2_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio2_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio4_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods32_prio4_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio1_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio2_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes8_pods64_prio4_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio1_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio1_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio2_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio2_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio4_util090/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/default/nodes16_pods64_prio4_util095/eta_eta-unknown_seeds-100-of-100  |  ETA: unknown  |  seeds 100/100
-
-
-python - done:
-
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util090_timeout01/eta_20251014-201329_seeds-100-of-100  |  ETA: 2025-10-14T20:13:29 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util095_timeout01/eta_20251014-201349_seeds-100-of-100  |  ETA: 2025-10-14T20:13:49 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util095_timeout20/eta_20251014-201357_seeds-100-of-100  |  ETA: 2025-10-14T20:13:57 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util095_timeout10/eta_20251014-201414_seeds-100-of-100  |  ETA: 2025-10-14T20:14:14 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util090_timeout10/eta_20251014-201535_seeds-100-of-100  |  ETA: 2025-10-14T20:15:35 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util090_timeout20/eta_20251014-201547_seeds-100-of-100  |  ETA: 2025-10-14T20:15:47 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util095_timeout01/eta_20251014-201641_seeds-100-of-100  |  ETA: 2025-10-14T20:16:41 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util095_timeout20/eta_20251014-201658_seeds-100-of-100  |  ETA: 2025-10-14T20:16:58 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util095_timeout10/eta_20251014-201702_seeds-100-of-100  |  ETA: 2025-10-14T20:17:02 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util090_timeout01/eta_20251014-201832_seeds-100-of-100  |  ETA: 2025-10-14T20:18:32 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util090_timeout20/eta_20251014-201841_seeds-100-of-100  |  ETA: 2025-10-14T20:18:41 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util090_timeout10/eta_20251014-201848_seeds-100-of-100  |  ETA: 2025-10-14T20:18:48 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util095_timeout01/eta_20251014-201916_seeds-100-of-100  |  ETA: 2025-10-14T20:19:16 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util095_timeout20/eta_20251014-201920_seeds-100-of-100  |  ETA: 2025-10-14T20:19:20 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util095_timeout10/eta_20251014-201943_seeds-100-of-100  |  ETA: 2025-10-14T20:19:43 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util090_timeout01/eta_20251014-202057_seeds-100-of-100  |  ETA: 2025-10-14T20:20:57 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util090_timeout10/eta_20251014-202122_seeds-100-of-100  |  ETA: 2025-10-14T20:21:22 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util090_timeout20/eta_20251014-202146_seeds-100-of-100  |  ETA: 2025-10-14T20:21:46 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util100_timeout01/eta_20251014-223546_seeds-121-of-500  |  ETA: 2025-10-14T22:35:46 (in 0s)  |  seeds 121/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util100_timeout10/eta_20251014-223744_seeds-119-of-500  |  ETA: 2025-10-14T22:37:44 (in 0s)  |  seeds 119/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util100_timeout20/eta_20251014-223813_seeds-111-of-500  |  ETA: 2025-10-14T22:38:13 (in 0s)  |  seeds 111/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util100_timeout01/eta_20251014-223858_seeds-112-of-500  |  ETA: 2025-10-14T22:38:58 (in 0s)  |  seeds 112/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util100_timeout10/eta_20251014-223859_seeds-111-of-500  |  ETA: 2025-10-14T22:38:59 (in 0s)  |  seeds 111/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util100_timeout20/eta_20251014-224044_seeds-104-of-500  |  ETA: 2025-10-14T22:40:44 (in 0s)  |  seeds 104/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util100_timeout10/eta_20251014-224046_seeds-105-of-500  |  ETA: 2025-10-14T22:40:46 (in 0s)  |  seeds 105/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util100_timeout20/eta_20251014-224106_seeds-116-of-500  |  ETA: 2025-10-14T22:41:06 (in 0s)  |  seeds 116/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util100_timeout01/eta_20251014-224144_seeds-105-of-500  |  ETA: 2025-10-14T22:41:44 (in 0s)  |  seeds 105/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util105_timeout01/eta_20251014-224426_seeds-113-of-500  |  ETA: 2025-10-14T22:44:26 (in 0s)  |  seeds 113/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util105_timeout01/eta_20251014-224431_seeds-107-of-500  |  ETA: 2025-10-14T22:44:31 (in 0s)  |  seeds 107/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util105_timeout10/eta_20251014-224446_seeds-101-of-500  |  ETA: 2025-10-14T22:44:46 (in 0s)  |  seeds 101/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util105_timeout01/eta_20251014-224542_seeds-101-of-500  |  ETA: 2025-10-14T22:45:42 (in 0s)  |  seeds 101/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util105_timeout10/eta_20251014-224609_seeds-106-of-500  |  ETA: 2025-10-14T22:46:09 (in 0s)  |  seeds 106/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio2_util105_timeout20/eta_20251014-224629_seeds-105-of-500  |  ETA: 2025-10-14T22:46:29 (in 0s)  |  seeds 105/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util105_timeout10/eta_20251014-224908_seeds-110-of-500  |  ETA: 2025-10-14T22:49:08 (in 0s)  |  seeds 110/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio1_util105_timeout20/eta_20251014-225413_seeds-107-of-500  |  ETA: 2025-10-14T22:54:13 (in 0s)  |  seeds 107/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods16_prio4_util105_timeout20/eta_20251015-091657_seeds-100-of-100  |  ETA: 2025-10-15T09:16:57 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util095_timeout01/eta_20251015-092553_seeds-100-of-100  |  ETA: 2025-10-15T09:25:53 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util095_timeout10/eta_20251015-092700_seeds-100-of-100  |  ETA: 2025-10-15T09:27:00 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util095_timeout20/eta_20251015-092712_seeds-100-of-100  |  ETA: 2025-10-15T09:27:12 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util100_timeout01/eta_20251015-092857_seeds-100-of-100  |  ETA: 2025-10-15T09:28:57 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util105_timeout01/eta_20251015-093100_seeds-100-of-100  |  ETA: 2025-10-15T09:31:00 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util090_timeout01/eta_20251015-093332_seeds-100-of-100  |  ETA: 2025-10-15T09:33:32 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util105_timeout01/eta_20251015-093432_seeds-100-of-100  |  ETA: 2025-10-15T09:34:32 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util095_timeout01/eta_20251015-093515_seeds-100-of-100  |  ETA: 2025-10-15T09:35:15 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util090_timeout20/eta_20251015-093517_seeds-100-of-100  |  ETA: 2025-10-15T09:35:17 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util105_timeout10/eta_20251015-093518_seeds-100-of-100  |  ETA: 2025-10-15T09:35:18 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util095_timeout10/eta_20251015-093531_seeds-100-of-100  |  ETA: 2025-10-15T09:35:31 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util105_timeout10/eta_20251015-093536_seeds-100-of-100  |  ETA: 2025-10-15T09:35:36 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util100_timeout01/eta_20251015-093559_seeds-100-of-100  |  ETA: 2025-10-15T09:35:59 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util090_timeout10/eta_20251015-093614_seeds-100-of-100  |  ETA: 2025-10-15T09:36:14 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util105_timeout20/eta_20251015-093615_seeds-100-of-100  |  ETA: 2025-10-15T09:36:15 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util095_timeout20/eta_20251015-093617_seeds-100-of-100  |  ETA: 2025-10-15T09:36:17 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util100_timeout20/eta_20251015-093617_seeds-100-of-100  |  ETA: 2025-10-15T09:36:17 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util100_timeout10/eta_20251015-093621_seeds-100-of-100  |  ETA: 2025-10-15T09:36:21 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util105_timeout01/eta_20251015-093809_seeds-100-of-100  |  ETA: 2025-10-15T09:38:09 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util105_timeout20/eta_20251015-093833_seeds-100-of-100  |  ETA: 2025-10-15T09:38:33 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util105_timeout20/eta_20251015-093838_seeds-100-of-100  |  ETA: 2025-10-15T09:38:38 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio4_util105_timeout10/eta_20251015-093852_seeds-100-of-100  |  ETA: 2025-10-15T09:38:52 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util090_timeout01/eta_20251015-093852_seeds-100-of-100  |  ETA: 2025-10-15T09:38:52 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util100_timeout10/eta_20251015-093934_seeds-100-of-100  |  ETA: 2025-10-15T09:39:34 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util090_timeout10/eta_20251015-093944_seeds-100-of-100  |  ETA: 2025-10-15T09:39:44 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util090_timeout20/eta_20251015-094122_seeds-100-of-100  |  ETA: 2025-10-15T09:41:22 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util095_timeout01/eta_20251015-094208_seeds-100-of-100  |  ETA: 2025-10-15T09:42:08 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util090_timeout01/eta_20251015-094416_seeds-100-of-100  |  ETA: 2025-10-15T09:44:16 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util100_timeout01/eta_20251015-094500_seeds-100-of-100  |  ETA: 2025-10-15T09:45:00 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util090_timeout10/eta_20251015-094514_seeds-100-of-100  |  ETA: 2025-10-15T09:45:14 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util090_timeout20/eta_20251015-094607_seeds-100-of-100  |  ETA: 2025-10-15T09:46:07 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util095_timeout01/eta_20251015-094714_seeds-100-of-100  |  ETA: 2025-10-15T09:47:14 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util105_timeout01/eta_20251015-094733_seeds-100-of-100  |  ETA: 2025-10-15T09:47:33 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util090_timeout01/eta_20251015-094900_seeds-100-of-100  |  ETA: 2025-10-15T09:49:00 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util090_timeout10/eta_20251015-094910_seeds-100-of-100  |  ETA: 2025-10-15T09:49:10 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util100_timeout01/eta_20251015-094929_seeds-100-of-100  |  ETA: 2025-10-15T09:49:29 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util090_timeout20/eta_20251015-095016_seeds-100-of-100  |  ETA: 2025-10-15T09:50:16 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util095_timeout01/eta_20251015-095056_seeds-100-of-100  |  ETA: 2025-10-15T09:50:56 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio1_util100_timeout20/eta_20251015-095139_seeds-100-of-100  |  ETA: 2025-10-15T09:51:39 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util095_timeout10/eta_20251015-095154_seeds-100-of-100  |  ETA: 2025-10-15T09:51:54 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util105_timeout01/eta_20251015-095226_seeds-100-of-100  |  ETA: 2025-10-15T09:52:26 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util095_timeout10/eta_20251015-095256_seeds-100-of-100  |  ETA: 2025-10-15T09:52:56 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util095_timeout20/eta_20251015-095316_seeds-100-of-100  |  ETA: 2025-10-15T09:53:16 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util095_timeout10/eta_20251015-095414_seeds-100-of-100  |  ETA: 2025-10-15T09:54:14 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util100_timeout01/eta_20251015-095429_seeds-100-of-100  |  ETA: 2025-10-15T09:54:29 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util100_timeout10/eta_20251015-095545_seeds-100-of-100  |  ETA: 2025-10-15T09:55:45 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util095_timeout20/eta_20251015-095642_seeds-100-of-100  |  ETA: 2025-10-15T09:56:42 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util105_timeout01/eta_20251015-095700_seeds-100-of-100  |  ETA: 2025-10-15T09:57:00 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util100_timeout10/eta_20251015-095712_seeds-100-of-100  |  ETA: 2025-10-15T09:57:12 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util105_timeout10/eta_20251015-095827_seeds-100-of-100  |  ETA: 2025-10-15T09:58:27 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util100_timeout20/eta_20251015-095832_seeds-100-of-100  |  ETA: 2025-10-15T09:58:32 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util100_timeout10/eta_20251015-095909_seeds-100-of-100  |  ETA: 2025-10-15T09:59:09 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util105_timeout20/eta_20251015-100007_seeds-100-of-100  |  ETA: 2025-10-15T10:00:07 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio4_util105_timeout10/eta_20251015-100017_seeds-100-of-100  |  ETA: 2025-10-15T10:00:17 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util100_timeout20/eta_20251015-100124_seeds-100-of-100  |  ETA: 2025-10-15T10:01:24 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio2_util105_timeout20/eta_20251015-100319_seeds-100-of-100  |  ETA: 2025-10-15T10:03:19 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util105_timeout10/eta_20251015-100335_seeds-100-of-100  |  ETA: 2025-10-15T10:03:35 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util095_timeout20/eta_20251015-100604_seeds-100-of-100  |  ETA: 2025-10-15T10:06:04 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util095_timeout01/eta_20251015-100656_seeds-100-of-100  |  ETA: 2025-10-15T10:06:56 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util095_timeout20/eta_20251015-100827_seeds-100-of-100  |  ETA: 2025-10-15T10:08:27 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util095_timeout10/eta_20251015-100901_seeds-100-of-100  |  ETA: 2025-10-15T10:09:01 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util100_timeout01/eta_20251015-101159_seeds-100-of-100  |  ETA: 2025-10-15T10:11:59 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util095_timeout01/eta_20251015-101253_seeds-100-of-100  |  ETA: 2025-10-15T10:12:53 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util100_timeout20/eta_20251015-101336_seeds-100-of-100  |  ETA: 2025-10-15T10:13:36 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util095_timeout20/eta_20251015-101352_seeds-100-of-100  |  ETA: 2025-10-15T10:13:52 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util095_timeout10/eta_20251015-101356_seeds-100-of-100  |  ETA: 2025-10-15T10:13:56 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util105_timeout01/eta_20251015-101554_seeds-100-of-100  |  ETA: 2025-10-15T10:15:54 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util095_timeout01/eta_20251015-101608_seeds-100-of-100  |  ETA: 2025-10-15T10:16:08 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util100_timeout01/eta_20251015-101657_seeds-100-of-100  |  ETA: 2025-10-15T10:16:57 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util095_timeout10/eta_20251015-101748_seeds-100-of-100  |  ETA: 2025-10-15T10:17:48 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods32_prio1_util105_timeout20/eta_20251015-101752_seeds-100-of-100  |  ETA: 2025-10-15T10:17:52 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util095_timeout20/eta_20251015-101823_seeds-100-of-100  |  ETA: 2025-10-15T10:18:23 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util105_timeout01/eta_20251015-102045_seeds-100-of-100  |  ETA: 2025-10-15T10:20:45 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util100_timeout01/eta_20251015-102211_seeds-100-of-100  |  ETA: 2025-10-15T10:22:11 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util105_timeout01/eta_20251015-102511_seeds-100-of-100  |  ETA: 2025-10-15T10:25:11 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util100_timeout10/eta_20251015-102819_seeds-100-of-100  |  ETA: 2025-10-15T10:28:19 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util100_timeout10/eta_20251015-102823_seeds-100-of-100  |  ETA: 2025-10-15T10:28:23 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util105_timeout10/eta_20251015-103041_seeds-100-of-100  |  ETA: 2025-10-15T10:30:41 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util100_timeout10/eta_20251015-103116_seeds-100-of-100  |  ETA: 2025-10-15T10:31:16 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util100_timeout20/eta_20251015-103246_seeds-100-of-100  |  ETA: 2025-10-15T10:32:46 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util105_timeout10/eta_20251015-103312_seeds-100-of-100  |  ETA: 2025-10-15T10:33:12 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util105_timeout10/eta_20251015-103534_seeds-100-of-100  |  ETA: 2025-10-15T10:35:34 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio4_util105_timeout20/eta_20251015-103759_seeds-100-of-100  |  ETA: 2025-10-15T10:37:59 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util100_timeout20/eta_20251015-104321_seeds-100-of-100  |  ETA: 2025-10-15T10:43:21 (in 0s)  |  seeds 100/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util100_timeout20/eta_20251015-104406_seeds-100-of-100  |  ETA: 2025-10-15T10:44:06 (in 0s)  |  seeds 100/100
-
-python - in progress:
-
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util095_timeout01/eta_20251014-203103_seeds-78-of-100  |  ETA: 2025-10-14T20:31:03 (in 0s)  |  seeds 78/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util095_timeout10/eta_20251014-203150_seeds-77-of-100  |  ETA: 2025-10-14T20:31:50 (in 0s)  |  seeds 77/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util095_timeout20/eta_20251014-203209_seeds-76-of-100  |  ETA: 2025-10-14T20:32:09 (in 0s)  |  seeds 76/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util090_timeout01/eta_20251014-204041_seeds-64-of-100  |  ETA: 2025-10-14T20:40:41 (in 0s)  |  seeds 64/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util090_timeout10/eta_20251014-204049_seeds-63-of-100  |  ETA: 2025-10-14T20:40:49 (in 0s)  |  seeds 63/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util090_timeout20/eta_20251014-204141_seeds-62-of-100  |  ETA: 2025-10-14T20:41:41 (in 0s)  |  seeds 62/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util100_timeout01/eta_20251014-231313_seeds-76-of-500  |  ETA: 2025-10-14T23:13:13 (in 0s)  |  seeds 76/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util100_timeout10/eta_20251014-231933_seeds-73-of-500  |  ETA: 2025-10-14T23:19:33 (in 0s)  |  seeds 73/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes4_pods32_prio2_util100_timeout20/eta_20251014-232017_seeds-73-of-500  |  ETA: 2025-10-14T23:20:17 (in 0s)  |  seeds 73/500
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio1_util105_timeout20/eta_20251015-104758_seeds-98-of-100  |  ETA: 2025-10-15T10:47:58 (in 2m2s)  |  seeds 98/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util090_timeout01/eta_20251015-104954_seeds-93-of-100  |  ETA: 2025-10-15T10:49:54 (in 3m58s)  |  seeds 93/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes8_pods64_prio2_util105_timeout20/eta_20251015-105115_seeds-94-of-100  |  ETA: 2025-10-15T10:51:15 (in 5m19s)  |  seeds 94/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util090_timeout01/eta_20251015-105226_seeds-88-of-100  |  ETA: 2025-10-15T10:52:26 (in 6m30s)  |  seeds 88/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util095_timeout01/eta_20251015-105436_seeds-85-of-100  |  ETA: 2025-10-15T10:54:36 (in 8m40s)  |  seeds 85/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util090_timeout10/eta_20251015-105525_seeds-83-of-100  |  ETA: 2025-10-15T10:55:25 (in 9m29s)  |  seeds 83/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util095_timeout01/eta_20251015-105706_seeds-85-of-100  |  ETA: 2025-10-15T10:57:06 (in 11m10s)  |  seeds 85/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util100_timeout01/eta_20251015-105727_seeds-81-of-100  |  ETA: 2025-10-15T10:57:27 (in 11m31s)  |  seeds 81/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util090_timeout01/eta_20251015-105750_seeds-77-of-100  |  ETA: 2025-10-15T10:57:50 (in 11m54s)  |  seeds 77/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util090_timeout10/eta_20251015-105850_seeds-79-of-100  |  ETA: 2025-10-15T10:58:50 (in 12m54s)  |  seeds 79/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util095_timeout01/eta_20251015-105856_seeds-77-of-100  |  ETA: 2025-10-15T10:58:56 (in 13m)  |  seeds 77/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util090_timeout20/eta_20251015-105911_seeds-77-of-100  |  ETA: 2025-10-15T10:59:11 (in 13m15s)  |  seeds 77/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util095_timeout01/eta_20251015-105943_seeds-74-of-100  |  ETA: 2025-10-15T10:59:43 (in 13m47s)  |  seeds 74/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util090_timeout10/eta_20251015-110102_seeds-72-of-100  |  ETA: 2025-10-15T11:01:02 (in 15m6s)  |  seeds 72/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util095_timeout01/eta_20251015-110104_seeds-79-of-100  |  ETA: 2025-10-15T11:01:04 (in 15m8s)  |  seeds 79/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util105_timeout01/eta_20251015-110307_seeds-73-of-100  |  ETA: 2025-10-15T11:03:07 (in 17m11s)  |  seeds 73/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util095_timeout01/eta_20251015-110309_seeds-76-of-100  |  ETA: 2025-10-15T11:03:09 (in 17m13s)  |  seeds 76/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util100_timeout01/eta_20251015-110321_seeds-71-of-100  |  ETA: 2025-10-15T11:03:21 (in 17m25s)  |  seeds 71/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util090_timeout20/eta_20251015-110324_seeds-73-of-100  |  ETA: 2025-10-15T11:03:24 (in 17m28s)  |  seeds 73/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util100_timeout01/eta_20251015-110348_seeds-77-of-100  |  ETA: 2025-10-15T11:03:48 (in 17m52s)  |  seeds 77/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util090_timeout20/eta_20251015-110354_seeds-68-of-100  |  ETA: 2025-10-15T11:03:54 (in 17m58s)  |  seeds 68/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util100_timeout01/eta_20251015-110708_seeds-72-of-100  |  ETA: 2025-10-15T11:07:08 (in 21m12s)  |  seeds 72/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util100_timeout01/eta_20251015-110727_seeds-63-of-100  |  ETA: 2025-10-15T11:07:27 (in 21m31s)  |  seeds 63/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util105_timeout01/eta_20251015-110732_seeds-65-of-100  |  ETA: 2025-10-15T11:07:32 (in 21m36s)  |  seeds 65/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util095_timeout10/eta_20251015-110815_seeds-73-of-100  |  ETA: 2025-10-15T11:08:15 (in 22m19s)  |  seeds 73/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util100_timeout01/eta_20251015-110836_seeds-70-of-100  |  ETA: 2025-10-15T11:08:36 (in 22m40s)  |  seeds 70/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util105_timeout01/eta_20251015-110841_seeds-63-of-100  |  ETA: 2025-10-15T11:08:41 (in 22m45s)  |  seeds 63/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util095_timeout10/eta_20251015-110944_seeds-67-of-100  |  ETA: 2025-10-15T11:09:44 (in 23m48s)  |  seeds 67/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util095_timeout10/eta_20251015-110952_seeds-61-of-100  |  ETA: 2025-10-15T11:09:52 (in 23m56s)  |  seeds 61/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util095_timeout10/eta_20251015-111101_seeds-68-of-100  |  ETA: 2025-10-15T11:11:01 (in 25m5s)  |  seeds 68/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util095_timeout20/eta_20251015-111157_seeds-68-of-100  |  ETA: 2025-10-15T11:11:57 (in 26m1s)  |  seeds 68/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util105_timeout01/eta_20251015-111202_seeds-69-of-100  |  ETA: 2025-10-15T11:12:02 (in 26m6s)  |  seeds 69/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util095_timeout10/eta_20251015-111210_seeds-68-of-100  |  ETA: 2025-10-15T11:12:10 (in 26m14s)  |  seeds 68/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util100_timeout10/eta_20251015-111312_seeds-58-of-100  |  ETA: 2025-10-15T11:13:12 (in 27m16s)  |  seeds 58/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util095_timeout20/eta_20251015-111334_seeds-66-of-100  |  ETA: 2025-10-15T11:13:34 (in 27m38s)  |  seeds 66/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util095_timeout10/eta_20251015-111347_seeds-60-of-100  |  ETA: 2025-10-15T11:13:47 (in 27m51s)  |  seeds 60/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util100_timeout10/eta_20251015-111403_seeds-63-of-100  |  ETA: 2025-10-15T11:14:03 (in 28m7s)  |  seeds 63/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util095_timeout20/eta_20251015-111434_seeds-57-of-100  |  ETA: 2025-10-15T11:14:34 (in 28m38s)  |  seeds 57/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util105_timeout01/eta_20251015-111505_seeds-65-of-100  |  ETA: 2025-10-15T11:15:05 (in 29m9s)  |  seeds 65/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util100_timeout20/eta_20251015-111622_seeds-55-of-100  |  ETA: 2025-10-15T11:16:22 (in 30m26s)  |  seeds 55/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util095_timeout20/eta_20251015-111712_seeds-66-of-100  |  ETA: 2025-10-15T11:17:12 (in 31m16s)  |  seeds 66/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util100_timeout10/eta_20251015-111730_seeds-57-of-100  |  ETA: 2025-10-15T11:17:30 (in 31m34s)  |  seeds 57/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util105_timeout10/eta_20251015-111815_seeds-59-of-100  |  ETA: 2025-10-15T11:18:15 (in 32m19s)  |  seeds 59/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util105_timeout01/eta_20251015-111841_seeds-61-of-100  |  ETA: 2025-10-15T11:18:41 (in 32m45s)  |  seeds 61/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util105_timeout10/eta_20251015-111846_seeds-53-of-100  |  ETA: 2025-10-15T11:18:46 (in 32m50s)  |  seeds 53/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util105_timeout10/eta_20251015-112219_seeds-53-of-100  |  ETA: 2025-10-15T11:22:19 (in 36m23s)  |  seeds 53/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio4_util105_timeout20/eta_20251015-112335_seeds-49-of-100  |  ETA: 2025-10-15T11:23:35 (in 37m39s)  |  seeds 49/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util095_timeout20/eta_20251015-112503_seeds-55-of-100  |  ETA: 2025-10-15T11:25:03 (in 39m7s)  |  seeds 55/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util100_timeout10/eta_20251015-112551_seeds-58-of-100  |  ETA: 2025-10-15T11:25:51 (in 39m55s)  |  seeds 58/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util100_timeout10/eta_20251015-112659_seeds-56-of-100  |  ETA: 2025-10-15T11:26:59 (in 41m3s)  |  seeds 56/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util095_timeout20/eta_20251015-112740_seeds-50-of-100  |  ETA: 2025-10-15T11:27:40 (in 41m44s)  |  seeds 50/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util100_timeout10/eta_20251015-112904_seeds-57-of-100  |  ETA: 2025-10-15T11:29:04 (in 43m8s)  |  seeds 57/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util100_timeout20/eta_20251015-113101_seeds-50-of-100  |  ETA: 2025-10-15T11:31:01 (in 45m5s)  |  seeds 50/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util100_timeout20/eta_20251015-113220_seeds-47-of-100  |  ETA: 2025-10-15T11:32:20 (in 46m24s)  |  seeds 47/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util090_timeout01/eta_20251015-113310_seeds-37-of-100  |  ETA: 2025-10-15T11:33:10 (in 47m14s)  |  seeds 37/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util105_timeout10/eta_20251015-113325_seeds-53-of-100  |  ETA: 2025-10-15T11:33:25 (in 47m29s)  |  seeds 53/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util105_timeout10/eta_20251015-113455_seeds-51-of-100  |  ETA: 2025-10-15T11:34:55 (in 48m59s)  |  seeds 51/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util105_timeout10/eta_20251015-113545_seeds-54-of-100  |  ETA: 2025-10-15T11:35:45 (in 49m49s)  |  seeds 54/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util090_timeout01/eta_20251015-113556_seeds-34-of-100  |  ETA: 2025-10-15T11:35:56 (in 50m)  |  seeds 34/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio1_util105_timeout20/eta_20251015-113641_seeds-46-of-100  |  ETA: 2025-10-15T11:36:41 (in 50m45s)  |  seeds 46/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods64_prio2_util105_timeout20/eta_20251015-113649_seeds-44-of-100  |  ETA: 2025-10-15T11:36:49 (in 50m53s)  |  seeds 44/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util090_timeout01/eta_20251015-113728_seeds-31-of-100  |  ETA: 2025-10-15T11:37:28 (in 51m32s)  |  seeds 31/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util095_timeout01/eta_20251015-114045_seeds-33-of-100  |  ETA: 2025-10-15T11:40:45 (in 54m49s)  |  seeds 33/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util100_timeout20/eta_20251015-114050_seeds-50-of-100  |  ETA: 2025-10-15T11:40:50 (in 54m54s)  |  seeds 50/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util100_timeout20/eta_20251015-114143_seeds-48-of-100  |  ETA: 2025-10-15T11:41:43 (in 55m47s)  |  seeds 48/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util095_timeout01/eta_20251015-114153_seeds-31-of-100  |  ETA: 2025-10-15T11:41:53 (in 55m57s)  |  seeds 31/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util095_timeout01/eta_20251015-114413_seeds-28-of-100  |  ETA: 2025-10-15T11:44:13 (in 58m17s)  |  seeds 28/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util100_timeout01/eta_20251015-114458_seeds-31-of-100  |  ETA: 2025-10-15T11:44:58 (in 59m2s)  |  seeds 31/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util100_timeout20/eta_20251015-114534_seeds-49-of-100  |  ETA: 2025-10-15T11:45:34 (in 59m38s)  |  seeds 49/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util090_timeout10/eta_20251015-114902_seeds-30-of-100  |  ETA: 2025-10-15T11:49:02 (in 1h3m6s)  |  seeds 30/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util100_timeout01/eta_20251015-114906_seeds-28-of-100  |  ETA: 2025-10-15T11:49:06 (in 1h3m10s)  |  seeds 28/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio2_util105_timeout20/eta_20251015-114939_seeds-46-of-100  |  ETA: 2025-10-15T11:49:39 (in 1h3m43s)  |  seeds 46/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util090_timeout10/eta_20251015-115001_seeds-28-of-100  |  ETA: 2025-10-15T11:50:01 (in 1h4m5s)  |  seeds 28/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio4_util105_timeout20/eta_20251015-115007_seeds-44-of-100  |  ETA: 2025-10-15T11:50:07 (in 1h4m11s)  |  seeds 44/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util100_timeout01/eta_20251015-115023_seeds-26-of-100  |  ETA: 2025-10-15T11:50:23 (in 1h4m27s)  |  seeds 26/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes16_pods128_prio1_util105_timeout20/eta_20251015-115126_seeds-46-of-100  |  ETA: 2025-10-15T11:51:26 (in 1h5m30s)  |  seeds 46/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util090_timeout10/eta_20251015-115142_seeds-26-of-100  |  ETA: 2025-10-15T11:51:42 (in 1h5m46s)  |  seeds 26/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util090_timeout20/eta_20251015-115348_seeds-25-of-100  |  ETA: 2025-10-15T11:53:48 (in 1h7m52s)  |  seeds 25/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util105_timeout01/eta_20251015-115401_seeds-28-of-100  |  ETA: 2025-10-15T11:54:01 (in 1h8m5s)  |  seeds 28/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util105_timeout01/eta_20251015-115533_seeds-26-of-100  |  ETA: 2025-10-15T11:55:33 (in 1h9m37s)  |  seeds 26/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util090_timeout20/eta_20251015-115742_seeds-26-of-100  |  ETA: 2025-10-15T11:57:42 (in 1h11m46s)  |  seeds 26/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util105_timeout01/eta_20251015-115908_seeds-23-of-100  |  ETA: 2025-10-15T11:59:08 (in 1h13m12s)  |  seeds 23/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util095_timeout10/eta_20251015-115925_seeds-25-of-100  |  ETA: 2025-10-15T11:59:25 (in 1h13m29s)  |  seeds 25/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util095_timeout10/eta_20251015-120134_seeds-23-of-100  |  ETA: 2025-10-15T12:01:34 (in 1h15m38s)  |  seeds 23/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util095_timeout10/eta_20251015-120315_seeds-26-of-100  |  ETA: 2025-10-15T12:03:15 (in 1h17m19s)  |  seeds 26/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util090_timeout20/eta_20251015-120344_seeds-26-of-100  |  ETA: 2025-10-15T12:03:44 (in 1h17m48s)  |  seeds 26/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util100_timeout10/eta_20251015-120751_seeds-21-of-100  |  ETA: 2025-10-15T12:07:51 (in 1h21m55s)  |  seeds 21/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util100_timeout10/eta_20251015-120825_seeds-23-of-100  |  ETA: 2025-10-15T12:08:25 (in 1h22m29s)  |  seeds 23/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util105_timeout20/eta_20251015-141957_seeds-8-of-100  |  ETA: 2025-10-15T14:19:57 (in 3h34m1s)  |  seeds 8/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util105_timeout20/eta_20251015-132231_seeds-9-of-100  |  ETA: 2025-10-15T13:22:31 (in 2h36m35s)  |  seeds 9/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util100_timeout20/eta_20251015-132233_seeds-11-of-100  |  ETA: 2025-10-15T13:22:33 (in 2h36m37s)  |  seeds 11/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util100_timeout20/eta_20251015-131854_seeds-10-of-100  |  ETA: 2025-10-15T13:18:54 (in 2h32m58s)  |  seeds 10/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util105_timeout10/eta_20251015-132006_seeds-11-of-100  |  ETA: 2025-10-15T13:20:06 (in 2h34m10s)  |  seeds 11/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util105_timeout20/eta_20251015-132059_seeds-9-of-100  |  ETA: 2025-10-15T13:20:59 (in 2h35m3s)  |  seeds 9/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util100_timeout20/eta_20251015-131139_seeds-10-of-100  |  ETA: 2025-10-15T13:11:39 (in 2h25m43s)  |  seeds 10/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util095_timeout20/eta_20251015-125302_seeds-13-of-100  |  ETA: 2025-10-15T12:53:02 (in 2h7m6s)  |  seeds 13/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util095_timeout20/eta_20251015-125319_seeds-14-of-100  |  ETA: 2025-10-15T12:53:19 (in 2h7m23s)  |  seeds 14/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util095_timeout20/eta_20251015-125423_seeds-11-of-100  |  ETA: 2025-10-15T12:54:23 (in 2h8m27s)  |  seeds 11/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util105_timeout10/eta_20251015-125438_seeds-11-of-100  |  ETA: 2025-10-15T12:54:38 (in 2h8m42s)  |  seeds 11/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util105_timeout10/eta_20251015-125839_seeds-12-of-100  |  ETA: 2025-10-15T12:58:39 (in 2h12m43s)  |  seeds 12/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util095_timeout01/eta_20251015-121947_seeds-18-of-100  |  ETA: 2025-10-15T12:19:47 (in 1h33m51s)  |  seeds 18/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util105_timeout10/eta_20251015-122021_seeds-21-of-100  |  ETA: 2025-10-15T12:20:21 (in 1h34m25s)  |  seeds 21/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util095_timeout01/eta_20251015-122056_seeds-17-of-100  |  ETA: 2025-10-15T12:20:56 (in 1h35m)  |  seeds 17/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util095_timeout01/eta_20251015-122449_seeds-14-of-100  |  ETA: 2025-10-15T12:24:49 (in 1h38m53s)  |  seeds 14/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util100_timeout20/eta_20251015-122453_seeds-20-of-100  |  ETA: 2025-10-15T12:24:53 (in 1h38m57s)  |  seeds 20/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util100_timeout20/eta_20251015-122514_seeds-18-of-100  |  ETA: 2025-10-15T12:25:14 (in 1h39m18s)  |  seeds 18/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util100_timeout20/eta_20251015-122824_seeds-20-of-100  |  ETA: 2025-10-15T12:28:24 (in 1h42m28s)  |  seeds 20/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util105_timeout20/eta_20251015-123145_seeds-18-of-100  |  ETA: 2025-10-15T12:31:45 (in 1h45m49s)  |  seeds 18/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util105_timeout20/eta_20251015-123202_seeds-17-of-100  |  ETA: 2025-10-15T12:32:02 (in 1h46m6s)  |  seeds 17/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util095_timeout10/eta_20251015-123241_seeds-15-of-100  |  ETA: 2025-10-15T12:32:41 (in 1h46m45s)  |  seeds 15/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util100_timeout01/eta_20251015-123356_seeds-16-of-100  |  ETA: 2025-10-15T12:33:56 (in 1h48m)  |  seeds 16/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util100_timeout01/eta_20251015-123405_seeds-14-of-100  |  ETA: 2025-10-15T12:34:05 (in 1h48m9s)  |  seeds 14/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util095_timeout10/eta_20251015-123433_seeds-13-of-100  |  ETA: 2025-10-15T12:34:33 (in 1h48m37s)  |  seeds 13/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util105_timeout20/eta_20251015-123551_seeds-19-of-100  |  ETA: 2025-10-15T12:35:51 (in 1h49m55s)  |  seeds 19/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util100_timeout01/eta_20251015-123626_seeds-13-of-100  |  ETA: 2025-10-15T12:36:26 (in 1h50m30s)  |  seeds 13/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util095_timeout10/eta_20251015-123711_seeds-15-of-100  |  ETA: 2025-10-15T12:37:11 (in 1h51m15s)  |  seeds 15/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util105_timeout01/eta_20251015-124250_seeds-14-of-100  |  ETA: 2025-10-15T12:42:50 (in 1h56m54s)  |  seeds 14/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util100_timeout10/eta_20251015-124515_seeds-12-of-100  |  ETA: 2025-10-15T12:45:15 (in 1h59m19s)  |  seeds 12/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util105_timeout01/eta_20251015-124528_seeds-13-of-100  |  ETA: 2025-10-15T12:45:28 (in 1h59m32s)  |  seeds 13/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio4_util105_timeout01/eta_20251015-124802_seeds-11-of-100  |  ETA: 2025-10-15T12:48:02 (in 2h2m6s)  |  seeds 11/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio2_util100_timeout10/eta_20251015-124805_seeds-13-of-100  |  ETA: 2025-10-15T12:48:05 (in 2h2m9s)  |  seeds 13/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods256_prio1_util100_timeout10/eta_20251015-124947_seeds-14-of-100  |  ETA: 2025-10-15T12:49:47 (in 2h3m51s)  |  seeds 14/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util100_timeout10/eta_20251015-121314_seeds-23-of-100  |  ETA: 2025-10-15T12:13:14 (in 1h27m18s)  |  seeds 23/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util095_timeout20/eta_20251015-121503_seeds-20-of-100  |  ETA: 2025-10-15T12:15:03 (in 1h29m7s)  |  seeds 20/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio1_util095_timeout20/eta_20251015-121541_seeds-23-of-100  |  ETA: 2025-10-15T12:15:41 (in 1h29m45s)  |  seeds 23/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio4_util105_timeout10/eta_20251015-121621_seeds-19-of-100  |  ETA: 2025-10-15T12:16:21 (in 1h30m25s)  |  seeds 19/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util105_timeout10/eta_20251015-121623_seeds-21-of-100  |  ETA: 2025-10-15T12:16:23 (in 1h30m27s)  |  seeds 21/100
-/work/Home/2025-10-14-02/content/results/all_synch_python/nodes32_pods128_prio2_util095_timeout20/eta_20251015-121634_seeds-21-of-100  |  ETA: 2025-10-15T12:16:34 (in 1h30m38s)  |  seeds 21/100
-
-
-
-default-deterministic - in progress:
-2025-10-14-default-det-nodes8_pods64_prio1_util090 is now running (ID: 5315297)
-2025-10-14-default-det-nodes8_pods64_prio2_util090 is now running (ID: 5315295)
-2025-10-14-default-det-nodes8_pods64_prio4_util090 is now running (ID: 5315294)
-2025-10-14-default-det-nodes16_pods128_prio1_util090 is now running (ID: 5315292)
-2025-10-14-default-det-nodes16_pods128_prio2_util090 is now running (ID: 5315291)
-2025-10-14-default-det-nodes16_pods128_prio4_util090 is now running (ID: 5315290)
-2025-10-14-default-det-nodes32_pods256_prio4_util090 is now running (ID: 5315287)
-2025-10-14-default-det-nodes32_pods256_prio2_util090 is now running (ID: 5315286)
-2025-10-14-default-det-nodes32_pods256_prio1_util090 is now running (ID: 5315284)
+failed to generate 100 seeds
+- default-deterministic/nodes16_pods128_prio1_util090 — Count 14 != 100
+- default-deterministic/nodes16_pods128_prio2_util090 — Count 23 != 100
+- default-deterministic/nodes16_pods128_prio4_util090 — Count 18 != 100
