@@ -1,4 +1,4 @@
-in progress:
+in progress - 2025-10-14-02:
 
     default-deterministic/nodes32_pods256_prio1_util090  (ID: 5315284)
     default-deterministic/nodes32_pods256_prio2_util090  (ID: 5315286)
@@ -24,41 +24,41 @@ waiting on deterministic-results:
 
 
 
-ready to be started:
+in progress - 2025-10-15-01:
 
-    default/nodes4_pods32_prio4_util090 
+    default/nodes4_pods32_prio4_util090 (ID: 5315892)
 
-    all_synch_python/nodes4_pods32_prio4_util090_timeout01 
-    all_synch_python/nodes4_pods32_prio4_util090_timeout10 
-    all_synch_python/nodes4_pods32_prio4_util090_timeout20 
-
-    default/nodes8_pods64_prio1_util090 
-    default/nodes8_pods64_prio2_util090  
-    default/nodes8_pods64_prio4_util090 
+    default/nodes8_pods64_prio1_util090 (ID: 5315893)
+    default/nodes8_pods64_prio2_util090  (ID: 5315894)
+    default/nodes8_pods64_prio4_util090 (ID: 5315895)
 
     default/nodes16_pods128_prio1_util090  
     default/nodes16_pods128_prio2_util090 
-    default/nodes16_pods128_prio4_util090
+    default/nodes16_pods128_prio4_util090 (ID: 5315898)
 
-    all_synch_python/nodes8_pods64_prio1_util090_timeout01 
-    all_synch_python/nodes8_pods64_prio1_util090_timeout10  
-    all_synch_python/nodes8_pods64_prio1_util090_timeout20 
+    all_synch_python/nodes8_pods64_prio1_util090_timeout01 (ID: 5315899)
+    all_synch_python/nodes8_pods64_prio1_util090_timeout10  (ID: 5315900)
+    all_synch_python/nodes8_pods64_prio1_util090_timeout20 (ID: 5315901)
 
-    all_synch_python/nodes8_pods64_prio2_util090_timeout01 
-    all_synch_python/nodes8_pods64_prio2_util090_timeout10 
-    all_synch_python/nodes8_pods64_prio2_util090_timeout20 
+    all_synch_python/nodes8_pods64_prio2_util090_timeout01 (ID: 5315902)
+    all_synch_python/nodes8_pods64_prio2_util090_timeout10 (ID: 5315903)
+    all_synch_python/nodes8_pods64_prio2_util090_timeout20 (ID: 5315904)
 
     all_synch_python/nodes8_pods64_prio4_util090_timeout01 
-    all_synch_python/nodes8_pods64_prio4_util090_timeout10 
-    all_synch_python/nodes8_pods64_prio4_util090_timeout20 
+    all_synch_python/nodes8_pods64_prio4_util090_timeout10 (ID: 5315906)
+    all_synch_python/nodes8_pods64_prio4_util090_timeout20 (ID: 5315907)
 
     all_synch_python/nodes4_pods32_prio2_util090_timeout01 
-    all_synch_python/nodes4_pods32_prio2_util090_timeout10 
-    all_synch_python/nodes4_pods32_prio2_util090_timeout20 
+    all_synch_python/nodes4_pods32_prio2_util090_timeout10 (ID: 5315909)
+    all_synch_python/nodes4_pods32_prio2_util090_timeout20 (ID: 5315910)
+
+    all_synch_python/nodes4_pods32_prio4_util090_timeout01 
+    all_synch_python/nodes4_pods32_prio4_util090_timeout10 
+    all_synch_python/nodes4_pods32_prio4_util090_timeout20 (ID: 5315913)
 
     all_synch_python/nodes4_pods32_prio2_util095_timeout01 
     all_synch_python/nodes4_pods32_prio2_util095_timeout10 
-    all_synch_python/nodes4_pods32_prio2_util095_timeout20 
+    all_synch_python/nodes4_pods32_prio2_util095_timeout20 (ID: 5315916)
 
     all_synch_python/nodes4_pods32_prio2_util100_timeout01 
     all_synch_python/nodes4_pods32_prio2_util100_timeout10 
