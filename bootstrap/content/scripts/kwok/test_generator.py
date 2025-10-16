@@ -1860,7 +1860,9 @@ class KwokTestGenerator:
             resp = json.loads(out) if out else {}
         except Exception:
             resp = {"status": "PY_SOLVER_STDOUT_PARSE_ERROR", "raw": out}
-
+        status = resp.get("status", "UNKNOWN")
+        if status == "PYTHON_EXCEPTION":
+            LOG.error("solver raised: %s", resp.get("error", "<no error message>"))
         _write_json(self.args.solver_output_export, resp)
         LOG.info("direct-solver: status=%s placements=%d duration_ms=%d",
                 resp.get("status"), len(resp.get("placements", []) or []), elapsed_ms)
