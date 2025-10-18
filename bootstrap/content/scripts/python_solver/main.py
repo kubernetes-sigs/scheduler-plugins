@@ -32,21 +32,6 @@ class CPSATSolver:
             return st
         return STATUS_MAP.get(st, "UNKNOWN")
 
-    @staticmethod
-    def _relative_gap(sense: str, obj: float, bound: float) -> float:
-        """
-        Compute the relative gap between the objective and the bound.
-        For max: gap = (bound - obj) / max(1, |obj|)
-        For min: gap = (obj   - bound) / max(1, |obj|)
-        """
-        if obj is None or bound is None:
-            return None
-        denom = max(1.0, abs(obj))
-        if sense == "max":
-            return max(0.0, (bound - obj) / denom)
-        else:
-            return max(0.0, (obj - bound) / denom)
-
     def solve(self, instance: dict) -> dict:
         """
         Solve the given instance and return the plan.
@@ -86,7 +71,7 @@ class CPSATSolver:
         #################################################
         # --- Constants ---------------------------------
         #################################################
-        SAFETY_PADDING_SEC  = 0.05 # amount of seconds to keep as safety padding to avoid overshooting the timeout
+        SAFETY_PADDING_SEC  = 0.05 # seconds for safety padding to avoid overshooting timeout
 
         #################################################
         # --- Options/Parameters ------------------------
@@ -239,6 +224,7 @@ class CPSATSolver:
         # --- Common Constraints ------------------------
         #################################################
         ### Node constraints - capacity per node
+        # Ensure that total assigned resources do not exceed node capacities
         eligible_pos = [{j: pos for pos, j in enumerate(eligible_nodes[i])}
                 for i in range(num_pods)]
         for j in range(num_nodes):
@@ -259,13 +245,13 @@ class CPSATSolver:
             else:
                 model.Add(placed[i] == 0)
 
-        ### Move constraints - only for running pods
+        ### Move constraints - only for running protected pods
         for i in running_idxs:
-            orig = p_node_j(i)
-            pos  = eligible_pos[i].get(orig)
             # "stay or move" coupling is implicit with <=1 assignment.
             # If protected & running: force stay if possible
             if p_protected(i):
+                orig = p_node_j(i)
+                pos  = eligible_pos[i].get(orig)
                 if pos is not None:
                     model.Add(assign[i][pos] == 1)   # must stay
                 else:
@@ -295,7 +281,7 @@ class CPSATSolver:
         def _is_placeable(i: int) -> bool:
             return len(eligible_nodes[i]) > 0
 
-        # Non-degradation
+        # Non-degradation of placement per priority tier
         for pr in priorities:
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
             if not idxs_ge: 
@@ -336,6 +322,13 @@ class CPSATSolver:
         #########################
         # Solver helpers
         #########################
+        def _remaining_wall() -> float:
+            """
+            Remaining wall time in seconds, with safety padding.
+            """
+            # wall guard with safety pad
+            return max(0.0, deadline - time.monotonic() - SAFETY_PADDING_SEC)
+        
         def _move_term(i):
             """
             Expression for whether pod i is moved (1) or not (0).
@@ -343,9 +336,23 @@ class CPSATSolver:
             pos = eligible_pos[i].get(p_node_j(i))
             return placed[i] if pos is None else placed[i] - assign[i][pos]
 
+        def _relative_gap(sense: str, obj: float, bound: float) -> float:
+            """
+            Compute the relative gap between the objective and the bound.
+            For max: gap = (bound - obj) / max(1, |obj|)
+            For min: gap = (obj   - bound) / max(1, |obj|)
+            """
+            if obj is None or bound is None:
+                return None
+            denom = max(1.0, abs(obj))
+            if sense == "max":
+                return max(0.0, (bound - obj) / denom)
+            else:
+                return max(0.0, (obj - bound) / denom)
+
         def _apply_solution_as_hint():
             """
-            Apply current solution as hints for next stage.
+            Apply current solution (how pods are placed) as hints for next stage.
             1) Clear previous hints
             2) Push only the assign[] decisions
             """
@@ -353,28 +360,6 @@ class CPSATSolver:
             for i in range(num_pods):
                 for local, _ in enumerate(eligible_nodes[i]):
                     model.AddHint(assign[i][local], int(solver.Value(assign[i][local])))
-
-        def _remaining_wall() -> float:
-            """
-            Remaining wall time in seconds, with safety padding.
-            """
-            # wall guard with safety pad
-            return max(0.0, deadline - time.monotonic() - SAFETY_PADDING_SEC)
-
-        def _chosen_node(i) -> int | None:
-            """
-            Return the chosen node index for pod i, or None if not placed.
-            """
-            for local, j in enumerate(eligible_nodes[i]):
-                if int(solver.Value(assign[i][local])) == 1:
-                    return j
-            return None
-
-        def _placed_now(i) -> bool:
-            """
-            Return whether pod i is currently placed.
-            """
-            return bool(int(solver.Value(placed[i])) == 1)
 
         def run_stage(obj_expr, sense: str, cap_sec: float) -> dict:
             """
@@ -406,11 +391,11 @@ class CPSATSolver:
             result["status"] = st
             result["time_spent"] = time_spent
 
-            # Pull objective/ bound when the model had an objective.
+            # Get objective value and bound when the model had an objective
             try:
                 obj = solver.ObjectiveValue()
                 bnd = solver.BestObjectiveBound()
-                result["relative_gap"] = self._relative_gap(sense, obj, bnd)
+                result["relative_gap"] = _relative_gap(sense, obj, bnd)
             except Exception:
                 pass
 
@@ -438,38 +423,47 @@ class CPSATSolver:
         st = cp_model.UNKNOWN
         stages: list[dict] = []
         for pr in effective_tiers:
+            # --- PLACEMENT stage ----------
+            # Objective: maximize the number of placed pods among priorities ≥ pr.
+            # After solving, we *pin the aggregate placement* for ≥ pr with:
+            #     model.Add(placed_expr == best)      if OPTIMAL
+            #     model.Add(placed_expr >= best)      if only FEASIBLE
+            # This enforces *non-regression* of the total placed count for ≥ pr in all
+            # subsequent (lower) tiers. Later tiers may reshuffle *which* ≥ pr pods are
+            # placed (subject to capacity/protection), but they cannot reduce the pinned
+            # total. This stage uses the tier’s placement time budget (place_cap), and we
+            # then apply the current solution as hints to warm-start the next stage.
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
+            
+            # Time budget calculation
             if not idxs_ge:
                 tiers_remaining = max(0, tiers_remaining - 1)
                 continue
             rem_wall = _remaining_wall()
             if rem_wall <= 0.0:
                 break
-            # Minimum guaranteed for this tier = equal share of what's left in the guaranteed pool
-            tier_min = floor_left / max(1, tiers_remaining)
-            # This tier can use: its guaranteed minimum + the whole unreserved pool
-            tier_cap = min(rem_wall, tier_min + unreserved_pool)
+            tier_min = floor_left / max(1, tiers_remaining) # minimum guaranteed for this tier = equal share of what's left in the guaranteed pool
+            tier_cap = min(rem_wall, tier_min + unreserved_pool) # this tier can use: its guaranteed minimum + the whole unreserved pool
             if tier_cap <= 1e-3:
                 tiers_remaining = max(0, tiers_remaining - 1)
                 continue
-            # Split tier budget into place/moves by MOVES_SHARE
-            place_cap = tier_cap * (1.0 - move_fraction_of_tier)
-            
-            # --- PLACEMENT stage ----------
-            placed_expr = sum(placed[i] for i in idxs_ge)
-            reserve_place = run_stage(placed_expr, "max", place_cap)
-            st = reserve_place["status"]
-            time_spent_place = reserve_place["time_spent"]
+            place_cap = tier_cap * (1.0 - move_fraction_of_tier) # split tier budget into place/moves by MOVES_SHARE
+            # Placement
+            placed_expr = sum(placed[i] for i in idxs_ge) # sum of placed pods
+            place_result = run_stage(placed_expr, "max", place_cap)
+            st = place_result["status"]
+            time_spent_place = place_result["time_spent"]
             stages.append({
                 "tier": pr,
                 "stage": "place",
                 "status": self._status_str(st),
                 "duration_ms": round(time_spent_place * 1000),
-                "relative_gap": f"{reserve_place['relative_gap']:.4f}",
+                "relative_gap": f"{place_result['relative_gap']:.4f}",
             })
             if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 break
             best_placed = solver.Value(placed_expr)
+            # If not optimal, allow feasible or better solutions in later tiers to increase placement
             model.Add(placed_expr == best_placed if st == cp_model.OPTIMAL else placed_expr >= best_placed)
             _apply_solution_as_hint()
 
@@ -479,29 +473,34 @@ class CPSATSolver:
             floor_left      = max(0.0, floor_left - (time_spent_place - use_unreserve))
 
             # --- MOVES stage ----------
-            # Let moves use whatever remains of this tier's cap (including any unused "placement" share)
+            # Objective: minimize the number of moved running pods among priorities >= pr.
+            # After solving, we pin the aggregate move count for >= pr with:
+            #     model.Add(moves_expr == best)
+            # This preserves the total number of moves for >= pr in all subsequent (lower) tiers.
+            # Later tiers may reshuffle which >= pr pods move (swap who moves vs stays),
+            # but they cannot change the pinned total; placement guarantees and protections still apply.
+            # The stage consumes whatever remains of this tier's time budget (including unused placement time).
             rem_tier = max(0.0, tier_cap - time_spent_place)
             if _remaining_wall() > 1e-3 and rem_tier > 1e-3:
-                def _move_term(i):
-                    pos = eligible_pos[i].get(p_node_j(i))
-                    return placed[i] if pos is None else placed[i] - assign[i][pos]
                 running_ge = [i for i in running_idxs if p_priority(i) >= pr]
-                moves_expr = sum(_move_term(i) for i in running_ge) if running_ge else 0
+                moves_expr = sum(_move_term(i) for i in running_ge) if running_ge else 0 # sum of moved running pods
                 
                 # cap moves by both remaining wall and remaining tier budget
-                reserve_moves = run_stage(moves_expr, "min", min(rem_tier, _remaining_wall()))
-                st = reserve_moves["status"]
-                time_spent_moves = reserve_moves["time_spent"]
+                moves_result = run_stage(moves_expr, "min", min(rem_tier, _remaining_wall()))
+                st = moves_result["status"]
+                time_spent_moves = moves_result["time_spent"]
                 stages.append({
                     "tier": pr,
                     "stage": "moves",
                     "status": self._status_str(st),
                     "duration_ms": round(time_spent_moves * 1000),
-                    "relative_gap": f"{reserve_moves['relative_gap']:.4f}",
+                    "relative_gap": f"{moves_result['relative_gap']:.4f}",
                 })
                 if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                     break
-                model.Add(moves_expr == solver.Value(moves_expr))
+                best_moves = solver.Value(moves_expr)
+                # if not optimal, allow feasible or better solutions in later tiers to reduce moves
+                model.Add(moves_expr == best_moves if st == cp_model.OPTIMAL else moves_expr <= best_moves)
                 _apply_solution_as_hint()
 
                 # pools deduction for moves
@@ -515,6 +514,21 @@ class CPSATSolver:
         #########################
         # Extract and return plan
         #########################
+        def _chosen_node(i) -> int | None:
+            """
+            Return the chosen node index for pod i, or None if not placed.
+            """
+            for local, j in enumerate(eligible_nodes[i]):
+                if int(solver.Value(assign[i][local])) == 1:
+                    return j
+            return None
+
+        def _placed_now(i) -> bool:
+            """
+            Return whether pod i is currently placed.
+            """
+            return bool(int(solver.Value(placed[i])) == 1)
+        
         placements, evictions = [], []
         for i in range(num_pods):
             was_running = (p_node_j(i) is not None)
