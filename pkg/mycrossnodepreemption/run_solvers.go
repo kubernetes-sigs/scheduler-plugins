@@ -137,8 +137,17 @@ func (pl *MyCrossNodePreemption) runSolvers(
 			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
 				DurationMs: durMs,
-				Status:     "failed-no-output",
+				Status:     "FAILED",
 			})
+			// return the attempt as bestAttempt if no other attempts succeeded?
+			if bestAttempt == nil {
+				tmp := &SolverResult{
+					Name:       att.Name,
+					DurationMs: durMs,
+					Status:     "FAILED",
+				}
+				bestAttempt = tmp
+			}
 			continue
 		} else if !hasSolverFeasibleResult(out.Status) { // no feasible or optimal solution
 			klog.InfoS(msg(strategy, InfoNoFeasibleOrOptimalSolution), "solver", att.Name, "status", out.Status, "durationMs", durMs)
@@ -149,6 +158,16 @@ func (pl *MyCrossNodePreemption) runSolvers(
 				Score:      computeSolverScore(inAttempt, out),
 				Stages:     out.Stages,
 			})
+			// return the attempt as bestAttempt if no other attempts succeeded?
+			if bestAttempt == nil {
+				bestAttempt = &SolverResult{
+					Name:       att.Name,
+					DurationMs: durMs,
+					Status:     out.Status,
+					Score:      computeSolverScore(inAttempt, out),
+					Stages:     out.Stages,
+				}
+			}
 			continue
 		}
 
