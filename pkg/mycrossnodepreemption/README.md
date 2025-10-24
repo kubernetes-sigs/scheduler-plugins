@@ -250,8 +250,10 @@ To run tests on UCloud:
 
 ## TODOs
 
+- Make a runner script to run the scheduler more realistically for testing the modalities better. We could use a lambda value (Gaussian distribution) to determine how often new pods arrive. Also, we could have a certain percentage of pods that are long-running and some that are short-lived.
+- Make the state-of-the-art section in the report for next meeting.
+- Write to Jacopo if I have any interesting Related work for the paper.
 - Use pluginConfig with args instead of hardcoding values. See [scheduler-config.yaml](https://github.com/AlleNeri/scheduler-plugins/blob/dev-optimizedpreemption/manifests/optimizedpreemption/scheduler-config.yaml)
-- Update paper with results and remove Z3 descriptions
 - Jacopo: Fine to just talk about the missing configuration options possible within k8s.
 - Jacopo: Dont add gang scheduling.
 - Jacopo: Introduction and Background sections are fine -- missing contribution section in Introduction.
