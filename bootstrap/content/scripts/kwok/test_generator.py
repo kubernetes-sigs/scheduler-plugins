@@ -40,7 +40,8 @@ RESULTS_HEADER = [
     "unschedulable_by_prio_now", "unschedulable_by_prio_before",
     "unscheduled_pods_now", "unscheduled_pods_before",
     "running_pods_now", "running_pods_before",
-    "pod_node_now", "pod_node_before",
+    "pod_info_now", "pod_info_before",
+    "node_info",
 ]
 
 LOGGER_NAME = "test-generator"
@@ -1388,7 +1389,16 @@ class KwokTestGenerator:
             LOG.warning("failed saving scheduler logs: %s", e)
 
     @staticmethod
-    def _build_pod_node_list(
+    def _build_node_info(names: list[str], cap_cpu_m: int, cap_mem_b: int) -> str:
+        """
+        Return JSON string array with objects:
+        [{"name": "...","cap_cpu_m": <int>, "cap_mem_bytes": <int>}, ...]
+        """
+        data = [{"name": n, "cap_cpu_m": int(cap_cpu_m), "cap_mem_bytes": int(cap_mem_b)} for n in names]
+        return json.dumps(data, separators=(",", ":"), sort_keys=False)
+
+    @staticmethod
+    def _build_pod_list(
         running_by_name: Dict[str, str],
         unschedulable_names: List[str],
         standalone_specs: List[Dict[str, object]] | None,
@@ -2200,6 +2210,7 @@ class KwokTestGenerator:
             f"{p}:{running_by_prio.get(p,0)}"
             for p in sorted(set(uid_to_priority.values()), reverse=True)
         )
+
         status = resp.get("status", "UNKNOWN")
         elapsed_ms = int(meta.get("elapsed_ms", 0))
         LOG.info(
@@ -2307,6 +2318,16 @@ class KwokTestGenerator:
         running_count_before = len(snap_before.pods_running)
         unsched_count_before = len(snap_before.pods_unscheduled)
         
+        # validate counts
+        if running_count_before + unsched_count_before != ta.num_pods:
+            phase = "snapshot_validation_before"
+            self._record_failure("seed", seed, phase,
+                            f"pod count mismatch: expected {ta.num_pods}, got {running_count_before}+{unsched_count_before}={running_count_before+unsched_count_before}")
+            LOG.warning("treating seed as failure: pod count mismatch: expected %d, got %d+%d=%d",
+                        ta.num_pods, running_count_before, unsched_count_before, running_count_before+unsched_count_before)
+            self._log_seed_summary(seed, note=f"pod count mismatch: expected total={ta.num_pods}, got running={running_count_before} unscheduled={unsched_count_before}; running+unscheduled={running_count_before+unsched_count_before}")
+            return False
+        
         # (optionally) trigger the solver
         if self.args.solver_trigger and not self.args.default_scheduler:
             phase = "solver_trigger"
@@ -2343,7 +2364,7 @@ class KwokTestGenerator:
         
         # validate counts
         if running_count_now + unsched_count_now != ta.num_pods:
-            phase = "snapshot_validation"
+            phase = "snapshot_validation_after"
             self._record_failure("seed", seed, phase,
                             f"pod count mismatch: expected {ta.num_pods}, got {running_count_now}+{unsched_count_now}={running_count_now+unsched_count_now}")
             LOG.warning("treating seed as failure: pod count mismatch: expected %d, got %d+%d=%d",
@@ -2407,14 +2428,20 @@ class KwokTestGenerator:
             "running_pods_now": "{" + ",".join(sorted([name for (name, _) in snap_now.pods_running])) + "}",
             "running_pods_before": "{" + ",".join(sorted([name for (name, _) in snap_before.pods_running])) + "}",
             
-            "pod_node_now": json.dumps(self._build_pod_node_list(
+            "pod_info_now": json.dumps(self._build_pod_list(
                 {name: node for (name, node) in snap_now.pods_running},
                 snap_now.pods_unscheduled, pod_specs, rs_specs
             ), separators=(",", ":")),
-            "pod_node_before": json.dumps(self._build_pod_node_list(
+            "pod_info_before": json.dumps(self._build_pod_list(
                 {name: node for (name, node) in snap_before.pods_running},
                 snap_before.pods_unscheduled, pod_specs, rs_specs
             ), separators=(",", ":")),
+            
+            "node_info": self._build_node_info(
+                [f"kwok-node-{i}" for i in range(1, ta.num_nodes + 1)],
+                ta.node_cpu_m,
+                ta.node_mem_b,
+            ),
         }
 
         phase = "write_results"
