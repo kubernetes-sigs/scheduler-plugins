@@ -46,7 +46,6 @@ class CPSATSolver:
             - guaranteed_tier_fraction: float in [0.0, 1.0], fraction of time guaranteed for all tiers (default 0.4)
             - move_fraction_of_tier: float in [0.0, 1.0], fraction of tier time for moves (default 0.3)
             - gap_limit: float in [0.0, 1.0], relative gap limit (default 0.00)
-            - use_strictly_improving: bool, whether to enforce strictly improving solutions (default False)
         Returns a dict with keys:
             - placements: list of placements (dicts with pod {uid, namespace, name}, from_node, to_node)
             - evictions: list of evictions (dicts with pod {uid, namespace, name}, node)
@@ -56,7 +55,7 @@ class CPSATSolver:
         """
         
         # Record start time
-        _started_at = time.monotonic()
+        started_at = time.monotonic()
         
         #################################################
         # --- Read Input -------------------------------
@@ -65,25 +64,14 @@ class CPSATSolver:
         pods        = instance.get("pods")  or []
         preemptor   = instance.get("preemptor") or None
 
-        if not nodes:
-            return {"status": self._status_str(NO_NODES)}
-        
-        #################################################
-        # --- Constants ---------------------------------
-        #################################################
-        SAFETY_PADDING_SEC  = 0.05 # seconds for safety padding to avoid overshooting timeout
-
         #################################################
         # --- Options/Parameters ------------------------
         #################################################
         timeout_ms               = int(instance.get("timeout_ms", 3000)) - 200
         ignore_affinity          = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
-        # If use_strictly_improving is true, accept a plan only if it is strictly better than the current state under the objective. 
-        # This prevents no-op plans but may reject globally optimal plans whose objective ties the baseline. Set False to allow equal-score solutions.
-        use_strictly_improving   = bool(instance.get("use_strictly_improving", False)) # TODO: Input interface doesn't implement this yet, however we enforce it
         log_progress             = bool(instance.get("log_progress", False))
         guaranteed_tier_fraction = float(instance.get("guaranteed_tier_fraction", 0.6)) # guaranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers. Default value of 0.6 is estimated through experiments.
-        move_fraction_of_tier    = float(instance.get("move_fraction_of_tier", 0.5)) # of a tier's budget: 30% moves, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves. Default value of 0.5 is estimated through experiments.
+        disr_fraction_of_tier    = float(instance.get("disr_fraction_of_tier", 0.5)) # of a tier's budget: 30% disruption, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves. Default value of 0.5 is estimated through experiments.
 
         #################################################
         # --- Solver setup ------------------------------
@@ -154,6 +142,8 @@ class CPSATSolver:
         pods = list(pod_by_uid.values())
         num_nodes = len(nodes)
         num_pods  = len(pods)
+        if num_nodes == 0:
+            return {"status": self._status_str(NO_NODES)}
         if num_pods == 0:
             return {"status": self._status_str(NO_PODS)}
         node_idx = {n["name"]: j for j, n in enumerate(nodes)}
@@ -217,13 +207,13 @@ class CPSATSolver:
         # placed (bool) - whether model places pod i somewhere
         # assign (bool) - whether model places pod i on node j (only for eligible nodes)
         placed = [model.NewBoolVar(f"placed_{i}") for i in range(num_pods)]
-        assign = [[model.NewBoolVar(f"assign_{i}_{j}") for j in eligible_nodes[i]]
+        assign = [[model.NewBoolVar(f"assign_{i}_{j}") for j in eligible_nodes[i]] # equals to the x_i,j in the paper, except that we only consider eligible nodes for each pod
             for i in range(num_pods)]
         
         #################################################
         # --- Common Constraints ------------------------
         #################################################
-        ### Node constraints - capacity per node
+        # --- Node constraints (bin-packing constraints) - capacity per node --------
         # Ensure that total assigned resources do not exceed node capacities
         eligible_pos = [{j: pos for pos, j in enumerate(eligible_nodes[i])}
                 for i in range(num_pods)]
@@ -238,22 +228,23 @@ class CPSATSolver:
                 model.Add(sum(cap_cpu_terms) <= n_cap_cpu_m(j))
                 model.Add(sum(cap_mem_terms) <= n_cap_mem_bytes(j))
 
-        ### Assign constraints - exactly one assignment if placed
+        # --- Assign constraints - exactly one assignment per pod ----
+        # In the paper we say at most one, but here we use exactly one,
+        # since we have the placed[i] variable to indicate whether pod i is placed.
         for i in range(num_pods):
             if eligible_nodes[i]:
                 model.Add(sum(assign[i]) == placed[i])
             else:
                 model.Add(placed[i] == 0)
 
-        ### Move constraints - only for running protected pods
+        # --- Stay constraints - only for running protected pods ---
+        # If protected & running: force stay if possible
         for i in running_idxs:
-            # "stay or move" coupling is implicit with <=1 assignment.
-            # If protected & running: force stay if possible
             if p_protected(i):
                 orig = p_node_j(i)
                 pos  = eligible_pos[i].get(orig)
                 if pos is not None:
-                    model.Add(assign[i][pos] == 1)   # must stay
+                    model.Add(assign[i][pos] == 1) # must stay
                 else:
                     # protected but cannot stay: infeasible → early return?
                     return {"status": "MODEL_INVALID"}
@@ -263,80 +254,36 @@ class CPSATSolver:
         #################################################
         # Single-preemptor mode:
         if single_preemptor_mode and preemptor_idx is not None:
-            # Single-preemptor must be placed
+            # Single-preemptor must be placed.
+            # However, possibly, it cannot be placed anywhere.
+            # In that case, the model is infeasible.
             model.Add(sum(assign[preemptor_idx]) == 1)
         # Batch mode
         else:
             # There must be at least one placement of pending pods
-            # (weak constraint to avoid trivial empty solution)
-            # Below we will enforce non-degradation on priorities
+            # (weak constraint to avoid trivial empty solution and solutions that only move running pods or evict.)
             if pending_idxs:
                 model.Add(sum(placed[i] for i in pending_idxs) >= 1)
 
-        #################################################
-        # --- Placed by Priority Constraints ------------
-        #################################################
-        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
-
-        def _is_placeable(i: int) -> bool:
-            return len(eligible_nodes[i]) > 0
-
-        # Non-degradation of placement per priority tier
-        for pr in priorities:
-            idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
-            if not idxs_ge: 
-                continue
-            base_ge = sum(1 for i in idxs_ge if i in running_idxs and _is_placeable(i))
-            model.Add(sum(placed[i] for i in idxs_ge) >= base_ge)   # <- placed_b
-
-        # Strict improvement. Enforce at least one strictly improving priority tier
-        if use_strictly_improving:
-            improved_at = []
-            for pr in priorities:
-                if single_preemptor_mode and preemptor_idx is not None and pr >= preemptor_priority:
-                    continue
-                idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
-                if not idxs_ge: 
-                    continue
-                base_ge = sum(1 for i in idxs_ge if i in running_idxs and _is_placeable(i))
-                improved = model.NewBoolVar(f"strict_improve_ge_{pr}")
-                model.Add(sum(placed[i] for i in idxs_ge) >= base_ge + 1).OnlyEnforceIf(improved)  # <- placed_b
-                improved_at.append(improved)
-            if improved_at:
-                model.AddBoolOr(improved_at)
-
-        #################################################
-        # --- Decision strategy ---------
-        #################################################
-        # TODO: Don't think this is needed
-        for i in range(num_pods):
-            model.AddDecisionStrategy(assign[i], cp_model.CHOOSE_FIRST, cp_model.SELECT_MAX_VALUE)
         
         #################################################
         # Lexicographic optimization:
         # Order per tier (≥priority):
         #   1) maximize placed
-        #   2) minimize moves (running only)
+        #   2) maximize stays (already-running, priority ≥ tier)
         #################################################
         
         #########################
         # Solver helpers
         #########################
-        def _remaining_wall() -> float:
+        def remaining_wall() -> float:
             """
-            Remaining wall time in seconds, with safety padding.
+            Remaining wall time in seconds
             """
             # wall guard with safety pad
-            return max(0.0, deadline - time.monotonic() - SAFETY_PADDING_SEC)
-        
-        def _move_term(i):
-            """
-            Expression for whether pod i is moved (1) or not (0).
-            """
-            pos = eligible_pos[i].get(p_node_j(i))
-            return placed[i] if pos is None else placed[i] - assign[i][pos]
+            return max(0.0, deadline - time.monotonic())
 
-        def _relative_gap(sense: str, obj: float, bound: float) -> float:
+        def relative_gap(sense: str, obj: float, bound: float) -> float:
             """
             Compute the relative gap between the objective and the bound.
             For max: gap = (bound - obj) / max(1, |obj|)
@@ -347,10 +294,16 @@ class CPSATSolver:
             denom = max(1.0, abs(obj))
             if sense == "max":
                 return max(0.0, (bound - obj) / denom)
-            else:
+            else: # min
                 return max(0.0, (obj - bound) / denom)
 
-        def _apply_solution_as_hint():
+        def orig_node(i):
+            """1 if pod i is placed on its same/original node, 0 otherwise."""
+            orig = p_node_j(i)
+            pos  = eligible_pos[i].get(orig)
+            return assign[i][pos] if pos is not None else 0
+
+        def apply_solution_as_hint():
             """
             Apply current solution (how pods are placed) as hints for next stage.
             1) Clear previous hints
@@ -358,8 +311,8 @@ class CPSATSolver:
             """
             model.ClearHints()
             for i in range(num_pods):
-                for local, _ in enumerate(eligible_nodes[i]):
-                    model.AddHint(assign[i][local], int(solver.Value(assign[i][local])))
+                for j, _ in enumerate(eligible_nodes[i]):
+                    model.AddHint(assign[i][j], int(solver.Value(assign[i][j])))
 
         def run_stage(obj_expr, sense: str, cap_sec: float) -> dict:
             """
@@ -379,7 +332,7 @@ class CPSATSolver:
             else:
                 model.Minimize(obj_expr)
 
-            budget = min(cap_sec, _remaining_wall())
+            budget = min(cap_sec, remaining_wall())
             if budget <= 1e-3:
                 return result
 
@@ -395,7 +348,7 @@ class CPSATSolver:
             try:
                 obj = solver.ObjectiveValue()
                 bnd = solver.BestObjectiveBound()
-                result["relative_gap"] = _relative_gap(sense, obj, bnd)
+                result["relative_gap"] = relative_gap(sense, obj, bnd)
             except Exception:
                 pass
 
@@ -405,56 +358,65 @@ class CPSATSolver:
         # Time management
         #########################
         total_sec  = max(0.0, timeout_ms / 1000.0) # total time we have in seconds
-        usable_sec = max(0.0, total_sec - SAFETY_PADDING_SEC) # time we can actually use, keeping a safety padding
+        usable_sec = max(0.0, total_sec) # time we can actually use
         deadline   = time.monotonic() + total_sec # absolute deadline time
 
-        # Build effective_tiers. An effective tier is one that has at least one pod that can be placed.
-        effective_tiers = [pr for pr in priorities if any(p_priority(i) >= pr for i in range(num_pods))]
-        tiers_remaining = max(1, len(effective_tiers))
+        # Build tiers: a tier is a group of pods of equal priority.
+        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
+        tiers = [p for p in priorities if any(p_priority(i) >= p for i in range(num_pods))]
+        remaining_tiers = max(1, len(tiers))
 
-        # Time allocation pools for tiers
-        reserved_total   = usable_sec * max(0.0, min(1.0, guaranteed_tier_fraction))  # guaranteed pool for all tiers
-        unreserved_pool  = max(0.0, usable_sec - reserved_total)                      # free pool, first tier can burn it
+        # Time allocation pools for priorities
+        reserved_total   = usable_sec * max(0.0, min(1.0, guaranteed_tier_fraction))  # guaranteed pool for all priorities
+        unreserved_pool  = max(0.0, usable_sec - reserved_total)                      # free pool, first priority can burn it
         floor_left       = reserved_total                                             # remaining guaranteed pool
 
         #########################
-        # Solve per tier
+        # Solve per priority
         #########################
+        #TODO: add total_solver_time to output, as total_time also includes model building time and I/O time
         st = cp_model.UNKNOWN
         stages: list[dict] = []
-        for pr in effective_tiers:
-            # --- PLACEMENT stage ----------
-            # Objective: maximize the number of placed pods among priorities ≥ pr.
-            # After solving, we *pin the aggregate placement* for ≥ pr with:
-            #     model.Add(placed_expr == best)      if OPTIMAL
-            #     model.Add(placed_expr >= best)      if only FEASIBLE
-            # This enforces *non-regression* of the total placed count for ≥ pr in all
-            # subsequent (lower) tiers. Later tiers may reshuffle *which* ≥ pr pods are
-            # placed (subject to capacity/protection), but they cannot reduce the pinned
-            # total. This stage uses the tier’s placement time budget (place_cap), and we
-            # then apply the current solution as hints to warm-start the next stage.
-            idxs_ge = [i for i in range(num_pods) if p_priority(i) >= pr]
-            
-            # Time budget calculation
-            if not idxs_ge:
-                tiers_remaining = max(0, tiers_remaining - 1)
+        for p in tiers:
+            # Indices of pods with priority ≥ p, both running and pending
+            idxs_ge = [i for i in range(num_pods) if p_priority(i) >= p]
+
+            # --- Time budget calculation ----------
+            if not idxs_ge: # no pods for this priority -> skip
+                remaining_tiers = max(0, remaining_tiers - 1)
                 continue
-            rem_wall = _remaining_wall()
-            if rem_wall <= 0.0:
+            rem_wall = remaining_wall()
+            if rem_wall <= 0.0: # no time left -> break
                 break
-            tier_min = floor_left / max(1, tiers_remaining) # minimum guaranteed for this tier = equal share of what's left in the guaranteed pool
+            tier_min = floor_left / max(1, remaining_tiers) # minimum guaranteed for this tier = equal share of what's left in the guaranteed pool
             tier_cap = min(rem_wall, tier_min + unreserved_pool) # this tier can use: its guaranteed minimum + the whole unreserved pool
             if tier_cap <= 1e-3:
-                tiers_remaining = max(0, tiers_remaining - 1)
+                remaining_tiers = max(0, remaining_tiers - 1)
                 continue
-            place_cap = tier_cap * (1.0 - move_fraction_of_tier) # split tier budget into place/moves by MOVES_SHARE
-            # Placement
-            placed_expr = sum(placed[i] for i in idxs_ge) # sum of placed pods
+            place_cap = tier_cap * (1.0 - disr_fraction_of_tier) # split priority budget into place/moves by MOVES_SHARE
+
+            # --- PLACEMENT stage ---
+            # Objective:
+            #   Maximize the number of placed pods among those with priority ≥ p.
+            # Term:
+            #   place := Σ_{i : prio(i) ≥ p} Σ_{j ∈ B} x_{i,j}
+            # Implementation detail:
+            #   We use `placed[i] ∈ {0,1}` with the constraint Σ_j assign[i][j] == placed[i],
+            #   so the objective is equivalent to:
+            #     placed_expr = Σ_{i : prio(i) ≥ p} placed[i]
+            #   After solving:
+            #     - If OPTIMAL:     Add( placed_expr == best_value )
+            #     - If FEASIBLE:    Add( placed_expr ≥  best_value )
+            #   This prevents later (lower) priorities from reducing the total number of
+            #   placed pods already achieved for ≥ p, while still allowing improvements.
+            # Warm start:
+            #   Apply the current assignment values as hints to help the next stage.
+            placed_expr = sum(placed[i] for i in idxs_ge) # sum of placed pods (priority ≥ pr) both running and pending
             place_result = run_stage(placed_expr, "max", place_cap)
             st = place_result["status"]
             time_spent_place = place_result["time_spent"]
             stages.append({
-                "tier": pr,
+                "tier": p,
                 "stage": "place",
                 "status": self._status_str(st),
                 "duration_ms": round(time_spent_place * 1000),
@@ -462,96 +424,115 @@ class CPSATSolver:
             })
             if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 break
-            best_placed = solver.Value(placed_expr)
-            # If not optimal, allow feasible or better solutions in later tiers to increase placement
-            model.Add(placed_expr == best_placed if st == cp_model.OPTIMAL else placed_expr >= best_placed)
-            _apply_solution_as_hint()
+            placed_p = solver.Value(placed_expr)
+            # If not optimal, allow feasible or better solutions in later priorities to increase placement
+            model.Add(placed_expr == placed_p if st == cp_model.OPTIMAL else placed_expr >= placed_p)
+            apply_solution_as_hint()
 
             # pools deduction for placement
             use_unreserve = min(unreserved_pool, time_spent_place)
             unreserved_pool -= use_unreserve
             floor_left      = max(0.0, floor_left - (time_spent_place - use_unreserve))
 
-            # --- MOVES stage ----------
-            # Objective: minimize the number of moved running pods among priorities >= pr.
-            # After solving, we pin the aggregate move count for >= pr with:
-            #     model.Add(moves_expr == best)
-            # This preserves the total number of moves for >= pr in all subsequent (lower) tiers.
-            # Later tiers may reshuffle which >= pr pods move (swap who moves vs stays),
-            # but they cannot change the pinned total; placement guarantees and protections still apply.
-            # The stage consumes whatever remains of this tier's time budget (including unused placement time).
-            rem_tier = max(0.0, tier_cap - time_spent_place)
-            if _remaining_wall() > 1e-3 and rem_tier > 1e-3:
-                running_ge = [i for i in running_idxs if p_priority(i) >= pr]
-                moves_expr = sum(_move_term(i) for i in running_ge) if running_ge else 0 # sum of moved running pods
-                
-                # cap moves by both remaining wall and remaining tier budget
-                moves_result = run_stage(moves_expr, "min", min(rem_tier, _remaining_wall()))
-                st = moves_result["status"]
-                time_spent_moves = moves_result["time_spent"]
-                stages.append({
-                    "tier": pr,
-                    "stage": "moves",
-                    "status": self._status_str(st),
-                    "duration_ms": round(time_spent_moves * 1000),
-                    "relative_gap": f"{moves_result['relative_gap']:.4f}",
-                })
-                if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                    break
-                best_moves = solver.Value(moves_expr)
-                # if not optimal, allow feasible or better solutions in later tiers to reduce moves
-                model.Add(moves_expr == best_moves if st == cp_model.OPTIMAL else moves_expr <= best_moves)
-                _apply_solution_as_hint()
+            # --- DISRUPTION (evictions + moves) stage ---
+            # Objective:
+            #   Minimize total disruption for already-running pods with priority ≥ p.
+            # For a running pod i with original node orig(i), define:
+            #   x_orig(i) := 1 if pod i is assigned to orig(i), else 0
+            #   placed[i] := 1 if pod i is assigned anywhere, else 0
+            # Per-pod disruption:
+            #   disr_i = (eviction_term) + (move_term)
+            #          = (1 - x_orig(i)) + (placed[i] - x_orig(i))
+            #          = 1 + placed[i] - 2 * x_orig(i)
+            # Therefore:
+            #   - stayed (placed on original node):   placed=1, x_orig=1 → disr_i = 0
+            #   - eviction (not placed anywhere):     placed=0, x_orig=0 → disr_i = 1
+            #   - move (placed on different node):    placed=1, x_orig=0 → disr_i = 2
+            # Term:
+            #   disr := Σ_{i ∈ running, prio(i) ≥ p} (1 + placed[i] - 2 * x_orig(i))
+            # Implementation detail:
+            #   x_orig(i) is computed as assign[i][pos] if the original node is eligible,
+            #   otherwise 0 (pod cannot stay on an ineligible node in this model).
+            #   After solving:
+            #     - If OPTIMAL:     Add( disr_expr == best_value )
+            #     - If FEASIBLE:    Add( disr_expr ≤  best_value )
+            #   This prevents later (lower) priorities from increasing the total disruption
+            #   already achieved for ≥ p, while still allowing improvements.
+            # Warm start:
+            #   Apply the current assignment values as hints to help subsequent tiers.
+            rem_tiers = max(0.0, tier_cap - time_spent_place)
+            if remaining_wall() > 1e-3 and rem_tiers > 1e-3:
+                running_ge = [i for i in running_idxs if p_priority(i) >= p] # running pods with priority ≥ p
+                if running_ge:
+                    disr_expr = sum(1 + placed[i] - 2 * orig_node(i) for i in running_ge)
+                    disr_result = run_stage(disr_expr, "min", min(rem_tiers, remaining_wall()))
+                    st = disr_result["status"]
+                    time_spent_disr = disr_result["time_spent"]
+                    stages.append({
+                        "tier": p, "stage": "disruption", "status": self._status_str(st),
+                        "duration_ms": round(time_spent_disr * 1000),
+                        "relative_gap": f"{disr_result['relative_gap']:.4f}",
+                    })
+                    if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                        break
+                    best_disr = solver.Value(disr_expr)
+                    model.Add(disr_expr == best_disr if st == cp_model.OPTIMAL else disr_expr <= best_disr)
+                    apply_solution_as_hint()
+                    
+                    # pools deduction for disruption
+                    use_unreserve = min(unreserved_pool, time_spent_disr)
+                    unreserved_pool -= use_unreserve
+                    floor_left      = max(0.0, floor_left - (time_spent_disr - use_unreserve))
 
-                # pools deduction for moves
-                use_unreserve = min(unreserved_pool, time_spent_moves)
-                unreserved_pool -= use_unreserve
-                floor_left      = max(0.0, floor_left - (time_spent_moves - use_unreserve))
-
-            # decrement tiers remaining
-            tiers_remaining = max(0, tiers_remaining - 1)
+            # decrement priorities remaining
+            remaining_tiers = max(0, remaining_tiers - 1)
 
         #########################
         # Extract and return plan
         #########################
-        def _chosen_node(i) -> int | None:
-            """
-            Return the chosen node index for pod i, or None if not placed.
-            """
+        def is_pod_placed_solver(i) -> bool:
+            """Return whether pod i is currently placed."""
+            return bool(int(solver.Value(placed[i])) == 1)
+        
+        def chosen_node_for_pod_solver(i) -> int | None:
+            """Return the chosen node index for pod i, or None if not placed."""
             for local, j in enumerate(eligible_nodes[i]):
                 if int(solver.Value(assign[i][local])) == 1:
                     return j
             return None
 
-        def _placed_now(i) -> bool:
-            """
-            Return whether pod i is currently placed.
-            """
-            return bool(int(solver.Value(placed[i])) == 1)
-        
+        def stayed_on_same_node_solver(i) -> bool:
+            orig = p_node_j(i)
+            pos  = eligible_pos[i].get(orig)
+            return bool(pos is not None and solver.Value(assign[i][pos]) == 1)
+
         placements, evictions = [], []
         for i in range(num_pods):
             was_running = (p_node_j(i) is not None)
-            placed_now  = _placed_now(i)
-            if was_running and not placed_now:
+            is_placed = is_pod_placed_solver(i)
+            if was_running and not is_placed:
                 evictions.append({
-                    "pod": {"uid": p_uid(i), "namespace": p_namespace(i), "name": p_name(i)},
+                    "pod": {"uid": p_uid(i), "name": p_name(i), "namespace": p_namespace(i)},
                     "node": nodes[p_node_j(i)]["name"],
                 })
                 continue
-            if placed_now and eligible_nodes[i]:
-                chosen_j = _chosen_node(i)
+            if is_placed:
+                if was_running and stayed_on_same_node_solver(i):
+                    # stayed — no placement entry
+                    continue
+                # either moved (was_running and not stayed), or newly placed (was not running)
+                chosen_j = chosen_node_for_pod_solver(i)
                 if chosen_j is None:
                     continue
                 orig_j = p_node_j(i)
-                moved = (orig_j is None) or (eligible_pos[i].get(orig_j) is None) or (chosen_j != orig_j)
-                if moved:
+                moved = was_running and not stayed_on_same_node_solver(i)
+                if moved or orig_j is None:
                     placements.append({
-                        "pod": {"uid": p_uid(i), "namespace": p_namespace(i), "name": p_name(i)},
+                        "pod": {"uid": p_uid(i), "name": p_name(i), "namespace": p_namespace(i)},
                         "from_node": nodes[orig_j]["name"] if orig_j is not None else "",
                         "to_node": nodes[chosen_j]["name"],
                     })
-        total_time = max(0.0, time.monotonic() - _started_at)
+        total_time = max(0.0, time.monotonic() - started_at)
         
         # Get overall status by checking all stages. Priority:
         # MODEL_INVALID > UNKNOWN > INFEASIBLE > FEASIBLE > OPTIMAL
