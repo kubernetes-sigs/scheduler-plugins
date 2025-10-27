@@ -24,6 +24,7 @@
     - [Bootstrap a VM](#bootstrap-a-vm)
     - [Running test jobs on UCloud](#running-test-jobs-on-ucloud)
     - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
+  - [Live-workload-simulator](#live-workload-simulator)
   - [TODOs](#todos)
     - [Later TODOs](#later-todos)
   - [Test](#test)
@@ -248,8 +249,74 @@ To run tests on UCloud:
   kubectl --context <ctx> -n <namespace> get events --field-selector involvedObject.kind=Pod -o json | jq '.items[] | {name: .involvedObject.name, reason: .reason, message: .message}'
   ```
 
+## Live-workload-simulator
+
+Settings
+- num_nodes
+- initial_avg_pods_per_node (ppn): initial pod count = num_nodes * ppn (only initial sizing, after that we allow the pod-count to fluctuate)
+- num_priorities
+- target_util (applies to CPU and MEM; we stop when both >= target)
+- solver_timeout: in seconds
+- Δt: seconds between event-tick -- should be at least solver_timeout
+- N: number of event-ticks (e.g. if  Δt = 10s, N = 100, --> run in 1,000s)
+      (each event-tick indexed by k)
+- low_util_range = [low_min, low_max] with 0 < low_min ≤ low_max < target_util
+
+Generate deterministic events ("trace") to a file.
+1) Draw (deterministic) low utilization target: low_util_k = uniform(low_min, low_max)
+2) Measure current util: from all alive pods (running + pending): curr_cpu_util, curr_mem_util.
+3) Delete pods until we are under low_util_k:
+    while (curr_cpu_util >  low_util_k) or (curr_mem_util >  low_util_k):
+        - pick a random (deterministic) victim:
+            if RS-mode: if RS-replicas > 1  --> scale_rs -1; else --> delete_rs
+            if standalone-mode --> delete_pod
+        - apply delete; recompute curr_cpu_util, curr_mem_util.
+4) Add-to-target_util:
+    while (curr_cpu_util < target_util) or (curr_mem_util < target_util):
+        - if RS-mode: select a random (deterministic) RS-set (scale +1) or a new (deterministic) one (create and scale to 1).
+        - if standalone-mode: create_pod
+        - recompute curr_cpu_util, curr_mem_util after each add; stop as soon as both >= target (overshoot allowed, will be adjusted in next tick).
+5) Save state after event-tick: state-{seed}-{tick}.csv
+
+events.csv ("trace") file (one row per event-tick, k)
+- event_id: event-{seed}-{k}
+- k: tick index
+- Δt
+- t_s: k * Δt 
+- low_util_k : the drawn threshold we deleted to
+- target_util: the set utilization we add back up to
+- cpu_util_after: cpu utilization after applying this event-tick
+- mem_util_after: mem utilization after applying this event-tick
+- deletions: total number of pods removed by this tick
+- additions: total number of pods added by this tick
+- alive_after: total number of alive pods after this tick (running + pending)
+- actions (json list): possible actions: delete_pod | delete_rs | scale_rs | create_rs | create_pod
+      - delete_pod: {name}
+      - delete_rs: {name}
+      - scale_rs: {name, replicas_num} (new count)
+      - create_rs: {name, priority, cpu_m, mem_b, replicas_num=1}
+      - create_pod: {name, priority, cpu_m, mem_b}
+
+Notes
+- Produces a deterministic load-simulator that deletes pods down to low_util_k, then add up to target_util.
+- Pod count will fluctuate; ppn is only for initial sizing.
+- Simulator can be in sync (wait for solver completes, and delay next event-tick) or async (no waiting just applying the next event-tick)
+
+Questions
+Is it acceptable that we do not meet a fixed pod count and may slightly overshoot utilization after ticks.
+Hitting both an exact pod total and an exact utilization simultaneously is not an easy task while still changing cluster state.
+Instead, we guarantee a minimum utilization after each tick so the scheduler/solver is exercised under meaningful load,
+and any small overshoot self-corrects on subsequent ticks.
+
 ## TODOs
 
+- Right now in the python solver, the disruption metric is defined as:
+    +1 if the pod stays in the original position
+    -2 if the pod is evicted
+    -1 if the pod is moved (-2 + 1)
+  Jacopo: Thinks my idea reduces the search space, however, he is also fine with a simpler metric, where we just sum the x_{i,p_i.orig} to treat every pod that is not in the same place as 1.
+- Also, warm-start the python solver before the loop.
+- Test the PolySCIP solver (<https://polyscip.zib.de/>). Seems to support multiple objectives (<https://www.scipopt.org/doc-3.2.0/applications/MultiObjective/>).
 - Make a runner script to run the scheduler more realistically for testing the modalities better. We could use a lambda value (Gaussian distribution) to determine how often new pods arrive. Also, we could have a certain percentage of pods that are long-running and some that are short-lived.
 - Make the state-of-the-art section in the report for next meeting.
 - Write to Jacopo if I have any interesting Related work for the paper.
