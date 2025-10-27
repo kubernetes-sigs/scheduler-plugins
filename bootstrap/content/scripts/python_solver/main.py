@@ -444,6 +444,8 @@ class CPSATSolver:
             #   disr_i = (eviction_term) + (move_term)
             #          = (1 - x_orig(i)) + (placed[i] - x_orig(i))
             #          = 1 + placed[i] - 2 * x_orig(i)
+            #          where we can remove the 1+ since it's constant across all pods, so
+            #          = placed[i] - 2 * x_orig(i)
             # Therefore:
             #   - stayed (placed on original node):   placed=1, x_orig=1 → disr_i = 0
             #   - eviction (not placed anywhere):     placed=0, x_orig=0 → disr_i = 1
@@ -464,7 +466,7 @@ class CPSATSolver:
             if remaining_wall() > 1e-3 and rem_tiers > 1e-3:
                 running_ge = [i for i in running_idxs if p_priority(i) >= p] # running pods with priority ≥ p
                 if running_ge:
-                    disr_expr = sum(1 + placed[i] - 2 * orig_node(i) for i in running_ge)
+                    disr_expr = sum(placed[i] - 2 * orig_node(i) for i in running_ge)
                     disr_result = run_stage(disr_expr, "min", min(rem_tiers, remaining_wall()))
                     st = disr_result["status"]
                     time_spent_disr = disr_result["time_spent"]
