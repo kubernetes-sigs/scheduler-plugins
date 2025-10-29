@@ -20,6 +20,7 @@ import (
 	"github.com/paypal/load-watcher/pkg/watcher"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -159,7 +160,7 @@ type NodeRequestsAndLimits struct {
 }
 
 // GetNodeRequestsAndLimits : total requested and limits of resources on a given node plus a pod
-func GetNodeRequestsAndLimits(logger klog.Logger, podInfosOnNode []*framework.PodInfo, node *v1.Node, pod *v1.Pod,
+func GetNodeRequestsAndLimits(logger klog.Logger, podInfosOnNode []fwk.PodInfo, node *v1.Node, pod *v1.Pod,
 	podRequests *framework.Resource, podLimits *framework.Resource) *NodeRequestsAndLimits {
 	// initialization
 	nodeRequest := &framework.Resource{}
@@ -178,7 +179,7 @@ func GetNodeRequestsAndLimits(logger klog.Logger, podInfosOnNode []*framework.Po
 	// get requests and limits for all pods
 	podsOnNode := make([]*v1.Pod, len(podInfosOnNode))
 	for i, pf := range podInfosOnNode {
-		podsOnNode[i] = pf.Pod
+		podsOnNode[i] = pf.GetPod()
 	}
 	for _, p := range append(podsOnNode, pod) {
 		var requested *framework.Resource

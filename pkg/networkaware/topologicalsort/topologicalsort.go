@@ -24,6 +24,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -99,9 +100,9 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 // Less is the function used by the activeQ heap algorithm to sort pods.
 // 1) Sort Pods based on their AppGroup and corresponding service topology graph.
 // 2) Otherwise, follow the strategy of the in-tree QueueSort Plugin (PrioritySort Plugin)
-func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
-	p1AppGroup := networkawareutil.GetPodAppGroupLabel(pInfo1.Pod)
-	p2AppGroup := networkawareutil.GetPodAppGroupLabel(pInfo2.Pod)
+func (ts *TopologicalSort) Less(pInfo1, pInfo2 fwk.QueuedPodInfo) bool {
+	p1AppGroup := networkawareutil.GetPodAppGroupLabel(pInfo1.GetPodInfo().GetPod())
+	p2AppGroup := networkawareutil.GetPodAppGroupLabel(pInfo2.GetPodInfo().GetPod())
 	ctx := context.TODO()
 	logger := ts.logger.WithValues("ExtensionPoint", "Less")
 
@@ -113,13 +114,13 @@ func (ts *TopologicalSort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	}
 
 	// Pods belong to the same appGroup, get the CR
-	logger.V(6).Info("Pods belong to the same AppGroup CR", "p1 name", pInfo1.Pod.Name, "p2 name", pInfo2.Pod.Name, "appGroup", p1AppGroup)
+	logger.V(6).Info("Pods belong to the same AppGroup CR", "p1 name", pInfo1.GetPodInfo().GetPod().Name, "p2 name", pInfo2.GetPodInfo().GetPod().Name, "appGroup", p1AppGroup)
 	agName := p1AppGroup
 	appGroup := ts.findAppGroupTopologicalSort(ctx, agName)
 
 	// Get labels from both pods
-	labelsP1 := pInfo1.Pod.GetLabels()
-	labelsP2 := pInfo2.Pod.GetLabels()
+	labelsP1 := pInfo1.GetPodInfo().GetPod().GetLabels()
+	labelsP2 := pInfo2.GetPodInfo().GetPod().GetLabels()
 
 	// Binary search to find both order index since topology list is ordered by Workload Name
 	orderP1 := networkawareutil.FindPodOrder(appGroup.Status.TopologyOrder, labelsP1[agv1alpha.AppGroupSelectorLabel])

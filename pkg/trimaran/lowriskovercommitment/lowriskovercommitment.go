@@ -31,6 +31,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
@@ -92,7 +93,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 }
 
 // PreScore : calculate pod requests and limits and store as plugin state data to be used during scoring
-func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
+func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState fwk.CycleState, pod *v1.Pod, nodes []fwk.NodeInfo) *fwk.Status {
 	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "PreScore")
 	logger.V(6).Info("PreScore: Calculating pod resource requests and limits", "pod", klog.KObj(pod))
 	podResourcesStateData := CreatePodResourcesStateData(pod)
@@ -101,7 +102,7 @@ func (pl *LowRiskOverCommitment) PreScore(ctx context.Context, cycleState *frame
 }
 
 // Score : evaluate score for a node
-func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
+func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState fwk.CycleState, pod *v1.Pod, nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
 	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	nodeName := nodeInfo.Node().Name
 	logger.V(6).Info("Score: Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
@@ -135,7 +136,7 @@ func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState *framewor
 	// calculate score
 	totalScore := pl.computeRank(logger, metrics, nodeInfo, pod, podRequests, podLimits) * float64(framework.MaxNodeScore)
 	score = int64(math.Round(totalScore))
-	return score, framework.NewStatus(framework.Success, "")
+	return score, fwk.NewStatus(fwk.Success, "")
 }
 
 // Name : name of plugin
@@ -149,16 +150,16 @@ func (pl *LowRiskOverCommitment) ScoreExtensions() framework.ScoreExtensions {
 }
 
 // NormalizeScore : normalize scores
-func (pl *LowRiskOverCommitment) NormalizeScore(context.Context, *framework.CycleState, *v1.Pod, framework.NodeScoreList) *framework.Status {
+func (pl *LowRiskOverCommitment) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, framework.NodeScoreList) *fwk.Status {
 	return nil
 }
 
 // computeRank : rank function for the LowRiskOverCommitment
-func (pl *LowRiskOverCommitment) computeRank(logger klog.Logger, metrics []watcher.Metric, nodeInfo *framework.NodeInfo, pod *v1.Pod,
+func (pl *LowRiskOverCommitment) computeRank(logger klog.Logger, metrics []watcher.Metric, nodeInfo fwk.NodeInfo, pod *v1.Pod,
 	podRequests *framework.Resource, podLimits *framework.Resource) float64 {
 	node := nodeInfo.Node()
 	// calculate risk based on requests and limits
-	nodeRequestsAndLimits := trimaran.GetNodeRequestsAndLimits(logger, nodeInfo.Pods, node, pod, podRequests, podLimits)
+	nodeRequestsAndLimits := trimaran.GetNodeRequestsAndLimits(logger, nodeInfo.GetPods(), node, pod, podRequests, podLimits)
 	riskCPU := pl.computeRisk(logger, metrics, v1.ResourceCPU, watcher.CPU, node, nodeRequestsAndLimits)
 	riskMemory := pl.computeRisk(logger, metrics, v1.ResourceMemory, watcher.Memory, node, nodeRequestsAndLimits)
 	rank := 1 - max(riskCPU, riskMemory)
@@ -273,12 +274,12 @@ type PodResourcesStateData struct {
 }
 
 // Clone : clone the pod resource state data
-func (s *PodResourcesStateData) Clone() framework.StateData {
+func (s *PodResourcesStateData) Clone() fwk.StateData {
 	return s
 }
 
 // getPreScoreState: retrieve pod requests and limits from plugin state data
-func getPreScoreState(cycleState *framework.CycleState) (*PodResourcesStateData, error) {
+func getPreScoreState(cycleState fwk.CycleState) (*PodResourcesStateData, error) {
 	podResourcesStateData, err := cycleState.Read(PodResourcesKey)
 	if err != nil {
 		return nil, fmt.Errorf("reading %q from cycleState: %w", PodResourcesKey, err)

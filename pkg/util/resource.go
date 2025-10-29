@@ -19,20 +19,20 @@ package util
 import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	fwk "k8s.io/kube-scheduler/framework"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 // ResourceList returns a resource list of this resource.
 // Note: this code used to exist in k/k, but removed in k/k#101465.
-func ResourceList(r *framework.Resource) v1.ResourceList {
+func ResourceList(r fwk.Resource) v1.ResourceList {
 	result := v1.ResourceList{
-		v1.ResourceCPU:              *resource.NewMilliQuantity(r.MilliCPU, resource.DecimalSI),
-		v1.ResourceMemory:           *resource.NewQuantity(r.Memory, resource.BinarySI),
-		v1.ResourcePods:             *resource.NewQuantity(int64(r.AllowedPodNumber), resource.BinarySI),
-		v1.ResourceEphemeralStorage: *resource.NewQuantity(r.EphemeralStorage, resource.BinarySI),
+		v1.ResourceCPU:              *resource.NewMilliQuantity(r.GetMilliCPU(), resource.DecimalSI),
+		v1.ResourceMemory:           *resource.NewQuantity(r.GetMemory(), resource.BinarySI),
+		v1.ResourcePods:             *resource.NewQuantity(int64(r.GetAllowedPodNumber()), resource.BinarySI),
+		v1.ResourceEphemeralStorage: *resource.NewQuantity(r.GetEphemeralStorage(), resource.BinarySI),
 	}
-	for rName, rQuant := range r.ScalarResources {
+	for rName, rQuant := range r.GetScalarResources() {
 		if v1helper.IsHugePageResourceName(rName) {
 			result[rName] = *resource.NewQuantity(rQuant, resource.BinarySI)
 		} else {
