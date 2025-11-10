@@ -132,20 +132,8 @@ def default_vs_solver_per_seed(solver_csv: Path, default_csv: Path, cfg_name: st
     df_s = load_csv(solver_csv)
     df_d = load_csv(default_csv)
     
-    # join on seed
-    joined = df_s[
-        [
-            "seed",
-            "util_run_cpu",
-            "util_run_mem",
-            "placed_by_prio",
-            "unscheduled_cnt",
-            "error",
-            "solver_status",
-            "solver_name",
-            "solver_duration_ms",
-        ]
-    ].rename(
+    # join result from solver and default on seed
+    joined = df_s[["seed", "util_run_cpu", "util_run_mem", "placed_by_prio", "unscheduled_cnt", "error", "solver_status", "solver_name", "solver_duration_ms"]].rename(
         columns={
             "util_run_cpu": "util_cpu_solver",
             "util_run_mem": "util_mem_solver",
@@ -153,15 +141,7 @@ def default_vs_solver_per_seed(solver_csv: Path, default_csv: Path, cfg_name: st
             "unscheduled_cnt": "unscheduled_cnt_solver",
         }
     ).merge(
-        df_d[
-            [
-                "seed",
-                "util_run_cpu",
-                "util_run_mem",
-                "placed_by_prio",
-                "unscheduled_cnt",
-            ]
-        ].rename(
+        df_d[["seed", "util_run_cpu", "util_run_mem", "placed_by_prio", "unscheduled_cnt"]].rename(
             columns={
                 "util_run_cpu": "util_cpu_default",
                 "util_run_mem": "util_mem_default",
@@ -169,9 +149,7 @@ def default_vs_solver_per_seed(solver_csv: Path, default_csv: Path, cfg_name: st
                 "unscheduled_cnt": "unscheduled_cnt_default",
             }
         ),
-        on="seed",
-        how="inner",
-        validate="one_to_one",
+        on="seed", how="inner", validate="one_to_one",
     )
 
     # default_all_scheduled: both have 0 unscheduled
@@ -179,13 +157,14 @@ def default_vs_solver_per_seed(solver_csv: Path, default_csv: Path, cfg_name: st
     no_pending_solver = pd.to_numeric(joined["unscheduled_cnt_solver"], errors="coerce").eq(0)
     joined["default_all_running"] = no_pending_default & no_pending_solver
 
-    # solver_called
+    # solver_called: any of status/name/duration present
     joined["solver_called"] = (
         joined["solver_status"].astype(str).str.strip().ne("")
         | joined["solver_name"].astype(str).str.strip().ne("")
         | pd.to_numeric(joined["solver_duration_ms"], errors="coerce").notna()
     ).astype(int)
 
+    # compare placements
     joined["placed_cmp"] = joined.apply(cmp_placed_by_prio_row, axis=1)
 
     # deltas for resource utilization
@@ -203,10 +182,8 @@ def main():
 
     per_combo_rows = []
 
-    solver_combos = sorted([p for p in solver_root.iterdir() if p.is_dir()]) # all combo dirs
-    if not solver_combos:
-        print(f"[warn] no solver combinations under {solver_root}")
-
+    solver_combos = sorted([p for p in solver_root.iterdir() if p.is_dir()])
+    
     # loop over solver combinations
     for solver_dir in solver_combos:
         meta = parse_solver_dirname(solver_dir.name)
@@ -236,15 +213,17 @@ def main():
 
         status = not_all_running["solver_status"]
 
-        # flags: OPTIMAL / FEASIBLE
+        # OPTIMAL / FEASIBLE flags
         is_optimal = status.eq("OPTIMAL")
         is_feasible = status.eq("FEASIBLE")
         is_ok = is_optimal | is_feasible
 
+        # placement comparison
         placed_equal = not_all_running["placed_cmp"].eq(0)
         placed_better = not_all_running["placed_cmp"].gt(0)
         placed_worse = not_all_running["placed_cmp"].lt(0)
 
+        # solver called if solver provided any result
         n_solver_called = int(not_all_running["solver_called"].sum())
 
         # DEFAULT ALL RUNNING: both default and solver scheduled all pods
@@ -335,37 +314,37 @@ def main():
 
         per_combo_rows.append(
             {
-                "util": meta["util"],
-                "nodes": meta["nodes"],
-                "pods": meta["pods"],
-                "pods_per_node": meta["pods_per_node"],
-                "priorities": meta["priorities"],
-                "timeout_s": meta["timeout"],
-                "config_dir": solver_dir.name,
-                "n_seeds": int(len(per_seed_df)),
-                "n_seeds_not_all_running": int(len(not_all_running)),
-                "n_default_all_running": n_default_all,
-                "default_all_running_rate": f"{default_all_rate:.{DECIMALS}f}" if DECIMALS is not None else default_all_rate,
-                "n_solver_called": n_solver_called,
-                "solver_called_rate": f"{solver_called_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_called_rate,
-                "n_solver_failed": n_solver_failed,
-                "solver_failed_rate": f"{solver_failed_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_failed_rate,
-                "n_default_optimal": n_default_optimal,
-                "default_optimal_rate": f"{default_optimal_rate:.{DECIMALS}f}" if DECIMALS is not None else default_optimal_rate,
-                "n_solver_optimal": n_solver_optimal,
-                "solver_optimal_rate": f"{solver_optimal_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_optimal_rate,
-                "n_solver_feasible": n_solver_feasible,
-                "solver_feasible_rate": f"{solver_feasible_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_feasible_rate,
-                "n_solver_improve": n_solver_better,
-                "solver_improve_rate": f"{solver_improve_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_improve_rate,
-                "n_other": n_other,
-                "other_rate": f"{other_rate:.{DECIMALS}f}" if DECIMALS is not None else other_rate,
-                "solver_duration_ms_sum": f"{t_sum:.{DECIMALS}f}" if DECIMALS is not None else t_sum,
-                "solver_duration_ms_mean": f"{t_mean:.{DECIMALS}f}" if DECIMALS is not None else t_mean,
-                "cpu_delta_sum": f"{cpu_delta_sum:.{DECIMALS}f}" if DECIMALS is not None else cpu_delta_sum,
-                "mem_delta_sum": f"{mem_delta_sum:.{DECIMALS}f}" if DECIMALS is not None else mem_delta_sum,
-                "cpu_delta_mean": f"{cpu_delta_mean:.{DECIMALS}f}" if DECIMALS is not None else cpu_delta_mean,
-                "mem_delta_mean": f"{mem_delta_mean:.{DECIMALS}f}" if DECIMALS is not None else mem_delta_mean,
+                "util":                     meta["util"],
+                "nodes":                    meta["nodes"],
+                "pods":                     meta["pods"],
+                "pods_per_node":            meta["pods_per_node"],
+                "priorities":               meta["priorities"],
+                "timeout_s":                meta["timeout"],
+                "config_dir":               solver_dir.name,
+                "n_seeds":                  int(len(per_seed_df)),
+                "n_seeds_not_all_running":  int(len(not_all_running)),
+                "n_default_all_running":    n_default_all,
+                "default_all_running_rate": f"{default_all_rate:.{DECIMALS}f}"     if DECIMALS is not None else default_all_rate,
+                "n_solver_called":          n_solver_called,
+                "solver_called_rate":       f"{solver_called_rate:.{DECIMALS}f}"   if DECIMALS is not None else solver_called_rate,
+                "n_solver_failed":          n_solver_failed,
+                "solver_failed_rate":       f"{solver_failed_rate:.{DECIMALS}f}"   if DECIMALS is not None else solver_failed_rate,
+                "n_default_optimal":        n_default_optimal,
+                "default_optimal_rate":     f"{default_optimal_rate:.{DECIMALS}f}" if DECIMALS is not None else default_optimal_rate,
+                "n_solver_optimal":         n_solver_optimal,
+                "solver_optimal_rate":      f"{solver_optimal_rate:.{DECIMALS}f}"  if DECIMALS is not None else solver_optimal_rate,
+                "n_solver_feasible":        n_solver_feasible,
+                "solver_feasible_rate":     f"{solver_feasible_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_feasible_rate,
+                "n_solver_improve":         n_solver_better,
+                "solver_improve_rate":      f"{solver_improve_rate:.{DECIMALS}f}"  if DECIMALS is not None else solver_improve_rate,
+                "n_other":                  n_other,
+                "other_rate":               f"{other_rate:.{DECIMALS}f}"           if DECIMALS is not None else other_rate,
+                "solver_duration_ms_sum":   f"{t_sum:.{DECIMALS}f}"                if DECIMALS is not None else t_sum,
+                "solver_duration_ms_mean":  f"{t_mean:.{DECIMALS}f}"               if DECIMALS is not None else t_mean,
+                "cpu_delta_sum":            f"{cpu_delta_sum:.{DECIMALS}f}"        if DECIMALS is not None else cpu_delta_sum,
+                "mem_delta_sum":            f"{mem_delta_sum:.{DECIMALS}f}"        if DECIMALS is not None else mem_delta_sum,
+                "cpu_delta_mean":           f"{cpu_delta_mean:.{DECIMALS}f}"       if DECIMALS is not None else cpu_delta_mean,
+                "mem_delta_mean":           f"{mem_delta_mean:.{DECIMALS}f}"       if DECIMALS is not None else mem_delta_mean,
             }
         )
 
