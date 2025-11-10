@@ -1,10 +1,7 @@
 
 # Cross-Node Preemption Plugin
 
-## Table of Contents
-
 - [Cross-Node Preemption Plugin](#cross-node-preemption-plugin)
-  - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Building the scheduler with the plugin](#building-the-scheduler-with-the-plugin)
     - [Prerequisites for building the plugin](#prerequisites-for-building-the-plugin)
@@ -18,7 +15,7 @@
       - [KWOK (Manual)](#kwok-manual)
       - [KWOK (Automated)](#kwok-automated)
     - [Run in a Kind cluster](#run-in-a-kind-cluster)
-  - [Testing the plugin](#testing-the-plugin)
+  - [Testing the scheduler with the plugin](#testing-the-scheduler-with-the-plugin)
     - [Test jobs](#test-jobs)
     - [Test scripts](#test-scripts)
       - [Initial workload generator](#initial-workload-generator)
@@ -32,11 +29,11 @@
   - [Live-workload-simulator](#live-workload-simulator)
   - [TODOs](#todos)
     - [Later TODOs](#later-todos)
-  - [Test](#test)
-    - [Later Tests](#later-tests)
-  - [Questions](#questions)
-    - [Open Questions](#open-questions)
-    - [Closed Questions](#closed-questions)
+    - [Test](#test)
+      - [Later Tests](#later-tests)
+    - [Questions](#questions)
+      - [Open Questions](#open-questions)
+      - [Closed Questions](#closed-questions)
 
 ## Overview
 
@@ -91,10 +88,10 @@ make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
 
 The built binary will be located in `bin/kube-scheduler`.
 
-As the plugin uses a Python solver, the Python environment and the solver code also need to be set up.
-This step is not needed if using the docker image as it already contains the Python environment and the solver code.
-
 #### Create a Python environment for the Python solver
+
+As the plugin uses a Python solver, the Python environment and the solver code also need to be set up.
+This step is not needed if you are building it as a docker image (as the docker image will contain everything needed).
 
 ```bash
 sudo install -d -m 0755 /opt/venv/
@@ -175,7 +172,7 @@ Then load the scheduler image into the Kind cluster (it will also build the imag
 ./kind/kind-load-plugins.sh <cluster_name>
 ```
 
-## Testing the plugin
+## Testing the scheduler with the plugin
 
 ### Test jobs
 
@@ -484,7 +481,7 @@ and any small overshoot self-corrects on subsequent ticks.
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
 - Fix TODOs
 
-## Test
+### Test
 
 - Test at which utilization the default scheduler stops to work properly.
 - Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
@@ -492,18 +489,18 @@ and any small overshoot self-corrects on subsequent ticks.
 - Test the plugin works across workload type.
 - Test CP-SAT vs. other solvers.
 
-### Later Tests
+#### Later Tests
 
 - Compare with other solvers.
 - Compare with other modes.
 - Compare with other hook stages.
 - Compare with hints.
 
-## Questions
+### Questions
 
-### Open Questions
+#### Open Questions
 
-### Closed Questions
+#### Closed Questions
 
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately

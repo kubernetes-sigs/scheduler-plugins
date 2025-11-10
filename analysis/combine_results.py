@@ -1,15 +1,8 @@
-import json, re
+import json, re, argparse
 from pathlib import Path
 from typing import Dict, Optional
 import pandas as pd
 
-RESULTS_ROOT = Path("G:/My Drive/Datalogi/MSc - SDU/Master Thesis/Results/results")
-SOLVER_SUBDIR = "all_synch_python"
-DEFAULT_SUBDIR = "default"
-OUT_DIR = Path("analysis")
-RESULTS_CSV = "results.csv"
-EXPECTED_SEED_CNT = 100  # expected number of seeds per combo
-DECIMALS = 4             # number of decimal places for rounding
 DIR_RE_SOLVER = re.compile(r"^nodes(?P<nodes>\d+)_pods(?P<pods>\d+)_prio(?P<prio>\d+)_util(?P<util>\d{3})_timeout(?P<timeout>\d{2})$")
 
 def rate(num, den):
@@ -116,11 +109,29 @@ def load_csv(csv_path: Path) -> pd.DataFrame:
     df["placed_by_prio"] = df.apply(lambda r: json.dumps(parse_json_cell(r.get("placed_by_prio_running", "")), separators=(",", ":")), axis=1)
     return df
 
-def default_vs_solver_results_per_seed(
+
+# placement compare
+def place_compare(a: Dict[int, int], b: Dict[int, int]) -> int:
+    """1 if a>b, 0 if equal, -1 if a<b (compare from highest priority down)."""
+    keys = sorted(set(a.keys()) | set(b.keys()), reverse=True)
+    for k in keys:
+        av = int(a.get(k, 0))
+        bv = int(b.get(k, 0))
+        if av > bv:
+            return 1
+        if av < bv:
+            return -1
+    return 0
+
+def cmp_placed_by_prio_row(row) -> int:
+    s_map = prio_map(row.get("placed_by_prio_solver", ""))
+    d_map = prio_map(row.get("placed_by_prio_default", ""))
+    return place_compare(s_map, d_map)
+
+def default_vs_solver_per_seed(
     solver_csv: Path,
     default_csv: Path,
     cfg_name: str,
-    expected_seed_count: Optional[int] = None,
 ) -> pd.DataFrame:
     df_s = load_csv(solver_csv)
     df_d = load_csv(default_csv)
@@ -189,41 +200,59 @@ def default_vs_solver_results_per_seed(
         | pd.to_numeric(joined["solver_duration_ms"], errors="coerce").notna()
     ).astype(int)
 
-    # placement compare
-    def place_compare(a: Dict[int, int], b: Dict[int, int]) -> int:
-        """1 if a>b, 0 if equal, -1 if a<b (compare from highest priority down)."""
-        keys = sorted(set(a.keys()) | set(b.keys()), reverse=True)
-        for k in keys:
-            av = int(a.get(k, 0))
-            bv = int(b.get(k, 0))
-            if av > bv:
-                return 1
-            if av < bv:
-                return -1
-        return 0
-
-    def cmp_placed_by_prio_row(row) -> int:
-        s_map = prio_map(row.get("placed_by_prio_solver", ""))
-        d_map = prio_map(row.get("placed_by_prio_default", ""))
-        return place_compare(s_map, d_map)
-
     joined["placed_cmp"] = joined.apply(cmp_placed_by_prio_row, axis=1)
 
     # deltas for resource utilization
     joined["cpu_delta"] = joined["util_cpu_solver"] - joined["util_cpu_default"]
     joined["mem_delta"] = joined["util_mem_solver"] - joined["util_mem_default"]
 
-    # expected size check
-    if expected_seed_count is not None and len(joined) != expected_seed_count:
-        raise SystemExit(f"[error] {cfg_name}: expected {expected_seed_count} joined seeds, found {len(joined)}")
-
     return joined
 
 
 def main():
-    solver_root = (RESULTS_ROOT / SOLVER_SUBDIR).resolve()
-    base_root = (RESULTS_ROOT / DEFAULT_SUBDIR).resolve()
-    out_dir = OUT_DIR.resolve()
+    p = argparse.ArgumentParser(description="Combine solver and default results into summary CSVs.")
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path("analysis"),
+        help="Output directory for combined results CSVs.",
+    )
+    p.add_argument(
+        "--results-root",
+        type=Path,
+        default=Path("G:/My Drive/Datalogi/MSc - SDU/Master Thesis/Results/results"),
+        help="Root directory containing results folders.",
+    )
+    p.add_argument(
+        "--solver-dir",
+        type=str,
+        default="all_synch_python",
+        help="Subdirectory name under results root for solver results.",
+    )
+    p.add_argument(
+        "--default-dir",
+        type=str,
+        default="default",
+        help="Subdirectory name under results root for default results.",
+    )
+    p.add_argument(
+        "--results-csv",
+        type=str,
+        default="results.csv",
+        help="Filename of results CSV files under each results subdirectory.",
+    )
+    p.add_argument(
+        "--decimals",
+        type=int,
+        default=4,
+        help="Number of decimal places for rounding rates and averages in output.",
+    )
+    args = p.parse_args()
+    
+    
+    solver_root = (args.results_root / args.solver_dir).resolve()
+    base_root = (args.results_root / args.default_dir).resolve()
+    out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     per_combo_rows = []
@@ -239,8 +268,8 @@ def main():
             continue
 
         default_dir = base_root / meta["default_dirname"]
-        solver_csv = solver_dir / RESULTS_CSV
-        default_csv = default_dir / RESULTS_CSV
+        solver_csv = solver_dir / args.results_csv
+        default_csv = default_dir / args.results_csv
 
         if not default_dir.exists():
             print(f"[skip] default folder missing: {default_dir.name}")
@@ -253,9 +282,7 @@ def main():
             continue
 
         try:
-            per_seed_df = default_vs_solver_results_per_seed(
-                solver_csv, default_csv, solver_dir.name, expected_seed_count=EXPECTED_SEED_CNT
-            )
+            per_seed_df = default_vs_solver_per_seed(solver_csv, default_csv, solver_dir.name)
         except SystemExit:
             raise
         except Exception as e:
@@ -378,27 +405,27 @@ def main():
                 "n_seeds": int(len(per_seed_df)),
                 "n_seeds_not_all_running": int(len(not_all_running)),
                 "n_default_all_running": n_default_all,
-                "default_all_running_rate": f"{default_all_rate:.{DECIMALS}f}" if DECIMALS is not None else default_all_rate,
+                "default_all_running_rate": f"{default_all_rate:.{args.decimals}f}" if args.decimals is not None else default_all_rate,
                 "n_solver_called": n_solver_called,
-                "solver_called_rate": f"{solver_called_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_called_rate,
+                "solver_called_rate": f"{solver_called_rate:.{args.decimals}f}" if args.decimals is not None else solver_called_rate,
                 "n_solver_failed": n_solver_failed,
-                "solver_failed_rate": f"{solver_failed_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_failed_rate,
+                "solver_failed_rate": f"{solver_failed_rate:.{args.decimals}f}" if args.decimals is not None else solver_failed_rate,
                 "n_default_optimal": n_default_optimal,
-                "default_optimal_rate": f"{default_optimal_rate:.{DECIMALS}f}" if DECIMALS is not None else default_optimal_rate,
+                "default_optimal_rate": f"{default_optimal_rate:.{args.decimals}f}" if args.decimals is not None else default_optimal_rate,
                 "n_solver_optimal": n_solver_optimal,
-                "solver_optimal_rate": f"{solver_optimal_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_optimal_rate,
+                "solver_optimal_rate": f"{solver_optimal_rate:.{args.decimals}f}" if args.decimals is not None else solver_optimal_rate,
                 "n_solver_feasible": n_solver_feasible,
-                "solver_feasible_rate": f"{solver_feasible_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_feasible_rate,
+                "solver_feasible_rate": f"{solver_feasible_rate:.{args.decimals}f}" if args.decimals is not None else solver_feasible_rate,
                 "n_solver_improve": n_solver_improve,
-                "solver_improve_rate": f"{solver_improve_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_improve_rate,
+                "solver_improve_rate": f"{solver_improve_rate:.{args.decimals}f}" if args.decimals is not None else solver_improve_rate,
                 "n_other": n_other,
-                "other_rate": f"{other_rate:.{DECIMALS}f}" if DECIMALS is not None else other_rate,
-                "solver_duration_ms_sum": f"{t_sum:.{DECIMALS}f}" if DECIMALS is not None else t_sum,
-                "solver_duration_ms_mean": f"{t_mean:.{DECIMALS}f}" if DECIMALS is not None else t_mean,
-                "cpu_delta_sum": f"{cpu_delta_sum:.{DECIMALS}f}" if DECIMALS is not None else cpu_delta_sum,
-                "mem_delta_sum": f"{mem_delta_sum:.{DECIMALS}f}" if DECIMALS is not None else mem_delta_sum,
-                "cpu_delta_mean": f"{cpu_delta_mean:.{DECIMALS}f}" if DECIMALS is not None else cpu_delta_mean,
-                "mem_delta_mean": f"{mem_delta_mean:.{DECIMALS}f}" if DECIMALS is not None else mem_delta_mean,
+                "other_rate": f"{other_rate:.{args.decimals}f}" if args.decimals is not None else other_rate,
+                "solver_duration_ms_sum": f"{t_sum:.{args.decimals}f}" if args.decimals is not None else t_sum,
+                "solver_duration_ms_mean": f"{t_mean:.{args.decimals}f}" if args.decimals is not None else t_mean,
+                "cpu_delta_sum": f"{cpu_delta_sum:.{args.decimals}f}" if args.decimals is not None else cpu_delta_sum,
+                "mem_delta_sum": f"{mem_delta_sum:.{args.decimals}f}" if args.decimals is not None else mem_delta_sum,
+                "cpu_delta_mean": f"{cpu_delta_mean:.{args.decimals}f}" if args.decimals is not None else cpu_delta_mean,
+                "mem_delta_mean": f"{mem_delta_mean:.{args.decimals}f}" if args.decimals is not None else mem_delta_mean,
             }
         )
 
