@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
-// Package myscorebreaker provides a deterministic node tie-break Score plugin.
 package myscorebreaker
 
 import (
@@ -11,7 +9,7 @@ import (
 	framework "k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// Name is the plugin name used in the Scheduler config.
+// Name of  plugin
 const Name = "MyScoreBreaker"
 
 // Ensure our plugin implements both ScorePlugin and ScoreExtensions.
@@ -22,7 +20,7 @@ var (
 
 type Plugin struct{}
 
-// New initializes the plugin; no args needed.
+// New initializes the plugin.
 func New(_ context.Context, _ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
 	return &Plugin{}, nil
 }
@@ -47,7 +45,6 @@ func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState
 
 	// Assign a strictly increasing score across the sorted list.
 	// Scale into [0, MaxNodeScore] so the plugin has full internal resolution,
-	// but since you set weight=1, its overall influence is tiny.
 	n := len(scores)
 	if n <= 1 {
 		return framework.NewStatus(framework.Success, "")
@@ -55,9 +52,6 @@ func (p *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState
 
 	for i := range scores {
 		// Example: n=4 -> indices [0..3]
-		// We want lexicographically *earlier* names to score *slightly higher*.
-		// Map i to descending scores: [Max, Max*(n-1)/(n-1), ..., 0]
-		// Using an integer linear ramp:
 		desc := int64(framework.MaxNodeScore) * int64(n-1-i) / int64(n-1)
 		scores[i].Score = desc
 	}
