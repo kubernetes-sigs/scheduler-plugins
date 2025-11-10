@@ -267,10 +267,11 @@ def plot_3d_ppn_prio_timeout(df: pd.DataFrame, title: str, out_path: Path):
 
     x_index = {r: i for i, r in enumerate(utils)}
     y_index = {n: j for j, n in enumerate(nodes)}
-
-    fig = plt.figure(figsize=FIGSIZE_3D)
     
-    ax = fig.add_subplot(111, projection="3d")
+    fig, ax = plt.subplots(
+        figsize=FIGSIZE_3D,
+        subplot_kw={"projection": "3d"}
+    )
     ax.view_init(elev=ELEV_3D, azim=AZIM_3D)
     ax.set_proj_type("ortho")
 
@@ -281,17 +282,18 @@ def plot_3d_ppn_prio_timeout(df: pd.DataFrame, title: str, out_path: Path):
     ax.set_xticks([x_index[r] + 0.5 for r in utils])
     ax.set_yticks([y_index[n] + 0.5 for n in nodes])
     ax.set_zticks([0, 20, 40, 60, 80, 100])
+    ax.zaxis.set_major_formatter(mtick.PercentFormatter(100.0))
     
     ax.set_xticklabels([f"{int(round(r))}%" for r in utils], fontsize=TICK_FS)
     ax.set_yticklabels([str(n) for n in nodes], fontsize=TICK_FS)
     
     ax.tick_params(axis='x', labelsize=TICK_FS, pad=-2)
     ax.tick_params(axis='y', labelsize=TICK_FS, pad=-2)
-    ax.tick_params(axis='z', labelsize=TICK_FS, pad=-2)
+    ax.tick_params(axis='z', labelsize=TICK_FS, pad=-1)
     
     ax.set_xlabel("target util (%)", fontsize=LABEL_FS, labelpad=-3)
     ax.set_ylabel("# of nodes", fontsize=LABEL_FS, labelpad=-3)
-    ax.set_zlabel("% of instances", fontsize=LABEL_FS, labelpad=-6)
+    ax.set_zlabel("% of instances", fontsize=LABEL_FS, labelpad=-4)
     
     ax.set_title(title, fontsize=TITLE_FS, y=1.01, pad=0)
 
@@ -338,7 +340,7 @@ def plot_3d_ppn_prio_timeout(df: pd.DataFrame, title: str, out_path: Path):
     fig.legend(
         handles, labels,
         loc="upper center",
-        bbox_to_anchor=(0.54, 0.92),
+        bbox_to_anchor=(0.545, 0.92),
         prop={"size": LEGEND_FS},
         ncol=len(labels),  # one row
         handlelength=1.0,  # shorter color boxes
