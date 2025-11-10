@@ -63,7 +63,6 @@ Otherwise, the following sections describe how to **build, run, and test** the s
 
 To enable and use plugins in the Kubernetes scheduler, you must apply a scheduler configuration manifest that selects the plugins and their settings; the manifest for this plugin is located in `bootstrap/content/manifests/`. Also note that the plugin is referenced and registered in `cmd/scheduler/main.go`, which is required for the scheduler to include and recognize it at build time.
 
-
 ## Building the scheduler+plugin
 
 The scheduler+plugin can be built either as a **binary (recommended)** or as a **docker image**.
