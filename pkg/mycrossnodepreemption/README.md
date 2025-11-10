@@ -6,24 +6,29 @@
 - [Cross-Node Preemption Plugin](#cross-node-preemption-plugin)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
-    - [Analogy of the problem to be solved](#analogy-of-the-problem-to-be-solved)
-    - [Plugin Description](#plugin-description)
-    - [Solvers](#solvers)
-  - [Build and Run](#build-and-run)
-    - [Prerequisites](#prerequisites)
-    - [Build the Python environment (for Python solver)](#build-the-python-environment-for-python-solver)
-    - [Copy the Python solver to solver location](#copy-the-python-solver-to-solver-location)
-    - [Build the scheduler with the plugin](#build-the-scheduler-with-the-plugin)
-      - [Building the binary](#building-the-binary)
-      - [Building the docker image (recommended for faster builds)](#building-the-docker-image-recommended-for-faster-builds)
-    - [Run the plugin on a KWOK cluster (Automated)](#run-the-plugin-on-a-kwok-cluster-automated)
-    - [Run the plugin on a KWOK cluster (Manual)](#run-the-plugin-on-a-kwok-cluster-manual)
-    - [Run the plugin in a Kind cluster](#run-the-plugin-in-a-kind-cluster)
-  - [Test the plugin](#test-the-plugin)
+  - [Building the scheduler with the plugin](#building-the-scheduler-with-the-plugin)
+    - [Prerequisites for building the plugin](#prerequisites-for-building-the-plugin)
+    - [Build as a binary (recommended)](#build-as-a-binary-recommended)
+      - [Create a Python environment for the Python solver](#create-a-python-environment-for-the-python-solver)
+      - [Copy the Python solver to solver location](#copy-the-python-solver-to-solver-location)
+    - [Build as a docker image](#build-as-a-docker-image)
+  - [Running the scheduler with the plugin](#running-the-scheduler-with-the-plugin)
+    - [Prerequisites for running the plugin](#prerequisites-for-running-the-plugin)
+    - [Run in a KWOK cluster (recommended)](#run-in-a-kwok-cluster-recommended)
+      - [KWOK (Manual)](#kwok-manual)
+      - [KWOK (Automated)](#kwok-automated)
+    - [Run in a Kind cluster](#run-in-a-kind-cluster)
+  - [Testing the plugin](#testing-the-plugin)
+    - [Test jobs](#test-jobs)
     - [Test scripts](#test-scripts)
-    - [Bootstrap a VM](#bootstrap-a-vm)
-    - [Running test jobs on UCloud](#running-test-jobs-on-ucloud)
-    - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
+      - [Initial workload generator](#initial-workload-generator)
+      - [Live-simulator](#live-simulator)
+    - [Run tests](#run-tests)
+      - [Running test jobs on UCloud](#running-test-jobs-on-ucloud)
+      - [Using Vagrant for development and test of init script](#using-vagrant-for-development-and-test-of-init-script)
+  - [Results Analysis: Plots, Tables, etc](#results-analysis-plots-tables-etc)
+    - [Scripts](#scripts)
+  - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
   - [Live-workload-simulator](#live-workload-simulator)
   - [TODOs](#todos)
     - [Later TODOs](#later-todos)
@@ -32,66 +37,64 @@
   - [Questions](#questions)
     - [Open Questions](#open-questions)
     - [Closed Questions](#closed-questions)
-  - [Generate jobs](#generate-jobs)
 
 ## Overview
 
-This project introduces an improved cross-node preemption plugin for Kubernetes that overcomes the limitations of the default scheduler’s preemption mechanism.
+This project introduces an *optimized priority-based* approach for placing pods on to nodes by introducing a **Cross-Node Preemption Plugin** for the Kubernetes scheduler.
+The goal is to schedule as many *high-priority* pods as possible, especially when the *default scheduler* fails to do so.
+The plugin makes it possible to integrate an *external* solver in this case a Python solver using **Google's CP-SAT** solver to find an optimal pod placement plan that maximizes the number of scheduled high-priority pods while *minimizing disruption by minimizing the number of preemptions (movements and evictions)*.
+Having the plan from the solver, the plugin then applies it by evicting or relocating pods across multiple nodes in the cluster allowing the planned pods to be scheduled. Note that the default Kubernetes scheduler only preempts pods within a *single* node.
 
-Whereas the default scheduler only preempts pods within a single node, this plugin is capable of reasoning across multiple nodes simultaneously. It implements efficient algorithms to decide which pods to move or evict, with the aim of admitting high-priority workloads while minimizing disruption.
+The plugin support different **optimization modes**:
 
-### Analogy of the problem to be solved
+- *For every pod* – re-optimize whenever a new pod arrives.
+- *All synch* – optimize all pods at fixed intervals (or on demand). It stop scheduling while waiting for the optimization to be completed and for the plan to be applied before proceeding.
+- *All asynch* – same as all synch, but do not wait for the optimization to complete before proceeding. It will only apply the plan if the cluster state is the same as when the plan was created. It will only stop scheduling while the plan is being applied.
 
-Let's imagine we have five Lego boxes filled with bricks of different sizes. We've just bought some new bricks that we want to put into the boxes. The problem is that none of the boxes have enough free space, since they are already nearly full. To make room, we can choose to move some of the existing bricks into other boxes that still have a little free space.
+Also, it can be integrated into different **scheduling phases**. Either before enqueuing the pod (*pre-enqueue*) or after having tried to schedule it normally (*post-filter*).
 
-But here a cascade effect occurs: when we move one brick from box A to box B, we may need to move another brick from box B into box C – and so on – before we finally free up enough space for the new bricks. This chain reaction can become long and complicated. That’s why the goal is not only to make room for the new bricks, but also to do it with as few moves as possible.
+- If pre-enqueue is used, the plugin will optimize the cluster state for every pod that arrives.
+- If post-filter is used, the plugin will only optimize when the default scheduler fails to schedule a pod.
 
-In Kubernetes, this is exactly the situation when high-priority pods need to be scheduled but the cluster is fragmented. The plugin's goal is to resolve this efficiently and fairly across the entire cluster.
+For a more **detailed description**, please refer to the paper ([Priority Matters: Optimising Kubernetes Clusters Usage with Constraint-Based Pod Packing](link-to-paper)) or the thesis report ([Optimizing Kubernetes Scheduler](link-to-thesis-report)).
 
-### Plugin Description
+The code of the plugin can be found in `pkg/mycrossnodepreemption/` and the manifests to deploy the scheduler with the plugin can be found in `manifests/mycrossnodepreemption/`.
 
-The Cross-Node Preemption Plugin extends the Kubernetes scheduler with the ability to:
+To make the plugin available to the Kubernetes scheduler, it is referenced in `cmd/scheduler/main.go`.
 
-- Perform cluster-wide reasoning: Instead of being limited to a single node, the plugin evaluates all nodes simultaneously when deciding how to schedule a pending pod.
-- Optimize across multiple strategies: It supports different solver back-ends (BFS search, local search, or external solvers like OR-Tools) to find feasible placements.
-- Reduce disruption: By modeling pod evictions and relocations, it aims to minimize the number of pods that must be preempted or moved.
-- Support multiple optimization modes:
-  - For every pod – re-optimize whenever a new pod arrives.
-  - Batch – group pending pods and solve them together.
-  - Continuous – keep optimizing placements as the workload evolves.
-- Integrate with scheduling phases: The plugin can be triggered at different points in the scheduling cycle (pre-enqueue or post-filter), making it adaptable to diverse workloads.
+## Building the scheduler with the plugin
 
-In short, this plugin enhances Kubernetes scheduling by making cross-node preemption both possible and practical, while ensuring better resource utilization.
+The scheduler with the plugin can be built either as a **binary (recommended)** or as a **docker image**.
 
-The code of the plugin can be found in `pkg/mycrossnodepreemption/`.
-
-### Solvers
-
-The plugin includes three different solvers to find optimal or near-optimal preemption plans:
-
-1. **Python (CP-SAT) solver**: A solver using Google's CP-SAT solver to find an optimal placement of pods. The code for this solver is located in `bootstrap/content/scripts/python_solver/main.py`.
-2. **Swap-based local-search solver**: A fast heuristic solver that iteratively tries to relocate pods to free up space.
-3. **Breadth-First Search (BFS) solver**: An exhaustive solver that tries to free a node by exploring pod relocations. Each depth level in the search tree corresponds to one move of a pod.
-
-The last two solvers are implemented in Go, while the first solver is implemented in Python and requires a Python environment as it uses the CP-SAT solver from Google's OR-Tools.
-
-## Build and Run
-
-### Prerequisites
+### Prerequisites for building the plugin
 
 The following tools are required (if Windows host, use WSL2 w/ e.g. Ubuntu) to build and run the scheduler with the plugin:
 
-- git (tested with 2.43.0)
-- make (tested with 4.3)
-- python3 (tested with 3.10.12)
-- pip (tested with 24.0)
-- kubectl (tested with client v.1.32.7)
-- kwok+kwokctl (tested with v0.7.0)
-- Go (tested with 1.24.3)
+- `git` (tested with 2.43.0)
+- `make` (tested with 4.3)
+- `python3` (tested with 3.10.12)
+- `pip` (tested with 24.0)
+- `Go` (tested with 1.24.3)
+- When building as a docker image:
+  - `docker` (tested with v28.3.2)
+  - `docker-buildx-plugin` (tested with v0.25.0)
 
 Currently, it is only tested on amd64 architecture and some code may need to be modified to run on other architectures.
 
-### Build the Python environment (for Python solver)
+### Build as a binary (recommended)
+
+To build the binary, run the following command in the root of the repo:
+
+```bash
+make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
+```
+
+The built binary will be located in `bin/kube-scheduler`.
+
+As the plugin uses a Python solver, the Python environment and the solver code also need to be set up.
+This step is not needed if using the docker image as it already contains the Python environment and the solver code.
+
+#### Create a Python environment for the Python solver
 
 ```bash
 sudo install -d -m 0755 /opt/venv/
@@ -100,7 +103,7 @@ sudo /opt/venv/bin/python -m pip install --upgrade pip
 sudo /opt/venv/bin/pip install --no-cache-dir -r bootstrap/content/scripts/python_solver/requirements.txt
 ```
 
-### Copy the Python solver to solver location
+#### Copy the Python solver to solver location
 
 NOTE: If you modify the Python solver code, you need to copy it again.
 
@@ -109,37 +112,32 @@ sudo install -d -m 0755 /opt/solver/
 sudo cp -a bootstrap/content/scripts/python_solver/main.py /opt/solver/main.py
 ```
 
-### Build the scheduler with the plugin
-
-The scheduler with the plugin can be built either as a binary or as a docker image.
-
-#### Building the binary
-
-To build the binary, run the following command in the root of the repo:
-
-```bash
-make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
-```
-
-#### Building the docker image (recommended for faster builds)
-
-To build the docker image, docker (tested with v28.3.2) and docker-buildx-plugin (tested with v0.25.0) must be installed, then run the following command in the root of the repo:
+### Build as a docker image
 
 ```bash
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile .
 ```
 
-### Run the plugin on a KWOK cluster (Automated)
+## Running the scheduler with the plugin
 
-To run the scheduler with the plugin on a KWOK cluster, the easiest way is to use the provided test generator script (`bootstrap/content/scripts/kwok/test_generator.py`). It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin. It has a number of parameters, see the help:
+To run the scheduler with the plugin, you can either run it on a **KWOK** or a **Kind** cluster.
+We recommend using KWOK as it is lightweight and easy to set up.
 
-```bash
-python3 bootstrap/content/scripts/kwok/test_generator.py --help
-```
+### Prerequisites for running the plugin
 
-### Run the plugin on a KWOK cluster (Manual)
+The following tools are required to run the scheduler with the plugin (tools already mentioned in the build prerequisites are omitted):
 
-If you just want to test it manually on a KWOK cluster, first create a scheduler config (see `manifests/mycrossnodepreemption/scheduler-config.yaml`) and a cluster config file (see `bootstrap/content/data/configs/a/01.yaml`). 
+- `kubectl` (tested with client v.1.32.7)
+- When running in a Kind cluster:
+  - `kind` (tested with v0.20.0)
+- When running in a KWOK cluster:
+  - `kwok`+`kwokctl` (tested with v0.7.0)
+
+### Run in a KWOK cluster (recommended)
+
+#### KWOK (Manual)
+
+If you just want to test it manually on a KWOK cluster, first create a scheduler config (see `manifests/mycrossnodepreemption/plugin-kube-scheduler-config.yaml`) and a cluster config file (see `bootstrap/content/data/configs-kwokctl/all_synch_python.yaml`).
 
 NOTE: Make sure you have the latest binary or docker image of the scheduler with the plugin built (see above). Also make sure the latest Python solver is copied to `/opt/solver/main.py` (see above).
 
@@ -155,34 +153,149 @@ To delete the cluster, run:
 kwokctl delete cluster --name <cluster_name>
 ```
 
-### Run the plugin in a Kind cluster
+#### KWOK (Automated)
 
-To run the plugin in a Kind cluster, install docker (tested with v28.3.2) + docker-buildx-plugin (tested with v0.25.0) + Kind (tested with v0.20.0), and run the provided script `kind/kind-create-cluster.sh` to create a Kind cluster with some specified number of nodes:
+To run the scheduler with the plugin on a KWOK cluster, the easiest way is to use the provided test generator script (`bootstrap/content/scripts/kwok/test_generator.py`). It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin. It has a number of parameters, see the help:
 
 ```bash
-./kind-create-cluster.sh <cluster_name> <num_nodes>
+python3 bootstrap/content/scripts/kwok/test_generator.py --help
+```
+  
+### Run in a Kind cluster
+
+To run the plugin in a Kind cluster, run the provided script `kind/kind-create-cluster.sh` to create a Kind cluster with some specified number of nodes:
+
+```bash
+./kind/kind-create-cluster.sh <cluster_name> <num_nodes>
 ```
 
 Then load the scheduler image into the Kind cluster (it will also build the image). The script uses a fixed number of environment variables, see `kind/kind-load-plugins.sh` for details. You can modify the script to change them.
 
 ```bash
-./kind-load-plugins.sh <cluster_name>
+./kind/kind-load-plugins.sh <cluster_name>
 ```
 
-## Test the plugin
+## Testing the plugin
+
+### Test jobs
+
+The test jobs used to test the plugin can be found under `bootstrap/content/data/jobs/`. They are generated using the provided job generator script `bootstrap/content/job_generator.py`.
+
+Deterministic jobs with default scheduler:
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/default-deterministic \
+--output-dir results/default-deterministic \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default-deterministic.yaml \
+--seed-file data/seeds/seeds_all.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 1.00 1.05 \
+--seeds-not-all-running 100 \
+--default-scheduler
+```
+
+Default scheduler jobs:
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/default \
+--output-dir results/default \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default.yaml \
+--seed-file data/seeds/seeds_100.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--default-scheduler
+```
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/default \
+--output-dir results/default \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default.yaml \
+--seed-file data/seeds/ \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--default-scheduler
+```
+
+Python solver jobs:
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/all_synch_python \
+--output-dir results/all_synch_python \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
+--seed-file data/seeds/ \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 \
+--timeouts 1 10 20 \
+--save-scheduler-logs \
+--save-solver-stats \
+--solver-trigger
+```
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/all_synch_python \
+--output-dir results/all_synch_python \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
+--seed-file data/seeds/seeds_100.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--timeouts 1 10 20 \
+--save-scheduler-logs \
+--save-solver-stats \
+--solver-trigger
+```
+
 
 ### Test scripts
 
-Some useful test scripts can be found in `bootstrap/content/scripts/kwok/`:
+To test the plugin, some test scripts have been made under `bootstrap/content/scripts/kwok/`:
 
 - `test_generator.py`: Generates a KWOK cluster with random pods and runs the scheduler with the plugin.
 - `stats.py`: Gathers statistics from the KWOK cluster e.g. number of scheduled pods, current utilization, etc.
 
-### Bootstrap a VM
+#### Initial workload generator
 
-To bootstrap a VM or a Job runner with all prerequisites installed and running tests with KWOK, use the provided init script `bootstrap/bootstrap.sh` and upload the content of the `bootstrap/content/`. Has been used on UCloud to run tests, see below for more details.
+#### Live-simulator
 
-To develop and test the init script it can be beneficial to run it in a VM. To make it easy, a Vagrantfile is provided in the root of the repo. It will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install Vagrant and VirtualBox, then run:
+### Run tests
+
+To make it easier to bootstrap and test on VMs or a Job runner (e.g. UCloud) a bootstrap folder is provided under `bootstrap/` that contains everything needed to run the tests including the init script `bootstrap.sh`. 
+
+#### Running test jobs on UCloud
+
+To run tests on UCloud:
+
+1) Upload the `bootstrap` folder to UCloud and place it under `Files`.
+2) If you want to be able to SSH into the instance, add your public SSH key to `SSH Keys` under `Resources`.
+3) Create a Terminal instance with Ubuntu 22.04. A illustration is shown below:
+
+   ![UCloud Terminal Instance](./ucloud_terminal_settings_example.png)
+
+4) Submit the instance and wait until it is running.
+5) To save the results use the App `Archive` and select the folder uploaded in step 4 which should now hold the results. Note if you also want to save the stdout from the instance save the file located under `Files -> Jobs -> <job_id> -> stdout-0.log`.
+
+#### Using Vagrant for development and test of init script
+
+To develop and test the init script it can be beneficial to run it in a VM. To make it easy, a Vagrantfile is provided in the root of the repo. It will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install Vagrant (tested with v2.4.7) and VirtualBox (tested with v7.1.10), then run:
 
 ```bash
 vagrant up
@@ -200,23 +313,36 @@ To delete the VM, run:
 vagrant destroy -f
 ```
 
-### Running test jobs on UCloud
+## Results Analysis: Plots, Tables, etc
 
-To run tests on UCloud:
+### Scripts
 
-1) Make sure the `bootstrap.sh` under `bootstrap/` is in Unix format (LF). If not, run `dos2unix bootstrap/bootstrap.sh`.
-2) Build the scheduler binary using the command mentioned above and copy it from `bin/kube-scheduler` to `bootstrap/content/bin/kube-scheduler`.
-3) Copy the content of `bootstrap` folder (including `bootstrap.sh` and `content/` in it) and rename it to whatever you like.
-4) Upload it to UCloud under 'Files'.
-5) If you want to be able to SSH into the instance, add your public SSH key to 'SSH Keys' under 'Resources'.
-6) Create a Terminal instance with Ubuntu 22.04. A illustration is shown below:
+The scripts used to generate plots and tables from the results can be found under `analysis/`.
 
-   ![UCloud Terminal Instance](./ucloud_terminal_settings_example.png)
 
-7) Submit the instance and wait until it is running.
-8) To save the results use the App 'Archiver' and select the folder uploaded in step 4 which should now hold the results. Note if you also want to save the stdout from the instance save the file located under Files -> Jobs -> <job_id> -> stdout-0.log.
 
-### Useful kubectl/kwokctl commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Useful kubectl/kwokctl commands
 
 - Get all pods
 
@@ -383,88 +509,3 @@ and any small overshoot self-corrects on subsequent ticks.
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately
 - What to do with node-selectors, PDBs, and other rules.
   - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
-
-## Generate jobs
-
-Deterministic jobs with default scheduler:
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/default-deterministic \
---output-dir results/default-deterministic \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/default-deterministic.yaml \
---seed-file data/seeds/seeds_all.txt \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 0.90 0.95 1.00 1.05 \
---seeds-not-all-running 100 \
---default-scheduler
-```
-
-Default scheduler jobs:
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/default \
---output-dir results/default \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/default.yaml \
---seed-file data/seeds/seeds_100.txt \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 1.00 1.05 \
---default-scheduler
-```
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/default \
---output-dir results/default \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/default.yaml \
---seed-file data/seeds/ \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 1.00 1.05 \
---default-scheduler
-```
-
-Python solver jobs:
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/all_synch_python \
---output-dir results/all_synch_python \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
---seed-file data/seeds/ \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 0.90 0.95 \
---timeouts 1 10 20 \
---save-scheduler-logs \
---save-solver-stats \
---solver-trigger
-```
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/all_synch_python \
---output-dir results/all_synch_python \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
---seed-file data/seeds/seeds_100.txt \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 1.00 1.05 \
---timeouts 1 10 20 \
---save-scheduler-logs \
---save-solver-stats \
---solver-trigger
-```
