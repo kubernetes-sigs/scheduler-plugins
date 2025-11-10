@@ -3,26 +3,28 @@
 
 - [Cross-Node Preemption Plugin](#cross-node-preemption-plugin)
   - [Overview](#overview)
-  - [Building the scheduler with the plugin](#building-the-scheduler-with-the-plugin)
-    - [Prerequisites for building the plugin](#prerequisites-for-building-the-plugin)
+  - [Building the scheduler+plugin](#building-the-schedulerplugin)
+    - [Prerequisites for building the scheduler+plugin](#prerequisites-for-building-the-schedulerplugin)
     - [Build as a binary (recommended)](#build-as-a-binary-recommended)
       - [Create a Python environment for the Python solver](#create-a-python-environment-for-the-python-solver)
       - [Copy the Python solver to solver location](#copy-the-python-solver-to-solver-location)
     - [Build as a docker image](#build-as-a-docker-image)
-  - [Running the scheduler with the plugin](#running-the-scheduler-with-the-plugin)
-    - [Prerequisites for running the plugin](#prerequisites-for-running-the-plugin)
-    - [Run in a KWOK cluster (recommended)](#run-in-a-kwok-cluster-recommended)
+  - [Running the scheduler+plugin](#running-the-schedulerplugin)
+    - [Prerequisites for running the scheduler+plugin](#prerequisites-for-running-the-schedulerplugin)
+    - [Run scheduler+plugin in a KWOK cluster (recommended)](#run-schedulerplugin-in-a-kwok-cluster-recommended)
       - [KWOK (Manual)](#kwok-manual)
       - [KWOK (Automated)](#kwok-automated)
     - [Run in a Kind cluster](#run-in-a-kind-cluster)
-  - [Testing the scheduler with the plugin](#testing-the-scheduler-with-the-plugin)
-    - [Test jobs](#test-jobs)
+  - [Testing the scheduler+plugin](#testing-the-schedulerplugin)
     - [Test scripts](#test-scripts)
-      - [Initial workload generator](#initial-workload-generator)
-      - [Live-simulator](#live-simulator)
-    - [Run tests](#run-tests)
-      - [Running test jobs on UCloud](#running-test-jobs-on-ucloud)
+      - [(Initial) workload generator (`test_generator.py`)](#initial-workload-generator-test_generatorpy)
+    - [Test jobs](#test-jobs)
+    - [Running test jobs using HPC resources and init script (recommended)](#running-test-jobs-using-hpc-resources-and-init-script-recommended)
+      - [Running test jobs using `test_generator.py` directly](#running-test-jobs-using-test_generatorpy-directly)
       - [Using Vagrant for development and test of init script](#using-vagrant-for-development-and-test-of-init-script)
+    - [Generating test jobs](#generating-test-jobs)
+    - [Estimate time to complete all jobs in UCloud](#estimate-time-to-complete-all-jobs-in-ucloud)
+      - [Live-simulator](#live-simulator)
   - [Results Analysis: Plots, Tables, etc](#results-analysis-plots-tables-etc)
     - [Scripts](#scripts)
   - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
@@ -59,11 +61,11 @@ The code of the plugin can be found in `pkg/mycrossnodepreemption/` and the mani
 
 To make the plugin available to the Kubernetes scheduler, it is referenced in `cmd/scheduler/main.go`.
 
-## Building the scheduler with the plugin
+## Building the scheduler+plugin
 
-The scheduler with the plugin can be built either as a **binary (recommended)** or as a **docker image**.
+The scheduler+plugin can be built either as a **binary (recommended)** or as a **docker image**.
 
-### Prerequisites for building the plugin
+### Prerequisites for building the scheduler+plugin
 
 The following tools are required (if Windows host, use WSL2 w/ e.g. Ubuntu) to build and run the scheduler with the plugin:
 
@@ -115,12 +117,11 @@ sudo cp -a bootstrap/content/scripts/python_solver/main.py /opt/solver/main.py
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile .
 ```
 
-## Running the scheduler with the plugin
+## Running the scheduler+plugin
 
-To run the scheduler with the plugin, you can either run it on a **KWOK** or a **Kind** cluster.
-We recommend using KWOK as it is lightweight and easy to set up.
+To run the scheduler with the plugin, you can either run it on a **KWOK** (recommended) or a **Kind** cluster.
 
-### Prerequisites for running the plugin
+### Prerequisites for running the scheduler+plugin
 
 The following tools are required to run the scheduler with the plugin (tools already mentioned in the build prerequisites are omitted):
 
@@ -130,7 +131,7 @@ The following tools are required to run the scheduler with the plugin (tools alr
 - When running in a KWOK cluster:
   - `kwok`+`kwokctl` (tested with v0.7.0)
 
-### Run in a KWOK cluster (recommended)
+### Run scheduler+plugin in a KWOK cluster (recommended)
 
 #### KWOK (Manual)
 
@@ -138,7 +139,7 @@ If you just want to test it manually on a KWOK cluster, first create a scheduler
 
 NOTE: Make sure you have the latest binary or docker image of the scheduler with the plugin built (see above). Also make sure the latest Python solver is copied to `/opt/solver/main.py` (see above).
 
-Then create the cluster with kwokctl:
+Then create the cluster with:
 
 ```bash
 kwokctl create cluster --name <cluster_name> --runtime <docker/binary> --config <path/to/cluster-config.yaml>
@@ -152,11 +153,7 @@ kwokctl delete cluster --name <cluster_name>
 
 #### KWOK (Automated)
 
-To run the scheduler with the plugin on a KWOK cluster, the easiest way is to use the provided test generator script (`bootstrap/content/scripts/kwok/test_generator.py`). It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin. It has a number of parameters, see the help:
-
-```bash
-python3 bootstrap/content/scripts/kwok/test_generator.py --help
-```
+To run the scheduler with the plugin on a KWOK cluster, the easiest way is to use the provided test generator script (`bootstrap/content/scripts/kwok/test_generator.py`, described below). It will create a KWOK cluster, fill it with random pods, and run the scheduler with the plugin.
   
 ### Run in a Kind cluster
 
@@ -166,19 +163,99 @@ To run the plugin in a Kind cluster, run the provided script `kind/kind-create-c
 ./kind/kind-create-cluster.sh <cluster_name> <num_nodes>
 ```
 
-Then load the scheduler image into the Kind cluster (it will also build the image). The script uses a fixed number of environment variables, see `kind/kind-load-plugins.sh` for details. You can modify the script to change them.
+Then load the scheduler image into the Kind cluster (it will also build the docker image):
 
 ```bash
 ./kind/kind-load-plugins.sh <cluster_name>
 ```
 
-## Testing the scheduler with the plugin
+## Testing the scheduler+plugin
+
+### Test scripts
+
+To test the plugin using KWOK, some test scripts have been made under `bootstrap/content/scripts/kwok/`:
+
+- `bootstrap/content/scripts/kwok/test_generator.py`: Generates a KWOK cluster with random pods and nodes and runs the scheduler with the plugin and generates statistics.
+- `bootstrap/content/scripts/kwok/stats.py`: Manually statistics from a KWOK cluster e.g. number of scheduled pods, current utilization, etc.
+
+#### (Initial) workload generator (`test_generator.py`)
+
+The script `bootstrap/content/scripts/kwok/test_generator.py`, generates an initial workload on a KWOK cluster and runs the scheduler with the plugin.
+
+It has several parameters to configure the plugin, workloads, etc. To see all available parameters, run:
+
+```bash
+python3 test_generator.py --help
+```
+
 
 ### Test jobs
 
-The test jobs used to test the plugin can be found under `bootstrap/content/data/jobs/`. They are generated using the provided job generator script `bootstrap/content/job_generator.py`.
+All the test jobs used to evaluate the plugin can be found under `bootstrap/content/data/jobs/`.
 
-Deterministic jobs with default scheduler:
+### Running test jobs using HPC resources and init script (recommended)
+
+To make it faster to evaluate the plugin by parallizing evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), the content to bootstrap a job runner (HPC or VM) is provided under `bootstrap/`.
+It contains everything needed to run the tests including the init script `bootstrap.sh` that will ensure everything is set up and the tests are run.
+
+To run the already generated test jobs, follow the steps (using UCloud as an example):
+
+1) Upload the `bootstrap` folder to UCloud and place it under `Files` (can be renamed if needed).
+2) If you want to be able to SSH into the instance, add your public SSH key to `SSH Keys` under `Resources`.
+3) Create a Terminal instance with Ubuntu 22.04. A illustration is shown below:
+
+   ![UCloud Terminal Instance](./ucloud_job_example.png)
+
+  As shown in the illustration, the important options to the init script are:
+     - `--content-dir`: Path to the `bootstrap` folder uploaded in step 1.
+     - `--job-file`: Path to the job file to run (e.g. see already made jobs under `bootstrap/content/data/jobs/`).
+4) Submit the instance and wait until it is running.
+5) To save the results use the App `Archive` and select the folder uploaded in step 4 which should now hold the results. Note if you also want to save the stdout from the instance save the file located under `Files -> Jobs -> <job_id> -> stdout-0.log`.
+
+#### Running test jobs using `test_generator.py` directly
+
+If you prefer or need to run the test jobs directly using the `test_generator.py` script, then first `cd` into the `bootstrap/content/` folder, then run:
+
+```bash
+python3 scripts/kwok/test_generator.py \
+--job-file data/jobs/<job_file>.yaml
+```
+
+More parameters can be provided to customize the test run. To see all available parameters, run:
+
+```bash
+python3 scripts/kwok/test_generator.py --help
+```
+
+#### Using Vagrant for development and test of init script
+
+To develop and test the init script it can be beneficial to run it in a VM on a local machine. To make it easy, a `Vagrantfile` is provided in the root of the repo. It will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install `Vagrant` (tested with v2.4.7) and `VirtualBox` (tested with v7.1.10), then run:
+
+```bash
+vagrant up
+```
+
+This will create a VM named `scheduler-plugins` that you can SSH into using:
+
+```bash
+vagrant ssh
+```
+
+To delete the VM, run:
+
+```bash
+vagrant destroy -f
+```
+
+### Generating test jobs
+
+Jobs can be generated using the provided job generator script `bootstrap/content/job_generator.py`.
+
+The already generated test jobs can be reproduced using the following commands:
+
+**Deterministic jobs with default scheduler**:
+
+Runs until 100 seeds are found where not all pods are running using the default scheduler.
 
 ```bash
 python3 job_generator.py \
@@ -195,7 +272,25 @@ python3 job_generator.py \
 --default-scheduler
 ```
 
-Default scheduler jobs:
+**Default scheduler jobs**:
+
+0.90-0.95 utils runs on the seeds found using the deterministic job generation above.
+
+```bash
+python3 job_generator.py \
+--out-dir data/jobs/default \
+--output-dir results/default \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default.yaml \
+--seed-file data/seeds/ \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 \
+--default-scheduler
+```
+
+1.00-1.05 utils runs on a fixed seed file with 100 seeds.
 
 ```bash
 python3 job_generator.py \
@@ -211,21 +306,9 @@ python3 job_generator.py \
 --default-scheduler
 ```
 
-```bash
-python3 job_generator.py \
---out-dir data/jobs/default \
---output-dir results/default \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/default.yaml \
---seed-file data/seeds/ \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 1.00 1.05 \
---default-scheduler
-```
+**Python solver jobs**:
 
-Python solver jobs:
+0.90-0.95 utils runs on the seeds found using the deterministic job generation above.
 
 ```bash
 python3 job_generator.py \
@@ -244,6 +327,8 @@ python3 job_generator.py \
 --solver-trigger
 ```
 
+1.00-1.05 utils runs on a fixed seed file with 100 seeds.
+
 ```bash
 python3 job_generator.py \
 --out-dir data/jobs/all_synch_python \
@@ -262,53 +347,12 @@ python3 job_generator.py \
 ```
 
 
-### Test scripts
+### Estimate time to complete all jobs in UCloud
 
-To test the plugin, some test scripts have been made under `bootstrap/content/scripts/kwok/`:
-
-- `test_generator.py`: Generates a KWOK cluster with random pods and runs the scheduler with the plugin.
-- `stats.py`: Gathers statistics from the KWOK cluster e.g. number of scheduled pods, current utilization, etc.
-
-#### Initial workload generator
+The script `bootstrap/content/jobs_eta.py`, estimates the time to complete each running job in UCloud based on average time per seed.
 
 #### Live-simulator
 
-### Run tests
-
-To make it easier to bootstrap and test on VMs or a Job runner (e.g. UCloud) a bootstrap folder is provided under `bootstrap/` that contains everything needed to run the tests including the init script `bootstrap.sh`. 
-
-#### Running test jobs on UCloud
-
-To run tests on UCloud:
-
-1) Upload the `bootstrap` folder to UCloud and place it under `Files`.
-2) If you want to be able to SSH into the instance, add your public SSH key to `SSH Keys` under `Resources`.
-3) Create a Terminal instance with Ubuntu 22.04. A illustration is shown below:
-
-   ![UCloud Terminal Instance](./ucloud_terminal_settings_example.png)
-
-4) Submit the instance and wait until it is running.
-5) To save the results use the App `Archive` and select the folder uploaded in step 4 which should now hold the results. Note if you also want to save the stdout from the instance save the file located under `Files -> Jobs -> <job_id> -> stdout-0.log`.
-
-#### Using Vagrant for development and test of init script
-
-To develop and test the init script it can be beneficial to run it in a VM. To make it easy, a Vagrantfile is provided in the root of the repo. It will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install Vagrant (tested with v2.4.7) and VirtualBox (tested with v7.1.10), then run:
-
-```bash
-vagrant up
-```
-
-This will create a VM named `scheduler-plugins` that you can SSH into using:
-
-```bash
-vagrant ssh
-```
-
-To delete the VM, run:
-
-```bash
-vagrant destroy -f
-```
 
 ## Results Analysis: Plots, Tables, etc
 
@@ -316,28 +360,38 @@ vagrant destroy -f
 
 The scripts used to generate plots and tables from the results can be found under `analysis/`.
 
+These scripts expects the format of the results to be as generated by the provided test generator script (`bootstrap/content/scripts/kwok/test_generator.py`) and how they are saved according to the job files. If something else is used, the scripts may need to be modified.
 
+After having run all the jobs the results should be organized as follows on disk:
 
+```results/
+  |── default-deterministic/
+  │     ├── results.csv
+  │     ├── logs/
+  │     └── solver-stats/
+  ├── default/
+  │     ├── results.csv
+  │     ├── logs/
+  │     └── solver-stats/
+  └── all_synch_python/
+        ├── results.csv
+        ├── logs/
+        └── solver-stats/
+```
 
+To make the necessary combined results, a script `analysis/combine_results.py` is provided that combines the results from different runs into a single CSV file (`per_combo_results.csv`) for easier analysis.
 
+```bash
+python3 analysis/combine_results.py
+```
 
+Then, the combined results (`per_combo_results.csv`) can be used to generate plots and tables using the provided scripts under `analysis/plots_and_tables.py`.
 
+```bash
+python3 analysis/plots_and_tables.py
+```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+This will generate all the plots and tables used in the report and save them under `analysis/figures/` and `analysis/tables/`.
 
 ## Useful kubectl/kwokctl commands
 

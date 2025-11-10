@@ -13,8 +13,11 @@ import matplotlib.ticker as mtick
 DF_PER_COMBO_PATH = Path("analysis/per_combo_results.csv")
 df_per_combo = pd.read_csv(DF_PER_COMBO_PATH)
 
-OUT_DIR = Path("analysis/figures")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+OUT_DIR = Path("analysis")
+OUT_FIGURES_DIR = OUT_DIR / "figures"
+OUT_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+OUT_TABLES_PATH = OUT_DIR / "tables"
+OUT_TABLES_PATH.mkdir(parents=True, exist_ok=True)
 
 #################################################################
 # Global plotting settings
@@ -247,7 +250,7 @@ plot_2d_grid_ppn_prio_with_aggregated_util(
     df_util_agg=aggregate_over_util(df_per_combo),
     ppns=PLOT_PPNS,
     priorities=PLOT_PRIORITIES,
-    out_path=OUT_DIR / "2d_grid_ppn_prio",
+    out_path=OUT_FIGURES_DIR / "2d_grid_ppn_prio",
     cell_figsize=CELL_FIGSIZE_2D,
 )
 
@@ -359,7 +362,7 @@ for ppn in PLOT_PPNS:
                 print(f"[skip] no per-combo rows for ppn={ppn}, prio={prio}, t={t}")
                 continue
             title = f"{PODS_PER_NODE_LABEL}={ppn}, priorities={prio}, timeout={t}s"
-            out_file = OUT_DIR / f"3d_ppn{ppn}_prio{prio}_timeout{t:02d}"
+            out_file = OUT_FIGURES_DIR / f"3d_ppn{ppn}_prio{prio}_timeout{t:02d}"
             plot_3d_ppn_prio_timeout(sub, title, out_file)
 
 
@@ -423,8 +426,10 @@ for u in TABLES_UTILS:
     emit_row(r"$\Delta$\,mem\,util\,(\%)", tab_mem)
     lines.append(r"\midrule" if u != TABLES_UTILS[-1] else r"\bottomrule")
 lines.append(r"\end{tabular}")
-
 latex_block = "\n".join(lines)
 
-print("\n# === LaTeX tabular ===\n")
-print(latex_block)
+# save to file
+OUT_TABLES_PATH = OUT_TABLES_PATH / "table.txt"
+with open(OUT_TABLES_PATH, "w") as f:
+    f.write(latex_block)
+print(f"[ok] saved tables: {OUT_TABLES_PATH}")

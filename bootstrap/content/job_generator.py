@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# generate_job_yamls.py
 import argparse, itertools, os, pathlib, yaml
 from typing import Any, Dict, Iterable, Optional
 

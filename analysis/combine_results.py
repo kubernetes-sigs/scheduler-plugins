@@ -7,7 +7,7 @@ import pandas as pd
 # Configuration
 ############################################################
 OUT_DIR = Path("analysis")
-RESULTS_ROOT = Path("G:/My Drive/Datalogi/MSc - SDU/Master Thesis/Results/results")
+RESULTS_ROOT = Path("G:/My Drive/Datalogi/MSc - SDU/Master Thesis/Results/results") # results root folder (results can be stored in other folders than in this repo)
 SOLVER_DIR = "all_synch_python"
 DEFAULT_DIR = "default"
 RESULTS_CSV = "results.csv"
