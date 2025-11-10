@@ -12,6 +12,8 @@ SOLVER_DIR = "all_synch_python"
 DEFAULT_DIR = "default"
 RESULTS_CSV = "results.csv"
 DECIMALS = 4
+
+# Matching directory names
 DIR_RE_SOLVER = re.compile(r"^nodes(?P<nodes>\d+)_pods(?P<pods>\d+)_prio(?P<prio>\d+)_util(?P<util>\d{3})_timeout(?P<timeout>\d{2})$")
 
 ############################################################
@@ -264,13 +266,13 @@ def main():
         # Rates over seeds
         n_seeds = max(1, len(per_seed_df))
 
-        default_all_rate = rate(n_default_all, n_seeds)
-        solver_called_rate = rate(n_solver_called, n_seeds)
-        solver_failed_rate = rate(n_solver_failed, n_seeds)
+        default_all_rate     = rate(n_default_all, n_seeds)
+        solver_called_rate   = rate(n_solver_called, n_seeds)
+        solver_failed_rate   = rate(n_solver_failed, n_seeds)
         default_optimal_rate = rate(n_default_optimal, n_seeds)
-        solver_optimal_rate = rate(n_solver_optimal, n_seeds)
+        solver_optimal_rate  = rate(n_solver_optimal, n_seeds)
         solver_feasible_rate = rate(n_solver_feasible, n_seeds)
-        solver_improve_rate = rate(n_solver_better, n_seeds)
+        solver_improve_rate  = rate(n_solver_better, n_seeds)
         other_rate = 1.0 - (
             default_all_rate
             + default_optimal_rate

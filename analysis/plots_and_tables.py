@@ -14,10 +14,12 @@ DF_PER_COMBO_PATH = Path("analysis/per_combo_results.csv")
 df_per_combo = pd.read_csv(DF_PER_COMBO_PATH)
 
 OUT_DIR = Path("analysis")
+
 OUT_FIGURES_DIR = OUT_DIR / "figures"
 OUT_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-OUT_TABLES_PATH = OUT_DIR / "tables"
-OUT_TABLES_PATH.mkdir(parents=True, exist_ok=True)
+
+OUT_TABLES_DIR = OUT_DIR / "tables"
+OUT_TABLES_DIR.mkdir(parents=True, exist_ok=True)
 
 #################################################################
 # Global plotting settings
@@ -104,7 +106,7 @@ def save_figure(fig: mpl.figure.Figure, out_path: Path):
     print(f"[ok] saved figure: {out_path} ({', '.join(FIGURE_FORMATS)})")
 
 #################################################################
-# 2D bar plot as a grid of ppn vs priorities with util aggregated
+# 2D bar plot as a grid: ppn vs priorities w/ util aggregated
 #################################################################
 def aggregate_over_util(per_combo_df: pd.DataFrame) -> pd.DataFrame:
     keys = ["pods_per_node","priorities","timeout_s","nodes"]
@@ -255,7 +257,7 @@ plot_2d_grid_ppn_prio_with_aggregated_util(
 )
 
 ###############################################################
-# 3D bar plot of ppn vs priorities vs timeout
+# 3D bar plot: ppn vs priorities vs timeout
 ###############################################################
 def plot_3d_ppn_prio_timeout(df: pd.DataFrame, title: str, out_path: Path):
     utils = sorted(df["util"].unique().tolist())
@@ -367,7 +369,7 @@ for ppn in PLOT_PPNS:
 
 
 ###############################################################
-# Tables
+# Table solver duration and utils (10s solver timeout): solver duration, cpu delta %, mem delta %
 ###############################################################
 # filter data for table
 df_solver_stats = df_per_combo[
@@ -429,7 +431,42 @@ lines.append(r"\end{tabular}")
 latex_block = "\n".join(lines)
 
 # save to file
-OUT_TABLES_PATH = OUT_TABLES_PATH / "table.txt"
-with open(OUT_TABLES_PATH, "w") as f:
+OUT_TABLES_DIR = OUT_TABLES_DIR / "table_solver_duration_and_utils.txt"
+with open(OUT_TABLES_DIR, "w") as f:
     f.write(latex_block)
-print(f"[ok] saved tables: {OUT_TABLES_PATH}")
+print(f"[ok] saved table solver duration and utils: {OUT_TABLES_DIR}")
+
+###############################################################
+# Table beats default or proves optimal (10s solver timeout): share of instances where we beat the default or prove optimal
+# default_all_running are excluded from denominator
+# share = (solver_optimal + solver_feasible + default_optimal) / (n_seeds - default_all_running)
+###############################################################
+good_counts = (
+    df_solver_stats["n_solver_optimal"].astype(float)
+    + df_solver_stats["n_solver_feasible"].astype(float)
+    + df_solver_stats["n_default_optimal"].astype(float)
+)
+solver_run_counts = (
+    df_solver_stats["n_seeds"].astype(float)
+    - df_solver_stats["n_default_all_running"].astype(float)
+)
+frac_good = safe_div(good_counts, solver_run_counts).mean()
+frac_good_pc_str = f"{frac_good * 100:.{TABLES_DECIMALS}f}"
+
+lines = []
+lines.append(r"\begin{tabular}{@{}l c@{}}")
+lines.append(r"\toprule")
+lines.append(r"\textbf{metric} & \textbf{value}\\")
+lines.append(r"\midrule")
+lines.append(
+    rf"share of instances where solver beats default or proves optimal & {frac_good_pc_str}\%\\"
+)
+lines.append(r"\bottomrule")
+lines.append(r"\end{tabular}")
+latex_block = "\n".join(lines)
+
+# save to file
+OUT_TABLES_PATH_FRAC = OUT_TABLES_DIR.parent / "table_solver_beats_default_or_proves_optimal.txt"
+with open(OUT_TABLES_PATH_FRAC, "w") as f:
+    f.write(latex_block)
+print(f"[ok] saved table solver success: {OUT_TABLES_PATH_FRAC}")
