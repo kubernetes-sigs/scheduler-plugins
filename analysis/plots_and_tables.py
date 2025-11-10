@@ -237,7 +237,7 @@ def plot_2d_grid_ppn_prio_with_aggregated_util(
     fig.legend(
         legend_handles, legend_labels,
         loc="upper center",
-        bbox_to_anchor=(0.53, 1.02),
+        bbox_to_anchor=(0.51, 1.02),
         prop={"size": LEGEND_FS},
         ncol=len(legend_labels),
         handlelength=LEGEND_HANDLE_LENGTH,
