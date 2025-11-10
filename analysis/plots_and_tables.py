@@ -8,6 +8,7 @@ import matplotlib.ticker as mtick
 
 #################################################################
 # Load data
+# Note: combine_results.py must be run first to produce the required CSV
 #################################################################
 DF_PER_COMBO_PATH = Path("analysis/per_combo_results.csv")
 df_per_combo = pd.read_csv(DF_PER_COMBO_PATH)
@@ -92,10 +93,6 @@ def safe_div(num, den):
     return num.div(den.replace(0, np.nan)).fillna(0.0)
 
 def save_figure(fig: mpl.figure.Figure, out_path: Path):
-    """
-    Save a Matplotlib figure to all formats in FORMATS using the global DPI.
-    out_path should be given without extension.
-    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     for ext in FIGURE_FORMATS:
         fname = out_path.with_suffix(f".{ext}")

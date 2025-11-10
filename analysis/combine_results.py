@@ -1,20 +1,24 @@
-import json, re, argparse
+import json, re
 from pathlib import Path
 from typing import Dict, Optional
 import pandas as pd
 
+############################################################
+# Configuration
+############################################################
+OUT_DIR = Path("analysis")
+RESULTS_ROOT = Path("G:/My Drive/Datalogi/MSc - SDU/Master Thesis/Results/results")
+SOLVER_DIR = "all_synch_python"
+DEFAULT_DIR = "default"
+RESULTS_CSV = "results.csv"
+DECIMALS = 4
 DIR_RE_SOLVER = re.compile(r"^nodes(?P<nodes>\d+)_pods(?P<pods>\d+)_prio(?P<prio>\d+)_util(?P<util>\d{3})_timeout(?P<timeout>\d{2})$")
 
+############################################################
+# Helpers
+############################################################
 def rate(num, den):
     return (num / den) if den and den > 0 else float("nan")
-
-def util_tag(u):
-    try:
-        x = float(u)
-        pct = x if x > 1.5 else x * 100.0
-        return f"{int(round(pct)):03d}"
-    except Exception:
-        return str(u)
 
 def parse_solver_dirname(name: str) -> Optional[Dict]:
     m = DIR_RE_SOLVER.match(name)
@@ -58,20 +62,10 @@ def parse_json_cell(raw):
     return None
 
 def prio_map(raw) -> Dict[int, int]:
-    """
-    Build {priority: count} from either:
-      - a dict-like object, or
-      - a JSON/CSV cell string that decodes to such a dict.
-    Priority keys may optionally start with 'p' (e.g., 'p1', '2').
-    """
     out: Dict[int, int] = {}
-
-    # If it's already a dict, use it directly; otherwise parse as JSON cell
     obj = raw if isinstance(raw, dict) else parse_json_cell(raw)
-
     if not isinstance(obj, dict):
         return out
-
     for k, v in obj.items():
         ks = str(k).strip()
         if ks.lower().startswith("p"):
@@ -80,13 +74,12 @@ def prio_map(raw) -> Dict[int, int]:
         out[pk] = int(v)
     return out
 
-
 def load_csv(csv_path: Path) -> pd.DataFrame:
     if not csv_path.exists():
         raise FileNotFoundError(f"results.csv not found: {csv_path}")
     df = pd.read_csv(csv_path, dtype=str).fillna("")
-    lut = {c.lower(): c for c in df.columns}
-    need = {
+    cols = {c.lower(): c for c in df.columns}
+    rename_map = {
         "seed": "seed",
         "util_run_cpu_now": "util_run_cpu",
         "util_run_mem_now": "util_run_mem",
@@ -98,21 +91,25 @@ def load_csv(csv_path: Path) -> pd.DataFrame:
         "best_solver_duration_ms": "solver_duration_ms",
         "best_solver_score": "solver_score",
     }
-    df = df.rename(columns={lut[k]: v for k, v in need.items() if lut[k] != v})
+    df = df.rename(columns={cols[k]: v for k, v in rename_map.items() if cols[k] != v})
     # minimal conversions
     df["seed"] = df["seed"].astype(str).str.strip()
     df["util_run_cpu"] = pd.to_numeric(df["util_run_cpu"].astype(str), errors="coerce")
     df["util_run_mem"] = pd.to_numeric(df["util_run_mem"].astype(str), errors="coerce")
     df["solver_duration_ms"] = pd.to_numeric(df["solver_duration_ms"].astype(str), errors="coerce")
     df["solver_status"] = df["solver_status"].astype(str).str.strip().str.upper()
-    # placed_by_prio using running info (could be changed to score from solver)
+    # NOTE: placed_by_prio using what is actual running - for solver this could be changed to score from the solver so it doesn't get affected by post-processing
     df["placed_by_prio"] = df.apply(lambda r: json.dumps(parse_json_cell(r.get("placed_by_prio_running", "")), separators=(",", ":")), axis=1)
     return df
 
-
 # placement compare
 def place_compare(a: Dict[int, int], b: Dict[int, int]) -> int:
-    """1 if a>b, 0 if equal, -1 if a<b (compare from highest priority down)."""
+    """
+    1 if a>b
+    0 if equal,
+    -1 if a<b
+    (compare from highest priority down).
+    """
     keys = sorted(set(a.keys()) | set(b.keys()), reverse=True)
     for k in keys:
         av = int(a.get(k, 0))
@@ -128,24 +125,13 @@ def cmp_placed_by_prio_row(row) -> int:
     d_map = prio_map(row.get("placed_by_prio_default", ""))
     return place_compare(s_map, d_map)
 
-def default_vs_solver_per_seed(
-    solver_csv: Path,
-    default_csv: Path,
-    cfg_name: str,
-) -> pd.DataFrame:
+############################################################
+# Main analysis
+############################################################
+def default_vs_solver_per_seed(solver_csv: Path, default_csv: Path, cfg_name: str) -> pd.DataFrame:
     df_s = load_csv(solver_csv)
     df_d = load_csv(default_csv)
-
-    # warnings for asymmetry
-    seeds_s = set(df_s["seed"])
-    seeds_d = set(df_d["seed"])
-    missing_in_default = sorted(seeds_s - seeds_d)
-    missing_in_solver = sorted(seeds_d - seeds_s)
-    if missing_in_default:
-        print(f"[warn] {cfg_name}: {len(missing_in_default)} seed(s) in solver but not default; e.g. {missing_in_default[:5]}")
-    if missing_in_solver:
-        print(f"[warn] {cfg_name}: {len(missing_in_solver)} seed(s) in default but not solver; e.g. {missing_in_solver[:5]}")
-
+    
     # join on seed
     joined = df_s[
         [
@@ -193,7 +179,7 @@ def default_vs_solver_per_seed(
     no_pending_solver = pd.to_numeric(joined["unscheduled_cnt_solver"], errors="coerce").eq(0)
     joined["default_all_running"] = no_pending_default & no_pending_solver
 
-    # solver_called: infer from presence of best_* info (no solver_attempts).
+    # solver_called
     joined["solver_called"] = (
         joined["solver_status"].astype(str).str.strip().ne("")
         | joined["solver_name"].astype(str).str.strip().ne("")
@@ -208,68 +194,29 @@ def default_vs_solver_per_seed(
 
     return joined
 
-
 def main():
-    p = argparse.ArgumentParser(description="Combine solver and default results into summary CSVs.")
-    p.add_argument(
-        "--out-dir",
-        type=Path,
-        default=Path("analysis"),
-        help="Output directory for combined results CSVs.",
-    )
-    p.add_argument(
-        "--results-root",
-        type=Path,
-        default=Path("G:/My Drive/Datalogi/MSc - SDU/Master Thesis/Results/results"),
-        help="Root directory containing results folders.",
-    )
-    p.add_argument(
-        "--solver-dir",
-        type=str,
-        default="all_synch_python",
-        help="Subdirectory name under results root for solver results.",
-    )
-    p.add_argument(
-        "--default-dir",
-        type=str,
-        default="default",
-        help="Subdirectory name under results root for default results.",
-    )
-    p.add_argument(
-        "--results-csv",
-        type=str,
-        default="results.csv",
-        help="Filename of results CSV files under each results subdirectory.",
-    )
-    p.add_argument(
-        "--decimals",
-        type=int,
-        default=4,
-        help="Number of decimal places for rounding rates and averages in output.",
-    )
-    args = p.parse_args()
-    
-    
-    solver_root = (args.results_root / args.solver_dir).resolve()
-    base_root = (args.results_root / args.default_dir).resolve()
-    out_dir = args.out_dir.resolve()
+    # make sure paths exist
+    solver_root = (RESULTS_ROOT / SOLVER_DIR).resolve()
+    default_root = (RESULTS_ROOT / DEFAULT_DIR).resolve()
+    out_dir = OUT_DIR.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     per_combo_rows = []
 
-    solver_combos = sorted([p for p in solver_root.iterdir() if p.is_dir()])
+    solver_combos = sorted([p for p in solver_root.iterdir() if p.is_dir()]) # all combo dirs
     if not solver_combos:
         print(f"[warn] no solver combinations under {solver_root}")
 
+    # loop over solver combinations
     for solver_dir in solver_combos:
         meta = parse_solver_dirname(solver_dir.name)
         if not meta:
             print(f"[skip] bad folder name: {solver_dir.name}")
             continue
 
-        default_dir = base_root / meta["default_dirname"]
-        solver_csv = solver_dir / args.results_csv
-        default_csv = default_dir / args.results_csv
+        default_dir = default_root / meta["default_dirname"]
+        solver_csv = solver_dir / RESULTS_CSV
+        default_csv = default_dir / RESULTS_CSV
 
         if not default_dir.exists():
             print(f"[skip] default folder missing: {default_dir.name}")
@@ -281,25 +228,15 @@ def main():
             print(f"[skip] default results.csv missing: {default_csv}")
             continue
 
-        try:
-            per_seed_df = default_vs_solver_per_seed(solver_csv, default_csv, solver_dir.name)
-        except SystemExit:
-            raise
-        except Exception as e:
-            print(f"[error] {solver_dir.name}: {e}")
-            continue
-
-        if per_seed_df.empty:
-            print(f"[warn] {solver_dir.name}: no overlapping seeds")
-            continue
-
-        # 1) default_all_scheduled mask (exclude from others)
+        per_seed_df = default_vs_solver_per_seed(solver_csv, default_csv, solver_dir.name)
+        
+        # default_all_scheduled mask (exclude from others)
         mask_default_all = per_seed_df["default_all_running"]
-        n_default_all = int(mask_default_all.sum())
         not_all_running = per_seed_df[~mask_default_all].copy()
 
         status = not_all_running["solver_status"]
 
+        # flags: OPTIMAL / FEASIBLE
         is_optimal = status.eq("OPTIMAL")
         is_feasible = status.eq("FEASIBLE")
         is_ok = is_optimal | is_feasible
@@ -310,28 +247,31 @@ def main():
 
         n_solver_called = int(not_all_running["solver_called"].sum())
 
-        # If solver proved OPTIMAL and placement == default → default was already optimal
+        # DEFAULT ALL RUNNING: both default and solver scheduled all pods
+        n_default_all = int(mask_default_all.sum())
+
+        # DEFAULT OPTIMAL: solver proved OPTIMAL and placement == default
         n_default_optimal = int((is_optimal & placed_equal).sum())
 
-        # Solver proved OPTIMAL and strictly better placement than default
+        # SOLVER OPTIMAL: solver proved OPTIMAL and strictly better placement than default
         n_solver_optimal = int((is_optimal & placed_better).sum())
 
-        # Solver FEASIBLE and strictly better placement than default
+        # SOLVER FEASIBLE: solver proved FEASIBLE and strictly better placement than default
         n_solver_feasible = int((is_feasible & placed_better).sum())
 
-        # Everything else is "failed":
+        # SOLVER FAILED: solver did not provide a OPTIMAL/FEASIBLE result, or FEASIBLE equal/worse, or OPTIMAL worse
         n_solver_failed = int(
             (
                 (~is_ok)  # FAILED
-                | (is_feasible & ~placed_better)  # FEASIBLE equal/worse
-                | (is_optimal & placed_worse)  # OPTIMAL worse; should not happen
+                | (is_feasible & ~placed_better)  # FEASIBLE equal/worse than default (NOTE: one could argue this is not a failure)
+                | (is_optimal & placed_worse)     # OPTIMAL worse than default; should not happen
             ).sum()
         )
 
-        # Solver Improved sums OPTIMAL + FEASIBLE
-        n_solver_improve = n_solver_optimal + n_solver_feasible
+        # SOLVER BETTER: sums OPTIMAL + FEASIBLE
+        n_solver_better = n_solver_optimal + n_solver_feasible
 
-        # Other counts
+        # OTHER: everything else
         n_other = len(not_all_running) - (
             n_default_optimal + n_solver_optimal + n_solver_feasible + n_solver_failed
         )
@@ -351,7 +291,7 @@ def main():
         default_optimal_rate = rate(n_default_optimal, n_seeds)
         solver_optimal_rate = rate(n_solver_optimal, n_seeds)
         solver_feasible_rate = rate(n_solver_feasible, n_seeds)
-        solver_improve_rate = rate(n_solver_improve, n_seeds)
+        solver_improve_rate = rate(n_solver_better, n_seeds)
         other_rate = 1.0 - (
             default_all_rate
             + default_optimal_rate
@@ -405,27 +345,27 @@ def main():
                 "n_seeds": int(len(per_seed_df)),
                 "n_seeds_not_all_running": int(len(not_all_running)),
                 "n_default_all_running": n_default_all,
-                "default_all_running_rate": f"{default_all_rate:.{args.decimals}f}" if args.decimals is not None else default_all_rate,
+                "default_all_running_rate": f"{default_all_rate:.{DECIMALS}f}" if DECIMALS is not None else default_all_rate,
                 "n_solver_called": n_solver_called,
-                "solver_called_rate": f"{solver_called_rate:.{args.decimals}f}" if args.decimals is not None else solver_called_rate,
+                "solver_called_rate": f"{solver_called_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_called_rate,
                 "n_solver_failed": n_solver_failed,
-                "solver_failed_rate": f"{solver_failed_rate:.{args.decimals}f}" if args.decimals is not None else solver_failed_rate,
+                "solver_failed_rate": f"{solver_failed_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_failed_rate,
                 "n_default_optimal": n_default_optimal,
-                "default_optimal_rate": f"{default_optimal_rate:.{args.decimals}f}" if args.decimals is not None else default_optimal_rate,
+                "default_optimal_rate": f"{default_optimal_rate:.{DECIMALS}f}" if DECIMALS is not None else default_optimal_rate,
                 "n_solver_optimal": n_solver_optimal,
-                "solver_optimal_rate": f"{solver_optimal_rate:.{args.decimals}f}" if args.decimals is not None else solver_optimal_rate,
+                "solver_optimal_rate": f"{solver_optimal_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_optimal_rate,
                 "n_solver_feasible": n_solver_feasible,
-                "solver_feasible_rate": f"{solver_feasible_rate:.{args.decimals}f}" if args.decimals is not None else solver_feasible_rate,
-                "n_solver_improve": n_solver_improve,
-                "solver_improve_rate": f"{solver_improve_rate:.{args.decimals}f}" if args.decimals is not None else solver_improve_rate,
+                "solver_feasible_rate": f"{solver_feasible_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_feasible_rate,
+                "n_solver_improve": n_solver_better,
+                "solver_improve_rate": f"{solver_improve_rate:.{DECIMALS}f}" if DECIMALS is not None else solver_improve_rate,
                 "n_other": n_other,
-                "other_rate": f"{other_rate:.{args.decimals}f}" if args.decimals is not None else other_rate,
-                "solver_duration_ms_sum": f"{t_sum:.{args.decimals}f}" if args.decimals is not None else t_sum,
-                "solver_duration_ms_mean": f"{t_mean:.{args.decimals}f}" if args.decimals is not None else t_mean,
-                "cpu_delta_sum": f"{cpu_delta_sum:.{args.decimals}f}" if args.decimals is not None else cpu_delta_sum,
-                "mem_delta_sum": f"{mem_delta_sum:.{args.decimals}f}" if args.decimals is not None else mem_delta_sum,
-                "cpu_delta_mean": f"{cpu_delta_mean:.{args.decimals}f}" if args.decimals is not None else cpu_delta_mean,
-                "mem_delta_mean": f"{mem_delta_mean:.{args.decimals}f}" if args.decimals is not None else mem_delta_mean,
+                "other_rate": f"{other_rate:.{DECIMALS}f}" if DECIMALS is not None else other_rate,
+                "solver_duration_ms_sum": f"{t_sum:.{DECIMALS}f}" if DECIMALS is not None else t_sum,
+                "solver_duration_ms_mean": f"{t_mean:.{DECIMALS}f}" if DECIMALS is not None else t_mean,
+                "cpu_delta_sum": f"{cpu_delta_sum:.{DECIMALS}f}" if DECIMALS is not None else cpu_delta_sum,
+                "mem_delta_sum": f"{mem_delta_sum:.{DECIMALS}f}" if DECIMALS is not None else mem_delta_sum,
+                "cpu_delta_mean": f"{cpu_delta_mean:.{DECIMALS}f}" if DECIMALS is not None else cpu_delta_mean,
+                "mem_delta_mean": f"{mem_delta_mean:.{DECIMALS}f}" if DECIMALS is not None else mem_delta_mean,
             }
         )
 
@@ -453,9 +393,7 @@ def main():
         if c in per_combo_df.columns:
             per_combo_df[c] = pd.to_numeric(per_combo_df[c], errors="coerce")
     out_per_combo = out_dir / "per_combo_results.csv"
-    per_combo_df.sort_values(
-        ["util", "nodes", "pods_per_node", "priorities", "timeout_s", "config_dir"]
-    ).to_csv(out_per_combo, index=False)
+    per_combo_df.sort_values(["util", "nodes", "pods_per_node", "priorities", "timeout_s", "config_dir"]).to_csv(out_per_combo, index=False)
     print(f"[ok] wrote {out_per_combo} (rows={len(per_combo_df)})")
 
 if __name__ == "__main__":
