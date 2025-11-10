@@ -41,23 +41,20 @@
 
 This project introduces an *optimized priority-based* approach for placing pods on to nodes by introducing a **Cross-Node Preemption Plugin** for the Kubernetes scheduler.
 The goal is to schedule as many *high-priority* pods as possible, especially when the *default scheduler* fails to do so.
-The plugin makes it possible to integrate an *external* solver in this case a Python solver using **Google's CP-SAT** solver to find an optimal pod placement plan that maximizes the number of scheduled high-priority pods while *minimizing disruption by minimizing the number of preemptions (movements and evictions)*.
-Having the plan from the solver, the plugin then applies it by evicting or relocating pods across multiple nodes in the cluster allowing the planned pods to be scheduled. Note that the default Kubernetes scheduler only preempts pods within a *single* node.
+The plugin makes it possible to integrate an *external* solver in this case a Python solver using **Google's CP-SAT** solver to find the optimal plan for placing pods on nodes that maximizes the number of scheduled high-priority pods while *minimizing disruption* by minimizing the number of preemptions (*movements* and *evictions*).
+Having the plan from the solver, the plugin then applies it by evicting and moving pods possibly across multiple nodes in the cluster. Note that the default Kubernetes scheduler is only able to preempt pods within a *single* node.
 
 The plugin support different **optimization modes**:
 
-- *For every pod* – re-optimize whenever a new pod arrives.
-- *All synch* – optimize all pods at fixed intervals (or on demand). It stop scheduling while waiting for the optimization to be completed and for the plan to be applied before proceeding.
-- *All asynch* – same as all synch, but do not wait for the optimization to complete before proceeding. It will only apply the plan if the cluster state is the same as when the plan was created. It will only stop scheduling while the plan is being applied.
+- *For every pod* – optimize for every new pod that arrives.
+- *All synch* – optimize all pods (both running and pending) at fixed intervals (or on demand via HTTP). It stop scheduling while waiting for the optimization to be completed and for the plan to be applied before proceeding.
+- *All asynch* – same as all synch, but do not wait for the optimization to complete before proceeding. That means, it will only apply the plan if the cluster state is the same as when the plan was created. Scheduling is however still stopped while the plan is being applied to avoid conflicts.
 
-Also, it can be integrated into different **scheduling phases**. Either before enqueuing the pod (*pre-enqueue*) or after having tried to schedule it normally (*post-filter*).
-
-- If pre-enqueue is used, the plugin will optimize the cluster state for every pod that arrives.
-- If post-filter is used, the plugin will only optimize when the default scheduler fails to schedule a pod.
+The plugin can be is integrated in different **scheduling phases**. Either before enqueuing the pod (*pre-enqueue*) or after having tried to schedule it normally using the default scheduler (*post-filter*).
 
 For a more **detailed description**, please refer to the paper ([Priority Matters: Optimising Kubernetes Clusters Usage with Constraint-Based Pod Packing](link-to-paper)) or the thesis report ([Optimizing Kubernetes Scheduler](link-to-thesis-report)).
 
-The code of the plugin can be found in `pkg/mycrossnodepreemption/` and the manifests to deploy the scheduler with the plugin can be found in `manifests/mycrossnodepreemption/`.
+The code of the plugin can be found in `pkg/mycrossnodepreemption/` and the manifests to deploy the scheduler with the plugin can be found in `bootstrap/content/manifests/`.
 
 To make the plugin available to the Kubernetes scheduler, it is referenced in `cmd/scheduler/main.go`.
 
@@ -135,7 +132,7 @@ The following tools are required to run the scheduler with the plugin (tools alr
 
 #### KWOK (Manual)
 
-If you just want to test it manually on a KWOK cluster, first create a scheduler config (see `manifests/mycrossnodepreemption/plugin-kube-scheduler-config.yaml`) and a cluster config file (see `bootstrap/content/data/configs-kwokctl/all_synch_python.yaml`).
+If you just want to test it manually on a KWOK cluster, first create a scheduler config (see `bootstrap/content/manifests/plugin-kube-scheduler-config.yaml`) and a cluster config file (see `bootstrap/content/data/configs-kwokctl/all_synch_python.yaml`).
 
 NOTE: Make sure you have the latest binary or docker image of the scheduler with the plugin built (see above). Also make sure the latest Python solver is copied to `/opt/solver/main.py` (see above).
 
@@ -256,6 +253,8 @@ The already generated test jobs can be reproduced using the following commands:
 **Deterministic jobs with default scheduler**:
 
 Runs until 100 seeds are found where not all pods are running using the default scheduler.
+
+NOTE: This make use of another plugin called `MyScoreBreaker` to break ties in scoring by name and disables preemption and sets number of parallelism to 1 to make the job generation deterministic. This plugin can be found under `pkg/myscorebreaker/`.
 
 ```bash
 python3 job_generator.py \
