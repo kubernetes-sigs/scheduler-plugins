@@ -1,0 +1,63 @@
+// solver_python.go
+
+package mypriorityoptimizer
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os/exec"
+
+	"k8s.io/klog/v2"
+)
+
+func (pl *MyPriorityOptimizer) runSolverPython(ctx context.Context, in SolverInput) (*SolverOutput, error) {
+	rawInput, _ := json.Marshal(in)
+	klog.V(MyV).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
+
+	cmd := exec.CommandContext(ctx, SolverPythonBin, SolverPath)
+	cmd.Stdin = bytes.NewReader(rawInput)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stderr pipe: %w", err)
+	}
+
+	go func() {
+		s := bufio.NewScanner(stderr)
+		buf := make([]byte, 0, 256*1024)
+		s.Buffer(buf, 1024*1024)
+		for s.Scan() {
+			klog.V(MyV).Info("solver: " + s.Text())
+		}
+		if err := s.Err(); err != nil {
+			klog.Info("solver scan failed: " + err.Error())
+		}
+	}()
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("solver start: %w", err)
+	}
+
+	outBuf, err := io.ReadAll(stdout)
+	if err != nil {
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("read solver stdout: %w", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("solver run: %w", err)
+	}
+
+	var out SolverOutput
+	if err := json.Unmarshal(outBuf, &out); err != nil {
+		return nil, fmt.Errorf("decode solver output: %w", err)
+	}
+	return &out, nil
+}

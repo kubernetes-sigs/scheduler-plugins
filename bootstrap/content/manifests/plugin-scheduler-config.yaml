@@ -5,19 +5,19 @@ profiles:
   plugins:
     preEnqueue:
       enabled:
-        - name: MyCrossNodePreemption
+        - name: MyPriorityOptimizer
     preFilter:
       enabled:
-        - name: MyCrossNodePreemption
+        - name: MyPriorityOptimizer
     postFilter:
       enabled:
-        - name: MyCrossNodePreemption
+        - name: MyPriorityOptimizer
     reserve:
       enabled:
-        - name: MyCrossNodePreemption
+        - name: MyPriorityOptimizer
     postBind:
       enabled:
-        - name: MyCrossNodePreemption
+        - name: MyPriorityOptimizer
     multiPoint:
       disabled:
         - name: DefaultPreemption

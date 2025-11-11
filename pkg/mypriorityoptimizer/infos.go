@@ -1,0 +1,38 @@
+// infos.go
+
+package mypriorityoptimizer
+
+var (
+	InfoNoop                             = "no operation"
+	InfoNoActivePlan                     = "no active plan"
+	InfoNoPlanProvided                   = "no plan provided"
+	InfoActivePlanInProgress             = "active plan is in progress"
+	InfoNoStrategyEnabled                = "no strategy enabled"
+	InfoBlockPod                         = "blocking pod"
+	InfoPendingPod                       = "pending pod"
+	InfoNoBlockedPods                    = "no blocked pods"
+	InfoPinPod                           = "pin pod"
+	InfoAllowPod                         = "allow pod"
+	InfoPlanCompleted                    = "plan completed"
+	InfoSolverFailed                     = "solver failed"
+	InfoNoSolverEnabled                  = "no solver enabled"
+	InfoPlanCompletionFailed             = "plan completion check failed"
+	InfoRegisterPlanFailed               = "register plan failed"
+	InfoPlanExecutionFailed              = "plan execution failed"
+	InfoNominatedAfterPlan               = "nominated after plan execution"
+	InfoNoPendingPods                    = "no pending pods"
+	InfoNoPendingPodsToSchedule          = "no pending pods to schedule"
+	InfoNoFeasibleOrOptimalSolution      = "no feasible or optimal solution"
+	InfoNoImprovingSolutionFromAnySolver = "no improving solution from any solver"
+	InfoNoImprovement                    = "no improvement"
+	InfoCachesNotWarmedUp                = "caches not warmed up yet"
+	InfoPlanExecutionFinished            = "plan execution finished; waiting for settlement"
+	InfoCycleStarted                     = "cycle started"
+	InfoCycleStartedFirstRun             = "started; first run scheduled"
+	InfoCycleNextRun                     = "next run"
+	InfoPodPlacedByName                  = "pod placed by name"
+	InfoPlanNotApplicable                = "plan not applicable"
+	InfoDeactivatingActivePlan           = "deactivating active plan"
+	InfoActivatingPlannedPendingPods     = "activating planned pending pods"
+	InfoNoUsableNodes                    = "no usable nodes available"
+)
