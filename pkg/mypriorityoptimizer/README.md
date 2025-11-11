@@ -23,7 +23,7 @@
       - [Using Vagrant for init script development](#using-vagrant-for-init-script-development)
       - [Generating test jobs](#generating-test-jobs)
       - [Estimate time to complete all jobs in UCloud](#estimate-time-to-complete-all-jobs-in-ucloud)
-    - [Live-simulator](#live-simulator)
+    - ['Live' Cluster Simulator](#live-cluster-simulator)
   - [Analysis](#analysis)
   - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
   - [Live-workload-simulator](#live-workload-simulator)
@@ -398,7 +398,7 @@ python3 job_generator.py \
 
 The script `bootstrap/content/jobs_eta.py`, estimates the time to complete each running job in UCloud based on average time per seed.
 
-### Live-simulator
+### 'Live' Cluster Simulator
 
 TODO: Missing description
 
