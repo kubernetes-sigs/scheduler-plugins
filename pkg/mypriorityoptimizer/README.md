@@ -16,11 +16,11 @@
     - [(Initial) Workload Generator](#initial-workload-generator)
       - [Workload configuration file](#workload-configuration-file)
       - [Test jobs](#test-jobs)
-      - [Running test jobs using HPC resources and init script (recommended)](#running-test-jobs-using-hpc-resources-and-init-script-recommended)
       - [Init script](#init-script)
+      - [Running test jobs using HPC (recommended)](#running-test-jobs-using-hpc-recommended)
       - [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs)
-      - [Running test jobs using test generator script directly](#running-test-jobs-using-test-generator-script-directly)
-      - [Using Vagrant for development and test of init script](#using-vagrant-for-development-and-test-of-init-script)
+      - [Running test jobs using test generator](#running-test-jobs-using-test-generator)
+      - [Using Vagrant for init script development](#using-vagrant-for-init-script-development)
       - [Generating test jobs](#generating-test-jobs)
       - [Estimate time to complete all jobs in UCloud](#estimate-time-to-complete-all-jobs-in-ucloud)
     - [Live-simulator](#live-simulator)
@@ -206,7 +206,11 @@ TODO: Describe the workload configuration files provided under `bootstrap/conten
 
 All the test jobs used to evaluate the plugin can be found under `bootstrap/content/data/jobs/`.
 
-#### Running test jobs using HPC resources and init script (recommended)
+#### Init script
+
+TODO: Describe the init script `bootstrap.sh` and its parameters.
+
+#### Running test jobs using HPC (recommended)
 
 To make it faster to evaluate the plugin by parallizing evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), the content to bootstrap a job runner (HPC or VM) is provided under `bootstrap/`.
 It contains everything needed to run the tests including the init script `bootstrap.sh` that will ensure everything is set up and the tests are run.
@@ -225,10 +229,6 @@ To run the already generated test jobs, follow the steps (using UCloud as an exa
      - `--job-file`: Path to the job file to run (e.g. see already made jobs under `bootstrap/content/data/jobs/`).
 5) Submit the instance and wait until it is running.
 6) To save the results use the App `Archive` and select the folder uploaded in step 4 which should now hold the results. Note if you also want to save the stdout from the instance save the file located under `Files -> Jobs -> <job_id> -> stdout-0.log`.
-
-#### Init script
-
-TODO: Describe the init script `bootstrap.sh` and its parameters.
 
 #### Expected folder structure after running all jobs
 
@@ -258,7 +258,7 @@ After having run all the jobs the results should be organized as follows on disk
         └── solver-stats/
 ```
 
-#### Running test jobs using test generator script directly
+#### Running test jobs using test generator
 
 If you prefer or need to run the test jobs directly using the `test_generator.py` script, then first `cd` into the `bootstrap/content/` folder, then run:
 
@@ -273,7 +273,7 @@ More parameters can be provided to customize the test run. To see all available 
 python3 scripts/kwok/test_generator.py --help
 ```
 
-#### Using Vagrant for development and test of init script
+#### Using Vagrant for init script development
 
 To develop and test the init script it can be beneficial to run it in a VM on a local machine. To make it easy, a `Vagrantfile` is provided in the root of the repo. It will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install `Vagrant` (tested with v2.4.7) and `VirtualBox` (tested with v7.1.10), then run:
 
