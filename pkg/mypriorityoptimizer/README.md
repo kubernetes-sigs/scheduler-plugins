@@ -3,6 +3,7 @@
 
 - [Priority Optimizer Plugin](#priority-optimizer-plugin)
   - [Overview](#overview)
+  - [Code Structure](#code-structure)
   - [Integrating](#integrating)
   - [Building](#building)
     - [Binary (recommended)](#binary-recommended)
@@ -15,7 +16,7 @@
   - [Testing](#testing)
     - [(Initial) Workload Generator](#initial-workload-generator)
       - [Workload configuration file](#workload-configuration-file)
-      - [Test jobs](#test-jobs)
+      - [Test job](#test-job)
       - [Init script](#init-script)
       - [Running test jobs using HPC (recommended)](#running-test-jobs-using-hpc-recommended)
       - [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs)
@@ -53,6 +54,10 @@ The plugin can be integrated in different **scheduling phases**: either before e
 For a more **detailed description** of the plugin and the optimization approach, see the **paper** ([Priority Matters: Optimising Kubernetes Clusters Usage with Constraint-Based Pod Packing](TODO:link-to-paper)) or the **thesis report** ([Optimizing Kubernetes Scheduler](TODO:link-to-thesis-report)).
 
 The following sections describe how to **build, run, and test** the scheduler with the plugin. If you just want to **replicate the results** from the paper/thesis report, read the instructions under [Running test jobs using HPC resources](#running-test-jobs-using-hpc-resources-and-init-script-recommended).
+
+## Code Structure
+
+TODO: 
 
 ## Integrating
 
@@ -198,11 +203,31 @@ It has several parameters to configure the plugin, workloads, etc. To see all av
 python3 test_generator.py --help
 ```
 
+The test generator can read settings from three sources for generating the right workloads and for setting up the plugin, with later ones overriding earlier ones:
+
+1) a workload configuration file
+2) a test job file
+3) command-line arguments to the script (highest priority)
+
 #### Workload configuration file
 
 TODO: Describe the workload configuration files provided under `bootstrap/content/data/configs-workload/`.
 
-#### Test jobs
+Example of a workload configuration file (`base.yaml`):
+
+```yaml
+kind: WorkloadConfiguration
+namespace: test
+cpu_per_pod: ["100m", "1000m"]
+mem_per_pod: ["100MB","1000MB"]
+num_replicas_per_rs: [1, 4]
+wait_pod_mode: running
+wait_pod_timeout: 2s
+settle_timeout_min: 3s
+settle_timeout_max: 10s
+```
+
+#### Test job
 
 All the test jobs used to evaluate the plugin can be found under `bootstrap/content/data/jobs/`.
 
