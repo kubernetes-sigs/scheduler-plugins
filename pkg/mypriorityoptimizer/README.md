@@ -53,7 +53,7 @@ The plugin can be integrated in different **scheduling phases**: either before e
 
 For a more **detailed description** of the plugin and the optimization approach, see the **paper** ([Priority Matters: Optimising Kubernetes Clusters Usage with Constraint-Based Pod Packing](TODO:link-to-paper)) or the **thesis report** ([Optimizing Kubernetes Scheduler](TODO:link-to-thesis-report)).
 
-The following sections describe how to **build, run, and test** the scheduler with the plugin. If you just want to **replicate the results** from the paper/thesis report, read the instructions under [Running test jobs using HPC resources](#running-test-jobs-using-hpc-resources-and-init-script-recommended).
+The following sections describe how to **build, run, and test** the scheduler with the plugin. If you just want to **replicate the results** from the paper/thesis report, read the instructions under [Running test jobs using HPC](#running-test-jobs-using-hpc-recommended).
 
 ## Code Structure
 
@@ -240,7 +240,9 @@ TODO: Describe the init script `bootstrap.sh` and its parameters.
 To make it faster to evaluate the plugin by parallizing evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), the content to bootstrap a job runner (HPC or VM) is provided under `bootstrap/`.
 It contains everything needed to run the tests including the init script `bootstrap.sh` that will ensure everything is set up and the tests are run.
 
-To run the already generated test jobs, follow the steps (using UCloud as an example):
+For replicating the results run the already generated test jobs, following the below steps.
+
+To run a test job, follow these steps (using UCloud as an example):
 
 1) Ensure latest binary of the scheduler with the plugin is built and moved to `bootstrap/content/bin/kube-scheduler` (see [Building](#building)).
 2) Upload the `bootstrap` folder to UCloud and place it under `Files` (can be renamed if needed).
