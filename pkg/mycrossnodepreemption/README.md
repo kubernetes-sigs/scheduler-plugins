@@ -6,19 +6,25 @@
   - [Plugin Integration](#plugin-integration)
   - [Building the scheduler+plugin](#building-the-schedulerplugin)
     - [Prerequisites for building the scheduler+plugin](#prerequisites-for-building-the-schedulerplugin)
+      - [Manifests for scheduler configuration](#manifests-for-scheduler-configuration)
+        - [MyCrossNodePreemption scheduler configuration](#mycrossnodepreemption-scheduler-configuration)
+        - [MyScoreBreaker (deterministic) scheduler config](#myscorebreaker-deterministic-scheduler-config)
     - [Build as a binary (recommended)](#build-as-a-binary-recommended)
     - [Build as a docker image](#build-as-a-docker-image)
   - [Running the scheduler+plugin](#running-the-schedulerplugin)
     - [Prerequisites for running the scheduler+plugin](#prerequisites-for-running-the-schedulerplugin)
     - [Run scheduler+plugin in a KWOK cluster (recommended)](#run-schedulerplugin-in-a-kwok-cluster-recommended)
-      - [KWOK (Manual)](#kwok-manual)
-      - [KWOK (Automated, using test generator script)](#kwok-automated-using-test-generator-script)
+      - [KWOK configuration](#kwok-configuration)
+      - [KWOK (run Manual)](#kwok-run-manual)
+      - [KWOK (run Automated using test generator script)](#kwok-run-automated-using-test-generator-script)
     - [Run in a Kind cluster](#run-in-a-kind-cluster)
   - [Testing the scheduler+plugin](#testing-the-schedulerplugin)
     - [Test scripts](#test-scripts)
       - [(Initial) workload generator (test generator)](#initial-workload-generator-test-generator)
+      - [Workload configuration file](#workload-configuration-file)
     - [Test jobs](#test-jobs)
     - [Running test jobs using HPC resources and init script (recommended)](#running-test-jobs-using-hpc-resources-and-init-script-recommended)
+      - [Init script](#init-script)
       - [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs)
       - [Running test jobs using test generator script directly](#running-test-jobs-using-test-generator-script-directly)
       - [Using Vagrant for development and test of init script](#using-vagrant-for-development-and-test-of-init-script)
@@ -38,7 +44,8 @@
 
 ## Overview
 
-This project introduces an *optimized, priority-based* approach for placing pods onto nodes via a **Cross-Node Preemption plugin** for the Kubernetes scheduler.
+This project introduces an **optimized, priority-based** approach for placing pods onto nodes via a **Cross-Node Preemption plugin** for the Kubernetes scheduler. The project is a fork of the Kubernetes-sigs project [scheduler-plugins](https://github.com/kubernetes-sigs/scheduler-plugins) and extends it with a new plugin (see describtion of the [Scheduling Framework](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/)).
+
 The goal is to schedule as many *high-priority* pods as possible, especially when the *default scheduler* fails to do so.
 The plugin enables integration of an *external* solver—here, a Python solver using **Google’s CP-SAT**—to compute an optimal placement plan that maximizes scheduled high-priority pods while *minimizing disruption* by reducing the number of preemptions (*movements* and *evictions*).
 Given the solver’s plan, the plugin applies it by evicting and moving pods, possibly across multiple nodes in the cluster. Note that the default Kubernetes scheduler can only preempt pods within a *single* node.
@@ -51,9 +58,7 @@ The plugin supports different **optimization modes**:
 
 The plugin can be integrated in different **scheduling phases**: either before enqueuing the pod (*PreEnqueue*) or after the default scheduler has failed to place it (*PostFilter*).
 
-For a more **detailed description**, see the paper ([Priority Matters: Optimising Kubernetes Clusters Usage with Constraint-Based Pod Packing](link-to-paper)) or the thesis report ([Optimizing Kubernetes Scheduler](link-to-thesis-report)).
-
-The plugin code is located in `pkg/mycrossnodepreemption/`.
+For a more **detailed description**, see the **paper** ([Priority Matters: Optimising Kubernetes Clusters Usage with Constraint-Based Pod Packing](TODO:link-to-paper)) or the **thesis report** ([Optimizing Kubernetes Scheduler](TODO:link-to-thesis-report)).
 
 If you just want to **replicate the results** from the paper/thesis report, read the instructions under [Running test jobs using HPC resources and init script (recommended)](#running-test-jobs-using-hpc-resources-and-init-script-recommended).
 
@@ -65,7 +70,7 @@ To enable and use plugins in the Kubernetes scheduler, you must apply a schedule
 
 ## Building the scheduler+plugin
 
-The scheduler+plugin can be built either as a **binary (recommended)** or as a **docker image**.
+The scheduler+plugin can be built either as a **binary (recommended)** or as a **docker image** and can then be run in a cluster (e.g. using KWOK or Kind).
 
 ### Prerequisites for building the scheduler+plugin
 
@@ -82,6 +87,30 @@ The following tools are required (if Windows host, use WSL2 w/ e.g. Ubuntu) to b
 
 Currently, it is only tested on **amd64** architecture and some code may need to be modified to run on other architectures (should not be a problem).
 
+#### Manifests for scheduler configuration
+
+The scheduler requires a configuration manifest to enable and configure the plugin (see also [Scheduler Configuration on Kubernetes webpage](https://kubernetes.io/docs/reference/scheduling/config/))
+
+We have provided two scheduler configuration manifests under `bootstrap/content/manifests/`:
+
+- `plugin-kube-scheduler-config.yaml`: Configuration for using the MyCrossNodePreemption plugin to configure the scheduler with optimization approach.
+- `deterministic-kube-scheduler-config.yaml`: Configuration for using the MyScoreBreaker plugin to configure the scheduler with the *deterministic* approach.
+
+##### MyCrossNodePreemption scheduler configuration
+
+The manifest `bootstrap/content/manifests/plugin-kube-scheduler-config.yaml` configures the scheduler to use the MyCrossNodePreemption plugin with the following settings:
+
+- enables the plugin in multiple extension points: PreEnqueue, PreFilter, PostFilter, Reserve, PostBind
+- disables the default preemption plugin to avoid conflicts with our plugin.
+
+##### MyScoreBreaker (deterministic) scheduler config
+
+The manifest `bootstrap/content/manifests/deterministic-kube-scheduler-config.yaml` configures the scheduler to use the MyScoreBreaker plugin with the following settings:
+
+- enables the plugin in the Score extension point to break scoring ties by name.
+- disables the default preemption plugin to avoid any preemptions.
+- sets parallelism to 1 to make scheduling deterministic.
+
 ### Build as a binary (recommended)
 
 To build the binary, run the following command in the root of this repo:
@@ -94,17 +123,19 @@ The built binary will be located in `bin/kube-scheduler`.
 
 ### Build as a docker image
 
+We have modified the default Dockerfile used to build the scheduler image to include the plugin. To build the docker image, run the following command in the root of this repo:
+
 ```bash
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile .
 ```
 
 ## Running the scheduler+plugin
 
-To run the scheduler with the plugin, you can either run it on a **KWOK** (recommended) or a **Kind** cluster.
+To run the scheduler with the plugin, you can e.g. run it on a **KWOK** (recommended) or a **Kind** cluster.
 
 ### Prerequisites for running the scheduler+plugin
 
-The following tools are required to run the scheduler with the plugin (tools already mentioned in the build prerequisites are omitted):
+The following tools are required (tools already mentioned in the build prerequisites are omitted):
 
 - `kubectl` (tested with client v.1.32.7)
 - When running in a Kind cluster:
@@ -114,11 +145,15 @@ The following tools are required to run the scheduler with the plugin (tools alr
 
 ### Run scheduler+plugin in a KWOK cluster (recommended)
 
-#### KWOK (Manual)
+#### KWOK configuration
+
+TODO: Describe the KWOK configuration files provided under `bootstrap/content/data/configs-kwokctl/`.
+
+#### KWOK (run Manual)
 
 To test the plugin manually on a KWOK cluster:
 
-1. Create or reuse a scheduler config (see `bootstrap/content/manifests/plugin-kube-scheduler-config.yaml`) and a cluster config (see `bootstrap/content/data/configs-kwokctl/all_synch_python.yaml`).
+1. Create or reuse a KWOK cluster config (see `bootstrap/content/data/configs-kwokctl/all_synch_python.yaml`).
 
 2. Build the latest scheduler binary or Docker image with the plugin enabled (see [Building the scheduler+plugin](#building-the-schedulerplugin)).
 
@@ -152,7 +187,7 @@ If you later want to delete the cluster, run:
 kwokctl delete cluster --name <cluster_name>
 ```
 
-#### KWOK (Automated, using test generator script)
+#### KWOK (run Automated using test generator script)
 
 To run the scheduler with the plugin on a KWOK cluster, the easiest approach is to use the provided test generator (`bootstrap/content/scripts/kwok/test_generator.py`, described below). It creates a KWOK cluster, populates it with random pods, and runs the scheduler with the plugin enabled.
   
@@ -189,6 +224,10 @@ It has several parameters to configure the plugin, workloads, etc. To see all av
 python3 test_generator.py --help
 ```
 
+#### Workload configuration file
+
+TODO: Describe the workload configuration files provided under `bootstrap/content/data/configs-workload/`.
+
 ### Test jobs
 
 All the test jobs used to evaluate the plugin can be found under `bootstrap/content/data/jobs/`.
@@ -212,6 +251,10 @@ To run the already generated test jobs, follow the steps (using UCloud as an exa
      - `--job-file`: Path to the job file to run (e.g. see already made jobs under `bootstrap/content/data/jobs/`).
 5) Submit the instance and wait until it is running.
 6) To save the results use the App `Archive` and select the folder uploaded in step 4 which should now hold the results. Note if you also want to save the stdout from the instance save the file located under `Files -> Jobs -> <job_id> -> stdout-0.log`.
+
+#### Init script
+
+TODO: Describe the init script `bootstrap.sh` and its parameters.
 
 #### Expected folder structure after running all jobs
 
@@ -500,6 +543,7 @@ and any small overshoot self-corrects on subsequent ticks.
 
 ## TODOs
 
+- Rename MyCrossNodePreemption to MyOptimizer.
 - Right now in the python solver, the disruption metric is defined as:
     +1 if the pod stays in the original position
     -2 if the pod is evicted
