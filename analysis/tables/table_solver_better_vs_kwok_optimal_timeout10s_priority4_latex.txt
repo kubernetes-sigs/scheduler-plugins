@@ -2,7 +2,7 @@
 \toprule
 \textbf{metric} & \textbf{value}\\
 \midrule
-share of instances where solver finds a better placement (green+red) & 73.6\%\\
-share of instances where solver proves KWOK is optimal and better than default (blue) & 19.8\%\\
+share of instances where solver finds a better placement, possibly optimal (green+red) & 73.6\%\\
+share of instances where solver proves KWOK is optimal (blue) & 19.8\%\\
 \bottomrule
 \end{tabular}

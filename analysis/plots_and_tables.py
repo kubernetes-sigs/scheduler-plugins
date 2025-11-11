@@ -507,10 +507,10 @@ for timeout_s in TABLE_TIMEOUTS:
         lines.append(r"\textbf{metric} & \textbf{value}\\")
         lines.append(r"\midrule")
         lines.append(
-            rf"share of instances where solver finds a better placement (green+red) & {better_share_pc_str}\%\\"
+            rf"share of instances where solver finds a better placement, possibly optimal (green+red) & {better_share_pc_str}\%\\"
         )
         lines.append(
-            rf"share of instances where solver proves KWOK is optimal and better than default (blue) & {proved_opt_share_pc_str}\%\\"
+            rf"share of instances where solver proves KWOK is optimal (blue) & {proved_opt_share_pc_str}\%\\"
         )
         lines.append(r"\bottomrule")
         lines.append(r"\end{tabular}")
