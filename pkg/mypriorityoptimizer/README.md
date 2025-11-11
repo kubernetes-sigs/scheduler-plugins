@@ -516,7 +516,6 @@ and any small overshoot self-corrects on subsequent ticks.
 
 ## TODOs
 
-- Rename MyPriorityOptimizer to MyOptimizer.
 - Right now in the python solver, the disruption metric is defined as:
     +1 if the pod stays in the original position
     -2 if the pod is evicted
