@@ -551,18 +551,12 @@ and any small overshoot self-corrects on subsequent ticks.
   Jacopo: Thinks my idea reduces the search space, however, he is also fine with a simpler metric, where we just sum the x_{i,p_i.orig} to treat every pod that is not in the same place as 1.
 - Also, warm-start the python solver before the loop.
 - Test the PolySCIP solver (<https://polyscip.zib.de/>). Seems to support multiple objectives (<https://www.scipopt.org/doc-3.2.0/applications/MultiObjective/>).
-- Make a runner script to run the scheduler more realistically for testing the modalities better. We could use a lambda value (Gaussian distribution) to determine how often new pods arrive. Also, we could have a certain percentage of pods that are long-running and some that are short-lived.
-- Make the state-of-the-art section in the report for next meeting.
-- Write to Jacopo if I have any interesting Related work for the paper.
+- Make a runner script to run the scheduler more realistically for testing the modalities better. We could use a lambda value (Gaussian or Poisson distribution) to determine how often new pods arrive. Also, we could have a certain percentage of pods that are long-running and some that are short-lived.
 - Use pluginConfig with args instead of hardcoding values. See [scheduler-config.yaml](https://github.com/AlleNeri/scheduler-plugins/blob/dev-optimizedpreemption/manifests/optimizedpreemption/scheduler-config.yaml)
-- Jacopo: Fine to just talk about the missing configuration options possible within k8s.
-- Jacopo: Dont add gang scheduling.
-- Jacopo: Introduction and Background sections are fine -- missing contribution section in Introduction.
 - Write about the non-determism when we activate blocked pods. The order in which they are activated matters. We can consider to sort them based on priority and creation time.
 - Write about that gang-scheduling (all-or-nothing strategy) doesn't really make sense in our case as we also preempt pods meaning we therefore cannot revert to the old state. However, we can consider to add a permit plugin to make all planned pods schedule together (but still due it does not implement an all-or-nothing strategy, as we have preemptions).
 - QoS classes are currently ignored: BestEffort, Burstable, Guaranteed. We currently assume all pods are Guaranteed Pods. See also <https://medium.com/@muppedaanvesh/a-hands-on-guide-to-kubernetes-qos-classes-%EF%B8%8F-571b5f8f7e58>
 - Quotas and LimitsRanges are currently ignored. See also <https://medium.com/codex/what-you-need-to-know-to-debug-a-preempted-pod-on-kubernetes-1c956eec3f35>
-- Remember to add: --trigger-optimizer --save-solver-stats --save-scheduler-logs
 - Clean up the code:
   - Reduce code
   - Switch case
@@ -579,33 +573,19 @@ and any small overshoot self-corrects on subsequent ticks.
 - Write report
 - Remove TODOs.
 - Make the test plan.
-- Write about that we need both the Blocked and Batched sets otherwise we can
-- Write about that we always set a lower bound based on priorities in optimal solver to prevent it providing a worse plan. If no hints provided then set it based on current state.
-- Write about that we solve at the end and therefore get the status of the overall model. However, to fail fast we also solve after each stage in the lexicographic order.
+- Write about why we have the Blocked pods sets: we ensure the pods are activated right away after plan completion.
 
 ### Later TODOs
 
 - Create unit and integration tests.
 - Find a better way to set verbose level.
-- Consider to add a permit plugin for proper gang-scheduling to prevent not fully implemented plans.
 - Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
 - Fix TODOs
 
 ### Test
 
-- Test at which utilization the default scheduler stops to work properly.
-- Large scale test on UCloud where i could set up multiple ubuntu servers each making on test.
 - Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
-- Test the plugin works across workload type.
-- Test CP-SAT vs. other solvers.
-
-#### Later Tests
-
-- Compare with other solvers.
-- Compare with other modes.
-- Compare with other hook stages.
-- Compare with hints.
 
 ## Questions
 
@@ -613,6 +593,8 @@ and any small overshoot self-corrects on subsequent ticks.
 
 ### Closed Questions
 
+- Add gang scheduling using Permit?
+  - Jacopo: Nope
 - What to do with evicted and blocked pods - put them to queue or try again immediately?
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately
 - What to do with node-selectors, PDBs, and other rules.
