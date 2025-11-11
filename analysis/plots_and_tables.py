@@ -84,19 +84,16 @@ CATEGORIES = [
 #################################################################
 # Global table settings
 #################################################################
-TABLES_PPNS     = [4, 8]
-TABLES_UTILS    = [90.0, 95.0, 100.0, 105.0]
-TABLES_NODES    = [4, 8, 16, 32]
-TABLES_PRIORITY = 4
-TABLES_TIMEOUT  = 10
-TABLES_DECIMALS = 1
+TABLE_PPNS       = [4, 8]
+TABLE_UTILS      = [90.0, 95.0, 100.0, 105.0]
+TABLE_NODES      = [4, 8, 16, 32]
+TABLE_PRIORITIES = [4]
+TABLE_TIMEOUTS   = [1, 10]
+TABLE_DECIMALS   = 1
 
 #################################################################
 # Plotting helpers
 #################################################################
-def safe_div(num, den):
-    return num.div(den.replace(0, np.nan)).fillna(0.0)
-
 def save_figure(fig: mpl.figure.Figure, out_path: Path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     for ext in FIGURE_FORMATS:
@@ -131,6 +128,9 @@ def aggregate_over_util(per_combo_df: pd.DataFrame) -> pd.DataFrame:
             "mem_delta_sum": "sum",
         })
     )
+
+    def safe_div(num, den):
+        return num.div(den.replace(0, np.nan)).fillna(0.0)
     
     # Rates from summed counts
     g["default_all_running_rate"] = safe_div(g["n_default_all_running"], g["n_seeds"])
@@ -245,7 +245,6 @@ def plot_2d_grid_ppn_prio_with_aggregated_util(
         columnspacing=LEGEND_COLUMN_SPACING,
     )
     
-    # save figure
     save_figure(fig, out_path)
 
 plot_2d_grid_ppn_prio_with_aggregated_util(
@@ -296,9 +295,9 @@ def plot_3d_ppn_prio_timeout(df: pd.DataFrame, title: str, out_path: Path):
     ax.tick_params(axis='y', labelsize=TICK_FS, pad=-2)
     ax.tick_params(axis='z', labelsize=TICK_FS, pad=-1)
     
-    ax.set_xlabel(TARGET_UTIL_LABEL, fontsize=LABEL_FS, labelpad=-3)
-    ax.set_ylabel(NODES_LABEL, fontsize=LABEL_FS, labelpad=-3)
-    ax.set_zlabel(INSTANCES_LABEL, fontsize=LABEL_FS, labelpad=-4)
+    ax.set_xlabel(TARGET_UTIL_LABEL, fontsize=LABEL_FS, labelpad=-4.0)
+    ax.set_ylabel(NODES_LABEL, fontsize=LABEL_FS, labelpad=-5.5)
+    ax.set_zlabel(INSTANCES_LABEL, fontsize=LABEL_FS, labelpad=-5.0)
     
     ax.set_title(title, fontsize=TITLE_FS, y=1.01, pad=0)
 
@@ -352,7 +351,6 @@ def plot_3d_ppn_prio_timeout(df: pd.DataFrame, title: str, out_path: Path):
         columnspacing=LEGEND_COLUMN_SPACING, # space between entries
     )
 
-    # save figure
     save_figure(fig, out_path)
 
 # one 3D bar plot per (ppn, prio, timeout)
@@ -369,104 +367,175 @@ for ppn in PLOT_PPNS:
 
 
 ###############################################################
-# Table solver duration and utils (10s solver timeout): solver duration, cpu delta %, mem delta %
+# Tables for solver duration/utils and success shares
+# for multiple timeouts (e.g., 1s and 10s)
 ###############################################################
-# filter data for table
-df_solver_stats = df_per_combo[
-    (df_per_combo["priorities"] == TABLES_PRIORITY) &
-    (df_per_combo["timeout_s"] == TABLES_TIMEOUT) &
-    (df_per_combo["pods_per_node"].isin(TABLES_PPNS)) &
-    (df_per_combo["util"].isin(TABLES_UTILS)) &
-    (df_per_combo["nodes"].isin(TABLES_NODES))
-].copy()
-
-# helper: metric pivot (util x (ppn,nodes)) → formatted strings
-def metric_pivot(values: pd.Series) -> pd.DataFrame:
-    p = (pd.concat([df_solver_stats[["util","pods_per_node","nodes"]], values], axis=1).pivot_table(index="util", columns=["pods_per_node","nodes"], values=values.name, aggfunc="mean"))
-    p = p.reindex(index=TABLES_UTILS, columns=pd.MultiIndex.from_product([TABLES_PPNS, TABLES_NODES], names=["ppn","nodes"]))
-    p = p.astype(float).round(TABLES_DECIMALS)
-    return p.map(lambda x: f"{x:.{TABLES_DECIMALS}f}" if pd.notna(x) else "—")
-
-# build metric tables
-solver_sec   = (df_solver_stats["solver_duration_ms_mean"] / 1000.0).rename("solver_sec")
-cpu_delta_pc = (df_solver_stats["cpu_delta_mean"] * 100.0).rename("cpu_delta_pc")
-mem_delta_pc = (df_solver_stats["mem_delta_mean"] * 100.0).rename("mem_delta_pc")
-
-tab_dur = metric_pivot(solver_sec)
-tab_cpu = metric_pivot(cpu_delta_pc)
-tab_mem = metric_pivot(mem_delta_pc)
-
-# assemble console DataFrame (rows=(util, metric), cols=(ppn,nodes))
-rows = []
-for u in TABLES_UTILS:
-    rows.append(pd.Series(tab_dur.loc[u], name=(f"{int(u)}%", "solver duration (s)")))
-    rows.append(pd.Series(tab_cpu.loc[u], name=(f"{int(u)}%", "Δ cpu util (%)")))
-    rows.append(pd.Series(tab_mem.loc[u], name=(f"{int(u)}%", "Δ mem util (%)")))
+def metric_pivot(df_solver_stats: pd.DataFrame, values: pd.Series) -> pd.DataFrame:
+    p = (
+        pd.concat(
+            [df_solver_stats[["util", "pods_per_node", "nodes"]], values],
+            axis=1,
+        )
+        .pivot_table(
+            index="util",
+            columns=["pods_per_node", "nodes"],
+            values=values.name,
+            aggfunc="mean",
+        )
+    )
+    p = p.reindex(
+        index=TABLE_UTILS,
+        columns=pd.MultiIndex.from_product(
+            [TABLE_PPNS, TABLE_NODES],   # <- FIX HERE
+            names=["ppn", "nodes"],
+        ),
+    )
+    p = p.astype(float).round(TABLE_DECIMALS)
+    return p.map(lambda x: f"{x:.{TABLE_DECIMALS}f}" if pd.notna(x) else "—")
 
 # build and print LaTeX tabular to console
 def fmt_cell(s: str) -> str:
     return r"\multicolumn{1}{c}{—}" if s == "—" else s
 
-lines = []
-lines.append(r"\begin{tabular}{@{}c l *{8}{c}@{}}")
-lines.append(r"\toprule")
-lines.append(r"\multirow{2}{*}{\textbf{util}} & \multirow{2}{*}{\textbf{metric}} &")
-lines.append(r"\multicolumn{4}{c}{\textbf{ppn = 4}} & \multicolumn{4}{c}{\textbf{ppn = 8}}\\")
-lines.append(r"\cmidrule(lr){3-6}\cmidrule(lr){7-10}")
-lines.append(r" &  & \textbf{4} & \textbf{8} & \textbf{16} & \textbf{32} & \textbf{4} & \textbf{8} & \textbf{16} & \textbf{32}\\")
-lines.append(r"\midrule")
+for timeout_s in TABLE_TIMEOUTS:
+    
+    for priority in TABLE_PRIORITIES:
+        # filter data for this timeout and priority
+        df_solver_stats = df_per_combo[
+            (df_per_combo["priorities"] == priority)
+            & (df_per_combo["timeout_s"] == timeout_s)
+            & (df_per_combo["pods_per_node"].isin(TABLE_PPNS))
+            & (df_per_combo["util"].isin(TABLE_UTILS))
+            & (df_per_combo["nodes"].isin(TABLE_NODES))
+        ].copy()
 
-for u in TABLES_UTILS:
-    util_label = f"{int(u)}\\%"
-    lines.append(rf"\multirow{{{3 if int(u)==90 else 2}}}{{*}}{{{util_label}}}")
-    def emit_row(metric_label: str, tab: pd.DataFrame):
-        left  = [fmt_cell(tab.loc[u, (4, n)]) for n in TABLES_NODES]
-        right = [fmt_cell(tab.loc[u, (8, n)]) for n in TABLES_NODES]
-        lines.append("& " + metric_label + " & " + " & ".join(left + right) + r" \\")
-    emit_row(r"solver\,duration\,(s)", tab_dur)
-    emit_row(r"$\Delta$\,cpu\,util\,(\%)", tab_cpu)
-    emit_row(r"$\Delta$\,mem\,util\,(\%)", tab_mem)
-    lines.append(r"\midrule" if u != TABLES_UTILS[-1] else r"\bottomrule")
-lines.append(r"\end{tabular}")
-latex_block = "\n".join(lines)
+        ####################################################################
+        # Table solver duration and utils (this timeout): duration, cpu, mem
+        ####################################################################
+        solver_sec = (df_solver_stats["solver_duration_ms_mean"] / 1000.0).rename(
+            "solver_sec"
+        )
+        cpu_delta_pc = (df_solver_stats["cpu_delta_mean"] * 100.0).rename("cpu_delta_pc")
+        mem_delta_pc = (df_solver_stats["mem_delta_mean"] * 100.0).rename("mem_delta_pc")
 
-# save to file
-OUT_TABLES_DIR = OUT_TABLES_DIR / "table_solver_duration_and_utils.txt"
-with open(OUT_TABLES_DIR, "w") as f:
-    f.write(latex_block)
-print(f"[ok] saved table solver duration and utils: {OUT_TABLES_DIR}")
+        tab_dur = metric_pivot(df_solver_stats, solver_sec)
+        tab_cpu = metric_pivot(df_solver_stats, cpu_delta_pc)
+        tab_mem = metric_pivot(df_solver_stats, mem_delta_pc)
 
-###############################################################
-# Table beats default or proves optimal (10s solver timeout): share of instances where we beat the default or prove optimal
-# default_all_running are excluded from denominator
-# share = (solver_optimal + solver_feasible + default_optimal) / (n_seeds - default_all_running)
-###############################################################
-good_counts = (
-    df_solver_stats["n_solver_optimal"].astype(float)
-    + df_solver_stats["n_solver_feasible"].astype(float)
-    + df_solver_stats["n_default_optimal"].astype(float)
-)
-solver_run_counts = (
-    df_solver_stats["n_seeds"].astype(float)
-    - df_solver_stats["n_default_all_running"].astype(float)
-)
-frac_good = safe_div(good_counts, solver_run_counts).mean()
-frac_good_pc_str = f"{frac_good * 100:.{TABLES_DECIMALS}f}"
+        # assemble console DataFrame (rows=(util, metric), cols=(ppn,nodes))
+        rows = []
+        for u in TABLE_UTILS:
+            rows.append(pd.Series(tab_dur.loc[u], name=(f"{int(u)}%", "solver duration (s)")))
+            rows.append(pd.Series(tab_cpu.loc[u], name=(f"{int(u)}%", "Δ cpu util (%)")))
+            rows.append(pd.Series(tab_mem.loc[u], name=(f"{int(u)}%", "Δ mem util (%)")))
 
-lines = []
-lines.append(r"\begin{tabular}{@{}l c@{}}")
-lines.append(r"\toprule")
-lines.append(r"\textbf{metric} & \textbf{value}\\")
-lines.append(r"\midrule")
-lines.append(
-    rf"share of instances where solver beats default or proves optimal & {frac_good_pc_str}\%\\"
-)
-lines.append(r"\bottomrule")
-lines.append(r"\end{tabular}")
-latex_block = "\n".join(lines)
+        # build LaTeX tabular
+        lines = []
+        lines.append(r"\begin{tabular}{@{}c l *{8}{c}@{}}")
+        lines.append(r"\toprule")
+        lines.append(r"\multirow{2}{*}{\textbf{util}} & \multirow{2}{*}{\textbf{metric}} &")
+        lines.append(
+            r"\multicolumn{4}{c}{\textbf{ppn = 4}} & \multicolumn{4}{c}{\textbf{ppn = 8}}\\"
+        )
+        lines.append(r"\cmidrule(lr){3-6}\cmidrule(lr){7-10}")
+        lines.append(
+            r" &  & \textbf{4} & \textbf{8} & \textbf{16} & \textbf{32} & \textbf{4} & \textbf{8} & \textbf{16} & \textbf{32}\\"
+        )
+        lines.append(r"\midrule")
 
-# save to file
-OUT_TABLES_PATH_FRAC = OUT_TABLES_DIR.parent / "table_solver_beats_default_or_proves_optimal.txt"
-with open(OUT_TABLES_PATH_FRAC, "w") as f:
-    f.write(latex_block)
-print(f"[ok] saved table solver success: {OUT_TABLES_PATH_FRAC}")
+        for u in TABLE_UTILS:
+            util_label = f"{int(u)}\\%"
+            lines.append(rf"\multirow{{3}}{{*}}{{{util_label}}}")
+
+            def emit_row(metric_label: str, tab: pd.DataFrame):
+                left = [fmt_cell(tab.loc[u, (4, n)]) for n in TABLE_NODES]
+                right = [fmt_cell(tab.loc[u, (8, n)]) for n in TABLE_NODES]
+                lines.append("& " + metric_label + " & " + " & ".join(left + right) + r" \\")
+
+            emit_row(r"solver\,duration\,(s)", tab_dur)
+            emit_row(r"$\Delta$\,cpu\,util\,(\%)", tab_cpu)
+            emit_row(r"$\Delta$\,mem\,util\,(\%)", tab_mem)
+            lines.append(r"\midrule" if u != TABLE_UTILS[-1] else r"\bottomrule")
+        lines.append(r"\end{tabular}")
+        latex_block = "\n".join(lines)
+
+        # save to file, with timeout in filename
+        out_path_dur = OUT_TABLES_DIR / f"table_solver_duration_and_utils_timeout{timeout_s:02d}s_priority{priority}_latex.txt"
+        with open(out_path_dur, "w") as f:
+            f.write(latex_block)
+        print(f"[ok] saved latex table solver duration and utils (timeout={timeout_s}s, priority={priority}): {out_path_dur}")
+        
+        # also save a pandas-style version for easier reading
+        dur_df = pd.DataFrame(rows)
+        out_path_dur_csv = OUT_TABLES_DIR / f"table_solver_duration_and_utils_timeout{timeout_s:02d}s_priority{priority}.csv"
+        dur_df.to_csv(out_path_dur_csv)
+        print(f"[ok] saved CSV solver duration and utils (timeout={timeout_s}s, priority={priority}): {out_path_dur_csv}")
+
+        ####################################################################
+        # Table: split "better" (green+red) vs "kwok optimal" (blue)
+        ####################################################################
+        better_counts = (
+            df_solver_stats["n_solver_optimal"].astype(float)
+            + df_solver_stats["n_solver_feasible"].astype(float)
+        )
+        kowk_opt_counts = df_solver_stats["n_default_optimal"].astype(float)
+
+        solver_run_counts = (
+            df_solver_stats["n_seeds"].astype(float)
+            - df_solver_stats["n_default_all_running"].astype(float)
+        )
+
+        # only keep combos where solver_run_counts > 0
+        mask_valid = solver_run_counts > 0
+        better_total = better_counts[mask_valid].sum()
+        kwok_opt_total = kowk_opt_counts[mask_valid].sum()
+        solver_runs_total = solver_run_counts[mask_valid].sum()
+
+        if solver_runs_total > 0:
+            better_share = better_total / solver_runs_total
+            kwok_opt_share = kwok_opt_total / solver_runs_total
+        else:
+            better_share = float("nan")
+            kwok_opt_share = float("nan")
+
+        better_share_pc_str = f"{better_share * 100:.{TABLE_DECIMALS}f}"
+        proved_opt_share_pc_str = f"{kwok_opt_share * 100:.{TABLE_DECIMALS}f}"
+
+        lines = []
+        lines.append(r"\begin{tabular}{@{}l c@{}}")
+        lines.append(r"\toprule")
+        lines.append(r"\textbf{metric} & \textbf{value}\\")
+        lines.append(r"\midrule")
+        lines.append(
+            rf"share of instances where solver finds a better placement (green+red) & {better_share_pc_str}\%\\"
+        )
+        lines.append(
+            rf"share of instances where solver proves KWOK is optimal and better than default (blue) & {proved_opt_share_pc_str}\%\\"
+        )
+        lines.append(r"\bottomrule")
+        lines.append(r"\end{tabular}")
+        latex_block = "\n".join(lines)
+
+        out_path_frac = OUT_TABLES_DIR / f"table_solver_better_vs_kwok_optimal_timeout{timeout_s:02d}s_priority{priority}_latex.txt"
+        with open(out_path_frac, "w") as f:
+            f.write(latex_block)
+        print(
+            f"[ok] saved latex table solver better/kwok optimal (timeout={timeout_s}s, priority={priority}): {out_path_frac}"
+        )
+        
+        # also save a pandas-style version (CSV) of the shares
+        shares_df = pd.DataFrame(
+            {
+                "metric": [
+                    "better_placement_share",
+                    "kwok_optimal_share",
+                ],
+                "share": [better_share, kwok_opt_share],
+                "share_percent": [better_share * 100.0, kwok_opt_share * 100.0],
+            }
+        )
+        out_path_frac_csv = OUT_TABLES_DIR / f"table_solver_better_vs_kwok_optimal_timeout{timeout_s:02d}s_priority{priority}.csv"
+        shares_df.to_csv(out_path_frac_csv, index=False)
+        print(
+            f"[ok] saved CSV solver better/kwok optimal (timeout={timeout_s}s, priority={priority}): {out_path_frac_csv}"
+        )

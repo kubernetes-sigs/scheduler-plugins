@@ -1,0 +1,8 @@
+\begin{tabular}{@{}l c@{}}
+\toprule
+\textbf{metric} & \textbf{value}\\
+\midrule
+share of instances where solver finds a better placement (green+red) & 44.2\%\\
+share of instances where solver proves KWOK is optimal and better than default (blue) & 19.1\%\\
+\bottomrule
+\end{tabular}

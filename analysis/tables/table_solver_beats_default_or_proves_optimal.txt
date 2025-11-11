@@ -1,7 +1,0 @@
-\begin{tabular}{@{}l c@{}}
-\toprule
-\textbf{metric} & \textbf{value}\\
-\midrule
-share of instances where solver beats default or proves optimal & 93.6\%\\
-\bottomrule
-\end{tabular}
