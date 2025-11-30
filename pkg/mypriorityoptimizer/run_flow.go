@@ -1,4 +1,4 @@
-// run_flow.go
+// pkg/mypriorityoptimizer/run_optimizer.go
 
 package mypriorityoptimizer
 
@@ -10,14 +10,14 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// runFlow runs the flow for the given phase (AllSynch, AllAsynch, Single).
-// For Single phase, the preemptor must be provided.
+// runFlow runs the optimisation flow for the given phase (AllSynch,
+// AllAsynch, Single). For Single phase, the preemptor must be provided.
 // Returns the target node name for the preemptor pod (if any) and error (if any).
-func (pl *MyPriorityOptimizer) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
+func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
 	strategy := strategyToString()
 
-	// Batch/Single: take Active early.
-	// Continuous: take Active later (only if we can worth apply the plan after solving).
+	// Periodic-sync/Per-pod: take Active early.
+	// Periodic-async: take Active later.
 	if !optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.V(MyV).InfoS(msg(strategy, InfoActivePlanInProgress))
@@ -27,40 +27,30 @@ func (pl *MyPriorityOptimizer) runFlow(ctx context.Context, preemptor *v1.Pod) (
 
 	start := time.Now()
 
-	// Fetch cluster view once
-	nodes, err := pl.getNodes()
+	// Plan context: snapshot, solver input, baseline, pending count.
+	nodes, pods, inp, baselineScore, pendingPrePlan, err := pl.planContext(preemptor)
 	if err != nil {
-		klog.Error(msg(strategy, "failed to list nodes"))
+		klog.Error(msg(strategy, InfoPlanPreparationFailed), "err", err)
 		pl.leaveActive()
 		return nil, nil, "", nil, nil, err
 	}
-	pods, err := pl.getPods()
-	if err != nil {
-		klog.Error(msg(strategy, "failed to list pods"))
-		pl.leaveActive()
-		return nil, nil, "", nil, nil, err
-	}
-
-	// Build input and run solvers
-	inp, err := pl.buildSolverInput(nodes, pods, preemptor)
-	if err != nil {
-		klog.Error(msg(strategy, "failed to build solver input"))
-		pl.leaveActive()
-		return nil, nil, "", nil, nil, err
-	}
-	// Compute baseline score
-	baselineScore := buildBaselineScore(inp)
 
 	// Nothing to do
-	pendingPrePlan := countPendingPods(pods)
 	if pendingPrePlan == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPods))
 		pl.leaveActive()
 		return nil, baselineScore, "baseline", nil, nil, ErrNoPendingPods
 	}
 
-	klog.InfoS(msg(strategy, "starting solvers"), "pending", pendingPrePlan, "totalPods", len(pods), "nodes", len(nodes))
-	bestName, hadImproving, bestAttempt, attempts := pl.runSolvers(ctx, inp, nodes, pods, baselineScore)
+	klog.InfoS(
+		msg(strategy, "starting solvers"),
+		"pending", pendingPrePlan,
+		"totalPods", len(pods),
+		"nodes", len(nodes),
+	)
+
+	// Plan computation
+	bestName, hadImproving, bestAttempt, attempts := pl.planComputation(ctx, inp, nodes, pods, baselineScore)
 
 	// Check if anything was feasible and improving
 	if !hadImproving {
@@ -70,7 +60,7 @@ func (pl *MyPriorityOptimizer) runFlow(ctx context.Context, preemptor *v1.Pod) (
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoImprovingSolutionFromAnySolver
 	}
 
-	// Continuous: take Active now that we know it’s worth applying.
+	// Periodic-async: take Active now that we know it is worth applying the plan.
 	if optimizeAllAsynch() {
 		if !pl.tryEnterActive() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
@@ -88,24 +78,24 @@ func (pl *MyPriorityOptimizer) runFlow(ctx context.Context, preemptor *v1.Pod) (
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoPendingPodsToSchedule
 	}
 
-	// Register and execute plan
-	plan, ap, err := pl.registerPlan(ctx, *bestAttempt, preemptor, pods)
+	// Plan registration
+	plan, ap, err := pl.planRegistration(ctx, *bestAttempt, preemptor, pods)
 	if err != nil {
-		klog.Error(msg(strategy, InfoRegisterPlanFailed))
+		klog.Error(msg(strategy, InfoPlanRegistrationFailed))
 		pl.onPlanSettled(PlanStatusFailed)
-		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrRegisterPlan.Error())
-		return nil, baselineScore, bestName, bestAttempt, attempts, ErrRegisterPlan
-	}
-	if err := pl.executePlan(plan); err != nil {
-		klog.Error(msg(strategy, InfoPlanExecutionFailed))
-		pl.onPlanSettled(PlanStatusFailed)
-		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrPlanExecutionFailed.Error())
-		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanExecutionFailed
+		pl.exportSolverStatsConfigMap(
+			ctx, strategy, baselineScore, bestName, attempts,
+			ErrPlanRegistration.Error(),
+		)
+		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanRegistration
 	}
 
-	// Activate planned pending (if applicable)
-	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualAllSynch() {
-		pl.activatePlannedPending(plan, pods)
+	// Plan eviction and recreate standalone pods
+	if err := pl.planActivation(plan, pods); err != nil {
+		klog.Error(msg(strategy, InfoPlanActivationFailed))
+		pl.onPlanSettled(PlanStatusFailed)
+		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrPlanActivationFailed.Error())
+		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanActivationFailed
 	}
 
 	// Export stats (success)

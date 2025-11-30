@@ -7,8 +7,8 @@ import "errors"
 var (
 	ErrNoSolverEnabled                  = errors.New(InfoNoSolverEnabled)
 	ErrActiveInProgress                 = errors.New(InfoActivePlanInProgress)
-	ErrRegisterPlan                     = errors.New(InfoRegisterPlanFailed)
-	ErrPlanExecutionFailed              = errors.New(InfoPlanExecutionFailed)
+	ErrPlanRegistration                 = errors.New(InfoPlanRegistrationFailed)
+	ErrPlanActivationFailed             = errors.New(InfoPlanActivationFailed)
 	ErrNoImprovingSolutionFromAnySolver = errors.New(InfoNoImprovingSolutionFromAnySolver)
 	ErrNoPendingPodsToSchedule          = errors.New(InfoNoPendingPodsToSchedule)
 	ErrNoPendingPods                    = errors.New(InfoNoPendingPods)

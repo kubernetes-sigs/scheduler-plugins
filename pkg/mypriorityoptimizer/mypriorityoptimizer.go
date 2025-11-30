@@ -12,7 +12,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-func (pl *MyPriorityOptimizer) Name() string { return Name }
+func (pl *SharedState) Name() string { return Name }
 
 func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	client, err := kubernetes.NewForConfig(h.KubeConfig())
@@ -20,7 +20,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, err
 	}
 
-	pl := &MyPriorityOptimizer{
+	pl := &SharedState{
 		Handle:             h,
 		Client:             client,
 		BlockedWhileActive: newPodSet("BlockedWhileActive"),
@@ -45,7 +45,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	ssInf := f.Apps().V1().StatefulSets().Informer()
 	dsInf := f.Apps().V1().DaemonSets().Informer()
 	jobInf := f.Batch().V1().Jobs().Informer()
-	go pl.waitForPluginReadiness(ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
+	go pl.waitCacheReadiness(ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
 
 	// Ensure Active is set to false
 	pl.Active.Store(false)

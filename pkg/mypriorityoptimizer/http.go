@@ -22,7 +22,7 @@ type HttpResponse struct {
 	PendingBefore int            `json:"pending_before"`
 }
 
-func (pl *MyPriorityOptimizer) startHTTPServer(ctx context.Context, addr string) {
+func (pl *SharedState) startHTTPServer(ctx context.Context, addr string) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {

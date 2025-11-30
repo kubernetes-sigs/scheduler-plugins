@@ -14,7 +14,7 @@ import (
 // activateBlockedPods activates up to 'max' pods from the blocked set; clear only the ones activated.
 // It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
 // if max <= 0, all pods are activated.
-func (pl *MyPriorityOptimizer) activatePods(podSet *PodSet, removeActivated bool, max int) (tried []types.UID) {
+func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max int) (tried []types.UID) {
 	// Prune stale entries first
 	_ = pl.pruneSet(podSet)
 
@@ -88,7 +88,7 @@ func (pl *MyPriorityOptimizer) activatePods(podSet *PodSet, removeActivated bool
 //   - is already bound (Spec.NodeName != "").
 //
 // It returns the number of entries removed.
-func (pl *MyPriorityOptimizer) pruneSet(podSet *PodSet) int {
+func (pl *SharedState) pruneSet(podSet *PodSet) int {
 	if podSet == nil || podSet.Size() == 0 {
 		return 0
 	}

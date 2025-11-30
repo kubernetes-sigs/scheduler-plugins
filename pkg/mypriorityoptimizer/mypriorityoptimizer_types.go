@@ -10,8 +10,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// MyPriorityOptimizer is the main plugin struct.
-type MyPriorityOptimizer struct {
+// SharedState is the shared state of the MyPriorityOptimizer plugin used across scheduling cycles and workers.
+type SharedState struct {
 	// Handle to the framework
 	Handle framework.Handle
 	// Kubernetes client

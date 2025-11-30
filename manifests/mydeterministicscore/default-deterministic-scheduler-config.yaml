@@ -1,0 +1,13 @@
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+parallelism: 1
+profiles:
+- schedulerName: default-scheduler
+  plugins:
+    score:
+      enabled:
+        - name: MyDeterministicScore
+          weight: 1
+    multiPoint:
+      disabled:
+        - name: DefaultPreemption

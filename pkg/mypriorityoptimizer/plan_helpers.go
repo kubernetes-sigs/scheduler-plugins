@@ -26,22 +26,22 @@ import (
 // tryEnterActive attempts to enter the active plan state.
 // Use CompareAndSwap to ensure only one goroutine can enter the active state
 // by checking that the previous value is false before setting it to true.
-func (pl *MyPriorityOptimizer) tryEnterActive() bool {
+func (pl *SharedState) tryEnterActive() bool {
 	return pl.Active.CompareAndSwap(false, true)
 }
 
 // leaveActive exits the active plan state.
-func (pl *MyPriorityOptimizer) leaveActive() {
+func (pl *SharedState) leaveActive() {
 	pl.Active.Store(false)
 }
 
 // getActivePlan returns the currently active plan, if any.
-func (pl *MyPriorityOptimizer) getActivePlan() *ActivePlan {
+func (pl *SharedState) getActivePlan() *ActivePlan {
 	return pl.ActivePlan.Load()
 }
 
 // clearActivePlan clears the currently active plan, if any.
-func (pl *MyPriorityOptimizer) tryClearActivePlan(ap *ActivePlan) bool {
+func (pl *SharedState) tryClearActivePlan(ap *ActivePlan) bool {
 	if ap == nil {
 		return false
 	}
@@ -50,7 +50,7 @@ func (pl *MyPriorityOptimizer) tryClearActivePlan(ap *ActivePlan) bool {
 
 // buildPlan builds the evictions, movements, old placements, new placements, placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
 // from the output of the solver.
-func (pl *MyPriorityOptimizer) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, error) {
+func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, error) {
 	if out == nil {
 		return &Plan{}, nil
 	}
@@ -175,7 +175,7 @@ func (pl *MyPriorityOptimizer) buildPlan(out *SolverOutput, preemptor *v1.Pod, p
 // setActivePlan sets the given stored plan as the active plan and initializes its counters,
 // deriving both WorkloadPerNodeCnts and PlacementByName solely from NewPlacements.
 // For controller-owned pods, quotas are keyed by the controller (e.g., ReplicaSet) name.
-func (pl *MyPriorityOptimizer) setActivePlan(plan *Plan, id string, _ []*v1.Pod) {
+func (pl *SharedState) setActivePlan(plan *Plan, id string, _ []*v1.Pod) {
 	// Exit if no plan provided
 	if plan == nil {
 		klog.V(MyV).ErrorS(ErrNoPlanProvided, InfoNoPlanProvided+" in setActivePlan", nil)
@@ -226,126 +226,8 @@ func buildWorkloadQuotasAtomics(wkQuotas WorkloadQuotas) WorkloadQuotasAtomics {
 	return nil
 }
 
-// registerPlan builds and registers a new plan as active, exporting it to a ConfigMap.
-func (pl *MyPriorityOptimizer) registerPlan(
-	ctx context.Context,
-	solver SolverResult,
-	preemptor *v1.Pod,
-	pods []*v1.Pod,
-) (*Plan, *ActivePlan, error) {
-	// Build the plan from the solver output
-	plan, err := pl.buildPlan(solver.Output, preemptor, pods)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build actions: %w", err)
-	}
-
-	// Unique plan id
-	id := fmt.Sprintf("plan-%d", time.Now().UnixNano())
-
-	// Set active plan
-	pl.setActivePlan(plan, id, pods)
-
-	// Store plan in ConfigMap for debugging purposes
-	storedPlan := &StoredPlan{
-		PluginVersion:        Version,
-		OptimizationStrategy: strategyToString(),
-		GeneratedAt:          time.Now().UTC(),
-		PlanStatus:           PlanStatusActive,
-		Plan:                 plan,
-		Solver:               summarizeAttempt(solver),
-	}
-	if preemptor != nil {
-		storedPlan.Preemptor = &Preemptor{
-			Pod: Pod{
-				UID:       preemptor.UID,
-				Namespace: preemptor.Namespace,
-				Name:      preemptor.Name,
-			},
-			NominatedNode: plan.NominatedNode,
-		}
-	}
-	if err := pl.exportPlanConfigMap(ctx, id, storedPlan); err != nil {
-		klog.ErrorS(err, "export plan to ConfigMap failed")
-	}
-
-	return plan, pl.getActivePlan(), nil
-}
-
-// executePlan executes the given plan: evicting and recreating pods as needed.
-func (pl *MyPriorityOptimizer) executePlan(plan *Plan) error {
-	// If no plan, nothing to do
-	if plan == nil {
-		klog.V(MyV).ErrorS(ErrNoPlanProvided, InfoNoPlanProvided, nil)
-		return ErrNoPlanProvided
-	}
-
-	if len(plan.Moves) == 0 && len(plan.Evicts) == 0 {
-		klog.V(MyV).Info("plan has no moves or evictions; nothing to do")
-		return nil
-	}
-
-	// Log plan details
-	for _, mv := range plan.Moves {
-		klog.V(MyV).InfoS("pod movement planned",
-			"pod", combineNsName(mv.Pod.Namespace, mv.Pod.Name), "from", mv.FromNode, "to", mv.ToNode)
-	}
-	for _, e := range plan.Evicts {
-		klog.V(MyV).InfoS("eviction planned",
-			"pod", combineNsName(e.Pod.Namespace, e.Pod.Name), "from", e.Node)
-	}
-
-	ap := pl.getActivePlan()
-	var baseCtx context.Context
-	if ap != nil && ap.Ctx != nil {
-		baseCtx = context.WithoutCancel(ap.Ctx)
-	} else {
-		baseCtx = context.Background()
-	}
-	overallCtx, cancel := context.WithTimeout(baseCtx, PlanOverallTimeout)
-	defer cancel()
-
-	// 1) Resolve unique targets (pods that are moved or evicted)
-	seen := map[types.UID]bool{}
-	var targets []*v1.Pod
-	add := func(uid types.UID, ns, name string) {
-		if seen[uid] {
-			return
-		}
-		seen[uid] = true
-		if pod := pl.resolvePod(uid, ns, name); pod != nil {
-			targets = append(targets, pod)
-		}
-	}
-	for _, mv := range plan.Moves {
-		add(mv.Pod.UID, mv.Pod.Namespace, mv.Pod.Name)
-	}
-	for _, e := range plan.Evicts {
-		add(e.Pod.UID, e.Pod.Namespace, e.Pod.Name)
-	}
-
-	// 2) Evict targets (bounded parallelism), then wait for them to disappear in cache
-	if len(targets) > 0 {
-		klog.V(MyV).InfoS("executePlan: evicting targeted pods", "count", len(targets))
-		if err := pl.evictTargets(overallCtx, targets); err != nil {
-			return err
-		}
-		waitCtx, cancel := context.WithTimeout(overallCtx, WaitPodsGoneTimeout)
-		defer cancel()
-		if err := pl.waitPodsGone(waitCtx, targets); err != nil {
-			return fmt.Errorf("wait for targeted pods gone: %w", err)
-		}
-	}
-
-	// 3) Recreate standalone (non-controller) pods only
-	if err := pl.recreateStandalonePods(overallCtx, targets); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // evictTargets evicts all target pods with bounded parallelism and per-op timeouts.
-func (pl *MyPriorityOptimizer) evictTargets(ctx context.Context, targets []*v1.Pod) error {
+func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(EvictParallelism)
 
@@ -367,7 +249,7 @@ func (pl *MyPriorityOptimizer) evictTargets(ctx context.Context, targets []*v1.P
 }
 
 // recreateStandalonePods recreates only non-controller-owned pods (bounded parallelism).
-func (pl *MyPriorityOptimizer) recreateStandalonePods(ctx context.Context, targets []*v1.Pod) error {
+func (pl *SharedState) recreateStandalonePods(ctx context.Context, targets []*v1.Pod) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(RecreatePodParallelism)
 
@@ -391,7 +273,7 @@ func (pl *MyPriorityOptimizer) recreateStandalonePods(ctx context.Context, targe
 }
 
 // waitTargetsGone waits until the evicted pods disappear from cache.
-func (pl *MyPriorityOptimizer) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
+func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 	if len(pods) == 0 {
 		return nil
 	}
@@ -428,9 +310,45 @@ func (pl *MyPriorityOptimizer) waitPodsGone(ctx context.Context, pods []*v1.Pod)
 	})
 }
 
+// activatePlannedPending activates all live pending pods that the plan intends to place
+// (i.e., NewPlacement with FromNode == "" and ToNode != "").
+func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
+	if plan == nil || len(plan.NewPlacements) == 0 || len(pods) == 0 {
+		return
+	}
+	// Build allow-set of UIDs for pending -> scheduled in this plan.
+	allow := make(map[types.UID]struct{}, len(plan.NewPlacements))
+	for _, np := range plan.NewPlacements {
+		if np.FromNode == "" && np.ToNode != "" {
+			allow[np.Pod.UID] = struct{}{}
+		}
+	}
+	if len(allow) == 0 {
+		return
+	}
+
+	// Collect matching, truly-pending pods from the live slice.
+	toAct := make(map[string]*v1.Pod, len(allow))
+	for _, p := range pods {
+		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName != "" {
+			continue // must be pending and alive
+		}
+		if _, ok := allow[p.UID]; !ok {
+			continue
+		}
+		key := combineNsName(p.Namespace, p.Name)
+		toAct[key] = p
+	}
+	if len(toAct) == 0 {
+		return
+	}
+	pl.Handle.Activate(klog.Background(), toAct)
+	klog.InfoS(InfoActivatingPlannedPendingPods, "count", len(toAct))
+}
+
 // resolvePod attempts to find the pod by matching UID and name,
 // falling back to scanning all pods in the namespace to find a matching UID.
-func (pl *MyPriorityOptimizer) resolvePod(uid types.UID, ns, name string) *v1.Pod {
+func (pl *SharedState) resolvePod(uid types.UID, ns, name string) *v1.Pod {
 	podsLister := pl.podsLister()
 
 	// Fast path: direct get matches UID
@@ -450,7 +368,7 @@ func (pl *MyPriorityOptimizer) resolvePod(uid types.UID, ns, name string) *v1.Po
 }
 
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
-func (pl *MyPriorityOptimizer) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
+func (pl *SharedState) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
 	if ap == nil {
 		// Plan got down concurrently; treat as "not completed yet" (retry later)
 		klog.V(MyV).InfoS("plan completion check skipped: no active plan doc")
@@ -499,7 +417,7 @@ func (pl *MyPriorityOptimizer) isPlanCompleted(ctx context.Context, ap *ActivePl
 }
 
 // onPlanSettled is called when a plan is settled (i.e., all its actions are completed).
-func (pl *MyPriorityOptimizer) onPlanSettled(status PlanStatus) bool {
+func (pl *SharedState) onPlanSettled(status PlanStatus) bool {
 	ap := pl.getActivePlan()
 	// Win-or-lose: swap the ActivePlan pointer from 'ap' to nil.
 	// Only the winner proceeds with teardown.
@@ -525,49 +443,13 @@ func (pl *MyPriorityOptimizer) onPlanSettled(status PlanStatus) bool {
 	return true
 }
 
-// activatePlannedPending activates all live pending pods that the plan intends to place
-// (i.e., NewPlacement with FromNode == "" and ToNode != "").
-func (pl *MyPriorityOptimizer) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
-	if plan == nil || len(plan.NewPlacements) == 0 || len(pods) == 0 {
-		return
-	}
-	// Build allow-set of UIDs for pending -> scheduled in this plan.
-	allow := make(map[types.UID]struct{}, len(plan.NewPlacements))
-	for _, np := range plan.NewPlacements {
-		if np.FromNode == "" && np.ToNode != "" {
-			allow[np.Pod.UID] = struct{}{}
-		}
-	}
-	if len(allow) == 0 {
-		return
-	}
-
-	// Collect matching, truly-pending pods from the live slice.
-	toAct := make(map[string]*v1.Pod, len(allow))
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName != "" {
-			continue // must be pending and alive
-		}
-		if _, ok := allow[p.UID]; !ok {
-			continue
-		}
-		key := combineNsName(p.Namespace, p.Name)
-		toAct[key] = p
-	}
-	if len(toAct) == 0 {
-		return
-	}
-	pl.Handle.Activate(klog.Background(), toAct)
-	klog.InfoS(InfoActivatingPlannedPendingPods, "count", len(toAct))
-}
-
 // isPodAllowedByActivePlan returns true if the pod is allowed by the active plan.
 // Standalone/preemptor pods are allowed by exact name match.
 // For controller-owned pods, we allow only if the plan still has remaining
 // per-node quota for that workload. If the pod already targets a specific
 // node (NodeName set), we check that node's remaining quota; otherwise we
 // allow if ANY node for that workload has remaining > 0.
-func (pl *MyPriorityOptimizer) isPodAllowedByActivePlan(pod *v1.Pod) bool {
+func (pl *SharedState) isPodAllowedByActivePlan(pod *v1.Pod) bool {
 	ap := pl.getActivePlan()
 	if ap == nil {
 		return false
@@ -604,8 +486,8 @@ func (pl *MyPriorityOptimizer) isPodAllowedByActivePlan(pod *v1.Pod) bool {
 	return false
 }
 
-// allowedNodes returns the set of nodes the pod is allowed to run on according to the active plan.
-func (pl *MyPriorityOptimizer) allowedNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
+// filterNodes returns the set of nodes the pod is allowed to run on according to the active plan.
+func (pl *SharedState) filterNodes(pod *v1.Pod) (sets.Set[string], string, bool) {
 	ap := pl.getActivePlan()
 	if ap == nil {
 		return nil, InfoNoActivePlan, true
@@ -645,7 +527,7 @@ func (pl *MyPriorityOptimizer) allowedNodes(pod *v1.Pod) (sets.Set[string], stri
 //	pendingScheduled = # of currently-pending pods that got a placement in this plan
 //	totalPrePlan     = # of pods currently bound
 //	totalPostPlan    = runningNow - evicted + pendingScheduled
-func (pl *MyPriorityOptimizer) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (pendingScheduled, totalPrePlan, totalPostPlan int) {
+func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (pendingScheduled, totalPrePlan, totalPostPlan int) {
 	if out == nil {
 		return 0, 0, 0
 	}
@@ -691,7 +573,7 @@ func (pl *MyPriorityOptimizer) countNewAndTotalPods(out *SolverOutput, pods []*v
 // waitPendingBound waits for the pending pod to be bound in the cache.
 // By checking this for every pod we process in PostBind, we can be sure
 // we have the correct state in cache before completing the plan.
-func (pl *MyPriorityOptimizer) waitPendingBound(ctx context.Context, pending *v1.Pod) (bool, error) {
+func (pl *SharedState) waitPendingBound(ctx context.Context, pending *v1.Pod) (bool, error) {
 
 	podsLister := pl.podsLister()
 	namespace := pending.Namespace
@@ -737,7 +619,7 @@ func (pl *MyPriorityOptimizer) waitPendingBound(ctx context.Context, pending *v1
 }
 
 // exportPlanConfigMap exports the given plan to a ConfigMap.
-func (pl *MyPriorityOptimizer) exportPlanConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
+func (pl *SharedState) exportPlanConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
 	doc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      name,
@@ -756,7 +638,7 @@ func (pl *MyPriorityOptimizer) exportPlanConfigMap(ctx context.Context, name str
 //   - The plan CM is put into the requested status (unless already final).
 //   - The exported stats CM only updates the last run if it isn't already final.
 //     (Never overwrite Failed with Completed.)
-func (pl *MyPriorityOptimizer) markPlanStatus(ctx context.Context, planCM string, status PlanStatus) {
+func (pl *SharedState) markPlanStatus(ctx context.Context, planCM string, status PlanStatus) {
 	lister := func(ns string) clientv1.ConfigMapNamespaceLister {
 		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
 	}
@@ -785,7 +667,7 @@ func (pl *MyPriorityOptimizer) markPlanStatus(ctx context.Context, planCM string
 }
 
 // watchPlanTimeout monitors the timeout for the given active plan.
-func (pl *MyPriorityOptimizer) watchPlanTimeout(ap *ActivePlan) {
+func (pl *SharedState) watchPlanTimeout(ap *ActivePlan) {
 	<-ap.Ctx.Done()
 	// If Cancel() was called due to completion/replacement, do nothing.
 	if ap.Ctx.Err() != context.DeadlineExceeded {

@@ -26,8 +26,8 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/pkg/capacityscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/coscheduling"
+	"sigs.k8s.io/scheduler-plugins/pkg/mydeterministicscore"
 	"sigs.k8s.io/scheduler-plugins/pkg/mypriorityoptimizer"
-	"sigs.k8s.io/scheduler-plugins/pkg/myscorebreaker"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
@@ -54,7 +54,7 @@ func main() {
 		app.WithPlugin(coscheduling.Name, coscheduling.New),
 		app.WithPlugin(loadvariationriskbalancing.Name, loadvariationriskbalancing.New),
 		app.WithPlugin(mypriorityoptimizer.Name, mypriorityoptimizer.New),
-		app.WithPlugin(myscorebreaker.Name, myscorebreaker.New),
+		app.WithPlugin(mydeterministicscore.Name, mydeterministicscore.New),
 		app.WithPlugin(networkoverhead.Name, networkoverhead.New),
 		app.WithPlugin(topologicalsort.Name, topologicalsort.New),
 		app.WithPlugin(noderesources.AllocatableName, noderesources.NewAllocatable),

@@ -16,24 +16,24 @@ import (
 )
 
 // nodesLister returns the NodeLister from the shared informer factory.
-func (pl *MyPriorityOptimizer) nodesLister() corev1listers.NodeLister {
+func (pl *SharedState) nodesLister() corev1listers.NodeLister {
 	return pl.Handle.SharedInformerFactory().Core().V1().Nodes().Lister()
 }
 
 // podsLister returns the PodsLister from the shared informer factory.
-func (pl *MyPriorityOptimizer) podsLister() corev1listers.PodLister {
+func (pl *SharedState) podsLister() corev1listers.PodLister {
 	return pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
 }
 
 // getNodes returns a list of all nodes in the cluster.
 // Use the informer lister to avoid stale data from SnapshotLister.
-func (pl *MyPriorityOptimizer) getNodes() ([]*v1.Node, error) {
+func (pl *SharedState) getNodes() ([]*v1.Node, error) {
 	return pl.nodesLister().List(labels.Everything())
 }
 
 // getPods returns a list of all pods in the cluster.
 // Use the informer lister to avoid stale data from SnapshotLister.
-func (pl *MyPriorityOptimizer) getPods() ([]*v1.Pod, error) {
+func (pl *SharedState) getPods() ([]*v1.Pod, error) {
 	return pl.podsLister().List(labels.Everything())
 }
 
@@ -75,7 +75,7 @@ func countPendingPods(pods []*v1.Pod) int {
 
 // evictPod evicts a pod from the cluster using the eviction API.
 // grace is set to 0 for immediate eviction.
-func (pl *MyPriorityOptimizer) evictPod(ctx context.Context, pod *v1.Pod) error {
+func (pl *SharedState) evictPod(ctx context.Context, pod *v1.Pod) error {
 	grace := int64(0) // immediate eviction
 	ev := &policyv1.Eviction{
 		ObjectMeta: metav1.ObjectMeta{
@@ -94,7 +94,7 @@ func (pl *MyPriorityOptimizer) evictPod(ctx context.Context, pod *v1.Pod) error 
 // recreateStandalonePod creates a new pod with the same specifications as the original pod.
 // Needed for standalone pods as when they are evicted, they will not be recreated as they have no controllers.
 // UID, GenerateName, ResourceVersion, NodeName, NodeSelector are all set to none.
-func (pl *MyPriorityOptimizer) recreateStandalonePod(ctx context.Context, orig *v1.Pod, _ string) error {
+func (pl *SharedState) recreateStandalonePod(ctx context.Context, orig *v1.Pod, _ string) error {
 	newPod := orig.DeepCopy()
 	newPod.UID = ""
 	newPod.GenerateName = ""

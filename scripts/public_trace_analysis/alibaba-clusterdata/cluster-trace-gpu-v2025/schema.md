@@ -1,0 +1,21 @@
+# Field Descriptions
+
+- `instance_sn`: Unique identifier for the instance.
+- `role`: Role of the instance.
+  - `CN`: CPU Node
+  - `HN`: Heterogeneous GPU Node
+- `app_name`: Name of the application group to which the instance belongs. An application group is a collection of instances sharing the same application name. For example, `app_0` may contain multiple instances like `instance_0`, `instance_1`, etc.
+- `cpu_request`: Number of CPU cores requested by the instance (in vCPUs).
+- `cpu_limit`: Maximum number of CPU cores allowed for the instance (same as `cpu_request` in this scenario).
+- `gpu_request`: Number of GPUs requested by the instance.
+- `gpu_limit`: Maximum number of GPUs allowed for the instance (same as `gpu_request` in this scenario).
+- `rdma_request`: Allocated percentage of the bandwidth of an RDMA Network Interface Card (RNIC), ranging from 0 to 100. Currently, this value is used as a constraint for scheduling density.
+- `rdma_limit`: Maximum RDMA bandwidth allowed for the instance (same as `rdma_request` in this scenario).
+- `memory_request`: Amount of main memory requested by the instance (in GiB).
+- `memory_limit`: Maximum amount of main memory allowed for the instance (in GiB).
+- `disk_request`: Amount of disk space requested by the instance (in GiB).
+- `disk_limit`: Maximum amount of disk space allowed for the instance (in GiB).
+- `max_instance_per_node`: Maximum number of instances of the same `app_name` that can be deployed on a single node. A value of `-1` indicates no deployment density limit.
+- `creation_time`: Timestamp indicating when the instance was created, expressed as the difference in **seconds** from the trace start time. If the instance existed before the trace start time, this field is set to `NaN`.
+- `scheduled_time`: Timestamp indicating when the instance was scheduled, expressed as the difference in **seconds** from the trace start time. If the instance was scheduled before the trace start time, this field is set to `NaN`.
+- `deletion_time`: Timestamp indicating when the instance was deleted, expressed as the difference in seconds from the trace start time. If the instance was deleted after the trace end time, this field is set to `NaN`.

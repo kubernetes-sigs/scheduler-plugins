@@ -13,7 +13,7 @@ import (
 // Only meaningful for Every@PreEnqueue
 // This function is needed as if we activate all blocked pods at once
 // over and over again in onPlanSettled, we end up with a large waiting time in the queue.
-func (pl *MyPriorityOptimizer) nudgeBlockedLoop(ctx context.Context) {
+func (pl *SharedState) nudgeBlockedLoop(ctx context.Context) {
 	label := "NudgeBlockedLoop"
 
 	if !optimizeEvery() || !optimizeAtPreEnqueue() {

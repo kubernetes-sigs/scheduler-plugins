@@ -91,7 +91,7 @@ func parseOptimizeHookStage(s string) StageType {
 }
 
 // decideStrategy determines the strategy at the given stage.
-func (pl *MyPriorityOptimizer) decideStrategy(stage StageType) StrategyDecision {
+func (pl *SharedState) decideStrategy(stage StageType) StrategyDecision {
 	// If there's an active plan, block all new pods.
 	ap := pl.getActivePlan()
 	if ap != nil {
