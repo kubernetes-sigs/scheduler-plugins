@@ -6,19 +6,6 @@ import os, subprocess, yaml, shlex, logging, textwrap, fcntl, contextlib
 from pathlib import Path
 from scripts.helpers.kubectl_helpers import kubectl_apply_yaml
 
-MEM_UNIT_TABLE = {
-    # bytes
-    "": 1, "b": 1, "byte": 1, "bytes": 1,
-    # SI (10^3)
-    "k": 10**3, "kb": 10**3,
-    "m": 10**6, "mb": 10**6,
-    "g": 10**9, "gb": 10**9,
-    # IEC (2^10)
-    "ki": 1024, "kib": 1024,
-    "mi": 1024**2, "mib": 1024**2,
-    "gi": 1024**3, "gib": 1024**3,
-}
-
 # ====================================================================
 # YAML helpers.
 # Due to proper indentation, we keep them outside class
