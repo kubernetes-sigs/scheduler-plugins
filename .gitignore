@@ -26,7 +26,7 @@ vendor
 __pycache__/
 .VSCodeCounter
 .vagrant/
-#/bootstrap/
+/bootstrap/
 output/
 results/
 eta*
