@@ -4,6 +4,7 @@
 - [Priority Optimizer Plugin](#priority-optimizer-plugin)
   - [Overview](#overview)
   - [Code Structure and Extension Points](#code-structure-and-extension-points)
+  - [Upstream version](#upstream-version)
   - [Integrating](#integrating)
   - [Building](#building)
     - [Binary (recommended)](#binary-recommended)
@@ -12,7 +13,7 @@
     - [KWOK (recommended)](#kwok-recommended)
     - [Kind](#kind)
   - [Testing](#testing)
-    - [(Initial) Workload Generator](#initial-workload-generator)
+    - [Workload Once Generator](#workload-once-generator)
       - [Deterministic scheduling](#deterministic-scheduling)
       - [Workload configuration file](#workload-configuration-file)
       - [Job file](#job-file)
@@ -48,6 +49,7 @@
     - [TODOs: Report](#todos-report)
     - [TODOs: General](#todos-general)
     - [TODOs: IJCAI Paper](#todos-ijcai-paper)
+    - [TODOs: Later](#todos-later)
   - [Questions](#questions)
     - [Open Questions](#open-questions)
     - [Closed Questions](#closed-questions)
@@ -64,6 +66,7 @@ The plugin can be triggered in different **optimization modes**:
 - *All synch* – optimize all pods (running and pending) at fixed intervals (or on request via HTTP). Scheduling is paused while the optimization runs and the plan is applied.
 - *Manual all synch* – same as all synch, but only optimizes when triggered via HTTP. Used for testing and evaluation.
 - *All asynch* – same as all synch, but does not wait for optimization to finish. The plan is applied only if the cluster state matches the state used by the solver. Scheduling is still paused while the plan is being applied to avoid conflicts.
+- *Free time* – optimize during free time windows (i.e. when no pods are arriving). #TODO: Not yet implemented.
 
 The plugin can be hooked into two **scheduling phases**: either before the pod is enqueued (*PreEnqueue*) or after the default scheduler fails to find a node (*PostFilter*). We recommend the latter, as it avoids optimization when the default scheduler can already place the pod and thus leverages its speed instead of running the solver unnecessarily. Note that the all sync/async modes always trigger at their configured intervals, regardless of which extension point is used.
 
@@ -83,18 +86,28 @@ The code for the **MyPriorityOptimizer** plugin is located under `pkg/mypriority
 - `run_flow.go`: Contains the main logic for running the optimization flow, including triggering the solver, applying the plan, etc.
 - `run_solvers.go`: Contains the logic for running solvers (e.g. the Python solver) and selecting the best one to use.
 - `solver_python.go`: Contains the logic for interacting with a Python solver, including preparing the input, running the solver, and parsing the output.
-- `optimize_loop.go`: Contains the logic for running the optimization flow (`run_flow.go`) in a separate goroutine when not running in mode *for every pod*.
-- `preenqueue_phase.go`: Implements the PreEnqueue scheduling extension point. This is mainly used for blocking new pods while an optimization is running or a plan is being applied. If in mode *for every pod*, it is also trigger the optimization for every new pod that arrives.
-- `prefilter_phase.go`: Implements the PreFilter scheduling extension point. This is also used for blocking new pods while an optimization is running or a plan is being applied. However, its main purpose is targeting the pod onto the node assigned by the solver in the plan (if any).
-- `postfilter_phase.go`: Implements the PostFilter scheduling extension point. This is mainly used to mark a pod as unschedulable as the default scheduler failed to place it. If in mode *for every pod*, it also triggers the optimization for every new pod that arrives.
-- `reserve_phase.go`: Implements the Reserve scheduling extension point. This is used to place workloads where we cannot rely on specific pod names (e.g. pods from a ReplicaSets) by matching on workload names instead and how many of each that should be placed on each node.
-- `postbind_phase.go`: Implements the PostBind scheduling extension point. This is used for deactivating the paused scheduling and for logging purposes.
+- `periodic_loop.go`: Contains the logic for running the optimization flow (`run_flow.go`) in a separate goroutine when not running in mode *for every pod*.
+- `hook_preenqueue.go`: Implements the PreEnqueue scheduling extension point. This is mainly used for blocking new pods while an optimization is running or a plan is being applied. If in mode *for every pod*, it is also trigger the optimization for every new pod that arrives.
+- `hook_prefilter.go`: Implements the PreFilter scheduling extension point. This is also used for blocking new pods while an optimization is running or a plan is being applied. However, its main purpose is targeting the pod onto the node assigned by the solver in the plan (if any).
+- `hook_postfilter.go`: Implements the PostFilter scheduling extension point. This is mainly used to mark a pod as unschedulable as the default scheduler failed to place it. If in mode *for every pod*, it also triggers the optimization for every new pod that arrives.
+- `hook_reserve.go`: Implements the Reserve scheduling extension point. This is used to place workloads where we cannot rely on specific pod names (e.g. pods from a ReplicaSets) by matching on workload names instead and how many of each that should be placed on each node.
+- `hook_postbind.go`: Implements the PostBind scheduling extension point. This is used for deactivating the paused scheduling and for logging purposes.
 
 If in mode *for every pod*, the optimization flow (`run_flow.go`) is triggered at every new pod arrival using the PreEnqueue and PostFilter extension points.
 
+## Upstream version
+
+Latest upstream version tracked: **v0.32.7** (tagged release) of  
+[`kubernetes-sigs/scheduler-plugins`](https://github.com/kubernetes-sigs/scheduler-plugins/releases).
+
+This fork follows **tagged upstream releases only**.  
+When updating, **do not** base changes on `*-devel` tags or arbitrary commits from `main`, as they may be incompatible with the KWOK emulation version used here.
+
+After moving to a new upstream tag, always verify **KWOK compatibility**, e.g. by running a small smoke test with the `kwok_workload_once.py` harness.
+
 ## Integrating
 
-To enable and use plugins in the Kubernetes scheduler, you must apply a **scheduler configuration manifest** that selects the plugins and their settings; the manifest for this plugin is `bootstrap/content/manifests/plugin-kube-scheduler-config.yaml` (see also [Scheduler Configuration on Kubernetes webpage](https://kubernetes.io/docs/reference/scheduling/config/) for background).
+To enable and use plugins in the Kubernetes scheduler, you must apply a **scheduler configuration manifest** that selects the plugins and their settings; the manifest for this plugin is `manifests/plugin-kube-scheduler-config.yaml` (see also [Scheduler Configuration on Kubernetes webpage](https://kubernetes.io/docs/reference/scheduling/config/) for background).
 
 This file enables the **MyPriorityOptimizer** plugin and the used extension points and disables the `DefaultPreemption` plugin to avoid conflicts with our plugin.
 
@@ -124,16 +137,8 @@ Currently, it is only tested on **amd64** architecture and some code may need to
 To build the binary, run the following command in the root of this repo:
 
 ```bash
-make build-scheduler \
-  VERSION=v0.34.1 \
-  GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
-```
-
-one could also just call like this:
-```bash
 make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
 ```
-however, we have experienced some issues with version mismatches if upstream changes versions, so specifying the version is recommended.
 
 The built binary will be located in `bin/kube-scheduler`.
 
@@ -195,14 +200,14 @@ Having set up the KWOK cluster configuration file, ensure you have built the lat
    sudo install -d -m 0755 /opt/venv/
    sudo python3 -m venv /opt/venv/
    sudo /opt/venv/bin/python -m pip install --upgrade pip
-   sudo /opt/venv/bin/pip install --no-cache-dir -r bootstrap/content/scripts/python_solver/requirements.txt
+   sudo /opt/venv/bin/pip install --no-cache-dir -r scripts/python_solver/requirements.txt
    ```
 
 - Copy the Python solver code to the location expected used by the plugin:
 
    ```bash
    sudo install -d -m 0755 /opt/solver/
-   sudo cp -a bootstrap/content/scripts/python_solver/main.py /opt/solver/main.py
+   sudo cp -a scripts/python_solver/main.py /opt/solver/main.py
    ```
 
    NOTE: If you change the Python solver, you *must* copy it again.
@@ -239,17 +244,17 @@ Then load the scheduler docker image into the Kind cluster (it will also build t
 
 To test the plugin two different approaches have been made:
 
-1) (Intitial) Workload Generator: A script that can generate an initial workload on a KWOK cluster running the scheduler with the plugin.
-2) 'Live' Cluster Simulator: A script that can simulate a live cluster with fluctuating workloads using the scheduler with the plugin.
+1) Workload Once Generator: A script that can generate an initial workload on a KWOK cluster running the scheduler with the plugin.
+2) Trace Replayer: A script that can simulate a live cluster with fluctuating workloads using the scheduler with the plugin.
 
 The first approach is used for evaluating the optimization capabilities of the plugin under different workloads and cluster sizes, while the second approach is used for testing the plugin under more realistic conditions with fluctuating workloads and the different optimization modes (all synch/asynch).
 
-### (Initial) Workload Generator
+### Workload Once Generator
 
 For evaluating the plugin, we first run the default scheduler (deterministically) to find 100 seeds where not all pods are running.
 Hereafter, we run the default scheduler (as-is) and the scheduler with the MyPriorityOptimizer plugin on these seeds.
 
-The script for generating the initial workload and running the tests is `bootstrap/content/scripts/kwok/test_generator.py`. The script can be setup by reading settings from three types of sources, with later ones overriding earlier ones:
+The script for generating the initial workload and running the tests is `scripts/kwok_workload_once/kwok_workload_once.py`. The script can be setup by reading settings from three types of sources, with later ones overriding earlier ones:
 
 1) a workload configuration file
 2) a test job file
@@ -258,7 +263,7 @@ The script for generating the initial workload and running the tests is `bootstr
 After choosing one of more of these source, the script can be run to generate the workload and run the tests. An example of how to run the script from `bootstrap/content/` folder is:
 
 ```bash
-python3 scripts/kwok/test_generator.py \
+python -m scripts/kwok_workload_once/kwok_workload_once.py \
 --cluster-name my-cluster \
 --kwok-runtime binary \
 --job-file data/jobs/<job_file>.yaml \
@@ -272,13 +277,13 @@ Where the idea is that `<job_file>.yaml` contains the specific configuration for
 
 To be able to reproduce seeds where not all pods are running using the default scheduler, another plugin called **MyDeterministicScore** is created, located under `pkg/mydeterministicscore/`. This plugin breaks scoring ties by name, disables `DefaultPreemption` plugin and sets `parallelism=1`, helping making scheduling deterministic.
 
-The scheduler configuration file for using this plugin is `bootstrap/content/data/configs-kwokctl/deterministic-kube-scheduler-config.yaml`.
+The scheduler configuration file for using this plugin is `data/configs-kwokctl/deterministic-kube-scheduler-config.yaml`.
 
 #### Workload configuration file
 
 As mentioned, the test script can read a workload configuration file to set up the workload to generate. The file can be used as a template reducing the need to specify all settings in every job file.
 
-The already provided workload configuration files can be found under `bootstrap/content/data/configs-workload/`. An example of a workload configuration file (`base.yaml`) is:
+The already provided workload configuration files can be found under `data/configs-workload/`. An example of a workload configuration file (`base.yaml`) is:
 
 ```yaml
 kind: WorkloadConfiguration
@@ -300,7 +305,7 @@ To specify the specific configuration for a test job, a job file can be used. Th
 
 That is when running the test script one only needs to provide the job file and the script will read all settings from it (overridable by command-line arguments).
 
-All the test jobs used previously to evaluate the plugin can be found under `bootstrap/content/data/jobs/`. An example of a job file (`bootstrap/content/data/jobs/all_synch_python/nodes4_pods16_prio4_util095_timeout10.yaml`) is:
+All the test jobs used previously to evaluate the plugin can be found under `data/jobs/`. An example of a job file (`data/jobs/all_synch_python/nodes4_pods16_prio4_util095_timeout10.yaml`) is:
 
 ```yaml
 workload-config-file: data/configs-workload/base.yaml
@@ -324,12 +329,12 @@ Here the job file specifies which workload configuration file, kwokctl configura
 
 #### Init script
 
-To run the test jobs faster by parallelizing the evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), an init script `bootstrap.sh` is provided under `bootstrap/` that can be used to set up a job runner (HPC or VM) and run the tests. The script will ensure all prerequisites are installed and the tests are run.
+To run the test jobs faster by parallelizing the evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), an init script `bootstrap.sh` is provided under `scripts/bootstrap/` that can be used to set up a job runner (HPC or VM) and run the tests. The script will ensure all prerequisites are installed and the tests are run.
 
-The init script accepts all parameters that the test script `test_generator.py` accepts, but the two main parameters to provide are:
+The init script accepts all parameters that the test script `kwok_workload_once.py` accepts, but the two main parameters to provide are:
 
 - `--content-dir`: Path to the `bootstrap` folder containing the init script and all content needed to run the tests.
-- `--job-file`: Path to the job file to run (e.g. see already made jobs under `bootstrap/content/data/jobs/`).
+- `--job-file`: Path to the job file to run (e.g. see already made jobs under `data/jobs/`).
 
 Note, that if the binary or docker image is not provided this script can also pull the repo and build the latest version before running the tests.
 
@@ -355,15 +360,20 @@ vagrant destroy -f
 
 #### Result replication and running test jobs
 
-After generating the jobs, they’re ready to run.** For faster evaluation, run them in parallel via the init script on HPC or VM resources; we don’t recommend manual, single-node runs with the test script.
+After generating the jobs, they’re ready to run.** For faster evaluation, run them in parallel via the init script on HPC or VM resources; we do not recommend manual, single-node runs with the test script.
 
 To run a test jobs, follow these steps:
 
-1) Ensure latest binary of the scheduler with the plugin is built and moved to `bootstrap/content/bin/kube-scheduler` (see [Building](#building)).
-2) Upload the `bootstrap` folder to HPC/VM provider where it can be found (can be renamed if needed). This folder contains the init script, the built binary, the Python solver code, and all content needed to run the tests (incl. the job files and configuration files, etc.).
-3) (Optional) Enable SSH access, by adding your public SSH key.
-4) Create an Ubuntu 22.04 instance (no GUI needed) for every job
-5) Once all jobs are done, download the folder containing the results to your local machine.
+  1) Run the provided `make_bootstrap_folder.sh` script from the root of the repo to create the `bootstrap` folder containing the init script, the built binary, the Python solver code, and all content needed to run the tests (incl. the job files and configuration files, etc.):
+  
+      ```bash
+      ./make_bootstrap_folder.sh
+      ```
+  
+  2) Upload the `bootstrap` folder to HPC/VM provider where it can be found (can be renamed if needed). This folder contains the init script, the built binary, the Python solver code, and all content needed to run the tests (incl. the job files and configuration files, etc.).
+  3) (Optional) Enable SSH access, by adding your public SSH key.
+  4) Create an Ubuntu 22.04 instance (no GUI needed) for every job
+  5) Once all jobs are done, download the folder containing the results to your local machine.
 
 An example of a instance setup using [UCloud](https://docs.cloud.sdu.dk/) is shown below - any comparable HPC or cloud platform should look/works similarly.
 
@@ -372,7 +382,7 @@ An example of a instance setup using [UCloud](https://docs.cloud.sdu.dk/) is sho
 As shown in the illustration, only two parameters are needed to run the init script:
 
 - `--content-dir`: Path to the `bootstrap` folder uploaded in step 1.
-- `--job-file`: Path to the job file to run (e.g. see already made jobs under `bootstrap/content/data/jobs/`).
+- `--job-file`: Path to the job file to run (e.g. see already made jobs under `data/jobs/`).
 
 #### Expected folder structure after running all jobs
 
@@ -427,7 +437,7 @@ The `results.csv` file contains the scheduling results for the job, while the `i
 
 #### Generating test jobs
 
-Jobs can be generated using the provided job generator script `bootstrap/content/job_generator.py`.
+Jobs can be generated using the provided job generator script `scripts/helpers/job_generator.py`.
 It generates one job file per combo across `--num-nodes`, `--avg-pods-per-node`, `--num-priorities`, `--utils`, and `--timeouts`.
 
 To regenerate the job sets, follow the steps in the below sections.
@@ -530,7 +540,7 @@ python3 job_generator.py \
 
 #### Estimate time to complete all jobs in UCloud
 
-Use `bootstrap/content/eta.py` to list ETAs for running jobs. It recursively scans for `eta_*` files, extracts recorded ETA and seed progress and prints a sorted summary.
+Use `scripts/helpers/jobs_eta.py` to list ETAs for running jobs. It recursively scans for `eta_*` files, extracts recorded ETA and seed progress and prints a sorted summary.
 
 ```bash
 # from bootstrap/content/ or anywhere
@@ -543,10 +553,10 @@ TODO: Implementation not finished yet.
 
 ## Analysis
 
-Scripts for generating **plots** and **tables** are placed under `analysis/`. They assume the layout shown in [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs); if yours differs, code changes may be needed.
+Analyzed results are placed under `analysis/`. They assume the layout shown in [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs); if yours differs, code changes may be needed.
 
-1. First, merge all job outputs into a single CSV by running `analysis/combine_results.py` (it writes `analysis/per_combo_results.csv`; adjust input/output paths in the script if needed).
-2. Then run `analysis/plots_and_tables.py` to produce every figure and table used in the report.
+1. First, merge all job outputs into a single CSV by running `scripts/kwok_workload_once/combine_results.py` (it writes `analysis/per_combo_results.csv`; adjust input/output paths in the script if needed).
+2. Then run `scripts/kwok_workload_once/plots_and_tables.py` to produce every figure and table used in the report.
    Outputs are saved under `analysis/figures/` and `analysis/tables/`.
 
 ## Useful kubectl/kwokctl commands
@@ -929,9 +939,6 @@ python3 trace_replayer.py \
 
 ## TODOs
 
-- Doesnt seems kwok fails if the binary provided is not found?
-- Update readme to the now more easier way of bootstraping.
-
 ### TODOs: Next Meeting 8/12
 
 - Read the DCM paper from SoA to understand their workload generation using Azure traces and check how workloads/jobs arrives in average using paper "Large-scale cluster management at Google with Borg"
@@ -1043,6 +1050,12 @@ at each tick $t_i$:
 ### TODOs: IJCAI Paper
 
 - If the paper is rejected at IJCAI and reviewers complaint about the random pod request used for evaluation, we may consider the possibility to use more realistic distributions. But for the time being, I will leave things as is.
+
+### TODOs: Later
+
+- Try updating to latest upstream version.
+  - Check for compatibility issues.
+  - Check if kubectl, kwokctl, etc. versions need to be updated as well to make it work.
 
 ## Questions
 
