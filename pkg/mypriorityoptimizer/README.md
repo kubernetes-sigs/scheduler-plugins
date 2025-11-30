@@ -951,7 +951,7 @@ python3 trace_replayer.py \
 
 #### Now TODOs
 
-- Bulk create and delete doesnt work, and when arrivals are short then we get a large drift.
+- Update Vagrant so it works after having moved files around.
 - Find en smartere måde at referere til plot funktionen fra `plots.py` vi benytter i `trace_generator.py`.
 
 #### Design
