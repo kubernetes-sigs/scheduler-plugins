@@ -33,3 +33,4 @@ results/
 eta*
 results.csv
 *.log
+*.coverage

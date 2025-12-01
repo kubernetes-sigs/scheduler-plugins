@@ -27,6 +27,8 @@
         - [Python solver jobs](#python-solver-jobs)
       - [Estimate time to complete all jobs in UCloud](#estimate-time-to-complete-all-jobs-in-ucloud)
     - ['Live' Cluster Simulator](#live-cluster-simulator)
+    - [Unit and Integration Tests](#unit-and-integration-tests)
+      - [Python: Unit Tests](#python-unit-tests)
   - [Analysis](#analysis)
   - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
   - [Cluster Simulator](#cluster-simulator)
@@ -557,6 +559,16 @@ python3 eta.py
 ### 'Live' Cluster Simulator
 
 TODO: Implementation not finished yet.
+
+### Unit and Integration Tests
+
+#### Python: Unit Tests
+
+Many Python scripts has been made and are stored under `scripts/`. For testing these scripts, unit tests have been made using `pytest` and are stored under the subfolder `tests/`. To run the tests, first install `pytest` (e.g. via `pip install pytest`). A `pytest.ini` file is also provided under the root of the repo to configure pytest. To run the tests, simply run the following command from the root of the repo:
+
+```bash
+pytest
+```
 
 ## Analysis
 
