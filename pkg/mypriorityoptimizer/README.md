@@ -693,7 +693,6 @@ with optional upper clamping at (x_{\max}) (to avoid pathological extremes).
 Each pod in the trace is a record with:
 
 - `id`: unique integer across all pods.
-- `name`: human-readable name, e.g. `"pod-000123"` derived from `id`.
 - `start_time`: pod creation time (seconds since (t=0)).
 - `end_time`: pod deletion time; always finite in our generator:
   [
@@ -702,6 +701,7 @@ Each pod in the trace is a record with:
 - `cpu`: requested CPU, as a fraction ((0,1]) of a single node’s capacity, sampled from (X_{\text{cpu}}).
 - `mem`: requested memory, as a fraction ((0,1]) of a single node’s capacity, sampled from (X_{\text{mem}}).
 - `priority`: integer priority in ({1, \dots, N_{\text{priorities}}}).
+- `replicas`: number of replicas of the record.
 
 Conceptually, the trace file is a JSON list:
 
@@ -709,21 +709,21 @@ Conceptually, the trace file is a JSON list:
 [
   {
     "id": 1,
-    "name": "pod-000001",
     "start_time": 12.3,
     "end_time": 305.3,
     "cpu": 0.40,
     "mem": 0.70,
-    "priority": 3
+    "priority": 3,
+    "replicas": 1
   },
   {
     "id": 2,
-    "name": "pod-000002",
     "start_time": 15.1,
     "end_time": 420.6,
     "cpu": 0.25,
     "mem": 0.30,
-    "priority": 1
+    "priority": 1,
+    "replicas": 2
   }
 ]
 ```
@@ -958,6 +958,8 @@ python -m scripts.kwok_trace_replayer.trace_replayer \
 
 #### Now TODOs
 
+- Finish the implementation of the live cluster simulator by line-by-line study of the code.
+- Run 3 different traces with different utilizations (e.g., 0.9, 0.95, 1.0) and see how our scheduler performs compared to default scheduler.
 - Update Vagrant so it works after having moved files around.
 - Find en smartere måde at referere til plot funktionen fra `plots.py` vi benytter i `trace_generator.py`.
 
