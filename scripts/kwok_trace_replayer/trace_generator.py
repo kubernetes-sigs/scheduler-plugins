@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-# bootstrap/content/scripts/kwok/trace_generator.py
-"""
-Generate a pod trace for Kubernetes scheduling experiments using Pareto Type I distributions for:
-  - CPU requests
-  - MEM requests
-  - Inter-arrival times
-  - Lifetimes
-- Each node has normalized capacity CPU = 1.0, MEM = 1.0 and each pod's `cpu` and `mem` are in (0, 1], meaning "fraction of one node".
-- Cluster total capacity is num_nodes * 1.0 (for both CPU and MEM).
-
-Method:
-  - Start at time 0 (in seconds), keep generating pods.
-  - For each pod, sample inter-arrival time, lifetime, CPU/MEM fractions, and priority from Pareto Type I distributions.
-  - Stop once the next pod's start_time would exceed trace_time.
-Output is a JSON list of pods.
-"""
+# trace_generator.py
 
 import argparse, heapq, json, logging
 from dataclasses import dataclass, asdict
@@ -24,11 +9,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from scripts.kwok_trace_replayer.trace_helpers import (
-    TraceRecord,
-    plot_histogram_with_pareto,
-    plot_bar_with_geometric
-)
 from scripts.helpers.general_helpers import (
     parse_duration_to_seconds,
     setup_logging,
@@ -37,17 +17,22 @@ from scripts.helpers.general_helpers import (
     build_cli_cmd,
     write_info_file,
 )
+from scripts.kwok_trace_replayer.trace_helpers import (
+    TraceRecord,
+    plot_histogram_with_pareto,
+    plot_bar_with_geometric
+)
 
 #####################################################################
 # Constants
 #####################################################################
-SOLVE_ALPHA_MAX_ITERATIONS = 10_000
-SOLVE_ALPHA_TOLERANCE = 1e-3
-SOLVE_ALPHA_SAMPLES = 50_000
-SOLVE_ALPHA_LOWER_BOUND = 0.1
-SOLVE_ALPHA_UPPER_BOUND = 10.0
+SOLVE_ALPHA_MAX_ITERATIONS  = 10_000 # number of bisection iterations
+SOLVE_ALPHA_TOLERANCE       = 1e-3   # tolerance on mean error for alpha solving
+SOLVE_ALPHA_SAMPLES         = 50_000 # Monte Carlo samples per mean evaluation
+SOLVE_ALPHA_LOWER_BOUND     = 0.1    # lower bound on alpha search
+SOLVE_ALPHA_UPPER_BOUND     = 10.0   # upper bound on alpha search
 
-MAX_DECIMALS = 6
+MAX_DECIMALS = 6                     # number of decimals to round floats to (CPU, MEM, times, etc.). 6 is enough for microsecond precision.
 
 #####################################################################
 # Logging setup
