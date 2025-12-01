@@ -38,29 +38,33 @@ from scripts.helpers.kwok_helpers import (
     ensure_kwok_cluster,
 )
 from scripts.helpers.cluster_stats import  stat_snapshot
-from trace_generator import TraceRecord
+from scripts.helpers.trace_helpers import TraceRecord
+
+#######################################################################
+# Constants
+#######################################################################
 
 LOG = logging.getLogger("trace-replayer")
 MAX_REPLAY_WORKERS = 4
 
-
-# ---------------------------------------------------------------------
+#######################################################################
 # Event model
-# ---------------------------------------------------------------------
+#######################################################################
+
 @dataclass
 class Event:
     sim_time: float   # seconds in trace's time
     kind: str         # "create" or "delete"
-    name: str
+    record_id: int
     cpu_str: str | None = None
     mem_str: str | None = None
     pc_name: str | None = None
     replicas: int = 1
 
 
-# ---------------------------------------------------------------------
+#######################################################################
 # Replayer class
-# ---------------------------------------------------------------------
+#######################################################################
 class TraceReplayer:
     """
     Encapsulates loading a trace, building events, replaying them against a KWOK cluster,
@@ -83,21 +87,22 @@ class TraceReplayer:
         self.node_cpu_m: int = 0
         self.node_mem_b: int = 0
 
-        # Kubernetes / monitoring fields
+        # Monitoring fields
         self.ctx: str = f"kwok-{args.cluster_name}"
         self.events: List[Event] = []
         self.prio_by_identity: Dict[str, int] = {}
 
-    # ---------------- Helpers for trace ----------------
+    # ---------------- Helpers ----------------
 
     @staticmethod
-    def _rs_name_for_pod(pod_name: str) -> str:
+    def _rs_name_for_record(record_id: int) -> str:
         """
-        Stable name for the ReplicaSet representing this trace pod.
-        The actual pod names in the cluster will be <rs-name>-<suffix>,
-        but the RS name stays constant and is what we manage.
+        Stable ReplicaSet name derived from the trace record id.
+
+        We add a non-numeric prefix to avoid YAML treating it as a number.
+        Example: record_id=1 -> "rs-000001"
         """
-        return f"rs-{pod_name}"
+        return f"rs-{record_id:06d}"
 
     def load_trace(self) -> None:
         """Load trace JSON and populate pods, max_prio, t_min, trace_time, meta."""
@@ -117,8 +122,7 @@ class TraceReplayer:
         trace_time = 0.0
 
         for rec in records:
-            id_val = int(rec.get("id", -1))
-            name = rec.get("name")
+            id_val = int(rec["id"])  # rely on id being present
             start = float(rec["start_time"])
             end = float(rec["end_time"])
             cpu = float(rec["cpu"])
@@ -129,7 +133,6 @@ class TraceReplayer:
             pods.append(
                 TraceRecord(
                     id=id_val,
-                    name=name,
                     start_time=start,
                     end_time=end,
                     cpu=cpu,
@@ -138,6 +141,7 @@ class TraceReplayer:
                     replicas=replicas,
                 )
             )
+
             max_prio = max(max_prio, prio)
             t_min = min(t_min, start)
             trace_time = max(trace_time, end)
@@ -180,7 +184,7 @@ class TraceReplayer:
                 Event(
                     sim_time=float(p.start_time),
                     kind="create",
-                    name=p.name,
+                    record_id=p.id,
                     cpu_str=cpu_str,
                     mem_str=mem_str,
                     pc_name=pc_name,
@@ -191,7 +195,7 @@ class TraceReplayer:
                 Event(
                     sim_time=float(p.end_time),
                     kind="delete",
-                    name=p.name,
+                    record_id=p.id,
                 )
             )
 
@@ -291,7 +295,7 @@ class TraceReplayer:
                         and ev.mem_str is not None
                         and ev.pc_name is not None
                     )
-                    rs_name = self._rs_name_for_pod(ev.name)
+                    rs_name = self._rs_name_for_record(ev.record_id)
 
                     yaml_text = yaml_kwok_rs(
                         ns=ns,
@@ -303,11 +307,11 @@ class TraceReplayer:
                     )
 
                     LOG.info(
-                        "CREATE RS @ sim_t=%.3f rs=%s (trace_pod=%s) "
+                        "CREATE RS @ sim_t=%.3f rs=%s (trace_record_id=%d) "
                         "replicas=%d cpu=%s mem=%s pc=%s",
                         ev.sim_time,
                         rs_name,
-                        ev.name,
+                        ev.record_id,
                         ev.replicas,
                         ev.cpu_str,
                         ev.mem_str,
@@ -321,15 +325,13 @@ class TraceReplayer:
                 # DELETE events: one delete_rs per RS (async)
                 # ------------------------------------------------------
                 for ev in deletes:
-                    rs_name = self._rs_name_for_pod(ev.name)
-
+                    rs_name = self._rs_name_for_record(ev.record_id)
                     LOG.info(
-                        "DELETE RS @ sim_t=%.3f rs=%s (trace_pod=%s)",
+                        "DELETE RS @ sim_t=%.3f rs=%s (trace_record_id=%d)",
                         ev.sim_time,
                         rs_name,
-                        ev.name,
+                        ev.record_id,
                     )
-
                     fut = executor.submit(delete_rs, LOG, self.ctx, ns, rs_name)
                     futures.append(fut)
 
@@ -345,70 +347,6 @@ class TraceReplayer:
             LOG.info("all kubectl tasks completed")
 
     # ---------------- Monitor helpers ----------------
-
-    @staticmethod
-    def _extract_pod_name(pod) -> str | None:
-        """
-        Extract pod name from what stat_snapshot returns.
-        Handles:
-          - tuple: ('pod-000001', 'kwok-node-7')
-          - plain strings ("pod-000001" or "trace/pod-000001")
-          - kubernetes.client.V1Pod-like objects with metadata.name
-          - dicts with ["metadata"]["name"]
-        """
-        name = None
-
-        # Case 0: KWOK / stat_snapshot: ('pod-000001', 'kwok-node-7')
-        if isinstance(pod, tuple) and len(pod) >= 1:
-            name = pod[0]
-
-        # Case 1: it's already a string
-        elif isinstance(pod, str):
-            name = pod
-
-        else:
-            # Object with .metadata.name
-            meta = getattr(pod, "metadata", None)
-            if meta is not None:
-                name = getattr(meta, "name", None)
-
-            # Dict-style fallback
-            if name is None and isinstance(pod, dict):
-                meta = pod.get("metadata") or {}
-                if isinstance(meta, dict):
-                    name = meta.get("name")
-
-        if not name:
-            return None
-
-        # If it's "ns/podname", strip namespace
-        if "/" in name:
-            name = name.split("/", 1)[1]
-
-        return name
-
-    @classmethod
-    def _extract_identity(cls, pod) -> str | None:
-        """
-        Map a running pod entry to the stable identity used in the trace.
-
-        We use the pod name prefix before the last '-' as the identity,
-        which matches the ReplicaSet name (rs-<trace-pod-name>).
-        """
-        name = cls._extract_pod_name(pod)
-        if not name:
-            return None
-
-        # strip namespace if present: "ns/podname"
-        if "/" in name:
-            name = name.split("/", 1)[1]
-
-        # For RS-managed pods: rs-name-randomsuffix
-        if "-" in name:
-            base, _suffix = name.rsplit("-", 1)
-            return base
-
-        return name
 
     def _monitor_loop(
         self,
@@ -476,10 +414,9 @@ class TraceReplayer:
                 sim_time_s = sim_t0 + wall_time_s  # 1:1 mapping
                 dt = max(0.0, now_abs - last_wall_abs)
                 last_wall_abs = now_abs
-
+                
                 pods_running = getattr(snap, "pods_running", []) or []
                 running_count = len(pods_running)
-
                 unsched_dict = getattr(snap, "unschedulable_by_prio", {}) or {}
                 if isinstance(unsched_dict, dict):
                     try:
@@ -490,10 +427,25 @@ class TraceReplayer:
                     unsched_count = 0
 
                 # Update per-priority cumulative runtime from running pods
-                for pod in pods_running:
-                    identity = self._extract_identity(pod)
-                    if not identity:
+                for entry in pods_running:
+                    # stat_snapshot returns (pod_name, node_name)
+                    try:
+                        pod_name = entry[0]
+                    except Exception:
+                        LOG.debug("unexpected pods_running entry: %r (%s)", entry, type(entry))
                         continue
+
+                    # Strip namespace if present: "ns/podname" -> "podname"
+                    if "/" in pod_name:
+                        pod_name = pod_name.split("/", 1)[1]
+
+                    # RS-managed pods have names "<rs_name>-<suffix>"
+                    # where rs_name == self._rs_name_for_record(record_id)
+                    if "-" in pod_name:
+                        identity, _suffix = pod_name.rsplit("-", 1)
+                    else:
+                        identity = pod_name
+
                     prio = prio_by_identity.get(identity)
                     if prio is None:
                         continue
@@ -533,9 +485,9 @@ class TraceReplayer:
         # 1. Load trace
         self.load_trace()
 
-        # Map stable identity -> priority (ReplicaSet name).
+        # Map stable identity -> priority; identity is str(id)
         self.prio_by_identity = {
-            self._rs_name_for_pod(p.name): p.priority for p in self.pods
+            self._rs_name_for_record(p.id): p.priority for p in self.pods
         }
 
         # 2. Convert node capacities to ints (mCPU / bytes)
@@ -629,9 +581,9 @@ class TraceReplayer:
         LOG.info("Done. Monitor CSV written to %s", monitor_out)
 
 
-# ---------------------------------------------------------------------
+#######################################################################
 # CLI
-# ---------------------------------------------------------------------
+#######################################################################
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Replay a JSON pod trace on a KWOK cluster and monitor utilization."

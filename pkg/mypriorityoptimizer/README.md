@@ -242,7 +242,13 @@ Then load the scheduler docker image into the Kind cluster (it will also build t
 
 ## Testing
 
-To test the plugin two different approaches have been made:
+For testing the pluging, first create a bootstrap folder containing all content needed to run the tests by running the provided script from the root of the repo:
+
+```bash
+./make_bootstrap_folder.sh
+```
+
+Then, two different approaches for testing have been made:
 
 1) Workload Once Generator: A script that can generate an initial workload on a KWOK cluster running the scheduler with the plugin.
 2) Trace Replayer: A script that can simulate a live cluster with fluctuating workloads using the scheduler with the plugin.
@@ -263,7 +269,7 @@ The script for generating the initial workload and running the tests is `scripts
 After choosing one of more of these source, the script can be run to generate the workload and run the tests. An example of how to run the script from `bootstrap/content/` folder is:
 
 ```bash
-python -m scripts/kwok_workload_once/kwok_workload_once.py \
+python -m scripts.kwok_workload_once.kwok_workload_once \
 --cluster-name my-cluster \
 --kwok-runtime binary \
 --job-file data/jobs/<job_file>.yaml \
@@ -340,7 +346,8 @@ Note, that if the binary or docker image is not provided this script can also pu
 
 ##### Using Vagrant for init script development
 
-To develop and test the init script it can be beneficial to run it in a VM on a local machine. For that reason, a `Vagrantfile` is provided in the root of the repo. It will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install `Vagrant` (tested with v2.4.7) and `VirtualBox` (tested with v7.1.10), then run:
+To develop and test the init script it can be beneficial to run it in a VM on a local machine. For that reason, a `Vagrantfile` is provided in the root of the repo. Ensure the `bootstrap` folder is created first by running the `make_bootstrap_folder.sh` script.
+Using Vagrant, it will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install `Vagrant` (tested with v2.4.7) and `VirtualBox` (tested with v7.1.10), then run:
 
 ```bash
 vagrant up
@@ -907,7 +914,7 @@ The evaluation pipeline is thus unchanged; only the **trace generator** has been
 ### 7. Example commands
 
 ```bash
-python3 trace_generator.py \
+python -m scripts.kwok_trace_replayer.trace_generator \
   --output trace_long.json \
   --n-nodes 16 \
   --mean-cpu 0.134 --xmin-cpu 0.05 --xmax-cpu 0.4 \
@@ -923,11 +930,11 @@ python3 trace_generator.py \
 ```
 
 ```bash
-python3 trace_replayer.py \
+python -m scripts.kwok_trace_replayer.trace_replayer \
   --trace-file trace_long.json \
   --cluster-name kwok1 \
   --kwok-runtime binary \
-  --kwokctl-config-file default.yaml \
+  --kwokctl-config-file data/configs-kwokctl/default.yaml \
   --namespace trace \
   --node-cpu 1000m \
   --node-mem 1Gi \

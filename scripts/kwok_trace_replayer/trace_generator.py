@@ -22,7 +22,7 @@ from typing import List, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from scripts.helpers.trace_helpers import TraceRecord, plot_histogram
-from scripts.helpers.kwok_helpers import parse_duration_to_seconds
+from scripts.helpers.general_helpers import parse_duration_to_seconds
 
 @dataclass
 class ClusterState:
@@ -362,11 +362,9 @@ class ParetoTraceGenerator:
             u_mem = new_live_mem / float(n_nodes)
 
             pod_id += 1
-            name = f"pod-{pod_id:06d}"
             pods.append(
                 TraceRecord(
                     id=pod_id,
-                    name=name,
                     start_time=start_time,
                     end_time=end_time,
                     cpu=cpu,

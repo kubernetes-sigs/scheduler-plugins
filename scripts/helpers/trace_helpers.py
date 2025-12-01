@@ -16,7 +16,6 @@ MC_MEAN_SEED = 12345      # fixed seed for reproducibility
 @dataclass
 class TraceRecord:
     id: int
-    name: str
     start_time: float
     end_time: float
     cpu: float
