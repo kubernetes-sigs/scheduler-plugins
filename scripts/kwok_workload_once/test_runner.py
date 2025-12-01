@@ -51,7 +51,7 @@ RESULTS_HEADER = [
     "node_info",
 ]
 
-LOGGER_NAME = "test-generator"
+LOGGER_NAME = "test-runner"
 LOG = logging.getLogger(LOGGER_NAME)
 
 CM_SOLVER_STATS_NAME = "solver-stats"
@@ -130,7 +130,7 @@ _Failure = namedtuple("_Failure", "category seed phase message details")
 # ------------ Args --------------------------
 ##############################################
 def build_argparser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(description="Generator of KWOK test clusters and workloads.")
+    ap = argparse.ArgumentParser(description="Test runner of KWOK test clusters and workloads.")
 
     # general
     ap.add_argument("--cluster-name", dest="cluster_name", default=None,
@@ -227,7 +227,7 @@ class TestRunner:
         self.args = TestRunner.ensure_default_args(self.args)
         
         # Setup logging
-        setup_logging(name=LOGGER_NAME, prefix="[test-generator] ", level=self.args.log_level)
+        setup_logging(name=LOGGER_NAME, prefix="[test-runner] ", level=self.args.log_level)
         
         # Log args after merging and setting defaults
         self.log_args(self.args)
@@ -440,7 +440,7 @@ class TestRunner:
     ##############################################
     def _parse_config_doc(self, config_doc: dict, override: dict | None = None) -> TestConfigRaw:
         """
-        Parse a single test-generator config document (already loaded from YAML)
+        Parse a single test-runner config document (already loaded from YAML)
         into TestConfigRaw. Optionally apply an in-memory override first.
         """
         if override:
@@ -1788,7 +1788,7 @@ class TestRunner:
 
     def run_mode_single_seed(self) -> None:
         """
-        Run the generator for a single specific seed.
+        Run the runner for a single specific seed.
         """
         seen = self.seen_results
         seed = int(self.args.seed)
@@ -1822,7 +1822,7 @@ class TestRunner:
 
     def run_mode_count(self) -> None:
         """
-        Run the generator for a specific number of random seeds.
+        Run the runner for a specific number of random seeds.
         """
         seen = self.seen_results
         to_make = int(self.args.count)
@@ -1868,7 +1868,7 @@ class TestRunner:
 
     def run_mode_seed_file(self) -> None:
         """
-        Run the generator for a list of seeds from a file.
+        Run the runner for a list of seeds from a file.
         """
         seen = self.seen_results
         seeds_list = self._read_seeds_file(Path(self.args.seed_file))
