@@ -16,14 +16,13 @@ Method:
 Output is a JSON list of pods.
 """
 
-import argparse, heapq, json, logging, sys, shlex
+import argparse, heapq, json, logging
 from dataclasses import dataclass, asdict
 from typing import List, Tuple
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import yaml
 
 from scripts.kwok_trace_replayer.trace_helpers import (
     TraceRecord,
@@ -34,8 +33,9 @@ from scripts.helpers.general_helpers import (
     parse_duration_to_seconds,
     setup_logging,
     make_header_footer,
-    get_git_info,
-    get_timestamp,
+    log_field_fmt,
+    build_cli_cmd,
+    write_info_file,
 )
 
 #####################################################################
@@ -194,10 +194,6 @@ class TraceGenerator:
     # ------------ Info/logging helpers ----------
     ##############################################
     @staticmethod
-    def _log_field_fmt(v):
-        return "<unset>" if v in (None, "") else str(v)
-
-    @staticmethod
     def log_args(args: argparse.Namespace) -> None:
         """
         Log the main arguments (similar style to test_generator).
@@ -228,7 +224,7 @@ class TraceGenerator:
             ("mean_life", args.mean_life),
         ]
         pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {TraceGenerator._log_field_fmt(v)}" for k, v in fields]
+        lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
         block = "\n".join(lines)
         header, footer = make_header_footer("ARGS")
         LOG.info("\n%s\n%s\n%s", header, block, footer)
@@ -238,22 +234,16 @@ class TraceGenerator:
         Write info_generate.yaml in output_dir with git + CLI + args (like test_generator).
         """
         try:
-            LOG.info("writing info_generate.yaml to output directory...")
-            git_info = get_git_info(Path.cwd())
-            payload = {
-                "meta": {
-                    "timestamp": get_timestamp(),
-                    "git": git_info or {},
-                },
-                "inputs": {
-                    "cli-cmd": "python3 " + " ".join(shlex.quote(a) for a in sys.argv),
-                    "args": {k: v for k, v in vars(self.args).items()},
-                },
-            }
             out_path = self.output_dir / "info_generate.yaml"
-            with open(out_path, "w", encoding="utf-8") as fh:
-                yaml.safe_dump(payload, fh, sort_keys=False)
-            LOG.info("wrote info bundle to %s", out_path)
+            inputs = {
+                "cli-cmd": build_cli_cmd(),
+                "args": {k: v for k, v in vars(self.args).items()},
+            }
+            write_info_file(
+                out_path,
+                inputs=inputs,
+                logger=LOG,
+            )
         except Exception as e:
             LOG.warning("failed to write info_generate.yaml: %s", e)
 
@@ -1057,19 +1047,11 @@ class TraceGenerator:
 
 def main() -> None:
     args = build_arg_parser().parse_args()
-
-    # Setup logging (same mechanism as test_generator)
-    if getattr(args, "log_level", None) is None:
-        args.log_level = "INFO"
-    setup_logging(name=LOGGER_NAME, prefix="[trace-generator] ", level=args.log_level)
-
+    setup_logging(name=LOGGER_NAME, level=args.log_level)
     TraceGenerator.log_args(args)
-
     generator = TraceGenerator(args)
     generator.run()
-
     LOG.info("done.")
-
 
 if __name__ == "__main__":
     main()

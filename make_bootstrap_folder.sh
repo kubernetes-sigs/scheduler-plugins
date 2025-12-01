@@ -24,9 +24,10 @@ chmod +x bootstrap/*.sh             # make copied scripts executable
 
 # 5) Copy manifests into "bootstrap/content/manifests" folder
 echo "Copying manifests into bootstrap/content/manifests..."
-mkdir -p bootstrap/content/manifests
-cp -r manifests/mypriorityoptimizer/* bootstrap/content/manifests/
-cp -r manifests/mydeterministicscore/* bootstrap/content/manifests/
+mkdir -p bootstrap/content/manifests/mypriorityoptimizer
+mkdir -p bootstrap/content/manifests/mydeterministicscore
+cp -r manifests/mypriorityoptimizer/* bootstrap/content/manifests/mypriorityoptimizer/
+cp -r manifests/mydeterministicscore/* bootstrap/content/manifests/mydeterministicscore/
 
 # 6) Call make to build the scheduler binary
 echo "Building scheduler binary with make..."

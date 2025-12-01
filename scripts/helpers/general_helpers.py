@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # general_helpers.py
 
-import sys, time, random, subprocess, csv, re, logging, hashlib
+import sys, time, random, subprocess, csv, re, logging, hashlib, shlex, yaml
 from typing import List, Dict, Tuple, Optional, Any
 from pathlib import Path
 from decimal import Decimal
@@ -111,6 +111,75 @@ def get_git_info(cwd: Optional[Path] = None) -> Dict[str, Any]:
     if commit is not None: info["commit"] = commit
     if branch is not None: info["branch"] = branch
     return info
+
+def build_cli_cmd() -> str:
+    """
+    Return the full CLI command used to invoke the current script,
+    prefixed with 'python3 ' (for reproducible info bundles).
+    """
+    return "python3 " + " ".join(shlex.quote(a) for a in sys.argv)
+
+def write_info_file(
+    out_path: Path | str,
+    *,
+    meta_extra: dict | None = None,
+    inputs: dict | None = None,
+    sections: dict | None = None,
+    logger: logging.Logger | None = None,
+) -> None:
+    """
+    Generic helper to write an info YAML bundle.
+
+    Structure:
+      meta:
+        timestamp: ...
+        git: ...
+        ...meta_extra...
+      inputs:  (optional)
+        ...inputs...
+      <section-name>:
+        ... (from sections) ...
+
+    - out_path: target YAML path.
+    - meta_extra: additional keys to merge into 'meta'.
+    - inputs: dictionary to be stored under 'inputs'.
+    - sections: mapping section_name -> dict, stored at top level.
+    """
+    try:
+        p = Path(out_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+        from scripts.helpers.general_helpers import get_git_info, get_timestamp  # if not in same file, adjust
+
+        git_info = get_git_info(Path.cwd())
+        meta = {
+            "timestamp": get_timestamp(),
+            "git": git_info or {},
+        }
+        if meta_extra:
+            meta.update(meta_extra)
+
+        payload: dict = {"meta": meta}
+
+        if inputs is not None:
+            payload["inputs"] = inputs
+
+        if sections:
+            for k, v in sections.items():
+                if v is not None:
+                    payload[k] = v
+
+        with open(p, "w", encoding="utf-8") as fh:
+            yaml.safe_dump(payload, fh, sort_keys=False)
+
+        if logger:
+            logger.info("wrote info bundle to %s", p)
+    except Exception as e:
+        if logger:
+            logger.warning("failed to write info bundle to %s: %s", out_path, e)
+
+def log_field_fmt(v):
+    return "<unset>" if v in (None, "") else str(v)
 
 ##############################################
 # ------------ Parser helpers----------------

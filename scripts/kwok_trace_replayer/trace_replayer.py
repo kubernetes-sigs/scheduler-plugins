@@ -34,7 +34,7 @@ High-level behavior:
   by (sim_time - t_min).
 """
 
-import argparse, csv, json, logging, threading, time, yaml, sys, shlex
+import argparse, csv, json, logging, threading, time, yaml
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +48,9 @@ from scripts.helpers.general_helpers import (
     qty_to_mcpu_str,
     qty_to_bytes_int,
     qty_to_bytes_str,
-    get_git_info,
+    log_field_fmt,
+    build_cli_cmd,
+    write_info_file,
 )
 from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml,
@@ -125,11 +127,6 @@ class TraceReplayer:
         self.prio_by_identity: Dict[str, int] = {}
 
     # ---------------- Arg logging / info bundle ----------------
-
-    @staticmethod
-    def _log_field_fmt(v):
-        return "<unset>" if v in (None, "") else str(v)
-
     @staticmethod
     def log_args(args: argparse.Namespace) -> None:
         """
@@ -148,7 +145,7 @@ class TraceReplayer:
             ("log_level", args.log_level),
         ]
         pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {TraceReplayer._log_field_fmt(v)}" for k, v in fields]
+        lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
         block = "\n".join(lines)
         header, footer = make_header_footer("ARGS (TRACE REPLAYER)")
         LOG.info("\n%s\n%s\n%s", header, block, footer)
@@ -159,26 +156,27 @@ class TraceReplayer:
         Mirrors style of trace_generator's info.yaml, but replayer-specific.
         """
         try:
-            git_info = get_git_info(Path.cwd())
-            payload = {
-                "meta": {
-                    "timestamp": get_timestamp(),
-                    "git": git_info or {},
-                    "kind": "trace_replayer",
-                },
-                "inputs": {
-                    "cli-cmd": "python3 " + " ".join(shlex.quote(a) for a in sys.argv),
-                    "args": {k: v for k, v in vars(self.args).items()},
-                },
+            out_path = self.base_dir / "info_replayer.yaml"
+            meta_extra = {
+                "kind": "trace_replayer",
+            }
+            inputs = {
+                "cli-cmd": build_cli_cmd(),
+                "args": {k: v for k, v in vars(self.args).items()},
+            }
+            sections = {
                 "trace": {
                     "trace_dir": str(self.base_dir),
                     "trace_path": str(self.trace_path),
-                },
+                }
             }
-            out_path = self.base_dir / "info_replayer.yaml"
-            with open(out_path, "w", encoding="utf-8") as fh:
-                yaml.safe_dump(payload, fh, sort_keys=False)
-            LOG.info("wrote replayer info bundle to %s", out_path)
+            write_info_file(
+                out_path,
+                meta_extra=meta_extra,
+                inputs=inputs,
+                sections=sections,
+                logger=LOG,
+            )
         except Exception as e:
             LOG.warning("failed to write info_replayer.yaml: %s", e)
 

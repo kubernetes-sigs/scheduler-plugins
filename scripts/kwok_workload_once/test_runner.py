@@ -5,18 +5,19 @@ import sys, copy, shutil, argparse, math, time, random, \
     csv, json, logging, yaml, subprocess, traceback, shlex
 from argparse import BooleanOptionalAction
 from importlib import metadata as importlib_metadata
-from dataclasses import dataclass, is_dataclass, asdict
+from dataclasses import dataclass
 from typing import Optional, Tuple, List, Dict, Any, Mapping, Iterable
 from collections import namedtuple, Counter
 from pathlib import Path
 from urllib import request as _urlreq, error as _urlerr
 from scripts.helpers.general_helpers import (
     seeded_random, generate_seeds,
-    get_timestamp, setup_logging, format_hms, make_header_footer, get_git_info,
+    get_timestamp, setup_logging, format_hms, make_header_footer,
     csv_append_row, csv_read_header,
     qty_to_mcpu_str, qty_to_bytes_str, qty_to_bytes_int, qty_to_mcpu_int,
     normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s,
     get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict, coerce_bool,
+    log_field_fmt, write_info_file, build_cli_cmd,
 )
 from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml, ensure_namespace, ensure_service_account, ensure_priority_classes, wait_rs_pods,
@@ -634,27 +635,25 @@ class TestRunner:
         Write a single info.yaml in the output dir that includes args, git, inputs, etc.
         """
         try:
-            self.output_dir_resolved.mkdir(parents=True, exist_ok=True)
-            git_info = get_git_info(Path.cwd())
-            payload = {
-                "meta": {
-                    "timestamp": get_timestamp(),
-                    "git": git_info or {},
-                    "job_file": self.args.job_file,
-                    "workload_config_file": self.args.workload_config_file,
-                    "kwokctl_config_file": self.args.kwokctl_config_file,
-                },
-                "inputs": {
-                    "cli-cmd": "python3 " + " ".join(shlex.quote(a) for a in sys.argv),
-                    "job": self.job_doc if self.job_doc else {},
-                    "workload": asdict(self.workload_config_doc) if is_dataclass(self.workload_config_doc) else self.workload_config_doc,
-                    "kwokctl": self.kwokctl_config_doc,
-                },
-            }
             out_path = self.output_dir_resolved / "info.yaml"
-            with open(out_path, "w", encoding="utf-8") as fh:
-                yaml.safe_dump(payload, fh, sort_keys=False)
-            LOG.info("wrote info bundle to %s", out_path)
+            meta_extra = {
+                "job_file": self.args.job_file,
+                "workload_config_file": self.args.workload_config_file,
+                "kwokctl_config_file": self.args.kwokctl_config_file,
+            }
+            # workload_config_doc is already a plain dict loaded from YAML
+            inputs = {
+                "cli-cmd": build_cli_cmd(),
+                "job": self.job_doc if self.job_doc else {},
+                "workload": self.workload_config_doc,
+                "kwokctl": self.kwokctl_config_doc,
+            }
+            write_info_file(
+                out_path,
+                meta_extra=meta_extra,
+                inputs=inputs,
+                logger=LOG,
+            )
         except Exception as e:
             LOG.warning("failed to write info.yaml: %s", e)
 
@@ -668,13 +667,6 @@ class TestRunner:
         seed_file_str = f"seed_file={self.args.seed_file}" if self.args.seed_file else ""
         str_combined  = "\n".join(s for s in (job_file_str, workload_str, kwokctl_str, seed_file_str) if s)
         return str_combined
-
-    @staticmethod
-    def _log_field_fmt(v):
-        """
-        Format a field for logging.
-        """
-        return "<unset>" if v in (None, "") else str(v)
 
     @staticmethod
     def _log_workload_config(tr: "TestConfigRaw") -> None:
@@ -705,7 +697,7 @@ class TestRunner:
             ("settle_timeout_max", tr.settle_timeout_max or "<unset>"),
         ]
         pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {TestRunner._log_field_fmt(v)}" for k, v in fields]
+        lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
         block = "\n".join(lines)
         header, footer = make_header_footer("WORKLOAD CONFIG")
         LOG.info("\n%s\n%s\n%s", header, block, footer)
@@ -741,7 +733,7 @@ class TestRunner:
             ("solver_trigger", args.solver_trigger),
         ]
         pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {TestRunner._log_field_fmt(v)}" for k, v in fields]
+        lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
         block = "\n".join(lines)
         header, footer = make_header_footer("ARGS")
         LOG.info("\n%s\n%s\n%s", header, block, footer)
