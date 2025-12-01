@@ -937,7 +937,6 @@ python -m scripts.kwok_trace_replayer.trace_replayer \
   --namespace trace \
   --node-cpu 1000m \
   --node-mem 1Gi \
-  --pods-cap 512 \
   --monitor-interval 1.0 \
   --log-level INFO
 ```

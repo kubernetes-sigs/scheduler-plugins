@@ -23,7 +23,7 @@ from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml, ensure_namespace, ensure_service_account, ensure_priority_classes, wait_rs_pods,
 )
 from scripts.helpers.kwok_helpers import (
-    yaml_kwok_pod, yaml_kwok_rs, ensure_kwok_cluster, create_kwok_nodes
+    yaml_kwok_pod, yaml_kwok_rs, ensure_kwok_cluster, create_kwok_nodes, kwok_pods_cap,
 )
 from scripts.helpers.cluster_stats import (
     stat_snapshot,
@@ -2063,11 +2063,10 @@ class TestRunner:
         phase = "nodes"
         LOG.info("phase=%s", phase)
         try:
-            DEFAULT_POD_CAP = max(30, ta.num_pods * 3)
             node_cpu_str = qty_to_mcpu_str(ta.node_cpu_m)
             node_mem_str = qty_to_bytes_str(ta.node_mem_b)
             LOG.info("sizing nodes: per-node cpu=%s, mem=%s", node_cpu_str, node_mem_str)
-            create_kwok_nodes(LOG, self.ctx, ta.num_nodes, node_cpu_str, node_mem_str, pods_cap=DEFAULT_POD_CAP)
+            create_kwok_nodes(LOG, self.ctx, ta.num_nodes, node_cpu_str, node_mem_str, pods_cap=kwok_pods_cap(ta.num_pods))
         except Exception as e:
             tb = traceback.format_exc()
             self._record_failure("seed", seed, "nodes", str(e), tb)

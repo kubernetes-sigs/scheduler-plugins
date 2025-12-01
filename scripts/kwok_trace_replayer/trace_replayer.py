@@ -1,38 +1,5 @@
 #!/usr/bin/env python3
 # trace_replayer.py
-"""
-Replay a JSON trace (from trace_generator.py) on a KWOK cluster and monitor actual utilization
-and running pods over time.
-
-Expected directory layout (from trace_generator.py):
-
-  <TRACE_DIR>/
-    trace.json
-    info.yaml
-    util.png
-    hists.png
-    ...
-    results/
-      trace-monitor.csv   (created by this script)
-
-This replayer:
-
-- Takes a directory (--trace-dir) instead of a single file.
-- Always loads <trace-dir>/trace.json.
-- Stores the monitor CSV in <trace-dir>/results/trace-monitor.csv.
-
-High-level behavior:
-
-- Creates a KWOK cluster (kwokctl)
-- Creates KWOK nodes with given CPU/memory capacities
-- Ensures namespace and PriorityClasses
-- Starts a monitor that periodically calls stat_snapshot(...) and writes a CSV timeline:
-    wall_time_s, sim_time_s, cpu_run_util, mem_run_util,
-    running_count, unsched_count, prio1_run_time_s, prio2_run_time_s, ...
-- Replays the trace according to its start_time / end_time values.
-  The earliest event is mapped to "now" (start_wall_time), and later events are offset
-  by (sim_time - t_min).
-"""
 
 import argparse, csv, json, logging, threading, time, yaml
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -57,14 +24,13 @@ from scripts.helpers.kubectl_helpers import (
     ensure_namespace,
     ensure_priority_classes,
     delete_rs,
+    get_json_ctx,
 )
 from scripts.helpers.kwok_helpers import (
     yaml_kwok_rs,
     create_kwok_nodes,
     ensure_kwok_cluster,
-)
-from scripts.helpers.cluster_stats import (
-    stat_snapshot,
+    kwok_pods_cap,
 )
 from scripts.kwok_trace_replayer.trace_helpers import (
     TraceRecord,
@@ -73,17 +39,20 @@ from scripts.kwok_trace_replayer.trace_helpers import (
 #######################################################################
 # Constants
 #######################################################################
+MAX_REPLAY_WORKERS = 10 # number of threads for replaying events. If more than 1, tasks run "async"
 
-LOG = logging.getLogger("trace-replayer")
-MAX_REPLAY_WORKERS = 4
+#######################################################################
+# Logging setup
+#######################################################################
+LOGGER_NAME = "trace-replayer"
+LOG = logging.getLogger(LOGGER_NAME)
 
 #######################################################################
 # Event model
 #######################################################################
-
 @dataclass
 class Event:
-    sim_time: float   # seconds in trace's time
+    sim_time_s: float   # seconds in trace's time
     kind: str         # "create" or "delete"
     record_id: int
     cpu_str: str | None = None
@@ -91,16 +60,72 @@ class Event:
     pc_name: str | None = None
     replicas: int = 1
 
+#####################################################################
+# Argument parser
+#####################################################################
+def build_argparser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description=(
+            "Replay a JSON pod trace on a KWOK cluster and monitor utilization. "
+            "Expects <trace-dir>/trace.json as produced by trace_generator.py."
+        )
+    )
+
+    # Trace directory
+    p.add_argument("--trace-dir", dest="trace_dir", required=True,
+        help="Directory containing trace.json from trace_generator.py",
+    )
+
+    # Cluster / KWOK options
+    p.add_argument("--cluster-name", dest="cluster_name", default="kwok1",
+        help="KWOK cluster name (kwokctl --name) (default: kwok1)",
+    )
+    p.add_argument("--kwok-runtime", dest="kwok_runtime", choices=["binary", "docker"], default="binary",
+        help="KWOK runtime (default: binary)",
+    )
+    p.add_argument("--kwokctl-config-file", dest="kwokctl_config_file", required=True,
+        help="KwokctlConfiguration YAML used to create the KWOK cluster.",
+    )
+    p.add_argument("--namespace", dest="namespace", default="trace",
+        help="Kubernetes namespace in which to create pods (default: trace)",
+    )
+    p.add_argument("--node-cpu", dest="node_cpu", default="1000m",
+        help=(
+            "Per-node CPU capacity as a Kubernetes quantity. "
+            "The trace stores CPU as a fraction of one node; this flag defines what "
+            "'1.0' means when converting to pod requests "
+            "(e.g., 0.25 → 250m if --node-cpu=1000m). "
+            "Default: 1000m (≈1 core)."
+        ),
+    )
+    p.add_argument("--node-mem", dest="node_mem", default="1Gi",
+        help=(
+            "Per-node memory capacity as a Kubernetes quantity. "
+            "The trace stores memory as a fraction of one node; this flag defines what "
+            "'1.0' means when converting to pod requests "
+            "(e.g., 0.5 → 512Mi if --node-mem=1Gi). "
+            "Default: 1Gi."
+        ),
+    )
+
+    # Monitoring
+    p.add_argument("--monitor-interval", dest="monitor_interval", type=float, default=1.0,
+        help="Monitor sampling interval in seconds (default: 1.0).",
+    )
+
+    # Logging
+    p.add_argument("--log-level", dest="log_level", default="INFO",
+        help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO).",
+    )
+
+    return p
 
 #######################################################################
-# Replayer class
+# TraceReplayer class
 #######################################################################
 class TraceReplayer:
     """
-    Encapsulates loading a trace, building events, replaying them against a KWOK cluster,
-    and monitoring utilization over time.
+    Replay a trace on a KWOK cluster and monitor utilization.
     """
-
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
 
@@ -126,11 +151,13 @@ class TraceReplayer:
         self.events: List[Event] = []
         self.prio_by_identity: Dict[str, int] = {}
 
-    # ---------------- Arg logging / info bundle ----------------
+    ##############################################
+    # ------------ Info/logging helpers ----------
+    ##############################################
     @staticmethod
     def log_args(args: argparse.Namespace) -> None:
         """
-        Log the main arguments (mirrors style used in trace_generator).
+        Log the main arguments.
         """
         fields = [
             ("trace_dir", args.trace_dir),
@@ -140,20 +167,18 @@ class TraceReplayer:
             ("namespace", args.namespace),
             ("node_cpu", args.node_cpu),
             ("node_mem", args.node_mem),
-            ("pods_cap", args.pods_cap),
             ("monitor_interval", args.monitor_interval),
             ("log_level", args.log_level),
         ]
         pad = max(len(k) for k, _ in fields)
         lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
         block = "\n".join(lines)
-        header, footer = make_header_footer("ARGS (TRACE REPLAYER)")
+        header, footer = make_header_footer("ARGS")
         LOG.info("\n%s\n%s\n%s", header, block, footer)
 
     def _write_info_file(self) -> None:
         """
         Write info_replayer.yaml in base_dir with git + CLI + args.
-        Mirrors style of trace_generator's info.yaml, but replayer-specific.
         """
         try:
             out_path = self.base_dir / "info_replayer.yaml"
@@ -180,13 +205,13 @@ class TraceReplayer:
         except Exception as e:
             LOG.warning("failed to write info_replayer.yaml: %s", e)
 
-    # ---------------- Helpers ----------------
-
+    ##############################################
+    # ------------ Replay helpers ----------------
+    ##############################################
     @staticmethod
     def _rs_name_for_record(record_id: int) -> str:
         """
         Stable ReplicaSet name derived from the trace record id.
-
         We add a non-numeric prefix to avoid YAML treating it as a number.
         Example: record_id=1 -> "rs-000001"
         """
@@ -283,7 +308,7 @@ class TraceReplayer:
             replicas = max(1, int(getattr(p, "replicas", 1)))
             events.append(
                 Event(
-                    sim_time=float(p.start_time),
+                    sim_time_s=float(p.start_time),
                     kind="create",
                     record_id=p.id,
                     cpu_str=cpu_str,
@@ -294,19 +319,20 @@ class TraceReplayer:
             )
             events.append(
                 Event(
-                    sim_time=float(p.end_time),
+                    sim_time_s=float(p.end_time),
                     kind="delete",
                     record_id=p.id,
                 )
             )
 
         # sort by sim_time, then create before delete
-        events.sort(key=lambda e: (e.sim_time, 0 if e.kind == "create" else 1))
+        events.sort(key=lambda e: (e.sim_time_s, 0 if e.kind == "create" else 1))
         LOG.info("built %d events from %d pods", len(events), len(self.pods))
         self.events = events
 
-    # ---------------- Replay ----------------
-
+    ##############################################
+    # ------------ Replayer ----------------------
+    ##############################################
     def _replay_events(
         self,
         ns: str,
@@ -352,11 +378,11 @@ class TraceReplayer:
         try:
             while i < n:
                 # Current batch timestamp (trace time)
-                current_t = events[i].sim_time
+                current_t = events[i].sim_time_s
 
                 # Collect all events with exactly this sim_time
                 batch_events: List[Event] = []
-                while i < n and events[i].sim_time == current_t:
+                while i < n and events[i].sim_time_s == current_t:
                     batch_events.append(events[i])
                     i += 1
 
@@ -410,7 +436,7 @@ class TraceReplayer:
                     LOG.info(
                         "CREATE RS @ sim_t=%.3f rs=%s (trace_record_id=%d) "
                         "replicas=%d cpu=%s mem=%s pc=%s",
-                        ev.sim_time,
+                        ev.sim_time_s,
                         rs_name,
                         ev.record_id,
                         ev.replicas,
@@ -429,7 +455,7 @@ class TraceReplayer:
                     rs_name = self._rs_name_for_record(ev.record_id)
                     LOG.info(
                         "DELETE RS @ sim_t=%.3f rs=%s (trace_record_id=%d)",
-                        ev.sim_time,
+                        ev.sim_time_s,
                         rs_name,
                         ev.record_id,
                     )
@@ -447,7 +473,90 @@ class TraceReplayer:
             executor.shutdown(wait=True)
             LOG.info("all kubectl tasks completed")
 
-    # ---------------- Monitor helpers ----------------
+    ##############################################
+    # ------------ Monitor helpers ---------------
+    ##############################################
+    def _snapshot_from_pods(self, ns: str) -> tuple[float, float, List[tuple[str, str]], int, Dict[int, int]]:
+        """
+        Build a snapshot directly from pods:
+
+        Returns:
+            cpu_run_util:   fraction of total cluster CPU capacity requested by running pods
+            mem_run_util:   fraction of total cluster memory capacity requested by running pods
+            pods_running:   list of (pod_name, node_name) for running pods
+            unsched_count:  total number of Pending pods
+            unsched_by_prio: dict prio -> count of Pending pods
+        """
+        pods_json = get_json_ctx(self.ctx, ["-n", ns, "get", "pods", "-o", "json"])
+        items = pods_json.get("items", []) or []
+
+        total_cpu_m = 0
+        total_mem_b = 0
+
+        pods_running: List[tuple[str, str]] = []
+        unsched_by_prio: Dict[int, int] = {}
+
+        for pod in items:
+            meta = pod.get("metadata", {}) or {}
+            spec = pod.get("spec", {}) or {}
+            status = pod.get("status", {}) or {}
+
+            pod_name = meta.get("name", "")
+            node_name = spec.get("nodeName", "") or ""
+            phase = status.get("phase", "")
+
+            # Try to get priority from PriorityClass name "p<N>"
+            pc_name = spec.get("priorityClassName")
+            prio: int | None = None
+            if isinstance(pc_name, str) and pc_name.startswith("p"):
+                try:
+                    prio = int(pc_name[1:])
+                except ValueError:
+                    prio = None
+
+            # Fallback: derive from RS identity -> priority mapping
+            if prio is None and pod_name:
+                identity = pod_name
+                # strip namespace if any (should not be present in name itself, but be safe)
+                if "/" in identity:
+                    identity = identity.split("/", 1)[1]
+                # RS-managed pods: "<rs_name>-<suffix>"
+                if "-" in identity:
+                    identity, _suffix = identity.rsplit("-", 1)
+                prio = self.prio_by_identity.get(identity)
+
+            if phase == "Running":
+                pods_running.append((pod_name, node_name))
+
+                # Sum resource requests of all containers
+                containers = spec.get("containers", []) or []
+                for c in containers:
+                    res = (c.get("resources") or {}).get("requests", {}) or {}
+                    cpu_q = res.get("cpu")
+                    mem_q = res.get("memory")
+                    if cpu_q:
+                        try:
+                            total_cpu_m += qty_to_mcpu_int(cpu_q)
+                        except Exception:
+                            pass
+                    if mem_q:
+                        try:
+                            total_mem_b += qty_to_bytes_int(mem_q)
+                        except Exception:
+                            pass
+
+            elif phase == "Pending" and prio is not None:
+                unsched_by_prio[prio] = unsched_by_prio.get(prio, 0) + 1
+
+        # Compute utilization relative to known cluster capacity
+        cpu_capacity_m = self.num_nodes * self.node_cpu_m
+        mem_capacity_b = self.num_nodes * self.node_mem_b
+
+        cpu_run_util = (total_cpu_m / cpu_capacity_m) if cpu_capacity_m > 0 else 0.0
+        mem_run_util = (total_mem_b / mem_capacity_b) if mem_capacity_b > 0 else 0.0
+
+        unsched_count = sum(unsched_by_prio.values())
+        return cpu_run_util, mem_run_util, pods_running, unsched_count, unsched_by_prio
 
     def _monitor_loop(
         self,
@@ -470,8 +579,8 @@ class TraceReplayer:
           running_count, unsched_count,
           prio1_run_time_s, ..., prio<max_prio>_run_time_s
 
-        The per-priority run times are *cumulative* pod-seconds:
-          #running_pods_in_prio * delta_t
+        Per-priority run times are cumulative pod-seconds, counted
+        **only while pods are actually Running**.
         """
         out_csv.parent.mkdir(parents=True, exist_ok=True)
         LOG.info(
@@ -481,16 +590,14 @@ class TraceReplayer:
         )
 
         # Cumulative pod-seconds per priority level
-        prio_runtime: Dict[int, float] = {
-            p: 0.0 for p in range(1, max_prio + 1)
-        }
+        prio_runtime: Dict[int, float] = {p: 0.0 for p in range(1, max_prio + 1)}
 
-        last_wall_abs = time.time()
+        # Last timestamp at which we saw THIS pod in Running phase
+        last_seen_running_ts: Dict[str, float] = {}
 
         with open(out_csv, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
 
-            # Header
             header = [
                 "wall_time_s",
                 "sim_time_s",
@@ -503,80 +610,81 @@ class TraceReplayer:
             writer.writerow(header)
 
             while not stop_event.is_set():
+                loop_start = time.time()
+
                 try:
-                    snap = stat_snapshot(self.ctx, ns, expected=0)
+                    (
+                        cpu_run_util,
+                        mem_run_util,
+                        pods_running,      # [(pod_name, node_name)]
+                        unsched_count,
+                        _unsched_by_prio,
+                    ) = self._snapshot_from_pods(ns)
+
                 except Exception as e:
-                    LOG.warning("monitor: stat_snapshot failed: %s", e)
+                    LOG.warning("monitor: snapshot_from_pods failed: %s", e)
                     time.sleep(interval_s)
                     continue
 
                 now_abs = time.time()
                 wall_time_s = now_abs - start_wall_time
-                sim_time_s = sim_t0 + wall_time_s  # 1:1 mapping
-                dt = max(0.0, now_abs - last_wall_abs)
-                last_wall_abs = now_abs
+                sim_time_s = sim_t0 + wall_time_s
 
-                pods_running = getattr(snap, "pods_running", []) or []
                 running_count = len(pods_running)
-                unsched_dict = getattr(snap, "unschedulable_by_prio", {}) or {}
-                if isinstance(unsched_dict, dict):
-                    try:
-                        unsched_count = sum(unsched_dict.values())
-                    except TypeError:
-                        unsched_count = 0
-                else:
-                    unsched_count = 0
+                live_running_pods: set[str] = set()
 
-                # Update per-priority cumulative runtime from running pods
-                for entry in pods_running:
-                    # stat_snapshot returns (pod_name, node_name)
-                    try:
-                        pod_name = entry[0]
-                    except Exception:
-                        LOG.debug(
-                            "unexpected pods_running entry: %r (%s)",
-                            entry,
-                            type(entry),
-                        )
-                        continue
+                # Integrate runtime *only* during intervals where pod is Running
+                for pod_name, _node_name in pods_running:
+                    live_running_pods.add(pod_name)
 
-                    # Strip namespace if present: "ns/podname" -> "podname"
-                    if "/" in pod_name:
-                        pod_name = pod_name.split("/", 1)[1]
-
-                    # RS-managed pods have names "<rs_name>-<suffix>"
-                    # where rs_name == self._rs_name_for_record(record_id)
-                    if "-" in pod_name:
-                        identity, _suffix = pod_name.rsplit("-", 1)
-                    else:
-                        identity = pod_name
+                    identity = pod_name
+                    if "/" in identity:
+                        identity = identity.split("/", 1)[1]
+                    if "-" in identity:
+                        identity, _suffix = identity.rsplit("-", 1)
 
                     prio = prio_by_identity.get(identity)
-                    if prio is None:
+                    if prio is None or not (1 <= prio <= max_prio):
                         continue
-                    if 1 <= prio <= max_prio:
-                        prio_runtime[prio] += dt
+
+                    prev_ts = last_seen_running_ts.get(pod_name)
+                    if prev_ts is None:
+                        # First time we see this pod in Running:
+                        # just remember the timestamp; don't backfill.
+                        last_seen_running_ts[pod_name] = now_abs
+                        continue
+
+                    delta = max(0.0, now_abs - prev_ts)
+                    last_seen_running_ts[pod_name] = now_abs
+                    prio_runtime[prio] += delta
+
+                # Drop pods that are no longer Running from the cache
+                for name in list(last_seen_running_ts.keys()):
+                    if name not in live_running_pods:
+                        del last_seen_running_ts[name]
 
                 row = [
                     f"{wall_time_s:.3f}",
                     f"{sim_time_s:.3f}",
-                    f"{snap.cpu_run_util:.6f}",
-                    f"{snap.mem_run_util:.6f}",
+                    f"{cpu_run_util:.6f}",
+                    f"{mem_run_util:.6f}",
                     running_count,
                     unsched_count,
                 ]
-                row.extend(
-                    f"{prio_runtime[p]:.6f}" for p in range(1, max_prio + 1)
-                )
+                row.extend(f"{prio_runtime[p]:.6f}" for p in range(1, max_prio + 1))
                 writer.writerow(row)
                 f.flush()
 
-                time.sleep(interval_s)
+                elapsed = time.time() - loop_start
+                sleep_s = max(0.0, interval_s - elapsed)
+                if sleep_s > 0:
+                    time.sleep(sleep_s)
 
         LOG.info("monitor: stop signal received; exiting")
 
-    # ---------------- High-level run logic ----------------
-
+    ##############################################
+    # ------------ Runner ------------------------
+    ##############################################
     def run(self) -> None:
         args = self.args
 
@@ -639,7 +747,7 @@ class TraceReplayer:
             num_nodes=self.num_nodes,
             node_cpu=args.node_cpu,
             node_mem=args.node_mem,
-            pods_cap=args.pods_cap,
+            pods_cap=kwok_pods_cap(),
         )
 
         # 6. Namespace + PriorityClasses
@@ -693,87 +801,13 @@ class TraceReplayer:
 
         LOG.info("Done. Monitor CSV written to %s", monitor_out)
 
-
-#######################################################################
-# CLI
-#######################################################################
-def build_argparser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        description=(
-            "Replay a JSON pod trace on a KWOK cluster and monitor utilization. "
-            "Expects <trace-dir>/trace.json as produced by trace_generator.py."
-        )
-    )
-
-    # Trace directory (instead of a single file)
-    p.add_argument(
-        "--trace-dir",
-        required=True,
-        help="Directory containing trace.json from trace_generator.py",
-    )
-
-    # Cluster / KWOK options
-    p.add_argument(
-        "--cluster-name",
-        default="kwok1",
-        help="KWOK cluster name (kwokctl --name) (default: kwok1)",
-    )
-    p.add_argument(
-        "--kwok-runtime",
-        choices=["binary", "docker"],
-        default="binary",
-        help="KWOK runtime (default: binary)",
-    )
-    p.add_argument(
-        "--kwokctl-config-file",
-        required=True,
-        help="KwokctlConfiguration YAML used to create the KWOK cluster.",
-    )
-    p.add_argument(
-        "--namespace",
-        default="trace",
-        help="Kubernetes namespace in which to create pods (default: trace)",
-    )
-    p.add_argument(
-        "--node-cpu",
-        default="1000m",
-        help="Per-node CPU capacity (K8s quantity, default: 1000m = 1 core).",
-    )
-    p.add_argument(
-        "--node-mem",
-        default="1Gi",
-        help="Per-node memory capacity (K8s quantity, default: 1Gi).",
-    )
-    p.add_argument(
-        "--pods-cap",
-        type=int,
-        default=512,
-        help="Per-node pod capacity (status.capacity.pods) (default: 512).",
-    )
-
-    # Monitoring options
-    p.add_argument(
-        "--monitor-interval",
-        type=float,
-        default=1.0,
-        help="Monitor sampling interval in seconds (default: 1.0).",
-    )
-
-    # Logging
-    p.add_argument(
-        "--log-level",
-        default="INFO",
-        help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO).",
-    )
-
-    return p
-
-
+###############################################
+# ------------ Main entry point ---------------
+###############################################
 def main() -> None:
     args = build_argparser().parse_args()
     replayer = TraceReplayer(args)
     replayer.run()
-
 
 if __name__ == "__main__":
     main()

@@ -147,6 +147,13 @@ def create_kwok_nodes(logger: logging.Logger, ctx: str, num_nodes: int, node_cpu
     """
     kubectl_apply_yaml(logger, ctx, "".join(yaml_kwok_node(f"kwok-node-{i}", node_cpu, node_mem, pods_cap) for i in range(1, num_nodes + 1)))
 
+def kwok_pods_cap(total_pods: int | None = None) -> int:
+    """
+    Compute a reasonable per-node pod capacity for KWOK nodes.
+    We use max(512, total_pods * 3) to ensure that the pod capacity is not a limiting factor.
+    """
+    return max(512, (total_pods * 3)) if total_pods is not None else 512
+
 @contextlib.contextmanager
 def kwok_cache_lock():
     """

@@ -51,7 +51,7 @@ class ClusterState:
     live_pods: int = 0
 
 #####################################################################
-# CLI
+# Argument parser
 #####################################################################
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=("Generate pod traces."))
