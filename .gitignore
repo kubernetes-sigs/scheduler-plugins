@@ -29,6 +29,7 @@ __pycache__/
 /bootstrap/
 output/
 results/
+/trace/
 eta*
 results.csv
 *.log

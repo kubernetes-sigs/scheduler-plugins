@@ -103,7 +103,7 @@ Latest upstream version tracked: **v0.32.7** (tagged release) of
 This fork follows **tagged upstream releases only**.  
 When updating, **do not** base changes on `*-devel` tags or arbitrary commits from `main`, as they may be incompatible with the KWOK emulation version used here.
 
-After moving to a new upstream tag, always verify **KWOK compatibility**, e.g. by running a small smoke test with the `kwok_workload_once.py` harness.
+After moving to a new upstream tag, always verify **KWOK compatibility**, e.g. by running a small smoke test with the `test_runner.py` harness.
 
 ## Integrating
 
@@ -260,7 +260,7 @@ The first approach is used for evaluating the optimization capabilities of the p
 For evaluating the plugin, we first run the default scheduler (deterministically) to find 100 seeds where not all pods are running.
 Hereafter, we run the default scheduler (as-is) and the scheduler with the MyPriorityOptimizer plugin on these seeds.
 
-The script for generating the initial workload and running the tests is `scripts/kwok_workload_once/kwok_workload_once.py`. The script can be setup by reading settings from three types of sources, with later ones overriding earlier ones:
+The script for generating the initial workload and running the tests is `scripts/kwok_workload_once/test_runner.py`. The script can be setup by reading settings from three types of sources, with later ones overriding earlier ones:
 
 1) a workload configuration file
 2) a test job file
@@ -269,7 +269,7 @@ The script for generating the initial workload and running the tests is `scripts
 After choosing one of more of these source, the script can be run to generate the workload and run the tests. An example of how to run the script from `bootstrap/content/` folder is:
 
 ```bash
-python -m scripts.kwok_workload_once.kwok_workload_once \
+python -m scripts.kwok_workload_once.test_runner \
 --cluster-name my-cluster \
 --kwok-runtime binary \
 --job-file data/jobs/<job_file>.yaml \
@@ -337,7 +337,7 @@ Here the job file specifies which workload configuration file, kwokctl configura
 
 To run the test jobs faster by parallelizing the evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), an init script `bootstrap.sh` is provided under `scripts/bootstrap/` that can be used to set up a job runner (HPC or VM) and run the tests. The script will ensure all prerequisites are installed and the tests are run.
 
-The init script accepts all parameters that the test script `kwok_workload_once.py` accepts, but the two main parameters to provide are:
+The init script accepts all parameters that the test script `test_runner.py` accepts, but the two main parameters to provide are:
 
 - `--content-dir`: Path to the `bootstrap` folder containing the init script and all content needed to run the tests.
 - `--job-file`: Path to the job file to run (e.g. see already made jobs under `data/jobs/`).
@@ -915,23 +915,22 @@ The evaluation pipeline is thus unchanged; only the **trace generator** has been
 
 ```bash
 python -m scripts.kwok_trace_replayer.trace_generator \
-  --output trace_long.json \
-  --n-nodes 16 \
+  --output-dir trace \
+  --num-nodes 16 \
   --mean-cpu 0.134 --xmin-cpu 0.05 --xmax-cpu 0.4 \
   --mean-mem 0.134 --xmin-mem 0.05 --xmax-mem 0.4 \
   --mean-arrival 10.0 --xmin-arrival 0.001 --xmax-arrival 60.0 \
   --mean-life 500.0 --xmin-life 10.0 --xmax-life 1800.0 \
-  --priority-min 1 --priority-max 4 \
-  --replicas-min 1 --replicas-max 3 \
-  --util-plot trace_long_util.png \
-  --hist-plot trace_long_hists.png \
+  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
+  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
   --seed 2 \
+  --log-level INFO \
   --trace-time 6h
 ```
 
 ```bash
 python -m scripts.kwok_trace_replayer.trace_replayer \
-  --trace-file trace_long.json \
+  --trace-dir trace \
   --cluster-name kwok1 \
   --kwok-runtime binary \
   --kwokctl-config-file data/configs-kwokctl/default.yaml \
@@ -940,7 +939,6 @@ python -m scripts.kwok_trace_replayer.trace_replayer \
   --node-mem 1Gi \
   --pods-cap 512 \
   --monitor-interval 1.0 \
-  --monitor-output trace-monitor.csv \
   --log-level INFO
 ```
 

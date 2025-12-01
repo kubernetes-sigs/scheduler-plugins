@@ -1,22 +1,45 @@
 #!/usr/bin/env python3
 # trace_replayer.py
 """
-Replay a JSON trace (from trace_generator.py) on a KWOK cluster and monitor actual utilization and running pods over time.
+Replay a JSON trace (from trace_generator.py) on a KWOK cluster and monitor actual utilization
+and running pods over time.
+
+Expected directory layout (from trace_generator.py):
+
+  <TRACE_DIR>/
+    trace.json
+    info.yaml
+    util.png
+    hists.png
+    ...
+    results/
+      trace-monitor.csv   (created by this script)
+
+This replayer:
+
+- Takes a directory (--trace-dir) instead of a single file.
+- Always loads <trace-dir>/trace.json.
+- Stores the monitor CSV in <trace-dir>/results/trace-monitor.csv.
+
+High-level behavior:
 
 - Creates a KWOK cluster (kwokctl)
 - Creates KWOK nodes with given CPU/memory capacities
-- Ensures namespace and priorities classes
+- Ensures namespace and PriorityClasses
 - Starts a monitor that periodically calls stat_snapshot(...) and writes a CSV timeline:
-  wall_time_s, cpu_run_util, mem_run_util, running_count, unsched_count, prio1_run_time_s, prio2_run_time_s, ...
-- Replays the trace according to its start_time / end_time values: we preserve the relative timing from the trace.
-  The earliest event is mapped to "now" (start_wall_time), and later events are offset by (sim_time - t_min).
+    wall_time_s, sim_time_s, cpu_run_util, mem_run_util,
+    running_count, unsched_count, prio1_run_time_s, prio2_run_time_s, ...
+- Replays the trace according to its start_time / end_time values.
+  The earliest event is mapped to "now" (start_wall_time), and later events are offset
+  by (sim_time - t_min).
 """
 
-import argparse, csv, json, logging, threading, time, yaml
+import argparse, csv, json, logging, threading, time, yaml, sys, shlex
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict
+
 from scripts.helpers.general_helpers import (
     setup_logging,
     make_header_footer,
@@ -25,6 +48,7 @@ from scripts.helpers.general_helpers import (
     qty_to_mcpu_str,
     qty_to_bytes_int,
     qty_to_bytes_str,
+    get_git_info,
 )
 from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml,
@@ -37,8 +61,12 @@ from scripts.helpers.kwok_helpers import (
     create_kwok_nodes,
     ensure_kwok_cluster,
 )
-from scripts.helpers.cluster_stats import  stat_snapshot
-from scripts.helpers.trace_helpers import TraceRecord
+from scripts.helpers.cluster_stats import (
+    stat_snapshot,
+)
+from scripts.kwok_trace_replayer.trace_helpers import (
+    TraceRecord,
+)
 
 #######################################################################
 # Constants
@@ -73,7 +101,11 @@ class TraceReplayer:
 
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
-        self.trace_path = Path(args.trace_file).resolve()
+
+        # Base directory containing trace.json and other artifacts
+        self.base_dir: Path = Path(args.trace_dir).resolve()
+        self.trace_path: Path = self.base_dir / "trace.json"
+        self.results_dir: Path = self.base_dir / "results"
 
         # Will be filled by load_trace
         self.pods: List[TraceRecord] = []
@@ -92,6 +124,64 @@ class TraceReplayer:
         self.events: List[Event] = []
         self.prio_by_identity: Dict[str, int] = {}
 
+    # ---------------- Arg logging / info bundle ----------------
+
+    @staticmethod
+    def _log_field_fmt(v):
+        return "<unset>" if v in (None, "") else str(v)
+
+    @staticmethod
+    def log_args(args: argparse.Namespace) -> None:
+        """
+        Log the main arguments (mirrors style used in trace_generator).
+        """
+        fields = [
+            ("trace_dir", args.trace_dir),
+            ("cluster_name", args.cluster_name),
+            ("kwok_runtime", args.kwok_runtime),
+            ("kwokctl_config_file", args.kwokctl_config_file),
+            ("namespace", args.namespace),
+            ("node_cpu", args.node_cpu),
+            ("node_mem", args.node_mem),
+            ("pods_cap", args.pods_cap),
+            ("monitor_interval", args.monitor_interval),
+            ("log_level", args.log_level),
+        ]
+        pad = max(len(k) for k, _ in fields)
+        lines = [f"{k.rjust(pad)} = {TraceReplayer._log_field_fmt(v)}" for k, v in fields]
+        block = "\n".join(lines)
+        header, footer = make_header_footer("ARGS (TRACE REPLAYER)")
+        LOG.info("\n%s\n%s\n%s", header, block, footer)
+
+    def _write_info_file(self) -> None:
+        """
+        Write info_replayer.yaml in base_dir with git + CLI + args.
+        Mirrors style of trace_generator's info.yaml, but replayer-specific.
+        """
+        try:
+            git_info = get_git_info(Path.cwd())
+            payload = {
+                "meta": {
+                    "timestamp": get_timestamp(),
+                    "git": git_info or {},
+                    "kind": "trace_replayer",
+                },
+                "inputs": {
+                    "cli-cmd": "python3 " + " ".join(shlex.quote(a) for a in sys.argv),
+                    "args": {k: v for k, v in vars(self.args).items()},
+                },
+                "trace": {
+                    "trace_dir": str(self.base_dir),
+                    "trace_path": str(self.trace_path),
+                },
+            }
+            out_path = self.base_dir / "info_replayer.yaml"
+            with open(out_path, "w", encoding="utf-8") as fh:
+                yaml.safe_dump(payload, fh, sort_keys=False)
+            LOG.info("wrote replayer info bundle to %s", out_path)
+        except Exception as e:
+            LOG.warning("failed to write info_replayer.yaml: %s", e)
+
     # ---------------- Helpers ----------------
 
     @staticmethod
@@ -106,6 +196,12 @@ class TraceReplayer:
 
     def load_trace(self) -> None:
         """Load trace JSON and populate pods, max_prio, t_min, trace_time, meta."""
+        if not self.trace_path.exists():
+            raise FileNotFoundError(
+                f"Trace file not found: {self.trace_path} "
+                f"(expected trace.json inside --trace-dir={self.base_dir})"
+            )
+
         with open(self.trace_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
 
@@ -165,8 +261,15 @@ class TraceReplayer:
         self.trace_time = trace_time
         self.meta = meta
 
-        # num_nodes from meta
-        self.num_nodes = int(meta["n_nodes"])
+        # num_nodes from meta (generator uses "num_nodes"; keep "n_nodes" as fallback)
+        if "num_nodes" in meta:
+            self.num_nodes = int(meta["num_nodes"])
+        elif "n_nodes" in meta:
+            self.num_nodes = int(meta["n_nodes"])
+        else:
+            raise KeyError(
+                f"Trace meta does not contain 'num_nodes' or 'n_nodes': {meta}"
+            )
 
     def _build_events(self, node_cpu_m: int, node_mem_b: int) -> None:
         """
@@ -414,7 +517,7 @@ class TraceReplayer:
                 sim_time_s = sim_t0 + wall_time_s  # 1:1 mapping
                 dt = max(0.0, now_abs - last_wall_abs)
                 last_wall_abs = now_abs
-                
+
                 pods_running = getattr(snap, "pods_running", []) or []
                 running_count = len(pods_running)
                 unsched_dict = getattr(snap, "unschedulable_by_prio", {}) or {}
@@ -432,7 +535,11 @@ class TraceReplayer:
                     try:
                         pod_name = entry[0]
                     except Exception:
-                        LOG.debug("unexpected pods_running entry: %r (%s)", entry, type(entry))
+                        LOG.debug(
+                            "unexpected pods_running entry: %r (%s)",
+                            entry,
+                            type(entry),
+                        )
                         continue
 
                     # Strip namespace if present: "ns/podname" -> "podname"
@@ -482,10 +589,21 @@ class TraceReplayer:
             level=args.log_level,
         )
 
+        # Log CLI arguments
+        self.log_args(args)
+
+        LOG.info("using trace directory: %s", self.base_dir)
+
+        # Ensure results directory exists
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write replayer info bundle (after base_dir/result_dir are known)
+        self._write_info_file()
+
         # 1. Load trace
         self.load_trace()
 
-        # Map stable identity -> priority; identity is str(id)
+        # Map stable identity -> priority; identity is RS name
         self.prio_by_identity = {
             self._rs_name_for_record(p.id): p.priority for p in self.pods
         }
@@ -530,11 +648,8 @@ class TraceReplayer:
         ensure_namespace(LOG, self.ctx, args.namespace)
         ensure_priority_classes(LOG, self.ctx, self.max_prio)
 
-        # 7. Monitor output path
-        if args.monitor_output:
-            monitor_out = Path(args.monitor_output).resolve()
-        else:
-            monitor_out = self.trace_path.with_suffix(".monitor.csv")
+        # 7. Monitor output path (always under <trace-dir>/results)
+        monitor_out = self.results_dir / "trace-monitor.csv"
 
         # 8. Start monitor thread
         start_wall_time = time.time()
@@ -586,14 +701,17 @@ class TraceReplayer:
 #######################################################################
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Replay a JSON pod trace on a KWOK cluster and monitor utilization."
+        description=(
+            "Replay a JSON pod trace on a KWOK cluster and monitor utilization. "
+            "Expects <trace-dir>/trace.json as produced by trace_generator.py."
+        )
     )
 
-    # Trace file
+    # Trace directory (instead of a single file)
     p.add_argument(
-        "--trace-file",
+        "--trace-dir",
         required=True,
-        help="Path to JSON trace from trace_generator.py",
+        help="Directory containing trace.json from trace_generator.py",
     )
 
     # Cluster / KWOK options
@@ -641,11 +759,6 @@ def build_argparser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="Monitor sampling interval in seconds (default: 1.0).",
-    )
-    p.add_argument(
-        "--monitor-output",
-        default=None,
-        help="CSV output path for monitor metrics (default: <trace-file>.monitor.csv).",
     )
 
     # Logging

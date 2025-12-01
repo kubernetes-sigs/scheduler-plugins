@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# public_trace_plots.py
+# plots.py
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Dict, Any, List
-from scripts.helpers.trace_helpers import plot_histogram
+from scripts.kwok_trace_replayer.trace_helpers import plot_histogram_with_pareto, plot_bar_with_geometric
 
 # ----------------------------------------------------------------------
 # CONFIG
@@ -15,7 +15,7 @@ from scripts.helpers.trace_helpers import plot_histogram
 DATASETS: List[Dict[str, Any]] = [
     {
         "name": "Google",
-        "csv_path": "google-cluster-data/ClusterData2019/data.csv",
+        "csv_path": "data/public_trace_data/google-cluster-data/ClusterData2019/data.csv",
         "plots": {
             "inter_arrival_us": {
                 "x_label": "Δt (milliseconds)",
@@ -45,13 +45,15 @@ DATASETS: List[Dict[str, Any]] = [
                 "pareto_xmin": 0.005,
             },
             "priority": {
-                "x_max": 250,
+                "log_y": True,
+                "fit_geometric": True,
+                "geom_ratio": 0.98
             },
         },
     },
     {
         "name": "Alibaba",
-        "csv_path": "alibaba-clusterdata/cluster-trace-gpu-v2025/data.csv",
+        "csv_path": "data/public_trace_data/alibaba-clusterdata/cluster-trace-gpu-v2025/data.csv",
         "plots": {
             "inter_arrival_us": {
                 "fit_pareto": True,
@@ -141,7 +143,8 @@ BASE_PLOT_SPECS = [
         "y_max": None,
         "x_max": None,
         "scale": 1.0,
-        "fit_pareto": False,
+        "fit_geometric": False,
+        "geom_ratio": 1.0,
     },
 ]
 
@@ -208,26 +211,50 @@ def make_combined_grid() -> None:
             if col_name not in df.columns:
                 ax.axis("off")
                 continue
-
             spec = specs_by_col[col_name]
             data = df[col_name].to_numpy()
-            
-            plot_histogram(
-                ax,
-                data,
-                title="",
-                x_label=spec["x_label"],
-                y_label=(rf"$\bf{{{ds_name}}}$"f"\n\n{spec['y_label']}" if col_idx == 0 else ""),
-                bins=spec["bins"],
-                x_max=spec.get("x_max"),
-                y_min=spec.get("y_min"),
-                y_max=spec.get("y_max"),
-                log_y=spec["log_y"],
-                scale=spec.get("scale", 1.0),
-                pareto_fit=spec.get("fit_pareto", False),
-                pareto_alpha=spec.get("pareto_alpha"),
-                pareto_xmin=spec.get("pareto_xmin"),
+
+            # Y-label only in first column for each row
+            y_label = (
+                rf"$\bf{{{ds_name}}}$" + f"\n\n{spec['y_label']}"
+                if col_idx == 0
+                else ""
             )
+
+            if col_name == "priority":
+                # Discrete priority distribution as bar chart
+                plot_bar_with_geometric(
+                    ax,
+                    data,
+                    title="",
+                    x_label=spec["x_label"],
+                    y_label=y_label,
+                    geom_fit=spec.get("fit_geometric", False),
+                    geom_ratio=spec.get("geom_ratio"),
+                    x_min=None,
+                    x_max=spec.get("x_max"),
+                    y_min=spec.get("y_min"),
+                    y_max=spec.get("y_max"),
+                    log_y=spec.get("log_y", False),
+                )
+            else:
+                # Continuous-ish metrics: histogram + optional Pareto
+                plot_histogram_with_pareto(
+                    ax,
+                    data,
+                    title="",
+                    x_label=spec["x_label"],
+                    y_label=y_label,
+                    bins=spec["bins"],
+                    x_max=spec.get("x_max"),
+                    y_min=spec.get("y_min"),
+                    y_max=spec.get("y_max"),
+                    log_y=spec["log_y"],
+                    scale=spec.get("scale", 1.0),
+                    pareto_fit=spec.get("fit_pareto", False),
+                    pareto_alpha=spec.get("pareto_alpha"),
+                    pareto_xmin=spec.get("pareto_xmin"),
+                )
 
     # Space adjustments
     fig.tight_layout(
@@ -237,7 +264,7 @@ def make_combined_grid() -> None:
         h_pad=0.2,  # height padding between subplots (inches)
     )
 
-    out_path = "histograms.png"
+    out_path = "analysis/figures/public_trace_histograms.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"[OK] Saved combined grid to {out_path}")

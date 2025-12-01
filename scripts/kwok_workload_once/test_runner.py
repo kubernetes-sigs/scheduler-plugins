@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# kwok_workload_once.py
+# test_runner.py
 
 import sys, copy, shutil, argparse, math, time, random, \
     csv, json, logging, yaml, subprocess, traceback, shlex
@@ -196,7 +196,7 @@ def build_argparser() -> argparse.ArgumentParser:
 ##############################################
 # ------------ Main class --------------------
 ##############################################
-class KwokTestGenerator:
+class TestRunner:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.workload_config_doc = None
@@ -223,7 +223,7 @@ class KwokTestGenerator:
             override_kwokctl_envs = override.get("kwokctl_envs", [])
 
         # Ensure defaults args
-        self.args = KwokTestGenerator.ensure_default_args(self.args)
+        self.args = TestRunner.ensure_default_args(self.args)
         
         # Setup logging
         setup_logging(name=LOGGER_NAME, prefix="[test-generator] ", level=self.args.log_level)
@@ -705,7 +705,7 @@ class KwokTestGenerator:
             ("settle_timeout_max", tr.settle_timeout_max or "<unset>"),
         ]
         pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {KwokTestGenerator._log_field_fmt(v)}" for k, v in fields]
+        lines = [f"{k.rjust(pad)} = {TestRunner._log_field_fmt(v)}" for k, v in fields]
         block = "\n".join(lines)
         header, footer = make_header_footer("WORKLOAD CONFIG")
         LOG.info("\n%s\n%s\n%s", header, block, footer)
@@ -741,7 +741,7 @@ class KwokTestGenerator:
             ("solver_trigger", args.solver_trigger),
         ]
         pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {KwokTestGenerator._log_field_fmt(v)}" for k, v in fields]
+        lines = [f"{k.rjust(pad)} = {TestRunner._log_field_fmt(v)}" for k, v in fields]
         block = "\n".join(lines)
         header, footer = make_header_footer("ARGS")
         LOG.info("\n%s\n%s\n%s", header, block, footer)
@@ -2299,9 +2299,9 @@ def main():
         generate_seeds(args.gen_seeds_to_file)
         return
 
-    # TestGenerator instance
-    test_generator = KwokTestGenerator(args)
-    test_generator.run()
+    # TestRunner instance
+    test_runner = TestRunner(args)
+    test_runner.run()
 
     print("done.")
 

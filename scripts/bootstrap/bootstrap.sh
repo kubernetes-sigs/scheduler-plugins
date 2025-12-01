@@ -297,7 +297,7 @@ stage_test() {
   print_cfg
   run_root "'${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_workload_once/requirements.txt'"
 
-  # Build flags to forward to kwok_workload_once.py
+  # Build flags to forward to test_runner.py
   local passthru; passthru="$(build_passthrough_flags)"
 
   # Build the argv list once, only adding args the user actually set
@@ -329,7 +329,7 @@ stage_test() {
   run_root "
     cd '${CONTENT_DIR}' && \
     { [ '${KWOK_RUNTIME}' != 'binary' ] || chmod +x './bin/kube-scheduler'; } && \
-    '${VENV_DIR}/bin/python' -m scripts.kwok_workload_once.kwok_workload_once ${quoted_args}
+    '${VENV_DIR}/bin/python' -m scripts.kwok_workload_once.test_runner ${quoted_args}
   "
 
   log ok "test done"
