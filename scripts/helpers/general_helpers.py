@@ -124,12 +124,10 @@ def write_info_file(
     *,
     meta_extra: dict | None = None,
     inputs: dict | None = None,
-    sections: dict | None = None,
     logger: logging.Logger | None = None,
 ) -> None:
     """
     Generic helper to write an info YAML bundle.
-
     Structure:
       meta:
         timestamp: ...
@@ -137,13 +135,9 @@ def write_info_file(
         ...meta_extra...
       inputs:  (optional)
         ...inputs...
-      <section-name>:
-        ... (from sections) ...
-
     - out_path: target YAML path.
     - meta_extra: additional keys to merge into 'meta'.
     - inputs: dictionary to be stored under 'inputs'.
-    - sections: mapping section_name -> dict, stored at top level.
     """
     try:
         p = Path(out_path)
@@ -163,11 +157,6 @@ def write_info_file(
 
         if inputs is not None:
             payload["inputs"] = inputs
-
-        if sections:
-            for k, v in sections.items():
-                if v is not None:
-                    payload[k] = v
 
         with open(p, "w", encoding="utf-8") as fh:
             yaml.safe_dump(payload, fh, sort_keys=False)

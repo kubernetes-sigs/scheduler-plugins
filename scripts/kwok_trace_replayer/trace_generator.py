@@ -156,7 +156,6 @@ class TraceGenerator:
     """
     Encapsulates based trace generation, statistics, and plotting.
     """
-
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.rng = np.random.default_rng(args.seed)
@@ -185,49 +184,49 @@ class TraceGenerator:
         self.u_mem_hist: List[float] = []           # memory utilization over time
         self.max_runnable_pods_hist: List[int] = [] # number of maximum possible runnable pods over time
 
+        # Parse trace_time duration string into seconds
+        self.trace_time_s = parse_duration_to_seconds(self.args.trace_time)
+
         # Write metadata bundle
         LOG.info("logging arguments and git info to output_dir...")
         self._write_info_file()
+        self.log_args()
         
         # Fit alphas from (xmin, xmax, mean)
         LOG.info("fitting Pareto alphas parameters...")
         self._fit_alphas()
 
-        # Parse trace_time duration string into seconds
-        self.trace_time_s = parse_duration_to_seconds(self.args.trace_time)
-
     ##############################################
     # ------------ Info/logging helpers ----------
     ##############################################
-    @staticmethod
-    def log_args(args: argparse.Namespace) -> None:
+    def log_args(self) -> None:
         """
         Log the main arguments (similar style to test_generator).
         """
         fields = [
-            ("output_dir", args.output_dir),
-            ("seed", args.seed),
-            ("log_level", args.log_level),
-            ("num_nodes", args.num_nodes),
-            ("trace_time", args.trace_time),
-            ("priority_min", args.priority_min),
-            ("priority_max", args.priority_max),
-            ("priority_ratio", args.priority_ratio),
-            ("replicas_min", args.replicas_min),
-            ("replicas_max", args.replicas_max),
-            ("replicas_ratio", args.replicas_ratio),
-            ("xmin_cpu", args.xmin_cpu),
-            ("xmax_cpu", args.xmax_cpu),
-            ("mean_cpu", args.mean_cpu),
-            ("xmin_mem", args.xmin_mem),
-            ("xmax_mem", args.xmax_mem),
-            ("mean_mem", args.mean_mem),
-            ("xmin_arrival", args.xmin_arrival),
-            ("xmax_arrival", args.xmax_arrival),
-            ("mean_arrival", args.mean_arrival),
-            ("xmin_life", args.xmin_life),
-            ("xmax_life", args.xmax_life),
-            ("mean_life", args.mean_life),
+            ("output_dir", self.args.output_dir),
+            ("seed", self.args.seed),
+            ("log_level", self.args.log_level),
+            ("num_nodes", self.args.num_nodes),
+            ("trace_time", self.args.trace_time),
+            ("priority_min", self.args.priority_min),
+            ("priority_max", self.args.priority_max),
+            ("priority_ratio", self.args.priority_ratio),
+            ("replicas_min", self.args.replicas_min),
+            ("replicas_max", self.args.replicas_max),
+            ("replicas_ratio", self.args.replicas_ratio),
+            ("xmin_cpu", self.args.xmin_cpu),
+            ("xmax_cpu", self.args.xmax_cpu),
+            ("mean_cpu", self.args.mean_cpu),
+            ("xmin_mem", self.args.xmin_mem),
+            ("xmax_mem", self.args.xmax_mem),
+            ("mean_mem", self.args.mean_mem),
+            ("xmin_arrival", self.args.xmin_arrival),
+            ("xmax_arrival", self.args.xmax_arrival),
+            ("mean_arrival", self.args.mean_arrival),
+            ("xmin_life", self.args.xmin_life),
+            ("xmax_life", self.args.xmax_life),
+            ("mean_life", self.args.mean_life),
         ]
         pad = max(len(k) for k, _ in fields)
         lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
@@ -901,7 +900,6 @@ class TraceGenerator:
         """
         Top-level entry point used by main().
         """
-        
         # Generate the trace
         self._generate_trace()
 
@@ -922,7 +920,6 @@ def main() -> None:
     args = build_arg_parser().parse_args()
     round_float_args(args, ndigits=MAX_DECIMALS)
     setup_logging(name=LOGGER_NAME, prefix="[trace-generator] ", level=args.log_level)
-    TraceGenerator.log_args(args)
     generator = TraceGenerator(args)
     generator.run()
     LOG.info("done.")

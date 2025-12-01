@@ -728,8 +728,6 @@ Conceptually, the trace file is a JSON list:
 ]
 ```
 
-This is exactly what `trace_generator.py` writes and what `trace_replayer.py` consumes.
-
 ---
 
 ### 3. Single fill-once generation method
