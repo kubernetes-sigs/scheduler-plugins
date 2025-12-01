@@ -47,6 +47,8 @@ SOLVE_ALPHA_SAMPLES = 50_000
 SOLVE_ALPHA_LOWER_BOUND = 0.1
 SOLVE_ALPHA_UPPER_BOUND = 10.0
 
+MAX_DECIMALS = 6
+
 #####################################################################
 # Logging setup
 #####################################################################
@@ -98,7 +100,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     # Lifetimes (seconds)
-    p.add_argument("--xmin-life", type=float, default=30.0,
+    p.add_argument("--xmin-life", type=float, default=10.0,
         help="Pareto I x_min for lifetimes (seconds).",
     )
     p.add_argument("--xmax-life", type=float, default=None,
@@ -131,7 +133,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     # Priority (min/max like replicas)
-    p.add_argument("--priority-min", type=int, default=0,
+    p.add_argument("--priority-min", type=int, default=1,
         help="Minimum priority value (inclusive).",
     )
     p.add_argument("--priority-max", type=int, default=3,
@@ -154,6 +156,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     return p
 
+def round_float_args(args, ndigits: int) -> None:
+    """
+    Round all float fields on the argparse Namespace to a fixed number of decimals.
+    """
+    for name, value in vars(args).items():
+        if isinstance(value, float):
+            setattr(args, name, round(value, ndigits))
+
 #####################################################################
 # Trace generator class
 #####################################################################
@@ -171,6 +181,11 @@ class TraceGenerator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.figures_dir: Path = self.output_dir / "figures"
         self.figures_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Build paths under output_dir
+        self.trace_path = self.output_dir / "trace.json"
+        self.util_plot_path = self.figures_dir / "utilization.png"
+        self.hist_plot_path = self.figures_dir / "histograms.png"
 
         # These will be filled by _fit_alphas() using (xmin, xmax, mean)
         self.alpha_cpu: float | None = None
@@ -369,16 +384,16 @@ class TraceGenerator:
             target_mean=args.mean_life,
         )
 
-        self.alpha_cpu = alpha_cpu
-        self.alpha_mem = alpha_mem
-        self.alpha_arrival = alpha_arrival
-        self.alpha_life = alpha_life
+        self.alpha_cpu      = round(alpha_cpu, MAX_DECIMALS)
+        self.alpha_mem      = round(alpha_mem, MAX_DECIMALS)
+        self.alpha_arrival  = round(alpha_arrival, MAX_DECIMALS)
+        self.alpha_life     = round(alpha_life, MAX_DECIMALS)
 
         # Attach them back onto args so existing plotting helpers keep working
-        args.alpha_cpu = alpha_cpu
-        args.alpha_mem = alpha_mem
-        args.alpha_arrival = alpha_arrival
-        args.alpha_life = alpha_life
+        args.alpha_cpu      = alpha_cpu
+        args.alpha_mem      = alpha_mem
+        args.alpha_arrival  = alpha_arrival
+        args.alpha_life     = alpha_life
 
         LOG.info(
             "[pareto-fit] CPU:      mean=%.4f  xmin=%.4f  xmax=%.4f  alpha≈%.4f",
@@ -490,27 +505,12 @@ class TraceGenerator:
     ##############################################
     # ------------ Plotting helpers --------------
     ##############################################
-    @staticmethod
-    def _plot_trace_utilization(
-        pods: List[TraceRecord],
-        times: List[float],
-        u_cpu_hist: List[float],
-        u_mem_hist: List[float],
-        max_runnable_pods_hist: List[int],
-        out_path: str | Path,
-    ) -> None:
+    def _plot_trace_utilization(self) -> None:
         """
         Plot CPU/MEM utilization and max runnable pods over time,
         including creation/deletion counts per x-tick.
         """
-        out_path = str(out_path)
-
-        times_plot = list(times)
-        u_cpu_plot = list(u_cpu_hist)
-        u_mem_plot = list(u_mem_hist)
-        max_runnable_pods_plot = list(max_runnable_pods_hist)
-
-        max_time = max(times_plot) if times_plot else 0.0
+        max_time = max(self.times)
 
         # Choose x-axis units based on total duration
         # <= 7h -> minutes, <= 7d -> hours, else days
@@ -528,8 +528,8 @@ class TraceGenerator:
 
         # CPU/MEM utilization
         ax1.plot(
-            times_plot,
-            u_cpu_plot,
+            self.times,
+            self.u_cpu_hist,
             label="CPU utilization",
             linestyle="--",
             color="tab:blue",
@@ -537,8 +537,8 @@ class TraceGenerator:
             linewidth=0.5,
         )
         ax1.plot(
-            times_plot,
-            u_mem_plot,
+            self.times,
+            self.u_mem_hist,
             label="Memory utilization",
             linestyle="--",
             color="tab:orange",
@@ -552,8 +552,8 @@ class TraceGenerator:
         # Second axis for max runnable pods
         ax2 = ax1.twinx()
         ax2.plot(
-            times_plot,
-            max_runnable_pods_plot,
+            self.times,
+            self.max_runnable_pods_hist,
             linestyle="-",
             linewidth=1.0,
             color="tab:green",
@@ -572,7 +572,7 @@ class TraceGenerator:
 
         # Build event list for tick annotation (C = creation, D = deletion)
         events: List[Tuple[float, str]] = []
-        for p in pods:
+        for p in self.pods:
             events.append((p.start_time, "C"))
             events.append((p.end_time, "D"))
         events.sort(key=lambda e: e[0])
@@ -616,40 +616,16 @@ class TraceGenerator:
 
         plt.tight_layout()
         plt.subplots_adjust(bottom=0.22)
-        plt.savefig(out_path)
+        plt.savefig(self.util_plot_path)
         plt.close(fig)
-        LOG.info("saved utilization plot to %s", out_path)
+        LOG.info("saved utilization plot to %s", self.util_plot_path)
 
-    @staticmethod
-    def _plot_generated_histograms(
-        pods: List[TraceRecord],
-        alpha_arrival: float,
-        xmin_arrival: float | None,
-        xmax_arrival: float | None,
-        alpha_life: float,
-        xmin_life: float | None,
-        xmax_life: float | None,
-        alpha_cpu: float,
-        xmin_cpu: float | None,
-        xmax_cpu: float | None,
-        alpha_mem: float,
-        xmin_mem: float | None,
-        xmax_mem: float | None,
-        priority_ratio: float,
-        priority_min: int,
-        priority_max: int,
-        replicas_ratio: float,
-        replicas_min: int,
-        replicas_max: int,
-        out_path: str | Path,
-    ) -> None:
+    def _plot_generated_histograms(self) -> None:
         """
         Build histograms of the generated data and save them as a 3x2 grid PNG.
         """
-        out_path = str(out_path)
-
         # Sort by start_time to get sensible inter-arrivals
-        pods_sorted = sorted(pods, key=lambda p: p.start_time)
+        pods_sorted = sorted(self.pods, key=lambda p: p.start_time)
         start_times = np.array([p.start_time for p in pods_sorted], dtype=float)
         cpu_vals = np.array([p.cpu for p in pods_sorted], dtype=float)
         mem_vals = np.array([p.mem for p in pods_sorted], dtype=float)
@@ -680,11 +656,11 @@ class TraceGenerator:
             y_label="Probability density",
             bins=80,
             log_y=True,
-            x_max=xmax_arrival,
+            x_max=self.args.xmax_arrival,
             scale=1.0,
             pareto_fit=True,
-            pareto_alpha=alpha_arrival,
-            pareto_xmin=xmin_arrival,
+            pareto_alpha=self.args.alpha_arrival,
+            pareto_xmin=self.args.xmin_arrival,
         )
 
         # Lifetimes
@@ -696,11 +672,11 @@ class TraceGenerator:
             y_label="Probability density",
             bins=80,
             log_y=True,
-            x_max=xmax_life,
+            x_max=self.args.xmax_life,
             scale=1.0,
             pareto_fit=True,
-            pareto_alpha=alpha_life,
-            pareto_xmin=xmin_life,
+            pareto_alpha=self.args.alpha_life,
+            pareto_xmin=self.args.xmin_life,
         )
 
         # CPU
@@ -712,11 +688,11 @@ class TraceGenerator:
             y_label="Probability density",
             bins=80,
             log_y=True,
-            x_max=xmax_cpu,
+            x_max=self.args.xmax_cpu,
             scale=1.0,
             pareto_fit=True,
-            pareto_alpha=alpha_cpu,
-            pareto_xmin=xmin_cpu,
+            pareto_alpha=self.args.alpha_cpu,
+            pareto_xmin=self.args.xmin_cpu,
         )
 
         # MEM
@@ -728,11 +704,11 @@ class TraceGenerator:
             y_label="Probability density",
             bins=80,
             log_y=True,
-            x_max=xmax_mem,
+            x_max=self.args.xmax_mem,
             scale=1.0,
             pareto_fit=True,
-            pareto_alpha=alpha_mem,
-            pareto_xmin=xmin_mem,
+            pareto_alpha=self.args.alpha_mem,
+            pareto_xmin=self.args.xmin_mem,
         )
 
         # Priorities (discrete PMF with geometric-like overlay)
@@ -743,9 +719,9 @@ class TraceGenerator:
             x_label="Priority",
             y_label="Probability mass",
             geom_fit=True,
-            geom_ratio=priority_ratio,
-            x_min=priority_min,
-            x_max=priority_max,
+            geom_ratio=self.args.priority_ratio,
+            x_min=self.args.priority_min,
+            x_max=self.args.priority_max,
         )
         
         # Replicas (discrete PMF with geometric-like overlay)
@@ -756,16 +732,16 @@ class TraceGenerator:
             x_label="Replicas",
             y_label="Probability mass",
             geom_fit=True,
-            geom_ratio=replicas_ratio,
-            x_min=replicas_min,
-            x_max=replicas_max,
+            geom_ratio=self.args.replicas_ratio,
+            x_min=self.args.replicas_min,
+            x_max=self.args.replicas_max,
         )
 
         fig.tight_layout()
-        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        fig.savefig(self.hist_plot_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
-        LOG.info("saved generated histograms to %s", out_path)
-
+        LOG.info("saved generated histograms to %s", self.hist_plot_path)
+    
     ##############################################
     # ------------ Trace generator ---------------
     ##############################################
@@ -854,10 +830,10 @@ class TraceGenerator:
             pods.append(
                 TraceRecord(
                     id=pod_id,
-                    start_time=start_time,
-                    end_time=end_time,
-                    cpu=cpu,
-                    mem=mem,
+                    start_time=round(start_time, MAX_DECIMALS),
+                    end_time=round(end_time, MAX_DECIMALS),
+                    cpu=round(cpu, MAX_DECIMALS),
+                    mem=round(mem, MAX_DECIMALS),
                     priority=priority,
                     replicas=replicas,
                 )
@@ -883,57 +859,55 @@ class TraceGenerator:
         
         LOG.info("total pods %d generated before stopping at t=%.1f seconds.", len(self.pods), self.trace_time_s)
     
-    def _write_trace(self, out_path: str | Path) -> None:
+    def _write_trace(self) -> None:
         """
         Write trace to a JSON file.
         """
-        out_path = str(out_path)
-        args = self.args
         obj = {
             "meta": {
-                "num_nodes": args.num_nodes,
-                "trace_time_s": self.trace_time_s,
-                "seed": args.seed,
+                "num_nodes": self.args.num_nodes,
+                "trace_time_s": round(self.trace_time_s, 2),
+                "seed": self.args.seed,
                 "cpu_params": {
                     "pareto_alpha": self.alpha_cpu,
-                    "pareto_xmin": args.xmin_cpu,
-                    "pareto_xmax": args.xmax_cpu,
-                    "pareto_mean": args.mean_cpu,
+                    "pareto_xmin":  self.args.xmin_cpu,
+                    "pareto_xmax":  self.args.xmax_cpu,
+                    "pareto_mean":  self.args.mean_cpu,
                 },
                 "mem_params": {
                     "pareto_alpha": self.alpha_mem,
-                    "pareto_xmin": args.xmin_mem,
-                    "pareto_xmax": args.xmax_mem,
-                    "pareto_mean": args.mean_mem,
+                    "pareto_xmin":  self.args.xmin_mem,
+                    "pareto_xmax":  self.args.xmax_mem,
+                    "pareto_mean":  self.args.mean_mem,
                 },
                 "arrival_params": {
                     "pareto_alpha": self.alpha_arrival,
-                    "pareto_xmin": args.xmin_arrival,
-                    "pareto_xmax": args.xmax_arrival,
-                    "pareto_mean": args.mean_arrival,
+                    "pareto_xmin":  self.args.xmin_arrival,
+                    "pareto_xmax":  self.args.xmax_arrival,
+                    "pareto_mean":  self.args.mean_arrival,
                 },
                 "lifetime_params": {
                     "pareto_alpha": self.alpha_life,
-                    "pareto_xmin": args.xmin_life,
-                    "pareto_xmax": args.xmax_life,
-                    "pareto_mean": args.mean_life,
+                    "pareto_xmin":  self.args.xmin_life,
+                    "pareto_xmax":  self.args.xmax_life,
+                    "pareto_mean":  self.args.mean_life,
                 },
                 "priority_params": {
-                    "priority_min": args.priority_min,
-                    "priority_max": args.priority_max,
-                    "ratio": args.priority_ratio,
+                    "priority_min": self.args.priority_min,
+                    "priority_max": self.args.priority_max,
+                    "ratio":        self.args.priority_ratio,
                 },
                 "replica_params": {
-                    "replicas_min": args.replicas_min,
-                    "replicas_max": args.replicas_max,
-                    "ratio": args.replicas_ratio,
+                    "replicas_min": self.args.replicas_min,
+                    "replicas_max": self.args.replicas_max,
+                    "ratio":        self.args.replicas_ratio,
                 },
             },
             "pods": [asdict(p) for p in self.pods],
         }
-        with open(out_path, "w", encoding="utf-8") as f:
+        with open(self.trace_path, "w", encoding="utf-8") as f:
             json.dump(obj, f, indent=2)
-        LOG.info("wrote trace JSON to %s", out_path)
+        LOG.info("wrote trace JSON to %s", self.trace_path)
     
     ##############################################
     # ------------ Runner ------------------------
@@ -946,54 +920,22 @@ class TraceGenerator:
         # Generate the trace
         self._generate_trace()
 
+        # Write the trace JSON file
+        self._write_trace()
+
         # Summarize utilization stats
         self._summarize_utilization()
-
-        # Build paths under output_dir
-        json_path = self.output_dir / "trace.json"
-        util_plot_path = self.figures_dir / "utilization.png"
-        hist_plot_path = self.figures_dir / "histograms.png"
-
-        # Write outputs
-        self._write_trace(json_path)
         
         # Create plots
-        self._plot_trace_utilization(
-            pods=self.pods,
-            times=self.times,
-            u_cpu_hist=self.u_cpu_hist,
-            u_mem_hist=self.u_mem_hist,
-            max_runnable_pods_hist=self.max_runnable_pods_hist,
-            out_path=util_plot_path,
-        )
-        self._plot_generated_histograms(
-            pods=self.pods,
-            alpha_arrival=self.args.alpha_arrival,
-            xmin_arrival=self.args.xmin_arrival,
-            xmax_arrival=self.args.xmax_arrival,
-            alpha_life=self.args.alpha_life,
-            xmin_life=self.args.xmin_life,
-            xmax_life=self.args.xmax_life,
-            alpha_cpu=self.args.alpha_cpu,
-            xmin_cpu=self.args.xmin_cpu,
-            xmax_cpu=self.args.xmax_cpu,
-            alpha_mem=self.args.alpha_mem,
-            xmin_mem=self.args.xmin_mem,
-            xmax_mem=self.args.xmax_mem,
-            priority_ratio=self.args.priority_ratio,
-            priority_min=self.args.priority_min,
-            priority_max=self.args.priority_max,
-            replicas_ratio=self.args.replicas_ratio,
-            replicas_min=self.args.replicas_min,
-            replicas_max=self.args.replicas_max,
-            out_path=hist_plot_path,
-        )
+        self._plot_trace_utilization()
+        self._plot_generated_histograms()
 
 ###############################################
 # ------------ Main entry point ---------------
 ###############################################
 def main() -> None:
     args = build_arg_parser().parse_args()
+    round_float_args(args, ndigits=MAX_DECIMALS)
     setup_logging(name=LOGGER_NAME, prefix="[trace-generator] ", level=args.log_level)
     TraceGenerator.log_args(args)
     generator = TraceGenerator(args)
