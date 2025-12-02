@@ -1,0 +1,2 @@
+trace-dir: data/traces/arr_20s_life_1300s
+kwokctl-config-file: data/configs-kwokctl/default.yaml

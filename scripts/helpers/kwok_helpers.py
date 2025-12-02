@@ -2,8 +2,9 @@
 # kwok_helpers.py
 
 import tempfile
-import os, subprocess, yaml, shlex, logging, textwrap, fcntl, contextlib
+import os, subprocess, yaml, shlex, logging, textwrap, fcntl, contextlib, copy
 from pathlib import Path
+from typing import Iterable, Mapping, Any
 from scripts.helpers.kubectl_helpers import kubectl_apply_yaml
 
 # ====================================================================
@@ -172,3 +173,34 @@ def kwok_cache_lock():
             fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
+
+def merge_kwokctl_envs(doc: dict, add_envs: Iterable[Mapping[str, Any]] | None, component: str = "kube-scheduler") -> dict:
+    """
+    Return a copy of `doc` with extraEnvs for `component` merged by env 'name'.
+    - Items in `add_envs` override/insert existing envs.
+    - Ensures componentsPatches and the component entry exist.
+    - Sorts components and envs by name for stability.
+    """
+    d = copy.deepcopy(doc) if isinstance(doc, dict) else {}
+    # Normalize inputs
+    add = [
+        e for e in (add_envs or [])
+        if isinstance(e, Mapping) and e.get("name")
+    ]
+    if not add:
+        return d
+    # Ensure componentsPatches is a list of dicts
+    cps = [c for c in (d.get("componentsPatches") or []) if isinstance(c, dict)]
+    d["componentsPatches"] = cps  # normalize back on the copy
+    # Get or create the target component patch
+    comp = next((c for c in cps if c.get("name") == component), None)
+    if comp is None:
+        comp = {"name": component}
+        cps.append(comp)
+    # Merge by name
+    cur = [e for e in (comp.get("extraEnvs") or []) if isinstance(e, dict) and e.get("name")]
+    env_by_name = {e["name"]: copy.deepcopy(e) for e in cur}
+    env_by_name.update({e["name"]: copy.deepcopy(e) for e in add})
+    comp["extraEnvs"] = [env_by_name[k] for k in sorted(env_by_name)]
+    cps.sort(key=lambda c: c.get("name", ""))
+    return d

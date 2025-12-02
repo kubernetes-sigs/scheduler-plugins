@@ -1,0 +1,30 @@
+meta:
+  timestamp: 2025/12/02/06:25:48
+  git:
+    commit: 8c622643d52edc238c934a848ebcf2809bfca02f
+    branch: henrikdc-optimization
+  kind: trace_replayer
+  job_file: data/jobs/trace/all_synch_python/arr_10s_life_660s.yaml
+  kwokctl_config_file: data/configs-kwokctl/all_synch_python.yaml
+inputs:
+  cli-cmd: python3 /mnt/d/projects/master/scheduler-plugins/scripts/kwok_trace_replayer/trace_replayer.py
+    --job-file data/jobs/trace/all_synch_python/arr_10s_life_660s.yaml
+  args:
+    job_file: data/jobs/trace/all_synch_python/arr_10s_life_660s.yaml
+    trace_dir: data/traces/arr_10s_life_660s
+    cluster_name: kwok1
+    kwok_runtime: binary
+    kwokctl_config_file: data/configs-kwokctl/all_synch_python.yaml
+    namespace: trace
+    node_cpu: 1000m
+    node_mem: 1Gi
+    monitor_interval: 1.0
+    log_level: INFO
+  job:
+    trace-dir: data/traces/arr_10s_life_660s
+    kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+    override-kwokctl-envs:
+    - name: OPTIMIZE_MODE
+      value: all_synch
+    - name: SOLVER_PYTHON_TIMEOUT
+      value: 10s

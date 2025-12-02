@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # test_runner.py
 
-import sys, copy, shutil, argparse, math, time, random, \
-    csv, json, logging, yaml, subprocess, traceback, shlex
+import sys, shutil, argparse, math, time, random, csv, json, logging, yaml, subprocess, traceback, shlex
 from argparse import BooleanOptionalAction
 from importlib import metadata as importlib_metadata
 from dataclasses import dataclass
-from typing import Optional, Tuple, List, Dict, Any, Mapping, Iterable
+from typing import Optional, Tuple, List, Dict, Any
 from collections import namedtuple, Counter
 from pathlib import Path
 from urllib import request as _urlreq, error as _urlerr
@@ -23,7 +22,7 @@ from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml, ensure_namespace, ensure_service_account, ensure_priority_classes, wait_rs_pods,
 )
 from scripts.helpers.kwok_helpers import (
-    yaml_kwok_pod, yaml_kwok_rs, ensure_kwok_cluster, create_kwok_nodes, kwok_pods_cap,
+    yaml_kwok_pod, yaml_kwok_rs, ensure_kwok_cluster, create_kwok_nodes, kwok_pods_cap, merge_kwokctl_envs,
 )
 from scripts.helpers.cluster_stats import (
     stat_snapshot,
@@ -264,7 +263,7 @@ class TestRunner:
                 str(self.kwokctl_config_doc.get("apiVersion", "")).startswith("config.kwok.x-k8s.io/")):
             raise SystemExit(f"{kwokctl_path}: expected a KwokctlConfiguration document")
         if override_kwokctl_envs:
-            self.kwokctl_config_doc = self._merge_kwokctl_envs(self.kwokctl_config_doc, override_kwokctl_envs)
+            self.kwokctl_config_doc = merge_kwokctl_envs(self.kwokctl_config_doc, override_kwokctl_envs)
         kwokctl_envs = self._get_kwokctl_envs(self.kwokctl_config_doc)
         if kwokctl_envs:
             self.log_kwokctl_envs(kwokctl_envs)
@@ -972,7 +971,7 @@ class TestRunner:
         jf_clean_start              = coerce_bool(job.get("clean-start"), default=None)
         jf_re_run_seeds             = coerce_bool(job.get("re-run-seeds"), default=None)
         jf_log_level                = get_str(job.get("log-level"))
-        jf_default_scheduler        = get_str(job.get("default-scheduler"))
+        jf_default_scheduler        = coerce_bool(job.get("default-scheduler"), default=None)
 
         jf_seed                     = job.get("seed")
         jf_seed_file                = get_str(job.get("seed-file"))
@@ -1016,7 +1015,7 @@ class TestRunner:
             args.save_scheduler_logs = jf_save_scheduler_logs
         if getattr(args, "log_level", None) is None and jf_log_level:
             args.log_level = jf_log_level
-        if getattr(args, "default_scheduler", None) is None and jf_default_scheduler:
+        if getattr(args, "default_scheduler", None) is None and jf_default_scheduler is not None:
             args.default_scheduler = jf_default_scheduler
         if getattr(args, "solver_trigger", None) is None and jf_solver_trigger is not None:
             args.solver_trigger = jf_solver_trigger
@@ -1026,38 +1025,6 @@ class TestRunner:
             args.re_run_seeds = jf_re_run_seeds
 
         return args, {"workload_config": jf_override_workload_config, "kwokctl_envs": jf_override_kwokctl_envs}
-
-    @staticmethod
-    def _merge_kwokctl_envs(doc: dict, add_envs: Iterable[Mapping[str, Any]] | None, component: str = "kube-scheduler") -> dict:
-        """
-        Return a copy of `doc` with extraEnvs for `component` merged by env 'name'.
-        - Items in `add_envs` override/insert existing envs.
-        - Ensures componentsPatches and the component entry exist.
-        - Sorts components and envs by name for stability.
-        """
-        d = copy.deepcopy(doc) if isinstance(doc, dict) else {}
-        # Normalize inputs
-        add = [
-            e for e in (add_envs or [])
-            if isinstance(e, Mapping) and e.get("name")
-        ]
-        if not add:
-            return d
-        # Ensure componentsPatches is a list of dicts
-        cps = [c for c in (d.get("componentsPatches") or []) if isinstance(c, dict)]
-        d["componentsPatches"] = cps  # normalize back on the copy
-        # Get or create the target component patch
-        comp = next((c for c in cps if c.get("name") == component), None)
-        if comp is None:
-            comp = {"name": component}
-            cps.append(comp)
-        # Merge by name
-        cur = [e for e in (comp.get("extraEnvs") or []) if isinstance(e, dict) and e.get("name")]
-        env_by_name = {e["name"]: copy.deepcopy(e) for e in cur}
-        env_by_name.update({e["name"]: copy.deepcopy(e) for e in add})
-        comp["extraEnvs"] = [env_by_name[k] for k in sorted(env_by_name)]
-        cps.sort(key=lambda c: c.get("name", ""))
-        return d
 
     @staticmethod
     def _get_kwokctl_envs(doc: dict, component: str = "kube-scheduler") -> dict[str, object] | None:

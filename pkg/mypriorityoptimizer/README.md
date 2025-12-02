@@ -913,22 +913,106 @@ The evaluation pipeline is thus unchanged; only the **trace generator** has been
 
 ```bash
 python -m scripts.kwok_trace_replayer.trace_generator \
-  --output-dir trace \
+  --output-dir data/traces/arr_10s_life_660s \
   --num-nodes 16 \
-  --mean-cpu 0.134 --xmin-cpu 0.05 --xmax-cpu 0.4 \
-  --mean-mem 0.134 --xmin-mem 0.05 --xmax-mem 0.4 \
+  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
+  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
   --mean-arrival 10.0 --xmin-arrival 0.001 --xmax-arrival 60.0 \
-  --mean-life 500.0 --xmin-life 10.0 --xmax-life 1800.0 \
+  --mean-life 660.0 --xmin-life 60.0 --xmax-life 3600.0 \
   --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
   --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
-  --seed 2 \
+  --seed 42 \
   --log-level INFO \
-  --trace-time 6h
+  --trace-time 12h
+```
+
+```bash
+python -m scripts.kwok_trace_replayer.trace_generator \
+  --output-dir data/traces/arr_20s_life_1300s \
+  --num-nodes 16 \
+  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
+  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
+  --mean-arrival 20.0 --xmin-arrival 0.001 --xmax-arrival 120.0 \
+  --mean-life 1300.0 --xmin-life 300.0 --xmax-life 3600.0 \
+  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
+  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
+  --seed 42 \
+  --log-level INFO \
+  --trace-time 12h
+```
+
+```bash
+python -m scripts.kwok_trace_replayer.trace_generator \
+  --output-dir data/traces/arr_30s_life_2000s \
+  --num-nodes 16 \
+  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
+  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
+  --mean-arrival 30.0 --xmin-arrival 0.001 --xmax-arrival 120.0 \
+  --mean-life 2000.0 --xmin-life 60.0 --xmax-life 3600.0 \
+  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
+  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
+  --seed 42 \
+  --log-level INFO \
+  --trace-time 12h
+```
+
+```bash
+python -m scripts.kwok_trace_replayer.trace_generator \
+  --output-dir data/traces/arr_60s_life_5000s \
+  --num-nodes 16 \
+  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
+  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
+  --mean-arrival 60.0 --xmin-arrival 0.001 --xmax-arrival 190.0 \
+  --mean-life 5000.0 --xmin-life 600.0 --xmax-life 10000.0 \
+  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
+  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
+  --seed 42 \
+  --log-level INFO \
+  --trace-time 12h
 ```
 
 ```bash
 python -m scripts.kwok_trace_replayer.trace_replayer \
-  --trace-dir trace \
+  --trace-dir data/traces/arr_10s_life_660s \
+  --cluster-name kwok1 \
+  --kwok-runtime binary \
+  --kwokctl-config-file data/configs-kwokctl/default.yaml \
+  --namespace trace \
+  --node-cpu 1000m \
+  --node-mem 1Gi \
+  --monitor-interval 1.0 \
+  --log-level INFO
+```
+
+```bash
+python -m scripts.kwok_trace_replayer.trace_replayer \
+  --trace-dir data/traces/arr_20s_life_1300s \
+  --cluster-name kwok1 \
+  --kwok-runtime binary \
+  --kwokctl-config-file data/configs-kwokctl/default.yaml \
+  --namespace trace \
+  --node-cpu 1000m \
+  --node-mem 1Gi \
+  --monitor-interval 1.0 \
+  --log-level INFO
+```
+
+```bash
+python -m scripts.kwok_trace_replayer.trace_replayer \
+  --trace-dir data/traces/arr_30s_life_2000s \
+  --cluster-name kwok1 \
+  --kwok-runtime binary \
+  --kwokctl-config-file data/configs-kwokctl/default.yaml \
+  --namespace trace \
+  --node-cpu 1000m \
+  --node-mem 1Gi \
+  --monitor-interval 1.0 \
+  --log-level INFO
+```
+
+```bash
+python -m scripts.kwok_trace_replayer.trace_replayer \
+  --trace-dir data/traces/arr_60s_life_5000s \
   --cluster-name kwok1 \
   --kwok-runtime binary \
   --kwokctl-config-file data/configs-kwokctl/default.yaml \

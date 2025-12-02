@@ -5,7 +5,7 @@ import argparse, csv, json, logging, threading, time, yaml
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Any
 
 from scripts.helpers.general_helpers import (
     setup_logging,
@@ -18,6 +18,7 @@ from scripts.helpers.general_helpers import (
     log_field_fmt,
     build_cli_cmd,
     write_info_file,
+    get_str,
 )
 from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml,
@@ -31,6 +32,7 @@ from scripts.helpers.kwok_helpers import (
     create_kwok_nodes,
     ensure_kwok_cluster,
     kwok_pods_cap,
+    merge_kwokctl_envs,
 )
 from scripts.kwok_trace_replayer.trace_helpers import (
     TraceRecord,
@@ -70,25 +72,30 @@ def build_argparser() -> argparse.ArgumentParser:
         )
     )
 
-    # Trace directory
-    p.add_argument("--trace-dir", dest="trace_dir", required=True,
+    # Job file (optional)
+    p.add_argument("--job-file", dest="job_file", default=None,
+        help="Path to a YAML job file describing the trace replay job (trace-dir, kwokctl-config-file, overrides, ...).",
+    )
+
+    # Trace directory (can come from CLI or job-file)
+    p.add_argument("--trace-dir", dest="trace_dir", required=False, default=None,
         help="Directory containing trace.json from trace_generator.py",
     )
 
     # Cluster / KWOK options
-    p.add_argument("--cluster-name", dest="cluster_name", default="kwok1",
-        help="KWOK cluster name (kwokctl --name) (default: kwok1)",
+    p.add_argument("--cluster-name", dest="cluster_name", default=None,
+        help="KWOK cluster name (kwokctl --name) (default: kwok1).",
     )
-    p.add_argument("--kwok-runtime", dest="kwok_runtime", choices=["binary", "docker"], default="binary",
-        help="KWOK runtime (default: binary)",
+    p.add_argument("--kwok-runtime", dest="kwok_runtime", choices=["binary", "docker"], default=None,
+        help="KWOK runtime (default: binary).",
     )
-    p.add_argument("--kwokctl-config-file", dest="kwokctl_config_file", required=True,
+    p.add_argument("--kwokctl-config-file", dest="kwokctl_config_file", required=False, default=None,
         help="KwokctlConfiguration YAML used to create the KWOK cluster.",
     )
-    p.add_argument("--namespace", dest="namespace", default="trace",
-        help="Kubernetes namespace in which to create pods (default: trace)",
+    p.add_argument("--namespace", dest="namespace", default=None,
+        help="Kubernetes namespace in which to create pods (default: trace).",
     )
-    p.add_argument("--node-cpu", dest="node_cpu", default="1000m",
+    p.add_argument("--node-cpu", dest="node_cpu", default=None,
         help=(
             "Per-node CPU capacity as a Kubernetes quantity. "
             "The trace stores CPU as a fraction of one node; this flag defines what "
@@ -97,7 +104,7 @@ def build_argparser() -> argparse.ArgumentParser:
             "Default: 1000m (≈1 core)."
         ),
     )
-    p.add_argument("--node-mem", dest="node_mem", default="1Gi",
+    p.add_argument("--node-mem", dest="node_mem", default=None,
         help=(
             "Per-node memory capacity as a Kubernetes quantity. "
             "The trace stores memory as a fraction of one node; this flag defines what "
@@ -108,16 +115,97 @@ def build_argparser() -> argparse.ArgumentParser:
     )
 
     # Monitoring
-    p.add_argument("--monitor-interval", dest="monitor_interval", type=float, default=1.0,
+    p.add_argument("--monitor-interval", dest="monitor_interval", type=float, default=None,
         help="Monitor sampling interval in seconds (default: 1.0).",
     )
 
     # Logging
-    p.add_argument("--log-level", dest="log_level", default="INFO",
+    p.add_argument("--log-level", dest="log_level", default=None,
         help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO).",
     )
 
     return p
+
+def merge_job_fields_into_args(
+    args: argparse.Namespace,
+    job: Dict[str, Any],
+) -> tuple[argparse.Namespace, List[Dict[str, Any]]]:
+    """
+    Merge job-file fields into args.
+    CLI has priority: we only fill fields that are currently None.
+    Returns (args, override_kwokctl_envs).
+    """
+    jf_trace_dir            = get_str(job.get("trace-dir"))
+    jf_cluster_name         = get_str(job.get("cluster-name"))
+    jf_kwok_runtime         = get_str(job.get("kwok-runtime"))
+    jf_kwokctl_config_file  = get_str(job.get("kwokctl-config-file"))
+    jf_namespace            = get_str(job.get("namespace"))
+    jf_node_cpu             = get_str(job.get("node-cpu"))
+    jf_node_mem             = get_str(job.get("node-mem"))
+    jf_monitor_interval     = job.get("monitor-interval")
+    jf_log_level            = get_str(job.get("log-level"))
+    jf_override_kwokctl_envs = job.get("override-kwokctl-envs") or []
+
+    if getattr(args, "trace_dir", None) is None and jf_trace_dir:
+        args.trace_dir = jf_trace_dir
+    if getattr(args, "cluster_name", None) is None and jf_cluster_name:
+        args.cluster_name = jf_cluster_name
+    if getattr(args, "kwok_runtime", None) is None and jf_kwok_runtime:
+        args.kwok_runtime = jf_kwok_runtime
+    if getattr(args, "kwokctl_config_file", None) is None and jf_kwokctl_config_file:
+        args.kwokctl_config_file = jf_kwokctl_config_file
+    if getattr(args, "namespace", None) is None and jf_namespace:
+        args.namespace = jf_namespace
+    if getattr(args, "node_cpu", None) is None and jf_node_cpu:
+        args.node_cpu = jf_node_cpu
+    if getattr(args, "node_mem", None) is None and jf_node_mem:
+        args.node_mem = jf_node_mem
+    if getattr(args, "log_level", None) is None and jf_log_level:
+        args.log_level = jf_log_level
+    if getattr(args, "monitor_interval", None) is None and jf_monitor_interval is not None:
+        try:
+            args.monitor_interval = float(jf_monitor_interval)
+        except Exception:
+            pass
+
+    return args, jf_override_kwokctl_envs
+
+
+def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
+    """
+    Final defaults + sanity checks after we've merged job-file and CLI.
+    """
+    if getattr(args, "cluster_name", None) is None:
+        args.cluster_name = "kwok1"
+    if getattr(args, "kwok_runtime", None) is None:
+        args.kwok_runtime = "binary"
+    if getattr(args, "namespace", None) is None:
+        args.namespace = "trace"
+    if getattr(args, "node_cpu", None) is None:
+        args.node_cpu = "1000m"
+    if getattr(args, "node_mem", None) is None:
+        args.node_mem = "1Gi"
+    if getattr(args, "monitor_interval", None) is None:
+        args.monitor_interval = 1.0
+    if getattr(args, "log_level", None) is None:
+        args.log_level = "INFO"
+    if getattr(args, "job_file", None) is None:
+        args.job_file = None
+
+    # Required: trace_dir + kwokctl_config_file (from CLI or job-file)
+    if not getattr(args, "trace_dir", None):
+        raise SystemExit("--trace-dir (or trace-dir in job-file) is required")
+    if not getattr(args, "kwokctl_config_file", None):
+        raise SystemExit("--kwokctl-config-file (or kwokctl-config-file in job-file) is required")
+
+    trace_dir = Path(args.trace_dir).resolve()
+    if not trace_dir.exists():
+        raise SystemExit(f"--trace-dir not found: {trace_dir}")
+    kwok_cfg = Path(args.kwokctl_config_file).resolve()
+    if not kwok_cfg.exists():
+        raise SystemExit(f"--kwokctl-config-file not found: {kwok_cfg}")
+
+    return args
 
 #######################################################################
 # TraceReplayer class
@@ -126,8 +214,15 @@ class TraceReplayer:
     """
     Replay a trace on a KWOK cluster and monitor utilization.
     """
-    def __init__(self, args: argparse.Namespace) -> None:
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        job_doc: Dict[str, Any] | None = None,
+        override_kwokctl_envs: List[Dict[str, Any]] | None = None,
+    ) -> None:
         self.args = args
+        self.job_doc: Dict[str, Any] = job_doc or {}
+        self.override_kwokctl_envs: List[Dict[str, Any]] = list(override_kwokctl_envs or [])
 
         # Base directory containing trace.json and other artifacts
         self.base_dir: Path = Path(args.trace_dir).resolve()
@@ -154,12 +249,12 @@ class TraceReplayer:
         self.prio_by_identity: Dict[str, int] = {} # pod identity -> priority
         
         # Write metadata bundle
-        LOG.info("logging arguments and git info to output_dir...")
+        LOG.info("logging arguments and git info to trace_dir...")
         self._write_info_file()
         
         # Log args
         self.log_args()
-
+    
     ##############################################
     # ------------ Info/logging helpers ----------
     ##############################################
@@ -177,6 +272,7 @@ class TraceReplayer:
             ("node_mem", self.args.node_mem),
             ("monitor_interval", self.args.monitor_interval),
             ("log_level", self.args.log_level),
+            ("job_file", getattr(self.args, "job_file", None)),
         ]
         pad = max(len(k) for k, _ in fields)
         lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
@@ -192,10 +288,13 @@ class TraceReplayer:
             out_path = self.base_dir / "info_replayer.yaml"
             meta_extra = {
                 "kind": "trace_replayer",
+                "job_file": getattr(self.args, "job_file", None),
+                "kwokctl_config_file": self.args.kwokctl_config_file,
             }
             inputs = {
                 "cli-cmd": build_cli_cmd(),
                 "args": {k: v for k, v in vars(self.args).items()},
+                "job": self.job_doc or {},
             }
             write_info_file(
                 out_path,
@@ -449,8 +548,6 @@ class TraceReplayer:
             pod_name = meta.get("name", "")
             node_name = spec.get("nodeName", "") or ""
             phase = status.get("phase", "")
-            pc_name = spec.get("priorityClassName")
-            prio = int(pc_name[1:])
             
             if phase == "Running":
                 pods_running.append((pod_name, node_name))
@@ -577,6 +674,11 @@ class TraceReplayer:
         kwok_cfg_path = Path(self.args.kwokctl_config_file).resolve()
         with open(kwok_cfg_path, "r", encoding="utf-8") as f:
             config_doc = yaml.safe_load(f) or {}
+
+        # Apply override-kwokctl-envs from job-file, if any
+        if self.override_kwokctl_envs:
+            config_doc = merge_kwokctl_envs(config_doc, self.override_kwokctl_envs)
+
         ensure_kwok_cluster(
             logger=LOG,
             cluster_name=self.args.cluster_name,
@@ -637,8 +739,32 @@ class TraceReplayer:
 ###############################################
 def main() -> None:
     args = build_argparser().parse_args()
+
+    job_doc: Dict[str, Any] | None = None
+    override_kwokctl_envs: List[Dict[str, Any]] = []
+
+    # If a job-file is provided, load it and merge into args
+    if getattr(args, "job_file", None):
+        job_path = Path(args.job_file)
+        if not job_path.exists():
+            raise SystemExit(f"--job-file not found: {job_path}")
+        try:
+            with open(job_path, "r", encoding="utf-8") as f:
+                job_doc = yaml.safe_load(f) or {}
+            if not isinstance(job_doc, dict):
+                raise SystemExit(f"--job-file must be a YAML mapping/object, got {type(job_doc).__name__}")
+        except Exception as e:
+            raise SystemExit(f"--job-file parse error for {job_path}: {e}")
+        args, override_kwokctl_envs = merge_job_fields_into_args(args, job_doc)
+
+    # Fill defaults + sanity checks (trace_dir, kwokctl_config_file, ...)
+    args = ensure_default_args(args)
+
+    # Setup logging using final log-level
     setup_logging(name="trace-replayer", prefix="[trace-replayer] ", level=args.log_level)
-    replayer = TraceReplayer(args)
+
+    # TraceReplayer instance
+    replayer = TraceReplayer(args, job_doc=job_doc, override_kwokctl_envs=override_kwokctl_envs)
     replayer.run()
 
 if __name__ == "__main__":

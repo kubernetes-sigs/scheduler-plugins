@@ -1,0 +1,7 @@
+trace-dir: data/traces/arr_20s_life_1300s
+kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+override-kwokctl-envs:
+  - name: OPTIMIZE_MODE
+    value: all_synch
+  - name: SOLVER_PYTHON_TIMEOUT
+    value: 10s
