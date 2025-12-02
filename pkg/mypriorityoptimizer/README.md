@@ -1049,6 +1049,7 @@ python -m scripts.kwok_trace_replayer.trace_replayer \
 
 #### Now TODOs
 
+- We need either to reduce plan timeout or make the plugin able to detect not having planned pods and skip planning in that case.
 - Finish the implementation of the live cluster simulator by line-by-line study of the code.
 - Run 3 different traces with different utilizations (e.g., 0.9, 0.95, 1.0) and see how our scheduler performs compared to default scheduler.
 - Update Vagrant so it works after having moved files around.
