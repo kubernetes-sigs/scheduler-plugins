@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
             "Plot per-priority cumulative runtime curves from one or more "
-            "trace-monitor CSV files as a grid of subplots (one priority per subplot).\n\n"
+            "results CSV files as a grid of subplots (one priority per subplot).\n\n"
             "Each CSV contributes one line per subplot; this is suitable for "
             "comparing multiple schedulers or configurations."
         )
@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "csvs",
         nargs="+",
-        help="One or more trace-monitor CSV files.",
+        help="One or more results CSV files.",
     )
     p.add_argument(
         "--labels",
@@ -107,7 +107,7 @@ def main() -> None:
     if not prios:
         raise SystemExit(
             f"No 'prio*_run_time_s' columns found in {csv_paths[0]}. "
-            "Did you pass the correct trace-monitor CSV?"
+            "Did you pass the correct results CSV?"
         )
 
     # Ensure all other CSVs have the required columns

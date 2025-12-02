@@ -29,6 +29,7 @@
     - ['Live' Cluster Simulator](#live-cluster-simulator)
     - [Unit and Integration Tests](#unit-and-integration-tests)
       - [Python: Unit Tests](#python-unit-tests)
+      - [Go: Unit Tests](#go-unit-tests)
   - [Analysis](#analysis)
   - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
   - [Cluster Simulator](#cluster-simulator)
@@ -40,9 +41,9 @@
     - [6. Evaluation and scoring](#6-evaluation-and-scoring)
     - [7. Example commands](#7-example-commands)
   - [TODOs](#todos)
+    - [Now TODOs](#now-todos)
     - [TODOs: Next Meeting 8/12](#todos-next-meeting-812)
     - [TODO: 'Live' Cluster Simulator](#todo-live-cluster-simulator)
-      - [Now TODOs](#now-todos)
       - [Design](#design)
         - [Other Approaches](#other-approaches)
     - [TODOs: Solver](#todos-solver)
@@ -570,6 +571,14 @@ Many Python scripts has been made and are stored under `scripts/`. For testing t
 pytest
 ```
 
+#### Go: Unit Tests
+
+```bash
+go test ./pkg/mypriorityoptimizer -coverprofile=go_coverage.out # run tests and collect coverage to file 'coverage.out'
+go tool cover -func=go_coverage.out # print coverage summary
+go tool cover -html=go_coverage.out -o coverage/go/coverage.html # write HTML report
+```
+
 ## Analysis
 
 Analyzed results are placed under `analysis/`. They assume the layout shown in [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs); if yours differs, code changes may be needed.
@@ -1035,7 +1044,39 @@ python -m scripts.kwok_trace_replayer.trace_replayer \
   --log-level INFO
 ```
 
+```bash
+python -m scripts.kwok_trace_replayer.trace_generator \
+  --output-dir data/traces/arr_10s_life_2000s \
+  --num-nodes 8 \
+  --mean-cpu 0.2 --xmin-cpu 0.1 --xmax-cpu 0.3 \
+  --mean-mem 0.2 --xmin-mem 0.1 --xmax-mem 0.3 \
+  --mean-arrival 30.0 --xmin-arrival 0.001 --xmax-arrival 120.0 \
+  --mean-life 2000.0 --xmin-life 60.0 --xmax-life 3600.0 \
+  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
+  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
+  --seed 42 \
+  --log-level INFO \
+  --trace-time 5m
+```
+
 ## TODOs
+
+### Now TODOs
+
+- Maybe i neee to check for if has bern tried scheduled
+
+- Find 3 traces at køre i ucloud over 3 timer og send eksempel til Jacopo
+- Fæddigør Implementation og Experiements
+- Læs DCM artikel og ret til. Jacopo mente at jeg bør nævne hvordan den adskiller sig fra vores
+- Implementer free time mode
+- Skriv tests til Plugin (mest vigtigt), dernæst python kode her især python solver
+- Lav plan for resten af tiden frem mod sommeren
+
+- We need either to reduce plan timeout or make the plugin able to detect not having planned pods and skip planning in that case.
+- Finish the implementation of the live cluster simulator by line-by-line study of the code.
+- Run 3 different traces with different utilizations (e.g., 0.9, 0.95, 1.0) and see how our scheduler performs compared to default scheduler.
+- Update Vagrant so it works after having moved files around.
+- Find en smartere måde at referere til plot funktionen fra `plots.py` vi benytter i `trace_generator.py`.
 
 ### TODOs: Next Meeting 8/12
 
@@ -1046,14 +1087,6 @@ python -m scripts.kwok_trace_replayer.trace_replayer \
 - PhD is possibly first in the end of 2026, however another PhD is at June it sounds.
 
 ### TODO: 'Live' Cluster Simulator
-
-#### Now TODOs
-
-- We need either to reduce plan timeout or make the plugin able to detect not having planned pods and skip planning in that case.
-- Finish the implementation of the live cluster simulator by line-by-line study of the code.
-- Run 3 different traces with different utilizations (e.g., 0.9, 0.95, 1.0) and see how our scheduler performs compared to default scheduler.
-- Update Vagrant so it works after having moved files around.
-- Find en smartere måde at referere til plot funktionen fra `plots.py` vi benytter i `trace_generator.py`.
 
 #### Design
 
@@ -1154,6 +1187,7 @@ at each tick $t_i$:
 
 ### TODOs: Later
 
+- Check that we are using the words pending and unschedulable pods correctly. In the code, I think we are often checking for pending pods, however, sometimes it would be more correct to check for unschedulable pods.
 - Try updating to latest upstream version.
   - Check for compatibility issues.
   - Check if kubectl, kwokctl, etc. versions need to be updated as well to make it work.
@@ -1161,6 +1195,11 @@ at each tick $t_i$:
 ## Questions
 
 ### Open Questions
+
+- How to run the live-cluster tests.
+  - solver-modes, solver-timeout, solver-interval, trace-length, #nodes, ~#pods, ~util, priorities
+- Is my way of evaluating fine?
+- 
 
 ### Closed Questions
 

@@ -72,6 +72,11 @@ def build_argparser() -> argparse.ArgumentParser:
         )
     )
 
+    # Result directory
+    p.add_argument("--result-dir", dest="result_dir", required=False, default=None,
+        help="Directory where replay results (e.g., trace-monitor.csv) are written.",
+    )
+
     # Job file (optional)
     p.add_argument("--job-file", dest="job_file", default=None,
         help="Path to a YAML job file describing the trace replay job (trace-dir, kwokctl-config-file, overrides, ...).",
@@ -144,6 +149,7 @@ def merge_job_fields_into_args(
     jf_node_mem             = get_str(job.get("node-mem"))
     jf_monitor_interval     = job.get("monitor-interval")
     jf_log_level            = get_str(job.get("log-level"))
+    jf_result_dir           = get_str(job.get("result-dir"))
     jf_override_kwokctl_envs = job.get("override-kwokctl-envs") or []
 
     if getattr(args, "trace_dir", None) is None and jf_trace_dir:
@@ -167,9 +173,10 @@ def merge_job_fields_into_args(
             args.monitor_interval = float(jf_monitor_interval)
         except Exception:
             pass
+    if getattr(args, "result_dir", None) is None and jf_result_dir:
+        args.result_dir = jf_result_dir
 
     return args, jf_override_kwokctl_envs
-
 
 def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
     """
@@ -197,6 +204,8 @@ def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
         raise SystemExit("--trace-dir (or trace-dir in job-file) is required")
     if not getattr(args, "kwokctl_config_file", None):
         raise SystemExit("--kwokctl-config-file (or kwokctl-config-file in job-file) is required")
+    if not getattr(args, "result_dir", None):
+        raise SystemExit("--result-dir (or result-dir in job-file) is required")
 
     trace_dir = Path(args.trace_dir).resolve()
     if not trace_dir.exists():
@@ -204,6 +213,9 @@ def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
     kwok_cfg = Path(args.kwokctl_config_file).resolve()
     if not kwok_cfg.exists():
         raise SystemExit(f"--kwokctl-config-file not found: {kwok_cfg}")
+
+    # We *create* result-dir later in TraceReplayer; here we just normalize it.
+    args.result_dir = str(Path(args.result_dir).resolve())
 
     return args
 
@@ -227,9 +239,11 @@ class TraceReplayer:
         # Base directory containing trace.json and other artifacts
         self.base_dir: Path = Path(args.trace_dir).resolve()
         self.trace_path: Path = self.base_dir / "trace.json"
-        self.results_dir: Path = self.base_dir / "results"
-        self.results_dir.mkdir(parents=True, exist_ok=True) # ensure results directory exists
-        self.monitor_path = self.results_dir / "trace-monitor.csv"
+
+        # Result directory (required; normalized in ensure_default_args)
+        self.results_dir: Path = Path(self.args.result_dir).resolve()
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.monitor_path = self.results_dir / "results.csv"
         
         # Will be filled by load_trace
         self.pods: List[TraceRecord] = []
@@ -271,6 +285,7 @@ class TraceReplayer:
             ("node_cpu", self.args.node_cpu),
             ("node_mem", self.args.node_mem),
             ("monitor_interval", self.args.monitor_interval),
+            ("result_dir", getattr(self.args, "result_dir", None)),
             ("log_level", self.args.log_level),
             ("job_file", getattr(self.args, "job_file", None)),
         ]
