@@ -40,6 +40,16 @@ SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
 
 SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
 
+# Runner selection: test_runner (default) or trace_replayer
+RUNNER="${RUNNER:-test_runner}"
+
+# Extra config for trace_replayer
+TRACE_DIR="${TRACE_DIR:-}"                       # can be relative to CONTENT_DIR
+KWOKCTL_CONFIG_FILE="${KWOKCTL_CONFIG_FILE:-}"  # can be relative to CONTENT_DIR
+NODE_CPU="${NODE_CPU:-}"
+NODE_MEM="${NODE_MEM:-}"
+MONITOR_INTERVAL="${MONITOR_INTERVAL:-}"
+
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 
@@ -96,12 +106,15 @@ resolve_paths_relative_to_folder() {
   SEED_FILE="$(to_abs_under_folder "$SEED_FILE")"
   JOB_FILE="$(to_abs_under_folder "$JOB_FILE")"
   REPO_DIR="$(to_abs_under_folder "$REPO_DIR")"
+  TRACE_DIR="$(to_abs_under_folder "$TRACE_DIR")"
+  KWOKCTL_CONFIG_FILE="$(to_abs_under_folder "$KWOKCTL_CONFIG_FILE")"
 }
 
 print_cfg() {
   log cfg "BUILD_SCHEDULER=${BUILD_SCHEDULER}"
   log cfg "CONTENT_DIR=${CONTENT_DIR}"
   log cfg "KWOK_RUNTIME=${KWOK_RUNTIME}"
+  log cfg "RUNNER=${RUNNER}"
   if [ -n "${JOB_FILE}" ]; then
     log cfg "JOB_FILE=${JOB_FILE:-<unset>}"
   else
@@ -137,6 +150,11 @@ print_cfg() {
   else
     log cfg "SAVE_SCHEDULER_LOGS=<unset>"
   fi
+  log cfg "TRACE_DIR=${TRACE_DIR:-<unset>}"
+  log cfg "KWOKCTL_CONFIG_FILE=${KWOKCTL_CONFIG_FILE:-<unset>}"
+  log cfg "NODE_CPU=${NODE_CPU:-<unset>}"
+  log cfg "NODE_MEM=${NODE_MEM:-<unset>}"
+  log cfg "MONITOR_INTERVAL=${MONITOR_INTERVAL:-<unset>}"
   if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "docker" ]; then
     log cfg "IMAGE_REMOTE_TAG=${IMAGE_REMOTE_TAG}"
   fi
@@ -295,44 +313,88 @@ stage_test() {
   log init "KWOK test starting"
   resolve_paths_relative_to_folder
   print_cfg
-  run_root "'${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_workload_once/requirements.txt'"
 
-  # Build flags to forward to test_runner.py
-  local passthru; passthru="$(build_passthrough_flags)"
-
-  # Build the argv list once, only adding args the user actually set
-  local args=()
-  [ -n "${KWOK_RUNTIME:-}"          ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
-  [ -n "${CLUSTER_NAME:-}"          ] && args+=( --cluster-name "${CLUSTER_NAME}" )
-  [ -n "${CONFIG_FILE:-}"           ] && args+=( --config-file "${CONFIG_FILE}" )
-  [ -n "${RESULTS_DIR:-}"           ] && args+=( --results-dir "${RESULTS_DIR}" )
-  [ -n "${SEED_FILE:-}"             ] && args+=( --seed-file "${SEED_FILE}" )
-  [ -n "${SEED:-}"                  ] && args+=( --seed "${SEED}" )
-  [ -n "${REPEATS:-}"               ] && args+=( --repeats "${REPEATS}" )
-  [ -n "${LOG_LEVEL:-}"             ] && args+=( --log-level "${LOG_LEVEL}" )
-  [ -n "${JOB_FILE:-}"              ] && args+=( --job-file "${JOB_FILE}" )
-  [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ] && args+=( --seeds-not-all-running "${SEEDS_NOT_ALL_RUNNING}" )
-  [ -n "${DEFAULT_SCHEDULER:-}"    ] && args+=( --default-scheduler "${DEFAULT_SCHEDULER}" )
-
-  # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --clean-start, --pause)
-  # shellcheck disable=SC2206
-  local pass_flags=( ${passthru} )
-  args+=( "${pass_flags[@]}" )
-
-  # Quote the entire argv safely for a nested bash -lc
-  local quoted_args=""
-  if ((${#args[@]})); then
-    printf -v quoted_args '%q ' "${args[@]}"
-  fi
-
-  # Run the tests
+  # Install per-runner requirements if present
   run_root "
-    cd '${CONTENT_DIR}' && \
-    { [ '${KWOK_RUNTIME}' != 'binary' ] || chmod +x './bin/kube-scheduler'; } && \
-    '${VENV_DIR}/bin/python' -m scripts.kwok_workload_once.test_runner ${quoted_args}
+    set -euo pipefail
+    if [ -f '${CONTENT_DIR}/scripts/kwok_workload_once/requirements.txt' ]; then
+      '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_workload_once/requirements.txt'
+    fi
+    if [ -f '${CONTENT_DIR}/scripts/kwok_trace_replayer/requirements.txt' ]; then
+      '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_trace_replayer/requirements.txt'
+    fi
   "
 
-  log ok "test done"
+  case "${RUNNER}" in
+    trace_replayer)
+      log init "running trace_replayer"
+      # Build args for trace_replayer
+      local tr_args=()
+      [ -n "${KWOK_RUNTIME:-}"         ] && tr_args+=( --kwok-runtime "${KWOK_RUNTIME}" )
+      [ -n "${CLUSTER_NAME:-}"         ] && tr_args+=( --cluster-name "${CLUSTER_NAME}" )
+      [ -n "${TRACE_DIR:-}"            ] && tr_args+=( --trace-dir "${TRACE_DIR}" )
+      [ -n "${KWOKCTL_CONFIG_FILE:-}"  ] && tr_args+=( --kwokctl-config-file "${KWOKCTL_CONFIG_FILE}" )
+      [ -n "${NODE_CPU:-}"             ] && tr_args+=( --node-cpu "${NODE_CPU}" )
+      [ -n "${NODE_MEM:-}"             ] && tr_args+=( --node-mem "${NODE_MEM}" )
+      [ -n "${MONITOR_INTERVAL:-}"     ] && tr_args+=( --monitor-interval "${MONITOR_INTERVAL}" )
+      [ -n "${LOG_LEVEL:-}"            ] && tr_args+=( --log-level "${LOG_LEVEL}" )
+      [ -n "${JOB_FILE:-}"             ] && tr_args+=( --job-file "${JOB_FILE}" )
+
+      local tr_quoted=""
+      if ((${#tr_args[@]})); then
+        printf -v tr_quoted '%q ' "${tr_args[@]}"
+      fi
+
+      run_root "
+        cd '${CONTENT_DIR}' && \
+        { [ '${KWOK_RUNTIME}' != 'binary' ] || chmod +x './bin/kube-scheduler'; } && \
+        '${VENV_DIR}/bin/python' -m scripts.kwok_trace_replayer.trace_replayer ${tr_quoted}
+      "
+      log ok "trace_replayer done"
+      ;;
+
+    test_runner|*)
+      log init "running test_runner (default)"
+
+      # Build flags to forward to test_runner.py
+      local passthru; passthru="$(build_passthrough_flags)"
+
+      # Build the argv list once, only adding args the user actually set
+      local args=()
+      [ -n "${KWOK_RUNTIME:-}"          ] && args+=( --kwok-runtime "${KWOK_RUNTIME}" )
+      [ -n "${CLUSTER_NAME:-}"          ] && args+=( --cluster-name "${CLUSTER_NAME}" )
+      [ -n "${CONFIG_FILE:-}"           ] && args+=( --config-file "${CONFIG_FILE}" )
+      [ -n "${RESULTS_DIR:-}"           ] && args+=( --results-dir "${RESULTS_DIR}" )
+      [ -n "${SEED_FILE:-}"             ] && args+=( --seed-file "${SEED_FILE}" )
+      [ -n "${SEED:-}"                  ] && args+=( --seed "${SEED}" )
+      [ -n "${REPEATS:-}"               ] && args+=( --repeats "${REPEATS}" )
+      [ -n "${LOG_LEVEL:-}"             ] && args+=( --log-level "${LOG_LEVEL}" )
+      [ -n "${JOB_FILE:-}"              ] && args+=( --job-file "${JOB_FILE}" )
+      [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ] && args+=( --seeds-not-all-running "${SEEDS_NOT_ALL_RUNNING}" )
+      [ -n "${DEFAULT_SCHEDULER:-}"    ] && args+=( --default-scheduler "${DEFAULT_SCHEDULER}" )
+      [ -n "${KWOKCTL_CONFIG_FILE:-}"  ] && args+=( --kwokctl-config-file "${KWOKCTL_CONFIG_FILE}" )
+
+      # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --clean-start, --pause)
+      # shellcheck disable=SC2206
+      local pass_flags=( ${passthru} )
+      args+=( "${pass_flags[@]}" )
+
+      # Quote the entire argv safely for a nested bash -lc
+      local quoted_args=""
+      if ((${#args[@]})); then
+        printf -v quoted_args '%q ' "${args[@]}"
+      fi
+
+      # Run the tests
+      run_root "
+        cd '${CONTENT_DIR}' && \
+        { [ '${KWOK_RUNTIME}' != 'binary' ] || chmod +x './bin/kube-scheduler'; } && \
+        '${VENV_DIR}/bin/python' -m scripts.kwok_workload_once.test_runner ${quoted_args}
+      "
+
+      log ok "test_runner done"
+      ;;
+  esac
 }
 
 ##################### Args and Dispatch #####################
@@ -362,6 +424,12 @@ FLAGS_SPEC=(
   "pause|PAUSE|flag|--pause"
   "log-level|LOG_LEVEL|value|"
   "default-scheduler|DEFAULT_SCHEDULER|flag|--default-scheduler"
+  "runner|RUNNER|value|"
+  "trace-dir|TRACE_DIR|value|"
+  "kwokctl-config-file|KWOKCTL_CONFIG_FILE|value|"
+  "node-cpu|NODE_CPU|value|"
+  "node-mem|NODE_MEM|value|"
+  "monitor-interval|MONITOR_INTERVAL|value|"
 )
 
 get_spec_field() { # usage: get_spec_field "<name>" <idx>

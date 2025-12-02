@@ -16,17 +16,19 @@
     cd /home/vagrant/bootstrap
     find . -type f -name '*.sh' -print0 | xargs -0 -r sed -i 's/\r$//'
     /usr/bin/env bash ./bootstrap.sh all \
+      --runner trace_replayer \
       --build-scheduler=false \
       --content-dir /home/vagrant/bootstrap/content \
       --cluster-name kwok1 \
       --kwok-runtime binary \
-      --results-dir data/results/a \
-      --job-file data/jobs/tmp/job-file_10_40.csv \
-      --trigger-optimizer true \
+      --results-dir results/trace/test \
+      --job-file data/jobs/trace/test/test_123.yaml \
+      --solver-trigger true \
       --save-solver-stats true \
       --save-scheduler-logs true \
       --re-run-seeds true \
       --clean-start true \
+      --monitor-interval 2
   SHELL
 end
 
