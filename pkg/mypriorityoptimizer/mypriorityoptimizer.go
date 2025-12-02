@@ -56,9 +56,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	klog.InfoS("Solver configuration", solverConfigArgs()...)
 
 	// Start HTTP server for manual triggering
-	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualAllSynch() {
-		go pl.startHTTPServer(ctx, HTTPAddr)
-	}
+	go pl.startHTTPServer(ctx, HTTPAddr)
 
 	return pl, nil
 }

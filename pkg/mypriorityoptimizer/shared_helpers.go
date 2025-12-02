@@ -1,4 +1,4 @@
-// shared_types.go
+// shared_helpers.go
 
 package mypriorityoptimizer
 

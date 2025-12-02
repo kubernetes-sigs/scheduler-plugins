@@ -8,8 +8,8 @@ import (
 
 func TestGetenv(t *testing.T) {
 	t.Run("returns existing value", func(t *testing.T) {
-		t.Setenv("MPO_TEST_KEY", "value")
-		got := getenv("MPO_TEST_KEY", "default")
+		t.Setenv("TEST_KEY", "value")
+		got := getenv("TEST_KEY", "default")
 		if got != "value" {
 			t.Fatalf("getenv() = %q, want %q", got, "value")
 		}
@@ -17,15 +17,15 @@ func TestGetenv(t *testing.T) {
 
 	t.Run("returns default when unset", func(t *testing.T) {
 		// no Setenv -> env var is unset
-		got := getenv("MPO_UNSET_KEY", "default")
+		got := getenv("UNSET_KEY", "default")
 		if got != "default" {
 			t.Fatalf("getenv() = %q, want %q", got, "default")
 		}
 	})
 
 	t.Run("returns default when set to empty string", func(t *testing.T) {
-		t.Setenv("MPO_EMPTY_KEY", "")
-		got := getenv("MPO_EMPTY_KEY", "default")
+		t.Setenv("EMPTY_KEY", "")
+		got := getenv("EMPTY_KEY", "default")
 		if got != "default" {
 			t.Fatalf("getenv() with empty value = %q, want %q", got, "default")
 		}

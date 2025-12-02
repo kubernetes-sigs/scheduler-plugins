@@ -15,6 +15,10 @@ const (
 	ModeAllAsynch
 	// ModeManualAllSynch is the same as ModeAllSynch but only triggers manual optimization via HTTP.
 	ModeManualAllSynch
+	// ModeFreeTimeSynch indicates we optimize during free time when no new pods are arriving, synchronously.
+	ModeFreeTimeSynch
+	// ModeFreeTimeAsynch indicates we optimize during free time when no new pods are arriving, asynchronously.
+	ModeFreeTimeAsynch
 )
 
 // Stage indicates which stage of scheduling we are in.

@@ -1063,27 +1063,20 @@ python -m scripts.kwok_trace_replayer.trace_generator \
 
 ### Now TODOs
 
-- Maybe i neee to check for if has bern tried scheduled
-
-- Find 3 traces at køre i ucloud over 3 timer og send eksempel til Jacopo
-- Fæddigør Implementation og Experiements
-- Læs DCM artikel og ret til. Jacopo mente at jeg bør nævne hvordan den adskiller sig fra vores
-- Implementer free time mode
+- Test the new free time mode.
+- Find 3 traces to run in ucloud over 12 hours and send example to Jacopo
+- Write Implementation and Experiments sections of the report
+- Read DCM article and revise. Jacopo suggested that I should clarify how it differs from ours.
+- Consider to redefine how we distinguish between modes
 - Skriv tests til Plugin (mest vigtigt), dernæst python kode her især python solver
 - Lav plan for resten af tiden frem mod sommeren
-
-- We need either to reduce plan timeout or make the plugin able to detect not having planned pods and skip planning in that case.
-- Finish the implementation of the live cluster simulator by line-by-line study of the code.
-- Run 3 different traces with different utilizations (e.g., 0.9, 0.95, 1.0) and see how our scheduler performs compared to default scheduler.
-- Update Vagrant so it works after having moved files around.
-- Find en smartere måde at referere til plot funktionen fra `plots.py` vi benytter i `trace_generator.py`.
 
 ### TODOs: Next Meeting 8/12
 
 - Read the DCM paper from SoA to understand their workload generation using Azure traces and check how workloads/jobs arrives in average using paper "Large-scale cluster management at Google with Borg"
 - Make the Live Cluster Simulator
 - Write the "Implementation" section of the report.
-- Add a new mode that uses the freetime while no pods are arriving to optimize the cluster in the background (same as all_asynch mode however, with unlimited time until new pod arrives).
+- Add the new freetime mode.
 - PhD is possibly first in the end of 2026, however another PhD is at June it sounds.
 
 ### TODO: 'Live' Cluster Simulator

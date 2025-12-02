@@ -29,26 +29,11 @@ func (pl *SharedState) periodicLoop(ctx context.Context) {
 				klog.InfoS(msg(strategy, InfoCachesNotWarmedUp), "nextIn", interval)
 				continue
 			}
-			pods, _ := pl.getPods()
-			pendingCount := countPendingPods(pods)
-			klog.InfoS(msg(strategy, InfoCycleStarted), "pendingPods", pendingCount)
+			klog.InfoS(msg(strategy, InfoCycleStarted))
 			// no singlePod in periodic modes
 			pl.runFlow(context.Background(), nil)
 			timer.Reset(interval)
 			klog.InfoS(msg(strategy, InfoCycleNextRun), "in", interval)
 		}
-	}
-}
-
-// startLoops launches background loops exactly once, after caches are warm.
-// It is safe to call multiple times; only the first call does anything.
-func (pl *SharedState) startLoops(ctx context.Context) {
-	if !pl.CachesWarm.Load() {
-		return
-	}
-	if optimizeAllSynch() || optimizeAllAsynch() {
-		go pl.periodicLoop(ctx)
-	} else if optimizeEvery() && optimizeAtPreEnqueue() {
-		go pl.nudgeBlockedLoop(ctx)
 	}
 }

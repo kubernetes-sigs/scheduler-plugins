@@ -5,7 +5,7 @@ package mypriorityoptimizer
 // ======= Optimality where/when settings =======
 
 // OptimizeMode is the frequency at which optimization is performed.
-// Choices: "every", "all_synch", "all_asynch"
+// Choices: "every", "all_synch", "all_asynch", "manual_all_synch", "freetime_synch", "freetime_asynch"
 var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_MODE", "all_synch"))
 
 // OptimizeHookStage is the action point that triggers optimization.
@@ -18,6 +18,12 @@ var OptimizeInterval = parseTime(getenv("OPTIMIZE_INTERVAL", "30s"))
 
 // OptimizeInitialDelay is the initial delay before the first optimization run.
 var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "15s"))
+
+// OptimizeFreeTimeDelay is the duration of idle time (no new pods arriving) before triggering freetime optimization.
+var OptimizeFreeTimeDelay = parseTime(getenv("OPTIMIZE_FREE_TIME_DELAY", "2s"))
+
+// OptimizeFreeTimeCheckInterval is the interval at which to check for free time conditions.
+var OptimizeFreeTimeCheckInterval = parseTime(getenv("OPTIMIZE_FREE_TIME_CHECK_INTERVAL", "2s"))
 
 // Address the HTTP server should listen on (only used in ModeManual, ModeAllSynch, ModeAllAsynch).
 // Only works on a KWOK cluster if running with binary runtime.

@@ -86,7 +86,11 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 	}
 
 	// 4) Activate planned pending (if applicable for the current mode)
-	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualAllSynch() {
+	//
+	// Global modes (All*, ManualAll*, FreeTime*) all operate on the accumulated
+	// pending set, so we activate planned pending pods here.
+	if optimizeAllSynch() || optimizeAllAsynch() || optimizeManualAllSynch() ||
+		optimizeFreeTimeSynch() || optimizeFreeTimeAsynch() {
 		pl.activatePlannedPending(plan, pods)
 	}
 

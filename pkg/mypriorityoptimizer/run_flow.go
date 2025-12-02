@@ -17,10 +17,10 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	strategy := strategyToString()
 
 	// Periodic-sync/Per-pod: take Active early.
-	// Periodic-async: take Active later.
-	if !optimizeAllAsynch() {
+	// Async modes: take Active later.
+	if !optimizeAsync() {
 		if !pl.tryEnterActive() {
-			klog.V(MyV).InfoS(msg(strategy, InfoActivePlanInProgress))
+			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
 			return nil, nil, "", nil, nil, ErrActiveInProgress
 		}
 	}
@@ -60,8 +60,8 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoImprovingSolutionFromAnySolver
 	}
 
-	// Periodic-async: take Active now that we know it is worth applying the plan.
-	if optimizeAllAsynch() {
+	// Async modes: take Active now that we know it is worth applying the plan.
+	if optimizeAsync() {
 		if !pl.tryEnterActive() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
 			pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrActiveInProgress.Error())

@@ -300,7 +300,7 @@ class TraceReplayer:
         Write info_replayer.yaml in base_dir with git + CLI + args.
         """
         try:
-            out_path = self.base_dir / "info_replayer.yaml"
+            out_path = self.results_dir / "info_replayer.yaml"
             meta_extra = {
                 "kind": "trace_replayer",
                 "job_file": getattr(self.args, "job_file", None),
@@ -540,7 +540,7 @@ class TraceReplayer:
     ##############################################
     # ------------ Monitor helpers ---------------
     ##############################################
-    def _snapshot_from_pods(self, ns: str) -> tuple[float, float, List[tuple[str, str]], int]:
+    def _snapshot_from_pods(self, ns: str) -> tuple[float, float, List[tuple[str, str]], List[str]]:
         """
         Build a snapshot directly from pods:
         Returns:
@@ -548,14 +548,15 @@ class TraceReplayer:
             mem_run_util:   fraction of total cluster memory capacity requested by running pods
             pods_running:   list of (pod_name, node_name) for running pods
             unsched_count:  total number of Pending pods
+            pending_pods:   list of pod names that are Pending
         """
         pods_json = get_json_ctx(self.ctx, ["-n", ns, "get", "pods", "-o", "json"])
         items = pods_json.get("items", []) or []
         total_cpu_m = 0
         total_mem_b = 0
         pods_running: List[tuple[str, str]] = []
-        unsched_count = 0
-        
+        pending_pods: List[str] = []
+
         for pod in items:
             meta = pod.get("metadata", {}) or {}
             spec = pod.get("spec", {}) or {}
@@ -563,7 +564,7 @@ class TraceReplayer:
             pod_name = meta.get("name", "")
             node_name = spec.get("nodeName", "") or ""
             phase = status.get("phase", "")
-            
+
             if phase == "Running":
                 pods_running.append((pod_name, node_name))
                 # Sum resource requests of all containers
@@ -574,17 +575,17 @@ class TraceReplayer:
                     mem_q = res.get("memory")
                     total_cpu_m += qty_to_mcpu_int(cpu_q)
                     total_mem_b += qty_to_bytes_int(mem_q)
-            
+
             elif phase == "Pending":
-                unsched_count += 1
+                pending_pods.append(pod_name)
 
         # Compute utilization relative to known cluster capacity
         cpu_capacity_m = self.num_nodes * self.node_cpu_m
         mem_capacity_b = self.num_nodes * self.node_mem_b
         cpu_run_util = (total_cpu_m / cpu_capacity_m) if cpu_capacity_m > 0 else 0.0
         mem_run_util = (total_mem_b / mem_capacity_b) if mem_capacity_b > 0 else 0.0
-        
-        return cpu_run_util, mem_run_util, pods_running, unsched_count
+
+        return cpu_run_util, mem_run_util, pods_running, pending_pods
 
     def _monitor_loop(
         self,
@@ -607,50 +608,118 @@ class TraceReplayer:
             interval_s,
         )
 
-        prio_runtime: Dict[int, float] = {p: 0.0 for p in range(1, max_prio + 1)} # cumulative pod-seconds per priority level
-        last_seen_running_ts: Dict[str, float] = {} # last timestamp at which we saw this pod running
+        # cumulative pod-seconds per priority level
+        prio_runtime: Dict[int, float] = {p: 0.0 for p in range(1, max_prio + 1)}
+        # last timestamp at which we saw this pod running
+        last_seen_running_ts: Dict[str, float] = {}
 
         with open(out_csv, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
-            header = ["wall_time_s", "sim_time_s", "cpu_run_util", "mem_run_util", "running_count", "unsched_count"]
+            header = [
+                "timestamp",
+                "wall_time_s",
+                "sim_time_s",
+                "cpu_run_util",
+                "mem_run_util",
+                "running_count",
+                "unsched_count",
+                "running_by_prio",
+                "unsched_by_prio",
+            ]
+            # keep per-priority runtime columns
             header.extend([f"prio{p}_run_time_s" for p in range(1, max_prio + 1)])
             writer.writerow(header)
 
             while not stop_event.is_set():
                 loop_start = time.time()
                 try:
-                    cpu_run_util, mem_run_util, pods_running, unsched_cnt = self._snapshot_from_pods(namespace)
+                    (
+                        cpu_run_util,
+                        mem_run_util,
+                        pods_running,
+                        pending_pods,
+                    ) = self._snapshot_from_pods(namespace)
                 except Exception as e:
                     LOG.warning("monitor: snapshot_from_pods failed: %s", e)
                     time.sleep(interval_s)
                     continue
-                now_abs = time.time()
+
+                now_abs     = time.time()
+                real_ts     = get_timestamp()
                 wall_time_s = now_abs - start_wall_time
-                sim_time_s = sim_t0 + wall_time_s
+                sim_time_s  = sim_t0 + wall_time_s
                 running_cnt = len(pods_running)
+                unsched_cnt = len(pending_pods)
                 running_pods: set[str] = set()
-                
-                # Integrate runtime per priority level
-                for pod_name, _node_name in pods_running:
-                    running_pods.add(pod_name)
+
+                # Per-priority counts (running and unscheduled) for this tick
+                running_by_prio: Dict[str, int] = {f"p{p}": 0 for p in range(1, max_prio + 1)}
+                unsched_by_prio: Dict[str, int] = {f"p{p}": 0 for p in range(1, max_prio + 1)}
+
+                # Helper: map pod name -> identity (ReplicaSet name) and priority
+                def get_pod_prio(pod_name: str) -> int | None:
+                    # Our identities are the RS names (e.g. "rs-000001").
+                    # Pods are typically "rs-000001-<hash>-<index>" or "rs-000001-<something>".
+                    identity = pod_name
                     if "-" in pod_name:
                         identity, _suffix = pod_name.rsplit("-", 1)
                     prio = prio_by_identity.get(identity)
+                    if prio is None:
+                        return None
+                    if prio < 1 or prio > max_prio:
+                        return None
+                    return prio
+
+                # Integrate runtime per priority level and count running per prio
+                for pod_name, _node_name in pods_running:
+                    running_pods.add(pod_name)
+                    prio = get_pod_prio(pod_name)
+                    if prio is not None:
+                        key = f"p{prio}"
+                        if key in running_by_prio:
+                            running_by_prio[key] += 1
+
                     prev_ts = last_seen_running_ts.get(pod_name)
-                    if prev_ts is None: # first time we see this pod in Running: just remember the timestamp; don't backfill.
+                    if prev_ts is None:
                         last_seen_running_ts[pod_name] = now_abs
                         continue
                     delta = max(0.0, now_abs - prev_ts)
                     last_seen_running_ts[pod_name] = now_abs
-                    prio_runtime[prio] += delta
+
+                    if prio is not None and prio in prio_runtime:
+                        prio_runtime[prio] += delta
 
                 # Drop pods that are no longer Running from the cache
                 for name in list(last_seen_running_ts.keys()):
                     if name not in running_pods:
                         del last_seen_running_ts[name]
 
-                row = [f"{wall_time_s:.3f}", f"{sim_time_s:.3f}", f"{cpu_run_util:.6f}", f"{mem_run_util:.6f}", running_cnt, unsched_cnt]
+                # Count unscheduled per priority (from Pending pods)
+                for pod_name in pending_pods:
+                    prio = get_pod_prio(pod_name)
+                    if prio is not None:
+                        key = f"p{prio}"
+                        if key in unsched_by_prio:
+                            unsched_by_prio[key] += 1
+
+                # Serialize running_by_prio and unsched_by_prio as JSON strings
+                running_dict_str = json.dumps(running_by_prio, separators=(",", ":"), sort_keys=True)
+                unsched_dict_str = json.dumps(unsched_by_prio, separators=(",", ":"), sort_keys=True)
+
+                # Build CSV row matching header
+                row: list[Any] = [
+                    real_ts,
+                    f"{wall_time_s:.3f}",
+                    f"{sim_time_s:.3f}",
+                    f"{cpu_run_util:.6f}",
+                    f"{mem_run_util:.6f}",
+                    running_cnt,
+                    unsched_cnt,
+                    running_dict_str,
+                    unsched_dict_str,
+                ]
                 row.extend(f"{prio_runtime[p]:.6f}" for p in range(1, max_prio + 1))
+
                 writer.writerow(row)
                 f.flush()
 

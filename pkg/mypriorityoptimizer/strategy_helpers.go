@@ -21,6 +21,21 @@ func optimizeAllAsynch() bool { return OptimizeMode == ModeAllAsynch }
 // optimizeManual collects like AllSynch but only optimizes when HTTP endpoint is called.
 func optimizeManualAllSynch() bool { return OptimizeMode == ModeManualAllSynch }
 
+// optimizeFreeTimeSynch optimizes all pods, but only when the queue has been
+// quiescent for OptimizeFreeTimeDelay.
+func optimizeFreeTimeSynch() bool { return OptimizeMode == ModeFreeTimeSynch }
+
+// optimizeFreeTimeAsynch optimizes all pods in the background when the queue has
+// been quiescent for OptimizeFreeTimeDelay.
+func optimizeFreeTimeAsynch() bool { return OptimizeMode == ModeFreeTimeAsynch }
+
+// optimizeAsync is true for all "async" modes where we:
+//   - collect pods at PostFilter, and
+//   - take Active later (after we know a plan is worthwhile).
+func optimizeAsync() bool {
+	return OptimizeMode == ModeAllAsynch || OptimizeMode == ModeFreeTimeAsynch
+}
+
 // optimizeAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
 func optimizeAtPreEnqueue() bool { return OptimizeHookStage == StagePreEnqueue }
 
@@ -45,15 +60,16 @@ func strategyToString() string {
 		return "AllAsynch" // At is ignored
 	case ModeManualAllSynch:
 		a = "ManualAllSynch"
+	case ModeFreeTimeSynch:
+		a = "FreeTimeSynch"
+	case ModeFreeTimeAsynch:
+		return "FreeTimeAsynch" // At is ignored
 	default:
 		a = "AllSynch"
 	}
 	b := "PreEnqueue"
 	if optimizeAtPostFilter() {
 		b = "PostFilter"
-	}
-	if OptimizeMode == ModeAllAsynch {
-		return a
 	}
 	return fmt.Sprintf("%s/%s", a, b)
 }
@@ -69,16 +85,21 @@ func parseOptimizeMode(s string) OptimizeModeType {
 		return ModeAllAsynch
 	case "manual_all_synch":
 		return ModeManualAllSynch
+	case "freetime_synch":
+		return ModeFreeTimeSynch
+	case "freetime_asynch":
+		return ModeFreeTimeAsynch
 	default:
-		klog.InfoS("Unknown ENV: OPTIMIZE_CADENCE value; defaulting to 'batch'", "value", s)
+		klog.InfoS("Unknown ENV: OPTIMIZE_MODE value; defaulting to 'all_synch'", "value", s)
 		return ModeAllSynch
 	}
 }
 
 // parseOptimizeHookStage parses an optimization "at" string and returns the corresponding OptimizationAtMode.
 func parseOptimizeHookStage(s string) StageType {
-	if optimizeAllAsynch() {
-		return StagePostFilter // in AllAsynch mode, we always collect pods at PostFilter
+	// In async modes, we always collect pods at PostFilter and ignore the env.
+	if optimizeAsync() {
+		return StagePostFilter
 	}
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "preenqueue":
@@ -98,18 +119,25 @@ func (pl *SharedState) decideStrategy(stage StageType) StrategyDecision {
 		return DecideBlock
 	}
 
-	// Modes: AllSynch@PreEnqueue or AllSynch@PostFilter - always set pods to pending
-	if (optimizeAllSynch() || optimizeManualAllSynch()) && ((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
+	// Modes: AllSynch/ManualAllSynch/FreeTimeSynch @ PreEnqueue/PostFilter
+	// -> always accumulate pods (keep them pending), actual optimization is
+	//    driven by periodicLoop (All*) or freetimeLoop (FreeTime*).
+	if (optimizeAllSynch() || optimizeManualAllSynch() || optimizeFreeTimeSynch()) &&
+		((optimizeAtPreEnqueue() && stage.atPreEnqueue()) ||
+			(optimizeAtPostFilter() && stage.atPostFilter())) {
 		return DecideProcessLater
 	}
 
-	// Mode: AllAsynch - always set pods to pending in PostFilter
-	if optimizeAllAsynch() && stage.atPostFilter() {
+	// Modes: AllAsynch or FreeTimeAsynch @ PostFilter
+	// -> always accumulate pods in PostFilter; async loops trigger optimization.
+	if optimizeAsync() && stage.atPostFilter() {
 		return DecideProcessLater
 	}
 
 	// Modes: Every@PreEnqueue or Every@PostFilter - optimize for every new pod
-	if optimizeEvery() && ((optimizeAtPreEnqueue() && stage.atPreEnqueue()) || (optimizeAtPostFilter() && stage.atPostFilter())) {
+	if optimizeEvery() &&
+		((optimizeAtPreEnqueue() && stage.atPreEnqueue()) ||
+			(optimizeAtPostFilter() && stage.atPostFilter())) {
 		return DecideProcess // optimize for every new pod
 	}
 
