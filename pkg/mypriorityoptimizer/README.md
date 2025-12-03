@@ -1063,6 +1063,7 @@ python -m scripts.kwok_trace_replayer.trace_generator \
 
 ### Now TODOs
 
+- Doesnt seems that our check for already solved solutions in the plugin works. Need to debug.
 - Test the new free time mode.
   - We should run the solver after cluster has settled for some time, e.g. 2 seconds. The solver should be run in async mode to allow normal scheduling and should be stopped if a new pod arrives - just throw away this try.
 - Find 3 traces to run in ucloud over 12 hours and send example to Jacopo
