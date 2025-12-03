@@ -44,7 +44,7 @@ func TestParseBool(t *testing.T) {
 		{"FALSE uppercase", "FALSE", false},
 		{"numeric 1", "1", true},
 		{"numeric 0", "0", false},
-		{"invalid -> false", "notabool", false}, // strconv.ParseBool returns error, v stays false
+		{"invalid -> false", "notabool", false}, // we are okay with returning false on invalid input
 		{"empty -> false", "", false},
 	}
 
@@ -125,11 +125,11 @@ func TestParseFloat(t *testing.T) {
 			want:   3.0,
 		},
 		{
-			name:   "invalid parse uses zero then clamp to lower bound",
+			name:   "invalid parse uses zero",
 			in:     "notafloat",
 			lLimit: 0.2,
 			uLimit: 0.8,
-			want:   0.2,
+			want:   0.0,
 		},
 		{
 			name:   "invalid parse with non-positive lower bound uses zero",

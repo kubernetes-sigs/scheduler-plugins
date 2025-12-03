@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"k8s.io/klog/v2"
 )
 
 // getenv retrieves the value of an environment variable or returns a default value.
@@ -18,19 +20,31 @@ func getenv(key, def string) string {
 
 // parseBool parses a boolean string and returns the corresponding bool value.
 func parseBool(s string) bool {
-	v, _ := strconv.ParseBool(s)
+	v, err := strconv.ParseBool(s)
+	if err != nil { // we are okay with returning false on invalid input
+		klog.ErrorS(err, "parseBool: invalid boolean string; returning false", "input", s)
+		return false
+	}
 	return v
 }
 
 // parseInt parses an integer string and returns the corresponding int value.
 func parseInt(s string) int {
-	v, _ := strconv.Atoi(s)
+	v, err := strconv.Atoi(s)
+	if err != nil { // we are okay with returning 0 on invalid input
+		klog.ErrorS(err, "parseInt: invalid integer string; returning 0", "input", s)
+		return 0
+	}
 	return v
 }
 
 // parseFloat parses a float string and returns the corresponding float64 value.
 func parseFloat(s string, lLimit float64, uLimit float64) float64 {
-	v, _ := strconv.ParseFloat(s, 64)
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil { // we are okay with returning 0 on invalid input
+		klog.ErrorS(err, "parseFloat: invalid float string; returning 0", "input", s)
+		return 0
+	}
 	if v < lLimit {
 		return lLimit
 	}
@@ -42,8 +56,10 @@ func parseFloat(s string, lLimit float64, uLimit float64) float64 {
 
 // parseTime parses a duration string and returns the corresponding time.Duration.
 func parseTime(s string) time.Duration {
-	if d, err := time.ParseDuration(s); err == nil {
-		return d
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		klog.ErrorS(err, "parseTime: invalid duration string; returning 0", "input", s)
+		return 0
 	}
-	return 0
+	return d
 }
