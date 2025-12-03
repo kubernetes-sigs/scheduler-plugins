@@ -335,12 +335,13 @@ class TraceReplayer:
     def load_trace(self) -> None:
         """Load trace JSON and populate pods, max_prio, t_min, trace_time, meta."""
         if not self.trace_path.exists():
-            raise FileNotFoundError(f"Trace file not found: {self.trace_path} "
+            raise FileNotFoundError(
+                f"Trace file not found: {self.trace_path} "
                 f"(expected trace.json inside --trace-dir={self.base_dir})"
             )
         with open(self.trace_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
-        
+
         meta = raw.get("meta", {}) or {}
         records = raw.get("pods", []) or []
 
@@ -348,23 +349,42 @@ class TraceReplayer:
         pods: List[TraceRecord] = []
         max_prio = 0
         t_min = float("inf")
-        trace_time = 0.0
+        trace_time = 0.0  # from events
 
         # Run through records and parse them into TraceRecord objects
         for rec in records:
-            
-            id_val      = int(rec["id"])
-            start       = float(rec["start_time"])
-            end         = float(rec["end_time"])
-            cpu         = float(rec["cpu"])
-            mem         = float(rec["mem"])
-            prio        = int(rec.get("priority"))
-            replicas    = int(rec.get("replicas"))
-            max_prio    = max(max_prio, prio)
-            t_min       = min(t_min, start)
-            trace_time  = max(trace_time, end)
-            
-            pods.append(TraceRecord(id=id_val, start_time=start, end_time=end, cpu=cpu, mem=mem, priority=prio, replicas=replicas))
+            id_val   = int(rec["id"])
+            start    = float(rec["start_time"])
+            end      = float(rec["end_time"])
+            cpu      = float(rec["cpu"])
+            mem      = float(rec["mem"])
+            prio     = int(rec.get("priority"))
+            replicas = int(rec.get("replicas"))
+
+            max_prio   = max(max_prio, prio)
+            t_min      = min(t_min, start)
+            trace_time = max(trace_time, end)
+
+            pods.append(
+                TraceRecord(
+                    id=id_val,
+                    start_time=start,
+                    end_time=end,
+                    cpu=cpu,
+                    mem=mem,
+                    priority=prio,
+                    replicas=replicas,
+                )
+            )
+
+        # Prefer the trace horizon from meta if provided: "trace_time_s"
+        meta_trace_time = meta.get("trace_time_s")
+        if meta_trace_time is not None:
+            try:
+                trace_time = float(meta_trace_time)
+            except (TypeError, ValueError):
+                # keep the max(end_time) fallback
+                pass
 
         LOG.info("loaded %d pods from %s (t_min=%.3f, trace_time=%.3f, max_priority=%d)",
             len(pods),
@@ -427,24 +447,78 @@ class TraceReplayer:
     def _replay_events(self, namespace: str, start_wall_time: float, sim_t0: float) -> None:
         """
         Replay events against the cluster.
+
+        We respect a global trace horizon self.trace_time (usually meta['trace_time_s']):
+        - All events with sim_time_s <= trace_time are executed.
+        - If the next batch would be after trace_time, we instead sleep until the
+          corresponding wall time for trace_time and then exit.
+        - If there are no more events but trace_time is still in the future,
+          we also sleep until trace_time before finishing.
         """
         header, footer = make_header_footer("TRACE REPLAY")
-        LOG.info(
-            "\n%s\nstart_wall=%s sim_t0=%.3f\n%s",
+        LOG.info("\n%s\nstart_wall=%s sim_t0=%.3f trace_end_s=%.3f\n%s",
             header,
             get_timestamp(),
             sim_t0,
+            self.trace_time,
             footer,
         )
+
         events = self.events
-        idx = 0
         num_events = len(events)
+        trace_end_s = float(self.trace_time)
+
+        def sleep_until(reason: str) -> None:
+            """Sleep so that simulated time reaches trace_end_s, if still ahead."""
+            if trace_end_s <= sim_t0:
+                # Degenerate / misconfigured case; nothing to sleep for.
+                LOG.info("trace_end_s=%.3f <= sim_t0=%.3f; no extra sleep (%s)",
+                    trace_end_s,
+                    sim_t0,
+                    reason,
+                )
+                return
+            target_wall_end = start_wall_time + max(0.0, trace_end_s - sim_t0)
+            now = time.time()
+            sleep_s = max(0.0, target_wall_end - now)
+            if sleep_s > 0:
+                LOG.info("sleeping %.3fs to reach trace_end_s=%.3f (reason=%s)",
+                    sleep_s,
+                    trace_end_s,
+                    reason,
+                )
+                time.sleep(sleep_s)
+            else:
+                LOG.info("trace_end_s=%.3f already reached in wall time (reason=%s); no sleep",
+                    trace_end_s,
+                    reason,
+                )
+
+        # No events at all: just wait until trace_end_s (if in the future) and exit.
+        if num_events == 0:
+            LOG.info("no events in trace; only aligning to trace_end_s=%.3f", trace_end_s)
+            sleep_until("no-events")
+            return
+
+        idx = 0
         executor = ThreadPoolExecutor(max_workers=MAX_REPLAY_WORKERS)
         futures: List[Future] = []
+        reached_end_sleep = False
+
         try:
             while idx < num_events:
                 # Current batch timestamp (trace time)
                 current_t = events[idx].sim_time_s
+
+                # If the *next* batch is beyond the allowed horizon, align to end and exit.
+                if current_t > trace_end_s:
+                    LOG.info("next batch sim_t=%.3f is beyond trace_end_s=%.3f; no more events will be replayed",
+                        current_t,
+                        trace_end_s,
+                    )
+                    sleep_until("next-batch-after-end")
+                    reached_end_sleep = True
+                    break
 
                 # Collect all events with exactly this sim_time
                 batch_events: List[Event] = []
@@ -456,7 +530,7 @@ class TraceReplayer:
                 target_wall = start_wall_time + max(0.0, current_t - sim_t0)
 
                 # Sleep until that wall time
-                now_before = time.time() # now_before means "before executing batch"
+                now_before = time.time()  # before executing batch
                 sleep_s = max(0.0, target_wall - now_before)
                 if sleep_s > 0:
                     time.sleep(sleep_s)
@@ -466,11 +540,9 @@ class TraceReplayer:
                 deletes = [ev for ev in batch_events if ev.kind == "delete"]
 
                 # Logging
-                now_after = time.time() # now_after means "right after sleep / just before submitting kubectl calls"
+                now_after = time.time()  # right after sleep / just before kubectl calls
                 batch_drift = now_after - target_wall
-                LOG.info(
-                    "TIME DRIFT batch @ sim_t=%.3f: target_wall=%.3f actual_wall=%.3f drift=%.6fs "
-                    "(creates=%d deletes=%d)",
+                LOG.info("TIME DRIFT batch @ sim_t=%.3f: target_wall=%.3f actual_wall=%.3f drift=%.6fs (creates=%d deletes=%d)",
                     current_t,
                     target_wall - start_wall_time,
                     now_after - start_wall_time,
@@ -497,8 +569,7 @@ class TraceReplayer:
                         mem=ev.mem_str,
                         pc=ev.pc_name,
                     )
-                    LOG.info(
-                        "CREATE @ sim_t=%.3f: rs=%s (id=%d) replicas=%d cpu=%s mem=%s pc=%s",
+                    LOG.info("CREATE @ sim_t=%.3f: rs=%s (id=%d) replicas=%d cpu=%s mem=%s pc=%s",
                         ev.sim_time_s,
                         rs_name,
                         ev.record_id,
@@ -523,11 +594,23 @@ class TraceReplayer:
                     )
                     fut = executor.submit(delete_rs, LOG, self.ctx, namespace, rs_name)
                     futures.append(fut)
-                
-                LOG.info("batch done @ sim_t=%.3f submitted: creates=%d deletes=%d", current_t, len(creates), len(deletes))
-            
+
+                LOG.info("batch done @ sim_t=%.3f submitted: creates=%d deletes=%d",
+                    current_t,
+                    len(creates),
+                    len(deletes),
+                )
+
+            # If we processed all events but haven't explicitly aligned to trace_end_s yet,
+            # we may still need to wait until the end of the trace.
+            if not reached_end_sleep:
+                LOG.info("all events <= trace_end_s=%.3f processed; aligning to trace end if needed",
+                    trace_end_s,
+                )
+                sleep_until("after-last-batch")
+
             LOG.info("all events processed; waiting for kubectl tasks to finish...")
-        
+
         finally:
             for fut in futures:
                 try:
