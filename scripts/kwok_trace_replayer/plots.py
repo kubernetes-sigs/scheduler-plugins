@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 import argparse
 import math
 from pathlib import Path
@@ -9,6 +7,7 @@ from typing import List, Tuple
 import pandas as pd
 import matplotlib.pyplot as plt
 
+TIME_COL = "wall_time_s"
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -32,12 +31,6 @@ def parse_args() -> argparse.Namespace:
             "Optional labels for each CSV (same order as csvs). "
             "If omitted, the filename stem is used."
         ),
-    )
-    p.add_argument(
-        "--xcol",
-        default="wall_time_s",
-        choices=["wall_time_s", "sim_time_s"],
-        help="X-axis column to use (default: wall_time_s).",
     )
     p.add_argument(
         "--out",
@@ -100,8 +93,8 @@ def main() -> None:
 
     # Use the first CSV to detect priorities
     df0 = dfs[0]
-    if args.xcol not in df0.columns:
-        raise SystemExit(f"Column {args.xcol!r} not found in {csv_paths[0]}")
+    if TIME_COL not in df0.columns:
+        raise SystemExit(f"Column {TIME_COL!r} not found in {csv_paths[0]}")
 
     prios = detect_priority_columns(df0)
     if not prios:
@@ -111,7 +104,7 @@ def main() -> None:
         )
 
     # Ensure all other CSVs have the required columns
-    required_cols = [args.xcol] + [col for _, col in prios]
+    required_cols = [TIME_COL] + [col for _, col in prios]
     for p, df in zip(csv_paths, dfs):
         missing = [c for c in required_cols if c not in df.columns]
         if missing:
@@ -119,17 +112,34 @@ def main() -> None:
                 f"CSV {p} is missing required columns: {', '.join(missing)}"
             )
 
+    # Compute global y-range across all priorities and CSVs
+    global_ymin = 0.0
+    global_ymax = 0.0
+    for df in dfs:
+        for _, col in prios:
+            col_max = df[col].max()
+            if pd.notna(col_max) and math.isfinite(col_max):
+                global_ymax = max(global_ymax, float(col_max))
+    if global_ymax <= 0:
+        # Fallback so the plots don't collapse if everything is zero.
+        global_ymax = 1.0
+
     # Layout: grid of subplots, one per priority
     n_prios = len(prios)
-    ncols = min(3, n_prios)
+    ncols = min(6, n_prios)  # up to 6 columns
     nrows = math.ceil(n_prios / ncols)
 
-    fig_width = 4 * ncols
-    fig_height = 3 * nrows
+    # Smaller individual plots
+    per_col_width = 2.2
+    per_row_height = 2.0
+    fig_width = per_col_width * ncols
+    fig_height = per_row_height * nrows
+
     fig, axes = plt.subplots(
         nrows=nrows,
         ncols=ncols,
         sharex=True,
+        sharey=True,  # enforce same y-scale everywhere
         figsize=(fig_width, fig_height),
     )
 
@@ -143,18 +153,28 @@ def main() -> None:
         ax = axes_list[idx]
 
         for df, label in zip(dfs, labels):
-            x = df[args.xcol].values
+            x = df[TIME_COL].values
             y = df[col].values
             # Let matplotlib handle colors; just fix line width.
             ax.plot(x, y, label=label, linewidth=1.5)
 
-        ax.set_title(f"Priority {prio}")
+        ax.set_title(f"Priority {prio}", fontsize=9)
         ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+        ax.set_ylim(global_ymin, global_ymax*1.05)
 
+        # Make tick labels smaller
+        ax.tick_params(axis="both", labelsize=6)
+
+        # Only first column shows y-axis label and tick labels
         if idx % ncols == 0:
-            ax.set_ylabel("Cumulative runtime (pod-seconds)")
+            ax.set_ylabel("Cumulative runtime (s)", fontsize=8)
+        else:
+            ax.set_ylabel("")
+            ax.tick_params(axis="y", labelleft=False)
+
+        # Bottom row gets x labels
         if idx >= n_prios - ncols:
-            ax.set_xlabel(args.xcol)
+            ax.set_xlabel("Time (s)", fontsize=8)
 
     # Hide unused axes, if any
     for j in range(n_prios, len(axes_list)):
@@ -168,9 +188,10 @@ def main() -> None:
             handles,
             lbls,
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.98),
+            bbox_to_anchor=(0.5, 1.02),
             ncol=max(1, len(lbls)),
             frameon=False,
+            fontsize=8,
         )
 
     fig.tight_layout(rect=(0.02, 0.03, 0.98, 0.93))
@@ -180,7 +201,7 @@ def main() -> None:
         out_path = Path(args.out)
     else:
         first = csv_paths[0]
-        out_path = first.with_name(first.stem + "_prio_grid.png")
+        out_path = first.with_name("prio_grid.png")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200)
