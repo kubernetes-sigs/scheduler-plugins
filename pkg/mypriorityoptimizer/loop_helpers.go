@@ -18,7 +18,7 @@ func (pl *SharedState) startLoops(ctx context.Context) {
 
 	case ModeFreeTimeSynch, ModeFreeTimeAsynch:
 		// Free-time global optimization (runs only when the queue is quiescent).
-		go pl.freetimeLoop(ctx)
+		go pl.freeTimeLoop(ctx)
 
 	default:
 		// Every@PreEnqueue uses the nudgeBlockedLoop helper.

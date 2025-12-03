@@ -43,24 +43,26 @@ const (
 
 	// PlanConfigMapLabelKey is the name of the ConfigMap used for plan configuration.
 	PlanConfigMapLabelKey = "plan"
+	// PlanCompletionCheckInterval is how often we check whether an active plan has reached its desired state.
+	PlanCompletionCheckInterval = 250 * time.Millisecond
 	// PlanPendingBindInterval is the interval at which pending binds are retried.
 	PlanPendingBindInterval = 250 * time.Millisecond
 	// PlansToRetain is the number of ConfigMaps plans to retain before the oldest are deleted.
-	PlansToRetain = 30
+	PlansToRetain = 32
 	// NudgeBlockedInterval is how often to try waking one blocked pod when idle in Every@PreEnqueue.
 	// We need this functionality at this mode, as if we activate all blocked pods at once
 	// over and over again in onPlanSettled, we end up with a large waiting time in the queue.
-	NudgeBlockedInterval = 200 * time.Millisecond
+	NudgeBlockedInterval = 250 * time.Millisecond
 	// The overall timeout for plan execution.
-	PlanOverallTimeout = 5 * time.Minute
+	PlanOverallTimeout = 60 * time.Second
 	// Timeout for individual evict operations.
-	EvictTimeout = 30 * time.Second
+	EvictTimeout = 10 * time.Second
 	// Timeout for individual recreate operations.
-	RecreateTimeout = 30 * time.Second
+	RecreateTimeout = 10 * time.Second
 	// Timeout for waiting for pods to be gone after eviction.
-	WaitPodsGoneTimeout = 1 * time.Minute
+	WaitPodsGoneTimeout = 60 * time.Second
 	// Interval for waiting for pods to be gone after eviction.
-	WaitPodsGoneInterval = 200 * time.Millisecond
+	WaitPodsGoneInterval = 250 * time.Millisecond
 	// Degree of parallelism for eviction operations.
 	EvictParallelism = 8
 	// Degree of parallelism for pod recreation operations.

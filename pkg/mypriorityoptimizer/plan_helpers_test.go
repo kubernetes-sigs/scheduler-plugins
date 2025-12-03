@@ -7,10 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// -----------------------------------------------------------------------------
-// tryEnterActive / leaveActive
-// -----------------------------------------------------------------------------
-
 func TestTryEnterActiveAndLeave(t *testing.T) {
 	pl := &SharedState{}
 
@@ -30,10 +26,6 @@ func TestTryEnterActiveAndLeave(t *testing.T) {
 		t.Fatalf("tryEnterActive() after leaveActive = false, want true")
 	}
 }
-
-// -----------------------------------------------------------------------------
-// getActivePlan / tryClearActivePlan
-// -----------------------------------------------------------------------------
 
 func TestGetAndClearActivePlan(t *testing.T) {
 	pl := &SharedState{}
@@ -70,10 +62,6 @@ func TestGetAndClearActivePlan(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// buildPlan – nil SolverOutput
-// -----------------------------------------------------------------------------
-
 func TestBuildPlan_NilOutputReturnsEmptyPlan(t *testing.T) {
 	pl := &SharedState{}
 
@@ -108,9 +96,9 @@ func TestBuildPlan_NilOutputReturnsEmptyPlan(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// buildWorkloadQuotasAtomics
-// -----------------------------------------------------------------------------
+func TestSetActivePlan(t *testing.T) {
+	//TODO
+}
 
 func TestBuildWorkloadQuotasAtomics_NilInput(t *testing.T) {
 	got := buildWorkloadQuotasAtomics(nil)
@@ -123,7 +111,7 @@ func TestBuildWorkloadQuotasAtomics_PopulatesAtomics(t *testing.T) {
 	wkQuotas := WorkloadQuotas{
 		"wk1": {
 			"nodeA": 3,
-			"nodeB": 0,  // non-positive; should still create a counter with value 0
+			"nodeB": 0, // non-positive; should still create a counter with value 0
 		},
 		"wk2": {
 			"nodeC": -5, // non-positive; also should result in a counter with value 0
@@ -154,9 +142,33 @@ func TestBuildWorkloadQuotasAtomics_PopulatesAtomics(t *testing.T) {
 	check("wk2", "nodeC", 0)
 }
 
-// -----------------------------------------------------------------------------
-// isPodAllowedByActivePlan – standalone / pinned-by-name behaviour
-// -----------------------------------------------------------------------------
+func TestEvictTargets(t *testing.T) {
+	//TODO
+}
+
+func TestRecreateStandalonePods(t *testing.T) {
+	//TODO
+}
+
+func TestWaitPodsGone(t *testing.T) {
+	//TODO
+}
+
+func TestActivatePlannedPending(t *testing.T) {
+	//TODO
+}
+
+func TestResolvePod(t *testing.T) {
+	//TODO
+}
+
+func TestIsPlanCompleted(t *testing.T) {
+	//TODO
+}
+
+func TestOnPlanSettled(t *testing.T) {
+	//TODO
+}
 
 func TestIsPodAllowedByActivePlan_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
@@ -195,10 +207,6 @@ func TestIsPodAllowedByActivePlan_PinnedByName(t *testing.T) {
 		t.Fatalf("isPodAllowedByActivePlan for pinned pod = false, want true")
 	}
 }
-
-// -----------------------------------------------------------------------------
-// filterNodes – basic paths (no active plan + standalone pinned)
-// -----------------------------------------------------------------------------
 
 func TestFilterNodes_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
@@ -248,4 +256,20 @@ func TestFilterNodes_PinnedStandalone(t *testing.T) {
 	if nodes == nil || nodes.Len() != 1 || !nodes.Has("nodeA") {
 		t.Fatalf("filterNodes allowed set = %#v, want {\"nodeA\"}", nodes)
 	}
+}
+
+func TestCountNewAndTotalPods(t *testing.T) {
+	//TODO
+}
+
+func TestWaitPendingBound(t *testing.T) {
+	//TODO
+}
+
+func TestExportPlanConfigMap(t *testing.T) {
+	//TODO
+}
+
+func TestMarkPlanStatus(t *testing.T) {
+	//TODO
 }

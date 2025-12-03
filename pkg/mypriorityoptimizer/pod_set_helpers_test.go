@@ -8,9 +8,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// -----------------------------------------------------------------------------
-// newPodSet / basic invariants
-// -----------------------------------------------------------------------------
+func TestActivatePods(t *testing.T) {
+	//TODO
+}
+
+func TestPruneSet(t *testing.T) {
+	//TODO
+}
 
 func TestNewPodSet_Empty(t *testing.T) {
 	ps := newPodSet("blocked")
@@ -31,10 +35,6 @@ func TestNewPodSet_Empty(t *testing.T) {
 		t.Fatalf("newPodSet.Snapshot() length = %d, want 0", len(snap))
 	}
 }
-
-// -----------------------------------------------------------------------------
-// AddPod / RemovePod / Size / Snapshot
-// -----------------------------------------------------------------------------
 
 func TestPodSet_AddAndRemovePod(t *testing.T) {
 	ps := newPodSet("blocked")
@@ -90,10 +90,6 @@ func TestPodSet_AddPod_NilNoOp(t *testing.T) {
 		t.Fatalf("Size() after AddPod(nil) = %d, want 0", got)
 	}
 }
-
-// -----------------------------------------------------------------------------
-// Snapshot returns a copy (mutating snapshot must not affect set)
-// -----------------------------------------------------------------------------
 
 func TestPodSet_SnapshotIsCopy(t *testing.T) {
 	ps := newPodSet("blocked")

@@ -1,4 +1,4 @@
-// prefilter_phase.go
+// prefilter_hook.go
 
 package mypriorityoptimizer
 

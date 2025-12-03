@@ -198,9 +198,6 @@ func (pl *SharedState) setActivePlan(plan *Plan, id string, _ []*v1.Pod) {
 
 	// Store the new active plan
 	pl.ActivePlan.Store(ap)
-
-	// Activate watcher for plan timeout
-	go pl.watchPlanTimeout(ap)
 }
 
 // buildWorkloadQuotasAtomics converts WorkloadQuotas (int32) to WorkloadPerNodeCnts (atomic.Int32)
@@ -368,49 +365,185 @@ func (pl *SharedState) resolvePod(uid types.UID, ns, name string) *v1.Pod {
 }
 
 // isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
-func (pl *SharedState) isPlanCompleted(ctx context.Context, ap *ActivePlan, pod *v1.Pod) (bool, error) {
+// It is based on the *current* active plan snapshot (ap):
+//
+//	A) all pinned pods (PlacementByName) exist, are not being deleted, and run on the planned node
+//	B) all per-workload per-node quotas have been consumed (all counters = 0)
+// func (pl *SharedState) isPlanCompleted(ctx context.Context, ap *ActivePlan) (bool, error) {
+// 	if ap == nil {
+// 		// Plan got torn down concurrently; treat as "not completed yet" (retry later).
+// 		klog.V(MyV).InfoS("plan completion check skipped: no active plan doc")
+// 		return false, nil
+// 	}
+
+// 	podsLister := pl.podsLister()
+
+// 	// A) Standalone/preemptor pods pinned by name must be on the expected nodes.
+// 	for nsname, wantNode := range ap.PlacementByName {
+// 		ns, name, err := splitNsName(nsname)
+// 		if err != nil {
+// 			return false, err
+// 		}
+// 		po, err := podsLister.Pods(ns).Get(name)
+// 		if err != nil {
+// 			// transient lister error or NotFound: treat as "not done yet" but surface error
+// 			return false, err
+// 		}
+// 		if po.DeletionTimestamp != nil || po.Spec.NodeName != wantNode {
+// 			klog.V(MyV).InfoS("plan incomplete: pinned pod mismatch",
+// 				"pod", nsname,
+// 				"expectedNode", wantNode,
+// 				"haveNode", po.Spec.NodeName,
+// 			)
+// 			return false, nil
+// 		}
+// 	}
+
+// 	// B) Per-workload per-node quotas must all be zero.
+// 	for wk, perNode := range ap.WorkloadPerNodeCnts {
+// 		for node, ctr := range perNode {
+// 			remaining := ctr.Load()
+// 			if remaining > 0 {
+// 				klog.V(MyV).InfoS("plan incomplete: remaining quota",
+// 					"workload", wk,
+// 					"node", node,
+// 					"remaining", remaining,
+// 				)
+// 				return false, nil
+// 			}
+// 		}
+// 	}
+
+// 	return true, nil
+// }
+
+// isPlanCompleted checks if the plan is completed by verifying the state of the cluster.
+// It is based on the current active plan snapshot (ap):
+//
+//	A) all pinned pods (PlacementByName) that still exist must run on the planned node;
+//	   if a pinned pod was deleted or is terminating, we treat it as "no longer required".
+//	B) all per-workload per-node quotas must be consumed, except for workloads that
+//	   have been scaled down / deleted (no live pods) or have no pending pods left.
+func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 	if ap == nil {
-		// Plan got down concurrently; treat as "not completed yet" (retry later)
+		// Plan got torn down concurrently; treat as "not completed yet" (retry later).
 		klog.V(MyV).InfoS("plan completion check skipped: no active plan doc")
 		return false, nil
 	}
 
-	// Wait until the pod is visible+bound in cache when relevant.
-	ok, err := pl.waitPendingBound(ctx, pod)
+	podsLister := pl.podsLister()
+
+	// Pre-scan all pods once to derive workload status:
+	//   - hasLive:    at least one live pod (not terminating) for this workload
+	//   - hasPending: at least one live *pending* pod for this workload
+	type wkStatus struct {
+		hasLive    bool
+		hasPending bool
+	}
+	workloadStatus := make(map[string]wkStatus)
+
+	allPods, err := podsLister.List(labels.Everything())
 	if err != nil {
 		return false, err
 	}
-	if !ok {
-		return false, fmt.Errorf("timed out waiting for pending pod to be bound in cache")
+	for _, p := range allPods {
+		if p == nil || p.DeletionTimestamp != nil {
+			continue
+		}
+		if wk, owned := topWorkload(p); owned {
+			key := wk.String()
+			st := workloadStatus[key]
+			st.hasLive = true
+			if p.Spec.NodeName == "" {
+				st.hasPending = true
+			}
+			workloadStatus[key] = st
+		}
 	}
 
-	podsLister := pl.podsLister()
-
-	// A) Standalone/preemptor pods planned to specific nodes must be there.
-	// Use the map from the active plan state: ns/name -> node.
+	// A) Standalone/preemptor pods pinned by name must be on the expected nodes.
+	//    If a pinned pod was deleted (or is terminating), we treat it as "satisfied"
+	//    under the current workload (e.g., user scaled down or deleted it).
 	for nsname, wantNode := range ap.PlacementByName {
 		ns, name, err := splitNsName(nsname)
 		if err != nil {
 			return false, err
 		}
 		po, err := podsLister.Pods(ns).Get(name)
+		if apierrors.IsNotFound(err) {
+			// The planned pod is gone (namespace/pod deleted or workload scaled down).
+			// For completion purposes, we treat this as satisfied.
+			klog.V(MyV).InfoS("plan completion: pinned pod gone; treating as satisfied",
+				"pod", nsname,
+				"expectedNode", wantNode,
+			)
+			continue
+		}
 		if err != nil {
+			// Real lister error: don't claim completion yet, but retry later.
 			return false, err
 		}
-		if po.DeletionTimestamp != nil || po.Spec.NodeName != wantNode {
-			klog.V(MyV).InfoS("plan incomplete: pinned pod mismatch", "pod", nsname, "expectedNode", wantNode, "haveNode", po.Spec.NodeName)
+		if po.DeletionTimestamp != nil {
+			// Pod is terminating; we also treat this as "no longer required".
+			klog.V(MyV).InfoS("plan completion: pinned pod terminating; treating as satisfied",
+				"pod", nsname,
+				"expectedNode", wantNode,
+			)
+			continue
+		}
+		if po.Spec.NodeName != wantNode {
+			// Pod exists and is running on a different node than planned -> not complete.
+			klog.V(MyV).InfoS("plan incomplete: pinned pod mismatch",
+				"pod", nsname,
+				"expectedNode", wantNode,
+				"haveNode", po.Spec.NodeName,
+			)
 			return false, nil
 		}
 	}
 
-	// B) Per-workload per-node quotas consumed.
+	// B) Per-workload per-node quotas:
+	// 	1) If total remaining == 0  -> satisfied.
+	// 	2) If workload has NO live pods -> workload deleted/scale-to-zero -> ignore remaining.
+	// 	3) If workload has pending pods -> still work to do -> not complete.
+	// 	4) If workload has live but no pending pods -> scaled under plan / nothing left that can consume extra quota -> treat remaining quota as satisfied.
 	for wk, perNode := range ap.WorkloadPerNodeCnts {
-		for node, ctr := range perNode {
-			if ctr.Load() > 0 {
-				klog.V(MyV).InfoS("plan incomplete: remaining quota", "workload", wk, "node", node, "remaining", ctr.Load())
-				return false, nil
-			}
+		var totalRemaining int32
+		for _, ctr := range perNode {
+			totalRemaining += ctr.Load()
 		}
+
+		// 1) All quota consumed -> satisfied
+		if totalRemaining <= 0 {
+			continue
+		}
+
+		st := workloadStatus[wk]
+
+		// 2) Workload completely gone (no live pods): treat as satisfied.
+		if !st.hasLive {
+			klog.V(MyV).InfoS("plan completion: workload scaled down or deleted; ignoring remaining quota",
+				"workload", wk,
+				"remaining", totalRemaining,
+			)
+			continue
+		}
+
+		// 3) Workload still has pending pods and remaining quota: plan not done yet.
+		if st.hasPending {
+			klog.V(MyV).InfoS("plan incomplete: workload still has pending pods and remaining quota",
+				"workload", wk,
+				"remaining", totalRemaining,
+			)
+			return false, nil
+		}
+
+		// 4) Workload has live pods but no pending ones: we can't consume more quota,
+		// so we treat the remaining quota as satisfied under the current workload.
+		klog.V(MyV).InfoS("plan completion: workload has no pending pods; treating remaining quota as satisfied",
+			"workload", wk,
+			"remaining", totalRemaining,
+		)
 	}
 
 	return true, nil
@@ -666,18 +799,18 @@ func (pl *SharedState) markPlanStatus(ctx context.Context, planCM string, status
 	})
 }
 
-// watchPlanTimeout monitors the timeout for the given active plan.
-func (pl *SharedState) watchPlanTimeout(ap *ActivePlan) {
-	<-ap.Ctx.Done()
-	// If Cancel() was called due to completion/replacement, do nothing.
-	if ap.Ctx.Err() != context.DeadlineExceeded {
-		return
-	}
-	// Ensure we're still looking at the same active plan
-	cur := pl.getActivePlan()
-	if cur == nil || cur.ID != ap.ID {
-		return
-	}
-	klog.InfoS("plan timeout reached; deactivating plan", "planID", ap.ID, "ttl", PlanExecutionTimeout)
-	pl.onPlanSettled(PlanStatusFailed)
-}
+// // watchPlanTimeout monitors the timeout for the given active plan.
+// func (pl *SharedState) watchPlanTimeout(ap *ActivePlan) {
+// 	<-ap.Ctx.Done()
+// 	// If Cancel() was called due to completion/replacement, do nothing.
+// 	if ap.Ctx.Err() != context.DeadlineExceeded {
+// 		return
+// 	}
+// 	// Ensure we're still looking at the same active plan
+// 	cur := pl.getActivePlan()
+// 	if cur == nil || cur.ID != ap.ID {
+// 		return
+// 	}
+// 	klog.InfoS("plan timeout reached; deactivating plan", "planID", ap.ID, "ttl", PlanExecutionTimeout)
+// 	pl.onPlanSettled(PlanStatusFailed)
+// }

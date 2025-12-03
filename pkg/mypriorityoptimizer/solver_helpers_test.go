@@ -10,10 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
 func hasKey(args []any, key string) bool {
 	for i := 0; i+1 < len(args); i += 2 {
 		if k, ok := args[i].(string); ok && k == key {
@@ -22,10 +18,6 @@ func hasKey(args []any, key string) bool {
 	}
 	return false
 }
-
-// -----------------------------------------------------------------------------
-// isAnySolverEnabled
-// -----------------------------------------------------------------------------
 
 func TestIsAnySolverEnabled(t *testing.T) {
 	origPy := SolverPythonEnabled
@@ -64,10 +56,6 @@ func TestIsAnySolverEnabled(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// buildSolverInput (error branch only, no usable nodes)
-// -----------------------------------------------------------------------------
-
 func TestBuildSolverInput_NoUsableNodes(t *testing.T) {
 	pl := &SharedState{}
 
@@ -82,10 +70,6 @@ func TestBuildSolverInput_NoUsableNodes(t *testing.T) {
 		t.Fatalf("buildSolverInput() with no nodes returned non-empty input: %+v", in)
 	}
 }
-
-// -----------------------------------------------------------------------------
-// buildBaselineScore
-// -----------------------------------------------------------------------------
 
 func TestBuildBaselineScore(t *testing.T) {
 	in := SolverInput{
@@ -107,10 +91,6 @@ func TestBuildBaselineScore(t *testing.T) {
 		t.Fatalf("PlacedByPriority['2'] = %d, want 1", got)
 	}
 }
-
-// -----------------------------------------------------------------------------
-// solverConfigArgs
-// -----------------------------------------------------------------------------
 
 func TestSolverConfigArgs(t *testing.T) {
 	origPy := SolverPythonEnabled
@@ -152,39 +132,6 @@ func TestSolverConfigArgs(t *testing.T) {
 	}
 	if hasKey(args, "bfsSolver") || hasKey(args, "localSearchSolver") {
 		t.Fatalf("solverConfigArgs() should not contain other solver keys, got %v", args)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// isImprovement / comparePlaced / cmpInt
-// -----------------------------------------------------------------------------
-
-func TestComparePlaced_HighPriorityWins(t *testing.T) {
-	a := map[string]int{"1": 2, "0": 1}
-	b := map[string]int{"1": 1, "0": 5}
-
-	if got := comparePlaced(a, b); got != 1 {
-		t.Fatalf("comparePlaced(a,b) = %d, want 1 (a better high-prio)", got)
-	}
-	if got := comparePlaced(b, a); got != -1 {
-		t.Fatalf("comparePlaced(b,a) = %d, want -1 (b worse high-prio)", got)
-	}
-
-	// Equal maps
-	if got := comparePlaced(a, map[string]int{"1": 2, "0": 1}); got != 0 {
-		t.Fatalf("comparePlaced(equal) = %d, want 0", got)
-	}
-}
-
-func TestCmpInt(t *testing.T) {
-	if got := cmpInt(1, 2); got != 1 {
-		t.Fatalf("cmpInt(1,2) = %d, want 1 (improvement)", got)
-	}
-	if got := cmpInt(3, 2); got != -1 {
-		t.Fatalf("cmpInt(3,2) = %d, want -1 (worse)", got)
-	}
-	if got := cmpInt(2, 2); got != 0 {
-		t.Fatalf("cmpInt(2,2) = %d, want 0 (equal)", got)
 	}
 }
 
@@ -236,9 +183,34 @@ func TestIsImprovement_Order(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// hasSolverFeasibleResult
-// -----------------------------------------------------------------------------
+func TestComparePlaced_HighPriorityWins(t *testing.T) {
+	a := map[string]int{"1": 2, "0": 1}
+	b := map[string]int{"1": 1, "0": 5}
+
+	if got := comparePlaced(a, b); got != 1 {
+		t.Fatalf("comparePlaced(a,b) = %d, want 1 (a better high-prio)", got)
+	}
+	if got := comparePlaced(b, a); got != -1 {
+		t.Fatalf("comparePlaced(b,a) = %d, want -1 (b worse high-prio)", got)
+	}
+
+	// Equal maps
+	if got := comparePlaced(a, map[string]int{"1": 2, "0": 1}); got != 0 {
+		t.Fatalf("comparePlaced(equal) = %d, want 0", got)
+	}
+}
+
+func TestCmpInt(t *testing.T) {
+	if got := cmpInt(1, 2); got != 1 {
+		t.Fatalf("cmpInt(1,2) = %d, want 1 (improvement)", got)
+	}
+	if got := cmpInt(3, 2); got != -1 {
+		t.Fatalf("cmpInt(3,2) = %d, want -1 (worse)", got)
+	}
+	if got := cmpInt(2, 2); got != 0 {
+		t.Fatalf("cmpInt(2,2) = %d, want 0 (equal)", got)
+	}
+}
 
 func TestHasSolverFeasibleResult(t *testing.T) {
 	tests := []struct {
@@ -257,92 +229,6 @@ func TestHasSolverFeasibleResult(t *testing.T) {
 		}
 	}
 }
-
-// -----------------------------------------------------------------------------
-// summarizeAttempt
-// -----------------------------------------------------------------------------
-
-func TestSummarizeAttempt_UsesExistingStatusIfSet(t *testing.T) {
-	r := SolverResult{
-		Name:       "python",
-		Status:     "FAILED",
-		DurationMs: 10,
-		Score: SolverScore{
-			PlacedByPriority: map[string]int{"1": 1},
-		},
-		Output: &SolverOutput{Status: "OPTIMAL"},
-	}
-
-	s := summarizeAttempt(r)
-	if s.Status != "FAILED" {
-		t.Fatalf("summarizeAttempt() Status = %q, want %q", s.Status, "FAILED")
-	}
-	if s.Name != r.Name || s.DurationMs != r.DurationMs {
-		t.Fatalf("summarizeAttempt() changed fields unexpectedly: %#v", s)
-	}
-}
-
-func TestSummarizeAttempt_DerivesStatusFromOutput(t *testing.T) {
-	r := SolverResult{
-		Name:       "python",
-		Status:     "",
-		DurationMs: 5,
-		Output:     &SolverOutput{Status: "OPTIMAL"},
-	}
-	s := summarizeAttempt(r)
-	if s.Status != "OPTIMAL" {
-		t.Fatalf("summarizeAttempt() Status = %q, want %q", s.Status, "OPTIMAL")
-	}
-}
-
-// -----------------------------------------------------------------------------
-// computeSolverScore (minimal branch: out == nil)
-// -----------------------------------------------------------------------------
-
-func TestComputeSolverScore_NilOutput(t *testing.T) {
-	in := SolverInput{
-		Pods: []SolverPod{
-			{UID: "u1", Priority: 1, Node: "n1"},
-		},
-	}
-	score := computeSolverScore(in, nil)
-	if len(score.PlacedByPriority) != 0 || score.Evicted != 0 || score.Moved != 0 {
-		t.Fatalf("computeSolverScore() with nil out = %#v, want zero score", score)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// toSolverPod
-// -----------------------------------------------------------------------------
-
-func TestToSolverPod_BasicMapping(t *testing.T) {
-	p := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mypod",
-			Namespace: "ns",
-			UID:       "uid-1",
-		},
-		Spec: v1.PodSpec{},
-	}
-
-	sp := toSolverPod(p, "nodeX")
-
-	if sp.UID != p.UID || sp.Namespace != p.Namespace || sp.Name != p.Name {
-		t.Fatalf("toSolverPod() identity fields mismatch: %+v", sp)
-	}
-	if sp.Node != "nodeX" {
-		t.Fatalf("toSolverPod() Node = %q, want %q", sp.Node, "nodeX")
-	}
-	// With no resource requests / priority set, we at least expect 0 values.
-	if sp.ReqCPUm != 0 || sp.ReqMemBytes != 0 || sp.Priority != 0 {
-		t.Fatalf("toSolverPod() expected zero cpu/mem/priority, got cpu=%d mem=%d prio=%d",
-			sp.ReqCPUm, sp.ReqMemBytes, sp.Priority)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// planApplicable (branches that don't require knowing SolverOutput element types)
-// -----------------------------------------------------------------------------
 
 func TestPlanApplicable_NilPlan(t *testing.T) {
 	pl := &SharedState{}
@@ -392,9 +278,84 @@ func TestPlanApplicable_CapacityExceededWhenNoNodes(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// exportSolverStatsConfigMap / appendSolverStatsCM and logLeaderboard
-// -----------------------------------------------------------------------------
-// These involve real Kubernetes clients and klog output. They are better
-// exercised in higher-level integration tests, so we deliberately keep
-// unit tests focused on the pure logic above.
+func TestSummarizeAttempt_UsesExistingStatusIfSet(t *testing.T) {
+	r := SolverResult{
+		Name:       "python",
+		Status:     "FAILED",
+		DurationMs: 10,
+		Score: SolverScore{
+			PlacedByPriority: map[string]int{"1": 1},
+		},
+		Output: &SolverOutput{Status: "OPTIMAL"},
+	}
+
+	s := summarizeAttempt(r)
+	if s.Status != "FAILED" {
+		t.Fatalf("summarizeAttempt() Status = %q, want %q", s.Status, "FAILED")
+	}
+	if s.Name != r.Name || s.DurationMs != r.DurationMs {
+		t.Fatalf("summarizeAttempt() changed fields unexpectedly: %#v", s)
+	}
+}
+
+func TestSummarizeAttempt_DerivesStatusFromOutput(t *testing.T) {
+	r := SolverResult{
+		Name:       "python",
+		Status:     "",
+		DurationMs: 5,
+		Output:     &SolverOutput{Status: "OPTIMAL"},
+	}
+	s := summarizeAttempt(r)
+	if s.Status != "OPTIMAL" {
+		t.Fatalf("summarizeAttempt() Status = %q, want %q", s.Status, "OPTIMAL")
+	}
+}
+
+func TestLogLeaderboard(t *testing.T) {
+	//TODO
+}
+
+func TestComputeSolverScore_NilOutput(t *testing.T) {
+	in := SolverInput{
+		Pods: []SolverPod{
+			{UID: "u1", Priority: 1, Node: "n1"},
+		},
+	}
+	score := computeSolverScore(in, nil)
+	if len(score.PlacedByPriority) != 0 || score.Evicted != 0 || score.Moved != 0 {
+		t.Fatalf("computeSolverScore() with nil out = %#v, want zero score", score)
+	}
+}
+
+func TestToSolverPod_BasicMapping(t *testing.T) {
+	p := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mypod",
+			Namespace: "ns",
+			UID:       "uid-1",
+		},
+		Spec: v1.PodSpec{},
+	}
+
+	sp := toSolverPod(p, "nodeX")
+
+	if sp.UID != p.UID || sp.Namespace != p.Namespace || sp.Name != p.Name {
+		t.Fatalf("toSolverPod() identity fields mismatch: %+v", sp)
+	}
+	if sp.Node != "nodeX" {
+		t.Fatalf("toSolverPod() Node = %q, want %q", sp.Node, "nodeX")
+	}
+	// With no resource requests / priority set, we at least expect 0 values.
+	if sp.ReqCPUm != 0 || sp.ReqMemBytes != 0 || sp.Priority != 0 {
+		t.Fatalf("toSolverPod() expected zero cpu/mem/priority, got cpu=%d mem=%d prio=%d",
+			sp.ReqCPUm, sp.ReqMemBytes, sp.Priority)
+	}
+}
+
+func TestExportSolverStatsConfigMap(t *testing.T) {
+	//TODO
+}
+
+func TestAppendSolverStatsCM(t *testing.T) {
+	//TODO
+}

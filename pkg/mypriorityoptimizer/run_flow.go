@@ -98,6 +98,9 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanActivationFailed
 	}
 
+	// Start a periodically plan completion watcher. The watcher stops itself.
+	pl.startPlanCompletionWatch(ap)
+
 	// Export stats (success)
 	pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, "")
 

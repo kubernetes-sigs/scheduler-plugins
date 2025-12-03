@@ -9,15 +9,15 @@ profiles:
     preFilter:
       enabled:
         - name: MyPriorityOptimizer
-    postFilter:
-      enabled:
-        - name: MyPriorityOptimizer
+    # postFilter:
+    #   enabled:
+    #     - name: MyPriorityOptimizer
     reserve:
       enabled:
         - name: MyPriorityOptimizer
-    postBind:
-      enabled:
-        - name: MyPriorityOptimizer
-    multiPoint:
-      disabled:
-        - name: DefaultPreemption
+    # postBind:
+    #   enabled:
+    #     - name: MyPriorityOptimizer
+    # multiPoint:
+    #   disabled:
+    #     - name: DefaultPreemption
