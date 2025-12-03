@@ -683,6 +683,14 @@ class TraceReplayer:
     ) -> None:
         """
         Periodically sample cluster state and write CSV.
+
+        We record:
+          - total CPU/mem utilization
+          - total running / unsched counts
+          - running_by_prio:  { "p1": <count>, ... }
+          - unsched_by_prio: { "p1": <count>, ... }
+
+        NOTE: per-priority accumulated runtime has been removed.
         """
         out_csv.parent.mkdir(parents=True, exist_ok=True)
         LOG.info(
@@ -690,11 +698,6 @@ class TraceReplayer:
             out_csv,
             interval_s,
         )
-
-        # cumulative pod-seconds per priority level
-        prio_runtime: Dict[int, float] = {p: 0.0 for p in range(1, max_prio + 1)}
-        # last timestamp at which we saw this pod running
-        last_seen_running_ts: Dict[str, float] = {}
 
         with open(out_csv, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
@@ -709,8 +712,6 @@ class TraceReplayer:
                 "running_by_prio",
                 "unsched_by_prio",
             ]
-            # keep per-priority runtime columns
-            header.extend([f"prio{p}_run_time_s" for p in range(1, max_prio + 1)])
             writer.writerow(header)
 
             while not stop_event.is_set():
@@ -733,7 +734,6 @@ class TraceReplayer:
                 sim_time_s  = sim_t0 + wall_time_s
                 running_cnt = len(pods_running)
                 unsched_cnt = len(pending_pods)
-                running_pods: set[str] = set()
 
                 # Per-priority counts (running and unscheduled) for this tick
                 running_by_prio: Dict[str, int] = {f"p{p}": 0 for p in range(1, max_prio + 1)}
@@ -753,29 +753,13 @@ class TraceReplayer:
                         return None
                     return prio
 
-                # Integrate runtime per priority level and count running per prio
+                # Count running per priority
                 for pod_name, _node_name in pods_running:
-                    running_pods.add(pod_name)
                     prio = get_pod_prio(pod_name)
                     if prio is not None:
                         key = f"p{prio}"
                         if key in running_by_prio:
                             running_by_prio[key] += 1
-
-                    prev_ts = last_seen_running_ts.get(pod_name)
-                    if prev_ts is None:
-                        last_seen_running_ts[pod_name] = now_abs
-                        continue
-                    delta = max(0.0, now_abs - prev_ts)
-                    last_seen_running_ts[pod_name] = now_abs
-
-                    if prio is not None and prio in prio_runtime:
-                        prio_runtime[prio] += delta
-
-                # Drop pods that are no longer Running from the cache
-                for name in list(last_seen_running_ts.keys()):
-                    if name not in running_pods:
-                        del last_seen_running_ts[name]
 
                 # Count unscheduled per priority (from Pending pods)
                 for pod_name in pending_pods:
@@ -801,7 +785,6 @@ class TraceReplayer:
                     running_dict_str,
                     unsched_dict_str,
                 ]
-                row.extend(f"{prio_runtime[p]:.6f}" for p in range(1, max_prio + 1))
 
                 writer.writerow(row)
                 f.flush()

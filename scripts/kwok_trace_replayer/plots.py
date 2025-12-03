@@ -1,43 +1,56 @@
 #!/usr/bin/env python3
 import argparse
 import math
+import json
 from pathlib import Path
 from typing import List, Tuple
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 TIME_COL = "wall_time_s"
+UNSCHED_COL = "unsched_by_prio"
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
-            "Plot per-priority cumulative runtime curves from one or more "
-            "results CSV files as a grid of subplots (one priority per subplot).\n\n"
-            "Each CSV contributes one line per subplot; this is suitable for "
-            "comparing multiple schedulers or configurations."
+            "Compare pending pods between default and python schedulers.\n\n"
+            "Top row: per-time *pending difference* (python - default).\n"
+            "Bottom row: *cumulative pending difference* (integral of the per-time diff, in pod-seconds).\n\n"
+            "If more than one priority:\n"
+            "  - Column 0 = TOTAL (all priorities summed)\n"
+            "  - Remaining columns = per priority.\n"
         )
     )
     p.add_argument(
-        "csvs",
-        nargs="+",
-        help="One or more results CSV files.",
+        "--default-csv",
+        required=True,
+        help="Results CSV for the default scheduler.",
     )
     p.add_argument(
-        "--labels",
-        nargs="*",
-        default=None,
+        "--python-csv",
+        required=True,
+        help="Results CSV for the Python optimizer.",
+    )
+    p.add_argument(
+        "--smooth-seconds",
+        type=float,
+        default=0.0,
         help=(
-            "Optional labels for each CSV (same order as csvs). "
-            "If omitted, the filename stem is used."
+            "Centered running-average window size in seconds applied "
+            "to the *per-time* difference before plotting (top row). "
+            "0 means no smoothing. (default: 0.0)"
         ),
     )
     p.add_argument(
         "--out",
         default=None,
         help=(
-            "Output image path (e.g., figures/prio_grid.png). "
-            "Default: <first-csv-stem>_prio_grid.png in the same directory as the first CSV."
+            "Output image path (e.g., figures/prio_pending_diff_grid.png). "
+            "Default: <default-csv-stem>_prio_pending_diff_grid.png in the same "
+            "directory as the default CSV."
         ),
     )
     p.add_argument(
@@ -48,89 +61,244 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def detect_priority_columns(df: pd.DataFrame) -> List[Tuple[int, str]]:
+def detect_priorities_from_unsched(df: pd.DataFrame) -> List[int]:
     """
-    Find columns named like 'prio<k>_run_time_s' and return
-    a sorted list of (k, column_name).
+    Inspect the first non-null unsched_by_prio cell and extract priorities.
+    Expects JSON like: {"p1": 0, "p2": 3, ...}
+    Returns a sorted list of integer priorities, e.g. [1, 2, 3, 4].
     """
-    prios: List[Tuple[int, str]] = []
-    for col in df.columns:
-        if col.startswith("prio") and col.endswith("_run_time_s"):
-            mid = col[len("prio") : -len("_run_time_s")]
+    if UNSCHED_COL not in df.columns:
+        raise SystemExit(f"Column {UNSCHED_COL!r} not found in DataFrame")
+
+    series = df[UNSCHED_COL].dropna()
+    if series.empty:
+        raise SystemExit(f"No non-null values in column {UNSCHED_COL!r}")
+
+    first = series.iloc[0]
+    if not isinstance(first, str):
+        raise SystemExit(f"Expected {UNSCHED_COL!r} to contain JSON strings, got {type(first)}")
+
+    try:
+        d = json.loads(first)
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"Failed to parse {UNSCHED_COL!r} JSON: {e}")
+
+    prios: List[int] = []
+    for key in d.keys():
+        if key.startswith("p"):
             try:
-                k = int(mid)
-                prios.append((k, col))
+                prios.append(int(key[1:]))
             except ValueError:
                 continue
-    prios.sort(key=lambda t: t[0])
+
+    if not prios:
+        raise SystemExit(
+            f"No 'p<k>' keys found in {UNSCHED_COL!r} JSON; got keys: {list(d.keys())}"
+        )
+
+    prios.sort()
     return prios
+
+
+def build_stepwise_diff(
+    t_def: np.ndarray,
+    y_def: np.ndarray,
+    t_py: np.ndarray,
+    y_py: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Build a time-aligned difference series between two stepwise-constant signals.
+
+    We:
+      - Take the union of timestamps from both series,
+      - Treat y_def and y_py as stepwise-constant between their own samples,
+      - For each time in the union, take the latest known value from each series
+        and compute diff = y_py - y_def.
+
+    Returns:
+      times, diff
+    """
+    if t_def.size == 0 and t_py.size == 0:
+        return np.array([]), np.array([])
+
+    # Sort just in case
+    order_def = np.argsort(t_def)
+    t_def = t_def[order_def]
+    y_def = y_def[order_def]
+
+    order_py = np.argsort(t_py)
+    t_py = t_py[order_py]
+    y_py = y_py[order_py]
+
+    # Union of timestamps
+    all_times = np.unique(np.concatenate([t_def, t_py]))
+
+    # Indices & last values
+    i_def = 0
+    i_py = 0
+    last_def = y_def[0] if t_def.size > 0 else 0.0
+    last_py = y_py[0] if t_py.size > 0 else 0.0
+
+    out_t: List[float] = []
+    out_diff: List[float] = []
+
+    for t in all_times:
+        # Advance default series up to time t
+        while i_def + 1 < t_def.size and t_def[i_def + 1] <= t:
+            i_def += 1
+            last_def = y_def[i_def]
+
+        # Advance python series up to time t
+        while i_py + 1 < t_py.size and t_py[i_py + 1] <= t:
+            i_py += 1
+            last_py = y_py[i_py]
+
+        out_t.append(float(t))
+        out_diff.append(float(last_py - last_def))  # python - default
+
+    return np.array(out_t, dtype=float), np.array(out_diff, dtype=float)
+
+
+def time_based_running_average(
+    t: np.ndarray,
+    y: np.ndarray,
+    window_s: float,
+) -> np.ndarray:
+    """
+    Centered running average over a *time* window (seconds).
+
+    For each index i, we average all y[j] such that
+      t[j] is in [t[i] - window_s/2, t[i] + window_s/2].
+
+    - window_s <= 0 → returns y unchanged
+    - Assumes t is sorted ascending.
+    """
+    if window_s <= 0.0 or y.size == 0:
+        return y
+
+    n = y.size
+    out = np.empty_like(y, dtype=float)
+    half = window_s / 2.0
+
+    left = 0
+    right = 0
+
+    for i in range(n):
+        center = t[i]
+        lo = center - half
+        hi = center + half
+
+        # Move left pointer to the first index with t >= lo
+        while left < n and t[left] < lo:
+            left += 1
+
+        # Ensure right at least left
+        if right < left:
+            right = left
+
+        # Move right pointer to the last index with t <= hi
+        while right + 1 < n and t[right + 1] <= hi:
+            right += 1
+
+        if right < left:
+            # No points in window (can happen if window_s is tiny); fall back to original
+            out[i] = float(y[i])
+        else:
+            out[i] = float(np.mean(y[left : right + 1]))
+
+    return out
 
 
 def main() -> None:
     args = parse_args()
 
-    csv_paths = [Path(p) for p in args.csvs]
-    if not csv_paths:
-        raise SystemExit("You must provide at least one CSV file.")
+    csv_paths = [Path(args.default_csv), Path(args.python_csv)]
 
-    # Build labels
-    if args.labels is not None and len(args.labels) > 0:
-        if len(args.labels) != len(csv_paths):
-            raise SystemExit(
-                f"--labels must have same length as csvs "
-                f"(got {len(args.labels)} labels, {len(csv_paths)} csvs)"
-            )
-        labels = args.labels
-    else:
-        labels = [p.stem for p in csv_paths]
-
-    # Load all CSVs
+    # Load both CSVs
     dfs: List[pd.DataFrame] = []
     for p in csv_paths:
         if not p.exists():
             raise SystemExit(f"CSV file not found: {p}")
         dfs.append(pd.read_csv(p))
 
-    # Use the first CSV to detect priorities
-    df0 = dfs[0]
-    if TIME_COL not in df0.columns:
-        raise SystemExit(f"Column {TIME_COL!r} not found in {csv_paths[0]}")
+    df_def, df_py = dfs
 
-    prios = detect_priority_columns(df0)
-    if not prios:
-        raise SystemExit(
-            f"No 'prio*_run_time_s' columns found in {csv_paths[0]}. "
-            "Did you pass the correct results CSV?"
-        )
-
-    # Ensure all other CSVs have the required columns
-    required_cols = [TIME_COL] + [col for _, col in prios]
+    # Column checks
     for p, df in zip(csv_paths, dfs):
-        missing = [c for c in required_cols if c not in df.columns]
+        missing = []
+        if TIME_COL not in df.columns:
+            missing.append(TIME_COL)
+        if UNSCHED_COL not in df.columns:
+            missing.append(UNSCHED_COL)
         if missing:
             raise SystemExit(
                 f"CSV {p} is missing required columns: {', '.join(missing)}"
             )
 
-    # Compute global y-range across all priorities and CSVs
-    global_ymin = 0.0
-    global_ymax = 0.0
-    for df in dfs:
-        for _, col in prios:
-            col_max = df[col].max()
-            if pd.notna(col_max) and math.isfinite(col_max):
-                global_ymax = max(global_ymax, float(col_max))
-    if global_ymax <= 0:
-        # Fallback so the plots don't collapse if everything is zero.
-        global_ymax = 1.0
-
-    # Layout: grid of subplots, one per priority
+    # Detect priorities from default CSV
+    prios = detect_priorities_from_unsched(df_def)  # e.g. [1,2,3,4]
     n_prios = len(prios)
-    ncols = min(6, n_prios)  # up to 6 columns
-    nrows = math.ceil(n_prios / ncols)
 
-    # Smaller individual plots
-    per_col_width = 2.2
+    # Parse unsched_by_prio JSON → DataFrame of columns p1, p2, ...
+    unsched_frames: List[pd.DataFrame] = []
+    for df in dfs:
+        parsed = df[UNSCHED_COL].apply(
+            lambda s: json.loads(s) if isinstance(s, str) and s else {}
+        )
+        unsched_df = pd.DataFrame(list(parsed))
+        unsched_frames.append(unsched_df)
+
+    unsched_def, unsched_py = unsched_frames
+
+    t_def = df_def[TIME_COL].values.astype(float)
+    t_py = df_py[TIME_COL].values.astype(float)
+
+    smooth_seconds = max(0.0, float(args.smooth_seconds))
+
+    # Groups = [total] + per-priority (if more than one priority)
+    groups: List[Tuple[str, np.ndarray, np.ndarray]] = []  # (label, y_def, y_py)
+
+    if n_prios > 1:
+        # Total group (all priorities summed)
+        cols_def = [f"p{pr}" for pr in prios if f"p{pr}" in unsched_def.columns]
+        cols_py = [f"p{pr}" for pr in prios if f"p{pr}" in unsched_py.columns]
+
+        if cols_def:
+            pend_def_total = unsched_def[cols_def].fillna(0).to_numpy(dtype=float).sum(axis=1)
+        else:
+            pend_def_total = np.zeros_like(t_def, dtype=float)
+
+        if cols_py:
+            pend_py_total = unsched_py[cols_py].fillna(0).to_numpy(dtype=float).sum(axis=1)
+        else:
+            pend_py_total = np.zeros_like(t_py, dtype=float)
+
+        groups.append(("Total (all priorities)", pend_def_total, pend_py_total))
+
+    # Per-priority groups
+    for pr in prios:
+        pkey = f"p{pr}"
+        if pkey in unsched_def.columns:
+            pend_def = unsched_def[pkey].fillna(0).astype(float).values
+        else:
+            pend_def = np.zeros_like(t_def, dtype=float)
+
+        if pkey in unsched_py.columns:
+            pend_py = unsched_py[pkey].fillna(0).astype(float).values
+        else:
+            pend_py = np.zeros_like(t_py, dtype=float)
+
+        groups.append((f"Priority {pr}", pend_def, pend_py))
+
+    n_groups = len(groups)
+    if n_groups == 0:
+        raise SystemExit("No groups to plot (no priorities detected).")
+
+    # Layout: 2 rows (top: diff, bottom: cumulative diff), one column per group
+    nrows = 2
+    ncols = n_groups
+
+    per_col_width = 2.6
     per_row_height = 2.0
     fig_width = per_col_width * ncols
     fig_height = per_row_height * nrows
@@ -139,57 +307,96 @@ def main() -> None:
         nrows=nrows,
         ncols=ncols,
         sharex=True,
-        sharey=True,  # enforce same y-scale everywhere
+        sharey=False,
         figsize=(fig_width, fig_height),
     )
 
-    if isinstance(axes, plt.Axes):
-        axes_list = [axes]
-    else:
-        axes_list = axes.ravel()
+    # axes is 2 x ncols
+    if ncols == 1:
+        axes = np.array(axes).reshape(2, 1)
+    axes = np.asarray(axes)
 
-    # Plot per priority
-    for idx, (prio, col) in enumerate(prios):
-        ax = axes_list[idx]
+    first_diff_line = None
 
-        for df, label in zip(dfs, labels):
-            x = df[TIME_COL].values
-            y = df[col].values
-            # Let matplotlib handle colors; just fix line width.
-            ax.plot(x, y, label=label, linewidth=1.5)
+    for j, (label, y_def, y_py) in enumerate(groups):
+        ax_diff = axes[0, j]
+        ax_cum = axes[1, j]
 
-        ax.set_title(f"Priority {prio}", fontsize=9)
-        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-        ax.set_ylim(global_ymin, global_ymax*1.05)
+        # Build per-time diff (stepwise)
+        x, diff = build_stepwise_diff(t_def, y_def, t_py, y_py)
+        diff_sm = time_based_running_average(x, diff, smooth_seconds)
 
-        # Make tick labels smaller
-        ax.tick_params(axis="both", labelsize=6)
+        # ---- Top row: per-time diff ----
+        if x.size > 0:
+            line = ax_diff.plot(x, diff_sm, linewidth=1.2)[0]
+            if first_diff_line is None:
+                first_diff_line = line
+            # Symmetric y around 0 for per-time diff
+            absmax = float(np.nanmax(np.abs(diff_sm))) if diff_sm.size > 0 else 1.0
+            if not math.isfinite(absmax) or absmax <= 0:
+                absmax = 1.0
+            ax_diff.set_ylim(-absmax * 1.05, absmax * 1.05)
 
-        # Only first column shows y-axis label and tick labels
-        if idx % ncols == 0:
-            ax.set_ylabel("Cumulative runtime (s)", fontsize=8)
+        ax_diff.axhline(0.0, color="black", linewidth=0.5, linestyle="--")
+        ax_diff.set_title(label, fontsize=9)
+        ax_diff.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+        ax_diff.tick_params(axis="both", labelsize=6)
+
+        # Y-label only on first column
+        if j == 0:
+            ax_diff.set_ylabel("Pending diff\n(python - default)", fontsize=8)
         else:
-            ax.set_ylabel("")
-            ax.tick_params(axis="y", labelleft=False)
+            ax_diff.set_ylabel("")
+            ax_diff.tick_params(axis="y", labelleft=False)
 
-        # Bottom row gets x labels
-        if idx >= n_prios - ncols:
-            ax.set_xlabel("Time (s)", fontsize=8)
+        # No x-label on top row
+        ax_diff.set_xlabel("")
 
-    # Hide unused axes, if any
-    for j in range(n_prios, len(axes_list)):
-        axes_list[j].set_visible(False)
+        # ---- Bottom row: cumulative diff (pod-seconds) ----
+        if x.size > 0:
+            dt = np.diff(x, prepend=x[0])
+            dt = np.clip(dt, 0.0, None)
+            cum = np.cumsum(diff * dt)
 
-    # Collect legend entries from first visible axis
-    first_ax = next((ax for ax in axes_list if ax.get_visible()), axes_list[0])
-    handles, lbls = first_ax.get_legend_handles_labels()
-    if handles:
+            ax_cum.plot(x, cum, linewidth=1.2)
+            ymin = float(np.nanmin(cum)) if cum.size > 0 else 0.0
+            ymax = float(np.nanmax(cum)) if cum.size > 0 else 0.0
+            if not math.isfinite(ymin):
+                ymin = 0.0
+            if not math.isfinite(ymax):
+                ymax = 0.0
+            if ymin == ymax:
+                if ymin == 0.0:
+                    ymax = 1.0
+                else:
+                    ymin *= 0.95
+                    ymax *= 1.05
+            ax_cum.set_ylim(ymin, ymax * 1.05 if ymax > 0 else ymax * 0.95)
+
+        ax_cum.axhline(0.0, color="black", linewidth=0.5, linestyle="--")
+        ax_cum.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+        ax_cum.tick_params(axis="both", labelsize=6)
+
+        if j == 0:
+            ax_cum.set_ylabel("Cumulative diff\n(pod-seconds)", fontsize=8)
+        else:
+            ax_cum.set_ylabel("")
+            ax_cum.tick_params(axis="y", labelleft=False)
+
+        # Bottom row gets x-labels
+        ax_cum.set_xlabel("Time (s)", fontsize=8)
+
+    # Tiny legend explaining sign / smoothing
+    if first_diff_line is not None:
+        legend_label = "(python - default)"
+        if smooth_seconds > 0:
+            legend_label += f", smoothed over ±{smooth_seconds/2:.1f}s"
         fig.legend(
-            handles,
-            lbls,
+            [first_diff_line],
+            [legend_label],
             loc="upper center",
             bbox_to_anchor=(0.5, 1.02),
-            ncol=max(1, len(lbls)),
+            ncol=1,
             frameon=False,
             fontsize=8,
         )
@@ -201,7 +408,7 @@ def main() -> None:
         out_path = Path(args.out)
     else:
         first = csv_paths[0]
-        out_path = first.with_name("prio_grid.png")
+        out_path = first.with_name("prio_pending_diff_grid.png")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200)

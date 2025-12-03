@@ -1064,6 +1064,7 @@ python -m scripts.kwok_trace_replayer.trace_generator \
 ### Now TODOs
 
 - Test the new free time mode.
+  - We should run the solver after cluster has settled for some time, e.g. 2 seconds. The solver should be run in async mode to allow normal scheduling and should be stopped if a new pod arrives - just throw away this try.
 - Find 3 traces to run in ucloud over 12 hours and send example to Jacopo
 - Write Implementation and Experiments sections of the report
 - Read DCM article and revise. Jacopo suggested that I should clarify how it differs from ours.
@@ -1121,6 +1122,7 @@ at each tick $t_i$:
 
 ### TODOs: Plugin
 
+- Consider to add a config parameter telling for which priorities of the pending pods we should optimize for.
 - New mode: Kør solver sålænge der ikke kommer nye pods (dvs. i fritiden).
 - Make recreation of standalone pods optional and consider to remove it completely.
 - Look throw forks and their stars on github on scheduler-plugins repo
@@ -1134,6 +1136,8 @@ at each tick $t_i$:
 
 ### TODOs: Report
 
+- Write about that we do not run the solver again if we have the same set of pending pods and have got an optimal solution for these already.
+- Write about the way we check plan completion in a routine rather than PostBind, as we can remove a pod before PostBind is called meaning we can end up in a situation where we never check for plan completion.
 - Write about the default preemption and the test script made showing the limitations of it.
 - The replayer uses a thread pool to issue kubectl apply and kubectl delete commands asynchronously, hiding their latency. Each trace event is submitted exactly once as an async job. Events are scheduled in deterministic order by simulated time, but the actual completion order of kubectl commands is not enforced. We only wait for all outstanding jobs once the replay loop has processed all event times.
 - We should not re-run tests with new found distributions: This is the first branch of results. You can present them like this and then add the second bench of results that test different things. The first one is to see how much we can improve in a simple static scenario. The second in a more dynamic one.
@@ -1192,7 +1196,6 @@ at each tick $t_i$:
 - How to run the live-cluster tests.
   - solver-modes, solver-timeout, solver-interval, trace-length, #nodes, ~#pods, ~util, priorities
 - Is my way of evaluating fine?
-- 
 
 ### Closed Questions
 
