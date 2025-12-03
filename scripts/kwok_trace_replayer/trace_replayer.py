@@ -467,6 +467,8 @@ class TraceReplayer:
         events = self.events
         num_events = len(events)
         trace_end_s = float(self.trace_time)
+        # Total planned wall duration from sim_t0 to trace_end_s (may be 0)
+        trace_total_wall = max(0.0, trace_end_s - sim_t0)
 
         def sleep_until(reason: str) -> None:
             """Sleep so that simulated time reaches trace_end_s, if still ahead."""
@@ -542,7 +544,15 @@ class TraceReplayer:
                 # Logging
                 now_after = time.time()  # right after sleep / just before kubectl calls
                 batch_drift = now_after - target_wall
-                LOG.info("TIME DRIFT batch @ sim_t=%.3f: target_wall=%.3f actual_wall=%.3f drift=%.6fs (creates=%d deletes=%d)",
+
+                # Compute remaining simulated and wall time until trace end.
+                sim_remaining_s = max(0.0, trace_end_s - current_t)
+                wall_elapsed_s = now_after - start_wall_time
+                wall_remaining_s = max(0.0, trace_total_wall - wall_elapsed_s)
+
+                LOG.info(
+                    "TIME DRIFT batch @ sim_t=%.3f: target_wall=%.3f actual_wall=%.3f "
+                    "drift=%.6fs (creates=%d deletes=%d)",
                     current_t,
                     target_wall - start_wall_time,
                     now_after - start_wall_time,
@@ -595,10 +605,14 @@ class TraceReplayer:
                     fut = executor.submit(delete_rs, LOG, self.ctx, namespace, rs_name)
                     futures.append(fut)
 
-                LOG.info("batch done @ sim_t=%.3f submitted: creates=%d deletes=%d",
+                LOG.info(
+                    "batch done @ sim_t=%.3f submitted: creates=%d deletes=%d "
+                    "(sim_remaining=%.3fs wall_remaining=%.3fs)",
                     current_t,
                     len(creates),
                     len(deletes),
+                    sim_remaining_s,
+                    wall_remaining_s,
                 )
 
             # If we processed all events but haven't explicitly aligned to trace_end_s yet,
