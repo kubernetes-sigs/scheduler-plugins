@@ -1,0 +1,10 @@
+trace-dir: data/traces2/test_30
+result-dir: results/test2_30/python10
+kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+override-kwokctl-envs:
+  - name: OPTIMIZE_MODE
+    value: all_asynch
+  - name: SOLVER_PYTHON_TIMEOUT
+    value: 10s
+  - name: OPTIMIZE_INTERVAL
+    value: 10s

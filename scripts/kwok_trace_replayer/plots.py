@@ -11,14 +11,17 @@ import matplotlib.pyplot as plt
 
 TIME_COL = "wall_time_s"
 UNSCHED_COL = "unsched_by_prio"
+CPU_COL = "cpu_run_util"
+MEM_COL = "mem_run_util"
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
-            "Compare pending pods between default and python schedulers.\n\n"
-            "Top row: per-time *pending difference* (python - default).\n"
-            "Bottom row: *cumulative pending difference* (integral of the per-time diff, in pod-seconds).\n\n"
+            "Compare pending pods and utilization between default and python schedulers.\n\n"
+            "Row 1 (top): effective utilization (max(CPU, MEM)) for default vs python.\n"
+            "Row 2: per-time *pending difference* (python - default).\n"
+            "Row 3: *cumulative pending difference* (integral of the per-time diff, in pod-seconds).\n\n"
             "If more than one priority:\n"
             "  - Column 0 = TOTAL (all priorities summed)\n"
             "  - Remaining columns = per priority.\n"
@@ -40,7 +43,7 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         help=(
             "Centered running-average window size in seconds applied "
-            "to the *per-time* difference before plotting (top row). "
+            "to the *per-time* pending difference before plotting (row 2). "
             "0 means no smoothing. (default: 0.0)"
         ),
     )
@@ -133,11 +136,11 @@ def build_stepwise_diff(
     # Union of timestamps
     all_times = np.unique(np.concatenate([t_def, t_py]))
 
-    # Indices & last values
-    i_def = 0
-    i_py = 0
-    last_def = y_def[0] if t_def.size > 0 else 0.0
-    last_py = y_py[0] if t_py.size > 0 else 0.0
+    # Indices & last values (start at 0 until we see the first sample)
+    i_def = -1
+    i_py = -1
+    last_def = 0.0
+    last_py = 0.0
 
     out_t: List[float] = []
     out_diff: List[float] = []
@@ -230,6 +233,10 @@ def main() -> None:
             missing.append(TIME_COL)
         if UNSCHED_COL not in df.columns:
             missing.append(UNSCHED_COL)
+        if CPU_COL not in df.columns:
+            missing.append(CPU_COL)
+        if MEM_COL not in df.columns:
+            missing.append(MEM_COL)
         if missing:
             raise SystemExit(
                 f"CSV {p} is missing required columns: {', '.join(missing)}"
@@ -250,8 +257,19 @@ def main() -> None:
 
     unsched_def, unsched_py = unsched_frames
 
+    # Time axes
     t_def = df_def[TIME_COL].values.astype(float)
     t_py = df_py[TIME_COL].values.astype(float)
+
+    # Effective utilization (max(CPU, MEM)) for default and python
+    eff_def = np.maximum(
+        df_def[CPU_COL].astype(float).to_numpy(),
+        df_def[MEM_COL].astype(float).to_numpy(),
+    )
+    eff_py = np.maximum(
+        df_py[CPU_COL].astype(float).to_numpy(),
+        df_py[MEM_COL].astype(float).to_numpy(),
+    )
 
     smooth_seconds = max(0.0, float(args.smooth_seconds))
 
@@ -294,44 +312,70 @@ def main() -> None:
     if n_groups == 0:
         raise SystemExit("No groups to plot (no priorities detected).")
 
-    # Layout: 2 rows (top: diff, bottom: cumulative diff), one column per group
-    nrows = 2
+    # Layout:
+    #   Row 0: single axis spanning all columns → effective utilization (default vs python)
+    #   Row 1: per-time pending diff (one column per group)
+    #   Row 2: cumulative pending diff (one column per group)
     ncols = n_groups
 
     per_col_width = 2.6
-    per_row_height = 2.0
-    fig_width = per_col_width * ncols
-    fig_height = per_row_height * nrows
+    height_util = 2.0
+    height_diff = 2.0
+    height_cum = 2.0
 
-    fig, axes = plt.subplots(
-        nrows=nrows,
+    fig_width = per_col_width * ncols
+    fig_height = height_util + height_diff + height_cum
+
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    gs = fig.add_gridspec(
+        nrows=3,
         ncols=ncols,
-        sharex=True,
-        sharey=False,
-        figsize=(fig_width, fig_height),
+        height_ratios=[height_util, height_diff, height_cum],
     )
 
-    # axes is 2 x ncols
-    if ncols == 1:
-        axes = np.array(axes).reshape(2, 1)
-    axes = np.asarray(axes)
+    # Row 0: utilization axis spanning all columns
+    ax_util = fig.add_subplot(gs[0, :])
+
+    # Rows 1–2: per-group axes
+    axes_diff = []
+    axes_cum = []
+    for j in range(ncols):
+        ax_d = fig.add_subplot(gs[1, j], sharex=ax_util)
+        ax_c = fig.add_subplot(gs[2, j], sharex=ax_util)
+        axes_diff.append(ax_d)
+        axes_cum.append(ax_c)
+
+    # ---- Utilization row (row 0) ----
+    line_def = ax_util.plot(t_def, eff_def, linewidth=1.2, label="default")[0]
+    line_py = ax_util.plot(t_py, eff_py, linewidth=1.2, label="python")[0]
+
+    ax_util.set_ylabel("Effective util.\nmax(CPU, MEM)", fontsize=8)
+    ax_util.set_xlabel("")  # x-label at bottom row only
+    ax_util.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    ax_util.tick_params(axis="both", labelsize=6)
+    ax_util.set_title("Effective utilization over time", fontsize=9)
+    ax_util.set_ylim(0.0, 1.05 * max(1.0, float(np.nanmax([eff_def.max(), eff_py.max()]))))
+    ax_util.legend(loc="upper left", fontsize=7, frameon=False)
 
     first_diff_line = None
 
+    # ---- Pending diff + cumulative rows (rows 1–2) ----
+    cum_series = []  # <--- collect cumulative series for global y-scale
+
     for j, (label, y_def, y_py) in enumerate(groups):
-        ax_diff = axes[0, j]
-        ax_cum = axes[1, j]
+        ax_diff = axes_diff[j]
+        ax_cum = axes_cum[j]
 
         # Build per-time diff (stepwise)
         x, diff = build_stepwise_diff(t_def, y_def, t_py, y_py)
         diff_sm = time_based_running_average(x, diff, smooth_seconds)
 
-        # ---- Top row: per-time diff ----
+        # ---- Row 1: per-time pending diff ----
         if x.size > 0:
             line = ax_diff.plot(x, diff_sm, linewidth=1.2)[0]
             if first_diff_line is None:
                 first_diff_line = line
-            # Symmetric y around 0 for per-time diff
+            # Symmetric y around 0 for per-time diff (per-column)
             absmax = float(np.nanmax(np.abs(diff_sm))) if diff_sm.size > 0 else 1.0
             if not math.isfinite(absmax) or absmax <= 0:
                 absmax = 1.0
@@ -342,36 +386,21 @@ def main() -> None:
         ax_diff.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
         ax_diff.tick_params(axis="both", labelsize=6)
 
-        # Y-label only on first column
         if j == 0:
             ax_diff.set_ylabel("Pending diff\n(python - default)", fontsize=8)
         else:
             ax_diff.set_ylabel("")
             ax_diff.tick_params(axis="y", labelleft=False)
-
-        # No x-label on top row
         ax_diff.set_xlabel("")
 
-        # ---- Bottom row: cumulative diff (pod-seconds) ----
+        # ---- Row 2: cumulative diff (pod-seconds) ----
+        cum = None
         if x.size > 0:
             dt = np.diff(x, prepend=x[0])
             dt = np.clip(dt, 0.0, None)
             cum = np.cumsum(diff * dt)
-
+            cum_series.append(cum)              # <--- store series
             ax_cum.plot(x, cum, linewidth=1.2)
-            ymin = float(np.nanmin(cum)) if cum.size > 0 else 0.0
-            ymax = float(np.nanmax(cum)) if cum.size > 0 else 0.0
-            if not math.isfinite(ymin):
-                ymin = 0.0
-            if not math.isfinite(ymax):
-                ymax = 0.0
-            if ymin == ymax:
-                if ymin == 0.0:
-                    ymax = 1.0
-                else:
-                    ymin *= 0.95
-                    ymax *= 1.05
-            ax_cum.set_ylim(ymin, ymax * 1.05 if ymax > 0 else ymax * 0.95)
 
         ax_cum.axhline(0.0, color="black", linewidth=0.5, linestyle="--")
         ax_cum.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
@@ -383,12 +412,44 @@ def main() -> None:
             ax_cum.set_ylabel("")
             ax_cum.tick_params(axis="y", labelleft=False)
 
-        # Bottom row gets x-labels
         ax_cum.set_xlabel("Time (s)", fontsize=8)
 
-    # Tiny legend explaining sign / smoothing
+    # ---- Shared y-scale for ALL cumulative plots ----
+    global_min = math.inf
+    global_max = -math.inf
+    for c in cum_series:
+        if c.size == 0:
+            continue
+        cmin = float(np.nanmin(c))
+        cmax = float(np.nanmax(c))
+        if math.isfinite(cmin):
+            global_min = min(global_min, cmin)
+        if math.isfinite(cmax):
+            global_max = max(global_max, cmax)
+
+    if global_min == math.inf or global_max == -math.inf:
+        # fallback if no data
+        global_min, global_max = 0.0, 1.0
+    elif global_min == global_max:
+        # flat line – give it a bit of range
+        if global_min == 0.0:
+            global_max = 1.0
+        else:
+            global_min *= 0.95
+            global_max *= 1.05
+    else:
+        span = global_max - global_min
+        pad = 0.05 * span
+        global_min -= pad
+        global_max += pad
+
+    for ax_cum in axes_cum:
+        ax_cum.set_ylim(global_min, global_max)
+
+
+    # Tiny figure-level legend explaining the pending diff sign / smoothing
     if first_diff_line is not None:
-        legend_label = "(python - default)"
+        legend_label = "Pending diff (python - default)"
         if smooth_seconds > 0:
             legend_label += f", smoothed over ±{smooth_seconds/2:.1f}s"
         fig.legend(

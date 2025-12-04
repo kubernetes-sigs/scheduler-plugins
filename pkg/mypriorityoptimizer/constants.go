@@ -54,13 +54,13 @@ const (
 	// over and over again in onPlanSettled, we end up with a large waiting time in the queue.
 	NudgeBlockedInterval = 250 * time.Millisecond
 	// The overall timeout for plan execution.
-	PlanOverallTimeout = 60 * time.Second
+	PlanOverallTimeout = 10 * time.Second
 	// Timeout for individual evict operations.
 	EvictTimeout = 10 * time.Second
 	// Timeout for individual recreate operations.
 	RecreateTimeout = 10 * time.Second
 	// Timeout for waiting for pods to be gone after eviction.
-	WaitPodsGoneTimeout = 60 * time.Second
+	WaitPodsGoneTimeout = 10 * time.Second
 	// Interval for waiting for pods to be gone after eviction.
 	WaitPodsGoneInterval = 250 * time.Millisecond
 	// Degree of parallelism for eviction operations.

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # trace_replayer.py
 
-import argparse, csv, json, logging, threading, time, yaml
+import argparse, csv, json, logging, threading, time, yaml, subprocess
+from argparse import BooleanOptionalAction
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,6 +130,15 @@ def build_argparser() -> argparse.ArgumentParser:
         help="Logging level (DEBUG, INFO, WARNING, ERROR) (default: INFO).",
     )
 
+    # Scheduler logs
+    p.add_argument(
+        "--save-scheduler-logs",
+        dest="save_scheduler_logs",
+        action=BooleanOptionalAction,
+        default=None,
+        help="Save 'kwokctl logs kube-scheduler' under <result-dir>/scheduler-logs before exiting.",
+    )
+
     return p
 
 def merge_job_fields_into_args(
@@ -150,6 +160,7 @@ def merge_job_fields_into_args(
     jf_monitor_interval     = job.get("monitor-interval")
     jf_log_level            = get_str(job.get("log-level"))
     jf_result_dir           = get_str(job.get("result-dir"))
+    jf_save_scheduler_logs  = job.get("save-scheduler-logs")
     jf_override_kwokctl_envs = job.get("override-kwokctl-envs") or []
 
     if getattr(args, "trace_dir", None) is None and jf_trace_dir:
@@ -175,6 +186,8 @@ def merge_job_fields_into_args(
             pass
     if getattr(args, "result_dir", None) is None and jf_result_dir:
         args.result_dir = jf_result_dir
+    if getattr(args, "save_scheduler_logs", None) is None and isinstance(jf_save_scheduler_logs, bool):
+        args.save_scheduler_logs = jf_save_scheduler_logs
 
     return args, jf_override_kwokctl_envs
 
@@ -198,6 +211,8 @@ def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
         args.log_level = "INFO"
     if getattr(args, "job_file", None) is None:
         args.job_file = None
+    if getattr(args, "save_scheduler_logs", None) is None:
+        args.save_scheduler_logs = False
 
     # Required: trace_dir + kwokctl_config_file (from CLI or job-file)
     if not getattr(args, "trace_dir", None):
@@ -214,7 +229,6 @@ def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
     if not kwok_cfg.exists():
         raise SystemExit(f"--kwokctl-config-file not found: {kwok_cfg}")
 
-    # We *create* result-dir later in TraceReplayer; here we just normalize it.
     args.result_dir = str(Path(args.result_dir).resolve())
 
     return args
@@ -287,6 +301,7 @@ class TraceReplayer:
             ("monitor_interval", self.args.monitor_interval),
             ("result_dir", getattr(self.args, "result_dir", None)),
             ("log_level", self.args.log_level),
+            ("save_scheduler_logs", getattr(self.args, "save_scheduler_logs", None)),
             ("job_file", getattr(self.args, "job_file", None)),
         ]
         pad = max(len(k) for k, _ in fields)
@@ -319,6 +334,35 @@ class TraceReplayer:
             )
         except Exception as e:
             LOG.warning("failed to write info_replayer.yaml: %s", e)
+
+    def _save_scheduler_logs(self) -> None:
+        """
+        Save scheduler logs for the current KWOK cluster to
+        <result-dir>/scheduler-logs/sched_logs.log.
+        """
+        sched_dir = self.results_dir / "scheduler-logs"
+        sched_dir.mkdir(parents=True, exist_ok=True)
+        out_path = sched_dir / "sched_logs.log"
+        # If file exists from a previous run, prune it
+        if out_path.exists():
+            try:
+                out_path.unlink()
+                LOG.info("pruned existing scheduler log: %s", out_path)
+            except OSError as e:
+                LOG.warning("failed pruning existing scheduler log %s: %s", out_path, e)
+        try:
+            r = subprocess.run(
+                ["kwokctl", "logs", "kube-scheduler", "--name", self.args.cluster_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            data = r.stdout or b""
+            with open(out_path, "wb") as fh:
+                fh.write(data)
+            LOG.info("saved scheduler logs to %s", out_path)
+        except Exception as e:
+            LOG.warning("failed saving scheduler logs: %s", e)
 
     ##############################################
     # ------------ Replay helpers ----------------
@@ -895,6 +939,12 @@ class TraceReplayer:
             stop_event.set()
             monitor_thread.join(timeout=10.0)
             LOG.info("monitor thread joined; done.")
+
+            # Always try to save scheduler logs if requested,
+            # even if replay failed partway.
+            if self.args.save_scheduler_logs:
+                LOG.info("saving scheduler logs via kwokctl...")
+                self._save_scheduler_logs()
 
         LOG.info("Done.")
 

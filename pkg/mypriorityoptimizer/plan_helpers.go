@@ -5,7 +5,6 @@ package mypriorityoptimizer
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"sync/atomic"
@@ -701,54 +700,6 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 	}
 
 	return pendingScheduled, totalPrePlan, totalPostPlan
-}
-
-// waitPendingBound waits for the pending pod to be bound in the cache.
-// By checking this for every pod we process in PostBind, we can be sure
-// we have the correct state in cache before completing the plan.
-func (pl *SharedState) waitPendingBound(ctx context.Context, pending *v1.Pod) (bool, error) {
-
-	podsLister := pl.podsLister()
-	namespace := pending.Namespace
-	name := pending.Name
-	uid := pending.UID
-	podStr := combineNsName(namespace, name)
-
-	// Single-shot check
-	p, err := podsLister.Pods(namespace).Get(name)
-	if err == nil && p.Spec.NodeName != "" {
-		return true, nil
-	}
-
-	// Poll until the cached pod is bound.
-	err = wait.PollUntilContextTimeout(ctx, PlanPendingBindInterval, PlanExecutionTimeout, true, func(ctx context.Context) (bool, error) {
-		p, err := podsLister.Pods(namespace).Get(name)
-		if apierrors.IsNotFound(err) { // pod not found; keep polling
-			klog.V(MyV).InfoS("waiting for pending to appear in cache", "pod", podStr)
-			return false, nil
-		}
-		if err != nil { // Lister error; keep polling
-			klog.V(MyV).InfoS("lister error while waiting for pending", "pod", podStr, "err", err)
-			return false, nil
-		}
-		if p.UID != uid { // waiting for matching pending UID
-			klog.V(MyV).InfoS("waiting for matching pending UID", "pod", podStr, "wantUID", uid, "haveUID", p.UID)
-			return false, nil
-		}
-		if p.Spec.NodeName == "" { // waiting for preemptor to bind
-			klog.V(MyV).InfoS("waiting for pending to bind", "pod", podStr)
-			return false, nil
-		}
-		return true, nil
-	})
-	if err == nil {
-		return true, nil
-	}
-	// Timeout/cancel
-	if errors.Is(err, context.DeadlineExceeded) {
-		return false, nil
-	}
-	return false, err
 }
 
 // exportPlanConfigMap exports the given plan to a ConfigMap.

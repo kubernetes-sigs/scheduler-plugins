@@ -1,4 +1,3 @@
-// pkg/mypriorityoptimizer/freetime_loop.go
 // freetime_loop.go
 
 package mypriorityoptimizer
@@ -13,14 +12,6 @@ import (
 
 // freeTimeLoop runs optimization only when the pending queue has been stable
 // (same set of Pending pods) for at least OptimizeFreeTimeDelay.
-//
-// In async mode, the solver runs in the background and is *cancelled*
-// if the pending set changes while it is running.
-//
-// Additionally, if we have already run the solver on a given pending set and
-// it concluded optimally (applied a plan or reported no improvement / nothing
-// schedulable), we will NOT run the solver again for that *exact* pending set.
-// Only a change in the pending set will allow another run.
 func (pl *SharedState) freeTimeLoop(ctx context.Context) {
 	label := "FreeTimeLoop"
 	strategy := strategyToString()
@@ -47,20 +38,20 @@ func (pl *SharedState) freeTimeLoop(ctx context.Context) {
 	defer timer.Stop()
 
 	var lastPendingSet map[types.UID]struct{}
-	var lastSolvedSet map[types.UID]struct{} // last pending set we solved "optimally"
+	var lastSolvedSet map[types.UID]struct{}
+	var lastSolvedFingerprint string
 	lastChange := time.Now()
 
-	// State for an in-flight free-time run
 	var (
-		runCancel   context.CancelFunc
-		runDone     chan bool              // true if that run is considered "solved"
-		baselineSet map[types.UID]struct{} // pending set at run start
+		runCancel           context.CancelFunc
+		runDone             chan bool
+		baselineSet         map[types.UID]struct{}
+		baselineFingerprint string
 	)
 
 	for {
 		select {
 		case <-ctx.Done():
-			// Cancel any in-flight run before exiting
 			if runCancel != nil {
 				runCancel()
 			}
@@ -73,120 +64,121 @@ func (pl *SharedState) freeTimeLoop(ctx context.Context) {
 			if !pl.CachesWarm.Load() {
 				klog.V(MyV).InfoS(msg(label, InfoCachesNotWarmedUp))
 				lastPendingSet = nil
+				lastSolvedSet = nil
+				lastSolvedFingerprint = ""
 				lastChange = time.Now()
 				timer.Reset(checkInterval)
 				continue
 			}
 
-			// If a plan is active, let it finish; we don't start or cancel runs here.
 			if ap := pl.getActivePlan(); ap != nil {
 				klog.V(MyV).InfoS(msg(label, InfoActivePlanInProgress))
 				timer.Reset(checkInterval)
 				continue
 			}
 
-			// Snapshot current pods
-			pods, _ := pl.getPods()
-
-			// Build current set of Pending pod UIDs.
-			currentSet := make(map[types.UID]struct{})
-			for _, p := range pods {
-				if p == nil || p.Status.Phase != "Pending" {
-					continue
-				}
-				currentSet[p.UID] = struct{}{}
+			snap, err := pl.buildPendingSnapshot()
+			if err != nil {
+				klog.V(MyV).InfoS(msg(label, "buildPendingSnapshot failed"),
+					"err", err)
+				timer.Reset(checkInterval)
+				continue
 			}
-			pendingCount := len(currentSet)
 
-			// ---- If we have a run in flight, track finish/cancel conditions ----
+			currentSet := snap.PendingUIDs
+			pendingCount := snap.PendingCount
+			currentFingerprint := snap.Fingerprint
+
+			// Handle in-flight run
 			if runDone != nil {
 				select {
 				case solved := <-runDone:
-					// Run finished (success, "no improvement", or ctx canceled)
-					klog.V(MyV).InfoS(msg(label, "free-time run finished"),
-						"solved", solved)
+					klog.InfoS(msg(label, "free-time run finished"), "solved", solved)
 
-					if solved && baselineSet != nil {
-						// Remember this pending set as "solved".
+					if solved && baselineSet != nil && baselineFingerprint != "" {
 						lastSolvedSet = cloneUIDSet(baselineSet)
+						lastSolvedFingerprint = baselineFingerprint
 					}
 					runDone = nil
 					runCancel = nil
 					baselineSet = nil
+					baselineFingerprint = ""
 
 				default:
-					// Still running: cancel if the pending set changed vs baseline.
 					if !sameUIDSet(currentSet, baselineSet) {
-						klog.V(MyV).InfoS(msg(label, "pending set changed; cancelling free-time run"),
-							"pending", pendingCount)
+						klog.V(MyV).InfoS(
+							msg(label, "pending set changed; cancelling free-time run"),
+							"pending", pendingCount,
+						)
 						runCancel()
 					}
-					// Do not start a new run until this one is fully finished.
 					timer.Reset(checkInterval)
 					continue
 				}
 			}
 
-			// ---- No run in progress from here on ----
+			// No run in progress from here
 
-			// If we previously solved this exact pending set "optimally",
-			// skip re-running the solver until the set changes.
-			if lastSolvedSet != nil && sameUIDSet(currentSet, lastSolvedSet) {
-				klog.V(MyV).InfoS(msg(label, "pending set matches last solved set; skipping optimization"),
+			if lastSolvedSet != nil &&
+				lastSolvedFingerprint != "" &&
+				sameUIDSet(currentSet, lastSolvedSet) &&
+				currentFingerprint == lastSolvedFingerprint {
+				klog.InfoS(msg(label, "pending set + cluster fingerprint match last solved; skipping optimization"),
 					"pending", pendingCount)
 				timer.Reset(checkInterval)
 				continue
 			}
 
-			// Nothing pending → nothing to optimize, reset baselines.
 			if pendingCount == 0 {
-				if lastPendingSet != nil || lastSolvedSet != nil {
+				if lastPendingSet != nil || lastSolvedSet != nil || lastSolvedFingerprint != "" {
 					lastPendingSet = nil
 					lastSolvedSet = nil
+					lastSolvedFingerprint = ""
 					lastChange = time.Now()
 				}
 				timer.Reset(checkInterval)
 				continue
 			}
 
-			// If the set of pending pods changed (not just the count), reset idle timer.
 			if !sameUIDSet(currentSet, lastPendingSet) {
 				lastPendingSet = cloneUIDSet(currentSet)
 				lastChange = time.Now()
-				klog.V(MyV).InfoS(msg(label, "pending set changed; reset idle timer"),
+				klog.InfoS(msg(label, "pending set changed; reset idle timer"),
 					"pending", pendingCount)
 				timer.Reset(checkInterval)
 				continue
 			}
 
-			// Same set of Pending pods; check how long they've been unchanged.
 			idleFor := time.Since(lastChange)
 			if idleFor < delay {
-				// Wait the remaining time until we consider it "free time".
 				timer.Reset(delay - idleFor)
 				continue
 			}
 
-			// We have a stable pending set for at least 'delay' → start a background run.
-			klog.InfoS(msg(label, InfoCycleStarted),
-				"pendingPods", pendingCount,
-				"idleFor", idleFor)
+			if SolverPythonEnabled && SolverPythonNumLowerPriorities > 0 {
+				if !pendingHasLowPriorityTargets(snap.Pods) {
+					klog.InfoS(
+						msg(label, "skip free-time run: only higher-priority pending pods outside python lower-tier window"),
+						"pending", pendingCount,
+						"pythonNumLowerPriorities", SolverPythonNumLowerPriorities,
+						"idleFor", idleFor,
+					)
+					timer.Reset(checkInterval)
+					continue
+				}
+			}
+
+			klog.InfoS(msg(label, InfoCycleStarted), "pendingPods", pendingCount, "idleFor", idleFor)
 
 			baselineSet = cloneUIDSet(currentSet)
+			baselineFingerprint = currentFingerprint
 			ctxRun, cancelRun := context.WithCancel(ctx)
 			runCancel = cancelRun
 			runDone = make(chan bool, 1)
 
 			go func() {
-				_, _, _, _, _, err := pl.runFlow(ctxRun, nil)
-
-				// Treat these as "solved" cases:
-				// - err == nil: plan applied successfully.
-				// - ErrNoImprovingSolutionFromAnySolver: baseline already optimal / no better plan.
-				// - ErrNoPendingPodsToSchedule: nothing schedulable under current constraints.
-				solved := err == nil ||
-					err == ErrNoImprovingSolutionFromAnySolver ||
-					err == ErrNoPendingPodsToSchedule
+				_, _, _, bestAttempt, _, err := pl.runFlow(ctxRun, nil)
+				solved := isRunSolvedForPendingSet(err, bestAttempt)
 
 				if err != nil &&
 					err != context.Canceled &&
@@ -199,9 +191,6 @@ func (pl *SharedState) freeTimeLoop(ctx context.Context) {
 				runDone <- solved
 			}()
 
-			// After starting a run, wait for either:
-			//  - the run to finish (handled above), or
-			//  - the pending set to change (also handled above).
 			timer.Reset(checkInterval)
 		}
 	}

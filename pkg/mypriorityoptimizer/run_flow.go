@@ -56,7 +56,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	if !hadImproving {
 		klog.Error(msg(strategy, InfoNoImprovingSolutionFromAnySolver))
 		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrNoImprovingSolutionFromAnySolver.Error())
+		pl.exportSolverStatsConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrNoImprovingSolutionFromAnySolver.Error())
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoImprovingSolutionFromAnySolver
 	}
 
@@ -64,7 +64,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	if optimizeAsync() {
 		if !pl.tryEnterActive() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
-			pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrActiveInProgress.Error())
+			pl.exportSolverStatsConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrActiveInProgress.Error())
 			return nil, nil, "", nil, nil, ErrActiveInProgress
 		}
 	}
@@ -74,7 +74,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	if pendingScheduled == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPodsToSchedule))
 		pl.leaveActive()
-		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrNoPendingPodsToSchedule.Error())
+		pl.exportSolverStatsConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrNoPendingPodsToSchedule.Error())
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoPendingPodsToSchedule
 	}
 
@@ -84,7 +84,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 		klog.Error(msg(strategy, InfoPlanRegistrationFailed))
 		pl.onPlanSettled(PlanStatusFailed)
 		pl.exportSolverStatsConfigMap(
-			ctx, strategy, baselineScore, bestName, attempts,
+			context.Background(), strategy, baselineScore, bestName, attempts,
 			ErrPlanRegistration.Error(),
 		)
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanRegistration
@@ -94,7 +94,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	if err := pl.planActivation(plan, pods); err != nil {
 		klog.Error(msg(strategy, InfoPlanActivationFailed))
 		pl.onPlanSettled(PlanStatusFailed)
-		pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, ErrPlanActivationFailed.Error())
+		pl.exportSolverStatsConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrPlanActivationFailed.Error())
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanActivationFailed
 	}
 
@@ -102,7 +102,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	pl.startPlanCompletionWatch(ap)
 
 	// Export stats (success)
-	pl.exportSolverStatsConfigMap(ctx, strategy, baselineScore, bestName, attempts, "")
+	pl.exportSolverStatsConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, "")
 
 	// Log summary
 	bestSummary := summarizeAttempt(*bestAttempt)

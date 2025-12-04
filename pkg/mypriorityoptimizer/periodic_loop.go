@@ -11,11 +11,6 @@ import (
 )
 
 // periodicLoop runs the optimization loop at a regular interval.
-// It starts with an initial delay and then runs at a fixed interval.
-// Additionally, if we have already run the solver on a given pending set and
-// it concluded optimally (applied a plan or reported no improvement / nothing
-// schedulable), we will NOT run the solver again for that *exact* pending set.
-// Only a change in the pending set will allow another run.
 func (pl *SharedState) periodicLoop(ctx context.Context) {
 	klog.InfoS("Loop configuration", "optimizationInterval", OptimizeInterval.String())
 
@@ -28,8 +23,8 @@ func (pl *SharedState) periodicLoop(ctx context.Context) {
 
 	klog.InfoS(msg(strategy, InfoCycleStartedFirstRun), "in", firstDelay)
 
-	// Last pending set on which we ran the solver and considered the result "solved".
 	var lastSolvedSet map[types.UID]struct{}
+	var lastSolvedFingerprint string
 
 	for {
 		select {
@@ -37,57 +32,65 @@ func (pl *SharedState) periodicLoop(ctx context.Context) {
 			return
 
 		case <-timer.C:
-			// Defensive: normally startLoops() only starts this once caches are warm.
 			if !pl.CachesWarm.Load() {
 				klog.InfoS(msg(strategy, InfoCachesNotWarmedUp), "nextIn", interval)
 				timer.Reset(interval)
 				continue
 			}
 
-			// Snapshot pods and build current Pending set.
-			pods, _ := pl.getPods()
-			currentSet := make(map[types.UID]struct{})
-			for _, p := range pods {
-				if p == nil || p.Status.Phase != "Pending" {
+			snap, err := pl.buildPendingSnapshot()
+			if err != nil {
+				klog.InfoS(msg(strategy, "buildPendingSnapshot failed"),
+					"err", err, "nextIn", interval)
+				timer.Reset(interval)
+				continue
+			}
+
+			pendingCount := snap.PendingCount
+
+			// If Python is configured to only optimize the N lowest priorities and
+			// there are currently no Pending pods in that low-priority window,
+			// skip this optimization cycle entirely.
+			if SolverPythonEnabled && SolverPythonNumLowerPriorities > 0 {
+				if !pendingHasLowPriorityTargets(snap.Pods) {
+					klog.V(MyV).InfoS(
+						msg(strategy, "skip periodic optimization: only higher-priority pending pods outside python lower-tier window"),
+						"pending", pendingCount,
+						"pythonNumLowerPriorities", SolverPythonNumLowerPriorities,
+					)
+					timer.Reset(interval)
 					continue
 				}
-				currentSet[p.UID] = struct{}{}
 			}
-			pendingCount := len(currentSet)
 
-			// No pending pods → nothing to optimize, clear solved baseline.
 			if pendingCount == 0 {
-				if lastSolvedSet != nil {
+				if lastSolvedSet != nil || lastSolvedFingerprint != "" {
 					lastSolvedSet = nil
+					lastSolvedFingerprint = ""
 				}
 				klog.InfoS(msg(strategy, "no pending pods; skipping optimization"))
 				timer.Reset(interval)
 				continue
 			}
 
-			// If we previously solved this exact pending set, skip re-running the solver.
-			if lastSolvedSet != nil && sameUIDSet(currentSet, lastSolvedSet) {
+			if lastSolvedSet != nil &&
+				lastSolvedFingerprint != "" &&
+				sameUIDSet(snap.PendingUIDs, lastSolvedSet) &&
+				snap.Fingerprint == lastSolvedFingerprint {
 				klog.V(MyV).InfoS(
-					msg(strategy, "pending set matches last solved set; skipping optimization"),
+					msg(strategy, "pending set + cluster fingerprint match last solved; skipping optimization"),
 					"pending", pendingCount,
 				)
 				timer.Reset(interval)
 				continue
 			}
 
-			klog.InfoS(msg(strategy, InfoCycleStarted),
-				"pendingPods", pendingCount)
+			klog.InfoS(msg(strategy, InfoCycleStarted), "pendingPods", pendingCount)
 
 			// No single preemptor in periodic modes.
-			_, _, _, _, _, err := pl.runFlow(context.Background(), nil)
+			_, _, _, bestAttempt, _, err := pl.runFlow(context.Background(), nil)
 
-			// Treat these outcomes as "solved" for this pending set:
-			// - success (err == nil)
-			// - no improving solution (baseline already optimal)
-			// - nothing schedulable under current constraints.
-			solved := err == nil ||
-				err == ErrNoImprovingSolutionFromAnySolver ||
-				err == ErrNoPendingPodsToSchedule
+			solved := isRunSolvedForPendingSet(err, bestAttempt)
 
 			if err != nil &&
 				err != ErrNoImprovingSolutionFromAnySolver &&
@@ -99,7 +102,8 @@ func (pl *SharedState) periodicLoop(ctx context.Context) {
 			}
 
 			if solved {
-				lastSolvedSet = cloneUIDSet(currentSet)
+				lastSolvedSet = cloneUIDSet(snap.PendingUIDs)
+				lastSolvedFingerprint = snap.Fingerprint
 			}
 
 			timer.Reset(interval)

@@ -17,7 +17,7 @@ var OptimizeHookStage = parseOptimizeHookStage(getenv("OPTIMIZE_HOOK_STAGE", "po
 var OptimizeInterval = parseTime(getenv("OPTIMIZE_INTERVAL", "30s"))
 
 // OptimizeInitialDelay is the initial delay before the first optimization run.
-var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "15s"))
+var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "5s"))
 
 // OptimizeFreeTimeDelay is the duration of idle time (no new pods arriving) before triggering freetime optimization.
 var OptimizeFreeTimeDelay = parseTime(getenv("OPTIMIZE_FREE_TIME_DELAY", "2s"))
@@ -55,6 +55,10 @@ var SolverPythonMoveFractionOfTier = parseFloat(getenv("SOLVER_PYTHON_MOVE_FRACT
 
 // SolverPythonGraceMs is the grace period for the python solver (ms).
 var SolverPythonGraceMs = parseInt(getenv("SOLVER_PYTHON_GRACE_MS", "1000"))
+
+// SolverPythonNumLowerPriorities controls how many distinct priorities (from the lowest)
+// are included in the optimization (0 = all priorities).
+var SolverPythonNumLowerPriorities = parseInt(getenv("SOLVER_PYTHON_NUM_LOWER_PRIORITIES", "0"))
 
 // SolverBfsEnabled indicates whether the BFS solver is enabled.
 var SolverBfsEnabled = parseBool(getenv("SOLVER_BFS_ENABLED", "false"))

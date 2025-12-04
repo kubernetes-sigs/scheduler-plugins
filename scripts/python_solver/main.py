@@ -42,9 +42,10 @@ class CPSATSolver:
             - ignore_affinity: bool, whether to ignore affinity constraints (default True)
             - log_progress: bool, whether to log progress (default False)
             - log_subsolvers: bool, whether to log subsolver statistics (default False)
-            - guaranteed_tier_fraction: float in [0.0, 1.0], fraction of time guaranteed for all tiers (default 0.4)
-            - move_fraction_of_tier: float in [0.0, 1.0], fraction of tier time for moves (default 0.3)
+            - guaranteed_tier_fraction: float in [0.0, 1.0], fraction of time guaranteed for all tiers (default 0.6)
+            - disr_fraction_of_tier: float in [0.0, 1.0], fraction of tier time for moves (default 0.5)
             - gap_limit: float in [0.0, 1.0], relative gap limit (default 0.00)
+            - num_lower_priorities: int >= 0, number of *lowest* distinct priorities to optimize over (0 = all priorities, default)
         Returns a dict with keys:
             - placements: list of placements (dicts with pod {uid, namespace, name}, from_node, to_node)
             - evictions: list of evictions (dicts with pod {uid, namespace, name}, node)
@@ -71,6 +72,9 @@ class CPSATSolver:
         log_progress             = bool(instance.get("log_progress", False))
         guaranteed_tier_fraction = float(instance.get("guaranteed_tier_fraction", 0.6)) # guaranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers. Default value of 0.6 is estimated through experiments.
         disr_fraction_of_tier    = float(instance.get("disr_fraction_of_tier", 0.5)) # of a tier's budget: 30% disruption, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves. Default value of 0.5 is estimated through experiments.
+        
+        # How many lowest priorities we actively optimize over (0 = all).
+        num_lower_priorities = int(instance.get("num_lower_priorities", 0))
 
         #################################################
         # --- Solver setup ------------------------------
@@ -263,7 +267,6 @@ class CPSATSolver:
             # (weak constraint to avoid trivial empty solution and solutions that only move running pods or evict.)
             if pending_idxs:
                 model.Add(sum(placed[i] for i in pending_idxs) >= 1)
-
         
         #################################################
         # Lexicographic optimization:
@@ -301,6 +304,24 @@ class CPSATSolver:
             orig = p_node_j(i)
             pos  = eligible_pos[i].get(orig)
             return assign[i][pos] if pos is not None else 0
+
+        def apply_current_placement_as_hint():
+            """
+            Seed solver hints from the current cluster placement before any Solve().
+            For each pod that is currently running on an eligible node, we hint:
+            - placed[i] == 1
+            - assign[i][pos(orig_j)] == 1
+            """
+            for i in range(num_pods):
+                orig_j = p_node_j(i)
+                if orig_j is None: # pending in the snapshot: no preferred node
+                    continue
+                pos = eligible_pos[i].get(orig_j)
+                if pos is None: # original node not in eligible_nodes (e.g. filtered out/unusable)
+                    continue
+                # "Stay where you are" is the starting suggestion
+                model.AddHint(placed[i], 1)
+                model.AddHint(assign[i][pos], 1)
 
         def apply_solution_as_hint():
             """
@@ -360,15 +381,66 @@ class CPSATSolver:
         usable_sec = max(0.0, total_sec) # time we can actually use
         deadline   = time.monotonic() + total_sec # absolute deadline time
 
-        # Build tiers: a tier is a group of pods of equal priority.
-        priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
-        tiers = [p for p in priorities if any(p_priority(i) >= p for i in range(num_pods))]
-        remaining_tiers = max(1, len(tiers))
-
         # Time allocation pools for priorities
         reserved_total   = usable_sec * max(0.0, min(1.0, guaranteed_tier_fraction))  # guaranteed pool for all priorities
         unreserved_pool  = max(0.0, usable_sec - reserved_total)                      # free pool, first priority can burn it
         floor_left       = reserved_total                                             # remaining guaranteed pool
+
+        #########################
+        # Hint current placements
+        #########################
+        # Seed hints from the current cluster placement before the first solve.
+        # This gives CP-SAT a good starting point.
+        apply_current_placement_as_hint()
+
+        #########################
+        # Build priorities and tiers
+        #########################
+        # Build distinct priorities (descending).
+        all_priorities = sorted({p_priority(i) for i in range(num_pods)}, reverse=True)
+
+        # Decide which priorities we actively optimize over.
+        #  - Single-preemptor mode: always solve across all priorities.
+        #  - num_lower_priorities <= 0 or >= (#distinct): also solve all priorities.
+        #  - otherwise: solve only the `num_lower_priorities` *lowest* priorities.
+        if single_preemptor_mode or num_lower_priorities <= 0 or num_lower_priorities >= len(all_priorities):
+            solve_priorities = set(all_priorities)
+        else:
+            # Example: all_priorities = [100, 10, 5, 0], num_lower_priorities = 2 → {5, 0}
+            solve_priorities = set(all_priorities[-num_lower_priorities:])
+
+        # Tiers we will actually iterate over (highest → lowest among the chosen ones).
+        tiers = sorted(solve_priorities, reverse=True)
+        remaining_tiers = max(1, len(tiers))
+
+        #################################################
+        # Freeze higher priorities (optional)
+        #################################################
+        freeze_high_prio = (
+            (not single_preemptor_mode)
+            and num_lower_priorities > 0
+            and len(all_priorities) > len(solve_priorities)
+        )
+
+        if freeze_high_prio and solve_priorities:
+            max_solved = max(solve_priorities)
+            high_running = 0
+            high_pending = 0
+            for i in range(num_pods):
+                pr = p_priority(i)
+                if pr <= max_solved:
+                    continue  # in the "solved" band; normal behavior
+                if i in running_idxs:
+                    orig = p_node_j(i)
+                    pos = eligible_pos[i].get(orig)
+                    if pos is None:
+                        return {"status": "MODEL_INVALID"}
+                    model.Add(assign[i][pos] == 1)
+                    model.Add(placed[i] == 1)
+                    high_running += 1
+                else:
+                    model.Add(placed[i] == 0)
+                    high_pending += 1
 
         #########################
         # Solve per priority

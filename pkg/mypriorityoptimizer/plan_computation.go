@@ -69,6 +69,7 @@ func (pl *SharedState) planComputation(
 			inAttempt.GapLimit = SolverPythonGapLimit
 			inAttempt.GuaranteedTierFraction = SolverPythonGuaranteedTierFraction
 			inAttempt.MoveFractionOfTier = SolverPythonMoveFractionOfTier
+			inAttempt.NumLowerPriorities = SolverPythonNumLowerPriorities
 			if SolverPythonGraceMs > 0 { // increase context duration by grace for python due to I/O overhead
 				ctxDur += time.Duration(SolverPythonGraceMs) * time.Millisecond
 			}

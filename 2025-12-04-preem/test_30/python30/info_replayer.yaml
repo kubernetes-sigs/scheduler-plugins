@@ -1,0 +1,32 @@
+meta:
+  timestamp: 2025/12/04/06:48:52
+  git: {}
+  kind: trace_replayer
+  job_file: /work/2025-12-04-preem/content/data/jobs/trace/test3/test_30_py_30.yaml
+  kwokctl_config_file: data/configs-kwokctl/all_synch_python.yaml
+inputs:
+  cli-cmd: python3 /work/2025-12-04-preem/content/scripts/kwok_trace_replayer/trace_replayer.py
+    --kwok-runtime binary --job-file /work/2025-12-04-preem/content/data/jobs/trace/test3/test_30_py_30.yaml
+  args:
+    result_dir: /work/2025-12-04-preem/content/results/test_30/python30
+    job_file: /work/2025-12-04-preem/content/data/jobs/trace/test3/test_30_py_30.yaml
+    trace_dir: data/traces3/test_30
+    cluster_name: kwok1
+    kwok_runtime: binary
+    kwokctl_config_file: data/configs-kwokctl/all_synch_python.yaml
+    namespace: trace
+    node_cpu: 1000m
+    node_mem: 1Gi
+    monitor_interval: 1.0
+    log_level: INFO
+  job:
+    trace-dir: data/traces3/test_30
+    result-dir: results/test_30/python30
+    kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+    override-kwokctl-envs:
+    - name: OPTIMIZE_MODE
+      value: all_asynch
+    - name: SOLVER_PYTHON_TIMEOUT
+      value: 10s
+    - name: OPTIMIZE_INTERVAL
+      value: 30s
