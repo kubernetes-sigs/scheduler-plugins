@@ -31,7 +31,7 @@ mkdir -p coverage/go
 
 if $RUN_PY; then
   echo "=== Running Python tests (pytest) ==="
-  pytest
+  python -m pytest
   echo "Python tests completed."
 fi
 
