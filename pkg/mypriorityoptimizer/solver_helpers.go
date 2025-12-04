@@ -18,7 +18,7 @@ import (
 
 // isAnySolverEnabled checks if any solver is enabled.
 func (pl *SharedState) isAnySolverEnabled() bool {
-	return SolverPythonEnabled || SolverBfsEnabled || SolverLocalSearchEnabled
+	return SolverPythonEnabled // add more using ORs as needed
 }
 
 // buildSolverInput builds the solver input from live nodes/pods (and optional preemptor)
@@ -140,12 +140,6 @@ func solverConfigArgs() []any {
 			"pythonMoveFractionOfTier", fmt.Sprintf("%.2f", SolverPythonMoveFractionOfTier),
 			"pythonNumLowerPriorities", SolverPythonNumLowerPriorities,
 		)
-	}
-	if SolverBfsEnabled {
-		args = append(args, "bfsSolver", true, "bfsTimeout", SolverBfsTimeout.String())
-	}
-	if SolverLocalSearchEnabled {
-		args = append(args, "localSearchSolver", true, "localSearchTimeout", SolverLocalSearchTimeout.String())
 	}
 	// Always include shared flags
 	args = append(args, "useHints", SolverUseHints, "saveFailedAttempts", SolverSaveAllAttempts)

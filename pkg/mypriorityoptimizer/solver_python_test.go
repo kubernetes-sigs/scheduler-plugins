@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// helper to write a temporary script that acts as the "python solver"
+// helper to write a temporary script that acts as the "python solver" script
 func writeFakeSolverScript(t *testing.T, dir, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, "fake_solver.sh")
@@ -44,18 +44,13 @@ cat >/dev/null
 echo '{"Status":"OPTIMAL"}'
 `
 	scriptPath := writeFakeSolverScript(t, tmpDir, script)
-
-	// For this test we call `bash <script>`, so:
 	solverPythonBin = "bash"
 	solverPath = scriptPath
 
 	pl := &SharedState{}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-
 	in := SolverInput{} // contents not important for this test
-
 	out, err := pl.runSolverPython(ctx, in)
 	if err != nil {
 		t.Fatalf("runSolverPython returned error: %v", err)
@@ -96,12 +91,9 @@ echo 'this-is-not-json'
 	solverPath = scriptPath
 
 	pl := &SharedState{}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-
 	in := SolverInput{}
-
 	out, err := pl.runSolverPython(ctx, in)
 	if err == nil {
 		t.Fatalf("expected error for invalid JSON output, got nil")

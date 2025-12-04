@@ -1,0 +1,11 @@
+trace-dir: data/traces/set3/1prio
+result-dir: results/1prio/python_all
+kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+save-scheduler-logs: true
+override-kwokctl-envs:
+  - name: OPTIMIZE_MODE
+    value: all_asynch
+  - name: SOLVER_PYTHON_TIMEOUT
+    value: 10s
+  - name: OPTIMIZE_INTERVAL
+    value: 20s

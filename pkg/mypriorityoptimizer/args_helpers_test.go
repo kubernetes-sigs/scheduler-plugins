@@ -67,7 +67,7 @@ func TestParseInt(t *testing.T) {
 		{"zero", "0", 0},
 		{"positive", "42", 42},
 		{"negative", "-7", -7},
-		{"invalid -> 0", "notanint", 0}, // strconv.Atoi returns 0 on error with ignored err
+		{"invalid -> 0", "notanint", 0},
 		{"empty -> 0", "", 0},
 	}
 

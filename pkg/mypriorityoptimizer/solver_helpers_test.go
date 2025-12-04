@@ -21,17 +21,11 @@ func hasKey(args []any, key string) bool {
 
 func TestIsAnySolverEnabled(t *testing.T) {
 	origPy := SolverPythonEnabled
-	origBfs := SolverBfsEnabled
-	origLocal := SolverLocalSearchEnabled
 	defer func() {
 		SolverPythonEnabled = origPy
-		SolverBfsEnabled = origBfs
-		SolverLocalSearchEnabled = origLocal
 	}()
 
 	SolverPythonEnabled = false
-	SolverBfsEnabled = false
-	SolverLocalSearchEnabled = false
 	pl := &SharedState{}
 
 	if got := pl.isAnySolverEnabled(); got {
@@ -41,18 +35,6 @@ func TestIsAnySolverEnabled(t *testing.T) {
 	SolverPythonEnabled = true
 	if got := pl.isAnySolverEnabled(); !got {
 		t.Fatalf("isAnySolverEnabled() with python enabled = %v, want true", got)
-	}
-
-	SolverPythonEnabled = false
-	SolverBfsEnabled = true
-	if got := pl.isAnySolverEnabled(); !got {
-		t.Fatalf("isAnySolverEnabled() with bfs enabled = %v, want true", got)
-	}
-
-	SolverBfsEnabled = false
-	SolverLocalSearchEnabled = true
-	if got := pl.isAnySolverEnabled(); !got {
-		t.Fatalf("isAnySolverEnabled() with local search enabled = %v, want true", got)
 	}
 }
 
@@ -94,27 +76,21 @@ func TestBuildBaselineScore(t *testing.T) {
 
 func TestSolverConfigArgs(t *testing.T) {
 	origPy := SolverPythonEnabled
-	origBfs := SolverBfsEnabled
-	origLocal := SolverLocalSearchEnabled
 	origHints := SolverUseHints
 	origSave := SolverSaveAllAttempts
 	defer func() {
 		SolverPythonEnabled = origPy
-		SolverBfsEnabled = origBfs
-		SolverLocalSearchEnabled = origLocal
 		SolverUseHints = origHints
 		SolverSaveAllAttempts = origSave
 	}()
 
 	// Case 1: all solvers disabled
 	SolverPythonEnabled = false
-	SolverBfsEnabled = false
-	SolverLocalSearchEnabled = false
 	SolverUseHints = true
 	SolverSaveAllAttempts = false
 
 	args := solverConfigArgs()
-	if hasKey(args, "pythonSolver") || hasKey(args, "bfsSolver") || hasKey(args, "localSearchSolver") {
+	if hasKey(args, "pythonSolver") {
 		t.Fatalf("solverConfigArgs() should not contain solver keys when all disabled, got %v", args)
 	}
 	if !hasKey(args, "useHints") || !hasKey(args, "saveFailedAttempts") {
@@ -123,15 +99,10 @@ func TestSolverConfigArgs(t *testing.T) {
 
 	// Case 2: python only
 	SolverPythonEnabled = true
-	SolverBfsEnabled = false
-	SolverLocalSearchEnabled = false
 
 	args = solverConfigArgs()
 	if !hasKey(args, "pythonSolver") {
 		t.Fatalf("solverConfigArgs() missing pythonSolver when python enabled, got %v", args)
-	}
-	if hasKey(args, "bfsSolver") || hasKey(args, "localSearchSolver") {
-		t.Fatalf("solverConfigArgs() should not contain other solver keys, got %v", args)
 	}
 }
 

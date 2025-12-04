@@ -1,0 +1,3 @@
+trace-dir: data/traces/set3/1prio
+result-dir: results/1prio/ds
+kwokctl-config-file: data/configs-kwokctl/default.yaml
