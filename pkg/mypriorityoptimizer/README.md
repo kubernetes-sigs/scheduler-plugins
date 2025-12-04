@@ -1063,6 +1063,16 @@ python -m scripts.kwok_trace_replayer.trace_generator \
 
 ### Now TODOs
 
+- Update the paper with the adjustments mentioned to Jacopo via mail:
+  - Completion check
+    Previously, the final "completion check" -- which verifies that pods have been placed on their intended nodes -- ran in `PostBind`.
+    This turned out to be fragile, because the last pods that should trigger the check might be deleted before `PostBind` is invoked.
+    We have now moved this logic into a dedicated background routine that periodically (every 250 ms) inspects the cluster state, detects when a plan has fully completed, and uses that as a gate before returning to normal scheduling.
+  - Do not run the solver on the same set of pending pods and cluster state
+    If we already have run the solver on the same set of pending pods and the pod-node placements are the same, and this solution was optimal we do not run the solver again.
+  - Keep default preemption enabled
+    To schedule higher‑priority pods quickly without running our solver, allow the default preemption mechanism to handle them.
+    It does not interfere with our plugin.
 - Doesnt seems that our check for already solved solutions in the plugin works. Need to debug.
 - Test the new free time mode.
   - We should run the solver after cluster has settled for some time, e.g. 2 seconds. The solver should be run in async mode to allow normal scheduling and should be stopped if a new pod arrives - just throw away this try.
