@@ -1091,11 +1091,15 @@ Total coverage: 56
 - plugin_readiness.go
 - config_map_helpers.go
 - pod_set_helpers.go
+- solver_helpers.go
+- hook_postfilter.go
+- hook_preenqueue.go
+- hook_prefilter.go
+- hook_reserve_unreserve.go
+- plan_helpers.go
 
 missing:
 
-- solver_helpers.go: buildSolverInput, planApplicable, logLeaderboard, computeSolverScore, exportSolverStatsConfigMap, appendSolverStatsCM
-- plan_helpers.go
 - plan_completion_watch.go
 - plan_activation.go
 
@@ -1103,11 +1107,6 @@ missing:
 - plan_context.go
 - plan_registration.go
 - optimization_flow.go
-
-- hook_postfilter.go
-- hook_preenqueue.go
-- hook_prefilter.go
-- hook_reserve_unreserve.go
 
 ### Now TODOs
 
