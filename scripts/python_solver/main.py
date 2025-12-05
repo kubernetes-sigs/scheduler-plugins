@@ -62,7 +62,7 @@ class CPSATSolver:
         #################################################
         nodes       = instance.get("nodes") or []
         pods        = instance.get("pods")  or []
-        preemptor   = instance.get("preemptor") or None
+        preemptor   = instance.get("preemptor") or None # preemptor (per-pod) mode
 
         #################################################
         # --- Options/Parameters ------------------------
@@ -118,9 +118,9 @@ class CPSATSolver:
                 pod_by_uid[uid] = p
 
         #################################################
-        # --- Single-Preemptor setup --------------------
+        # --- Preemptor (per-pod) setup -----------------
         #################################################
-        # If single-preemptor mode and preemptor 
+        # If preemptor (per-pod) mode and preemptor 
         # not already in pods, add it as pending.
         single_preemptor_mode = False
         preemptor_uid = None
@@ -172,12 +172,10 @@ class CPSATSolver:
         #################################################
         # Index of preemptor
         preemptor_idx = None
-        preemptor_priority  = None
         if single_preemptor_mode:
             for i in range(num_pods):
                 if p_uid(i) == preemptor_uid:
                     preemptor_idx = i
-                    preemptor_priority = p_priority(i)
                     break
             if preemptor_idx is None:
                 single_preemptor_mode = False # fallback if not found
@@ -255,13 +253,13 @@ class CPSATSolver:
         #################################################
         # --- Mode Specific Constraints -----------------
         #################################################
-        # Single-preemptor mode:
+        # Preemptor (per-pod) mode:
         if single_preemptor_mode and preemptor_idx is not None:
             # Single-preemptor must be placed.
             # However, possibly, it cannot be placed anywhere.
             # In that case, the model is infeasible.
             model.Add(sum(assign[preemptor_idx]) == 1)
-        # Batch mode
+        # Global modes
         else:
             # There must be at least one placement of pending pods
             # (weak constraint to avoid trivial empty solution and solutions that only move running pods or evict.)

@@ -1066,18 +1066,18 @@ python -m scripts.kwok_trace_replayer.trace_generator \
 
 #### Go Tests
 
-Total coverage: 33.3%
+Total coverage: 56
 
 100% coverage:
 
 - args_parsers.go
 - logging_helpers.go
 - mode_helpers.go
-- strategy_helpers.go
+- objects_helpers.go
+- loop_interlude.go
+- loop_periodic.go
 
 95%+ coverage:
-
-- nudge_blocked.go
 
 90%+ coverage:
 
@@ -1086,6 +1086,7 @@ Total coverage: 33.3%
 
 80%+ coverage:
 
+- loop_helpers.go
 - plugin.go
 - plugin_readiness.go
 - config_map_helpers.go
@@ -1093,7 +1094,6 @@ Total coverage: 33.3%
 
 missing:
 
-- objects_helpers.go
 - solver_helpers.go: buildSolverInput, planApplicable, logLeaderboard, computeSolverScore, exportSolverStatsConfigMap, appendSolverStatsCM
 - plan_helpers.go
 - plan_completion_watch.go
@@ -1103,10 +1103,6 @@ missing:
 - plan_context.go
 - plan_registration.go
 - optimization_flow.go
-
-- loop_helpers.go
-- loop_interlude.go
-- loop_periodic.go
 
 - hook_postfilter.go
 - hook_preenqueue.go

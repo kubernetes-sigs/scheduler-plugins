@@ -4,6 +4,7 @@ package mypriorityoptimizer
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -11,6 +12,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
+
+// By default this just calls (*SharedState).optimizeGlobalBackgroundLoop.
+// Tests can override this variable to intercept the cfg passed in.
+var optimizeGlobalBackgroundLoopFunc = func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
+	pl.optimizeGlobalBackgroundLoop(ctx, cfg)
+}
 
 // startLoops launches background loops exactly once, after caches are warm.
 // It is safe to call multiple times; only the first call does anything.
@@ -23,11 +30,6 @@ func (pl *SharedState) startLoops(ctx context.Context) {
 		go pl.loopPeriodic(ctx)
 	case ModeInterlude:
 		go pl.loopInterlude(ctx)
-	default:
-		// PerPod@PreEnqueue uses the nudgeBlockedLoop helper.
-		if optimizePerPod() && hookAtPreEnqueue() {
-			go pl.nudgeBlockedLoop(ctx)
-		}
 	}
 }
 
@@ -353,4 +355,51 @@ func pendingHasLowPriorityTargets(pods []*v1.Pod) bool {
 
 	// Only higher-priority pending pods are present → Python won't touch them.
 	return false
+}
+
+// PendingSnapshot bundles the pieces of state that both the periodic and
+// free-time loops need in order to decide whether to run the solver.
+type PendingSnapshot struct {
+	PendingUIDs  map[types.UID]struct{}
+	PendingCount int
+	Fingerprint  string     // clusterFingerprint(nodes, pods)
+	Pods         []*v1.Pod  // live snapshot (for priority checks)
+	Nodes        []*v1.Node // live snapshot (for solver input)
+}
+
+// buildPendingSnapshot:
+//   - lists current pods and nodes via informers
+//   - builds the set of Pending pod UIDs
+//   - computes the baseline cluster fingerprint (usable nodes + running pods).
+func (pl *SharedState) buildPendingSnapshot() (*PendingSnapshot, error) {
+	pods, err := pl.getPods()
+	if err != nil {
+		return nil, fmt.Errorf("buildPendingSnapshot: getPods failed: %w", err)
+	}
+	nodes, err := pl.getNodes()
+	if err != nil {
+		return nil, fmt.Errorf("buildPendingSnapshot: getNodes failed: %w", err)
+	}
+
+	pendingSet := make(map[types.UID]struct{})
+	for _, p := range pods {
+		if p == nil || p.DeletionTimestamp != nil {
+			continue
+		}
+		// You currently check Status.Phase == "Pending" – use constant for clarity.
+		if p.Status.Phase != v1.PodPending {
+			continue
+		}
+		pendingSet[p.UID] = struct{}{}
+	}
+
+	fp := clusterFingerprint(nodes, pods)
+
+	return &PendingSnapshot{
+		PendingUIDs:  pendingSet,
+		PendingCount: len(pendingSet),
+		Fingerprint:  fp,
+		Pods:         pods,
+		Nodes:        nodes,
+	}, nil
 }

@@ -85,13 +85,8 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 		}
 	}
 
-	// 4) Activate planned pending (if applicable for the current mode)
-	//
-	// Global modes (Periodic, Manual, Interlude) all operate on the
-	// accumulated pending set, so we activate planned pending pods here.
-	if isGlobalMode() {
-		pl.activatePlannedPending(plan, pods)
-	}
+	// 4) Activate planned pending
+	pl.activatePlannedPending(plan, pods)
 
 	return nil
 

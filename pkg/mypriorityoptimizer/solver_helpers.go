@@ -550,8 +550,15 @@ func (pl *SharedState) exportSolverStatsConfigMap(
 	)
 }
 
-// append (create if missing) an entry to the ConfigMap ledger
+var appendSolverStatsCMHook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats)
+
 func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedSolverStats) {
+	// Allow unit tests to intercept ConfigMap writes and avoid real K8s clients.
+	if appendSolverStatsCMHook != nil {
+		appendSolverStatsCMHook(pl, ctx, entry)
+		return
+	}
+
 	cli := pl.Handle.ClientSet()
 	if cli == nil {
 		klog.V(1).Info("no clientset; skip stats CM")

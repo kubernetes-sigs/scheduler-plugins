@@ -1,6 +1,7 @@
 package mypriorityoptimizer
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -17,6 +18,16 @@ func hasKey(args []any, key string) bool {
 		}
 	}
 	return false
+}
+
+func withAppendStatsHook(
+	hook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats),
+	fn func(),
+) {
+	orig := appendSolverStatsCMHook
+	appendSolverStatsCMHook = hook
+	defer func() { appendSolverStatsCMHook = orig }()
+	fn()
 }
 
 func TestIsAnySolverEnabled(t *testing.T) {
@@ -50,6 +61,191 @@ func TestBuildSolverInput_NoUsableNodes(t *testing.T) {
 	}
 	if len(in.Nodes) != 0 || len(in.Pods) != 0 {
 		t.Fatalf("buildSolverInput() with no nodes returned non-empty input: %+v", in)
+	}
+}
+
+func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
+	pl := &SharedState{}
+
+	// One usable node.
+	nUsable := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "n1"},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{Type: v1.NodeReady, Status: v1.ConditionTrue},
+			},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("1000m"),
+				v1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+	// One unusable node (unschedulable) – should be ignored.
+	nUnusable := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "n2"},
+		Spec:       v1.NodeSpec{Unschedulable: true},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{Type: v1.NodeReady, Status: v1.ConditionTrue},
+			},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("1000m"),
+				v1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+
+	// Pending pod → always included.
+	pPending := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-pending",
+			Namespace: "ns",
+			UID:       "u-pending",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("100m"),
+						v1.ResourceMemory: resource.MustParse("64Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	// Running on usable node → included.
+	pRunUsable := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-run-usable",
+			Namespace: "ns",
+			UID:       "u-run-usable",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "n1",
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("200m"),
+						v1.ResourceMemory: resource.MustParse("128Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	// Running on unusable node → ignored.
+	pRunUnusable := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-run-unusable",
+			Namespace: "ns",
+			UID:       "u-run-unusable",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "n2",
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("300m"),
+						v1.ResourceMemory: resource.MustParse("256Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	// System namespace pending pod → should be Protected=true.
+	pSystem := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-sys",
+			Namespace: SystemNamespace,
+			UID:       "u-sys",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("50m"),
+						v1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	// Preemptor pod – present in the live pods slice but should only appear in Preemptor.
+	preemptor := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-preemptor",
+			Namespace: "ns",
+			UID:       "u-preemptor",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("100m"),
+						v1.ResourceMemory: resource.MustParse("64Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	// Duplicate pending pod to exercise deduplication.
+	pods := []*v1.Pod{
+		pPending,
+		pRunUsable,
+		pRunUnusable,
+		preemptor,
+		pSystem,
+		pPending, // duplicate UID
+		nil,      // ignored
+	}
+
+	in, err := pl.buildSolverInput([]*v1.Node{nUsable, nUnusable}, pods, preemptor)
+	if err != nil {
+		t.Fatalf("buildSolverInput() unexpected error: %v", err)
+	}
+
+	if len(in.Nodes) != 1 || in.Nodes[0].Name != "n1" {
+		t.Fatalf("buildSolverInput().Nodes = %+v, want single usable node n1", in.Nodes)
+	}
+	if in.Preemptor == nil || string(in.Preemptor.UID) != "u-preemptor" {
+		t.Fatalf("Preemptor = %#v, want UID u-preemptor", in.Preemptor)
+	}
+
+	// Expect: pending, running-on-usable, system pending (protected)
+	if len(in.Pods) != 3 {
+		t.Fatalf("buildSolverInput().Pods len = %d, want 3", len(in.Pods))
+	}
+
+	var seenPending, seenRunUsable, seenSystem bool
+	for _, sp := range in.Pods {
+		switch string(sp.UID) {
+		case "u-pending":
+			if sp.Node != "" {
+				t.Fatalf("pending pod Node = %q, want empty", sp.Node)
+			}
+			seenPending = true
+		case "u-run-usable":
+			if sp.Node != "n1" {
+				t.Fatalf("running pod Node = %q, want n1", sp.Node)
+			}
+			seenRunUsable = true
+		case "u-sys":
+			if !sp.Protected {
+				t.Fatalf("system pod must be Protected=true")
+			}
+			seenSystem = true
+		default:
+			t.Fatalf("unexpected SolverPod UID %q in input", sp.UID)
+		}
+	}
+
+	if !seenPending || !seenRunUsable || !seenSystem {
+		t.Fatalf("missing expected pods: pending=%v runUsable=%v system=%v",
+			seenPending, seenRunUsable, seenSystem)
 	}
 }
 
@@ -246,6 +442,186 @@ func TestPlanApplicable_CapacityExceededWhenNoNodes(t *testing.T) {
 	}
 }
 
+func TestPlanApplicable_EvictNodeNowUnusable(t *testing.T) {
+	pl := &SharedState{}
+
+	// Running pod on node1, but we pass no usable nodes → eviction sees node unusable.
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p1",
+			Namespace: "ns1",
+			UID:       "uid-1",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "node1",
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("100m"),
+						v1.ResourceMemory: resource.MustParse("128Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	out := &SolverOutput{
+		Evictions: []Placement{
+			{Pod: Pod{UID: "uid-1", Namespace: "ns1", Name: "p1"}},
+		},
+	}
+
+	ok, reason := pl.planApplicable(out, nil, []*v1.Pod{pod})
+	if ok {
+		t.Fatalf("planApplicable() with eviction on unusable node = true, want false")
+	}
+	if !strings.Contains(reason, "evict node now unusable") {
+		t.Fatalf("planApplicable() reason = %q, want it to contain 'evict node now unusable'", reason)
+	}
+}
+
+func TestPlanApplicable_PendingPreconditionChanged(t *testing.T) {
+	pl := &SharedState{}
+
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "n1"},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{Type: v1.NodeReady, Status: v1.ConditionTrue},
+			},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("1000m"),
+				v1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+
+	// Pod is already bound (no longer pending) but plan expects FromNode == "".
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p1",
+			Namespace: "ns1",
+			UID:       "uid-1",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "n1",
+		},
+	}
+
+	out := &SolverOutput{
+		Placements: []NewPlacement{
+			{
+				Pod:      Pod{UID: "uid-1", Namespace: "ns1", Name: "p1"},
+				FromNode: "",
+				ToNode:   "n1",
+			},
+		},
+	}
+
+	ok, reason := pl.planApplicable(out, []*v1.Node{node}, []*v1.Pod{pod})
+	if ok {
+		t.Fatalf("planApplicable() with pending precondition violated = true, want false")
+	}
+	if !strings.Contains(reason, "pending precondition changed") {
+		t.Fatalf("planApplicable() reason = %q, want it to contain 'pending precondition changed'", reason)
+	}
+}
+
+func TestPlanApplicable_Success(t *testing.T) {
+	pl := &SharedState{}
+
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "n1"},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{Type: v1.NodeReady, Status: v1.ConditionTrue},
+			},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("1000m"),
+				v1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+
+	// pStay remains on n1.
+	pStay := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-stay",
+			Namespace: "ns",
+			UID:       "u-stay",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "n1",
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("500m"),
+						v1.ResourceMemory: resource.MustParse("256Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	// pEvict will be evicted from n1.
+	pEvict := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-evict",
+			Namespace: "ns",
+			UID:       "u-evict",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "n1",
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("500m"),
+						v1.ResourceMemory: resource.MustParse("256Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	// pPending gets placed on n1.
+	pPending := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p-pending",
+			Namespace: "ns",
+			UID:       "u-pending",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "",
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("500m"),
+						v1.ResourceMemory: resource.MustParse("256Mi"),
+					},
+				},
+			}},
+		},
+	}
+
+	out := &SolverOutput{
+		Evictions: []Placement{
+			{Pod: Pod{UID: "u-evict", Namespace: "ns", Name: "p-evict"}},
+		},
+		Placements: []NewPlacement{
+			{
+				Pod:      Pod{UID: "u-pending", Namespace: "ns", Name: "p-pending"},
+				FromNode: "",
+				ToNode:   "n1",
+			},
+		},
+	}
+
+	ok, reason := pl.planApplicable(out, []*v1.Node{node}, []*v1.Pod{pStay, pEvict, pPending})
+	if !ok {
+		t.Fatalf("planApplicable() = false, reason=%q, want true", reason)
+	}
+}
+
 func TestSummarizeAttempt_UsesExistingStatusIfSet(t *testing.T) {
 	r := SolverResult{
 		Name:       "python",
@@ -279,8 +655,37 @@ func TestSummarizeAttempt_DerivesStatusFromOutput(t *testing.T) {
 	}
 }
 
-func TestLogLeaderboard(t *testing.T) {
-	//TODO
+func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
+	baseline := SolverScore{
+		PlacedByPriority: map[string]int{"1": 1},
+		Evicted:          0,
+		Moved:            0,
+	}
+
+	attempts := []SolverResult{
+		{
+			Name:       "python",
+			Status:     "OPTIMAL",
+			DurationMs: 10,
+			Score: SolverScore{
+				PlacedByPriority: map[string]int{"1": 2}, // better
+				Evicted:          0,
+				Moved:            0,
+			},
+		},
+		{
+			Name:       "fallback",
+			Status:     "FEASIBLE",
+			DurationMs: 20,
+			Score:      baseline, // equal to baseline
+		},
+	}
+
+	best := attempts[0]
+
+	// We just want to exercise the grouping and tie-tagging logic; if this
+	// panics, the test fails.
+	logLeaderboard("test-label", attempts, baseline, best)
 }
 
 func TestComputeSolverScore_NilOutput(t *testing.T) {
@@ -292,6 +697,66 @@ func TestComputeSolverScore_NilOutput(t *testing.T) {
 	score := computeSolverScore(in, nil)
 	if len(score.PlacedByPriority) != 0 || score.Evicted != 0 || score.Moved != 0 {
 		t.Fatalf("computeSolverScore() with nil out = %#v, want zero score", score)
+	}
+}
+
+func TestComputeSolverScore_Basic(t *testing.T) {
+	in := SolverInput{
+		Pods: []SolverPod{
+			{UID: "u1", Priority: 1, Node: "n1"}, // running
+			{UID: "u2", Priority: 2, Node: ""},   // pending
+			{UID: "u3", Priority: 1, Node: "n1"}, // running
+		},
+	}
+
+	out := &SolverOutput{
+		Placements: []NewPlacement{
+			{Pod: Pod{UID: "u2"}, ToNode: "n1"}, // place pending
+			{Pod: Pod{UID: "u3"}, ToNode: "n2"}, // move running
+			{Pod: Pod{UID: "uX"}, ToNode: "n1"}, // unknown UID → ignored
+		},
+		Evictions: []Placement{
+			{Pod: Pod{UID: "u1"}}, // evict u1
+		},
+	}
+
+	score := computeSolverScore(in, out)
+
+	if got := score.PlacedByPriority["1"]; got != 1 {
+		t.Fatalf("placed prio 1 = %d, want 1", got)
+	}
+	if got := score.PlacedByPriority["2"]; got != 1 {
+		t.Fatalf("placed prio 2 = %d, want 1", got)
+	}
+	if score.Evicted != 1 {
+		t.Fatalf("Evicted = %d, want 1", score.Evicted)
+	}
+	if score.Moved != 1 {
+		t.Fatalf("Moved = %d, want 1", score.Moved)
+	}
+}
+
+func TestComputeSolverScore_WithPreemptor(t *testing.T) {
+	pre := &SolverPod{UID: "u-pre", Priority: 5}
+
+	in := SolverInput{
+		Preemptor: pre,
+		Pods:      nil,
+	}
+
+	out := &SolverOutput{
+		Placements: []NewPlacement{
+			{Pod: Pod{UID: pre.UID}, ToNode: "n1"},
+		},
+	}
+
+	score := computeSolverScore(in, out)
+
+	if got := score.PlacedByPriority["5"]; got != 1 {
+		t.Fatalf("placed prio 5 (preemptor) = %d, want 1", got)
+	}
+	if score.Evicted != 0 || score.Moved != 0 {
+		t.Fatalf("Evicted/Moved = (%d,%d), want (0,0)", score.Evicted, score.Moved)
 	}
 }
 
@@ -320,10 +785,91 @@ func TestToSolverPod_BasicMapping(t *testing.T) {
 	}
 }
 
-func TestExportSolverStatsConfigMap(t *testing.T) {
-	//TODO
+func TestExportSolverStatsConfigMap_UsesAppendHook(t *testing.T) {
+	pl := &SharedState{}
+
+	baseline := &SolverScore{
+		PlacedByPriority: map[string]int{"1": 1},
+		Evicted:          0,
+		Moved:            0,
+	}
+	attempts := []SolverResult{
+		{
+			Name:       "python",
+			Status:     "OPTIMAL",
+			DurationMs: 42,
+			Score: SolverScore{
+				PlacedByPriority: map[string]int{"1": 2},
+				Evicted:          0,
+				Moved:            0,
+			},
+		},
+	}
+
+	var gotPl *SharedState
+	var gotEntry ExportedSolverStats
+
+	withAppendStatsHook(
+		func(hpl *SharedState, _ context.Context, entry ExportedSolverStats) {
+			gotPl = hpl
+			gotEntry = entry
+		},
+		func() {
+			pl.exportSolverStatsConfigMap(
+				context.Background(),
+				"strategyX",
+				baseline,
+				"python",
+				attempts,
+				"some-error",
+			)
+		},
+	)
+
+	if gotPl != pl {
+		t.Fatalf("hook received pl=%p, want %p", gotPl, pl)
+	}
+	if gotEntry.BestName != "python" {
+		t.Fatalf("BestName = %q, want %q", gotEntry.BestName, "python")
+	}
+	if gotEntry.Error != "some-error" {
+		t.Fatalf("Error = %q, want %q", gotEntry.Error, "some-error")
+	}
+	if gotEntry.Baseline != baseline {
+		t.Fatalf("Baseline pointer mismatch: got %p, want %p", gotEntry.Baseline, baseline)
+	}
+	if len(gotEntry.Attempts) != len(attempts) {
+		t.Fatalf("Attempts len = %d, want %d", len(gotEntry.Attempts), len(attempts))
+	}
+	if gotEntry.Attempts[0].Name != "python" || gotEntry.Attempts[0].Status != "OPTIMAL" {
+		t.Fatalf("summarized Attempts[0] = %#v, want Name=python Status=OPTIMAL", gotEntry.Attempts[0])
+	}
+	if gotEntry.TimestampNs == 0 {
+		t.Fatalf("TimestampNs not set")
+	}
 }
 
-func TestAppendSolverStatsCM(t *testing.T) {
-	//TODO
+func TestAppendSolverStatsCM_UsesHookWhenSet(t *testing.T) {
+	pl := &SharedState{}
+	entry := ExportedSolverStats{BestName: "best"}
+
+	var called bool
+	withAppendStatsHook(
+		func(hpl *SharedState, _ context.Context, e ExportedSolverStats) {
+			called = true
+			if hpl != pl {
+				t.Fatalf("hook pl=%p, want %p", hpl, pl)
+			}
+			if e.BestName != entry.BestName {
+				t.Fatalf("entry.BestName = %q, want %q", e.BestName, entry.BestName)
+			}
+		},
+		func() {
+			pl.appendSolverStatsCM(context.Background(), entry)
+		},
+	)
+
+	if !called {
+		t.Fatalf("appendSolverStatsCM hook was not called")
+	}
 }

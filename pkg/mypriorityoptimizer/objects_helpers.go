@@ -18,14 +18,34 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
+// -----------------------------------------------------------------------------
+// Small indirection hooks so we can inject fakes in tests.
+// In production these all point to the real client / informer paths.
+// -----------------------------------------------------------------------------
+
+var (
+	nodesListerFor = func(pl *SharedState) corev1listers.NodeLister {
+		return pl.Handle.SharedInformerFactory().Core().V1().Nodes().Lister()
+	}
+	podsListerFor = func(pl *SharedState) corev1listers.PodLister {
+		return pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	}
+	evictPodFor = func(pl *SharedState, ctx context.Context, pod *v1.Pod, ev *policyv1.Eviction) error {
+		return pl.Client.CoreV1().Pods(pod.Namespace).EvictV1(ctx, ev)
+	}
+	createPodFor = func(pl *SharedState, ctx context.Context, pod *v1.Pod) (*v1.Pod, error) {
+		return pl.Client.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	}
+)
+
 // nodesLister returns the NodeLister from the shared informer factory.
 func (pl *SharedState) nodesLister() corev1listers.NodeLister {
-	return pl.Handle.SharedInformerFactory().Core().V1().Nodes().Lister()
+	return nodesListerFor(pl)
 }
 
 // podsLister returns the PodsLister from the shared informer factory.
 func (pl *SharedState) podsLister() corev1listers.PodLister {
-	return pl.Handle.SharedInformerFactory().Core().V1().Pods().Lister()
+	return podsListerFor(pl)
 }
 
 // getNodes returns a list of all nodes in the cluster.
@@ -91,7 +111,7 @@ func (pl *SharedState) evictPod(ctx context.Context, pod *v1.Pod) error {
 			Preconditions:      &metav1.Preconditions{UID: &pod.UID},
 		},
 	}
-	return pl.Client.CoreV1().Pods(pod.Namespace).EvictV1(ctx, ev)
+	return evictPodFor(pl, ctx, pod, ev)
 }
 
 // recreateStandalonePod creates a new pod with the same specifications as the original pod.
@@ -105,7 +125,8 @@ func (pl *SharedState) recreateStandalonePod(ctx context.Context, orig *v1.Pod, 
 	newPod.Status = v1.PodStatus{}
 	newPod.Spec.NodeName = "" // no direct binding
 	newPod.Spec.NodeSelector = map[string]string{}
-	if _, err := pl.Client.CoreV1().Pods(orig.Namespace).Create(ctx, newPod, metav1.CreateOptions{}); err != nil {
+
+	if _, err := createPodFor(pl, ctx, newPod); err != nil {
 		return fmt.Errorf("failed to create pod %s: %w", podRef(newPod), err)
 	}
 	return nil
@@ -352,51 +373,4 @@ type WorkloadKey struct {
 	Namespace string
 	// Name of the workload
 	Name string
-}
-
-// PendingSnapshot bundles the pieces of state that both the periodic and
-// free-time loops need in order to decide whether to run the solver.
-type PendingSnapshot struct {
-	PendingUIDs  map[types.UID]struct{}
-	PendingCount int
-	Fingerprint  string     // clusterFingerprint(nodes, pods)
-	Pods         []*v1.Pod  // live snapshot (for priority checks)
-	Nodes        []*v1.Node // live snapshot (for solver input)
-}
-
-// buildPendingSnapshot:
-//   - lists current pods and nodes via informers
-//   - builds the set of Pending pod UIDs
-//   - computes the baseline cluster fingerprint (usable nodes + running pods).
-func (pl *SharedState) buildPendingSnapshot() (*PendingSnapshot, error) {
-	pods, err := pl.getPods()
-	if err != nil {
-		return nil, fmt.Errorf("buildPendingSnapshot: getPods failed: %w", err)
-	}
-	nodes, err := pl.getNodes()
-	if err != nil {
-		return nil, fmt.Errorf("buildPendingSnapshot: getNodes failed: %w", err)
-	}
-
-	pendingSet := make(map[types.UID]struct{})
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
-			continue
-		}
-		// You currently check Status.Phase == "Pending" – use constant for clarity.
-		if p.Status.Phase != v1.PodPending {
-			continue
-		}
-		pendingSet[p.UID] = struct{}{}
-	}
-
-	fp := clusterFingerprint(nodes, pods)
-
-	return &PendingSnapshot{
-		PendingUIDs:  pendingSet,
-		PendingCount: len(pendingSet),
-		Fingerprint:  fp,
-		Pods:         pods,
-		Nodes:        nodes,
-	}, nil
 }

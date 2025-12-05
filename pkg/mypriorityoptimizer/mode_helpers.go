@@ -14,6 +14,7 @@ func optimizePerPod() bool { return OptimizeMode == ModePerPod }
 // optimizeAsync is true for modes where we:
 //   - collect pods at PostFilter, and
 //   - take Active only after we know a plan is worthwhile.
+//
 // "PerPod" is always treated as synchronous.
 func optimizeAsync() bool {
 	if OptimizeMode == ModePerPod {
@@ -37,16 +38,20 @@ func isGlobalMode() bool {
 }
 
 // hookAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
-func hookAtPreEnqueue() bool { return OptimizeHookStage == StagePreEnqueue }
+func hookAtPreEnqueue() bool {
+	if OptimizeMode == ModePerPod {
+		return false
+	}
+	return OptimizeHookStage == StagePreEnqueue
+}
 
 // hookAtPostFilter is the action point that triggers optimization at the PostFilter stage.
-func hookAtPostFilter() bool { return OptimizeHookStage == StagePostFilter }
-
-// atPreEnqueue returns true if the stage is PreEnqueue.
-func (stage StageType) atPreEnqueue() bool { return stage == StagePreEnqueue }
-
-// atPostFilter returns true if the stage is PostFilter.
-func (stage StageType) atPostFilter() bool { return stage == StagePostFilter }
+func hookAtPostFilter() bool {
+	if OptimizeMode == ModePerPod {
+		return true
+	}
+	return OptimizeHookStage == StagePostFilter
+}
 
 // modeToString returns a string representation of the current strategy:
 // "<Mode><Synch|Asynch>/<PreEnqueue|PostFilter>"
@@ -65,15 +70,15 @@ func modeToString() string {
 		modeStr = "Periodic"
 	}
 
+	stageStr := "PostFilter"
+	if hookAtPreEnqueue() && !optimizePerPod() {
+		stageStr = "PreEnqueue"
+	}
+
 	syncStr := "Synch"
 	if optimizeAsync() {
 		syncStr = "Asynch"
 	}
 
-	stageStr := "PreEnqueue"
-	if hookAtPostFilter() {
-		stageStr = "PostFilter"
-	}
-
-	return fmt.Sprintf("%s%s/%s", modeStr, syncStr, stageStr)
+	return fmt.Sprintf("%s/%s/%s", modeStr, stageStr, syncStr)
 }

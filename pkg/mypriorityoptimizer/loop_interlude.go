@@ -1,5 +1,3 @@
-// mode_interlude.go
-
 package mypriorityoptimizer
 
 import (
@@ -23,5 +21,6 @@ func (pl *SharedState) loopInterlude(ctx context.Context) {
 		InterludeDelay: delay, // require stability for this long
 		CancelOnChange: true,  // cancel if pending set changes
 	}
-	pl.optimizeGlobalBackgroundLoop(ctx, cfg)
+	// delegated through hook
+	optimizeGlobalBackgroundLoopFunc(pl, ctx, cfg)
 }

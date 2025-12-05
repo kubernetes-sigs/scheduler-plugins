@@ -1,5 +1,5 @@
 workload-config-file: data/configs-workload/test/test.yaml
-kwokctl-config-file: data/configs-kwokctl/test/solver-manual-preenqueue-asynch.yaml
+kwokctl-config-file: data/configs-kwokctl/test/solver-manual-postfilter-synch.yaml
 seed: 42
 clean-start: true
 output-dir: results/test/nodes2_pods12_prio4_util110_timeout10

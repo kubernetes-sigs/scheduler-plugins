@@ -20,13 +20,15 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 
 	ap := pl.getActivePlan()
 
-	// Always allow kube-system pods and when no active plan exists.
+	// Always allow kube-system pods and pending pods when no active plan exists.
 	if pending.Namespace == SystemNamespace || ap == nil {
 		return nil, framework.NewStatus(framework.Success)
 	}
 
+	// Get filtering decision from active plan (if any)
 	filteredNodes, filterMsg, ok := pl.filterNodes(pending)
 
+	// Convert filteredNodes to slice for logging
 	var nodeNames []string
 	if filteredNodes != nil {
 		nodeNames = filteredNodes.UnsortedList()
@@ -39,14 +41,14 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 	)
 
 	switch {
-	case ok && filteredNodes == nil:
+	case ok && filteredNodes == nil: // allowed on all nodes
 		klog.V(MyV).InfoS(msg(stage, InfoAllowPod),
 			"pod", klog.KObj(pending),
 			"reason", filterMsg,
 		)
 		return nil, framework.NewStatus(framework.Success)
 
-	case ok && filteredNodes.Len() > 0:
+	case ok && filteredNodes.Len() > 0: // allowed on specific nodes
 		klog.V(MyV).InfoS(msg(stage, InfoPinPod),
 			"pod", klog.KObj(pending),
 			"nodes", nodeNames,
@@ -54,7 +56,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 		)
 		return &framework.PreFilterResult{NodeNames: filteredNodes}, framework.NewStatus(framework.Success)
 
-	default:
+	default: // not allowed on any node; block the pod
 		klog.V(MyV).InfoS(msg(stage, InfoBlockPod),
 			"pod", klog.KObj(pending),
 			"reason", filterMsg,

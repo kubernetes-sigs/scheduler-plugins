@@ -13,6 +13,7 @@ import (
 // onPlanCompleted), and then exit.
 func (pl *SharedState) startPlanCompletionWatch(ap *ActivePlan) {
 	if ap == nil {
+		klog.V(MyV).Info("startPlanCompletionWatch: no active plan provided")
 		return
 	}
 	go pl.planCompletionWatch(ap)

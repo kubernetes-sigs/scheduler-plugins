@@ -22,6 +22,21 @@ import (
 	clientv1 "k8s.io/client-go/listers/core/v1"
 )
 
+// test hooks (overridden only in unit tests; nil in production).
+var (
+	evictTargetsHook           func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
+	recreateStandalonePodsHook func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
+	waitPodsGoneHook           func(pl *SharedState, ctx context.Context, pods []*v1.Pod) error
+	activatePlannedPendingHook func(pl *SharedState, toActivate map[string]*v1.Pod)
+	resolvePodHook             func(pl *SharedState, uid types.UID, ns, name string) *v1.Pod
+	isPlanCompletedHook        func(pl *SharedState, ap *ActivePlan) (bool, error)
+	onPlanCompletedHook        func(pl *SharedState, status PlanStatus, ap *ActivePlan)
+	exportPlanToConfigMapHook  func(pl *SharedState, ctx context.Context, name string, sp *StoredPlan) error
+	// If markPlanStatusHook returns true, the real implementation is skipped.
+	markPlanStatusHook func(pl *SharedState, ctx context.Context, planCM string, status PlanStatus) bool
+	podsListerHook     func(pl *SharedState) clientv1.PodLister
+)
+
 // tryEnterActive attempts to enter the active plan state.
 // Use CompareAndSwap to ensure only one goroutine can enter the active state
 // by checking that the previous value is false before setting it to true.
@@ -224,11 +239,16 @@ func buildWorkloadQuotasAtomics(wkQuotas WorkloadQuotas) WorkloadQuotasAtomics {
 
 // evictTargets evicts all target pods with bounded parallelism and per-op timeouts.
 func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) error {
+	if evictTargetsHook != nil {
+		return evictTargetsHook(pl, ctx, targets)
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(EvictParallelism)
 
 	// Loop over targets and evict each in its own goroutine with timeout.
 	for _, pod := range targets {
+		pod := pod // avoid loop var capture
 		g.Go(func() error {
 			opCtx, cancel := context.WithTimeout(gctx, EvictTimeout)
 			defer cancel()
@@ -246,11 +266,17 @@ func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) erro
 
 // recreateStandalonePods recreates only non-controller-owned pods (bounded parallelism).
 func (pl *SharedState) recreateStandalonePods(ctx context.Context, targets []*v1.Pod) error {
+	if recreateStandalonePodsHook != nil {
+		return recreateStandalonePodsHook(pl, ctx, targets)
+	}
+
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(RecreatePodParallelism)
 
 	// Loop over targets and recreate each standalone pod in its own goroutine with timeout.
 	for _, pod := range targets {
+		pod := pod // avoid loop var capture
+
 		// Skip controller-owned pods (their controllers will recreate them)
 		if _, owned := topWorkload(pod); owned {
 			continue
@@ -270,6 +296,10 @@ func (pl *SharedState) recreateStandalonePods(ctx context.Context, targets []*v1
 
 // waitTargetsGone waits until the evicted pods disappear from cache.
 func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
+	if waitPodsGoneHook != nil {
+		return waitPodsGoneHook(pl, ctx, pods)
+	}
+
 	if len(pods) == 0 {
 		return nil
 	}
@@ -310,6 +340,8 @@ func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 // (i.e., NewPlacement with FromNode == "" and ToNode != "").
 func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 	if plan == nil || len(plan.NewPlacements) == 0 || len(pods) == 0 {
+		klog.V(MyV).InfoS("activatePlannedPending: no plan or no new placements or no pods",
+			"planNil", plan == nil, "newPlacementsLen", len(plan.NewPlacements), "podsLen", len(pods))
 		return
 	}
 	// Build allow-set of UIDs for pending -> scheduled in this plan.
@@ -320,6 +352,7 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 		}
 	}
 	if len(allow) == 0 {
+		klog.V(MyV).InfoS("activatePlannedPending: no new placements with FromNode == \"\" and ToNode != \"\"")
 		return
 	}
 
@@ -336,15 +369,27 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 		toAct[key] = p
 	}
 	if len(toAct) == 0 {
+		klog.V(MyV).InfoS("activatePlannedPending: no matching pending pods found")
 		return
 	}
-	pl.Handle.Activate(klog.Background(), toAct)
 	klog.InfoS(InfoActivatingPlannedPendingPods, "count", len(toAct))
+
+	// Test hook: let unit tests observe the activation set without requiring a real Handle.
+	if activatePlannedPendingHook != nil {
+		activatePlannedPendingHook(pl, toAct)
+		return
+	}
+
+	pl.Handle.Activate(klog.Background(), toAct)
 }
 
 // resolvePod attempts to find the pod by matching UID and name,
 // falling back to scanning all pods in the namespace to find a matching UID.
 func (pl *SharedState) resolvePod(uid types.UID, ns, name string) *v1.Pod {
+	if resolvePodHook != nil {
+		return resolvePodHook(pl, uid, ns, name)
+	}
+
 	podsLister := pl.podsLister()
 
 	// Fast path: direct get matches UID
@@ -424,6 +469,10 @@ func (pl *SharedState) resolvePod(uid types.UID, ns, name string) *v1.Pod {
 //	B) all per-workload per-node quotas must be consumed, except for workloads that
 //	   have been scaled down / deleted (no live pods) or have no pending pods left.
 func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
+	if isPlanCompletedHook != nil {
+		return isPlanCompletedHook(pl, ap)
+	}
+
 	if ap == nil {
 		// Plan got torn down concurrently; treat as "not completed yet" (retry later).
 		klog.V(MyV).InfoS("plan completion check skipped: no active plan doc")
@@ -562,6 +611,13 @@ func (pl *SharedState) onPlanCompleted(status PlanStatus) bool {
 	if ap.Cancel != nil {
 		ap.Cancel() // stop timeout watcher
 	}
+
+	// Allow tests to intercept teardown without hitting external deps.
+	if onPlanCompletedHook != nil {
+		onPlanCompletedHook(pl, status, ap)
+		return true
+	}
+
 	// We do not activate blocked pods when we are in PerPod@PreEnqueue
 	// as it would lead to high contention; instead we periodically nudge them.
 	if !optimizePerPod() || !hookAtPreEnqueue() {
@@ -704,6 +760,10 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 
 // exportPlanToConfigMap exports the given plan to a ConfigMap.
 func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
+	if exportPlanToConfigMapHook != nil {
+		return exportPlanToConfigMapHook(pl, ctx, name, sp)
+	}
+
 	doc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      name,
@@ -723,6 +783,10 @@ func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, s
 //   - The exported stats CM only updates the last run if it isn't already final.
 //     (Never overwrite Failed with Completed.)
 func (pl *SharedState) markPlanStatus(ctx context.Context, planCM string, status PlanStatus) {
+	if markPlanStatusHook != nil && markPlanStatusHook(pl, ctx, planCM, status) {
+		return
+	}
+
 	lister := func(ns string) clientv1.ConfigMapNamespaceLister {
 		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
 	}
