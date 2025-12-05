@@ -7,18 +7,14 @@ import (
 	"time"
 )
 
-func (pl *SharedState) modeInterlude(ctx context.Context) {
+func (pl *SharedState) loopInterlude(ctx context.Context) {
 	delay := OptimizeInterludeDelay
 	if delay <= 0 {
 		delay = 2 * time.Second
 	}
-
 	checkInterval := OptimizeInterludeCheckInterval
 	if checkInterval <= 0 {
-		checkInterval = delay / 4
-		if checkInterval <= 0 {
-			checkInterval = 250 * time.Millisecond
-		}
+		checkInterval = 250 * time.Millisecond
 	}
 
 	cfg := optimizeLoopConfig{
@@ -27,5 +23,5 @@ func (pl *SharedState) modeInterlude(ctx context.Context) {
 		InterludeDelay: delay, // require stability for this long
 		CancelOnChange: true,  // cancel if pending set changes
 	}
-	pl.optimizeBackgroundLoop(ctx, cfg)
+	pl.optimizeGlobalBackgroundLoop(ctx, cfg)
 }

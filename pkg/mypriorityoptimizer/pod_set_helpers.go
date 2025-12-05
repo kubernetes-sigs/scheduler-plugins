@@ -1,3 +1,4 @@
+// pkg/mypriorityoptimizer/pod_set_helpers.go
 // pod_set_helpers.go
 
 package mypriorityoptimizer
@@ -8,8 +9,29 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 )
+
+// -----------------------------------------------------------------------------
+// Test hooks / indirections for PodSet helpers
+// -----------------------------------------------------------------------------
+
+// podsListerForPodSets returns the PodLister used by activatePods/pruneSet.
+// In production it delegates to pl.podsLister(), but tests can override it.
+var podsListerForPodSets = func(pl *SharedState) corev1listers.PodLister {
+	return pl.podsLister()
+}
+
+// activatePodsCall performs the actual framework.Handle.Activate call.
+// In tests we override this to capture which pods would be activated.
+var activatePodsCall = func(pl *SharedState, toAct map[string]*v1.Pod) {
+	pl.Handle.Activate(klog.Background(), toAct)
+}
+
+// -----------------------------------------------------------------------------
+// PodSet helpers
+// -----------------------------------------------------------------------------
 
 // activateBlockedPods activates up to 'max' pods from the blocked set; clear only the ones activated.
 // It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
@@ -27,7 +49,7 @@ func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max in
 	blockedPods := podSet.Snapshot()
 	items := make([]PodSetItem, 0, len(blockedPods))
 	// Get current Pod objects so that we don't return stale/deleted ones.
-	podsLister := pl.podsLister()
+	podsLister := podsListerForPodSets(pl)
 	for _, k := range blockedPods {
 		if p, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
 			items = append(items, PodSetItem{p: p, key: k})
@@ -57,9 +79,6 @@ func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max in
 	if max > 0 && max < limit {
 		limit = max
 	}
-	if limit == 0 {
-		return nil
-	}
 
 	// Build activation map and record "tried" UIDs
 	toAct := make(map[string]*v1.Pod, limit)
@@ -69,7 +88,7 @@ func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max in
 	}
 
 	if len(toAct) > 0 {
-		pl.Handle.Activate(klog.Background(), toAct)
+		activatePodsCall(pl, toAct)
 		klog.InfoS("activated pods", "set", podSet.Name, "count", len(toAct))
 		if removeActivated {
 			// Remove only the ones we just activated
@@ -93,7 +112,7 @@ func (pl *SharedState) pruneSet(podSet *PodSet) int {
 		return 0
 	}
 	snap := podSet.Snapshot()
-	podsLister := pl.podsLister()
+	podsLister := podsListerForPodSets(pl)
 
 	removed := 0
 	for uid, key := range snap {

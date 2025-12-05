@@ -1,4 +1,4 @@
-// mypriorityoptimizer_types.go
+// plugin_types.go
 
 package mypriorityoptimizer
 
@@ -22,8 +22,8 @@ type SharedState struct {
 	ActivePlan atomic.Pointer[ActivePlan]
 	// Set of blocked pods
 	BlockedWhileActive *PodSet
-	// Mutex to wait for caches to warm up
-	CachesWarm atomic.Bool
+	// Whether the plugin is ready (caches warmed up and usable node found)
+	PluginReady atomic.Bool
 }
 
 // ActivePlan represents the state of an active plan.

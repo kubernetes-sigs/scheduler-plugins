@@ -5,7 +5,7 @@ package mypriorityoptimizer
 // ======= Optimality where/when settings =======
 
 // OptimizeMode is the frequency at which optimization is performed.
-// Choices: "every", "periodic", "interlude", "manual"
+// Choices: "per_pod", "periodic", "interlude", "manual"
 var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_MODE", "periodic"))
 
 // OptimizeSolveSynch controls whether solver runs use the synchronous
@@ -47,14 +47,17 @@ var HTTPAddr = getenv("HTTP_ADDR", ":18080")
 // Save failed attempts to config map (for debugging)
 var SolverSaveAllAttempts = parseBool(getenv("SOLVER_SAVE_FAILED_ATTEMPTS", "true"))
 
-// Whether solvers should receive and honor improvement hints.
-var SolverUseHints = parseBool(getenv("SOLVER_USE_HINTS", "false"))
-
 // SolverPythonEnabled indicates whether the Python solver is enabled.
 var SolverPythonEnabled = parseBool(getenv("SOLVER_PYTHON_ENABLED", "false"))
 
 // SolverPythonTimeout is the timeout for the python solver to complete.
 var SolverPythonTimeout = parseTime(getenv("SOLVER_PYTHON_TIMEOUT", "10s"))
+
+// SolverPythonScriptPath is the path to the solver executable.
+var SolverPythonScriptPath = getenv("SOLVER_PATH", "/opt/solver/main.py")
+
+// Path to the Python binary to use for running the solver.
+var SolverPythonBin = getenv("SOLVER_PYTHON_BIN", "/opt/venv/bin/python")
 
 // SolverPythonGapLimit is the gap to optimality for the python solver (0.00 = optimal).
 var SolverPythonGapLimit = parseFloat(getenv("SOLVER_PYTHON_GAP_LIMIT", "0.00"), 0.00, 1.00)

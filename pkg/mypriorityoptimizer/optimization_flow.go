@@ -10,11 +10,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// runFlow runs the optimisation flow for the given phase (AllSynch,
+// runOptimizationFlow runs the optimisation flow for the given phase (AllSynch,
 // AllAsynch, Single). For Single phase, the preemptor must be provided.
 // Returns the target node name for the preemptor pod (if any) and error (if any).
-func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
-	strategy := strategyToString()
+func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
+	strategy := modeToString()
 
 	// Periodic-sync/Per-pod: take Active early.
 	// Async modes: take Active later.
@@ -82,7 +82,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	plan, ap, err := pl.planRegistration(ctx, *bestAttempt, preemptor, pods)
 	if err != nil {
 		klog.Error(msg(strategy, InfoPlanRegistrationFailed))
-		pl.onPlanSettled(PlanStatusFailed)
+		pl.onPlanCompleted(PlanStatusFailed)
 		pl.exportSolverStatsConfigMap(
 			context.Background(), strategy, baselineScore, bestName, attempts,
 			ErrPlanRegistration.Error(),
@@ -93,7 +93,7 @@ func (pl *SharedState) runFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *
 	// Plan eviction and recreate standalone pods
 	if err := pl.planActivation(plan, pods); err != nil {
 		klog.Error(msg(strategy, InfoPlanActivationFailed))
-		pl.onPlanSettled(PlanStatusFailed)
+		pl.onPlanCompleted(PlanStatusFailed)
 		pl.exportSolverStatsConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrPlanActivationFailed.Error())
 		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanActivationFailed
 	}

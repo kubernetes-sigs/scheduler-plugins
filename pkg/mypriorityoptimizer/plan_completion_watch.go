@@ -9,8 +9,8 @@ import (
 
 // startPlanCompletionWatch spawns a goroutine that periodically checks
 // whether the active plan has been realized, or has timed out.
-// It will call onPlanSettled(Completed/Failed) at most once (guarded inside
-// onPlanSettled), and then exit.
+// It will call onPlanCompleted(Completed/Failed) at most once (guarded inside
+// onPlanCompleted), and then exit.
 func (pl *SharedState) startPlanCompletionWatch(ap *ActivePlan) {
 	if ap == nil {
 		return
@@ -48,7 +48,7 @@ func (pl *SharedState) planCompletionWatch(ap *ActivePlan) {
 						"planID", ap.ID,
 						"timeout", PlanExecutionTimeout,
 					)
-					pl.onPlanSettled(PlanStatusFailed)
+					pl.onPlanCompleted(PlanStatusFailed)
 				}
 			} else {
 				klog.V(MyV).InfoS(msg(label, "plan context cancelled; exiting watcher"),
@@ -85,7 +85,7 @@ func (pl *SharedState) planCompletionWatch(ap *ActivePlan) {
 			klog.InfoS(msg(label, "plan completed; settling"),
 				"planID", ap.ID,
 			)
-			pl.onPlanSettled(PlanStatusCompleted)
+			pl.onPlanCompleted(PlanStatusCompleted)
 			return
 		}
 	}

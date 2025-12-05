@@ -1,0 +1,16 @@
+workload-config-file: data/configs-workload/test/test.yaml
+kwokctl-config-file: data/configs-kwokctl/test/solver-manual-preenqueue-asynch.yaml
+seed: 42
+clean-start: true
+output-dir: results/test/nodes2_pods12_prio4_util110_timeout10
+save-scheduler-logs: true
+save-solver-stats: true
+solver-trigger: true
+override-workload-config:
+  num_nodes: 4
+  num_pods: 12
+  num_priorities: 2
+  util: 1.1
+override-kwokctl-envs:
+- name: SOLVER_PYTHON_TIMEOUT
+  value: 10s

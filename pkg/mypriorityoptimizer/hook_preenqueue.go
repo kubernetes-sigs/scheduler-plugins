@@ -21,7 +21,7 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *framewo
 	}
 
 	// If caches are not warm, block the pod
-	if !pl.CachesWarm.Load() {
+	if !pl.PluginReady.Load() {
 		pl.BlockedWhileActive.AddPod(pending)
 		klog.V(MyV).Info(msg(stage, "caches not warmed up yet; waiting"))
 		return framework.NewStatus(framework.Pending, msg(stage, "caches not warmed up yet; waiting"))
@@ -39,7 +39,7 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *framewo
 		return framework.NewStatus(framework.Pending, msg(stage, InfoPendingPod))
 
 	case DecideBlock:
-		if !pl.isPodAllowedByActivePlan(pending) {
+		if !pl.isPodAllowedByPlan(pending) {
 			klog.V(MyV).InfoS(msg(stage, InfoActivePlanInProgress+"; "+InfoBlockPod), "pod", klog.KObj(pending))
 			pl.BlockedWhileActive.AddPod(pending)
 			return framework.NewStatus(framework.Pending, msg(stage, InfoActivePlanInProgress+"; "+InfoBlockPod))
@@ -48,7 +48,7 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *framewo
 
 	case DecideProcess:
 		klog.InfoS(msg(stage, "start"), "pod", klog.KObj(pending))
-		_, _, _, _, _, err := pl.runFlow(ctx, pending)
+		_, _, _, _, _, err := pl.runOptimizationFlow(ctx, pending)
 		if err != nil {
 			switch err {
 			case ErrActiveInProgress: // we only keep the pod in the set if we get ErrActiveInProgress

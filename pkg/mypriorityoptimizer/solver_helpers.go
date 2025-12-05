@@ -142,7 +142,7 @@ func solverConfigArgs() []any {
 		)
 	}
 	// Always include shared flags
-	args = append(args, "useHints", SolverUseHints, "saveFailedAttempts", SolverSaveAllAttempts)
+	args = append(args, "saveFailedAttempts", SolverSaveAllAttempts)
 	return args
 }
 
@@ -582,98 +582,4 @@ func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedSo
 	if err != nil {
 		klog.ErrorS(err, "append solver stats failed")
 	}
-}
-
-// isRunSolvedForPendingSet decides whether a run of runFlow has
-// "fully solved" the current pending set, i.e. there is nothing
-// better to do for this set of pending pods under the current cluster state.
-// We only consider it solved when:
-//   - runFlow returned ErrNoImprovingSolutionFromAnySolver OR
-//     ErrNoPendingPodsToSchedule, AND
-//   - bestAttempt is non-nil with Status == "OPTIMAL".
-//
-// If the solver only found a FEASIBLE solution, hit a time limit,
-// was cancelled, or otherwise did not prove optimality, we return false
-// so that the same pending set may be retried later.
-func isRunSolvedForPendingSet(err error, bestAttempt *SolverResult) bool {
-	if bestAttempt == nil {
-		return false
-	}
-	if bestAttempt.Status != "OPTIMAL" {
-		// Not a proven optimal solution → allow re-runs.
-		return false
-	}
-	return err == ErrNoImprovingSolutionFromAnySolver ||
-		err == ErrNoPendingPodsToSchedule
-}
-
-// pendingHasLowPriorityTargets reports whether, under the current
-// SolverPythonNumLowerPriorities setting, there exists at least one
-// Pending pod whose priority is within the "lowest N" distinct priorities
-// observed in the cluster.
-//
-// Semantics:
-//   - If SolverPythonNumLowerPriorities <= 0, we return true (no gating).
-//   - If SolverPythonEnabled is false, we also return true (this gating is
-//     only meaningful for the Python solver).
-//   - Otherwise, we:
-//     1) Collect all distinct priorities across *all* pods (running+pending)
-//     2) Sort ascending and take the lowest N priorities
-//     3) Check if any Pending pod has a priority in that set.
-//     If none do, we return false → nothing for Python to do on this queue.
-func pendingHasLowPriorityTargets(pods []*v1.Pod) bool {
-	if !SolverPythonEnabled || SolverPythonNumLowerPriorities <= 0 {
-		// Either Python is disabled or we're not restricting priorities:
-		// from the Go side we should not skip runs based on priority windows.
-		return true
-	}
-
-	// 1) Distinct priorities across all pods (running + pending)
-	prioSet := make(map[int32]struct{})
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
-			continue
-		}
-		pr := getPodPriority(p)
-		prioSet[pr] = struct{}{}
-	}
-	if len(prioSet) == 0 {
-		// No pods with a defined priority – be conservative and say "nothing to do".
-		return false
-	}
-
-	// 2) Sorted ascending list of all priorities
-	all := make([]int32, 0, len(prioSet))
-	for pr := range prioSet {
-		all = append(all, pr)
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
-
-	// Keep only the N lowest distinct priorities
-	limit := SolverPythonNumLowerPriorities
-	if limit > len(all) {
-		limit = len(all)
-	}
-	lowSet := make(map[int32]struct{}, limit)
-	for i := 0; i < limit; i++ {
-		lowSet[all[i]] = struct{}{}
-	}
-
-	// 3) Check if ANY Pending pod is in those lower priorities
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
-			continue
-		}
-		if p.Spec.NodeName != "" {
-			continue // running, not in the pending queue
-		}
-		pr := getPodPriority(p)
-		if _, ok := lowSet[pr]; ok {
-			// At least one pending pod is in the low-priority window
-			return true
-		}
-	}
-
-	// Only higher-priority pending pods are present → Python won't touch them.
-	return false
 }

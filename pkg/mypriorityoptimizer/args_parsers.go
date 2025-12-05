@@ -1,10 +1,11 @@
-// args_helpers.go
+// args_parsers.go
 
 package mypriorityoptimizer
 
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -62,4 +63,35 @@ func parseTime(s string) time.Duration {
 		return 0
 	}
 	return d
+}
+
+// parseOptimizeMode parses an optimization mode string and returns the ModeType.
+func parseOptimizeMode(s string) ModeType {
+	v := strings.ToLower(strings.TrimSpace(s))
+	switch v {
+	case "per_pod", "perpod":
+		return ModePerPod
+	case "periodic":
+		return ModePeriodic
+	case "interlude":
+		return ModeInterlude
+	case "manual":
+		return ModeManual
+	default:
+		klog.InfoS("Unknown ENV: OPTIMIZE_MODE value; defaulting to 'periodic'", "value", s)
+		return ModePeriodic
+	}
+}
+
+// parseOptimizeHookStage parses an optimization "at" string and returns the StageType.
+func parseOptimizeHookStage(s string) StageType {
+	v := strings.ToLower(strings.TrimSpace(s))
+	switch v {
+	case "preenqueue":
+		return StagePreEnqueue
+	case "postfilter":
+		return StagePostFilter
+	default:
+		return StageNone
+	}
 }

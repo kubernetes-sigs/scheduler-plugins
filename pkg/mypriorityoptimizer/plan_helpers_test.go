@@ -166,11 +166,11 @@ func TestIsPlanCompleted(t *testing.T) {
 	//TODO
 }
 
-func TestOnPlanSettled(t *testing.T) {
+func TestOnPlanCompleted(t *testing.T) {
 	//TODO
 }
 
-func TestIsPodAllowedByActivePlan_NoActivePlan(t *testing.T) {
+func TestIsPodAllowedByPlan_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -178,12 +178,12 @@ func TestIsPodAllowedByActivePlan_NoActivePlan(t *testing.T) {
 			Name:      "pod",
 		},
 	}
-	if allowed := pl.isPodAllowedByActivePlan(pod); allowed {
-		t.Fatalf("isPodAllowedByActivePlan with no active plan = true, want false")
+	if allowed := pl.isPodAllowedByPlan(pod); allowed {
+		t.Fatalf("isPodAllowedByPlan with no active plan = true, want false")
 	}
 }
 
-func TestIsPodAllowedByActivePlan_PinnedByName(t *testing.T) {
+func TestIsPodAllowedByPlan_PinnedByName(t *testing.T) {
 	pl := &SharedState{}
 
 	ns, name := "ns", "pod"
@@ -203,8 +203,8 @@ func TestIsPodAllowedByActivePlan_PinnedByName(t *testing.T) {
 		},
 	}
 
-	if allowed := pl.isPodAllowedByActivePlan(pod); !allowed {
-		t.Fatalf("isPodAllowedByActivePlan for pinned pod = false, want true")
+	if allowed := pl.isPodAllowedByPlan(pod); !allowed {
+		t.Fatalf("isPodAllowedByPlan for pinned pod = false, want true")
 	}
 }
 

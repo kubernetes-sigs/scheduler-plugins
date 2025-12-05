@@ -1,6 +1,12 @@
+// logging_helpers_test.go
+
 package mypriorityoptimizer
 
 import "testing"
+
+// -----------------------------------------------------------------------------
+// msg
+// -----------------------------------------------------------------------------
 
 func TestMsg_Basic(t *testing.T) {
 	got := msg("solver", "started")

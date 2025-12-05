@@ -12,12 +12,14 @@ componentsPatches:
     #     value: "10"
     extraEnvs:
       - name: OPTIMIZE_MODE
-        value: "manual_all_synch" # choices: per_pod, all_synch, all_asynch, manual_all_synch
+        value: "periodic" # choices: per_pod, periodic, interlude, manual
+      - name: OPTIMIZE_SOLVE_SYNCH
+        value: "true" # true=synchronous, false=asynchronous (solver runs in background)
       - name: OPTIMIZE_HOOK_STAGE
-        value: "postfilter" # choices: preenqueue, postfilter (not used in all_asynch mode)
+        value: "preenqueue" # choices: preenqueue, postfilter
       - name: PLAN_EXECUTION_TIMEOUT
         value: "600h" # set high to determine any potential issues
       - name: SOLVER_PYTHON_ENABLED
         value: "true"
-      # - name: SOLVER_PYTHON_TIMEOUT
-      #   value: # 1s, 10s, 20s
+      - name: SOLVER_PYTHON_TIMEOUT
+        value: 10s

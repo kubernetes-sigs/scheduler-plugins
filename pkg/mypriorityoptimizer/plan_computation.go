@@ -21,7 +21,7 @@ func (pl *SharedState) planComputation(
 	baselineScore *SolverScore,
 ) (best string, hadFeasibleImprovingSolver bool, bestAttempt *SolverResult, attempts []SolverResult) {
 	hadFeasibleImprovingSolver = false
-	strategy := strategyToString()
+	strategy := modeToString()
 
 	// =====================================
 	// === Setup Attempts ==================
@@ -33,7 +33,7 @@ func (pl *SharedState) planComputation(
 			Timeout: SolverPythonTimeout,
 			Trials:  1,
 			Run: func(ctx context.Context, in SolverInput) (*SolverOutput, error) {
-				return pl.runSolverPython(ctx, in)
+				return pl.runSolverExternal(ctx, in)
 			},
 		},
 	}

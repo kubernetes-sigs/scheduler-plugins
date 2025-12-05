@@ -1,4 +1,4 @@
-// shared_helpers.go
+// logging_helpers.go
 
 package mypriorityoptimizer
 

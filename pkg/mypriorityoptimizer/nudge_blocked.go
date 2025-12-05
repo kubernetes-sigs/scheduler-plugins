@@ -10,19 +10,22 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// Only meaningful for Every@PreEnqueue
+// Test-overrideable base interval; in production it mirrors NudgeBlockedInterval.
+var nudgeBlockedBaseInterval = NudgeBlockedInterval
+
+// Only meaningful for PerPod@PreEnqueue
 // This function is needed as if we activate all blocked pods at once
-// over and over again in onPlanSettled, we end up with a large waiting time in the queue.
+// over and over again in onPlanCompleted, we end up with a large waiting time in the queue.
 func (pl *SharedState) nudgeBlockedLoop(ctx context.Context) {
 	label := "NudgeBlockedLoop"
 
-	if !optimizeEvery() || !optimizeAtPreEnqueue() {
+	if !optimizePerPod() || !hookAtPreEnqueue() {
 		return
 	}
-	strategy := strategyToString()
+	strategy := modeToString()
 	klog.InfoS(msg(label, "started for "+strategy))
 
-	base := NudgeBlockedInterval
+	base := nudgeBlockedBaseInterval
 	delay := base
 
 	var last types.UID
@@ -37,7 +40,7 @@ func (pl *SharedState) nudgeBlockedLoop(ctx context.Context) {
 			return
 		case <-timer.C:
 			// If caches are not warm, or a plan is active, or nothing blocked: skip and reset to base delay.
-			if !pl.CachesWarm.Load() {
+			if !pl.PluginReady.Load() {
 				klog.V(MyV).InfoS(msg(label, InfoCachesNotWarmedUp))
 				sameCount = 0
 				last = ""

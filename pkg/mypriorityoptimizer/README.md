@@ -41,6 +41,8 @@
     - [6. Evaluation and scoring](#6-evaluation-and-scoring)
     - [7. Example commands](#7-example-commands)
   - [TODOs](#todos)
+    - [Unit Tests](#unit-tests)
+      - [Go Tests](#go-tests)
     - [Now TODOs](#now-todos)
     - [TODOs: Next Meeting 8/12](#todos-next-meeting-812)
     - [TODO: 'Live' Cluster Simulator](#todo-live-cluster-simulator)
@@ -65,11 +67,10 @@ Our goal is to schedule as many *high-priority* pods as possible, especially whe
 
 The plugin can be triggered in different **optimization modes**:
 
-- *For every pod* – optimize for every new pod that arrives (not recommended for large clusters).
-- *All synch* – optimize all pods (running and pending) at fixed intervals (or on request via HTTP). Scheduling is paused while the optimization runs and the plan is applied.
-- *Manual all synch* – same as all synch, but only optimizes when triggered via HTTP. Used for testing and evaluation.
-- *All asynch* – same as all synch, but does not wait for optimization to finish. The plan is applied only if the cluster state matches the state used by the solver. Scheduling is still paused while the plan is being applied to avoid conflicts.
-- *Free time* – optimize during free time windows (i.e. when no pods are arriving). #TODO: Not yet implemented.
+- *PerPod* – optimize for every new pod that arrives (not recommended for large clusters).
+- *Periodic* – optimize all pods (running and pending) at fixed intervals (or on request via HTTP). Scheduling is paused while the optimization runs and the plan is applied.
+- *Interlude* – optimize during interlude windows (i.e. when no pods are arriving). #TODO: Not yet implemented.
+- *Manual* – same as periodic, but only optimizes when triggered via HTTP. Used for testing and evaluation.
 
 The plugin can be hooked into two **scheduling phases**: either before the pod is enqueued (*PreEnqueue*) or after the default scheduler fails to find a node (*PostFilter*). We recommend the latter, as it avoids optimization when the default scheduler can already place the pod and thus leverages its speed instead of running the solver unnecessarily. Note that the all sync/async modes always trigger at their configured intervals, regardless of which extension point is used.
 
@@ -1061,8 +1062,62 @@ python -m scripts.kwok_trace_replayer.trace_generator \
 
 ## TODOs
 
+### Unit Tests
+
+#### Go Tests
+
+Total coverage: 33.3%
+
+100% coverage:
+
+- args_parsers.go
+- logging_helpers.go
+- mode_helpers.go
+- strategy_helpers.go
+
+95%+ coverage:
+
+- nudge_blocked.go
+
+90%+ coverage:
+
+- http_server.go
+- solver_external.go
+
+80%+ coverage:
+
+- plugin.go
+- plugin_readiness.go
+- config_map_helpers.go
+- pod_set_helpers.go
+
+missing:
+
+- objects_helpers.go
+- solver_helpers.go: buildSolverInput, planApplicable, logLeaderboard, computeSolverScore, exportSolverStatsConfigMap, appendSolverStatsCM
+- plan_helpers.go
+- plan_completion_watch.go
+- plan_activation.go
+
+- plan_computation.go
+- plan_context.go
+- plan_registration.go
+- optimization_flow.go
+
+- loop_helpers.go
+- loop_interlude.go
+- loop_periodic.go
+
+- hook_postfilter.go
+- hook_preenqueue.go
+- hook_prefilter.go
+- hook_reserve_unreserve.go
+
 ### Now TODOs
 
+- Make integration tests for checking the different modes work as intended.
+- Update README with the new trace generator and replayer design and refactored code structure.
+- Write about that we solve to optimal in the trace replayer experiments to prevent high disruption.
 - Update the paper with the adjustments mentioned to Jacopo via mail:
   - Completion check
     Previously, the final "completion check" -- which verifies that pods have been placed on their intended nodes -- ran in `PostBind`.

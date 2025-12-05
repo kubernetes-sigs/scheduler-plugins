@@ -11,7 +11,7 @@ profiles:
         - name: MyPriorityOptimizer
     postFilter:
       enabled:
-        - name: MyPriorityOptimizer # TODO: should only be enabled if using Every@PostFilter strategy 
+        - name: MyPriorityOptimizer # TODO: should only be enabled if using PerPod@PostFilter strategy 
     reserve:
       enabled:
         - name: MyPriorityOptimizer

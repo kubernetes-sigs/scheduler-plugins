@@ -145,8 +145,8 @@ func isControlPlane(n *v1.Node) bool {
 		n.Name == "control-plane" || n.Name == "kind-control-plane"
 }
 
-// nodeReady returns true if the node is ready.
-func nodeReady(n *v1.Node) bool {
+// isNodeReady returns true if the node is ready.
+func isNodeReady(n *v1.Node) bool {
 	for _, c := range n.Status.Conditions {
 		if c.Type == v1.NodeReady {
 			return c.Status == v1.ConditionTrue
@@ -171,7 +171,7 @@ func isNodeUsable(n *v1.Node) bool {
 	if n == nil || isControlPlane(n) || n.Spec.Unschedulable {
 		return false
 	}
-	if !nodeReady(n) {
+	if !isNodeReady(n) {
 		return false
 	}
 	if hasNoScheduleCondTaint(n) {
@@ -293,8 +293,8 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 	return fmt.Sprintf("%x", h.Sum64())
 }
 
-// IsPreemptor returns true if the preemptorUID matches the other podUID.
-func IsPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
+// isPreemptor returns true if the preemptorUID matches the other podUID.
+func isPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
 	return string(PodUID) != "" && string(preemptorUID) != "" && preemptorUID == PodUID
 }
 

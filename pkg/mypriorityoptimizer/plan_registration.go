@@ -33,7 +33,7 @@ func (pl *SharedState) planRegistration(
 	// Store plan in ConfigMap for debugging purposes
 	storedPlan := &StoredPlan{
 		PluginVersion:        Version,
-		OptimizationStrategy: strategyToString(),
+		OptimizationStrategy: modeToString(),
 		GeneratedAt:          time.Now().UTC(),
 		PlanStatus:           PlanStatusActive,
 		Plan:                 plan,
@@ -49,7 +49,7 @@ func (pl *SharedState) planRegistration(
 			NominatedNode: plan.NominatedNode,
 		}
 	}
-	if err := pl.exportPlanConfigMap(ctx, id, storedPlan); err != nil {
+	if err := pl.exportPlanToConfigMap(ctx, id, storedPlan); err != nil {
 		klog.ErrorS(err, "export plan to ConfigMap failed")
 	}
 

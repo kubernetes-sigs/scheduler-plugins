@@ -16,15 +16,15 @@ import (
 
 var (
 	execCommandContext = exec.CommandContext
-	solverPythonBin    = SolverPythonBin
-	solverPath         = SolverPath
+	solverBinary       = SolverPythonBin
+	solverScriptPath   = SolverPythonScriptPath
 )
 
-func (pl *SharedState) runSolverPython(ctx context.Context, in SolverInput) (*SolverOutput, error) {
+func (pl *SharedState) runSolverExternal(ctx context.Context, in SolverInput) (*SolverOutput, error) {
 	rawInput, _ := json.Marshal(in)
 	klog.V(MyV).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
 
-	cmd := execCommandContext(ctx, solverPythonBin, solverPath)
+	cmd := execCommandContext(ctx, solverBinary, solverScriptPath)
 	cmd.Stdin = bytes.NewReader(rawInput)
 
 	stdout, err := cmd.StdoutPipe()

@@ -124,7 +124,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 		moved := src != "" && src != plm.ToNode
 
 		// Always add preemptor to placementByName and set nominatedNode
-		if preemptor != nil && IsPreemptor(plm.Pod.UID, preemptor.UID) {
+		if preemptor != nil && isPreemptor(plm.Pod.UID, preemptor.UID) {
 			placementByName[combineNsName(p.Namespace, p.Name)] = plm.ToNode
 			nominatedNode = plm.ToNode
 			continue
@@ -548,8 +548,8 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 	return true, nil
 }
 
-// onPlanSettled is called when a plan is settled (i.e., all its actions are completed).
-func (pl *SharedState) onPlanSettled(status PlanStatus) bool {
+// onPlanCompleted is called when a plan is settled (i.e., all its actions are completed).
+func (pl *SharedState) onPlanCompleted(status PlanStatus) bool {
 	ap := pl.getActivePlan()
 	// Win-or-lose: swap the ActivePlan pointer from 'ap' to nil.
 	// Only the winner proceeds with teardown.
@@ -562,9 +562,9 @@ func (pl *SharedState) onPlanSettled(status PlanStatus) bool {
 	if ap.Cancel != nil {
 		ap.Cancel() // stop timeout watcher
 	}
-	// We do not activate blocked pods when we are in Every@PreEnqueue
+	// We do not activate blocked pods when we are in PerPod@PreEnqueue
 	// as it would lead to high contention; instead we periodically nudge them.
-	if !optimizeEvery() || !optimizeAtPreEnqueue() {
+	if !optimizePerPod() || !hookAtPreEnqueue() {
 		pl.activatePods(pl.BlockedWhileActive, false, -1)
 	}
 	klog.InfoS(InfoDeactivatingActivePlan, "planID", ap.ID)
@@ -575,13 +575,13 @@ func (pl *SharedState) onPlanSettled(status PlanStatus) bool {
 	return true
 }
 
-// isPodAllowedByActivePlan returns true if the pod is allowed by the active plan.
+// isPodAllowedByPlan returns true if the pod is allowed by the active plan.
 // Standalone/preemptor pods are allowed by exact name match.
 // For controller-owned pods, we allow only if the plan still has remaining
 // per-node quota for that workload. If the pod already targets a specific
 // node (NodeName set), we check that node's remaining quota; otherwise we
 // allow if ANY node for that workload has remaining > 0.
-func (pl *SharedState) isPodAllowedByActivePlan(pod *v1.Pod) bool {
+func (pl *SharedState) isPodAllowedByPlan(pod *v1.Pod) bool {
 	ap := pl.getActivePlan()
 	if ap == nil {
 		return false
@@ -702,8 +702,8 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 	return pendingScheduled, totalPrePlan, totalPostPlan
 }
 
-// exportPlanConfigMap exports the given plan to a ConfigMap.
-func (pl *SharedState) exportPlanConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
+// exportPlanToConfigMap exports the given plan to a ConfigMap.
+func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
 	doc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      name,
@@ -763,5 +763,5 @@ func (pl *SharedState) markPlanStatus(ctx context.Context, planCM string, status
 // 		return
 // 	}
 // 	klog.InfoS("plan timeout reached; deactivating plan", "planID", ap.ID, "ttl", PlanExecutionTimeout)
-// 	pl.onPlanSettled(PlanStatusFailed)
+// 	pl.onPlanCompleted(PlanStatusFailed)
 // }

@@ -76,24 +76,21 @@ func TestBuildBaselineScore(t *testing.T) {
 
 func TestSolverConfigArgs(t *testing.T) {
 	origPy := SolverPythonEnabled
-	origHints := SolverUseHints
 	origSave := SolverSaveAllAttempts
 	defer func() {
 		SolverPythonEnabled = origPy
-		SolverUseHints = origHints
 		SolverSaveAllAttempts = origSave
 	}()
 
 	// Case 1: all solvers disabled
 	SolverPythonEnabled = false
-	SolverUseHints = true
 	SolverSaveAllAttempts = false
 
 	args := solverConfigArgs()
 	if hasKey(args, "pythonSolver") {
 		t.Fatalf("solverConfigArgs() should not contain solver keys when all disabled, got %v", args)
 	}
-	if !hasKey(args, "useHints") || !hasKey(args, "saveFailedAttempts") {
+	if !hasKey(args, "saveFailedAttempts") {
 		t.Fatalf("solverConfigArgs() must always include shared flags, got %v", args)
 	}
 
