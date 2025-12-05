@@ -9,3 +9,7 @@ override-kwokctl-envs:
     value: 10s
   - name: OPTIMIZE_INTERVAL
     value: 20s
+  - name: SOLVER_PYTHON_GUARANTEED_TIER_FRACTION
+    value: "0.0"
+  - name: SOLVER_PYTHON_MOVE_FRACTION_OF_TIER
+    value: "0.0"

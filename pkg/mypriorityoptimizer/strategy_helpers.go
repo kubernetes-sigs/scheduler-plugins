@@ -9,32 +9,37 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// ==== Mode helpers =======================================================
+
 // optimizeEvery is the optimizer cadence that optimizes for every new pod.
 func optimizeEvery() bool { return OptimizeMode == ModeEvery }
 
-// optimizeAllSynch is the optimizer cadence that optimizes all pods and blocks while optimizing.
-func optimizeAllSynch() bool { return OptimizeMode == ModeAllSynch }
-
-// optimizeAllAsynch is the optimizer cadence that tries to optimize continuous if the cluster state hasn't drift too much during solver optimization.
-func optimizeAllAsynch() bool { return OptimizeMode == ModeAllAsynch }
-
-// optimizeManual collects like AllSynch but only optimizes when HTTP endpoint is called.
-func optimizeManualAllSynch() bool { return OptimizeMode == ModeManualAllSynch }
-
-// optimizeFreeTimeSynch optimizes all pods, but only when the queue has been
-// quiescent for OptimizeFreeTimeDelay.
-func optimizeFreeTimeSynch() bool { return OptimizeMode == ModeFreeTimeSynch }
-
-// optimizeFreeTimeAsynch optimizes all pods in the background when the queue has
-// been quiescent for OptimizeFreeTimeDelay.
-func optimizeFreeTimeAsynch() bool { return OptimizeMode == ModeFreeTimeAsynch }
-
-// optimizeAsync is true for all "async" modes where we:
-//   - collect pods at PostFilter, and
-//   - take Active later (after we know a plan is worthwhile).
-func optimizeAsync() bool {
-	return OptimizeMode == ModeAllAsynch || OptimizeMode == ModeFreeTimeAsynch
+// isGlobalMode is true for modes that operate on the accumulated pending set
+// (as opposed to "every pod" modes).
+func isGlobalMode() bool {
+	switch OptimizeMode {
+	case ModePeriodic, ModeManual, ModeInterlude:
+		return true
+	default:
+		return false
+	}
 }
+
+// optimizeAsync is true for modes where we:
+//   - collect pods at PostFilter, and
+//   - take Active only after we know a plan is worthwhile.
+//
+// "Every" is always treated as synchronous to keep semantics simple.
+func optimizeAsync() bool {
+	if OptimizeMode == ModeEvery {
+		return false
+	}
+	return !OptimizeSolveSynch
+}
+
+// optimizeManual runs in manual global mode: pods are collected but the solver
+// is only run on explicit HTTP /solve.
+func optimizeManual() bool { return OptimizeMode == ModeManual }
 
 // optimizeAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
 func optimizeAtPreEnqueue() bool { return OptimizeHookStage == StagePreEnqueue }
@@ -48,59 +53,77 @@ func (stage StageType) atPreEnqueue() bool { return stage == StagePreEnqueue }
 // atPostFilter returns true if the stage is PostFilter.
 func (stage StageType) atPostFilter() bool { return stage == StagePostFilter }
 
-// strategyToString returns a string representation of the optimization mode.
+// strategyToString returns a string representation of the current strategy:
+// "<Mode><Synch|Asynch>/<PreEnqueue|PostFilter>"
 func strategyToString() string {
-	var a string
+	var modeStr string
 	switch OptimizeMode {
 	case ModeEvery:
-		a = "Every"
-	case ModeAllSynch:
-		a = "AllSynch"
-	case ModeAllAsynch:
-		return "AllAsynch" // At is ignored
-	case ModeManualAllSynch:
-		a = "ManualAllSynch"
-	case ModeFreeTimeSynch:
-		a = "FreeTimeSynch"
-	case ModeFreeTimeAsynch:
-		return "FreeTimeAsynch" // At is ignored
+		modeStr = "Every"
+	case ModePeriodic:
+		modeStr = "Periodic"
+	case ModeInterlude:
+		modeStr = "Interlude"
+	case ModeManual:
+		modeStr = "Manual"
 	default:
-		a = "AllSynch"
+		modeStr = "Periodic"
 	}
-	b := "PreEnqueue"
+
+	syncStr := "Synch"
+	if optimizeAsync() {
+		syncStr = "Asynch"
+	}
+
+	stageStr := "PreEnqueue"
 	if optimizeAtPostFilter() {
-		b = "PostFilter"
+		stageStr = "PostFilter"
 	}
-	return fmt.Sprintf("%s/%s", a, b)
+
+	return fmt.Sprintf("%s%s/%s", modeStr, syncStr, stageStr)
 }
 
-// parseOptimizeMode parses a cadence string and returns the corresponding OptimizationCadenceMode.
+// ==== Parsing ============================================================
+
+// parseOptimizeMode parses a cadence string and returns the corresponding OptimizeModeType.
+//
+// Allowed values:
+//   - "every"
+//   - "periodic"
+//   - "manual"
+//   - "interlude"
 func parseOptimizeMode(s string) OptimizeModeType {
-	switch strings.ToLower(strings.TrimSpace(s)) {
+	v := strings.ToLower(strings.TrimSpace(s))
+	switch v {
 	case "every":
 		return ModeEvery
-	case "all_synch":
-		return ModeAllSynch
-	case "all_asynch":
-		return ModeAllAsynch
-	case "manual_all_synch":
-		return ModeManualAllSynch
-	case "freetime_synch":
-		return ModeFreeTimeSynch
-	case "freetime_asynch":
-		return ModeFreeTimeAsynch
+	case "periodic":
+		return ModePeriodic
+	case "manual":
+		return ModeManual
+	case "interlude":
+		return ModeInterlude
 	default:
-		klog.InfoS("Unknown ENV: OPTIMIZE_MODE value; defaulting to 'all_synch'", "value", s)
-		return ModeAllSynch
+		klog.InfoS("Unknown ENV: OPTIMIZE_MODE value; defaulting to 'periodic'", "value", s)
+		return ModePeriodic
 	}
 }
 
-// parseOptimizeHookStage parses an optimization "at" string and returns the corresponding OptimizationAtMode.
+// parseOptimizeHookStage parses an optimization "at" string and returns the StageType.
+//
+// For manual mode we always block at PreEnqueue, regardless of the env.
+// For other async *global* modes we always collect pods at PostFilter.
 func parseOptimizeHookStage(s string) StageType {
-	// In async modes, we always collect pods at PostFilter and ignore the env.
-	if optimizeAsync() {
+	// Manual mode: always gate at PreEnqueue so pods are blocked until /solve.
+	if OptimizeMode == ModeManual {
+		return StagePreEnqueue
+	}
+
+	// Async global (non-manual) modes → always PostFilter.
+	if isGlobalMode() && optimizeAsync() {
 		return StagePostFilter
 	}
+
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "preenqueue":
 		return StagePreEnqueue
@@ -111,7 +134,8 @@ func parseOptimizeHookStage(s string) StageType {
 	}
 }
 
-// decideStrategy determines the strategy at the given stage.
+// ==== Strategy decision ==================================================
+
 func (pl *SharedState) decideStrategy(stage StageType) StrategyDecision {
 	// If there's an active plan, block all new pods.
 	ap := pl.getActivePlan()
@@ -119,26 +143,19 @@ func (pl *SharedState) decideStrategy(stage StageType) StrategyDecision {
 		return DecideBlock
 	}
 
-	// Modes: AllSynch/ManualAllSynch/FreeTimeSynch @ PreEnqueue/PostFilter
-	// -> always accumulate pods (keep them pending), actual optimization is
-	//    driven by periodicLoop (All*) or freetimeLoop (FreeTime*).
-	if (optimizeAllSynch() || optimizeManualAllSynch() || optimizeFreeTimeSynch()) &&
+	// Global modes (Periodic, Manual, Interlude) accumulate pods,
+	// and optimization is driven by the periodic/interlude loops or HTTP /solve.
+	if isGlobalMode() &&
 		((optimizeAtPreEnqueue() && stage.atPreEnqueue()) ||
 			(optimizeAtPostFilter() && stage.atPostFilter())) {
 		return DecideProcessLater
 	}
 
-	// Modes: AllAsynch or FreeTimeAsynch @ PostFilter
-	// -> always accumulate pods in PostFilter; async loops trigger optimization.
-	if optimizeAsync() && stage.atPostFilter() {
-		return DecideProcessLater
-	}
-
-	// Modes: Every@PreEnqueue or Every@PostFilter - optimize for every new pod
+	// ModeEvery: optimize for every new pod at the configured stage.
 	if optimizeEvery() &&
 		((optimizeAtPreEnqueue() && stage.atPreEnqueue()) ||
 			(optimizeAtPostFilter() && stage.atPostFilter())) {
-		return DecideProcess // optimize for every new pod
+		return DecideProcess
 	}
 
 	// If not at the stage of optimization, allow all pods

@@ -1,0 +1,26 @@
+meta:
+  timestamp: 2025/12/04/17:44:04
+  git: {}
+  kind: trace_replayer
+  job_file: /work/2025-12-04-modes/content/data/jobs/trace/test5/1prio_ds.yaml
+  kwokctl_config_file: data/configs-kwokctl/default.yaml
+inputs:
+  cli-cmd: python3 /work/2025-12-04-modes/content/scripts/kwok_trace_replayer/trace_replayer.py
+    --kwok-runtime binary --job-file /work/2025-12-04-modes/content/data/jobs/trace/test5/1prio_ds.yaml
+  args:
+    result_dir: /work/2025-12-04-modes/content/results/1prio/ds
+    job_file: /work/2025-12-04-modes/content/data/jobs/trace/test5/1prio_ds.yaml
+    trace_dir: data/traces/set3/1prio
+    cluster_name: kwok1
+    kwok_runtime: binary
+    kwokctl_config_file: data/configs-kwokctl/default.yaml
+    namespace: trace
+    node_cpu: 1000m
+    node_mem: 1Gi
+    monitor_interval: 1.0
+    log_level: INFO
+    save_scheduler_logs: false
+  job:
+    trace-dir: data/traces/set3/1prio
+    result-dir: results/1prio/ds
+    kwokctl-config-file: data/configs-kwokctl/default.yaml

@@ -5,28 +5,40 @@ package mypriorityoptimizer
 // ======= Optimality where/when settings =======
 
 // OptimizeMode is the frequency at which optimization is performed.
-// Choices: "every", "all_synch", "all_asynch", "manual_all_synch", "freetime_synch", "freetime_asynch"
-var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_MODE", "all_synch"))
+// Choices: "every", "periodic", "interlude", "manual"
+var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_MODE", "periodic"))
+
+// OptimizeSolveSynch controls whether solver runs use the synchronous
+// or asynchronous flow w.r.t. taking the Active lock.
+//
+// true  → "synchronous" (take Active before planContext)
+// false → "asynchronous" (take Active only once we know a plan is worth applying)
+var OptimizeSolveSynch = parseBool(getenv("OPTIMIZE_SOLVE_SYNCH", "true"))
 
 // OptimizeHookStage is the action point that triggers optimization.
-// Choices: "preenqueue", "postfilter" (ignored in all_asynch mode)
+// Choices: "preenqueue", "postfilter"
+// (ignored for async global modes, which always collect at PostFilter)
 var OptimizeHookStage = parseOptimizeHookStage(getenv("OPTIMIZE_HOOK_STAGE", "postfilter"))
 
-// OptimizeInterval is the duration between consecutive optimization runs.
-// If a plan is actively being executed, the loop is skipped.
+// OptimizeInterval is the duration between consecutive optimization runs
+// in periodic mode. If a plan is actively being executed, the loop is skipped.
 var OptimizeInterval = parseTime(getenv("OPTIMIZE_INTERVAL", "30s"))
 
-// OptimizeInitialDelay is the initial delay before the first optimization run.
+// OptimizeInitialDelay is the initial delay before the first optimization run
+// in periodic mode.
 var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "5s"))
 
-// OptimizeFreeTimeDelay is the duration of idle time (no new pods arriving) before triggering freetime optimization.
-var OptimizeFreeTimeDelay = parseTime(getenv("OPTIMIZE_FREE_TIME_DELAY", "2s"))
+// OptimizeInterludeDelay is the duration of idle time (no changes in the
+// pending set) before triggering interlude optimization.
+var OptimizeInterludeDelay = parseTime(getenv("OPTIMIZE_INTERLUDE_DELAY", "2s"))
 
-// OptimizeFreeTimeCheckInterval is the interval at which to check for free time conditions.
-var OptimizeFreeTimeCheckInterval = parseTime(getenv("OPTIMIZE_FREE_TIME_CHECK_INTERVAL", "2s"))
+// OptimizeInterludeCheckInterval is the interval at which we poll for
+// interlude "free time" conditions.
+var OptimizeInterludeCheckInterval = parseTime(getenv("OPTIMIZE_INTERLUDE_CHECK_INTERVAL", "2s"))
 
-// Address the HTTP server should listen on (only used in ModeManual, ModeAllSynch, ModeAllAsynch).
-// Only works on a KWOK cluster if running with binary runtime.
+// Address the HTTP server should listen on (used for manual optimization
+// and debugging in all modes). Only works on a KWOK cluster if running
+// with binary runtime.
 // Examples: ":18080", "0.0.0.0:18080"
 var HTTPAddr = getenv("HTTP_ADDR", ":18080")
 

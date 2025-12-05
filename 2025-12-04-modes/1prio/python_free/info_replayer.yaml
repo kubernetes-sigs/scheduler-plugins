@@ -1,0 +1,38 @@
+meta:
+  timestamp: 2025/12/04/17:44:23
+  git: {}
+  kind: trace_replayer
+  job_file: /work/2025-12-04-modes/content/data/jobs/trace/test5/1prio_python_free.yaml
+  kwokctl_config_file: data/configs-kwokctl/all_synch_python.yaml
+inputs:
+  cli-cmd: python3 /work/2025-12-04-modes/content/scripts/kwok_trace_replayer/trace_replayer.py
+    --kwok-runtime binary --job-file /work/2025-12-04-modes/content/data/jobs/trace/test5/1prio_python_free.yaml
+  args:
+    result_dir: /work/2025-12-04-modes/content/results/1prio/python_free
+    job_file: /work/2025-12-04-modes/content/data/jobs/trace/test5/1prio_python_free.yaml
+    trace_dir: data/traces/set3/1prio
+    cluster_name: kwok1
+    kwok_runtime: binary
+    kwokctl_config_file: data/configs-kwokctl/all_synch_python.yaml
+    namespace: trace
+    node_cpu: 1000m
+    node_mem: 1Gi
+    monitor_interval: 1.0
+    log_level: INFO
+    save_scheduler_logs: true
+  job:
+    trace-dir: data/traces/set3/1prio
+    result-dir: results/1prio/python_free
+    kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+    save-scheduler-logs: true
+    override-kwokctl-envs:
+    - name: OPTIMIZE_MODE
+      value: freetime_asynch
+    - name: SOLVER_PYTHON_TIMEOUT
+      value: 10s
+    - name: OPTIMIZE_INTERVAL
+      value: 20s
+    - name: SOLVER_PYTHON_GUARANTEED_TIER_FRACTION
+      value: '0.0'
+    - name: SOLVER_PYTHON_MOVE_FRACTION_OF_TIER
+      value: '0.0'

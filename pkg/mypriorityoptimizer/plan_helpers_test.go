@@ -85,10 +85,10 @@ func TestBuildPlan_NilOutputReturnsEmptyPlan(t *testing.T) {
 	if len(plan.NewPlacements) != 0 {
 		t.Errorf("plan.NewPlacements length = %d, want 0", len(plan.NewPlacements))
 	}
-	if plan.PlacementByName != nil && len(plan.PlacementByName) != 0 {
+	if len(plan.PlacementByName) != 0 {
 		t.Errorf("plan.PlacementByName length = %d, want 0", len(plan.PlacementByName))
 	}
-	if plan.WorkloadQuotas != nil && len(plan.WorkloadQuotas) != 0 {
+	if len(plan.WorkloadQuotas) != 0 {
 		t.Errorf("plan.WorkloadQuotas length = %d, want 0", len(plan.WorkloadQuotas))
 	}
 	if plan.NominatedNode != "" {

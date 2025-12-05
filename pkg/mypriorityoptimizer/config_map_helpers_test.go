@@ -220,7 +220,7 @@ func TestMutateJson_Appends(t *testing.T) {
 	lister := newConfigMapLister(cm)
 
 	// mutateJson should load, call f(existing), and patch back.
-	err := mutateJson[item](ctx, cli.CoreV1(), lister, doc, func(existing []item) ([]item, error) {
+	err := mutateJson(ctx, cli.CoreV1(), lister, doc, func(existing []item) ([]item, error) {
 		return append(existing, item{ID: 3}), nil
 	})
 	if err != nil {
