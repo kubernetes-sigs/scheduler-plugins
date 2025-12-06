@@ -191,7 +191,7 @@ func TestPluginReadiness(t *testing.T) {
 		withReadinessInterval(1*time.Millisecond, func() {
 			withCacheWarmupDelay(0, func() {
 				// Use PerPod@PreEnqueue so pluginReadiness skips activatePods.
-				withGlobals(ModePerPod, StagePreEnqueue, true, func() {
+				withChosenMode(ModePerPod, StagePreEnqueue, true, func() {
 					ctx, cancel := context.WithCancel(context.Background())
 					defer cancel()
 

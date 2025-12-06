@@ -18,7 +18,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 
 	// Periodic-sync/Per-pod: take Active early.
 	// Async modes: take Active later.
-	if !optimizeAsync() {
+	if !isAsyncSolving() {
 		if !pl.tryEnterActive() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
 			return nil, nil, "", nil, nil, ErrActiveInProgress
@@ -61,7 +61,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	}
 
 	// Async modes: take Active now that we know it is worth applying the plan.
-	if optimizeAsync() {
+	if isAsyncSolving() {
 		if !pl.tryEnterActive() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
 			pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrActiveInProgress.Error())

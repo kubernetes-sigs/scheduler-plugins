@@ -63,7 +63,7 @@ func (pl *SharedState) pluginReadiness(ctx context.Context, informers ...cache.S
 	klog.InfoS(msg(label, InfoPluginReady))
 
 	// Avoid a surge in PerPod@PreEnqueue; the idle nudge will trickle them.
-	if !(optimizePerPod() && hookAtPreEnqueue()) {
+	if !(isPerPodMode() && hookAtPreEnqueue()) {
 		pl.activatePods(pl.BlockedWhileActive, false, -1) // activate all currently blocked
 	}
 

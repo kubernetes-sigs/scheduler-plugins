@@ -7,23 +7,8 @@ import (
 
 // ==== Mode helpers =======================================================
 
-// optimizePerPod is the optimizer cadence that optimizes for every new pod.
-func optimizePerPod() bool { return OptimizeMode == ModePerPod }
-
-// optimizeAsync is true for modes where we:
-//   - collect pods at PostFilter, and
-//   - take Active only after we know a plan is worthwhile.
-//
-// "PerPod" is always treated as synchronous.
-func optimizeAsync() bool {
-	if OptimizeMode == ModePerPod {
-		return false
-	}
-	return !OptimizeSolveSynch
-}
-
-// isManualMode is true if the mode is Manual.
-func isManualMode() bool { return OptimizeMode == ModeManual }
+// isPerPodMode is the optimizer cadence that optimizes for every new pod.
+func isPerPodMode() bool { return OptimizeMode == ModePerPod }
 
 // isGlobalMode is true for modes that operate on the accumulated pending set
 // (as opposed to per_pod modes).
@@ -34,6 +19,20 @@ func isGlobalMode() bool {
 	default:
 		return false
 	}
+}
+
+// isManualMode is true if the mode is Manual.
+func isManualMode() bool { return OptimizeMode == ModeManual }
+
+// isAsyncSolving is true for modes where we:
+// - collect pods at PostFilter, and
+// - take Active only after we know a plan is worthwhile.
+// "PerPod" is always treated as synchronous.
+func isAsyncSolving() bool {
+	if OptimizeMode == ModePerPod {
+		return false
+	}
+	return !OptimizeSolveSynch
 }
 
 // hookAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
@@ -70,12 +69,12 @@ func modeToString() string {
 	}
 
 	stageStr := "PostFilter"
-	if hookAtPreEnqueue() && !optimizePerPod() {
+	if hookAtPreEnqueue() && !isPerPodMode() {
 		stageStr = "PreEnqueue"
 	}
 
 	syncStr := "Synch"
-	if optimizeAsync() {
+	if isAsyncSolving() {
 		syncStr = "Asynch"
 	}
 

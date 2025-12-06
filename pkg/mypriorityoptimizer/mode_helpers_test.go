@@ -3,9 +3,9 @@ package mypriorityoptimizer
 
 import "testing"
 
-// withGlobals is a small helper to temporarily set the global optimization
+// withChosenMode is a small helper to temporarily set the global optimization
 // knobs and restore them after the test callback returns.
-func withGlobals(mode ModeType, stage StageType, synch bool, fn func()) {
+func withChosenMode(mode ModeType, stage StageType, synch bool, fn func()) {
 	oldMode := OptimizeMode
 	oldStage := OptimizeHookStage
 	oldSynch := OptimizeSolveSynch
@@ -27,15 +27,15 @@ func withGlobals(mode ModeType, stage StageType, synch bool, fn func()) {
 // optimizePerPod
 // -----------------------------------------------------------------------------
 
-func TestOptimizePerPod(t *testing.T) {
-	withGlobals(ModePerPod, StagePostFilter, true, func() {
-		if !optimizePerPod() {
-			t.Fatalf("expected optimizePerPod() to be true when OptimizeMode == ModePerPod")
+func TestIsPerPodMode(t *testing.T) {
+	withChosenMode(ModePerPod, StagePostFilter, true, func() {
+		if !isPerPodMode() {
+			t.Fatalf("expected isPerPodMode() to be true when OptimizeMode == ModePerPod")
 		}
 	})
-	withGlobals(ModePeriodic, StagePreEnqueue, true, func() {
-		if optimizePerPod() {
-			t.Fatalf("expected optimizePerPod() to be false when OptimizeMode != ModePerPod")
+	withChosenMode(ModePeriodic, StagePreEnqueue, true, func() {
+		if isPerPodMode() {
+			t.Fatalf("expected isPerPodMode() to be false when OptimizeMode != ModePerPod")
 		}
 	})
 }
@@ -45,22 +45,22 @@ func TestOptimizePerPod(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestIsGlobalMode(t *testing.T) {
-	withGlobals(ModePerPod, StagePostFilter, true, func() {
+	withChosenMode(ModePerPod, StagePostFilter, true, func() {
 		if isGlobalMode() {
 			t.Fatalf("expected isGlobalMode() to be false for ModePerPod")
 		}
 	})
-	withGlobals(ModePeriodic, StagePreEnqueue, true, func() {
+	withChosenMode(ModePeriodic, StagePreEnqueue, true, func() {
 		if !isGlobalMode() {
 			t.Fatalf("expected isGlobalMode() to be true for ModePeriodic")
 		}
 	})
-	withGlobals(ModeManual, StagePreEnqueue, true, func() {
+	withChosenMode(ModeManual, StagePreEnqueue, true, func() {
 		if !isGlobalMode() {
 			t.Fatalf("expected isGlobalMode() to be true for ModeManual")
 		}
 	})
-	withGlobals(ModeInterlude, StagePreEnqueue, true, func() {
+	withChosenMode(ModeInterlude, StagePreEnqueue, true, func() {
 		if !isGlobalMode() {
 			t.Fatalf("expected isGlobalMode() to be true for ModeInterlude")
 		}
@@ -72,12 +72,12 @@ func TestIsGlobalMode(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestIsManualMode(t *testing.T) {
-	withGlobals(ModeManual, StagePreEnqueue, true, func() {
+	withChosenMode(ModeManual, StagePreEnqueue, true, func() {
 		if !isManualMode() {
 			t.Fatalf("expected isManualMode() to be true for ModeManual")
 		}
 	})
-	withGlobals(ModePeriodic, StagePreEnqueue, true, func() {
+	withChosenMode(ModePeriodic, StagePreEnqueue, true, func() {
 		if isManualMode() {
 			t.Fatalf("expected isManualMode() to be false for non-manual modes")
 		}
@@ -88,23 +88,23 @@ func TestIsManualMode(t *testing.T) {
 // optimizeAsync
 // -----------------------------------------------------------------------------
 
-func TestOptimizeAsync(t *testing.T) {
+func TestIsAsyncSolving(t *testing.T) {
 	// PerPod is always synchronous regardless of OptimizeSolveSynch
-	withGlobals(ModePerPod, StagePostFilter, false, func() {
-		if optimizeAsync() {
-			t.Fatalf("expected optimizeAsync() to be false for ModePerPod regardless of OptimizeSolveSynch")
+	withChosenMode(ModePerPod, StagePostFilter, false, func() {
+		if isAsyncSolving() {
+			t.Fatalf("expected isAsyncSolving() to be false for ModePerPod regardless of OptimizeSolveSynch")
 		}
 	})
 	// Global modes: OptimizeSolveSynch=true -> synchronous
-	withGlobals(ModePeriodic, StagePreEnqueue, true, func() {
-		if optimizeAsync() {
-			t.Fatalf("expected optimizeAsync() to be false when OptimizeSolveSynch=true for global non-PerPod modes")
+	withChosenMode(ModePeriodic, StagePreEnqueue, true, func() {
+		if isAsyncSolving() {
+			t.Fatalf("expected isAsyncSolving() to be false when OptimizeSolveSynch=true for global non-PerPod modes")
 		}
 	})
 	// Global modes: OptimizeSolveSynch=false -> asynchronous
-	withGlobals(ModePeriodic, StagePreEnqueue, false, func() {
-		if !optimizeAsync() {
-			t.Fatalf("expected optimizeAsync() to be true when OptimizeSolveSynch=false for global non-PerPod modes")
+	withChosenMode(ModePeriodic, StagePreEnqueue, false, func() {
+		if !isAsyncSolving() {
+			t.Fatalf("expected isAsyncSolving() to be true when OptimizeSolveSynch=false for global non-PerPod modes")
 		}
 	})
 }
@@ -115,7 +115,7 @@ func TestOptimizeAsync(t *testing.T) {
 
 func TestHookAtStage(t *testing.T) {
 	// PerPod: we force PostFilter regardless of OptimizeHookStage.
-	withGlobals(ModePerPod, StagePreEnqueue, true, func() {
+	withChosenMode(ModePerPod, StagePreEnqueue, true, func() {
 		if hookAtPreEnqueue() {
 			t.Fatalf("expected hookAtPreEnqueue() to be false for ModePerPod")
 		}
@@ -125,7 +125,7 @@ func TestHookAtStage(t *testing.T) {
 	})
 
 	// Global mode with StagePreEnqueue.
-	withGlobals(ModePeriodic, StagePreEnqueue, true, func() {
+	withChosenMode(ModePeriodic, StagePreEnqueue, true, func() {
 		if !hookAtPreEnqueue() {
 			t.Fatalf("expected hookAtPreEnqueue() when OptimizeHookStage=StagePreEnqueue in global mode")
 		}
@@ -135,7 +135,7 @@ func TestHookAtStage(t *testing.T) {
 	})
 
 	// Global mode with StagePostFilter.
-	withGlobals(ModePeriodic, StagePostFilter, true, func() {
+	withChosenMode(ModePeriodic, StagePostFilter, true, func() {
 		if hookAtPreEnqueue() {
 			t.Fatalf("expected hookAtPreEnqueue() to be false when OptimizeHookStage=StagePostFilter in global mode")
 		}
@@ -151,13 +151,13 @@ func TestHookAtStage(t *testing.T) {
 
 func TestModeToString(t *testing.T) {
 	// PerPod: always PostFilter + Synch, regardless of stage & OptimizeSolveSynch.
-	withGlobals(ModePerPod, StagePreEnqueue, true, func() {
+	withChosenMode(ModePerPod, StagePreEnqueue, true, func() {
 		got := modeToString()
 		if got != "PerPod/PostFilter/Synch" {
 			t.Fatalf("unexpected modeToString for PerPod+Synch+PreEnqueue: %q", got)
 		}
 	})
-	withGlobals(ModePerPod, StagePostFilter, false, func() {
+	withChosenMode(ModePerPod, StagePostFilter, false, func() {
 		got := modeToString()
 		if got != "PerPod/PostFilter/Synch" {
 			t.Fatalf("unexpected modeToString for PerPod+Asynch+PostFilter (forced Synch): %q", got)
@@ -165,7 +165,7 @@ func TestModeToString(t *testing.T) {
 	})
 
 	// Periodic + Asynch + PostFilter
-	withGlobals(ModePeriodic, StagePostFilter, false, func() {
+	withChosenMode(ModePeriodic, StagePostFilter, false, func() {
 		got := modeToString()
 		if got != "Periodic/PostFilter/Asynch" {
 			t.Fatalf("unexpected modeToString for Periodic+Asynch+PostFilter: %q", got)
@@ -173,7 +173,7 @@ func TestModeToString(t *testing.T) {
 	})
 
 	// Manual + Synch + PostFilter
-	withGlobals(ModeManual, StagePostFilter, true, func() {
+	withChosenMode(ModeManual, StagePostFilter, true, func() {
 		got := modeToString()
 		if got != "Manual/PostFilter/Synch" {
 			t.Fatalf("unexpected modeToString for Manual+Synch+PostFilter: %q", got)
@@ -184,7 +184,7 @@ func TestModeToString(t *testing.T) {
 	//   - modeStr: "Interlude"
 	//   - stageStr: hookAtPreEnqueue()=true → "PreEnqueue"
 	//   - syncStr: optimizeAsync()=true → "Asynch"
-	withGlobals(ModeInterlude, StagePreEnqueue, false, func() {
+	withChosenMode(ModeInterlude, StagePreEnqueue, false, func() {
 		got := modeToString()
 		if got != "Interlude/PreEnqueue/Asynch" {
 			t.Fatalf("unexpected modeToString for Interlude+Asynch+PreEnqueue: %q", got)
@@ -195,7 +195,7 @@ func TestModeToString(t *testing.T) {
 	//   - ModeType(999) -> "Periodic"
 	//   - synch: true → optimizeAsync() = false → "Synch"
 	//   - stage: PreEnqueue → "PreEnqueue"
-	withGlobals(ModeType(999), StagePreEnqueue, true, func() {
+	withChosenMode(ModeType(999), StagePreEnqueue, true, func() {
 		got := modeToString()
 		if got != "Periodic/PreEnqueue/Synch" {
 			t.Fatalf("unexpected modeToString for unknown mode value: %q", got)

@@ -619,7 +619,7 @@ func (pl *SharedState) onPlanCompleted(status PlanStatus) bool {
 
 	// We do not activate blocked pods when we are in PerPod@PreEnqueue
 	// as it would lead to high contention; instead we periodically nudge them.
-	if !optimizePerPod() || !hookAtPreEnqueue() {
+	if !isPerPodMode() || !hookAtPreEnqueue() {
 		pl.activatePods(pl.BlockedWhileActive, false, -1)
 	}
 	klog.InfoS(InfoDeactivatingActivePlan, "planID", ap.ID)
