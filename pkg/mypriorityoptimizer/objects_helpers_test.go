@@ -715,6 +715,58 @@ func TestIsPodAssigned(t *testing.T) {
 	}
 }
 
+func TestIsPodProtected(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  *v1.Pod
+		want bool
+	}{
+		{
+			name: "nil pod",
+			pod:  nil,
+			want: false,
+		},
+		{
+			name: "kube-system namespace",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "controller",
+					Namespace: "kube-system",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "non kube-system namespace",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "app",
+					Namespace: "default",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "empty namespace",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "no-namespace",
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := isPodProtected(test.pod)
+			if got != test.want {
+				t.Fatalf("isPodProtected() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestPodsByUID(t *testing.T) {
 	now := metav1.NewTime(time.Now())
 	p1 := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", UID: types.UID("u1")}}

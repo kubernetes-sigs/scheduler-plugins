@@ -8,93 +8,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/cache"
 )
-
-// -----------------------------------------------------------------------------
-// Test helpers
-// -----------------------------------------------------------------------------
-
-// fakeSharedIndexInformer is a minimal SharedIndexInformer stub that only
-// implements HasSynced in a meaningful way. All other methods are no-ops.
-type fakeSharedIndexInformer struct {
-	synced bool
-}
-
-func (f *fakeSharedIndexInformer) AddEventHandler(
-	handler cache.ResourceEventHandler,
-) (cache.ResourceEventHandlerRegistration, error) {
-	return nil, nil
-}
-
-func (f *fakeSharedIndexInformer) AddEventHandlerWithResyncPeriod(
-	handler cache.ResourceEventHandler,
-	resyncPeriod time.Duration,
-) (cache.ResourceEventHandlerRegistration, error) {
-	return nil, nil
-}
-
-func (f *fakeSharedIndexInformer) RemoveEventHandler(
-	reg cache.ResourceEventHandlerRegistration,
-) error {
-	return nil
-}
-
-func (f *fakeSharedIndexInformer) GetStore() cache.Store           { return nil }
-func (f *fakeSharedIndexInformer) GetController() cache.Controller { return nil }
-func (f *fakeSharedIndexInformer) Run(stopCh <-chan struct{})      {}
-
-func (f *fakeSharedIndexInformer) HasSynced() bool                 { return f.synced }
-func (f *fakeSharedIndexInformer) LastSyncResourceVersion() string { return "" }
-
-func (f *fakeSharedIndexInformer) AddIndexers(indexers cache.Indexers) error { return nil }
-func (f *fakeSharedIndexInformer) GetIndexer() cache.Indexer                 { return nil }
-
-func (f *fakeSharedIndexInformer) SetWatchErrorHandler(handler cache.WatchErrorHandler) error {
-	return nil
-}
-
-func (f *fakeSharedIndexInformer) SetTransform(handler cache.TransformFunc) error {
-	return nil
-}
-
-func (f *fakeSharedIndexInformer) IsStopped() bool { return false }
-
-// Override helpers – these now tweak the overrideable vars, not the consts.
-
-func withCacheWarmupDelay(d time.Duration, fn func()) {
-	old := cacheWarmupDelay
-	cacheWarmupDelay = d
-	defer func() { cacheWarmupDelay = old }()
-	fn()
-}
-
-func withReadinessInterval(d time.Duration, fn func()) {
-	old := readinessUsableNodeInterval
-	readinessUsableNodeInterval = d
-	defer func() { readinessUsableNodeInterval = old }()
-	fn()
-}
-
-func withReadinessHooks(
-	getNodes func(*SharedState) ([]*v1.Node, error),
-	isUsable func(*v1.Node) bool,
-	fn func(),
-) {
-	oldGet := getNodesForReadiness
-	oldUsable := isNodeUsableForReadiness
-
-	getNodesForReadiness = getNodes
-	isNodeUsableForReadiness = isUsable
-
-	defer func() {
-		getNodesForReadiness = oldGet
-		isNodeUsableForReadiness = oldUsable
-	}()
-
-	// run the body passed in from the test
-	fn()
-}
 
 // -----------------------------------------------------------------------------
 // pluginReadiness
@@ -117,6 +31,7 @@ func TestPluginReadiness(t *testing.T) {
 			close(done)
 		}()
 
+		// Give pluginReadiness a moment to enter WaitForCacheSync, then cancel.
 		time.Sleep(10 * time.Millisecond)
 		cancel()
 
@@ -141,7 +56,8 @@ func TestPluginReadiness(t *testing.T) {
 
 		done := make(chan struct{})
 		go func() {
-			pl.pluginReadiness(ctx /* no informers */)
+			// No informers; should short-circuit on ctx cancellation or waitForUsableNode.
+			pl.pluginReadiness(ctx)
 			close(done)
 		}()
 
@@ -167,7 +83,9 @@ func TestPluginReadiness(t *testing.T) {
 
 			done := make(chan struct{})
 			go func() {
-				pl.pluginReadiness(ctx /* no informers */)
+				// No informers; cacheReady will trivially succeed, but warmup should
+				// observe ctx cancellation and return.
+				pl.pluginReadiness(ctx)
 				close(done)
 			}()
 
@@ -190,20 +108,22 @@ func TestPluginReadiness(t *testing.T) {
 
 		withReadinessInterval(1*time.Millisecond, func() {
 			withCacheWarmupDelay(0, func() {
-				// Use PerPod@PreEnqueue so pluginReadiness skips activatePods.
+				// Use PerPod@PreEnqueue so we are in the most restrictive mode;
+				// readiness itself should still complete once a usable node is seen.
 				withMode(ModePerPod, StagePreEnqueue, true, func() {
 					ctx, cancel := context.WithCancel(context.Background())
 					defer cancel()
 
 					withReadinessHooks(
 						func(_ *SharedState) ([]*v1.Node, error) {
+							// Immediately report one node, so readiness does not spin.
 							return []*v1.Node{new(v1.Node)}, nil
 						},
 						func(*v1.Node) bool { return true },
 						func() {
 							done := make(chan struct{})
 							go func() {
-								pl.pluginReadiness(ctx /* no informers */)
+								pl.pluginReadiness(ctx)
 								close(done)
 							}()
 

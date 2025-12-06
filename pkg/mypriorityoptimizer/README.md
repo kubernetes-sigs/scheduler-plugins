@@ -1076,10 +1076,10 @@ Done:
 - plugin.go
 - objects_helpers.go
 - pod_set_helpers.go
+- plugin_readiness.go
 
 missing:
 
-- plugin_readiness.go
 - loop_helpers.go
 - plan_helpers.go
 - plan_context.go

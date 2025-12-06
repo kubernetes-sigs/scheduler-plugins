@@ -21,7 +21,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 	ap := pl.getActivePlan()
 
 	// Always allow kube-system pods and pending pods when no active plan exists.
-	if pending.Namespace == SystemNamespace || ap == nil {
+	if isPodProtected(pending) || ap == nil {
 		return nil, framework.NewStatus(framework.Success)
 	}
 

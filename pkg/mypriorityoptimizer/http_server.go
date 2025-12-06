@@ -12,21 +12,6 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// HTTP response structs
-// -----------------------------------------------------------------------------
-
-type HttpResponse struct {
-	Status        string         `json:"status"`
-	DurationMs    int64          `json:"duration_ms"`
-	Error         string         `json:"error,omitempty"`
-	Active        bool           `json:"active"`
-	Baseline      *SolverScore   `json:"baseline,omitempty"`
-	BestName      string         `json:"best_name,omitempty"`
-	Attempts      []SolverResult `json:"attempts,omitempty"`
-	PendingBefore int            `json:"pending_before"`
-}
-
-// -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
 
@@ -86,6 +71,7 @@ func (pl *SharedState) startHTTPServer(ctx context.Context, addr string) {
 
 // healthz
 func (pl *SharedState) healthzHandler(w http.ResponseWriter, r *http.Request) {
+	klog.InfoS("HTTP /healthz requested")
 	if !pl.PluginReady.Load() {
 		http.Error(w, "warming", http.StatusServiceUnavailable)
 		return
@@ -96,6 +82,7 @@ func (pl *SharedState) healthzHandler(w http.ResponseWriter, r *http.Request) {
 
 // active
 func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
+	klog.InfoS("HTTP /active requested")
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -108,11 +95,11 @@ func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 
 // solve
 func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
+	klog.InfoS("HTTP /solve requested")
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	start := time.Now()
 	resp := HttpResponse{
 		Active: pl.Active.Load(),
@@ -129,7 +116,6 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 	// Count pending pods before running any solvers.
 	pods, _ := getPodsForHTTP(pl)
 	resp.PendingBefore = countPendingPods(pods)
-
 	_, baseline, bestName, _, attempts, err := runFlowForHTTP(pl, context.Background())
 	resp.Baseline = baseline
 	resp.BestName = bestName

@@ -1,4 +1,4 @@
-// test_helpers.go
+// test_helpers_test.go
 package mypriorityoptimizer
 
 import (
@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,4 +73,41 @@ func uidSet(uids ...string) map[types.UID]struct{} {
 		m[types.UID(u)] = struct{}{}
 	}
 	return m
+}
+
+// -----------------------------------------------------------------------------
+// Plugin readiness helpers (override global vars for the duration of a test)
+// -----------------------------------------------------------------------------
+
+func withCacheWarmupDelay(d time.Duration, fn func()) {
+	old := cacheWarmupDelay
+	cacheWarmupDelay = d
+	defer func() { cacheWarmupDelay = old }()
+	fn()
+}
+
+func withReadinessInterval(d time.Duration, fn func()) {
+	old := readinessUsableNodeInterval
+	readinessUsableNodeInterval = d
+	defer func() { readinessUsableNodeInterval = old }()
+	fn()
+}
+
+func withReadinessHooks(
+	getNodes func(*SharedState) ([]*v1.Node, error),
+	isUsable func(*v1.Node) bool,
+	fn func(),
+) {
+	oldGet := getNodesForReadiness
+	oldUsable := isNodeUsableForReadiness
+
+	getNodesForReadiness = getNodes
+	isNodeUsableForReadiness = isUsable
+
+	defer func() {
+		getNodesForReadiness = oldGet
+		isNodeUsableForReadiness = oldUsable
+	}()
+
+	fn()
 }

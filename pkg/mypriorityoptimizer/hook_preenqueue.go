@@ -14,7 +14,7 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *framewo
 	const stage = "PreEnqueue"
 
 	// 1) Always allow kube-system pods.
-	if pending.Namespace == SystemNamespace {
+	if isPodProtected(pending) {
 		return framework.NewStatus(framework.Success)
 	}
 

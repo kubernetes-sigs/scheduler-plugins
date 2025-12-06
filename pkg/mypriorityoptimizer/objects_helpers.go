@@ -250,6 +250,18 @@ func isPodAssigned(p *v1.Pod) bool {
 	return p != nil && p.Spec.NodeName != ""
 }
 
+// isPodProtected returns true if the pod e.g. is a system pod and should not be evicted.
+func isPodProtected(p *v1.Pod) bool {
+	if p == nil {
+		return false
+	}
+	// Example: protect pods in kube-system namespace
+	if p.Namespace == SystemNamespace {
+		return true
+	}
+	return false
+}
+
 // podsByUID returns a map of pod UIDs to their corresponding Pod objects.
 func podsByUID(pods []*v1.Pod) map[types.UID]*v1.Pod {
 	m := make(map[types.UID]*v1.Pod, len(pods))

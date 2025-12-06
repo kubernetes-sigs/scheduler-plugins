@@ -18,7 +18,7 @@ func (pl *SharedState) Reserve(ctx context.Context, st *framework.CycleState, pe
 	stage := "Reserve"
 
 	ap := pl.getActivePlan()
-	if pending.Namespace == SystemNamespace || ap == nil {
+	if isPodProtected(pending) || ap == nil {
 		return framework.NewStatus(framework.Success)
 	}
 

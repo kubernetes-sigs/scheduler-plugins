@@ -82,7 +82,7 @@ func (pl *SharedState) buildSolverInput(
 		case where == "":
 			// pending → always include
 			sp := toSolverPod(p, "")
-			if p.Namespace == SystemNamespace {
+			if isPodProtected(p) {
 				sp.Protected = true
 			}
 			if !seen[sp.UID] {
@@ -96,7 +96,7 @@ func (pl *SharedState) buildSolverInput(
 				continue
 			}
 			sp := toSolverPod(p, where)
-			if p.Namespace == SystemNamespace {
+			if isPodProtected(p) {
 				sp.Protected = true
 			}
 			if !seen[sp.UID] {
