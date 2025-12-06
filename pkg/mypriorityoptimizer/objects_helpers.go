@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/klog/v2"
 )
 
 // -----------------------------------------------------------------------------
@@ -113,6 +114,8 @@ func (pl *SharedState) evictPod(ctx context.Context, pod *v1.Pod) error {
 // Needed for standalone pods as when they are evicted, they will not be recreated as they have no controllers.
 // UID, GenerateName, ResourceVersion, NodeName, NodeSelector are all set to none.
 func (pl *SharedState) recreateStandalonePod(ctx context.Context, orig *v1.Pod, _ string) error {
+	klog.V(MyV).InfoS("recreating standalone pod", "pod", podRef(orig))
+
 	newPod := orig.DeepCopy()
 	newPod.UID = ""
 	newPod.GenerateName = ""

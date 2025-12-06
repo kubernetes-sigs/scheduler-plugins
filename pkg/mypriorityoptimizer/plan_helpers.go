@@ -366,7 +366,6 @@ func (pl *SharedState) recreateStandalonePods(ctx context.Context, targets []*v1
 		g.Go(func() error {
 			opCtx, cancel := context.WithTimeout(gctx, RecreateTimeout)
 			defer cancel()
-			klog.V(MyV).InfoS("recreating standalone pod", "pod", podRef(pod))
 			if err := pl.recreateStandalonePod(opCtx, pod, ""); err != nil {
 				return fmt.Errorf("recreate %s: %w", podRef(pod), err)
 			}
@@ -404,11 +403,9 @@ func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 			case apierrors.IsNotFound(err):
 				// Pod gone from the API/lister.
 				delete(remaining, key)
-
 			case err != nil:
 				// Transient lister error; keep polling.
 				return false, nil
-
 			default:
 				// Consider it "gone" for our purposes if the UID changed or it started deleting.
 				if !isSamePodUID(p.UID, key.UID) || isPodDeleted(p) {
@@ -442,9 +439,8 @@ func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max in
 	blockedPods := podSet.Snapshot()
 	items := make([]PodSetItem, 0, len(blockedPods))
 	// Get current Pod objects so that we don't return stale/deleted ones.
-	podsLister := podsListerFor(pl)
 	for _, k := range blockedPods {
-		if p, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
+		if p, err := pl.getPodByName(k.Namespace, k.Name); err == nil && p != nil {
 			items = append(items, PodSetItem{p: p, key: k})
 		}
 	}
@@ -500,11 +496,10 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 		klog.V(MyV).InfoS("activatePlannedPending: no new placements with FromNode == \"\" and ToNode != \"\"")
 		return
 	}
-
 	// Collect matching, truly-pending pods from the live slice.
 	toAct := make(map[string]*v1.Pod, len(allow))
 	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil || getPodAssignedNodeName(p) != "" {
+		if isPodDeleted(p) || isPodAssigned(p) {
 			continue // must be pending and alive
 		}
 		if _, ok := allow[p.UID]; !ok {
@@ -557,7 +552,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 			key := wk.String()
 			st := workloadStatus[key]
 			st.hasLive = true
-			if getPodAssignedNodeName(p) == "" {
+			if !isPodAssigned(p) {
 				st.hasPending = true
 			}
 			workloadStatus[key] = st
