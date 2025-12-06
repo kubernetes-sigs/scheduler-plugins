@@ -253,6 +253,78 @@ func TestActivatePods_NilSetNoPanic(t *testing.T) {
 	}
 }
 
+func TestActivatePods_EqualPriorityZeroTimestampSortsByName(t *testing.T) {
+	pl := &SharedState{}
+	ps := newPodSet("blocked")
+
+	// Two pods with the same priority and zero CreationTimestamp.
+	// Order should fall back to lexicographic name order when timestamps are zero.
+	pA := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns1",
+			Name:      "pod-a",
+			UID:       types.UID("uid-a"),
+			// CreationTimestamp left as zero value
+		},
+		Spec: v1.PodSpec{},
+	}
+	pB := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns1",
+			Name:      "pod-b",
+			UID:       types.UID("uid-b"),
+			// CreationTimestamp left as zero value
+		},
+		Spec: v1.PodSpec{},
+	}
+
+	prio := int32(10)
+	pA.Spec.Priority = &prio
+	pB.Spec.Priority = &prio
+
+	ps.AddPod(pA)
+	ps.AddPod(pB)
+
+	store := map[string]map[string]*v1.Pod{
+		"ns1": {
+			"pod-a": pA,
+			"pod-b": pB,
+		},
+	}
+
+	// Override lister and activate hook.
+	oldLister := podsListerForPodSets
+	oldActivate := activatePodsCall
+	defer func() {
+		podsListerForPodSets = oldLister
+		activatePodsCall = oldActivate
+	}()
+
+	podsListerForPodSets = func(pl *SharedState) corev1listers.PodLister {
+		return &fakePodLister{
+			store:     store,
+			errPerKey: map[string]error{},
+		}
+	}
+
+	// We only care about the ordering encoded in `tried`.
+	activatePodsCall = func(pl *SharedState, _ map[string]*v1.Pod) {
+		// no-op
+	}
+
+	tried := pl.activatePods(ps, false, -1)
+	if len(tried) != 2 {
+		t.Fatalf("expected 2 tried pods, got %d", len(tried))
+	}
+
+	// With equal priority and zero timestamps, ordering must fall back to name:
+	// "pod-a" before "pod-b".
+	if tried[0] != pA.UID || tried[1] != pB.UID {
+		t.Fatalf("tried order = [%q, %q], want [%q, %q]",
+			tried[0], tried[1], pA.UID, pB.UID)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // pruneSet
 // -----------------------------------------------------------------------------
@@ -404,7 +476,7 @@ func TestPruneSet_EmptyOrNil(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// Existing PodSet tests (unchanged)
+// newPodSet
 // -----------------------------------------------------------------------------
 
 func TestNewPodSet_Empty(t *testing.T) {
@@ -426,6 +498,10 @@ func TestNewPodSet_Empty(t *testing.T) {
 		t.Fatalf("newPodSet.Snapshot() length = %d, want 0", len(snap))
 	}
 }
+
+// -----------------------------------------------------------------------------
+// PodSet AddPod / RemovePod / Size / Snapshot
+// -----------------------------------------------------------------------------
 
 func TestPodSet_AddAndRemovePod(t *testing.T) {
 	ps := newPodSet("blocked")

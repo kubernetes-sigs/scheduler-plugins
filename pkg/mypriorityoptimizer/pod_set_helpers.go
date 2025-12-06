@@ -1,4 +1,3 @@
-// pkg/mypriorityoptimizer/pod_set_helpers.go
 // pod_set_helpers.go
 
 package mypriorityoptimizer

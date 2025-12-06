@@ -243,7 +243,7 @@ func TestParseOptimizeHookStage_ManualRespectsEnv(t *testing.T) {
 }
 
 func TestParseOptimizeHookStage_SyncOrNonGlobalHonorsEnv(t *testing.T) {
-	// Sync global → respect env
+	// Sync global -> respect env
 	withGlobals(ModePeriodic, StageNone, true, func() {
 		if optimizeAsync() {
 			t.Fatalf("test precondition: expected optimizeAsync() false for ModePeriodic + OptimizeSolveSynch=true")
@@ -256,7 +256,7 @@ func TestParseOptimizeHookStage_SyncOrNonGlobalHonorsEnv(t *testing.T) {
 		}
 	})
 
-	// Non-global (PerPod) → respect env.
+	// Non-global (PerPod) -> respect env.
 	withGlobals(ModePerPod, StageNone, false, func() {
 		if got := parseOptimizeHookStage("preenqueue"); got != StagePreEnqueue {
 			t.Fatalf("perpod + preenqueue input: got %v, want StagePreEnqueue", got)

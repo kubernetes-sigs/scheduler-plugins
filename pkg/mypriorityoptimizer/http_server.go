@@ -12,6 +12,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// -----------------------------------------------------------------------------
+// HTTP response structs
+// -----------------------------------------------------------------------------
 type HttpResponse struct {
 	Status        string         `json:"status"`
 	DurationMs    int64          `json:"duration_ms"`

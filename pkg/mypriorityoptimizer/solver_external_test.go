@@ -23,6 +23,10 @@ func writeFakeSolverScript(t *testing.T, dir, body string) string {
 	return path
 }
 
+// -----------------------------------------------------------------------------
+// runSolverExternal
+// -----------------------------------------------------------------------------
+
 func TestRunSolverExternal_Success(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("runSolverExternal test requires bash on PATH")

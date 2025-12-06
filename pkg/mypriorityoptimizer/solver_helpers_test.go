@@ -3,13 +3,25 @@ package mypriorityoptimizer
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
 
 func hasKey(args []any, key string) bool {
 	for i := 0; i+1 < len(args); i += 2 {
@@ -30,6 +42,28 @@ func withAppendStatsHook(
 	fn()
 }
 
+type fakeHandleForStats struct {
+	// Embed the framework.Handle interface. This makes *fakeHandleForStats
+	// satisfy framework.Handle's *method set* without us having to write
+	// all those methods. We only override the ones we care about.
+	framework.Handle
+
+	client  kubernetes.Interface
+	factory informers.SharedInformerFactory
+}
+
+func (f *fakeHandleForStats) ClientSet() kubernetes.Interface {
+	return f.client
+}
+
+func (f *fakeHandleForStats) SharedInformerFactory() informers.SharedInformerFactory {
+	return f.factory
+}
+
+// -----------------------------------------------------------------------------
+// isAnySolverEnabled
+// -----------------------------------------------------------------------------
+
 func TestIsAnySolverEnabled(t *testing.T) {
 	origPy := SolverPythonEnabled
 	defer func() {
@@ -48,6 +82,10 @@ func TestIsAnySolverEnabled(t *testing.T) {
 		t.Fatalf("isAnySolverEnabled() with python enabled = %v, want true", got)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// buildSolverInput
+// -----------------------------------------------------------------------------
 
 func TestBuildSolverInput_NoUsableNodes(t *testing.T) {
 	pl := &SharedState{}
@@ -249,6 +287,10 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// buildBaselineScore
+// -----------------------------------------------------------------------------
+
 func TestBuildBaselineScore(t *testing.T) {
 	in := SolverInput{
 		Pods: []SolverPod{
@@ -269,6 +311,10 @@ func TestBuildBaselineScore(t *testing.T) {
 		t.Fatalf("PlacedByPriority['2'] = %d, want 1", got)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// solverConfigArgs
+// -----------------------------------------------------------------------------
 
 func TestSolverConfigArgs(t *testing.T) {
 	origPy := SolverPythonEnabled
@@ -298,6 +344,10 @@ func TestSolverConfigArgs(t *testing.T) {
 		t.Fatalf("solverConfigArgs() missing pythonSolver when python enabled, got %v", args)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// isImprovement
+// -----------------------------------------------------------------------------
 
 func TestIsImprovement_Order(t *testing.T) {
 	base := SolverScore{
@@ -347,6 +397,10 @@ func TestIsImprovement_Order(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// comparePlaced
+// -----------------------------------------------------------------------------
+
 func TestComparePlaced_HighPriorityWins(t *testing.T) {
 	a := map[string]int{"1": 2, "0": 1}
 	b := map[string]int{"1": 1, "0": 5}
@@ -364,6 +418,10 @@ func TestComparePlaced_HighPriorityWins(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// cmpInt
+// -----------------------------------------------------------------------------
+
 func TestCmpInt(t *testing.T) {
 	if got := cmpInt(1, 2); got != 1 {
 		t.Fatalf("cmpInt(1,2) = %d, want 1 (improvement)", got)
@@ -375,6 +433,10 @@ func TestCmpInt(t *testing.T) {
 		t.Fatalf("cmpInt(2,2) = %d, want 0 (equal)", got)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// hasSolverFeasibleResult
+// -----------------------------------------------------------------------------
 
 func TestHasSolverFeasibleResult(t *testing.T) {
 	tests := []struct {
@@ -393,6 +455,10 @@ func TestHasSolverFeasibleResult(t *testing.T) {
 		}
 	}
 }
+
+// -----------------------------------------------------------------------------
+// planApplicable
+// -----------------------------------------------------------------------------
 
 func TestPlanApplicable_NilPlan(t *testing.T) {
 	pl := &SharedState{}
@@ -622,6 +688,10 @@ func TestPlanApplicable_Success(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// summarizeAttempt
+// -----------------------------------------------------------------------------
+
 func TestSummarizeAttempt_UsesExistingStatusIfSet(t *testing.T) {
 	r := SolverResult{
 		Name:       "python",
@@ -655,6 +725,10 @@ func TestSummarizeAttempt_DerivesStatusFromOutput(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// logLeaderboard
+// -----------------------------------------------------------------------------
+
 func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 	baseline := SolverScore{
 		PlacedByPriority: map[string]int{"1": 1},
@@ -687,6 +761,10 @@ func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 	// panics, the test fails.
 	logLeaderboard("test-label", attempts, baseline, best)
 }
+
+// -----------------------------------------------------------------------------
+// computeSolverScore
+// -----------------------------------------------------------------------------
 
 func TestComputeSolverScore_NilOutput(t *testing.T) {
 	in := SolverInput{
@@ -760,6 +838,10 @@ func TestComputeSolverScore_WithPreemptor(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// toSolverPod
+// -----------------------------------------------------------------------------
+
 func TestToSolverPod_BasicMapping(t *testing.T) {
 	p := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -785,7 +867,11 @@ func TestToSolverPod_BasicMapping(t *testing.T) {
 	}
 }
 
-func TestExportSolverStatsConfigMap_UsesAppendHook(t *testing.T) {
+// -----------------------------------------------------------------------------
+// exportSolverStatsToConfigMap
+// -----------------------------------------------------------------------------
+
+func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 	pl := &SharedState{}
 
 	baseline := &SolverScore{
@@ -815,7 +901,7 @@ func TestExportSolverStatsConfigMap_UsesAppendHook(t *testing.T) {
 			gotEntry = entry
 		},
 		func() {
-			pl.exportSolverStatsConfigMap(
+			pl.exportSolverStatsToConfigMap(
 				context.Background(),
 				"strategyX",
 				baseline,
@@ -849,27 +935,115 @@ func TestExportSolverStatsConfigMap_UsesAppendHook(t *testing.T) {
 	}
 }
 
-func TestAppendSolverStatsCM_UsesHookWhenSet(t *testing.T) {
+// -----------------------------------------------------------------------------
+// appendSolverStatsCM
+// -----------------------------------------------------------------------------
+
+func TestAppendSolverStatsCM_NoClientSet_SkipsWithoutPanic(t *testing.T) {
+	ctx := context.Background()
+	pl := &SharedState{
+		Handle: &fakeHandleForStats{
+			client:  nil,
+			factory: nil,
+		},
+	}
+
+	// Ensure hook is disabled so we execute the real body.
+	orig := appendSolverStatsCMHook
+	appendSolverStatsCMHook = nil
+	defer func() { appendSolverStatsCMHook = orig }()
+
+	// Just ensure it doesn't panic when there is no clientset.
+	pl.appendSolverStatsCM(ctx, ExportedSolverStats{BestName: "best"})
+}
+
+func TestAppendSolverStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
+	ctx := context.Background()
+
+	// Start with an empty fake cluster.
+	client := fake.NewSimpleClientset()
+	factory := informers.NewSharedInformerFactory(client, 0)
+
+	pl := &SharedState{
+		Handle: &fakeHandleForStats{
+			client:  client,
+			factory: factory,
+		},
+	}
+
+	// Make sure we go through the real implementation, not the hook.
+	orig := appendSolverStatsCMHook
+	appendSolverStatsCMHook = nil
+	defer func() { appendSolverStatsCMHook = orig }()
+
+	entry := ExportedSolverStats{
+		BestName: "python",
+		// other fields not strictly necessary for this test
+	}
+
+	pl.appendSolverStatsCM(ctx, entry)
+
+	// After appendSolverStatsCM, we expect the ConfigMap to exist.
+	cm, err := client.CoreV1().
+		ConfigMaps(SystemNamespace).
+		Get(ctx, SolverConfigMapExportedStatsName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("expected stats ConfigMap to be created, got err = %v", err)
+	}
+
+	dataKey := SolverConfigMapLabelKey + ".json"
+	payload, ok := cm.Data[dataKey]
+	if !ok || payload == "" {
+		t.Fatalf("expected non-empty JSON payload in key %q, got %q", dataKey, payload)
+	}
+}
+
+// readAll(stdout) error: simulate via test hook.
+func TestRunSolverExternal_ReadStdoutError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runSolverExternal test requires bash on PATH")
+	}
+
+	// Save & restore globals
+	origBin := solverBinary
+	origPath := solverScriptPath
+	origExec := execCommandContext
+	origRead := readAllStdout
+	defer func() {
+		solverBinary = origBin
+		solverScriptPath = origPath
+		execCommandContext = origExec
+		readAllStdout = origRead
+	}()
+
+	tmpDir := t.TempDir()
+
+	// Normal solver script (would normally succeed)
+	script := `#!/usr/bin/env bash
+cat >/dev/null
+echo '{"Status":"OPTIMAL"}'
+`
+	scriptPath := writeFakeSolverScript(t, tmpDir, script)
+	solverBinary = "bash"
+	solverScriptPath = scriptPath
+
+	// Force readAllStdout to fail so we hit the error path
+	readAllStdout = func(r io.Reader) ([]byte, error) {
+		return nil, fmt.Errorf("forced read error")
+	}
+
 	pl := &SharedState{}
-	entry := ExportedSolverStats{BestName: "best"}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-	var called bool
-	withAppendStatsHook(
-		func(hpl *SharedState, _ context.Context, e ExportedSolverStats) {
-			called = true
-			if hpl != pl {
-				t.Fatalf("hook pl=%p, want %p", hpl, pl)
-			}
-			if e.BestName != entry.BestName {
-				t.Fatalf("entry.BestName = %q, want %q", e.BestName, entry.BestName)
-			}
-		},
-		func() {
-			pl.appendSolverStatsCM(context.Background(), entry)
-		},
-	)
-
-	if !called {
-		t.Fatalf("appendSolverStatsCM hook was not called")
+	out, err := pl.runSolverExternal(ctx, SolverInput{})
+	if err == nil {
+		t.Fatalf("expected error from readAllStdout, got nil (out=%#v)", out)
+	}
+	if !strings.Contains(err.Error(), "read solver stdout") {
+		t.Fatalf("expected read solver stdout error, got %v", err)
+	}
+	if out != nil {
+		t.Fatalf("expected nil output on read error, got %#v", out)
 	}
 }

@@ -213,7 +213,6 @@ func comparePlaced(a, b map[string]int) int {
 	return 0
 }
 
-// TODO: check and cleanup
 // cmpInt returns +1 if a<b (improvement because smaller is better),
 // -1 if a>b (worse), 0 if equal.
 func cmpInt(suggested, baseline int) int {
@@ -230,7 +229,7 @@ func cmpInt(suggested, baseline int) int {
 // hasSolverFeasibleResult checks if the solver output is feasible.
 // OPTIMAL means the solution is perfect and meets all constraints
 // (Note there can be multiple optimal solutions and that the solver is non-deterministic).
-// FEASIBLE means the solution is not perfect but still meets all constraints.
+// FEASIBLE means the solution is not optimal (not perfect) but still meets all constraints.
 func hasSolverFeasibleResult(status string) bool {
 	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
 }
@@ -430,7 +429,6 @@ func logLeaderboard(
 	)
 }
 
-// TODO: check and cleanup
 // computeSolverScore computes final Score from the snapshot given to the solver:
 //   - placed_by_priority: number of pods that were placed for each priority
 //   - evicted:            number of pods that were evicted
@@ -505,7 +503,6 @@ func computeSolverScore(in SolverInput, out *SolverOutput) SolverScore {
 	}
 }
 
-// TODO: check and cleanup
 // toSolverPod converts a Pod to a SolverPod.
 func toSolverPod(p *v1.Pod, node string) SolverPod {
 	return SolverPod{
@@ -519,9 +516,9 @@ func toSolverPod(p *v1.Pod, node string) SolverPod {
 	}
 }
 
-// exportSolverStatsConfigMap exports a compact run record to the stats ConfigMap.
+// exportSolverStatsToConfigMap exports a compact run record to the stats ConfigMap.
 // Only runs when `hadFeasible` is true.
-func (pl *SharedState) exportSolverStatsConfigMap(
+func (pl *SharedState) exportSolverStatsToConfigMap(
 	ctx context.Context,
 	strategy string,
 	baseline *SolverScore,

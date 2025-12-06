@@ -15,7 +15,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// small helper
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
 func decodeHTTPResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
 	t.Helper()
 	var resp HttpResponse

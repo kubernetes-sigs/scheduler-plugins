@@ -1066,7 +1066,15 @@ python -m scripts.kwok_trace_replayer.trace_generator \
 
 #### Go Tests
 
-Total coverage: 56
+Done:
+
+- args_parsers.go
+- logging_helpers.go
+- http_server.go
+- solver_helpers.go
+- pod_set_helpers.go
+
+Total coverage: 59.2%
 
 100% coverage:
 
@@ -1079,10 +1087,17 @@ Total coverage: 56
 
 95%+ coverage:
 
+- solver_external.go
+- pod_set_helpers.go
+
 90%+ coverage:
 
 - http_server.go
 - solver_external.go
+
+85%+ coverage:
+
+- solver_helpers.go
 
 80%+ coverage:
 

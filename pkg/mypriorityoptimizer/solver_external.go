@@ -1,4 +1,4 @@
-// solver_python.go
+// solver_external.go
 
 package mypriorityoptimizer
 
@@ -18,6 +18,9 @@ var (
 	execCommandContext = exec.CommandContext
 	solverBinary       = SolverPythonBin
 	solverScriptPath   = SolverPythonScriptPath
+
+	// test hook so we can force a read error from stdout
+	readAllStdout = io.ReadAll
 )
 
 func (pl *SharedState) runSolverExternal(ctx context.Context, in SolverInput) (*SolverOutput, error) {
@@ -52,11 +55,14 @@ func (pl *SharedState) runSolverExternal(ctx context.Context, in SolverInput) (*
 		return nil, fmt.Errorf("solver start: %w", err)
 	}
 
-	outBuf, err := io.ReadAll(stdout)
+	// --- this is the line we want to cover ---
+	outBuf, err := readAllStdout(stdout)
 	if err != nil {
 		_ = cmd.Wait()
 		return nil, fmt.Errorf("read solver stdout: %w", err)
 	}
+	// -----------------------------------------
+
 	if err := cmd.Wait(); err != nil {
 		return nil, fmt.Errorf("solver run: %w", err)
 	}
