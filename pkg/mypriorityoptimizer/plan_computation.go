@@ -85,7 +85,7 @@ func (pl *SharedState) planComputation(
 				Name:       att.Name,
 				DurationMs: durMs,
 				Status:     out.Status,
-				Score:      computeSolverScore(inAttempt, out),
+				Score:      scoreSolution(inAttempt, out),
 				Stages:     out.Stages,
 			})
 			continue
@@ -112,7 +112,7 @@ func (pl *SharedState) planComputation(
 				Name:       att.Name,
 				DurationMs: durMs,
 				Status:     out.Status,
-				Score:      computeSolverScore(inAttempt, out),
+				Score:      scoreSolution(inAttempt, out),
 				Stages:     out.Stages,
 			})
 			// return the attempt as bestAttempt if no other attempts succeeded?
@@ -121,7 +121,7 @@ func (pl *SharedState) planComputation(
 					Name:       att.Name,
 					DurationMs: durMs,
 					Status:     out.Status,
-					Score:      computeSolverScore(inAttempt, out),
+					Score:      scoreSolution(inAttempt, out),
 					Stages:     out.Stages,
 				}
 			}
@@ -136,14 +136,14 @@ func (pl *SharedState) planComputation(
 				Name:       att.Name,
 				DurationMs: durMs,
 				Status:     out.Status,
-				Score:      computeSolverScore(inAttempt, out),
+				Score:      scoreSolution(inAttempt, out),
 				Stages:     out.Stages,
 			})
 			continue
 		}
 
 		// Check if improving over baseline
-		score := computeSolverScore(inAttempt, out)
+		score := scoreSolution(inAttempt, out)
 		improvedOverBaseline := isImprovement(*baselineScore, score)
 		curr := SolverResult{
 			Name:       att.Name,

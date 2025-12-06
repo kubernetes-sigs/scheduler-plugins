@@ -35,7 +35,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 	}
 	klog.V(MyV).InfoS(msg(stage, "filter decision"),
 		"activePlan", ap != nil,
-		"pod", combineNsName(pending.Namespace, pending.Name),
+		"pod", mergeNsName(pending.Namespace, pending.Name),
 		"nodes", nodeNames,
 		"reason", filterMsg,
 	)

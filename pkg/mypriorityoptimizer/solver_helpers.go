@@ -290,7 +290,7 @@ func (pl *SharedState) planApplicable(out *SolverOutput, nodes []*v1.Node, pods 
 	for _, np := range out.Placements {
 		p := pByUID[np.Pod.UID]
 		if p == nil || p.DeletionTimestamp != nil {
-			return false, fmt.Sprintf("pod vanished: %s", combineNsName(np.Pod.Namespace, np.Pod.Name))
+			return false, fmt.Sprintf("pod vanished: %s", mergeNsName(np.Pod.Namespace, np.Pod.Name))
 		}
 		// Source must still be consistent enough:
 		//   - if it was a move (FromNode != ""), pod should still be on that source
@@ -427,11 +427,11 @@ func logLeaderboard(
 	)
 }
 
-// computeSolverScore computes final Score from the snapshot given to the solver:
+// scoreSolution computes final Score from the snapshot given to the solver:
 //   - placed_by_priority: number of pods that were placed for each priority
 //   - evicted:            number of pods that were evicted
 //   - moved:              number of pods that were moved to a different node
-func computeSolverScore(in SolverInput, out *SolverOutput) SolverScore {
+func scoreSolution(in SolverInput, out *SolverOutput) SolverScore {
 	if out == nil {
 		return SolverScore{}
 	}

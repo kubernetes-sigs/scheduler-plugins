@@ -4,23 +4,11 @@ package mypriorityoptimizer
 import (
 	"bytes"
 	"context"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 )
-
-// helper to write a temporary script that acts as the "python solver" script
-func writeFakeSolverScript(t *testing.T, dir, body string) string {
-	t.Helper()
-	path := filepath.Join(dir, "fake_solver.sh")
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("failed to write fake solver script: %v", err)
-	}
-	return path
-}
 
 // -----------------------------------------------------------------------------
 // runSolverExternal

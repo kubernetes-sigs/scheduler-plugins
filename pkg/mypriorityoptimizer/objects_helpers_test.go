@@ -4,7 +4,6 @@ package mypriorityoptimizer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -12,101 +11,11 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
 // -----------------------------------------------------------------------------
-// Test fakes & helpers
-// -----------------------------------------------------------------------------
-
-type fakeNodeLister struct {
-	nodes []*v1.Node
-	err   error
-}
-
-func (f *fakeNodeLister) List(selector labels.Selector) ([]*v1.Node, error) {
-	return f.nodes, f.err
-}
-
-func (f *fakeNodeLister) Get(name string) (*v1.Node, error) {
-	for _, n := range f.nodes {
-		if n.Name == name {
-			return n, nil
-		}
-	}
-	return nil, fmt.Errorf("not found")
-}
-
-type fakePodNamespaceLister2 struct {
-	pods []*v1.Pod
-	err  error
-}
-
-func (f *fakePodNamespaceLister2) List(selector labels.Selector) ([]*v1.Pod, error) {
-	return f.pods, f.err
-}
-
-func (f *fakePodNamespaceLister2) Get(name string) (*v1.Pod, error) {
-	for _, p := range f.pods {
-		if p.Name == name {
-			return p, nil
-		}
-	}
-	return nil, fmt.Errorf("not found")
-}
-
-type fakePodLister2 struct {
-	pods []*v1.Pod
-	err  error
-}
-
-func (f *fakePodLister2) List(selector labels.Selector) ([]*v1.Pod, error) {
-	return f.pods, f.err
-}
-
-func (f *fakePodLister2) Pods(namespace string) corev1listers.PodNamespaceLister {
-	var nsPods []*v1.Pod
-	for _, p := range f.pods {
-		if p.Namespace == namespace {
-			nsPods = append(nsPods, p)
-		}
-	}
-	return &fakePodNamespaceLister2{pods: nsPods, err: f.err}
-}
-
-// helper to restore hook vars after each test
-func withNodeLister(nl corev1listers.NodeLister, fn func()) {
-	orig := nodesListerFor
-	nodesListerFor = func(pl *SharedState) corev1listers.NodeLister { return nl }
-	defer func() { nodesListerFor = orig }()
-	fn()
-}
-
-func withPodLister(plister corev1listers.PodLister, fn func()) {
-	orig := podsListerFor
-	podsListerFor = func(pl *SharedState) corev1listers.PodLister { return plister }
-	defer func() { podsListerFor = orig }()
-	fn()
-}
-
-func withEvictHook(hook func(pl *SharedState, ctx context.Context, pod *v1.Pod, ev *policyv1.Eviction) error, fn func()) {
-	orig := evictPodFor
-	evictPodFor = hook
-	defer func() { evictPodFor = orig }()
-	fn()
-}
-
-func withCreateHook(hook func(pl *SharedState, ctx context.Context, pod *v1.Pod) (*v1.Pod, error), fn func()) {
-	orig := createPodFor
-	createPodFor = hook
-	defer func() { createPodFor = orig }()
-	fn()
-}
-
-// -----------------------------------------------------------------------------
-// nodesLister / podsLister / getNodes / getPods
+// nodesLister
 // -----------------------------------------------------------------------------
 
 func TestNodesLister(t *testing.T) {
@@ -120,9 +29,13 @@ func TestNodesLister(t *testing.T) {
 	})
 }
 
+// -----------------------------------------------------------------------------
+// podsLister
+// -----------------------------------------------------------------------------
+
 func TestPodsLister(t *testing.T) {
 	pl := &SharedState{}
-	fake := &fakePodLister2{}
+	fake := &fakePodLister{}
 	withPodLister(fake, func() {
 		got := pl.podsLister()
 		if got != fake {
@@ -130,6 +43,10 @@ func TestPodsLister(t *testing.T) {
 		}
 	})
 }
+
+// -----------------------------------------------------------------------------
+// getNodes
+// -----------------------------------------------------------------------------
 
 func TestGetNodes(t *testing.T) {
 	nodes := []*v1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "n1"}}}
@@ -154,11 +71,19 @@ func TestGetNodes(t *testing.T) {
 	})
 }
 
+// -----------------------------------------------------------------------------
+// getPods
+// -----------------------------------------------------------------------------
+
 func TestGetPods(t *testing.T) {
-	pods := []*v1.Pod{{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "ns"}}}
+	p := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "ns"}}
 	pl := &SharedState{}
 
-	withPodLister(&fakePodLister2{pods: pods}, func() {
+	// success case
+	store := map[string]map[string]*v1.Pod{
+		"ns": {"p1": p},
+	}
+	withPodLister(&fakePodLister{store: store}, func() {
 		got, err := pl.getPods()
 		if err != nil {
 			t.Fatalf("getPods() unexpected error: %v", err)
@@ -168,8 +93,9 @@ func TestGetPods(t *testing.T) {
 		}
 	})
 
+	// error case
 	sentinel := errors.New("boom")
-	withPodLister(&fakePodLister2{err: sentinel}, func() {
+	withPodLister(&fakePodLister{err: sentinel}, func() {
 		_, err := pl.getPods()
 		if !errors.Is(err, sentinel) {
 			t.Fatalf("getPods() error = %v, want %v", err, sentinel)
@@ -178,7 +104,7 @@ func TestGetPods(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// simple string helpers
+// podRef
 // -----------------------------------------------------------------------------
 
 func TestPodRef(t *testing.T) {
@@ -188,11 +114,19 @@ func TestPodRef(t *testing.T) {
 	}
 }
 
-func TestCombineNsName(t *testing.T) {
-	if got := combineNsName("ns", "name"); got != "ns/name" {
-		t.Fatalf("combineNsName() = %q, want %q", got, "ns/name")
+// -----------------------------------------------------------------------------
+// mergeNsName
+// -----------------------------------------------------------------------------
+
+func TestMergeNsName(t *testing.T) {
+	if got := mergeNsName("ns", "name"); got != "ns/name" {
+		t.Fatalf("mergeNsName() = %q, want %q", got, "ns/name")
 	}
 }
+
+// -----------------------------------------------------------------------------
+// splitNsName
+// -----------------------------------------------------------------------------
 
 func TestSplitNsName(t *testing.T) {
 	ns, name, err := splitNsName("ns/name")
@@ -401,7 +335,7 @@ func TestRecreateStandalonePod_Error(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// resource helpers
+// getPodCPURequest
 // -----------------------------------------------------------------------------
 
 func TestGetPodCPURequest(t *testing.T) {
@@ -434,6 +368,10 @@ func TestGetPodCPURequest(t *testing.T) {
 		t.Fatalf("getPodCPURequest(empty) = %d, want 0", got)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// getPodMemoryRequest
+// -----------------------------------------------------------------------------
 
 func TestGetPodMemoryRequest(t *testing.T) {
 	p := &v1.Pod{
@@ -473,6 +411,10 @@ func TestGetPodMemoryRequest(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// getPodPriority
+// -----------------------------------------------------------------------------
+
 func TestGetPodPriority(t *testing.T) {
 	pval := int32(10)
 	withPrio := &v1.Pod{Spec: v1.PodSpec{Priority: &pval}}
@@ -487,39 +429,43 @@ func TestGetPodPriority(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// node classification helpers
+// isNodeControlPlane
 // -----------------------------------------------------------------------------
 
-func TestIsControlPlane(t *testing.T) {
+func TestIsNodeControlPlane(t *testing.T) {
 	n := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: map[string]string{}}}
-	if isControlPlane(n) {
+	if isNodeControlPlane(n) {
 		t.Fatalf("worker node should not be control plane")
 	}
 
 	n1 := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1", Labels: map[string]string{
 		"node-role.kubernetes.io/control-plane": "true",
 	}}}
-	if !isControlPlane(n1) {
+	if !isNodeControlPlane(n1) {
 		t.Fatalf("node with control-plane label should be control plane")
 	}
 
 	n2 := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n2", Labels: map[string]string{
 		"node-role.kubernetes.io/master": "true",
 	}}}
-	if !isControlPlane(n2) {
+	if !isNodeControlPlane(n2) {
 		t.Fatalf("node with master label should be control plane")
 	}
 
 	n3 := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "control-plane"}}
-	if !isControlPlane(n3) {
+	if !isNodeControlPlane(n3) {
 		t.Fatalf("node named control-plane should be control plane")
 	}
 
 	n4 := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "kind-control-plane"}}
-	if !isControlPlane(n4) {
+	if !isNodeControlPlane(n4) {
 		t.Fatalf("node named kind-control-plane should be control plane")
 	}
 }
+
+// -----------------------------------------------------------------------------
+// isNodeReady
+// -----------------------------------------------------------------------------
 
 func TestNodeReady(t *testing.T) {
 	n := &v1.Node{}
@@ -540,9 +486,13 @@ func TestNodeReady(t *testing.T) {
 	}
 }
 
-func TestHasNoScheduleCondTaint(t *testing.T) {
+// -----------------------------------------------------------------------------
+// isNodeNoScheduleConditionTainted
+// -----------------------------------------------------------------------------
+
+func TestIsNodeNoScheduleConditionTainted(t *testing.T) {
 	n := &v1.Node{}
-	if hasNoScheduleCondTaint(n) {
+	if isNodeNoScheduleConditionTainted(n) {
 		t.Fatalf("empty node should not have NoScheduleCondTaint")
 	}
 
@@ -552,7 +502,7 @@ func TestHasNoScheduleCondTaint(t *testing.T) {
 			Effect: v1.TaintEffectNoSchedule,
 		},
 	}
-	if !hasNoScheduleCondTaint(n) {
+	if !isNodeNoScheduleConditionTainted(n) {
 		t.Fatalf("node with not-ready NoSchedule taint should return true")
 	}
 
@@ -562,7 +512,7 @@ func TestHasNoScheduleCondTaint(t *testing.T) {
 			Effect: v1.TaintEffectNoSchedule,
 		},
 	}
-	if !hasNoScheduleCondTaint(n) {
+	if !isNodeNoScheduleConditionTainted(n) {
 		t.Fatalf("node with unreachable NoSchedule taint should return true")
 	}
 
@@ -572,10 +522,37 @@ func TestHasNoScheduleCondTaint(t *testing.T) {
 			Effect: v1.TaintEffectPreferNoSchedule,
 		},
 	}
-	if hasNoScheduleCondTaint(n) {
+	if isNodeNoScheduleConditionTainted(n) {
 		t.Fatalf("PreferNoSchedule should not count as NoScheduleCondTaint")
 	}
 }
+
+// -----------------------------------------------------------------------------
+// isNodeAllocatable
+// -----------------------------------------------------------------------------
+
+func TestIsNodeAllocatable(t *testing.T) {
+	n := &v1.Node{
+		Status: v1.NodeStatus{
+			Allocatable: v1.ResourceList{},
+		},
+	}
+	if isNodeAllocatable(n) {
+		t.Fatalf("node with empty allocatable should not be allocatable")
+	}
+
+	n.Status.Allocatable = v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse("1000m"),
+		v1.ResourceMemory: resource.MustParse("1Gi"),
+	}
+	if !isNodeAllocatable(n) {
+		t.Fatalf("node with allocatable resources should be allocatable")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// isNodeUsable
+// -----------------------------------------------------------------------------
 
 func TestIsNodeUsable(t *testing.T) {
 	if isNodeUsable(nil) {
@@ -683,7 +660,7 @@ func TestPodsByUID(t *testing.T) {
 // clusterFingerprint
 // -----------------------------------------------------------------------------
 
-func TestClusterFingerprintDeterministic(t *testing.T) {
+func TestClusterFingerprint(t *testing.T) {
 	n1 := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "n1"},
 		Status: v1.NodeStatus{

@@ -15,19 +15,6 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
-func decodeHTTPResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
-	t.Helper()
-	var resp HttpResponse
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode JSON response: %v", err)
-	}
-	return resp
-}
-
-// -----------------------------------------------------------------------------
 // /healthz endpoint
 // -----------------------------------------------------------------------------
 
@@ -229,8 +216,6 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 				t.Fatalf("PendingBefore = %d, want 2", resp.PendingBefore)
 			}
 
-			// We still execute Error/Attempts/Baseline/BestName assignments
-			// in solveHandler, but only lightly check the error mapping here.
 			if c.err != nil && resp.Error == "" {
 				t.Fatalf("expected Error to be populated for err=%v", c.err)
 			}
@@ -253,7 +238,7 @@ func TestStartHTTPServer_ShutsDownOnContextCancel(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		// Using :0 lets the OS pick a free port; we don't need to know it.
+		// Using :0 lets OS pick a free port
 		pl.startHTTPServer(ctx, "127.0.0.1:0")
 		close(done)
 	}()
@@ -268,4 +253,17 @@ func TestStartHTTPServer_ShutsDownOnContextCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatalf("startHTTPServer did not shut down after context cancel")
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+func decodeHTTPResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
+	t.Helper()
+	var resp HttpResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+	return resp
 }

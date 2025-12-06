@@ -31,8 +31,8 @@ var (
 	isPlanCompletedHook        func(pl *SharedState, ap *ActivePlan) (bool, error)
 	onPlanCompletedHook        func(pl *SharedState, status PlanStatus, ap *ActivePlan)
 	exportPlanToConfigMapHook  func(pl *SharedState, ctx context.Context, name string, sp *StoredPlan) error
-	// If markPlanStatusHook returns true, the real implementation is skipped.
-	markPlanStatusHook func(pl *SharedState, ctx context.Context, planCM string, status PlanStatus) bool
+	// If markPlanStatusToConfigMapHook returns true, the real implementation is skipped.
+	markPlanStatusToConfigMapHook func(pl *SharedState, ctx context.Context, planCM string, status PlanStatus) bool
 )
 
 // tryEnterActive attempts to enter the active plan state.
@@ -138,7 +138,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 
 		// Always add preemptor to placementByName and set nominatedNode
 		if preemptor != nil && isPreemptor(plm.Pod.UID, preemptor.UID) {
-			placementByName[combineNsName(p.Namespace, p.Name)] = plm.ToNode
+			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.ToNode
 			nominatedNode = plm.ToNode
 			continue
 		} else if moved {
@@ -154,7 +154,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 				}
 				workloadQuotas[wkKey][plm.ToNode] = workloadQuotas[wkKey][plm.ToNode] + 1
 			} else {
-				placementByName[combineNsName(p.Namespace, p.Name)] = plm.ToNode
+				placementByName[mergeNsName(p.Namespace, p.Name)] = plm.ToNode
 			}
 		}
 
@@ -363,7 +363,7 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 		if _, ok := allow[p.UID]; !ok {
 			continue
 		}
-		key := combineNsName(p.Namespace, p.Name)
+		key := mergeNsName(p.Namespace, p.Name)
 		toAct[key] = p
 	}
 	if len(toAct) == 0 {
@@ -624,7 +624,7 @@ func (pl *SharedState) onPlanCompleted(status PlanStatus) bool {
 	klog.InfoS(InfoDeactivatingActivePlan, "planID", ap.ID)
 
 	// Mark the plan statuses in ConfigMaps
-	pl.markPlanStatus(context.Background(), ap.ID, status)
+	pl.markPlanStatusToConfigMap(context.Background(), ap.ID, status)
 
 	return true
 }
@@ -642,7 +642,7 @@ func (pl *SharedState) isPodAllowedByPlan(pod *v1.Pod) bool {
 	}
 
 	// Standalone/preemptor pins addressed by name.
-	if _, ok := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; ok {
+	if _, ok := ap.PlacementByName[mergeNsName(pod.Namespace, pod.Name)]; ok {
 		return true
 	}
 
@@ -680,7 +680,7 @@ func (pl *SharedState) filterNodes(pod *v1.Pod) (sets.Set[string], string, bool)
 	}
 
 	// Standalone/preemptor addressed by name.
-	if node, present := ap.PlacementByName[combineNsName(pod.Namespace, pod.Name)]; present {
+	if node, present := ap.PlacementByName[mergeNsName(pod.Namespace, pod.Name)]; present {
 		if node != "" {
 			return sets.New(node), "standalone; pin to planned node", true
 		}
@@ -780,8 +780,8 @@ func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, s
 //   - The plan CM is put into the requested status (unless already final).
 //   - The exported stats CM only updates the last run if it isn't already final.
 //     (Never overwrite Failed with Completed.)
-func (pl *SharedState) markPlanStatus(ctx context.Context, planCM string, status PlanStatus) {
-	if markPlanStatusHook != nil && markPlanStatusHook(pl, ctx, planCM, status) {
+func (pl *SharedState) markPlanStatusToConfigMap(ctx context.Context, planCM string, status PlanStatus) {
+	if markPlanStatusToConfigMapHook != nil && markPlanStatusToConfigMapHook(pl, ctx, planCM, status) {
 		return
 	}
 

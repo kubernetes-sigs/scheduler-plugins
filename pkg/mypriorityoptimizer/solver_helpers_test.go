@@ -15,9 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 // -----------------------------------------------------------------------------
@@ -31,34 +29,6 @@ func hasKey(args []any, key string) bool {
 		}
 	}
 	return false
-}
-
-func withAppendStatsHook(
-	hook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats),
-	fn func(),
-) {
-	orig := appendSolverStatsCMHook
-	appendSolverStatsCMHook = hook
-	defer func() { appendSolverStatsCMHook = orig }()
-	fn()
-}
-
-type fakeHandleForStats struct {
-	// Embed the framework.Handle interface. This makes *fakeHandleForStats
-	// satisfy framework.Handle's *method set* without us having to write
-	// all those methods. We only override the ones we care about.
-	framework.Handle
-
-	client  kubernetes.Interface
-	factory informers.SharedInformerFactory
-}
-
-func (f *fakeHandleForStats) ClientSet() kubernetes.Interface {
-	return f.client
-}
-
-func (f *fakeHandleForStats) SharedInformerFactory() informers.SharedInformerFactory {
-	return f.factory
 }
 
 // -----------------------------------------------------------------------------
@@ -764,22 +734,22 @@ func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// computeSolverScore
+// scoreSolution
 // -----------------------------------------------------------------------------
 
-func TestComputeSolverScore_NilOutput(t *testing.T) {
+func TestScoreSolution_NilOutput(t *testing.T) {
 	in := SolverInput{
 		Pods: []SolverPod{
 			{UID: "u1", Priority: 1, Node: "n1"},
 		},
 	}
-	score := computeSolverScore(in, nil)
+	score := scoreSolution(in, nil)
 	if len(score.PlacedByPriority) != 0 || score.Evicted != 0 || score.Moved != 0 {
-		t.Fatalf("computeSolverScore() with nil out = %#v, want zero score", score)
+		t.Fatalf("scoreSolution() with nil out = %#v, want zero score", score)
 	}
 }
 
-func TestComputeSolverScore_Basic(t *testing.T) {
+func TestScoreSolution_Basic(t *testing.T) {
 	in := SolverInput{
 		Pods: []SolverPod{
 			{UID: "u1", Priority: 1, Node: "n1"}, // running
@@ -799,7 +769,7 @@ func TestComputeSolverScore_Basic(t *testing.T) {
 		},
 	}
 
-	score := computeSolverScore(in, out)
+	score := scoreSolution(in, out)
 
 	if got := score.PlacedByPriority["1"]; got != 1 {
 		t.Fatalf("placed prio 1 = %d, want 1", got)
@@ -815,7 +785,7 @@ func TestComputeSolverScore_Basic(t *testing.T) {
 	}
 }
 
-func TestComputeSolverScore_WithPreemptor(t *testing.T) {
+func TestScoreSolution_WithPreemptor(t *testing.T) {
 	pre := &SolverPod{UID: "u-pre", Priority: 5}
 
 	in := SolverInput{
@@ -829,7 +799,7 @@ func TestComputeSolverScore_WithPreemptor(t *testing.T) {
 		},
 	}
 
-	score := computeSolverScore(in, out)
+	score := scoreSolution(in, out)
 
 	if got := score.PlacedByPriority["5"]; got != 1 {
 		t.Fatalf("placed prio 5 (preemptor) = %d, want 1", got)
@@ -943,7 +913,7 @@ func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 func TestAppendSolverStatsCM_NoClientSet_SkipsWithoutPanic(t *testing.T) {
 	ctx := context.Background()
 	pl := &SharedState{
-		Handle: &fakeHandleForStats{
+		Handle: &fakeHandle{
 			client:  nil,
 			factory: nil,
 		},
@@ -966,7 +936,7 @@ func TestAppendSolverStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
 	factory := informers.NewSharedInformerFactory(client, 0)
 
 	pl := &SharedState{
-		Handle: &fakeHandleForStats{
+		Handle: &fakeHandle{
 			client:  client,
 			factory: factory,
 		},

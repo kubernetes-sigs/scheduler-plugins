@@ -11,25 +11,15 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Test hooks / indirections
+// Test hooks
 // -----------------------------------------------------------------------------
 
-// Overrideable delays for tests.
-// In production they simply mirror the global constants.
-var cacheWarmupDelay = CacheWarmupSettleDelay
-
-var readinessUsableNodeInterval = PluginReadinessUsableNodeInterval
-
-// testable hooks for waitForUsableNode; overridden in unit tests.
-var getNodesForReadiness = func(pl *SharedState) ([]*v1.Node, error) {
-	return pl.getNodes()
-}
-
-var isNodeUsableForReadiness = isNodeUsable
-
-// -----------------------------------------------------------------------------
-// pluginReadiness
-// -----------------------------------------------------------------------------
+var (
+	cacheWarmupDelay            = CacheWarmupSettleDelay
+	readinessUsableNodeInterval = PluginReadinessUsableNodeInterval
+	isNodeUsableForReadiness    = isNodeUsable
+	getNodesForReadiness        = func(pl *SharedState) ([]*v1.Node, error) { return pl.getNodes() }
+)
 
 // pluginReadiness waits for all informers to sync and until a usable node is found.
 func (pl *SharedState) pluginReadiness(ctx context.Context, informers ...cache.SharedIndexInformer) {
@@ -62,10 +52,8 @@ func (pl *SharedState) pluginReadiness(ctx context.Context, informers ...cache.S
 	pl.PluginReady.Store(true)
 	klog.InfoS(msg(label, InfoPluginReady))
 
-	// Avoid a surge in PerPod@PreEnqueue; the idle nudge will trickle them.
-	if !(isPerPodMode() && hookAtPreEnqueue()) {
-		pl.activatePods(pl.BlockedWhileActive, false, -1) // activate all currently blocked
-	}
+	// Activate all currently blocked pods
+	pl.activatePods(pl.BlockedWhileActive, false, -1)
 
 	// Start optimization loops (periodic / interlude / nudge)
 	pl.startLoops(ctx)

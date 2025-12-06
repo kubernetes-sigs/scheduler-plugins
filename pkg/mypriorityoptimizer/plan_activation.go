@@ -55,13 +55,13 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 	} else {
 		for _, mv := range plan.Moves {
 			klog.V(MyV).InfoS("pod movement planned",
-				"pod", combineNsName(mv.Pod.Namespace, mv.Pod.Name),
+				"pod", mergeNsName(mv.Pod.Namespace, mv.Pod.Name),
 				"from", mv.FromNode, "to", mv.ToNode,
 			)
 		}
 		for _, e := range plan.Evicts {
 			klog.V(MyV).InfoS("eviction planned",
-				"pod", combineNsName(e.Pod.Namespace, e.Pod.Name),
+				"pod", mergeNsName(e.Pod.Namespace, e.Pod.Name),
 				"from", e.Node,
 			)
 		}
@@ -79,6 +79,8 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 		}
 
 		// 3) Recreate standalone (non-controller) pods only
+		// Note: In real scenarios, standalone pods would never be recreated
+		// by the scheduler, but for testing purposes we support this here.
 		if err := pl.recreateStandalonePods(overallCtx, targets); err != nil {
 			return err
 		}

@@ -13,27 +13,11 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-// fakeHandleDeps is a tiny handle that satisfies handleDeps for tests.
-type fakeHandleDeps struct {
-	cfg     *rest.Config
-	factory informers.SharedInformerFactory
-}
-
-func (f *fakeHandleDeps) KubeConfig() *rest.Config {
-	return f.cfg
-}
-
-func (f *fakeHandleDeps) SharedInformerFactory() informers.SharedInformerFactory {
-	return f.factory
-}
-
 // -----------------------------------------------------------------------------
-// Name()
+// Name
 // -----------------------------------------------------------------------------
 
-// TestName verifies that the plugin's Name() method returns the
-// global Name constant. This also exercises the trivial method
-// receiver path on *SharedState.
+// TestName ensures the Name method returns the expected plugin name.
 func TestName(t *testing.T) {
 	pl := &SharedState{}
 	got := pl.Name()
@@ -43,12 +27,12 @@ func TestName(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// New (panic on nil handle)
+// New
 // -----------------------------------------------------------------------------
 
-// TestNewWithNilHandlePanics ensures that if the scheduler ever calls New
+// TestNew_WithNilHandlePanics ensures that if the scheduler ever calls New
 // with a nil framework.Handle, we fail loudly rather than silently.
-func TestNewWithNilHandlePanics(t *testing.T) {
+func TestNew_NilHandlePanics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fatalf("expected New to panic when given a nil Handle, but it did not panic")
@@ -58,14 +42,13 @@ func TestNewWithNilHandlePanics(t *testing.T) {
 	_, _ = New(context.Background(), nil, nil) // nil framework.Handle
 }
 
-// -----------------------------------------------------------------------------
-// newFromHandle – client error path
-// -----------------------------------------------------------------------------
-
-func TestNewFromHandle_ClientError(t *testing.T) {
+// TestNew_Handle_ClientError ensures that if there is an error creating
+// the Kubernetes client from the provided rest.Config, the error is
+// propagated and no hooks are invoked.
+func TestNew_Handle_ClientError(t *testing.T) {
 	ctx := context.Background()
 
-	fh := &fakeHandleDeps{
+	fh := &fakeHandle{
 		cfg:     &rest.Config{},
 		factory: informers.NewSharedInformerFactory(fake.NewSimpleClientset(), 0),
 	}
@@ -107,15 +90,13 @@ func TestNewFromHandle_ClientError(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// newFromHandle – ErrNoSolverEnabled path
-// -----------------------------------------------------------------------------
-
-func TestNewFromHandle_NoSolverEnabled(t *testing.T) {
+// TestNew_Handle_NoSolverEnabled ensures that if no solver is enabled,
+// New returns ErrNoSolverEnabled and does not invoke any hooks.
+func TestNew_Handle_NoSolverEnabled(t *testing.T) {
 	ctx := context.Background()
 
 	client := fake.NewSimpleClientset()
-	fh := &fakeHandleDeps{
+	fh := &fakeHandle{
 		cfg:     &rest.Config{},
 		factory: informers.NewSharedInformerFactory(client, 0),
 	}
@@ -159,16 +140,14 @@ func TestNewFromHandle_NoSolverEnabled(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// newFromHandle – happy path
-// -----------------------------------------------------------------------------
-
-func TestNewFromHandle_Success(t *testing.T) {
+// TestNew_Handle_Success ensures that when all conditions are met,
+// New returns a properly initialized plugin and invokes the expected hooks.
+func TestNew_Handle_Success(t *testing.T) {
 	ctx := context.Background()
 
 	client := fake.NewSimpleClientset()
 	factory := informers.NewSharedInformerFactory(client, 0)
-	fh := &fakeHandleDeps{
+	fh := &fakeHandle{
 		cfg:     &rest.Config{},
 		factory: factory,
 	}

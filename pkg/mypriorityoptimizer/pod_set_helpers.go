@@ -15,15 +15,15 @@ import (
 // Test hooks / indirections for PodSet helpers
 // -----------------------------------------------------------------------------
 
-// podsListerForPodSets returns the PodLister used by activatePods/pruneSet.
+// podsLister returns the PodLister used by activatePods/pruneSet.
 // In production it delegates to pl.podsLister(), but tests can override it.
-var podsListerForPodSets = func(pl *SharedState) corev1listers.PodLister {
+var podsLister = func(pl *SharedState) corev1listers.PodLister {
 	return pl.podsLister()
 }
 
-// activatePodsCall performs the actual framework.Handle.Activate call.
+// activatePods performs the actual framework.Handle.Activate call.
 // In tests we override this to capture which pods would be activated.
-var activatePodsCall = func(pl *SharedState, toAct map[string]*v1.Pod) {
+var activatePods = func(pl *SharedState, toAct map[string]*v1.Pod) {
 	pl.Handle.Activate(klog.Background(), toAct)
 }
 
@@ -47,7 +47,7 @@ func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max in
 	blockedPods := podSet.Snapshot()
 	items := make([]PodSetItem, 0, len(blockedPods))
 	// Get current Pod objects so that we don't return stale/deleted ones.
-	podsLister := podsListerForPodSets(pl)
+	podsLister := podsLister(pl)
 	for _, k := range blockedPods {
 		if p, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
 			items = append(items, PodSetItem{p: p, key: k})
@@ -81,12 +81,12 @@ func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max in
 	// Build activation map and record "tried" UIDs
 	toAct := make(map[string]*v1.Pod, limit)
 	for _, it := range items[:limit] {
-		toAct[combineNsName(it.p.Namespace, it.p.Name)] = it.p
+		toAct[mergeNsName(it.p.Namespace, it.p.Name)] = it.p
 		tried = append(tried, it.key.UID)
 	}
 
 	if len(toAct) > 0 {
-		activatePodsCall(pl, toAct)
+		activatePods(pl, toAct)
 		klog.InfoS("activated pods", "set", podSet.Name, "count", len(toAct))
 		if removeActivated {
 			// Remove only the ones we just activated
@@ -110,7 +110,7 @@ func (pl *SharedState) pruneSet(podSet *PodSet) int {
 		return 0
 	}
 	snap := podSet.Snapshot()
-	podsLister := podsListerForPodSets(pl)
+	podsLister := podsLister(pl)
 
 	removed := 0
 	for uid, key := range snap {

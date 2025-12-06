@@ -3,6 +3,7 @@ package mypriorityoptimizer
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -10,18 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
-
-// ----------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------
-
-func uidSet(uids ...string) map[types.UID]struct{} {
-	m := make(map[types.UID]struct{}, len(uids))
-	for _, u := range uids {
-		m[types.UID(u)] = struct{}{}
-	}
-	return m
-}
 
 // ----------------------------------------------------------------------
 // startLoops
@@ -181,8 +170,16 @@ func TestBuildPendingSnapshot(t *testing.T) {
 		},
 	}
 
+	// Build store to feed fakePodLister.
+	store := map[string]map[string]*v1.Pod{
+		"ns": {
+			"p-pending": pPending,
+			"p-running": pRunning,
+		},
+	}
+
 	withNodeLister(&fakeNodeLister{nodes: []*v1.Node{n}}, func() {
-		withPodLister(&fakePodLister2{pods: []*v1.Pod{pPending, pRunning}}, func() {
+		withPodLister(&fakePodLister{store: store}, func() {
 			snap, err := pl.buildPendingSnapshot()
 			if err != nil {
 				t.Fatalf("buildPendingSnapshot() unexpected error: %v", err)
@@ -198,6 +195,54 @@ func TestBuildPendingSnapshot(t *testing.T) {
 			}
 			if len(snap.Pods) != 2 || len(snap.Nodes) != 1 {
 				t.Fatalf("snap pods/nodes sizes wrong: pods=%d nodes=%d", len(snap.Pods), len(snap.Nodes))
+			}
+		})
+	})
+}
+
+func TestBuildPendingSnapshot_NodesErrorPropagated(t *testing.T) {
+	pl := &SharedState{}
+	sentinel := errors.New("nodes boom")
+
+	withNodeLister(&fakeNodeLister{err: sentinel}, func() {
+		// Pod lister should not matter if node listing already fails,
+		// but we provide a no-op lister for completeness.
+		withPodLister(&fakePodLister{}, func() {
+			snap, err := pl.buildPendingSnapshot()
+			if snap != nil {
+				t.Fatalf("expected nil snapshot on error, got %#v", snap)
+			}
+			if !errors.Is(err, sentinel) {
+				t.Fatalf("buildPendingSnapshot() err = %v, want wrapped %v", err, sentinel)
+			}
+		})
+	})
+}
+
+func TestBuildPendingSnapshot_PodsErrorPropagated(t *testing.T) {
+	pl := &SharedState{}
+	sentinel := errors.New("pods boom")
+
+	// One usable node so we get past node listing.
+	n := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "n1"},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("1000m"),
+				v1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+
+	withNodeLister(&fakeNodeLister{nodes: []*v1.Node{n}}, func() {
+		withPodLister(&fakePodLister{err: sentinel}, func() {
+			snap, err := pl.buildPendingSnapshot()
+			if snap != nil {
+				t.Fatalf("expected nil snapshot on error, got %#v", snap)
+			}
+			if !errors.Is(err, sentinel) {
+				t.Fatalf("buildPendingSnapshot() err = %v, want wrapped %v", err, sentinel)
 			}
 		})
 	})

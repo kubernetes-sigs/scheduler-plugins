@@ -1071,55 +1071,36 @@ Done:
 - args_parsers.go
 - logging_helpers.go
 - mode_helpers.go
+- http_server.go
+- solver_external.go
+- plugin.go
 
-Total coverage: 59.2%
+missing:
 
-100% coverage:
-
-- args_parsers.go
-- logging_helpers.go
-- mode_helpers.go
+- pod_set_helpers.go
+- plugin_readiness.go
+- loop_helpers.go
 - objects_helpers.go
+- plan_helpers.go
+- plan_context.go
+- plan_completion_watch.go
+- solver_helpers.go
+
 - loop_interlude.go
 - loop_periodic.go
 
-95%+ coverage:
-
-- solver_external.go
-- pod_set_helpers.go
-
-90%+ coverage:
-
-- http_server.go
-- solver_external.go
-
-85%+ coverage:
-
-- solver_helpers.go
-
-80%+ coverage:
-
-- loop_helpers.go
-- plugin.go
-- plugin_readiness.go
+- plan_activation.go
+- plan_computation.go
+- plan_registration.go
+- optimization_flow.go
 - config_map_helpers.go
-- pod_set_helpers.go
-- solver_helpers.go
+
 - hook_postfilter.go
 - hook_preenqueue.go
 - hook_prefilter.go
 - hook_reserve_unreserve.go
-- plan_helpers.go
 
-missing:
-
-- plan_completion_watch.go
-- plan_activation.go
-
-- plan_computation.go
-- plan_context.go
-- plan_registration.go
-- optimization_flow.go
+Total coverage: 59.2%
 
 ### Now TODOs
 

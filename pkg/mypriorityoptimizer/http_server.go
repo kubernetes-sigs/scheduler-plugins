@@ -87,7 +87,7 @@ func (pl *SharedState) startHTTPServer(ctx context.Context, addr string) {
 // healthz
 func (pl *SharedState) healthzHandler(w http.ResponseWriter, r *http.Request) {
 	if !pl.PluginReady.Load() {
-		http.Error(w, "plugin not ready", http.StatusServiceUnavailable)
+		http.Error(w, "warming", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

@@ -24,7 +24,7 @@ func (pl *SharedState) Reserve(ctx context.Context, st *framework.CycleState, pe
 
 	// Pass through placementByName pods; do not consume workload quota.
 	if ap.PlacementByName != nil {
-		if _, ok := ap.PlacementByName[combineNsName(pending.Namespace, pending.Name)]; ok {
+		if _, ok := ap.PlacementByName[mergeNsName(pending.Namespace, pending.Name)]; ok {
 			klog.V(MyV).InfoS(msg(stage, InfoPodPlacedByName), "pod", klog.KObj(pending))
 			return framework.NewStatus(framework.Success)
 		}

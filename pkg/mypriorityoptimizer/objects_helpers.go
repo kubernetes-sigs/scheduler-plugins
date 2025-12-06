@@ -18,8 +18,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Small indirection hooks so we can inject fakes in tests.
-// In production these all point to the real client / informer paths.
+// Hooks so we can inject fakes in tests.
 // -----------------------------------------------------------------------------
 
 var (
@@ -64,8 +63,8 @@ func podRef(p *v1.Pod) string {
 	return fmt.Sprintf("%s/%s", p.Namespace, p.Name)
 }
 
-// combineNsName combines namespace and name into a single string with a '/' separator.
-func combineNsName(ns, name string) string {
+// mergeNsName combines namespace and name into a single string with a '/' separator.
+func mergeNsName(ns, name string) string {
 	return fmt.Sprintf("%s/%s", ns, name)
 }
 
@@ -157,9 +156,9 @@ func getPodPriority(p *v1.Pod) int32 {
 	return 0
 }
 
-// isControlPlane returns true if the node is a control plane node.
+// isNodeControlPlane returns true if the node is a control plane node.
 // Additional labels can be added here as needed.
-func isControlPlane(n *v1.Node) bool {
+func isNodeControlPlane(n *v1.Node) bool {
 	return n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
 		n.Labels["node-role.kubernetes.io/master"] != "" ||
 		n.Name == "control-plane" || n.Name == "kind-control-plane"
@@ -175,8 +174,8 @@ func isNodeReady(n *v1.Node) bool {
 	return false
 }
 
-// hasNoScheduleCondTaint returns true if the node has a NoSchedule taint due to not ready or unreachable conditions.
-func hasNoScheduleCondTaint(n *v1.Node) bool {
+// isNodeNoScheduleConditionTainted returns true if the node has a NoSchedule taint due to not ready or unreachable conditions.
+func isNodeNoScheduleConditionTainted(n *v1.Node) bool {
 	for _, t := range n.Spec.Taints {
 		if (t.Key == "node.kubernetes.io/not-ready" || t.Key == "node.kubernetes.io/unreachable") &&
 			(t.Effect == v1.TaintEffectNoSchedule || string(t.Effect) == "") {
@@ -186,19 +185,24 @@ func hasNoScheduleCondTaint(n *v1.Node) bool {
 	return false
 }
 
+// isNodeAllocatable returns true if the node has allocatable CPU and memory resources.
+func isNodeAllocatable(n *v1.Node) bool {
+	return n.Status.Allocatable.Cpu().MilliValue() > 0 &&
+		n.Status.Allocatable.Memory().Value() > 0
+}
+
 // isNodeUsable returns true if the node is usable for scheduling.
 func isNodeUsable(n *v1.Node) bool {
-	if n == nil || isControlPlane(n) || n.Spec.Unschedulable {
+	if n == nil || isNodeControlPlane(n) || n.Spec.Unschedulable {
 		return false
 	}
 	if !isNodeReady(n) {
 		return false
 	}
-	if hasNoScheduleCondTaint(n) {
+	if isNodeNoScheduleConditionTainted(n) {
 		return false
 	}
-	return n.Status.Allocatable.Cpu().MilliValue() > 0 &&
-		n.Status.Allocatable.Memory().Value() > 0
+	return isNodeAllocatable(n)
 }
 
 // podsByUID returns a map of pod UIDs to their corresponding Pod objects.
@@ -322,15 +326,15 @@ func isPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
 func (wk WorkloadKey) String() string {
 	switch wk.Kind {
 	case wkReplicaSet:
-		return "rs:" + combineNsName(wk.Namespace, wk.Name)
+		return "rs:" + mergeNsName(wk.Namespace, wk.Name)
 	case wkStatefulSet:
-		return "ss:" + combineNsName(wk.Namespace, wk.Name)
+		return "ss:" + mergeNsName(wk.Namespace, wk.Name)
 	case wkDaemonSet:
-		return "ds:" + combineNsName(wk.Namespace, wk.Name)
+		return "ds:" + mergeNsName(wk.Namespace, wk.Name)
 	case wkJob:
-		return "job:" + combineNsName(wk.Namespace, wk.Name)
+		return "job:" + mergeNsName(wk.Namespace, wk.Name)
 	default:
-		return combineNsName(wk.Namespace, wk.Name)
+		return mergeNsName(wk.Namespace, wk.Name)
 	}
 }
 
