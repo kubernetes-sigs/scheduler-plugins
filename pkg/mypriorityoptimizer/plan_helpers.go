@@ -137,7 +137,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 		moved := src != "" && src != plm.ToNode
 
 		// Always add preemptor to placementByName and set nominatedNode
-		if preemptor != nil && isPreemptor(plm.Pod.UID, preemptor.UID) {
+		if preemptor != nil && isPodPreemptor(plm.Pod.UID, preemptor.UID) {
 			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.ToNode
 			nominatedNode = plm.ToNode
 			continue

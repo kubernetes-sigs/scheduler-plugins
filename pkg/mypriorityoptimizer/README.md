@@ -1074,13 +1074,13 @@ Done:
 - http_server.go
 - solver_external.go
 - plugin.go
+- objects_helpers.go
 
 missing:
 
 - pod_set_helpers.go
 - plugin_readiness.go
 - loop_helpers.go
-- objects_helpers.go
 - plan_helpers.go
 - plan_context.go
 - plan_completion_watch.go

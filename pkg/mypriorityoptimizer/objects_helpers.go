@@ -84,10 +84,10 @@ func countPendingPods(pods []*v1.Pod) int {
 	}
 	n := 0
 	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
+		if isPodDeleted(p) {
 			continue
 		}
-		if p.Spec.NodeName == "" {
+		if !isPodAssigned(p) {
 			n++
 		}
 	}
@@ -130,20 +130,107 @@ func (pl *SharedState) recreateStandalonePod(ctx context.Context, orig *v1.Pod, 
 	return nil
 }
 
+// getNodeCPUAllocatable returns the allocatable CPU of a node in millicores.
+func getNodeCPUAllocatable(n *v1.Node) int64 {
+	return n.Status.Allocatable.Cpu().MilliValue()
+}
+
+// getNodeMemoryAllocatable returns the allocatable memory of a node in bytes.
+func getNodeMemoryAllocatable(n *v1.Node) int64 {
+	return n.Status.Allocatable.Memory().Value()
+}
+
+// isNodeControlPlane returns true if the node is a control plane node.
+// Additional labels can be added here as needed.
+func isNodeControlPlane(n *v1.Node) bool {
+	return n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
+		n.Labels["node-role.kubernetes.io/master"] != "" ||
+		n.Name == "control-plane" || n.Name == "kind-control-plane"
+}
+
+// getNodeConditions returns the conditions of a node.
+func getNodeConditions(n *v1.Node) []v1.NodeCondition {
+	return n.Status.Conditions
+}
+
+// isNodeReady returns true if the node is ready.
+func isNodeReady(n *v1.Node) bool {
+	conditions := getNodeConditions(n)
+	for _, c := range conditions {
+		if c.Type == v1.NodeReady {
+			return c.Status == v1.ConditionTrue
+		}
+	}
+	return false
+}
+
+// getNodeTaints returns the taints of a node.
+func getNodeTaints(n *v1.Node) []v1.Taint {
+	return n.Spec.Taints
+}
+
+// isNodeNoScheduleConditionTainted returns true if the node has a NoSchedule taint due to not ready or unreachable conditions.
+func isNodeNoScheduleConditionTainted(n *v1.Node) bool {
+	taints := getNodeTaints(n)
+	for _, t := range taints {
+		if (t.Key == "node.kubernetes.io/not-ready" || t.Key == "node.kubernetes.io/unreachable") &&
+			(t.Effect == v1.TaintEffectNoSchedule || string(t.Effect) == "") {
+			return true
+		}
+	}
+	return false
+}
+
+// isNodeAllocatable returns true if the node has allocatable CPU and memory resources.
+func isNodeAllocatable(n *v1.Node) bool {
+	return getNodeCPUAllocatable(n) > 0 && getNodeMemoryAllocatable(n) > 0
+}
+
+func isNodeUnschedulable(n *v1.Node) bool {
+	return n.Spec.Unschedulable
+}
+
+// isNodeUsable returns true if the node is usable for scheduling.
+func isNodeUsable(n *v1.Node) bool {
+	return n != nil &&
+		!isNodeControlPlane(n) &&
+		!isNodeUnschedulable(n) &&
+		isNodeReady(n) &&
+		!isNodeNoScheduleConditionTainted(n) &&
+		isNodeAllocatable(n)
+}
+
+// getPodContainers returns all containers of a pod
+func getPodContainers(p *v1.Pod) []v1.Container {
+	return p.Spec.Containers
+}
+
+// getContainerCPURequest returns the CPU request of a container in millicores.
+func getContainerCPURequest(c v1.Container) int64 {
+	return c.Resources.Requests.Cpu().MilliValue()
+}
+
+// getContainerMemoryRequest returns the memory request of a container in bytes.
+func getContainerMemoryRequest(c v1.Container) int64 {
+	return c.Resources.Requests.Memory().Value()
+}
+
 // getPodCPURequest returns the total CPU request for a pod by summing the requests of all containers.
 func getPodCPURequest(p *v1.Pod) int64 {
+	containers := getPodContainers(p)
 	var total int64
-	for _, c := range p.Spec.Containers {
-		total += c.Resources.Requests.Cpu().MilliValue()
+	for _, c := range containers {
+		total += getContainerCPURequest(c)
 	}
 	return total
 }
 
 // getPodMemoryRequest returns the total memory request for a pod by summing the requests of all containers.
 func getPodMemoryRequest(p *v1.Pod) int64 {
+	containers := getPodContainers(p)
 	var total int64
-	for _, c := range p.Spec.Containers {
-		total += c.Resources.Requests.Memory().Value()
+	for _, c := range containers {
+		total += getContainerMemoryRequest(c)
 	}
 	return total
 }
@@ -156,60 +243,21 @@ func getPodPriority(p *v1.Pod) int32 {
 	return 0
 }
 
-// isNodeControlPlane returns true if the node is a control plane node.
-// Additional labels can be added here as needed.
-func isNodeControlPlane(n *v1.Node) bool {
-	return n.Labels["node-role.kubernetes.io/control-plane"] != "" ||
-		n.Labels["node-role.kubernetes.io/master"] != "" ||
-		n.Name == "control-plane" || n.Name == "kind-control-plane"
+// isPodDeleted returns true if the pod has a deletion timestamp set.
+func isPodDeleted(p *v1.Pod) bool {
+	return p == nil || p.DeletionTimestamp != nil
 }
 
-// isNodeReady returns true if the node is ready.
-func isNodeReady(n *v1.Node) bool {
-	for _, c := range n.Status.Conditions {
-		if c.Type == v1.NodeReady {
-			return c.Status == v1.ConditionTrue
-		}
-	}
-	return false
-}
-
-// isNodeNoScheduleConditionTainted returns true if the node has a NoSchedule taint due to not ready or unreachable conditions.
-func isNodeNoScheduleConditionTainted(n *v1.Node) bool {
-	for _, t := range n.Spec.Taints {
-		if (t.Key == "node.kubernetes.io/not-ready" || t.Key == "node.kubernetes.io/unreachable") &&
-			(t.Effect == v1.TaintEffectNoSchedule || string(t.Effect) == "") {
-			return true
-		}
-	}
-	return false
-}
-
-// isNodeAllocatable returns true if the node has allocatable CPU and memory resources.
-func isNodeAllocatable(n *v1.Node) bool {
-	return n.Status.Allocatable.Cpu().MilliValue() > 0 &&
-		n.Status.Allocatable.Memory().Value() > 0
-}
-
-// isNodeUsable returns true if the node is usable for scheduling.
-func isNodeUsable(n *v1.Node) bool {
-	if n == nil || isNodeControlPlane(n) || n.Spec.Unschedulable {
-		return false
-	}
-	if !isNodeReady(n) {
-		return false
-	}
-	if isNodeNoScheduleConditionTainted(n) {
-		return false
-	}
-	return isNodeAllocatable(n)
+// isPodAssigned returns true if the pod is assigned to a node.
+func isPodAssigned(p *v1.Pod) bool {
+	return p != nil && p.Spec.NodeName != ""
 }
 
 // podsByUID returns a map of pod UIDs to their corresponding Pod objects.
 func podsByUID(pods []*v1.Pod) map[types.UID]*v1.Pod {
 	m := make(map[types.UID]*v1.Pod, len(pods))
 	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
+		if isPodDeleted(p) {
 			continue
 		}
 		m[p.UID] = p
@@ -249,8 +297,8 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 
 	// Node capacities.
 	for _, n := range usable {
-		cpu := n.Status.Allocatable.Cpu().MilliValue()
-		mem := n.Status.Allocatable.Memory().Value()
+		cpu := getNodeCPUAllocatable(n)
+		mem := getNodeMemoryAllocatable(n)
 		_, _ = h.Write([]byte("N:"))
 		_, _ = h.Write([]byte(n.Name))
 		_, _ = h.Write([]byte(":"))
@@ -272,11 +320,8 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 	}
 	keys := make([]podKey, 0, len(pods))
 	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
+		if isPodDeleted(p) || !isPodAssigned(p) {
 			continue
-		}
-		if p.Spec.NodeName == "" {
-			continue // pending
 		}
 		if _, ok := usableNames[p.Spec.NodeName]; !ok {
 			continue
@@ -317,8 +362,8 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 	return fmt.Sprintf("%x", h.Sum64())
 }
 
-// isPreemptor returns true if the preemptorUID matches the other podUID.
-func isPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
+// isPodPreemptor returns true if the preemptorUID matches the other podUID.
+func isPodPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
 	return string(PodUID) != "" && string(preemptorUID) != "" && preemptorUID == PodUID
 }
 
