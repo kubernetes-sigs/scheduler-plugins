@@ -78,7 +78,7 @@ func TestGetAndClearActivePlan(t *testing.T) {
 	}
 
 	// tryClear with wrong pointer should fail.
-	if ok := pl.tryClearActivePlan(ap2); !(!ok) {
+	if ok := pl.tryClearActivePlan(ap2); ok {
 		t.Fatalf("tryClearActivePlan(ap2) = %v, want false", ok)
 	}
 	if got := pl.getActivePlan(); got != ap1 {

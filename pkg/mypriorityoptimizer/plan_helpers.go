@@ -33,7 +33,6 @@ var (
 	exportPlanToConfigMapHook  func(pl *SharedState, ctx context.Context, name string, sp *StoredPlan) error
 	// If markPlanStatusHook returns true, the real implementation is skipped.
 	markPlanStatusHook func(pl *SharedState, ctx context.Context, planCM string, status PlanStatus) bool
-	podsListerHook     func(pl *SharedState) clientv1.PodLister
 )
 
 // tryEnterActive attempts to enter the active plan state.

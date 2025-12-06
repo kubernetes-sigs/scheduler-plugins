@@ -1070,9 +1070,7 @@ Done:
 
 - args_parsers.go
 - logging_helpers.go
-- http_server.go
-- solver_helpers.go
-- pod_set_helpers.go
+- mode_helpers.go
 
 Total coverage: 59.2%
 

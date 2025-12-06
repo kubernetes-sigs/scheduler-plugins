@@ -38,8 +38,6 @@ type SolverInput struct {
 	GuaranteedTierFraction float64 `json:"guaranteed_tier_fraction,omitempty"`
 	// Fraction of a tier's budget for moves (0.0-1.0)
 	MoveFractionOfTier float64 `json:"move_fraction_of_tier,omitempty"`
-	// Number of lowest distinct priorities to optimize over (0 = all)
-	NumLowerPriorities int `json:"num_lower_priorities,omitempty"`
 }
 
 // SolverOutput is the output from a solver.

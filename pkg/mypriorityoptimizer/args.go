@@ -70,10 +70,6 @@ var SolverPythonMoveFractionOfTier = parseFloat(getenv("SOLVER_PYTHON_MOVE_FRACT
 // SolverPythonGraceMs is the grace period for the python solver (ms).
 var SolverPythonGraceMs = parseInt(getenv("SOLVER_PYTHON_GRACE_MS", "1000"))
 
-// SolverPythonNumLowerPriorities controls how many distinct priorities (from the lowest)
-// are included in the optimization (0 = all priorities).
-var SolverPythonNumLowerPriorities = parseInt(getenv("SOLVER_PYTHON_NUM_LOWER_PRIORITIES", "0"))
-
 // ======= Plan settings =======
 
 // PlanExecutionTimeout is the maximum duration a plan may run before being terminated.

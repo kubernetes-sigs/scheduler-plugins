@@ -13,9 +13,9 @@ func withOptimizeLoopFunc(t *testing.T,
 	body func(),
 ) {
 	t.Helper()
-	orig := optimizeGlobalBackgroundLoopFunc
-	optimizeGlobalBackgroundLoopFunc = fn
-	defer func() { optimizeGlobalBackgroundLoopFunc = orig }()
+	orig := optimizeGlobalLoopFunc
+	optimizeGlobalLoopFunc = fn
+	defer func() { optimizeGlobalLoopFunc = orig }()
 	body()
 }
 

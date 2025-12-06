@@ -137,7 +137,6 @@ func solverConfigArgs() []any {
 			"pythonGapLimit", fmt.Sprintf("%.2f", SolverPythonGapLimit),
 			"pythonGuaranteedTierFraction", fmt.Sprintf("%.2f", SolverPythonGuaranteedTierFraction),
 			"pythonMoveFractionOfTier", fmt.Sprintf("%.2f", SolverPythonMoveFractionOfTier),
-			"pythonNumLowerPriorities", SolverPythonNumLowerPriorities,
 		)
 	}
 	// Always include shared flags

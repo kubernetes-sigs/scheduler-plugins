@@ -4,7 +4,6 @@ package mypriorityoptimizer
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -12,10 +11,17 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// By default this just calls (*SharedState).optimizeGlobalBackgroundLoop.
+type optimizeLoopConfig struct {
+	Label          string        // log label
+	Interval       time.Duration // base tick interval
+	InterludeDelay time.Duration // 0 => no "idle window"; >0 => require this long of stability
+	CancelOnChange bool          // cancel in-flight run if pending set changes
+}
+
+// By default this just calls (*SharedState).optimizeGlobalLoop.
 // Tests can override this variable to intercept the cfg passed in.
-var optimizeGlobalBackgroundLoopFunc = func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
-	pl.optimizeGlobalBackgroundLoop(ctx, cfg)
+var optimizeGlobalLoopFunc = func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
+	pl.optimizeGlobalLoop(ctx, cfg)
 }
 
 // startLoops launches background loops exactly once, after caches are warm.
@@ -32,14 +38,7 @@ func (pl *SharedState) startLoops(ctx context.Context) {
 	}
 }
 
-type optimizeLoopConfig struct {
-	Label          string        // log label
-	Interval       time.Duration // base tick interval
-	InterludeDelay time.Duration // 0 => no "idle window"; >0 => require this long of stability
-	CancelOnChange bool          // cancel in-flight run if pending set changes
-}
-
-func (pl *SharedState) optimizeGlobalBackgroundLoop(ctx context.Context, cfg optimizeLoopConfig) {
+func (pl *SharedState) optimizeGlobalLoop(ctx context.Context, cfg optimizeLoopConfig) {
 	strategy := modeToString()
 
 	interval := cfg.Interval
@@ -187,20 +186,7 @@ func (pl *SharedState) optimizeGlobalBackgroundLoop(ctx context.Context, cfg opt
 				}
 			}
 
-			// 9) Python lower-tier window
-			if SolverPythonEnabled && SolverPythonNumLowerPriorities > 0 {
-				if !pendingHasLowPriorityTargets(snap.Pods) {
-					klog.V(MyV).InfoS(
-						msg(cfg.Label, "skip run: only higher-priority pending pods outside python lower-tier window"),
-						"pending", pendingCount,
-						"pythonNumLowerPriorities", SolverPythonNumLowerPriorities,
-					)
-					timer.Reset(interval)
-					continue
-				}
-			}
-
-			// 10) Start a background run
+			// 9 Start a background run
 			klog.InfoS(msg(cfg.Label, InfoCycleStarted),
 				"pendingPods", pendingCount)
 
@@ -283,77 +269,6 @@ func isAlreadySolvedForPendingSet(err error, bestAttempt *SolverResult) bool {
 	}
 	return err == ErrNoImprovingSolutionFromAnySolver ||
 		err == ErrNoPendingPodsToSchedule
-}
-
-// pendingHasLowPriorityTargets reports whether, under the current
-// SolverPythonNumLowerPriorities setting, there exists at least one
-// Pending pod whose priority is within the "lowest N" distinct priorities
-// observed in the cluster.
-//
-// Semantics:
-//   - If SolverPythonNumLowerPriorities <= 0, we return true (no gating).
-//   - If SolverPythonEnabled is false, we also return true (this gating is
-//     only meaningful for the Python solver).
-//   - Otherwise, we:
-//     1) Collect all distinct priorities across *all* pods (running+pending)
-//     2) Sort ascending and take the lowest N priorities
-//     3) Check if any Pending pod has a priority in that set.
-//     If none do, we return false → nothing for Python to do on this queue.
-func pendingHasLowPriorityTargets(pods []*v1.Pod) bool {
-	if !SolverPythonEnabled || SolverPythonNumLowerPriorities <= 0 {
-		// Either Python is disabled or we're not restricting priorities:
-		// from the Go side we should not skip runs based on priority windows.
-		return true
-	}
-
-	// 1) Distinct priorities across all pods (running + pending)
-	prioSet := make(map[int32]struct{})
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
-			continue
-		}
-		pr := getPodPriority(p)
-		prioSet[pr] = struct{}{}
-	}
-	if len(prioSet) == 0 {
-		// No pods with a defined priority – be conservative and say "nothing to do".
-		return false
-	}
-
-	// 2) Sorted ascending list of all priorities
-	all := make([]int32, 0, len(prioSet))
-	for pr := range prioSet {
-		all = append(all, pr)
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
-
-	// Keep only the N lowest distinct priorities
-	limit := SolverPythonNumLowerPriorities
-	if limit > len(all) {
-		limit = len(all)
-	}
-	lowSet := make(map[int32]struct{}, limit)
-	for i := 0; i < limit; i++ {
-		lowSet[all[i]] = struct{}{}
-	}
-
-	// 3) Check if ANY Pending pod is in those lower priorities
-	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
-			continue
-		}
-		if p.Spec.NodeName != "" {
-			continue // running, not in the pending queue
-		}
-		pr := getPodPriority(p)
-		if _, ok := lowSet[pr]; ok {
-			// At least one pending pod is in the low-priority window
-			return true
-		}
-	}
-
-	// Only higher-priority pending pods are present → Python won't touch them.
-	return false
 }
 
 // PendingSnapshot bundles the pieces of state that both the periodic and

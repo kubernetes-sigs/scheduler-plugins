@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
 // ----------------------------------------------------------------------
-// Helpers for tests
+// Helpers
 // ----------------------------------------------------------------------
 
 func uidSet(uids ...string) map[types.UID]struct{} {
@@ -22,22 +23,17 @@ func uidSet(uids ...string) map[types.UID]struct{} {
 	return m
 }
 
-func int32Ptr(v int32) *int32 {
-	return &v
-}
+// ----------------------------------------------------------------------
+// startLoops
+// ----------------------------------------------------------------------
 
-func newPodWithPriority(name string, prio int32, nodeName string) *v1.Pod {
-	return &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "ns",
-		},
-		Spec: v1.PodSpec{
-			NodeName: nodeName,
-			Priority: int32Ptr(prio),
-		},
-	}
-}
+// TODO: test missing
+
+// ----------------------------------------------------------------------
+// optimizeGlobalLoop
+// ----------------------------------------------------------------------
+
+// TODO: test missing
 
 // ----------------------------------------------------------------------
 // sameUIDSet
@@ -92,18 +88,15 @@ func TestCloneUIDSet_Nil(t *testing.T) {
 
 func TestCloneUIDSet_Independence(t *testing.T) {
 	src := uidSet("u1", "u2")
-
 	cloned := cloneUIDSet(src)
 	if !sameUIDSet(src, cloned) {
 		t.Fatalf("cloneUIDSet() produced different contents: src=%v cloned=%v", src, cloned)
 	}
-
 	// Mutate clone and ensure src is unaffected
 	delete(cloned, types.UID("u1"))
 	if _, ok := src[types.UID("u1")]; !ok {
 		t.Fatalf("mutating clone mutated source: src=%v cloned=%v", src, cloned)
 	}
-
 	// Mutate src and ensure clone is unaffected
 	src[types.UID("u3")] = struct{}{}
 	if _, ok := cloned[types.UID("u3")]; ok {
@@ -149,106 +142,63 @@ func TestIsAlreadySolvedForPendingSet_OptimalWithOtherError(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------------
-// pendingHasLowPriorityTargets
-// ----------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// buildPendingSnapshot
+// -----------------------------------------------------------------------------
 
-func TestPendingHasLowPriorityTargets_PythonDisabledAlwaysTrue(t *testing.T) {
-	origEnabled := SolverPythonEnabled
-	origNum := SolverPythonNumLowerPriorities
-	defer func() {
-		SolverPythonEnabled = origEnabled
-		SolverPythonNumLowerPriorities = origNum
-	}()
+func TestBuildPendingSnapshot(t *testing.T) {
+	pl := &SharedState{}
 
-	SolverPythonEnabled = false
-	SolverPythonNumLowerPriorities = 10
-
-	// No pods at all – should still return true because gating is disabled.
-	if got := pendingHasLowPriorityTargets(nil); !got {
-		t.Fatalf("pendingHasLowPriorityTargets(nil) with python disabled = false, want true")
+	// One usable node
+	n := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "n1"},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("1000m"),
+				v1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
 	}
-}
-
-func TestPendingHasLowPriorityTargets_NoRestrictionWhenNumLowerNonPositive(t *testing.T) {
-	origEnabled := SolverPythonEnabled
-	origNum := SolverPythonNumLowerPriorities
-	defer func() {
-		SolverPythonEnabled = origEnabled
-		SolverPythonNumLowerPriorities = origNum
-	}()
-
-	SolverPythonEnabled = true
-	SolverPythonNumLowerPriorities = 0
-
-	pods := []*v1.Pod{
-		newPodWithPriority("p1", 5, ""), // pending
+	// One pending pod and one running pod
+	pPending := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "p-pending", Namespace: "ns", UID: types.UID("pu1")},
+		Status:     v1.PodStatus{Phase: v1.PodPending},
 	}
-	if got := pendingHasLowPriorityTargets(pods); !got {
-		t.Fatalf("pendingHasLowPriorityTargets() with NumLower<=0 = false, want true")
-	}
-}
-
-func TestPendingHasLowPriorityTargets_LowTierPendingExists(t *testing.T) {
-	origEnabled := SolverPythonEnabled
-	origNum := SolverPythonNumLowerPriorities
-	defer func() {
-		SolverPythonEnabled = origEnabled
-		SolverPythonNumLowerPriorities = origNum
-	}()
-
-	SolverPythonEnabled = true
-	SolverPythonNumLowerPriorities = 2 // keep 2 lowest priorities
-
-	// Priorities present: 1, 5, 10
-	// Lowest 2 ⇒ {1,5}. We have a pending pod at prio 5 ⇒ should be true.
-	pods := []*v1.Pod{
-		newPodWithPriority("run-low", 1, "n1"), // running low
-		newPodWithPriority("pend-low", 5, ""),  // pending in low-tier window
-		newPodWithPriority("pend-high", 10, ""),
+	pRunning := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "p-running", Namespace: "ns", UID: types.UID("pu2")},
+		Status:     v1.PodStatus{Phase: v1.PodRunning},
+		Spec: v1.PodSpec{
+			NodeName: "n1",
+			Containers: []v1.Container{{
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("100m"),
+						v1.ResourceMemory: resource.MustParse("128Mi"),
+					},
+				},
+			}},
+		},
 	}
 
-	if got := pendingHasLowPriorityTargets(pods); !got {
-		t.Fatalf("pendingHasLowPriorityTargets() with a low-tier pending pod = false, want true")
-	}
-}
-
-func TestPendingHasLowPriorityTargets_OnlyHighTierPending(t *testing.T) {
-	origEnabled := SolverPythonEnabled
-	origNum := SolverPythonNumLowerPriorities
-	defer func() {
-		SolverPythonEnabled = origEnabled
-		SolverPythonNumLowerPriorities = origNum
-	}()
-
-	SolverPythonEnabled = true
-	SolverPythonNumLowerPriorities = 1 // keep only the single lowest priority
-
-	// Priorities present: 1, 5, 10
-	// Lowest 1 ⇒ {1}. Our only pending pods are at 5 and 10 ⇒ expect false.
-	pods := []*v1.Pod{
-		newPodWithPriority("run-low", 1, "n1"), // running at lowest prio
-		newPodWithPriority("pend-mid", 5, ""),  // pending but not in lowest tier
-		newPodWithPriority("pend-high", 10, ""),
-	}
-
-	if got := pendingHasLowPriorityTargets(pods); got {
-		t.Fatalf("pendingHasLowPriorityTargets() with only higher-tier pending pods = true, want false")
-	}
-}
-
-func TestPendingHasLowPriorityTargets_EmptyPodsWithGating(t *testing.T) {
-	origEnabled := SolverPythonEnabled
-	origNum := SolverPythonNumLowerPriorities
-	defer func() {
-		SolverPythonEnabled = origEnabled
-		SolverPythonNumLowerPriorities = origNum
-	}()
-
-	SolverPythonEnabled = true
-	SolverPythonNumLowerPriorities = 3
-
-	if got := pendingHasLowPriorityTargets(nil); got {
-		t.Fatalf("pendingHasLowPriorityTargets(nil) with gating enabled = true, want false")
-	}
+	withNodeLister(&fakeNodeLister{nodes: []*v1.Node{n}}, func() {
+		withPodLister(&fakePodLister2{pods: []*v1.Pod{pPending, pRunning}}, func() {
+			snap, err := pl.buildPendingSnapshot()
+			if err != nil {
+				t.Fatalf("buildPendingSnapshot() unexpected error: %v", err)
+			}
+			if snap.PendingCount != 1 {
+				t.Fatalf("PendingCount = %d, want 1", snap.PendingCount)
+			}
+			if _, ok := snap.PendingUIDs[pPending.UID]; !ok {
+				t.Fatalf("pending UID set does not contain pending pod")
+			}
+			if snap.Fingerprint == "" {
+				t.Fatalf("Fingerprint should not be empty")
+			}
+			if len(snap.Pods) != 2 || len(snap.Nodes) != 1 {
+				t.Fatalf("snap pods/nodes sizes wrong: pods=%d nodes=%d", len(snap.Pods), len(snap.Nodes))
+			}
+		})
+	})
 }

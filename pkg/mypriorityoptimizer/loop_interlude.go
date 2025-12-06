@@ -23,5 +23,5 @@ func (pl *SharedState) loopInterlude(ctx context.Context) {
 		CancelOnChange: true,  // cancel if pending set changes
 	}
 	// delegated through hook
-	optimizeGlobalBackgroundLoopFunc(pl, ctx, cfg)
+	optimizeGlobalLoopFunc(pl, ctx, cfg)
 }

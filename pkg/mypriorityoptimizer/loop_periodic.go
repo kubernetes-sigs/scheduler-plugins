@@ -18,5 +18,5 @@ func (pl *SharedState) loopPeriodic(ctx context.Context) {
 		CancelOnChange: false, // do NOT cancel if new pods arrive (can be made configurable later)
 	}
 	// delegated through hook
-	optimizeGlobalBackgroundLoopFunc(pl, ctx, cfg)
+	optimizeGlobalLoopFunc(pl, ctx, cfg)
 }
