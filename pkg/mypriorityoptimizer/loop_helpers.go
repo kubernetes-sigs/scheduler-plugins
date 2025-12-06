@@ -11,17 +11,17 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type optimizeLoopConfig struct {
+type OptimizeLoopConfig struct {
 	Label          string        // log label
 	Interval       time.Duration // base tick interval
 	InterludeDelay time.Duration // 0 => no "idle window"; >0 => require this long of stability
 	CancelOnChange bool          // cancel in-flight run if pending set changes
 }
 
-// By default this just calls (*SharedState).optimizeGlobalLoop.
+// By default this just calls (*SharedState).optimizeBackgroundLoop.
 // Tests can override this variable to intercept the cfg passed in.
-var optimizeGlobalLoopFunc = func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
-	pl.optimizeGlobalLoop(ctx, cfg)
+var optimizeBackgroundLoopFunc = func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig) {
+	pl.optimizeBackgroundLoop(ctx, cfg)
 }
 
 // startLoops launches background loops exactly once, after caches are warm.
@@ -38,7 +38,7 @@ func (pl *SharedState) startLoops(ctx context.Context) {
 	}
 }
 
-func (pl *SharedState) optimizeGlobalLoop(ctx context.Context, cfg optimizeLoopConfig) {
+func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeLoopConfig) {
 	strategy := modeToString()
 
 	interval := cfg.Interval

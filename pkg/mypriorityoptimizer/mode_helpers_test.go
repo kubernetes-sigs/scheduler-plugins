@@ -31,28 +31,28 @@ func TestIsPerPodMode(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// isGlobalMode
+// isBackgroundMode
 // -----------------------------------------------------------------------------
 
-func TestIsGlobalMode(t *testing.T) {
+func TestIsBackgroundMode(t *testing.T) {
 	withMode(ModePeriodic, StagePreEnqueue, true, func() {
-		if !isGlobalMode() {
-			t.Fatalf("expected isGlobalMode() to be true for ModePeriodic")
+		if !isBackgroundMode() {
+			t.Fatalf("expected isBackgroundMode() to be true for ModePeriodic")
 		}
 	})
 	withMode(ModeInterlude, StagePreEnqueue, true, func() {
-		if !isGlobalMode() {
-			t.Fatalf("expected isGlobalMode() to be true for ModeInterlude")
+		if !isBackgroundMode() {
+			t.Fatalf("expected isBackgroundMode() to be true for ModeInterlude")
 		}
 	})
 	withMode(ModeManual, StagePreEnqueue, true, func() {
-		if !isGlobalMode() {
-			t.Fatalf("expected isGlobalMode() to be true for ModeManual")
+		if !isBackgroundMode() {
+			t.Fatalf("expected isBackgroundMode() to be true for ModeManual")
 		}
 	})
 	withMode(ModePerPod, StagePostFilter, true, func() {
-		if isGlobalMode() {
-			t.Fatalf("expected isGlobalMode() to be false for ModePerPod")
+		if isBackgroundMode() {
+			t.Fatalf("expected isBackgroundMode() to be false for ModePerPod")
 		}
 	})
 }
@@ -95,16 +95,16 @@ func TestIsAsyncSolving(t *testing.T) {
 			t.Fatalf("expected isAsyncSolving() to be false for ModePerPod regardless of OptimizeSolveSynch")
 		}
 	})
-	// Global modes: OptimizeSolveSynch=true -> synchronous
+	// Background modes: OptimizeSolveSynch=true -> synchronous
 	withMode(ModePeriodic, StagePreEnqueue, true, func() {
 		if isAsyncSolving() {
-			t.Fatalf("expected isAsyncSolving() to be false when OptimizeSolveSynch=true for global non-PerPod modes")
+			t.Fatalf("expected isAsyncSolving() to be false when OptimizeSolveSynch=true for background non-PerPod modes")
 		}
 	})
-	// Global modes: OptimizeSolveSynch=false -> asynchronous
+	// Background modes: OptimizeSolveSynch=false -> asynchronous
 	withMode(ModePeriodic, StagePreEnqueue, false, func() {
 		if !isAsyncSolving() {
-			t.Fatalf("expected isAsyncSolving() to be true when OptimizeSolveSynch=false for global non-PerPod modes")
+			t.Fatalf("expected isAsyncSolving() to be true when OptimizeSolveSynch=false for background non-PerPod modes")
 		}
 	})
 }
@@ -124,23 +124,23 @@ func TestHookAtStage(t *testing.T) {
 		}
 	})
 
-	// Global mode with StagePreEnqueue.
+	// Background mode with StagePreEnqueue.
 	withMode(ModePeriodic, StagePreEnqueue, true, func() {
 		if !hookAtPreEnqueue() {
-			t.Fatalf("expected hookAtPreEnqueue() when OptimizeHookStage=StagePreEnqueue in global mode")
+			t.Fatalf("expected hookAtPreEnqueue() when OptimizeHookStage=StagePreEnqueue in background mode")
 		}
 		if hookAtPostFilter() {
-			t.Fatalf("expected hookAtPostFilter() to be false when OptimizeHookStage=StagePreEnqueue in global mode")
+			t.Fatalf("expected hookAtPostFilter() to be false when OptimizeHookStage=StagePreEnqueue in background mode")
 		}
 	})
 
-	// Global mode with StagePostFilter.
+	// Background mode with StagePostFilter.
 	withMode(ModePeriodic, StagePostFilter, true, func() {
 		if hookAtPreEnqueue() {
-			t.Fatalf("expected hookAtPreEnqueue() to be false when OptimizeHookStage=StagePostFilter in global mode")
+			t.Fatalf("expected hookAtPreEnqueue() to be false when OptimizeHookStage=StagePostFilter in background mode")
 		}
 		if !hookAtPostFilter() {
-			t.Fatalf("expected hookAtPostFilter() when OptimizeHookStage=StagePostFilter in global mode")
+			t.Fatalf("expected hookAtPostFilter() when OptimizeHookStage=StagePostFilter in background mode")
 		}
 	})
 }

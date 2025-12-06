@@ -8,16 +8,16 @@ const (
 	// ModePerPod optimizes for every new pod.
 	ModePerPod ModeType = iota
 
-	// ModePeriodic runs periodic global optimization over the accumulated pending set.
+	// ModePeriodic runs periodic optimization over the accumulated pending set.
 	ModePeriodic
+
+	// ModeInterlude runs optimization only during "quiet" periods where the
+	// pending set has been stable for some time.
+	ModeInterlude
 
 	// ModeManual collects like ModePeriodic but only optimizes when the HTTP
 	// /solve endpoint is called.
 	ModeManual
-
-	// ModeInterlude runs global optimization only during "quiet" periods where the
-	// pending set has been stable for some time.
-	ModeInterlude
 )
 
 // Stage indicates which stage of scheduling we are in.

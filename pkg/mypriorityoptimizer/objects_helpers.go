@@ -15,7 +15,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Hooks so we can inject fakes in tests.
+// Test Hooks
 // -----------------------------------------------------------------------------
 
 var (
@@ -240,6 +240,11 @@ func getPodPriority(p *v1.Pod) int32 {
 	return 0
 }
 
+// getPodNodeName returns the name of the node to which the pod is assigned.
+func getPodAssignedNodeName(p *v1.Pod) string {
+	return p.Spec.NodeName
+}
+
 // isPodDeleted returns true if the pod has a deletion timestamp set.
 func isPodDeleted(p *v1.Pod) bool {
 	return p == nil || p.DeletionTimestamp != nil
@@ -247,7 +252,7 @@ func isPodDeleted(p *v1.Pod) bool {
 
 // isPodAssigned returns true if the pod is assigned to a node.
 func isPodAssigned(p *v1.Pod) bool {
-	return p != nil && p.Spec.NodeName != ""
+	return p != nil && getPodAssignedNodeName(p) != ""
 }
 
 // isPodProtected returns true if the pod e.g. is a system pod and should not be evicted.

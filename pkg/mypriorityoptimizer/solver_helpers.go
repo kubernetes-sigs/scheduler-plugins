@@ -77,7 +77,7 @@ func (pl *SharedState) buildSolverInput(
 			continue
 		}
 
-		where := p.Spec.NodeName
+		where := getPodAssignedNodeName(p)
 		switch {
 		case where == "":
 			// pending → always include
@@ -265,25 +265,25 @@ func (pl *SharedState) planApplicable(out *SolverOutput, nodes []*v1.Node, pods 
 
 	// Tally current usage
 	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil || p.Spec.NodeName == "" {
+		if p == nil || p.DeletionTimestamp != nil || getPodAssignedNodeName(p) == "" {
 			continue
 		}
-		addUse(p.Spec.NodeName, getPodCPURequest(p), getPodMemoryRequest(p))
+		addUse(getPodAssignedNodeName(p), getPodCPURequest(p), getPodMemoryRequest(p))
 	}
 
 	// Simulate the plan on top of current usage:
 	// - Evictions free resources on their current node
 	for _, e := range out.Evictions {
 		p := pByUID[e.Pod.UID]
-		if p == nil || p.Spec.NodeName == "" {
+		if p == nil || getPodAssignedNodeName(p) == "" {
 			// Already gone or pending now: keep going.
 			continue
 		}
 		// If a node became unusable, fail.
-		if !usable[p.Spec.NodeName] {
-			return false, fmt.Sprintf("evict node now unusable: %s", p.Spec.NodeName)
+		if !usable[getPodAssignedNodeName(p)] {
+			return false, fmt.Sprintf("evict node now unusable: %s", getPodAssignedNodeName(p))
 		}
-		addUse(p.Spec.NodeName, -getPodCPURequest(p), -getPodMemoryRequest(p))
+		addUse(getPodAssignedNodeName(p), -getPodCPURequest(p), -getPodMemoryRequest(p))
 	}
 
 	// - Moves/placements: check pod still where we expect (pending or src), then add to dst
@@ -296,17 +296,17 @@ func (pl *SharedState) planApplicable(out *SolverOutput, nodes []*v1.Node, pods 
 		//   - if it was a move (FromNode != ""), pod should still be on that source
 		//   - if it was a new/pending placement (FromNode == ""), pod should still be pending
 		if np.FromNode != "" {
-			if p.Spec.NodeName != np.FromNode {
+			if getPodAssignedNodeName(p) != np.FromNode {
 				return false, fmt.Sprintf("move precondition changed for %s/%s: was on %q, now on %q",
-					p.Namespace, p.Name, np.FromNode, p.Spec.NodeName)
+					p.Namespace, p.Name, np.FromNode, getPodAssignedNodeName(p))
 			}
 			// remove from src (already accounted by evictions? No — moves are distinct)
 			addUse(np.FromNode, -getPodCPURequest(p), -getPodMemoryRequest(p))
 		} else {
 			// pending expected
-			if p.Spec.NodeName != "" {
+			if getPodAssignedNodeName(p) != "" {
 				return false, fmt.Sprintf("pending precondition changed for %s/%s: now bound to %q",
-					p.Namespace, p.Name, p.Spec.NodeName)
+					p.Namespace, p.Name, getPodAssignedNodeName(p))
 			}
 		}
 

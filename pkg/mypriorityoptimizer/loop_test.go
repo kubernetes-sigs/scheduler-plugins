@@ -7,15 +7,15 @@ import (
 	"time"
 )
 
-// helper to temporarily override optimizeGlobalBackgroundLoopFunc
+// helper to temporarily override optimizeBackgroundLoopFunc
 func withOptimizeLoopFunc(t *testing.T,
-	fn func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig),
+	fn func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig),
 	body func(),
 ) {
 	t.Helper()
-	orig := optimizeGlobalLoopFunc
-	optimizeGlobalLoopFunc = fn
-	defer func() { optimizeGlobalLoopFunc = orig }()
+	orig := optimizeBackgroundLoopFunc
+	optimizeBackgroundLoopFunc = fn
+	defer func() { optimizeBackgroundLoopFunc = orig }()
 	body()
 }
 
@@ -30,11 +30,11 @@ func TestLoopInterlude_UsesDefaultsWhenNonPositive(t *testing.T) {
 	OptimizeInterludeDelay = 0
 	OptimizeInterludeCheckInterval = 0
 
-	var gotCfg optimizeLoopConfig
+	var gotCfg OptimizeLoopConfig
 	var called bool
 
 	withOptimizeLoopFunc(t,
-		func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
+		func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig) {
 			called = true
 			gotCfg = cfg
 		},
@@ -45,7 +45,7 @@ func TestLoopInterlude_UsesDefaultsWhenNonPositive(t *testing.T) {
 	)
 
 	if !called {
-		t.Fatalf("loopInterlude() did not call optimizeGlobalBackgroundLoopFunc")
+		t.Fatalf("loopInterlude() did not call optimizeBackgroundLoopFunc")
 	}
 	if gotCfg.Label != "InterludeLoop" {
 		t.Fatalf("cfg.Label = %q, want %q", gotCfg.Label, "InterludeLoop")
@@ -72,11 +72,11 @@ func TestLoopInterlude_UsesConfiguredValues(t *testing.T) {
 	OptimizeInterludeDelay = 5 * time.Second
 	OptimizeInterludeCheckInterval = 123 * time.Millisecond
 
-	var gotCfg optimizeLoopConfig
+	var gotCfg OptimizeLoopConfig
 	var called bool
 
 	withOptimizeLoopFunc(t,
-		func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
+		func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig) {
 			called = true
 			gotCfg = cfg
 		},
@@ -87,7 +87,7 @@ func TestLoopInterlude_UsesConfiguredValues(t *testing.T) {
 	)
 
 	if !called {
-		t.Fatalf("loopInterlude() did not call optimizeGlobalBackgroundLoopFunc")
+		t.Fatalf("loopInterlude() did not call optimizeBackgroundLoopFunc")
 	}
 	if gotCfg.Label != "InterludeLoop" {
 		t.Fatalf("cfg.Label = %q, want %q", gotCfg.Label, "InterludeLoop")
@@ -110,11 +110,11 @@ func TestLoopPeriodic_DefaultIntervalWhenTooSmall(t *testing.T) {
 	// Trigger default path
 	OptimizeInterval = 0
 
-	var gotCfg optimizeLoopConfig
+	var gotCfg OptimizeLoopConfig
 	var called bool
 
 	withOptimizeLoopFunc(t,
-		func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
+		func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig) {
 			called = true
 			gotCfg = cfg
 		},
@@ -125,7 +125,7 @@ func TestLoopPeriodic_DefaultIntervalWhenTooSmall(t *testing.T) {
 	)
 
 	if !called {
-		t.Fatalf("loopPeriodic() did not call optimizeGlobalBackgroundLoopFunc")
+		t.Fatalf("loopPeriodic() did not call optimizeBackgroundLoopFunc")
 	}
 
 	// loopPeriodic mutates OptimizeInterval when it is too small
@@ -153,11 +153,11 @@ func TestLoopPeriodic_UsesConfiguredInterval(t *testing.T) {
 
 	OptimizeInterval = 5 * time.Second
 
-	var gotCfg optimizeLoopConfig
+	var gotCfg OptimizeLoopConfig
 	var called bool
 
 	withOptimizeLoopFunc(t,
-		func(pl *SharedState, ctx context.Context, cfg optimizeLoopConfig) {
+		func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig) {
 			called = true
 			gotCfg = cfg
 		},
@@ -168,7 +168,7 @@ func TestLoopPeriodic_UsesConfiguredInterval(t *testing.T) {
 	)
 
 	if !called {
-		t.Fatalf("loopPeriodic() did not call optimizeGlobalBackgroundLoopFunc")
+		t.Fatalf("loopPeriodic() did not call optimizeBackgroundLoopFunc")
 	}
 
 	// Should not have been overwritten

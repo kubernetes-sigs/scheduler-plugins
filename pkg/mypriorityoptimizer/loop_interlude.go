@@ -16,12 +16,12 @@ func (pl *SharedState) loopInterlude(ctx context.Context) {
 		checkInterval = 250 * time.Millisecond
 	}
 
-	cfg := optimizeLoopConfig{
+	cfg := OptimizeLoopConfig{
 		Label:          "InterludeLoop",
 		Interval:       checkInterval,
 		InterludeDelay: delay, // require stability for this long
 		CancelOnChange: true,  // cancel if pending set changes
 	}
 	// delegated through hook
-	optimizeGlobalLoopFunc(pl, ctx, cfg)
+	optimizeBackgroundLoopFunc(pl, ctx, cfg)
 }

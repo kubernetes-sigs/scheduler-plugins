@@ -256,7 +256,7 @@ class CPSATSolver:
             # However, possibly, it cannot be placed anywhere.
             # In that case, the model is infeasible.
             model.Add(sum(assign[preemptor_idx]) == 1)
-        # Global modes
+        # Background modes
         else:
             # There must be at least one placement of pending pods
             # (weak constraint to avoid trivial empty solution and solutions that only move running pods or evict.)

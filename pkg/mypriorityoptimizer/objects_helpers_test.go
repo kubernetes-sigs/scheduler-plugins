@@ -681,6 +681,42 @@ func TestGetPodPriority(t *testing.T) {
 	}
 }
 
+func TestGetPodAssignedNodeName(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  *v1.Pod
+		want string
+	}{
+		{
+			name: "assigned pod",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					NodeName: "node-1",
+				},
+			},
+			want: "node-1",
+		},
+		{
+			name: "unassigned pod",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					NodeName: "",
+				},
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getPodAssignedNodeName(tt.pod)
+			if got != tt.want {
+				t.Fatalf("getPodAssignedNodeName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 //
 // -----------------------------------------------------------------------------
 // isPodDeleted / isPodAssigned / podsByUID

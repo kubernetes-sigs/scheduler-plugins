@@ -16,7 +16,7 @@ var OptimizeSolveSynch = parseBool(getenv("OPTIMIZE_SOLVE_SYNCH", "true"))
 
 // OptimizeHookStage is the action point that triggers optimization.
 // Choices: "preenqueue", "postfilter"
-// (ignored for async global modes, which always collect at PostFilter)
+// (ignored for async background modes, which always collect at PostFilter)
 var OptimizeHookStage = parseOptimizeHookStage(getenv("OPTIMIZE_HOOK_STAGE", "postfilter"))
 
 // OptimizeInterval is the duration between consecutive optimization runs

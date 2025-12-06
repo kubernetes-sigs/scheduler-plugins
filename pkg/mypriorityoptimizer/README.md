@@ -1080,12 +1080,12 @@ Done:
 
 missing:
 
-- loop_helpers.go
 - plan_helpers.go
 - plan_context.go
 - plan_completion_watch.go
 - solver_helpers.go
 
+- loop_helpers.go
 - loop_interlude.go
 - loop_periodic.go
 

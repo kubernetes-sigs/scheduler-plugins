@@ -5,14 +5,12 @@ import (
 	"fmt"
 )
 
-// ==== Mode helpers =======================================================
-
 // isPerPodMode is the optimizer cadence that optimizes for every new pod.
 func isPerPodMode() bool { return OptimizeMode == ModePerPod }
 
-// isGlobalMode is true for modes that operate on the accumulated pending set
+// isBackgroundMode is true for modes that operate on the accumulated pending set
 // (as opposed to per_pod modes).
-func isGlobalMode() bool {
+func isBackgroundMode() bool {
 	switch OptimizeMode {
 	case ModePeriodic, ModeInterlude, ModeManual:
 		return true
