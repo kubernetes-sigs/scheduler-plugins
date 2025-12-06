@@ -1,5 +1,4 @@
 // plan_helpers.go
-
 package mypriorityoptimizer
 
 import (

@@ -1,6 +1,4 @@
-// pkg/mypriorityoptimizer/plugin_test.go
 // plugin_test.go
-
 package mypriorityoptimizer
 
 import (

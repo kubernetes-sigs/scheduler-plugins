@@ -1,5 +1,4 @@
 // mode_helpers_test.go
-
 package mypriorityoptimizer
 
 import "testing"

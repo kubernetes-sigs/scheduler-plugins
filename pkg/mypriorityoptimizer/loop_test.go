@@ -1,3 +1,4 @@
+// loop_test.go
 package mypriorityoptimizer
 
 import (

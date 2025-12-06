@@ -1,5 +1,4 @@
 // solver_external.go
-
 package mypriorityoptimizer
 
 import (

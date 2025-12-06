@@ -1,5 +1,4 @@
 // objects_helpers.go
-
 package mypriorityoptimizer
 
 import (

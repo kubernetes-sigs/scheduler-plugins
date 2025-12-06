@@ -1,5 +1,4 @@
 // shared_types.go
-
 package mypriorityoptimizer
 
 import (

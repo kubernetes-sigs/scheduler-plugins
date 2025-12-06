@@ -1,5 +1,4 @@
 // plan_types.go
-
 package mypriorityoptimizer
 
 import "time"

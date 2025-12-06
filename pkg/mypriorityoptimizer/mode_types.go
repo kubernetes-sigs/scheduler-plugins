@@ -1,5 +1,4 @@
 // mode_types.go
-
 package mypriorityoptimizer
 
 // ModeType indicates *when* we optimize.

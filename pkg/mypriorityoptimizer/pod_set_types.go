@@ -1,5 +1,4 @@
 // pod_set_types.go
-
 package mypriorityoptimizer
 
 import (

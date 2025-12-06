@@ -1,5 +1,4 @@
 // loop_helpers.go
-
 package mypriorityoptimizer
 
 import (

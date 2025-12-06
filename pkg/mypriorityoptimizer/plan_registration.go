@@ -1,5 +1,4 @@
 // plan_registration.go
-
 package mypriorityoptimizer
 
 import (

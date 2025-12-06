@@ -1,5 +1,4 @@
 // plugin_readiness_test.go
-
 package mypriorityoptimizer
 
 import (

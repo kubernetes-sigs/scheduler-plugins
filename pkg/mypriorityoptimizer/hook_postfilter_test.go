@@ -1,4 +1,4 @@
-// pkg/mypriorityoptimizer/hook_postfilter_test.go
+// hook_postfilter_test.go
 package mypriorityoptimizer
 
 import (

@@ -1,5 +1,4 @@
 // plugin.go
-
 package mypriorityoptimizer
 
 import (

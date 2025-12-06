@@ -1,5 +1,4 @@
 // infos.go
-
 package mypriorityoptimizer
 
 var (

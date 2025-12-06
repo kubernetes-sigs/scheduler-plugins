@@ -1,5 +1,4 @@
 // preenqueue_hook.go
-
 package mypriorityoptimizer
 
 import (

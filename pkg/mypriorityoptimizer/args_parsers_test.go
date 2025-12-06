@@ -1,5 +1,4 @@
 // args_parsers_test.go
-
 package mypriorityoptimizer
 
 import (
@@ -57,11 +56,11 @@ func TestParseBool(t *testing.T) {
 		{"empty -> false", "", false},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseBool(tt.in)
-			if got != tt.want {
-				t.Fatalf("parseBool(%q) = %v, want %v", tt.in, got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := parseBool(test.in)
+			if got != test.want {
+				t.Fatalf("parseBool(%q) = %v, want %v", test.in, got, test.want)
 			}
 		})
 	}
@@ -84,11 +83,11 @@ func TestParseInt(t *testing.T) {
 		{"empty -> 0", "", 0},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseInt(tt.in)
-			if got != tt.want {
-				t.Fatalf("parseInt(%q) = %d, want %d", tt.in, got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := parseInt(test.in)
+			if got != test.want {
+				t.Fatalf("parseInt(%q) = %d, want %d", test.in, got, test.want)
 			}
 		})
 	}
@@ -159,16 +158,16 @@ func TestParseFloat(t *testing.T) {
 
 	const floatTolerance = 1e-9
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseFloat(tt.in, tt.lLimit, tt.uLimit)
-			diff := got - tt.want
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := parseFloat(test.in, test.lLimit, test.uLimit)
+			diff := got - test.want
 			if diff < 0 {
 				diff = -diff
 			}
 			if diff > floatTolerance {
 				t.Fatalf("parseFloat(%q, %f, %f) = %f, want %f",
-					tt.in, tt.lLimit, tt.uLimit, got, tt.want)
+					test.in, test.lLimit, test.uLimit, got, test.want)
 			}
 		})
 	}
@@ -192,11 +191,11 @@ func TestParseTime(t *testing.T) {
 		{"empty -> 0", "", 0},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseTime(tt.in)
-			if got != tt.want {
-				t.Fatalf("parseTime(%q) = %v, want %v", tt.in, got, tt.want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := parseTime(test.in)
+			if got != test.want {
+				t.Fatalf("parseTime(%q) = %v, want %v", test.in, got, test.want)
 			}
 		})
 	}
@@ -218,10 +217,10 @@ func TestParseOptimizeMode(t *testing.T) {
 		{"manual", ModeManual},
 		{"unknown", ModePeriodic}, // default
 	}
-	for _, tt := range tests {
-		got := parseOptimizeMode(tt.in)
-		if got != tt.want {
-			t.Fatalf("parseOptimizeMode(%q) = %v, want %v", tt.in, got, tt.want)
+	for _, test := range tests {
+		got := parseOptimizeMode(test.in)
+		if got != test.want {
+			t.Fatalf("parseOptimizeMode(%q) = %v, want %v", test.in, got, test.want)
 		}
 	}
 }
@@ -230,42 +229,14 @@ func TestParseOptimizeMode(t *testing.T) {
 // parseOptimizeHookStage
 // -----------------------------------------------------------------------------
 
-func TestParseOptimizeHookStage_ManualRespectsEnv(t *testing.T) {
-	// Manual mode: both PreEnqueue and PostFilter must be respected (no override).
-	withGlobals(ModeManual, StageNone, true, func() {
-		if got := parseOptimizeHookStage("preenqueue"); got != StagePreEnqueue {
-			t.Fatalf("manual+preenqueue: got %v, want StagePreEnqueue", got)
-		}
-		if got := parseOptimizeHookStage("postfilter"); got != StagePostFilter {
-			t.Fatalf("manual+postfilter: got %v, want StagePostFilter", got)
-		}
-	})
-}
-
-func TestParseOptimizeHookStage_SyncOrNonGlobalHonorsEnv(t *testing.T) {
-	// Sync global -> respect env
-	withGlobals(ModePeriodic, StageNone, true, func() {
-		if optimizeAsync() {
-			t.Fatalf("test precondition: expected optimizeAsync() false for ModePeriodic + OptimizeSolveSynch=true")
-		}
-		if got := parseOptimizeHookStage("preenqueue"); got != StagePreEnqueue {
-			t.Fatalf("periodic synch + preenqueue input: got %v, want StagePreEnqueue", got)
-		}
-		if got := parseOptimizeHookStage("postfilter"); got != StagePostFilter {
-			t.Fatalf("periodic synch + postfilter input: got %v, want StagePostFilter", got)
-		}
-	})
-
-	// Non-global (PerPod) -> respect env.
-	withGlobals(ModePerPod, StageNone, false, func() {
-		if got := parseOptimizeHookStage("preenqueue"); got != StagePreEnqueue {
-			t.Fatalf("perpod + preenqueue input: got %v, want StagePreEnqueue", got)
-		}
-		if got := parseOptimizeHookStage("postfilter"); got != StagePostFilter {
-			t.Fatalf("perpod + postfilter input: got %v, want StagePostFilter", got)
-		}
-		if got := parseOptimizeHookStage("unknown"); got != StageNone {
-			t.Fatalf("perpod + unknown input: got %v, want StageNone", got)
-		}
-	})
+func TestParseOptimizeHookStage(t *testing.T) {
+	if got := parseOptimizeHookStage("preenqueue"); got != StagePreEnqueue {
+		t.Fatalf("preenqueue: got %v, want StagePreEnqueue", got)
+	}
+	if got := parseOptimizeHookStage("postfilter"); got != StagePostFilter {
+		t.Fatalf("postfilter: got %v, want StagePostFilter", got)
+	}
+	if got := parseOptimizeHookStage("unknown"); got != StageNone {
+		t.Fatalf("unknown: got %v, want StageNone", got)
+	}
 }

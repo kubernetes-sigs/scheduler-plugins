@@ -1,5 +1,4 @@
 // plan_activation.go
-
 package mypriorityoptimizer
 
 import (

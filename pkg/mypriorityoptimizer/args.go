@@ -1,5 +1,4 @@
 // args.go
-
 package mypriorityoptimizer
 
 // ======= Optimality where/when settings =======

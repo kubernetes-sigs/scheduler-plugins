@@ -1,5 +1,4 @@
 // config_map_types.go
-
 package mypriorityoptimizer
 
 // ConfigMap document

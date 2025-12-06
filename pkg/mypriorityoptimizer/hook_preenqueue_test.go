@@ -1,4 +1,4 @@
-// pkg/mypriorityoptimizer/hook_preenqueue_test.go
+// hook_preenqueue_test.go
 package mypriorityoptimizer
 
 import (

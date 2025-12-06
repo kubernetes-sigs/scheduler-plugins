@@ -1,4 +1,4 @@
-// pkg/mypriorityoptimizer/pod_set_helpers_test.go
+// pod_set_helpers_test.go
 package mypriorityoptimizer
 
 import (

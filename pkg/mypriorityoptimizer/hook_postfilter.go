@@ -1,5 +1,4 @@
 // postfilter_hook.go
-
 package mypriorityoptimizer
 
 import (

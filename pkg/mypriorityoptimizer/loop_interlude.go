@@ -1,3 +1,4 @@
+// loop_interlude.go
 package mypriorityoptimizer
 
 import (

@@ -1,5 +1,4 @@
 // http_server_test.go
-
 package mypriorityoptimizer
 
 import (
@@ -31,7 +30,6 @@ func decodeHTTPResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpRespons
 // -----------------------------------------------------------------------------
 // writeJSON
 // -----------------------------------------------------------------------------
-
 func TestWriteJSON_SetsStatusAndContentType(t *testing.T) {
 	rr := httptest.NewRecorder()
 	payload := map[string]string{"foo": "bar"}

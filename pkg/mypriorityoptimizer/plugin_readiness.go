@@ -1,6 +1,4 @@
-// pkg/mypriorityoptimizer/plugin_readiness.go
 // plugin_readiness.go
-
 package mypriorityoptimizer
 
 import (

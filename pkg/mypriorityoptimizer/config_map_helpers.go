@@ -1,5 +1,4 @@
 // config_map_helpers.go
-
 package mypriorityoptimizer
 
 import (
