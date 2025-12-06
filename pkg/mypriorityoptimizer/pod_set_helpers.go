@@ -8,43 +8,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// prunePending removes from `set` any pod that:
-//   - no longer exists,
-//   - has been recreated (UID changed),
-//   - is terminating (DeletionTimestamp != nil), or
-//   - is already bound (Spec.NodeName != "").
-//
-// It returns the number of entries removed.
-func (pl *SharedState) pruneSet(podSet *PodSet) int {
-	if podSet == nil || podSet.Size() == 0 {
-		return 0
-	}
-	snap := podSet.Snapshot()
-	podsLister := podsListerFor(pl)
-
-	removed := 0
-	for uid, key := range snap {
-		cur, err := podsLister.Pods(key.Namespace).Get(key.Name)
-		switch {
-		case apierrors.IsNotFound(err):
-			podSet.RemovePod(uid)
-			removed++
-		case err != nil:
-			// conservatively keep on lister error
-		default:
-			// drop if recreated, terminating, or not pending anymore
-			if string(cur.UID) != string(uid) || cur.DeletionTimestamp != nil || cur.Spec.NodeName != "" {
-				podSet.RemovePod(uid)
-				removed++
-			}
-		}
-	}
-	if removed > 0 {
-		klog.V(MyV).InfoS("pruned stale entries", "set", podSet.Name, "removed", removed)
-	}
-	return removed
-}
-
 // newPodSet creates a new PodSet.
 func newPodSet(name string) *PodSet { return &PodSet{Name: name, m: make(map[types.UID]PodKey)} }
 
@@ -54,6 +17,36 @@ func doesPodSetExist(podSet *PodSet) bool {
 		return false
 	}
 	return podSet.Size() > 0
+}
+
+// prunePending removes from `set` any pod that is no longer pending.
+// It returns the number of removed pods.
+func (pl *SharedState) pruneSet(podSet *PodSet) int {
+	if !doesPodSetExist(podSet) {
+		return 0
+	}
+	snap := podSet.Snapshot()
+	removed := 0
+	for uid, key := range snap {
+		cur, err := pl.getPodByName(key.Namespace, key.Name)
+		switch {
+		case apierrors.IsNotFound(err):
+			podSet.RemovePod(uid)
+			removed++
+		case err != nil:
+			// conservatively keep on lister error
+		default:
+			// drop if recreated, terminating, or not pending anymore
+			if !isSamePodUID(cur.UID, uid) || isPodDeleted(cur) || getPodAssignedNodeName(cur) != "" {
+				podSet.RemovePod(uid)
+				removed++
+			}
+		}
+	}
+	if removed > 0 {
+		klog.V(MyV).InfoS("pruned stale entries", "set", podSet.Name, "removed", removed)
+	}
+	return removed
 }
 
 // AddPod adds a pod to the set.

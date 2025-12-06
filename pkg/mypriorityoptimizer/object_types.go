@@ -19,3 +19,11 @@ type WorkloadKey struct {
 	// Name of the workload
 	Name string
 }
+
+// WorkloadStatus represents the status of a workload.
+//   - hasLive:    at least one live pod (not terminating) for this workload
+//   - hasPending: at least one live *pending* pod for this workload
+type wkStatus struct {
+	hasLive    bool
+	hasPending bool
+}

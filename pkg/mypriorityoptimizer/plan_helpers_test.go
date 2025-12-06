@@ -944,7 +944,7 @@ func TestMarkPlanStatusToConfigMap_UsesHook(t *testing.T) {
 		return true // tell implementation to skip real mutateRaw
 	}
 
-	pl.markPlanStatusToConfigMap(ctx, "cm-name", PlanStatusFailed)
+	pl.setPlanStatusInConfigMap(ctx, "cm-name", PlanStatusFailed)
 
 	if !called {
 		t.Fatalf("markPlanStatusHook not called")

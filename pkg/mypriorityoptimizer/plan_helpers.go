@@ -87,8 +87,8 @@ func makeNewPlacement(p *v1.Pod, fromNode, toNode string) NewPlacement {
 	}
 }
 
-// incWorkloadQuota increments the quota count for a workload/node pair.
-func incWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
+// increaseWorkloadQuota increments the quota count for a workload/node pair.
+func increaseWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
 	wkKey := wk.String()
 	if wq[wkKey] == nil {
 		wq[wkKey] = map[string]int32{}
@@ -139,23 +139,23 @@ func sortPodSetItemsByPriorityAndCreation(items []PodSetItem) {
 	})
 }
 
-// isPlacementUnscheduled returns true if the solver do not want pod to be placed
-func isPlacementUnscheduled(toNode string) bool {
+// isPlanPodUnscheduled returns true if the solver do not want pod to be placed
+func isPlanPodUnscheduled(toNode string) bool {
 	return toNode == ""
 }
 
-// isPlacementMove returns true if the pod is currently bound to a node
+// isPlanPodMove returns true if the pod is currently bound to a node
 // and the solver wants it on a different node.
-func isPlacementMove(fromNode, toNode string) bool {
+func isPlanPodMove(fromNode, toNode string) bool {
 	return fromNode != "" && fromNode != toNode
 }
 
-// isPlacementChanged returns true if the pod's placement is changing
-func isPlacementChanged(fromNode, toNode string) bool {
+// isPlanPodPlacementChanged returns true if the pod's placement is changing
+func isPlanPodPlacementChanged(fromNode, toNode string) bool {
 	return fromNode == "" || fromNode != toNode
 }
 
-func isPlacementPendingTo(fromNode, toNode string) bool {
+func isPlanPodNewlyScheduled(fromNode, toNode string) bool {
 	return fromNode == "" && toNode != ""
 }
 
@@ -225,7 +225,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 	// - placementByName (standalone + preemptor)
 	// - workloadQuotas (controller-owned, only when pending->node or node change)
 	for _, plm := range out.Placements {
-		if isPlacementUnscheduled(plm.ToNode) {
+		if isPlanPodUnscheduled(plm.ToNode) {
 			continue
 		}
 
@@ -238,7 +238,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 		np := makeNewPlacement(p, src, plm.ToNode)
 		newPlacements = append(newPlacements, np)
 
-		moved := isPlacementMove(src, plm.ToNode)
+		moved := isPlanPodMove(src, plm.ToNode)
 
 		// Always add preemptor to placementByName and set nominatedNode.
 		if preemptor != nil && isSamePodUID(plm.Pod.UID, preemptor.UID) {
@@ -248,13 +248,13 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 		} else if moved {
 			moves = append(moves, np)
 		}
-		if !isPlacementChanged(src, plm.ToNode) {
+		if !isPlanPodPlacementChanged(src, plm.ToNode) {
 			continue
 		}
 
 		// Controller-owned: go via WorkloadQuotas
 		if wk, owned := topWorkload(p); owned {
-			incWorkloadQuota(workloadQuotas, wk, plm.ToNode)
+			increaseWorkloadQuota(workloadQuotas, wk, plm.ToNode)
 		} else {
 			// Standalone pod: track directly by name.
 			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.ToNode
@@ -332,10 +332,8 @@ func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) erro
 	if evictTargetsHook != nil {
 		return evictTargetsHook(pl, ctx, targets)
 	}
-
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(EvictParallelism)
-
 	// Loop over targets and evict each in its own goroutine with timeout.
 	for _, pod := range targets {
 		g.Go(func() error {
@@ -500,7 +498,7 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 	// Build allow-set of UIDs for pending -> scheduled in this plan.
 	allow := make(map[types.UID]struct{}, len(plan.NewPlacements))
 	for _, np := range plan.NewPlacements {
-		if isPlacementPendingTo(np.FromNode, np.ToNode) {
+		if isPlanPodNewlyScheduled(np.FromNode, np.ToNode) {
 			allow[np.Pod.UID] = struct{}{}
 		}
 	}
@@ -555,16 +553,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 	}
 
 	podsLister := pl.podsLister()
-
-	// Pre-scan all pods once to derive workload status:
-	//   - hasLive:    at least one live pod (not terminating) for this workload
-	//   - hasPending: at least one live *pending* pod for this workload
-	type wkStatus struct {
-		hasLive    bool
-		hasPending bool
-	}
 	workloadStatus := make(map[string]wkStatus)
-
 	allPods, err := podsLister.List(labels.Everything())
 	if err != nil {
 		return false, err
@@ -614,12 +603,13 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 			)
 			continue
 		}
-		if isPlacementChanged(po.Spec.NodeName, wantNode) {
+		haveNode := getPodAssignedNodeName(po)
+		if isPlanPodPlacementChanged(haveNode, wantNode) {
 			// Pod exists and is running on a different node than planned -> not complete.
 			klog.V(MyV).InfoS("plan incomplete: pinned pod mismatch",
 				"pod", nsname,
 				"expectedNode", wantNode,
-				"haveNode", po.Spec.NodeName,
+				"haveNode", haveNode,
 			)
 			return false, nil
 		}
@@ -699,7 +689,7 @@ func (pl *SharedState) onPlanCompleted(status PlanStatus) bool {
 	klog.InfoS(InfoDeactivatingActivePlan, "planID", ap.ID)
 
 	// Mark the plan statuses in ConfigMaps
-	pl.markPlanStatusToConfigMap(context.Background(), ap.ID, status)
+	pl.setPlanStatusInConfigMap(context.Background(), ap.ID, status)
 
 	return true
 }
@@ -729,7 +719,7 @@ func (pl *SharedState) isPodAllowedByPlan(pod *v1.Pod) bool {
 		}
 		// If a node is already selected (rare at PreEnqueue, possible later),
 		// require remaining quota on that specific node.
-		if node := pod.Spec.NodeName; node != "" {
+		if node := getPodAssignedNodeName(pod); node != "" {
 			if ctr, exists := perNode[node]; exists && ctr.Load() > 0 {
 				return true
 			}
@@ -855,7 +845,7 @@ func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, s
 //   - The plan CM is put into the requested status (unless already final).
 //   - The exported stats CM only updates the last run if it isn't already final.
 //     (Never overwrite Failed with Completed.)
-func (pl *SharedState) markPlanStatusToConfigMap(ctx context.Context, planCM string, status PlanStatus) {
+func (pl *SharedState) setPlanStatusInConfigMap(ctx context.Context, planCM string, status PlanStatus) {
 	if markPlanStatusToConfigMapHook != nil && markPlanStatusToConfigMapHook(pl, ctx, planCM, status) {
 		return
 	}

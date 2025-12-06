@@ -11,6 +11,55 @@ import (
 )
 
 // -----------------------------------------------------------------------------
+// newPodSet
+// -----------------------------------------------------------------------------
+
+func TestNewPodSet_Empty(t *testing.T) {
+	ps := newPodSet("blocked")
+
+	if ps == nil {
+		t.Fatalf("newPodSet returned nil")
+	}
+	if ps.Name != "blocked" {
+		t.Fatalf("newPodSet name = %q, want %q", ps.Name, "blocked")
+	}
+
+	if got := ps.Size(); got != 0 {
+		t.Fatalf("newPodSet.Size() = %d, want 0", got)
+	}
+
+	snap := ps.Snapshot()
+	if len(snap) != 0 {
+		t.Fatalf("newPodSet.Snapshot() length = %d, want 0", len(snap))
+	}
+}
+
+// -----------------------------------------------------------------------------
+// doesPodSetExist
+// -----------------------------------------------------------------------------
+
+func TestDoesPodSetExist(t *testing.T) {
+	// nil set → false
+	if got := doesPodSetExist(nil); got {
+		t.Fatalf("doesPodSetExist(nil) = %v, want false", got)
+	}
+
+	// empty set → false
+	empty := newPodSet("empty")
+	if got := doesPodSetExist(empty); got {
+		t.Fatalf("doesPodSetExist(empty) = %v, want false", got)
+	}
+
+	// set with one pod → true
+	ps := newPodSet("blocked")
+	pod := newPod("ns1", "pod1", "uid-1", "", 5)
+	ps.AddPod(pod)
+	if got := doesPodSetExist(ps); !got {
+		t.Fatalf("doesPodSetExist(non-empty) = %v, want true", got)
+	}
+}
+
+// -----------------------------------------------------------------------------
 // pruneSet
 // -----------------------------------------------------------------------------
 
@@ -100,55 +149,6 @@ func TestPruneSet_EmptyOrNil(t *testing.T) {
 	ps := newPodSet("empty")
 	if removed := pl.pruneSet(ps); removed != 0 {
 		t.Fatalf("pruneSet(empty) removed %d, want 0", removed)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// newPodSet
-// -----------------------------------------------------------------------------
-
-func TestNewPodSet_Empty(t *testing.T) {
-	ps := newPodSet("blocked")
-
-	if ps == nil {
-		t.Fatalf("newPodSet returned nil")
-	}
-	if ps.Name != "blocked" {
-		t.Fatalf("newPodSet name = %q, want %q", ps.Name, "blocked")
-	}
-
-	if got := ps.Size(); got != 0 {
-		t.Fatalf("newPodSet.Size() = %d, want 0", got)
-	}
-
-	snap := ps.Snapshot()
-	if len(snap) != 0 {
-		t.Fatalf("newPodSet.Snapshot() length = %d, want 0", len(snap))
-	}
-}
-
-// -----------------------------------------------------------------------------
-// doesPodSetExist
-// -----------------------------------------------------------------------------
-
-func TestDoesPodSetExist(t *testing.T) {
-	// nil set → false
-	if got := doesPodSetExist(nil); got {
-		t.Fatalf("doesPodSetExist(nil) = %v, want false", got)
-	}
-
-	// empty set → false
-	empty := newPodSet("empty")
-	if got := doesPodSetExist(empty); got {
-		t.Fatalf("doesPodSetExist(empty) = %v, want false", got)
-	}
-
-	// set with one pod → true
-	ps := newPodSet("blocked")
-	pod := newPod("ns1", "pod1", "uid-1", "", 5)
-	ps.AddPod(pod)
-	if got := doesPodSetExist(ps); !got {
-		t.Fatalf("doesPodSetExist(non-empty) = %v, want true", got)
 	}
 }
 
