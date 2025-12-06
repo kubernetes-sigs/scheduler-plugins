@@ -14,6 +14,7 @@ import (
 // -----------------------------------------------------------------------------
 // HTTP response structs
 // -----------------------------------------------------------------------------
+
 type HttpResponse struct {
 	Status        string         `json:"status"`
 	DurationMs    int64          `json:"duration_ms"`
@@ -26,16 +27,23 @@ type HttpResponse struct {
 }
 
 // -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// -----------------------------------------------------------------------------
 // Test hooks
 // -----------------------------------------------------------------------------
 
-// Default to the real methods; tests override these to avoid running the full
-// scheduling flow and to control outputs.
 var (
 	getPodsForHTTP = func(pl *SharedState) ([]*v1.Pod, error) {
 		return pl.getPods()
 	}
-
 	runFlowForHTTP = func(pl *SharedState, ctx context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
 		return pl.runOptimizationFlow(ctx, nil)
 	}
@@ -59,7 +67,7 @@ func (pl *SharedState) startHTTPServer(ctx context.Context, addr string) {
 
 	klog.InfoS("HTTP server started", "addr", addr)
 
-	// Shutdown on context cancel.
+	// Shutdown on context cancel
 	go func() {
 		<-ctx.Done()
 		shCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -67,7 +75,6 @@ func (pl *SharedState) startHTTPServer(ctx context.Context, addr string) {
 		_ = server.Shutdown(shCtx)
 	}()
 
-	// Intentionally log errors; do not return them (plugin must stay alive).
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		klog.ErrorS(err, "HTTP server exited unexpectedly")
 	}
@@ -77,15 +84,17 @@ func (pl *SharedState) startHTTPServer(ctx context.Context, addr string) {
 // Handlers
 // -----------------------------------------------------------------------------
 
+// healthz
 func (pl *SharedState) healthzHandler(w http.ResponseWriter, r *http.Request) {
 	if !pl.PluginReady.Load() {
-		http.Error(w, "warming", http.StatusServiceUnavailable)
+		http.Error(w, "plugin not ready", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
 
+// active
 func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -97,6 +106,7 @@ func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// solve
 func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -108,7 +118,7 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 		Active: pl.Active.Load(),
 	}
 
-	// Not ready yet → early exit
+	// Not ready yet -> early exit
 	if !pl.PluginReady.Load() {
 		resp.Status = "not-ready"
 		resp.DurationMs = time.Since(start).Milliseconds()
@@ -116,7 +126,7 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Count pending pods *before* running any solvers.
+	// Count pending pods before running any solvers.
 	pods, _ := getPodsForHTTP(pl)
 	resp.PendingBefore = countPendingPods(pods)
 
@@ -141,14 +151,4 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// -----------------------------------------------------------------------------
-// Helper
-// -----------------------------------------------------------------------------
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
 }
