@@ -216,14 +216,12 @@ func (pl *SharedState) getPod(uid types.UID, ns, name string) *v1.Pod {
 
 // getPodByName returns the pod by namespace and name.
 func (pl *SharedState) getPodByName(ns, name string) (*v1.Pod, error) {
-	podsLister := pl.podsLister()
-	return podsLister.Pods(ns).Get(name)
+	return pl.podsLister().Pods(ns).Get(name)
 }
 
 // getPodByUID returns the pod by UID by scanning all pods.
 func (pl *SharedState) getPodByUID(uid types.UID) (*v1.Pod, error) {
-	podsLister := pl.podsLister()
-	pods, err := podsLister.List(labels.Everything())
+	pods, err := pl.podsLister().List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}

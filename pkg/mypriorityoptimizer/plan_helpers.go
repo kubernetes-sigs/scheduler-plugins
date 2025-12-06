@@ -14,7 +14,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -386,7 +385,6 @@ func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 	if len(pods) == 0 {
 		return nil
 	}
-
 	// Use the shared Pod identity type (UID, Namespace, Name) as the key.
 	remaining := make(map[Pod]struct{}, len(pods))
 	for _, p := range pods {
@@ -395,17 +393,13 @@ func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 		}
 		remaining[toPlanPod(p)] = struct{}{}
 	}
-
-	podsLister := pl.podsLister()
-
 	// Poll until all pods are gone or context is done.
 	return wait.PollUntilContextCancel(ctx, WaitPodsGoneInterval, true, func(ctx context.Context) (bool, error) {
 		if len(remaining) == 0 {
 			return true, nil
 		}
-
 		for key := range remaining {
-			p, err := podsLister.Pods(key.Namespace).Get(key.Name)
+			p, err := pl.getPodByName(key.Namespace, key.Name)
 			switch {
 			case apierrors.IsNotFound(err):
 				// Pod gone from the API/lister.
@@ -545,16 +539,13 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 	if isPlanCompletedHook != nil {
 		return isPlanCompletedHook(pl, ap)
 	}
-
 	if ap == nil {
 		// Plan got torn down concurrently; treat as "not completed yet" (retry later).
 		klog.V(MyV).InfoS("plan completion check skipped: no active plan doc")
 		return false, nil
 	}
-
-	podsLister := pl.podsLister()
 	workloadStatus := make(map[string]wkStatus)
-	allPods, err := podsLister.List(labels.Everything())
+	allPods, err := pl.getPods()
 	if err != nil {
 		return false, err
 	}
@@ -581,7 +572,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		po, err := podsLister.Pods(ns).Get(name)
+		po, err := pl.getPodByName(ns, name)
 		if apierrors.IsNotFound(err) {
 			// The planned pod is gone (namespace/pod deleted or workload scaled down).
 			// For completion purposes, we treat this as satisfied.
