@@ -575,6 +575,218 @@ func TestIsNodeUsable(t *testing.T) {
 
 //
 // -----------------------------------------------------------------------------
+// getPodByName / getPodByUID / getPod
+// -----------------------------------------------------------------------------
+
+func TestGetPodByName_Success(t *testing.T) {
+	pl := &SharedState{}
+	p := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p",
+			Namespace: "ns",
+			UID:       types.UID("uid-1"),
+		},
+	}
+	store := map[string]map[string]*v1.Pod{
+		"ns": {"p": p},
+	}
+
+	withPodLister(&fakePodLister{store: store}, func() {
+		got, err := pl.getPodByName("ns", "p")
+		if err != nil {
+			t.Fatalf("getPodByName() unexpected error: %v", err)
+		}
+		if got != p {
+			t.Fatalf("getPodByName() = %#v, want %#v", got, p)
+		}
+	})
+}
+
+func TestGetPodByName_Error(t *testing.T) {
+	pl := &SharedState{}
+	sentinel := errors.New("boom")
+
+	withPodLister(&fakePodLister{
+		errPerKey: map[string]error{"ns/p": sentinel},
+	}, func() {
+		got, err := pl.getPodByName("ns", "p")
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("getPodByName() error = %v, want %v", err, sentinel)
+		}
+		if got != nil {
+			t.Fatalf("getPodByName() pod = %#v, want nil on error", got)
+		}
+	})
+}
+
+func TestGetPodByUID_Success(t *testing.T) {
+	pl := &SharedState{}
+
+	p1 := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p1",
+			Namespace: "ns1",
+			UID:       types.UID("u1"),
+		},
+	}
+	p2 := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p2",
+			Namespace: "ns2",
+			UID:       types.UID("u2"),
+		},
+	}
+	store := map[string]map[string]*v1.Pod{
+		"ns1": {"p1": p1},
+		"ns2": {"p2": p2},
+	}
+
+	withPodLister(&fakePodLister{store: store}, func() {
+		got, err := pl.getPodByUID(types.UID("u2"))
+		if err != nil {
+			t.Fatalf("getPodByUID() unexpected error: %v", err)
+		}
+		if got == nil || got.Name != "p2" || got.Namespace != "ns2" {
+			t.Fatalf("getPodByUID() = %#v, want ns2/p2", got)
+		}
+	})
+}
+
+func TestGetPodByUID_NotFound(t *testing.T) {
+	pl := &SharedState{}
+	p := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p",
+			Namespace: "ns",
+			UID:       types.UID("u1"),
+		},
+	}
+	store := map[string]map[string]*v1.Pod{
+		"ns": {"p": p},
+	}
+
+	withPodLister(&fakePodLister{store: store}, func() {
+		got, err := pl.getPodByUID(types.UID("does-not-exist"))
+		if err == nil {
+			t.Fatalf("getPodByUID() expected error for missing UID, got nil")
+		}
+		if got != nil {
+			t.Fatalf("getPodByUID() pod = %#v, want nil when not found", got)
+		}
+	})
+}
+
+func TestGetPodByUID_Error(t *testing.T) {
+	pl := &SharedState{}
+	sentinel := errors.New("boom")
+
+	withPodLister(&fakePodLister{err: sentinel}, func() {
+		got, err := pl.getPodByUID(types.UID("u1"))
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("getPodByUID() error = %v, want %v", err, sentinel)
+		}
+		if got != nil {
+			t.Fatalf("getPodByUID() pod = %#v, want nil on error", got)
+		}
+	})
+}
+
+func TestGetPod_FastPathByName(t *testing.T) {
+	pl := &SharedState{}
+	uid := types.UID("uid-1")
+	p := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p",
+			Namespace: "ns",
+			UID:       uid,
+		},
+	}
+	store := map[string]map[string]*v1.Pod{
+		"ns": {"p": p},
+	}
+
+	withPodLister(&fakePodLister{store: store}, func() {
+		got := pl.getPod(uid, "ns", "p")
+		if got != p {
+			t.Fatalf("getPod() = %#v, want %#v (fast path by name)", got, p)
+		}
+	})
+}
+
+func TestGetPod_FallbackToUIDOnNameMismatch(t *testing.T) {
+	pl := &SharedState{}
+	targetUID := types.UID("uid-target")
+
+	pWrong := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p",
+			Namespace: "ns",
+			UID:       types.UID("uid-old"),
+		},
+	}
+	pCorrect := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other",
+			Namespace: "other-ns",
+			UID:       targetUID,
+		},
+	}
+
+	store := map[string]map[string]*v1.Pod{
+		"ns":       {"p": pWrong},
+		"other-ns": {"other": pCorrect},
+	}
+
+	withPodLister(&fakePodLister{store: store}, func() {
+		got := pl.getPod(targetUID, "ns", "p")
+		if got != pCorrect {
+			t.Fatalf("getPod() = %#v, want fallback to %#v", got, pCorrect)
+		}
+	})
+}
+
+func TestGetPod_FallbackToUIDOnGetError(t *testing.T) {
+	pl := &SharedState{}
+	targetUID := types.UID("uid-target")
+
+	pCorrect := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p",
+			Namespace: "ns",
+			UID:       targetUID,
+		},
+	}
+	store := map[string]map[string]*v1.Pod{
+		"ns": {"p": pCorrect},
+	}
+
+	sentinel := errors.New("boom")
+
+	withPodLister(&fakePodLister{
+		store:     store,
+		errPerKey: map[string]error{"ns/p": sentinel}, // Get(ns,p) fails, List() still works
+	}, func() {
+		got := pl.getPod(targetUID, "ns", "p")
+		if got != pCorrect {
+			t.Fatalf("getPod() fallback to UID = %#v, want %#v", got, pCorrect)
+		}
+	})
+}
+
+func TestGetPod_NotFound(t *testing.T) {
+	pl := &SharedState{}
+	store := map[string]map[string]*v1.Pod{} // empty
+
+	withPodLister(&fakePodLister{store: store}, func() {
+		got := pl.getPod(types.UID("does-not-exist"), "ns", "p")
+		if got != nil {
+			t.Fatalf("getPod() = %#v, want nil when pod not found", got)
+		}
+	})
+}
+
+//
+// -----------------------------------------------------------------------------
 // Pod resource helpers: getPodContainers / container requests / pod requests / priority
 // -----------------------------------------------------------------------------
 
@@ -722,6 +934,27 @@ func TestGetPodAssignedNodeName(t *testing.T) {
 // isPodDeleted / isPodAssigned / podsByUID
 // -----------------------------------------------------------------------------
 
+func TestIsSamePodUID(t *testing.T) {
+	u1 := types.UID("u1")
+	u2 := types.UID("u2")
+
+	if !isSamePodUID(u1, u1) {
+		t.Fatalf("isSamePodUID(u1,u1) = false, want true")
+	}
+	if isSamePodUID(u1, u2) {
+		t.Fatalf("isSamePodUID(u1,u2) = true, want false")
+	}
+	if isSamePodUID("", u2) {
+		t.Fatalf("isSamePodUID(\"\",u2) = true, want false")
+	}
+	if isSamePodUID(u1, "") {
+		t.Fatalf("isSamePodUID(u1,\"\") = true, want false")
+	}
+	if isSamePodUID("", "") {
+		t.Fatalf("isSamePodUID(\"\",\"\") = true, want false")
+	}
+}
+
 func TestIsPodDeleted(t *testing.T) {
 	if !isPodDeleted(nil) {
 		t.Fatalf("isPodDeleted(nil) = false, want true")
@@ -748,6 +981,71 @@ func TestIsPodAssigned(t *testing.T) {
 	p.Spec.NodeName = "n1"
 	if !isPodAssigned(p) {
 		t.Fatalf("isPodAssigned(p with NodeName) = false, want true")
+	}
+}
+
+func TestIsPodAssignedAndAlive(t *testing.T) {
+	now := metav1.NewTime(time.Now())
+
+	tests := []struct {
+		name string
+		pod  *v1.Pod
+		want bool
+	}{
+		{
+			name: "nil pod",
+			pod:  nil,
+			want: false,
+		},
+		{
+			name: "pending and alive (unassigned)",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pending",
+					Namespace: "ns",
+				},
+				Spec: v1.PodSpec{
+					NodeName: "",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "assigned and alive",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "running",
+					Namespace: "ns",
+				},
+				Spec: v1.PodSpec{
+					NodeName: "node-1",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "assigned but terminating",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "terminating",
+					Namespace:         "ns",
+					DeletionTimestamp: &now,
+				},
+				Spec: v1.PodSpec{
+					NodeName: "node-1",
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isPodAssignedAndAlive(tt.pod)
+			if got != tt.want {
+				t.Fatalf("isPodAssignedAndAlive() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -973,29 +1271,6 @@ func TestClusterFingerprint_SortingBranches(t *testing.T) {
 	fpB := clusterFingerprint([]*v1.Node{n1, n2}, []*v1.Pod{p1, p3, p2})
 	if fpA != fpB {
 		t.Fatalf("clusterFingerprint not deterministic with multiple pods across nodes; fpA=%q fpB=%q", fpA, fpB)
-	}
-}
-
-//
-// -----------------------------------------------------------------------------
-// isPodPreemptor
-// -----------------------------------------------------------------------------
-
-func TestIsPodPreemptor(t *testing.T) {
-	u1 := types.UID("u1")
-	u2 := types.UID("u2")
-
-	if !isPodPreemptor(u1, u1) {
-		t.Fatalf("expected isPodPreemptor(u1,u1) to be true")
-	}
-	if isPodPreemptor(u1, u2) {
-		t.Fatalf("expected isPodPreemptor(u1,u2) to be false")
-	}
-	if isPodPreemptor("", u2) {
-		t.Fatalf("expected isPodPreemptor('',u2) to be false")
-	}
-	if isPodPreemptor(u1, "") {
-		t.Fatalf("expected isPodPreemptor(u1,'') to be false")
 	}
 }
 

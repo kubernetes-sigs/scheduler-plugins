@@ -128,6 +128,31 @@ func TestNewPodSet_Empty(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// doesPodSetExist
+// -----------------------------------------------------------------------------
+
+func TestDoesPodSetExist(t *testing.T) {
+	// nil set → false
+	if got := doesPodSetExist(nil); got {
+		t.Fatalf("doesPodSetExist(nil) = %v, want false", got)
+	}
+
+	// empty set → false
+	empty := newPodSet("empty")
+	if got := doesPodSetExist(empty); got {
+		t.Fatalf("doesPodSetExist(empty) = %v, want false", got)
+	}
+
+	// set with one pod → true
+	ps := newPodSet("blocked")
+	pod := newPod("ns1", "pod1", "uid-1", "", 5)
+	ps.AddPod(pod)
+	if got := doesPodSetExist(ps); !got {
+		t.Fatalf("doesPodSetExist(non-empty) = %v, want true", got)
+	}
+}
+
+// -----------------------------------------------------------------------------
 // PodSet AddPod / RemovePod / Size / Snapshot
 // -----------------------------------------------------------------------------
 

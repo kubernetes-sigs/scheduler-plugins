@@ -38,7 +38,7 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 			return
 		}
 		seen[uid] = true
-		if pod := pl.resolvePod(uid, ns, name); pod != nil {
+		if pod := pl.getPod(uid, ns, name); pod != nil {
 			targets = append(targets, pod)
 		}
 	}

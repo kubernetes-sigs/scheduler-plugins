@@ -48,6 +48,14 @@ func (pl *SharedState) pruneSet(podSet *PodSet) int {
 // newPodSet creates a new PodSet.
 func newPodSet(name string) *PodSet { return &PodSet{Name: name, m: make(map[types.UID]PodKey)} }
 
+// doesPodSetExist returns true if the pod set is non-nil and has at least one pod.
+func doesPodSetExist(podSet *PodSet) bool {
+	if podSet == nil {
+		return false
+	}
+	return podSet.Size() > 0
+}
+
 // AddPod adds a pod to the set.
 // Use mutex to protect the map such that only one goroutine can modify the map at a time.
 func (s *PodSet) AddPod(p *v1.Pod) {

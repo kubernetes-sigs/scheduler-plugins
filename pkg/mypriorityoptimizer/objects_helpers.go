@@ -197,6 +197,44 @@ func isNodeUsable(n *v1.Node) bool {
 		isNodeAllocatable(n)
 }
 
+// getPod attempts to find the pod by matching UID and name,
+// using getPodByName first, then falling back to getPodByUID.
+// Returns nil if the pod cannot be found or errors occur.
+func (pl *SharedState) getPod(uid types.UID, ns, name string) *v1.Pod {
+	// Fast path: lookup by namespace/name and verify UID.
+	if p, err := pl.getPodByName(ns, name); err == nil && p != nil && isSamePodUID(p.UID, uid) {
+		return p
+	}
+
+	// Fallback: lookup by UID across all pods (handles renames, stale name → UID).
+	if p, err := pl.getPodByUID(uid); err == nil && p != nil {
+		return p
+	}
+
+	return nil
+}
+
+// getPodByName returns the pod by namespace and name.
+func (pl *SharedState) getPodByName(ns, name string) (*v1.Pod, error) {
+	podsLister := pl.podsLister()
+	return podsLister.Pods(ns).Get(name)
+}
+
+// getPodByUID returns the pod by UID by scanning all pods.
+func (pl *SharedState) getPodByUID(uid types.UID) (*v1.Pod, error) {
+	podsLister := pl.podsLister()
+	pods, err := podsLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range pods {
+		if isSamePodUID(p.UID, uid) {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("pod with UID %s not found", uid)
+}
+
 // getPodContainers returns all containers of a pod
 func getPodContainers(p *v1.Pod) []v1.Container {
 	return p.Spec.Containers
@@ -245,6 +283,11 @@ func getPodAssignedNodeName(p *v1.Pod) string {
 	return p.Spec.NodeName
 }
 
+// isSamePodUID
+func isSamePodUID(pod1, pod2 types.UID) bool {
+	return string(pod1) != "" && string(pod2) != "" && pod1 == pod2
+}
+
 // isPodDeleted returns true if the pod has a deletion timestamp set.
 func isPodDeleted(p *v1.Pod) bool {
 	return p == nil || p.DeletionTimestamp != nil
@@ -253,6 +296,12 @@ func isPodDeleted(p *v1.Pod) bool {
 // isPodAssigned returns true if the pod is assigned to a node.
 func isPodAssigned(p *v1.Pod) bool {
 	return p != nil && getPodAssignedNodeName(p) != ""
+}
+
+// isPodAssignedAndAlive returns true if the pod is non-nil, not terminating,
+// and currently bound to a node. This is the set of pods we can count as "running now".
+func isPodAssignedAndAlive(p *v1.Pod) bool {
+	return !isPodDeleted(p) && isPodAssigned(p)
 }
 
 // isPodProtected returns true if the pod e.g. is a system pod and should not be evicted.
@@ -313,24 +362,4 @@ func topWorkload(p *v1.Pod) (WorkloadKey, bool) {
 		}
 	}
 	return WorkloadKey{}, false
-}
-
-// WorkloadKind represents the kind of workload.
-type WorkloadKind int
-
-const (
-	wkReplicaSet WorkloadKind = iota
-	wkStatefulSet
-	wkDaemonSet
-	wkJob
-)
-
-// WorkloadKey is a key to identify a workload.
-type WorkloadKey struct {
-	// What kind of workload
-	Kind WorkloadKind
-	// Namespace of the workload
-	Namespace string
-	// Name of the workload
-	Name string
 }

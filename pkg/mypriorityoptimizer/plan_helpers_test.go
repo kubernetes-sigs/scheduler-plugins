@@ -1,4 +1,3 @@
-// pkg/mypriorityoptimizer/plan_helpers_test.go
 // plan_helpers_test.go
 package mypriorityoptimizer
 
@@ -310,7 +309,7 @@ func TestSetActivePlan_ReplacesOldAndInitializesQuotas(t *testing.T) {
 // ----------------------------------------------------------------------
 
 func TestBuildWorkloadQuotasAtomics_NilInput(t *testing.T) {
-	got := buildWorkloadQuotasAtomics(nil)
+	got := buildWorkloadQuotas(nil)
 	if got != nil {
 		t.Fatalf("buildWorkloadQuotasAtomics(nil) = %#v, want nil", got)
 	}
@@ -325,7 +324,7 @@ func TestBuildWorkloadQuotasAtomics_PositiveAndNonPositiveCounts(t *testing.T) {
 		},
 	}
 
-	got := buildWorkloadQuotasAtomics(wk)
+	got := buildWorkloadQuotas(wk)
 	if got == nil {
 		t.Fatalf("buildWorkloadQuotasAtomics(...) = nil, want non-nil")
 	}
@@ -773,51 +772,6 @@ func TestActivatePlannedPending_UsesHookWithMatchingPending(t *testing.T) {
 	key := mergeNsName("ns", "p-allowed")
 	if got[key] != pending {
 		t.Fatalf("toActivate[%q] = %#v, want %#v", key, got[key], pending)
-	}
-}
-
-// ----------------------------------------------------------------------
-// resolvePod
-// ---------------------------------------------------------------------
-
-func TestResolvePod_UsesHook(t *testing.T) {
-	pl := &SharedState{}
-
-	var (
-		called  bool
-		gotUID  types.UID
-		gotNS   string
-		gotName string
-	)
-
-	uid := types.UID("u1")
-
-	orig := resolvePodHook
-	defer func() { resolvePodHook = orig }()
-
-	expect := newPod("ns", "p", string(uid), "", 1)
-
-	resolvePodHook = func(hpl *SharedState, huid types.UID, ns, name string) *v1.Pod {
-		if hpl != pl {
-			t.Fatalf("hook pl = %p, want %p", hpl, pl)
-		}
-		called = true
-		gotUID = huid
-		gotNS = ns
-		gotName = name
-		return expect
-	}
-
-	got := pl.resolvePod(uid, "ns", "p")
-	if !called {
-		t.Fatalf("resolvePodHook not called")
-	}
-	if gotUID != uid || gotNS != "ns" || gotName != "p" {
-		t.Fatalf("hook args = (%q,%q,%q), want (%q,%q,%q)",
-			gotUID, gotNS, gotName, uid, "ns", "p")
-	}
-	if got != expect {
-		t.Fatalf("resolvePod() = %#v, want %#v", got, expect)
 	}
 }
 
