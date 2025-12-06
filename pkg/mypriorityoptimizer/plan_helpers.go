@@ -771,29 +771,28 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 	totalPrePlan, pendingScheduled = 0, 0
 
 	pUID := podsByUID(pods)
+
+	// Count currently running (assigned + alive) pods
 	for _, p := range pods {
-		if p == nil || p.DeletionTimestamp != nil {
-			continue
-		}
-		if getPodAssignedNodeName(p) != "" {
+		if isPodAssignedAndAlive(p) {
 			totalPrePlan++
 		}
 	}
 
-	// Count evicted
+	// Count evicted running pods
 	evicted := 0
 	for _, e := range out.Evictions {
-		if p := pUID[e.Pod.UID]; p != nil && !isPodDeleted(p) && getPodAssignedNodeName(p) != "" {
+		if p := pUID[e.Pod.UID]; isPodAssignedAndAlive(p) {
 			evicted++
 		}
 	}
 
-	// Count pending that will be scheduled
+	// Count pending pods that will be scheduled by this plan
 	for _, plm := range out.Placements {
-		if plm.ToNode == "" {
+		if isPlanPodUnscheduled(plm.ToNode) {
 			continue
 		}
-		if p := pUID[plm.Pod.UID]; p != nil && !isPodDeleted(p) && getPodAssignedNodeName(p) == "" {
+		if p := pUID[plm.Pod.UID]; p != nil && !isPodDeleted(p) && !isPodAssigned(p) {
 			pendingScheduled++
 		}
 	}
