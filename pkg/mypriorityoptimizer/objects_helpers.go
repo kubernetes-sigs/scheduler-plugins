@@ -4,9 +4,6 @@ package mypriorityoptimizer
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
-	"sort"
-	"strconv"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -263,108 +260,6 @@ func podsByUID(pods []*v1.Pod) map[types.UID]*v1.Pod {
 		m[p.UID] = p
 	}
 	return m
-}
-
-// clusterFingerprint builds a stable hash of the "cluster state" that matters
-// for the solver baseline:
-//
-//   - all usable nodes (name + allocatable CPU/MEM)
-//   - all RUNNING (non-terminating) pods bound to usable nodes
-//     (UID + node + CPU/MEM + priority)
-//
-// Pending pods are explicitly *not* included here, since we track them via the
-// pending UID set separately. We only use this to decide whether the cluster
-// is "the same" baseline for a previously-solved pending set.
-//
-// The fingerprint is cheap to compute for small clusters and stable across
-// map-iteration nondeterminism thanks to sorting.
-func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
-	h := fnv.New64a()
-
-	// Filter usable nodes and sort them by name for determinism.
-	usable := make([]*v1.Node, 0, len(nodes))
-	for _, n := range nodes {
-		if n == nil {
-			continue
-		}
-		if isNodeUsable(n) {
-			usable = append(usable, n)
-		}
-	}
-	sort.Slice(usable, func(i, j int) bool {
-		return usable[i].Name < usable[j].Name
-	})
-
-	// Node capacities.
-	for _, n := range usable {
-		cpu := getNodeCPUAllocatable(n)
-		mem := getNodeMemoryAllocatable(n)
-		_, _ = h.Write([]byte("N:"))
-		_, _ = h.Write([]byte(n.Name))
-		_, _ = h.Write([]byte(":"))
-		_, _ = h.Write([]byte(strconv.FormatInt(cpu, 10)))
-		_, _ = h.Write([]byte("/"))
-		_, _ = h.Write([]byte(strconv.FormatInt(mem, 10)))
-		_, _ = h.Write([]byte(";"))
-	}
-
-	usableNames := make(map[string]struct{}, len(usable))
-	for _, n := range usable {
-		usableNames[n.Name] = struct{}{}
-	}
-
-	// Collect running pods on usable nodes and sort (node, UID) for determinism.
-	type podKey struct {
-		node string
-		uid  types.UID
-	}
-	keys := make([]podKey, 0, len(pods))
-	for _, p := range pods {
-		if isPodDeleted(p) || !isPodAssigned(p) {
-			continue
-		}
-		if _, ok := usableNames[p.Spec.NodeName]; !ok {
-			continue
-		}
-		keys = append(keys, podKey{node: p.Spec.NodeName, uid: p.UID})
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].node != keys[j].node {
-			return keys[i].node < keys[j].node
-		}
-		return keys[i].uid < keys[j].uid
-	})
-
-	byUID := podsByUID(pods)
-
-	for _, k := range keys {
-		p := byUID[k.uid]
-		if p == nil {
-			continue
-		}
-		cpu := getPodCPURequest(p)
-		mem := getPodMemoryRequest(p)
-		prio := getPodPriority(p)
-
-		_, _ = h.Write([]byte("P:"))
-		_, _ = h.Write([]byte(string(p.UID)))
-		_, _ = h.Write([]byte("@"))
-		_, _ = h.Write([]byte(p.Spec.NodeName))
-		_, _ = h.Write([]byte(":"))
-		_, _ = h.Write([]byte(strconv.FormatInt(cpu, 10)))
-		_, _ = h.Write([]byte("/"))
-		_, _ = h.Write([]byte(strconv.FormatInt(mem, 10)))
-		_, _ = h.Write([]byte("#"))
-		_, _ = h.Write([]byte(strconv.Itoa(int(prio))))
-		_, _ = h.Write([]byte(";"))
-	}
-
-	return fmt.Sprintf("%x", h.Sum64())
-}
-
-// isPodPreemptor returns true if the preemptorUID matches the other podUID.
-func isPodPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
-	return string(PodUID) != "" && string(preemptorUID) != "" && preemptorUID == PodUID
 }
 
 // WorkloadKind represents the type of workload.

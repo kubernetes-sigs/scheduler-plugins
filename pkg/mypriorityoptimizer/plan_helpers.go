@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sort"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -334,6 +336,79 @@ func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 	})
 }
 
+// activatePods performs the actual framework.Handle.Activate call.
+// In tests we override this to capture which pods would be activated.
+var activatePods = func(pl *SharedState, toAct map[string]*v1.Pod) {
+	pl.Handle.Activate(klog.Background(), toAct)
+}
+
+// activateBlockedPods activates up to 'max' pods from the blocked set; clear only the ones activated.
+// It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
+// if max <= 0, all pods are activated.
+func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max int) (tried []types.UID) {
+	// Prune stale entries first
+	_ = pl.pruneSet(podSet)
+
+	// If no blocked pods, nothing to do
+	if podSet == nil || podSet.Size() == 0 {
+		return
+	}
+
+	// Snapshot and resolve current Pod objects
+	blockedPods := podSet.Snapshot()
+	items := make([]PodSetItem, 0, len(blockedPods))
+	// Get current Pod objects so that we don't return stale/deleted ones.
+	podsLister := podsListerFor(pl)
+	for _, k := range blockedPods {
+		if p, err := podsLister.Pods(k.Namespace).Get(k.Name); err == nil && p != nil {
+			items = append(items, PodSetItem{p: p, key: k})
+		}
+	}
+	if len(items) == 0 {
+		return
+	}
+
+	// Sort by priority, then creation timestamp (older first), then name
+	sort.Slice(items, func(i, j int) bool {
+		pi := getPodPriority(items[i].p)
+		pj := getPodPriority(items[j].p)
+		if pi != pj {
+			return pi > pj
+		}
+		ti := items[i].p.GetCreationTimestamp().Time
+		tj := items[j].p.GetCreationTimestamp().Time
+		if ti.IsZero() || tj.IsZero() {
+			return items[i].p.GetName() < items[j].p.GetName()
+		}
+		return ti.Before(tj)
+	})
+
+	// Limit the number of pods to activate
+	limit := len(items)
+	if max > 0 && max < limit {
+		limit = max
+	}
+
+	// Build activation map and record "tried" UIDs
+	toAct := make(map[string]*v1.Pod, limit)
+	for _, it := range items[:limit] {
+		toAct[mergeNsName(it.p.Namespace, it.p.Name)] = it.p
+		tried = append(tried, it.key.UID)
+	}
+
+	if len(toAct) > 0 {
+		activatePods(pl, toAct)
+		klog.InfoS("activated pods", "set", podSet.Name, "count", len(toAct))
+		if removeActivated {
+			// Remove only the ones we just activated
+			for _, it := range items[:limit] {
+				podSet.RemovePod(it.key.UID)
+			}
+		}
+	}
+	return tried
+}
+
 // activatePlannedPending activates all live pending pods that the plan intends to place
 // (i.e., NewPlacement with FromNode == "" and ToNode != "").
 func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
@@ -378,7 +453,7 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 		return
 	}
 
-	pl.Handle.Activate(klog.Background(), toAct)
+	activatePods(pl, toAct)
 }
 
 // resolvePod attempts to find the pod by matching UID and name,
@@ -812,18 +887,104 @@ func (pl *SharedState) markPlanStatusToConfigMap(ctx context.Context, planCM str
 	})
 }
 
-// // watchPlanTimeout monitors the timeout for the given active plan.
-// func (pl *SharedState) watchPlanTimeout(ap *ActivePlan) {
-// 	<-ap.Ctx.Done()
-// 	// If Cancel() was called due to completion/replacement, do nothing.
-// 	if ap.Ctx.Err() != context.DeadlineExceeded {
-// 		return
-// 	}
-// 	// Ensure we're still looking at the same active plan
-// 	cur := pl.getActivePlan()
-// 	if cur == nil || cur.ID != ap.ID {
-// 		return
-// 	}
-// 	klog.InfoS("plan timeout reached; deactivating plan", "planID", ap.ID, "ttl", PlanExecutionTimeout)
-// 	pl.onPlanCompleted(PlanStatusFailed)
-// }
+// clusterFingerprint builds a stable hash of the "cluster state" that matters
+// for the solver baseline:
+//
+//   - all usable nodes (name + allocatable CPU/MEM)
+//   - all RUNNING (non-terminating) pods bound to usable nodes
+//     (UID + node + CPU/MEM + priority)
+//
+// Pending pods are explicitly *not* included here, since we track them via the
+// pending UID set separately. We only use this to decide whether the cluster
+// is "the same" baseline for a previously-solved pending set.
+//
+// The fingerprint is cheap to compute for small clusters and stable across
+// map-iteration nondeterminism thanks to sorting.
+func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
+	h := fnv.New64a()
+
+	// Filter usable nodes and sort them by name for determinism.
+	usable := make([]*v1.Node, 0, len(nodes))
+	for _, n := range nodes {
+		if n == nil {
+			continue
+		}
+		if isNodeUsable(n) {
+			usable = append(usable, n)
+		}
+	}
+	sort.Slice(usable, func(i, j int) bool {
+		return usable[i].Name < usable[j].Name
+	})
+
+	// Node capacities.
+	for _, n := range usable {
+		cpu := getNodeCPUAllocatable(n)
+		mem := getNodeMemoryAllocatable(n)
+		_, _ = h.Write([]byte("N:"))
+		_, _ = h.Write([]byte(n.Name))
+		_, _ = h.Write([]byte(":"))
+		_, _ = h.Write([]byte(strconv.FormatInt(cpu, 10)))
+		_, _ = h.Write([]byte("/"))
+		_, _ = h.Write([]byte(strconv.FormatInt(mem, 10)))
+		_, _ = h.Write([]byte(";"))
+	}
+
+	usableNames := make(map[string]struct{}, len(usable))
+	for _, n := range usable {
+		usableNames[n.Name] = struct{}{}
+	}
+
+	// Collect running pods on usable nodes and sort (node, UID) for determinism.
+	type podKey struct {
+		node string
+		uid  types.UID
+	}
+	keys := make([]podKey, 0, len(pods))
+	for _, p := range pods {
+		if isPodDeleted(p) || !isPodAssigned(p) {
+			continue
+		}
+		if _, ok := usableNames[p.Spec.NodeName]; !ok {
+			continue
+		}
+		keys = append(keys, podKey{node: p.Spec.NodeName, uid: p.UID})
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].node != keys[j].node {
+			return keys[i].node < keys[j].node
+		}
+		return keys[i].uid < keys[j].uid
+	})
+
+	byUID := podsByUID(pods)
+
+	for _, k := range keys {
+		p := byUID[k.uid]
+		if p == nil {
+			continue
+		}
+		cpu := getPodCPURequest(p)
+		mem := getPodMemoryRequest(p)
+		prio := getPodPriority(p)
+
+		_, _ = h.Write([]byte("P:"))
+		_, _ = h.Write([]byte(string(p.UID)))
+		_, _ = h.Write([]byte("@"))
+		_, _ = h.Write([]byte(p.Spec.NodeName))
+		_, _ = h.Write([]byte(":"))
+		_, _ = h.Write([]byte(strconv.FormatInt(cpu, 10)))
+		_, _ = h.Write([]byte("/"))
+		_, _ = h.Write([]byte(strconv.FormatInt(mem, 10)))
+		_, _ = h.Write([]byte("#"))
+		_, _ = h.Write([]byte(strconv.Itoa(int(prio))))
+		_, _ = h.Write([]byte(";"))
+	}
+
+	return fmt.Sprintf("%x", h.Sum64())
+}
+
+// isPodPreemptor returns true if the preemptorUID matches the other podUID.
+func isPodPreemptor(PodUID types.UID, preemptorUID types.UID) bool {
+	return string(PodUID) != "" && string(preemptorUID) != "" && preemptorUID == PodUID
+}

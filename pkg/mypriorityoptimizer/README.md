@@ -1075,10 +1075,10 @@ Done:
 - solver_external.go
 - plugin.go
 - objects_helpers.go
+- pod_set_helpers.go
 
 missing:
 
-- pod_set_helpers.go
 - plugin_readiness.go
 - loop_helpers.go
 - plan_helpers.go
@@ -1100,7 +1100,7 @@ missing:
 - hook_prefilter.go
 - hook_reserve_unreserve.go
 
-Total coverage: 59.2%
+Total coverage: 59.1%
 
 ### Now TODOs
 
