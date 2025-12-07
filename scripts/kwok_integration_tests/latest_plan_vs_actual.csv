@@ -1,0 +1,7 @@
+pod,planned_node,actual_node,expected_assignment
+mpo-big-1,,,false
+mpo-big-2,kwok-node-2,kwok-node-2,true
+mpo-small-1,kwok-node-1,kwok-node-1,true
+mpo-small-2,kwok-node-1,kwok-node-1,true
+mpo-small-3,kwok-node-1,kwok-node-1,true
+mpo-small-4,kwok-node-1,kwok-node-1,true

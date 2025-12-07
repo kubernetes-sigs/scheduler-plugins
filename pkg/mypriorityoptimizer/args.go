@@ -25,7 +25,7 @@ var OptimizeInterval = parseTime(getenv("OPTIMIZE_INTERVAL", "30s"))
 
 // OptimizeInitialDelay is the initial delay before the first optimization run
 // in periodic mode.
-var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "5s"))
+var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "2s"))
 
 // OptimizeInterludeDelay is the duration of idle time (no changes in the
 // pending set) before triggering interlude optimization.

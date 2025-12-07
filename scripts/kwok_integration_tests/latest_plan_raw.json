@@ -1,0 +1,73 @@
+{
+  "plugin_version": "v0.0.1",
+  "optimization_strategy": "Interlude/PreEnqueue/Asynch",
+  "generated_at": "2025-12-07T07:28:13.990671524Z",
+  "completed_at": "2025-12-07T07:28:14.261423776Z",
+  "solver": {
+    "name": "python",
+    "status": "OPTIMAL",
+    "duration_ms": 301,
+    "score": {
+      "placed_by_priority": {
+        "2": 1,
+        "3": 4
+      }
+    }
+  },
+  "plan_status": "Completed",
+  "plan": {
+    "evicts": null,
+    "moves": null,
+    "old_placements": null,
+    "new_placements": [
+      {
+        "pod": {
+          "uid": "946df17d-13a1-489e-ba69-abae742d23be",
+          "namespace": "mpo-itest",
+          "name": "mpo-big-2"
+        },
+        "to_node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "371a695c-b7b4-4fe2-a90e-703de95e8790",
+          "namespace": "mpo-itest",
+          "name": "mpo-small-1"
+        },
+        "to_node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "991251de-3626-4b2e-a217-906897a00f47",
+          "namespace": "mpo-itest",
+          "name": "mpo-small-2"
+        },
+        "to_node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "cd4fd5f6-59ec-45c3-bb8a-9fb21f220b94",
+          "namespace": "mpo-itest",
+          "name": "mpo-small-3"
+        },
+        "to_node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "24ed491e-88e7-426e-a30c-995db8d481ee",
+          "namespace": "mpo-itest",
+          "name": "mpo-small-4"
+        },
+        "to_node": "kwok-node-1"
+      }
+    ],
+    "placement_by_name": {
+      "mpo-itest/mpo-big-2": "kwok-node-2",
+      "mpo-itest/mpo-small-1": "kwok-node-1",
+      "mpo-itest/mpo-small-2": "kwok-node-1",
+      "mpo-itest/mpo-small-3": "kwok-node-1",
+      "mpo-itest/mpo-small-4": "kwok-node-1"
+    },
+    "workload_quotas": {}
+  }
+}

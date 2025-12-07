@@ -1104,6 +1104,7 @@ Total coverage: 59.1%
 
 ### Now TODOs
 
+- add config map after plugin ready to show meta data like which args is used and so on.
 - Make integration tests for checking the different modes work as intended.
 - Update README with the new trace generator and replayer design and refactored code structure.
 - Write about that we solve to optimal in the trace replayer experiments to prevent high disruption.

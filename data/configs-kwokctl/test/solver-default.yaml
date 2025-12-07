@@ -1,0 +1,23 @@
+kind: KwokctlConfiguration
+apiVersion: config.kwok.x-k8s.io/v1alpha1
+options:
+  kubeSchedulerConfig: manifests/mypriorityoptimizer/plugin-scheduler-config.yaml
+  kubeSchedulerBinary: bin/kube-scheduler
+  kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
+componentsPatches:
+  - name: kube-scheduler
+    # uncomment for more verbose logging
+    # extraArgs:
+    #   - key: v
+    #     value: "10"
+    extraEnvs:
+      - name: OPTIMIZE_SOLVE_SYNCH
+        value: "false" # true=synchronous, false=asynchronous (solver runs in background)
+      - name: PLAN_EXECUTION_TIMEOUT
+        value: "600h" # set high to determine any potential issues
+      - name: SOLVER_PYTHON_ENABLED
+        value: "true"
+      - name: SOLVER_PYTHON_TIMEOUT
+        value: 10s
+      - name: OPTIMIZE_INTERVAL
+        value: 2s
