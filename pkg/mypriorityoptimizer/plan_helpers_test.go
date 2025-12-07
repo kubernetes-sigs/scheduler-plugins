@@ -781,7 +781,7 @@ func TestActivatePlannedPending_UsesHookWithMatchingPending(t *testing.T) {
 
 func TestIsPlanCompleted_UsesHook(t *testing.T) {
 	pl := &SharedState{}
-	ap := &ActivePlan{ID: "plan-1"}
+	ap := &ActivePlan{ID: PlanConfigMapNamePrefix + "1"}
 
 	var (
 		called bool
@@ -824,7 +824,7 @@ func TestOnPlanCompleted_HookCalledAfterStateCleared(t *testing.T) {
 
 	cancelled := false
 	ap := &ActivePlan{
-		ID: "plan-1",
+		ID: PlanConfigMapNamePrefix + "1",
 		Cancel: func() {
 			cancelled = true
 		},
@@ -883,7 +883,7 @@ func TestExportPlanToConfigMap_UsesHook(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 	sp := &StoredPlan{}
-	name := "plan-cm"
+	name := PlanConfigMapNamePrefix + "cm"
 
 	var (
 		called  bool

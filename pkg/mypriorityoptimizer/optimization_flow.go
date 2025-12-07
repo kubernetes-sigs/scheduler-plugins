@@ -14,7 +14,7 @@ import (
 // AllAsynch, Single). For Single phase, the preemptor must be provided.
 // Returns the target node name for the preemptor pod (if any) and error (if any).
 func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
-	strategy := modeToString()
+	strategy := combinedModeToString()
 
 	// Periodic-sync/Per-pod: take Active early.
 	// Async modes: take Active later.

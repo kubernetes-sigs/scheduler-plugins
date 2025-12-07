@@ -110,7 +110,7 @@ func TestIsAsyncSolving(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// hookAtStage
+// hookAtPreEnqueue / hookAtPostFilter
 // -----------------------------------------------------------------------------
 
 func TestHookAtStage(t *testing.T) {
@@ -150,49 +150,136 @@ func TestHookAtStage(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestModeToString(t *testing.T) {
+	withMode(ModePerPod, StagePostFilter, true, func() {
+		if got := modeToString(); got != "PerPod" {
+			t.Fatalf("expected modeToString()=PerPod for ModePerPod, got %q", got)
+		}
+	})
+	withMode(ModePeriodic, StagePostFilter, true, func() {
+		if got := modeToString(); got != "Periodic" {
+			t.Fatalf("expected modeToString()=Periodic for ModePeriodic, got %q", got)
+		}
+	})
+	withMode(ModeInterlude, StagePostFilter, true, func() {
+		if got := modeToString(); got != "Interlude" {
+			t.Fatalf("expected modeToString()=Interlude for ModeInterlude, got %q", got)
+		}
+	})
+	withMode(ModeManual, StagePostFilter, true, func() {
+		if got := modeToString(); got != "Manual" {
+			t.Fatalf("expected modeToString()=Manual for ModeManual, got %q", got)
+		}
+	})
+	// Unknown mode value -> default branch ("Periodic")
+	withMode(ModeType(999), StagePostFilter, true, func() {
+		if got := modeToString(); got != "Periodic" {
+			t.Fatalf("expected modeToString()=Periodic for unknown mode value, got %q", got)
+		}
+	})
+}
+
+// -----------------------------------------------------------------------------
+// stageToString
+// -----------------------------------------------------------------------------
+
+func TestStageToString(t *testing.T) {
+	// PerPod: always PostFilter regardless of OptimizeHookStage.
+	withMode(ModePerPod, StagePreEnqueue, true, func() {
+		if got := stageToString(); got != "PostFilter" {
+			t.Fatalf("expected stageToString()=PostFilter for ModePerPod, got %q", got)
+		}
+	})
+
+	// Background mode with StagePreEnqueue.
+	withMode(ModePeriodic, StagePreEnqueue, true, func() {
+		if got := stageToString(); got != "PreEnqueue" {
+			t.Fatalf("expected stageToString()=PreEnqueue for background mode with StagePreEnqueue, got %q", got)
+		}
+	})
+
+	// Background mode with StagePostFilter.
+	withMode(ModePeriodic, StagePostFilter, true, func() {
+		if got := stageToString(); got != "PostFilter" {
+			t.Fatalf("expected stageToString()=PostFilter for background mode with StagePostFilter, got %q", got)
+		}
+	})
+}
+
+// -----------------------------------------------------------------------------
+// syncToString
+// -----------------------------------------------------------------------------
+
+func TestSyncToString(t *testing.T) {
+	// PerPod is always synchronous.
+	withMode(ModePerPod, StagePostFilter, false, func() {
+		if got := syncToString(); got != "Synch" {
+			t.Fatalf("expected syncToString()=Synch for ModePerPod, got %q", got)
+		}
+	})
+
+	// Background mode, OptimizeSolveSynch=true -> synchronous.
+	withMode(ModePeriodic, StagePostFilter, true, func() {
+		if got := syncToString(); got != "Synch" {
+			t.Fatalf("expected syncToString()=Synch when OptimizeSolveSynch=true, got %q", got)
+		}
+	})
+
+	// Background mode, OptimizeSolveSynch=false -> asynchronous.
+	withMode(ModePeriodic, StagePostFilter, false, func() {
+		if got := syncToString(); got != "Asynch" {
+			t.Fatalf("expected syncToString()=Asynch when OptimizeSolveSynch=false, got %q", got)
+		}
+	})
+}
+
+// -----------------------------------------------------------------------------
+// combinedModeToString
+// -----------------------------------------------------------------------------
+
+func TestCombinedModeToString(t *testing.T) {
 	// PerPod: always PostFilter + Synch
 	withMode(ModePerPod, StagePreEnqueue, true, func() {
-		got := modeToString()
+		got := combinedModeToString()
 		if got != "PerPod/PostFilter/Synch" {
-			t.Fatalf("unexpected modeToString for PerPod+Synch+PreEnqueue: %q", got)
+			t.Fatalf("unexpected combinedModeToString for PerPod+Synch+PreEnqueue: %q", got)
 		}
 	})
 	withMode(ModePerPod, StagePostFilter, false, func() {
-		got := modeToString()
+		got := combinedModeToString()
 		if got != "PerPod/PostFilter/Synch" {
-			t.Fatalf("unexpected modeToString for PerPod+Asynch+PostFilter (forced Synch): %q", got)
+			t.Fatalf("unexpected combinedModeToString for PerPod+Asynch+PostFilter (forced Synch): %q", got)
 		}
 	})
 
 	// Periodic + Asynch + PostFilter
 	withMode(ModePeriodic, StagePostFilter, false, func() {
-		got := modeToString()
+		got := combinedModeToString()
 		if got != "Periodic/PostFilter/Asynch" {
-			t.Fatalf("unexpected modeToString for Periodic+Asynch+PostFilter: %q", got)
+			t.Fatalf("unexpected combinedModeToString for Periodic+Asynch+PostFilter: %q", got)
 		}
 	})
 
 	// Manual + Synch + PostFilter
 	withMode(ModeManual, StagePostFilter, true, func() {
-		got := modeToString()
+		got := combinedModeToString()
 		if got != "Manual/PostFilter/Synch" {
-			t.Fatalf("unexpected modeToString for Manual+Synch+PostFilter: %q", got)
+			t.Fatalf("unexpected combinedModeToString for Manual+Synch+PostFilter: %q", got)
 		}
 	})
 
 	// Interlude + Asynch + PreEnqueue
 	withMode(ModeInterlude, StagePreEnqueue, false, func() {
-		got := modeToString()
+		got := combinedModeToString()
 		if got != "Interlude/PreEnqueue/Asynch" {
-			t.Fatalf("unexpected modeToString for Interlude+Asynch+PreEnqueue: %q", got)
+			t.Fatalf("unexpected combinedModeToString for Interlude+Asynch+PreEnqueue: %q", got)
 		}
 	})
 
 	// Unknown mode value -> default branch ("Periodic")
 	withMode(ModeType(999), StagePreEnqueue, true, func() {
-		got := modeToString()
+		got := combinedModeToString()
 		if got != "Periodic/PreEnqueue/Synch" {
-			t.Fatalf("unexpected modeToString for unknown mode value: %q", got)
+			t.Fatalf("unexpected combinedModeToString for unknown mode value: %q", got)
 		}
 	})
 }

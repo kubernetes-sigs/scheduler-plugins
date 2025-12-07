@@ -20,21 +20,33 @@ const (
 	// CacheWarmupSettleDelay is the duration to wait before proceeding after cache has warmed up.
 	CacheWarmupSettleDelay = 2 * time.Second
 	// PluginReadinessUsableNodeInterval is the interval at which the plugin checks for readiness.
-	PluginReadinessUsableNodeInterval = 200 * time.Millisecond
+	PluginReadinessUsableNodeInterval = 250 * time.Millisecond
+	// =========================================================
+
+	// ================ Plugin config snapshot =================
+
+	// PluginCfgConfigMapName is the name of the ConfigMap storing plugin configuration.
+	// NB: Kubernetes resource names must be DNS-1123 compliant, so we use "plugin-config"
+	// instead of "plugin_config" (underscores are not allowed in resource names).
+	PluginCfgConfigMapName = "plugin-config"
+	// PluginCfgConfigMapLabelKey is the label key used for plugin configuration ConfigMaps.
+	PluginCfgConfigMapLabelKey = "plugin-config"
 	// =========================================================
 
 	// ================ Solver settings ========================
 
 	// SolverLogProgress is a flag that enables/disables logging of solver progress.
 	SolverLogProgress = false
-	// SolverConfigMapExportedStatsName is the name of the exported stats config map.
-	SolverConfigMapExportedStatsName = "solver-stats"
-	// SolverConfigMapLabelKey is the label key used for solver configuration config maps.
-	SolverConfigMapLabelKey = "runs"
+	// SolverStatsConfigMapName is the name of the exported stats config map.
+	SolverStatsConfigMapName = "solver-stats"
+	// SolverStatsConfigMapLabelKey is the label key used for solver configuration config maps.
+	SolverStatsConfigMapLabelKey = "runs"
 	// =========================================================
 
 	// ================ Plan settings ==========================
 
+	// Prefix for plan ConfigMaps.
+	PlanConfigMapNamePrefix = "plan-"
 	// PlanConfigMapLabelKey is the name of the ConfigMap used for plan configuration.
 	PlanConfigMapLabelKey = "plan"
 	// PlanCompletionCheckInterval is how often we check whether an active plan has reached its desired state.

@@ -957,12 +957,12 @@ func TestAppendSolverStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
 	// After appendSolverStatsCM, we expect the ConfigMap to exist.
 	cm, err := client.CoreV1().
 		ConfigMaps(SystemNamespace).
-		Get(ctx, SolverConfigMapExportedStatsName, metav1.GetOptions{})
+		Get(ctx, SolverStatsConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("expected stats ConfigMap to be created, got err = %v", err)
 	}
 
-	dataKey := SolverConfigMapLabelKey + ".json"
+	dataKey := SolverStatsConfigMapLabelKey + ".json"
 	payload, ok := cm.Data[dataKey]
 	if !ok || payload == "" {
 		t.Fatalf("expected non-empty JSON payload in key %q, got %q", dataKey, payload)

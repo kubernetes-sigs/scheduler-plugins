@@ -561,9 +561,9 @@ func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedSo
 	}
 	doc := ConfigMapDoc{
 		Namespace: SystemNamespace,
-		Name:      SolverConfigMapExportedStatsName,
-		LabelKey:  SolverConfigMapLabelKey,
-		DataKey:   SolverConfigMapLabelKey + ".json",
+		Name:      SolverStatsConfigMapName,
+		LabelKey:  SolverStatsConfigMapLabelKey,
+		DataKey:   SolverStatsConfigMapLabelKey + ".json",
 	}
 
 	err := mutateJson(

@@ -39,7 +39,7 @@ func (pl *SharedState) startLoops(ctx context.Context) {
 }
 
 func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeLoopConfig) {
-	strategy := modeToString()
+	strategy := combinedModeToString()
 
 	interval := cfg.Interval
 	if interval <= 0 {

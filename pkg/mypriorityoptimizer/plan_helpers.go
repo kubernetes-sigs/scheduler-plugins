@@ -352,9 +352,9 @@ func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) erro
 
 // recreateStandalonePods recreates only non-controller-owned pods (bounded parallelism).
 func (pl *SharedState) recreateStandalonePods(ctx context.Context, targets []*v1.Pod) error {
-	if recreateStandalonePodsHook != nil {
-		return recreateStandalonePodsHook(pl, ctx, targets)
-	}
+	// if recreateStandalonePodsHook != nil {
+	// 	return recreateStandalonePodsHook(pl, ctx, targets)
+	// }
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(RecreatePodParallelism)
 	// Loop over targets and recreate each standalone pod in its own goroutine with timeout.

@@ -24,7 +24,7 @@ func (pl *SharedState) planRegistration(
 	}
 
 	// Unique plan id
-	id := fmt.Sprintf("plan-%d", time.Now().UnixNano())
+	id := fmt.Sprintf(PlanConfigMapNamePrefix+"%d", time.Now().UnixNano())
 
 	// Set active plan
 	pl.setActivePlan(plan, id, pods)
@@ -32,7 +32,7 @@ func (pl *SharedState) planRegistration(
 	// Store plan in ConfigMap for debugging purposes
 	storedPlan := &StoredPlan{
 		PluginVersion:        Version,
-		OptimizationStrategy: modeToString(),
+		OptimizationStrategy: combinedModeToString(),
 		GeneratedAt:          time.Now().UTC(),
 		PlanStatus:           PlanStatusActive,
 		Plan:                 plan,

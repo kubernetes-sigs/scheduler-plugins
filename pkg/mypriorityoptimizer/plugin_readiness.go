@@ -52,6 +52,9 @@ func (pl *SharedState) pluginReadiness(ctx context.Context, informers ...cache.S
 	pl.PluginReady.Store(true)
 	klog.InfoS(msg(label, InfoPluginReady))
 
+	// Snapshot  plugin configuration
+	_ = pl.persistPluginConfig(ctx)
+
 	// Activate all currently blocked pods
 	pl.activatePods(pl.BlockedWhileActive, false, -1)
 

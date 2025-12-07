@@ -15,5 +15,5 @@ Accept: text/plain
 
 ###
 # Trigger optimization
-POST {{baseUrl}}/optimize
+POST {{baseUrl}}/solve
 Accept: application/json

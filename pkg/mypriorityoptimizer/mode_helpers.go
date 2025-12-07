@@ -49,32 +49,41 @@ func hookAtPostFilter() bool {
 	return OptimizeHookStage == StagePostFilter
 }
 
-// modeToString returns a string representation of the current strategy:
-// "<Mode><Synch|Asynch>/<PreEnqueue|PostFilter>"
+// modeToString returns a human-readable representation of the OptimizeMode.
 func modeToString() string {
-	var modeStr string
 	switch OptimizeMode {
 	case ModePerPod:
-		modeStr = "PerPod"
+		return "PerPod"
 	case ModePeriodic:
-		modeStr = "Periodic"
+		return "Periodic"
 	case ModeInterlude:
-		modeStr = "Interlude"
+		return "Interlude"
 	case ModeManual:
-		modeStr = "Manual"
+		return "Manual"
 	default:
-		modeStr = "Periodic"
+		return "Periodic"
 	}
+}
 
+// stageToString returns a human-readable representation of a StageType.
+func stageToString() string {
 	stageStr := "PostFilter"
 	if hookAtPreEnqueue() && !isPerPodMode() {
 		stageStr = "PreEnqueue"
 	}
+	return stageStr
+}
 
-	syncStr := "Synch"
+// syncToString returns "Asynch" or "Synch" based on the OptimizeSolveSynch setting.
+func syncToString() string {
 	if isAsyncSolving() {
-		syncStr = "Asynch"
+		return "Asynch"
 	}
+	return "Synch"
+}
 
-	return fmt.Sprintf("%s/%s/%s", modeStr, stageStr, syncStr)
+// combinedModeToString returns a string representation of the current strategy:
+// "<Mode><Synch|Asynch>/<PreEnqueue|PostFilter>"
+func combinedModeToString() string {
+	return fmt.Sprintf("%s/%s/%s", modeToString(), stageToString(), syncToString())
 }

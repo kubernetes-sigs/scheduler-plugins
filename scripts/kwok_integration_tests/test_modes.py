@@ -25,7 +25,7 @@ from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml,
     ensure_namespace,
     ensure_priority_classes,
-    wait_pod,
+    wait_rs_pods,
     get_json_ctx,
 )
 from scripts.helpers.kwok_helpers import (
@@ -33,7 +33,7 @@ from scripts.helpers.kwok_helpers import (
     create_kwok_nodes,
     kwok_pods_cap,
     merge_kwokctl_envs,
-    yaml_kwok_pod,
+    yaml_kwok_rs,
 )
 
 # ---------------------------------------------------------------------------
@@ -56,14 +56,20 @@ PLAN_NAMESPACE = "kube-system"
 PLAN_LABEL_KEY = "plan"
 PLAN_DATA_KEY = PLAN_LABEL_KEY + ".json"
 
-POD_TIMEOUT_S = 60
+# Plugin readiness ConfigMap (created once the plugin is fully ready)
+PLUGIN_CFG_NAMESPACE = PLAN_NAMESPACE
+PLUGIN_CFG_NAME = "plugin-config"
+PLUGIN_CFG_DATA_KEY = "plugin-config.json"
+PLUGIN_CFG_TIMEOUT_S = 10  # timeout for waiting for plugin readiness
+
+POD_TIMEOUT_S = 5
 
 # Timing model:
 # 1) After creating workload & pods exist -> wait WORKLOAD_SETTLE_TIME_S
 # 2) Then wait up to CONFIG_MAP_TIMEOUT_S for a plan ConfigMap to appear
 # 3) Once plan is present -> wait PLAN_EXECUTION_TIME_S for evictions/new pods
 WORKLOAD_SETTLE_TIME_S = 2
-CONFIG_MAP_TIMEOUT_S = 30
+CONFIG_MAP_TIMEOUT_S = 10
 PLAN_EXECUTION_TIME_S = 10
 
 # Manual HTTP trigger (same style as test_runner)
@@ -84,56 +90,52 @@ EXPECTED_NODE_NAMES = [f"kwok-node-{i+1}" for i in range(NUM_NODES)]
 # expected_assignment:
 #   - mpo-big-1: expected to be evicted (False)
 #   - others: expected to be assigned after the plan (True)
-TEST_PODS = [
+TEST_PODS1 = [
     {
-        "name": "mpo-big-1",
-        "cpu": "700m",
-        "mem": "700Mi",
-        "pc": "p1",
+        "name": "hp-big-1",
+        "cpu": "900m",
+        "mem": "100Mi",
+        "pc": "p3",
         "expected_assignment": False,
     },
     {
-        "name": "mpo-big-2",
-        "cpu": "700m",
-        "mem": "700Mi",
-        "pc": "p2",
-        "expected_assignment": True,
-    },
-    {
-        "name": "mpo-small-1",
-        "cpu": "400m",
-        "mem": "400Mi",
-        "pc": "p3",
-        "expected_assignment": True,
-    },
-    {
-        "name": "mpo-small-2",
-        "cpu": "400m",
-        "mem": "400Mi",
-        "pc": "p3",
-        "expected_assignment": True,
-    },
-    {
-        "name": "mpo-small-3",
-        "cpu": "100m",
-        "mem": "100Mi",
-        "pc": "p3",
-        "expected_assignment": True,
-    },
-    {
-        "name": "mpo-small-4",
-        "cpu": "100m",
+        "name": "hp-big-2",
+        "cpu": "900m",
         "mem": "100Mi",
         "pc": "p3",
         "expected_assignment": True,
     },
 ]
 
-TEST_POD_NAMES = [p["name"] for p in TEST_PODS]
+TEST_PODS2 = [
+    {
+        "name": "hp-small-1",
+        "cpu": "200m",
+        "mem": "100Mi",
+        "pc": "p3",
+        "expected_assignment": True,
+    },
+    {
+        "name": "hp-small-2",
+        "cpu": "200m",
+        "mem": "100Mi",
+        "pc": "p3",
+        "expected_assignment": True,
+    },
+    {
+        "name": "hp-small-3",
+        "cpu": "200m",
+        "mem": "100Mi",
+        "pc": "p3",
+        "expected_assignment": True,
+    },
+]
+
+TEST_POD_NAMES = [p["name"] for p in (TEST_PODS1 + TEST_PODS2)]
 
 # Expected final running/non-running state after the plan is applied.
 EXPECTED_ASSIGNMENT: Dict[Tuple[str, str], bool] = {
-    (TEST_NAMESPACE, p["name"]): p["expected_assignment"] for p in TEST_PODS
+    (TEST_NAMESPACE, p["name"]): p["expected_assignment"] for p in (TEST_PODS1 + TEST_PODS2)
 }
 
 # ---------------------------------------------------------------------------
@@ -169,6 +171,58 @@ def build_kwokctl_config_for_mode(
     ]
     return merge_kwokctl_envs(base_doc, envs, component="kube-scheduler")
 
+def wait_for_plugin_configmap(
+    ctx: str,
+    logger: logging.Logger,
+    *,
+    timeout_s: int = PLUGIN_CFG_TIMEOUT_S,
+) -> Optional[Dict[str, Any]]:
+    """
+    Wait until the plugin readiness ConfigMap appears.
+
+    The plugin is considered 'ready' once it has created the ConfigMap:
+      - namespace: PLUGIN_CFG_NAMESPACE
+      - name:      PLUGIN_CFG_NAME
+
+    Returns the ConfigMap JSON dict, or None on timeout.
+    """
+    deadline = time.time() + timeout_s
+    last_err: Optional[Exception] = None
+
+    while time.time() < deadline:
+        try:
+            cm = get_json_ctx(
+                ctx,
+                [
+                    "-n", PLUGIN_CFG_NAMESPACE,
+                    "get", "cm", PLUGIN_CFG_NAME,
+                    "-o", "json",
+                ],
+            )
+            logger.info(
+                "plugin readiness ConfigMap %s/%s found; plugin is ready.",
+                PLUGIN_CFG_NAMESPACE,
+                PLUGIN_CFG_NAME,
+            )
+            return cm
+        except RuntimeError as e:
+            last_err = e
+            logger.info(
+                "plugin not ready yet; waiting for ConfigMap %s/%s (error: %s)",
+                PLUGIN_CFG_NAMESPACE,
+                PLUGIN_CFG_NAME,
+                e,
+            )
+            time.sleep(1.0)
+
+    logger.warning(
+        "plugin ConfigMap %s/%s did not appear within %.1fs (last error: %s)",
+        PLUGIN_CFG_NAMESPACE,
+        PLUGIN_CFG_NAME,
+        timeout_s,
+        last_err,
+    )
+    return None
 
 def get_latest_plan_configmap(
     ctx: str,
@@ -341,7 +395,7 @@ def run_mode_integration(
     )
 
     # --- Nodes ---
-    total_pods = len(TEST_PODS)
+    total_pods = len(TEST_PODS1) + len(TEST_PODS2)
     create_kwok_nodes(
         LOG,
         ctx,
@@ -355,27 +409,96 @@ def run_mode_integration(
     ensure_namespace(LOG, ctx, TEST_NAMESPACE)
     ensure_priority_classes(LOG, ctx, NUM_PRIORITIES, prefix="p", start=1)
 
-    # --- Workload ---
+    # --- Plugin readiness: wait for plugin_config before applying workloads ---
+    LOG.info(
+        "Waiting up to %.1fs for plugin readiness ConfigMap %s/%s before applying workloads.",
+        PLUGIN_CFG_TIMEOUT_S,
+        PLUGIN_CFG_NAMESPACE,
+        PLUGIN_CFG_NAME,
+    )
+    plugin_cfg_cm = wait_for_plugin_configmap(ctx, LOG, timeout_s=PLUGIN_CFG_TIMEOUT_S)
+    if plugin_cfg_cm is None:
+        LOG.error(
+            "Plugin readiness ConfigMap %s/%s not found within %.1fs; aborting integration.",
+            PLUGIN_CFG_NAMESPACE,
+            PLUGIN_CFG_NAME,
+            PLUGIN_CFG_TIMEOUT_S,
+        )
+        return False # abort integration test
+
+    # Save plugin config map + decoded inner config for debugging / inspection
+    try:
+        out_dir = Path(__file__).resolve().parent
+        inner_raw = (plugin_cfg_cm.get("data") or {}).get(PLUGIN_CFG_DATA_KEY, "")
+        cfg_path = out_dir / "latest_plugin_config.json"
+        try:
+            inner_obj = json.loads(inner_raw)
+            cfg_path.write_text(
+                json.dumps(inner_obj, indent=2),
+                encoding="utf-8",
+            )
+            LOG.info("Saved decoded plugin config snapshot to %s", cfg_path)
+        except Exception as e:
+            # Fallback: write the raw string so we don't lose information
+            cfg_path.write_text(inner_raw, encoding="utf-8")
+            LOG.warning(
+                "Failed to parse inner plugin config JSON; wrote raw string to %s: %s",
+                cfg_path,
+                e,
+            )
+
+    except Exception as e:
+        LOG.warning("Failed to write plugin config debug files: %s", e)
+
+    # --- Workload (one ReplicaSet per logical test pod) ---
+    # Default to 1 replica each, but allow overriding via optional "replicas" key.
     yaml_text = "".join(
         [
-            yaml_kwok_pod(
+            yaml_kwok_rs(
                 TEST_NAMESPACE,
                 p["name"],
+                int(p.get("replicas", 1)),
                 p["cpu"],
                 p["mem"],
                 p["pc"],
             )
-            for p in TEST_PODS
+            for p in TEST_PODS1
         ]
     )
     kubectl_apply_yaml(LOG, ctx, yaml_text)
 
-    # Wait for pods to exist in the API
-    for name in TEST_POD_NAMES:
-        _ = wait_pod(
+    # Wait for each ReplicaSet to create its pods.
+    for p in TEST_PODS1:
+        _ = wait_rs_pods(
             LOG,
             ctx,
-            name,
+            p["name"],
+            TEST_NAMESPACE,
+            POD_TIMEOUT_S,
+            mode="running",
+        )
+    
+    yaml_text = "".join(
+        [
+            yaml_kwok_rs(
+                TEST_NAMESPACE,
+                p["name"],
+                int(p.get("replicas", 1)),
+                p["cpu"],
+                p["mem"],
+                p["pc"],
+            )
+            for p in TEST_PODS2
+        ]
+    )
+    kubectl_apply_yaml(LOG, ctx, yaml_text)
+
+    # Wait for each ReplicaSet to create its pods.
+    for p in TEST_PODS2:
+        _ = wait_rs_pods(
+            LOG,
+            ctx,
+            p["name"],
             TEST_NAMESPACE,
             POD_TIMEOUT_S,
             mode="exist",
@@ -399,12 +522,7 @@ def run_mode_integration(
     if cm is None:
         LOG.warning("No plan ConfigMap found within %.1fs; treating as integration failure.", CONFIG_MAP_TIMEOUT_S)
         return False
-
     raw_plan = (cm.get("data") or {}).get(PLAN_DATA_KEY)
-    if not raw_plan:
-        LOG.error("plan ConfigMap %s missing data[%r]", cm.get("metadata", {}).get("name"), PLAN_DATA_KEY)
-        return False
-
     try:
         stored_plan = json.loads(raw_plan)
     except Exception as e:
@@ -422,20 +540,53 @@ def run_mode_integration(
         ctx,
         ["-n", TEST_NAMESPACE, "get", "pods", "-o", "json"],
     )
-    actual_nodes: Dict[Tuple[str, str], str] = {}
-    for item in pods_json.get("items", []):
-        name = (item.get("metadata") or {}).get("name", "")
-        ns = (item.get("metadata") or {}).get("namespace", TEST_NAMESPACE)
-        node = (item.get("spec") or {}).get("nodeName", "")
-        if name:
-            actual_nodes[(str(ns), str(name))] = str(node or "")
 
-    # Sanity: make sure we at least saw our pods in the API
-    for name in TEST_POD_NAMES:
-        key = (TEST_NAMESPACE, name)
-        if key not in actual_nodes:
-            LOG.error("pod %s/%s not found via kubectl", TEST_NAMESPACE, name)
+    # actual_nodes: real pod (ns, name) -> nodeName (for plan vs actual)
+    actual_nodes: Dict[Tuple[str, str], str] = {}
+    # pod_to_rs: real pod (ns, name) -> logical ReplicaSet name (label "app")
+    pod_to_rs: Dict[Tuple[str, str], str] = {}
+    # rs_seen: which logical ReplicaSets actually have at least one pod object
+    rs_seen = set()
+    # rs_assigned: per (ns, rs_name) whether ANY replica is scheduled on a node
+    rs_assigned: Dict[Tuple[str, str], bool] = {}
+
+    for item in pods_json.get("items", []):
+        meta = (item.get("metadata") or {})
+        spec = (item.get("spec") or {})
+        name = meta.get("name", "")
+        ns = meta.get("namespace", TEST_NAMESPACE)
+        node = spec.get("nodeName", "") or ""
+        labels = meta.get("labels") or {}
+
+        if not name:
+            continue
+
+        key_pod = (str(ns), str(name))
+        actual_nodes[key_pod] = node
+
+        rs_name = labels.get("app")
+        if rs_name:
+            key_rs = (str(ns), str(rs_name))
+            rs_seen.add(key_rs)
+            pod_to_rs[key_pod] = str(rs_name)
+            # mark RS as assigned if *any* of its replicas has a nodeName
+            if node:
+                rs_assigned[key_rs] = rs_assigned.get(key_rs, False) or True
+            else:
+                rs_assigned.setdefault(key_rs, False)
+
+    # Sanity: make sure we saw at least one pod for each logical ReplicaSet
+    for p in TEST_PODS1:
+        key_rs = (TEST_NAMESPACE, p["name"])
+        if key_rs not in rs_seen:
+            LOG.error(
+                "no pods found for ReplicaSet %s/%s (label app=%s) via kubectl",
+                TEST_NAMESPACE,
+                p["name"],
+                p["name"],
+            )
             return False
+
 
     # ------------------------------------------------------------------
     # Write debug artifacts:
@@ -456,16 +607,21 @@ def run_mode_integration(
             writer = csv.writer(f)
             writer.writerow(
                 [
-                    "pod",
+                    "pod",              # real pod name
                     "planned_node",
                     "actual_node",
-                    "expected_assignment",
+                    "expected_assignment",  # from owning ReplicaSet (if any)
                 ]
             )
             for ns, name in all_keys:
                 planned_node = plan_map.get((ns, name), "")
                 actual_node = actual_nodes.get((ns, name), "")
-                should_run = EXPECTED_ASSIGNMENT.get((ns, name))
+                rs_name = pod_to_rs.get((ns, name))
+                should_run = (
+                    EXPECTED_ASSIGNMENT.get((ns, rs_name))
+                    if rs_name is not None
+                    else None
+                )
                 expected_assignment = (
                     "" if should_run is None else ("true" if should_run else "false")
                 )
@@ -499,14 +655,16 @@ def run_mode_integration(
 
     # Check 2: expected assignment vs actual assignment (derived from nodeName)
     assignment_mismatches = []
-    for key, should_run in EXPECTED_ASSIGNMENT.items():
-        actual_node = actual_nodes.get(key, "")
-        is_assigned = bool(actual_node)
+    for key_rs, should_run in EXPECTED_ASSIGNMENT.items():
+        is_assigned = rs_assigned.get(key_rs, False)
         if is_assigned != should_run:
-            assignment_mismatches.append((key, should_run, is_assigned, actual_node))
+            assignment_mismatches.append((key_rs, should_run, is_assigned))
 
     if assignment_mismatches:
-        LOG.error("expected assignment mismatches: %s", assignment_mismatches)
+        LOG.error(
+            "expected assignment mismatches (ReplicaSet-level): %s",
+            assignment_mismatches,
+        )
         return False
 
     LOG.info(
@@ -523,8 +681,6 @@ def run_mode_integration(
 # ---------------------------------------------------------------------------
 
 if pytest is not None:
-    @pytest.mark.kwok
-    @pytest.mark.integration
     @pytest.mark.parametrize(
         "opt_mode,opt_hook,opt_sync",
         [

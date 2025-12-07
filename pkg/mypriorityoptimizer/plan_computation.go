@@ -20,7 +20,7 @@ func (pl *SharedState) planComputation(
 	baselineScore *SolverScore,
 ) (best string, hadFeasibleImprovingSolver bool, bestAttempt *SolverResult, attempts []SolverResult) {
 	hadFeasibleImprovingSolver = false
-	strategy := modeToString()
+	strategy := combinedModeToString()
 
 	// =====================================
 	// === Setup Attempts ==================

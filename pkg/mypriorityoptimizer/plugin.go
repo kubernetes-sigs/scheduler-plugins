@@ -94,7 +94,7 @@ func newFromHandle(
 	pluginReadinessStarter(pl, ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
 
 	// Plugin configuration logging
-	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", modeToString())
+	klog.InfoS("Plugin initialized", "name", Name, "version", Version, "mode", combinedModeToString())
 	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
 	klog.InfoS("Solver configuration", solverConfigArgs()...)
 
