@@ -17,12 +17,22 @@ from scripts.helpers.general_helpers import (
     normalize_interval, parse_int_interval, parse_qty_interval, parse_timeout_s,
     get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict, coerce_bool,
     log_field_fmt, write_info_file, build_cli_cmd,
+    solver_trigger_http, get_solver_active_status_http,
 )
 from scripts.helpers.kubectl_helpers import (
-    kubectl_apply_yaml, ensure_namespace, ensure_service_account, ensure_priority_classes, wait_rs_pods,
+    kubectl_apply_yaml,
+    ensure_namespace,
+    ensure_service_account,
+    ensure_priority_classes,
+    wait_rs_pods,
 )
 from scripts.helpers.kwok_helpers import (
-    yaml_kwok_pod, yaml_kwok_rs, ensure_kwok_cluster, create_kwok_nodes, kwok_pods_cap, merge_kwokctl_envs,
+    yaml_kwok_pod,
+    yaml_kwok_rs,
+    ensure_kwok_cluster,
+    create_kwok_nodes,
+    kwok_pods_cap,
+    merge_kwokctl_envs,
 )
 from scripts.helpers.cluster_stats import (
     stat_snapshot,
@@ -1657,31 +1667,6 @@ class TestRunner:
         }
         return resp, meta
 
-    def _solver_trigger_http(self) -> tuple[int, str]:
-        """
-        POST /solve endpoint. Returns (status_code, body_str).
-        Timeout should be long enough to allow the solver to run.
-        """
-        data = b""
-        headers = {
-            "Accept": "application/json",
-            "Content-Length": "0",
-        }
-        try:
-            req = _urlreq.Request(SOLVER_TRIGGER_URL, data=data, headers=headers, method="POST")
-            with _urlreq.urlopen(req, timeout=SOLVER_TRIGGER_TIMEOUT_S) as resp:
-                body = resp.read().decode("utf-8", errors="replace")
-                return getattr(resp, "status", 200), body
-        except _urlerr.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            return e.code, body
-        except Exception as e:
-            LOG.info("solver POST failed %s", e)
-            return 0, f"connect-failed: {e}"
-
     def _wait_solver_inactive_http(self, url: str, timeout_s: int, *, poll_initial_s: float = 0.5, poll_interval_s: float = 1.5, resp_strip_length: int = 200) -> bool:
         """
         Poll the /active endpoint until it reports Active=false or until timeout.
@@ -1689,24 +1674,6 @@ class TestRunner:
         poll_initial_s: initial poll interval in seconds (default 0.5s)
         poll_interval_s: maximum poll interval in seconds (default 1.5s)
         """
-        def get_solver_active_status_http(url: str, *, timeout: float = 3.0) -> tuple[int, str]:
-            """
-            GET /active endpoint. Returns (status_code, body_str).
-            """
-            try:
-                req = _urlreq.Request(url, method="GET", headers={"Accept": "application/json"})
-                with _urlreq.urlopen(req, timeout=timeout) as resp:
-                    body = resp.read().decode("utf-8", errors="replace")
-                    return getattr(resp, "status", 200), body
-            except _urlerr.HTTPError as e:
-                try:
-                    body = e.read().decode("utf-8", errors="replace")
-                except Exception:
-                    body = str(e)
-                return e.code, body
-            except Exception as e:
-                return 0, f"connect-failed: {e}"
-        
         deadline = time.time() + max(0, int(timeout_s))
         interval = float(poll_initial_s)
         time.sleep(interval)
@@ -2093,7 +2060,7 @@ class TestRunner:
         if self.args.solver_trigger and not self.args.default_scheduler:
             phase = "solver_trigger"
             LOG.info("phase=%s url=%s; waiting for response (timeout %ss)", phase, SOLVER_TRIGGER_URL, SOLVER_TRIGGER_TIMEOUT_S)
-            code, body = self._solver_trigger_http()
+            code, body = solver_trigger_http(logger=LOG, url=SOLVER_TRIGGER_URL, timeout_s=SOLVER_TRIGGER_TIMEOUT_S)
             body_compact = (body or "").replace("\n", "\\n")
             if len(body_compact) > 600:
                 body_compact = body_compact[:600] + "...(truncated)"

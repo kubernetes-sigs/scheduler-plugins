@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	corev1listers "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog/v2"
 )
 
 // -----------------------------------------------------------------------------
@@ -28,9 +27,6 @@ var (
 	}
 	evictPodFor = func(pl *SharedState, ctx context.Context, pod *v1.Pod, ev *policyv1.Eviction) error {
 		return pl.Client.CoreV1().Pods(pod.Namespace).EvictV1(ctx, ev)
-	}
-	createPodFor = func(pl *SharedState, ctx context.Context, pod *v1.Pod) (*v1.Pod, error) {
-		return pl.Client.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
 	}
 )
 
@@ -108,26 +104,6 @@ func (pl *SharedState) evictPod(ctx context.Context, pod *v1.Pod) error {
 		},
 	}
 	return evictPodFor(pl, ctx, pod, ev)
-}
-
-// recreateStandalonePod creates a new pod with the same specifications as the original pod.
-// Needed for standalone pods as when they are evicted, they will not be recreated as they have no controllers.
-// UID, GenerateName, ResourceVersion, NodeName, NodeSelector are all set to none.
-func (pl *SharedState) recreateStandalonePod(ctx context.Context, orig *v1.Pod, _ string) error {
-	klog.V(MyV).InfoS("recreating standalone pod", "pod", podRef(orig))
-
-	newPod := orig.DeepCopy()
-	newPod.UID = ""
-	newPod.GenerateName = ""
-	newPod.ResourceVersion = ""
-	newPod.Status = v1.PodStatus{}
-	newPod.Spec.NodeName = "" // no direct binding
-	newPod.Spec.NodeSelector = map[string]string{}
-
-	if _, err := createPodFor(pl, ctx, newPod); err != nil {
-		return fmt.Errorf("failed to create pod %s: %w", podRef(newPod), err)
-	}
-	return nil
 }
 
 // getNodeCPUAllocatable returns the allocatable CPU of a node in millicores.

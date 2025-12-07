@@ -19,13 +19,9 @@ var OptimizeSolveSynch = parseBool(getenv("OPTIMIZE_SOLVE_SYNCH", "true"))
 // (ignored for async background modes, which always collect at PostFilter)
 var OptimizeHookStage = parseOptimizeHookStage(getenv("OPTIMIZE_HOOK_STAGE", "postfilter"))
 
-// OptimizeInterval is the duration between consecutive optimization runs
+// OptimizePeriodicInterval is the duration between consecutive optimization runs
 // in periodic mode. If a plan is actively being executed, the loop is skipped.
-var OptimizeInterval = parseTime(getenv("OPTIMIZE_INTERVAL", "30s"))
-
-// OptimizeInitialDelay is the initial delay before the first optimization run
-// in periodic mode.
-var OptimizeInitialDelay = parseTime(getenv("OPTIMIZE_INITIAL_DELAY", "2s"))
+var OptimizePeriodicInterval = parseTime(getenv("OPTIMIZE_PERIODIC_INTERVAL", "30s"))
 
 // OptimizeInterludeDelay is the duration of idle time (no changes in the
 // pending set) before triggering interlude optimization.
@@ -33,7 +29,7 @@ var OptimizeInterludeDelay = parseTime(getenv("OPTIMIZE_INTERLUDE_DELAY", "2s"))
 
 // OptimizeInterludeCheckInterval is the interval at which we poll for
 // interlude "free time" conditions.
-var OptimizeInterludeCheckInterval = parseTime(getenv("OPTIMIZE_INTERLUDE_CHECK_INTERVAL", "2s"))
+var OptimizeInterludeCheckInterval = parseTime(getenv("OPTIMIZE_INTERLUDE_CHECK_INTERVAL", "250ms"))
 
 // Address the HTTP server should listen on (used for manual optimization
 // and debugging in all modes). Only works on a KWOK cluster if running

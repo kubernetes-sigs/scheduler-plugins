@@ -5,6 +5,7 @@ import sys, time, random, subprocess, csv, re, logging, hashlib, shlex, yaml
 from typing import List, Dict, Tuple, Optional, Any
 from pathlib import Path
 from decimal import Decimal
+from urllib import request as _urlreq, error as _urlerr  # for solver HTTP trigger
 
 MEM_UNIT_TABLE = {
     # bytes
@@ -503,3 +504,49 @@ def generate_seeds(gen_seeds_to_file: Optional[List[str]]) -> None:
         print(f"wrote {len(chunk)} seeds to {outp}")
         written_total += len(chunk)
     print(f"wrote {written_total} seeds across {parts} file(s)")
+    
+#############################################
+# Solver HTTP trigger helper
+#############################################
+def solver_trigger_http(logger: logging.Logger, url: str, timeout: float) -> tuple[int, str]:
+    """
+    POST /solve endpoint. Returns (status_code, body_str).
+    Timeout should be long enough to allow the solver to run.
+    """
+    data = b""
+    headers = {
+        "Accept": "application/json",
+        "Content-Length": "0",
+    }
+    try:
+        req = _urlreq.Request(url, data=data, headers=headers, method="POST")
+        with _urlreq.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return getattr(resp, "status", 200), body
+    except _urlerr.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = str(e)
+        return e.code, body
+    except Exception as e:
+        logger.info("solver POST failed %s", e)
+        return 0, f"connect-failed: {e}"
+
+def get_solver_active_status_http(url: str, *, timeout: float = 3.0) -> tuple[int, str]:
+    """
+    GET /active endpoint. Returns (status_code, body_str).
+    """
+    try:
+        req = _urlreq.Request(url, method="GET", headers={"Accept": "application/json"})
+        with _urlreq.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return getattr(resp, "status", 200), body
+    except _urlerr.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = str(e)
+        return e.code, body
+    except Exception as e:
+        return 0, f"connect-failed: {e}"

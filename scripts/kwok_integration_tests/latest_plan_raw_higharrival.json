@@ -1,0 +1,123 @@
+{
+  "plugin_version": "v0.0.1",
+  "optimization_strategy": "Interlude/PostFilter/Synch",
+  "generated_at": "2025-12-07T19:44:10.355283245Z",
+  "solver": {
+    "name": "python",
+    "status": "OPTIMAL",
+    "duration_ms": 361,
+    "score": {
+      "placed_by_priority": {
+        "1": 9
+      },
+      "evicted": 1
+    }
+  },
+  "plan_status": "Active",
+  "plan": {
+    "evicts": [
+      {
+        "pod": {
+          "uid": "ef1a197f-f70d-4304-9309-41f8925f9f5d",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-103-gklmw"
+        },
+        "node": "kwok-node-2"
+      }
+    ],
+    "moves": null,
+    "old_placements": [
+      {
+        "pod": {
+          "uid": "33415de6-bf81-4a3f-a956-cbdfba31a514",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-101-f2x8p"
+        },
+        "node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "f1ae6f74-5cda-42dc-a31a-71a5a29e6e4e",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-102-qjth8"
+        },
+        "node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "ef1a197f-f70d-4304-9309-41f8925f9f5d",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-103-gklmw"
+        },
+        "node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "488fe5b5-fec1-401e-93d4-177fcd3a1530",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-104-q2m9b"
+        },
+        "node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "a0170664-26e2-4fa0-9917-533f7228691e",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-105-bb48h"
+        },
+        "node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "3fece536-9dec-4c47-a319-ce980179781d",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-106-vp9wl"
+        },
+        "node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "c89b39a7-7777-49ad-9e89-26dc534dd6fc",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-201-5gt76"
+        },
+        "node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "99b7afe4-2f48-4dc2-b3fa-e42c64b91846",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-202-dtp2d"
+        },
+        "node": "kwok-node-2"
+      }
+    ],
+    "new_placements": [
+      {
+        "pod": {
+          "uid": "98d03b57-f1a9-461e-b5d2-6e6ced204be6",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-203-486wj"
+        },
+        "to_node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "f7837e35-06b5-491a-b70b-b5783b8939f8",
+          "namespace": "mpo-itest",
+          "name": "higharrival-pod-204-8fcw7"
+        },
+        "to_node": "kwok-node-2"
+      }
+    ],
+    "placement_by_name": {},
+    "workload_quotas": {
+      "rs:mpo-itest/higharrival-pod-203": {
+        "kwok-node-2": 1
+      },
+      "rs:mpo-itest/higharrival-pod-204": {
+        "kwok-node-2": 1
+      }
+    }
+  }
+}

@@ -19,5 +19,7 @@ componentsPatches:
         value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
         value: 10s
-      - name: OPTIMIZE_INTERVAL
-        value: 2s
+      - name: OPTIMIZE_PERIODIC_INTERVAL
+        value: 10s
+      - name: OPTIMIZE_INTERLUDE_DELAY # time cluster state must be stable before solving
+        value: 5s

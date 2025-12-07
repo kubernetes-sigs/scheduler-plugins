@@ -6,5 +6,5 @@ override-kwokctl-envs:
     value: freetime_asynch
   - name: SOLVER_PYTHON_TIMEOUT
     value: 10s
-  - name: OPTIMIZE_INTERVAL
+  - name: OPTIMIZE_PERIODIC_INTERVAL
     value: 30s

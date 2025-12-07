@@ -104,11 +104,11 @@ func TestLoopInterlude_UsesConfiguredValues(t *testing.T) {
 }
 
 func TestLoopPeriodic_DefaultIntervalWhenTooSmall(t *testing.T) {
-	origInterval := OptimizeInterval
-	defer func() { OptimizeInterval = origInterval }()
+	origInterval := OptimizePeriodicInterval
+	defer func() { OptimizePeriodicInterval = origInterval }()
 
 	// Trigger default path
-	OptimizeInterval = 0
+	OptimizePeriodicInterval = 0
 
 	var gotCfg OptimizeLoopConfig
 	var called bool
@@ -129,8 +129,8 @@ func TestLoopPeriodic_DefaultIntervalWhenTooSmall(t *testing.T) {
 	}
 
 	// loopPeriodic mutates OptimizeInterval when it is too small
-	if OptimizeInterval != 2*time.Second {
-		t.Fatalf("OptimizeInterval after loopPeriodic = %v, want %v", OptimizeInterval, 2*time.Second)
+	if OptimizePeriodicInterval != 2*time.Second {
+		t.Fatalf("OptimizeInterval after loopPeriodic = %v, want %v", OptimizePeriodicInterval, 2*time.Second)
 	}
 
 	if gotCfg.Label != "PeriodicLoop" {
@@ -148,10 +148,10 @@ func TestLoopPeriodic_DefaultIntervalWhenTooSmall(t *testing.T) {
 }
 
 func TestLoopPeriodic_UsesConfiguredInterval(t *testing.T) {
-	origInterval := OptimizeInterval
-	defer func() { OptimizeInterval = origInterval }()
+	origInterval := OptimizePeriodicInterval
+	defer func() { OptimizePeriodicInterval = origInterval }()
 
-	OptimizeInterval = 5 * time.Second
+	OptimizePeriodicInterval = 5 * time.Second
 
 	var gotCfg OptimizeLoopConfig
 	var called bool
@@ -172,8 +172,8 @@ func TestLoopPeriodic_UsesConfiguredInterval(t *testing.T) {
 	}
 
 	// Should not have been overwritten
-	if OptimizeInterval != 5*time.Second {
-		t.Fatalf("OptimizeInterval after loopPeriodic = %v, want %v", OptimizeInterval, 5*time.Second)
+	if OptimizePeriodicInterval != 5*time.Second {
+		t.Fatalf("OptimizeInterval after loopPeriodic = %v, want %v", OptimizePeriodicInterval, 5*time.Second)
 	}
 
 	if gotCfg.Label != "PeriodicLoop" {

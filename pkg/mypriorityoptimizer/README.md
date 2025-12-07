@@ -1192,6 +1192,7 @@ at each tick $t_i$:
 
 ### TODOs: Report
 
+- Write about that we do not recreate standalone (non-controller) pods as default k8s does not either. So if a standalone pod is evicted it is gone as one needs to recreate it manually.
 - Write about that we do not run the solver again if we have the same set of pending pods and have got an optimal solution for these already.
 - Write about the way we check plan completion in a routine rather than PostBind, as we can remove a pod before PostBind is called meaning we can end up in a situation where we never check for plan completion.
 - Write about the default preemption and the test script made showing the limitations of it.

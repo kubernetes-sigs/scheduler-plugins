@@ -30,7 +30,7 @@ inputs:
       value: freetime_asynch
     - name: SOLVER_PYTHON_TIMEOUT
       value: 10s
-    - name: OPTIMIZE_INTERVAL
+    - name: OPTIMIZE_PERIODIC_INTERVAL
       value: 20s
     - name: SOLVER_PYTHON_GUARANTEED_TIER_FRACTION
       value: '0.0'

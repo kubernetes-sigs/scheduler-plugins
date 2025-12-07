@@ -148,13 +148,6 @@ func withEvictHook(hook func(pl *SharedState, ctx context.Context, pod *v1.Pod, 
 	fn()
 }
 
-func withCreateHook(hook func(pl *SharedState, ctx context.Context, pod *v1.Pod) (*v1.Pod, error), fn func()) {
-	orig := createPodFor
-	createPodFor = hook
-	defer func() { createPodFor = orig }()
-	fn()
-}
-
 // -----------------------------------------------------------------------------
 // SharedIndexInformer fake (for cache readiness tests)
 // -----------------------------------------------------------------------------

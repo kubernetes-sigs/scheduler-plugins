@@ -25,8 +25,7 @@ type PluginConfigSnapshot struct {
 	OptimizeMode                   string `json:"optimizeMode"`
 	OptimizeHookStage              string `json:"optimizeHookStage"`
 	OptimizeSolveSynch             bool   `json:"optimizeSolveSynch"`
-	OptimizeInterval               string `json:"optimizeInterval"`
-	OptimizeInitialDelay           string `json:"optimizeInitialDelay"`
+	OptimizePeriodicInterval       string `json:"optimizePeriodicInterval"`
 	OptimizeInterludeDelay         string `json:"optimizeInterludeDelay"`
 	OptimizeInterludeCheckInterval string `json:"optimizeInterludeCheckInterval"`
 
@@ -79,8 +78,7 @@ func buildPluginConfigSnapshot() PluginConfigSnapshot {
 		PluginReadinessUsableNodeInterval: PluginReadinessUsableNodeInterval.String(),
 
 		OptimizeMode:                   combinedModeToString(),
-		OptimizeInterval:               OptimizeInterval.String(),
-		OptimizeInitialDelay:           OptimizeInitialDelay.String(),
+		OptimizePeriodicInterval:       OptimizePeriodicInterval.String(),
 		OptimizeInterludeDelay:         OptimizeInterludeDelay.String(),
 		OptimizeInterludeCheckInterval: OptimizeInterludeCheckInterval.String(),
 

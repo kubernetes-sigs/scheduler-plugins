@@ -77,16 +77,9 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 				return fmt.Errorf("wait for targeted pods gone: %w", err)
 			}
 		}
-
-		// 3) Recreate standalone (non-controller) pods only
-		// Note: In real scenarios, standalone pods would never be recreated
-		// by the scheduler, but for testing purposes we support this here.
-		if err := pl.recreateStandalonePods(overallCtx, targets); err != nil {
-			return err
-		}
 	}
 
-	// 4) Activate planned pending
+	// 3) Activate planned pending
 	pl.activatePlannedPending(plan, pods)
 
 	return nil

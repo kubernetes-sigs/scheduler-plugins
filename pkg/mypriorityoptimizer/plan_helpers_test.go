@@ -614,53 +614,6 @@ func TestEvictTargets_UsesHook(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------
-// recreateStandalonePods
-// ---------------------------------------------------------------------
-
-func TestRecreateStandalonePods_UsesHook(t *testing.T) {
-	pl := &SharedState{}
-	ctx := context.Background()
-
-	p1 := newPod("ns", "p1", "u1", "", 1)
-	p2 := newPod("ns", "p2", "u2", "", 1)
-	targets := []*v1.Pod{p1, p2}
-
-	var (
-		called     bool
-		gotPl      *SharedState
-		gotCtx     context.Context
-		gotTargets []*v1.Pod
-	)
-
-	orig := recreateStandalonePodsHook
-	defer func() { recreateStandalonePodsHook = orig }()
-
-	recreateStandalonePodsHook = func(hpl *SharedState, hctx context.Context, htargets []*v1.Pod) error {
-		called = true
-		gotPl = hpl
-		gotCtx = hctx
-		gotTargets = htargets
-		return nil
-	}
-
-	if err := pl.recreateStandalonePods(ctx, targets); err != nil {
-		t.Fatalf("recreateStandalonePods() error = %v, want nil", err)
-	}
-	if !called {
-		t.Fatalf("recreateStandalonePodsHook not called")
-	}
-	if gotPl != pl {
-		t.Fatalf("hook pl = %p, want %p", gotPl, pl)
-	}
-	if gotCtx != ctx {
-		t.Fatalf("hook ctx = %v, want %v", gotCtx, ctx)
-	}
-	if !reflect.DeepEqual(gotTargets, targets) {
-		t.Fatalf("hook targets = %#v, want %#v", gotTargets, targets)
-	}
-}
-
-// ----------------------------------------------------------------------
 // waitPodsGone
 // ---------------------------------------------------------------------
 

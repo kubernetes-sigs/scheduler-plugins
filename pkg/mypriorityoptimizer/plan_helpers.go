@@ -25,7 +25,6 @@ import (
 // test hooks (overridden only in unit tests; nil in production).
 var (
 	evictTargetsHook           func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
-	recreateStandalonePodsHook func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
 	waitPodsGoneHook           func(pl *SharedState, ctx context.Context, pods []*v1.Pod) error
 	activatePlannedPendingHook func(pl *SharedState, toActivate map[string]*v1.Pod)
 	isPlanCompletedHook        func(pl *SharedState, ap *ActivePlan) (bool, error)
@@ -350,31 +349,6 @@ func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) erro
 	return nil
 }
 
-// recreateStandalonePods recreates only non-controller-owned pods (bounded parallelism).
-func (pl *SharedState) recreateStandalonePods(ctx context.Context, targets []*v1.Pod) error {
-	// if recreateStandalonePodsHook != nil {
-	// 	return recreateStandalonePodsHook(pl, ctx, targets)
-	// }
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(RecreatePodParallelism)
-	// Loop over targets and recreate each standalone pod in its own goroutine with timeout.
-	for _, pod := range targets {
-		// Skip controller-owned pods (their controllers will recreate them)
-		if _, owned := topWorkload(pod); owned {
-			continue
-		}
-		g.Go(func() error {
-			opCtx, cancel := context.WithTimeout(gctx, RecreateTimeout)
-			defer cancel()
-			if err := pl.recreateStandalonePod(opCtx, pod, ""); err != nil {
-				return fmt.Errorf("recreate %s: %w", podRef(pod), err)
-			}
-			return nil
-		})
-	}
-	return g.Wait()
-}
-
 // waitTargetsGone waits until the evicted pods disappear from cache.
 // waitPodsGone waits until the evicted pods disappear from cache.
 func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
@@ -561,7 +535,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 
 	// A) Standalone/preemptor pods pinned by name must be on the expected nodes.
 	//    If a pinned pod was deleted (or is terminating), we treat it as "satisfied"
-	//    under the current workload (e.g., user scaled down or deleted it).
+	//    under the current workload (e.g., user scaled down or deleted it; furthermore, standalone pods are not recreated automatically).
 	for nsname, wantNode := range ap.PlacementByName {
 		ns, name, err := splitNsName(nsname)
 		if err != nil {
@@ -570,7 +544,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 		po, err := pl.getPodByName(ns, name)
 		if apierrors.IsNotFound(err) {
 			// The planned pod is gone (namespace/pod deleted or workload scaled down).
-			// For completion purposes, we treat this as satisfied.
+			// We treat this as satisfied.
 			klog.V(MyV).InfoS("plan completion: pinned pod gone; treating as satisfied",
 				"pod", nsname,
 				"expectedNode", wantNode,

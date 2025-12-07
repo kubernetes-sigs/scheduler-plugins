@@ -49,7 +49,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 	klog.InfoS(msg(cfg.Label, "started"),
 		"mode", strategy,
 		"interval", interval,
-		"interludeeDelay", cfg.InterludeDelay,
+		"interludeDelay", cfg.InterludeDelay,
 		"cancelOnChange", cfg.CancelOnChange,
 	)
 

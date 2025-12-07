@@ -1,0 +1,11 @@
+pod,planned_node,actual_node,expected_assignment
+higharrival-pod-101-f2x8p,kwok-node-2,kwok-node-2,
+higharrival-pod-102-qjth8,kwok-node-1,kwok-node-1,
+higharrival-pod-103-jdnqc,,,
+higharrival-pod-104-q2m9b,kwok-node-1,kwok-node-1,
+higharrival-pod-105-bb48h,kwok-node-1,kwok-node-1,
+higharrival-pod-106-vp9wl,kwok-node-2,kwok-node-2,
+higharrival-pod-201-5gt76,kwok-node-1,kwok-node-1,
+higharrival-pod-202-dtp2d,kwok-node-2,kwok-node-2,
+higharrival-pod-203-486wj,kwok-node-2,kwok-node-2,
+higharrival-pod-204-8fcw7,kwok-node-2,kwok-node-2,

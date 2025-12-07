@@ -1,0 +1,7 @@
+pod,planned_node,actual_node,expected_assignment
+sameprio-pod-101-tctr9,,,false
+sameprio-pod-102-6mbzs,kwok-node-2,kwok-node-2,true
+sameprio-pod-201-fbf2p,kwok-node-1,kwok-node-1,true
+sameprio-pod-202-5kxqv,kwok-node-2,kwok-node-2,true
+sameprio-pod-203-dmf5d,kwok-node-1,kwok-node-1,true
+sameprio-pod-204-qrfj2,kwok-node-1,kwok-node-1,true
