@@ -1,12 +1,12 @@
 {
   "plugin_version": "v0.0.1",
-  "optimization_strategy": "Interlude/PreEnqueue/Asynch",
-  "generated_at": "2025-12-07T07:28:13.990671524Z",
-  "completed_at": "2025-12-07T07:28:14.261423776Z",
+  "optimization_strategy": "Manual/PreEnqueue/Asynch",
+  "generated_at": "2025-12-07T07:33:35.464137267Z",
+  "completed_at": "2025-12-07T07:33:35.724928221Z",
   "solver": {
     "name": "python",
     "status": "OPTIMAL",
-    "duration_ms": 301,
+    "duration_ms": 342,
     "score": {
       "placed_by_priority": {
         "2": 1,
@@ -22,31 +22,31 @@
     "new_placements": [
       {
         "pod": {
-          "uid": "946df17d-13a1-489e-ba69-abae742d23be",
+          "uid": "ef68745e-17d6-4d31-bbec-2dac9a598324",
           "namespace": "mpo-itest",
           "name": "mpo-big-2"
+        },
+        "to_node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "dae453d9-3a04-4540-b5d5-ad989b151fba",
+          "namespace": "mpo-itest",
+          "name": "mpo-small-1"
         },
         "to_node": "kwok-node-2"
       },
       {
         "pod": {
-          "uid": "371a695c-b7b4-4fe2-a90e-703de95e8790",
-          "namespace": "mpo-itest",
-          "name": "mpo-small-1"
-        },
-        "to_node": "kwok-node-1"
-      },
-      {
-        "pod": {
-          "uid": "991251de-3626-4b2e-a217-906897a00f47",
+          "uid": "4cf0ef85-b54f-48f6-9aeb-940018eefd41",
           "namespace": "mpo-itest",
           "name": "mpo-small-2"
         },
-        "to_node": "kwok-node-1"
+        "to_node": "kwok-node-2"
       },
       {
         "pod": {
-          "uid": "cd4fd5f6-59ec-45c3-bb8a-9fb21f220b94",
+          "uid": "48da4980-89f2-4294-bcc2-a736e14444f5",
           "namespace": "mpo-itest",
           "name": "mpo-small-3"
         },
@@ -54,7 +54,7 @@
       },
       {
         "pod": {
-          "uid": "24ed491e-88e7-426e-a30c-995db8d481ee",
+          "uid": "cd10cdda-70fd-48b8-a60c-3f260937d93b",
           "namespace": "mpo-itest",
           "name": "mpo-small-4"
         },
@@ -62,9 +62,9 @@
       }
     ],
     "placement_by_name": {
-      "mpo-itest/mpo-big-2": "kwok-node-2",
-      "mpo-itest/mpo-small-1": "kwok-node-1",
-      "mpo-itest/mpo-small-2": "kwok-node-1",
+      "mpo-itest/mpo-big-2": "kwok-node-1",
+      "mpo-itest/mpo-small-1": "kwok-node-2",
+      "mpo-itest/mpo-small-2": "kwok-node-2",
       "mpo-itest/mpo-small-3": "kwok-node-1",
       "mpo-itest/mpo-small-4": "kwok-node-1"
     },

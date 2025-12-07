@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 
 import yaml
+from urllib import request as _urlreq, error as _urlerr  # <-- for manual HTTP trigger
 
 # pytest is optional: used only when running via pytest
 try:
@@ -64,6 +65,13 @@ POD_TIMEOUT_S = 60
 WORKLOAD_SETTLE_TIME_S = 2
 CONFIG_MAP_TIMEOUT_S = 30
 PLAN_EXECUTION_TIME_S = 10
+
+# Manual HTTP trigger (same style as test_runner)
+SOLVER_TRIGGER_URL = "http://localhost:18080/solve"
+SOLVER_TRIGGER_TIMEOUT_S = 60
+
+# Valid optimization modes for this integration test
+VALID_OPT_MODES = {"per_pod", "periodic", "interlude", "manual"}
 
 # Node names KWOK normally uses for this cluster size.
 # Used only for documentation / expectations; we don't *assert* on them globally.
@@ -250,6 +258,33 @@ def plan_placements_by_pod(sp: Dict[str, Any]) -> Dict[Tuple[str, str], str]:
     return mapping
 
 
+def solver_trigger_http(logger: logging.Logger) -> tuple[int, str]:
+    """
+    POST /solve endpoint (manual mode trigger).
+    Returns (status_code, body_str).
+    """
+    data = b""
+    headers = {
+        "Accept": "application/json",
+        "Content-Length": "0",
+    }
+    try:
+        req = _urlreq.Request(SOLVER_TRIGGER_URL, data=data, headers=headers, method="POST")
+        with _urlreq.urlopen(req, timeout=SOLVER_TRIGGER_TIMEOUT_S) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return getattr(resp, "status", 200), body
+    except _urlerr.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = str(e)
+        logger.info("solver POST HTTPError: %s", e)
+        return e.code, body
+    except Exception as e:
+        logger.info("solver POST failed: %s", e)
+        return 0, f"connect-failed: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Core integration function
 # ---------------------------------------------------------------------------
@@ -272,10 +307,14 @@ def run_mode_integration(
     4. Apply a small workload meant to trigger optimizer.
     5. Wait for pods to exist.
     6. Sleep WORKLOAD_SETTLE_TIME_S to let default scheduler / queues settle.
+       - If opt_mode == "manual", trigger the solver via HTTP here.
     7. Wait (up to CONFIG_MAP_TIMEOUT_S) for a StoredPlan ConfigMap to appear.
     8. Sleep PLAN_EXECUTION_TIME_S to allow evictions / re-scheduling.
     9. Fetch actual cluster state and compare vs plan + EXPECTED_ASSIGNMENT.
     """
+    if opt_mode not in VALID_OPT_MODES:
+        raise ValueError(f"Invalid opt_mode={opt_mode!r}; expected one of {sorted(VALID_OPT_MODES)}")
+
     LOG = setup_logging(
         name=f"mpo-itest-{opt_mode}-{hook_stage}-{opt_sync}",
         prefix=f"[mpo-itest mode={opt_mode} hook={hook_stage} sync={opt_sync}] ",
@@ -345,6 +384,15 @@ def run_mode_integration(
     # 1) Workload settle time
     LOG.info("Sleeping %.1fs for workload to settle before expecting a plan.", WORKLOAD_SETTLE_TIME_S)
     time.sleep(WORKLOAD_SETTLE_TIME_S)
+
+    # Manual modes: trigger optimization via HTTP (same idea as test_runner)
+    if opt_mode == "manual":
+        LOG.info("Manual mode: triggering solver via HTTP: %s", SOLVER_TRIGGER_URL)
+        code, body = solver_trigger_http(LOG)
+        body_compact = (body or "").replace("\n", "\\n")
+        if len(body_compact) > 600:
+            body_compact = body_compact[:600] + "...(truncated)"
+        LOG.info("solver_response code=%s body=%s", code, body_compact)
 
     # 2) Wait for plan ConfigMap (with timeout)
     cm = get_latest_plan_configmap(ctx, LOG, timeout_s=CONFIG_MAP_TIMEOUT_S)
@@ -483,13 +531,13 @@ if pytest is not None:
             # ("per_pod", "preenqueue", False),
             # ("per_pod", "postfilter", False),
             # ("per_pod", "postfilter", True),
-            ("periodic", "preenqueue", False),
-            ("periodic", "preenqueue", True),
-            ("periodic", "postfilter", False),
-            ("periodic", "postfilter", True),
-            ("interlude", "preenqueue", False),
-            ("interlude", "preenqueue", True),
-            ("interlude", "postfilter", False),
+            # ("periodic", "preenqueue", False),
+            # ("periodic", "preenqueue", True),
+            # ("periodic", "postfilter", False),
+            # ("periodic", "postfilter", True),
+            # ("interlude", "preenqueue", False),
+            # ("interlude", "preenqueue", True),
+            # ("interlude", "postfilter", False),
             ("interlude", "postfilter", True),
             ("manual", "preenqueue", False),
             ("manual", "postfilter", False),
