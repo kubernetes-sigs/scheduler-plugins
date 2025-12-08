@@ -88,9 +88,13 @@ jobs:
           python -m pytest scripts/test
       - name: Run go unit tests
         run: |
-            go test ./pkg/mypriorityoptimizer -coverprofile=coverage/unit/go/go_coverage.out
-            go tool cover -func=coverage/unit/go/go_coverage.out
-            go tool cover -html=coverage/unit/go/go_coverage.out -o coverage/unit/go/coverage.html
+            go test ./pkg/mypriorityoptimizer \
+              -coverprofile=coverage/unit/go/go_coverage.out
+            go tool cover \
+              -func=coverage/unit/go/go_coverage.out
+            go tool cover \
+              -html=coverage/unit/go/go_coverage.out \
+              -o coverage/unit/go/coverage.html
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
@@ -104,12 +108,13 @@ jobs:
   # 3) Integration tests
   # -------------------------------------------------------
   integration-tests:
-    # Run only after build + unit tests succeeded
     needs: [build-scheduler, unit-tests]
     runs-on: ubuntu-latest
 
     env:
       KUBE_SCHEDULER_BIN: ${{ github.workspace }}/bin/kube-scheduler
+      VENV_DIR: /opt/venv
+      SOLVER_DIR: /opt/solver
 
     steps:
       - name: Checkout code
@@ -133,22 +138,18 @@ jobs:
           echo "Installing kubectl ${KUBECTL_VERSION} and kwok ${KWOK_VERSION}"
           cd /tmp
 
-          # kubectl
           curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo install -m 0755 kubectl /usr/local/bin/kubectl
 
-          # kwokctl and kwok
           curl -fsSLo kwokctl-linux-amd64 "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwokctl-linux-amd64"
           curl -fsSLo kwok-linux-amd64   "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwok-linux-amd64"
           chmod +x kwokctl-linux-amd64 kwok-linux-amd64
           sudo install -m 0755 kwokctl-linux-amd64 /usr/local/bin/kwokctl
           sudo install -m 0755 kwok-linux-amd64   /usr/local/bin/kwok
 
-          # Clean up
           rm -f kubectl kwokctl-linux-amd64 kwok-linux-amd64
 
-          # Verify
           echo "kubectl:" && kubectl version --client --short || true
           echo "kwokctl:" && kwokctl --version || true
           echo "kwok:" && kwok --version || true
@@ -157,10 +158,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-        
-      - name: Prepare integration test coverage directory
+
+      - name: Set up solver Python environment
         run: |
-          mkdir -p coverage/integration/kwok
+          set -euo pipefail
+          sudo install -d -m 0755 "${SOLVER_DIR}" "${VENV_DIR}"
+          sudo chown -R "$USER:$USER" "${SOLVER_DIR}" "${VENV_DIR}"
+          cp scripts/python_solver/main.py "${SOLVER_DIR}/main.py"
+          python -m venv "${VENV_DIR}"
+          "${VENV_DIR}/bin/python" -m pip install --upgrade pip
+          "${VENV_DIR}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
+
+      - name: Prepare integration test coverage directory
+        run: mkdir -p coverage/integration/kwok
 
       - name: Install integration test deps
         run: |
@@ -171,4 +181,8 @@ jobs:
 
       - name: Run integration tests
         run: |
-          python -m pytest scripts/kwok_integration_tests/test_modes.py --cov=scripts/kwok_integration_tests --cov-report=xml:coverage/integration/kwok/coverage.xml --cov-report=html:coverage/integration/kwok/html
+          python -m pytest \
+            scripts/kwok_integration_tests/test_modes.py \
+            --cov=scripts/kwok_integration_tests \
+            --cov-report=xml:coverage/integration/kwok/coverage.xml \
+            --cov-report=html:coverage/integration/kwok/html
