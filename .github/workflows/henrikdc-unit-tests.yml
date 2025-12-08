@@ -1,0 +1,40 @@
+name: Unit Tests (Python + Go)
+
+on:
+  push:
+    branches: [ "henrikdc-main" ]
+  pull_request:
+    branches: [ "henrikdc-main" ]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ---- Python setup ----
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # or whatever you use locally
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      # ---- Go setup ----
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"       # match your local Go version
+
+      # ---- Run your combined test script ----
+      - name: Run tests (Python + Go)
+        run: |
+          chmod +x ./run_tests.sh
+          ./run_tests.sh all
