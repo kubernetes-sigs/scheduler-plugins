@@ -19,7 +19,7 @@ import (
 // TODO: test missing
 
 // ----------------------------------------------------------------------
-// optimizeBBackgroundLoop
+// optimizeBackgroundLoop
 // ----------------------------------------------------------------------
 
 // TODO: test missing

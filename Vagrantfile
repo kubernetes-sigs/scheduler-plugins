@@ -17,7 +17,6 @@
     find . -type f -name '*.sh' -print0 | xargs -0 -r sed -i 's/\r$//'
     /usr/bin/env bash ./bootstrap.sh all \
       --runner trace_replayer \
-      --build-scheduler=false \
       --content-dir /home/vagrant/bootstrap/content \
       --cluster-name kwok1 \
       --kwok-runtime binary \
@@ -32,6 +31,4 @@
   SHELL
 end
 
-# NOTE: REMEMBER TO BUILD BEFORE VAGRANT UP, if not using prebuilt scheduler
-
-# UCLOUD: --build-scheduler false --content-dir /work/<content-dir> --kwok-runtime binary --matrix-file data/jobs/2025-09-24/baseline_n4_p16_u090-01.csv
+# NOTE: Build kube-scheduler binary before 'vagrant up' (to destroy vagrant use 'vagrant destroy -f')

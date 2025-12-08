@@ -2,7 +2,7 @@ meta:
   timestamp: 2025/12/03/21:48:28
   git:
     commit: 35e95377283ba1212e1f704b6bd290f380ea838d
-    branch: henrikdc-improvements
+    branch: test
 inputs:
   cli-cmd: python3 /mnt/c/projects/master/scheduler-plugins/scripts/kwok_trace_replayer/trace_generator.py
     --output-dir data/traces/test_30 --num-nodes 8 --mean-cpu 0.15 --xmin-cpu 0.1

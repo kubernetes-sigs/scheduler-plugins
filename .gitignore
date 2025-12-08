@@ -22,7 +22,7 @@ hack/tools/bin/*
 # Ignore vendor/
 vendor
 
-# TODO_HC: added
+# TODO: added
 __pycache__/
 .VSCodeCounter
 .vagrant/

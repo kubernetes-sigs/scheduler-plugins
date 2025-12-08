@@ -4,51 +4,8 @@ set -euo pipefail
 ########################## Defaults ##########################
 #############################################################
 CONTENT_DIR="${CONTENT_DIR:-/workspace}"
-
 CONTENT_DIR_WAIT_TIMEOUT_S="${CONTENT_DIR_WAIT_TIMEOUT:-30}" # seconds
 CONTENT_DIR_WAIT_INTERVAL_S="${CONTENT_DIR_WAIT_INTERVAL:-2}" # seconds
-
-BUILD_SCHEDULER="${BUILD_SCHEDULER:-false}" # if true, build the scheduler binary/image; otherwise assume pre-built
-
-REPO_OWNER="${REPO_OWNER:-henrikdchristensen}"
-REPO_NAME="${REPO_NAME:-scheduler-plugins}"
-REPO_BRANCH="${REPO_BRANCH:-henrikdc-cross-preemp}"
-REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}"
-REPO_DIR="${REPO_DIR:-repo}"            # can be relative to CONTENT_DIR
-
-CLUSTER_NAME="${CLUSTER_NAME:-}"
-KWOK_RUNTIME="${KWOK_RUNTIME:-binary}"  # binary | docker
-
-RESULTS_DIR="${RESULTS_DIR:-}"          # can be relative to CONTENT_DIR
-CONFIG_FILE="${CONFIG_FILE:-}"          # can be relative to CONTENT_DIR
-SEED_FILE="${SEED_FILE:-}"              # can be relative to CONTENT_DIR
-JOB_FILE="${JOB_FILE:-}"                # can be relative to CONTENT_DIR
-SEED="${SEED:-}"
-RE_RUN_SEEDS="${RE_RUN_SEEDS:-}"
-CLEAN_START="${CLEAN_START:-}"
-LOG_LEVEL="${LOG_LEVEL:-}"
-
-DEFAULT_SCHEDULER="${DEFAULT_SCHEDULER:-}" # if true, use the default kube-scheduler instead of the custom one
-
-SOLVER_TRIGGER="${SOLVER_TRIGGER:-}"
-
-PAUSE="${PAUSE:-}"
-
-SEEDS_NOT_ALL_RUNNING="${SEEDS_NOT_ALL_RUNNING:-}" # int: how many seeds can be allowed to not reach all pods running (0=all must reach all running)
-
-SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
-
-SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
-
-# Runner selection: test_runner (default) or trace_replayer
-RUNNER="${RUNNER:-test_runner}"
-
-# Extra config for trace_replayer
-TRACE_DIR="${TRACE_DIR:-}"                       # can be relative to CONTENT_DIR
-KWOKCTL_CONFIG_FILE="${KWOKCTL_CONFIG_FILE:-}"  # can be relative to CONTENT_DIR
-NODE_CPU="${NODE_CPU:-}"
-NODE_MEM="${NODE_MEM:-}"
-MONITOR_INTERVAL="${MONITOR_INTERVAL:-}"
 
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.32.7}"
 KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
@@ -56,11 +13,38 @@ KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 GO_VERSION="${GO_VERSION:-1.24.3}"
 GO_ARCH="${GO_ARCH:-amd64}"
 
-IMAGE_REMOTE_TAG="${IMAGE_REMOTE_TAG:-localhost:5000/scheduler-plugins/kube-scheduler:dev}"
-IMAGE_TAG_RESOLVED="${IMAGE_TAG_RESOLVED:-${IMAGE_REMOTE_TAG}}"
-
 VENV_DIR="/opt/venv"
 SOLVER_DIR="/opt/solver"
+
+# Runner selection: test_runner (default) or trace_replayer
+RUNNER="${RUNNER:-test_runner}"
+
+# Shared config
+CLUSTER_NAME="${CLUSTER_NAME:-}"
+KWOK_RUNTIME="binary"  # binary | docker
+JOB_FILE="${JOB_FILE:-}"                # can be relative to CONTENT_DIR
+LOG_LEVEL="${LOG_LEVEL:-}"
+CLEAN_START="${CLEAN_START:-}"
+
+# For test_runner
+RESULTS_DIR="${RESULTS_DIR:-}"          # can be relative to CONTENT_DIR
+CONFIG_FILE="${CONFIG_FILE:-}"          # can be relative to CONTENT_DIR
+SEED_FILE="${SEED_FILE:-}"              # can be relative to CONTENT_DIR
+SEED="${SEED:-}"
+RE_RUN_SEEDS="${RE_RUN_SEEDS:-}"
+DEFAULT_SCHEDULER="${DEFAULT_SCHEDULER:-}" # if true, use the default kube-scheduler instead of the custom one
+SOLVER_TRIGGER="${SOLVER_TRIGGER:-}"
+PAUSE="${PAUSE:-}"
+SEEDS_NOT_ALL_RUNNING="${SEEDS_NOT_ALL_RUNNING:-}" # int: how many seeds can be allowed to not reach all pods running (0=all must reach all running)
+SAVE_SOLVER_STATS="${SAVE_SOLVER_STATS:-}"
+SAVE_SCHEDULER_LOGS="${SAVE_SCHEDULER_LOGS:-}"
+
+# For trace_replayer
+TRACE_DIR="${TRACE_DIR:-}"                       # can be relative to CONTENT_DIR
+KWOKCTL_CONFIG_FILE="${KWOKCTL_CONFIG_FILE:-}"  # can be relative to CONTENT_DIR
+NODE_CPU="${NODE_CPU:-}"
+NODE_MEM="${NODE_MEM:-}"
+MONITOR_INTERVAL="${MONITOR_INTERVAL:-}"
 
 ########################## Helpers ##########################
 #############################################################
@@ -105,13 +89,11 @@ resolve_paths_relative_to_folder() {
   RESULTS_DIR="$(to_abs_under_folder "$RESULTS_DIR")"
   SEED_FILE="$(to_abs_under_folder "$SEED_FILE")"
   JOB_FILE="$(to_abs_under_folder "$JOB_FILE")"
-  REPO_DIR="$(to_abs_under_folder "$REPO_DIR")"
   TRACE_DIR="$(to_abs_under_folder "$TRACE_DIR")"
   KWOKCTL_CONFIG_FILE="$(to_abs_under_folder "$KWOKCTL_CONFIG_FILE")"
 }
 
 print_cfg() {
-  log cfg "BUILD_SCHEDULER=${BUILD_SCHEDULER}"
   log cfg "CONTENT_DIR=${CONTENT_DIR}"
   log cfg "KWOK_RUNTIME=${KWOK_RUNTIME}"
   log cfg "RUNNER=${RUNNER}"
@@ -127,7 +109,6 @@ print_cfg() {
     log cfg "CLEAN_START=${CLEAN_START:-<unset>}"
     log cfg "LOG_LEVEL=${LOG_LEVEL:-<unset>}"
     log cfg "PAUSE=${PAUSE:-<unset>}"
-    log cfg "REPO_DIR=${REPO_DIR:-<unset>}"
   fi
   log cfg "DEFAULT_SCHEDULER=${DEFAULT_SCHEDULER:-<unset>}"
   if [ -n "${SEEDS_NOT_ALL_RUNNING:-}" ]; then
@@ -155,9 +136,6 @@ print_cfg() {
   log cfg "NODE_CPU=${NODE_CPU:-<unset>}"
   log cfg "NODE_MEM=${NODE_MEM:-<unset>}"
   log cfg "MONITOR_INTERVAL=${MONITOR_INTERVAL:-<unset>}"
-  if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "docker" ]; then
-    log cfg "IMAGE_REMOTE_TAG=${IMAGE_REMOTE_TAG}"
-  fi
 }
 
 ######################## Stage Setup ########################
@@ -171,21 +149,6 @@ stage_setup() {
   run_root "export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends git ca-certificates curl make python3 python3-pip python3-venv"
-
-  # Clone only if we need to build
-  if [ "${BUILD_SCHEDULER}" = "true" ]; then
-    if [ ! -d "${REPO_DIR}/.git" ]; then
-      cd '/tmp'
-      log init "cloning https://github.com/${REPO_OWNER}/${REPO_NAME}#${REPO_BRANCH} to ${REPO_DIR}"
-      run_root "install -d -m 0755 '$(dirname "${REPO_DIR}")'"
-      run_root "git clone --branch '${REPO_BRANCH}' --single-branch '${REPO_URL}' '${REPO_DIR}'"
-      log ok "cloned repo to ${REPO_DIR}"
-    else
-      log init "updating existing repo in ${REPO_DIR}"
-      run_root "cd '${REPO_DIR}' && git fetch && git checkout '${REPO_BRANCH}' && git pull --ff-only || true"
-      log ok "updated repo in ${REPO_DIR}"
-    fi
-  fi
 
   # kubectl/kwokctl/kwok
   log init "installing kubectl ${KUBECTL_VERSION}, kwokctl ${KWOK_VERSION}, kwok ${KWOK_VERSION}"
@@ -204,54 +167,18 @@ stage_setup() {
   kwok --version    >/dev/null 2>&1 || die "kwok not installed"
   log ok "kubectl/kwokctl/kwok installed"
 
-  # Docker (if needed)
-  if [ "${KWOK_RUNTIME}" = "docker" ]; then
-    log init "installing docker"
-    run_root "
-      install -m 0755 -d /etc/apt/keyrings
-      if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-      fi
-      echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$UBUNTU_CODENAME\") stable\" > /etc/apt/sources.list.d/docker.list
-      apt-get update
-      apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin
-      systemctl enable --now docker
-    "
-    docker --version >/dev/null 2>&1 || die "docker not installed"
-    log ok "docker installed"
-  fi
-
-  # Go (if needed)
-  if [ "${BUILD_SCHEDULER}" = "true" ] && [ "${KWOK_RUNTIME}" = "binary" ]; then
-    log init "installing Go ${GO_VERSION}"
-    run_root "
-      curl -fsSLo /tmp/go.tgz https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz
-      rm -rf /usr/local/go
-      tar -C /usr/local -xzf /tmp/go.tgz
-      tee /etc/profile.d/golang.sh >/dev/null <<'EOF_G'
-export PATH=\"/usr/local/go/bin:\$PATH\"
-export GOPATH=\"\$HOME/go\"
-export GOCACHE=\"\$HOME/.cache/go-build\"
-EOF_G
-      chmod 0644 /etc/profile.d/golang.sh
-    "
-    export PATH="/usr/local/go/bin:${PATH}"
-    go version >/dev/null 2>&1 || die "go not installed"
-    log ok "Go installed"
-  fi
-  
-  log ok "setup done"
-}
-
-######################## Stage Build ########################
-#############################################################
-stage_build() {
-  log init "build starting"
-
+  # Normalize paths
   resolve_paths_relative_to_folder
+  # Print configuration
   print_cfg
 
+  # Ensure kube-scheduler binary is present for binary runtime
+  log init "verifying kube-scheduler binary"
+  run_root "chmod +x '${CONTENT_DIR}/bin/kube-scheduler'" \
+    || die "KWOK_RUNTIME=binary but no prebuilt scheduler at '${CONTENT_DIR}/bin/kube-scheduler'. Set BUILD_SCHEDULER=true or place the binary there."
+  log ok "kube-scheduler binary verified"
+
+  # Stage the solver
   log init "staging solver to ${SOLVER_DIR} (venv @ ${VENV_DIR})"
   run_root "
     set -euo pipefail
@@ -264,47 +191,7 @@ stage_build() {
   "
   log ok "staged solver (venv @ ${VENV_DIR})"
 
-  # Build scheduler (if needed)
-  if [ "${BUILD_SCHEDULER}" = "true" ]; then
-    if [ "${KWOK_RUNTIME}" = "binary" ]; then # build binary
-      log init "building kube-scheduler binary"
-      run_root "
-        set -euo pipefail
-        export PATH=\"/usr/local/go/bin:\$PATH\"  # from setup stage
-        cd '${REPO_DIR}'
-        make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
-        install -d -m 0755 '${CONTENT_DIR}/bin'
-        install -m 0755 '${REPO_DIR}/bin/kube-scheduler' '${CONTENT_DIR}/bin/kube-scheduler'
-      "
-      log ok "built binary: ${CONTENT_DIR}/bin/kube-scheduler"
-    else # build docker image
-      log init "building kube-scheduler docker image"
-      run_root "
-        set -euo pipefail
-        cd '${REPO_DIR}'
-        docker build -t '${IMAGE_TAG_RESOLVED}' -f build/scheduler/Dockerfile .
-      "
-      log ok "built image: ${IMAGE_TAG_RESOLVED}"
-    fi
-  else
-    # Not building: ensure the binary is present for binary runtime
-    if [ "${KWOK_RUNTIME}" = "binary" ]; then # binary
-      run_root "chmod +x '${CONTENT_DIR}/bin/kube-scheduler'" \
-        || die "KWOK_RUNTIME=binary but no prebuilt scheduler at '${CONTENT_DIR}/bin/kube-scheduler'. Set BUILD_SCHEDULER=true or place the binary there."
-    else # docker
-      if ! docker image inspect "${IMAGE_TAG_RESOLVED}" >/dev/null 2>&1; then
-        log warn "image '${IMAGE_TAG_RESOLVED}' not found locally; attempting docker pull"
-        if ! docker pull "${IMAGE_REMOTE_TAG}"; then
-          die "KWOK_RUNTIME=docker but image '${IMAGE_REMOTE_TAG}' not present and pull failed. \
-Place the image locally (docker load/tag) or set BUILD_SCHEDULER=true."
-        fi
-        docker tag "${IMAGE_REMOTE_TAG}" "${IMAGE_TAG_RESOLVED}"
-      fi
-      log ok "scheduler image present: ${IMAGE_TAG_RESOLVED}"
-    fi
-  fi
-
-  log ok "build done"
+  log ok "setup done"
 }
 
 ######################## Stage Test #########################
@@ -374,7 +261,7 @@ stage_test() {
       [ -n "${DEFAULT_SCHEDULER:-}"    ] && args+=( --default-scheduler "${DEFAULT_SCHEDULER}" )
       [ -n "${KWOKCTL_CONFIG_FILE:-}"  ] && args+=( --kwokctl-config-file "${KWOKCTL_CONFIG_FILE}" )
 
-      # Append passthrough boolean flags (like --trigger-optimizer, --save-scheduler-logs, --clean-start, --pause)
+      # Append passthrough boolean flags (like --solver-trigger, --save-scheduler-logs, --clean-start, --pause)
       # shellcheck disable=SC2206
       local pass_flags=( ${passthru} )
       args+=( "${pass_flags[@]}" )
@@ -388,7 +275,7 @@ stage_test() {
       # Run the tests
       run_root "
         cd '${CONTENT_DIR}' && \
-        { [ '${KWOK_RUNTIME}' != 'binary' ] || chmod +x './bin/kube-scheduler'; } && \
+        chmod +x './bin/kube-scheduler' && \
         '${VENV_DIR}/bin/python' -m scripts.kwok_workload_once.test_runner ${quoted_args}
       "
 
@@ -404,9 +291,7 @@ stage_test() {
 # kind: "flag" (boolean) or "value" (needs a value)
 # pass: the flag to forward ("" to disable)
 FLAGS_SPEC=(
-  "build-scheduler|BUILD_SCHEDULER|value|"
   "content-dir|CONTENT_DIR|value|"
-  "image-remote-tag|IMAGE_REMOTE_TAG|value|"
   "cluster-name|CLUSTER_NAME|value|"
   "kwok-runtime|KWOK_RUNTIME|value|"
   "config-file|CONFIG_FILE|value|"
@@ -453,8 +338,8 @@ set_var() { # set shell var by name under set -u
 }
 
 parse_cli_using_spec() {
-  # Also supports a leading subcommand (all|setup-build|test)
-  case "${1-}" in all|setup-build|test) cmd="$1"; shift;; esac
+  # Also supports a leading subcommand (all|setup|test)
+  case "${1-}" in all|setup|test) cmd="$1"; shift;; esac
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -512,9 +397,9 @@ parse_cli_using_spec "$@"
 wait_for_dir "${CONTENT_DIR}" "${CONTENT_DIR_WAIT_TIMEOUT_S}" "${CONTENT_DIR_WAIT_INTERVAL_S}"
 
 case "${cmd}" in
-  setup-build) stage_setup; stage_build ;;
-  test)        stage_test ;;
-  all)         stage_setup; stage_build; stage_test ;;
+  setup)  stage_setup ;;
+  test)   stage_test ;;
+  all)    stage_setup; stage_test ;;
 esac
 
 exit 0
