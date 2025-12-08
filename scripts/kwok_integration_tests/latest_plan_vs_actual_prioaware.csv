@@ -1,7 +1,0 @@
-pod,planned_node,actual_node,expected_assignment
-prioaware-pod-101-xlh2p,,,
-prioaware-pod-102-2nwwm,,,
-prioaware-pod-103-4xd7j,,,
-prioaware-pod-104-9l2v4,,,
-prioaware-pod-201-4vsfc,kwok-node-2,kwok-node-2,true
-prioaware-pod-202-dmzhw,kwok-node-1,kwok-node-1,true

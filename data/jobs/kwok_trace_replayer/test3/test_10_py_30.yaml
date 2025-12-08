@@ -1,6 +1,6 @@
 trace-dir: data/traces3/test_10
 result-dir: results/test_10/python30
-kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+kwokctl-config-file: data/configs-kwokctl/plugin-scheduler.yaml
 save-scheduler-logs: true
 override-kwokctl-envs:
   - name: OPTIMIZE_MODE

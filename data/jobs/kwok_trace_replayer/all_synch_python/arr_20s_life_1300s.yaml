@@ -1,6 +1,6 @@
 trace-dir: data/traces/arr_20s_life_1300s
 result-dir: results/traces/arr_20s_life_1300s
-kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+kwokctl-config-file: data/configs-kwokctl/plugin-scheduler.yaml
 override-kwokctl-envs:
   - name: OPTIMIZE_MODE
     value: all_synch

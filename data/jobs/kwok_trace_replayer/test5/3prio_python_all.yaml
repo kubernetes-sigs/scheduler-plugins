@@ -1,6 +1,6 @@
 trace-dir: data/traces/set3/3prio
 result-dir: results/3prio/python_all
-kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+kwokctl-config-file: data/configs-kwokctl/plugin-scheduler.yaml
 save-scheduler-logs: true
 override-kwokctl-envs:
   - name: OPTIMIZE_MODE

@@ -34,3 +34,5 @@ eta*
 results.csv
 *.log
 *coverage*
+/scripts/kwok_integration_tests/**/*.csv
+/scripts/kwok_integration_tests/**/*.json

@@ -168,7 +168,7 @@ The following tools are required (tools already mentioned in [Building](#buildin
 
 ### KWOK (recommended)
 
-To set up a KWOK cluster with the scheduler+plugin one needs to provide a configuration file to KWOK. An example of a configuration file is `bootstrap/content/data/configs-kwokctl/all_synch_python.yaml`.
+To set up a KWOK cluster with the scheduler+plugin one needs to provide a configuration file to KWOK. An example of a configuration file is `bootstrap/content/data/configs-kwokctl/plugin-scheduler.yaml`.
 
 ```yaml
 kind: KwokctlConfiguration
@@ -317,9 +317,9 @@ All the test jobs used previously to evaluate the plugin can be found under `dat
 
 ```yaml
 workload-config-file: data/configs-workload/base.yaml
-kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
-seed-file: data/seeds/nodes4_pods16_prio4_util095.txt
-output-dir: results/all_synch_python/nodes4_pods16_prio4_util095_timeout10
+kwokctl-config-file: data/configs-kwokctl/plugin-scheduler.yaml
+seed-file: data/seeds/kwok_workload_once/nodes4_pods16_prio4_util095.txt
+output-dir: results/plugin-scheduler/nodes4_pods16_prio4_util095_timeout10
 save-scheduler-logs: true
 save-solver-stats: true
 solver-trigger: true
@@ -418,7 +418,7 @@ results/
 │   │   └── seeds-not-all-running.txt    (if applicable)
 │   ├── ...
 │   └── nodes32_pods256_prio4_util105/
-└── all_synch_python/
+└── plugin-scheduler/
     ├── nodes4_pods16_prio1_util090_timeout01/
     │   ├── results.csv
     │   ├── info.yaml
@@ -460,11 +460,11 @@ NOTE: This make use of another `--kwokctl-config-file` to make the job generatio
 
 ```bash
 python3 job_generator.py \
---out-dir data/jobs/default-deterministic \
---output-dir results/default-deterministic \
+--out-dir data/jobs/kwok_workload_once/default-deterministic \
+--output-dir results/kwok_workload_once/default-deterministic \
 --workload-config-file data/configs-workload/base.yaml \
 --kwokctl-config-file data/configs-kwokctl/default-deterministic.yaml \
---seed-file data/seeds/seeds_all.txt \
+--seed-file data/seeds/kwok_workload_once/seeds_all.txt \
 --num-nodes 4 8 16 32 \
 --avg-pods-per-node 4 8 \
 --num-priorities 1 2 4 \
@@ -479,11 +479,11 @@ python3 job_generator.py \
 
 ```bash
 python3 job_generator.py \
---out-dir data/jobs/default \
---output-dir results/default \
+--out-dir data/jobs/kwok_workload_once/default \
+--output-dir results/kwok_workload_once/default \
 --workload-config-file data/configs-workload/base.yaml \
 --kwokctl-config-file data/configs-kwokctl/default.yaml \
---seed-file data/seeds/ \
+--seed-file data/seeds/kwok_workload_once/ \
 --num-nodes 4 8 16 32 \
 --avg-pods-per-node 4 8 \
 --num-priorities 1 2 4 \
@@ -495,11 +495,11 @@ python3 job_generator.py \
 
 ```bash
 python3 job_generator.py \
---out-dir data/jobs/default \
---output-dir results/default \
+--out-dir data/jobs/kwok_workload_once/default \
+--output-dir results/kwok_workload_once/default \
 --workload-config-file data/configs-workload/base.yaml \
 --kwokctl-config-file data/configs-kwokctl/default.yaml \
---seed-file data/seeds/seeds_100.txt \
+--seed-file data/seeds/kwok_workload_once/seeds_100.txt \
 --num-nodes 4 8 16 32 \
 --avg-pods-per-node 4 8 \
 --num-priorities 1 2 4 \
@@ -513,11 +513,11 @@ python3 job_generator.py \
 
 ```bash
 python3 job_generator.py \
---out-dir data/jobs/all_synch_python \
---output-dir results/all_synch_python \
+--out-dir data/jobs/kwok_workload_once/plugin-scheduler \
+--output-dir results/kwok_workload_once/plugin-scheduler \
 --workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
---seed-file data/seeds/ \
+--kwokctl-config-file data/configs-kwokctl/plugin-scheduler.yaml \
+--seed-file data/seeds/kwok_workload_once/ \
 --num-nodes 4 8 16 32 \
 --avg-pods-per-node 4 8 \
 --num-priorities 1 2 4 \
@@ -532,11 +532,11 @@ python3 job_generator.py \
 
 ```bash
 python3 job_generator.py \
---out-dir data/jobs/all_synch_python \
---output-dir results/all_synch_python \
+--out-dir data/jobs/kwok_workload_once/plugin-scheduler \
+--output-dir results/kwok_workload_once/plugin-scheduler \
 --workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/all_synch_python.yaml \
---seed-file data/seeds/seeds_100.txt \
+--kwokctl-config-file data/configs-kwokctl/plugin-scheduler.yaml \
+--seed-file data/seeds/kwok_workload_once/seeds_100.txt \
 --num-nodes 4 8 16 32 \
 --avg-pods-per-node 4 8 \
 --num-priorities 1 2 4 \

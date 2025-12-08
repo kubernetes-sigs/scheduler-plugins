@@ -27,7 +27,6 @@ from scripts.helpers.kubectl_helpers import (
     wait_rs_pods,
 )
 from scripts.helpers.kwok_helpers import (
-    yaml_kwok_pod,
     yaml_kwok_rs,
     ensure_kwok_cluster,
     create_kwok_nodes,
@@ -520,8 +519,10 @@ class TestRunner:
             except Exception:
                 errors.append("num_priorities interval must contain integers")
 
-        # Replicaset check
-        if tr.num_replicas_per_rs is not None:
+        # ReplicaSets
+        if tr.num_replicas_per_rs is None:
+            errors.append("num_replicas_per_rs must be provided")
+        else:
             try:
                 lo_rps = int(tr.num_replicas_per_rs[0])
                 hi_rps = int(tr.num_replicas_per_rs[1])
@@ -551,7 +552,6 @@ class TestRunner:
                 errors.append(f"mem_per_pod has invalid quantities: {tr.mem_per_pod!r}")
 
         ok = (len(errors) == 0)
-        
         return ok, ("\n".join(errors) if errors else "")
     
     def _resolve_config_for_seed(self, seed_int: int) -> TestConfigApplied:
@@ -570,28 +570,26 @@ class TestRunner:
         cpu_m = (qty_to_mcpu_int(tr.cpu_per_pod[0]), qty_to_mcpu_int(tr.cpu_per_pod[1]))
         mem_b = (qty_to_bytes_int(tr.mem_per_pod[0]), qty_to_bytes_int(tr.mem_per_pod[1]))
 
-        # Pod sizes
-        rs_sets: list[int] = []
-        rs_cpu = rs_mem = None
-        if tr.num_replicas_per_rs is not None: # RS mode
-            rng_rs_sizes = seeded_random(seed_int, "rs-sizes")
-            rng_rs_cpu   = seeded_random(seed_int, "rs-cpu")
-            rng_rs_mem   = seeded_random(seed_int, "rs-mem")
-            rs_sets = self._gen_rs_sizes(rng_rs_sizes, tr.num_pods, tr.num_replicas_per_rs)
-            rs_cpu = [rng_rs_cpu.randint(cpu_m[0], cpu_m[1]) for _ in rs_sets]
-            rs_mem = [rng_rs_mem.randint(mem_b[0], mem_b[1]) for _ in rs_sets]
-            cpu_parts = [v for i, v in enumerate(rs_cpu) for _ in range(rs_sets[i])]
-            mem_parts = [v for i, v in enumerate(rs_mem) for _ in range(rs_sets[i])]
-        else: # standalone
-            rng_pod_cpu = seeded_random(seed_int, "pod-cpu")
-            rng_pod_mem = seeded_random(seed_int, "pod-mem")
-            cpu_parts = [rng_pod_cpu.randint(cpu_m[0], cpu_m[1]) for _ in range(tr.num_pods)]
-            mem_parts = [rng_pod_mem.randint(mem_b[0], mem_b[1]) for _ in range(tr.num_pods)]
+        # ReplicaSets only
+        if tr.num_replicas_per_rs is None:
+            raise SystemExit("config error: num_replicas_per_rs must be set")
+
+        rng_rs_sizes = seeded_random(seed_int, "rs-sizes")
+        rng_rs_cpu   = seeded_random(seed_int, "rs-cpu")
+        rng_rs_mem   = seeded_random(seed_int, "rs-mem")
+
+        rs_sets = self._gen_rs_sizes(rng_rs_sizes, tr.num_pods, tr.num_replicas_per_rs)
+        rs_cpu = [rng_rs_cpu.randint(cpu_m[0], cpu_m[1]) for _ in rs_sets]
+        rs_mem = [rng_rs_mem.randint(mem_b[0], mem_b[1]) for _ in rs_sets]
+
+        # Flatten RS specs into per-pod parts (for node sizing)
+        cpu_parts = [v for i, v in enumerate(rs_cpu) for _ in range(rs_sets[i])]
+        mem_parts = [v for i, v in enumerate(rs_mem) for _ in range(rs_sets[i])]
 
         # Node sizes based on pods above and target utilization
         sum_cpu, sum_mem = sum(cpu_parts), sum(mem_parts)
         max_cpu_m, max_mem_b = (max(cpu_parts) if cpu_parts else 1), (max(mem_parts) if mem_parts else 1)
-        util = max(1e-9, float(tr.util)) # avoid division by zero #TODO: move the max check in parser
+        util = max(1e-9, float(tr.util)) # avoid division by zero
         total_cap_cpu = int(math.ceil(sum_cpu / util))
         total_cap_mem = int(math.ceil(sum_mem / util))
         per_node_m = max(max_cpu_m, int(math.ceil(total_cap_cpu / tr.num_nodes)))
@@ -612,27 +610,21 @@ class TestRunner:
             num_replicas_per_rs=tr.num_replicas_per_rs,
             cpu_per_pod_m=cpu_m_used,
             mem_per_pod_b=mem_b_used,
-            
             util=tr.util,
-            
             wait_pod_mode=wait_pod_mode,
             wait_pod_timeout_s=wait_pod_timeout_s,
-            
             settle_timeout_min_s=settle_timeout_min_s,
             settle_timeout_max_s=settle_timeout_max_s,
-            
             node_cpu_m=per_node_m,
             node_mem_b=per_node_b,
-            
             pod_parts_cpu_m=cpu_parts,
             pod_parts_mem_b=mem_parts,
         )
-        
-        # Only add RS fields if RS are used
-        if num_rs_sets > 0:
-            ta.rs_sets = rs_sets
-            ta.rs_parts_cpu_m = rs_cpu
-            ta.rs_parts_mem_b = rs_mem
+
+        # RS specific fields (always used now)
+        ta.rs_sets = rs_sets
+        ta.rs_parts_cpu_m = rs_cpu
+        ta.rs_parts_mem_b = rs_mem
 
         return ta
     
@@ -1376,75 +1368,48 @@ class TestRunner:
     def _build_pod_list(
         running_by_name: Dict[str, str],
         unschedulable_names: List[str],
-        standalone_specs: List[Dict[str, object]] | None,
         rs_specs: List[Dict[str, object]] | None,
     ) -> List[Dict[str, object]]:
         """
-        Build a combined list of all pods (standalone and from RS) with their specs and node assignment.
+        Build a combined list of all pods with their specs and node assignment.
         Each entry: {name, cpu_m, mem_b, priority, node}
         """
-        by_standalone = {p["name"]: p for p in (standalone_specs or [])}
         by_rs = {r["name"]: r for r in (rs_specs or [])}
         all_names = set(running_by_name.keys()) | set(unschedulable_names)
         out: List[Dict[str, object]] = []
         for pname in sorted(all_names):
             node = running_by_name.get(pname, "")
-            if pname in by_standalone:
-                spec = by_standalone[pname]
-                out.append({
-                    "name": pname,
-                    "cpu_m": int(spec["req_cpu_m"]),
-                    "mem_b": int(spec["req_mem_bytes"]),
-                    "priority": str(spec["priority"]),
-                    "node": node,
-                })
-            else:
-                rsname = ""
-                if by_rs:
-                    for candidate in sorted(by_rs.keys(), key=len, reverse=True):
-                        if pname.startswith(candidate + "-"):
-                            rsname = candidate
-                            break
-                r = by_rs.get(rsname, {})
-                out.append({
-                    "name": pname,
-                    "cpu_m": int(r.get("req_cpu_m", 0)),
-                    "mem_b": int(r.get("req_mem_bytes", 0)),
-                    "priority": str(r.get("priority", "")),
-                    "node": node,
-                })
+            rsname = ""
+            if by_rs:
+                for candidate in sorted(by_rs.keys(), key=len, reverse=True):
+                    if pname.startswith(candidate + "-"):
+                        rsname = candidate
+                        break
+            r = by_rs.get(rsname, {})
+            out.append({
+                "name": pname,
+                "cpu_m": int(r.get("req_cpu_m", 0)),
+                "mem_b": int(r.get("req_mem_bytes", 0)),
+                "priority": str(r.get("priority", "")),
+                "node": node,
+            })
         return out
 
     ##############################################
     # ------------ Workload helpers ------------
     ##############################################
-    def _make_standalone_pod_specs_only(self, rng, ta) -> list[dict]:
-        """
-        Build standalone pod specs by splitting pod_parts_cpu_m and pod_parts_mem_b.
-        Each pod gets a random priority in [1, num_priorities].
-        """
-        specs: list[dict] = []
-        n = len(ta.pod_parts_cpu_m)
-        for i in range(n):
-            prio = rng.randint(1, max(1, ta.num_priorities))
-            name = f"pod-{i+1:03d}-p{prio}"
-            specs.append({
-                "name": name,
-                "priority": int(prio),
-                "req_cpu_m": int(ta.pod_parts_cpu_m[i]),
-                "req_mem_bytes": int(ta.pod_parts_mem_b[i]),
-            })
-        return specs
-
     def _make_replicaset_specs_only(self, rng, ta) -> list[dict]:
         """
-        Build ReplicaSet specs by randomly splitting num_pods into sets of sizes in replicas_per_set.
+        Build ReplicaSet specs only.
         Each RS gets a random priority in [1, num_priorities].
         """
         rs_specs: list[dict] = []
         if not getattr(ta, "rs_sets", None):
-            return rs_specs
+            raise ValueError("_make_replicaset_specs_only: rs_sets is empty; expected at least one ReplicaSet")
+
         for idx, replicas in enumerate(ta.rs_sets, start=1):
+            if replicas < 1:
+                raise ValueError(f"_make_replicaset_specs_only: invalid replicas={replicas}; must be >=1")
             prio = rng.randint(1, max(1, ta.num_priorities))
             name = f"rs-{idx:02d}-p{prio}"
             rs_specs.append({
@@ -1455,26 +1420,6 @@ class TestRunner:
                 "replicas": int(replicas),
             })
         return rs_specs
-
-    def _apply_standalone_pods(self, ta: TestConfigApplied, specs: list[dict]) -> None:
-        """
-        Apply standalone pods via kubectl in the given namespace with the specified specs.
-        """
-        names: List[str] = []
-        for s in specs:
-            pc = f"p{int(s['priority'])}"
-            cpu_m_str = qty_to_mcpu_str(int(s["req_cpu_m"]))
-            mem_b_str = qty_to_bytes_str(int(s["req_mem_bytes"]))
-            kubectl_apply_yaml(LOG, self.ctx, yaml_kwok_pod(ta.namespace, s["name"], cpu_m_str, mem_b_str, pc))
-            names.append(s["name"])
-        # Wait (as before)
-        if ta.wait_pod_mode == "running":
-            for name in names:
-                _ = self._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
-        elif ta.wait_pod_mode in ("exist", "ready"):
-            for name in names:
-                _ = self._wait_each(self.ctx, "pod", name, ta.namespace, ta.wait_pod_timeout_s, ta.wait_pod_mode)
-        LOG.info("created %d standalone pods", len(specs))
 
     def _apply_replicasets(self, ta: TestConfigApplied, specs: list[dict]) -> None:
         """
@@ -1512,7 +1457,7 @@ class TestRunner:
     ######################################################
     # ---------- Solver helpers ------------------
     ######################################################
-    def _solver_directly(self, ta, seed, pod_specs, rs_specs) -> tuple[dict, dict]:
+    def _solver_directly(self, ta, seed, rs_specs) -> tuple[dict, dict]:
         """
         Directly call the solver script with the given specs and return its result.
         Returns (solver_result, metrics).
@@ -1530,7 +1475,7 @@ class TestRunner:
                 raise SystemExit(f"[solver] Missing requirement: {dist}=={required}\n")
             if installed != required:
                 raise SystemExit(f"[solver] Version mismatch for {dist}: required {required}, found {installed}\n")
-         
+        
         def _preplace_running_pods(pods, nodes, run_util: float, seed: int) -> None:
             # Build per-node targets
             targets = [{
@@ -1586,7 +1531,7 @@ class TestRunner:
             "cap_mem_bytes": int(ta.node_mem_b),
         } for j in range(ta.num_nodes)]
 
-        # Pods (emit standalone and RS replicas)
+        # Pods
         pods = []
         uid_counter = 0
 
@@ -1603,9 +1548,7 @@ class TestRunner:
                 "protected": False,
                 "node": "",
             })
-
-        for s in pod_specs:
-            emit(s["name"], s["priority"], s["req_cpu_m"], s["req_mem_bytes"])
+        
         for rs in rs_specs:
             for r in range(int(rs["replicas"])):
                 emit(f'{rs["name"]}-{r}', rs["priority"], rs["req_cpu_m"], rs["req_mem_bytes"])
@@ -1877,22 +1820,17 @@ class TestRunner:
     ##############################################
     def _execute_seed_direct(self, seed: int, ta: "TestConfigApplied") -> bool:
         """
-        Direct solving path (no cluster). Generates specs, calls the Python solver and logs stats.
+        Direct solving path (no cluster). Generates specs, calls the solver and logs stats.
         """
         phase = "generate_specs"
         LOG.info("phase=%s (no cluster work)", phase)
         rng = seeded_random(seed, "base")
 
-        pod_specs: list[dict] = []
-        rs_specs:  list[dict] = []
-        if ta.num_replicaset > 0:
-            rs_specs = self._make_replicaset_specs_only(rng, ta)
-        else:
-            pod_specs = self._make_standalone_pod_specs_only(rng, ta)
+        rs_specs:  list[dict] = self._make_replicaset_specs_only(rng, ta)
 
         phase = "call_solver"
         LOG.info("phase=%s", phase)
-        resp, meta = self._solver_directly(ta, seed, pod_specs, rs_specs)
+        resp, meta = self._solver_directly(ta, seed, rs_specs)
 
         placements = resp.get("placements", []) or []
         evictions  = resp.get("evictions", [])  or []
@@ -2025,15 +1963,9 @@ class TestRunner:
 
         # workload
         phase = "apply_workload"
-        LOG.info("phase=%s  mode=%s", phase, 'RS' if ta.num_replicaset>0 else 'standalone')
-        pod_specs: list[dict] = []
-        rs_specs:  list[dict] = []
-        if ta.num_replicaset > 0:
-            rs_specs = self._make_replicaset_specs_only(rng, ta)
-            self._apply_replicasets(ta, rs_specs)
-        else:
-            pod_specs = self._make_standalone_pod_specs_only(rng, ta)
-            self._apply_standalone_pods(ta, pod_specs)
+        LOG.info("phase=%s", phase)
+        rs_specs:  list[dict] = self._make_replicaset_specs_only(rng, ta)
+        self._apply_replicasets(ta, rs_specs)
 
         # minimal wait for pods to appear
         phase = "wait_settle_before_first_check"
@@ -2060,7 +1992,7 @@ class TestRunner:
         if self.args.solver_trigger and not self.args.default_scheduler:
             phase = "solver_trigger"
             LOG.info("phase=%s url=%s; waiting for response (timeout %ss)", phase, SOLVER_TRIGGER_URL, SOLVER_TRIGGER_TIMEOUT_S)
-            code, body = solver_trigger_http(logger=LOG, url=SOLVER_TRIGGER_URL, timeout_s=SOLVER_TRIGGER_TIMEOUT_S)
+            code, body = solver_trigger_http(logger=LOG, url=SOLVER_TRIGGER_URL, timeout=SOLVER_TRIGGER_TIMEOUT_S)
             body_compact = (body or "").replace("\n", "\\n")
             if len(body_compact) > 600:
                 body_compact = body_compact[:600] + "...(truncated)"
@@ -2158,11 +2090,11 @@ class TestRunner:
             
             "pod_info_now": json.dumps(self._build_pod_list(
                 {name: node for (name, node) in snap_now.pods_running},
-                snap_now.pods_unscheduled, pod_specs, rs_specs
+                snap_now.pods_unscheduled, rs_specs
             ), separators=(",", ":")),
             "pod_info_before": json.dumps(self._build_pod_list(
                 {name: node for (name, node) in snap_before.pods_running},
-                snap_before.pods_unscheduled, pod_specs, rs_specs
+                snap_before.pods_unscheduled, rs_specs
             ), separators=(",", ":")),
             
             "node_info": self._build_node_info(

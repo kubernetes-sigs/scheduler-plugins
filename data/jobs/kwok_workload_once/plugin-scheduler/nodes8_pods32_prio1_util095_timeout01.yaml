@@ -1,0 +1,15 @@
+workload-config-file: data/configs-workload/base.yaml
+kwokctl-config-file: data/configs-kwokctl/plugin-scheduler.yaml
+seed-file: data/seeds/kwok_workload_once/nodes8_pods32_prio1_util095.txt
+output-dir: results/plugin-scheduler/nodes8_pods32_prio1_util095_timeout01
+save-scheduler-logs: true
+save-solver-stats: true
+solver-trigger: true
+override-workload-config:
+  num_nodes: 8
+  num_pods: 32
+  num_priorities: 1
+  util: 0.95
+override-kwokctl-envs:
+- name: SOLVER_PYTHON_TIMEOUT
+  value: 1s

@@ -1,6 +1,6 @@
 trace-dir: data/traces2/test_20
 result-dir: results/test2_20/python30
-kwokctl-config-file: data/configs-kwokctl/all_synch_python.yaml
+kwokctl-config-file: data/configs-kwokctl/plugin-scheduler.yaml
 override-kwokctl-envs:
   - name: OPTIMIZE_MODE
     value: freetime_asynch

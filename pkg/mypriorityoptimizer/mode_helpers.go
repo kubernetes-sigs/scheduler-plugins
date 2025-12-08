@@ -36,6 +36,8 @@ func modeToString() string {
 		return "Interlude"
 	case ModeManual:
 		return "Manual"
+	case ModeManualBlocking:
+		return "ManualBlocking"
 	default:
 		return "Periodic"
 	}

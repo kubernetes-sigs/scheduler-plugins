@@ -1,6 +1,0 @@
-pod,planned_node,actual_node,expected_assignment
-hp-big-1-xw2rv,,,false
-hp-big-2-xfxqq,kwok-node-2,kwok-node-2,false
-hp-small-1-6vr6z,kwok-node-1,kwok-node-1,true
-hp-small-2-d8kt9,kwok-node-1,kwok-node-1,true
-hp-small-3-wm5pt,kwok-node-1,kwok-node-1,true
