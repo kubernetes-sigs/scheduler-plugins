@@ -25,7 +25,7 @@ from scripts.helpers.kwok_helpers import (
 
 DEFAULT_CLUSTER_NAME = "kwok1"
 DEFAULT_KWOK_RUNTIME = "binary"
-DEFAULT_KWOKCTL_CONFIG = "data/configs-kwokctl/test/solver-default.yaml"
+DEFAULT_KWOKCTL_CONFIG = "data/configs-kwokctl/test/test.yaml"
 
 NUM_NODES = 2
 NODE_CPU = "1000m"

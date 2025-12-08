@@ -1,0 +1,188 @@
+# .github/workflows/henrikdc-ci.yml
+name: CI (Build + Unit + Integration)
+
+on:
+  push:
+    branches: [ "henrikdc-main" ]
+  pull_request:
+    branches: [ "henrikdc-main" ]
+
+jobs:
+  # -------------------------------------------------------
+  # 1) Build kube-scheduler binary
+  # -------------------------------------------------------
+  build-scheduler:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.0"
+
+      - name: Build kube-scheduler binary
+        run: |
+          # Uses command from Makefile:
+          make build-scheduler
+
+      - name: Upload kube-scheduler binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: kube-scheduler-binary
+          path: bin/kube-scheduler
+
+  # -------------------------------------------------------
+  # 2) Unit tests (Python + Go)
+  # -------------------------------------------------------
+  unit-tests:
+    needs: build-scheduler
+    runs-on: ubuntu-latest
+
+    env:
+      # Path where we will put the binary after download
+      KUBE_SCHEDULER_BIN: ${{ github.workspace }}/bin/kube-scheduler
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download kube-scheduler binary
+        uses: actions/download-artifact@v4
+        with:
+          name: kube-scheduler-binary
+          path: bin
+
+      - name: Make binary executable
+        run: chmod +x bin/kube-scheduler
+
+      # ---- Python setup ----
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python test deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f scripts/test/requirements.txt ]; then
+            pip install -r scripts/test/requirements.txt
+          fi
+
+      # ---- Go setup (for unit tests) ----
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.0"
+
+      - name: Prepare coverage directories
+        run: |
+          mkdir -p coverage/unit/python
+          mkdir -p coverage/unit/go
+
+      # ---- Run unit tests (Python + Go) ----
+      - name: Run python unit tests
+        run: |
+          python -m pytest scripts/test
+      - name: Run go unit tests
+        run: |
+            go test ./pkg/mypriorityoptimizer \
+              -coverprofile=coverage/unit/go/go_coverage.out
+            go tool cover \
+              -func=coverage/unit/go/go_coverage.out
+            go tool cover \
+              -html=coverage/unit/go/go_coverage.out \
+              -o coverage/unit/go/coverage.html
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage/unit/python
+            coverage/unit/go
+
+  # -------------------------------------------------------
+  # 3) Integration tests
+  # -------------------------------------------------------
+  integration-tests:
+    needs: [build-scheduler, unit-tests]
+    runs-on: ubuntu-latest
+
+    env:
+      KUBE_SCHEDULER_BIN: ${{ github.workspace }}/bin/kube-scheduler
+      VENV_DIR: /opt/venv
+      SOLVER_DIR: /opt/solver
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download kube-scheduler binary
+        uses: actions/download-artifact@v4
+        with:
+          name: kube-scheduler-binary
+          path: bin
+
+      - name: Make binary executable
+        run: chmod +x bin/kube-scheduler
+
+      - name: Install kubectl / kwokctl / kwok
+        env:
+          KUBECTL_VERSION: v1.32.7
+          KWOK_VERSION: v0.7.0
+        run: |
+          set -euo pipefail
+          echo "Installing kubectl ${KUBECTL_VERSION} and kwok ${KWOK_VERSION}"
+          cd /tmp
+
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo install -m 0755 kubectl /usr/local/bin/kubectl
+
+          curl -fsSLo kwokctl-linux-amd64 "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwokctl-linux-amd64"
+          curl -fsSLo kwok-linux-amd64   "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwok-linux-amd64"
+          chmod +x kwokctl-linux-amd64 kwok-linux-amd64
+          sudo install -m 0755 kwokctl-linux-amd64 /usr/local/bin/kwokctl
+          sudo install -m 0755 kwok-linux-amd64   /usr/local/bin/kwok
+
+          rm -f kubectl kwokctl-linux-amd64 kwok-linux-amd64
+
+          echo "kubectl:" && kubectl version --client || true
+          echo "kwokctl:" && kwokctl --version || true
+          echo "kwok:" && kwok --version || true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up solver Python environment
+        run: |
+          set -euo pipefail
+          sudo install -d -m 0755 "${SOLVER_DIR}" "${VENV_DIR}"
+          sudo chown -R "$USER:$USER" "${SOLVER_DIR}" "${VENV_DIR}"
+          cp scripts/python_solver/main.py "${SOLVER_DIR}/main.py"
+          python -m venv "${VENV_DIR}"
+          "${VENV_DIR}/bin/python" -m pip install --upgrade pip
+          "${VENV_DIR}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
+
+      - name: Prepare integration test coverage directory
+        run: mkdir -p coverage/integration/kwok
+
+      - name: Install integration test deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f scripts/kwok_integration_tests/requirements.txt ]; then
+            pip install -r scripts/kwok_integration_tests/requirements.txt
+          fi
+
+      - name: Run integration tests
+        run: |
+          python -m pytest \
+            scripts/kwok_integration_tests/test_modes.py \
+            --cov=scripts/kwok_integration_tests \
+            --cov-report=xml:coverage/integration/kwok/coverage.xml \
+            --cov-report=html:coverage/integration/kwok/html
