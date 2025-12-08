@@ -150,7 +150,7 @@ jobs:
 
           rm -f kubectl kwokctl-linux-amd64 kwok-linux-amd64
 
-          echo "kubectl:" && kubectl version --client --short || true
+          echo "kubectl:" && kubectl version --client || true
           echo "kwokctl:" && kwokctl --version || true
           echo "kwok:" && kwok --version || true
 
