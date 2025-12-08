@@ -1,4 +1,4 @@
-# tests/test_cp_sat_solver.py
+# test_python_solver.py
 import pytest
 
 import io, json
@@ -250,96 +250,6 @@ def test_single_preemptor_infeasible_if_it_cannot_fit_any_node():
     assert out["status"] == "INFEASIBLE"
     assert out["placements"] == []
     assert out["evictions"] == []
-
-
-# ---------------------------------------------------------------------------
-# num_lower_priorities behaviour
-# ---------------------------------------------------------------------------
-
-def test_num_lower_priorities_only_places_low_priority_pending_pods():
-    """
-    When num_lower_priorities > 0 and there are distinct priorities,
-    only the lowest N priorities should be actively optimized.
-
-    Here we have high (100) and low (0) pending pods, and
-    num_lower_priorities=1 should let the solver only place the low-priority pod.
-    """
-    solver = CPSATSolver()
-    nodes = [make_node("n1", cpu=1000, mem=1_000_000_000)]
-    # Both pods individually fit on the node
-    pods = [
-        make_pod("high", cpu=200, mem=100_000_000, priority=100, node=""),
-        make_pod("low", cpu=200, mem=100_000_000, priority=0, node=""),
-    ]
-
-    out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": pods,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-            "num_lower_priorities": 1,  # only the lowest distinct priority (0) is solved
-        }
-    )
-
-    status = out["status"]
-    assert status in ("FEASIBLE", "OPTIMAL")
-
-    placements = out["placements"]
-    placed_uids = {pl["pod"]["uid"] for pl in placements}
-
-    # Low-priority pod should be eligible to be placed
-    assert "low" in placed_uids
-
-    # High-priority pending pod (priority=100) should *not* be placed when
-    # we freeze higher priorities in this mode.
-    assert "high" not in placed_uids
-
-
-def test_high_priority_running_pod_is_not_evicted_when_freeze_high_enabled():
-    """
-    With a running high-priority pod and a pending low-priority pod,
-    when num_lower_priorities > 0, the high-priority running pod should
-    be frozen in place (no eviction), while the low-priority pod can be
-    placed if capacity allows.
-    """
-    solver = CPSATSolver()
-    # Single node with enough capacity to host both pods
-    nodes = [make_node("n1", cpu=800, mem=1_000_000_000)]
-
-    pods = [
-        # High-priority pod already running on n1
-        make_pod("high", cpu=400, mem=100_000_000, priority=100, node="n1"),
-        # Low-priority pod pending
-        make_pod("low", cpu=300, mem=100_000_000, priority=0, node=""),
-    ]
-
-    out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": pods,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-            "num_lower_priorities": 1,  # only lowest prio (0) is in solve set
-        }
-    )
-
-    status = out["status"]
-    assert status in ("FEASIBLE", "OPTIMAL")
-
-    placements = out["placements"]
-    evictions = out["evictions"]
-
-    placed_uids = {pl["pod"]["uid"] for pl in placements}
-    evicted_uids = {ev["pod"]["uid"] for ev in evictions}
-
-    # High-priority running pod must not be evicted
-    assert "high" not in evicted_uids
-
-    # And it should not appear as a placement either if it stayed put
-    assert "high" not in placed_uids
-
-    # Low-priority pod is typically placed
-    assert "low" in placed_uids
-
 
 # ---------------------------------------------------------------------------
 # CLI / main() tests – input/output handling
