@@ -17,47 +17,19 @@
       - [Deterministic scheduling](#deterministic-scheduling)
       - [Workload configuration file](#workload-configuration-file)
       - [Job file](#job-file)
-      - [Init script](#init-script)
-        - [Using Vagrant for init script development](#using-vagrant-for-init-script-development)
-      - [Result replication and running test jobs](#result-replication-and-running-test-jobs)
-      - [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs)
+      - [Bootstrap script](#bootstrap-script)
+        - [Using Vagrant for bootstrap script development](#using-vagrant-for-bootstrap-script-development)
       - [Generating test jobs](#generating-test-jobs)
         - [Deterministic jobs with default scheduler](#deterministic-jobs-with-default-scheduler)
         - [Default scheduler jobs](#default-scheduler-jobs)
         - [Python solver jobs](#python-solver-jobs)
+      - [Result replication and running test jobs](#result-replication-and-running-test-jobs)
+      - [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs)
       - [Estimate time to complete all jobs in UCloud](#estimate-time-to-complete-all-jobs-in-ucloud)
-    - ['Live' Cluster Simulator](#live-cluster-simulator)
+      - [Analysis](#analysis)
+    - [Trace Replayer](#trace-replayer)
     - [Unit and Integration Tests](#unit-and-integration-tests)
-      - [Python: Unit Tests](#python-unit-tests)
-      - [Go: Unit Tests](#go-unit-tests)
-  - [Analysis](#analysis)
   - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
-  - [Cluster Simulator](#cluster-simulator)
-    - [1. Inputs and stochastic model](#1-inputs-and-stochastic-model)
-    - [2. Pod model and trace format](#2-pod-model-and-trace-format)
-    - [3. Single fill-once generation method](#3-single-fill-once-generation-method)
-    - [4. Utilization model during generation](#4-utilization-model-during-generation)
-    - [5. Replaying the trace](#5-replaying-the-trace)
-    - [6. Evaluation and scoring](#6-evaluation-and-scoring)
-    - [7. Example commands](#7-example-commands)
-  - [TODOs](#todos)
-    - [Unit Tests](#unit-tests)
-      - [Go Tests](#go-tests)
-    - [Now TODOs](#now-todos)
-    - [TODO: 'Live' Cluster Simulator](#todo-live-cluster-simulator)
-      - [Design](#design)
-        - [Other Approaches](#other-approaches)
-    - [TODOs: Solver](#todos-solver)
-    - [TODOs: Testing](#todos-testing)
-    - [TODOs: Plugin](#todos-plugin)
-    - [TODOs: Report](#todos-report)
-    - [TODOs: General](#todos-general)
-    - [TODOs: IJCAI Paper](#todos-ijcai-paper)
-    - [TODOs: Later](#todos-later)
-  - [Questions](#questions)
-    - [Open Questions](#open-questions)
-    - [Closed Questions](#closed-questions)
-  - [PhD](#phd)
 
 ## Overview
 
@@ -103,16 +75,15 @@ Some of the main files and their purpose are described below:
 Latest upstream version tracked: **v0.32.7** (tagged release) of  
 [`kubernetes-sigs/scheduler-plugins`](https://github.com/kubernetes-sigs/scheduler-plugins/releases).
 
-This fork follows **tagged upstream releases only**.  
-When updating, **do not** base changes on `*-devel` tags or arbitrary commits from `main`, as they may be incompatible with the KWOK emulation version used here.
+This fork follows **tagged upstream releases only** (we **do not** base changes on `*-devel` tags or arbitrary commits from `main`).
 
-After moving to a new upstream tag, always verify **KWOK compatibility**, e.g. by running a small smoke test with the `test_runner.py` harness.
+After moving to a new upstream tag, always verify that all works as intended, e.g. by running a small smoke test with the `test_runner.py` script (see below).
 
 ## Integrating
 
-To enable and use plugins in the Kubernetes scheduler, you must apply a **scheduler configuration manifest** that selects the plugins and their settings; the manifest for this plugin is `manifests/plugin-kube-scheduler-config.yaml` (see also [Scheduler Configuration on Kubernetes webpage](https://kubernetes.io/docs/reference/scheduling/config/) for background).
+To enable and use plugins in the Kubernetes scheduler, you must apply a **scheduler configuration manifest** that selects the plugins and their settings; the manifest for this plugin is `manifests/mypriorityoptimizer/plugin-scheduler-config.yaml` (see also [Scheduler Configuration on Kubernetes webpage](https://kubernetes.io/docs/reference/scheduling/config/) for background).
 
-This file enables the **MyPriorityOptimizer** plugin and the used extension points and disables the `DefaultPreemption` plugin to avoid conflicts with our plugin.
+This file enables the **MyPriorityOptimizer** plugin and the extension points, described above, that it implements.
 
 The plugin is referenced and registered in `cmd/scheduler/main.go` such that the scheduler will include it at build time.
 
@@ -137,7 +108,7 @@ Currently, it is only tested on **amd64** architecture and some code may need to
 
 ### Binary (recommended)
 
-To build the binary, run the following command in the root of this repo:
+To build the binary, run the following command in the root of the repo:
 
 ```bash
 make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
@@ -147,7 +118,9 @@ The built binary will be located in `bin/kube-scheduler`.
 
 ### Docker image
 
-We have modified the default Dockerfile used to build the scheduler image to include the plugin. To build the docker image, run the following command in the root of this repo:
+We have **modified** the default Dockerfile used to build the scheduler image to include the plugin.
+
+To build the docker image, ensure Docker is running, then run the following command in the root of the repo:
 
 ```bash
 docker build -t localhost:5000/scheduler-plugins/kube-scheduler:dev -f build/scheduler/Dockerfile .
@@ -167,13 +140,13 @@ The following tools are required (tools already mentioned in [Building](#buildin
 
 ### KWOK (recommended)
 
-To set up a KWOK cluster with the scheduler+plugin one needs to provide a configuration file to KWOK. An example of a configuration file is `bootstrap/content/data/configs-kwokctl/plugin-scheduler.yaml`.
+To set up a KWOK cluster with the scheduler+plugin one needs to provide a configuration file to KWOK. An example of a configuration file is `data/configs-kwokctl/plugin-scheduler.yaml`.
 
 ```yaml
 kind: KwokctlConfiguration
 apiVersion: config.kwok.x-k8s.io/v1alpha1
 options:
-  kubeSchedulerConfig: manifests/plugin-scheduler-config.yaml
+  kubeSchedulerConfig: manifests/mypriorityoptimizer/plugin-scheduler-config.yaml
   kubeSchedulerBinary: bin/kube-scheduler
   kubeSchedulerImage: localhost:5000/scheduler-plugins/kube-scheduler:dev
 componentsPatches:
@@ -184,7 +157,11 @@ componentsPatches:
     #     value: "10"
     extraEnvs:
       - name: OPTIMIZE_MODE
-        value: "manual_blocking" # choices: per_pod, periodic, interlude, manual, manual_blocking
+        value: "periodic" # choices: per_pod, periodic, interlude, manual, manual_blocking
+      - name: OPTIMIZE_SOLVE_SYNCH
+        value: "true" # choices: true, false
+      - name: OPTIMIZE_PERIODIC_INTERVAL
+        value: 30s # e.g. 10s, 30s, 60s
       - name: SOLVER_PYTHON_ENABLED
         value: "true"
       - name: SOLVER_PYTHON_TIMEOUT
@@ -211,9 +188,9 @@ Having set up the KWOK cluster configuration file, ensure you have built the lat
    sudo cp -a scripts/python_solver/main.py /opt/solver/main.py
    ```
 
-   NOTE: If you change the Python solver, you *must* copy it again.
+   NOTE: If you change the code of the Python solver, you *must* copy it again.
 
-Finally, to create and run the KWOK cluster with the scheduler+pluging, run the following command:
+Finally, to create and run the KWOK cluster with the scheduler+plugin, run the following command:
 
 ```bash
 kwokctl create cluster --name <cluster_name> --runtime <docker/binary> --config <path/to/cluster-config.yaml>
@@ -243,7 +220,7 @@ Then load the scheduler docker image into the Kind cluster (it will also build t
 
 ## Testing
 
-For testing the pluging, first create a bootstrap folder containing all content needed to run the tests by running the provided script from the root of the repo:
+For testing the plugin, a script has been made to create a bootstrap folder containing all content needed to run the tests, including the built binary, the Python solver code, and all test jobs and configuration files. From the root of the repo, run:
 
 ```bash
 ./make_bootstrap_folder.sh
@@ -251,15 +228,15 @@ For testing the pluging, first create a bootstrap folder containing all content 
 
 Then, two different approaches for testing have been made:
 
-1) Workload Once Generator: A script that can generate an initial workload on a KWOK cluster running the scheduler with the plugin.
+1) Workload Once Generator (used in the **paper**): A script that can generate an initial workload on a KWOK cluster running the scheduler with the plugin.
 2) Trace Replayer: A script that can simulate a live cluster with fluctuating workloads using the scheduler with the plugin.
 
-The first approach is used for evaluating the optimization capabilities of the plugin under different workloads and cluster sizes, while the second approach is used for testing the plugin under more realistic conditions with fluctuating workloads and the different optimization modes (all synch/asynch).
+The first approach is used for evaluating the optimization capabilities of the plugin under different workloads and cluster sizes, while the second approach is used for testing the plugin under changing conditions and compare the different optimization modes.
 
 ### Workload Once Generator
 
 For evaluating the plugin, we first run the default scheduler (deterministically) to find 100 seeds where not all pods are running.
-Hereafter, we run the default scheduler (as-is) and the scheduler with the MyPriorityOptimizer plugin on these seeds.
+Hereafter, we run the default scheduler (as-is) and the scheduler with the `MyPriorityOptimizer` plugin on these seeds.
 
 The script for generating the initial workload and running the tests is `scripts/kwok_workload_once/test_runner.py`. The script can be setup by reading settings from three types of sources, with later ones overriding earlier ones:
 
@@ -267,30 +244,30 @@ The script for generating the initial workload and running the tests is `scripts
 2) a test job file
 3) command-line arguments to the script (highest priority)
 
-After choosing one of more of these source, the script can be run to generate the workload and run the tests. An example of how to run the script from `bootstrap/content/` folder is:
+After choosing one of more of these source, the script can be run to generate the workload and run the tests. An example of how to run the script from the root of the repo or the `bootstrap` folder is:
 
 ```bash
 python -m scripts.kwok_workload_once.test_runner \
 --cluster-name my-cluster \
 --kwok-runtime binary \
---job-file data/jobs/<job_file>.yaml \
+--job-file data/jobs/kwok_workload_once/<job_file>.yaml \
 --workload-config-file data/configs-workload/<workload_config_file>.yaml \
 --kwokctl-config-file data/configs-kwokctl/<kwokctl_config_file>.yaml
 ```
 
-Where the idea is that `<job_file>.yaml` contains the specific configuration for a job, `<workload_config_file>.yaml` contains the workload configuration to use, and `<kwokctl_config_file>.yaml` contains the KWOK cluster configuration to use (see above [KWOK (recommended)](#kwok-recommended) for more details on this file). In the following sections the [job file](#job-file) and the [workload configuration file](#workload-configuration-file) are described, however, first we shortly describe the deterministic scheduling setup.
+The idea is that `<job_file>.yaml` contains the specific configuration for a job, `<workload_config_file>.yaml` contains the workload configuration to use, and `<kwokctl_config_file>.yaml` contains the KWOK cluster configuration to use (see above [KWOK (recommended)](#kwok-recommended) for more details on this file). In the following sections the [job file](#job-file) and the [workload configuration file](#workload-configuration-file) are described, however, first we shortly describe the deterministic scheduling setup.
 
 #### Deterministic scheduling
 
 To be able to reproduce seeds where not all pods are running using the default scheduler, another plugin called **MyDeterministicScore** is created, located under `pkg/mydeterministicscore/`. This plugin breaks scoring ties by name, disables `DefaultPreemption` plugin and sets `parallelism=1`, helping making scheduling deterministic.
 
-The scheduler configuration file for using this plugin is `data/configs-kwokctl/deterministic-kube-scheduler-config.yaml`.
+The scheduler configuration file for using this plugin is `data/configs-kwokctl/deterministic-scheduler-config.yaml`.
 
 #### Workload configuration file
 
-As mentioned, the test script can read a workload configuration file to set up the workload to generate. The file can be used as a template reducing the need to specify all settings in every job file.
+As mentioned, the `test_runner.py` script can read a workload configuration file to set up the workload to generate. The file can be used as a template reducing the need to specify all settings in every job file.
 
-The already provided workload configuration files can be found under `data/configs-workload/`. An example of a workload configuration file (`base.yaml`) is:
+An example of a workload configuration file is `data/configs-workload/base.yaml`:
 
 ```yaml
 kind: WorkloadConfiguration
@@ -308,11 +285,9 @@ Here the settings, for example, specify that pods should request between 100m an
 
 #### Job file
 
-To specify the specific configuration for a test job, a job file can be used. The job file can also specify which workload configuration file to use as a template, which kwokctl configuration file to use, which seed file to use, and other settings specific to the job - actually all settings that is possible in the test script.
+To specify the specific configuration for a test job, a job file can be used. The job file can also specify which workload configuration file to use as a template, which kwokctl configuration file to use, which seed file to use, and other settings specific to the job--actually all settings that is possible in the test script.
 
-That is when running the test script one only needs to provide the job file and the script will read all settings from it (overridable by command-line arguments).
-
-All the test jobs used previously to evaluate the plugin can be found under `data/jobs/`. An example of a job file (`data/jobs/all_synch_python/nodes4_pods16_prio4_util095_timeout10.yaml`) is:
+All the test jobs used previously to evaluate the plugin can be found under `data/jobs/kwok_workload_once`. An example of a job file is `data/jobs/kwok_workload_once/nodes4_pods16_prio4_util095_timeout10.yaml`:
 
 ```yaml
 workload-config-file: data/configs-workload/base.yaml
@@ -334,21 +309,21 @@ override-kwokctl-envs:
 
 Here the job file specifies which workload configuration file, kwokctl configuration file, and seed file to use. It also specifies the output directory to save the results to, that scheduler logs and solver stats should be saved, and that the solver should be triggered manually over HTTP. Finally, it overrides/adds some settings in the workload configuration file (number of nodes, pods, priorities, and target utilization) and in the kwokctl configuration file (the Python solver timeout).
 
-#### Init script
+#### Bootstrap script
 
-To run the test jobs faster by parallelizing the evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), an init script `bootstrap.sh` is provided under `scripts/bootstrap/` that can be used to set up a job runner (HPC or VM) and run the tests. The script will ensure all prerequisites are installed and the tests are run.
+To run the test jobs faster by parallelizing the evaluation using HPC resources (we used [UCloud](https://docs.cloud.sdu.dk/)), a `bootstrap.sh` script is provided under `scripts/bootstrap/` that can be used to set up a job runner (HPC or VM) and run the tests. The script will ensure all prerequisites are installed and the tests are run.
 
-The init script accepts all parameters that the test script `test_runner.py` accepts, but the two main parameters to provide are:
+The bootstrap script accepts parameters that the `test_runner.py` script accepts, but the two main parameters to provide are:
 
-- `--content-dir`: Path to the `bootstrap` folder containing the init script and all content needed to run the tests.
-- `--job-file`: Path to the job file to run (e.g. see already made jobs under `data/jobs/`).
+- `--content-dir`: path to the `bootstrap` folder created using the `make_bootstrap_folder.sh` script.
+- `--job-file`: path to the job file to run (e.g. see jobs under `data/jobs/`).
 
 Note, that if the binary or docker image is not provided this script can also pull the repo and build the latest version before running the tests.
 
-##### Using Vagrant for init script development
+##### Using Vagrant for bootstrap script development
 
-To develop and test the init script it can be beneficial to run it in a VM on a local machine. For that reason, a `Vagrantfile` is provided in the root of the repo. Ensure the `bootstrap` folder is created first by running the `make_bootstrap_folder.sh` script.
-Using Vagrant, it will create an Ubuntu 22.04 VM with all prerequisites installed and the repo cloned. To use it, install `Vagrant` (tested with v2.4.7) and `VirtualBox` (tested with v7.1.10), then run:
+To develop and test the bootstrap script it can be beneficial to run it in a VM on a local machine. For that reason, a `Vagrantfile` is provided in the root of the repo. Ensure the `bootstrap` folder is created first by running the `make_bootstrap_folder.sh` script.
+Using Vagrant, it will create an Ubuntu 22.04 VM with all prerequisites installed. To use it, install `Vagrant` (tested with v2.4.7) and `VirtualBox` (tested with v7.1.10), then run:
 
 ```bash
 vagrant up
@@ -366,19 +341,119 @@ To delete the VM, run:
 vagrant destroy -f
 ```
 
+#### Generating test jobs
+
+Jobs can be generated using the provided job generator script `scripts/helpers/job_generator.py`.
+It generates one job file per combination of `--num-nodes`, `--avg-pods-per-node`, `--num-priorities`, `--utils`, and `--timeouts`.
+
+To regenerate the jobs, follow the steps in the below sections.
+
+Note that the [deterministic jobs](#deterministic-jobs-with-default-scheduler) should be run first to discover 'not-all-running' seeds under the default scheduler. For each combination, take the produced `seeds_not_all_running.txt` and place it in `data/seeds/` as one file per combination (name it `nodes<N>_pods<P>_prio<R>_util<XYZ>.txt`). Then run both the [default scheduler](#default-scheduler-jobs) and [Python solver jobs](#python-solver-jobs) sets, passing `--seed-file data/seeds/` so they automatically pick the per-combo seed lists.
+
+##### Deterministic jobs with default scheduler
+
+```bash
+python -m scripts.helpers.job_generator.py \
+--out-dir data/jobs/kwok_workload_once/default-deterministic \
+--output-dir results/kwok_workload_once/default-deterministic \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default-deterministic.yaml \
+--seed-file data/seeds/kwok_workload_once/seeds_all.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 1.00 1.05 \
+--seeds-not-all-running 100 \
+--default-scheduler
+```
+
+##### Default scheduler jobs
+
+0.90-0.95 utils runs on the seeds found using the deterministic job generation above.
+
+```bash
+python -m scripts.helpers.job_generator \
+--out-dir data/jobs/kwok_workload_once/default \
+--output-dir results/kwok_workload_once/default \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default.yaml \
+--seed-file data/seeds/kwok_workload_once/ \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 \
+--default-scheduler
+```
+
+1.00-1.05 utils runs on a fixed seed file with 100 seeds.
+
+```bash
+python -m scripts.helpers.job_generator \
+--out-dir data/jobs/kwok_workload_once/default \
+--output-dir results/kwok_workload_once/default \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/default.yaml \
+--seed-file data/seeds/kwok_workload_once/seeds_100.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--default-scheduler
+```
+
+##### Python solver jobs
+
+0.90-0.95 utils runs on the seeds found using the deterministic job generation above.
+
+```bash
+python -m scripts.helpers.job_generator \
+--out-dir data/jobs/kwok_workload_once/plugin-scheduler \
+--output-dir results/kwok_workload_once/plugin-scheduler \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/plugin-scheduler.yaml \
+--seed-file data/seeds/kwok_workload_once/ \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 0.90 0.95 \
+--timeouts 1 10 20 \
+--save-scheduler-logs \
+--save-solver-stats \
+--solver-trigger
+```
+
+1.00-1.05 utils runs on a fixed seed file with 100 seeds.
+
+```bash
+python -m scripts.helpers.job_generator \
+--out-dir data/jobs/kwok_workload_once/plugin-scheduler \
+--output-dir results/kwok_workload_once/plugin-scheduler \
+--workload-config-file data/configs-workload/base.yaml \
+--kwokctl-config-file data/configs-kwokctl/plugin-scheduler.yaml \
+--seed-file data/seeds/kwok_workload_once/seeds_100.txt \
+--num-nodes 4 8 16 32 \
+--avg-pods-per-node 4 8 \
+--num-priorities 1 2 4 \
+--utils 1.00 1.05 \
+--timeouts 1 10 20 \
+--save-scheduler-logs \
+--save-solver-stats \
+--solver-trigger
+```
+
 #### Result replication and running test jobs
 
-After generating the jobs, they’re ready to run.** For faster evaluation, run them in parallel via the init script on HPC or VM resources; we do not recommend manual, single-node runs with the test script.
+After generating the jobs, they are ready to run. For faster evaluation, run them in parallel via the bootstrap script on HPC or VM resources.
 
 To run a test jobs, follow these steps:
 
-  1) Run the provided `make_bootstrap_folder.sh` script from the root of the repo to create the `bootstrap` folder containing the init script, the built binary, the Python solver code, and all content needed to run the tests (incl. the job files and configuration files, etc.):
+  1) Run the provided `make_bootstrap_folder.sh` script from the root of the repo to create the `bootstrap` folder containing the bootstrap script, the built binary, the Python solver code, and all content needed to run the tests (incl. the job files and configuration files, etc.):
   
       ```bash
       ./make_bootstrap_folder.sh
       ```
   
-  2) Upload the `bootstrap` folder to HPC/VM provider where it can be found (can be renamed if needed). This folder contains the init script, the built binary, the Python solver code, and all content needed to run the tests (incl. the job files and configuration files, etc.).
+  2) Upload the `bootstrap` folder to HPC/VM provider where it can be found (can be renamed if needed). This folder contains the bootstrap script, the built binary, the Python solver code, and all content needed to run the tests (incl. the job files and configuration files, etc.).
   3) (Optional) Enable SSH access, by adding your public SSH key.
   4) Create an Ubuntu 22.04 instance (no GUI needed) for every job
   5) Once all jobs are done, download the folder containing the results to your local machine.
@@ -387,10 +462,10 @@ An example of a instance setup using [UCloud](https://docs.cloud.sdu.dk/) is sho
 
 <center><img src="./images/ucloud_job_example.png" alt="UCloud Terminal Example" width="70%"/></center>
 
-As shown in the illustration, only two parameters are needed to run the init script:
+As shown in the illustration, only two parameters are needed to run the bootstrap script:
 
-- `--content-dir`: Path to the `bootstrap` folder uploaded in step 1.
-- `--job-file`: Path to the job file to run (e.g. see already made jobs under `data/jobs/`).
+- `--content-dir`: path to the `bootstrap` folder uploaded in step 1.
+- `--job-file`: path to the job file to run (e.g. see already made jobs under `data/jobs/`).
 
 #### Expected folder structure after running all jobs
 
@@ -443,147 +518,63 @@ results/
 
 The `results.csv` file contains the scheduling results for the job, while the `info.yaml` file contains the job configuration used. If applicable, the `seeds-all-running.txt` and `seeds-not-all-running.txt` files contain the seeds where all pods were running and where not all pods were running, respectively. For the plugin jobs, the `scheduler-logs/` folder contains the saved kube-scheduler logs for each seed, while the `solver-stats/` folder contains the saved solver statistics for each seed.
 
-#### Generating test jobs
-
-Jobs can be generated using the provided job generator script `scripts/helpers/job_generator.py`.
-It generates one job file per combo across `--num-nodes`, `--avg-pods-per-node`, `--num-priorities`, `--utils`, and `--timeouts`.
-
-To regenerate the job sets, follow the steps in the below sections.
-Run the [deterministic jobs](#deterministic-jobs-with-default-scheduler) first to discover 'not-all-running' seeds under the default scheduler.
-For each combo, take the produced `seeds_not_all_running.txt` and place it in `data/seeds/` as one file per combo (name it `nodes<N>_pods<P>_prio<R>_util<XYZ>.txt`).
-Then run both the [default scheduler](#default-scheduler-jobs) and [Python solver jobs](#python-solver-jobs) sets, passing `--seed-file data/seeds/` so they automatically pick the per-combo seed lists.
-
-##### Deterministic jobs with default scheduler
-
-NOTE: This make use of another `--kwokctl-config-file` to make the job generation deterministic.
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/kwok_workload_once/default-deterministic \
---output-dir results/kwok_workload_once/default-deterministic \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/default-deterministic.yaml \
---seed-file data/seeds/kwok_workload_once/seeds_all.txt \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 0.90 0.95 1.00 1.05 \
---seeds-not-all-running 100 \
---default-scheduler
-```
-
-##### Default scheduler jobs
-
-0.90-0.95 utils runs on the seeds found using the deterministic job generation above.
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/kwok_workload_once/default \
---output-dir results/kwok_workload_once/default \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/default.yaml \
---seed-file data/seeds/kwok_workload_once/ \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 0.90 0.95 \
---default-scheduler
-```
-
-1.00-1.05 utils runs on a fixed seed file with 100 seeds.
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/kwok_workload_once/default \
---output-dir results/kwok_workload_once/default \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/default.yaml \
---seed-file data/seeds/kwok_workload_once/seeds_100.txt \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 1.00 1.05 \
---default-scheduler
-```
-
-##### Python solver jobs
-
-0.90-0.95 utils runs on the seeds found using the deterministic job generation above.
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/kwok_workload_once/plugin-scheduler \
---output-dir results/kwok_workload_once/plugin-scheduler \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/plugin-scheduler.yaml \
---seed-file data/seeds/kwok_workload_once/ \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 0.90 0.95 \
---timeouts 1 10 20 \
---save-scheduler-logs \
---save-solver-stats \
---solver-trigger
-```
-
-1.00-1.05 utils runs on a fixed seed file with 100 seeds.
-
-```bash
-python3 job_generator.py \
---out-dir data/jobs/kwok_workload_once/plugin-scheduler \
---output-dir results/kwok_workload_once/plugin-scheduler \
---workload-config-file data/configs-workload/base.yaml \
---kwokctl-config-file data/configs-kwokctl/plugin-scheduler.yaml \
---seed-file data/seeds/kwok_workload_once/seeds_100.txt \
---num-nodes 4 8 16 32 \
---avg-pods-per-node 4 8 \
---num-priorities 1 2 4 \
---utils 1.00 1.05 \
---timeouts 1 10 20 \
---save-scheduler-logs \
---save-solver-stats \
---solver-trigger
-```
-
 #### Estimate time to complete all jobs in UCloud
 
 Use `scripts/helpers/jobs_eta.py` to list ETAs for running jobs. It recursively scans for `eta_*` files, extracts recorded ETA and seed progress and prints a sorted summary.
 
 ```bash
-# from bootstrap/content/ or anywhere
-python3 eta.py
+python -m scripts.helpers.jobs_eta
 ```
 
-### 'Live' Cluster Simulator
+#### Analysis
 
-TODO: Implementation not finished yet.
+Analyzed results are placed under `analysis/kwok_workload_once/`. They assume the layout shown in [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs); if yours differs, code changes may be needed.
+
+1. First, merge all job outputs into a single CSV by running `python scripts/kwok_workload_once/combine_results.py` (it writes `analysis/kwok_workload_once/per_combo_results.csv`; adjust input/output paths in the script if needed).
+2. Then run `python scripts/kwok_workload_once/plots_and_tables.py` to produce every figure and table used in the report.
+   Outputs are saved under `analysis/kwok_workload_once/figures/` and `analysis/kwok_workload_once/tables/`.
+
+### Trace Replayer
+
+TODO: Implementation in progress.
 
 ### Unit and Integration Tests
 
-#### Python: Unit Tests
-
-Many Python scripts has been made and are stored under `scripts/`. For testing these scripts, unit tests have been made using `pytest` and are stored under the subfolder `tests/`. To run the tests, first install `pytest` (e.g. via `pip install pytest`). A `pytest.ini` file is also provided under the root of the repo to configure pytest. To run the tests, simply run the following command from the root of the repo:
+To make running tests easier, a `run_tests.sh` script has been provided in the root of the repo that can be used to run all tests (both Python and Go tests). However, first ensure Python dependencies are installed by running:
 
 ```bash
-python -m pytest
+pip install -r scripts/test/requirements.txt
 ```
 
-#### Go: Unit Tests
+Then, from the root of the repo, run:
 
 ```bash
-go test ./pkg/mypriorityoptimizer -coverprofile=go_coverage.out # run tests and collect coverage to file 'coverage.out'
-go tool cover -func=go_coverage.out # print coverage summary
-go tool cover -html=go_coverage.out -o coverage/go/coverage.html # write HTML report
+./run_tests.sh
 ```
 
-## Analysis
+or to run only Python or Go tests, run:
 
-Analyzed results are placed under `analysis/`. They assume the layout shown in [Expected folder structure after running all jobs](#expected-folder-structure-after-running-all-jobs); if yours differs, code changes may be needed.
+```bash
+./run_tests.sh python
+```
 
-1. First, merge all job outputs into a single CSV by running `scripts/kwok_workload_once/combine_results.py` (it writes `analysis/per_combo_results.csv`; adjust input/output paths in the script if needed).
-2. Then run `scripts/kwok_workload_once/plots_and_tables.py` to produce every figure and table used in the report.
-   Outputs are saved under `analysis/figures/` and `analysis/tables/`.
+```bash
+./run_tests.sh go
+```
+
+Note: a `pytest.ini` file is also provided under the root of the repo to configure `pytest`.
+
+To run specific Python tests, use `pytest` directly. For example, to run all tests in a specific file with coverage, run:
+
+```bash
+pytest scripts/test/test_general_helpers.py
+```
+
+To run specific Go tests, use `go test` directly. For example, to run a specific test, run:
+
+```bash
+go test ./pkg/mypriorityoptimizer -run TestNewPodSet_Empty -v
+```
 
 ## Useful kubectl/kwokctl commands
 
@@ -613,7 +604,7 @@ Analyzed results are placed under `analysis/`. They assume the layout shown in [
   kubectl delete ns <namespace>
   ```
 
-- Show recent **cluster events**
+- Show recent cluster events
 
   ```bash
   kubectl get events -A --sort-by=.lastTimestamp
@@ -623,6 +614,12 @@ Analyzed results are placed under `analysis/`. They assume the layout shown in [
 
   ```bash
   kwokctl logs kube-scheduler --name <cluster_name>
+  ```
+
+- Getting plugin configuration from kube-scheduler
+
+  ```bash
+  kubectl -n kube-system get cm kube-scheduler -o jsonpath='{.data.config\.yaml}' | yq e .
   ```
 
 - Getting saved solver plans from kube-scheduler
@@ -647,602 +644,3 @@ Analyzed results are placed under `analysis/`. They assume the layout shown in [
   ```bash
   kubectl --context <ctx> -n <namespace> get events --field-selector involvedObject.kind=Pod -o json | jq '.items[] | {name: .involvedObject.name, reason: .reason, message: .message}'
   ```
-
-Here’s an updated, single-method description that matches the current code and keeps the replay + evaluation story the same.
-
-You can drop all mentions of “Method 1/2” and the old capacity-from-expectation stuff and replace with something like this:
-
----
-
-## Cluster Simulator
-
-### 1. Inputs and stochastic model
-
-The simulator generates a synthetic pod trace using Pareto Type I distributions for all key quantities. You choose:
-
-- **Cluster shape**
-
-  - (N_{\text{nodes}}): number of nodes.
-  - Each node has normalized capacity `CPU = 1.0`, `MEM = 1.0`.
-  - Cluster total capacity is therefore (C_{\text{cpu}} = C_{\text{mem}} = N_{\text{nodes}}).
-
-- **Simulation horizon**
-
-  - (T_{\max}): maximum simulated time; the generator runs from (t = 0) until the next pod would start at (t \ge T_{\max}).
-
-- **Priorities**
-
-  - (N_{\text{priorities}}): number of priority levels.
-  - Each pod’s priority is sampled uniformly from ({1, \dots, N_{\text{priorities}}}).
-
-- **Resource request distributions (normalized to a single node)**
-
-  - CPU request:
-    [
-    X_{\text{cpu}} \sim \text{ParetoI}(\alpha_{\text{cpu}}, x_{\min,\text{cpu}}, x_{\max,\text{cpu}})
-    ]
-    interpreted as “fraction of a node’s CPU”, i.e. in ((0, 1]).
-  - Memory request:
-    [
-    X_{\text{mem}} \sim \text{ParetoI}(\alpha_{\text{mem}}, x_{\min,\text{mem}}, x_{\max,\text{mem}})
-    ]
-    interpreted as “fraction of a node’s memory”.
-
-- **Inter-arrival and lifetime distributions (seconds)**
-
-  - Inter-arrival time:
-    [
-    X_{\text{arrival}} \sim \text{ParetoI}(\alpha_{\text{arrival}}, x_{\min,\text{arrival}}, x_{\max,\text{arrival}})
-    ]
-  - Lifetime:
-    [
-    X_{\text{lifetime}} \sim \text{ParetoI}(\alpha_{\text{life}}, x_{\min,\text{life}}, x_{\max,\text{life}})
-    ]
-
-Here “ParetoI” means the classic Pareto Type I distribution
-[
-f(x) = \alpha x_{\min}^{\alpha} x^{-(\alpha+1)},\qquad x \ge x_{\min},
-]
-with optional upper clamping at (x_{\max}) (to avoid pathological extremes).
-
----
-
-### 2. Pod model and trace format
-
-Each pod in the trace is a record with:
-
-- `id`: unique integer across all pods.
-- `start_time`: pod creation time (seconds since (t=0)).
-- `end_time`: pod deletion time; always finite in our generator:
-  [
-  \text{end_time} = \text{start_time} + X_{\text{lifetime}}.
-  ]
-- `cpu`: requested CPU, as a fraction ((0,1]) of a single node’s capacity, sampled from (X_{\text{cpu}}).
-- `mem`: requested memory, as a fraction ((0,1]) of a single node’s capacity, sampled from (X_{\text{mem}}).
-- `priority`: integer priority in ({1, \dots, N_{\text{priorities}}}).
-- `replicas`: number of replicas of the record.
-
-Conceptually, the trace file is a JSON list:
-
-```json
-[
-  {
-    "id": 1,
-    "start_time": 12.3,
-    "end_time": 305.3,
-    "cpu": 0.40,
-    "mem": 0.70,
-    "priority": 3,
-    "replicas": 1
-  },
-  {
-    "id": 2,
-    "start_time": 15.1,
-    "end_time": 420.6,
-    "cpu": 0.25,
-    "mem": 0.30,
-    "priority": 1,
-    "replicas": 2
-  }
-]
-```
-
----
-
-### 3. Single fill-once generation method
-
-The generator implements a **single, time-driven fill-once method** over the fixed horizon ([0, T_{\max})). There is no separate “fill–drain mode”; all dynamics (pods finishing and freeing capacity) come from the sampled lifetimes.
-
-Algorithm (matching `generate(...)`):
-
-1. Initialize:
-
-   - `current_time = 0`,
-   - empty list `pods`,
-   - an empty min-heap `end_heap` storing `(end_time, cpu, mem)` of live pods,
-   - cluster state with `live_cpu = 0`, `live_mem = 0`,
-   - histories `times`, `u_cpu_hist`, `u_mem_hist`, `max_runnable_pods_hist`, all starting at `t = 0` with utilization 0.
-2. While `current_time < trace_time`:
-
-   1. **Sample next start time**
-      Sample an inter-arrival:
-      [
-      \Delta t \sim X_{\text{arrival}},
-      ]
-      set
-      [
-      \text{start_time} = \text{current_time} + \Delta t.
-      ]
-      If `start_time >= trace_time`, stop; the trace horizon has been reached.
-
-   2. **Remove completed pods up to start_time**
-      Pop from `end_heap` all entries with `end_time <= start_time`, and subtract their `cpu` and `mem` from `live_cpu` and `live_mem`. This mirrors pods finishing before the next arrival.
-
-   3. **Sample pod attributes**
-
-      - Lifetime:
-        [
-        L \sim X_{\text{lifetime}},\quad \text{end_time} = \text{start_time} + L.
-        ]
-      - CPU request:
-        [
-        \text{cpu} \sim X_{\text{cpu}}.
-        ]
-      - Memory request:
-        [
-        \text{mem} \sim X_{\text{mem}}.
-        ]
-      - Priority:
-        [
-        \text{priority} \sim \text{Uniform}{1, \dots, N_{\text{priorities}}}.
-        ]
-
-   4. **Update live set and utilization**
-      Add the pod to the live set:
-      [
-      \text{live_cpu} \leftarrow \text{live_cpu} + \text{cpu}, \quad
-      \text{live_mem} \leftarrow \text{live_mem} + \text{mem},
-      ]
-      push `(end_time, cpu, mem)` into `end_heap`, and record:
-
-      - `times.append(start_time)`
-      - CPU utilization:
-        [
-        U_{\text{cpu}}(t) = \frac{\text{live_cpu}}{N_{\text{nodes}}},
-        ]
-      - MEM utilization:
-        [
-        U_{\text{mem}}(t) = \frac{\text{live_mem}}{N_{\text{nodes}}},
-        ]
-      - and the number of concurrently live pods as `max_runnable_pods_hist.append(len(end_heap))`.
-      Set `current_time = start_time` and continue.
-
-3. Return:
-
-   - the list of `pods`,
-   - the time series `times`,
-   - `u_cpu_hist`, `u_mem_hist`,
-   - and `max_runnable_pods_hist`.
-This gives a finite trace whose duration is exactly controlled by (T_{\max}), and whose instantaneous pressure is driven purely by the sampled inter-arrivals and lifetimes, not by explicit “fill until threshold, then drain” logic.
-
----
-
-### 4. Utilization model during generation
-
-During generation we conceptually define, at any simulated time (t),
-
-- the set of live pods:
-  [
-  \text{live}(t) = { p \mid \text{start_time}_p \le t < \text{end_time}_p },
-  ]
-- per-resource utilization (with normalized capacities):
-  [
-  U_{\text{cpu}}(t) = \frac{\sum_{p \in \text{live}(t)} \text{cpu}*p}{N*{\text{nodes}}},
-  \quad
-  U_{\text{mem}}(t) = \frac{\sum_{p \in \text{live}(t)} \text{mem}*p}{N*{\text{nodes}}}.
-  ]
-- effective utilization:
-  [
-  U(t) = \max{U_{\text{cpu}}(t), U_{\text{mem}}(t)}.
-  ]
-
-The generator tracks (U_{\text{cpu}}) and (U_{\text{mem}}) at each accepted pod’s start time, which we later visualize (optional utilization plots) to confirm that the trace indeed induces high-utilization, high-churn conditions.
-
----
-
-### 5. Replaying the trace
-
-The replay phase is decoupled from the generator and does not depend on its internal normalization. The replayer:
-
-1. **Loads the JSON trace** produced by `trace_generator.py` into a list of `TracePod` objects.
-
-2. **Maps normalized fractions to concrete K8s quantities** given:
-
-   - per-node CPU capacity (e.g. `"1000m"`) and
-   - per-node memory capacity (e.g. `"1Gi"`).
-
-   For each pod:
-
-   - `cpu_m = round(cpu_frac * node_cpu_m)`,
-   - `mem_bytes = round(mem_frac * node_mem_bytes)`,
-   - converted to Kubernetes quantities (e.g. `"750m"`, `"512Mi"`).
-
-3. **Builds an event list**:
-
-   For each pod (p) we create two events:
-
-   - Create:
-     [
-     (\text{sim_time} = \text{start_time}_p,; \text{kind} = \text{"create"})
-     ]
-   - Delete:
-     [
-     (\text{sim_time} = \text{end_time}_p,; \text{kind} = \text{"delete"})
-     ]
-
-   Events are sorted by `(sim_time, kind)` so that deletes at a given timestamp happen after creates with the same `sim_time`.
-
-4. **Replays events against a KWOK cluster**:
-
-   - A KWOK cluster with the configured number of nodes and capacities is created.
-   - Namespace and PriorityClasses are ensured.
-   - For each event, we sleep until the wall-clock time corresponding to `sim_time`:
-     [
-     \text{wall_time}(e) = \text{start_wall} + (\text{sim_time}*e - t*{\min}),
-     ]
-     then either `kubectl apply` (create) or `kubectl delete` (delete) the corresponding pod.
-
-Using the same trace, we can perform multiple runs:
-
-- **Run A**: Default Scheduler only.
-- **Run B**: Default Scheduler + our Scheduling Framework plugin.
-
-All differences in outcomes are therefore due to the scheduler(s), not the trace.
-
----
-
-### 6. Evaluation and scoring
-
-While the trace is being replayed, a background monitor periodically samples cluster state and writes a time series CSV with:
-
-- `cpu_run_util`, `mem_run_util`: the **actual** CPU and memory utilization of running pods (as seen by the cluster).
-- `running_count`: number of pods currently running.
-- `unsched_count`: number of unschedulable pods (summed over priorities).
-- `prio_k_run_time_s`: cumulative pod-seconds for each priority (k).
-For each priority level (k), we accumulate:
-
-[
-T_k = \sum_{\text{intervals }i} \left( #\text{running pods with priority } k \text{ during interval } i \right) \cdot \Delta t_i,
-]
-
-i.e., the total **runtime mass** allocated to that priority during the replay.
-
-Given the same trace and cluster configuration, we compare:
-
-- (T_k^{\text{DS}}) vs. (T_k^{\text{plugin}}) per priority (k),
-- time series of `cpu_run_util` / `mem_run_util`,
-- and the evolution of `unsched_count`.
-This lets us answer questions such as:
-
-> For identical workloads and capacities, does the solver-based scheduler increase the cumulative runtime of high-priority pods compared to the Default Scheduler, and what is the impact on overall utilization and unschedulable backlog?
-
-The evaluation pipeline is thus unchanged; only the **trace generator** has been simplified to a single fill-once method over a fixed time horizon.
-
-### 7. Example commands
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_generator \
-  --output-dir data/traces/arr_10s_life_660s \
-  --num-nodes 16 \
-  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
-  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
-  --mean-arrival 10.0 --xmin-arrival 0.001 --xmax-arrival 60.0 \
-  --mean-life 660.0 --xmin-life 60.0 --xmax-life 3600.0 \
-  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
-  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
-  --seed 42 \
-  --log-level INFO \
-  --trace-time 12h
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_generator \
-  --output-dir data/traces/arr_20s_life_1300s \
-  --num-nodes 16 \
-  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
-  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
-  --mean-arrival 20.0 --xmin-arrival 0.001 --xmax-arrival 120.0 \
-  --mean-life 1300.0 --xmin-life 300.0 --xmax-life 3600.0 \
-  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
-  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
-  --seed 42 \
-  --log-level INFO \
-  --trace-time 12h
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_generator \
-  --output-dir data/traces/arr_30s_life_2000s \
-  --num-nodes 16 \
-  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
-  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
-  --mean-arrival 30.0 --xmin-arrival 0.001 --xmax-arrival 120.0 \
-  --mean-life 2000.0 --xmin-life 60.0 --xmax-life 3600.0 \
-  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
-  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
-  --seed 42 \
-  --log-level INFO \
-  --trace-time 12h
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_generator \
-  --output-dir data/traces/arr_60s_life_5000s \
-  --num-nodes 16 \
-  --mean-cpu 0.1 --xmin-cpu 0.05 --xmax-cpu 0.3 \
-  --mean-mem 0.1 --xmin-mem 0.05 --xmax-mem 0.3 \
-  --mean-arrival 60.0 --xmin-arrival 0.001 --xmax-arrival 190.0 \
-  --mean-life 5000.0 --xmin-life 600.0 --xmax-life 10000.0 \
-  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
-  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
-  --seed 42 \
-  --log-level INFO \
-  --trace-time 12h
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_replayer \
-  --trace-dir data/traces/arr_10s_life_660s \
-  --cluster-name kwok1 \
-  --kwok-runtime binary \
-  --kwokctl-config-file data/configs-kwokctl/default.yaml \
-  --namespace trace \
-  --node-cpu 1000m \
-  --node-mem 1Gi \
-  --monitor-interval 1.0 \
-  --log-level INFO
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_replayer \
-  --trace-dir data/traces/arr_20s_life_1300s \
-  --cluster-name kwok1 \
-  --kwok-runtime binary \
-  --kwokctl-config-file data/configs-kwokctl/default.yaml \
-  --namespace trace \
-  --node-cpu 1000m \
-  --node-mem 1Gi \
-  --monitor-interval 1.0 \
-  --log-level INFO
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_replayer \
-  --trace-dir data/traces/arr_30s_life_2000s \
-  --cluster-name kwok1 \
-  --kwok-runtime binary \
-  --kwokctl-config-file data/configs-kwokctl/default.yaml \
-  --namespace trace \
-  --node-cpu 1000m \
-  --node-mem 1Gi \
-  --monitor-interval 1.0 \
-  --log-level INFO
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_replayer \
-  --trace-dir data/traces/arr_60s_life_5000s \
-  --cluster-name kwok1 \
-  --kwok-runtime binary \
-  --kwokctl-config-file data/configs-kwokctl/default.yaml \
-  --namespace trace \
-  --node-cpu 1000m \
-  --node-mem 1Gi \
-  --monitor-interval 1.0 \
-  --log-level INFO
-```
-
-```bash
-python -m scripts.kwok_trace_replayer.trace_generator \
-  --output-dir data/traces/arr_10s_life_2000s \
-  --num-nodes 8 \
-  --mean-cpu 0.2 --xmin-cpu 0.1 --xmax-cpu 0.3 \
-  --mean-mem 0.2 --xmin-mem 0.1 --xmax-mem 0.3 \
-  --mean-arrival 30.0 --xmin-arrival 0.001 --xmax-arrival 120.0 \
-  --mean-life 2000.0 --xmin-life 60.0 --xmax-life 3600.0 \
-  --priority-min 1 --priority-max 4 --priority-ratio 0.8 \
-  --replicas-min 1 --replicas-max 3 --replicas-ratio 1.2 \
-  --seed 42 \
-  --log-level INFO \
-  --trace-time 5m
-```
-
-## TODOs
-
-### Unit Tests
-
-#### Go Tests
-
-Done:
-
-- args_parsers.go
-- logging_helpers.go
-- mode_helpers.go
-- http_server.go
-- solver_external.go
-- plugin.go
-- objects_helpers.go
-- pod_set_helpers.go
-- plugin_readiness.go
-
-missing:
-
-- plan_helpers.go
-- plan_context.go
-- plan_completion_watch.go
-- solver_helpers.go
-
-- loop_helpers.go
-- loop_interlude.go
-- loop_periodic.go
-
-- plan_activation.go
-- plan_computation.go
-- plan_registration.go
-- optimization_flow.go
-- config_map_helpers.go
-
-- hook_postfilter.go
-- hook_preenqueue.go
-- hook_prefilter.go
-- hook_reserve_unreserve.go
-
-Total coverage: 59.1%
-
-### Now TODOs
-
-- Check that we are using the words pending and unschedulable pods correctly. In the code, I think we are often checking for pending pods, however, sometimes it would be more correct to check for unschedulable pods.
-- protect main branch in GitHub and run unit and integration tests on each push
-- finish Go unit tests to reach at least 80% coverage
-- remove support of standalone pods in test_runner script.
-- Update README with the new trace generator and replayer design and refactored code structure.
-- Write about that we solve to optimal in the trace replayer experiments to prevent high disruption.
-- Update the paper with the adjustments mentioned to Jacopo via mail:
-  - Completion check
-    Previously, the final "completion check" -- which verifies that pods have been placed on their intended nodes -- ran in `PostBind`.
-    This turned out to be fragile, because the last pods that should trigger the check might be deleted before `PostBind` is invoked.
-    We have now moved this logic into a dedicated background routine that periodically (every 250 ms) inspects the cluster state, detects when a plan has fully completed, and uses that as a gate before returning to normal scheduling.
-  - Do not run the solver on the same set of pending pods and cluster state
-    If we already have run the solver on the same set of pending pods and the pod-node placements are the same, and this solution was optimal we do not run the solver again.
-  - Keep default preemption enabled
-    To schedule higher‑priority pods quickly without running our solver, allow the default preemption mechanism to handle them.
-    It does not interfere with our plugin.
-- Write Implementation and Experiments sections of the report
-- Read DCM article and revise. Jacopo suggested that I should clarify how it differs from ours.
-- Lav plan for resten af tiden frem mod sommeren
-
-### TODO: 'Live' Cluster Simulator
-
-#### Design
-
-- We want a continous distribution, not a discrete one, as we want to sample real values.
-- Dont keep utilization in check.
-- Make a traces that can be replayed to make it deterministic.
-|-----o---o-o-o---o---o---o---o---o---o---o---o---o---o---o---o---o---o----|
-     t0   t1t2t3  t4  t5  t6  t7  t8  t9  t10 t11 t12 t13 t14 t15 t16 t17
-at each tick $t_i$:
-- Run trace and read which pods to add at $t_i$.
-- Evaluation: For each $pod_i$, let $t_i$ be the uptime.
-  - Let $T_p = \sum_{i: pod_i = priority p} t_i$.
-  - Result is $(T_1, T_2, ..., T_n)$ for $n$ priorities.
-  - One result is better than the other by lexicographic order, i.e., first compare $T_n$, then $T_{n-1}$, ..., then $T_1$.
-  - Competitive analysis:
-    - Let $P$ be the number of pods and $N$ be the number of nodes.
-    - Competitive ratio, $c$: $c \le N/(P-N) = O(1/P)$ if $N$ is assumed constant $(O(1))$.
-  - Vi tænker at hvis man har prioriter på x aksen startende fra højeste prioritet og y aksen er total runtime for pods med den prioritet, så vil vores scheduler starte dårlige, men vinder ved lavere prioriteter, da den får disse også skeduleret.
-- Vi tror udmiddelbart at vores approach er langsommere med at skedulere højere prioritets pods end default, da den blot kaster lavere væk med det samme.
-
-##### Other Approaches
-
-- Sample direct from public traces and scale to wanted expectations.
-- Use Prometheus to monitor the cluster for evaluation.
-
-### TODOs: Solver
-
-- Right now in the python solver, the disruption metric is defined as:
-    +1 if the pod stays in the original position
-    -2 if the pod is evicted
-    -1 if the pod is moved (-2 + 1)
-  Jacopo: Thinks my idea reduces the search space, however, he is also fine with a simpler metric, where we just sum the x_{i,p_i.orig} to treat every pod that is not in the same place as 1.
-- Also, warm-start the python solver before the loop.
-- Test the PolySCIP solver (<https://polyscip.zib.de/>). Seems to support multiple objectives (<https://www.scipopt.org/doc-3.2.0/applications/MultiObjective/>).
-
-### TODOs: Testing
-
-- Test if python solver timing depends heavily on the node it is executed on (CPU type, etc.)
-
-### TODOs: Plugin
-
-- Look throw forks and their stars on github on scheduler-plugins repo
-- QoS classes are currently ignored: BestEffort, Burstable, Guaranteed. We currently assume all pods are Guaranteed Pods. See also <https://medium.com/@muppedaanvesh/a-hands-on-guide-to-kubernetes-qos-classes-%EF%B8%8F-571b5f8f7e58>
-- Quotas and LimitsRanges are currently ignored. See also <https://medium.com/codex/what-you-need-to-know-to-debug-a-preempted-pod-on-kubernetes-1c956eec3f35>
-- Find a better way to set verbose level.
-- We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
-- Add metrics using Prometheus and Grafana.
-
-### TODOs: Report
-
-- Write about that we do not recreate standalone (non-controller) pods as default k8s does not either. So if a standalone pod is evicted it is gone as one needs to recreate it manually.
-- Write about that we do not run the solver again if we have the same set of pending pods and have got an optimal solution for these already.
-- Write about the way we check plan completion in a routine rather than PostBind, as we can remove a pod before PostBind is called meaning we can end up in a situation where we never check for plan completion.
-- Write about the default preemption and the test script made showing the limitations of it.
-- The replayer uses a thread pool to issue kubectl apply and kubectl delete commands asynchronously, hiding their latency. Each trace event is submitted exactly once as an async job. Events are scheduled in deterministic order by simulated time, but the actual completion order of kubectl commands is not enforced. We only wait for all outstanding jobs once the replay loop has processed all event times.
-- We should not re-run tests with new found distributions: This is the first branch of results. You can present them like this and then add the second bench of results that test different things. The first one is to see how much we can improve in a simple static scenario. The second in a more dynamic one.
-- Make it clear that many factors influence their concrete distribution so we would rather make it configurable to later use case and for ease of experimentation.
-- Argue why we choose Pareto using the grid-plot and the paper "Reiss et al., EuroSys 2012" which argues that Borg arrivals follow a power-law distribution.
-- Nævn at vi altid bruger en MC sample til at estimere forventet værdi, da vi upper-bounder distributionerne.
-- Nævn at vi har overvejet Lomax for at tillade 0s inter-arrival times, men valgte Pareto da det er mere simpelt og blot sætte xmin til en lille værdi (f.eks. 0.0001s). Brugen af den er fx nem ved CPU og Mem da den allerede sikrer mod lave værdier via xmin.
-- Gør det klart at vores udviklet plugin faktisk ender med at være et Adapter design pattern, da den kan benyttes i flere forskellige hooks, alt efter behov.
-- Gør det klart at via KSF, benytter vi os af Inversion of Control, da vi implementere interfaces som K8s scheduler benytter sig af.
-- Vi tænker måske at fordi der er prioriter så har default scheduler nemmere ved at være optimal, da den tillader preemption, det gør den ikke hvis der blot er en enkelt prioritet (altså ingen prioritering). Vi kan lave en uendelig svær case hvor hvis vi først har submittet en høj prioritet pod der fylder det hele, så kan vi ikke skedulere andre høj prioritet pods, da den ikke preemptor. Her er vores anderledes, da vi blot optimere antallet af pods for hver prioritet, hvilket betyder at vi tillader at flytte rundt på pods.
-- Vi tillader os at skalere distributionerne fra public traces, da vi antager fx at Borg kunne bruge flere cells (clusters) til at håndtere de samme workloads, hvilket betyder at i stedet for at have 8 cells med i alt 10000 noder, så kunne de have brugt 1000 cells hvor hver cell har 10 noder. Dette betyder at distributionen af pod arrivals som er lavet over alle cells i borg kan skaleres med 1000, hvilket nu viser hvor ofte pods ankommer til et enkelt kubernetes cluster med 10 noder.
-- The reason why we think that higher number of priorities helps is that we solve subproblems first.
-- If you dont know the wheighting, the only reasonable thing to do is to start with 1st priority then 2nd and so on. However, if you did have a wheighting, you could have done something smarter. But since we in real life do not know the wheighting, it makes sense to just start with 1st priority and then 2nd.
-- We can use all from the paper but to avoid any problem with the plagiarism check you can also add a sentence that these results/text is also presented in the arxiv paper that you submitted to IJCAI.
-- Make it clear that we could have removed the PostFilter hook if every@PostFilter wasnt a mode
-- Why we include concrete implementation details: "One exception is if you require a certain technology for your approach, e.g., you investigate gcc and your approach does not extend to other compilers." see "Writing a Computer Science Thesis"
-- We could also make it possible to run until optimal for each priority and return the priorities levels we reached to get. Since at the end of the day we only care about high priorities.
-- Gør det klart at preenque kun blokerer mod at en pod går i activeQ
-- Write about the non-determism when we activate blocked pods. The order in which they are activated matters. We can consider to sort them based on priority and creation time.
-- Write about that gang-scheduling (all-or-nothing strategy) doesn't really make sense in our case as we also preempt pods meaning we therefore cannot revert to the old state. However, we can consider to add a permit plugin to make all planned pods schedule together (but still due it does not implement an all-or-nothing strategy, as we have preemptions).
-- Write about why we have the Blocked pods sets: we ensure the pods are activated right away after plan completion.
-
-### TODOs: General
-
-- Clean up the code:
-  - Reduce code
-  - Switch case
-  - Early return
-  - Default values
-  - Remove magic numbers
-  - Follow DRY, SOLID principles and Design Patterns where possible.
-  - Sort functions based on usage from outside to inside
-  - Proper logging
-  - Comments
-  - Proper variable names
-  - Replace not understandable code
-  - Use common functions
-- Fix TODOs.
-- Create more unit and integration tests.
-- Etc.
-
-### TODOs: IJCAI Paper
-
-- If the paper is rejected at IJCAI and reviewers complaint about the random pod request used for evaluation, we may consider the possibility to use more realistic distributions. But for the time being, I will leave things as is.
-
-### TODOs: Later
-
-- Try updating to latest upstream version.
-  - Check for compatibility issues.
-  - Check if kubectl, kwokctl, etc. versions need to be updated as well to make it work.
-
-## Questions
-
-### Open Questions
-
-- How to run the live-cluster tests.
-  - solver-modes, solver-timeout, solver-interval, trace-length, #nodes, ~#pods, ~util, priorities
-- Is my way of evaluating fine?
-
-### Closed Questions
-
-- Add gang scheduling using Permit?
-  - Jacopo: Nope
-- What to do with evicted and blocked pods - put them to queue or try again immediately?
-  - Jacopo: Fine, what i am doing now, by just letting them try again immediately
-- What to do with node-selectors, PDBs, and other rules.
-  - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
-
-## PhD
-
-- PhD is possibly first in the end of 2026, however another PhD is at June it sounds.

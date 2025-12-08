@@ -23,7 +23,6 @@ type PluginConfigSnapshot struct {
 
 	// Optimization settings (from args.go)
 	OptimizeMode                   string `json:"optimizeMode"`
-	OptimizeSolveSynch             bool   `json:"optimizeSolveSynch"`
 	OptimizePeriodicInterval       string `json:"optimizePeriodicInterval"`
 	OptimizeInterludeDelay         string `json:"optimizeInterludeDelay"`
 	OptimizeInterludeCheckInterval string `json:"optimizeInterludeCheckInterval"`
@@ -115,8 +114,7 @@ func buildPluginConfigSnapshot() PluginConfigSnapshot {
 }
 
 // persistPluginConfig writes the PluginConfigSnapshot to a ConfigMap in
-// SystemNamespace using ConfigMapDoc.ensureJson. It is best-effort and
-// safe to call multiple times.
+// SystemNamespace using ConfigMapDoc.ensureJson.
 func (pl *SharedState) persistPluginConfig(ctx context.Context) error {
 	if pl == nil || pl.Client == nil {
 		// In tests we often have a nil Client; treat as no-op.
