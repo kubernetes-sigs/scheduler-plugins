@@ -33,7 +33,7 @@ from scripts.kwok_integration_tests.test_helpers import (
     scenario_max_priority,
     scenario_total_replicas,
     apply_workload_step,
-    wait_for_workload_step_simple,
+    wait_for_workload_step,
 )
 
 # Namespace is specific to this script (tests use a different one)
@@ -122,12 +122,13 @@ def setup_cluster(
             node_cpu_m,
             node_mem_b,
         )
-        wait_for_workload_step_simple(
+        wait_for_workload_step(
             LOG,
             ctx,
             TEST_NAMESPACE,
             scenario,
             step,
+            hook_stage=hook_stage,
             disable_wait_and_active_checks=disable_wait_and_active_checks,
         )
 

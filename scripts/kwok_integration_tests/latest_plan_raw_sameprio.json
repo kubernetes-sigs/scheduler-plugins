@@ -1,12 +1,12 @@
 {
   "plugin_version": "v0.0.1",
   "optimization_strategy": "PerPod/PostFilter/Synch",
-  "generated_at": "2025-12-08T05:04:30.770707476Z",
-  "completed_at": "2025-12-08T05:04:32.049833593Z",
+  "generated_at": "2025-12-08T05:19:44.729463357Z",
+  "completed_at": "2025-12-08T05:19:46.512384972Z",
   "solver": {
     "name": "python",
     "status": "OPTIMAL",
-    "duration_ms": 854,
+    "duration_ms": 998,
     "score": {
       "placed_by_priority": {
         "3": 5
@@ -16,91 +16,91 @@
   },
   "preemptor": {
     "pod": {
-      "uid": "bddfe3d8-45b7-4a17-af9a-a1841364265f",
+      "uid": "08157616-d20a-4263-8435-8bb764f9b38a",
       "namespace": "integration-test",
-      "name": "sameprio-pod-201-rs2mp"
+      "name": "sameprio-pod-201-kkkxk"
     },
-    "nominated_node": "kwok-node-2"
+    "nominated_node": "kwok-node-1"
   },
   "plan_status": "Completed",
   "plan": {
     "evicts": [
       {
         "pod": {
-          "uid": "48532f36-82de-41af-9b18-6ea8a191b8be",
+          "uid": "0385236f-46db-410d-86e6-6ef998e2ae3c",
           "namespace": "integration-test",
-          "name": "sameprio-pod-101-wx27b"
+          "name": "sameprio-pod-101-mh92x"
         },
-        "node": "kwok-node-2"
+        "node": "kwok-node-1"
       }
     ],
     "moves": null,
     "old_placements": [
       {
         "pod": {
-          "uid": "48532f36-82de-41af-9b18-6ea8a191b8be",
+          "uid": "0385236f-46db-410d-86e6-6ef998e2ae3c",
           "namespace": "integration-test",
-          "name": "sameprio-pod-101-wx27b"
+          "name": "sameprio-pod-101-mh92x"
         },
-        "node": "kwok-node-2"
+        "node": "kwok-node-1"
       },
       {
         "pod": {
-          "uid": "73b22be1-c635-404a-a86c-f4a6f7bdc942",
+          "uid": "554dcc62-f01f-4748-bc5a-7fb7bad5c7ba",
           "namespace": "integration-test",
-          "name": "sameprio-pod-102-hbxrr"
+          "name": "sameprio-pod-102-6wnbj"
         },
-        "node": "kwok-node-1"
+        "node": "kwok-node-2"
       }
     ],
     "new_placements": [
       {
         "pod": {
-          "uid": "bddfe3d8-45b7-4a17-af9a-a1841364265f",
+          "uid": "08157616-d20a-4263-8435-8bb764f9b38a",
           "namespace": "integration-test",
-          "name": "sameprio-pod-201-rs2mp"
-        },
-        "to_node": "kwok-node-2"
-      },
-      {
-        "pod": {
-          "uid": "f96c43f0-f879-4a7d-895b-4aa5d4c1e38c",
-          "namespace": "integration-test",
-          "name": "sameprio-pod-202-8hwqz"
+          "name": "sameprio-pod-201-kkkxk"
         },
         "to_node": "kwok-node-1"
       },
       {
         "pod": {
-          "uid": "43ab665f-bd98-46e6-968e-f0035da5e28f",
+          "uid": "86f1eb16-e558-4242-b121-39026374b9b2",
           "namespace": "integration-test",
-          "name": "sameprio-pod-203-xfgz2"
+          "name": "sameprio-pod-202-j8b7c"
         },
         "to_node": "kwok-node-2"
       },
       {
         "pod": {
-          "uid": "692542dc-5d6a-4db1-9528-fb3b8e043713",
+          "uid": "e8c650a7-a9e4-41d5-965b-e299ba2eddab",
           "namespace": "integration-test",
-          "name": "sameprio-pod-204-ghcbs"
+          "name": "sameprio-pod-203-qlj9l"
         },
-        "to_node": "kwok-node-2"
+        "to_node": "kwok-node-1"
+      },
+      {
+        "pod": {
+          "uid": "c647070b-38ce-4893-8bd2-dd4692c2a3c7",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-204-vhb9r"
+        },
+        "to_node": "kwok-node-1"
       }
     ],
     "placement_by_name": {
-      "integration-test/sameprio-pod-201-rs2mp": "kwok-node-2"
+      "integration-test/sameprio-pod-201-kkkxk": "kwok-node-1"
     },
     "workload_quotas": {
       "rs:integration-test/sameprio-pod-202": {
-        "kwok-node-1": 1
+        "kwok-node-2": 1
       },
       "rs:integration-test/sameprio-pod-203": {
-        "kwok-node-2": 1
+        "kwok-node-1": 1
       },
       "rs:integration-test/sameprio-pod-204": {
-        "kwok-node-2": 1
+        "kwok-node-1": 1
       }
     },
-    "nominated_node": "kwok-node-2"
+    "nominated_node": "kwok-node-1"
   }
 }

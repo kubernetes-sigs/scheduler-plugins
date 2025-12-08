@@ -397,16 +397,20 @@ def wait_for_workload_step(
     scenario: WorkloadScenario,
     step: WorkloadStep,
     *,
+    hook_stage: str,
     step_index: int,
     num_steps: int,
     disable_wait_and_active_checks: bool = DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
 ) -> bool:
     """
-    Wait for ReplicaSets of a workload step according to step.wait_mode
-    and enforce the /active invariants according to step.active_plan_check_mode.
+    Wait for ReplicaSets of a workload step and enforce the /active invariants.
 
-    If disable_wait_and_active_checks is True, this returns immediately
-    without waiting or calling /active.
+    - If disable_wait_and_active_checks is True, this returns immediately.
+    - We normally honor step.wait_running:
+        * True  -> wait for pods to be Running
+        * False -> wait for them to exist
+    - BUT for hook_stage='preenqueue' we always downgrade to waiting for existence
+      (we never block on Running in that hook).
     """
     if disable_wait_and_active_checks:
         logger.info(
@@ -434,20 +438,9 @@ def wait_for_workload_step(
     is_last_step = (step_index == num_steps - 1)
     should_check_any = (not is_last_step) and (mode in {"each_pod", "after_step"})
 
-    if step.wait_mode not in {"running", "exist", "none"}:
-        logger.warning(
-            "Unknown wait_mode=%r for step %s; skipping waits and /active checks.",
-            step.wait_mode,
-            step.name,
-        )
-        return True
-
-    # No wait for pods; only possible after-step check
-    if step.wait_mode == "none":
-        logger.info(
-            "Workload step %s: wait_mode=none; not waiting for pods.",
-            step.name,
-        )
+    if not step.pods:
+        logger.info("Workload step %s has no pods; nothing to wait for.", step.name)
+        # Still allow after-step /active check, if requested
         if should_check_any and mode == "after_step":
             when = (
                 f"after workload step {step_index + 1}/{num_steps} "
@@ -457,6 +450,16 @@ def wait_for_workload_step(
                 return False
         return True
 
+    # Decide effective wait mode for pods
+    effective_running = bool(step.wait_running and hook_stage != "preenqueue")
+    wait_mode = "running" if effective_running else "exist"
+
+    if step.wait_running and not effective_running:
+        logger.info(
+            "hook_stage=%s: overriding wait_running=True -> wait for pod existence only.",
+            hook_stage,
+        )
+
     # Normal wait: per-pod waits, optional per-pod /active checks
     for pod in step.pods:
         rs_name = rs_name_for_pod(scenario, pod)
@@ -464,7 +467,7 @@ def wait_for_workload_step(
             "Waiting for RS %s/%s to be %s (timeout=%.1fs)",
             namespace,
             rs_name,
-            step.wait_mode,
+            wait_mode,
             float(step.wait_timeout_s),
         )
         _ = wait_rs_pods(
@@ -473,7 +476,7 @@ def wait_for_workload_step(
             rs_name,
             namespace,
             step.wait_timeout_s,
-            mode=step.wait_mode,
+            mode=wait_mode,
         )
 
         # Per-pod invariant, if requested
@@ -730,12 +733,12 @@ def run_mode_integration(
         raise ValueError(f"Invalid hook_stage={hook_stage!r}; expected one of {sorted(VALID_HOOK_STAGES)}")
 
     LOG = setup_logging(
-        name=f"mpo-itest-{scenario.id}-{opt_mode}-{hook_stage}-{opt_sync}",
-        prefix=f"[mpo-itest scenario={scenario.id} mode={opt_mode} hook={hook_stage} sync={opt_sync}] ",
+        name=f"itest-{scenario.id}-{opt_mode}-{hook_stage}-{opt_sync}",
+        prefix=f"[itest scenario={scenario.id} mode={opt_mode} hook={hook_stage} sync={opt_sync}] ",
         level="INFO",
     )
     header, footer = make_header_footer(
-        f"MPOptimizer KWOK integration: scenario={scenario.id}, mode={opt_mode}, hook={hook_stage}, sync={opt_sync}"
+        f"KWOK integration: scenario={scenario.id}, mode={opt_mode}, hook={hook_stage}, sync={opt_sync}"
     )
     LOG.info("\n%s\ncluster=%s\n%s", header, cluster_name, footer)
     LOG.info("Scenario description: %s", scenario.description)
@@ -810,6 +813,7 @@ def run_mode_integration(
             TEST_NAMESPACE,
             scenario,
             step,
+            hook_stage=hook_stage,
             step_index=idx,
             num_steps=num_steps,
             disable_wait_and_active_checks=disable_wait_and_active_checks,
@@ -963,3 +967,6 @@ def main() -> None:
         disable_wait_and_active_checks=args.disable_wait_and_active_checks,
     )
     sys.exit(0 if ok else 1)
+
+if __name__ == "__main__":
+    main()
