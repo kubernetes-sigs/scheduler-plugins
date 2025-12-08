@@ -212,19 +212,19 @@ func TestWaitForUsableNode(t *testing.T) {
 			defer cancel()
 
 			calls := 0
-
+			errs := 0
 			withReadinessHooks(
 				func(_ *SharedState) ([]*v1.Node, error) {
 					calls++
-					switch calls {
-					case 1:
-						return nil, fmt.Errorf("boom") // error path
-					case 2:
-						defer cancel()
-						return []*v1.Node{new(v1.Node)}, nil // no usable nodes
-					default:
-						return nil, fmt.Errorf("unexpected extra getNodes call")
+					if calls == 1 {
+						errs++
+						return nil, fmt.Errorf("boom") // first call: error
 					}
+					// After the first error, simulate nodes present but none usable,
+					// and cancel the context. There might be 1 or more of these calls
+					// before ctx.Done() wins the next select.
+					cancel()
+					return []*v1.Node{new(v1.Node)}, nil
 				},
 				func(*v1.Node) bool {
 					return false // treat all nodes as unusable
@@ -235,7 +235,10 @@ func TestWaitForUsableNode(t *testing.T) {
 						t.Fatalf("expected waitForUsableNode to return false when only unusable nodes and errors")
 					}
 					if calls != 2 {
-						t.Fatalf("expected 2 getNodes calls, got %d", calls)
+						t.Fatalf("expected exactly 2 getNodes calls (error + unusable), got %d", calls)
+					}
+					if errs != 1 {
+						t.Fatalf("expected exactly 1 getNodes error, got %d", errs)
 					}
 				},
 			)
