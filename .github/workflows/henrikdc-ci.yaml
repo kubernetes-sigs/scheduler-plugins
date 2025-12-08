@@ -124,6 +124,35 @@ jobs:
       - name: Make binary executable
         run: chmod +x bin/kube-scheduler
 
+      - name: Install kubectl / kwokctl / kwok
+        env:
+          KUBECTL_VERSION: v1.32.7
+          KWOK_VERSION: v0.7.0
+        run: |
+          set -euo pipefail
+          echo "Installing kubectl ${KUBECTL_VERSION} and kwok ${KWOK_VERSION}"
+          cd /tmp
+
+          # kubectl
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo install -m 0755 kubectl /usr/local/bin/kubectl
+
+          # kwokctl and kwok
+          curl -fsSLo kwokctl-linux-amd64 "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwokctl-linux-amd64"
+          curl -fsSLo kwok-linux-amd64   "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/kwok-linux-amd64"
+          chmod +x kwokctl-linux-amd64 kwok-linux-amd64
+          sudo install -m 0755 kwokctl-linux-amd64 /usr/local/bin/kwokctl
+          sudo install -m 0755 kwok-linux-amd64   /usr/local/bin/kwok
+
+          # Clean up
+          rm -f kubectl kwokctl-linux-amd64 kwok-linux-amd64
+
+          # Verify
+          echo "kubectl:" && kubectl version --client --short || true
+          echo "kwokctl:" && kwokctl --version || true
+          echo "kwok:" && kwok --version || true
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
