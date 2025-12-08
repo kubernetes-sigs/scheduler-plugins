@@ -23,8 +23,8 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+          if [ -f scripts/test/requirements.txt ]; then
+            pip install -r scripts/test/requirements.txt
           fi
 
       # ---- Go setup ----
