@@ -92,6 +92,13 @@ jobs:
             go tool cover -func=coverage/go/go_coverage.out
             go tool cover -html=coverage/go/go_coverage.out -o coverage/go/coverage.html
 
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage/python
+            coverage/go
 
   # -------------------------------------------------------
   # 3) Integration tests
@@ -131,4 +138,4 @@ jobs:
 
       - name: Run integration tests (Python only)
         run: |
-          pytest tests/integration
+          pytest scripts/kwok_integration_tests/test_modes.py
