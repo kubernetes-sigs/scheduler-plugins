@@ -31,7 +31,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"       # match your local Go version
+          go-version: "1.24.0"       # match your local Go version
 
       # ---- Run your combined test script ----
       - name: Run tests (Python + Go)
