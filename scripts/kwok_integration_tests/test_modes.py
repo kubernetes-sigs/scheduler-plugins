@@ -1,16 +1,8 @@
 # test_modes.py
-#!/usr/bin/env python3
 
-import argparse, csv
-import json
-import logging
-import sys
-import time
-from dataclasses import dataclass
+import argparse, csv, json, logging, sys, time
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
-
-import yaml
 
 # pytest is optional: used only when running via pytest
 try:
@@ -22,14 +14,11 @@ from scripts.helpers.general_helpers import (
     setup_logging,
     make_header_footer,
     qty_to_mcpu_int,
-    qty_to_mcpu_str,
     qty_to_bytes_int,
-    qty_to_bytes_str,
     solver_trigger_http,
     get_solver_active_status_http,
 )
 from scripts.helpers.kubectl_helpers import (
-    kubectl_apply_yaml,
     ensure_namespace,
     ensure_priority_classes,
     wait_rs_pods,
@@ -39,91 +28,58 @@ from scripts.helpers.kwok_helpers import (
     ensure_kwok_cluster,
     create_kwok_nodes,
     kwok_pods_cap,
-    merge_kwokctl_envs,
-    yaml_kwok_rs,
+)
+from scripts.kwok_integration_tests.test_helpers import (
+    DEFAULT_CLUSTER_NAME,
+    DEFAULT_KWOK_RUNTIME,
+    DEFAULT_KWOKCTL_CONFIG,
+    NUM_NODES,
+    NODE_CPU,
+    NODE_MEM,
+    NUM_PRIORITIES,
+    VALID_OPT_MODES,
+    VALID_HOOK_STAGES,
+    WorkloadStep,
+    WorkloadScenario,
+    WORKLOAD_SCENARIOS,
+    DEFAULT_WORKLOAD_ID,
+    DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
+    rs_name_for_pod,
+    load_kwokctl_config,
+    build_kwokctl_config_for_mode,
+    scenario_max_priority,
+    scenario_total_replicas,
+    apply_workload_step,
 )
 
-# ---------------------------------------------------------------------------
-# Data model for workloads
-# ---------------------------------------------------------------------------
-
-@dataclass
-class WorkloadPod:
-    """
-    Logical test pod specification expressed as fractions of node capacity.
-
-    cpu, mem are fractions of a *single node's* capacity (0.0–1.0+).
-    priority is an integer PriorityClass index (1..NUM_PRIORITIES).
-    expected_assignment:
-      - True  => we assert the ReplicaSet ends up scheduled on some node
-      - False => we assert the ReplicaSet ends up NOT scheduled
-      - None  => we don't assert anything for this ReplicaSet
-    """
-    id: int
-    cpu: float
-    mem: float
-    priority: int
-    replicas: int = 1
-    expected_assignment: Optional[bool] = None
-
-
-@dataclass
-class WorkloadStep:
-    """
-    A step in a workload scenario: a batch of ReplicaSets applied together,
-    and a policy for how long we wait after creating them.
-    """
-    name: str
-    pods: List[WorkloadPod]
-    wait_mode: str = "exist"  # "exist", "running", or "none"
-    wait_timeout_s: int = 5
-
-
-@dataclass
-class WorkloadScenario:
-    """
-    Complete workload scenario composed of one or more steps.
-    """
-    id: str
-    description: str
-    steps: List[WorkloadStep]
-
 
 # ---------------------------------------------------------------------------
-# Constants (adjust if needed)
+# Constants specific to the integration tests
 # ---------------------------------------------------------------------------
 
-DEFAULT_CLUSTER_NAME = "kwok1"
-DEFAULT_KWOK_RUNTIME = "binary"
-DEFAULT_KWOKCTL_CONFIG = "data/configs-kwokctl/test/solver-default.yaml"
-
-TEST_NAMESPACE = "mpo-itest"
-NUM_NODES = 2
-NODE_CPU = "1000m"
-NODE_MEM = "1Gi"
-NUM_PRIORITIES = 3
-
-PLAN_NAMESPACE = "kube-system"
+TEST_NAMESPACE = "integration-test"
+SYSTEM_NAMESPACE = "kube-system"
 
 # Must match your plugin's ConfigMap label & data key
 PLAN_LABEL_KEY = "plan"
 PLAN_DATA_KEY = PLAN_LABEL_KEY + ".json"
 
 # Plugin readiness ConfigMap (created once the plugin is fully ready)
-PLUGIN_CFG_NAMESPACE = PLAN_NAMESPACE
 PLUGIN_CFG_NAME = "plugin-config"
 PLUGIN_CFG_DATA_KEY = "plugin-config.json"
 PLUGIN_CFG_TIMEOUT_S = 10  # timeout for waiting for plugin readiness
 
-POD_TIMEOUT_S = 5
+# Pod wait timeout per step (scenario definitions already use POD_TIMEOUT_S via shared module)
 
 # Timing model:
-# 1) After creating workload & pods exist -> wait WORKLOAD_SETTLE_TIME_S
+# 1) After creating workload & pods -> wait WORKLOAD_SETTLE_TIME_S
 # 2) Then wait up to CONFIG_MAP_TIMEOUT_S for a plan ConfigMap to appear
-# 3) Once plan is present -> wait PLAN_EXECUTION_TIME_S for evictions/new pods
+# 3) Once plan is present -> wait PLAN_EXECUTION_TIME_S to be sure evictions/new pods are done
 WORKLOAD_SETTLE_TIME_S = 2
 CONFIG_MAP_TIMEOUT_S = 10
-PLAN_EXECUTION_TIME_S = 10
+PLAN_EXECUTION_MAX_WAIT_S = 10
+PLAN_EXECUTION_MIN_WAIT_S = 1
+PLAN_EXECUTION_POLL_INTERVAL_S = 1
 
 # Manual HTTP trigger (same style as test_runner)
 SOLVER_TRIGGER_URL = "http://localhost:18080/solve"
@@ -131,196 +87,33 @@ SOLVER_TRIGGER_TIMEOUT_S = 60
 
 # NEW: /active endpoint (solver status)
 SOLVER_ACTIVE_URL = "http://localhost:18080/active"
-SOLVER_ACTIVE_TIMEOUT_S = 3.0
+SOLVER_ACTIVE_TIMEOUT_S = 5.0
 
-# Valid optimization modes for this integration test
-VALID_OPT_MODES = {"per_pod", "periodic", "interlude", "manual"}
-
-# Node names KWOK normally uses for this cluster size.
-# Used only for documentation / expectations; we don't *assert* on them globally.
-EXPECTED_NODE_NAMES = [f"kwok-node-{i+1}" for i in range(NUM_NODES)]
+# KWOK node names
+NODE_NAMES = [f"kwok-node-{i+1}" for i in range(NUM_NODES)]
 
 # Mode combinations to exercise in pytest (central place to tweak)
-MODE_CASES: List[Tuple[str, str, bool]] = [
-    # ("per_pod", "preenqueue", False),
-    # ("per_pod", "postfilter", False),
-    # ("per_pod", "postfilter", True),
-    # ("periodic", "preenqueue", False),
-    # ("periodic", "preenqueue", True),
-    # ("periodic", "postfilter", False),
-    # ("periodic", "postfilter", True),
-    # ("interlude", "preenqueue", False),
-    # ("interlude", "preenqueue", True),
-    # ("interlude", "postfilter", False),
-    ("interlude", "postfilter", True),
-    ("manual", "preenqueue", False),
-    ("manual", "postfilter", False),
-    ("manual", "postfilter", True),
+# Each entry: (opt_mode, hook_stage, opt_sync, workload_ids)
+PYTEST_MODE_CASES: List[Tuple[str, str, bool, List[str]]] = [
+    ("per_pod", "postfilter", True, ["sameprio"]),
+    ("periodic", "preenqueue", True, ["prioaware"]),
+    ("periodic", "preenqueue", False, ["prioaware"]),
+    ("periodic", "postfilter", True, ["sameprio"]),
+    ("periodic", "postfilter", False, ["sameprio"]),
+    ("interlude", "preenqueue", True, ["prioaware", "higharrival"]),
+    ("interlude", "preenqueue", False, ["prioaware", "higharrival"]),
+    ("interlude", "postfilter", True, ["sameprio", "higharrival"]),
+    ("interlude", "postfilter", False, ["sameprio", "higharrival"]),
+    ("manual", "preenqueue", True, ["prioaware"]),
+    ("manual", "preenqueue", False, ["prioaware"]),
+    ("manual", "postfilter", True, ["sameprio"]),
+    ("manual", "postfilter", False, ["sameprio"]),
 ]
 
-# ---------------------------------------------------------------------------
-# Workload scenario definitions
-# ---------------------------------------------------------------------------
-
-def _rs_name_for_pod(scenario: WorkloadScenario, pod: WorkloadPod) -> str:
-    """
-    Stable ReplicaSet name derived from (scenario.id, pod.id).
-    """
-    return f"{scenario.id}-pod-{pod.id:03d}"
-
-
-def _scenario_same_priority() -> WorkloadScenario:
-    big_step = WorkloadStep(
-        name="big-first",
-        pods=[
-            WorkloadPod(id=101, cpu=0.8, mem=0.1, priority=3, expected_assignment=False),
-            WorkloadPod(id=102, cpu=0.7, mem=0.1, priority=3, expected_assignment=True),
-        ],
-        wait_mode="running",
-        wait_timeout_s=POD_TIMEOUT_S,
-    )
-    small_step = WorkloadStep(
-        name="small-later",
-        pods=[
-            WorkloadPod(id=201, cpu=0.4, mem=0.1, priority=3, expected_assignment=True),
-            WorkloadPod(id=202, cpu=0.3, mem=0.1, priority=3, expected_assignment=True),
-            WorkloadPod(id=203, cpu=0.3, mem=0.1, priority=3, expected_assignment=True),
-            WorkloadPod(id=204, cpu=0.3, mem=0.1, priority=3, expected_assignment=True),
-        ],
-        wait_mode="exist",
-        wait_timeout_s=POD_TIMEOUT_S,
-    )
-    return WorkloadScenario(
-        id="sameprio",
-        description=(
-            "Equal-priority repacking: two big p3 pods first, four smaller "
-            "p3 pods later; default will not evict reschedule equal priorities, optimizer can."
-        ),
-        steps=[big_step, small_step],
-    )
-
-
-def _scenario_different_priority() -> WorkloadScenario:
-    """
-    Scenario 2: Mixed priorities.
-
-    Cluster: 2 nodes, each 1.0 CPU.
-
-    - Low-priority p1 pods (0.5 CPU each) fill the cluster.
-    - Later, high-priority p3 pods (0.7 CPU each) arrive.
-
-    We assert that all high-priority pods end up scheduled (expected=True),
-    while we don't assert anything for the low-priority background pods.
-    """
-    low_step = WorkloadStep(
-        name="low-background",
-        pods=[
-            WorkloadPod(id=101, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
-            WorkloadPod(id=102, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
-            WorkloadPod(id=103, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
-            WorkloadPod(id=104, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
-        ],
-        wait_mode="running",
-        wait_timeout_s=POD_TIMEOUT_S,
-    )
-    high_step = WorkloadStep(
-        name="high-arrival",
-        pods=[
-            WorkloadPod(id=201, cpu=0.7, mem=0.1, priority=3, expected_assignment=True),
-            WorkloadPod(id=202, cpu=0.7, mem=0.1, priority=3, expected_assignment=True),
-        ],
-        wait_mode="exist",
-        wait_timeout_s=POD_TIMEOUT_S,
-    )
-    return WorkloadScenario(
-        id="prioaware",
-        description=(
-            "Priority-aware scheduling: low-priority p1 pods fill the cluster; "
-            "later high-priority p3 pods should be scheduled, evicting some p1 pods."
-        ),
-        steps=[low_step, high_step],
-    )
-
-def _scenario_high_arrival() -> WorkloadScenario:
-    steps1 = [
-        WorkloadStep(
-            name=f"step{100+i}",
-            pods=[WorkloadPod(
-                id=100+i,
-                cpu=0.3,
-                mem=0.1,
-                priority=1,
-                expected_assignment=None,
-            )],
-            wait_mode="exist",
-            wait_timeout_s=POD_TIMEOUT_S,
-        )
-        for i in range(1, 7)
-    ]
-    steps2 = [
-        WorkloadStep(
-            name=f"step{200+i}",
-            pods=[WorkloadPod(
-                id=200+i,
-                cpu=0.1,
-                mem=0.1,
-                priority=1,
-                expected_assignment=None,
-            )],
-            wait_mode="exist",
-            wait_timeout_s=POD_TIMEOUT_S,
-        )
-        for i in range(1, 5)
-    ]
-    return WorkloadScenario(
-        id="higharrival",
-        description=(
-            "High-arrival to check mode interlude behavior."
-        ),
-        steps=steps1 + steps2,
-    )
-
-WORKLOAD_SCENARIOS: Dict[str, WorkloadScenario] = {
-    "sameprio": _scenario_same_priority(),
-    "prioaware": _scenario_different_priority(),
-    "higharrival": _scenario_high_arrival(),
-}
-
-DEFAULT_WORKLOAD_ID = "sameprio"
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers reused from setup_cluster + extra test-only helpers
 # ---------------------------------------------------------------------------
-
-def load_kwokctl_config(path: str | Path) -> Dict[str, Any]:
-    """Load a KwokctlConfiguration YAML as a dict."""
-    p = Path(path)
-    if not p.exists():
-        raise SystemExit(f"kwokctl config not found: {p}")
-    with p.open("r", encoding="utf-8") as f:
-        doc = yaml.safe_load(f) or {}
-    if not isinstance(doc, dict):
-        raise SystemExit(f"{p}: expected KwokctlConfiguration mapping")
-    return doc
-
-
-def build_kwokctl_config_for_mode(
-    base_doc: Dict[str, Any],
-    opt_mode: str,
-    hook_stage: str,
-    opt_sync: bool,
-) -> Dict[str, Any]:
-    """
-    Return a copy of base_doc that injects OPTIMIZE_MODE / OPTIMIZE_HOOK_STAGE
-    envs into the kube-scheduler component.
-    """
-    envs = [
-        {"name": "OPTIMIZE_MODE", "value": opt_mode},
-        {"name": "OPTIMIZE_HOOK_STAGE", "value": hook_stage},
-        {"name": "OPTIMIZE_SOLVE_SYNCH", "value": "true" if opt_sync else "false"},
-    ]
-    return merge_kwokctl_envs(base_doc, envs, component="kube-scheduler")
-
 
 def wait_for_plugin_configmap(
     ctx: str,
@@ -332,7 +125,7 @@ def wait_for_plugin_configmap(
     Wait until the plugin readiness ConfigMap appears.
 
     The plugin is considered 'ready' once it has created the ConfigMap:
-      - namespace: PLUGIN_CFG_NAMESPACE
+      - namespace: SYSTEM_NAMESPACE
       - name:      PLUGIN_CFG_NAME
 
     Returns the ConfigMap JSON dict, or None on timeout.
@@ -345,14 +138,14 @@ def wait_for_plugin_configmap(
             cm = get_json_ctx(
                 ctx,
                 [
-                    "-n", PLUGIN_CFG_NAMESPACE,
+                    "-n", SYSTEM_NAMESPACE,
                     "get", "cm", PLUGIN_CFG_NAME,
                     "-o", "json",
                 ],
             )
             logger.info(
                 "plugin readiness ConfigMap %s/%s found; plugin is ready.",
-                PLUGIN_CFG_NAMESPACE,
+                SYSTEM_NAMESPACE,
                 PLUGIN_CFG_NAME,
             )
             return cm
@@ -360,7 +153,7 @@ def wait_for_plugin_configmap(
             last_err = e
             logger.info(
                 "plugin not ready yet; waiting for ConfigMap %s/%s (error: %s)",
-                PLUGIN_CFG_NAMESPACE,
+                SYSTEM_NAMESPACE,
                 PLUGIN_CFG_NAME,
                 e,
             )
@@ -368,7 +161,7 @@ def wait_for_plugin_configmap(
 
     logger.warning(
         "plugin ConfigMap %s/%s did not appear within %.1fs (last error: %s)",
-        PLUGIN_CFG_NAMESPACE,
+        SYSTEM_NAMESPACE,
         PLUGIN_CFG_NAME,
         timeout_s,
         last_err,
@@ -383,7 +176,7 @@ def get_latest_plan_configmap(
     timeout_s: int = CONFIG_MAP_TIMEOUT_S,
 ) -> Optional[Dict[str, Any]]:
     """
-    Poll for the latest plan ConfigMap in PLAN_NAMESPACE, filtered by PLAN_LABEL_KEY=true.
+    Poll for the latest plan ConfigMap in SYSTEM_NAMESPACE, filtered by PLAN_LABEL_KEY=true.
     Returns the newest ConfigMap (by creationTimestamp/resourceVersion) or None.
     """
     deadline = time.time() + timeout_s
@@ -392,7 +185,7 @@ def get_latest_plan_configmap(
             data = get_json_ctx(
                 ctx,
                 [
-                    "-n", PLAN_NAMESPACE,
+                    "-n", SYSTEM_NAMESPACE,
                     "get", "cm",
                     "-l", f"{PLAN_LABEL_KEY}=true",
                     "-o", "json",
@@ -420,6 +213,120 @@ def get_latest_plan_configmap(
     return None
 
 
+def stored_plan_is_done(sp: Dict[str, Any]) -> bool:
+    """
+    Return True if the StoredPlan JSON reports done.
+    """
+    status = sp.get("plan_status")
+    if isinstance(status, str):
+        return status.lower() == "completed"
+    return False
+
+
+def wait_for_plan_done(
+    logger: logging.Logger,
+    *,
+    ctx: str,
+    cm_name: str,
+    min_wait_s: float = PLAN_EXECUTION_MIN_WAIT_S,
+    max_wait_s: float = PLAN_EXECUTION_MAX_WAIT_S,
+    poll_interval_s: float = PLAN_EXECUTION_POLL_INTERVAL_S,
+) -> Optional[Dict[str, Any]]:
+    """
+    Poll the already-existing plan ConfigMap until its StoredPlan.status is 'done',
+    or until max_wait_s is exceeded.
+    """
+    start = time.time()
+    deadline = start + max_wait_s
+
+    if min_wait_s > 0:
+        logger.info(
+            "Waiting %.1fs minimum before checking plan status in ConfigMap %s/%s.",
+            min_wait_s,
+            SYSTEM_NAMESPACE,
+            cm_name,
+        )
+        time.sleep(min_wait_s)
+
+    attempt = 0
+    last_err: Optional[Exception] = None
+
+    while time.time() < deadline:
+        attempt += 1
+        try:
+            cm = get_json_ctx(
+                ctx,
+                [
+                    "-n", SYSTEM_NAMESPACE,
+                    "get", "cm", cm_name,
+                    "-o", "json",
+                ],
+            )
+            raw_plan = (cm.get("data") or {}).get(PLAN_DATA_KEY)
+            if not raw_plan:
+                logger.warning(
+                    "Plan ConfigMap %s/%s has no data[%s] on attempt %d; retrying...",
+                    SYSTEM_NAMESPACE,
+                    cm_name,
+                    PLAN_DATA_KEY,
+                    attempt,
+                )
+            else:
+                try:
+                    sp = json.loads(raw_plan)
+                except Exception as e:
+                    last_err = e
+                    logger.warning(
+                        "Failed to parse StoredPlan JSON from %s/%s on attempt %d: %s",
+                        SYSTEM_NAMESPACE,
+                        cm_name,
+                        attempt,
+                        e,
+                    )
+                else:
+                    if stored_plan_is_done(sp):
+                        elapsed = time.time() - start
+                        logger.info(
+                            "Plan status reached 'done' in ConfigMap %s/%s after %.2fs (attempt %d).",
+                            SYSTEM_NAMESPACE,
+                            cm_name,
+                            elapsed,
+                            attempt,
+                        )
+                        return sp
+
+                    logger.info(
+                        "Plan status not done yet in ConfigMap %s/%s (attempt %d); polling again...",
+                        SYSTEM_NAMESPACE,
+                        cm_name,
+                        attempt,
+                    )
+
+        except RuntimeError as e:
+            last_err = e
+            logger.warning(
+                "Failed to read plan ConfigMap %s/%s on attempt %d: %s",
+                SYSTEM_NAMESPACE,
+                cm_name,
+                attempt,
+                e,
+            )
+
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_interval_s, max(0.0, remaining)))
+
+    logger.error(
+        "Plan status did not reach 'done' within %.1fs for ConfigMap %s/%s (last_err=%r)",
+        max_wait_s,
+        SYSTEM_NAMESPACE,
+        cm_name,
+        last_err,
+    )
+    return None
+
+
 def plan_placements_by_pod(sp: Dict[str, Any]) -> Dict[Tuple[str, str], str]:
     """
     Given a StoredPlan dict, compute the FINAL planned placement:
@@ -444,7 +351,7 @@ def plan_placements_by_pod(sp: Dict[str, Any]) -> Dict[Tuple[str, str], str]:
         if ns and name and node:
             mapping[(str(ns), str(name))] = str(node)
 
-    # 2) Evicts: remove from mapping (no final node for evicted pods)
+    # 2) Evicts: remove from mapping
     for ev in plan.get("evicts") or []:
         pod = ev.get("pod") or {}
         ns = pod.get("namespace") or TEST_NAMESPACE
@@ -463,23 +370,8 @@ def plan_placements_by_pod(sp: Dict[str, Any]) -> Dict[Tuple[str, str], str]:
 
     return mapping
 
-def _scenario_max_priority(scenario: WorkloadScenario) -> int:
-    m = 0
-    for step in scenario.steps:
-        for pod in step.pods:
-            m = max(m, pod.priority)
-    return m
 
-
-def _scenario_total_replicas(scenario: WorkloadScenario) -> int:
-    total = 0
-    for step in scenario.steps:
-        for pod in step.pods:
-            total += int(pod.replicas)
-    return total
-
-
-def _build_expected_assignment(
+def build_expected_assignment(
     scenario: WorkloadScenario,
     namespace: str,
 ) -> Dict[Tuple[str, str], bool]:
@@ -493,79 +385,81 @@ def _build_expected_assignment(
         for pod in step.pods:
             if pod.expected_assignment is None:
                 continue
-            rs_name = _rs_name_for_pod(scenario, pod)
+            rs_name = rs_name_for_pod(scenario, pod)
             mapping[(namespace, rs_name)] = bool(pod.expected_assignment)
     return mapping
 
 
-def _apply_workload_step(
+def wait_for_workload_step(
     logger: logging.Logger,
     ctx: str,
     namespace: str,
     scenario: WorkloadScenario,
     step: WorkloadStep,
-    node_cpu_m: int,
-    node_mem_b: int,
-) -> None:
+    *,
+    step_index: int,
+    num_steps: int,
+    disable_wait_and_active_checks: bool = DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
+) -> bool:
     """
-    Create ReplicaSets for a single workload step and apply them via kubectl.
+    Wait for ReplicaSets of a workload step according to step.wait_mode
+    and enforce the /active invariants according to step.active_plan_check_mode.
+
+    If disable_wait_and_active_checks is True, this returns immediately
+    without waiting or calling /active.
     """
-    yaml_chunks: List[str] = []
-    for pod in step.pods:
-        rs_name = _rs_name_for_pod(scenario, pod)
-        cpu_m = max(1, int(round(pod.cpu * node_cpu_m)))
-        mem_b = max(1, int(round(pod.mem * node_mem_b)))
-        cpu_str = qty_to_mcpu_str(cpu_m)
-        mem_str = qty_to_bytes_str(mem_b)
-        pc_name = f"p{pod.priority}"
+    if disable_wait_and_active_checks:
         logger.info(
-            "Workload step %s: RS %s (pod-id=%d) replicas=%d cpu=%s mem=%s prio=p%d",
+            "WAIT & ACTIVE-CHECK DISABLED: skipping pod waits and /active checks "
+            "for step %s (%d/%d) in namespace %s",
             step.name,
-            rs_name,
-            pod.id,
-            pod.replicas,
-            cpu_str,
-            mem_str,
-            pod.priority,
+            step_index + 1,
+            num_steps,
+            namespace,
         )
-        yaml_chunks.append(
-            yaml_kwok_rs(
-                namespace,
-                rs_name,
-                int(pod.replicas),
-                cpu_str,
-                mem_str,
-                pc_name,
-            )
+        return True
+
+    # Normalize active_plan_check_mode
+    raw_mode = step.active_plan_check_mode
+    mode = (raw_mode or "").lower()
+    if mode not in {"each_pod", "after_step", "never", ""}:
+        logger.warning(
+            "Unknown active_plan_check_mode=%r for step %s; treating as 'after_step'.",
+            raw_mode,
+            step.name,
         )
+        mode = "after_step"
 
-    if not yaml_chunks:
-        logger.info("Workload step %s has no pods; skipping apply.", step.name)
-        return
+    # Do not enforce /active invariants on the final step
+    is_last_step = (step_index == num_steps - 1)
+    should_check_any = (not is_last_step) and (mode in {"each_pod", "after_step"})
 
-    yaml_text = "".join(yaml_chunks)
-    kubectl_apply_yaml(logger, ctx, yaml_text)
-
-
-def _wait_for_workload_step(
-    logger: logging.Logger,
-    ctx: str,
-    namespace: str,
-    scenario: WorkloadScenario,
-    step: WorkloadStep,
-) -> None:
-    """
-    Wait for ReplicaSets of a workload step according to step.wait_mode.
-    """
     if step.wait_mode not in {"running", "exist", "none"}:
-        logger.warning("Unknown wait_mode=%r for step %s; skipping waits.", step.wait_mode, step.name)
-        return
-    if step.wait_mode == "none":
-        logger.info("Workload step %s: wait_mode=none; not waiting for pods.", step.name)
-        return
+        logger.warning(
+            "Unknown wait_mode=%r for step %s; skipping waits and /active checks.",
+            step.wait_mode,
+            step.name,
+        )
+        return True
 
+    # No wait for pods; only possible after-step check
+    if step.wait_mode == "none":
+        logger.info(
+            "Workload step %s: wait_mode=none; not waiting for pods.",
+            step.name,
+        )
+        if should_check_any and mode == "after_step":
+            when = (
+                f"after workload step {step_index + 1}/{num_steps} "
+                f"({step.name})"
+            )
+            if not assert_no_active_plan_http(logger, when=when):
+                return False
+        return True
+
+    # Normal wait: per-pod waits, optional per-pod /active checks
     for pod in step.pods:
-        rs_name = _rs_name_for_pod(scenario, pod)
+        rs_name = rs_name_for_pod(scenario, pod)
         logger.info(
             "Waiting for RS %s/%s to be %s (timeout=%.1fs)",
             namespace,
@@ -582,8 +476,28 @@ def _wait_for_workload_step(
             mode=step.wait_mode,
         )
 
+        # Per-pod invariant, if requested
+        if should_check_any and mode == "each_pod":
+            when = (
+                f"after pod {pod.id} in step {step_index + 1}/{num_steps} "
+                f"({step.name})"
+            )
+            if not assert_no_active_plan_http(logger, when=when):
+                return False
 
-def _write_plan_debug_files(
+    # After-step invariant
+    if should_check_any and mode == "after_step":
+        when = (
+            f"after workload step {step_index + 1}/{num_steps} "
+            f"({step.name})"
+        )
+        if not assert_no_active_plan_http(logger, when=when):
+            return False
+
+    return True
+
+
+def write_plan_debug_files(
     logger: logging.Logger,
     out_dir: Path,
     raw_plan: str,
@@ -600,7 +514,7 @@ def _write_plan_debug_files(
         raw_plan_path = out_dir / f"latest_plan_raw_{scenario.id}.json"
         csv_path = out_dir / f"latest_plan_vs_actual_{scenario.id}.csv"
 
-        # Raw plan: exactly what was in the ConfigMap (or pretty-printed)
+        # Raw plan
         raw_plan_path.write_text(raw_plan, encoding="utf-8")
 
         # CSV: merged view of plan placements, actual state, and expected_assignment
@@ -656,31 +570,20 @@ def evaluate_plan_and_cluster_state(
 ) -> bool:
     """
     After a StoredPlan has been published, wait for plan execution, fetch the
-    actual cluster state, and compare:
-
-      1) planned placements vs actual node assignments
-      2) expected_assignment (ReplicaSet-level) vs actual assignment
+    actual cluster state, and compare plan vs actual + expectations.
     """
     # Convert StoredPlan to final planned placement per pod
     plan_map = plan_placements_by_pod(stored_plan)
 
-    # 3) Wait for the plan to actually be executed (evictions + new pods)
-    logger.info("Sleeping %.1fs to allow plan execution (evictions / new placements).", PLAN_EXECUTION_TIME_S)
-    time.sleep(PLAN_EXECUTION_TIME_S)
-
-    # 4) Actual node assignments (AFTER plan execution window)
+    # Actual node assignments
     pods_json = get_json_ctx(
         ctx,
         ["-n", namespace, "get", "pods", "-o", "json"],
     )
 
-    # actual_nodes: real pod (ns, name) -> nodeName (for plan vs actual)
     actual_nodes: Dict[Tuple[str, str], str] = {}
-    # pod_to_rs: real pod (ns, name) -> logical ReplicaSet name (label "app")
     pod_to_rs: Dict[Tuple[str, str], str] = {}
-    # rs_seen: which logical ReplicaSets actually have at least one pod object
     rs_seen = set()
-    # rs_assigned: per (ns, rs_name) whether ANY replica is scheduled on a node
     rs_assigned: Dict[Tuple[str, str], bool] = {}
 
     for item in pods_json.get("items", []):
@@ -702,7 +605,6 @@ def evaluate_plan_and_cluster_state(
             key_rs = (str(ns), str(rs_name))
             rs_seen.add(key_rs)
             pod_to_rs[key_pod] = str(rs_name)
-            # mark RS as assigned if *any* of its replicas has a nodeName
             if node:
                 rs_assigned[key_rs] = rs_assigned.get(key_rs, False) or True
             else:
@@ -711,7 +613,7 @@ def evaluate_plan_and_cluster_state(
     # Sanity: make sure we saw at least one pod for each logical ReplicaSet
     for step in scenario.steps:
         for pod in step.pods:
-            rs_name = _rs_name_for_pod(scenario, pod)
+            rs_name = rs_name_for_pod(scenario, pod)
             key_rs = (namespace, rs_name)
             if key_rs not in rs_seen:
                 logger.error(
@@ -722,13 +624,11 @@ def evaluate_plan_and_cluster_state(
                 )
                 return False
 
-    # ------------------------------------------------------------------
-    # Write debug artifacts
-    # ------------------------------------------------------------------
+    # Debug artifacts
     try:
         out_dir = Path(__file__).resolve().parent
         raw_plan = json.dumps(stored_plan, indent=2)
-        _write_plan_debug_files(
+        write_plan_debug_files(
             logger,
             out_dir,
             raw_plan,
@@ -752,7 +652,7 @@ def evaluate_plan_and_cluster_state(
         logger.error("plan vs actual node mismatches: %s", mismatches)
         return False
 
-    # Check 2: expected assignment vs actual assignment (derived from nodeName)
+    # Check 2: expected assignment vs actual assignment
     assignment_mismatches = []
     for key_rs, should_run in expected_assignment.items():
         is_assigned = rs_assigned.get(key_rs, False)
@@ -773,12 +673,10 @@ def evaluate_plan_and_cluster_state(
     )
     return True
 
+
 def assert_no_active_plan_http(logger: logging.Logger, *, when: str) -> bool:
     """
     Call GET /active via the shared helper and assert that no active plan is reported.
-
-    Returns True if everything looks OK (status 200, JSON with active==False),
-    False otherwise.
     """
     code, body = get_solver_active_status_http(SOLVER_ACTIVE_URL, timeout=SOLVER_ACTIVE_TIMEOUT_S)
     body_compact = (body or "").replace("\n", "\\n")
@@ -797,14 +695,12 @@ def assert_no_active_plan_http(logger: logging.Logger, *, when: str) -> bool:
         logger.error("Failed to parse /active JSON %s: %s body=%r", when, e, body)
         return False
 
-    # Contract: { "active": <bool>, ... }
     active = bool(payload.get("active", False))
     if active:
         logger.error("Expected no active plan %s, but /active reported active=true: %s", when, payload)
         return False
 
     return True
-
 
 
 # ---------------------------------------------------------------------------
@@ -819,24 +715,19 @@ def run_mode_integration(
     scenario: WorkloadScenario,
     cluster_name: str = DEFAULT_CLUSTER_NAME,
     kwok_runtime: str = DEFAULT_KWOK_RUNTIME,
-    kwokctl_config_file: str | Path = DEFAULT_KWOKCTL_CONFIG,
+    kwokctl_config_file: str = DEFAULT_KWOKCTL_CONFIG,
+    disable_wait_and_active_checks: bool = DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
 ) -> bool:
     """
-    End-to-end integration test for a given (opt_mode, hook_stage, scenario):
+    End-to-end integration test for a given (opt_mode, hook_stage, scenario).
 
-    1. Recreate KWOK cluster with scheduler env set to opt_mode/hook_stage.
-    2. Create KWOK nodes.
-    3. Ensure test namespace + PriorityClasses.
-    4. Apply workload steps for the scenario in order, with per-step waits.
-       After each *intermediate* step we assert there is no active plan yet
-       via GET /active.
-    5. Sleep WORKLOAD_SETTLE_TIME_S to let default scheduler / queues settle.
-       - If opt_mode == "manual", trigger the solver via HTTP here.
-    6. Wait (up to CONFIG_MAP_TIMEOUT_S) for a StoredPlan ConfigMap to appear.
-    7. Evaluate plan vs cluster state and expected_assignment for the scenario.
+    If disable_wait_and_active_checks is True, pod waits and /active checks
+    during workload application are skipped.
     """
     if opt_mode not in VALID_OPT_MODES:
         raise ValueError(f"Invalid opt_mode={opt_mode!r}; expected one of {sorted(VALID_OPT_MODES)}")
+    if hook_stage not in VALID_HOOK_STAGES:
+        raise ValueError(f"Invalid hook_stage={hook_stage!r}; expected one of {sorted(VALID_HOOK_STAGES)}")
 
     LOG = setup_logging(
         name=f"mpo-itest-{scenario.id}-{opt_mode}-{hook_stage}-{opt_sync}",
@@ -868,7 +759,7 @@ def run_mode_integration(
     )
 
     # --- Nodes ---
-    total_pods = _scenario_total_replicas(scenario)
+    total_pods = scenario_total_replicas(scenario)
     create_kwok_nodes(
         LOG,
         ctx,
@@ -880,71 +771,60 @@ def run_mode_integration(
 
     # --- Namespace + PCs ---
     ensure_namespace(LOG, ctx, TEST_NAMESPACE)
-    num_prios = max(NUM_PRIORITIES, _scenario_max_priority(scenario))
+    num_prios = max(NUM_PRIORITIES, scenario_max_priority(scenario))
     ensure_priority_classes(LOG, ctx, num_prios, prefix="p", start=1)
 
     # --- Plugin readiness: wait for plugin_config before applying workloads ---
     LOG.info(
         "Waiting up to %.1fs for plugin readiness ConfigMap %s/%s before applying workloads.",
         PLUGIN_CFG_TIMEOUT_S,
-        PLUGIN_CFG_NAMESPACE,
+        SYSTEM_NAMESPACE,
         PLUGIN_CFG_NAME,
     )
     plugin_cfg_cm = wait_for_plugin_configmap(ctx, LOG, timeout_s=PLUGIN_CFG_TIMEOUT_S)
     if plugin_cfg_cm is None:
         LOG.error(
             "Plugin readiness ConfigMap %s/%s not found within %.1fs; aborting integration.",
-            PLUGIN_CFG_NAMESPACE,
+            SYSTEM_NAMESPACE,
             PLUGIN_CFG_NAME,
             PLUGIN_CFG_TIMEOUT_S,
         )
-        return False  # abort integration test
-
-    # Save plugin config map + decoded inner config for debugging / inspection
-    try:
-        out_dir = Path(__file__).resolve().parent
-        inner_raw = (plugin_cfg_cm.get("data") or {}).get(PLUGIN_CFG_DATA_KEY, "")
-        cfg_path = out_dir / "latest_plugin_config.json"
-        try:
-            inner_obj = json.loads(inner_raw)
-            cfg_path.write_text(
-                json.dumps(inner_obj, indent=2),
-                encoding="utf-8",
-            )
-            LOG.info("Saved decoded plugin config snapshot to %s", cfg_path)
-        except Exception as e:
-            # Fallback: write the raw string so we don't lose information
-            cfg_path.write_text(inner_raw, encoding="utf-8")
-            LOG.warning(
-                "Failed to parse inner plugin config JSON; wrote raw string to %s: %s",
-                cfg_path,
-                e,
-            )
-
-    except Exception as e:
-        LOG.warning("Failed to write plugin config debug files: %s", e)
+        return False
 
     # --- Apply workload steps ---
     num_steps = len(scenario.steps)
     for idx, step in enumerate(scenario.steps):
         LOG.info("=== Applying workload step: %s ===", step.name)
-        _apply_workload_step(LOG, ctx, TEST_NAMESPACE, scenario, step, node_cpu_m, node_mem_b)
-        _wait_for_workload_step(LOG, ctx, TEST_NAMESPACE, scenario, step)
-
-        # Between workload steps, assert that the solver has no active plan yet.
-        # We don't do this after the last step, because that is exactly when we
-        # expect a plan to be produced later in the test.
-        if idx < num_steps - 1:
-            when = f"after workload step {idx+1}/{num_steps} ({step.name})"
-            if not assert_no_active_plan_http(LOG, when=when):
-                LOG.error("Active-plan invariant violated %s; failing integration test.", when)
-                return False
+        apply_workload_step(
+            LOG,
+            ctx,
+            TEST_NAMESPACE,
+            scenario,
+            step,
+            node_cpu_m,
+            node_mem_b,
+        )
+        if not wait_for_workload_step(
+            LOG,
+            ctx,
+            TEST_NAMESPACE,
+            scenario,
+            step,
+            step_index=idx,
+            num_steps=num_steps,
+            disable_wait_and_active_checks=disable_wait_and_active_checks,
+        ):
+            LOG.error(
+                "Workload step %s failed (wait or /active invariant).",
+                step.name,
+            )
+            return False
 
     # 1) Workload settle time
     LOG.info("Sleeping %.1fs for workload to settle before expecting a plan.", WORKLOAD_SETTLE_TIME_S)
     time.sleep(WORKLOAD_SETTLE_TIME_S)
 
-    # Manual modes: trigger optimization via HTTP (same idea as test_runner)
+    # Manual modes: trigger optimization via HTTP
     if opt_mode == "manual":
         LOG.info("Manual mode: triggering solver via HTTP: %s", SOLVER_TRIGGER_URL)
         code, body = solver_trigger_http(LOG, SOLVER_TRIGGER_URL, SOLVER_TRIGGER_TIMEOUT_S)
@@ -956,19 +836,41 @@ def run_mode_integration(
     # 2) Wait for plan ConfigMap (with timeout)
     cm = get_latest_plan_configmap(ctx, LOG, timeout_s=CONFIG_MAP_TIMEOUT_S)
     if cm is None:
-        LOG.warning("No plan ConfigMap found within %.1fs; treating as integration failure.", CONFIG_MAP_TIMEOUT_S)
+        LOG.warning(
+            "No plan ConfigMap found within %.1fs; treating as integration failure.",
+            CONFIG_MAP_TIMEOUT_S,
+        )
         return False
+
+    cm_name = (cm.get("metadata") or {}).get("name")
+    if not cm_name:
+        LOG.error("StoredPlan ConfigMap is missing metadata.name; cannot poll for completion.")
+        return False
+
+    # Initial parse
     raw_plan = (cm.get("data") or {}).get(PLAN_DATA_KEY)
     if not raw_plan:
         LOG.error("StoredPlan ConfigMap data[%s] is empty or missing", PLAN_DATA_KEY)
         return False
     try:
-        stored_plan = json.loads(raw_plan)
+        _ = json.loads(raw_plan)
     except Exception as e:
-        LOG.error("failed to parse StoredPlan JSON from ConfigMap: %s", e)
+        LOG.error("Failed initial parse of StoredPlan JSON from ConfigMap: %s", e)
         return False
 
-    expected_assignment = _build_expected_assignment(scenario, TEST_NAMESPACE)
+    # Now poll the same ConfigMap until status=='done' (or timeout)
+    stored_plan = wait_for_plan_done(
+        LOG,
+        ctx=ctx,
+        cm_name=cm_name,
+        min_wait_s=PLAN_EXECUTION_MIN_WAIT_S,
+        max_wait_s=PLAN_EXECUTION_MAX_WAIT_S,
+        poll_interval_s=PLAN_EXECUTION_POLL_INTERVAL_S,
+    )
+    if stored_plan is None:
+        return False
+
+    expected_assignment = build_expected_assignment(scenario, TEST_NAMESPACE)
 
     ok = evaluate_plan_and_cluster_state(
         LOG,
@@ -986,18 +888,18 @@ def run_mode_integration(
 # ---------------------------------------------------------------------------
 
 if pytest is not None:
-    # Workload IDs we want to exercise under pytest
-    WORKLOAD_IDS_FOR_TEST = ["sameprio", "prioaware", "higharrival"]
+    # Flatten (workload_ids, mode, hook, sync) -> (workload_id, mode, hook, sync)
+    PARAM_CASES: List[Tuple[str, str, bool, str]] = [
+        (opt_mode, opt_hook, opt_sync, wid)
+        for (opt_mode, opt_hook, opt_sync, workload_ids) in PYTEST_MODE_CASES
+        for wid in workload_ids
+    ]
 
     @pytest.mark.parametrize(
-        "workload_id,opt_mode,opt_hook,opt_sync",
-        [
-            (wid, opt_mode, opt_hook, opt_sync)
-            for wid in WORKLOAD_IDS_FOR_TEST
-            for (opt_mode, opt_hook, opt_sync) in MODE_CASES
-        ],
+        "opt_mode,opt_hook,opt_sync,workload_id",
+        PARAM_CASES,
     )
-    def test_mpo_modes_end_to_end(workload_id: str, opt_mode: str, opt_hook: str, opt_sync: bool):
+    def test_modes_end_to_end(opt_mode: str, opt_hook: str, opt_sync: bool, workload_id: str):
         scenario = WORKLOAD_SCENARIOS[workload_id]
         assert run_mode_integration(
             opt_mode,
@@ -1029,12 +931,18 @@ def build_argparser() -> argparse.ArgumentParser:
                     choices=sorted(VALID_OPT_MODES),
                     help="OPTIMIZE_MODE value")
     ap.add_argument("--optimize-hook-stage", default="postfilter",
-                    help="OPTIMIZE_HOOK_STAGE value (preenqueue or postfilter; default: postfilter)")
+                    choices=sorted(VALID_HOOK_STAGES),
+                    help="OPTIMIZE_HOOK_STAGE value (default: postfilter)")
     ap.add_argument("--optimize-sync", action="store_true",
                     help="Set OPTIMIZE_SYNC=true (default: false)")
     ap.add_argument("--workload-id", default=DEFAULT_WORKLOAD_ID,
                     choices=sorted(WORKLOAD_SCENARIOS.keys()),
                     help=f"Workload scenario id (default: {DEFAULT_WORKLOAD_ID})")
+    ap.add_argument(
+        "--disable-wait-and-active-checks",
+        action="store_true",
+        help="Disable waiting for pods and /active invariants while applying workloads.",
+    )
     return ap
 
 
@@ -1052,9 +960,6 @@ def main() -> None:
         cluster_name=args.cluster_name,
         kwok_runtime=args.kwok_runtime,
         kwokctl_config_file=args.kwokctl_config_file,
+        disable_wait_and_active_checks=args.disable_wait_and_active_checks,
     )
     sys.exit(0 if ok else 1)
-
-
-if __name__ == "__main__":
-    main()

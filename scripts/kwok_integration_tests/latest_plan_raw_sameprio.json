@@ -1,12 +1,12 @@
 {
   "plugin_version": "v0.0.1",
-  "optimization_strategy": "Periodic/PostFilter/Asynch",
-  "generated_at": "2025-12-07T19:08:46.118407498Z",
-  "completed_at": "2025-12-07T19:08:46.39370676Z",
+  "optimization_strategy": "PerPod/PostFilter/Synch",
+  "generated_at": "2025-12-08T05:04:30.770707476Z",
+  "completed_at": "2025-12-08T05:04:32.049833593Z",
   "solver": {
     "name": "python",
     "status": "OPTIMAL",
-    "duration_ms": 740,
+    "duration_ms": 854,
     "score": {
       "placed_by_priority": {
         "3": 5
@@ -14,82 +14,93 @@
       "evicted": 1
     }
   },
+  "preemptor": {
+    "pod": {
+      "uid": "bddfe3d8-45b7-4a17-af9a-a1841364265f",
+      "namespace": "integration-test",
+      "name": "sameprio-pod-201-rs2mp"
+    },
+    "nominated_node": "kwok-node-2"
+  },
   "plan_status": "Completed",
   "plan": {
     "evicts": [
       {
         "pod": {
-          "uid": "1582665b-bc72-48f5-93f6-1ca0502aa649",
-          "namespace": "mpo-itest",
-          "name": "sameprio-pod-101-bq6wd"
+          "uid": "48532f36-82de-41af-9b18-6ea8a191b8be",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-101-wx27b"
         },
-        "node": "kwok-node-1"
+        "node": "kwok-node-2"
       }
     ],
     "moves": null,
     "old_placements": [
       {
         "pod": {
-          "uid": "1582665b-bc72-48f5-93f6-1ca0502aa649",
-          "namespace": "mpo-itest",
-          "name": "sameprio-pod-101-bq6wd"
+          "uid": "48532f36-82de-41af-9b18-6ea8a191b8be",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-101-wx27b"
+        },
+        "node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "73b22be1-c635-404a-a86c-f4a6f7bdc942",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-102-hbxrr"
         },
         "node": "kwok-node-1"
-      },
-      {
-        "pod": {
-          "uid": "b2b13717-d6e2-48d2-8017-f783965ee3bb",
-          "namespace": "mpo-itest",
-          "name": "sameprio-pod-102-6mbzs"
-        },
-        "node": "kwok-node-2"
-      },
-      {
-        "pod": {
-          "uid": "5898b3ca-68cb-4104-b039-8c386fbb9064",
-          "namespace": "mpo-itest",
-          "name": "sameprio-pod-202-5kxqv"
-        },
-        "node": "kwok-node-2"
       }
     ],
     "new_placements": [
       {
         "pod": {
-          "uid": "e14e4c54-1b14-44b8-8214-81b662300e6c",
-          "namespace": "mpo-itest",
-          "name": "sameprio-pod-201-fbf2p"
+          "uid": "bddfe3d8-45b7-4a17-af9a-a1841364265f",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-201-rs2mp"
+        },
+        "to_node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "f96c43f0-f879-4a7d-895b-4aa5d4c1e38c",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-202-8hwqz"
         },
         "to_node": "kwok-node-1"
       },
       {
         "pod": {
-          "uid": "9c394cb4-f494-4aba-9c46-99388ccee6e8",
-          "namespace": "mpo-itest",
-          "name": "sameprio-pod-203-dmf5d"
+          "uid": "43ab665f-bd98-46e6-968e-f0035da5e28f",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-203-xfgz2"
         },
-        "to_node": "kwok-node-1"
+        "to_node": "kwok-node-2"
       },
       {
         "pod": {
-          "uid": "2c127940-1008-4aaa-9471-989bd67bbc7b",
-          "namespace": "mpo-itest",
-          "name": "sameprio-pod-204-qrfj2"
+          "uid": "692542dc-5d6a-4db1-9528-fb3b8e043713",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-204-ghcbs"
         },
-        "to_node": "kwok-node-1"
+        "to_node": "kwok-node-2"
       }
     ],
-    "placement_by_name": {},
+    "placement_by_name": {
+      "integration-test/sameprio-pod-201-rs2mp": "kwok-node-2"
+    },
     "workload_quotas": {
-      "rs:mpo-itest/sameprio-pod-201": {
+      "rs:integration-test/sameprio-pod-202": {
         "kwok-node-1": 1
       },
-      "rs:mpo-itest/sameprio-pod-203": {
-        "kwok-node-1": 1
+      "rs:integration-test/sameprio-pod-203": {
+        "kwok-node-2": 1
       },
-      "rs:mpo-itest/sameprio-pod-204": {
-        "kwok-node-1": 1
+      "rs:integration-test/sameprio-pod-204": {
+        "kwok-node-2": 1
       }
-    }
+    },
+    "nominated_node": "kwok-node-2"
   }
 }
