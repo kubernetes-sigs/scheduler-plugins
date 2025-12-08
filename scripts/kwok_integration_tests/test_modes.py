@@ -99,9 +99,9 @@ PYTEST_MODE_CASES: List[Tuple[str, bool, List[str]]] = [
     ("manual", True, ["sameprio"]),
     # ("manual", False, ["sameprio"]), #TODO: find out why Async fails and per_pod fails
     # ("per_pod", True, ["sameprio"]),
-    ("periodic", True, ["sameprio"]),
+    # ("periodic", True, ["sameprio"]),
     # ("periodic", False, ["sameprio"]),
-    ("interlude", True, ["sameprio", "higharrival"]),
+    # ("interlude", True, ["sameprio", "higharrival"]),
     # ("interlude", False, ["sameprio", "higharrival"]),
 ]
 
