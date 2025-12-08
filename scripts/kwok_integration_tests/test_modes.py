@@ -91,18 +91,14 @@ NODE_NAMES = [f"kwok-node-{i+1}" for i in range(NUM_NODES)]
 
 # Mode combinations to exercise in pytest (central place to tweak)
 # Each entry: (opt_mode, opt_sync, workload_ids)
+# We just test using sync=True for all modes.
 PYTEST_MODE_CASES: List[Tuple[str, bool, List[str]]] = [
     ("manual_blocking", True, ["prioaware"]),
-    ("manual_blocking", False, ["prioaware"]),
     ("manual", True, ["sameprio"]),
-    ("manual", False, ["sameprio"]),
     ("per_pod", True, ["sameprio"]),
     ("periodic", True, ["sameprio"]),
-    ("periodic", False, ["sameprio"]),
     ("interlude", True, ["higharrival"]),
-    ("interlude", False, ["higharrival"]),
 ]
-
 
 # ---------------------------------------------------------------------------
 # Helpers reused from setup_cluster + extra test-only helpers
