@@ -85,7 +85,7 @@ jobs:
       # ---- Run unit tests (Python + Go) ----
       - name: Run python unit tests
         run: |
-          python -m pytest scripts/test
+          python -m pytest -v scripts/test
       - name: Run go unit tests
         run: |
             go test ./pkg/mypriorityoptimizer \
@@ -181,7 +181,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          python -m pytest \
+          python -m pytest -v \
             scripts/kwok_integration_tests/test_modes.py \
             --cov=scripts/kwok_integration_tests \
             --cov-report=xml:coverage/integration/kwok/coverage.xml \
