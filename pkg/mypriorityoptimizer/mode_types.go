@@ -18,6 +18,9 @@ const (
 	// ModeManual collects like ModePeriodic but only optimizes when the HTTP
 	// /solve endpoint is called.
 	ModeManual
+
+	// ModeManualBlocking blocks the normal scheduling flow until /solve is called.
+	ModeManualBlocking
 )
 
 // Stage indicates which stage of scheduling we are in.

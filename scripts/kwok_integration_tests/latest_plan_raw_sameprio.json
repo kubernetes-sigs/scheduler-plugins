@@ -1,12 +1,12 @@
 {
   "plugin_version": "v0.0.1",
-  "optimization_strategy": "PerPod/PostFilter/Synch",
-  "generated_at": "2025-12-08T05:19:44.729463357Z",
-  "completed_at": "2025-12-08T05:19:46.512384972Z",
+  "optimization_strategy": "Manual/Asynch",
+  "generated_at": "2025-12-08T08:39:18.363583113Z",
+  "completed_at": "2025-12-08T08:39:18.677017506Z",
   "solver": {
     "name": "python",
     "status": "OPTIMAL",
-    "duration_ms": 998,
+    "duration_ms": 391,
     "score": {
       "placed_by_priority": {
         "3": 5
@@ -14,93 +14,82 @@
       "evicted": 1
     }
   },
-  "preemptor": {
-    "pod": {
-      "uid": "08157616-d20a-4263-8435-8bb764f9b38a",
-      "namespace": "integration-test",
-      "name": "sameprio-pod-201-kkkxk"
-    },
-    "nominated_node": "kwok-node-1"
-  },
   "plan_status": "Completed",
   "plan": {
     "evicts": [
       {
         "pod": {
-          "uid": "0385236f-46db-410d-86e6-6ef998e2ae3c",
+          "uid": "e0f71f22-a64b-448c-9d1c-705e2400122f",
           "namespace": "integration-test",
-          "name": "sameprio-pod-101-mh92x"
+          "name": "sameprio-pod-101-rr47r"
         },
-        "node": "kwok-node-1"
+        "node": "kwok-node-2"
       }
     ],
     "moves": null,
     "old_placements": [
       {
         "pod": {
-          "uid": "0385236f-46db-410d-86e6-6ef998e2ae3c",
+          "uid": "e0f71f22-a64b-448c-9d1c-705e2400122f",
           "namespace": "integration-test",
-          "name": "sameprio-pod-101-mh92x"
+          "name": "sameprio-pod-101-rr47r"
+        },
+        "node": "kwok-node-2"
+      },
+      {
+        "pod": {
+          "uid": "734d6d6e-4947-4184-bffb-2b1c68ee59c1",
+          "namespace": "integration-test",
+          "name": "sameprio-pod-102-ghzr5"
         },
         "node": "kwok-node-1"
       },
       {
         "pod": {
-          "uid": "554dcc62-f01f-4748-bc5a-7fb7bad5c7ba",
+          "uid": "e15a34ed-45b0-4703-815f-0fecd95ec060",
           "namespace": "integration-test",
-          "name": "sameprio-pod-102-6wnbj"
+          "name": "sameprio-pod-202-msvpm"
         },
-        "node": "kwok-node-2"
+        "node": "kwok-node-1"
       }
     ],
     "new_placements": [
       {
         "pod": {
-          "uid": "08157616-d20a-4263-8435-8bb764f9b38a",
+          "uid": "4799054e-be1b-4e90-ae4d-c16cd85ae32d",
           "namespace": "integration-test",
-          "name": "sameprio-pod-201-kkkxk"
-        },
-        "to_node": "kwok-node-1"
-      },
-      {
-        "pod": {
-          "uid": "86f1eb16-e558-4242-b121-39026374b9b2",
-          "namespace": "integration-test",
-          "name": "sameprio-pod-202-j8b7c"
+          "name": "sameprio-pod-201-m56rn"
         },
         "to_node": "kwok-node-2"
       },
       {
         "pod": {
-          "uid": "e8c650a7-a9e4-41d5-965b-e299ba2eddab",
+          "uid": "39076870-0ee4-42eb-bce5-28fcca6513d9",
           "namespace": "integration-test",
-          "name": "sameprio-pod-203-qlj9l"
+          "name": "sameprio-pod-203-4fgfj"
         },
-        "to_node": "kwok-node-1"
+        "to_node": "kwok-node-2"
       },
       {
         "pod": {
-          "uid": "c647070b-38ce-4893-8bd2-dd4692c2a3c7",
+          "uid": "6c8715b5-8a6a-45c1-877a-5d08cd5acd30",
           "namespace": "integration-test",
-          "name": "sameprio-pod-204-vhb9r"
+          "name": "sameprio-pod-204-hwww5"
         },
-        "to_node": "kwok-node-1"
+        "to_node": "kwok-node-2"
       }
     ],
-    "placement_by_name": {
-      "integration-test/sameprio-pod-201-kkkxk": "kwok-node-1"
-    },
+    "placement_by_name": {},
     "workload_quotas": {
-      "rs:integration-test/sameprio-pod-202": {
+      "rs:integration-test/sameprio-pod-201": {
         "kwok-node-2": 1
       },
       "rs:integration-test/sameprio-pod-203": {
-        "kwok-node-1": 1
+        "kwok-node-2": 1
       },
       "rs:integration-test/sameprio-pod-204": {
-        "kwok-node-1": 1
+        "kwok-node-2": 1
       }
-    },
-    "nominated_node": "kwok-node-1"
+    }
   }
 }

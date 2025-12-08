@@ -24,7 +24,6 @@ from scripts.kwok_integration_tests.test_helpers import (
     NODE_MEM,
     NUM_PRIORITIES,
     VALID_OPT_MODES,
-    VALID_HOOK_STAGES,
     WORKLOAD_SCENARIOS,
     DEFAULT_WORKLOAD_ID,
     DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
@@ -33,7 +32,7 @@ from scripts.kwok_integration_tests.test_helpers import (
     scenario_max_priority,
     scenario_total_replicas,
     apply_workload_step,
-    wait_for_workload_step,
+    wait_for_workload_step_simple,
 )
 
 # Namespace is specific to this script (tests use a different one)
@@ -46,7 +45,6 @@ TEST_NAMESPACE = "test"
 def setup_cluster(
     *,
     opt_mode: str,
-    hook_stage: str,
     opt_sync: bool,
     scenario,
     cluster_name: str = DEFAULT_CLUSTER_NAME,
@@ -61,16 +59,14 @@ def setup_cluster(
     """
     if opt_mode not in VALID_OPT_MODES:
         raise ValueError(f"Invalid opt_mode={opt_mode!r}; expected one of {sorted(VALID_OPT_MODES)}")
-    if hook_stage not in VALID_HOOK_STAGES:
-        raise ValueError(f"Invalid hook_stage={hook_stage!r}; expected one of {sorted(VALID_HOOK_STAGES)}")
 
     LOG = setup_logging(
-        name=f"setup-{scenario.id}-{opt_mode}-{hook_stage}-{opt_sync}",
-        prefix=f"[setup scenario={scenario.id} mode={opt_mode} hook={hook_stage} sync={opt_sync}] ",
+        name=f"setup-{scenario.id}-{opt_mode}-{opt_sync}",
+        prefix=f"[setup scenario={scenario.id} mode={opt_mode} sync={opt_sync}] ",
         level="INFO",
     )
     header, footer = make_header_footer(
-        f"Setup KWOK cluster: scenario={scenario.id}, mode={opt_mode}, hook={hook_stage}, sync={opt_sync}"
+        f"Setup KWOK cluster: scenario={scenario.id}, mode={opt_mode}, sync={opt_sync}"
     )
     LOG.info("\n%s\ncluster=%s\n%s", header, cluster_name, footer)
     LOG.info("Scenario description: %s", scenario.description)
@@ -79,7 +75,7 @@ def setup_cluster(
 
     # --- KWOK cluster (always recreate) ---
     base_cfg = load_kwokctl_config(kwokctl_config_file)
-    cfg_for_mode = build_kwokctl_config_for_mode(base_cfg, opt_mode, hook_stage, opt_sync)
+    cfg_for_mode = build_kwokctl_config_for_mode(base_cfg, opt_mode, opt_sync)
 
     ensure_kwok_cluster(
         LOG,
@@ -122,13 +118,12 @@ def setup_cluster(
             node_cpu_m,
             node_mem_b,
         )
-        wait_for_workload_step(
+        wait_for_workload_step_simple(
             LOG,
             ctx,
             TEST_NAMESPACE,
             scenario,
             step,
-            hook_stage=hook_stage,
             disable_wait_and_active_checks=disable_wait_and_active_checks,
         )
 
@@ -176,12 +171,6 @@ def build_argparser() -> argparse.ArgumentParser:
         help="OPTIMIZE_MODE value for the scheduler plugin",
     )
     ap.add_argument(
-        "--optimize-hook-stage",
-        default="postfilter",
-        choices=sorted(VALID_HOOK_STAGES),
-        help="OPTIMIZE_HOOK_STAGE value (default: postfilter)",
-    )
-    ap.add_argument(
         "--optimize-sync",
         action="store_true",
         help="Set OPTIMIZE_SOLVE_SYNCH=true (default: false)",
@@ -208,7 +197,6 @@ def main() -> None:
 
     setup_cluster(
         opt_mode=args.optimize_mode,
-        hook_stage=args.optimize_hook_stage,
         opt_sync=args.optimize_sync,
         scenario=scenario,
         cluster_name=args.cluster_name,

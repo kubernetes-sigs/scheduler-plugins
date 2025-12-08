@@ -38,7 +38,6 @@ from scripts.kwok_integration_tests.test_helpers import (
     NODE_MEM,
     NUM_PRIORITIES,
     VALID_OPT_MODES,
-    VALID_HOOK_STAGES,
     WorkloadStep,
     WorkloadScenario,
     WORKLOAD_SCENARIOS,
@@ -93,21 +92,17 @@ SOLVER_ACTIVE_TIMEOUT_S = 5.0
 NODE_NAMES = [f"kwok-node-{i+1}" for i in range(NUM_NODES)]
 
 # Mode combinations to exercise in pytest (central place to tweak)
-# Each entry: (opt_mode, hook_stage, opt_sync, workload_ids)
-PYTEST_MODE_CASES: List[Tuple[str, str, bool, List[str]]] = [
-    ("per_pod", "postfilter", True, ["sameprio"]),
-    ("periodic", "preenqueue", True, ["prioaware"]),
-    ("periodic", "preenqueue", False, ["prioaware"]),
-    ("periodic", "postfilter", True, ["sameprio"]),
-    ("periodic", "postfilter", False, ["sameprio"]),
-    ("interlude", "preenqueue", True, ["prioaware", "higharrival"]),
-    ("interlude", "preenqueue", False, ["prioaware", "higharrival"]),
-    ("interlude", "postfilter", True, ["sameprio", "higharrival"]),
-    ("interlude", "postfilter", False, ["sameprio", "higharrival"]),
-    ("manual", "preenqueue", True, ["prioaware"]),
-    ("manual", "preenqueue", False, ["prioaware"]),
-    ("manual", "postfilter", True, ["sameprio"]),
-    ("manual", "postfilter", False, ["sameprio"]),
+# Each entry: (opt_mode, opt_sync, workload_ids)
+PYTEST_MODE_CASES: List[Tuple[str, bool, List[str]]] = [
+    ("manual_blocking", True, ["prioaware"]),
+    ("manual_blocking", False, ["prioaware"]),
+    ("manual", True, ["sameprio"]),
+    ("manual", False, ["sameprio"]),
+    ("per_pod", True, ["sameprio"]),
+    ("periodic", True, ["sameprio"]),
+    ("periodic", False, ["sameprio"]),
+    ("interlude", True, ["sameprio", "higharrival"]),
+    ("interlude", False, ["sameprio", "higharrival"]),
 ]
 
 
@@ -397,20 +392,16 @@ def wait_for_workload_step(
     scenario: WorkloadScenario,
     step: WorkloadStep,
     *,
-    hook_stage: str,
     step_index: int,
     num_steps: int,
     disable_wait_and_active_checks: bool = DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
 ) -> bool:
     """
-    Wait for ReplicaSets of a workload step and enforce the /active invariants.
+    Wait for ReplicaSets of a workload step according to step.wait_mode
+    and enforce the /active invariants according to step.active_plan_check_mode.
 
-    - If disable_wait_and_active_checks is True, this returns immediately.
-    - We normally honor step.wait_running:
-        * True  -> wait for pods to be Running
-        * False -> wait for them to exist
-    - BUT for hook_stage='preenqueue' we always downgrade to waiting for existence
-      (we never block on Running in that hook).
+    If disable_wait_and_active_checks is True, this returns immediately
+    without waiting or calling /active.
     """
     if disable_wait_and_active_checks:
         logger.info(
@@ -438,9 +429,20 @@ def wait_for_workload_step(
     is_last_step = (step_index == num_steps - 1)
     should_check_any = (not is_last_step) and (mode in {"each_pod", "after_step"})
 
-    if not step.pods:
-        logger.info("Workload step %s has no pods; nothing to wait for.", step.name)
-        # Still allow after-step /active check, if requested
+    if step.wait_mode not in {"running", "exist", "none"}:
+        logger.warning(
+            "Unknown wait_mode=%r for step %s; skipping waits and /active checks.",
+            step.wait_mode,
+            step.name,
+        )
+        return True
+
+    # No wait for pods; only possible after-step check
+    if step.wait_mode == "none":
+        logger.info(
+            "Workload step %s: wait_mode=none; not waiting for pods.",
+            step.name,
+        )
         if should_check_any and mode == "after_step":
             when = (
                 f"after workload step {step_index + 1}/{num_steps} "
@@ -450,16 +452,6 @@ def wait_for_workload_step(
                 return False
         return True
 
-    # Decide effective wait mode for pods
-    effective_running = bool(step.wait_running and hook_stage != "preenqueue")
-    wait_mode = "running" if effective_running else "exist"
-
-    if step.wait_running and not effective_running:
-        logger.info(
-            "hook_stage=%s: overriding wait_running=True -> wait for pod existence only.",
-            hook_stage,
-        )
-
     # Normal wait: per-pod waits, optional per-pod /active checks
     for pod in step.pods:
         rs_name = rs_name_for_pod(scenario, pod)
@@ -467,7 +459,7 @@ def wait_for_workload_step(
             "Waiting for RS %s/%s to be %s (timeout=%.1fs)",
             namespace,
             rs_name,
-            wait_mode,
+            step.wait_mode,
             float(step.wait_timeout_s),
         )
         _ = wait_rs_pods(
@@ -476,7 +468,7 @@ def wait_for_workload_step(
             rs_name,
             namespace,
             step.wait_timeout_s,
-            mode=wait_mode,
+            mode=step.wait_mode,
         )
 
         # Per-pod invariant, if requested
@@ -712,7 +704,6 @@ def assert_no_active_plan_http(logger: logging.Logger, *, when: str) -> bool:
 
 def run_mode_integration(
     opt_mode: str,
-    hook_stage: str,
     opt_sync: bool,
     *,
     scenario: WorkloadScenario,
@@ -722,23 +713,21 @@ def run_mode_integration(
     disable_wait_and_active_checks: bool = DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
 ) -> bool:
     """
-    End-to-end integration test for a given (opt_mode, hook_stage, scenario).
+    End-to-end integration test for a given (opt_mode, scenario).
 
     If disable_wait_and_active_checks is True, pod waits and /active checks
     during workload application are skipped.
     """
     if opt_mode not in VALID_OPT_MODES:
         raise ValueError(f"Invalid opt_mode={opt_mode!r}; expected one of {sorted(VALID_OPT_MODES)}")
-    if hook_stage not in VALID_HOOK_STAGES:
-        raise ValueError(f"Invalid hook_stage={hook_stage!r}; expected one of {sorted(VALID_HOOK_STAGES)}")
 
     LOG = setup_logging(
-        name=f"itest-{scenario.id}-{opt_mode}-{hook_stage}-{opt_sync}",
-        prefix=f"[itest scenario={scenario.id} mode={opt_mode} hook={hook_stage} sync={opt_sync}] ",
+        name=f"mpo-itest-{scenario.id}-{opt_mode}-{opt_sync}",
+        prefix=f"[mpo-itest scenario={scenario.id} mode={opt_mode} sync={opt_sync}] ",
         level="INFO",
     )
     header, footer = make_header_footer(
-        f"KWOK integration: scenario={scenario.id}, mode={opt_mode}, hook={hook_stage}, sync={opt_sync}"
+        f"MPOptimizer KWOK integration: scenario={scenario.id}, mode={opt_mode}, sync={opt_sync}"
     )
     LOG.info("\n%s\ncluster=%s\n%s", header, cluster_name, footer)
     LOG.info("Scenario description: %s", scenario.description)
@@ -751,7 +740,7 @@ def run_mode_integration(
 
     # --- KWOK cluster (always recreate) ---
     base_cfg = load_kwokctl_config(kwokctl_config_file)
-    cfg_for_mode = build_kwokctl_config_for_mode(base_cfg, opt_mode, hook_stage, opt_sync)
+    cfg_for_mode = build_kwokctl_config_for_mode(base_cfg, opt_mode, opt_sync)
 
     ensure_kwok_cluster(
         LOG,
@@ -813,7 +802,6 @@ def run_mode_integration(
             TEST_NAMESPACE,
             scenario,
             step,
-            hook_stage=hook_stage,
             step_index=idx,
             num_steps=num_steps,
             disable_wait_and_active_checks=disable_wait_and_active_checks,
@@ -829,7 +817,7 @@ def run_mode_integration(
     time.sleep(WORKLOAD_SETTLE_TIME_S)
 
     # Manual modes: trigger optimization via HTTP
-    if opt_mode == "manual":
+    if opt_mode.startswith("manual"):
         LOG.info("Manual mode: triggering solver via HTTP: %s", SOLVER_TRIGGER_URL)
         code, body = solver_trigger_http(LOG, SOLVER_TRIGGER_URL, SOLVER_TRIGGER_TIMEOUT_S)
         body_compact = (body or "").replace("\n", "\\n")
@@ -892,22 +880,21 @@ def run_mode_integration(
 # ---------------------------------------------------------------------------
 
 if pytest is not None:
-    # Flatten (workload_ids, mode, hook, sync) -> (workload_id, mode, hook, sync)
-    PARAM_CASES: List[Tuple[str, str, bool, str]] = [
-        (opt_mode, opt_hook, opt_sync, wid)
-        for (opt_mode, opt_hook, opt_sync, workload_ids) in PYTEST_MODE_CASES
+    # Flatten (workload_ids, mode, sync) -> (workload_id, mode, sync)
+    PARAM_CASES: List[Tuple[str, bool, str]] = [
+        (opt_mode, opt_sync, wid)
+        for (opt_mode, opt_sync, workload_ids) in PYTEST_MODE_CASES
         for wid in workload_ids
     ]
 
     @pytest.mark.parametrize(
-        "opt_mode,opt_hook,opt_sync,workload_id",
+        "opt_mode,opt_sync,workload_id",
         PARAM_CASES,
     )
-    def test_modes_end_to_end(opt_mode: str, opt_hook: str, opt_sync: bool, workload_id: str):
+    def test_modes_end_to_end(opt_mode: str, opt_sync: bool, workload_id: str):
         scenario = WORKLOAD_SCENARIOS[workload_id]
         assert run_mode_integration(
             opt_mode,
-            opt_hook,
             opt_sync,
             scenario=scenario,
             cluster_name=DEFAULT_CLUSTER_NAME,
@@ -934,9 +921,6 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--optimize-mode", required=True,
                     choices=sorted(VALID_OPT_MODES),
                     help="OPTIMIZE_MODE value")
-    ap.add_argument("--optimize-hook-stage", default="postfilter",
-                    choices=sorted(VALID_HOOK_STAGES),
-                    help="OPTIMIZE_HOOK_STAGE value (default: postfilter)")
     ap.add_argument("--optimize-sync", action="store_true",
                     help="Set OPTIMIZE_SYNC=true (default: false)")
     ap.add_argument("--workload-id", default=DEFAULT_WORKLOAD_ID,
@@ -958,7 +942,6 @@ def main() -> None:
 
     ok = run_mode_integration(
         opt_mode=args.optimize_mode,
-        hook_stage=args.optimize_hook_stage,
         opt_sync=args.optimize_sync,
         scenario=scenario,
         cluster_name=args.cluster_name,

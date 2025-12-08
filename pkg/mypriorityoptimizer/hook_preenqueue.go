@@ -46,9 +46,9 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *framewo
 	}
 
 	// 4) No active plan:
-	//    In Manual or Background mode with PreEnqueue hook we block pods to
-	//    accumulate work for the solver.
-	if hookAtPreEnqueue() && (isManualMode() || isBackgroundMode()) {
+
+	//	- In Manual Blocking mode, block the pod to accumulate work for the solver.
+	if isManualBlockingMode() {
 		klog.V(MyV).InfoS(msg(stage, InfoPendingPod), "pod", klog.KObj(pending))
 		// If you also want to track these as "blocked" for later unblocking,
 		// uncomment the next line:
@@ -56,7 +56,7 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *framewo
 		return framework.NewStatus(framework.Pending, msg(stage, InfoPendingPod))
 	}
 
-	// 5) Otherwise (PerPod mode, PostFilter hooks, etc.) just let the pod through.
+	//	- Other modes, just let the pod through.
 	klog.V(MyV).InfoS(msg(stage, "pass-through"), "pod", klog.KObj(pending))
 	return framework.NewStatus(framework.Success)
 }

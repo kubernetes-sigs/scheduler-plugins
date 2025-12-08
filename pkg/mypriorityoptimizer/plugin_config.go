@@ -23,7 +23,6 @@ type PluginConfigSnapshot struct {
 
 	// Optimization settings (from args.go)
 	OptimizeMode                   string `json:"optimizeMode"`
-	OptimizeHookStage              string `json:"optimizeHookStage"`
 	OptimizeSolveSynch             bool   `json:"optimizeSolveSynch"`
 	OptimizePeriodicInterval       string `json:"optimizePeriodicInterval"`
 	OptimizeInterludeDelay         string `json:"optimizeInterludeDelay"`

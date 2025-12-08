@@ -215,6 +215,7 @@ func TestParseOptimizeMode(t *testing.T) {
 		{"periodic ", ModePeriodic},
 		{"interlude", ModeInterlude},
 		{"manual", ModeManual},
+		{"manual_blocking", ModeManualBlocking},
 		{"unknown", ModePeriodic}, // default
 	}
 	for _, test := range tests {
@@ -222,21 +223,5 @@ func TestParseOptimizeMode(t *testing.T) {
 		if got != test.want {
 			t.Fatalf("parseOptimizeMode(%q) = %v, want %v", test.in, got, test.want)
 		}
-	}
-}
-
-// -----------------------------------------------------------------------------
-// parseOptimizeHookStage
-// -----------------------------------------------------------------------------
-
-func TestParseOptimizeHookStage(t *testing.T) {
-	if got := parseOptimizeHookStage("preenqueue"); got != StagePreEnqueue {
-		t.Fatalf("preenqueue: got %v, want StagePreEnqueue", got)
-	}
-	if got := parseOptimizeHookStage("postfilter"); got != StagePostFilter {
-		t.Fatalf("postfilter: got %v, want StagePostFilter", got)
-	}
-	if got := parseOptimizeHookStage("unknown"); got != StageNone {
-		t.Fatalf("unknown: got %v, want StageNone", got)
 	}
 }

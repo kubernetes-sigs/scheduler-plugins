@@ -1,7 +1,7 @@
 pod,planned_node,actual_node,expected_assignment
-sameprio-pod-101-5fk8b,,,false
-sameprio-pod-102-6wnbj,kwok-node-2,kwok-node-2,true
-sameprio-pod-201-kkkxk,kwok-node-1,kwok-node-1,true
-sameprio-pod-202-j8b7c,kwok-node-2,kwok-node-2,true
-sameprio-pod-203-qlj9l,kwok-node-1,kwok-node-1,true
-sameprio-pod-204-vhb9r,kwok-node-1,kwok-node-1,true
+sameprio-pod-101-pxvxd,,,false
+sameprio-pod-102-ghzr5,kwok-node-1,kwok-node-1,true
+sameprio-pod-201-m56rn,kwok-node-2,kwok-node-2,true
+sameprio-pod-202-msvpm,kwok-node-1,kwok-node-1,true
+sameprio-pod-203-4fgfj,kwok-node-2,kwok-node-2,true
+sameprio-pod-204-hwww5,kwok-node-2,kwok-node-2,true

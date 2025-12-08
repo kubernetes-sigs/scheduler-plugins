@@ -1,8 +1,10 @@
 # test_helpers.py
-import logging, yaml
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+
+import yaml
 
 from scripts.helpers.general_helpers import (
     qty_to_mcpu_str,
@@ -33,9 +35,8 @@ NUM_PRIORITIES = 3
 # In practice 10s is still fast but a bit more forgiving.
 POD_TIMEOUT_S = 10
 
-# Valid optimization modes / hook stages (just for CLI/pytest validation)
-VALID_OPT_MODES = {"per_pod", "periodic", "interlude", "manual"}
-VALID_HOOK_STAGES = {"preenqueue", "postfilter"}
+# Valid optimization modes (just for CLI/pytest validation)
+VALID_OPT_MODES = {"per_pod", "periodic", "interlude", "manual", "manual_blocking"}
 
 # Global default: by default we DO NOT disable waits & active checks.
 DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS = False
@@ -59,12 +60,11 @@ class Workload:
 class WorkloadStep:
     name: str
     pods: List[Workload]
-    # If True, we want to wait for Running; if False, we only wait for existence.
-    # For hook_stage='preenqueue' we always downgrade to existence, regardless of this flag.
-    wait_running: bool = False
+    wait_mode: str = "exist"  # "exist", "running", or "none"
     wait_timeout_s: int = POD_TIMEOUT_S
     # Only used by tests; setup_cluster ignores this.
     active_plan_check_mode: str = "after_step"
+
 
 @dataclass
 class WorkloadScenario:
@@ -91,7 +91,7 @@ def _scenario_all_scheduled_by_default() -> WorkloadScenario:
             Workload(id=3, cpu=0.2, mem=0.1, priority=2, expected_assignment=True),
             Workload(id=4, cpu=0.1, mem=0.1, priority=2, expected_assignment=True),
         ],
-        wait_running=True,
+        wait_mode="running",
         wait_timeout_s=POD_TIMEOUT_S,
         active_plan_check_mode="after_step",
     )
@@ -112,7 +112,7 @@ def _scenario_same_priority() -> WorkloadScenario:
             Workload(id=101, cpu=0.8, mem=0.1, priority=3, expected_assignment=False),
             Workload(id=102, cpu=0.7, mem=0.1, priority=3, expected_assignment=True),
         ],
-        wait_running=True,
+        wait_mode="running",
         wait_timeout_s=POD_TIMEOUT_S,
         active_plan_check_mode="after_step",
     )
@@ -124,6 +124,7 @@ def _scenario_same_priority() -> WorkloadScenario:
             Workload(id=203, cpu=0.3, mem=0.1, priority=3, expected_assignment=True),
             Workload(id=204, cpu=0.3, mem=0.1, priority=3, expected_assignment=True),
         ],
+        wait_mode="exist",
         wait_timeout_s=POD_TIMEOUT_S,
         active_plan_check_mode="after_step",
     )
@@ -152,7 +153,7 @@ def _scenario_different_priority() -> WorkloadScenario:
             Workload(id=103, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
             Workload(id=104, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
         ],
-        wait_running=True,
+        wait_mode="running",
         wait_timeout_s=POD_TIMEOUT_S,
         active_plan_check_mode="after_step",
     )
@@ -162,6 +163,7 @@ def _scenario_different_priority() -> WorkloadScenario:
             Workload(id=201, cpu=0.7, mem=0.1, priority=3, expected_assignment=True),
             Workload(id=202, cpu=0.7, mem=0.1, priority=3, expected_assignment=True),
         ],
+        wait_mode="exist",
         wait_timeout_s=POD_TIMEOUT_S,
         active_plan_check_mode="after_step",
     )
@@ -188,6 +190,7 @@ def _scenario_high_arrival() -> WorkloadScenario:
                     expected_assignment=None,
                 )
             ],
+            wait_mode="exist",
             wait_timeout_s=POD_TIMEOUT_S,
             active_plan_check_mode="each_pod",
         )
@@ -248,16 +251,14 @@ def load_kwokctl_config(path: str | Path) -> Dict[str, Any]:
 def build_kwokctl_config_for_mode(
     base_doc: Dict[str, Any],
     opt_mode: str,
-    hook_stage: str,
     opt_sync: bool,
 ) -> Dict[str, Any]:
     """
-    Return a copy of base_doc that injects OPTIMIZE_MODE / OPTIMIZE_HOOK_STAGE
+    Return a copy of base_doc that injects OPTIMIZE_MODE
     envs into the kube-scheduler component.
     """
     envs = [
         {"name": "OPTIMIZE_MODE", "value": opt_mode},
-        {"name": "OPTIMIZE_HOOK_STAGE", "value": hook_stage},
         {"name": "OPTIMIZE_SOLVE_SYNCH", "value": "true" if opt_sync else "false"},
     ]
     return merge_kwokctl_envs(base_doc, envs, component="kube-scheduler")
@@ -312,26 +313,20 @@ def apply_workload_step(
     kubectl_apply_yaml(logger, ctx, yaml_text)
 
 
-def wait_for_workload_step(
+def wait_for_workload_step_simple(
     logger: logging.Logger,
     ctx: str,
     namespace: str,
     scenario: WorkloadScenario,
     step: WorkloadStep,
     *,
-    hook_stage: str,
     disable_wait_and_active_checks: bool = DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
 ) -> None:
     """
     Simple waiting logic used by setup_cluster:
-    wait for ReplicaSets of a workload step.
+    wait for ReplicaSets of a workload step according to step.wait_mode.
 
-    - If disable_wait_and_active_checks is True, this returns immediately.
-    - We normally honor step.wait_running:
-        * True  -> wait for pods to be Running
-        * False -> wait for them to exist
-    - BUT for hook_stage='preenqueue' we always downgrade to waiting for existence
-      (we never block on Running in that hook).
+    If disable_wait_and_active_checks is True, this returns immediately.
     """
     if disable_wait_and_active_checks:
         logger.info(
@@ -341,19 +336,19 @@ def wait_for_workload_step(
         )
         return
 
-    if not step.pods:
-        logger.info("Workload step %s has no pods; nothing to wait for.", step.name)
-        return
-
-    # Decide effective wait mode
-    effective_running = bool(step.wait_running and hook_stage != "preenqueue")
-    wait_mode = "running" if effective_running else "exist"
-
-    if step.wait_running and not effective_running:
-        logger.info(
-            "hook_stage=%s: overriding wait_running=True -> wait for pod existence only.",
-            hook_stage,
+    if step.wait_mode not in {"running", "exist", "none"}:
+        logger.warning(
+            "Unknown wait_mode=%r for step %s; skipping waits.",
+            step.wait_mode,
+            step.name,
         )
+        return
+    if step.wait_mode == "none":
+        logger.info(
+            "Workload step %s: wait_mode=none; not waiting for pods.",
+            step.name,
+        )
+        return
 
     for pod in step.pods:
         rs_name = rs_name_for_pod(scenario, pod)
@@ -361,7 +356,7 @@ def wait_for_workload_step(
             "Waiting for RS %s/%s to be %s (timeout=%.1fs)",
             namespace,
             rs_name,
-            wait_mode,
+            step.wait_mode,
             float(step.wait_timeout_s),
         )
         _ = wait_rs_pods(
@@ -370,5 +365,5 @@ def wait_for_workload_step(
             rs_name,
             namespace,
             step.wait_timeout_s,
-            mode=wait_mode,
+            mode=step.wait_mode,
         )

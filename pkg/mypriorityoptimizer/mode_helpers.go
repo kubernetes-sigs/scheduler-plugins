@@ -8,19 +8,11 @@ import (
 // isPerPodMode is the optimizer cadence that optimizes for every new pod.
 func isPerPodMode() bool { return OptimizeMode == ModePerPod }
 
-// isBackgroundMode is true for modes that operate on the accumulated pending set
-// (as opposed to per_pod modes).
-func isBackgroundMode() bool {
-	switch OptimizeMode {
-	case ModePeriodic, ModeInterlude, ModeManual:
-		return true
-	default:
-		return false
-	}
-}
-
 // isManualMode is true if the mode is Manual.
 func isManualMode() bool { return OptimizeMode == ModeManual }
+
+// isManualBlockingMode is true if the mode is ManualBlocking.
+func isManualBlockingMode() bool { return OptimizeMode == ModeManualBlocking }
 
 // isAsyncSolving is true for modes where we:
 // - collect pods at PostFilter, and
@@ -31,22 +23,6 @@ func isAsyncSolving() bool {
 		return false
 	}
 	return !OptimizeSolveSynch
-}
-
-// hookAtPreEnqueue is the action point that triggers optimization at the PreEnqueue stage.
-func hookAtPreEnqueue() bool {
-	if OptimizeMode == ModePerPod {
-		return false
-	}
-	return OptimizeHookStage == StagePreEnqueue
-}
-
-// hookAtPostFilter is the action point that triggers optimization at the PostFilter stage.
-func hookAtPostFilter() bool {
-	if OptimizeMode == ModePerPod {
-		return true
-	}
-	return OptimizeHookStage == StagePostFilter
 }
 
 // modeToString returns a human-readable representation of the OptimizeMode.
@@ -65,15 +41,6 @@ func modeToString() string {
 	}
 }
 
-// stageToString returns a human-readable representation of a StageType.
-func stageToString() string {
-	stageStr := "PostFilter"
-	if hookAtPreEnqueue() && !isPerPodMode() {
-		stageStr = "PreEnqueue"
-	}
-	return stageStr
-}
-
 // syncToString returns "Asynch" or "Synch" based on the OptimizeSolveSynch setting.
 func syncToString() string {
 	if isAsyncSolving() {
@@ -83,7 +50,7 @@ func syncToString() string {
 }
 
 // combinedModeToString returns a string representation of the current strategy:
-// "<Mode><Synch|Asynch>/<PreEnqueue|PostFilter>"
+// "<Mode><Synch|Asynch>"
 func combinedModeToString() string {
-	return fmt.Sprintf("%s/%s/%s", modeToString(), stageToString(), syncToString())
+	return fmt.Sprintf("%s/%s", modeToString(), syncToString())
 }

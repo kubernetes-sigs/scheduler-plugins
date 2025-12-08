@@ -1,0 +1,7 @@
+pod,planned_node,actual_node,expected_assignment
+priosame-pod-101-8bchz,,,false
+priosame-pod-102-vzdbx,kwok-node-2,kwok-node-2,true
+priosame-pod-201-tssjf,kwok-node-1,kwok-node-1,true
+priosame-pod-202-skwxt,kwok-node-2,kwok-node-2,true
+priosame-pod-203-w6wpn,kwok-node-1,kwok-node-1,true
+priosame-pod-204-lgpvt,kwok-node-1,kwok-node-1,true

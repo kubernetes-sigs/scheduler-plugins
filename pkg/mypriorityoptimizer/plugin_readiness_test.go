@@ -110,7 +110,7 @@ func TestPluginReadiness(t *testing.T) {
 			withCacheWarmupDelay(0, func() {
 				// Use PerPod@PreEnqueue so we are in the most restrictive mode;
 				// readiness itself should still complete once a usable node is seen.
-				withMode(ModePerPod, StagePreEnqueue, true, func() {
+				withMode(ModePerPod, true, func() {
 					ctx, cancel := context.WithCancel(context.Background())
 					defer cancel()
 

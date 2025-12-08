@@ -10,14 +10,12 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// helper: temporarily override OptimizeMode / OptimizeHookStage using the real parsers.
-func withOptimizeModeStage(modeStr, stageStr string, fn func()) {
-	origMode, origStage := OptimizeMode, OptimizeHookStage
+// helper: temporarily override OptimizeMode using the real parsers.
+func withOptimizeModeStage(modeStr string, fn func()) {
+	origMode := OptimizeMode
 	OptimizeMode = parseOptimizeMode(modeStr)
-	OptimizeHookStage = parseOptimizeHookStage(stageStr)
 	defer func() {
 		OptimizeMode = origMode
-		OptimizeHookStage = origStage
 	}()
 	fn()
 }
@@ -44,9 +42,9 @@ func TestPreEnqueue_KubeSystemAlwaysAllowed(t *testing.T) {
 	}
 }
 
-// In manual_all_synch with PreEnqueue hook and no active plan, we should block pods
-// (to accumulate work for the solver), returning Pending.
-func TestPreEnqueue_ManualPreEnqueueBlocks(t *testing.T) {
+// In Manual Blocking mode, PreEnqueue should block non-system pods when
+// there is no active plan.
+func TestPreEnqueue_ManualBlockingModeBlocks(t *testing.T) {
 	pl := &SharedState{}
 	pl.PluginReady.Store(true) // skip cache-not-ready branch
 
@@ -57,7 +55,7 @@ func TestPreEnqueue_ManualPreEnqueueBlocks(t *testing.T) {
 		},
 	}
 
-	withOptimizeModeStage("manual", "preenqueue", func() {
+	withOptimizeModeStage("manual_blocking", func() {
 		st := pl.PreEnqueue(context.Background(), pod)
 		if st == nil {
 			t.Fatalf("PreEnqueue() returned nil status")
@@ -81,7 +79,7 @@ func TestPreEnqueue_DefaultModePassThrough(t *testing.T) {
 		},
 	}
 
-	withOptimizeModeStage("periodic", "postfilter", func() {
+	withOptimizeModeStage("periodic", func() {
 		st := pl.PreEnqueue(context.Background(), pod)
 		if st == nil {
 			t.Fatalf("PreEnqueue() returned nil status")

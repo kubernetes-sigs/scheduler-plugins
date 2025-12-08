@@ -185,9 +185,7 @@ componentsPatches:
     #     value: "10"
     extraEnvs:
       - name: OPTIMIZE_MODE
-        value: "manual_all_synch" # choices: every, all_synch, all_asynch, manual_all_synch
-      - name: OPTIMIZE_HOOK_STAGE
-        value: "postfilter" # choices: preenqueue, postfilter (not used in all_asynch mode)
+        value: "manual_blocking" # choices: per_pod, periodic, interlude, manual, manual_blocking
       - name: SOLVER_PYTHON_ENABLED
         value: "true"
       - name: SOLVER_PYTHON_TIMEOUT

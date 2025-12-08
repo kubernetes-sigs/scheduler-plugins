@@ -14,11 +14,6 @@ var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_MODE", "periodic"))
 // false → "asynchronous" (take Active only once we know a plan is worth applying)
 var OptimizeSolveSynch = parseBool(getenv("OPTIMIZE_SOLVE_SYNCH", "true"))
 
-// OptimizeHookStage is the action point that triggers optimization.
-// Choices: "preenqueue", "postfilter"
-// (ignored for async background modes, which always collect at PostFilter)
-var OptimizeHookStage = parseOptimizeHookStage(getenv("OPTIMIZE_HOOK_STAGE", "postfilter"))
-
 // OptimizePeriodicInterval is the duration between consecutive optimization runs
 // in periodic mode. If a plan is actively being executed, the loop is skipped.
 var OptimizePeriodicInterval = parseTime(getenv("OPTIMIZE_PERIODIC_INTERVAL", "30s"))

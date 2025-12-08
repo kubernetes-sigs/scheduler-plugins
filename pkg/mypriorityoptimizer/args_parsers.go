@@ -76,21 +76,10 @@ func parseOptimizeMode(s string) ModeType {
 		return ModeInterlude
 	case "manual":
 		return ModeManual
+	case "manual_blocking", "manualblocking":
+		return ModeManualBlocking
 	default:
 		klog.InfoS("Unknown ENV: OPTIMIZE_MODE value; defaulting to 'periodic'", "value", s)
 		return ModePeriodic
-	}
-}
-
-// parseOptimizeHookStage parses an optimization "at" string and returns the StageType.
-func parseOptimizeHookStage(s string) StageType {
-	v := strings.ToLower(strings.TrimSpace(s))
-	switch v {
-	case "preenqueue":
-		return StagePreEnqueue
-	case "postfilter":
-		return StagePostFilter
-	default:
-		return StageNone
 	}
 }

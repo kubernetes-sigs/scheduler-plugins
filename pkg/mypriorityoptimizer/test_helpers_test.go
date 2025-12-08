@@ -15,17 +15,14 @@ import (
 
 // withMode is a small helper to temporarily set the mode during a test
 // and restore to the original values.
-func withMode(mode ModeType, stage StageType, synch bool, fn func()) {
+func withMode(mode ModeType, synch bool, fn func()) {
 	oldMode := OptimizeMode
-	oldStage := OptimizeHookStage
 	oldSynch := OptimizeSolveSynch
 
 	OptimizeMode = mode
-	OptimizeHookStage = stage
 	OptimizeSolveSynch = synch
 	defer func() {
 		OptimizeMode = oldMode
-		OptimizeHookStage = oldStage
 		OptimizeSolveSynch = oldSynch
 	}()
 	fn()

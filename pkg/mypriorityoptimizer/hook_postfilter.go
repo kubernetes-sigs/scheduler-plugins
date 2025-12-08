@@ -14,8 +14,8 @@ import (
 func (pl *SharedState) PostFilter(ctx context.Context, _ *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
 	stage := "PostFilter"
 
-	// Only proceed if PerPod@PostFilter is enabled; otherwise, just skip.
-	if !(isPerPodMode() && hookAtPostFilter()) {
+	// Only proceed if PerPod is enabled; otherwise, just skip.
+	if !isPerPodMode() {
 		klog.V(MyV).InfoS(msg(stage, "no nomination"), "pod", klog.KObj(pending))
 		return nil, framework.NewStatus(framework.Unschedulable, msg(stage, "no nomination"))
 	}
