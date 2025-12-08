@@ -85,7 +85,10 @@ jobs:
       # ---- Run unit tests (Python + Go) ----
       - name: Run python unit tests
         run: |
-          python -m pytest scripts/test
+          python -m pytest scripts/test \
+            --cov=scripts/test \
+            --cov-report=xml:coverage/unit/python/coverage.xml \
+            --cov-report=html:coverage/unit/python/html
       - name: Run go unit tests
         run: |
             go test ./pkg/mypriorityoptimizer \
@@ -99,7 +102,7 @@ jobs:
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-reports
+          name: coverage-reports-unit
           path: |
             coverage/unit/python
             coverage/unit/go
@@ -181,8 +184,15 @@ jobs:
 
       - name: Run integration tests
         run: |
-          python -m pytest \
+          # -s to show print() output during tests
+          python -m pytest -s \
             scripts/kwok_integration_tests/test_modes.py \
             --cov=scripts/kwok_integration_tests \
             --cov-report=xml:coverage/integration/kwok/coverage.xml \
             --cov-report=html:coverage/integration/kwok/html
+
+      - name: Upload integration test coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-integration
+          path: coverage/integration/kwok
