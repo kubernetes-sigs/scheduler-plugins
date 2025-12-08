@@ -55,8 +55,8 @@ if "$RUN_UNIT_PY"; then
   python -m pytest \
     --cov=. \
     --cov-report=term \
-    --cov-report=html:coverage/unit/python/html
-  echo "Python tests completed. Coverage HTML: coverage/unit/python/html/index.html"
+    --cov-report=html:coverage/unit/python
+  echo "Python tests completed. Coverage HTML: coverage/unit/python/index.html"
 fi
 
 if "$RUN_UNIT_GO"; then
@@ -73,21 +73,21 @@ if "$RUN_INT_KWOK"; then
     scripts/kwok_integration_tests/test_modes.py \
     --cov=. \
     --cov-report=term \
-    --cov-report=html:coverage/integration/kwok/html
-  echo "Integration tests with KWOK completed. Coverage HTML: coverage/integration/kwok/html/index.html"
+    --cov-report=html:coverage/integration/kwok
+  echo "Integration tests with KWOK completed. Coverage HTML: coverage/integration/kwok/index.html"
 fi
 
 # Summary
 if "$RUN_UNIT_PY" && "$RUN_UNIT_GO"; then
   echo "Unit coverage:"
-  echo "  Python: coverage/unit/python/html/index.html"
+  echo "  Python: coverage/unit/python/index.html"
   echo "  Go:     coverage/unit/go/coverage.html"
 elif "$RUN_UNIT_PY"; then
-  echo "Python unit coverage: coverage/unit/python/html/index.html"
+  echo "Python unit coverage: coverage/unit/python/index.html"
 elif "$RUN_UNIT_GO"; then
   echo "Go unit coverage: coverage/unit/go/coverage.html"
 fi
 
 if "$RUN_INT_KWOK"; then
-  echo "Integration coverage (KWOK): coverage/integration/kwok/html/index.html"
+  echo "Integration coverage (KWOK): coverage/integration/kwok/index.html"
 fi

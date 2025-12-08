@@ -153,7 +153,7 @@ def _scenario_different_priority() -> WorkloadScenario:
             Workload(id=103, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
             Workload(id=104, cpu=0.5, mem=0.1, priority=1, expected_assignment=None),
         ],
-        wait_mode="running",
+        wait_mode="exist",
         wait_timeout_s=POD_TIMEOUT_S,
         active_plan_check_mode="none",
     )
