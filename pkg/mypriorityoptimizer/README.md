@@ -44,7 +44,6 @@
     - [Unit Tests](#unit-tests)
       - [Go Tests](#go-tests)
     - [Now TODOs](#now-todos)
-    - [TODOs: Next Meeting 8/12](#todos-next-meeting-812)
     - [TODO: 'Live' Cluster Simulator](#todo-live-cluster-simulator)
       - [Design](#design)
         - [Other Approaches](#other-approaches)
@@ -58,6 +57,7 @@
   - [Questions](#questions)
     - [Open Questions](#open-questions)
     - [Closed Questions](#closed-questions)
+  - [PhD](#phd)
 
 ## Overview
 
@@ -1102,8 +1102,10 @@ Total coverage: 59.1%
 
 ### Now TODOs
 
-- remove support of recreation of standalone pods as recreation isnt either supported in default k8s.
-- Make integration tests for checking the different modes work as intended.
+- Check that we are using the words pending and unschedulable pods correctly. In the code, I think we are often checking for pending pods, however, sometimes it would be more correct to check for unschedulable pods.
+- protect main branch in GitHub and run unit and integration tests on each push
+- finish Go unit tests to reach at least 80% coverage
+- remove support of standalone pods in test_runner script.
 - Update README with the new trace generator and replayer design and refactored code structure.
 - Write about that we solve to optimal in the trace replayer experiments to prevent high disruption.
 - Update the paper with the adjustments mentioned to Jacopo via mail:
@@ -1116,23 +1118,9 @@ Total coverage: 59.1%
   - Keep default preemption enabled
     To schedule higher‑priority pods quickly without running our solver, allow the default preemption mechanism to handle them.
     It does not interfere with our plugin.
-- Doesnt seems that our check for already solved solutions in the plugin works. Need to debug.
-- Test the new free time mode.
-  - We should run the solver after cluster has settled for some time, e.g. 2 seconds. The solver should be run in async mode to allow normal scheduling and should be stopped if a new pod arrives - just throw away this try.
-- Find 3 traces to run in ucloud over 12 hours and send example to Jacopo
 - Write Implementation and Experiments sections of the report
 - Read DCM article and revise. Jacopo suggested that I should clarify how it differs from ours.
-- Consider to redefine how we distinguish between modes
-- Skriv tests til Plugin (mest vigtigt), dernæst python kode her især python solver
 - Lav plan for resten af tiden frem mod sommeren
-
-### TODOs: Next Meeting 8/12
-
-- Read the DCM paper from SoA to understand their workload generation using Azure traces and check how workloads/jobs arrives in average using paper "Large-scale cluster management at Google with Borg"
-- Make the Live Cluster Simulator
-- Write the "Implementation" section of the report.
-- Add the new freetime mode.
-- PhD is possibly first in the end of 2026, however another PhD is at June it sounds.
 
 ### TODO: 'Live' Cluster Simulator
 
@@ -1176,15 +1164,10 @@ at each tick $t_i$:
 
 ### TODOs: Plugin
 
-- Consider to add a config parameter telling for which priorities of the pending pods we should optimize for.
-- New mode: Kør solver sålænge der ikke kommer nye pods (dvs. i fritiden).
-- Make recreation of standalone pods optional and consider to remove it completely.
 - Look throw forks and their stars on github on scheduler-plugins repo
-- Use pluginConfig with args instead of hardcoding values. See [scheduler-config.yaml](https://github.com/AlleNeri/scheduler-plugins/blob/dev-optimizedpreemption/manifests/optimizedpreemption/scheduler-config.yaml)
 - QoS classes are currently ignored: BestEffort, Burstable, Guaranteed. We currently assume all pods are Guaranteed Pods. See also <https://medium.com/@muppedaanvesh/a-hands-on-guide-to-kubernetes-qos-classes-%EF%B8%8F-571b5f8f7e58>
 - Quotas and LimitsRanges are currently ignored. See also <https://medium.com/codex/what-you-need-to-know-to-debug-a-preempted-pod-on-kubernetes-1c956eec3f35>
 - Find a better way to set verbose level.
-- Somehow ensure that the cluster state is the same throughout execution. If not, consider to evict those non-planned pods during execution. We can use the snapshot to see how many there is of each RS-workloads and standalone pods and compare with the actual state. We should never have more than planned, but we can have less if something got deleted externally or if we move a pod or evict it.
 - We will get a plan timeout if a pod is removed during plan execution (if a standalone pod is deleted or a workload is scaled down).
 - Add metrics using Prometheus and Grafana.
 
@@ -1217,7 +1200,6 @@ at each tick $t_i$:
 
 ### TODOs: General
 
-- Create unit and integration tests.
 - Clean up the code:
   - Reduce code
   - Switch case
@@ -1232,6 +1214,8 @@ at each tick $t_i$:
   - Replace not understandable code
   - Use common functions
 - Fix TODOs.
+- Create more unit and integration tests.
+- Etc.
 
 ### TODOs: IJCAI Paper
 
@@ -1239,7 +1223,6 @@ at each tick $t_i$:
 
 ### TODOs: Later
 
-- Check that we are using the words pending and unschedulable pods correctly. In the code, I think we are often checking for pending pods, however, sometimes it would be more correct to check for unschedulable pods.
 - Try updating to latest upstream version.
   - Check for compatibility issues.
   - Check if kubectl, kwokctl, etc. versions need to be updated as well to make it work.
@@ -1260,3 +1243,7 @@ at each tick $t_i$:
   - Jacopo: Fine, what i am doing now, by just letting them try again immediately
 - What to do with node-selectors, PDBs, and other rules.
   - Jacopo: Fine, to ignore these just write about it. May, the extra constaints actually will make the solver faster (smaller search space).
+
+## PhD
+
+- PhD is possibly first in the end of 2026, however another PhD is at June it sounds.

@@ -66,7 +66,7 @@ func TestPreEnqueue_ManualBlockingModeBlocks(t *testing.T) {
 	})
 }
 
-// In a default-like configuration (all_synch@PostFilter) with no active plan,
+// In a default-like configuration with no active plan,
 // PreEnqueue should just pass through and allow the pod.
 func TestPreEnqueue_DefaultModePassThrough(t *testing.T) {
 	pl := &SharedState{}
