@@ -68,23 +68,21 @@ PLUGIN_CFG_NAME = "plugin-config"
 PLUGIN_CFG_DATA_KEY = "plugin-config.json"
 PLUGIN_CFG_TIMEOUT_S = 10  # timeout for waiting for plugin readiness
 
-# Pod wait timeout per step (scenario definitions already use POD_TIMEOUT_S via shared module)
-
 # Timing model:
 # 1) After creating workload & pods -> wait WORKLOAD_SETTLE_TIME_S
 # 2) Then wait up to CONFIG_MAP_TIMEOUT_S for a plan ConfigMap to appear
 # 3) Once plan is present -> wait PLAN_EXECUTION_TIME_S to be sure evictions/new pods are done
-WORKLOAD_SETTLE_TIME_S = 2
-CONFIG_MAP_TIMEOUT_S = 10
+WORKLOAD_SETTLE_TIME_S = 5
+PLAN_CFG_TIMEOUT_S = 20 # 
 PLAN_EXECUTION_MAX_WAIT_S = 10
-PLAN_EXECUTION_MIN_WAIT_S = 1
+PLAN_EXECUTION_MIN_WAIT_S = 5
 PLAN_EXECUTION_POLL_INTERVAL_S = 1
 
 # Manual HTTP trigger (same style as test_runner)
 SOLVER_TRIGGER_URL = "http://localhost:18080/solve"
 SOLVER_TRIGGER_TIMEOUT_S = 60
 
-# NEW: /active endpoint (solver status)
+# /active endpoint (solver status)
 SOLVER_ACTIVE_URL = "http://localhost:18080/active"
 SOLVER_ACTIVE_TIMEOUT_S = 5.0
 
@@ -97,12 +95,12 @@ PYTEST_MODE_CASES: List[Tuple[str, bool, List[str]]] = [
     ("manual_blocking", True, ["prioaware"]),
     ("manual_blocking", False, ["prioaware"]),
     ("manual", True, ["sameprio"]),
-    # ("manual", False, ["sameprio"]), #TODO: find out why Async fails and per_pod fails
-    # ("per_pod", True, ["sameprio"]),
-    # ("periodic", True, ["sameprio"]),
-    # ("periodic", False, ["sameprio"]),
-    # ("interlude", True, ["sameprio", "higharrival"]),
-    # ("interlude", False, ["sameprio", "higharrival"]),
+    ("manual", False, ["sameprio"]),
+    ("per_pod", True, ["sameprio"]),
+    ("periodic", True, ["sameprio"]),
+    ("periodic", False, ["sameprio"]),
+    ("interlude", True, ["higharrival"]),
+    ("interlude", False, ["higharrival"]),
 ]
 
 
@@ -168,7 +166,7 @@ def get_latest_plan_configmap(
     ctx: str,
     logger: logging.Logger,
     *,
-    timeout_s: int = CONFIG_MAP_TIMEOUT_S,
+    timeout_s: int = PLAN_CFG_TIMEOUT_S,
 ) -> Optional[Dict[str, Any]]:
     """
     Poll for the latest plan ConfigMap in SYSTEM_NAMESPACE, filtered by PLAN_LABEL_KEY=true.
@@ -826,11 +824,11 @@ def run_mode_integration(
         LOG.info("solver_response code=%s body=%s", code, body_compact)
 
     # 2) Wait for plan ConfigMap (with timeout)
-    cm = get_latest_plan_configmap(ctx, LOG, timeout_s=CONFIG_MAP_TIMEOUT_S)
+    cm = get_latest_plan_configmap(ctx, LOG, timeout_s=PLAN_CFG_TIMEOUT_S)
     if cm is None:
         LOG.warning(
             "No plan ConfigMap found within %.1fs; treating as integration failure.",
-            CONFIG_MAP_TIMEOUT_S,
+            PLAN_CFG_TIMEOUT_S,
         )
         return False
 

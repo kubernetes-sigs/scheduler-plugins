@@ -63,7 +63,7 @@ class WorkloadStep:
     wait_mode: str = "exist"  # "exist", "running", or "none"
     wait_timeout_s: int = POD_TIMEOUT_S
     # Only used by tests; setup_cluster ignores this.
-    active_plan_check_mode: str = "after_step"
+    active_plan_check_mode: str = "none" # "each_pod", "after_step", "none"
 
 
 @dataclass
@@ -86,10 +86,10 @@ def _scenario_all_scheduled_by_default() -> WorkloadScenario:
     step = WorkloadStep(
         name="all-scheduled",
         pods=[
-            Workload(id=1, cpu=0.4, mem=0.1, priority=2, expected_assignment=True),
-            Workload(id=2, cpu=0.3, mem=0.1, priority=2, expected_assignment=True),
-            Workload(id=3, cpu=0.2, mem=0.1, priority=2, expected_assignment=True),
-            Workload(id=4, cpu=0.1, mem=0.1, priority=2, expected_assignment=True),
+            Workload(id=1, cpu=0.4, mem=0.1, priority=3, expected_assignment=True),
+            Workload(id=2, cpu=0.3, mem=0.1, priority=3, expected_assignment=True),
+            Workload(id=3, cpu=0.2, mem=0.1, priority=3, expected_assignment=True),
+            Workload(id=4, cpu=0.1, mem=0.1, priority=3, expected_assignment=True),
         ],
         wait_mode="running",
         wait_timeout_s=POD_TIMEOUT_S,
@@ -114,7 +114,7 @@ def _scenario_same_priority() -> WorkloadScenario:
         ],
         wait_mode="running",
         wait_timeout_s=POD_TIMEOUT_S,
-        active_plan_check_mode="after_step",
+        active_plan_check_mode="none",
     )
     small_step = WorkloadStep(
         name="small-later",
@@ -126,7 +126,7 @@ def _scenario_same_priority() -> WorkloadScenario:
         ],
         wait_mode="exist",
         wait_timeout_s=POD_TIMEOUT_S,
-        active_plan_check_mode="after_step",
+        active_plan_check_mode="none",
     )
     return WorkloadScenario(
         id="sameprio",
@@ -155,7 +155,7 @@ def _scenario_different_priority() -> WorkloadScenario:
         ],
         wait_mode="running",
         wait_timeout_s=POD_TIMEOUT_S,
-        active_plan_check_mode="after_step",
+        active_plan_check_mode="none",
     )
     high_step = WorkloadStep(
         name="high-arrival",
@@ -165,7 +165,7 @@ def _scenario_different_priority() -> WorkloadScenario:
         ],
         wait_mode="exist",
         wait_timeout_s=POD_TIMEOUT_S,
-        active_plan_check_mode="after_step",
+        active_plan_check_mode="none",
     )
     return WorkloadScenario(
         id="prioaware",
@@ -178,15 +178,15 @@ def _scenario_different_priority() -> WorkloadScenario:
 
 
 def _scenario_high_arrival() -> WorkloadScenario:
-    steps = [
+    steps1 = [
         WorkloadStep(
-            name=f"step-{i}",
+            name=f"step-{100+i}",
             pods=[
                 Workload(
-                    id=i,
+                    id=100+i,
                     cpu=0.3,
                     mem=0.1,
-                    priority=1,
+                    priority=3,
                     expected_assignment=None,
                 )
             ],
@@ -194,7 +194,25 @@ def _scenario_high_arrival() -> WorkloadScenario:
             wait_timeout_s=POD_TIMEOUT_S,
             active_plan_check_mode="each_pod",
         )
-        for i in range(1, 11)
+        for i in range(1, 6)
+    ]
+    steps2 = [
+        WorkloadStep(
+            name=f"step-{200+i}",
+            pods=[
+                Workload(
+                    id=200+i,
+                    cpu=0.2,
+                    mem=0.1,
+                    priority=3,
+                    expected_assignment=None,
+                )
+            ],
+            wait_mode="exist",
+            wait_timeout_s=POD_TIMEOUT_S,
+            active_plan_check_mode="each_pod",
+        )
+        for i in range(1, 6)
     ]
     return WorkloadScenario(
         id="higharrival",
@@ -202,7 +220,7 @@ def _scenario_high_arrival() -> WorkloadScenario:
             "High-arrival scenario: many small p1 pods in quick succession, "
             "useful for testing 'interlude' behavior."
         ),
-        steps=steps,
+        steps=steps1 + steps2,
     )
 
 

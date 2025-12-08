@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Default: run both Python + Go unit tests (no KWOK integration)
-MODE="${1:-unit_all}"
+MODE="${1:-all}"
 
 RUN_UNIT_PY=false
 RUN_UNIT_GO=false
@@ -20,13 +20,16 @@ case "$MODE" in
     RUN_UNIT_PY=true
     RUN_UNIT_GO=true
     ;;
-  unit_py|unit_python)
+  unit_py)
     RUN_UNIT_PY=true
     ;;
-  unit_go|unit_golang)
+  unit_go)
     RUN_UNIT_GO=true
     ;;
-  int_kwok|integration)
+  int_all|int_kwok)
+    RUN_INT_KWOK=true
+    ;;
+  int_kwok)
     RUN_INT_KWOK=true
     ;;
   *)
@@ -36,6 +39,7 @@ case "$MODE" in
     echo "  unit_py   - run only Python unit tests (pytest)" >&2
     echo "  unit_go   - run only Go unit tests (mypriorityoptimizer package)" >&2
     echo "  int_kwok  - run only integration tests with KWOK" >&2
+    echo "  int_all   - run all integration tests with KWOK" >&2
     exit 1
     ;;
 esac
@@ -66,7 +70,7 @@ fi
 if "$RUN_INT_KWOK"; then
   echo "=== Running Integration tests with KWOK ==="
   python -m pytest \
-    tests/kwok_integration_tests/test_modes.py \
+    scripts/kwok_integration_tests/test_modes.py \
     --cov=. \
     --cov-report=term \
     --cov-report=html:coverage/integration/kwok/html
