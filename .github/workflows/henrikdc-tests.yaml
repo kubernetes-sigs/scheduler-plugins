@@ -77,6 +77,11 @@ jobs:
         with:
           go-version: "1.24.0"
 
+      - name: Prepare coverage directories
+        run: |
+          mkdir -p coverage/python
+          mkdir -p coverage/go
+
       # ---- Run unit tests (Python + Go) ----
       - name: Run python unit tests
         run: |
