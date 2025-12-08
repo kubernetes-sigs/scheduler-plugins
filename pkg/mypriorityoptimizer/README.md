@@ -61,43 +61,42 @@
 
 ## Overview
 
-This project introduces an **optimized, priority-based** approach for placing pods onto nodes (possibly **optimal**) via the **MyPriorityOptimizer** plugin for the Kubernetes scheduler. The project is a fork of the Kubernetes-sigs project [scheduler-plugins](https://github.com/kubernetes-sigs/scheduler-plugins) and extends it with a new plugin (see also describtion of the [Scheduling Framework](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/) for background).
-
-Our goal is to schedule as many *high-priority* pods as possible, especially when the *default scheduler* fails to do so (a possibly side effect of our approach is better resource utilization). The plugin enables integration of an *external* solver—here, a Python solver using [Google's CP-SAT](https://developers.google.com/optimization/cp/cp_solver)—to compute an optimal placement plan that maximizes high-priority pods while *minimizing disruption* by reducing the number of preemptions (*movements* and *evictions*). Given the solver's solution, the plugin applies it by evicting and moving pods, possibly across multiple nodes in the cluster (Note: default scheduler can only preempt pods within a *single* node, which may lead to more preemptions than necessary).
-
-The plugin can be triggered in different **optimization modes**:
-
-- *PerPod* – optimize for every new pod that arrives (not recommended for large clusters).
-- *Periodic* – optimize all pods (running and pending) at fixed intervals (or on request via HTTP). Scheduling is paused while the optimization runs and the plan is applied.
-- *Interlude* – optimize during interlude windows (i.e. when no pods are arriving). #TODO: Not yet implemented.
-- *Manual* – same as periodic, but only optimizes when triggered via HTTP. Used for testing and evaluation.
-
-The plugin can be hooked into two **scheduling phases**: either before the pod is enqueued (*PreEnqueue*) or after the default scheduler fails to find a node (*PostFilter*). We recommend the latter, as it avoids optimization when the default scheduler can already place the pod and thus leverages its speed instead of running the solver unnecessarily. Note that the all sync/async modes always trigger at their configured intervals, regardless of which extension point is used.
+This project introduces an **optimized, priority-based** approach for placing pods optimally onto nodes via the **MyPriorityOptimizer** plugin for the Kubernetes scheduler. The project is a fork of the Kubernetes-sigs project [scheduler-plugins](https://github.com/kubernetes-sigs/scheduler-plugins) and extends it with a new plugin. For background see description of the [Scheduling Framework](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/).
 
 <center><img src="./images/scheduling-framework.png" alt="Scheduling Framework" width="60%"/></center>
 
-For a more **detailed description** of the plugin and the optimization approach, read also the **paper** ([Priority Matters: Optimising Kubernetes Clusters Usage with Constraint-Based Pod Packing](https://arxiv.org/abs/2511.08373)) and the **thesis report** ([Optimizing Kubernetes Scheduler [in progress]](TODO:link-to-thesis-report)).
+Our goal is to schedule as many *high-priority* pods as possible, especially when the *default scheduler* fails to do so (a possibly side effect of our approach is better resource utilization). The plugin enables integration of an *external* solver—here, a Python solver using [Google's CP-SAT](https://developers.google.com/optimization/cp/cp_solver)—to compute an optimal placement plan that maximizes high-priority pods while *minimizing disruption* by reducing the number of preemptions (*movements* and *evictions*). Given the solver's solution, the plugin applies it by evicting and moving pods, possibly across multiple nodes in the cluster (Note: default scheduler can only preempt pods within a *single* node, which may lead to more preemptions than necessary).
+
+The solver can be triggered in different **optimization modes**:
+
+- *PerPod* – optimize for every new pod that arrives (not recommended for large clusters).
+- *Periodic* – optimize all pods (running and pending) at fixed intervals.
+- *Interlude* – optimize all pods during interlude windows (i.e. when no pods are arriving).
+- *Manual* – runs normal scheduling like the ones above, but optimization is only triggered manually (via HTTP). Used for testing and evaluation.
+- *ManualBlocking* – same as *Manual*, but all pods are blocked from entering the cluster until the solver is triggered via HTTP and completes. Used for testing and evaluation.
+
+Moreover, the optimization is running in either **sync** or **async mode**:
+
+- *Sync* – the scheduling of new pods is blocked while the solver is running and while the plan is being applied.
+- *Async* – the scheduling of new pods is not blocked while the solver is running, only while the plan is being applied. When the solver completes, the cluster state is re-checked to ensure the plan is still valid before applying it; otherwise, the plan is discarded.
 
 The following sections describe how to **build, run, and test** the scheduler with the plugin.
-For [result replication](#result-replication-and-running-test-jobs) from the paper/thesis report, read the provided instructions.
+For [result replication](#result-replication-and-running-test-jobs) from the paper, read the provided instructions.
 
 ## Code Structure and Extension Points
 
-The code for the **MyPriorityOptimizer** plugin is located under `pkg/mypriorityoptimizer/`. The main files are:
+The code for the **MyPriorityOptimizer** plugin is located under `pkg/mypriorityoptimizer/`.
 
-- `mypriorityoptimizer.go`: Main entry point for the plugin that sets up the plugin.
+Some of the main files and their purpose are described below:
+
+- `plugin.go`: Main entry point for the plugin that sets up the plugin.
 - `args.go`: Contains the configuration arguments for the plugin (e.g. optimization mode, solver timeout, etc.).
-- `run_flow.go`: Contains the main logic for running the optimization flow, including triggering the solver, applying the plan, etc.
-- `run_solvers.go`: Contains the logic for running solvers (e.g. the Python solver) and selecting the best one to use.
-- `solver_python.go`: Contains the logic for interacting with a Python solver, including preparing the input, running the solver, and parsing the output.
-- `periodic_loop.go`: Contains the logic for running the optimization flow (`run_flow.go`) in a separate goroutine when not running in mode *for every pod*.
-- `hook_preenqueue.go`: Implements the PreEnqueue scheduling extension point. This is mainly used for blocking new pods while an optimization is running or a plan is being applied. If in mode *for every pod*, it is also trigger the optimization for every new pod that arrives.
-- `hook_prefilter.go`: Implements the PreFilter scheduling extension point. This is also used for blocking new pods while an optimization is running or a plan is being applied. However, its main purpose is targeting the pod onto the node assigned by the solver in the plan (if any).
-- `hook_postfilter.go`: Implements the PostFilter scheduling extension point. This is mainly used to mark a pod as unschedulable as the default scheduler failed to place it. If in mode *for every pod*, it also triggers the optimization for every new pod that arrives.
-- `hook_reserve.go`: Implements the Reserve scheduling extension point. This is used to place workloads where we cannot rely on specific pod names (e.g. pods from a ReplicaSets) by matching on workload names instead and how many of each that should be placed on each node.
-- `hook_postbind.go`: Implements the PostBind scheduling extension point. This is used for deactivating the paused scheduling and for logging purposes.
-
-If in mode *for every pod*, the optimization flow (`run_flow.go`) is triggered at every new pod arrival using the PreEnqueue and PostFilter extension points.
+- `optimization_flow.go`: Contains the main logic for running the optimization flow, including triggering the solver, applying the plan, etc.
+- `hook_preenqueue.go`: Implements the PreEnqueue scheduling extension point. This is mainly used for blocking new pods while an optimization is running or a plan is being applied.
+- `hook_prefilter.go`: Implements the PreFilter scheduling extension point. Its main purpose is targeting the pod onto the node assigned by the solver in the plan (if any).
+- `hook_postfilter.go`: Implements the PostFilter scheduling extension point. This is mainly used to mark a pod as unschedulable as the default scheduler failed to place it. If in mode *PerPod*, it also triggers the optimization for every new pod that arrives.
+- `hook_reserve_unreserve.go`: Implements the Reserve/Unreserve scheduling extension points. It is used as we cannot rely on specific pod names (e.g. pods from a ReplicaSets), instead we count how many of each that should be placed on each node.
+- `plan_completion_watch.go`: A background watcher for plan completion, checking that all pods in the plan are assigned to the correct nodes.
 
 ## Upstream version
 
