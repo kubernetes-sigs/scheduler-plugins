@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Default: run both Python + Go unit tests (no KWOK integration)
+# Default: run all tests
 MODE="${1:-all}"
 
 RUN_UNIT_PY=false
@@ -16,25 +16,30 @@ case "$MODE" in
     RUN_INT_KWOK=true
     ;;
   unit_all|unit)
-    # Only unit tests (default)
+    # Only unit tests
     RUN_UNIT_PY=true
     RUN_UNIT_GO=true
     ;;
-  unit_py)
+  unit_py|unit_python)
     RUN_UNIT_PY=true
     ;;
   unit_go)
     RUN_UNIT_GO=true
     ;;
-  int_all|int_kwok|integration)
+  int_all|int|int_kwok|integration)
+    # Only KWOK integration tests
     RUN_INT_KWOK=true
     ;;
   *)
-    echo "Usage: $0 [unit_py|unit_go|unit_all|int_kwok|integration|all]" >&2
-    echo "  all         - run unit tests + KWOK integration tests" >&2
+    echo "Usage: $0 [all|unit_py|unit_go|unit_all|int_kwok|integration]" >&2
+    echo "  all         - run unit tests + integration tests" >&2
     echo "  unit_all    - run Python and Go unit tests (default)" >&2
+    echo "  unit        - alias for unit_all" >&2
     echo "  unit_py     - run only Python unit tests (pytest)" >&2
+    echo "  unit_python - alias for unit_py" >&2
     echo "  unit_go     - run only Go unit tests (mypriorityoptimizer package)" >&2
+    echo "  int_all     - run only integration tests with KWOK" >&2
+    echo "  int         - alias for int_all" >&2
     echo "  int_kwok    - run only integration tests with KWOK" >&2
     echo "  integration - alias for int_kwok" >&2
     exit 1
