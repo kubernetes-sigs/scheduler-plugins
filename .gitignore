@@ -23,6 +23,7 @@ hack/tools/bin/*
 vendor
 
 # TODO: added
+*pytest_cache/
 __pycache__/
 .VSCodeCounter
 .vagrant/
