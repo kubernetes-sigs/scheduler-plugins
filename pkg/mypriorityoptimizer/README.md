@@ -540,40 +540,14 @@ TODO: Implementation in progress.
 
 ### Unit and Integration Tests
 
-To make running tests easier, a `run_tests.sh` script has been provided in the root of the repo that can be used to run all tests (both Python and Go tests). However, first ensure Python dependencies are installed by running:
-
-```bash
-pip install -r scripts/test/requirements.txt
-```
-
-Then, from the root of the repo, run:
+To make running tests easier, a `run_tests.sh` script has been provided in the root of the repo that can be used to run all tests (both Python and Go tests), simply run:
 
 ```bash
 ./run_tests.sh
-```
-
-or to run only Python or Go tests, run:
-
-```bash
-./run_tests.sh python
-```
-
-```bash
-./run_tests.sh go
-```
-
-Note: a `pytest.ini` file is also provided under the root of the repo to configure `pytest`.
-
-To run specific Python tests, use `pytest` directly. For example, to run all tests in a specific file with coverage, run:
-
-```bash
-pytest scripts/test/test_general_helpers.py
-```
-
-To run specific Go tests, use `go test` directly. For example, to run a specific test, run:
-
-```bash
-go test ./pkg/mypriorityoptimizer -run TestNewPodSet_Empty -v
+# or to run only unit tests, run:
+./run_tests.sh unit
+# or to run only integration tests, run:
+./run_tests.sh int
 ```
 
 ## Useful kubectl/kwokctl commands

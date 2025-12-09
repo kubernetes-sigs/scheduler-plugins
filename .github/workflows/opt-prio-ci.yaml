@@ -1,11 +1,11 @@
-# .github/workflows/henrikdc-ci.yml
+# .github/workflows/opt-prio-ci.yml
 name: CI (Build + Unit + Integration)
 
 on:
   push:
-    branches: [ "henrikdc-main" ]
+    branches: [ "opt-prio-main" ]
   pull_request:
-    branches: [ "henrikdc-main" ]
+    branches: [ "opt-prio-main" ]
 
 jobs:
   # -------------------------------------------------------
