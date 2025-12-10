@@ -12,7 +12,7 @@
   - [Running](#running)
     - [KWOK (recommended)](#kwok-recommended)
     - [Kind](#kind)
-      - [Incompatibilities between Scheduler-plugin and KWOK versions](#incompatibilities-between-scheduler-plugin-and-kwok-versions)
+      - [Version mismatch between Scheduler-plugin and KWOK versions](#version-mismatch-between-scheduler-plugin-and-kwok-versions)
   - [Testing](#testing)
     - [Workload Once Generator](#workload-once-generator)
       - [Deterministic scheduling](#deterministic-scheduling)
@@ -30,6 +30,7 @@
       - [Analysis](#analysis)
     - [Trace Replayer](#trace-replayer)
     - [Unit and Integration Tests](#unit-and-integration-tests)
+    - [GitHub Actions](#github-actions)
   - [Useful kubectl/kwokctl commands](#useful-kubectlkwokctl-commands)
 
 ## Overview
@@ -73,12 +74,8 @@ Some of the main files and their purpose are described below:
 
 ## Upstream version
 
-Latest upstream version tracked: **v0.33.5** (tagged release) of  
-[`kubernetes-sigs/scheduler-plugins`](https://github.com/kubernetes-sigs/scheduler-plugins/releases).
-
-This fork follows **tagged upstream releases only** (we **do not** base changes on `*-devel` tags or arbitrary commits from `main`).
-
-After moving to a new upstream tag, always verify that all works as intended, e.g. by running a small smoke test with the `test_runner.py` script (see below).
+Latest upstream version are listed in the [Releases](https://github.com/kubernetes-sigs/scheduler-plugins/releases), it should follow the [Kubernetes versioning](https://kubernetes.io/releases).
+After merging with upstream, always verify that all works as intended, e.g. by running a small smoke test with the `test_runner.py` script (see below).
 
 ## Integrating
 
@@ -219,17 +216,19 @@ Then load the scheduler docker image into the Kind cluster (it will also build t
 ./kind/kind-load-plugins.sh <cluster_name>
 ```
 
-#### Incompatibilities between Scheduler-plugin and KWOK versions
+#### Version mismatch between Scheduler-plugin and KWOK versions
 
 Sometimes when running on a specific scheduler-plugin version, it may be needed to force the version when building the scheduler binary.
 For example, KWOK may report
 
 ```bash
+# Running the command
 kwokctl logs kube-scheduler --name kwok1
+# may report
 E1210 13:54:11.815001   22220 run.go:72] "command failed" err="[emulation version 0.33 is not between [1.31, 0.33.0], minCompatibilityVersion version 0.32 is not between [1.31, 0.33]]"
 ```
 
-That can be fixed by building the scheduler with the `VERSION` field set to the desired version, e.g.:
+That can be fixed by building the scheduler with the `VERSION` field set to the desired version (note that we use v1 instead of v0), e.g.:
 
 ```bash
 make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=v1.33.0
@@ -566,6 +565,10 @@ To make running tests easier, a `run_tests.sh` script has been provided in the r
 # or to run only integration tests, run:
 ./run_tests.sh int
 ```
+
+### GitHub Actions
+
+A GitHub Actions workflow is provided in `.github/workflows/opt-prio-ci.yml` that runs on every push and pull request to the default branch `opt-prio-main` branch. The workflow runs the unit and integration tests.
 
 ## Useful kubectl/kwokctl commands
 
