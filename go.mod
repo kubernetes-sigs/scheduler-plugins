@@ -1,12 +1,8 @@
 module sigs.k8s.io/scheduler-plugins
 
-<<<<<<< HEAD
-go 1.24
-=======
 go 1.24.0
 
 toolchain go1.24.4
->>>>>>> upstream/master
 
 require (
 	github.com/containers/common v0.62.3

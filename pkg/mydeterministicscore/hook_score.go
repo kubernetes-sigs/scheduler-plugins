@@ -28,7 +28,7 @@ func New(_ context.Context, _ runtime.Object, _ framework.Handle) (framework.Plu
 func (p *MyDeterministicScore) Name() string { return Name }
 
 // Score returns 0 for every node (we do the ordering in NormalizeScore).
-func (p *MyDeterministicScore) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+func (p *MyDeterministicScore) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
 	return 0, nil
 }
 
