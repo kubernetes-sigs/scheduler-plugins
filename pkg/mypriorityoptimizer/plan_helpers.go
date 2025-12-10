@@ -77,11 +77,11 @@ func makePlacement(p *v1.Pod, node string) Placement {
 }
 
 // makeNewPlacement builds a NewPlacement for a pod moving from src → dst.
-func makeNewPlacement(p *v1.Pod, fromNode, toNode string) NewPlacement {
-	return NewPlacement{
-		Pod:      toPlanPod(p),
-		FromNode: fromNode,
-		ToNode:   toNode,
+func makeNewPlacement(p *v1.Pod, oldNode, toNode string) Placement {
+	return Placement{
+		Pod:     toPlanPod(p),
+		OldNode: oldNode,
+		Node:    toNode,
 	}
 }
 
@@ -106,7 +106,7 @@ func sortPlacementsByPod(pls []Placement) {
 }
 
 // sortNewPlacementsByPod sorts new placements by (namespace, name) for stable output.
-func sortNewPlacementsByPod(pls []NewPlacement) {
+func sortNewPlacementsByPod(pls []Placement) {
 	sort.Slice(pls, func(i, j int) bool {
 		pi, pj := pls[i].Pod, pls[j].Pod
 		if pi.Namespace != pj.Namespace {
@@ -208,8 +208,8 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 	evicts := collectEvictions(out, byUID)
 
 	var (
-		moves         []NewPlacement
-		newPlacements []NewPlacement
+		moves         []Placement
+		newPlacements []Placement
 		nominatedNode string
 	)
 
@@ -223,7 +223,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 	// - placementByName (standalone + preemptor)
 	// - workloadQuotas (controller-owned, only when pending->node or node change)
 	for _, plm := range out.Placements {
-		if isPlanPodUnscheduled(plm.ToNode) {
+		if isPlanPodUnscheduled(plm.Node) {
 			continue
 		}
 
@@ -233,29 +233,29 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 		}
 
 		src := getPodAssignedNodeName(p)
-		np := makeNewPlacement(p, src, plm.ToNode)
+		np := makeNewPlacement(p, src, plm.Node)
 		newPlacements = append(newPlacements, np)
 
-		moved := isPlanPodMove(src, plm.ToNode)
+		moved := isPlanPodMove(src, plm.Node)
 
 		// Always add preemptor to placementByName and set nominatedNode.
 		if preemptor != nil && isSamePodUID(plm.Pod.UID, preemptor.UID) {
-			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.ToNode
-			nominatedNode = plm.ToNode
+			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.Node
+			nominatedNode = plm.Node
 			continue
 		} else if moved {
 			moves = append(moves, np)
 		}
-		if !isPlanPodPlacementChanged(src, plm.ToNode) {
+		if !isPlanPodPlacementChanged(src, plm.Node) {
 			continue
 		}
 
 		// Controller-owned: go via WorkloadQuotas
 		if wk, owned := topWorkload(p); owned {
-			increaseWorkloadQuota(workloadQuotas, wk, plm.ToNode)
+			increaseWorkloadQuota(workloadQuotas, wk, plm.Node)
 		} else {
 			// Standalone pod: track directly by name.
-			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.ToNode
+			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.Node
 		}
 	}
 
@@ -291,11 +291,11 @@ func (pl *SharedState) setActivePlan(plan *Plan, id string, _ []*v1.Pod) {
 	// Build the new active plan state
 	ctxPlan, cancel := context.WithTimeout(context.Background(), PlanExecutionTimeout)
 	ap := &ActivePlan{
-		ID:                  id,
-		WorkloadPerNodeCnts: buildWorkloadQuotas(plan.WorkloadQuotas),
-		PlacementByName:     plan.PlacementByName, // we just pass PlacementsByName directly
-		Ctx:                 ctxPlan,
-		Cancel:              cancel,
+		ID:              id,
+		WorkloadQuotas:  buildWorkloadQuotas(plan.WorkloadQuotas),
+		PlacementByName: plan.PlacementByName, // we just pass PlacementsByName directly
+		Ctx:             ctxPlan,
+		Cancel:          cancel,
 	}
 
 	// Store the new active plan
@@ -462,7 +462,7 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 	// Build allow-set of UIDs for pending -> scheduled in this plan.
 	allow := make(map[types.UID]struct{}, len(plan.NewPlacements))
 	for _, np := range plan.NewPlacements {
-		if isPlanPodNewlyScheduled(np.FromNode, np.ToNode) {
+		if isPlanPodNewlyScheduled(np.OldNode, np.Node) {
 			allow[np.Pod.UID] = struct{}{}
 		}
 	}
@@ -580,7 +580,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 	// 	2) If workload has NO live pods -> workload deleted/scale-to-zero -> ignore remaining.
 	// 	3) If workload has pending pods -> still work to do -> not complete.
 	// 	4) If workload has live but no pending pods -> scaled under plan / nothing left that can consume extra quota -> treat remaining quota as satisfied.
-	for wk, perNode := range ap.WorkloadPerNodeCnts {
+	for wk, perNode := range ap.WorkloadQuotas {
 		var totalRemaining int32
 		for _, ctr := range perNode {
 			totalRemaining += ctr.Load()
@@ -673,7 +673,7 @@ func (pl *SharedState) isPodAllowedByPlan(pod *v1.Pod) bool {
 
 	// Workload quotas (pods created by a controller).
 	if wk, ok := topWorkload(pod); ok {
-		perNode, ok := ap.WorkloadPerNodeCnts[wk.String()]
+		perNode, ok := ap.WorkloadQuotas[wk.String()]
 		if !ok || len(perNode) == 0 {
 			return false
 		}
@@ -714,7 +714,7 @@ func (pl *SharedState) filterNodes(pod *v1.Pod) (sets.Set[string], string, bool)
 
 	// Controller-owned: enforce per-workload per-node quotas.
 	if wk, owned := topWorkload(pod); owned {
-		perNode := ap.WorkloadPerNodeCnts[wk.String()]
+		perNode := ap.WorkloadQuotas[wk.String()]
 		if len(perNode) == 0 {
 			return nil, "workload not in active plan; block", false
 		}
@@ -763,7 +763,7 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 
 	// Count pending pods that will be scheduled by this plan
 	for _, plm := range out.Placements {
-		if isPlanPodUnscheduled(plm.ToNode) {
+		if isPlanPodUnscheduled(plm.Node) {
 			continue
 		}
 		if p := pUID[plm.Pod.UID]; p != nil && !isPodDeleted(p) && !isPodAssigned(p) {
@@ -883,13 +883,7 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 	for _, n := range usable {
 		usableNames[n.Name] = struct{}{}
 	}
-
-	// Collect running pods on usable nodes and sort (node, UID) for determinism.
-	type podKey struct {
-		node string
-		uid  types.UID
-	}
-	keys := make([]podKey, 0, len(pods))
+	keys := make([]Pod, 0, len(pods))
 	for _, p := range pods {
 		if isPodDeleted(p) || !isPodAssigned(p) {
 			continue
@@ -897,19 +891,19 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 		if _, ok := usableNames[getPodAssignedNodeName(p)]; !ok {
 			continue
 		}
-		keys = append(keys, podKey{node: getPodAssignedNodeName(p), uid: p.UID})
+		keys = append(keys, Pod{Node: getPodAssignedNodeName(p), UID: p.UID})
 	}
 	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].node != keys[j].node {
-			return keys[i].node < keys[j].node
+		if keys[i].Node != keys[j].Node {
+			return keys[i].Node < keys[j].Node
 		}
-		return keys[i].uid < keys[j].uid
+		return keys[i].UID < keys[j].UID
 	})
 
 	byUID := podsByUID(pods)
 
 	for _, k := range keys {
-		p := byUID[k.uid]
+		p := byUID[k.UID]
 		if p == nil {
 			continue
 		}

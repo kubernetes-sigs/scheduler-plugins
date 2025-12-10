@@ -15,17 +15,7 @@ type PodSet struct {
 	// mu protects the map
 	mu sync.RWMutex
 	// m maps pod UID to PodKey
-	m map[types.UID]PodKey
-}
-
-// PodKey is a minimal key for identifying a pod.
-type PodKey struct {
-	// Unique identifier for the pod
-	UID types.UID // for fast lookup, we only use types.UID as key (not as a string)
-	// Namespace of the pod
-	Namespace string
-	// Name of the pod
-	Name string
+	m map[types.UID]Pod
 }
 
 // PodSetItem represents an item in the PodSet.
@@ -33,5 +23,5 @@ type PodSetItem struct {
 	// Pod pointer (if needed)
 	p *v1.Pod
 	// Key for identifying the pod
-	key PodKey
+	key Pod
 }

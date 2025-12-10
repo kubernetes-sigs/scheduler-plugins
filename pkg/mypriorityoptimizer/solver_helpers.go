@@ -293,15 +293,15 @@ func (pl *SharedState) planApplicable(out *SolverOutput, nodes []*v1.Node, pods 
 			return false, fmt.Sprintf("pod vanished: %s", mergeNsName(np.Pod.Namespace, np.Pod.Name))
 		}
 		// Source must still be consistent enough:
-		//   - if it was a move (FromNode != ""), pod should still be on that source
-		//   - if it was a new/pending placement (FromNode == ""), pod should still be pending
-		if np.FromNode != "" {
-			if getPodAssignedNodeName(p) != np.FromNode {
+		//   - if it was a move (OldNode != ""), pod should still be on that source
+		//   - if it was a new/pending placement (OldNode == ""), pod should still be pending
+		if np.OldNode != "" {
+			if getPodAssignedNodeName(p) != np.OldNode {
 				return false, fmt.Sprintf("move precondition changed for %s/%s: was on %q, now on %q",
-					p.Namespace, p.Name, np.FromNode, getPodAssignedNodeName(p))
+					p.Namespace, p.Name, np.OldNode, getPodAssignedNodeName(p))
 			}
 			// remove from src (already accounted by evictions? No — moves are distinct)
-			addUse(np.FromNode, -getPodCPURequest(p), -getPodMemoryRequest(p))
+			addUse(np.OldNode, -getPodCPURequest(p), -getPodMemoryRequest(p))
 		} else {
 			// pending expected
 			if getPodAssignedNodeName(p) != "" {
@@ -311,10 +311,10 @@ func (pl *SharedState) planApplicable(out *SolverOutput, nodes []*v1.Node, pods 
 		}
 
 		// Destination must still be usable & have capacity
-		if !usable[np.ToNode] {
-			return false, fmt.Sprintf("dest node now unusable: %s", np.ToNode)
+		if !usable[np.Node] {
+			return false, fmt.Sprintf("dest node now unusable: %s", np.Node)
 		}
-		addUse(np.ToNode, getPodCPURequest(p), getPodMemoryRequest(p))
+		addUse(np.Node, getPodCPURequest(p), getPodMemoryRequest(p))
 	}
 
 	// Check that every node remains within capacity
@@ -456,11 +456,11 @@ func scoreSolution(in SolverInput, out *SolverOutput) SolverScore {
 		afterWhere[uid] = w
 	}
 	for _, plm := range out.Placements {
-		if plm.ToNode == "" {
+		if plm.Node == "" {
 			continue
 		}
 		if _, known := afterWhere[plm.Pod.UID]; known {
-			afterWhere[plm.Pod.UID] = plm.ToNode
+			afterWhere[plm.Pod.UID] = plm.Node
 		}
 	}
 

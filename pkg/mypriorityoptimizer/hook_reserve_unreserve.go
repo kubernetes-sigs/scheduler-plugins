@@ -39,7 +39,7 @@ func (pl *SharedState) Reserve(ctx context.Context, st fwk.CycleState, pending *
 	}
 	// Check if workload is tracked in the active plan.
 	workloadKey := wk.String()
-	allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[workloadKey]
+	allWorkloadCnts, ok := ap.WorkloadQuotas[workloadKey]
 	if !ok {
 		klog.V(MyV).InfoS(msg(stage, "workload not tracked"), "pod", klog.KObj(pending), "node", node)
 		return fwk.NewStatus(fwk.Unschedulable, msg(stage, "workload not tracked"))
@@ -89,7 +89,7 @@ func (pl *SharedState) Unreserve(ctx context.Context, st fwk.CycleState, pending
 		return
 	}
 	// Return quota
-	if allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[reservationState.key.rsKey]; ok {
+	if allWorkloadCnts, ok := ap.WorkloadQuotas[reservationState.key.rsKey]; ok {
 		if ctr, ok := allWorkloadCnts[reservationState.key.nodeName]; ok {
 			ctr.Add(1) // return quota
 		}

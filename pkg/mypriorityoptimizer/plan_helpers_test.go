@@ -110,9 +110,9 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 		Evictions: []Placement{
 			{Pod: Pod{UID: p1.UID}},
 		},
-		Placements: []NewPlacement{
-			{Pod: Pod{UID: p2.UID}, ToNode: "n2"},
-			{Pod: Pod{UID: p3.UID}, ToNode: "n1"},
+		Placements: []Placement{
+			{Pod: Pod{UID: p2.UID}, Node: "n2"},
+			{Pod: Pod{UID: p3.UID}, Node: "n1"},
 		},
 	}
 
@@ -150,13 +150,13 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 	if plan.NewPlacements[0].Pod.Name != "p2" {
 		t.Fatalf("NewPlacements[0].Pod.Name = %q, want %q", plan.NewPlacements[0].Pod.Name, "p2")
 	}
-	if plan.NewPlacements[0].FromNode != "n1" || plan.NewPlacements[0].ToNode != "n2" {
+	if plan.NewPlacements[0].OldNode != "n1" || plan.NewPlacements[0].Node != "n2" {
 		t.Fatalf("NewPlacements[0] = %#v, want From=n1 To=n2", plan.NewPlacements[0])
 	}
 	if plan.NewPlacements[1].Pod.Name != "p3" {
 		t.Fatalf("NewPlacements[1].Pod.Name = %q, want %q", plan.NewPlacements[1].Pod.Name, "p3")
 	}
-	if plan.NewPlacements[1].FromNode != "" || plan.NewPlacements[1].ToNode != "n1" {
+	if plan.NewPlacements[1].OldNode != "" || plan.NewPlacements[1].Node != "n1" {
 		t.Fatalf("NewPlacements[1] = %#v, want From=\"\" To=n1", plan.NewPlacements[1])
 	}
 
@@ -164,7 +164,7 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 	if got := len(plan.Moves); got != 1 {
 		t.Fatalf("Moves len = %d, want 1", got)
 	}
-	if plan.Moves[0].Pod.Name != "p2" || plan.Moves[0].FromNode != "n1" || plan.Moves[0].ToNode != "n2" {
+	if plan.Moves[0].Pod.Name != "p2" || plan.Moves[0].OldNode != "n1" || plan.Moves[0].Node != "n2" {
 		t.Fatalf("Moves[0] = %#v, want p2 From=n1 To=n2", plan.Moves[0])
 	}
 
@@ -190,8 +190,8 @@ func TestBuildPlan_WithPreemptorNomination(t *testing.T) {
 	pre := newPod("ns", "pre", "pre-uid", "", 1)
 
 	out := &SolverOutput{
-		Placements: []NewPlacement{
-			{Pod: Pod{UID: pre.UID}, ToNode: "n-pre"},
+		Placements: []Placement{
+			{Pod: Pod{UID: pre.UID}, Node: "n-pre"},
 		},
 	}
 
@@ -280,7 +280,7 @@ func TestSetActivePlan_ReplacesOldAndInitializesQuotas(t *testing.T) {
 	}
 
 	// WorkloadPerNodeCnts should mirror WorkloadQuotas with atomics.
-	perNode, ok := ap.WorkloadPerNodeCnts["wk1"]
+	perNode, ok := ap.WorkloadQuotas["wk1"]
 	if !ok || perNode == nil {
 		t.Fatalf("WorkloadPerNodeCnts[\"wk1\"] missing")
 	}
@@ -514,9 +514,9 @@ func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
 	pods := []*v1.Pod{run1, run2, pend1, del}
 
 	out := &SolverOutput{
-		Placements: []NewPlacement{
-			{Pod: Pod{UID: pend1.UID}, ToNode: "n1"}, // schedule pending
-			{Pod: Pod{UID: "u-unknown"}, ToNode: "n1"},
+		Placements: []Placement{
+			{Pod: Pod{UID: pend1.UID}, Node: "n1"}, // schedule pending
+			{Pod: Pod{UID: "u-unknown"}, Node: "n1"},
 		},
 		Evictions: []Placement{
 			{Pod: Pod{UID: run1.UID}}, // evict one running
@@ -669,9 +669,9 @@ func TestActivatePlannedPending_UsesHookWithMatchingPending(t *testing.T) {
 	uidIgnored := types.UID("u-ignored")
 
 	plan := &Plan{
-		NewPlacements: []NewPlacement{
-			{Pod: Pod{UID: uidAllowed}, FromNode: "", ToNode: "n1"},      // should be activated
-			{Pod: Pod{UID: uidIgnored}, FromNode: "n-old", ToNode: "n2"}, // move, not pending→node
+		NewPlacements: []Placement{
+			{Pod: Pod{UID: uidAllowed}, OldNode: "", Node: "n1"},      // should be activated
+			{Pod: Pod{UID: uidIgnored}, OldNode: "n-old", Node: "n2"}, // move, not pending→node
 		},
 	}
 

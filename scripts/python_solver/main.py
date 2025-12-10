@@ -556,8 +556,8 @@ class CPSATSolver:
                 if moved or orig_j is None:
                     placements.append({
                         "pod": {"uid": p_uid(i), "name": p_name(i), "namespace": p_namespace(i)},
-                        "from_node": nodes[orig_j]["name"] if orig_j is not None else "",
-                        "to_node": nodes[chosen_j]["name"],
+                        "old_node": nodes[orig_j]["name"] if orig_j is not None else "",
+                        "node": nodes[chosen_j]["name"],
                     })
         total_time = max(0.0, time.monotonic() - started_at)
         

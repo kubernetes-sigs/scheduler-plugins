@@ -30,7 +30,7 @@ type ActivePlan struct {
 	// Unique plan ID
 	ID string
 	// Workload quotas for moved or new pods that are part of a workload
-	WorkloadPerNodeCnts WorkloadQuotasAtomics
+	WorkloadQuotas WorkloadQuotasAtomics
 	// Placements by name for standalone pods that is either moved or new: ns/name -> node
 	PlacementByName map[string]string // pod ns/name -> targetNode
 	// Context to cancel the plan

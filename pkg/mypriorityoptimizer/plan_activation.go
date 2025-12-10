@@ -56,7 +56,7 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 		for _, mv := range plan.Moves {
 			klog.V(MyV).InfoS("pod movement planned",
 				"pod", mergeNsName(mv.Pod.Namespace, mv.Pod.Name),
-				"from", mv.FromNode, "to", mv.ToNode,
+				"from", mv.OldNode, "to", mv.Node,
 			)
 		}
 		for _, e := range plan.Evicts {

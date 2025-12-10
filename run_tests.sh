@@ -3,12 +3,12 @@ set -euo pipefail
 
 # Load environment variables
 ENV_FILE="opt-prio.env"
-echo "===Loading versions from ${ENV_FILE} ==="
+echo "===Load environment variables from ${ENV_FILE} ==="
 # shellcheck source=/dev/null
 set -a
 source "${ENV_FILE}"
 set +a
-echo "Versions loaded."
+echo "Environment variables loaded."
 
 # Default: run all tests
 MODE="${1:-all}"
