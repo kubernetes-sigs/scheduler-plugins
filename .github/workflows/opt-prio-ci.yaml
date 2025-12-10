@@ -22,9 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Adjust filename if your env file is named without a leading dot:
-          # source opt-prio.env
-          source .opt-prio.env
+          source opt-prio.env
 
           # Fail-fast checks
           : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
@@ -98,7 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source .opt-prio.env
+          source opt-prio.env
           : "${GO_VERSION:?GO_VERSION missing in env file}"
           : "${SCHEDULER_VERSION:?SCHEDULER_VERSION missing in env file}"
           {
@@ -137,7 +135,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source .opt-prio.env
+          source opt-prio.env
           : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
           : "${KUBE_SCHEDULER_BIN:?KUBE_SCHEDULER_BIN missing in env file}"
           : "${VENV_DIR:?VENV_DIR missing in env file}"
