@@ -59,7 +59,7 @@ jobs:
       - name: Run python unit tests
         run: |
           python -m pytest scripts/test \
-            --cov=<your_python_package_or_module_here> \
+            --cov=scripts \
             --cov-report=xml:coverage/unit/python/coverage.xml \
             --cov-report=html:coverage/unit/python/html
 
