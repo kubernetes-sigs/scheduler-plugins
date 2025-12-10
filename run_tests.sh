@@ -8,6 +8,7 @@ echo "===Loading versions from ${ENV_FILE} ==="
 set -a
 source "${ENV_FILE}"
 set +a
+echo "Versions loaded."
 
 # Default: run all tests
 MODE="${1:-all}"
@@ -71,8 +72,7 @@ ensure_solver_env() {
   fi
 
   # Install solver requirements into that venv
-  "${VENV_DIR}/bin/python" -m pip install --upgrade pip
-  "${VENV_DIR}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
+  "${VENV_DIR}/bin/pip" install -r scripts/python_solver/requirements.txt
 }
 
 # -------------------------------------------------------------------
@@ -107,8 +107,7 @@ if "$RUN_INT_KWOK"; then
   echo "Building kube-scheduler with mypriorityoptimizer plugin..."
   make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=${SCHEDULER_VERSION}
 
-  # Make sure solver env exists (mirrors CI workflow setup)
-  export VENV_DIR SOLVER_DIR
+  # Make sure solver env exists
   ensure_solver_env
 
   # Install integration test dependencies in the current Python env

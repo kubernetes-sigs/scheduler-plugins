@@ -24,6 +24,6 @@ type WorkloadKey struct {
 //   - hasLive:    at least one live pod (not terminating) for this workload
 //   - hasPending: at least one live *pending* pod for this workload
 type wkStatus struct {
-	hasLive    bool
-	hasPending bool
+	HasLive    bool
+	HasPending bool
 }

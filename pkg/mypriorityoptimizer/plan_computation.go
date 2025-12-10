@@ -14,7 +14,7 @@ import (
 // Returns: bestOut, whether anything was feasible, the best solver summary, and total duration (all attempts).
 func (pl *SharedState) planComputation(
 	ctx context.Context,
-	in SolverInput,
+	solverInput SolverInput,
 	nodes []*v1.Node,
 	pods []*v1.Pod,
 	baselineScore *SolverScore,
@@ -55,7 +55,7 @@ func (pl *SharedState) planComputation(
 		}
 
 		// Per-attempt input & hints
-		inAttempt := in
+		inAttempt := solverInput
 		inAttempt.TimeoutMs = att.Timeout.Milliseconds() // ← no grace added here
 
 		// Build attempt context with timeout + grace

@@ -11,13 +11,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type OptimizeLoopConfig struct {
-	Label          string        // log label
-	Interval       time.Duration // base tick interval
-	InterludeDelay time.Duration // 0 => no "idle window"; >0 => require this long of stability
-	CancelOnChange bool          // cancel in-flight run if pending set changes
-}
-
 // By default this just calls (*SharedState).optimizeBackgroundLoop.
 // Tests can override this variable to intercept the cfg passed in.
 var optimizeBackgroundLoopFunc = func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig) {
@@ -269,16 +262,6 @@ func isAlreadySolvedForPendingSet(err error, bestAttempt *SolverResult) bool {
 	}
 	return err == ErrNoImprovingSolutionFromAnySolver ||
 		err == ErrNoPendingPodsToSchedule
-}
-
-// PendingSnapshot bundles the pieces of state that both the periodic and
-// free-time loops need in order to decide whether to run the solver.
-type PendingSnapshot struct {
-	PendingUIDs  map[types.UID]struct{}
-	PendingCount int
-	Fingerprint  string     // clusterFingerprint(nodes, pods)
-	Pods         []*v1.Pod  // live snapshot (for priority checks)
-	Nodes        []*v1.Node // live snapshot (for solver input)
 }
 
 // buildPendingSnapshot:

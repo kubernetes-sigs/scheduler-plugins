@@ -4,22 +4,22 @@ package mypriorityoptimizer
 import (
 	"context"
 	"time"
-
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // SolverInput is the input to a solver.
 type SolverInput struct {
 	// Preemptor pod (if any; single pod mode)
-	Preemptor *SolverPod `json:"preemptor,omitempty"`
+	Preemptor *Pod `json:"preemptor,omitempty"`
 	// Nodes to consider
-	Nodes []SolverNode `json:"nodes"`
+	Nodes []Node `json:"nodes"`
 	// Pods to schedule / re-schedule
-	Pods []SolverPod `json:"pods"`
+	Pods []Pod `json:"pods"`
 	// Timeout for the solver (ms)
 	TimeoutMs int64 `json:"timeout_ms"`
 	// If true, ignore affinity rules
 	IgnoreAffinity bool `json:"ignore_affinity"`
+
+	// TODO: Make python specific options an extra struct?
 	// Log solver progress
 	LogProgress bool `json:"log_progress,omitempty"`
 	// Gap to optimality (0.0 = ignore)
@@ -38,53 +38,15 @@ type SolverOutput struct {
 	Placements []NewPlacement `json:"placements"`
 	// Evicted pods
 	Evictions []Placement `json:"evictions"`
-	// Stages of the solver
-	Stages []SolverStage `json:"stages,omitempty"`
 	// Duration in milliseconds of the solver
 	DurationMs int64 `json:"duration_ms,omitempty"`
-}
 
-// SolverNode represents a node in the cluster for the solver.
-type SolverNode struct {
-	// Name of the node
-	Name string `json:"name"`
-	// Total CPU capacity in millicores
-	CapCPUm int64 `json:"cap_cpu_m"`
-	// Total memory capacity in bytes
-	CapMemBytes int64 `json:"cap_mem_bytes"`
-	// Allocated (used) CPU in millicores (not serialized)
-	AllocCPUm int64 `json:"-"`
-	// Allocated (used) memory in bytes (not serialized)
-	AllocMemBytes int64 `json:"-"`
-	// Labels of the node
-	Labels map[string]string `json:"labels,omitempty"`
-	// Pods currently on the node (not serialized)
-	Pods map[types.UID]*SolverPod `json:"-"`
-}
-
-// SolverPod represents a pod for the solver.
-type SolverPod struct {
-	// Unique identifier for the pod
-	UID types.UID `json:"uid"`
-	// Namespace of the pod
-	Namespace string `json:"namespace"`
-	// Name of the pod
-	Name string `json:"name"`
-	// Requested CPU in millicores
-	ReqCPUm int64 `json:"req_cpu_m"`
-	// Requested memory in bytes
-	ReqMemBytes int64 `json:"req_mem_bytes"`
-	// Priority of the pod
-	Priority int32 `json:"priority"`
-	// Whether the pod is protected from preemption
-	Protected bool `json:"protected,omitempty"`
-	// Current node of the pod (empty if new pod)
-	Node string `json:"node"`
+	// Make python-specific fields optional
+	// Stages of the solver
+	Stages []SolverStage `json:"stages,omitempty"`
 }
 
 // SolverAttempt defines a solver attempt configuration and function.
-// solver_types.go
-
 type SolverAttempt struct {
 	// Name of the solver attempt
 	Name string
@@ -109,7 +71,6 @@ type SolverResult struct {
 	Score SolverScore `json:"score,omitempty"`
 	// Stages of the solver
 	Stages []SolverStage `json:"stages,omitempty"`
-
 	// In-memory only (not exported)
 	// Comparison vs previous leader (-1 worse, 0 tie, 1 better)
 	CmpBase int `json:"-"`
@@ -138,24 +99,6 @@ type SolverStage struct {
 	DurationMs int64 `json:"duration_ms"`
 	// The ratio gap to optimality (if known)
 	RelativeGap string `json:"relative_gap,omitempty"`
-}
-
-// PreparedState is the prepared state for solving.
-type PreparedState struct {
-	// Whether we are in single-preemptor mode
-	Single bool
-	// Nodes to consider
-	Nodes map[string]*SolverNode
-	// Pods to schedule / re-schedule
-	Pods map[types.UID]*SolverPod
-	// Ordered list of nodes (by available resources descending)
-	Order []*SolverNode
-	// Current resource deltas per node (CPU, MEM)
-	Preemptor *SolverPod
-	// The list of pods to work on (sorted by priority desc, req desc)
-	Worklist []*SolverPod
-	// Move gate for local search
-	MoveGate *int32
 }
 
 // ExportedSolverStats is the structure used to export solver run statistics.

@@ -33,7 +33,7 @@ type StoredPlan struct {
 	// Solver summary (status & score)
 	Solver SolverResult `json:"solver"`
 	// Single-preemptor metadata
-	Preemptor *Preemptor `json:"preemptor,omitempty"`
+	Preemptor *Pod `json:"preemptor,omitempty"`
 	// PlanStatus of the plan
 	PlanStatus PlanStatus `json:"plan_status"`
 	// The actual plan
@@ -54,11 +54,3 @@ const (
 
 // WorkloadQuotas is a map of workloadKey -> node -> remaining count
 type WorkloadQuotas map[string]map[string]int32
-
-// Preemptor represents a preemptor pod and its nominated node.
-type Preemptor struct {
-	// Pod being preempted
-	Pod Pod `json:"pod"`
-	// Nominated node for the preemptor pod
-	NominatedNode string `json:"nominated_node"`
-}

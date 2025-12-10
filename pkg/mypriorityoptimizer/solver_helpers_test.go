@@ -248,7 +248,7 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 			}
 			seenSystem = true
 		default:
-			t.Fatalf("unexpected SolverPod UID %q in input", sp.UID)
+			t.Fatalf("unexpected Pod UID %q in input", sp.UID)
 		}
 	}
 
@@ -264,7 +264,7 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 
 func TestBuildBaselineScore(t *testing.T) {
 	in := SolverInput{
-		Pods: []SolverPod{
+		Pods: []Pod{
 			{Priority: 1, Node: "n1"}, // placed
 			{Priority: 1, Node: ""},   // pending
 			{Priority: 2, Node: "n2"}, // placed
@@ -739,7 +739,7 @@ func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 
 func TestScoreSolution_NilOutput(t *testing.T) {
 	in := SolverInput{
-		Pods: []SolverPod{
+		Pods: []Pod{
 			{UID: "u1", Priority: 1, Node: "n1"},
 		},
 	}
@@ -751,7 +751,7 @@ func TestScoreSolution_NilOutput(t *testing.T) {
 
 func TestScoreSolution_Basic(t *testing.T) {
 	in := SolverInput{
-		Pods: []SolverPod{
+		Pods: []Pod{
 			{UID: "u1", Priority: 1, Node: "n1"}, // running
 			{UID: "u2", Priority: 2, Node: ""},   // pending
 			{UID: "u3", Priority: 1, Node: "n1"}, // running
@@ -786,7 +786,7 @@ func TestScoreSolution_Basic(t *testing.T) {
 }
 
 func TestScoreSolution_WithPreemptor(t *testing.T) {
-	pre := &SolverPod{UID: "u-pre", Priority: 5}
+	pre := &Pod{UID: "u-pre", Priority: 5}
 
 	in := SolverInput{
 		Preemptor: pre,
@@ -810,10 +810,10 @@ func TestScoreSolution_WithPreemptor(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// toSolverPod
+// toPod
 // -----------------------------------------------------------------------------
 
-func TestToSolverPod_BasicMapping(t *testing.T) {
+func TestToPod_BasicMapping(t *testing.T) {
 	p := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "mypod",
@@ -823,17 +823,17 @@ func TestToSolverPod_BasicMapping(t *testing.T) {
 		Spec: v1.PodSpec{},
 	}
 
-	sp := toSolverPod(p, "nodeX")
+	sp := toPod(p, "nodeX")
 
 	if sp.UID != p.UID || sp.Namespace != p.Namespace || sp.Name != p.Name {
-		t.Fatalf("toSolverPod() identity fields mismatch: %+v", sp)
+		t.Fatalf("toPod() identity fields mismatch: %+v", sp)
 	}
 	if sp.Node != "nodeX" {
-		t.Fatalf("toSolverPod() Node = %q, want %q", sp.Node, "nodeX")
+		t.Fatalf("toPod() Node = %q, want %q", sp.Node, "nodeX")
 	}
 	// With no resource requests / priority set, we at least expect 0 values.
 	if sp.ReqCPUm != 0 || sp.ReqMemBytes != 0 || sp.Priority != 0 {
-		t.Fatalf("toSolverPod() expected zero cpu/mem/priority, got cpu=%d mem=%d prio=%d",
+		t.Fatalf("toPod() expected zero cpu/mem/priority, got cpu=%d mem=%d prio=%d",
 			sp.ReqCPUm, sp.ReqMemBytes, sp.Priority)
 	}
 }

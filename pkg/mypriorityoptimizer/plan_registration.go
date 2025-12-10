@@ -39,13 +39,11 @@ func (pl *SharedState) planRegistration(
 		Solver:               summarizeAttempt(solver),
 	}
 	if preemptor != nil {
-		storedPlan.Preemptor = &Preemptor{
-			Pod: Pod{
-				UID:       preemptor.UID,
-				Namespace: preemptor.Namespace,
-				Name:      preemptor.Name,
-			},
-			NominatedNode: plan.NominatedNode,
+		storedPlan.Preemptor = &Pod{
+			UID:       preemptor.UID,
+			Namespace: preemptor.Namespace,
+			Name:      preemptor.Name,
+			Node:      plan.NominatedNode,
 		}
 	}
 	if err := pl.exportPlanToConfigMap(ctx, id, storedPlan); err != nil {

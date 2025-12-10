@@ -36,8 +36,8 @@ func (pl *SharedState) buildSolverInput(
 	in := SolverInput{
 		IgnoreAffinity: true,
 		LogProgress:    SolverLogProgress,
-		Nodes:          make([]SolverNode, 0, len(nodes)),
-		Pods:           make([]SolverPod, 0, len(pods)),
+		Nodes:          make([]Node, 0, len(nodes)),
+		Pods:           make([]Pod, 0, len(pods)),
 		TimeoutMs:      0, // filled by caller
 	}
 
@@ -47,7 +47,7 @@ func (pl *SharedState) buildSolverInput(
 		if !isNodeUsable(n) {
 			continue
 		}
-		in.Nodes = append(in.Nodes, SolverNode{
+		in.Nodes = append(in.Nodes, Node{
 			Name:        n.Name,
 			CapCPUm:     n.Status.Allocatable.Cpu().MilliValue(),
 			CapMemBytes: n.Status.Allocatable.Memory().Value(),
@@ -61,7 +61,7 @@ func (pl *SharedState) buildSolverInput(
 	// ----- Preemptor: include as pending (not in Pods list) -----
 	preUID := ""
 	if preemptor != nil {
-		pre := toSolverPod(preemptor, "")
+		pre := toPod(preemptor, "")
 		in.Preemptor = &pre
 		preUID = string(preemptor.UID)
 	}
@@ -81,7 +81,7 @@ func (pl *SharedState) buildSolverInput(
 		switch {
 		case where == "":
 			// pending → always include
-			sp := toSolverPod(p, "")
+			sp := toPod(p, "")
 			if isPodProtected(p) {
 				sp.Protected = true
 			}
@@ -95,7 +95,7 @@ func (pl *SharedState) buildSolverInput(
 			if !usable[where] {
 				continue
 			}
-			sp := toSolverPod(p, where)
+			sp := toPod(p, where)
 			if isPodProtected(p) {
 				sp.Protected = true
 			}
@@ -501,9 +501,9 @@ func scoreSolution(in SolverInput, out *SolverOutput) SolverScore {
 	}
 }
 
-// toSolverPod converts a Pod to a SolverPod.
-func toSolverPod(p *v1.Pod, node string) SolverPod {
-	return SolverPod{
+// toPod converts a Pod to a SolverPod.
+func toPod(p *v1.Pod, node string) Pod {
+	return Pod{
 		UID:         p.UID,
 		Namespace:   p.Namespace,
 		Name:        p.Name,

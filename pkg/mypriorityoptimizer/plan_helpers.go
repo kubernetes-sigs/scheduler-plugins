@@ -525,9 +525,9 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 		if wk, owned := topWorkload(p); owned {
 			key := wk.String()
 			st := workloadStatus[key]
-			st.hasLive = true
+			st.HasLive = true
 			if !isPodAssigned(p) {
-				st.hasPending = true
+				st.HasPending = true
 			}
 			workloadStatus[key] = st
 		}
@@ -594,7 +594,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 		st := workloadStatus[wk]
 
 		// 2) Workload completely gone (no live pods): treat as satisfied.
-		if !st.hasLive {
+		if !st.HasLive {
 			klog.V(MyV).InfoS("plan completion: workload scaled down or deleted; ignoring remaining quota",
 				"workload", wk,
 				"remaining", totalRemaining,
@@ -603,7 +603,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 		}
 
 		// 3) Workload still has pending pods and remaining quota: plan not done yet.
-		if st.hasPending {
+		if st.HasPending {
 			klog.V(MyV).InfoS("plan incomplete: workload still has pending pods and remaining quota",
 				"workload", wk,
 				"remaining", totalRemaining,
