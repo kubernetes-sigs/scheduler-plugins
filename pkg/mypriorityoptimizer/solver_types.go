@@ -30,8 +30,6 @@ type SolverInput struct {
 	IgnoreAffinity bool `json:"ignore_affinity"`
 	// Log solver progress
 	LogProgress bool `json:"log_progress,omitempty"`
-	// Maximum number of trials (0 = unlimited)
-	MaxTrials int `json:"max_trials,omitempty"` // for local search
 	// Gap to optimality (0.0 = ignore)
 	GapLimit float64 `json:"gap_limit,omitempty"`
 	// Guaranteed fraction of time for all tiers (0.0-1.0)
@@ -102,8 +100,6 @@ type SolverAttempt struct {
 	Enabled bool
 	// Timeout for the solver attempt
 	Timeout time.Duration
-	// Number of trials the solver attempt should perform
-	Trials int
 	// Function to run the solver attempt
 	Run func(ctx context.Context, in SolverInput) (*SolverOutput, error)
 }

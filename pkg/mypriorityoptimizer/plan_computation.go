@@ -30,7 +30,6 @@ func (pl *SharedState) planComputation(
 			Name:    "python",
 			Enabled: SolverPythonEnabled,
 			Timeout: SolverPythonTimeout,
-			Trials:  1,
 			Run: func(ctx context.Context, in SolverInput) (*SolverOutput, error) {
 				return pl.runSolverExternal(ctx, in)
 			},
@@ -58,7 +57,6 @@ func (pl *SharedState) planComputation(
 		// Per-attempt input & hints
 		inAttempt := in
 		inAttempt.TimeoutMs = att.Timeout.Milliseconds() // ← no grace added here
-		inAttempt.MaxTrials = att.Trials
 
 		// Build attempt context with timeout + grace
 		ctxDur := att.Timeout
