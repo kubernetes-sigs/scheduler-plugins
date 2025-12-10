@@ -8,14 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// SolveMode indicates the mode of solving.
-type SolveMode int
-
-const (
-	SolveAll SolveMode = iota
-	SolveSingle
-)
-
 // SolverInput is the input to a solver.
 type SolverInput struct {
 	// Preemptor pod (if any; single pod mode)
