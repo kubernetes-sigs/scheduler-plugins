@@ -7,13 +7,13 @@ import (
 
 type Plan struct {
 	// Evicted pods
-	Evicts []Placement `json:"evicts"`
+	Evicts []Pod `json:"evicts"`
 	// Moved pods
-	Moves []Placement `json:"moves"`
+	Moves []Pod `json:"moves"`
 	// All pods and their old placements
-	OldPlacements []Placement `json:"old_placements"`
+	OldPlacements []Pod `json:"old_placements"`
 	// All pods and their new placements
-	NewPlacements []Placement `json:"new_placements"`
+	NewPlacements []Pod `json:"new_placements"`
 	// Placement by name for standalone pods: ns/name -> node
 	PlacementByName map[string]string `json:"placement_by_name"`
 	// Workload quotas for new placed pods that are part of a workload

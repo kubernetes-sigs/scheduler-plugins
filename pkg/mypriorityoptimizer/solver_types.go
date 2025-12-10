@@ -35,9 +35,9 @@ type SolverOutput struct {
 	// Status of the solver (failed/infeasible/feasible/optimal)
 	Status string `json:"status"`
 	// Pod placements (new or moved)
-	Placements []Placement `json:"placements"`
+	Placements []Pod `json:"placements"`
 	// Evicted pods
-	Evictions []Placement `json:"evictions"`
+	Evictions []Pod `json:"evictions"`
 	// Duration in milliseconds of the solver
 	DurationMs int64 `json:"duration_ms,omitempty"`
 

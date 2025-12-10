@@ -274,7 +274,7 @@ func (pl *SharedState) planApplicable(out *SolverOutput, nodes []*v1.Node, pods 
 	// Simulate the plan on top of current usage:
 	// - Evictions free resources on their current node
 	for _, e := range out.Evictions {
-		p := pByUID[e.Pod.UID]
+		p := pByUID[e.UID]
 		if p == nil || getPodAssignedNodeName(p) == "" {
 			// Already gone or pending now: keep going.
 			continue
@@ -288,9 +288,9 @@ func (pl *SharedState) planApplicable(out *SolverOutput, nodes []*v1.Node, pods 
 
 	// - Moves/placements: check pod still where we expect (pending or src), then add to dst
 	for _, np := range out.Placements {
-		p := pByUID[np.Pod.UID]
+		p := pByUID[np.UID]
 		if p == nil || p.DeletionTimestamp != nil {
-			return false, fmt.Sprintf("pod vanished: %s", mergeNsName(np.Pod.Namespace, np.Pod.Name))
+			return false, fmt.Sprintf("pod vanished: %s", mergeNsName(np.Namespace, np.Name))
 		}
 		// Source must still be consistent enough:
 		//   - if it was a move (OldNode != ""), pod should still be on that source
@@ -459,15 +459,15 @@ func scoreSolution(in SolverInput, out *SolverOutput) SolverScore {
 		if plm.Node == "" {
 			continue
 		}
-		if _, known := afterWhere[plm.Pod.UID]; known {
-			afterWhere[plm.Pod.UID] = plm.Node
+		if _, known := afterWhere[plm.UID]; known {
+			afterWhere[plm.UID] = plm.Node
 		}
 	}
 
 	// Evicted
 	evicted := make(map[types.UID]struct{}, len(out.Evictions))
 	for _, e := range out.Evictions {
-		evicted[e.Pod.UID] = struct{}{}
+		evicted[e.UID] = struct{}{}
 	}
 
 	// Placed by priority

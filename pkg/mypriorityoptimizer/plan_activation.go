@@ -43,10 +43,10 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 		}
 	}
 	for _, mv := range plan.Moves {
-		add(mv.Pod.UID, mv.Pod.Namespace, mv.Pod.Name)
+		add(mv.UID, mv.Namespace, mv.Name)
 	}
 	for _, e := range plan.Evicts {
-		add(e.Pod.UID, e.Pod.Namespace, e.Pod.Name)
+		add(e.UID, e.Namespace, e.Name)
 	}
 
 	// 2) Log plan details and evict (if any)
@@ -55,13 +55,13 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 	} else {
 		for _, mv := range plan.Moves {
 			klog.V(MyV).InfoS("pod movement planned",
-				"pod", mergeNsName(mv.Pod.Namespace, mv.Pod.Name),
+				"pod", mergeNsName(mv.Namespace, mv.Name),
 				"from", mv.OldNode, "to", mv.Node,
 			)
 		}
 		for _, e := range plan.Evicts {
 			klog.V(MyV).InfoS("eviction planned",
-				"pod", mergeNsName(e.Pod.Namespace, e.Pod.Name),
+				"pod", mergeNsName(e.Namespace, e.Name),
 				"from", e.Node,
 			)
 		}

@@ -503,8 +503,8 @@ func TestPlanApplicable_EvictNodeNowUnusable(t *testing.T) {
 	}
 
 	out := &SolverOutput{
-		Evictions: []Placement{
-			{Pod: Pod{UID: "uid-1", Namespace: "ns1", Name: "p1"}},
+		Evictions: []Pod{
+			{UID: "uid-1", Namespace: "ns1", Name: "p1"},
 		},
 	}
 
@@ -546,11 +546,13 @@ func TestPlanApplicable_PendingPreconditionChanged(t *testing.T) {
 	}
 
 	out := &SolverOutput{
-		Placements: []Placement{
+		Placements: []Pod{
 			{
-				Pod:     Pod{UID: "uid-1", Namespace: "ns1", Name: "p1"},
-				OldNode: "",
-				Node:    "n1",
+				UID:       "uid-1",
+				Namespace: "ns1",
+				Name:      "p1",
+				OldNode:   "",
+				Node:      "n1",
 			},
 		},
 	}
@@ -641,14 +643,16 @@ func TestPlanApplicable_Success(t *testing.T) {
 	}
 
 	out := &SolverOutput{
-		Evictions: []Placement{
-			{Pod: Pod{UID: "u-evict", Namespace: "ns", Name: "p-evict"}},
+		Evictions: []Pod{
+			{UID: "u-evict", Namespace: "ns", Name: "p-evict"},
 		},
-		Placements: []Placement{
+		Placements: []Pod{
 			{
-				Pod:     Pod{UID: "u-pending", Namespace: "ns", Name: "p-pending"},
-				OldNode: "",
-				Node:    "n1",
+				UID:       "u-pending",
+				Namespace: "ns",
+				Name:      "p-pending",
+				OldNode:   "",
+				Node:      "n1",
 			},
 		},
 	}
@@ -759,13 +763,13 @@ func TestScoreSolution_Basic(t *testing.T) {
 	}
 
 	out := &SolverOutput{
-		Placements: []Placement{
-			{Pod: Pod{UID: "u2"}, Node: "n1"}, // place pending
-			{Pod: Pod{UID: "u3"}, Node: "n2"}, // move running
-			{Pod: Pod{UID: "uX"}, Node: "n1"}, // unknown UID → ignored
+		Placements: []Pod{
+			{UID: "u2", Node: "n1"}, // place pending
+			{UID: "u3", Node: "n2"}, // move running
+			{UID: "uX", Node: "n1"}, // unknown UID → ignored
 		},
-		Evictions: []Placement{
-			{Pod: Pod{UID: "u1"}}, // evict u1
+		Evictions: []Pod{
+			{UID: "u1"}, // evict u1
 		},
 	}
 
@@ -794,8 +798,8 @@ func TestScoreSolution_WithPreemptor(t *testing.T) {
 	}
 
 	out := &SolverOutput{
-		Placements: []Placement{
-			{Pod: Pod{UID: pre.UID}, Node: "n1"},
+		Placements: []Pod{
+			{UID: pre.UID, Node: "n1"},
 		},
 	}
 

@@ -69,19 +69,23 @@ func toPlanPod(p *v1.Pod) Pod {
 }
 
 // makePlacement builds a Placement for a pod on a given node.
-func makePlacement(p *v1.Pod, node string) Placement {
-	return Placement{
-		Pod:  toPlanPod(p),
-		Node: node,
+func makePlacement(p *v1.Pod, node string) Pod {
+	return Pod{
+		UID:       p.UID,
+		Namespace: p.Namespace,
+		Name:      p.Name,
+		Node:      node,
 	}
 }
 
 // makeNewPlacement builds a NewPlacement for a pod moving from src → dst.
-func makeNewPlacement(p *v1.Pod, oldNode, toNode string) Placement {
-	return Placement{
-		Pod:     toPlanPod(p),
-		OldNode: oldNode,
-		Node:    toNode,
+func makeNewPlacement(p *v1.Pod, oldNode, toNode string) Pod {
+	return Pod{
+		UID:       p.UID,
+		Namespace: p.Namespace,
+		Name:      p.Name,
+		OldNode:   oldNode,
+		Node:      toNode,
 	}
 }
 
@@ -95,9 +99,9 @@ func increaseWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
 }
 
 // sortPlacementsByPod sorts placements by (namespace, name) for stable output.
-func sortPlacementsByPod(pls []Placement) {
+func sortPlacementsByPod(pls []Pod) {
 	sort.Slice(pls, func(i, j int) bool {
-		pi, pj := pls[i].Pod, pls[j].Pod
+		pi, pj := pls[i], pls[j]
 		if pi.Namespace != pj.Namespace {
 			return pi.Namespace < pj.Namespace
 		}
@@ -106,9 +110,9 @@ func sortPlacementsByPod(pls []Placement) {
 }
 
 // sortNewPlacementsByPod sorts new placements by (namespace, name) for stable output.
-func sortNewPlacementsByPod(pls []Placement) {
+func sortNewPlacementsByPod(pls []Pod) {
 	sort.Slice(pls, func(i, j int) bool {
-		pi, pj := pls[i].Pod, pls[j].Pod
+		pi, pj := pls[i], pls[j]
 		if pi.Namespace != pj.Namespace {
 			return pi.Namespace < pj.Namespace
 		}
@@ -167,8 +171,8 @@ func indexPodsForPlan(pods []*v1.Pod, preemptor *v1.Pod) map[types.UID]*v1.Pod {
 }
 
 // collectOldPlacements returns placements for all currently assigned & alive pods.
-func collectOldPlacements(byUID map[types.UID]*v1.Pod) []Placement {
-	oldPlacements := make([]Placement, 0, len(byUID))
+func collectOldPlacements(byUID map[types.UID]*v1.Pod) []Pod {
+	oldPlacements := make([]Pod, 0, len(byUID))
 	for _, p := range byUID {
 		if isPodAssignedAndAlive(p) {
 			oldPlacements = append(oldPlacements, makePlacement(p, getPodAssignedNodeName(p)))
@@ -179,13 +183,13 @@ func collectOldPlacements(byUID map[types.UID]*v1.Pod) []Placement {
 }
 
 // collectEvictions builds evict placements from the solver output and pod index.
-func collectEvictions(out *SolverOutput, byUID map[types.UID]*v1.Pod) []Placement {
+func collectEvictions(out *SolverOutput, byUID map[types.UID]*v1.Pod) []Pod {
 	if out == nil || len(out.Evictions) == 0 {
 		return nil
 	}
-	evicts := make([]Placement, 0, len(out.Evictions))
+	evicts := make([]Pod, 0, len(out.Evictions))
 	for _, e := range out.Evictions {
-		if p := byUID[e.Pod.UID]; isPodAssignedAndAlive(p) {
+		if p := byUID[e.UID]; isPodAssignedAndAlive(p) {
 			evicts = append(evicts, makePlacement(p, getPodAssignedNodeName(p)))
 		}
 	}
@@ -208,8 +212,8 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 	evicts := collectEvictions(out, byUID)
 
 	var (
-		moves         []Placement
-		newPlacements []Placement
+		moves         []Pod
+		newPlacements []Pod
 		nominatedNode string
 	)
 
@@ -227,7 +231,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 			continue
 		}
 
-		p := byUID[plm.Pod.UID]
+		p := byUID[plm.UID]
 		if isPodDeleted(p) {
 			continue
 		}
@@ -239,7 +243,7 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 		moved := isPlanPodMove(src, plm.Node)
 
 		// Always add preemptor to placementByName and set nominatedNode.
-		if preemptor != nil && isSamePodUID(plm.Pod.UID, preemptor.UID) {
+		if preemptor != nil && isSamePodUID(plm.UID, preemptor.UID) {
 			placementByName[mergeNsName(p.Namespace, p.Name)] = plm.Node
 			nominatedNode = plm.Node
 			continue
@@ -463,7 +467,7 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 	allow := make(map[types.UID]struct{}, len(plan.NewPlacements))
 	for _, np := range plan.NewPlacements {
 		if isPlanPodNewlyScheduled(np.OldNode, np.Node) {
-			allow[np.Pod.UID] = struct{}{}
+			allow[np.UID] = struct{}{}
 		}
 	}
 	if len(allow) == 0 {
@@ -756,7 +760,7 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 	// Count evicted running pods
 	evicted := 0
 	for _, e := range out.Evictions {
-		if p := pUID[e.Pod.UID]; isPodAssignedAndAlive(p) {
+		if p := pUID[e.UID]; isPodAssignedAndAlive(p) {
 			evicted++
 		}
 	}
@@ -766,7 +770,7 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 		if isPlanPodUnscheduled(plm.Node) {
 			continue
 		}
-		if p := pUID[plm.Pod.UID]; p != nil && !isPodDeleted(p) && !isPodAssigned(p) {
+		if p := pUID[plm.UID]; p != nil && !isPodDeleted(p) && !isPodAssigned(p) {
 			pendingScheduled++
 		}
 	}

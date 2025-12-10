@@ -539,7 +539,9 @@ class CPSATSolver:
             is_placed = is_pod_placed_solver(i)
             if was_running and not is_placed:
                 evictions.append({
-                    "pod": {"uid": p_uid(i), "name": p_name(i), "namespace": p_namespace(i)},
+                    "uid": p_uid(i),
+                    "name": p_name(i),
+                    "namespace": p_namespace(i),
                     "node": nodes[p_node_j(i)]["name"],
                 })
                 continue
@@ -555,7 +557,9 @@ class CPSATSolver:
                 moved = was_running and not stayed_on_same_node_solver(i)
                 if moved or orig_j is None:
                     placements.append({
-                        "pod": {"uid": p_uid(i), "name": p_name(i), "namespace": p_namespace(i)},
+                        "uid": p_uid(i),
+                        "name": p_name(i),
+                        "namespace": p_namespace(i),
                         "old_node": nodes[orig_j]["name"] if orig_j is not None else "",
                         "node": nodes[chosen_j]["name"],
                     })

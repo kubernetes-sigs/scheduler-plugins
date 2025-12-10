@@ -41,14 +41,6 @@ type Pod struct {
 	Protected bool `json:"protected,omitempty"`
 	// Current node of the pod (empty if new pod)
 	Node string `json:"node,omitempty"`
-}
-
-// Placement represents a pod placement on a node.
-type Placement struct {
-	// Pod being placed
-	Pod Pod `json:"pod"`
-	// Previous node pod was placed on; empty if new pod
+	// Old node of the pod (empty if new pod)
 	OldNode string `json:"old_node,omitempty"`
-	// Current node pod is placed on
-	Node string `json:"node,omitempty"`
 }
