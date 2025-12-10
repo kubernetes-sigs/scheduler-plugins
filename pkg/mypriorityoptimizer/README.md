@@ -73,7 +73,7 @@ Some of the main files and their purpose are described below:
 
 ## Upstream version
 
-Latest upstream version tracked: **v0.32.7** (tagged release) of  
+Latest upstream version tracked: **v0.33.5** (tagged release) of  
 [`kubernetes-sigs/scheduler-plugins`](https://github.com/kubernetes-sigs/scheduler-plugins/releases).
 
 This fork follows **tagged upstream releases only** (we **do not** base changes on `*-devel` tags or arbitrary commits from `main`).

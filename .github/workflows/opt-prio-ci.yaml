@@ -7,7 +7,10 @@ on:
     branches: [ "opt-prio-main" ]
 
 jobs:
-  tests:
+  # -------------------------------------------------------
+  # Unit tests (Python + Go)
+  # -------------------------------------------------------
+  unit-tests:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,48 +23,35 @@ jobs:
         run: |
           set -euo pipefail
           source opt-prio.env
+
+          # Fail-fast checks
           : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
           : "${GO_VERSION:?GO_VERSION missing in env file}"
-          : "${SCHEDULER_VERSION:?SCHEDULER_VERSION missing in env file}"
-          : "${KUBE_SCHEDULER_BIN:?KUBE_SCHEDULER_BIN missing in env file}"
-          : "${VENV_DIR:?VENV_DIR missing in env file}"
-          : "${SOLVER_DIR:?SOLVER_DIR missing in env file}"
-          : "${KUBECTL_VERSION:?KUBECTL_VERSION missing in env file}"
-          : "${KWOK_VERSION:?KWOK_VERSION missing in env file}"
 
+          # Expose as step outputs to avoid "context access might be invalid"
           {
             echo "PYTHON_VERSION=${PYTHON_VERSION}"
             echo "GO_VERSION=${GO_VERSION}"
-            echo "SCHEDULER_VERSION=${SCHEDULER_VERSION}"
-            echo "KUBE_SCHEDULER_BIN=${KUBE_SCHEDULER_BIN}"
-            echo "VENV_DIR=${VENV_DIR}"
-            echo "SOLVER_DIR=${SOLVER_DIR}"
-            echo "KUBECTL_VERSION=${KUBECTL_VERSION}"
-            echo "KWOK_VERSION=${KWOK_VERSION}"
           } >> "$GITHUB_OUTPUT"
 
-      # ---- Shared setup (Python + Go) ----
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ steps.load-env.outputs.PYTHON_VERSION }}
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ steps.load-env.outputs.GO_VERSION }}
-
-      # =====================================================
-      # Phase 1: Unit tests
-      # =====================================================
-      - name: Install Python unit test deps
+      - name: Install Python test deps
         run: |
           python -m pip install --upgrade pip
           if [ -f scripts/test/requirements.txt ]; then
             pip install -r scripts/test/requirements.txt
           fi
 
-      - name: Prepare unit coverage directories
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.load-env.outputs.GO_VERSION }}
+
+      - name: Prepare coverage directories
         run: |
           mkdir -p coverage/unit/python
           mkdir -p coverage/unit/go
@@ -83,22 +73,61 @@ jobs:
             -html=coverage/unit/go/go_coverage.out \
             -o coverage/unit/go/coverage.html
 
-      - name: Upload unit coverage reports
+      - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reports-unit
           path: |
             coverage/unit/python
             coverage/unit/go
+      
+  # -------------------------------------------------------
+  # Integration tests
+  # -------------------------------------------------------
+  integration-tests:
+    needs: ["unit-tests"]
+    runs-on: ubuntu-latest
 
-      # =====================================================
-      # Phase 2: Integration tests
-      # =====================================================
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - id: load-env
+        name: Load envs from file
+        shell: bash
+        run: |
+          set -euo pipefail
+          source opt-prio.env
+          : "${GO_VERSION:?GO_VERSION missing in env file}"
+          : "${SCHEDULER_VERSION:?SCHEDULER_VERSION missing in env file}"
+          : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
+          : "${KUBE_SCHEDULER_BIN:?KUBE_SCHEDULER_BIN missing in env file}"
+          : "${VENV_DIR:?VENV_DIR missing in env file}"
+          : "${SOLVER_DIR:?SOLVER_DIR missing in env file}"
+          : "${KUBECTL_VERSION:?KUBECTL_VERSION missing in env file}"
+          : "${KWOK_VERSION:?KWOK_VERSION missing in env file}"
+          {
+            echo "GO_VERSION=${GO_VERSION}"
+            echo "SCHEDULER_VERSION=${SCHEDULER_VERSION}"
+            echo "PYTHON_VERSION=${PYTHON_VERSION}"
+            echo "KUBE_SCHEDULER_BIN=${KUBE_SCHEDULER_BIN}"
+            echo "VENV_DIR=${VENV_DIR}"
+            echo "SOLVER_DIR=${SOLVER_DIR}"
+            echo "KUBECTL_VERSION=${KUBECTL_VERSION}"
+            echo "KWOK_VERSION=${KWOK_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.load-env.outputs.GO_VERSION }}
 
       - name: Build kube-scheduler binary
         run: |
           make build-scheduler VERSION=${{ steps.load-env.outputs.SCHEDULER_VERSION }}
-          chmod +x "${{ steps.load-env.outputs.KUBE_SCHEDULER_BIN }}"
+
+      - name: Make binary executable
+        run: chmod +x "${{ steps.load-env.outputs.KUBE_SCHEDULER_BIN }}"
 
       - name: Install kubectl / kwokctl / kwok
         env:
@@ -124,6 +153,11 @@ jobs:
           echo "kubectl:" && kubectl version --client || true
           echo "kwokctl:" && kwokctl --version || true
           echo "kwok:" && kwok --version || true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.load-env.outputs.PYTHON_VERSION }}
 
       - name: Set up solver Python environment
         run: |
