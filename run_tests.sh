@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Load environment variables
 ENV_FILE="opt-prio.env"
-echo "Loading versions from ${ENV_FILE}..."
+echo "===Loading versions from ${ENV_FILE} ==="
 # shellcheck source=/dev/null
 set -a
 source "${ENV_FILE}"
@@ -63,7 +63,7 @@ ensure_solver_env() {
   mkdir -p "${SOLVER_DIR}" "${VENV_DIR}"
 
   # Always copy latest solver code
-  cp scripts/python_solver/main.py "${SOLVER_DIR}/main.py"
+  cp "${PYTHON_SOLVER_PATH}" "${SOLVER_DIR}/main.py"
 
   # Create venv if missing
   if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
