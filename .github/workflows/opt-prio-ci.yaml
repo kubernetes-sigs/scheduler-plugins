@@ -80,11 +80,12 @@ jobs:
           path: |
             coverage/unit/python
             coverage/unit/go
-
+      
   # -------------------------------------------------------
-  # Build kube-scheduler binary
+  # Integration tests
   # -------------------------------------------------------
-  build-scheduler:
+  integration-tests:
+    needs: ["unit-tests"]
     runs-on: ubuntu-latest
 
     steps:
@@ -99,9 +100,21 @@ jobs:
           source opt-prio.env
           : "${GO_VERSION:?GO_VERSION missing in env file}"
           : "${SCHEDULER_VERSION:?SCHEDULER_VERSION missing in env file}"
+          : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
+          : "${KUBE_SCHEDULER_BIN:?KUBE_SCHEDULER_BIN missing in env file}"
+          : "${VENV_DIR:?VENV_DIR missing in env file}"
+          : "${SOLVER_DIR:?SOLVER_DIR missing in env file}"
+          : "${KUBECTL_VERSION:?KUBECTL_VERSION missing in env file}"
+          : "${KWOK_VERSION:?KWOK_VERSION missing in env file}"
           {
             echo "GO_VERSION=${GO_VERSION}"
             echo "SCHEDULER_VERSION=${SCHEDULER_VERSION}"
+            echo "PYTHON_VERSION=${PYTHON_VERSION}"
+            echo "KUBE_SCHEDULER_BIN=${KUBE_SCHEDULER_BIN}"
+            echo "VENV_DIR=${VENV_DIR}"
+            echo "SOLVER_DIR=${SOLVER_DIR}"
+            echo "KUBECTL_VERSION=${KUBECTL_VERSION}"
+            echo "KWOK_VERSION=${KWOK_VERSION}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
@@ -112,50 +125,6 @@ jobs:
       - name: Build kube-scheduler binary
         run: |
           make build-scheduler VERSION=${{ steps.load-env.outputs.SCHEDULER_VERSION }}
-
-      - name: Upload kube-scheduler binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: kube-scheduler-binary
-          path: bin/kube-scheduler
-
-  # -------------------------------------------------------
-  # Integration tests
-  # -------------------------------------------------------
-  integration-tests:
-    needs: [build-scheduler]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - id: load-env
-        name: Load envs from file
-        shell: bash
-        run: |
-          set -euo pipefail
-          source opt-prio.env
-          : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
-          : "${KUBE_SCHEDULER_BIN:?KUBE_SCHEDULER_BIN missing in env file}"
-          : "${VENV_DIR:?VENV_DIR missing in env file}"
-          : "${SOLVER_DIR:?SOLVER_DIR missing in env file}"
-          : "${KUBECTL_VERSION:?KUBECTL_VERSION missing in env file}"
-          : "${KWOK_VERSION:?KWOK_VERSION missing in env file}"
-          {
-            echo "PYTHON_VERSION=${PYTHON_VERSION}"
-            echo "KUBE_SCHEDULER_BIN=${KUBE_SCHEDULER_BIN}"
-            echo "VENV_DIR=${VENV_DIR}"
-            echo "SOLVER_DIR=${SOLVER_DIR}"
-            echo "KUBECTL_VERSION=${KUBECTL_VERSION}"
-            echo "KWOK_VERSION=${KWOK_VERSION}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Download kube-scheduler binary
-        uses: actions/download-artifact@v4
-        with:
-          name: kube-scheduler-binary
-          path: bin
 
       - name: Make binary executable
         run: chmod +x "${{ steps.load-env.outputs.KUBE_SCHEDULER_BIN }}"
