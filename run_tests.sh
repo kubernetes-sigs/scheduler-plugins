@@ -120,7 +120,8 @@ if "$RUN_INT_KWOK"; then
     scripts/kwok_integration_tests/test_modes.py \
     --cov=. \
     --cov-report=term \
-    --cov-report=html:coverage/integration/kwok
+    --cov-report=html:coverage/integration/kwok \
+    -v -s
 
   echo "Integration tests with KWOK completed. Coverage HTML: coverage/integration/kwok/index.html"
 fi
