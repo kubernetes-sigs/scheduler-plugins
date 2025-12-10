@@ -107,7 +107,9 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	case schedv1alpha1.PodGroupPending:
 		if len(pods) >= int(pg.Spec.MinMember) {
 			pgCopy.Status.Phase = schedv1alpha1.PodGroupScheduling
-			fillOccupiedObj(pgCopy, &pods[0])
+			if len(pods) > 0 {
+				fillOccupiedObj(pgCopy, &pods[0])
+			}
 		}
 	default:
 		pgCopy.Status.Running, pgCopy.Status.Succeeded, pgCopy.Status.Failed = getCurrentPodStats(pods)

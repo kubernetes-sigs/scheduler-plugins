@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/informers"
 	testClientSet "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 	schedConfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -46,8 +47,8 @@ var _ framework.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*v1.Node
-	nodeInfos   []*framework.NodeInfo
-	nodeInfoMap map[string]*framework.NodeInfo
+	nodeInfos   []fwk.NodeInfo
+	nodeInfoMap map[string]fwk.NodeInfo
 }
 
 func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
@@ -58,19 +59,19 @@ func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwk.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwk.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwk.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwk.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
@@ -111,7 +112,8 @@ func TestLowRiskOverCommitment_New(t *testing.T) {
 	metrics.Register()
 	cs := testClientSet.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
-	snapshot := newTestSharedLister(nil, nil)
+	snapshot, err := newTestSharedLister(nil, nil)
+	assert.Nil(t, err)
 	fh, err := testutil.NewFramework(ctx, registeredPlugins, []schedConfig.PluginConfig{lowRiskOverCommitmentConfig},
 		"default-scheduler", runtime.WithClientSet(cs),
 		runtime.WithInformerFactory(informerFactory), runtime.WithSnapshotSharedLister(snapshot))
@@ -212,7 +214,8 @@ func TestLowRiskOverCommitment_Score(t *testing.T) {
 
 			cs := testClientSet.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
-			snapshot := newTestSharedLister(nil, nodes)
+			snapshot, err := newTestSharedLister(nil, nodes)
+			assert.Nil(t, err)
 
 			fh, err := testutil.NewFramework(ctx, registeredPlugins, []schedConfig.PluginConfig{LowRiskOverCommitmentConfig},
 				"default-scheduler", runtime.WithClientSet(cs),
@@ -390,15 +393,19 @@ func TestLowRiskOverCommitment_computeRisk(t *testing.T) {
 	}
 }
 
-func newTestSharedLister(pods []*v1.Pod, nodes []*v1.Node) *testSharedLister {
-	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	var nodeInfos []*framework.NodeInfo
+func newTestSharedLister(pods []*v1.Pod, nodes []*v1.Node) (*testSharedLister, error) {
+	nodeInfoMap := make(map[string]fwk.NodeInfo)
+	var nodeInfos []fwk.NodeInfo
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
 			nodeInfoMap[nodeName] = framework.NewNodeInfo()
 		}
-		nodeInfoMap[nodeName].AddPod(pod)
+		info, err := framework.NewPodInfo(pod)
+		if err != nil {
+			return nil, err
+		}
+		nodeInfoMap[nodeName].AddPodInfo(info)
 	}
 	for _, node := range nodes {
 		if _, ok := nodeInfoMap[node.Name]; !ok {
@@ -415,5 +422,5 @@ func newTestSharedLister(pods []*v1.Pod, nodes []*v1.Node) *testSharedLister {
 		nodes:       nodes,
 		nodeInfos:   nodeInfos,
 		nodeInfoMap: nodeInfoMap,
-	}
+	}, nil
 }

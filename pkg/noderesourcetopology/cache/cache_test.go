@@ -123,10 +123,6 @@ func checkGetCachedNRTCopy(t *testing.T, makeCache func(client ctrlclient.WithWa
 
 func makeTestNRT(nodeName string) *topologyv1alpha2.NodeResourceTopology {
 	return &topologyv1alpha2.NodeResourceTopology{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "NodeResourceTopology",
-			APIVersion: "topology.node.k8s.io/v1alpha2",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: nodeName,
 		},

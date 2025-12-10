@@ -7,6 +7,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -14,7 +15,7 @@ import (
 // It is used, here, to filter the node(s) that the pod can be (tried) scheduled on.
 // If a pod part of a plan was scheduled on a wrong node due to workload quotas,
 // it is determined in Reserve plugin and will be retried again.
-func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, pending *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (pl *SharedState) PreFilter(ctx context.Context, st fwk.CycleState, pending *v1.Pod, nodes []fwk.NodeInfo) (*framework.PreFilterResult, *fwk.Status) {
 
 	stage := "PreFilter"
 
@@ -22,7 +23,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 
 	// Always allow kube-system pods and pending pods when no active plan exists.
 	if isPodProtected(pending) || ap == nil {
-		return nil, framework.NewStatus(framework.Success)
+		return nil, fwk.NewStatus(fwk.Success)
 	}
 
 	// Get filtering decision from active plan (if any)
@@ -46,7 +47,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 			"pod", klog.KObj(pending),
 			"reason", filterMsg,
 		)
-		return nil, framework.NewStatus(framework.Success)
+		return nil, fwk.NewStatus(fwk.Success)
 
 	case ok && filteredNodes.Len() > 0: // allowed on specific nodes
 		klog.V(MyV).InfoS(msg(stage, InfoPinPod),
@@ -54,7 +55,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 			"nodes", nodeNames,
 			"reason", filterMsg,
 		)
-		return &framework.PreFilterResult{NodeNames: filteredNodes}, framework.NewStatus(framework.Success)
+		return &framework.PreFilterResult{NodeNames: filteredNodes}, fwk.NewStatus(fwk.Success)
 
 	default: // not allowed on any node; block the pod
 		klog.V(MyV).InfoS(msg(stage, InfoBlockPod),
@@ -62,7 +63,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st *framework.CycleState, 
 			"reason", filterMsg,
 		)
 		pl.BlockedWhileActive.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, msg(stage, filterMsg))
+		return nil, fwk.NewStatus(fwk.Unschedulable, msg(stage, filterMsg))
 	}
 }
 

@@ -7,26 +7,26 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 )
 
 // Reserve is called at the end of scheduling cycle to reserve resources for a pod on a specific node.
 // If it fails, the Unreserve function is called to release any reserved resources.
 // It is used, here, to place workload pods on the appropriate nodes as they are automatically created, therefore, placement by name cannot be done.
-func (pl *SharedState) Reserve(ctx context.Context, st *framework.CycleState, pending *v1.Pod, node string) *framework.Status {
+func (pl *SharedState) Reserve(ctx context.Context, st fwk.CycleState, pending *v1.Pod, node string) *fwk.Status {
 
 	stage := "Reserve"
 
 	ap := pl.getActivePlan()
 	if isPodProtected(pending) || ap == nil {
-		return framework.NewStatus(framework.Success)
+		return fwk.NewStatus(fwk.Success)
 	}
 
 	// Pass through placementByName pods; do not consume workload quota.
 	if ap.PlacementByName != nil {
 		if _, ok := ap.PlacementByName[mergeNsName(pending.Namespace, pending.Name)]; ok {
 			klog.V(MyV).InfoS(msg(stage, InfoPodPlacedByName), "pod", klog.KObj(pending))
-			return framework.NewStatus(framework.Success)
+			return fwk.NewStatus(fwk.Success)
 		}
 	}
 
@@ -35,20 +35,20 @@ func (pl *SharedState) Reserve(ctx context.Context, st *framework.CycleState, pe
 	wk, ok := topWorkload(pending)
 	if !ok {
 		klog.V(MyV).InfoS(msg(stage, "pod not part of any workload; allowing"), "pod", klog.KObj(pending))
-		return framework.NewStatus(framework.Success)
+		return fwk.NewStatus(fwk.Success)
 	}
 	// Check if workload is tracked in the active plan.
 	workloadKey := wk.String()
 	allWorkloadCnts, ok := ap.WorkloadPerNodeCnts[workloadKey]
 	if !ok {
 		klog.V(MyV).InfoS(msg(stage, "workload not tracked"), "pod", klog.KObj(pending), "node", node)
-		return framework.NewStatus(framework.Unschedulable, msg(stage, "workload not tracked"))
+		return fwk.NewStatus(fwk.Unschedulable, msg(stage, "workload not tracked"))
 	}
 	// Check if node is tracked for this workload.
 	workloadCntForNode, ok := allWorkloadCnts[node]
 	if !ok {
 		klog.V(MyV).InfoS(msg(stage, "node not tracked"), "pod", klog.KObj(pending), "node", node)
-		return framework.NewStatus(framework.Unschedulable, msg(stage, "node not tracked"))
+		return fwk.NewStatus(fwk.Unschedulable, msg(stage, "node not tracked"))
 	}
 
 	// Try to consume workload quota for this pod on this node.
@@ -57,17 +57,17 @@ func (pl *SharedState) Reserve(ctx context.Context, st *framework.CycleState, pe
 		currentCnt := workloadCntForNode.Load()
 		if currentCnt <= 0 {
 			klog.V(MyV).InfoS(msg(stage, "workload node quota exhausted"), "pod", klog.KObj(pending), "node", node)
-			return framework.NewStatus(framework.Unschedulable, msg(stage, "workload node quota exhausted"))
+			return fwk.NewStatus(fwk.Unschedulable, msg(stage, "workload node quota exhausted"))
 		}
 		if workloadCntForNode.CompareAndSwap(currentCnt, currentCnt-1) { // successfully reserved quota
 			klog.V(MyV).InfoS(msg(stage, "workload node quota consumed"), "pod", klog.KObj(pending), "node", node)
 			st.Write(rsReservationKey, &rsReservationState{key: reservationKey{rsKey: workloadKey, nodeName: node}})
-			return framework.NewStatus(framework.Success)
+			return fwk.NewStatus(fwk.Success)
 		}
 	}
 }
 
-func (pl *SharedState) Unreserve(ctx context.Context, st *framework.CycleState, pending *v1.Pod, _ string) {
+func (pl *SharedState) Unreserve(ctx context.Context, st fwk.CycleState, pending *v1.Pod, _ string) {
 	stage := "Unreserve"
 
 	// Read reservation state
@@ -96,7 +96,7 @@ func (pl *SharedState) Unreserve(ctx context.Context, st *framework.CycleState, 
 	}
 }
 
-const rsReservationKey framework.StateKey = "myx/rsReservation"
+const rsReservationKey fwk.StateKey = "myx/rsReservation"
 
 type reservationKey struct {
 	rsKey    string
@@ -107,7 +107,7 @@ type rsReservationState struct {
 	key reservationKey
 }
 
-func (s *rsReservationState) Clone() framework.StateData {
+func (s *rsReservationState) Clone() fwk.StateData {
 	return &rsReservationState{
 		key: s.key,
 	}

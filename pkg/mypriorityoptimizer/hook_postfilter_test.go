@@ -8,7 +8,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 )
 
 // We only test the fast-path where PerPod@PostFilter is NOT enabled:
@@ -37,8 +37,8 @@ func TestPostFilter_NoPerPod_NoNomination(t *testing.T) {
 	if st == nil {
 		t.Fatalf("PostFilter() returned nil status")
 	}
-	if st.Code() != framework.Unschedulable {
-		t.Fatalf("PostFilter() code = %v, want %v", st.Code(), framework.Unschedulable)
+	if st.Code() != fwk.Unschedulable {
+		t.Fatalf("PostFilter() code = %v, want %v", st.Code(), fwk.Unschedulable)
 	}
 	if msg := st.Message(); !strings.Contains(msg, "PostFilter: no nomination") {
 		t.Fatalf("PostFilter() message = %q, want to contain %q", msg, "PostFilter: no nomination")

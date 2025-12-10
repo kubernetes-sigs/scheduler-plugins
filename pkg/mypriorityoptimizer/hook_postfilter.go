@@ -7,17 +7,18 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 // PostFilter is called after filtering a pod.
-func (pl *SharedState) PostFilter(ctx context.Context, _ *framework.CycleState, pending *v1.Pod, _ framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (pl *SharedState) PostFilter(ctx context.Context, state fwk.CycleState, pending *v1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *fwk.Status) {
 	stage := "PostFilter"
 
 	// Only proceed if PerPod is enabled; otherwise, just skip.
 	if !isPerPodMode() {
 		klog.V(MyV).InfoS(msg(stage, "no nomination"), "pod", klog.KObj(pending))
-		return nil, framework.NewStatus(framework.Unschedulable, msg(stage, "no nomination"))
+		return nil, fwk.NewStatus(fwk.Unschedulable, msg(stage, "no nomination"))
 	}
 
 	// If active plan in progress, block the pod.
@@ -25,7 +26,7 @@ func (pl *SharedState) PostFilter(ctx context.Context, _ *framework.CycleState, 
 	if ap != nil {
 		klog.V(MyV).InfoS(msg(stage, InfoActivePlanInProgress+"; "+InfoBlockPod), "pod", klog.KObj(pending))
 		pl.BlockedWhileActive.AddPod(pending)
-		return nil, framework.NewStatus(framework.Unschedulable, msg(stage, InfoActivePlanInProgress))
+		return nil, fwk.NewStatus(fwk.Unschedulable, msg(stage, InfoActivePlanInProgress))
 	}
 
 	// If no active plan, run optimisation flow for the pod.
@@ -36,14 +37,14 @@ func (pl *SharedState) PostFilter(ctx context.Context, _ *framework.CycleState, 
 		switch err {
 		case ErrActiveInProgress: // we only keep the pod in the set if we get ErrActiveInProgress
 			pl.BlockedWhileActive.AddPod(pending)
-			return nil, framework.NewStatus(framework.Unschedulable, msg(stage, InfoActivePlanInProgress))
+			return nil, fwk.NewStatus(fwk.Unschedulable, msg(stage, InfoActivePlanInProgress))
 		default: // else
-			return nil, framework.NewStatus(framework.Unschedulable, msg(stage, InfoPlanRegistrationFailed))
+			return nil, fwk.NewStatus(fwk.Unschedulable, msg(stage, InfoPlanRegistrationFailed))
 		}
 	}
 
 	// Return the result with the nominated node information which the scheduler will use to bind the pod.
 	return &framework.PostFilterResult{
 		NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.NominatedNode, NominatingMode: framework.ModeOverride},
-	}, framework.NewStatus(framework.Success, msg(stage, InfoNominatedAfterPlan))
+	}, fwk.NewStatus(fwk.Success, msg(stage, InfoNominatedAfterPlan))
 }

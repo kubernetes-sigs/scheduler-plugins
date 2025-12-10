@@ -7,6 +7,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -24,8 +25,8 @@ func TestReserve_KubeSystemAlwaysAllowed(t *testing.T) {
 	if st == nil {
 		t.Fatalf("Reserve() returned nil status")
 	}
-	if st.Code() != framework.Success {
-		t.Fatalf("Reserve() code = %v, want %v", st.Code(), framework.Success)
+	if st.Code() != fwk.Success {
+		t.Fatalf("Reserve() code = %v, want %v", st.Code(), fwk.Success)
 	}
 }
 
@@ -43,8 +44,8 @@ func TestReserve_NoActivePlan_AllowsPod(t *testing.T) {
 	if st == nil {
 		t.Fatalf("Reserve() returned nil status")
 	}
-	if st.Code() != framework.Success {
-		t.Fatalf("Reserve() code = %v, want %v", st.Code(), framework.Success)
+	if st.Code() != fwk.Success {
+		t.Fatalf("Reserve() code = %v, want %v", st.Code(), fwk.Success)
 	}
 }
 

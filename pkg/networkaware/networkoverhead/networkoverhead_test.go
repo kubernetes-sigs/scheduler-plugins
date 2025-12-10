@@ -34,6 +34,7 @@ import (
 	testClientSet "k8s.io/client-go/kubernetes/fake"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/workqueue"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
@@ -52,8 +53,8 @@ var _ framework.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*v1.Node
-	nodeInfos   []*framework.NodeInfo
-	nodeInfoMap map[string]*framework.NodeInfo
+	nodeInfos   []fwk.NodeInfo
+	nodeInfoMap map[string]fwk.NodeInfo
 }
 
 func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
@@ -64,19 +65,19 @@ func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwk.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwk.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwk.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwk.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
@@ -380,7 +381,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 		networkTopology *ntv1alpha1.NetworkTopology
 		pod             *v1.Pod
 		pods            []*v1.Pod
-		expected        framework.Code
+		expected        fwk.Code
 	}{
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 10 nodes, 1 pod to allocate",
@@ -393,7 +394,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 100 nodes, 1 pod to allocate",
@@ -406,7 +407,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 500 nodes, 1 pod to allocate",
@@ -419,7 +420,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 1000 nodes, 1 pod to allocate",
@@ -432,7 +433,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 2000 nodes, 1 pod to allocate",
@@ -445,7 +446,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 3000 nodes, 1 pod to allocate",
@@ -458,7 +459,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 5000 nodes, 1 pod to allocate",
@@ -471,7 +472,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 10000 nodes, 1 pod to allocate",
@@ -484,7 +485,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 	}
 
@@ -559,7 +560,7 @@ func BenchmarkNetworkOverheadPreFilter(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Prefilter
-				if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
+				if _, got := pl.PreFilter(context.TODO(), state, tt.pod, nil); got.Code() != tt.expected {
 					b.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 					assert.True(b, got.IsSuccess())
 				}
@@ -604,11 +605,11 @@ func TestNetworkOverheadScore(t *testing.T) {
 		networkTopology    *ntv1alpha1.NetworkTopology
 		nodes              []*v1.Node
 		pod                *v1.Pod
-		want               *framework.Status
+		want               *fwk.Status
 		wantedScoresBefore framework.NodeScoreList
 		wantedScoresAfter  framework.NodeScoreList
 		nodeToScore        *v1.Node
-		expected           framework.Code
+		expected           fwk.Code
 	}{
 		{
 			name:            "AppGroup: basic, p1 to allocate, 8 nodes to score",
@@ -644,7 +645,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 				framework.NodeScore{Name: nodes[6].Name, Score: 50},
 				framework.NodeScore{Name: nodes[7].Name, Score: 50},
 			},
-			expected: framework.Success,
+			expected: fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p2 to allocate, 8 nodes to score",
@@ -679,7 +680,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 				framework.NodeScore{Name: nodes[6].Name, Score: 0},
 				framework.NodeScore{Name: nodes[7].Name, Score: 0},
 			},
-			expected: framework.Success,
+			expected: fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p3 to allocate, no dependency, 8 nodes to score",
@@ -714,7 +715,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 				framework.NodeScore{Name: nodes[6].Name, Score: 0},
 				framework.NodeScore{Name: nodes[7].Name, Score: 0},
 			},
-			expected: framework.Success,
+			expected: fwk.Success,
 		},
 	}
 	for _, tt := range tests {
@@ -779,7 +780,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 
 			for _, n := range nodes {
 				// Prefilter
-				if _, got := pl.PreFilter(ctx, state, tt.pod); got.Code() != tt.expected {
+				if _, got := pl.PreFilter(ctx, state, tt.pod, nil); got.Code() != tt.expected {
 					t.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 				}
 
@@ -851,7 +852,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 		networkTopology *ntv1alpha1.NetworkTopology
 		pod             *v1.Pod
 		pods            []*v1.Pod
-		expected        framework.Code
+		expected        fwk.Code
 	}{
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 10 nodes, 1 pod to allocate",
@@ -864,7 +865,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 100 nodes, 1 pod to allocate",
@@ -877,7 +878,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 500 nodes, 1 pod to allocate",
@@ -890,7 +891,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 1000 nodes, 1 pod to allocate",
@@ -903,7 +904,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 2000 nodes, 1 pod to allocate",
@@ -916,7 +917,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 3000 nodes, 1 pod to allocate",
@@ -929,7 +930,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 5000 nodes, 1 pod to allocate",
@@ -942,7 +943,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 10000 nodes, 1 pod to allocate",
@@ -955,7 +956,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 	}
 
@@ -1026,7 +1027,7 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			}
 
 			// Prefilter
-			if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
+			if _, got := pl.PreFilter(context.TODO(), state, tt.pod, nil); got.Code() != tt.expected {
 				b.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 			}
 
@@ -1094,8 +1095,8 @@ func TestNetworkOverheadFilter(t *testing.T) {
 		pods            []*v1.Pod
 		nodes           []*v1.Node
 		nodeToFilter    *v1.Node
-		wantStatus      *framework.Status
-		expected        framework.Code
+		wantStatus      *fwk.Status
+		expected        fwk.Code
 	}{
 		{
 			name:            "AppGroup: basic, p1 to allocate, n-1 to filter: n-1 does not meet network requirements",
@@ -1104,10 +1105,10 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "basic", nil, nil),
 			nodes:           nodes,
-			wantStatus:      framework.NewStatus(framework.Unschedulable, "Node n-1 does not meet several network requirements from Workload dependencies: Satisfied: 0 Violated: 1"),
+			wantStatus:      fwk.NewStatus(fwk.Unschedulable, "Node n-1 does not meet several network requirements from Workload dependencies: Satisfied: 0 Violated: 1"),
 			nodeToFilter:    nodes[0],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p1 to allocate, n-6 to filter: n-6 meets network requirements",
@@ -1119,7 +1120,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			wantStatus:      nil,
 			nodeToFilter:    nodes[5],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p2 to allocate, n-5 to filter: n-5 does not meet network requirements",
@@ -1128,10 +1129,10 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			networkTopology: networkTopology,
 			pod:             makePod("p2", "p2-deployment", 0, "basic", nil, nil),
 			nodes:           nodes,
-			wantStatus:      framework.NewStatus(framework.Unschedulable, "Node n-5 does not meet several network requirements from Workload dependencies: Satisfied: 0 Violated: 1"),
+			wantStatus:      fwk.NewStatus(fwk.Unschedulable, "Node n-5 does not meet several network requirements from Workload dependencies: Satisfied: 0 Violated: 1"),
 			nodeToFilter:    nodes[4],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p2 to allocate, n-7 to filter: n-7 meets network requirements",
@@ -1143,7 +1144,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			wantStatus:      nil,
 			nodeToFilter:    nodes[6],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p3 to allocate, no dependencies, n-1 to filter: n-1 meets network requirements",
@@ -1155,7 +1156,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			wantStatus:      nil,
 			nodeToFilter:    nodes[0],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p10 to allocate, different AppGroup, n-1 to filter: n-1 meets network requirements",
@@ -1167,7 +1168,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			wantStatus:      nil,
 			nodeToFilter:    nodes[0],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p1 to allocate, n-1 to filter, multiple dependencies: n-1 does not meet network requirements",
@@ -1176,10 +1177,10 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "basic", nil, nil),
 			nodes:           nodes,
-			wantStatus:      framework.NewStatus(framework.Unschedulable, "Node n-1 does not meet several network requirements from Workload dependencies: Satisfied: 0 Violated: 1"),
+			wantStatus:      fwk.NewStatus(fwk.Unschedulable, "Node n-1 does not meet several network requirements from Workload dependencies: Satisfied: 0 Violated: 1"),
 			nodeToFilter:    nodes[0],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: basic, p1 to allocate, n-6 to filter, multiple dependencies: n-6 meets network requirements",
@@ -1191,7 +1192,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			wantStatus:      nil,
 			nodeToFilter:    nodes[5],
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 	}
 	for _, tt := range tests {
@@ -1259,7 +1260,7 @@ func TestNetworkOverheadFilter(t *testing.T) {
 			state := framework.NewCycleState()
 
 			// Prefilter
-			if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
+			if _, got := pl.PreFilter(context.TODO(), state, tt.pod, nil); got.Code() != tt.expected {
 				t.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 			}
 
@@ -1310,7 +1311,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 		networkTopology *ntv1alpha1.NetworkTopology
 		pod             *v1.Pod
 		pods            []*v1.Pod
-		expected        framework.Code
+		expected        fwk.Code
 	}{
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 10 nodes, 1 pod to allocate",
@@ -1323,7 +1324,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 100 nodes, 1 pod to allocate",
@@ -1336,7 +1337,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 500 nodes, 1 pod to allocate",
@@ -1349,7 +1350,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 1000 nodes, 1 pod to allocate",
@@ -1362,7 +1363,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 2000 nodes, 1 pod to allocate",
@@ -1375,7 +1376,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 3000 nodes, 1 pod to allocate",
@@ -1388,7 +1389,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 5000 nodes, 1 pod to allocate",
@@ -1401,7 +1402,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 		{
 			name:            "AppGroup: onlineboutique, 10 pods allocated, 10000 nodes, 1 pod to allocate",
@@ -1414,7 +1415,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			networkTopology: networkTopology,
 			pod:             makePod("p1", "p1-deployment", 0, "onlineboutique", nil, nil),
 			pods:            pods,
-			expected:        framework.Success,
+			expected:        fwk.Success,
 		},
 	}
 
@@ -1485,7 +1486,7 @@ func BenchmarkNetworkOverheadFilter(b *testing.B) {
 			state := framework.NewCycleState()
 
 			// Prefilter
-			if _, got := pl.PreFilter(context.TODO(), state, tt.pod); got.Code() != tt.expected {
+			if _, got := pl.PreFilter(context.TODO(), state, tt.pod, nil); got.Code() != tt.expected {
 				b.Errorf("expected %v, got %v : %v", tt.expected, got.Code(), got.Message())
 			}
 
@@ -1524,14 +1525,14 @@ func Until(ctx context.Context, pieces int, doWorkPiece workqueue.DoWorkPieceFun
 }
 
 func newTestSharedLister(pods []*v1.Pod, nodes []*v1.Node) *testSharedLister {
-	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfoMap := make(map[string]fwk.NodeInfo)
+	nodeInfos := make([]fwk.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
 			nodeInfoMap[nodeName] = framework.NewNodeInfo()
 		}
-		nodeInfoMap[nodeName].AddPod(pod)
+		nodeInfoMap[nodeName].(*framework.NodeInfo).AddPod(pod)
 	}
 	for _, node := range nodes {
 		if _, ok := nodeInfoMap[node.Name]; !ok {

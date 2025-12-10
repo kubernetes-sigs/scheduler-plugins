@@ -36,6 +36,7 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
@@ -81,7 +82,7 @@ type PreFilterState struct {
 }
 
 // Clone the preFilter state.
-func (s *PreFilterState) Clone() framework.StateData {
+func (s *PreFilterState) Clone() fwk.StateData {
 	return s
 }
 
@@ -91,7 +92,7 @@ type ElasticQuotaSnapshotState struct {
 }
 
 // Clone the ElasticQuotaSnapshot state.
-func (s *ElasticQuotaSnapshotState) Clone() framework.StateData {
+func (s *ElasticQuotaSnapshotState) Clone() fwk.StateData {
 	return &ElasticQuotaSnapshotState{
 		elasticQuotaInfos: s.elasticQuotaInfos.clone(),
 	}
@@ -190,21 +191,21 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 	return c, nil
 }
 
-func (c *CapacityScheduling) EventsToRegister(_ context.Context) ([]framework.ClusterEventWithHint, error) {
+func (c *CapacityScheduling) EventsToRegister(_ context.Context) ([]fwk.ClusterEventWithHint, error) {
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/pull/101394
 	// Please follow: eventhandlers.go#L403-L410
 	eqGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
-	return []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
-		{Event: framework.ClusterEvent{Resource: framework.EventResource(eqGVK), ActionType: framework.All}},
+	return []fwk.ClusterEventWithHint{
+		{Event: fwk.ClusterEvent{Resource: fwk.Pod, ActionType: fwk.Delete}},
+		{Event: fwk.ClusterEvent{Resource: fwk.EventResource(eqGVK), ActionType: fwk.All}},
 	}, nil
 }
 
 // PreFilter performs the following validations.
 // 1. Check if the (pod.request + eq.allocated) is less than eq.max.
 // 2. Check if the sum(eq's usage) > sum(eq's min).
-func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (c *CapacityScheduling) PreFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodes []fwk.NodeInfo) (*framework.PreFilterResult, *fwk.Status) {
 	// TODO improve the efficiency of taking snapshot
 	// e.g. use a two-pointer data structure to only copy the updated EQs when necessary.
 	snapshotElasticQuota := c.snapshotElasticQuota()
@@ -219,7 +220,7 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.Cyc
 			podReq: *podReq,
 		}
 		state.Write(preFilterStateKey, preFilterState)
-		return nil, framework.NewStatus(framework.Success)
+		return nil, fwk.NewStatus(fwk.Success)
 	}
 
 	// nominatedPodsReqInEQWithPodReq is the sum of podReq and the requested resources of the Nominated Pods
@@ -233,24 +234,24 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.Cyc
 
 	nodeList, err := c.fh.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
-		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Error getting the nodelist: %v", err))
+		return nil, fwk.NewStatus(fwk.Error, fmt.Sprintf("Error getting the nodelist: %v", err))
 	}
 
 	for _, node := range nodeList {
 		nominatedPods := c.fh.NominatedPodsForNode(node.Node().Name)
 		for _, p := range nominatedPods {
-			if p.Pod.UID == pod.UID {
+			if p.GetPod().UID == pod.UID {
 				continue
 			}
-			ns := p.Pod.Namespace
+			ns := p.GetPod().Namespace
 			info := c.elasticQuotaInfos[ns]
 			if info != nil {
-				pResourceRequest := util.ResourceList(computePodResourceRequest(p.Pod))
+				pResourceRequest := util.ResourceList(computePodResourceRequest(p.GetPod()))
 				// If they are subject to the same quota(namespace) and p is more important than pod,
 				// p will be added to the nominatedResource and totalNominatedResource.
 				// If they aren't subject to the same quota(namespace) and the usage of quota(p's namespace) does not exceed min,
 				// p will be added to the totalNominatedResource.
-				if ns == pod.Namespace && corev1helpers.PodPriority(p.Pod) >= corev1helpers.PodPriority(pod) {
+				if ns == pod.Namespace && corev1helpers.PodPriority(p.GetPod()) >= corev1helpers.PodPriority(pod) {
 					nominatedPodsReqInEQWithPodReq.Add(pResourceRequest)
 					nominatedPodsReqWithPodReq.Add(pResourceRequest)
 				} else if ns != pod.Namespace && !info.usedOverMin() {
@@ -270,14 +271,14 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state *framework.Cyc
 	state.Write(preFilterStateKey, preFilterState)
 
 	if eq.usedOverMaxWith(nominatedPodsReqInEQWithPodReq) {
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Pod %v/%v is rejected in PreFilter because ElasticQuota %v is more than Max", pod.Namespace, pod.Name, eq.Namespace))
+		return nil, fwk.NewStatus(fwk.Unschedulable, fmt.Sprintf("Pod %v/%v is rejected in PreFilter because ElasticQuota %v is more than Max", pod.Namespace, pod.Name, eq.Namespace))
 	}
 
 	if elasticQuotaInfos.aggregatedUsedOverMinWith(*nominatedPodsReqWithPodReq) {
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Pod %v/%v is rejected in PreFilter because total ElasticQuota used is more than min", pod.Namespace, pod.Name))
+		return nil, fwk.NewStatus(fwk.Unschedulable, fmt.Sprintf("Pod %v/%v is rejected in PreFilter because total ElasticQuota used is more than min", pod.Namespace, pod.Name))
 	}
 
-	return nil, framework.NewStatus(framework.Success, "")
+	return nil, fwk.NewStatus(fwk.Success, "")
 }
 
 // PreFilterExtensions returns prefilter extensions, pod add and remove.
@@ -286,48 +287,48 @@ func (c *CapacityScheduling) PreFilterExtensions() framework.PreFilterExtensions
 }
 
 // AddPod from pre-computed data in cycleState.
-func (c *CapacityScheduling) AddPod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *v1.Pod, podToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (c *CapacityScheduling) AddPod(ctx context.Context, cycleState fwk.CycleState, podToSchedule *v1.Pod, podToAdd fwk.PodInfo, nodeInfo fwk.NodeInfo) *fwk.Status {
 	logger := klog.FromContext(klog.NewContext(ctx, c.logger))
 
 	elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(cycleState)
 	if err != nil {
 		logger.Error(err, "Failed to read elasticQuotaSnapshot from cycleState", "elasticQuotaSnapshotKey", ElasticQuotaSnapshotKey)
-		return framework.NewStatus(framework.Error, err.Error())
+		return fwk.NewStatus(fwk.Error, err.Error())
 	}
 
-	elasticQuotaInfo := elasticQuotaSnapshotState.elasticQuotaInfos[podToAdd.Pod.Namespace]
+	elasticQuotaInfo := elasticQuotaSnapshotState.elasticQuotaInfos[podToAdd.GetPod().Namespace]
 	if elasticQuotaInfo != nil {
-		err := elasticQuotaInfo.addPodIfNotPresent(podToAdd.Pod)
+		err := elasticQuotaInfo.addPodIfNotPresent(podToAdd.GetPod())
 		if err != nil {
-			logger.Error(err, "Failed to add Pod to its associated elasticQuota", "pod", klog.KObj(podToAdd.Pod))
+			logger.Error(err, "Failed to add Pod to its associated elasticQuota", "pod", klog.KObj(podToAdd.GetPod()))
 		}
 	}
 
-	return framework.NewStatus(framework.Success, "")
+	return fwk.NewStatus(fwk.Success, "")
 }
 
 // RemovePod from pre-computed data in cycleState.
-func (c *CapacityScheduling) RemovePod(ctx context.Context, cycleState *framework.CycleState, podToSchedule *v1.Pod, podToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (c *CapacityScheduling) RemovePod(ctx context.Context, cycleState fwk.CycleState, podToSchedule *v1.Pod, podToRemove fwk.PodInfo, nodeInfo fwk.NodeInfo) *fwk.Status {
 	logger := klog.FromContext(klog.NewContext(ctx, c.logger))
 
 	elasticQuotaSnapshotState, err := getElasticQuotaSnapshotState(cycleState)
 	if err != nil {
 		logger.Error(err, "Failed to read elasticQuotaSnapshot from cycleState", "elasticQuotaSnapshotKey", ElasticQuotaSnapshotKey)
-		return framework.NewStatus(framework.Error, err.Error())
+		return fwk.NewStatus(fwk.Error, err.Error())
 	}
 
-	elasticQuotaInfo := elasticQuotaSnapshotState.elasticQuotaInfos[podToRemove.Pod.Namespace]
+	elasticQuotaInfo := elasticQuotaSnapshotState.elasticQuotaInfos[podToRemove.GetPod().Namespace]
 	if elasticQuotaInfo != nil {
-		err = elasticQuotaInfo.deletePodIfPresent(podToRemove.Pod)
+		err = elasticQuotaInfo.deletePodIfPresent(podToRemove.GetPod())
 		if err != nil {
-			logger.Error(err, "Failed to delete Pod from its associated elasticQuota", "pod", klog.KObj(podToRemove.Pod))
+			logger.Error(err, "Failed to delete Pod from its associated elasticQuota", "pod", klog.KObj(podToRemove.GetPod()))
 		}
 	}
 
-	return framework.NewStatus(framework.Success, "")
+	return fwk.NewStatus(fwk.Success, "")
 }
 
-func (c *CapacityScheduling) PostFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (c *CapacityScheduling) PostFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *fwk.Status) {
 	defer func() {
 		metrics.PreemptionAttempts.Inc()
 	}()
@@ -346,7 +347,7 @@ func (c *CapacityScheduling) PostFilter(ctx context.Context, state *framework.Cy
 	return pe.Preempt(ctx, state, pod, m)
 }
 
-func (c *CapacityScheduling) Reserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
+func (c *CapacityScheduling) Reserve(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodeName string) *fwk.Status {
 	c.Lock()
 	defer c.Unlock()
 	logger := klog.FromContext(klog.NewContext(ctx, c.logger)).WithValues("ExtensionPoint", "Reserve")
@@ -356,13 +357,13 @@ func (c *CapacityScheduling) Reserve(ctx context.Context, state *framework.Cycle
 		err := elasticQuotaInfo.addPodIfNotPresent(pod)
 		if err != nil {
 			logger.Error(err, "Failed to add Pod to its associated elasticQuota", "pod", klog.KObj(pod))
-			return framework.NewStatus(framework.Error, err.Error())
+			return fwk.NewStatus(fwk.Error, err.Error())
 		}
 	}
-	return framework.NewStatus(framework.Success, "")
+	return fwk.NewStatus(fwk.Success, "")
 }
 
-func (c *CapacityScheduling) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
+func (c *CapacityScheduling) Unreserve(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodeName string) {
 	c.Lock()
 	defer c.Unlock()
 
@@ -380,7 +381,7 @@ func (c *CapacityScheduling) Unreserve(ctx context.Context, state *framework.Cyc
 type preemptor struct {
 	logger klog.Logger
 	fh     framework.Handle
-	state  *framework.CycleState
+	state  fwk.CycleState
 }
 
 func (p *preemptor) OrderedScoreFuncs(ctx context.Context, nodesToVictims map[string]*extenderv1.Victims) []func(node string) int64 {
@@ -405,7 +406,7 @@ func (p *preemptor) CandidatesToVictimsMap(candidates []preemption.Candidate) ma
 // considered for preemption.
 // We look at the node that is nominated for this pod and as long as there are
 // terminating pods on the node, we don't consider this for preempting more pods.
-func (p *preemptor) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
+func (p *preemptor) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod, nominatedNodeStatus *fwk.Status) (bool, string) {
 	logger := p.logger
 
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
@@ -424,7 +425,7 @@ func (p *preemptor) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod,
 	if len(nomNodeName) > 0 {
 		// If the pod's nominated node is considered as UnschedulableAndUnresolvable by the filters,
 		// then the pod should be considered for preempting again.
-		if nominatedNodeStatus.Code() == framework.UnschedulableAndUnresolvable {
+		if nominatedNodeStatus.Code() == fwk.UnschedulableAndUnresolvable {
 			return true, ""
 		}
 
@@ -443,20 +444,20 @@ func (p *preemptor) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod,
 		preemptorEQInfo, preemptorWithEQ := elasticQuotaSnapshotState.elasticQuotaInfos[pod.Namespace]
 		if preemptorWithEQ {
 			moreThanMinWithPreemptor := preemptorEQInfo.usedOverMinWith(&preFilterState.nominatedPodsReqInEQWithPodReq)
-			for _, p := range nodeInfo.Pods {
+			for _, p := range nodeInfo.GetPods() {
 				// Checking terminating pods
-				if p.Pod.DeletionTimestamp != nil {
-					eqInfo, withEQ := elasticQuotaSnapshotState.elasticQuotaInfos[p.Pod.Namespace]
+				if p.GetPod().DeletionTimestamp != nil {
+					eqInfo, withEQ := elasticQuotaSnapshotState.elasticQuotaInfos[p.GetPod().Namespace]
 					if !withEQ {
 						continue
 					}
-					if p.Pod.Namespace == pod.Namespace && corev1helpers.PodPriority(p.Pod) < podPriority {
+					if p.GetPod().Namespace == pod.Namespace && corev1helpers.PodPriority(p.GetPod()) < podPriority {
 						// There is a terminating pod on the nominated node.
 						// If the terminating pod is in the same namespace with preemptor
 						// and it is less important than preemptor,
 						// return false to avoid preempting more pods.
 						return false, "not eligible due to a terminating pod on the nominated node."
-					} else if p.Pod.Namespace != pod.Namespace && !moreThanMinWithPreemptor && eqInfo.usedOverMin() {
+					} else if p.GetPod().Namespace != pod.Namespace && !moreThanMinWithPreemptor && eqInfo.usedOverMin() {
 						// There is a terminating pod on the nominated node.
 						// The terminating pod isn't in the same namespace with preemptor.
 						// If moreThanMinWithPreemptor is false, it indicates that preemptor can preempt the pods in other EQs whose used is over min.
@@ -467,12 +468,12 @@ func (p *preemptor) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod,
 				}
 			}
 		} else {
-			for _, p := range nodeInfo.Pods {
-				_, withEQ := elasticQuotaSnapshotState.elasticQuotaInfos[p.Pod.Namespace]
+			for _, p := range nodeInfo.GetPods() {
+				_, withEQ := elasticQuotaSnapshotState.elasticQuotaInfos[p.GetPod().Namespace]
 				if withEQ {
 					continue
 				}
-				if p.Pod.DeletionTimestamp != nil && corev1helpers.PodPriority(p.Pod) < podPriority {
+				if p.GetPod().DeletionTimestamp != nil && corev1helpers.PodPriority(p.GetPod()) < podPriority {
 					// There is a terminating pod on the nominated node.
 					return false, "not eligible due to a terminating pod on the nominated node."
 				}
@@ -484,10 +485,10 @@ func (p *preemptor) PodEligibleToPreemptOthers(ctx context.Context, pod *v1.Pod,
 
 func (p *preemptor) SelectVictimsOnNode(
 	ctx context.Context,
-	state *framework.CycleState,
+	state fwk.CycleState,
 	pod *v1.Pod,
-	nodeInfo *framework.NodeInfo,
-	pdbs []*policy.PodDisruptionBudget) ([]*v1.Pod, int, *framework.Status) {
+	nodeInfo fwk.NodeInfo,
+	pdbs []*policy.PodDisruptionBudget) ([]*v1.Pod, int, *fwk.Status) {
 
 	logger := p.logger
 
@@ -495,22 +496,22 @@ func (p *preemptor) SelectVictimsOnNode(
 	if err != nil {
 		msg := "Failed to read elasticQuotaSnapshot from cycleState"
 		logger.Error(err, msg, "elasticQuotaSnapshotKey", ElasticQuotaSnapshotKey)
-		return nil, 0, framework.NewStatus(framework.Unschedulable, msg)
+		return nil, 0, fwk.NewStatus(fwk.Unschedulable, msg)
 	}
 
 	preFilterState, err := getPreFilterState(state)
 	if err != nil {
 		msg := "Failed to read preFilterState from cycleState"
 		logger.Error(err, msg, "preFilterStateKey", preFilterStateKey)
-		return nil, 0, framework.NewStatus(framework.Unschedulable, msg)
+		return nil, 0, fwk.NewStatus(fwk.Unschedulable, msg)
 	}
 
 	var nominatedPodsReqInEQWithPodReq framework.Resource
 	var nominatedPodsReqWithPodReq framework.Resource
 	podReq := preFilterState.podReq
 
-	removePod := func(rpi *framework.PodInfo) error {
-		if err := nodeInfo.RemovePod(logger, rpi.Pod); err != nil {
+	removePod := func(rpi fwk.PodInfo) error {
+		if err := nodeInfo.RemovePod(logger, rpi.GetPod()); err != nil {
 			return err
 		}
 		status := p.fh.RunPreFilterExtensionRemovePod(ctx, state, pod, rpi, nodeInfo)
@@ -519,7 +520,7 @@ func (p *preemptor) SelectVictimsOnNode(
 		}
 		return nil
 	}
-	addPod := func(api *framework.PodInfo) error {
+	addPod := func(api fwk.PodInfo) error {
 		nodeInfo.AddPodInfo(api)
 		status := p.fh.RunPreFilterExtensionAddPod(ctx, state, pod, api, nodeInfo)
 		if !status.IsSuccess() {
@@ -533,15 +534,17 @@ func (p *preemptor) SelectVictimsOnNode(
 	preemptorElasticQuotaInfo, preemptorWithElasticQuota := elasticQuotaInfos[pod.Namespace]
 
 	// sort the pods in node by the priority class
-	sort.Slice(nodeInfo.Pods, func(i, j int) bool { return !schedutil.MoreImportantPod(nodeInfo.Pods[i].Pod, nodeInfo.Pods[j].Pod) })
+	sort.Slice(nodeInfo.GetPods(), func(i, j int) bool {
+		return !schedutil.MoreImportantPod(nodeInfo.GetPods()[i].GetPod(), nodeInfo.GetPods()[j].GetPod())
+	})
 
-	var potentialVictims []*framework.PodInfo
+	var potentialVictims []fwk.PodInfo
 	if preemptorWithElasticQuota {
 		nominatedPodsReqInEQWithPodReq = preFilterState.nominatedPodsReqInEQWithPodReq
 		nominatedPodsReqWithPodReq = preFilterState.nominatedPodsReqWithPodReq
 		moreThanMinWithPreemptor := preemptorElasticQuotaInfo.usedOverMinWith(&nominatedPodsReqInEQWithPodReq)
-		for _, p := range nodeInfo.Pods {
-			eqInfo, withEQ := elasticQuotaInfos[p.Pod.Namespace]
+		for _, p := range nodeInfo.GetPods() {
+			eqInfo, withEQ := elasticQuotaInfos[p.GetPod().Namespace]
 			if !withEQ {
 				continue
 			}
@@ -552,10 +555,10 @@ func (p *preemptor) SelectVictimsOnNode(
 				// quotas. So that we will select the pods which subject to the
 				// same quota(namespace) with the lower priority than the
 				// preemptor's priority as potential victims in a node.
-				if p.Pod.Namespace == pod.Namespace && corev1helpers.PodPriority(p.Pod) < podPriority {
+				if p.GetPod().Namespace == pod.Namespace && corev1helpers.PodPriority(p.GetPod()) < podPriority {
 					potentialVictims = append(potentialVictims, p)
 					if err := removePod(p); err != nil {
-						return nil, 0, framework.AsStatus(err)
+						return nil, 0, fwk.AsStatus(err)
 					}
 				}
 
@@ -566,24 +569,24 @@ func (p *preemptor) SelectVictimsOnNode(
 				// will be chosen from Quotas that allocates more resources
 				// than its min, i.e., borrowing resources from other
 				// Quotas.
-				if p.Pod.Namespace != pod.Namespace && eqInfo.usedOverMin() {
+				if p.GetPod().Namespace != pod.Namespace && eqInfo.usedOverMin() {
 					potentialVictims = append(potentialVictims, p)
 					if err := removePod(p); err != nil {
-						return nil, 0, framework.AsStatus(err)
+						return nil, 0, fwk.AsStatus(err)
 					}
 				}
 			}
 		}
 	} else {
-		for _, p := range nodeInfo.Pods {
-			_, withEQ := elasticQuotaInfos[p.Pod.Namespace]
+		for _, p := range nodeInfo.GetPods() {
+			_, withEQ := elasticQuotaInfos[p.GetPod().Namespace]
 			if withEQ {
 				continue
 			}
-			if corev1helpers.PodPriority(p.Pod) < podPriority {
+			if corev1helpers.PodPriority(p.GetPod()) < podPriority {
 				potentialVictims = append(potentialVictims, p)
 				if err := removePod(p); err != nil {
-					return nil, 0, framework.AsStatus(err)
+					return nil, 0, fwk.AsStatus(err)
 				}
 			}
 		}
@@ -592,7 +595,7 @@ func (p *preemptor) SelectVictimsOnNode(
 	// No potential victims are found, and so we don't need to evaluate the node again since its state didn't change.
 	if len(potentialVictims) == 0 {
 		message := fmt.Sprintf("No victims found on node %v for preemptor pod %v", nodeInfo.Node().Name, pod.Name)
-		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, message)
+		return nil, 0, fwk.NewStatus(fwk.UnschedulableAndUnresolvable, message)
 	}
 
 	// If the new pod does not fit after removing all the lower priority pods,
@@ -611,7 +614,7 @@ func (p *preemptor) SelectVictimsOnNode(
 	if preemptorWithElasticQuota {
 		if preemptorElasticQuotaInfo.usedOverMaxWith(&podReq) ||
 			elasticQuotaInfos.aggregatedUsedOverMinWith(podReq) {
-			return nil, 0, framework.NewStatus(framework.Unschedulable, "global quota max exceeded")
+			return nil, 0, fwk.NewStatus(fwk.Unschedulable, "global quota max exceeded")
 		}
 	}
 
@@ -620,13 +623,13 @@ func (p *preemptor) SelectVictimsOnNode(
 	// Sort potentialVictims by pod priority from high to low, which ensures to
 	// reprieve higher priority pods first.
 	sort.Slice(potentialVictims, func(i, j int) bool {
-		return schedutil.MoreImportantPod(potentialVictims[i].Pod, potentialVictims[j].Pod)
+		return schedutil.MoreImportantPod(potentialVictims[i].GetPod(), potentialVictims[j].GetPod())
 	})
 	// Try to reprieve as many pods as possible. We first try to reprieve the PDB
 	// violating victims and then other non-violating ones. In both cases, we start
 	// from the highest priority victims.
 	violatingVictims, nonViolatingVictims := filterPodsWithPDBViolation(potentialVictims, pdbs)
-	reprievePod := func(pi *framework.PodInfo) (bool, error) {
+	reprievePod := func(pi fwk.PodInfo) (bool, error) {
 		if err := addPod(pi); err != nil {
 			return false, err
 		}
@@ -636,24 +639,24 @@ func (p *preemptor) SelectVictimsOnNode(
 			if err := removePod(pi); err != nil {
 				return false, err
 			}
-			victims = append(victims, pi.Pod)
-			logger.V(5).Info("Found a potential preemption victim on node", "pod", klog.KObj(pi.Pod), "node", klog.KObj(nodeInfo.Node()))
+			victims = append(victims, pi.GetPod())
+			logger.V(5).Info("Found a potential preemption victim on node", "pod", klog.KObj(pi.GetPod()), "node", klog.KObj(nodeInfo.Node()))
 		}
 
 		if preemptorWithElasticQuota && (preemptorElasticQuotaInfo.usedOverMaxWith(&nominatedPodsReqInEQWithPodReq) || elasticQuotaInfos.aggregatedUsedOverMinWith(nominatedPodsReqWithPodReq)) {
 			if err := removePod(pi); err != nil {
 				return false, err
 			}
-			victims = append(victims, pi.Pod)
-			logger.V(5).Info("Found a potential preemption victim on node", "pod", klog.KObj(pi.Pod), " node", klog.KObj(nodeInfo.Node()))
+			victims = append(victims, pi.GetPod())
+			logger.V(5).Info("Found a potential preemption victim on node", "pod", klog.KObj(pi.GetPod()), " node", klog.KObj(nodeInfo.Node()))
 		}
 
 		return fits, nil
 	}
 	for _, pi := range violatingVictims {
 		if fits, err := reprievePod(pi); err != nil {
-			logger.Error(err, "Failed to reprieve pod", "pod", klog.KObj(pi.Pod))
-			return nil, 0, framework.AsStatus(err)
+			logger.Error(err, "Failed to reprieve pod", "pod", klog.KObj(pi.GetPod()))
+			return nil, 0, fwk.AsStatus(err)
 		} else if !fits {
 			numViolatingVictim++
 		}
@@ -661,8 +664,8 @@ func (p *preemptor) SelectVictimsOnNode(
 	// Now we try to reprieve non-violating victims.
 	for _, pi := range nonViolatingVictims {
 		if _, err := reprievePod(pi); err != nil {
-			logger.Error(err, "Failed to reprieve pod", "pod", klog.KObj(pi.Pod))
-			return nil, 0, framework.AsStatus(err)
+			logger.Error(err, "Failed to reprieve pod", "pod", klog.KObj(pi.GetPod()))
+			return nil, 0, fwk.AsStatus(err)
 		}
 	}
 
@@ -670,7 +673,7 @@ func (p *preemptor) SelectVictimsOnNode(
 	if len(violatingVictims) != 0 && len(nonViolatingVictims) != 0 {
 		sort.Slice(victims, func(i, j int) bool { return schedutil.MoreImportantPod(victims[i], victims[j]) })
 	}
-	return victims, numViolatingVictim, framework.NewStatus(framework.Success)
+	return victims, numViolatingVictim, fwk.NewStatus(fwk.Success)
 }
 
 func (c *CapacityScheduling) addElasticQuota(obj interface{}) {
@@ -799,7 +802,7 @@ func (c *CapacityScheduling) snapshotElasticQuota() *ElasticQuotaSnapshotState {
 	}
 }
 
-func getPreFilterState(cycleState *framework.CycleState) (*PreFilterState, error) {
+func getPreFilterState(cycleState fwk.CycleState) (*PreFilterState, error) {
 	c, err := cycleState.Read(preFilterStateKey)
 	if err != nil {
 		// preFilterState doesn't exist, likely PreFilter wasn't invoked.
@@ -813,7 +816,7 @@ func getPreFilterState(cycleState *framework.CycleState) (*PreFilterState, error
 	return s, nil
 }
 
-func getElasticQuotaSnapshotState(cycleState *framework.CycleState) (*ElasticQuotaSnapshotState, error) {
+func getElasticQuotaSnapshotState(cycleState fwk.CycleState) (*ElasticQuotaSnapshotState, error) {
 	c, err := cycleState.Read(ElasticQuotaSnapshotKey)
 	if err != nil {
 		// ElasticQuotaSnapshotState doesn't exist, likely PreFilter wasn't invoked.
@@ -883,14 +886,14 @@ func computePodResourceRequest(pod *v1.Pod) *framework.Resource {
 // preempted.
 // This function is stable and does not change the order of received pods. So, if it
 // receives a sorted list, grouping will preserve the order of the input list.
-func filterPodsWithPDBViolation(podInfos []*framework.PodInfo, pdbs []*policy.PodDisruptionBudget) (violatingPods, nonViolatingPods []*framework.PodInfo) {
+func filterPodsWithPDBViolation(podInfos []fwk.PodInfo, pdbs []*policy.PodDisruptionBudget) (violatingPods, nonViolatingPods []fwk.PodInfo) {
 	pdbsAllowed := make([]int32, len(pdbs))
 	for i, pdb := range pdbs {
 		pdbsAllowed[i] = pdb.Status.DisruptionsAllowed
 	}
 
 	for _, podInfo := range podInfos {
-		pod := podInfo.Pod
+		pod := podInfo.GetPod()
 		pdbForPodIsViolated := false
 		// A pod with no labels will not match any PDB. So, no need to check.
 		if len(pod.Labels) != 0 {

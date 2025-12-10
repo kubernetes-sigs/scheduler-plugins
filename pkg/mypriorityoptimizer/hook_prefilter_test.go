@@ -7,6 +7,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -20,12 +21,12 @@ func TestPreFilter_KubeSystemAlwaysAllowed(t *testing.T) {
 		},
 	}
 
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod)
+	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
 	if st == nil {
 		t.Fatalf("PreFilter() returned nil status")
 	}
-	if st.Code() != framework.Success {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), framework.Success)
+	if st.Code() != fwk.Success {
+		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Success)
 	}
 	if res != nil {
 		t.Fatalf("PreFilter() result = %#v, want nil for kube-system pod", res)
@@ -42,12 +43,12 @@ func TestPreFilter_NoActivePlan_AllowsPod(t *testing.T) {
 		},
 	}
 
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod)
+	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
 	if st == nil {
 		t.Fatalf("PreFilter() returned nil status")
 	}
-	if st.Code() != framework.Success {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), framework.Success)
+	if st.Code() != fwk.Success {
+		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Success)
 	}
 	if res != nil {
 		t.Fatalf("PreFilter() result = %#v, want nil when no active plan", res)

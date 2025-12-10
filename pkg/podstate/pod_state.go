@@ -22,6 +22,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -39,7 +40,7 @@ func (ps *PodState) Name() string {
 }
 
 // Score invoked at the score extension point.
-func (ps *PodState) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
+func (ps *PodState) Score(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
 	// pe.score favors nodes with terminating pods instead of nominated pods
 	// It calculates the sum of the node's terminating pods and nominated pods
 	return ps.score(nodeInfo)
@@ -50,20 +51,20 @@ func (ps *PodState) ScoreExtensions() framework.ScoreExtensions {
 	return ps
 }
 
-func (ps *PodState) score(nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
+func (ps *PodState) score(nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
 	var terminatingPodNum, nominatedPodNum int64
 	// get nominated Pods for node from nominatedPodMap
 	nominatedPodNum = int64(len(ps.handle.NominatedPodsForNode(nodeInfo.Node().Name)))
-	for _, p := range nodeInfo.Pods {
+	for _, p := range nodeInfo.GetPods() {
 		// Pod is terminating if DeletionTimestamp has been set
-		if p.Pod.DeletionTimestamp != nil {
+		if p.GetPod().DeletionTimestamp != nil {
 			terminatingPodNum++
 		}
 	}
 	return terminatingPodNum - nominatedPodNum, nil
 }
 
-func (ps *PodState) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
+func (ps *PodState) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *fwk.Status {
 	// Find highest and lowest scores.
 	var highest int64 = -math.MaxInt64
 	var lowest int64 = math.MaxInt64

@@ -26,6 +26,7 @@ import (
 	"math"
 
 	"github.com/paypal/load-watcher/pkg/watcher"
+	fwk "k8s.io/kube-scheduler/framework"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -81,7 +82,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 }
 
 // Score : evaluate score for a node
-func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
+func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState fwk.CycleState, pod *v1.Pod, nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
 	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	nodeName := nodeInfo.Node().Name
 	logger.V(6).Info("Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
@@ -118,7 +119,7 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState *fra
 	}
 	score = int64(math.Round(totalScore))
 	logger.V(6).Info("Calculating totalScore", "pod", klog.KObj(pod), "nodeName", nodeName, "totalScore", score)
-	return score, framework.NewStatus(framework.Success, "")
+	return score, fwk.NewStatus(fwk.Success, "")
 }
 
 // Name : name of plugin
@@ -132,6 +133,6 @@ func (pl *LoadVariationRiskBalancing) ScoreExtensions() framework.ScoreExtension
 }
 
 // NormalizeScore : normalize scores
-func (pl *LoadVariationRiskBalancing) NormalizeScore(context.Context, *framework.CycleState, *v1.Pod, framework.NodeScoreList) *framework.Status {
+func (pl *LoadVariationRiskBalancing) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, framework.NodeScoreList) *fwk.Status {
 	return nil
 }

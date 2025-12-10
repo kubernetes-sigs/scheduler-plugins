@@ -7,7 +7,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 )
 
 // helper: temporarily override OptimizeMode using the real parsers.
@@ -37,8 +37,8 @@ func TestPreEnqueue_KubeSystemAlwaysAllowed(t *testing.T) {
 	if st == nil {
 		t.Fatalf("PreEnqueue() returned nil status")
 	}
-	if st.Code() != framework.Success {
-		t.Fatalf("PreEnqueue() code = %v, want %v", st.Code(), framework.Success)
+	if st.Code() != fwk.Success {
+		t.Fatalf("PreEnqueue() code = %v, want %v", st.Code(), fwk.Success)
 	}
 }
 
@@ -60,8 +60,8 @@ func TestPreEnqueue_ManualBlockingModeBlocks(t *testing.T) {
 		if st == nil {
 			t.Fatalf("PreEnqueue() returned nil status")
 		}
-		if st.Code() != framework.Pending {
-			t.Fatalf("PreEnqueue() code = %v, want %v (Pending)", st.Code(), framework.Pending)
+		if st.Code() != fwk.Pending {
+			t.Fatalf("PreEnqueue() code = %v, want %v (Pending)", st.Code(), fwk.Pending)
 		}
 	})
 }
@@ -84,8 +84,8 @@ func TestPreEnqueue_DefaultModePassThrough(t *testing.T) {
 		if st == nil {
 			t.Fatalf("PreEnqueue() returned nil status")
 		}
-		if st.Code() != framework.Success {
-			t.Fatalf("PreEnqueue() code = %v, want %v", st.Code(), framework.Success)
+		if st.Code() != fwk.Success {
+			t.Fatalf("PreEnqueue() code = %v, want %v", st.Code(), fwk.Success)
 		}
 	})
 }
