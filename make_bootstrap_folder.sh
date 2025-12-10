@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Load environment variables
+ENV_FILE="opt-prio.env"
+echo "Loading versions from ${ENV_FILE}..."
+# shellcheck source=/dev/null
+set -a
+source "${ENV_FILE}"
+set +a
+
 # 1) Create a new folder called "bootstrap" (remove existing one)
 echo "Cleaning and creating bootstrap directory..."
 rm -rf bootstrap
@@ -31,7 +39,7 @@ cp -r manifests/mydeterministicscore/*  bootstrap/content/manifests/mydeterminis
 
 # 6) Call make to build the scheduler binary
 echo "Building scheduler binary with make..."
-make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=v1.33.0
+make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION="${SCHEDULER_VERSION}"
 chmod +x bin/kube-scheduler  # make sure the built binary is executable
 
 # 7) Copy built binary from "bin/kube-scheduler" to "bootstrap/content/bin" folder

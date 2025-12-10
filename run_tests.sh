@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Load environment variables
+ENV_FILE="opt-prio.env"
+echo "Loading versions from ${ENV_FILE}..."
+# shellcheck source=/dev/null
+set -a
+source "${ENV_FILE}"
+set +a
+
 # Default: run all tests
 MODE="${1:-all}"
 
 RUN_UNIT_PY=false
 RUN_UNIT_GO=false
 RUN_INT_KWOK=false
-VERSION="v1.33.0"
 
 case "$MODE" in
   all|"")
@@ -50,14 +57,8 @@ esac
 # -------------------------------------------------------------------
 # Shared settings for solver env (only used for integration tests)
 # -------------------------------------------------------------------
-VENV_DIR="${VENV_DIR:-/opt/venv}"
-SOLVER_DIR="${SOLVER_DIR:-/opt/solver}"
-
 ensure_solver_env() {
   echo "=== Ensuring solver Python environment ==="
-  echo "VENV_DIR=${VENV_DIR}"
-  echo "SOLVER_DIR=${SOLVER_DIR}"
-
   # Directories
   mkdir -p "${SOLVER_DIR}" "${VENV_DIR}"
 
@@ -104,7 +105,7 @@ if "$RUN_INT_KWOK"; then
 
   # Create/update kube-scheduler binary
   echo "Building kube-scheduler with mypriorityoptimizer plugin..."
-  make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=${VERSION}
+  make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=${SCHEDULER_VERSION}
 
   # Make sure solver env exists (mirrors CI workflow setup)
   export VENV_DIR SOLVER_DIR

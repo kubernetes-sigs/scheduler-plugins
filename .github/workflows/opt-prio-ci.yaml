@@ -1,4 +1,3 @@
-# .github/workflows/opt-prio-ci.yml
 name: CI (Build + Unit + Integration)
 
 on:
@@ -18,11 +17,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ---- Python setup ----
+      - id: load-env
+        name: Load envs from file
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Adjust filename if your env file is named without a leading dot:
+          # source opt-prio.env
+          source .opt-prio.env
+
+          # Fail-fast checks
+          : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
+          : "${GO_VERSION:?GO_VERSION missing in env file}"
+
+          # Expose as step outputs to avoid "context access might be invalid"
+          {
+            echo "PYTHON_VERSION=${PYTHON_VERSION}"
+            echo "GO_VERSION=${GO_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ steps.load-env.outputs.PYTHON_VERSION }}
 
       - name: Install Python test deps
         run: |
@@ -31,33 +48,32 @@ jobs:
             pip install -r scripts/test/requirements.txt
           fi
 
-      # ---- Go setup (for unit tests) ----
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24.0"
+          go-version: ${{ steps.load-env.outputs.GO_VERSION }}
 
       - name: Prepare coverage directories
         run: |
           mkdir -p coverage/unit/python
           mkdir -p coverage/unit/go
 
-      # ---- Run unit tests (Python + Go) ----
       - name: Run python unit tests
         run: |
           python -m pytest scripts/test \
-            --cov=scripts/test \
+            --cov=<your_python_package_or_module_here> \
             --cov-report=xml:coverage/unit/python/coverage.xml \
             --cov-report=html:coverage/unit/python/html
+
       - name: Run go unit tests
         run: |
-            go test ./pkg/mypriorityoptimizer \
-              -coverprofile=coverage/unit/go/go_coverage.out
-            go tool cover \
-              -func=coverage/unit/go/go_coverage.out
-            go tool cover \
-              -html=coverage/unit/go/go_coverage.out \
-              -o coverage/unit/go/coverage.html
+          go test ./pkg/mypriorityoptimizer \
+            -coverprofile=coverage/unit/go/go_coverage.out
+          go tool cover \
+            -func=coverage/unit/go/go_coverage.out
+          go tool cover \
+            -html=coverage/unit/go/go_coverage.out \
+            -o coverage/unit/go/coverage.html
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
@@ -71,25 +87,33 @@ jobs:
   # Build kube-scheduler binary
   # -------------------------------------------------------
   build-scheduler:
-
     runs-on: ubuntu-latest
-
-    env:
-      VERSION: v1.33.0
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - id: load-env
+        name: Load envs from file
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .opt-prio.env
+          : "${GO_VERSION:?GO_VERSION missing in env file}"
+          : "${SCHEDULER_VERSION:?SCHEDULER_VERSION missing in env file}"
+          {
+            echo "GO_VERSION=${GO_VERSION}"
+            echo "SCHEDULER_VERSION=${SCHEDULER_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24.6"
+          go-version: ${{ steps.load-env.outputs.GO_VERSION }}
 
       - name: Build kube-scheduler binary
         run: |
-          # Uses command from Makefile:
-          make build-scheduler VERSION=${{ env.VERSION }}
+          make build-scheduler VERSION=${{ steps.load-env.outputs.SCHEDULER_VERSION }}
 
       - name: Upload kube-scheduler binary
         uses: actions/upload-artifact@v4
@@ -104,14 +128,30 @@ jobs:
     needs: [build-scheduler]
     runs-on: ubuntu-latest
 
-    env:
-      KUBE_SCHEDULER_BIN: ${{ github.workspace }}/bin/kube-scheduler
-      VENV_DIR: /opt/venv
-      SOLVER_DIR: /opt/solver
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - id: load-env
+        name: Load envs from file
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .opt-prio.env
+          : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
+          : "${KUBE_SCHEDULER_BIN:?KUBE_SCHEDULER_BIN missing in env file}"
+          : "${VENV_DIR:?VENV_DIR missing in env file}"
+          : "${SOLVER_DIR:?SOLVER_DIR missing in env file}"
+          : "${KUBECTL_VERSION:?KUBECTL_VERSION missing in env file}"
+          : "${KWOK_VERSION:?KWOK_VERSION missing in env file}"
+          {
+            echo "PYTHON_VERSION=${PYTHON_VERSION}"
+            echo "KUBE_SCHEDULER_BIN=${KUBE_SCHEDULER_BIN}"
+            echo "VENV_DIR=${VENV_DIR}"
+            echo "SOLVER_DIR=${SOLVER_DIR}"
+            echo "KUBECTL_VERSION=${KUBECTL_VERSION}"
+            echo "KWOK_VERSION=${KWOK_VERSION}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download kube-scheduler binary
         uses: actions/download-artifact@v4
@@ -120,12 +160,12 @@ jobs:
           path: bin
 
       - name: Make binary executable
-        run: chmod +x bin/kube-scheduler
+        run: chmod +x "${{ steps.load-env.outputs.KUBE_SCHEDULER_BIN }}"
 
       - name: Install kubectl / kwokctl / kwok
         env:
-          KUBECTL_VERSION: v1.33.3
-          KWOK_VERSION: v0.7.0
+          KUBECTL_VERSION: ${{ steps.load-env.outputs.KUBECTL_VERSION }}
+          KWOK_VERSION: ${{ steps.load-env.outputs.KWOK_VERSION }}
         run: |
           set -euo pipefail
           echo "Installing kubectl ${KUBECTL_VERSION} and kwok ${KWOK_VERSION}"
@@ -150,17 +190,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ steps.load-env.outputs.PYTHON_VERSION }}
 
       - name: Set up solver Python environment
         run: |
           set -euo pipefail
-          sudo install -d -m 0755 "${SOLVER_DIR}" "${VENV_DIR}"
-          sudo chown -R "$USER:$USER" "${SOLVER_DIR}" "${VENV_DIR}"
-          cp scripts/python_solver/main.py "${SOLVER_DIR}/main.py"
-          python -m venv "${VENV_DIR}"
-          "${VENV_DIR}/bin/python" -m pip install --upgrade pip
-          "${VENV_DIR}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
+          sudo install -d -m 0755 "${{ steps.load-env.outputs.SOLVER_DIR }}" "${{ steps.load-env.outputs.VENV_DIR }}"
+          sudo chown -R "$USER:$USER" "${{ steps.load-env.outputs.SOLVER_DIR }}" "${{ steps.load-env.outputs.VENV_DIR }}"
+          cp scripts/python_solver/main.py "${{ steps.load-env.outputs.SOLVER_DIR }}/main.py"
+          python -m venv "${{ steps.load-env.outputs.VENV_DIR }}"
+          "${{ steps.load-env.outputs.VENV_DIR }}/bin/python" -m pip install --upgrade pip
+          "${{ steps.load-env.outputs.VENV_DIR }}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
 
       - name: Prepare integration test coverage directory
         run: mkdir -p coverage/integration/kwok
@@ -174,7 +214,6 @@ jobs:
 
       - name: Run integration tests
         run: |
-          # -s to show print() output during tests
           python -m pytest -s \
             scripts/kwok_integration_tests/test_modes.py \
             --cov=scripts/kwok_integration_tests \
