@@ -9,54 +9,12 @@ on:
 
 jobs:
   # -------------------------------------------------------
-  # 1) Build kube-scheduler binary
-  # -------------------------------------------------------
-  build-scheduler:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24.0"
-
-      - name: Build kube-scheduler binary
-        run: |
-          # Uses command from Makefile:
-          make build-scheduler
-
-      - name: Upload kube-scheduler binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: kube-scheduler-binary
-          path: bin/kube-scheduler
-
-  # -------------------------------------------------------
-  # 2) Unit tests (Python + Go)
+  # Unit tests (Python + Go)
   # -------------------------------------------------------
   unit-tests:
-    needs: build-scheduler
     runs-on: ubuntu-latest
 
-    env:
-      # Path where we will put the binary after download
-      KUBE_SCHEDULER_BIN: ${{ github.workspace }}/bin/kube-scheduler
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download kube-scheduler binary
-        uses: actions/download-artifact@v4
-        with:
-          name: kube-scheduler-binary
-          path: bin
-
-      - name: Make binary executable
-        run: chmod +x bin/kube-scheduler
 
       # ---- Python setup ----
       - name: Set up Python
@@ -108,10 +66,40 @@ jobs:
             coverage/unit/go
 
   # -------------------------------------------------------
-  # 3) Integration tests
+  # Build kube-scheduler binary
+  # -------------------------------------------------------
+  build-scheduler:
+
+    runs-on: ubuntu-latest
+
+    env:
+      VERSION: v1.33.0
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.6"
+
+      - name: Build kube-scheduler binary
+        run: |
+          # Uses command from Makefile:
+          make build-scheduler VERSION=${{ env.VERSION }}
+
+      - name: Upload kube-scheduler binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: kube-scheduler-binary
+          path: bin/kube-scheduler
+
+  # -------------------------------------------------------
+  # Integration tests
   # -------------------------------------------------------
   integration-tests:
-    needs: [build-scheduler, unit-tests]
+    needs: [build-scheduler]
     runs-on: ubuntu-latest
 
     env:
@@ -134,7 +122,7 @@ jobs:
 
       - name: Install kubectl / kwokctl / kwok
         env:
-          KUBECTL_VERSION: v1.32.7
+          KUBECTL_VERSION: v1.33.3
           KWOK_VERSION: v0.7.0
         run: |
           set -euo pipefail

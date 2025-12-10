@@ -7,6 +7,7 @@ MODE="${1:-all}"
 RUN_UNIT_PY=false
 RUN_UNIT_GO=false
 RUN_INT_KWOK=false
+VERSION="v1.33.0"
 
 case "$MODE" in
   all|"")
@@ -103,7 +104,7 @@ if "$RUN_INT_KWOK"; then
 
   # Create/update kube-scheduler binary
   echo "Building kube-scheduler with mypriorityoptimizer plugin..."
-  make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
+  make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=${VERSION}
 
   # Make sure solver env exists (mirrors CI workflow setup)
   export VENV_DIR SOLVER_DIR

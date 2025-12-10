@@ -12,6 +12,7 @@
   - [Running](#running)
     - [KWOK (recommended)](#kwok-recommended)
     - [Kind](#kind)
+      - [Incompatibilities between Scheduler-plugin and KWOK versions](#incompatibilities-between-scheduler-plugin-and-kwok-versions)
   - [Testing](#testing)
     - [Workload Once Generator](#workload-once-generator)
       - [Deterministic scheduling](#deterministic-scheduling)
@@ -216,6 +217,22 @@ Then load the scheduler docker image into the Kind cluster (it will also build t
 
 ```bash
 ./kind/kind-load-plugins.sh <cluster_name>
+```
+
+#### Incompatibilities between Scheduler-plugin and KWOK versions
+
+Sometimes when running on a specific scheduler-plugin version, it may be needed to force the version when building the scheduler binary.
+For example, KWOK may report
+
+```bash
+kwokctl logs kube-scheduler --name kwok1
+E1210 13:54:11.815001   22220 run.go:72] "command failed" err="[emulation version 0.33 is not between [1.31, 0.33.0], minCompatibilityVersion version 0.32 is not between [1.31, 0.33]]"
+```
+
+That can be fixed by building the scheduler with the `VERSION` field set to the desired version, e.g.:
+
+```bash
+make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=v1.33.0
 ```
 
 ## Testing

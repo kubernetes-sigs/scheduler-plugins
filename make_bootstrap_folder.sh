@@ -31,7 +31,7 @@ cp -r manifests/mydeterministicscore/*  bootstrap/content/manifests/mydeterminis
 
 # 6) Call make to build the scheduler binary
 echo "Building scheduler binary with make..."
-make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64'
+make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=v1.33.0
 chmod +x bin/kube-scheduler  # make sure the built binary is executable
 
 # 7) Copy built binary from "bin/kube-scheduler" to "bootstrap/content/bin" folder
