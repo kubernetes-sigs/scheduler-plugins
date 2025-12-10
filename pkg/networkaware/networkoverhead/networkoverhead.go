@@ -362,8 +362,9 @@ func (no *NetworkOverhead) Filter(ctx context.Context,
 func (no *NetworkOverhead) Score(ctx context.Context,
 	cycleState *framework.CycleState,
 	pod *corev1.Pod,
-	nodeName string) (int64, *framework.Status) {
+	nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
 	score := framework.MinNodeScore
+	nodeName := nodeInfo.Node().Name
 
 	logger := klog.FromContext(klog.NewContext(ctx, no.logger)).WithValues("ExtensionPoint", "Score")
 	// Get PreFilterState
