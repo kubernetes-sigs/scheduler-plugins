@@ -13,9 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// ----------------------------------------------------------------------
+// -------------------------
 // startLoops
-// ----------------------------------------------------------------------
+// --------------------------
 
 func TestStartLoops_DoesNothingWhenNotReady(t *testing.T) {
 	origMode := OptimizeMode
@@ -112,9 +112,9 @@ func TestStartLoops_LaunchesInterludeLoopWhenModeInterlude(t *testing.T) {
 	)
 }
 
-// ----------------------------------------------------------------------
+// -------------------------
 // optimizeBackgroundLoop
-// ----------------------------------------------------------------------
+// --------------------------
 
 func TestOptimizeBackgroundLoop_SkipsWhenPluginNotReady(t *testing.T) {
 	pl := &SharedState{} // PluginReady default is false
@@ -223,9 +223,9 @@ func TestOptimizeBackgroundLoop_StartsRunForStablePendingSet(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------------
+// -------------------------
 // isSameUIDSet
-// ----------------------------------------------------------------------
+// --------------------------
 
 func TestIsSameUIDSet_NilVsNil(t *testing.T) {
 	if !isSameUIDSet(nil, nil) {
@@ -264,9 +264,9 @@ func TestIsSameUIDSet_DifferentElements(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------------
+// -------------------------
 // cloneUIDSet
-// ----------------------------------------------------------------------
+// --------------------------
 
 func TestCloneUIDSet_Nil(t *testing.T) {
 	if got := cloneUIDSet(nil); got != nil {
@@ -292,9 +292,9 @@ func TestCloneUIDSet_Independence(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------------
+// -------------------------
 // isAlreadyComputedForPendingSet
-// ----------------------------------------------------------------------
+// --------------------------
 
 func TestIsAlreadyComputedForPendingSet_BestAttemptNil(t *testing.T) {
 	if got := isAlreadyComputedForPendingSet(nil, nil); got {
@@ -330,9 +330,9 @@ func TestIsAlreadyComputedForPendingSet_OptimalWithOtherError(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // buildPendingSnapshot
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestBuildPendingSnapshot(t *testing.T) {
 	pl := &SharedState{}

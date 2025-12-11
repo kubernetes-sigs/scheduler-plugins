@@ -13,9 +13,9 @@ import (
 
 var postFilterSleep = time.Sleep
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // PostFilter
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // PostFilter is called after filtering a pod.
 func (pl *SharedState) PostFilter(ctx context.Context, state fwk.CycleState, pending *v1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *fwk.Status) {

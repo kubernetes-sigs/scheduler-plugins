@@ -16,9 +16,9 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // marshalJsonIndented
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestMarshalJsonIndented_Success(t *testing.T) {
 	type payload struct {
@@ -61,9 +61,9 @@ func TestMarshalJsonIndented_Error(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // jsonString
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestJsonString_Success(t *testing.T) {
 	type payload struct {
@@ -92,9 +92,9 @@ func TestJsonString_Error(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // patchDataString
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestPatchDataString_UpdatesSingleKey(t *testing.T) {
 	ctx := context.Background()
@@ -140,9 +140,9 @@ func TestPatchDataString_UpdatesSingleKey(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // ensureJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestEnsureJson_CreateAndUpdate(t *testing.T) {
 	ctx := context.Background()
@@ -254,9 +254,9 @@ func TestEnsureJson_UpdateOnNilData(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // patchJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestPatchJson(t *testing.T) {
 	ctx := context.Background()
@@ -350,9 +350,9 @@ func TestPatchJson_ErrorOnMarshalFailure(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // readJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestReadJson_MissingAndPresent(t *testing.T) {
 	namespace := "ns3"
@@ -400,9 +400,9 @@ func TestReadJson_MissingAndPresent(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // mutateJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestMutateJson_Appends(t *testing.T) {
 	ctx := context.Background()
@@ -516,9 +516,9 @@ func TestMutateJson_MutateError(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // mutateRaw
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestMutateRaw_Uppercases(t *testing.T) {
 	ctx := context.Background()
@@ -645,9 +645,9 @@ func TestMutateRaw_NilNewRaw_NoOp(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // listConfigMaps
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 	namespace := "ns6"
@@ -704,9 +704,9 @@ func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // pruneConfigMaps
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestPruneConfigMaps_DeletesOldOnes(t *testing.T) {
 	ctx := context.Background()

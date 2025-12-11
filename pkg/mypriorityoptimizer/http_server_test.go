@@ -14,9 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // /healthz endpoint
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestHttpHealthzHandler_WarmingAndReady(t *testing.T) {
 	pl := &SharedState{}
@@ -51,9 +51,9 @@ func TestHttpHealthzHandler_WarmingAndReady(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // /active endpoint
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestHttpActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 	pl := &SharedState{}
@@ -88,9 +88,9 @@ func TestHttpActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // /solve endpoint
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestHttpSolveHandler_MethodNotAllowed(t *testing.T) {
 	pl := &SharedState{}
@@ -231,9 +231,9 @@ func TestHttpSolveHandler_Ready_StatusVariants(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // startHttpServer
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestStartHttpServer_ShutsDownOnContextCancel(t *testing.T) {
 	pl := &SharedState{}
@@ -260,9 +260,9 @@ func TestStartHttpServer_ShutsDownOnContextCancel(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // decodeHttpResponse
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func decodeHttpResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
 	t.Helper()

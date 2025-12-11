@@ -10,9 +10,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// -----------------------------------------------------------------------------
-// parseGetEnv
-// -----------------------------------------------------------------------------
+// -------------------------
+// getenv
+// --------------------------
 
 // getenv retrieves the value of an environment variable or returns a default value.
 func getenv(key, def string) string {
@@ -22,9 +22,9 @@ func getenv(key, def string) string {
 	return def
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // parseBool
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // parseBool parses a boolean string and returns the corresponding bool value.
 func parseBool(s string) bool {
@@ -36,9 +36,9 @@ func parseBool(s string) bool {
 	return v
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // parseInt
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // parseInt parses an integer string and returns the corresponding int value.
 func parseInt(s string) int {
@@ -50,9 +50,9 @@ func parseInt(s string) int {
 	return v
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // parseFloat
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // parseFloat parses a float string and returns the corresponding float64 value.
 func parseFloat(s string, lLimit float64, uLimit float64) float64 {
@@ -70,9 +70,9 @@ func parseFloat(s string, lLimit float64, uLimit float64) float64 {
 	return v
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // parseTime
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // parseTime parses a duration string and returns the corresponding time.Duration.
 func parseTime(s string) time.Duration {
@@ -84,9 +84,9 @@ func parseTime(s string) time.Duration {
 	return d
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // parseOptimizeMode
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // parseOptimizeMode parses an optimization mode string and returns the ModeType.
 func parseOptimizeMode(s string) ModeType {

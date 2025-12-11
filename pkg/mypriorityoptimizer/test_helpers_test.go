@@ -104,9 +104,9 @@ func uidSet(uids ...string) map[types.UID]struct{} {
 	return m
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // Plugin readiness helpers (override global vars for the duration of a test)
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func withReadinessInterval(d time.Duration, fn func()) {
 	old := readinessUsableNodeInterval

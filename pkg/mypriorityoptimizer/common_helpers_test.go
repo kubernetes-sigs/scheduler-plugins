@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // getUniqueId
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestGetUniqueId_PrefixAndNonEmpty(t *testing.T) {
 	prefix := "job-"
@@ -36,9 +36,9 @@ func TestGetUniqueId_ProducesDifferentValues(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // getTimestampNowUtc
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestGetTimestampNowUtc_IsUTCAndReasonable(t *testing.T) {
 	before := time.Now().UTC()
@@ -56,9 +56,9 @@ func TestGetTimestampNowUtc_IsUTCAndReasonable(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // cmpLexiByKeys
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestCmpLexiByKeys_StringKeys(t *testing.T) {
 	keys := []string{"p2", "p1", "p0"} // p2 is most significant
@@ -103,9 +103,9 @@ func TestCmpLexiByKeys_IntKeys_Generic(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // cmpLexi
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestCmpLexi_HighPriorityWins(t *testing.T) {
 	// Basic numeric priority behavior: higher numeric priority first.
@@ -149,9 +149,9 @@ func TestCmpLexi_NumericVsNumericAndFallback(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // cmpInt
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestCmpInt(t *testing.T) {
 	if got := cmpInt(1, 2); got != 1 {

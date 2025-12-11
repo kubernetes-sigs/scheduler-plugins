@@ -12,9 +12,9 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // PostFilter
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // We only test the fast-path where PerPod@PostFilter is NOT enabled:
 // PostFilter should return Unschedulable with a "no nomination" message.

@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // runSolverExternal – happy path
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunSolverExternal_Success(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -54,9 +54,9 @@ printf '{"status":"OPTIMAL"}'
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // runSolverExternal – readAllStdout error
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunSolverExternal_ReadStdoutError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -108,9 +108,9 @@ echo '{"Status":"OPTIMAL"}'
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // runSolverExternal – StdoutPipe error
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunSolverExternal_StdoutPipeError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -140,9 +140,9 @@ func TestRunSolverExternal_StdoutPipeError(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // runSolverExternal – StderrPipe error
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunSolverExternal_StderrPipeError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -172,9 +172,9 @@ func TestRunSolverExternal_StderrPipeError(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // runSolverExternal – Start error
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunSolverExternal_StartError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -196,9 +196,9 @@ func TestRunSolverExternal_StartError(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // runSolverExternal – Wait error (non-zero exit)
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunSolverExternal_WaitError(t *testing.T) {
 	if runtime.GOOS == "windows" {

@@ -16,18 +16,18 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // marshalJsonIndented
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // marshalJsonIndented marshals an object to JSON with indentation.
 func marshalJsonIndented(v any) ([]byte, error) {
 	return json.MarshalIndent(v, "", "  ")
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // jsonString
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // jsonString pretty-prints v to JSON and returns it as a string.
 func jsonString(v any) (string, error) {
@@ -38,9 +38,9 @@ func jsonString(v any) (string, error) {
 	return string(b), nil
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // patchDataString
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // patchDataString patches a single DataKey with the given raw JSON string.
 func (d ConfigMapDoc) patchDataString(
@@ -59,9 +59,9 @@ func (d ConfigMapDoc) patchDataString(
 	return err
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // ensureJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // Create or update config map, storing data as JSON at DataKey.
 func (d ConfigMapDoc) ensureJson(
@@ -102,9 +102,9 @@ func (d ConfigMapDoc) ensureJson(
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // patchJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // Patch only DataKey via merge patch.
 func (d ConfigMapDoc) patchJson(
@@ -119,9 +119,9 @@ func (d ConfigMapDoc) patchJson(
 	return d.patchDataString(ctx, cli, jsonStr)
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // readJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // readJson reads DataKey; returns nil if the ConfigMap or key is missing.
 func (d ConfigMapDoc) readJson(
@@ -137,9 +137,9 @@ func (d ConfigMapDoc) readJson(
 	return []byte(cm.Data[d.DataKey]), nil
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // mutateJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // mutateJson loads → mutates → patches an array JSON.
 func mutateJson[T any](
@@ -164,9 +164,9 @@ func mutateJson[T any](
 	return doc.patchJson(ctx, cli, out)
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // mutateRaw
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // mutateRaw loads the JSON string at DataKey, mutates it, and writes the result back.
 func (d ConfigMapDoc) mutateRaw(
@@ -188,9 +188,9 @@ func (d ConfigMapDoc) mutateRaw(
 	return d.patchDataString(ctx, cli, string(newRaw))
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // listConfigMaps
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // List config maps by label newest-first.
 func listConfigMaps(
@@ -213,9 +213,9 @@ func listConfigMaps(
 	return cms, nil
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // pruneConfigMaps
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // Keep first K newest config maps for label, delete the rest.
 func pruneConfigMaps(

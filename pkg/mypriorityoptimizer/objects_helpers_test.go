@@ -15,9 +15,9 @@ import (
 )
 
 //
-// -----------------------------------------------------------------------------
-// nodesLister / podsLister hooks + getNodes/getPods
-// -----------------------------------------------------------------------------
+// -------------------------
+// nodesLister / podsLister / getNodes / getPods
+// --------------------------
 
 func TestNodesLister(t *testing.T) {
 	pl := &SharedState{}
@@ -91,9 +91,9 @@ func TestGetPods(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // podRef / mergeNsName / splitNsName
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestPodRef(t *testing.T) {
 	p := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"}}
@@ -123,9 +123,9 @@ func TestSplitNsName(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // countPendingPods
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestCountPendingPods(t *testing.T) {
 	if got := countPendingPods(nil); got != 0 {
@@ -152,9 +152,9 @@ func TestCountPendingPods(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // evictPod
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestEvictPod_Success(t *testing.T) {
 	pl := &SharedState{}
@@ -221,9 +221,9 @@ func TestEvictPod_Error(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
-// Node resource helpers
-// -----------------------------------------------------------------------------
+// -------------------------
+// getNodeCPUAllocatable / getNodeMemoryAllocatable
+// --------------------------
 
 func TestGetNodeCPUAllocatable(t *testing.T) {
 	n := &v1.Node{
@@ -254,11 +254,11 @@ func TestGetNodeMemoryAllocatable(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // isNodeControlPlane / getNodeConditions / isNodeReady / getNodeTaints /
 // isNodeNoScheduleConditionTainted / isNodeAllocatable / isNodeUnschedulable /
 // isNodeUsable
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestIsNodeControlPlane(t *testing.T) {
 	n := &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker", Labels: map[string]string{}}}
@@ -479,9 +479,9 @@ func TestIsNodeUsable(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // getPodByName / getPodByUID / getPod
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestGetPodByName_Success(t *testing.T) {
 	pl := &SharedState{}
@@ -691,9 +691,9 @@ func TestGetPod_NotFound(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
-// Pod resource helpers: getPodContainers / container requests / pod requests / priority
-// -----------------------------------------------------------------------------
+// -------------------------
+// getPodContainers / getContainerCPURequest / getContainerMemoryRequest / getPodCPURequest / getPodMemoryRequest / getPodPriority
+// --------------------------
 
 func TestGetPodContainers(t *testing.T) {
 	p := &v1.Pod{
@@ -835,9 +835,9 @@ func TestGetPodAssignedNodeName(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
-// isPodDeleted / isPodAssigned / podsByUID
-// -----------------------------------------------------------------------------
+// -------------------------
+// isSamePodUID / isPodDeleted / isPodAssigned / isPodAssignedAndAlive / isPodProtected / podsByUID
+// --------------------------
 
 func TestIsSamePodUID(t *testing.T) {
 	u1 := types.UID("u1")
@@ -1022,9 +1022,9 @@ func TestPodsByUID(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // clusterFingerprint
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestClusterFingerprint(t *testing.T) {
 	n1 := &v1.Node{
@@ -1180,9 +1180,9 @@ func TestClusterFingerprint_SortingBranches(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // WorkloadKey.String
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestWorkloadKeyString(t *testing.T) {
 	wk := WorkloadKey{Kind: wkReplicaSet, Namespace: "ns", Name: "foo"}
@@ -1212,9 +1212,9 @@ func TestWorkloadKeyString(t *testing.T) {
 }
 
 //
-// -----------------------------------------------------------------------------
+// -------------------------
 // getTopWorkload
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestGetTopWorkload(t *testing.T) {
 	ctrlTrue := true

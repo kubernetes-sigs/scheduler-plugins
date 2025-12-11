@@ -10,9 +10,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // Helpers
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // dummySolverInput returns a minimal SolverInput with a specific baseline.
 func dummySolverInput(evicted int) SolverInput {
@@ -23,9 +23,9 @@ func dummySolverInput(evicted int) SolverInput {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // 1) Optimization gate: ErrOptimizationInProgress
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunOptimizationFlow_OptimizationInProgress(t *testing.T) {
 	pl := &SharedState{}
@@ -50,9 +50,9 @@ func TestRunOptimizationFlow_OptimizationInProgress(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // 2) Non-async: planContext error → leave PlanActive and propagate error
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunOptimizationFlow_PlanContextError(t *testing.T) {
 	pl := &SharedState{}
@@ -100,9 +100,9 @@ func TestRunOptimizationFlow_PlanContextError(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // 3) Non-async: no improving solution → ErrNoImprovingSolutionFromAnySolver
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunOptimizationFlow_NoImprovingSolution(t *testing.T) {
 	pl := &SharedState{}
@@ -190,9 +190,9 @@ func TestRunOptimizationFlow_NoImprovingSolution(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // 4) Non-async: plan not applicable → ErrPlanNotApplicable
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunOptimizationFlow_PlanNotApplicable(t *testing.T) {
 	pl := &SharedState{}
@@ -272,9 +272,9 @@ func TestRunOptimizationFlow_PlanNotApplicable(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // 5) Non-async: pendingScheduled == 0 → ErrNoPendingPodsScheduled
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunOptimizationFlow_NoPendingScheduled(t *testing.T) {
 	pl := &SharedState{}
@@ -359,9 +359,9 @@ func TestRunOptimizationFlow_NoPendingScheduled(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // 6) Non-async: happy path → success, watcher started, stats exported with no error
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
 	pl := &SharedState{}

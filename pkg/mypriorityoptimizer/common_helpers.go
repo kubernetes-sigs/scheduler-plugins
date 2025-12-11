@@ -7,27 +7,27 @@ import (
 	"time"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // getUniqueId
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // getUniqueId generates a unique identifier with the given prefix.
 func getUniqueId(prefix string) string {
 	return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // getTimestampNowUtc
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // getTimestampNowUtc returns the current timestamp in UTC.
 func getTimestampNowUtc() time.Time {
 	return time.Now().UTC()
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // cmpInt
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // cmpInt returns +1 if suggested<baseline (improvement because smaller is better),
 // -1 if suggested>baseline (worse), 0 if equal.
@@ -42,9 +42,9 @@ func cmpInt(suggested, baseline int) int {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // cmpLexiByKeys
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // cmpLexiByKeys compares two score maps lexicographically along the given key
 // order. The first key in `keys` is the most significant, the last the least.
@@ -64,9 +64,9 @@ func cmpLexiByKeys[K comparable](keys []K, a, b map[K]int) int {
 	return 0
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // cmpLexi
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // cmpLexi compares two maps[string]int whose keys are stringified integers.
 // It orders keys by descending numeric value (e.g. "10" > "5" > "1") and

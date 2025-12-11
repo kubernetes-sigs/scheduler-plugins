@@ -14,9 +14,9 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
+// -------------------------
+// hasKey
+// --------------------------
 
 func hasKey(args []any, key string) bool {
 	for i := 0; i+1 < len(args); i += 2 {
@@ -27,9 +27,9 @@ func hasKey(args []any, key string) bool {
 	return false
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // isAnySolverEnabled
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestIsAnySolverEnabled(t *testing.T) {
 	origPy := SolverPythonEnabled
@@ -50,9 +50,9 @@ func TestIsAnySolverEnabled(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // buildSolverInput
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestBuildSolverInput_NoUsableNodes(t *testing.T) {
 	pl := &SharedState{}
@@ -254,9 +254,9 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // buildBaselineScore
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestBuildBaselineScore(t *testing.T) {
 	p1Pri := int32(1)
@@ -325,9 +325,9 @@ func TestBuildBaselineScore(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // solverConfigArgs
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestSolverConfigArgs(t *testing.T) {
 	origPy := SolverPythonEnabled
@@ -358,9 +358,9 @@ func TestSolverConfigArgs(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // isSolutionBetter
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestIsSolutionBetter_Order(t *testing.T) {
 	base := SolverScore{
@@ -410,9 +410,9 @@ func TestIsSolutionBetter_Order(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // isSolutionUsable
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestIsSolutionUsable(t *testing.T) {
 	tests := []struct {
@@ -432,9 +432,9 @@ func TestIsSolutionUsable(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // isSolutionApplicable
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestSolutionApplicable_NilPlan(t *testing.T) {
 	pl := &SharedState{}
@@ -668,9 +668,9 @@ func TestSolutionApplicable_Success(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // logLeaderboard
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 	baseline := SolverScore{
@@ -705,9 +705,9 @@ func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 	logLeaderboard("test-label", attempts, baseline, &best)
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // scoreSolution
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestScoreSolution_NilOutput(t *testing.T) {
 	in := SolverInput{
@@ -781,9 +781,9 @@ func TestScoreSolution_WithPreemptor(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // toSolverPod
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestToSolverPod_BasicMapping(t *testing.T) {
 	p := &v1.Pod{
@@ -810,9 +810,9 @@ func TestToSolverPod_BasicMapping(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // exportSolverStatsToConfigMap
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 	pl := &SharedState{}
@@ -887,9 +887,9 @@ func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // appendSolverStatsCM
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func TestAppendSolverStatsCM_NoClientSet_SkipsWithoutPanic(t *testing.T) {
 	ctx := context.Background()

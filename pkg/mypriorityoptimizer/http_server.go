@@ -10,9 +10,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // Test Hooks
-// -----------------------------------------------------------------------------
+// --------------------------
 
 var (
 	// Keep only this hook so tests can stub the optimisation flow.
@@ -21,9 +21,9 @@ var (
 	}
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // /healthz endpoint
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // httpHealthzHandler handles /healthz requests.
 func (pl *SharedState) httpHealthzHandler(w http.ResponseWriter, r *http.Request) {
@@ -36,9 +36,9 @@ func (pl *SharedState) httpHealthzHandler(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write([]byte("ok"))
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // /active endpoint
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // httpActiveHandler handles /active requests.
 func (pl *SharedState) httpActiveHandler(w http.ResponseWriter, r *http.Request) {
@@ -53,9 +53,9 @@ func (pl *SharedState) httpActiveHandler(w http.ResponseWriter, r *http.Request)
 	writeHttpJson(w, http.StatusOK, resp)
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // /solve endpoint
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // httpSolveHandler handles /solve requests.
 func (pl *SharedState) httpSolveHandler(w http.ResponseWriter, r *http.Request) {
@@ -104,9 +104,9 @@ func (pl *SharedState) httpSolveHandler(w http.ResponseWriter, r *http.Request) 
 	writeHttpJson(w, http.StatusOK, resp)
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // startHttpServer
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // startHttpServer starts the HTTP server for health checks and manual solving.
 func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
@@ -136,9 +136,9 @@ func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
 	}
 }
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // writeHttpJson
-// -----------------------------------------------------------------------------
+// --------------------------
 
 func writeHttpJson(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

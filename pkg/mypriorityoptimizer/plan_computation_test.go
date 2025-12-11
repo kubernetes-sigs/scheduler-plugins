@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // planComputation
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // No solvers enabled → no attempts, no usable result, no best result.
 func TestPlanComputation_NoEnabledSolvers(t *testing.T) {

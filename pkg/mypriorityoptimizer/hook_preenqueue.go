@@ -9,9 +9,9 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 )
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // PreEnqueue
-// -----------------------------------------------------------------------------
+// --------------------------
 
 // PreEnqueue is called before a pod is enqueued for scheduling.
 func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *fwk.Status {
