@@ -15,7 +15,7 @@ type SafePodSet struct {
 	// mu protects the map
 	mu sync.RWMutex
 	// m maps pod UID to PodKey
-	m map[types.UID]PlannerPod
+	m map[types.UID]SolverPod
 }
 
 // SafePodSetItem represents an item in the PodSet.
@@ -23,5 +23,5 @@ type SafePodSetItem struct {
 	// Pod pointer
 	p *v1.Pod
 	// Key for identifying the pod
-	key PlannerPod
+	key SolverPod
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// runPythonSolver – wiring + JSON decode
+// runPythonSolver
 // -----------------------------------------------------------------------------
 
 func TestRunPythonSolver_Success(t *testing.T) {
@@ -39,7 +39,7 @@ printf '{"status":"OPTIMAL","placements":[],"evictions":[]}'
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	out, err := pl.runPythonSolver(ctx, PlannerInput{}, PythonSolverOptions{})
+	out, err := pl.runPythonSolver(ctx, SolverInput{}, PythonSolverOptions{})
 	if err != nil {
 		t.Fatalf("runPythonSolver returned error: %v", err)
 	}
@@ -78,7 +78,7 @@ echo 'not-json'
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	out, err := pl.runPythonSolver(ctx, PlannerInput{}, PythonSolverOptions{})
+	out, err := pl.runPythonSolver(ctx, SolverInput{}, PythonSolverOptions{})
 	if err == nil {
 		t.Fatalf("expected error for invalid JSON output, got nil")
 	}

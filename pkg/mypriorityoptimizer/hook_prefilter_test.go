@@ -11,6 +11,10 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
+// -----------------------------------------------------------------------------
+// PreFilter
+// -----------------------------------------------------------------------------
+
 // kube-system pods should always be allowed and not constrained by any active plan.
 func TestPreFilter_KubeSystemAlwaysAllowed(t *testing.T) {
 	pl := &SharedState{}

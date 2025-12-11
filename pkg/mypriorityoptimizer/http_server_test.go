@@ -81,7 +81,7 @@ func TestActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("GET /active status = %d, want %d", rr.Code, http.StatusOK)
 		}
-		resp := decodeHTTPResponse(t, rr)
+		resp := decodeHttpResponse(t, rr)
 		if !resp.Active {
 			t.Fatalf("expected Active=true in response")
 		}
@@ -117,7 +117,7 @@ func TestSolveHandler_NotReady(t *testing.T) {
 	if rr.Code != http.StatusPreconditionFailed {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusPreconditionFailed)
 	}
-	resp := decodeHTTPResponse(t, rr)
+	resp := decodeHttpResponse(t, rr)
 	if resp.Status != "not-ready" {
 		t.Fatalf("Status = %q, want %q", resp.Status, "not-ready")
 	}
@@ -170,7 +170,7 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 		{name: "error", err: fmt.Errorf("boom"), wantStatus: "error"},
 	}
 
-	attempts := []PlannerResult{
+	attempts := []SolverResult{
 		{Name: "solverA", Status: "FEASIBLE"},
 		{Name: "solverB", Status: "OPTIMAL"},
 	}
@@ -194,8 +194,8 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 			withPodLister(fpl, func() {
 				// Override runOptFlow to control the outcome.
 				oldRun := runOptFlow
-				runOptFlow = func(*SharedState, context.Context) (*Plan, *PlannerScore, string, *PlannerResult, []PlannerResult, error) {
-					baseline := &PlannerScore{Evicted: 1}
+				runOptFlow = func(*SharedState, context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
+					baseline := &SolverScore{Evicted: 1}
 					return nil, baseline, "solverB", nil, attempts, c.err
 				}
 				defer func() { runOptFlow = oldRun }()
@@ -208,7 +208,7 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 				if rr.Code != http.StatusOK {
 					t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
 				}
-				resp := decodeHTTPResponse(t, rr)
+				resp := decodeHttpResponse(t, rr)
 
 				if resp.Status != c.wantStatus {
 					t.Fatalf("Status = %q, want %q", resp.Status, c.wantStatus)
@@ -261,10 +261,10 @@ func TestStartHttpServer_ShutsDownOnContextCancel(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// Helpers
+// decodeHttpResponse
 // -----------------------------------------------------------------------------
 
-func decodeHTTPResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
+func decodeHttpResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
 	t.Helper()
 	var resp HttpResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {

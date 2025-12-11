@@ -26,8 +26,8 @@ func TestPlanComputation_NoEnabledSolvers(t *testing.T) {
 	SolverPythonEnabled = false
 	runPythonSolverHook = nil
 
-	in := PlannerInput{
-		BaselineScore: PlannerScore{},
+	in := SolverInput{
+		BaselineScore: SolverScore{},
 	}
 
 	ctx := context.Background()
@@ -69,12 +69,12 @@ func TestPlanComputation_SolverError(t *testing.T) {
 	SolverPythonTimeout = 10 * time.Millisecond
 	SolverPythonGraceMs = 0
 
-	runPythonSolverHook = func(_ *SharedState, _ context.Context, _ PlannerInput, _ PythonSolverOptions) (*PlannerOutput, error) {
+	runPythonSolverHook = func(_ *SharedState, _ context.Context, _ SolverInput, _ PythonSolverOptions) (*SolverOutput, error) {
 		return nil, errors.New("boom")
 	}
 
-	in := PlannerInput{
-		BaselineScore: PlannerScore{},
+	in := SolverInput{
+		BaselineScore: SolverScore{},
 	}
 
 	ctx := context.Background()
@@ -126,19 +126,19 @@ func TestPlanComputation_UsableButNotImproving(t *testing.T) {
 	SolverPythonGraceMs = 0
 
 	// Hook: just return an OPTIMAL plan with no placements/evictions.
-	// scorePlan(in, out) will be zero, equal to baseline.
-	runPythonSolverHook = func(_ *SharedState, _ context.Context, _ PlannerInput, _ PythonSolverOptions) (*PlannerOutput, error) {
-		return &PlannerOutput{
+	// scoreSolution(in, out) will be zero, equal to baseline.
+	runPythonSolverHook = func(_ *SharedState, _ context.Context, _ SolverInput, _ PythonSolverOptions) (*SolverOutput, error) {
+		return &SolverOutput{
 			Status:     "OPTIMAL",
 			Placements: nil,
 			Evictions:  nil,
 		}, nil
 	}
 
-	zero := PlannerScore{}
-	in := PlannerInput{
+	zero := SolverScore{}
+	in := SolverInput{
 		BaselineScore: zero,
-		// No Pods / Preemptor -> scorePlan also yields zero.
+		// No Pods / Preemptor -> scoreSolution also yields zero.
 	}
 
 	ctx := context.Background()
@@ -194,7 +194,7 @@ func TestPlanComputation_UsableAndImproving(t *testing.T) {
 	SolverPythonTimeout = 10 * time.Millisecond
 	SolverPythonGraceMs = 0
 
-	pre := &PlannerPod{
+	pre := &SolverPod{
 		UID:       "u-pre",
 		Namespace: "ns",
 		Name:      "pre",
@@ -203,10 +203,10 @@ func TestPlanComputation_UsableAndImproving(t *testing.T) {
 	}
 
 	// Hook: return a plan that places the preemptor on node n1.
-	runPythonSolverHook = func(_ *SharedState, _ context.Context, _ PlannerInput, _ PythonSolverOptions) (*PlannerOutput, error) {
-		return &PlannerOutput{
+	runPythonSolverHook = func(_ *SharedState, _ context.Context, _ SolverInput, _ PythonSolverOptions) (*SolverOutput, error) {
+		return &SolverOutput{
 			Status: "OPTIMAL",
-			Placements: []PlannerPod{
+			Placements: []SolverPod{
 				{
 					UID:       pre.UID,
 					Namespace: pre.Namespace,
@@ -218,10 +218,10 @@ func TestPlanComputation_UsableAndImproving(t *testing.T) {
 		}, nil
 	}
 
-	in := PlannerInput{
+	in := SolverInput{
 		Preemptor:     pre,
 		Pods:          nil,
-		BaselineScore: PlannerScore{}, // nothing placed initially
+		BaselineScore: SolverScore{}, // nothing placed initially
 	}
 
 	ctx := context.Background()

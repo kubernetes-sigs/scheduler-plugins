@@ -4,6 +4,8 @@ package mypriorityoptimizer
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -49,6 +51,60 @@ printf '{"status":"OPTIMAL"}'
 	want := `{"status":"OPTIMAL"}`
 	if got != want {
 		t.Fatalf("runSolverExternal output = %q, want %q", got, want)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// runSolverExternal – readAllStdout error
+// -----------------------------------------------------------------------------
+
+func TestRunSolverExternal_ReadStdoutError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runSolverExternal test requires bash on PATH")
+	}
+
+	// Save & restore globals
+	origBin := solverBinary
+	origPath := solverScriptPath
+	origExec := execCommandContext
+	origRead := readAllStdout
+	defer func() {
+		solverBinary = origBin
+		solverScriptPath = origPath
+		execCommandContext = origExec
+		readAllStdout = origRead
+	}()
+
+	tmpDir := t.TempDir()
+
+	// Normal solver script (would normally succeed)
+	script := `#!/usr/bin/env bash
+cat >/dev/null
+echo '{"Status":"OPTIMAL"}'
+`
+	scriptPath := writeFakeSolverScript(t, tmpDir, script)
+	solverBinary = "bash"
+	solverScriptPath = scriptPath
+
+	// Force readAllStdout to fail so we hit the error path
+	readAllStdout = func(r io.Reader) ([]byte, error) {
+		return nil, fmt.Errorf("forced read error")
+	}
+
+	pl := &SharedState{}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	payloadJson := []byte(`{"dummy":"data"}`)
+
+	out, err := pl.runSolverExternal(ctx, payloadJson, SolverPythonBin, SolverPythonScriptPath)
+	if err == nil {
+		t.Fatalf("expected error from readAllStdout, got nil (out=%#v)", out)
+	}
+	if !strings.Contains(err.Error(), "read solver stdout") {
+		t.Fatalf("expected read solver stdout error, got %v", err)
+	}
+	if out != nil {
+		t.Fatalf("expected nil output on read error, got %#v", out)
 	}
 }
 

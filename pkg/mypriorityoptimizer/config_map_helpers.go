@@ -16,10 +16,18 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
-// marshalJSONIndented marshals an object to pretty-printed JSON.
-func marshalJSONIndented(v any) ([]byte, error) {
+// -----------------------------------------------------------------------------
+// marshalJSONIndented
+// -----------------------------------------------------------------------------
+
+// marshalJsonIndented marshals an object to pretty-printed JSON.
+func marshalJsonIndented(v any) ([]byte, error) {
 	return json.MarshalIndent(v, "", "  ")
 }
+
+// -----------------------------------------------------------------------------
+// patchDataString
+// -----------------------------------------------------------------------------
 
 // patchDataString patches a single DataKey with the given raw JSON string.
 func (d ConfigMapDoc) patchDataString(
@@ -38,13 +46,17 @@ func (d ConfigMapDoc) patchDataString(
 	return err
 }
 
+// -----------------------------------------------------------------------------
+// ensureJson
+// -----------------------------------------------------------------------------
+
 // Create or update config map, storing data as JSON at DataKey.
 func (d ConfigMapDoc) ensureJson(
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,
 	data any,
 ) error {
-	b, err := marshalJSONIndented(data)
+	b, err := marshalJsonIndented(data)
 	if err != nil {
 		return err
 	}
@@ -77,18 +89,26 @@ func (d ConfigMapDoc) ensureJson(
 	}
 }
 
+// -----------------------------------------------------------------------------
+// patchJson
+// -----------------------------------------------------------------------------
+
 // Patch only DataKey via merge patch.
 func (d ConfigMapDoc) patchJson(
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,
 	v any,
 ) error {
-	b, err := marshalJSONIndented(v)
+	b, err := marshalJsonIndented(v)
 	if err != nil {
 		return err
 	}
 	return d.patchDataString(ctx, cli, string(b))
 }
+
+// -----------------------------------------------------------------------------
+// readJson
+// -----------------------------------------------------------------------------
 
 // Read DataKey; nil if config map or key missing.
 func (d ConfigMapDoc) readJson(
@@ -103,6 +123,10 @@ func (d ConfigMapDoc) readJson(
 	}
 	return []byte(cm.Data[d.DataKey]), nil
 }
+
+// -----------------------------------------------------------------------------
+// mutateJson
+// -----------------------------------------------------------------------------
 
 // Load -> mutate -> patch an array JSON.
 func mutateJson[T any](
@@ -127,6 +151,10 @@ func mutateJson[T any](
 	return doc.patchJson(ctx, cli, out)
 }
 
+// -----------------------------------------------------------------------------
+// mutateRaw
+// -----------------------------------------------------------------------------
+
 // MutateRaw loads the JSON string at DataKey, 'mutate' it, and writes the result back.
 func (d ConfigMapDoc) mutateRaw(
 	ctx context.Context,
@@ -146,6 +174,10 @@ func (d ConfigMapDoc) mutateRaw(
 	}
 	return d.patchDataString(ctx, cli, string(newRaw))
 }
+
+// -----------------------------------------------------------------------------
+// listConfigMaps
+// -----------------------------------------------------------------------------
 
 // List config maps by label newest-first.
 func listConfigMaps(
@@ -167,6 +199,10 @@ func listConfigMaps(
 	})
 	return cms, nil
 }
+
+// -----------------------------------------------------------------------------
+// pruneConfigMaps
+// -----------------------------------------------------------------------------
 
 // Keep first K newest config maps for label, delete the rest.
 func pruneConfigMaps(

@@ -1,4 +1,4 @@
-// postfilter_hook.go
+// hook_postfilter.go
 package mypriorityoptimizer
 
 import (
@@ -10,6 +10,10 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
+
+// -----------------------------------------------------------------------------
+// PostFilter
+// -----------------------------------------------------------------------------
 
 // PostFilter is called after filtering a pod.
 func (pl *SharedState) PostFilter(ctx context.Context, state fwk.CycleState, pending *v1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *fwk.Status) {

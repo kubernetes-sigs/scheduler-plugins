@@ -1,5 +1,4 @@
-// reserve_unreserve_hook.go
-
+// hook_reserve_unreserve.go
 package mypriorityoptimizer
 
 import (
@@ -9,6 +8,10 @@ import (
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
 )
+
+// -----------------------------------------------------------------------------
+// Reserve
+// -----------------------------------------------------------------------------
 
 // Reserve is called at the end of scheduling cycle to reserve resources for a pod on a specific node.
 // If it fails, the Unreserve function is called to release any reserved resources.
@@ -66,6 +69,10 @@ func (pl *SharedState) Reserve(ctx context.Context, st fwk.CycleState, pending *
 		}
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Unreserve
+// -----------------------------------------------------------------------------
 
 func (pl *SharedState) Unreserve(ctx context.Context, st fwk.CycleState, pending *v1.Pod, _ string) {
 	stage := "Unreserve"

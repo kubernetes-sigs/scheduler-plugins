@@ -3,11 +3,17 @@ package mypriorityoptimizer
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -92,13 +98,189 @@ func TestToPlanPod_BasicConversion(t *testing.T) {
 		},
 	}
 	pp := toPlanPod(p)
-	want := PlannerPod{
+	want := SolverPod{
 		UID:       p.UID,
 		Namespace: p.Namespace,
 		Name:      p.Name,
 	}
 	if !reflect.DeepEqual(pp, want) {
 		t.Fatalf("toPlanPod() = %+v, want %+v", pp, want)
+	}
+}
+
+// ----------------------------------------------------------------------
+// increaseWorkloadQuota
+// ----------------------------------------------------------------------
+
+func TestIncreaseWorkloadQuota_NewAndExisting(t *testing.T) {
+	wq := WorkloadQuotas{}
+	wk := WorkloadKey{} // zero value is fine, we only care that wk.String() is stable
+
+	// First increment should allocate the inner map and set to 1.
+	increaseWorkloadQuota(wq, wk, "node-a")
+	key := wk.String()
+	if wq[key] == nil {
+		t.Fatalf("wq[%q] is nil, want non-nil map", key)
+	}
+	if got := wq[key]["node-a"]; got != 1 {
+		t.Fatalf("wq[%q][node-a] = %d, want 1", key, got)
+	}
+
+	// Second increment on the same key/node should be 2.
+	increaseWorkloadQuota(wq, wk, "node-a")
+	if got := wq[key]["node-a"]; got != 2 {
+		t.Fatalf("wq[%q][node-a] = %d, want 2", key, got)
+	}
+
+	// Different node should get its own counter.
+	increaseWorkloadQuota(wq, wk, "node-b")
+	if got := wq[key]["node-b"]; got != 1 {
+		t.Fatalf("wq[%q][node-b] = %d, want 1", key, got)
+	}
+}
+
+// ----------------------------------------------------------------------
+// sortPlacementsByPod
+// ----------------------------------------------------------------------
+
+func TestSortPlacementsByPod_SortsByNamespaceThenName(t *testing.T) {
+	in := []SolverPod{
+		{Namespace: "ns-b", Name: "x"},
+		{Namespace: "ns-a", Name: "z"},
+		{Namespace: "ns-a", Name: "a"},
+	}
+	sortPlacementsByPod(in)
+
+	got := []string{
+		in[0].Namespace + "/" + in[0].Name,
+		in[1].Namespace + "/" + in[1].Name,
+		in[2].Namespace + "/" + in[2].Name,
+	}
+	want := []string{"ns-a/a", "ns-a/z", "ns-b/x"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sorted = %#v, want %#v", got, want)
+	}
+}
+
+// ----------------------------------------------------------------------
+// sortNewPlacementsByPod
+// ----------------------------------------------------------------------
+
+func TestSortNewPlacementsByPod_SortsByNamespaceThenName(t *testing.T) {
+	in := []SolverPod{
+		{Namespace: "ns-b", Name: "x"},
+		{Namespace: "ns-a", Name: "z"},
+		{Namespace: "ns-a", Name: "a"},
+	}
+	sortNewPlacementsByPod(in)
+
+	got := []string{
+		in[0].Namespace + "/" + in[0].Name,
+		in[1].Namespace + "/" + in[1].Name,
+		in[2].Namespace + "/" + in[2].Name,
+	}
+	want := []string{"ns-a/a", "ns-a/z", "ns-b/x"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sorted = %#v, want %#v", got, want)
+	}
+}
+
+// ----------------------------------------------------------------------
+// sortPodSetItemsByPriorityAndCreation
+// ----------------------------------------------------------------------
+
+func TestSortPodSetItemsByPriorityAndCreation_PriorityDominates(t *testing.T) {
+	var pLowPrio int32 = 1
+	var pHighPrio int32 = 10
+
+	now := metav1.Now()
+	older := metav1.NewTime(now.Add(-time.Minute))
+
+	pLow := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "low",
+			CreationTimestamp: older,
+		},
+		Spec: v1.PodSpec{Priority: &pLowPrio},
+	}
+	pHigh := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "high",
+			CreationTimestamp: now,
+		},
+		Spec: v1.PodSpec{Priority: &pHighPrio},
+	}
+
+	items := []SafePodSetItem{
+		{p: pLow},
+		{p: pHigh},
+	}
+	sortPodSetItemsByPriorityAndCreation(items)
+
+	if items[0].p.Name != "high" || items[1].p.Name != "low" {
+		t.Fatalf("order = %s,%s, want high,low", items[0].p.Name, items[1].p.Name)
+	}
+}
+
+func TestSortPodSetItemsByPriorityAndCreation_TimestampThenName(t *testing.T) {
+	var prio int32 = 5
+
+	now := metav1.Now()
+	older := metav1.NewTime(now.Add(-time.Minute))
+
+	pOld := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "old",
+			CreationTimestamp: older,
+		},
+		Spec: v1.PodSpec{Priority: &prio},
+	}
+	pNew := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "new",
+			CreationTimestamp: now,
+		},
+		Spec: v1.PodSpec{Priority: &prio},
+	}
+
+	items := []SafePodSetItem{
+		{p: pNew},
+		{p: pOld},
+	}
+	sortPodSetItemsByPriorityAndCreation(items)
+
+	if items[0].p.Name != "old" || items[1].p.Name != "new" {
+		t.Fatalf("order = %s,%s, want old,new", items[0].p.Name, items[1].p.Name)
+	}
+}
+
+func TestSortPodSetItemsByPriorityAndCreation_NameFallbackOnZeroTimestamp(t *testing.T) {
+	var prio int32 = 5
+
+	zeroTS := metav1.Time{} // IsZero() == true
+	pA := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "a",
+			CreationTimestamp: zeroTS,
+		},
+		Spec: v1.PodSpec{Priority: &prio},
+	}
+	pC := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "c",
+			CreationTimestamp: zeroTS,
+		},
+		Spec: v1.PodSpec{Priority: &prio},
+	}
+
+	items := []SafePodSetItem{
+		{p: pC},
+		{p: pA},
+	}
+	sortPodSetItemsByPriorityAndCreation(items)
+
+	if items[0].p.Name != "a" || items[1].p.Name != "c" {
+		t.Fatalf("order = %s,%s, want a,c (name fallback)", items[0].p.Name, items[1].p.Name)
 	}
 }
 
@@ -128,15 +310,15 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 	//  - p1: running on n1, will be evicted
 	//  - p2: running on n1, moved to n2
 	//  - p3: pending, placed on n1
-	p1 := newPod("ns", "p1", "u1", "n1", 1)
-	p2 := newPod("ns", "p2", "u2", "n1", 1)
-	p3 := newPod("ns", "p3", "u3", "", 1)
+	p1 := newPod("ns", "p1", "u1", "n1", "", "", 1)
+	p2 := newPod("ns", "p2", "u2", "n1", "", "", 1)
+	p3 := newPod("ns", "p3", "u3", "", "", "", 1)
 
-	out := &PlannerOutput{
-		Evictions: []PlannerPod{
+	out := &SolverOutput{
+		Evictions: []SolverPod{
 			{UID: p1.UID},
 		},
-		Placements: []PlannerPod{
+		Placements: []SolverPod{
 			{UID: p2.UID, Node: "n2"},
 			{UID: p3.UID, Node: "n1"},
 		},
@@ -213,10 +395,10 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 func TestBuildPlan_WithPreemptorNomination(t *testing.T) {
 	pl := &SharedState{}
 
-	pre := newPod("ns", "pre", "pre-uid", "", 1)
+	pre := newPod("ns", "pre", "pre-uid", "", "", "", 1)
 
-	out := &PlannerOutput{
-		Placements: []PlannerPod{
+	out := &SolverOutput{
+		Placements: []SolverPod{
 			{UID: pre.UID, Node: "n-pre"},
 		},
 	}
@@ -395,7 +577,7 @@ func TestBuildWorkloadQuotasAtomics_PositiveAndNonPositiveCounts(t *testing.T) {
 
 func TestIsPodAllowedByPlan_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
-	p := newPod("ns", "p", "u", "", 1)
+	p := newPod("ns", "p", "u", "", "", "", 1)
 
 	if got := pl.isPodAllowedByPlan(p); got {
 		t.Fatalf("isPodAllowedByPlan() with no active plan = %v, want false", got)
@@ -412,10 +594,105 @@ func TestIsPodAllowedByPlan_PinnedStandalone(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p-standalone", "u1", "", 1)
+	p := newPod("ns", "p-standalone", "u1", "", "", "", 1)
 
 	if got := pl.isPodAllowedByPlan(p); !got {
 		t.Fatalf("isPodAllowedByPlan() for pinned standalone pod = %v, want true", got)
+	}
+}
+
+func TestIsPodAllowedByPlan_WorkloadAnyNodeAllowed(t *testing.T) {
+	pl := &SharedState{}
+	var prio int32 = 5
+
+	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+
+	wk, owned := getTopWorkload(p)
+	if !owned {
+		t.Fatalf("getTopWorkload() returned owned=false for owned pod")
+	}
+	wkStr := wk.String()
+
+	wq := WorkloadQuotas{
+		wkStr: {
+			"n1": 1, // some quota
+		},
+	}
+
+	ap := &ActivePlan{
+		ID:             "plan",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+	pl.ActivePlan.Store(ap)
+
+	if got := pl.isPodAllowedByPlan(p); !got {
+		t.Fatalf("isPodAllowedByPlan() = false, want true when any node has quota")
+	}
+}
+
+func TestIsPodAllowedByPlan_WorkloadSpecificNodeRequired(t *testing.T) {
+	pl := &SharedState{}
+	var prio int32 = 5
+
+	// Pod already has a node selected.
+	p := newPod("ns", "p", "u1", "n2", "ReplicaSet", "rs-1", prio)
+
+	wk, owned := getTopWorkload(p)
+	if !owned {
+		t.Fatalf("getTopWorkload() returned owned=false for owned pod")
+	}
+	wkStr := wk.String()
+
+	wq := WorkloadQuotas{
+		wkStr: {
+			"n2": 1,
+			"n1": 0,
+		},
+	}
+	ap := &ActivePlan{
+		ID:             "plan",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+	pl.ActivePlan.Store(ap)
+
+	if got := pl.isPodAllowedByPlan(p); !got {
+		t.Fatalf("isPodAllowedByPlan() = false, want true when selected node has quota")
+	}
+
+	// Now exhaust quota on n2.
+	ap.WorkloadQuotas[wkStr]["n2"].Store(0)
+	if got := pl.isPodAllowedByPlan(p); got {
+		t.Fatalf("isPodAllowedByPlan() = true, want false when selected node quota is 0")
+	}
+}
+
+func TestIsPodAllowedByPlan_WorkloadQuotasExhausted(t *testing.T) {
+	pl := &SharedState{}
+	var prio int32 = 5
+
+	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+
+	wk, owned := getTopWorkload(p)
+	if !owned {
+		t.Fatalf("getTopWorkload() returned owned=false for owned pod")
+	}
+	wkStr := wk.String()
+
+	// All quota counters are zero.
+	wq := WorkloadQuotas{
+		wkStr: {
+			"n1": 0,
+			"n2": 0,
+		},
+	}
+	ap := &ActivePlan{
+		ID:             "plan",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+	pl.ActivePlan.Store(ap)
+
+	if got := pl.isPodAllowedByPlan(p); got {
+		t.Fatalf("isPodAllowedByPlan() = true, want false when all quotas are exhausted")
 	}
 }
 
@@ -425,7 +702,7 @@ func TestIsPodAllowedByPlan_PinnedStandalone(t *testing.T) {
 
 func TestFilterNodes_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
-	p := newPod("ns", "p", "u", "", 1)
+	p := newPod("ns", "p", "u", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if nodes != nil {
@@ -449,7 +726,7 @@ func TestFilterNodes_PinnedStandaloneToSpecificNode(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p1", "u1", "", 1)
+	p := newPod("ns", "p1", "u1", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if !ok {
@@ -473,7 +750,7 @@ func TestFilterNodes_PinnedStandaloneNoSpecificNode(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p-any", "u1", "", 1)
+	p := newPod("ns", "p-any", "u1", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if !ok {
@@ -496,7 +773,7 @@ func TestFilterNodes_PodNotInPlanBlocked(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p-unknown", "u1", "", 1)
+	p := newPod("ns", "p-unknown", "u1", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if ok {
@@ -507,6 +784,73 @@ func TestFilterNodes_PodNotInPlanBlocked(t *testing.T) {
 	}
 	if reason == "" {
 		t.Fatalf("filterNodes() reason is empty, want descriptive string")
+	}
+}
+
+func TestFilterNodes_WorkloadNodesAllowed(t *testing.T) {
+	pl := &SharedState{}
+	var prio int32 = 5
+
+	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+
+	wk, owned := getTopWorkload(p)
+	if !owned {
+		t.Fatalf("getTopWorkload() returned owned=false for owned pod")
+	}
+	wkStr := wk.String()
+
+	wq := WorkloadQuotas{
+		wkStr: {
+			"n1": 1,
+			"n2": 0,
+		},
+	}
+
+	ap := &ActivePlan{
+		ID:             "plan",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+	pl.ActivePlan.Store(ap)
+
+	nodes, reason, ok := pl.filterNodes(p)
+	if !ok {
+		t.Fatalf("filterNodes() ok = false, want true; reason=%q", reason)
+	}
+	if nodes == nil || !nodes.Has("n1") || nodes.Has("n2") {
+		t.Fatalf("filterNodes() nodes = %v, want only {n1}", nodes)
+	}
+}
+
+func TestFilterNodes_WorkloadQuotasExhausted(t *testing.T) {
+	pl := &SharedState{}
+	var prio int32 = 5
+
+	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+
+	wk, owned := getTopWorkload(p)
+	if !owned {
+		t.Fatalf("getTopWorkload() returned owned=false for owned pod")
+	}
+	wkStr := wk.String()
+
+	wq := WorkloadQuotas{
+		wkStr: {
+			"n1": 0,
+		},
+	}
+
+	ap := &ActivePlan{
+		ID:             "plan",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+	pl.ActivePlan.Store(ap)
+
+	nodes, reason, ok := pl.filterNodes(p)
+	if ok {
+		t.Fatalf("filterNodes() ok = true, want false when all quotas exhausted; reason=%q", reason)
+	}
+	if nodes != nil && nodes.Len() != 0 {
+		t.Fatalf("filterNodes() nodes = %v, want nil or empty set", nodes)
 	}
 }
 
@@ -526,22 +870,22 @@ func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
 	now := metav1.Now()
 
 	// running pods
-	run1 := newPod("ns", "run1", "u-run1", "n1", 1)
-	run2 := newPod("ns", "run2", "u-run2", "n2", 1)
+	run1 := newPod("ns", "run1", "u-run1", "n1", "", "", 1)
+	run2 := newPod("ns", "run2", "u-run2", "n2", "", "", 1)
 	// pending pod (to be scheduled)
-	pend1 := newPod("ns", "pend1", "u-pend1", "", 1)
+	pend1 := newPod("ns", "pend1", "u-pend1", "", "", "", 1)
 	// deleted pod (should be ignored)
-	del := newPod("ns", "del", "u-del", "n1", 1)
+	del := newPod("ns", "del", "u-del", "n1", "", "", 1)
 	del.DeletionTimestamp = &now
 
 	pods := []*v1.Pod{run1, run2, pend1, del}
 
-	out := &PlannerOutput{
-		Placements: []PlannerPod{
+	out := &SolverOutput{
+		Placements: []SolverPod{
 			{UID: pend1.UID, Node: "n1"}, // schedule pending
 			{UID: "u-unknown", Node: "n1"},
 		},
-		Evictions: []PlannerPod{
+		Evictions: []SolverPod{
 			{UID: run1.UID}, // evict one running
 			{UID: "u-nonexistent"},
 		},
@@ -565,12 +909,12 @@ func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
 
 func TestCountNewAndTotalPods_TotalPostNonNegative(t *testing.T) {
 	// Only pending pods → totalPrePlan = 0
-	pend := newPod("ns", "pend", "u-pend", "", 1)
+	pend := newPod("ns", "pend", "u-pend", "", "", "", 1)
 	pods := []*v1.Pod{pend}
 
 	// Eviction references a UID not present or with no node
-	out := &PlannerOutput{
-		Evictions: []PlannerPod{
+	out := &SolverOutput{
+		Evictions: []SolverPod{
 			{UID: "u-missing"},
 		},
 	}
@@ -595,8 +939,8 @@ func TestEvictTargets_UsesHook(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 
-	p1 := newPod("ns", "p1", "u1", "", 1)
-	p2 := newPod("ns", "p2", "u2", "", 1)
+	p1 := newPod("ns", "p1", "u1", "", "", "", 1)
+	p2 := newPod("ns", "p2", "u2", "", "", "", 1)
 	targets := []*v1.Pod{p1, p2}
 
 	var (
@@ -634,6 +978,53 @@ func TestEvictTargets_UsesHook(t *testing.T) {
 	}
 }
 
+func TestEvictTargets_NormalAndNotFoundAreIgnored(t *testing.T) {
+	pl := &SharedState{}
+	ctx := context.Background()
+
+	p1 := newPod("ns", "p1", "u1", "", "", "", 1)
+	p2 := newPod("ns", "p2", "u2", "", "", "", 1)
+
+	var seen []string
+
+	withEvictHook(func(_ *SharedState, _ context.Context, pod *v1.Pod, _ *policyv1.Eviction) error {
+		seen = append(seen, mergeNsName(pod.Namespace, pod.Name))
+		// Alternate between nil and NotFound to exercise the IsNotFound branch.
+		if pod.Name == "p1" {
+			return nil
+		}
+		return apierrors.NewNotFound(schema.GroupResource{Group: "", Resource: "pods"}, pod.Name)
+	}, func() {
+		if err := pl.evictTargets(ctx, []*v1.Pod{p1, p2}); err != nil {
+			t.Fatalf("evictTargets() error = %v, want nil", err)
+		}
+	})
+
+	if len(seen) != 2 {
+		t.Fatalf("evictPodFor called %d times, want 2", len(seen))
+	}
+}
+
+func TestEvictTargets_PropagatesNonNotFoundError(t *testing.T) {
+	pl := &SharedState{}
+	ctx := context.Background()
+
+	p := newPod("ns", "p", "u", "", "", "", 1)
+	wantErr := fmt.Errorf("boom-evict")
+
+	withEvictHook(func(_ *SharedState, _ context.Context, _ *v1.Pod, _ *policyv1.Eviction) error {
+		return wantErr
+	}, func() {
+		err := pl.evictTargets(ctx, []*v1.Pod{p})
+		if err == nil {
+			t.Fatalf("evictTargets() error = nil, want non-nil")
+		}
+		if !strings.Contains(err.Error(), "boom-evict") {
+			t.Fatalf("evictTargets() error = %v, want to contain %q", err, "boom-evict")
+		}
+	})
+}
+
 // ----------------------------------------------------------------------
 // waitPodsGone
 // ---------------------------------------------------------------------
@@ -642,7 +1033,7 @@ func TestWaitPodsGone_UsesHookWhenNonEmpty(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 
-	p := newPod("ns", "p", "u1", "n1", 1)
+	p := newPod("ns", "p", "u1", "n1", "", "", 1)
 
 	var (
 		called bool
@@ -679,9 +1070,109 @@ func TestWaitPodsGone_UsesHookWhenNonEmpty(t *testing.T) {
 	}
 }
 
+func TestWaitPodsGone_EmptySliceFastPath(t *testing.T) {
+	pl := &SharedState{}
+	ctx := context.Background()
+
+	// No hook: this must return immediately without error.
+	if err := pl.waitPodsGone(ctx, nil); err != nil {
+		t.Fatalf("waitPodsGone(nil) error = %v, want nil", err)
+	}
+}
+
+func TestWaitPodsGone_PollUntilNotFound(t *testing.T) {
+	pl := &SharedState{}
+	ctx := context.Background()
+
+	p := newPod("ns", "p", "u1", "", "", "", 1)
+
+	// Fake lister that always returns IsNotFound for this pod.
+	store := map[string]map[string]*v1.Pod{} // empty store → NotFound via fakePodNamespaceLister
+	plister := &fakePodLister{store: store}
+
+	withPodLister(plister, func() {
+		if err := pl.waitPodsGone(ctx, []*v1.Pod{p}); err != nil {
+			t.Fatalf("waitPodsGone() error = %v, want nil", err)
+		}
+	})
+}
+
+func TestWaitPodsGone_IgnoresNilPodsInInput(t *testing.T) {
+	pl := &SharedState{}
+	ctx := context.Background()
+
+	// Input slice includes a nil pod; this should not panic and should
+	// effectively behave like an empty slice.
+	if err := pl.waitPodsGone(ctx, []*v1.Pod{nil}); err != nil {
+		t.Fatalf("waitPodsGone() with nil pod error = %v, want nil", err)
+	}
+}
+
+func TestWaitPodsGone_TreatsUidChangeOrTerminatingAsGone(t *testing.T) {
+	pl := &SharedState{}
+	ctx := context.Background()
+
+	// Original pod identity (UID + ns + name)
+	orig := newPod("ns", "p", "u1", "", "", "", 1)
+
+	// In the store we simulate the "same" pod name but:
+	//  - different UID (u2)
+	//  - or terminating
+	// Either should make the entry be considered "gone".
+	changedUID := newPod("ns", "p", "u2", "", "", "", 1)
+	now := metav1.Now()
+	terminating := newPod("ns", "p-term", "u3", "", "", "", 1)
+	terminating.DeletionTimestamp = &now
+
+	store := map[string]map[string]*v1.Pod{
+		"ns": {
+			"p":      changedUID,
+			"p-term": terminating,
+		},
+	}
+	plister := &fakePodLister{store: store}
+
+	withPodLister(plister, func() {
+		// First: UID has changed → treated as gone.
+		if err := pl.waitPodsGone(ctx, []*v1.Pod{orig}); err != nil {
+			t.Fatalf("waitPodsGone() (UID changed) error = %v, want nil", err)
+		}
+
+		// Second: pod terminating → treated as gone as well.
+		if err := pl.waitPodsGone(ctx, []*v1.Pod{terminating}); err != nil {
+			t.Fatalf("waitPodsGone() (terminating) error = %v, want nil", err)
+		}
+	})
+}
+
+// ----------------------------------------------------------------------
+// activatePods
+// ----------------------------------------------------------------------
+
+func TestActivatePods_NoPodSetDoesNothing(t *testing.T) {
+	pl := &SharedState{}
+
+	var called bool
+	orig := activatePods
+	defer func() { activatePods = orig }()
+
+	activatePods = func(_ *SharedState, _ map[string]*v1.Pod) {
+		called = true
+	}
+
+	// nil podSet → no activation
+	tried := pl.activatePods(nil, true, -1)
+	if len(tried) != 0 {
+		t.Fatalf("activatePods(nil) tried = %v, want empty", tried)
+	}
+	if called {
+		t.Fatalf("activatePods() global should not be called when podSet is nil")
+	}
+}
+
 // ----------------------------------------------------------------------
 // activatePlannedPods
-// ---------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 func TestActivatePlannedPods_UsesHookWithMatchingPending(t *testing.T) {
 	pl := &SharedState{}
@@ -690,7 +1181,7 @@ func TestActivatePlannedPods_UsesHookWithMatchingPending(t *testing.T) {
 	uidIgnored := types.UID("u-ignored")
 
 	plan := &Plan{
-		NewPlacements: []PlannerPod{
+		NewPlacements: []SolverPod{
 			{UID: uidAllowed, OldNode: "", Node: "n1"},      // should be activated
 			{UID: uidIgnored, OldNode: "n-old", Node: "n2"}, // move, not pending→node
 		},
@@ -749,6 +1240,64 @@ func TestActivatePlannedPods_UsesHookWithMatchingPending(t *testing.T) {
 	}
 }
 
+func TestActivatePlannedPods_NoPlanOrNoNewPlacements(t *testing.T) {
+	pl := &SharedState{}
+
+	// No panic, no hook called → just exercise the guard clauses.
+	pl.activatePlannedPods(nil, nil)
+	pl.activatePlannedPods(&Plan{}, nil)
+	pl.activatePlannedPods(&Plan{NewPlacements: nil}, []*v1.Pod{})
+}
+
+func TestActivatePlannedPods_UsesGlobalActivateWhenNoHook(t *testing.T) {
+	pl := &SharedState{}
+
+	uid := types.UID("u-allowed")
+	plan := &Plan{
+		NewPlacements: []SolverPod{
+			{UID: uid, OldNode: "", Node: "n1"}, // From "" -> Node != "" => newly scheduled
+		},
+	}
+	pending := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "p-allowed",
+			UID:       uid,
+		},
+		Spec: v1.PodSpec{
+			NodeName: "", // pending
+		},
+	}
+
+	var (
+		called bool
+		gotPl  *SharedState
+		gotMap map[string]*v1.Pod
+	)
+
+	orig := activatePods
+	defer func() { activatePods = orig }()
+
+	activatePods = func(hpl *SharedState, toAct map[string]*v1.Pod) {
+		called = true
+		gotPl = hpl
+		gotMap = toAct
+	}
+
+	pl.activatePlannedPods(plan, []*v1.Pod{pending})
+
+	if !called {
+		t.Fatalf("global activatePods was not called")
+	}
+	if gotPl != pl {
+		t.Fatalf("activatePods pl = %p, want %p", gotPl, pl)
+	}
+	key := mergeNsName("ns", "p-allowed")
+	if gotMap[key] != pending {
+		t.Fatalf("toAct[%q] = %#v, want %#v", key, gotMap[key], pending)
+	}
+}
+
 // ----------------------------------------------------------------------
 // isPlanCompleted
 // ----------------------------------------------------------------------
@@ -786,6 +1335,224 @@ func TestIsPlanCompleted_UsesHook(t *testing.T) {
 	if gotPl != pl || gotAp != ap {
 		t.Fatalf("hook args = (%p,%p), want (%p,%p)", gotPl, gotAp, pl, ap)
 	}
+}
+
+func TestIsPlanCompleted_NilActivePlan(t *testing.T) {
+	pl := &SharedState{}
+
+	ok, err := pl.isPlanCompleted(nil)
+	if err != nil {
+		t.Fatalf("isPlanCompleted(nil) error = %v, want nil", err)
+	}
+	if ok {
+		t.Fatalf("isPlanCompleted(nil) = true, want false (no active plan doc)")
+	}
+}
+
+func TestIsPlanCompleted_PinnedPodGoneAndNoQuotasMeansCompleted(t *testing.T) {
+	pl := &SharedState{}
+
+	ap := &ActivePlan{
+		ID: PlanConfigMapNamePrefix + "1",
+		PlacementByName: map[string]string{
+			mergeNsName("ns", "p-gone"): "n1",
+		},
+		WorkloadQuotas: WorkloadQuotasAtomics{}, // no workload quotas
+	}
+
+	// Empty store -> Get() returns NotFound for ns/p-gone.
+	store := map[string]map[string]*v1.Pod{}
+	plister := &fakePodLister{store: store}
+
+	withPodLister(plister, func() {
+		ok, err := pl.isPlanCompleted(ap)
+		if err != nil {
+			t.Fatalf("isPlanCompleted() error = %v, want nil", err)
+		}
+		if !ok {
+			t.Fatalf("isPlanCompleted() = false, want true (pinned pod gone, no quotas)")
+		}
+	})
+}
+
+func TestIsPlanCompleted_PinnedPodOnWrongNodeNotCompleted(t *testing.T) {
+	pl := &SharedState{}
+
+	ap := &ActivePlan{
+		ID: PlanConfigMapNamePrefix + "1",
+		PlacementByName: map[string]string{
+			mergeNsName("ns", "p-mismatch"): "n-expected",
+		},
+	}
+
+	p := newPod("ns", "p-mismatch", "u1", "n-other", "", "", 1)
+
+	store := map[string]map[string]*v1.Pod{
+		"ns": {
+			"p-mismatch": p,
+		},
+	}
+	plister := &fakePodLister{store: store}
+
+	withPodLister(plister, func() {
+		ok, err := pl.isPlanCompleted(ap)
+		if err != nil {
+			t.Fatalf("isPlanCompleted() error = %v, want nil", err)
+		}
+		if ok {
+			t.Fatalf("isPlanCompleted() = true, want false due to pinned pod on wrong node")
+		}
+	})
+}
+
+func TestIsPlanCompleted_PinnedPodTerminatingTreatedAsSatisfied(t *testing.T) {
+	pl := &SharedState{}
+
+	ap := &ActivePlan{
+		ID: PlanConfigMapNamePrefix + "1",
+		PlacementByName: map[string]string{
+			mergeNsName("ns", "p-term"): "n1",
+		},
+		WorkloadQuotas: WorkloadQuotasAtomics{},
+	}
+
+	p := newPod("ns", "p-term", "u1", "n1", "", "", 1)
+	now := metav1.Now()
+	p.DeletionTimestamp = &now
+
+	store := map[string]map[string]*v1.Pod{
+		"ns": {
+			"p-term": p,
+		},
+	}
+	plister := &fakePodLister{store: store}
+
+	withPodLister(plister, func() {
+		ok, err := pl.isPlanCompleted(ap)
+		if err != nil {
+			t.Fatalf("isPlanCompleted() error = %v, want nil", err)
+		}
+		if !ok {
+			t.Fatalf("isPlanCompleted() = false, want true (terminating pod treated as satisfied)")
+		}
+	})
+}
+
+func TestIsPlanCompleted_WorkloadScaledDownIgnored(t *testing.T) {
+	pl := &SharedState{}
+
+	// No live pods at all.
+	store := map[string]map[string]*v1.Pod{}
+	plister := &fakePodLister{store: store}
+
+	// Build a workload key from a dummy pod so we get the right string form.
+	pDummy := newPod("ns", "p", "u-dummy", "", "ReplicaSet", "rs-1", 1)
+	wk, owned := getTopWorkload(pDummy)
+	if !owned {
+		t.Fatalf("getTopWorkload(dummy) returned owned=false")
+	}
+	wkStr := wk.String()
+
+	wq := WorkloadQuotas{
+		wkStr: {"n1": 3}, // remaining quota > 0
+	}
+
+	ap := &ActivePlan{
+		ID:             PlanConfigMapNamePrefix + "1",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+
+	withPodLister(plister, func() {
+		ok, err := pl.isPlanCompleted(ap)
+		if err != nil {
+			t.Fatalf("isPlanCompleted() error = %v, want nil", err)
+		}
+		if !ok {
+			t.Fatalf("isPlanCompleted() = false, want true (workload scaled down, remaining quota ignored)")
+		}
+	})
+}
+
+func TestIsPlanCompleted_WorkloadPendingWithQuotaNotCompleted(t *testing.T) {
+	pl := &SharedState{}
+
+	// Running + pending pods for the same workload.
+	var prio int32 = 5
+	pRun := newPod("ns", "p-run", "u-run", "n1", "ReplicaSet", "rs-1", prio)
+	pPending := newPod("ns", "p-pend", "u-pend", "", "ReplicaSet", "rs-1", prio)
+
+	store := map[string]map[string]*v1.Pod{
+		"ns": {
+			"p-run":  pRun,
+			"p-pend": pPending,
+		},
+	}
+	plister := &fakePodLister{store: store}
+
+	wk, owned := getTopWorkload(pRun)
+	if !owned {
+		t.Fatalf("getTopWorkload(run) returned owned=false")
+	}
+	wkStr := wk.String()
+
+	wq := WorkloadQuotas{
+		wkStr: {"n1": 1}, // remaining quota
+	}
+
+	ap := &ActivePlan{
+		ID:             PlanConfigMapNamePrefix + "1",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+
+	withPodLister(plister, func() {
+		ok, err := pl.isPlanCompleted(ap)
+		if err != nil {
+			t.Fatalf("isPlanCompleted() error = %v, want nil", err)
+		}
+		if ok {
+			t.Fatalf("isPlanCompleted() = true, want false (pending pods + remaining quota)")
+		}
+	})
+}
+
+func TestIsPlanCompleted_WorkloadLiveNoPendingQuotaSatisfied(t *testing.T) {
+	pl := &SharedState{}
+
+	// Only running pods for the workload.
+	var prio int32 = 5
+	pRun := newPod("ns", "p-run", "u-run", "n1", "ReplicaSet", "rs-1", prio)
+
+	store := map[string]map[string]*v1.Pod{
+		"ns": {
+			"p-run": pRun,
+		},
+	}
+	plister := &fakePodLister{store: store}
+
+	wk, owned := getTopWorkload(pRun)
+	if !owned {
+		t.Fatalf("getTopWorkload(run) returned owned=false")
+	}
+	wkStr := wk.String()
+
+	wq := WorkloadQuotas{
+		wkStr: {"n1": 2}, // remaining > 0
+	}
+
+	ap := &ActivePlan{
+		ID:             PlanConfigMapNamePrefix + "1",
+		WorkloadQuotas: buildWorkloadQuotas(wq),
+	}
+
+	withPodLister(plister, func() {
+		ok, err := pl.isPlanCompleted(ap)
+		if err != nil {
+			t.Fatalf("isPlanCompleted() error = %v, want nil", err)
+		}
+		if !ok {
+			t.Fatalf("isPlanCompleted() = false, want true (live pods, no pending, remaining quota treated as satisfied)")
+		}
+	})
 }
 
 // ----------------------------------------------------------------------
@@ -846,6 +1613,83 @@ func TestOnPlanCompleted_HookCalledAfterStateCleared(t *testing.T) {
 	}
 	if pl.getActivePlan() != nil {
 		t.Fatalf("ActivePlan not cleared by onPlanCompleted")
+	}
+}
+
+func TestOnPlanCompleted_NoActivePlanOrAlreadyCleared(t *testing.T) {
+	pl := &SharedState{}
+
+	// No ActivePlan stored -> tryClearActivePlan(nil) == false.
+	ok := pl.onPlanCompleted(PlanStatusCompleted)
+	if ok {
+		t.Fatalf("onPlanCompleted() = true, want false when there is no active plan")
+	}
+}
+
+func TestOnPlanCompleted_DefaultPathTearsDownAndMarksStatus(t *testing.T) {
+	pl := &SharedState{}
+	pl.ActivePlanInProgress.Store(true)
+
+	cancelled := false
+	ap := &ActivePlan{
+		ID: PlanConfigMapNamePrefix + "cm-123",
+		Cancel: func() {
+			cancelled = true
+		},
+	}
+	pl.ActivePlan.Store(ap)
+
+	// Ensure there is no hook so the default path is taken.
+	origOnHook := onPlanCompletedHook
+	defer func() { onPlanCompletedHook = origOnHook }()
+	onPlanCompletedHook = nil
+
+	var (
+		statusCalled bool
+		gotPl        *SharedState
+		gotCtx       context.Context
+		gotCM        string
+		gotStatus    PlanStatus
+	)
+	origMark := markPlanStatusToConfigMapHook
+	defer func() { markPlanStatusToConfigMapHook = origMark }()
+
+	markPlanStatusToConfigMapHook = func(hpl *SharedState, hctx context.Context, planCM string, status PlanStatus) bool {
+		statusCalled = true
+		gotPl = hpl
+		gotCtx = hctx
+		gotCM = planCM
+		gotStatus = status
+		return true // skip real mutateRaw
+	}
+
+	ok := pl.onPlanCompleted(PlanStatusCompleted)
+	if !ok {
+		t.Fatalf("onPlanCompleted() = false, want true")
+	}
+	if pl.getActivePlan() != nil {
+		t.Fatalf("active plan not cleared")
+	}
+	if pl.ActivePlanInProgress.Load() {
+		t.Fatalf("ActivePlanInProgress still true after onPlanCompleted")
+	}
+	if !cancelled {
+		t.Fatalf("ActivePlan.Cancel was not called")
+	}
+	if !statusCalled {
+		t.Fatalf("markPlanStatusToConfigMapHook not called")
+	}
+	if gotPl != pl {
+		t.Fatalf("markPlanStatusToConfigMapHook pl = %p, want %p", gotPl, pl)
+	}
+	if gotCtx == nil {
+		t.Fatalf("markPlanStatusToConfigMapHook ctx is nil")
+	}
+	if gotCM != ap.ID {
+		t.Fatalf("markPlanStatusToConfigMapHook planCM = %q, want %q", gotCM, ap.ID)
+	}
+	if gotStatus != PlanStatusCompleted {
+		t.Fatalf("markPlanStatusToConfigMapHook status = %v, want %v", gotStatus, PlanStatusCompleted)
 	}
 }
 

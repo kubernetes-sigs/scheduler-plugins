@@ -8,14 +8,18 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// -----------------------------------------------------------------------------
+// runPythonSolver
+// -----------------------------------------------------------------------------
+
 // runPythonSolver is the Python-specific wrapper that prepares the payload,
 // invokes the external process, decodes the PythonSolverOutput and returns
 // the embedded generic SolverOutput.
 func (pl *SharedState) runPythonSolver(
 	ctx context.Context,
-	in PlannerInput,
+	in SolverInput,
 	opts PythonSolverOptions,
-) (*PlannerOutput, error) {
+) (*SolverOutput, error) {
 	// Prepare the payload
 	payload := PythonSolverPayload{
 		SolverInput:   in,
@@ -50,7 +54,7 @@ func (pl *SharedState) runPythonSolver(
 		return nil, fmt.Errorf("decode python solver output: %w", err)
 	}
 
-	out := &pyOut.PlannerOutput
+	out := &pyOut.SolverOutput
 
 	// Summary log for the whole solve.
 	klog.V(MyV).InfoS("Python solver result",

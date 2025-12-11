@@ -15,22 +15,30 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// -----------------------------------------------------------------------------
+// isAnySolverEnabled
+// -----------------------------------------------------------------------------
+
 // isAnySolverEnabled checks if any solver is enabled.
 func (pl *SharedState) isAnySolverEnabled() bool {
 	return SolverPythonEnabled // add more using ORs as needed
 }
+
+// -----------------------------------------------------------------------------
+// buildSolverInput
+// -----------------------------------------------------------------------------
 
 // buildSolverInput builds the solver input from live nodes/pods (and optional preemptor)
 func (pl *SharedState) buildSolverInput(
 	nodes []*v1.Node,
 	pods []*v1.Pod,
 	preemptor *v1.Pod,
-) (PlannerInput, error) {
+) (SolverInput, error) {
 
-	in := PlannerInput{
+	in := SolverInput{
 		IgnoreAffinity: true,
-		Nodes:          make([]PlannerNode, 0, len(nodes)),
-		Pods:           make([]PlannerPod, 0, len(pods)),
+		Nodes:          make([]SolverNode, 0, len(nodes)),
+		Pods:           make([]SolverPod, 0, len(pods)),
 	}
 
 	// ----- Nodes: keep only usable -----
@@ -39,7 +47,7 @@ func (pl *SharedState) buildSolverInput(
 		if !isNodeUsable(n) {
 			continue
 		}
-		in.Nodes = append(in.Nodes, PlannerNode{
+		in.Nodes = append(in.Nodes, SolverNode{
 			Name:        n.Name,
 			CapCPUm:     n.Status.Allocatable.Cpu().MilliValue(),
 			CapMemBytes: n.Status.Allocatable.Memory().Value(),
@@ -47,13 +55,13 @@ func (pl *SharedState) buildSolverInput(
 		usable[n.Name] = true
 	}
 	if len(in.Nodes) == 0 {
-		return PlannerInput{}, ErrNoUsableNodes
+		return SolverInput{}, ErrNoUsableNodes
 	}
 
 	// ----- Preemptor: include as pending (not in Pods list) -----
 	preUID := ""
 	if preemptor != nil {
-		pre := toPod(preemptor, "")
+		pre := toSolverPod(preemptor, "")
 		in.Preemptor = &pre
 		preUID = string(preemptor.UID)
 	}
@@ -73,7 +81,7 @@ func (pl *SharedState) buildSolverInput(
 		switch {
 		case where == "":
 			// pending → always include
-			sp := toPod(p, "")
+			sp := toSolverPod(p, "")
 			if isPodProtected(p) {
 				sp.Protected = true
 			}
@@ -87,7 +95,7 @@ func (pl *SharedState) buildSolverInput(
 			if !usable[where] {
 				continue
 			}
-			sp := toPod(p, where)
+			sp := toSolverPod(p, where)
 			if isPodProtected(p) {
 				sp.Protected = true
 			}
@@ -103,8 +111,12 @@ func (pl *SharedState) buildSolverInput(
 	return in, nil
 }
 
+// -----------------------------------------------------------------------------
+// buildBaselineScore
+// -----------------------------------------------------------------------------
+
 // buildBaselineScore computes the baseline score from the solver input.
-func buildBaselineScore(pods []*v1.Pod) PlannerScore {
+func buildBaselineScore(pods []*v1.Pod) SolverScore {
 	placedByPri := map[string]int{}
 	for _, p := range pods {
 		if !isPodAssigned(p) {
@@ -113,12 +125,16 @@ func buildBaselineScore(pods []*v1.Pod) PlannerScore {
 		pr := strconv.Itoa(int(getPodPriority(p)))
 		placedByPri[pr] = placedByPri[pr] + 1
 	}
-	return PlannerScore{
+	return SolverScore{
 		PlacedByPriority: placedByPri,
 		Evicted:          0,
 		Moved:            0,
 	}
 }
+
+// -----------------------------------------------------------------------------
+// solverConfigArgs
+// -----------------------------------------------------------------------------
 
 // solverConfigArgs builds a list of key-value pairs representing the active solver configuration.
 func solverConfigArgs() []any {
@@ -138,32 +154,36 @@ func solverConfigArgs() []any {
 	return args
 }
 
-// isImprovement compares two scores lexicographically:
+// -----------------------------------------------------------------------------
+// isSolutionBetter
+// -----------------------------------------------------------------------------
+
+// isSolutionBetter compares two scores lexicographically:
 //  1. More placed per priority (lexicographic map compare)
 //  2. Fewer evictions
 //  3. Fewer moves
 //
 // Returns 1 if suggested is better, -1 if worse, 0 if equal.
 // Returns as soon as a difference is found.
-func isImprovement(baseline, suggested *PlannerScore) int {
+func isSolutionBetter(old, new *SolverScore) int {
 	// 1) Placed-by-priority (more is better)
-	if cmp := cmpLexi(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
+	if cmp := cmpLexi(new.PlacedByPriority, old.PlacedByPriority); cmp != 0 {
 		klog.V(MyV).InfoS("compare placed-by-priority", "result", cmp,
-			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
+			"new", new.PlacedByPriority, "old", old.PlacedByPriority)
 		return cmp
 	}
 
 	// 2) Evictions (fewer is better)
-	if cmp := cmpInt(suggested.Evicted, baseline.Evicted); cmp != 0 {
+	if cmp := cmpInt(new.Evicted, old.Evicted); cmp != 0 {
 		klog.V(MyV).InfoS("compare evictions", "result", cmp,
-			"suggested", suggested.Evicted, "baseline", baseline.Evicted)
+			"new", new.Evicted, "old", old.Evicted)
 		return cmp
 	}
 
 	// 3) Moves (fewer is better)
-	if cmp := cmpInt(suggested.Moved, baseline.Moved); cmp != 0 {
+	if cmp := cmpInt(new.Moved, old.Moved); cmp != 0 {
 		klog.V(MyV).InfoS("compare moves", "result", cmp,
-			"suggested", suggested.Moved, "baseline", baseline.Moved)
+			"new", new.Moved, "old", old.Moved)
 		return cmp
 	}
 
@@ -171,6 +191,10 @@ func isImprovement(baseline, suggested *PlannerScore) int {
 	klog.V(MyV).InfoS("no change: equal on placed, evictions, and moves")
 	return 0
 }
+
+// -----------------------------------------------------------------------------
+// cmpLexi
+// -----------------------------------------------------------------------------
 
 // cmpLexi returns 1 if a>b, -1 if a<b, 0 if equal
 func cmpLexi(a, b map[string]int) int {
@@ -204,6 +228,10 @@ func cmpLexi(a, b map[string]int) int {
 	return 0
 }
 
+// -----------------------------------------------------------------------------
+// cmpInt
+// -----------------------------------------------------------------------------
+
 // cmpInt returns +1 if suggested<baseline (improvement because smaller is better),
 // -1 if suggested>baseline (worse), 0 if equal.
 func cmpInt(suggested, baseline int) int {
@@ -217,40 +245,27 @@ func cmpInt(suggested, baseline int) int {
 	}
 }
 
-// hasSolverUsableResult checks if the solver output status indicates a usable result.
+// -----------------------------------------------------------------------------
+// isSolutionUsable
+// -----------------------------------------------------------------------------
+
+// isSolutionUsable checks if the solver output status indicates a usable result.
 // OPTIMAL means the solution is perfect and meets all constraints
 // (there can be multiple optimal solutions and the solver is non-deterministic).
 // FEASIBLE means the solution is not optimal but still meets all constraints.
-func hasSolverUsableResult(status string) bool {
+func isSolutionUsable(status string) bool {
 	return status != "" && (status == "OPTIMAL" || status == "FEASIBLE")
 }
 
-// doesSolverSolutionImproves reports whether a solver result is both usable
-// (status is OPTIMAL/FEASIBLE) and strictly better than the given baseline.
-// Returns:
-//
-//	improves: true if usable AND strictly better than baseline
-//	usable:   true if status indicates a usable solution (OPTIMAL/FEASIBLE)
-func doesSolverSolutionImproves(
-	baseline *PlannerScore,
-	status string,
-	score *PlannerScore,
-) (improves bool, usable bool) {
-	if baseline == nil || score == nil {
-		return false, false
-	}
-	usable = hasSolverUsableResult(status)
-	if !usable {
-		return false, false
-	}
-	return isImprovement(baseline, score) > 0, true
-}
+// -----------------------------------------------------------------------------
+// isSolutionApplicable
+// -----------------------------------------------------------------------------
 
-// isPlanApplicable checks whether a SolverOutput can still be safely
+// isSolutionApplicable checks whether a SolverOutput can still be safely
 // applied on the current cluster state. It allows unrelated drift and only
 // insists that the concrete preconditions for the plan still hold.
-func (pl *SharedState) isPlanApplicable(
-	out *PlannerOutput,
+func (pl *SharedState) isSolutionApplicable(
+	out *SolverOutput,
 	nodes []*v1.Node,
 	pods []*v1.Pod,
 ) (bool, string) {
@@ -356,14 +371,18 @@ func (pl *SharedState) isPlanApplicable(
 	return true, ""
 }
 
+// -----------------------------------------------------------------------------
+// logLeaderboard
+// -----------------------------------------------------------------------------
+
 // logLeaderboard prints a compact solver leaderboard relative to baseline.
 // It groups attempts as better/equal/worse vs baseline and tags adjacent ties.
 // If best is nil, it logs only the baseline row.
 func logLeaderboard(
 	label string,
-	attempts []PlannerResult,
-	baseline PlannerScore,
-	best *PlannerResult,
+	attempts []SolverResult,
+	baseline SolverScore,
+	best *SolverResult,
 ) {
 	// No best attempt → only log baseline (useful when all solvers failed / unusable).
 	if best == nil {
@@ -384,9 +403,9 @@ func logLeaderboard(
 		attempts = nil
 	}
 
-	var better, equal, worse []PlannerResult
+	var better, equal, worse []SolverResult
 	for _, r := range attempts {
-		cmp := isImprovement(&baseline, &r.Score)
+		cmp := isSolutionBetter(&baseline, &r.Score)
 		switch cmp {
 		case 1:
 			better = append(better, r)
@@ -398,18 +417,18 @@ func logLeaderboard(
 	}
 
 	// Baseline entry – first among equals
-	baselineEntry := PlannerResult{
+	baselineEntry := SolverResult{
 		Name:       "baseline",
 		Status:     "BASELINE",
 		DurationMs: 0,
 		Score:      baseline,
 	}
-	equal = append([]PlannerResult{baselineEntry}, equal...)
+	equal = append([]SolverResult{baselineEntry}, equal...)
 
 	ranking := append(append(better, equal...), worse...)
 
-	tied := func(a, b PlannerScore) bool {
-		return isImprovement(&a, &b) == 0 && isImprovement(&b, &a) == 0
+	tied := func(a, b SolverScore) bool {
+		return isSolutionBetter(&a, &b) == 0 && isSolutionBetter(&b, &a) == 0
 	}
 
 	names := make([]string, len(ranking))
@@ -446,13 +465,17 @@ func logLeaderboard(
 	)
 }
 
-// scorePlan computes final Score from the snapshot given to the solver:
+// -----------------------------------------------------------------------------
+// scoreSolution
+// -----------------------------------------------------------------------------
+
+// scoreSolution computes final Score from the snapshot given to the solver:
 //   - placed_by_priority: number of pods that were placed for each priority
 //   - evicted:            number of pods that were evicted
 //   - moved:              number of pods that were moved to a different node
-func scorePlan(in PlannerInput, out *PlannerOutput) PlannerScore {
+func scoreSolution(in SolverInput, out *SolverOutput) SolverScore {
 	if out == nil {
-		return PlannerScore{}
+		return SolverScore{}
 	}
 
 	// Before-state (where) and priority by UID
@@ -513,16 +536,20 @@ func scorePlan(in PlannerInput, out *PlannerOutput) PlannerScore {
 		}
 	}
 
-	return PlannerScore{
+	return SolverScore{
 		PlacedByPriority: placedByPri,
 		Evicted:          len(evicted),
 		Moved:            moves,
 	}
 }
 
-// toPod converts a Pod to a SolverPod.
-func toPod(p *v1.Pod, node string) PlannerPod {
-	return PlannerPod{
+// -----------------------------------------------------------------------------
+// toSolverPod
+// -----------------------------------------------------------------------------
+
+// toSolverPod converts a Pod to a SolverPod.
+func toSolverPod(p *v1.Pod, node string) SolverPod {
+	return SolverPod{
 		UID:         p.UID,
 		Namespace:   p.Namespace,
 		Name:        p.Name,
@@ -533,24 +560,28 @@ func toPod(p *v1.Pod, node string) PlannerPod {
 	}
 }
 
-// exportPlannerStatsToConfigMap exports a compact run record to the stats ConfigMap.
+// -----------------------------------------------------------------------------
+// exportSolverStatsToConfigMap
+// -----------------------------------------------------------------------------
+
+// exportSolverStatsToConfigMap exports a compact run record to the stats ConfigMap.
 // Only runs when `hadFeasible` is true.
-func (pl *SharedState) exportPlannerStatsToConfigMap(
+func (pl *SharedState) exportSolverStatsToConfigMap(
 	ctx context.Context,
 	strategy string,
-	baseline PlannerScore,
+	baseline SolverScore,
 	best string,
-	attempts []PlannerResult,
+	attempts []SolverResult,
 	err string,
 ) {
-	entry := ExportedPlannerStats{
+	entry := ExportedSolverStats{
 		TimestampNs: time.Now().UnixNano(),
 		BestName:    best,
 		Error:       err,
 		Baseline:    baseline,
 		Attempts:    attempts,
 	}
-	pl.appendPlannerStatsCM(ctx, entry)
+	pl.appendSolverStatsCM(ctx, entry)
 	klog.V(MyV).InfoS(msg(strategy, "exported solver stats"),
 		"attempts", len(attempts),
 		"bestAttempt", best,
@@ -558,12 +589,16 @@ func (pl *SharedState) exportPlannerStatsToConfigMap(
 	)
 }
 
-var appendPlannerStatsCMHook func(pl *SharedState, ctx context.Context, entry ExportedPlannerStats)
+// -----------------------------------------------------------------------------
+// appendSolverStatsCM
+// -----------------------------------------------------------------------------
 
-func (pl *SharedState) appendPlannerStatsCM(ctx context.Context, entry ExportedPlannerStats) error {
+var appendSolverStatsCMHook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats)
+
+func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedSolverStats) error {
 	// Allow unit tests to intercept ConfigMap writes and avoid real K8s clients.
-	if appendPlannerStatsCMHook != nil {
-		appendPlannerStatsCMHook(pl, ctx, entry)
+	if appendSolverStatsCMHook != nil {
+		appendSolverStatsCMHook(pl, ctx, entry)
 		return nil
 	}
 
@@ -586,12 +621,12 @@ func (pl *SharedState) appendPlannerStatsCM(ctx context.Context, entry ExportedP
 			return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
 		},
 		doc,
-		func(existing []ExportedPlannerStats) ([]ExportedPlannerStats, error) {
+		func(existing []ExportedSolverStats) ([]ExportedSolverStats, error) {
 			return append(existing, entry), nil
 		},
 	)
 	if apierrors.IsNotFound(err) {
-		_ = doc.ensureJson(ctx, cli.CoreV1(), []ExportedPlannerStats{entry})
+		_ = doc.ensureJson(ctx, cli.CoreV1(), []ExportedSolverStats{entry})
 		return nil
 	}
 	return err

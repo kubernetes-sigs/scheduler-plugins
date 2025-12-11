@@ -14,17 +14,17 @@ import (
 var runPythonSolverHook func(
 	pl *SharedState,
 	ctx context.Context,
-	in PlannerInput,
+	in SolverInput,
 	opts PythonSolverOptions,
-) (*PlannerOutput, error)
+) (*SolverOutput, error)
 
 // planComputation tries enabled solvers in order, keeping the best attempt.
 // Returns the name of the best solver, whether any usable result was found,
 // the best attempt details, the best output, and all attempts.
 func (pl *SharedState) planComputation(
 	ctx context.Context,
-	solverInput PlannerInput,
-) (bestName string, hadUsableResult bool, bestAttempt *PlannerResult, bestOutput *PlannerOutput, attempts []PlannerResult) {
+	solverInput SolverInput,
+) (bestName string, hadUsableResult bool, bestAttempt *SolverResult, bestOutput *SolverOutput, attempts []SolverResult) {
 	hadUsableResult = false
 	strategy := getModeCombinedAsString()
 
@@ -39,12 +39,12 @@ func (pl *SharedState) planComputation(
 	// =====================================
 	// === Setup Attempts ==================
 	// =====================================
-	solverAttempts := []PlannerAttempt{
+	solverAttempts := []SolverAttempt{
 		{
 			Name:    "python",
 			Enabled: SolverPythonEnabled,
 			Timeout: SolverPythonTimeout + time.Duration(SolverPythonGraceMs)*time.Millisecond,
-			Run: func(ctx context.Context, in PlannerInput) (*PlannerOutput, error) {
+			Run: func(ctx context.Context, in SolverInput) (*SolverOutput, error) {
 				// Use hook if present (unit tests); otherwise call real solver.
 				if runPythonSolverHook != nil {
 					return runPythonSolverHook(pl, ctx, in, pyOpts)
@@ -97,10 +97,10 @@ func (pl *SharedState) planComputation(
 			}
 
 			status := "FAILED"
-			var score PlannerScore
+			var score SolverScore
 			if out != nil {
 				status = out.Status
-				score = scorePlan(inAttempt, out)
+				score = scoreSolution(inAttempt, out)
 			}
 
 			klog.InfoS(
@@ -111,7 +111,7 @@ func (pl *SharedState) planComputation(
 				"durationMs", durMs,
 			)
 
-			attempts = append(attempts, PlannerResult{
+			attempts = append(attempts, SolverResult{
 				Name:       att.Name,
 				DurationMs: durMs,
 				Status:     status,
@@ -121,15 +121,15 @@ func (pl *SharedState) planComputation(
 		}
 
 		// Build scored result
-		res := PlannerResult{
+		res := SolverResult{
 			Name:       att.Name,
 			DurationMs: durMs,
 			Status:     out.Status,
-			Score:      scorePlan(inAttempt, out),
+			Score:      scoreSolution(inAttempt, out),
 		}
-
-		// Is it a usable solution and does it improve over the current best?
-		improvesCurrent, usable := doesSolverSolutionImproves(&currentBest, res.Status, &res.Score)
+		// ---------- usable / not-usable cases ----------
+		improvesCurrent := isSolutionBetter(&currentBest, &res.Score) > 0
+		usable := isSolutionUsable(res.Status)
 		if !usable {
 			klog.InfoS(
 				msg(strategy, InfoNoFeasibleOrOptimalSolution),

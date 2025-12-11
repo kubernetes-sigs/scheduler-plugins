@@ -11,6 +11,10 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
+// -----------------------------------------------------------------------------
+// Reserve
+// -----------------------------------------------------------------------------
+
 // kube-system pods should always pass Reserve without touching workload quotas.
 func TestReserve_KubeSystemAlwaysAllowed(t *testing.T) {
 	pl := &SharedState{}
@@ -48,6 +52,10 @@ func TestReserve_NoActivePlan_AllowsPod(t *testing.T) {
 		t.Fatalf("Reserve() code = %v, want %v", st.Code(), fwk.Success)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Unreserve
+// -----------------------------------------------------------------------------
 
 // Unreserve with no reservation state present should be a no-op (no panic).
 func TestUnreserve_NoReservationState_NoPanic(t *testing.T) {

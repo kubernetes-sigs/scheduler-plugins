@@ -1,9 +1,9 @@
 package mypriorityoptimizer
 
-// PythonSolverOutput is the output from the Python solver, extending PlannerOutput.
+// PythonSolverOutput is the output from the Python solver, extending SolverOutput.
 type PythonSolverOutput struct {
-	// Embed the generic planner fields (status, placements, evictions, duration)
-	PlannerOutput
+	// Embed the generic solver fields (status, placements, evictions, duration)
+	SolverOutput
 	// SolvePhases of the solver (Python-specific)
 	SolvePhases []SolverPhase `json:"phases,omitempty"`
 }
@@ -23,7 +23,7 @@ type PythonSolverOptions struct {
 // PythonSolverPayload is the full payload sent to the external Python solver.
 type PythonSolverPayload struct {
 	// Embedded solver input and options
-	SolverInput PlannerInput `json:"solver_input"`
+	SolverInput SolverInput `json:"solver_input"`
 	// Python solver options
 	SolverOptions PythonSolverOptions `json:"solver_options"`
 }

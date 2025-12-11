@@ -104,28 +104,28 @@ func TestIsAlreadyComputedForPendingSet_BestAttemptNil(t *testing.T) {
 }
 
 func TestIsAlreadyComputedForPendingSet_NonOptimalStatus(t *testing.T) {
-	best := &PlannerResult{Status: "FEASIBLE"}
+	best := &SolverResult{Status: "FEASIBLE"}
 	if got := isAlreadyComputedForPendingSet(ErrNoImprovingSolutionFromAnySolver, best); got {
 		t.Fatalf("isAlreadyComputedForPendingSet(non-OPTIMAL) = true, want false")
 	}
 }
 
 func TestIsAlreadyComputedForPendingSet_OptimalWithNoImprovementErr(t *testing.T) {
-	best := &PlannerResult{Status: "OPTIMAL"}
+	best := &SolverResult{Status: "OPTIMAL"}
 	if got := isAlreadyComputedForPendingSet(ErrNoImprovingSolutionFromAnySolver, best); !got {
 		t.Fatalf("isAlreadyComputedForPendingSet(OPTIMAL, ErrNoImprovingSolutionFromAnySolver) = false, want true")
 	}
 }
 
 func TestIsAlreadyComputedForPendingSet_OptimalWithNoPendingPodsErr(t *testing.T) {
-	best := &PlannerResult{Status: "OPTIMAL"}
+	best := &SolverResult{Status: "OPTIMAL"}
 	if got := isAlreadyComputedForPendingSet(ErrNoPendingPodsScheduled, best); !got {
 		t.Fatalf("isAlreadyComputedForPendingSet(OPTIMAL, ErrNoPendingPodsScheduled) = false, want true")
 	}
 }
 
 func TestIsAlreadyComputedForPendingSet_OptimalWithOtherError(t *testing.T) {
-	best := &PlannerResult{Status: "OPTIMAL"}
+	best := &SolverResult{Status: "OPTIMAL"}
 	if got := isAlreadyComputedForPendingSet(context.DeadlineExceeded, best); got {
 		t.Fatalf("isAlreadyComputedForPendingSet(OPTIMAL, other error) = true, want false")
 	}

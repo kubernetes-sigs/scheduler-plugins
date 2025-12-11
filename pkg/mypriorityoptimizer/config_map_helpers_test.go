@@ -12,23 +12,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
-	corev1listers "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
 )
 
-// Helper: build a lister func(ns string) ConfigMapNamespaceLister from a set of ConfigMaps.
-func newConfigMapLister(cms ...*apiv1.ConfigMap) func(ns string) corev1listers.ConfigMapNamespaceLister {
-	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
-		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
-	})
-	for _, cm := range cms {
-		_ = indexer.Add(cm)
-	}
-	l := corev1listers.NewConfigMapLister(indexer)
-	return func(ns string) corev1listers.ConfigMapNamespaceLister {
-		return l.ConfigMaps(ns)
-	}
-}
+// -----------------------------------------------------------------------------
+// marshalJSONIndented
+// -----------------------------------------------------------------------------
+
+// TODO: missing
+
+// -----------------------------------------------------------------------------
+// patchDataString
+// -----------------------------------------------------------------------------
+
+// TODO: missing
+
+// -----------------------------------------------------------------------------
+// ensureJson
+// -----------------------------------------------------------------------------
 
 func TestEnsureJson_CreateAndUpdate(t *testing.T) {
 	ctx := context.Background()
@@ -89,6 +89,10 @@ func TestEnsureJson_CreateAndUpdate(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// patchJson
+// -----------------------------------------------------------------------------
+
 func TestPatchJson(t *testing.T) {
 	ctx := context.Background()
 	namespace := "ns2"
@@ -138,6 +142,10 @@ func TestPatchJson(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// readJson
+// -----------------------------------------------------------------------------
+
 func TestReadJson_MissingAndPresent(t *testing.T) {
 	namespace := "ns3"
 	name := "cm3"
@@ -183,6 +191,10 @@ func TestReadJson_MissingAndPresent(t *testing.T) {
 		t.Fatalf("expected IsNotFound for missing name")
 	}
 }
+
+// -----------------------------------------------------------------------------
+// mutateJson
+// -----------------------------------------------------------------------------
 
 func TestMutateJson_Appends(t *testing.T) {
 	ctx := context.Background()
@@ -242,6 +254,10 @@ func TestMutateJson_Appends(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// mutateJson
+// -----------------------------------------------------------------------------
+
 func TestMutateRaw_Uppercases(t *testing.T) {
 	ctx := context.Background()
 	namespace := "ns5"
@@ -283,6 +299,10 @@ func TestMutateRaw_Uppercases(t *testing.T) {
 		t.Fatalf("mutateRaw did not update dataKey; got %q", updated.Data[dataKey])
 	}
 }
+
+// -----------------------------------------------------------------------------
+// listConfigMaps
+// -----------------------------------------------------------------------------
 
 func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 	namespace := "ns6"
@@ -338,6 +358,10 @@ func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 		t.Fatalf("unexpected order: %v, %v, %v", items[0].Name, items[1].Name, items[2].Name)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// pruneConfigMaps
+// -----------------------------------------------------------------------------
 
 func TestPruneConfigMaps_DeletesOldOnes(t *testing.T) {
 	ctx := context.Background()

@@ -10,7 +10,7 @@ import (
 
 // newSafePodSet creates a new PodSet.
 func newSafePodSet(name string) *SafePodSet {
-	return &SafePodSet{Name: name, m: make(map[types.UID]PlannerPod)}
+	return &SafePodSet{Name: name, m: make(map[types.UID]SolverPod)}
 }
 
 // doesSafePodSetExist returns true if the pod set is non-nil and has at least one pod.
@@ -58,7 +58,7 @@ func (s *SafePodSet) AddPodSafely(p *v1.Pod) {
 		return
 	}
 	s.mu.Lock()
-	s.m[p.UID] = PlannerPod{UID: p.UID, Namespace: p.Namespace, Name: p.Name}
+	s.m[p.UID] = SolverPod{UID: p.UID, Namespace: p.Namespace, Name: p.Name}
 	s.mu.Unlock()
 }
 
@@ -81,9 +81,9 @@ func (s *SafePodSet) Size() int {
 
 // SnapshotSafely returns a snapshot of the current pods in the set.
 // Use mutex so that we can read the map safely.
-func (s *SafePodSet) SnapshotSafely() map[types.UID]PlannerPod {
+func (s *SafePodSet) SnapshotSafely() map[types.UID]SolverPod {
 	s.mu.RLock()
-	out := make(map[types.UID]PlannerPod, len(s.m))
+	out := make(map[types.UID]SolverPod, len(s.m))
 	for k, v := range s.m {
 		out[k] = v
 	}

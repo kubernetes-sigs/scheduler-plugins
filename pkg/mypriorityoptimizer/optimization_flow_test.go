@@ -14,10 +14,10 @@ import (
 // Helpers
 // -----------------------------------------------------------------------------
 
-// dummyPlannerInput returns a minimal PlannerInput with a specific baseline.
-func dummyPlannerInput(evicted int) PlannerInput {
-	return PlannerInput{
-		BaselineScore: PlannerScore{
+// dummySolverInput returns a minimal SolverInput with a specific baseline.
+func dummySolverInput(evicted int) SolverInput {
+	return SolverInput{
+		BaselineScore: SolverScore{
 			Evicted: evicted,
 		},
 	}
@@ -71,13 +71,13 @@ func TestRunOptimizationFlow_PlanContextError(t *testing.T) {
 
 	// planContext fails.
 	wantErr := errors.New("boom-plancontext")
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return nil, nil, 0, PlannerInput{}, wantErr
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return nil, nil, 0, SolverInput{}, wantErr
 	}
 
 	// We should NOT export stats on this early failure.
 	calledExport := atomic.Bool{}
-	exportSolverStatsFn = func(_ *SharedState, _ string, _ PlannerScore, _ string, _ []PlannerResult, _ string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, _ string) {
 		calledExport.Store(true)
 	}
 
@@ -121,28 +121,28 @@ func TestRunOptimizationFlow_NoImprovingSolution(t *testing.T) {
 	isAsyncSolvingFn = func() bool { return false }
 
 	// Baseline score we expect to be threaded through.
-	baseline := PlannerScore{Evicted: 42}
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return nil, nil, 3, dummyPlannerInput(baseline.Evicted), nil
+	baseline := SolverScore{Evicted: 42}
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return nil, nil, 3, dummySolverInput(baseline.Evicted), nil
 	}
 
 	// No improving solution from any solver.
-	bestAttempt := &PlannerResult{Name: "attempt-1"}
-	attempts := []PlannerResult{
+	bestAttempt := &SolverResult{Name: "attempt-1"}
+	attempts := []SolverResult{
 		{Name: "solverA", Status: "FEASIBLE"},
 		{Name: "solverB", Status: "OPTIMAL"},
 	}
-	planComputationFn = func(_ *SharedState, _ context.Context, _ PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return "solverB", false /* hadImprovement */, bestAttempt, nil, attempts
 	}
 
 	// Capture exported stats.
 	calledExport := atomic.Bool{}
-	var gotBaseline PlannerScore
+	var gotBaseline SolverScore
 	var gotBestName string
 	var gotErrMsg string
 
-	exportSolverStatsFn = func(_ *SharedState, _ string, baselineScore PlannerScore, bestName string, att []PlannerResult, errMsg string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, baselineScore SolverScore, bestName string, att []SolverResult, errMsg string) {
 		calledExport.Store(true)
 		gotBaseline = baselineScore
 		gotBestName = bestName
@@ -200,39 +200,39 @@ func TestRunOptimizationFlow_PlanNotApplicable(t *testing.T) {
 	origAsync := isAsyncSolvingFn
 	origPlanCtx := planContextFn
 	origPlanComp := planComputationFn
-	origIsApplicable := isPlanApplicableFn
+	origIsApplicable := isSolutionApplicableFn
 	origExportStats := exportSolverStatsFn
 	defer func() {
 		isAsyncSolvingFn = origAsync
 		planContextFn = origPlanCtx
 		planComputationFn = origPlanComp
-		isPlanApplicableFn = origIsApplicable
+		isSolutionApplicableFn = origIsApplicable
 		exportSolverStatsFn = origExportStats
 	}()
 
 	isAsyncSolvingFn = func() bool { return false }
 
-	baseline := PlannerScore{Evicted: 7}
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, 2, dummyPlannerInput(baseline.Evicted), nil
+	baseline := SolverScore{Evicted: 7}
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return []*v1.Node{}, []*v1.Pod{}, 2, dummySolverInput(baseline.Evicted), nil
 	}
 
-	bestAttempt := &PlannerResult{Name: "attempt-2"}
-	bestOut := &PlannerOutput{Status: "OPTIMAL"}
-	attempts := []PlannerResult{{Name: "solverX"}}
+	bestAttempt := &SolverResult{Name: "attempt-2"}
+	bestOut := &SolverOutput{Status: "OPTIMAL"}
+	attempts := []SolverResult{{Name: "solverX"}}
 
-	planComputationFn = func(_ *SharedState, _ context.Context, _ PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return "solverX", true, bestAttempt, bestOut, attempts
 	}
 
 	// Plan not applicable anymore.
-	isPlanApplicableFn = func(_ *SharedState, _ *PlannerOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
+	isSolutionApplicableFn = func(_ *SharedState, _ *SolverOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
 		return false, "stale-cluster"
 	}
 
 	calledExport := atomic.Bool{}
 	var gotErrMsg string
-	exportSolverStatsFn = func(_ *SharedState, _ string, _ PlannerScore, _ string, _ []PlannerResult, errMsg string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, errMsg string) {
 		calledExport.Store(true)
 		gotErrMsg = errMsg
 	}
@@ -282,45 +282,45 @@ func TestRunOptimizationFlow_NoPendingScheduled(t *testing.T) {
 	origAsync := isAsyncSolvingFn
 	origPlanCtx := planContextFn
 	origPlanComp := planComputationFn
-	origIsApplicable := isPlanApplicableFn
+	origIsApplicable := isSolutionApplicableFn
 	origComputeCounts := computePlanPodCountsFn
 	origExportStats := exportSolverStatsFn
 	defer func() {
 		isAsyncSolvingFn = origAsync
 		planContextFn = origPlanCtx
 		planComputationFn = origPlanComp
-		isPlanApplicableFn = origIsApplicable
+		isSolutionApplicableFn = origIsApplicable
 		computePlanPodCountsFn = origComputeCounts
 		exportSolverStatsFn = origExportStats
 	}()
 
 	isAsyncSolvingFn = func() bool { return false }
 
-	baseline := PlannerScore{Evicted: 10}
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, 2, dummyPlannerInput(baseline.Evicted), nil
+	baseline := SolverScore{Evicted: 10}
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return []*v1.Node{}, []*v1.Pod{}, 2, dummySolverInput(baseline.Evicted), nil
 	}
 
-	bestAttempt := &PlannerResult{Name: "attempt-3"}
-	bestOut := &PlannerOutput{Status: "OPTIMAL"}
-	attempts := []PlannerResult{{Name: "solverY"}}
+	bestAttempt := &SolverResult{Name: "attempt-3"}
+	bestOut := &SolverOutput{Status: "OPTIMAL"}
+	attempts := []SolverResult{{Name: "solverY"}}
 
-	planComputationFn = func(_ *SharedState, _ context.Context, _ PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return "solverY", true, bestAttempt, bestOut, attempts
 	}
 
-	isPlanApplicableFn = func(_ *SharedState, _ *PlannerOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
+	isSolutionApplicableFn = func(_ *SharedState, _ *SolverOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
 		return true, ""
 	}
 
 	// No pending pods scheduled.
-	computePlanPodCountsFn = func(_ *PlannerOutput, _ []*v1.Pod) (int, int, int) {
+	computePlanPodCountsFn = func(_ *SolverOutput, _ []*v1.Pod) (int, int, int) {
 		return 0, 5, 5
 	}
 
 	calledExport := atomic.Bool{}
 	var gotErrMsg string
-	exportSolverStatsFn = func(_ *SharedState, _ string, _ PlannerScore, _ string, _ []PlannerResult, errMsg string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, errMsg string) {
 		calledExport.Store(true)
 		gotErrMsg = errMsg
 	}
@@ -369,7 +369,7 @@ func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
 	origAsync := isAsyncSolvingFn
 	origPlanCtx := planContextFn
 	origPlanComp := planComputationFn
-	origIsApplicable := isPlanApplicableFn
+	origIsApplicable := isSolutionApplicableFn
 	origComputeCounts := computePlanPodCountsFn
 	origPlanReg := planRegistrationFn
 	origPlanAct := planActivationFn
@@ -379,7 +379,7 @@ func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
 		isAsyncSolvingFn = origAsync
 		planContextFn = origPlanCtx
 		planComputationFn = origPlanComp
-		isPlanApplicableFn = origIsApplicable
+		isSolutionApplicableFn = origIsApplicable
 		computePlanPodCountsFn = origComputeCounts
 		planRegistrationFn = origPlanReg
 		planActivationFn = origPlanAct
@@ -389,36 +389,36 @@ func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
 
 	isAsyncSolvingFn = func() bool { return false }
 
-	baseline := PlannerScore{Evicted: 0}
+	baseline := SolverScore{Evicted: 0}
 	nodes := []*v1.Node{}
 	pods := []*v1.Pod{}
 	pendingPrePlan := 2
 
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return nodes, pods, pendingPrePlan, dummyPlannerInput(baseline.Evicted), nil
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return nodes, pods, pendingPrePlan, dummySolverInput(baseline.Evicted), nil
 	}
 
-	bestAttempt := &PlannerResult{Name: "attempt-best"}
-	bestOut := &PlannerOutput{Status: "OPTIMAL"}
-	attempts := []PlannerResult{{Name: "solverZ"}}
+	bestAttempt := &SolverResult{Name: "attempt-best"}
+	bestOut := &SolverOutput{Status: "OPTIMAL"}
+	attempts := []SolverResult{{Name: "solverZ"}}
 
-	planComputationFn = func(_ *SharedState, _ context.Context, _ PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return "solverZ", true, bestAttempt, bestOut, attempts
 	}
 
-	isPlanApplicableFn = func(_ *SharedState, _ *PlannerOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
+	isSolutionApplicableFn = func(_ *SharedState, _ *SolverOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
 		return true, ""
 	}
 
 	// Some positive number of pendingScheduled.
-	computePlanPodCountsFn = func(_ *PlannerOutput, _ []*v1.Pod) (int, int, int) {
+	computePlanPodCountsFn = func(_ *SolverOutput, _ []*v1.Pod) (int, int, int) {
 		return 2, 5, 7
 	}
 
 	dummyPlan := &Plan{}
 	dummyAP := &ActivePlan{ID: "plan-123"}
 
-	planRegistrationFn = func(_ *SharedState, _ context.Context, _ PlannerResult, _ *PlannerOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
+	planRegistrationFn = func(_ *SharedState, _ context.Context, _ SolverResult, _ *SolverOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
 		return dummyPlan, dummyAP, nil
 	}
 
@@ -436,7 +436,7 @@ func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
 
 	exportCalled := atomic.Bool{}
 	var exportErrMsg string
-	exportSolverStatsFn = func(_ *SharedState, _ string, _ PlannerScore, _ string, _ []PlannerResult, errMsg string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, errMsg string) {
 		exportCalled.Store(true)
 		exportErrMsg = errMsg
 	}
@@ -492,13 +492,13 @@ func TestRunOptimizationFlow_ActivePlanAlreadyInProgress_NonAsync(t *testing.T) 
 	isAsyncSolvingFn = func() bool { return false }
 
 	// If planContext is ever called, the test should fail → early return expected.
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
 		t.Fatalf("planContextFn must not be called when ActivePlan is already in progress")
-		return nil, nil, 0, PlannerInput{}, nil
+		return nil, nil, 0, SolverInput{}, nil
 	}
 
 	// We should not export stats on this early ActivePlan conflict.
-	exportSolverStatsFn = func(_ *SharedState, _ string, _ PlannerScore, _ string, _ []PlannerResult, _ string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, _ string) {
 		t.Fatalf("exportSolverStatsFn must not be called on early ActivePlan conflict")
 	}
 
@@ -520,7 +520,7 @@ func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 	origAsync := isAsyncSolvingFn
 	origPlanCtx := planContextFn
 	origPlanComp := planComputationFn
-	origIsApplicable := isPlanApplicableFn
+	origIsApplicable := isSolutionApplicableFn
 	origComputeCounts := computePlanPodCountsFn
 	origPlanReg := planRegistrationFn
 	origPlanAct := planActivationFn
@@ -530,7 +530,7 @@ func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 		isAsyncSolvingFn = origAsync
 		planContextFn = origPlanCtx
 		planComputationFn = origPlanComp
-		isPlanApplicableFn = origIsApplicable
+		isSolutionApplicableFn = origIsApplicable
 		computePlanPodCountsFn = origComputeCounts
 		planRegistrationFn = origPlanReg
 		planActivationFn = origPlanAct
@@ -541,25 +541,25 @@ func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 	// Async mode: skip early PlanActive and only take it after plan is validated.
 	isAsyncSolvingFn = func() bool { return true }
 
-	baseline := PlannerScore{Evicted: 11}
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, 1, dummyPlannerInput(baseline.Evicted), nil
+	baseline := SolverScore{Evicted: 11}
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return []*v1.Node{}, []*v1.Pod{}, 1, dummySolverInput(baseline.Evicted), nil
 	}
 
-	bestAttempt := &PlannerResult{Name: "attempt-async"}
-	bestOut := &PlannerOutput{Status: "OPTIMAL"}
-	attempts := []PlannerResult{{Name: "solverAsync"}}
+	bestAttempt := &SolverResult{Name: "attempt-async"}
+	bestOut := &SolverOutput{Status: "OPTIMAL"}
+	attempts := []SolverResult{{Name: "solverAsync"}}
 
-	planComputationFn = func(_ *SharedState, _ context.Context, _ PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return "solverAsync", true, bestAttempt, bestOut, attempts
 	}
 
-	isPlanApplicableFn = func(_ *SharedState, _ *PlannerOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
+	isSolutionApplicableFn = func(_ *SharedState, _ *SolverOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
 		return true, ""
 	}
 
 	// pendingScheduled > 0 so we reach the async PlanActive branch.
-	computePlanPodCountsFn = func(_ *PlannerOutput, _ []*v1.Pod) (int, int, int) {
+	computePlanPodCountsFn = func(_ *SolverOutput, _ []*v1.Pod) (int, int, int) {
 		return 1, 4, 5
 	}
 
@@ -567,7 +567,7 @@ func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 	pl.ActivePlanInProgress.Store(true)
 
 	// None of these should be reached if we fail at async tryEnterActivePlan.
-	planRegistrationFn = func(_ *SharedState, _ context.Context, _ PlannerResult, _ *PlannerOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
+	planRegistrationFn = func(_ *SharedState, _ context.Context, _ SolverResult, _ *SolverOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
 		t.Fatalf("planRegistrationFn must not be called when async tryEnterActivePlan fails")
 		return nil, nil, nil
 	}
@@ -580,10 +580,10 @@ func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 	}
 
 	exportCalled := atomic.Bool{}
-	var gotBaseline PlannerScore
+	var gotBaseline SolverScore
 	var gotBestName string
 	var gotErrMsg string
-	exportSolverStatsFn = func(_ *SharedState, _ string, baselineScore PlannerScore, bestName string, _ []PlannerResult, errMsg string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, baselineScore SolverScore, bestName string, _ []SolverResult, errMsg string) {
 		exportCalled.Store(true)
 		gotBaseline = baselineScore
 		gotBestName = bestName
@@ -622,7 +622,7 @@ func TestRunOptimizationFlow_PlanRegistrationError(t *testing.T) {
 	origAsync := isAsyncSolvingFn
 	origPlanCtx := planContextFn
 	origPlanComp := planComputationFn
-	origIsApplicable := isPlanApplicableFn
+	origIsApplicable := isSolutionApplicableFn
 	origComputeCounts := computePlanPodCountsFn
 	origPlanReg := planRegistrationFn
 	origPlanAct := planActivationFn
@@ -632,7 +632,7 @@ func TestRunOptimizationFlow_PlanRegistrationError(t *testing.T) {
 		isAsyncSolvingFn = origAsync
 		planContextFn = origPlanCtx
 		planComputationFn = origPlanComp
-		isPlanApplicableFn = origIsApplicable
+		isSolutionApplicableFn = origIsApplicable
 		computePlanPodCountsFn = origComputeCounts
 		planRegistrationFn = origPlanReg
 		planActivationFn = origPlanAct
@@ -643,29 +643,29 @@ func TestRunOptimizationFlow_PlanRegistrationError(t *testing.T) {
 
 	isAsyncSolvingFn = func() bool { return false }
 
-	baseline := PlannerScore{Evicted: 5}
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, 3, dummyPlannerInput(baseline.Evicted), nil
+	baseline := SolverScore{Evicted: 5}
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return []*v1.Node{}, []*v1.Pod{}, 3, dummySolverInput(baseline.Evicted), nil
 	}
 
-	bestAttempt := &PlannerResult{Name: "attempt-regerr"}
-	bestOut := &PlannerOutput{Status: "OPTIMAL"}
-	attempts := []PlannerResult{{Name: "solverReg"}}
+	bestAttempt := &SolverResult{Name: "attempt-regerr"}
+	bestOut := &SolverOutput{Status: "OPTIMAL"}
+	attempts := []SolverResult{{Name: "solverReg"}}
 
-	planComputationFn = func(_ *SharedState, _ context.Context, _ PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return "solverReg", true, bestAttempt, bestOut, attempts
 	}
 
-	isPlanApplicableFn = func(_ *SharedState, _ *PlannerOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
+	isSolutionApplicableFn = func(_ *SharedState, _ *SolverOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
 		return true, ""
 	}
 
-	computePlanPodCountsFn = func(_ *PlannerOutput, _ []*v1.Pod) (int, int, int) {
+	computePlanPodCountsFn = func(_ *SolverOutput, _ []*v1.Pod) (int, int, int) {
 		return 2, 4, 6
 	}
 
 	wantErr := errors.New("boom-planreg")
-	planRegistrationFn = func(_ *SharedState, _ context.Context, _ PlannerResult, _ *PlannerOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
+	planRegistrationFn = func(_ *SharedState, _ context.Context, _ SolverResult, _ *SolverOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
 		return nil, nil, wantErr
 	}
 
@@ -681,7 +681,7 @@ func TestRunOptimizationFlow_PlanRegistrationError(t *testing.T) {
 	// Only check stats export here.
 	exportCalled := atomic.Bool{}
 	var gotErrMsg string
-	exportSolverStatsFn = func(_ *SharedState, _ string, _ PlannerScore, _ string, _ []PlannerResult, errMsg string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, errMsg string) {
 		exportCalled.Store(true)
 		gotErrMsg = errMsg
 	}
@@ -723,7 +723,7 @@ func TestRunOptimizationFlow_PlanActivationError(t *testing.T) {
 	origAsync := isAsyncSolvingFn
 	origPlanCtx := planContextFn
 	origPlanComp := planComputationFn
-	origIsApplicable := isPlanApplicableFn
+	origIsApplicable := isSolutionApplicableFn
 	origComputeCounts := computePlanPodCountsFn
 	origPlanReg := planRegistrationFn
 	origPlanAct := planActivationFn
@@ -733,7 +733,7 @@ func TestRunOptimizationFlow_PlanActivationError(t *testing.T) {
 		isAsyncSolvingFn = origAsync
 		planContextFn = origPlanCtx
 		planComputationFn = origPlanComp
-		isPlanApplicableFn = origIsApplicable
+		isSolutionApplicableFn = origIsApplicable
 		computePlanPodCountsFn = origComputeCounts
 		planRegistrationFn = origPlanReg
 		planActivationFn = origPlanAct
@@ -744,24 +744,24 @@ func TestRunOptimizationFlow_PlanActivationError(t *testing.T) {
 
 	isAsyncSolvingFn = func() bool { return false }
 
-	baseline := PlannerScore{Evicted: 2}
-	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, 1, dummyPlannerInput(baseline.Evicted), nil
+	baseline := SolverScore{Evicted: 2}
+	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		return []*v1.Node{}, []*v1.Pod{}, 1, dummySolverInput(baseline.Evicted), nil
 	}
 
-	bestAttempt := &PlannerResult{Name: "attempt-acterr"}
-	bestOut := &PlannerOutput{Status: "OPTIMAL"}
-	attempts := []PlannerResult{{Name: "solverAct"}}
+	bestAttempt := &SolverResult{Name: "attempt-acterr"}
+	bestOut := &SolverOutput{Status: "OPTIMAL"}
+	attempts := []SolverResult{{Name: "solverAct"}}
 
-	planComputationFn = func(_ *SharedState, _ context.Context, _ PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return "solverAct", true, bestAttempt, bestOut, attempts
 	}
 
-	isPlanApplicableFn = func(_ *SharedState, _ *PlannerOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
+	isSolutionApplicableFn = func(_ *SharedState, _ *SolverOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
 		return true, ""
 	}
 
-	computePlanPodCountsFn = func(_ *PlannerOutput, _ []*v1.Pod) (int, int, int) {
+	computePlanPodCountsFn = func(_ *SolverOutput, _ []*v1.Pod) (int, int, int) {
 		return 1, 3, 4
 	}
 
@@ -771,7 +771,7 @@ func TestRunOptimizationFlow_PlanActivationError(t *testing.T) {
 	// Simulate that planRegistration would have set an active plan.
 	pl.ActivePlan.Store(dummyAP)
 
-	planRegistrationFn = func(_ *SharedState, _ context.Context, _ PlannerResult, _ *PlannerOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
+	planRegistrationFn = func(_ *SharedState, _ context.Context, _ SolverResult, _ *SolverOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
 		return dummyPlan, dummyAP, nil
 	}
 
@@ -794,7 +794,7 @@ func TestRunOptimizationFlow_PlanActivationError(t *testing.T) {
 
 	exportCalled := atomic.Bool{}
 	var gotErrMsg string
-	exportSolverStatsFn = func(_ *SharedState, _ string, _ PlannerScore, _ string, _ []PlannerResult, errMsg string) {
+	exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, errMsg string) {
 		exportCalled.Store(true)
 		gotErrMsg = errMsg
 	}

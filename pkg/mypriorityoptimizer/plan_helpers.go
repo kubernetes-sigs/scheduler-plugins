@@ -21,15 +21,17 @@ import (
 	clientv1 "k8s.io/client-go/listers/core/v1"
 )
 
-// test hooks (overridden only in unit tests; nil in production).
+// ----------------------------------------------------------------------
+// Test Hooks
+// ----------------------------------------------------------------------
+
 var (
-	evictTargetsHook          func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
-	waitPodsGoneHook          func(pl *SharedState, ctx context.Context, pods []*v1.Pod) error
-	activatePlannedPodsHook   func(pl *SharedState, toActivate map[string]*v1.Pod)
-	isPlanCompletedHook       func(pl *SharedState, ap *ActivePlan) (bool, error)
-	onPlanCompletedHook       func(pl *SharedState, status PlanStatus, ap *ActivePlan)
-	exportPlanToConfigMapHook func(pl *SharedState, ctx context.Context, name string, sp *StoredPlan) error
-	// If markPlanStatusToConfigMapHook returns true, the real implementation is skipped.
+	evictTargetsHook              func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
+	waitPodsGoneHook              func(pl *SharedState, ctx context.Context, pods []*v1.Pod) error
+	activatePlannedPodsHook       func(pl *SharedState, toActivate map[string]*v1.Pod)
+	isPlanCompletedHook           func(pl *SharedState, ap *ActivePlan) (bool, error)
+	onPlanCompletedHook           func(pl *SharedState, status PlanStatus, ap *ActivePlan)
+	exportPlanToConfigMapHook     func(pl *SharedState, ctx context.Context, name string, sp *StoredPlan) error
 	markPlanStatusToConfigMapHook func(pl *SharedState, ctx context.Context, planCM string, status PlanStatus) bool
 )
 
@@ -66,18 +68,26 @@ func (pl *SharedState) tryLeaveOptimizationFlow() {
 	pl.OptimizationInProgress.Store(false)
 }
 
+// ----------------------------------------------------------------------
+// toPlanPod
+// ----------------------------------------------------------------------
+
 // toPlanPod converts a core/v1 Pod into a Pod (UID, Namespace, Name).
-func toPlanPod(p *v1.Pod) PlannerPod {
-	return PlannerPod{
+func toPlanPod(p *v1.Pod) SolverPod {
+	return SolverPod{
 		UID:       p.UID,
 		Namespace: p.Namespace,
 		Name:      p.Name,
 	}
 }
 
+// ----------------------------------------------------------------------
+// makePlacement
+// ----------------------------------------------------------------------
+
 // makePlacement builds a Placement for a pod on a given node.
-func makePlacement(p *v1.Pod, node string) PlannerPod {
-	return PlannerPod{
+func makePlacement(p *v1.Pod, node string) SolverPod {
+	return SolverPod{
 		UID:       p.UID,
 		Namespace: p.Namespace,
 		Name:      p.Name,
@@ -85,9 +95,13 @@ func makePlacement(p *v1.Pod, node string) PlannerPod {
 	}
 }
 
+// ----------------------------------------------------------------------
+// makeNewPlacement
+// ----------------------------------------------------------------------
+
 // makeNewPlacement builds a NewPlacement for a pod moving from src → dst.
-func makeNewPlacement(p *v1.Pod, oldNode, toNode string) PlannerPod {
-	return PlannerPod{
+func makeNewPlacement(p *v1.Pod, oldNode, toNode string) SolverPod {
+	return SolverPod{
 		UID:       p.UID,
 		Namespace: p.Namespace,
 		Name:      p.Name,
@@ -95,6 +109,10 @@ func makeNewPlacement(p *v1.Pod, oldNode, toNode string) PlannerPod {
 		Node:      toNode,
 	}
 }
+
+// ----------------------------------------------------------------------
+// increaseWorkloadQuota
+// ----------------------------------------------------------------------
 
 // increaseWorkloadQuota increments the quota count for a workload/node pair.
 func increaseWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
@@ -105,8 +123,12 @@ func increaseWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
 	wq[wkKey][node]++
 }
 
+// ----------------------------------------------------------------------
+// sortPlacementsByPod
+// ----------------------------------------------------------------------
+
 // sortPlacementsByPod sorts placements by (namespace, name) for stable output.
-func sortPlacementsByPod(pls []PlannerPod) {
+func sortPlacementsByPod(pls []SolverPod) {
 	sort.Slice(pls, func(i, j int) bool {
 		pi, pj := pls[i], pls[j]
 		if pi.Namespace != pj.Namespace {
@@ -116,8 +138,12 @@ func sortPlacementsByPod(pls []PlannerPod) {
 	})
 }
 
+// ----------------------------------------------------------------------
+// sortNewPlacementsByPod
+// ----------------------------------------------------------------------
+
 // sortNewPlacementsByPod sorts new placements by (namespace, name) for stable output.
-func sortNewPlacementsByPod(pls []PlannerPod) {
+func sortNewPlacementsByPod(pls []SolverPod) {
 	sort.Slice(pls, func(i, j int) bool {
 		pi, pj := pls[i], pls[j]
 		if pi.Namespace != pj.Namespace {
@@ -126,6 +152,10 @@ func sortNewPlacementsByPod(pls []PlannerPod) {
 		return pi.Name < pj.Name
 	})
 }
+
+// ----------------------------------------------------------------------
+// sortPodSetItemsByPriorityAndCreation
+// ----------------------------------------------------------------------
 
 // sortPodSetItemsByPriorityAndCreation sorts PodSetItems by:
 //  1. priority (higher first)
@@ -178,8 +208,8 @@ func indexPodsForPlan(pods []*v1.Pod, preemptor *v1.Pod) map[types.UID]*v1.Pod {
 }
 
 // collectOldPlacements returns placements for all currently assigned & alive pods.
-func collectOldPlacements(byUID map[types.UID]*v1.Pod) []PlannerPod {
-	oldPlacements := make([]PlannerPod, 0, len(byUID))
+func collectOldPlacements(byUID map[types.UID]*v1.Pod) []SolverPod {
+	oldPlacements := make([]SolverPod, 0, len(byUID))
 	for _, p := range byUID {
 		if isPodAssignedAndAlive(p) {
 			oldPlacements = append(oldPlacements, makePlacement(p, getPodAssignedNodeName(p)))
@@ -190,11 +220,11 @@ func collectOldPlacements(byUID map[types.UID]*v1.Pod) []PlannerPod {
 }
 
 // collectEvictions builds evict placements from the solver output and pod index.
-func collectEvictions(out *PlannerOutput, byUID map[types.UID]*v1.Pod) []PlannerPod {
+func collectEvictions(out *SolverOutput, byUID map[types.UID]*v1.Pod) []SolverPod {
 	if out == nil || len(out.Evictions) == 0 {
 		return nil
 	}
-	evicts := make([]PlannerPod, 0, len(out.Evictions))
+	evicts := make([]SolverPod, 0, len(out.Evictions))
 	for _, e := range out.Evictions {
 		if p := byUID[e.UID]; isPodAssignedAndAlive(p) {
 			evicts = append(evicts, makePlacement(p, getPodAssignedNodeName(p)))
@@ -206,7 +236,7 @@ func collectEvictions(out *PlannerOutput, byUID map[types.UID]*v1.Pod) []Planner
 // buildPlan builds the evictions, movements, old placements, new placements,
 // placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
 // from the output of the solver.
-func (pl *SharedState) buildPlan(out *PlannerOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, error) {
+func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, error) {
 	if out == nil {
 		return &Plan{}, nil
 	}
@@ -219,8 +249,8 @@ func (pl *SharedState) buildPlan(out *PlannerOutput, preemptor *v1.Pod, pods []*
 	evicts := collectEvictions(out, byUID)
 
 	var (
-		moves         []PlannerPod
-		newPlacements []PlannerPod
+		moves         []SolverPod
+		newPlacements []SolverPod
 		nominatedNode string
 	)
 
@@ -336,6 +366,10 @@ func buildWorkloadQuotas(wkQuotas WorkloadQuotas) WorkloadQuotasAtomics {
 	return nil
 }
 
+// ----------------------------------------------------------------------
+// evictTargets
+// ----------------------------------------------------------------------
+
 // evictTargets evicts all target pods with bounded parallelism and per-op timeouts.
 func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) error {
 	if evictTargetsHook != nil {
@@ -370,7 +404,7 @@ func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 		return nil
 	}
 	// Use the shared Pod identity type (UID, Namespace, Name) as the key.
-	remaining := make(map[PlannerPod]struct{}, len(pods))
+	remaining := make(map[SolverPod]struct{}, len(pods))
 	for _, p := range pods {
 		if p == nil {
 			continue
@@ -465,13 +499,24 @@ func (pl *SharedState) activatePods(podSet *SafePodSet, removeActivated bool, ma
 // activatePlannedPods activates all live pending pods that the plan intends to place
 // (i.e., NewPlacement with FromNode == "" and ToNode != "").
 func (pl *SharedState) activatePlannedPods(plan *Plan, pods []*v1.Pod) {
-	if plan == nil || len(plan.NewPlacements) == 0 || len(pods) == 0 {
+	planNil := plan == nil
+	newPlacementsLen := 0
+	if !planNil {
+		newPlacementsLen = len(plan.NewPlacements)
+	}
+	podsLen := len(pods) // len on a nil slice is fine (returns 0)
+
+	if planNil || newPlacementsLen == 0 || podsLen == 0 {
 		klog.V(MyV).InfoS("activatePlannedPods: no plan or no new placements or no pods",
-			"planNil", plan == nil, "newPlacementsLen", len(plan.NewPlacements), "podsLen", len(pods))
+			"planNil", planNil,
+			"newPlacementsLen", newPlacementsLen,
+			"podsLen", podsLen,
+		)
 		return
 	}
+
 	// Build allow-set of UIDs for pending -> scheduled in this plan.
-	allow := make(map[types.UID]struct{}, len(plan.NewPlacements))
+	allow := make(map[types.UID]struct{}, newPlacementsLen)
 	for _, np := range plan.NewPlacements {
 		if isPlanPodNewlyScheduled(np.OldNode, np.Node) {
 			allow[np.UID] = struct{}{}
@@ -481,6 +526,7 @@ func (pl *SharedState) activatePlannedPods(plan *Plan, pods []*v1.Pod) {
 		klog.V(MyV).InfoS("activatePlannedPods: no new placements with FromNode == \"\" and ToNode != \"\"")
 		return
 	}
+
 	// Collect matching, truly-pending pods from the live slice.
 	toAct := make(map[string]*v1.Pod, len(allow))
 	for _, p := range pods {
@@ -749,7 +795,7 @@ func (pl *SharedState) filterNodes(pod *v1.Pod) (sets.Set[string], string, bool)
 //	pendingScheduled = number of currently-pending pods that get a placement
 //	runningBefore    = number of pods currently assigned and alive
 //	runningAfter     = runningBefore - evictedRunning + pendingScheduled
-func computePlanPodCounts(out *PlannerOutput, pods []*v1.Pod) (
+func computePlanPodCounts(out *SolverOutput, pods []*v1.Pod) (
 	pendingScheduled, runningBefore, runningAfter int,
 ) {
 	if out == nil {
@@ -894,7 +940,7 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 	for _, n := range usable {
 		usableNames[n.Name] = struct{}{}
 	}
-	keys := make([]PlannerPod, 0, len(pods))
+	keys := make([]SolverPod, 0, len(pods))
 	for _, p := range pods {
 		if isPodDeleted(p) || !isPodAssigned(p) {
 			continue
@@ -902,7 +948,7 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 		if _, ok := usableNames[getPodAssignedNodeName(p)]; !ok {
 			continue
 		}
-		keys = append(keys, PlannerPod{Node: getPodAssignedNodeName(p), UID: p.UID})
+		keys = append(keys, SolverPod{Node: getPodAssignedNodeName(p), UID: p.UID})
 	}
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].Node != keys[j].Node {

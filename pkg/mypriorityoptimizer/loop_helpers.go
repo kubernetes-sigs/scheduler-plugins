@@ -252,7 +252,7 @@ func cloneUIDSet(in map[types.UID]struct{}) map[types.UID]struct{} {
 // If the solver only found a FEASIBLE solution, hit a time limit,
 // was cancelled, or otherwise did not prove optimality, we return false
 // so that the same pending set may be retried later.
-func isAlreadyComputedForPendingSet(err error, bestAttempt *PlannerResult) bool {
+func isAlreadyComputedForPendingSet(err error, bestAttempt *SolverResult) bool {
 	if bestAttempt == nil {
 		return false
 	}

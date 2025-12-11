@@ -11,7 +11,7 @@ import (
 
 var buildPlanFn = func(
 	pl *SharedState,
-	out *PlannerOutput,
+	out *SolverOutput,
 	preemptor *v1.Pod,
 	pods []*v1.Pod,
 ) (*Plan, error) {
@@ -30,8 +30,8 @@ var exportPlanToConfigMapFn = func(
 // planRegistration builds and registers a new plan as active, exporting it to a ConfigMap.
 func (pl *SharedState) planRegistration(
 	ctx context.Context,
-	solverResult PlannerResult,
-	out *PlannerOutput,
+	solverResult SolverResult,
+	out *SolverOutput,
 	preemptor *v1.Pod,
 	pods []*v1.Pod,
 ) (*Plan, *ActivePlan, error) {

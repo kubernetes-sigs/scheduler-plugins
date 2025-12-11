@@ -11,55 +11,18 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Helpers
+// Test Hooks
 // -----------------------------------------------------------------------------
-
-func writeHttpJson(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
-}
 
 var (
 	// Keep only this hook so tests can stub the optimisation flow.
-	runOptFlow = func(pl *SharedState, ctx context.Context) (*Plan, *PlannerScore, string, *PlannerResult, []PlannerResult, error) {
+	runOptFlow = func(pl *SharedState, ctx context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
 		return pl.runOptimizationFlow(ctx, nil)
 	}
 )
 
 // -----------------------------------------------------------------------------
-// HTTP server entrypoint
-// -----------------------------------------------------------------------------
-
-func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/healthz", pl.healthzHandler)
-	mux.HandleFunc("/active", pl.activeHandler)
-	mux.HandleFunc("/solve", pl.solveHandler)
-
-	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
-	klog.InfoS("HTTP server started", "addr", addr)
-
-	// Shutdown on context cancel
-	go func() {
-		<-ctx.Done()
-		shCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shCtx)
-	}()
-
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		klog.ErrorS(err, "HTTP server exited unexpectedly")
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Handlers
+// /healthz endpoint
 // -----------------------------------------------------------------------------
 
 // healthz
@@ -73,6 +36,10 @@ func (pl *SharedState) healthzHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
+// -----------------------------------------------------------------------------
+// /active endpoint
+// -----------------------------------------------------------------------------
+
 // active
 func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 	klog.InfoS("HTTP /active requested")
@@ -85,6 +52,10 @@ func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	writeHttpJson(w, http.StatusOK, resp)
 }
+
+// -----------------------------------------------------------------------------
+// /solve endpoint
+// -----------------------------------------------------------------------------
 
 // solve
 func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
@@ -131,4 +102,46 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeHttpJson(w, http.StatusOK, resp)
+}
+
+// -----------------------------------------------------------------------------
+// startHttpServer
+// -----------------------------------------------------------------------------
+
+// startHttpServer starts the HTTP server for health checks and manual solving.
+func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/healthz", pl.healthzHandler)
+	mux.HandleFunc("/active", pl.activeHandler)
+	mux.HandleFunc("/solve", pl.solveHandler)
+
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	klog.InfoS("HTTP server started", "addr", addr)
+
+	// Shutdown on context cancel
+	go func() {
+		<-ctx.Done()
+		shCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shCtx)
+	}()
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		klog.ErrorS(err, "HTTP server exited unexpectedly")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// writeHttpJson
+// -----------------------------------------------------------------------------
+
+func writeHttpJson(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
 }

@@ -276,7 +276,7 @@ func TestPlanContext_Success(t *testing.T) {
 				t.Fatalf("pendingPrePlan = %d, want 1 (one pending pod)", pendingCount)
 			}
 
-			// Baseline score in the PlannerInput should match what buildBaselineScore
+			// Baseline score in the SolverInput should match what buildBaselineScore
 			// would compute for the same pods (i.e., only the running pod counts).
 			wantBaseline := buildBaselineScore(gotPods)
 

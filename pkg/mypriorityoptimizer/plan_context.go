@@ -11,30 +11,30 @@ func (pl *SharedState) planContext(preemptor *v1.Pod) (
 	nodes []*v1.Node,
 	pods []*v1.Pod,
 	pendingPrePlan int,
-	inp PlannerInput,
+	inp SolverInput,
 	err error,
 ) {
 	// Fetch nodes
 	nodes, err = pl.getNodes()
 	if err != nil {
-		return nil, nil, 0, PlannerInput{}, ErrFailedToListNodes
+		return nil, nil, 0, SolverInput{}, ErrFailedToListNodes
 	}
 
 	// Fetch pods
 	pods, err = pl.getPods()
 	if err != nil {
-		return nodes, nil, 0, PlannerInput{}, ErrFailedToListPods
+		return nodes, nil, 0, SolverInput{}, ErrFailedToListPods
 	}
 	// Count pending pods before any plan is applied
 	pendingPrePlan = countPendingPods(pods)
 	if pendingPrePlan == 0 {
-		return nodes, pods, pendingPrePlan, PlannerInput{}, ErrNoPendingPods
+		return nodes, pods, pendingPrePlan, SolverInput{}, ErrNoPendingPods
 	}
 
 	// Build solver input for this snapshot
 	inp, err = pl.buildSolverInput(nodes, pods, preemptor)
 	if err != nil {
-		return nodes, pods, pendingPrePlan, PlannerInput{}, ErrFailedToBuildSolverInput
+		return nodes, pods, pendingPrePlan, SolverInput{}, ErrFailedToBuildSolverInput
 	}
 
 	return nodes, pods, pendingPrePlan, inp, nil

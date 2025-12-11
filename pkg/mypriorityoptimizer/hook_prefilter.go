@@ -1,5 +1,4 @@
-// prefilter_hook.go
-
+// hook_prefilter.go
 package mypriorityoptimizer
 
 import (
@@ -10,6 +9,10 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
+
+// -----------------------------------------------------------------------------
+// PreFilter
+// -----------------------------------------------------------------------------
 
 // PreFilter is called at the beginning of scheduling cycle.
 // It is used, here, to filter the node(s) that the pod can be (tried) scheduled on.

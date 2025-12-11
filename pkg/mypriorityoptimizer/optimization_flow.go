@@ -13,19 +13,19 @@ import (
 // Test Hooks
 var (
 	isAsyncSolvingFn = isAsyncSolving
-	planContextFn    = func(pl *SharedState, preemptor *v1.Pod) ([]*v1.Node, []*v1.Pod, int, PlannerInput, error) {
+	planContextFn    = func(pl *SharedState, preemptor *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
 		return pl.planContext(preemptor)
 	}
-	planComputationFn = func(pl *SharedState, ctx context.Context, in PlannerInput) (string, bool, *PlannerResult, *PlannerOutput, []PlannerResult) {
+	planComputationFn = func(pl *SharedState, ctx context.Context, in SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 		return pl.planComputation(ctx, in)
 	}
-	isPlanApplicableFn = func(pl *SharedState, out *PlannerOutput, nodes []*v1.Node, pods []*v1.Pod) (bool, string) {
-		return pl.isPlanApplicable(out, nodes, pods)
+	isSolutionApplicableFn = func(pl *SharedState, out *SolverOutput, nodes []*v1.Node, pods []*v1.Pod) (bool, string) {
+		return pl.isSolutionApplicable(out, nodes, pods)
 	}
-	computePlanPodCountsFn = func(out *PlannerOutput, pods []*v1.Pod) (int, int, int) {
+	computePlanPodCountsFn = func(out *SolverOutput, pods []*v1.Pod) (int, int, int) {
 		return computePlanPodCounts(out, pods)
 	}
-	planRegistrationFn = func(pl *SharedState, ctx context.Context, res PlannerResult, out *PlannerOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, *ActivePlan, error) {
+	planRegistrationFn = func(pl *SharedState, ctx context.Context, res SolverResult, out *SolverOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, *ActivePlan, error) {
 		return pl.planRegistration(ctx, res, out, preemptor, pods)
 	}
 	planActivationFn = func(pl *SharedState, plan *Plan, pods []*v1.Pod) error {
@@ -34,15 +34,15 @@ var (
 	startPlanCompletionWatchFn = func(pl *SharedState, ap *ActivePlan) {
 		pl.startPlanCompletionWatch(ap)
 	}
-	exportSolverStatsFn = func(pl *SharedState, strategy string, baseline PlannerScore, bestName string, attempts []PlannerResult, errMsg string) {
-		pl.exportPlannerStatsToConfigMap(context.Background(), strategy, baseline, bestName, attempts, errMsg)
+	exportSolverStatsFn = func(pl *SharedState, strategy string, baseline SolverScore, bestName string, attempts []SolverResult, errMsg string) {
+		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baseline, bestName, attempts, errMsg)
 	}
 )
 
 // runOptimizationFlow runs the optimisation flow for the given phase (AllSynch,
 // AllAsynch, Single). For Single phase, the preemptor must be provided.
 // Returns the target node name for the preemptor pod (if any) and error (if any).
-func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *PlannerScore, string, *PlannerResult, []PlannerResult, error) {
+func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
 	strategy := getModeCombinedAsString()
 
 	// Ensure only one optimization flow at a time.
@@ -85,7 +85,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 
 	// Verify that plan (still) can be applied
 	// Mainly for async modes, where the cluster state may have changed since plan computation.
-	ok, why := isPlanApplicableFn(pl, bestOut, nodes, pods)
+	ok, why := isSolutionApplicableFn(pl, bestOut, nodes, pods)
 	if !ok {
 		klog.Error(msg(strategy, InfoPlanNotApplicable), "solver", bestName, "status", bestOut.Status, "reason", why)
 		pl.tryLeaveActivePlan()

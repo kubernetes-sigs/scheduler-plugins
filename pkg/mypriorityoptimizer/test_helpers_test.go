@@ -12,6 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // withMode is a small helper to temporarily set the mode during a test
@@ -29,15 +31,15 @@ func withMode(mode ModeType, synch bool, fn func()) {
 	fn()
 }
 
-// withAppendStatsHook temporarily overrides appendPlannerStatsCMHook and restores
+// withAppendStatsHook temporarily overrides appendSolverStatsCMHook and restores
 // it after fn returns.
 func withAppendStatsHook(
-	hook func(pl *SharedState, ctx context.Context, entry ExportedPlannerStats),
+	hook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats),
 	fn func(),
 ) {
-	orig := appendPlannerStatsCMHook
-	appendPlannerStatsCMHook = hook
-	defer func() { appendPlannerStatsCMHook = orig }()
+	orig := appendSolverStatsCMHook
+	appendSolverStatsCMHook = hook
+	defer func() { appendSolverStatsCMHook = orig }()
 	fn()
 }
 
@@ -51,12 +53,25 @@ func writeFakeSolverScript(t *testing.T, dir, body string) string {
 }
 
 // newPod creates a pod with the given ns/name/uid, optional nodeName, and priority.
-func newPod(ns, name, uid, node string, prio int32) *v1.Pod {
+func newPod(ns, name, uid, node, ownerKind, ownerName string, prio int32) *v1.Pod {
+	var ownerRefs []metav1.OwnerReference
+	if ownerKind != "" && ownerName != "" {
+		controller := true
+		ownerRefs = []metav1.OwnerReference{
+			{
+				APIVersion: "apps/v1",
+				Kind:       ownerKind,
+				Name:       ownerName,
+				Controller: &controller,
+			},
+		}
+	}
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ns,
-			Name:      name,
-			UID:       types.UID(uid),
+			Namespace:       ns,
+			Name:            name,
+			UID:             types.UID(uid),
+			OwnerReferences: ownerRefs,
 		},
 		Spec: v1.PodSpec{
 			NodeName: node,
@@ -117,4 +132,18 @@ func withReadinessHooks(
 	}()
 
 	fn()
+}
+
+// Helper: build a lister func(ns string) ConfigMapNamespaceLister from a set of ConfigMaps.
+func newConfigMapLister(cms ...*v1.ConfigMap) func(ns string) corev1listers.ConfigMapNamespaceLister {
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+	})
+	for _, cm := range cms {
+		_ = indexer.Add(cm)
+	}
+	l := corev1listers.NewConfigMapLister(indexer)
+	return func(ns string) corev1listers.ConfigMapNamespaceLister {
+		return l.ConfigMaps(ns)
+	}
 }

@@ -56,11 +56,11 @@ func TestParseBool(t *testing.T) {
 		{"empty -> false", "", false},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := parseBool(test.in)
-			if got != test.want {
-				t.Fatalf("parseBool(%q) = %v, want %v", test.in, got, test.want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseBool(tt.in)
+			if got != tt.want {
+				t.Fatalf("parseBool(%q) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -83,11 +83,11 @@ func TestParseInt(t *testing.T) {
 		{"empty -> 0", "", 0},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := parseInt(test.in)
-			if got != test.want {
-				t.Fatalf("parseInt(%q) = %d, want %d", test.in, got, test.want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseInt(tt.in)
+			if got != tt.want {
+				t.Fatalf("parseInt(%q) = %d, want %d", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -158,16 +158,16 @@ func TestParseFloat(t *testing.T) {
 
 	const floatTolerance = 1e-9
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := parseFloat(test.in, test.lLimit, test.uLimit)
-			diff := got - test.want
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseFloat(tt.in, tt.lLimit, tt.uLimit)
+			diff := got - tt.want
 			if diff < 0 {
 				diff = -diff
 			}
 			if diff > floatTolerance {
 				t.Fatalf("parseFloat(%q, %f, %f) = %f, want %f",
-					test.in, test.lLimit, test.uLimit, got, test.want)
+					tt.in, tt.lLimit, tt.uLimit, got, tt.want)
 			}
 		})
 	}
@@ -210,11 +210,13 @@ func TestParseOptimizeMode(t *testing.T) {
 		in   string
 		want ModeType
 	}{
+		{"perpod", ModePerPod},
 		{"per_pod", ModePerPod},
 		{"PER_POD", ModePerPod},
 		{"periodic ", ModePeriodic},
 		{"interlude", ModeInterlude},
 		{"manual", ModeManual},
+		{"manualblocking", ModeManualBlocking},
 		{"manual_blocking", ModeManualBlocking},
 		{"unknown", ModePeriodic}, // default
 	}

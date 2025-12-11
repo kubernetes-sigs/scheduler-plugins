@@ -10,6 +10,10 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 )
 
+// -----------------------------------------------------------------------------
+// PreEnqueue
+// -----------------------------------------------------------------------------
+
 // kube-system pods should always be allowed regardless of mode/plan.
 func TestPreEnqueue_KubeSystemAlwaysAllowed(t *testing.T) {
 	pl := &SharedState{}

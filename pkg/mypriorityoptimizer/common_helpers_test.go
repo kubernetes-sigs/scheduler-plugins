@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// -----------------------------------------------------------------------------
+// getUniqueId
+// -----------------------------------------------------------------------------
+
 func TestGetUniqueId_PrefixAndNonEmpty(t *testing.T) {
 	prefix := "job-"
 	id := getUniqueId(prefix)
@@ -23,7 +27,6 @@ func TestGetUniqueId_ProducesDifferentValues(t *testing.T) {
 	prefix := "job-"
 
 	id1 := getUniqueId(prefix)
-	// Very unlikely to need this, but avoid relying on same-ns resolution.
 	time.Sleep(time.Nanosecond)
 	id2 := getUniqueId(prefix)
 
@@ -31,6 +34,10 @@ func TestGetUniqueId_ProducesDifferentValues(t *testing.T) {
 		t.Fatalf("getUniqueId produced identical values: %q and %q", id1, id2)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// getTimestampNowUtc
+// -----------------------------------------------------------------------------
 
 func TestGetTimestampNowUtc_IsUTCAndReasonable(t *testing.T) {
 	before := time.Now().UTC()
@@ -42,7 +49,7 @@ func TestGetTimestampNowUtc_IsUTCAndReasonable(t *testing.T) {
 		t.Fatalf("getTimestampNowUtc() location = %v, want %v", ts.Location(), time.UTC)
 	}
 
-	// Should be within [before-1s, after+1s] to be robust to tiny clock quirks.
+	// Should be within [before-1s, after+1s]
 	if ts.Before(before.Add(-1*time.Second)) || ts.After(after.Add(1*time.Second)) {
 		t.Fatalf("getTimestampNowUtc() = %v, want close to [%v, %v]", ts, before, after)
 	}

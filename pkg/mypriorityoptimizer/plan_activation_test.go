@@ -96,11 +96,11 @@ func TestPlanActivation_WithTargets_Success(t *testing.T) {
 	pods := []*v1.Pod{p1, p2}
 
 	plan := &Plan{
-		Moves: []PlannerPod{
+		Moves: []SolverPod{
 			{UID: p1.UID, Namespace: p1.Namespace, Name: p1.Name, OldNode: "n1", Node: "n2"},
 			{UID: p1.UID, Namespace: p1.Namespace, Name: p1.Name, OldNode: "n1", Node: "n2"}, // duplicate
 		},
-		Evicts: []PlannerPod{
+		Evicts: []SolverPod{
 			{UID: p2.UID, Namespace: p2.Namespace, Name: p2.Name, Node: "n1"},
 		},
 	}
@@ -213,7 +213,7 @@ func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
 
 	p1 := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "p1", UID: types.UID("u1")}}
 	plan := &Plan{
-		Moves: []PlannerPod{
+		Moves: []SolverPod{
 			{UID: p1.UID, Namespace: p1.Namespace, Name: p1.Name, OldNode: "n1", Node: "n2"},
 		},
 	}
@@ -278,7 +278,7 @@ func TestPlanActivation_WaitPodsGoneErrorStopsActivate(t *testing.T) {
 
 	p1 := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "p1", UID: types.UID("u1")}}
 	plan := &Plan{
-		Evicts: []PlannerPod{
+		Evicts: []SolverPod{
 			{UID: p1.UID, Namespace: p1.Namespace, Name: p1.Name, Node: "n1"},
 		},
 	}

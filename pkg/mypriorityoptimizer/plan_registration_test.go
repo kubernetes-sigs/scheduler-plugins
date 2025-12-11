@@ -19,7 +19,7 @@ func TestPlanRegistration_NilOutput(t *testing.T) {
 
 	plan, ap, err := pl.planRegistration(
 		context.Background(),
-		PlannerResult{},
+		SolverResult{},
 		nil, // out is nil → immediate error
 		nil,
 		nil,
@@ -53,7 +53,7 @@ func TestPlanRegistration_BuildPlanError(t *testing.T) {
 	// Make buildPlan fail.
 	buildPlanFn = func(
 		_ *SharedState,
-		_ *PlannerOutput,
+		_ *SolverOutput,
 		_ *v1.Pod,
 		_ []*v1.Pod,
 	) (*Plan, error) {
@@ -72,11 +72,11 @@ func TestPlanRegistration_BuildPlanError(t *testing.T) {
 		return nil
 	}
 
-	out := &PlannerOutput{Status: "OPTIMAL"}
+	out := &SolverOutput{Status: "OPTIMAL"}
 
 	plan, ap, err := pl.planRegistration(
 		context.Background(),
-		PlannerResult{Name: "python"},
+		SolverResult{Name: "python"},
 		out,
 		nil,
 		nil,
@@ -122,7 +122,7 @@ func TestPlanRegistration_ExportErrorIsIgnored(t *testing.T) {
 	dummyPlan := &Plan{}
 	buildPlanFn = func(
 		_ *SharedState,
-		_ *PlannerOutput,
+		_ *SolverOutput,
 		_ *v1.Pod,
 		_ []*v1.Pod,
 	) (*Plan, error) {
@@ -147,18 +147,18 @@ func TestPlanRegistration_ExportErrorIsIgnored(t *testing.T) {
 		return errors.New("cm write failed")
 	}
 
-	solverRes := PlannerResult{
+	solverRes := SolverResult{
 		Name:       "python",
 		Status:     "OPTIMAL",
 		DurationMs: 123,
-		Score: PlannerScore{
+		Score: SolverScore{
 			PlacedByPriority: map[string]int{"5": 1},
 			Evicted:          0,
 			Moved:            0,
 		},
 	}
 
-	out := &PlannerOutput{
+	out := &SolverOutput{
 		Status: "OPTIMAL",
 	}
 
