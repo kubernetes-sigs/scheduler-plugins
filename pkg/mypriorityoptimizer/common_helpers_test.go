@@ -32,18 +32,18 @@ func TestGetUniqueId_ProducesDifferentValues(t *testing.T) {
 	}
 }
 
-func TestTimestampNowUtc_IsUTCAndReasonable(t *testing.T) {
+func TestGetTimestampNowUtc_IsUTCAndReasonable(t *testing.T) {
 	before := time.Now().UTC()
-	ts := timestampNowUtc()
+	ts := getTimestampNowUtc()
 	after := time.Now().UTC()
 
 	// Must be in UTC
 	if ts.Location() != time.UTC {
-		t.Fatalf("timestampNowUtc() location = %v, want %v", ts.Location(), time.UTC)
+		t.Fatalf("getTimestampNowUtc() location = %v, want %v", ts.Location(), time.UTC)
 	}
 
 	// Should be within [before-1s, after+1s] to be robust to tiny clock quirks.
 	if ts.Before(before.Add(-1*time.Second)) || ts.After(after.Add(1*time.Second)) {
-		t.Fatalf("timestampNowUtc() = %v, want close to [%v, %v]", ts, before, after)
+		t.Fatalf("getTimestampNowUtc() = %v, want close to [%v, %v]", ts, before, after)
 	}
 }

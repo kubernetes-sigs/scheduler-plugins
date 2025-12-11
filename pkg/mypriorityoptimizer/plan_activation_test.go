@@ -25,10 +25,10 @@ func TestPlanActivation_NilPlan(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// Plan with no moves/evicts → only activatePlannedPending
+// Plan with no moves/evicts → only activatePlannedPods
 // -----------------------------------------------------------------------------
 
-func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePending(t *testing.T) {
+func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePlannedPods(t *testing.T) {
 	pl := &SharedState{}
 	plan := &Plan{} // no moves/evicts
 	pods := []*v1.Pod{
@@ -37,12 +37,12 @@ func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePending(t *testing.T) {
 
 	origEvict := evictTargetsHook
 	origWait := waitPodsGoneHook
-	origActivate := activatePlannedPendingFn
+	origActivate := activatePlannedPodsFn
 	origGetPod := getPodForPlanActivation
 	defer func() {
 		evictTargetsHook = origEvict
 		waitPodsGoneHook = origWait
-		activatePlannedPendingFn = origActivate
+		activatePlannedPodsFn = origActivate
 		getPodForPlanActivation = origGetPod
 	}()
 
@@ -62,9 +62,9 @@ func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePending(t *testing.T) {
 
 	var gotPlan *Plan
 	var gotPods []*v1.Pod
-	activatePlannedPendingFn = func(hpl *SharedState, p *Plan, ps []*v1.Pod) {
+	activatePlannedPodsFn = func(hpl *SharedState, p *Plan, ps []*v1.Pod) {
 		if hpl != pl {
-			t.Fatalf("activatePlannedPendingFn received pl=%p, want %p", hpl, pl)
+			t.Fatalf("activatePlannedPodsFn received pl=%p, want %p", hpl, pl)
 		}
 		gotPlan = p
 		gotPods = ps
@@ -74,13 +74,13 @@ func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePending(t *testing.T) {
 		t.Fatalf("planActivation() error = %v, want nil", err)
 	}
 	if gotPlan != plan {
-		t.Fatalf("activatePlannedPendingFn plan = %#v, want %#v", gotPlan, plan)
+		t.Fatalf("activatePlannedPodsFn plan = %#v, want %#v", gotPlan, plan)
 	}
 	if len(gotPods) != len(pods) {
-		t.Fatalf("activatePlannedPendingFn pods len = %d, want %d", len(gotPods), len(pods))
+		t.Fatalf("activatePlannedPodsFn pods len = %d, want %d", len(gotPods), len(pods))
 	}
 	if gotPods[0] != pods[0] {
-		t.Fatalf("activatePlannedPendingFn pods[0] = %#v, want %#v", gotPods[0], pods[0])
+		t.Fatalf("activatePlannedPodsFn pods[0] = %#v, want %#v", gotPods[0], pods[0])
 	}
 }
 
@@ -107,12 +107,12 @@ func TestPlanActivation_WithTargets_Success(t *testing.T) {
 
 	origEvict := evictTargetsHook
 	origWait := waitPodsGoneHook
-	origActivate := activatePlannedPendingFn
+	origActivate := activatePlannedPodsFn
 	origGetPod := getPodForPlanActivation
 	defer func() {
 		evictTargetsHook = origEvict
 		waitPodsGoneHook = origWait
-		activatePlannedPendingFn = origActivate
+		activatePlannedPodsFn = origActivate
 		getPodForPlanActivation = origGetPod
 	}()
 
@@ -150,9 +150,9 @@ func TestPlanActivation_WithTargets_Success(t *testing.T) {
 		waitTargets = append([]*v1.Pod(nil), pods...)
 		return nil
 	}
-	activatePlannedPendingFn = func(hpl *SharedState, p *Plan, ps []*v1.Pod) {
+	activatePlannedPodsFn = func(hpl *SharedState, p *Plan, ps []*v1.Pod) {
 		if hpl != pl {
-			t.Fatalf("activatePlannedPendingFn pl = %p, want %p", hpl, pl)
+			t.Fatalf("activatePlannedPodsFn pl = %p, want %p", hpl, pl)
 		}
 		activatedPlan = p
 		activatedPods = ps
@@ -221,12 +221,12 @@ func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
 
 	origEvict := evictTargetsHook
 	origWait := waitPodsGoneHook
-	origActivate := activatePlannedPendingFn
+	origActivate := activatePlannedPodsFn
 	origGetPod := getPodForPlanActivation
 	defer func() {
 		evictTargetsHook = origEvict
 		waitPodsGoneHook = origWait
-		activatePlannedPendingFn = origActivate
+		activatePlannedPodsFn = origActivate
 		getPodForPlanActivation = origGetPod
 	}()
 
@@ -250,7 +250,7 @@ func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
 		waitCalled = true
 		return nil
 	}
-	activatePlannedPendingFn = func(_ *SharedState, _ *Plan, _ []*v1.Pod) {
+	activatePlannedPodsFn = func(_ *SharedState, _ *Plan, _ []*v1.Pod) {
 		activateCalled = true
 	}
 
@@ -265,7 +265,7 @@ func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
 		t.Fatalf("waitPodsGoneHook was called, but should not be after evict error")
 	}
 	if activateCalled {
-		t.Fatalf("activatePlannedPendingFn was called, but should not be after evict error")
+		t.Fatalf("activatePlannedPodsFn was called, but should not be after evict error")
 	}
 }
 
@@ -286,12 +286,12 @@ func TestPlanActivation_WaitPodsGoneErrorStopsActivate(t *testing.T) {
 
 	origEvict := evictTargetsHook
 	origWait := waitPodsGoneHook
-	origActivate := activatePlannedPendingFn
+	origActivate := activatePlannedPodsFn
 	origGetPod := getPodForPlanActivation
 	defer func() {
 		evictTargetsHook = origEvict
 		waitPodsGoneHook = origWait
-		activatePlannedPendingFn = origActivate
+		activatePlannedPodsFn = origActivate
 		getPodForPlanActivation = origGetPod
 	}()
 
@@ -315,7 +315,7 @@ func TestPlanActivation_WaitPodsGoneErrorStopsActivate(t *testing.T) {
 		waitCalled = true
 		return waitErr
 	}
-	activatePlannedPendingFn = func(_ *SharedState, _ *Plan, _ []*v1.Pod) {
+	activatePlannedPodsFn = func(_ *SharedState, _ *Plan, _ []*v1.Pod) {
 		activateCalled = true
 	}
 
@@ -333,6 +333,6 @@ func TestPlanActivation_WaitPodsGoneErrorStopsActivate(t *testing.T) {
 		t.Fatalf("waitPodsGoneHook was not called")
 	}
 	if activateCalled {
-		t.Fatalf("activatePlannedPendingFn was called, but should not be after waitPodsGone error")
+		t.Fatalf("activatePlannedPodsFn was called, but should not be after waitPodsGone error")
 	}
 }

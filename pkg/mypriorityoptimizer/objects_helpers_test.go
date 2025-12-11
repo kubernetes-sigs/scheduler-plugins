@@ -1213,10 +1213,10 @@ func TestWorkloadKeyString(t *testing.T) {
 
 //
 // -----------------------------------------------------------------------------
-// topWorkload
+// getTopWorkload
 // -----------------------------------------------------------------------------
 
-func TestTopWorkload(t *testing.T) {
+func TestGetTopWorkload(t *testing.T) {
 	ctrlTrue := true
 	p := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1227,38 +1227,38 @@ func TestTopWorkload(t *testing.T) {
 			},
 		},
 	}
-	wk, ok := topWorkload(p)
+	wk, ok := getTopWorkload(p)
 	if !ok {
-		t.Fatalf("expected topWorkload to return true for RS controller")
+		t.Fatalf("expected getTopWorkload to return true for RS controller")
 	}
 	if wk.Kind != wkReplicaSet || wk.Namespace != "ns" || wk.Name != "rs1" {
-		t.Fatalf("topWorkload(RS) = %#v, want rs:ns/rs1", wk)
+		t.Fatalf("getTopWorkload(RS) = %#v, want rs:ns/rs1", wk)
 	}
 
 	p = p.DeepCopy()
 	p.OwnerReferences = []metav1.OwnerReference{{Kind: "StatefulSet", Name: "ss1", Controller: &ctrlTrue}}
-	wk, ok = topWorkload(p)
+	wk, ok = getTopWorkload(p)
 	if !ok || wk.Kind != wkStatefulSet || wk.Name != "ss1" {
-		t.Fatalf("topWorkload(SS) = %#v (ok=%v), want ss:ns/ss1", wk, ok)
+		t.Fatalf("getTopWorkload(SS) = %#v (ok=%v), want ss:ns/ss1", wk, ok)
 	}
 
 	p.OwnerReferences = []metav1.OwnerReference{{Kind: "DaemonSet", Name: "ds1", Controller: &ctrlTrue}}
-	wk, ok = topWorkload(p)
+	wk, ok = getTopWorkload(p)
 	if !ok || wk.Kind != wkDaemonSet || wk.Name != "ds1" {
-		t.Fatalf("topWorkload(DS) = %#v (ok=%v), want ds:ns/ds1", wk, ok)
+		t.Fatalf("getTopWorkload(DS) = %#v (ok=%v), want ds:ns/ds1", wk, ok)
 	}
 
 	p.OwnerReferences = []metav1.OwnerReference{{Kind: "Job", Name: "job1", Controller: &ctrlTrue}}
-	wk, ok = topWorkload(p)
+	wk, ok = getTopWorkload(p)
 	if !ok || wk.Kind != wkJob || wk.Name != "job1" {
-		t.Fatalf("topWorkload(Job) = %#v (ok=%v), want job:ns/job1", wk, ok)
+		t.Fatalf("getTopWorkload(Job) = %#v (ok=%v), want job:ns/job1", wk, ok)
 	}
 
 	p.OwnerReferences = []metav1.OwnerReference{
 		{Kind: "ReplicaSet", Name: "rs1", Controller: nil},
 	}
-	wk, ok = topWorkload(p)
+	wk, ok = getTopWorkload(p)
 	if ok {
-		t.Fatalf("expected topWorkload to return false when no Controller=true owner exists, got %#v", wk)
+		t.Fatalf("expected getTopWorkload to return false when no Controller=true owner exists, got %#v", wk)
 	}
 }

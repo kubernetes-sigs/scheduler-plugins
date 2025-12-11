@@ -22,8 +22,8 @@ func isAsyncSolving() bool {
 	return !OptimizeSolveSynch
 }
 
-// modeToString returns a human-readable representation of the OptimizeMode.
-func modeToString() string {
+// getModeAsString returns a human-readable representation of the OptimizeMode.
+func getModeAsString() string {
 	switch OptimizeMode {
 	case ModePerPod:
 		return "PerPod"
@@ -40,16 +40,16 @@ func modeToString() string {
 	}
 }
 
-// syncToString returns "Asynch" or "Synch" based on the OptimizeSolveSynch setting.
-func syncToString() string {
+// getSyncAsString returns "Asynch" or "Synch" based on the OptimizeSolveSynch setting.
+func getSyncAsString() string {
 	if isAsyncSolving() {
 		return "Asynch"
 	}
 	return "Synch"
 }
 
-// combinedModeToString returns a string representation of the current strategy:
+// getModeCombinedAsString returns a string representation of the current strategy:
 // "<Mode><Synch|Asynch>"
-func combinedModeToString() string {
-	return fmt.Sprintf("%s/%s", modeToString(), syncToString())
+func getModeCombinedAsString() string {
+	return fmt.Sprintf("%s/%s", getModeAsString(), getSyncAsString())
 }

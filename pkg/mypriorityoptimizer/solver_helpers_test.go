@@ -415,23 +415,23 @@ func TestIsImprovement_Order(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// comparePlaced
+// compareLexi
 // -----------------------------------------------------------------------------
 
-func TestComparePlaced_HighPriorityWins(t *testing.T) {
+func TestCmpLexi_HighPriorityWins(t *testing.T) {
 	a := map[string]int{"1": 2, "0": 1}
 	b := map[string]int{"1": 1, "0": 5}
 
-	if got := comparePlaced(a, b); got != 1 {
-		t.Fatalf("comparePlaced(a,b) = %d, want 1 (a better high-prio)", got)
+	if got := cmpLexi(a, b); got != 1 {
+		t.Fatalf("cmpLexi(a,b) = %d, want 1 (a better high-prio)", got)
 	}
-	if got := comparePlaced(b, a); got != -1 {
-		t.Fatalf("comparePlaced(b,a) = %d, want -1 (b worse high-prio)", got)
+	if got := cmpLexi(b, a); got != -1 {
+		t.Fatalf("cmpLexi(b,a) = %d, want -1 (b worse high-prio)", got)
 	}
 
 	// Equal maps
-	if got := comparePlaced(a, map[string]int{"1": 2, "0": 1}); got != 0 {
-		t.Fatalf("comparePlaced(equal) = %d, want 0", got)
+	if got := cmpLexi(a, map[string]int{"1": 2, "0": 1}); got != 0 {
+		t.Fatalf("cmpLexi(equal) = %d, want 0", got)
 	}
 }
 
@@ -967,10 +967,10 @@ func TestToPod_BasicMapping(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// exportSolverStatsToConfigMap
+// exportPlannerStatsToConfigMap
 // -----------------------------------------------------------------------------
 
-func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
+func TestExportPlannerStatsToConfigMap_UsesAppendHook(t *testing.T) {
 	pl := &SharedState{}
 
 	baseline := PlannerScore{
@@ -1000,7 +1000,7 @@ func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 			gotEntry = entry
 		},
 		func() {
-			pl.exportSolverStatsToConfigMap(
+			pl.exportPlannerStatsToConfigMap(
 				context.Background(),
 				"strategyX",
 				baseline,
@@ -1044,10 +1044,10 @@ func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// appendSolverStatsCM
+// appendPlannerStatsCM
 // -----------------------------------------------------------------------------
 
-func TestAppendSolverStatsCM_NoClientSet_SkipsWithoutPanic(t *testing.T) {
+func TestAppendPlannerStatsCM_NoClientSet_SkipsWithoutPanic(t *testing.T) {
 	ctx := context.Background()
 	pl := &SharedState{
 		Handle: &fakeHandle{
@@ -1057,15 +1057,15 @@ func TestAppendSolverStatsCM_NoClientSet_SkipsWithoutPanic(t *testing.T) {
 	}
 
 	// Ensure hook is disabled so we execute the real body.
-	orig := appendSolverStatsCMHook
-	appendSolverStatsCMHook = nil
-	defer func() { appendSolverStatsCMHook = orig }()
+	orig := appendPlannerStatsCMHook
+	appendPlannerStatsCMHook = nil
+	defer func() { appendPlannerStatsCMHook = orig }()
 
 	// Just ensure it doesn't panic when there is no clientset.
-	pl.appendSolverStatsCM(ctx, ExportedPlannerStats{BestName: "best"})
+	pl.appendPlannerStatsCM(ctx, ExportedPlannerStats{BestName: "best"})
 }
 
-func TestAppendSolverStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
+func TestAppendPlannerStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Start with an empty fake cluster.
@@ -1080,18 +1080,18 @@ func TestAppendSolverStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
 	}
 
 	// Make sure we go through the real implementation, not the hook.
-	orig := appendSolverStatsCMHook
-	appendSolverStatsCMHook = nil
-	defer func() { appendSolverStatsCMHook = orig }()
+	orig := appendPlannerStatsCMHook
+	appendPlannerStatsCMHook = nil
+	defer func() { appendPlannerStatsCMHook = orig }()
 
 	entry := ExportedPlannerStats{
 		BestName: "python",
 		// other fields not strictly necessary for this test
 	}
 
-	pl.appendSolverStatsCM(ctx, entry)
+	pl.appendPlannerStatsCM(ctx, entry)
 
-	// After appendSolverStatsCM, we expect the ConfigMap to exist.
+	// After appendPlannerStatsCM, we expect the ConfigMap to exist.
 	cm, err := client.CoreV1().
 		ConfigMaps(SystemNamespace).
 		Get(ctx, SolverStatsConfigMapName, metav1.GetOptions{})

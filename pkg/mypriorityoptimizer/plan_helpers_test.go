@@ -680,10 +680,10 @@ func TestWaitPodsGone_UsesHookWhenNonEmpty(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------
-// activatePlannedPending
+// activatePlannedPods
 // ---------------------------------------------------------------------
 
-func TestActivatePlannedPending_UsesHookWithMatchingPending(t *testing.T) {
+func TestActivatePlannedPods_UsesHookWithMatchingPending(t *testing.T) {
 	pl := &SharedState{}
 
 	uidAllowed := types.UID("u-allowed")
@@ -724,10 +724,10 @@ func TestActivatePlannedPending_UsesHookWithMatchingPending(t *testing.T) {
 		got    map[string]*v1.Pod
 	)
 
-	orig := activatePlannedPendingHook
-	defer func() { activatePlannedPendingHook = orig }()
+	orig := activatePlannedPodsHook
+	defer func() { activatePlannedPodsHook = orig }()
 
-	activatePlannedPendingHook = func(hpl *SharedState, toActivate map[string]*v1.Pod) {
+	activatePlannedPodsHook = func(hpl *SharedState, toActivate map[string]*v1.Pod) {
 		if hpl != pl {
 			t.Fatalf("hook pl = %p, want %p", hpl, pl)
 		}
@@ -735,10 +735,10 @@ func TestActivatePlannedPending_UsesHookWithMatchingPending(t *testing.T) {
 		got = toActivate
 	}
 
-	pl.activatePlannedPending(plan, pods)
+	pl.activatePlannedPods(plan, pods)
 
 	if !called {
-		t.Fatalf("activatePlannedPendingHook not called")
+		t.Fatalf("activatePlannedPodsHook not called")
 	}
 	if len(got) != 1 {
 		t.Fatalf("toActivate len = %d, want 1", len(got))

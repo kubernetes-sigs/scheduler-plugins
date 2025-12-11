@@ -10,6 +10,6 @@ func getUniqueId(prefix string) string {
 	return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
 }
 
-func timestampNowUtc() time.Time {
+func getTimestampNowUtc() time.Time {
 	return time.Now().UTC()
 }

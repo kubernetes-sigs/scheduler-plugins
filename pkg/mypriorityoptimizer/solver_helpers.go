@@ -147,7 +147,7 @@ func solverConfigArgs() []any {
 // Returns as soon as a difference is found.
 func isImprovement(baseline, suggested *PlannerScore) int {
 	// 1) Placed-by-priority (more is better)
-	if cmp := comparePlaced(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
+	if cmp := cmpLexi(suggested.PlacedByPriority, baseline.PlacedByPriority); cmp != 0 {
 		klog.V(MyV).InfoS("compare placed-by-priority", "result", cmp,
 			"suggested", suggested.PlacedByPriority, "baseline", baseline.PlacedByPriority)
 		return cmp
@@ -172,8 +172,8 @@ func isImprovement(baseline, suggested *PlannerScore) int {
 	return 0
 }
 
-// comparePlaced returns 1 if a>b, -1 if a<b, 0 if equal (lexi by priority desc).
-func comparePlaced(a, b map[string]int) int {
+// cmpLexi returns 1 if a>b, -1 if a<b, 0 if equal
+func cmpLexi(a, b map[string]int) int {
 	keys := map[int]struct{}{}
 	for key := range a {
 		if value, err := strconv.Atoi(key); err == nil {
@@ -533,9 +533,9 @@ func toPod(p *v1.Pod, node string) PlannerPod {
 	}
 }
 
-// exportSolverStatsToConfigMap exports a compact run record to the stats ConfigMap.
+// exportPlannerStatsToConfigMap exports a compact run record to the stats ConfigMap.
 // Only runs when `hadFeasible` is true.
-func (pl *SharedState) exportSolverStatsToConfigMap(
+func (pl *SharedState) exportPlannerStatsToConfigMap(
 	ctx context.Context,
 	strategy string,
 	baseline PlannerScore,
@@ -550,7 +550,7 @@ func (pl *SharedState) exportSolverStatsToConfigMap(
 		Baseline:    baseline,
 		Attempts:    attempts,
 	}
-	pl.appendSolverStatsCM(ctx, entry)
+	pl.appendPlannerStatsCM(ctx, entry)
 	klog.V(MyV).InfoS(msg(strategy, "exported solver stats"),
 		"attempts", len(attempts),
 		"bestAttempt", best,
@@ -558,19 +558,18 @@ func (pl *SharedState) exportSolverStatsToConfigMap(
 	)
 }
 
-var appendSolverStatsCMHook func(pl *SharedState, ctx context.Context, entry ExportedPlannerStats)
+var appendPlannerStatsCMHook func(pl *SharedState, ctx context.Context, entry ExportedPlannerStats)
 
-func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedPlannerStats) {
+func (pl *SharedState) appendPlannerStatsCM(ctx context.Context, entry ExportedPlannerStats) error {
 	// Allow unit tests to intercept ConfigMap writes and avoid real K8s clients.
-	if appendSolverStatsCMHook != nil {
-		appendSolverStatsCMHook(pl, ctx, entry)
-		return
+	if appendPlannerStatsCMHook != nil {
+		appendPlannerStatsCMHook(pl, ctx, entry)
+		return nil
 	}
 
 	cli := pl.Handle.ClientSet()
 	if cli == nil {
-		klog.V(1).Info("no clientset; skip stats CM")
-		return
+		return ErrNoClientset
 	}
 	doc := ConfigMapDoc{
 		Namespace: SystemNamespace,
@@ -579,6 +578,7 @@ func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedPl
 		DataKey:   SolverStatsConfigMapLabelKey + ".json",
 	}
 
+	// TODO: Think we can use the one from config_map_helpers.go?
 	err := mutateJson(
 		ctx,
 		cli.CoreV1(),
@@ -592,9 +592,7 @@ func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedPl
 	)
 	if apierrors.IsNotFound(err) {
 		_ = doc.ensureJson(ctx, cli.CoreV1(), []ExportedPlannerStats{entry})
-		return
+		return nil
 	}
-	if err != nil {
-		klog.ErrorS(err, "append solver stats failed")
-	}
+	return err
 }

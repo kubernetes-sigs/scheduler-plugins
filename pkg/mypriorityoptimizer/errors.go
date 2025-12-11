@@ -22,4 +22,5 @@ var (
 	ErrFailedToListNodes                   = errors.New(InfoFailedToListNodes)
 	ErrFailedToListPods                    = errors.New(InfoFailedToListPods)
 	ErrFailedToBuildSolverInput            = errors.New(InfoFailedToBuildSolverInput)
+	ErrNoClientset                         = errors.New(InfoNoClientset)
 )

@@ -3,7 +3,6 @@ package mypriorityoptimizer
 
 import (
 	"context"
-	"time"
 
 	"k8s.io/klog/v2"
 )
@@ -12,7 +11,7 @@ import (
 // To extend, just add fields to PluginConfigSnapshot and populate them here.
 func buildPluginConfigSnapshot() PluginConfigSnapshot {
 	return PluginConfigSnapshot{
-		Timestamp: time.Now().UTC(),
+		Timestamp: getTimestampNowUtc(),
 
 		Name:    Name,
 		Version: PluginVersion,
@@ -21,7 +20,7 @@ func buildPluginConfigSnapshot() PluginConfigSnapshot {
 		CacheWarmupSettleDelay:            CacheWarmupSettleDelay.String(),
 		PluginReadinessUsableNodeInterval: PluginReadinessUsableNodeInterval.String(),
 
-		OptimizeMode:                   combinedModeToString(),
+		OptimizeMode:                   getModeCombinedAsString(),
 		OptimizePeriodicInterval:       OptimizePeriodicInterval.String(),
 		OptimizeInterludeDelay:         OptimizeInterludeDelay.String(),
 		OptimizeInterludeCheckInterval: OptimizeInterludeCheckInterval.String(),

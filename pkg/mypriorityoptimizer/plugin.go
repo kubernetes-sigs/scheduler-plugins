@@ -32,7 +32,7 @@ var pluginReadinessStarter = func(pl *SharedState, ctx context.Context, infs ...
 // httpServerStarter is a hook so tests can avoid starting the HTTP server
 // and can assert that it would have been started.
 var httpServerStarter = func(pl *SharedState, ctx context.Context, addr string) {
-	go pl.startHTTPServer(ctx, addr)
+	go pl.startHttpServer(ctx, addr)
 }
 
 // solverEnabled is a tiny indirection around (*SharedState).isAnySolverEnabled
@@ -94,7 +94,7 @@ func newFromHandle(
 	pluginReadinessStarter(pl, ctx, podsInf, nodesInf, cmsInf, rsInf, ssInf, dsInf, jobInf)
 
 	// Plugin configuration logging
-	klog.InfoS("Plugin initialized", "name", Name, "version", PluginVersion, "mode", combinedModeToString())
+	klog.InfoS("Plugin initialized", "name", Name, "version", PluginVersion, "mode", getModeCombinedAsString())
 	klog.InfoS("Plan configuration", "executionTimeout", PlanExecutionTimeout.String())
 	klog.InfoS("Solver configuration", solverConfigArgs()...)
 

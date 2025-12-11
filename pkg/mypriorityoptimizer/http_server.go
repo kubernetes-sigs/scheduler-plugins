@@ -14,7 +14,7 @@ import (
 // Helpers
 // -----------------------------------------------------------------------------
 
-func writeHTTPjson(w http.ResponseWriter, code int, v any) {
+func writeHttpJson(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
@@ -31,7 +31,7 @@ var (
 // HTTP server entrypoint
 // -----------------------------------------------------------------------------
 
-func (pl *SharedState) startHTTPServer(ctx context.Context, addr string) {
+func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", pl.healthzHandler)
@@ -83,7 +83,7 @@ func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 	resp := HttpResponse{
 		Active: pl.ActivePlanInProgress.Load(),
 	}
-	writeHTTPjson(w, http.StatusOK, resp)
+	writeHttpJson(w, http.StatusOK, resp)
 }
 
 // solve
@@ -102,7 +102,7 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 	if !pl.PluginReady.Load() {
 		resp.Status = "not-ready"
 		resp.DurationMs = time.Since(start).Milliseconds()
-		writeHTTPjson(w, http.StatusPreconditionFailed, resp)
+		writeHttpJson(w, http.StatusPreconditionFailed, resp)
 		return
 	}
 
@@ -130,5 +130,5 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 		resp.Status = "error"
 	}
 
-	writeHTTPjson(w, http.StatusOK, resp)
+	writeHttpJson(w, http.StatusOK, resp)
 }

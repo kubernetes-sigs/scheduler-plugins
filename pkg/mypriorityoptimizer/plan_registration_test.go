@@ -202,9 +202,9 @@ func TestPlanRegistration_ExportErrorIsIgnored(t *testing.T) {
 	if gotStored.PluginVersion != PluginVersion {
 		t.Fatalf("stored.PluginVersion = %q, want %q", gotStored.PluginVersion, PluginVersion)
 	}
-	if gotStored.OptimizationStrategy != combinedModeToString() {
+	if gotStored.OptimizationStrategy != getModeCombinedAsString() {
 		t.Fatalf("stored.OptimizationStrategy = %q, want %q",
-			gotStored.OptimizationStrategy, combinedModeToString())
+			gotStored.OptimizationStrategy, getModeCombinedAsString())
 	}
 	if gotStored.GeneratedAt.IsZero() {
 		t.Fatalf("stored.GeneratedAt is zero, want non-zero timestamp")

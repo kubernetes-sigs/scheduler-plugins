@@ -232,10 +232,10 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// startHTTPServer
+// startHttpServer
 // -----------------------------------------------------------------------------
 
-func TestStartHTTPServer_ShutsDownOnContextCancel(t *testing.T) {
+func TestStartHttpServer_ShutsDownOnContextCancel(t *testing.T) {
 	pl := &SharedState{}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -244,7 +244,7 @@ func TestStartHTTPServer_ShutsDownOnContextCancel(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		// Using :0 lets OS pick a free port
-		pl.startHTTPServer(ctx, "127.0.0.1:0")
+		pl.startHttpServer(ctx, "127.0.0.1:0")
 		close(done)
 	}()
 
@@ -256,7 +256,7 @@ func TestStartHTTPServer_ShutsDownOnContextCancel(t *testing.T) {
 	case <-done:
 		// ok
 	case <-time.After(2 * time.Second):
-		t.Fatalf("startHTTPServer did not shut down after context cancel")
+		t.Fatalf("startHttpServer did not shut down after context cancel")
 	}
 }
 

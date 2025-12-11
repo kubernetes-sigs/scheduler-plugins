@@ -321,8 +321,8 @@ func (wk WorkloadKey) String() string {
 	}
 }
 
-// topWorkload returns the top-level workload controller of a pod, if any.
-func topWorkload(p *v1.Pod) (WorkloadKey, bool) {
+// getTopWorkload returns the top-level workload controller of a pod, if any.
+func getTopWorkload(p *v1.Pod) (WorkloadKey, bool) {
 	for _, o := range p.OwnerReferences {
 		if o.Controller == nil || !*o.Controller {
 			continue

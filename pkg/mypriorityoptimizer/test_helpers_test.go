@@ -29,15 +29,15 @@ func withMode(mode ModeType, synch bool, fn func()) {
 	fn()
 }
 
-// withAppendStatsHook temporarily overrides appendSolverStatsCMHook and restores
+// withAppendStatsHook temporarily overrides appendPlannerStatsCMHook and restores
 // it after fn returns.
 func withAppendStatsHook(
 	hook func(pl *SharedState, ctx context.Context, entry ExportedPlannerStats),
 	fn func(),
 ) {
-	orig := appendSolverStatsCMHook
-	appendSolverStatsCMHook = hook
-	defer func() { appendSolverStatsCMHook = orig }()
+	orig := appendPlannerStatsCMHook
+	appendPlannerStatsCMHook = hook
+	defer func() { appendPlannerStatsCMHook = orig }()
 	fn()
 }
 

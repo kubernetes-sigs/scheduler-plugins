@@ -32,7 +32,7 @@ func (pl *SharedState) Reserve(ctx context.Context, st fwk.CycleState, pending *
 
 	// Check if pod is part of a workload; if not, allow it immediately.
 	// Otherwise, we need to check the workload quota.
-	wk, ok := topWorkload(pending)
+	wk, ok := getTopWorkload(pending)
 	if !ok {
 		klog.V(MyV).InfoS(msg(stage, "pod not part of any workload; allowing"), "pod", klog.KObj(pending))
 		return fwk.NewStatus(fwk.Success)

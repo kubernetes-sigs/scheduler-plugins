@@ -23,12 +23,12 @@ import (
 
 // test hooks (overridden only in unit tests; nil in production).
 var (
-	evictTargetsHook           func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
-	waitPodsGoneHook           func(pl *SharedState, ctx context.Context, pods []*v1.Pod) error
-	activatePlannedPendingHook func(pl *SharedState, toActivate map[string]*v1.Pod)
-	isPlanCompletedHook        func(pl *SharedState, ap *ActivePlan) (bool, error)
-	onPlanCompletedHook        func(pl *SharedState, status PlanStatus, ap *ActivePlan)
-	exportPlanToConfigMapHook  func(pl *SharedState, ctx context.Context, name string, sp *StoredPlan) error
+	evictTargetsHook          func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
+	waitPodsGoneHook          func(pl *SharedState, ctx context.Context, pods []*v1.Pod) error
+	activatePlannedPodsHook   func(pl *SharedState, toActivate map[string]*v1.Pod)
+	isPlanCompletedHook       func(pl *SharedState, ap *ActivePlan) (bool, error)
+	onPlanCompletedHook       func(pl *SharedState, status PlanStatus, ap *ActivePlan)
+	exportPlanToConfigMapHook func(pl *SharedState, ctx context.Context, name string, sp *StoredPlan) error
 	// If markPlanStatusToConfigMapHook returns true, the real implementation is skipped.
 	markPlanStatusToConfigMapHook func(pl *SharedState, ctx context.Context, planCM string, status PlanStatus) bool
 )
@@ -262,7 +262,7 @@ func (pl *SharedState) buildPlan(out *PlannerOutput, preemptor *v1.Pod, pods []*
 		}
 
 		// Controller-owned: go via WorkloadQuotas
-		if wk, owned := topWorkload(p); owned {
+		if wk, owned := getTopWorkload(p); owned {
 			increaseWorkloadQuota(workloadQuotas, wk, plm.Node)
 		} else {
 			// Standalone pod: track directly by name.
@@ -462,11 +462,11 @@ func (pl *SharedState) activatePods(podSet *SafePodSet, removeActivated bool, ma
 	return tried
 }
 
-// activatePlannedPending activates all live pending pods that the plan intends to place
+// activatePlannedPods activates all live pending pods that the plan intends to place
 // (i.e., NewPlacement with FromNode == "" and ToNode != "").
-func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
+func (pl *SharedState) activatePlannedPods(plan *Plan, pods []*v1.Pod) {
 	if plan == nil || len(plan.NewPlacements) == 0 || len(pods) == 0 {
-		klog.V(MyV).InfoS("activatePlannedPending: no plan or no new placements or no pods",
+		klog.V(MyV).InfoS("activatePlannedPods: no plan or no new placements or no pods",
 			"planNil", plan == nil, "newPlacementsLen", len(plan.NewPlacements), "podsLen", len(pods))
 		return
 	}
@@ -478,7 +478,7 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 		}
 	}
 	if len(allow) == 0 {
-		klog.V(MyV).InfoS("activatePlannedPending: no new placements with FromNode == \"\" and ToNode != \"\"")
+		klog.V(MyV).InfoS("activatePlannedPods: no new placements with FromNode == \"\" and ToNode != \"\"")
 		return
 	}
 	// Collect matching, truly-pending pods from the live slice.
@@ -494,14 +494,14 @@ func (pl *SharedState) activatePlannedPending(plan *Plan, pods []*v1.Pod) {
 		toAct[key] = p
 	}
 	if len(toAct) == 0 {
-		klog.V(MyV).InfoS("activatePlannedPending: no matching pending pods found")
+		klog.V(MyV).InfoS("activatePlannedPods: no matching pending pods found")
 		return
 	}
 	klog.InfoS(InfoActivatingPlannedPendingPods, "count", len(toAct))
 
 	// Test hook: let unit tests observe the activation set without requiring a real Handle.
-	if activatePlannedPendingHook != nil {
-		activatePlannedPendingHook(pl, toAct)
+	if activatePlannedPodsHook != nil {
+		activatePlannedPodsHook(pl, toAct)
 		return
 	}
 
@@ -533,7 +533,7 @@ func (pl *SharedState) isPlanCompleted(ap *ActivePlan) (bool, error) {
 		if isPodDeleted(p) {
 			continue
 		}
-		if wk, owned := topWorkload(p); owned {
+		if wk, owned := getTopWorkload(p); owned {
 			key := wk.String()
 			st := workloadStatus[key]
 			st.HasLive = true
@@ -683,7 +683,7 @@ func (pl *SharedState) isPodAllowedByPlan(pod *v1.Pod) bool {
 	}
 
 	// Workload quotas (pods created by a controller).
-	if wk, ok := topWorkload(pod); ok {
+	if wk, ok := getTopWorkload(pod); ok {
 		perNode, ok := ap.WorkloadQuotas[wk.String()]
 		if !ok || len(perNode) == 0 {
 			return false
@@ -724,7 +724,7 @@ func (pl *SharedState) filterNodes(pod *v1.Pod) (sets.Set[string], string, bool)
 	}
 
 	// Controller-owned: enforce per-workload per-node quotas.
-	if wk, owned := topWorkload(pod); owned {
+	if wk, owned := getTopWorkload(pod); owned {
 		perNode := ap.WorkloadQuotas[wk.String()]
 		if len(perNode) == 0 {
 			return nil, "workload not in active plan; block", false
@@ -840,7 +840,7 @@ func (pl *SharedState) setPlanStatusInConfigMap(ctx context.Context, planCM stri
 		}
 		sp.PlanStatus = status
 		if status == PlanStatusCompleted || status == PlanStatusFailed {
-			sp.CompletedAt = timestampNowUtc()
+			sp.CompletedAt = getTimestampNowUtc()
 		}
 		b, _ := json.MarshalIndent(&sp, "", "  ")
 		return b, nil

@@ -4,7 +4,6 @@ package mypriorityoptimizer
 import (
 	"context"
 	"fmt"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -50,8 +49,8 @@ func (pl *SharedState) planRegistration(
 
 	storedPlan := &StoredPlan{
 		PluginVersion:        PluginVersion,
-		OptimizationStrategy: combinedModeToString(),
-		GeneratedAt:          time.Now().UTC(),
+		OptimizationStrategy: getModeCombinedAsString(),
+		GeneratedAt:          getTimestampNowUtc(),
 		PlanStatus:           PlanStatusActive,
 		Plan:                 plan,
 		SolverResult:         solverResult,

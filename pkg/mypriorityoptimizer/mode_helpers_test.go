@@ -89,126 +89,126 @@ func TestIsAsyncSolving(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// modeToString
+// getModeAsString
 // -----------------------------------------------------------------------------
 
-func TestModeToString(t *testing.T) {
+func TestGetModeAsString(t *testing.T) {
 	withMode(ModePerPod, true, func() {
-		if got := modeToString(); got != "PerPod" {
-			t.Fatalf("expected modeToString()=PerPod for ModePerPod, got %q", got)
+		if got := getModeAsString(); got != "PerPod" {
+			t.Fatalf("expected getModeAsString()=PerPod for ModePerPod, got %q", got)
 		}
 	})
 	withMode(ModePeriodic, true, func() {
-		if got := modeToString(); got != "Periodic" {
-			t.Fatalf("expected modeToString()=Periodic for ModePeriodic, got %q", got)
+		if got := getModeAsString(); got != "Periodic" {
+			t.Fatalf("expected getModeAsString()=Periodic for ModePeriodic, got %q", got)
 		}
 	})
 	withMode(ModeInterlude, true, func() {
-		if got := modeToString(); got != "Interlude" {
-			t.Fatalf("expected modeToString()=Interlude for ModeInterlude, got %q", got)
+		if got := getModeAsString(); got != "Interlude" {
+			t.Fatalf("expected getModeAsString()=Interlude for ModeInterlude, got %q", got)
 		}
 	})
 	withMode(ModeManual, true, func() {
-		if got := modeToString(); got != "Manual" {
-			t.Fatalf("expected modeToString()=Manual for ModeManual, got %q", got)
+		if got := getModeAsString(); got != "Manual" {
+			t.Fatalf("expected getModeAsString()=Manual for ModeManual, got %q", got)
 		}
 	})
 	withMode(ModeManualBlocking, true, func() {
-		if got := modeToString(); got != "ManualBlocking" {
-			t.Fatalf("expected modeToString()=ManualBlocking for ModeManualBlocking, got %q", got)
+		if got := getModeAsString(); got != "ManualBlocking" {
+			t.Fatalf("expected getModeAsString()=ManualBlocking for ModeManualBlocking, got %q", got)
 		}
 	})
 	// Unknown mode value -> default branch ("Periodic")
 	withMode(ModeType(999), true, func() {
-		if got := modeToString(); got != "Periodic" {
-			t.Fatalf("expected modeToString()=Periodic for unknown mode value, got %q", got)
+		if got := getModeAsString(); got != "Periodic" {
+			t.Fatalf("expected getModeAsString()=Periodic for unknown mode value, got %q", got)
 		}
 	})
 }
 
 // -----------------------------------------------------------------------------
-// syncToString
+// getSyncAsString
 // -----------------------------------------------------------------------------
 
-func TestSyncToString(t *testing.T) {
+func TestGetSyncAsString(t *testing.T) {
 	// PerPod is always synchronous.
 	withMode(ModePerPod, false, func() {
-		if got := syncToString(); got != "Synch" {
-			t.Fatalf("expected syncToString()=Synch for ModePerPod, got %q", got)
+		if got := getSyncAsString(); got != "Synch" {
+			t.Fatalf("expected getSyncAsString()=Synch for ModePerPod, got %q", got)
 		}
 	})
 
 	// Background mode, OptimizeSolveSynch=true -> synchronous.
 	withMode(ModePeriodic, true, func() {
-		if got := syncToString(); got != "Synch" {
-			t.Fatalf("expected syncToString()=Synch when OptimizeSolveSynch=true, got %q", got)
+		if got := getSyncAsString(); got != "Synch" {
+			t.Fatalf("expected getSyncAsString()=Synch when OptimizeSolveSynch=true, got %q", got)
 		}
 	})
 
 	// Background mode, OptimizeSolveSynch=false -> asynchronous.
 	withMode(ModePeriodic, false, func() {
-		if got := syncToString(); got != "Asynch" {
-			t.Fatalf("expected syncToString()=Asynch when OptimizeSolveSynch=false, got %q", got)
+		if got := getSyncAsString(); got != "Asynch" {
+			t.Fatalf("expected getSyncAsString()=Asynch when OptimizeSolveSynch=false, got %q", got)
 		}
 	})
 }
 
 // -----------------------------------------------------------------------------
-// combinedModeToString
+// getModeCombinedAsString
 // -----------------------------------------------------------------------------
 
-func TestCombinedModeToString(t *testing.T) {
+func TestGetModeCombinedAsString(t *testing.T) {
 	// PerPod: always PostFilter + Synch
 	withMode(ModePerPod, true, func() {
-		got := combinedModeToString()
+		got := getModeCombinedAsString()
 		if got != "PerPod/Synch" {
-			t.Fatalf("unexpected combinedModeToString for PerPod+Synch+PreEnqueue: %q", got)
+			t.Fatalf("unexpected getModeCombinedAsString for PerPod+Synch+PreEnqueue: %q", got)
 		}
 	})
 	withMode(ModePerPod, false, func() {
-		got := combinedModeToString()
+		got := getModeCombinedAsString()
 		if got != "PerPod/Synch" {
-			t.Fatalf("unexpected combinedModeToString for PerPod+Asynch+PostFilter (forced Synch): %q", got)
+			t.Fatalf("unexpected getModeCombinedAsString for PerPod+Asynch+PostFilter (forced Synch): %q", got)
 		}
 	})
 
 	// Periodic + Asynch + PostFilter
 	withMode(ModePeriodic, false, func() {
-		got := combinedModeToString()
+		got := getModeCombinedAsString()
 		if got != "Periodic/Asynch" {
-			t.Fatalf("unexpected combinedModeToString for Periodic+Asynch+PostFilter: %q", got)
+			t.Fatalf("unexpected getModeCombinedAsString for Periodic+Asynch+PostFilter: %q", got)
 		}
 	})
 
 	// Manual + Synch + PostFilter
 	withMode(ModeManual, true, func() {
-		got := combinedModeToString()
+		got := getModeCombinedAsString()
 		if got != "Manual/Synch" {
-			t.Fatalf("unexpected combinedModeToString for Manual+Synch+PostFilter: %q", got)
+			t.Fatalf("unexpected getModeCombinedAsString for Manual+Synch+PostFilter: %q", got)
 		}
 	})
 
 	// ManaulBlocking + Synch + PreEnqueue
 	withMode(ModeManualBlocking, true, func() {
-		got := combinedModeToString()
+		got := getModeCombinedAsString()
 		if got != "ManualBlocking/Synch" {
-			t.Fatalf("unexpected combinedModeToString for ManualBlocking+Synch+PreEnqueue: %q", got)
+			t.Fatalf("unexpected getModeCombinedAsString for ManualBlocking+Synch+PreEnqueue: %q", got)
 		}
 	})
 
 	// Interlude + Asynch + PreEnqueue
 	withMode(ModeInterlude, false, func() {
-		got := combinedModeToString()
+		got := getModeCombinedAsString()
 		if got != "Interlude/Asynch" {
-			t.Fatalf("unexpected combinedModeToString for Interlude+Asynch+PreEnqueue: %q", got)
+			t.Fatalf("unexpected getModeCombinedAsString for Interlude+Asynch+PreEnqueue: %q", got)
 		}
 	})
 
 	// Unknown mode value -> default branch ("Periodic")
 	withMode(ModeType(999), true, func() {
-		got := combinedModeToString()
+		got := getModeCombinedAsString()
 		if got != "Periodic/Synch" {
-			t.Fatalf("unexpected combinedModeToString for unknown mode value: %q", got)
+			t.Fatalf("unexpected getModeCombinedAsString for unknown mode value: %q", got)
 		}
 	})
 }

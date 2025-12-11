@@ -11,8 +11,8 @@ import (
 )
 
 // Small indirections to make planActivation easier to test.
-var activatePlannedPendingFn = func(pl *SharedState, plan *Plan, pods []*v1.Pod) {
-	pl.activatePlannedPending(plan, pods)
+var activatePlannedPodsFn = func(pl *SharedState, plan *Plan, pods []*v1.Pod) {
+	pl.activatePlannedPods(plan, pods)
 }
 
 var getPodForPlanActivation = func(pl *SharedState, uid types.UID, ns, name string) *v1.Pod {
@@ -89,7 +89,7 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 	}
 
 	// 3) Activate planned pending
-	activatePlannedPendingFn(pl, plan, pods)
+	activatePlannedPodsFn(pl, plan, pods)
 
 	return nil
 }

@@ -26,7 +26,7 @@ func (pl *SharedState) planComputation(
 	solverInput PlannerInput,
 ) (bestName string, hadUsableResult bool, bestAttempt *PlannerResult, bestOutput *PlannerOutput, attempts []PlannerResult) {
 	hadUsableResult = false
-	strategy := combinedModeToString()
+	strategy := getModeCombinedAsString()
 
 	// Python tuning knobs live here, not inside SolverInput.
 	pyOpts := PythonSolverOptions{
