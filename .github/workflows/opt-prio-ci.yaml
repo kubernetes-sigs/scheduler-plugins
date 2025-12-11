@@ -102,8 +102,8 @@ jobs:
           : "${SCHEDULER_VERSION:?SCHEDULER_VERSION missing in env file}"
           : "${PYTHON_VERSION:?PYTHON_VERSION missing in env file}"
           : "${KUBE_SCHEDULER_BIN:?KUBE_SCHEDULER_BIN missing in env file}"
-          : "${VENV_DIR:?VENV_DIR missing in env file}"
-          : "${SOLVER_DIR:?SOLVER_DIR missing in env file}"
+          : "${PYTHON_SOLVER_OUT_VENV_DIR:?PYTHON_SOLVER_OUT_VENV_DIR missing in env file}"
+          : "${PYTHON_SOLVER_OUT_SCRIPT_DIR:?PYTHON_SOLVER_OUT_SCRIPT_DIR missing in env file}"
           : "${KUBECTL_VERSION:?KUBECTL_VERSION missing in env file}"
           : "${KWOK_VERSION:?KWOK_VERSION missing in env file}"
           {
@@ -111,8 +111,8 @@ jobs:
             echo "SCHEDULER_VERSION=${SCHEDULER_VERSION}"
             echo "PYTHON_VERSION=${PYTHON_VERSION}"
             echo "KUBE_SCHEDULER_BIN=${KUBE_SCHEDULER_BIN}"
-            echo "VENV_DIR=${VENV_DIR}"
-            echo "SOLVER_DIR=${SOLVER_DIR}"
+            echo "PYTHON_SOLVER_OUT_VENV_DIR=${PYTHON_SOLVER_OUT_VENV_DIR}"
+            echo "PYTHON_SOLVER_OUT_SCRIPT_DIR=${PYTHON_SOLVER_OUT_SCRIPT_DIR}"
             echo "KUBECTL_VERSION=${KUBECTL_VERSION}"
             echo "KWOK_VERSION=${KWOK_VERSION}"
           } >> "$GITHUB_OUTPUT"
@@ -162,12 +162,12 @@ jobs:
       - name: Set up solver Python environment
         run: |
           set -euo pipefail
-          sudo install -d -m 0755 "${{ steps.load-env.outputs.SOLVER_DIR }}" "${{ steps.load-env.outputs.VENV_DIR }}"
-          sudo chown -R "$USER:$USER" "${{ steps.load-env.outputs.SOLVER_DIR }}" "${{ steps.load-env.outputs.VENV_DIR }}"
-          cp scripts/python_solver/main.py "${{ steps.load-env.outputs.SOLVER_DIR }}/main.py"
-          python -m venv "${{ steps.load-env.outputs.VENV_DIR }}"
-          "${{ steps.load-env.outputs.VENV_DIR }}/bin/python" -m pip install --upgrade pip
-          "${{ steps.load-env.outputs.VENV_DIR }}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
+          sudo install -d -m 0755 "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_SCRIPT_DIR }}" "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_VENV_DIR }}"
+          sudo chown -R "$USER:$USER" "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_SCRIPT_DIR }}" "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_VENV_DIR }}"
+          cp scripts/python_solver/main.py "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_SCRIPT_DIR }}/main.py"
+          python -m venv "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_VENV_DIR }}"
+          "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_VENV_DIR }}/bin/python" -m pip install --upgrade pip
+          "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_VENV_DIR }}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
 
       - name: Prepare integration test coverage directory
         run: mkdir -p coverage/integration/kwok

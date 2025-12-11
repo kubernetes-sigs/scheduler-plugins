@@ -170,7 +170,7 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 		{name: "error", err: fmt.Errorf("boom"), wantStatus: "error"},
 	}
 
-	attempts := []SolverResult{
+	attempts := []PlannerResult{
 		{Name: "solverA", Status: "FEASIBLE"},
 		{Name: "solverB", Status: "OPTIMAL"},
 	}
@@ -181,47 +181,52 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 			pl.PluginReady.Store(true)
 			pl.Active.Store(true)
 
-			// Override hooks for this subtest.
-			oldGet := getPodsForHTTP
-			oldRun := runFlowForHTTP
-			getPodsForHTTP = func(*SharedState) ([]*v1.Pod, error) {
-				return pods, nil
+			// Fake pod store used by fakePodLister.
+			store := map[string]map[string]*v1.Pod{
+				"ns": {
+					"p1": pods[0],
+					"p2": pods[1],
+					"p3": pods[2],
+				},
 			}
-			runFlowForHTTP = func(*SharedState, context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
-				baseline := &SolverScore{Evicted: 1}
-				return nil, baseline, "solverB", nil, attempts, c.err
-			}
-			defer func() {
-				getPodsForHTTP = oldGet
-				runFlowForHTTP = oldRun
-			}()
+			fpl := &fakePodLister{store: store}
 
-			rr := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodPost, "/solve", nil)
+			withPodLister(fpl, func() {
+				// Override runOptFlow to control the outcome.
+				oldRun := runOptFlow
+				runOptFlow = func(*SharedState, context.Context) (*Plan, *PlannerScore, string, *PlannerResult, []PlannerResult, error) {
+					baseline := &PlannerScore{Evicted: 1}
+					return nil, baseline, "solverB", nil, attempts, c.err
+				}
+				defer func() { runOptFlow = oldRun }()
 
-			pl.solveHandler(rr, req)
+				rr := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, "/solve", nil)
 
-			if rr.Code != http.StatusOK {
-				t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
-			}
-			resp := decodeHTTPResponse(t, rr)
+				pl.solveHandler(rr, req)
 
-			if resp.Status != c.wantStatus {
-				t.Fatalf("Status = %q, want %q", resp.Status, c.wantStatus)
-			}
-			if !resp.Active {
-				t.Fatalf("Active = false, want true")
-			}
-			if resp.PendingBefore != 2 {
-				t.Fatalf("PendingBefore = %d, want 2", resp.PendingBefore)
-			}
+				if rr.Code != http.StatusOK {
+					t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+				}
+				resp := decodeHTTPResponse(t, rr)
 
-			if c.err != nil && resp.Error == "" {
-				t.Fatalf("expected Error to be populated for err=%v", c.err)
-			}
-			if c.err == nil && resp.Error != "" {
-				t.Fatalf("expected Error empty when err=nil, got %q", resp.Error)
-			}
+				if resp.Status != c.wantStatus {
+					t.Fatalf("Status = %q, want %q", resp.Status, c.wantStatus)
+				}
+				if !resp.Active {
+					t.Fatalf("Active = false, want true")
+				}
+				if resp.PendingBefore != 2 {
+					t.Fatalf("PendingBefore = %d, want 2", resp.PendingBefore)
+				}
+
+				if c.err != nil && resp.Error == "" {
+					t.Fatalf("expected Error to be populated for err=%v", c.err)
+				}
+				if c.err == nil && resp.Error != "" {
+					t.Fatalf("expected Error empty when err=nil, got %q", resp.Error)
+				}
+			})
 		})
 	}
 }

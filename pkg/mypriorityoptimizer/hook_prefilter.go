@@ -62,7 +62,7 @@ func (pl *SharedState) PreFilter(ctx context.Context, st fwk.CycleState, pending
 			"pod", klog.KObj(pending),
 			"reason", filterMsg,
 		)
-		pl.BlockedWhileActive.AddPod(pending)
+		pl.BlockedWhileActive.AddPodSafely(pending)
 		return nil, fwk.NewStatus(fwk.Unschedulable, msg(stage, filterMsg))
 	}
 }

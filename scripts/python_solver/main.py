@@ -49,36 +49,42 @@ class CPSATSolver:
         Returns a dict with keys:
             - placements: list of placements (dicts with pod {uid, namespace, name}, from_node, to_node)
             - evictions: list of evictions (dicts with pod {uid, namespace, name}, node)
-            - stages: list of stages (dicts with tier, stage ("place" or "moves"), status, duration_ms, relative_gap)
+            - phases: list of phases (dicts with tier, stage ("place" or "moves"), status, duration_ms, relative_gap)
             - duration_ms: total duration in milliseconds
             - status: overall status string
         """
         
         # Record start time
         started_at = time.monotonic()
-        
+
+        #################################################
+        # --- Unwrap Go payload -------------------------
+        #################################################
+        solver_input   = instance.get("solver_input") or {}
+        solver_options = instance.get("solver_options") or {}
+
         #################################################
         # --- Read Input -------------------------------
         #################################################
-        nodes       = instance.get("nodes") or []
-        pods        = instance.get("pods")  or []
-        preemptor   = instance.get("preemptor") or None # preemptor (per-pod) mode
+        nodes       = solver_input.get("nodes") or []
+        pods        = solver_input.get("pods")  or []
+        preemptor   = solver_input.get("preemptor") or None # preemptor (per-pod) mode
 
         #################################################
         # --- Options/Parameters ------------------------
         #################################################
-        timeout_ms               = int(instance.get("timeout_ms", 3000)) - 200
-        ignore_affinity          = bool(instance.get("ignore_affinity", True)) # TODO: consider to use this
-        log_progress             = bool(instance.get("log_progress", False))
-        guaranteed_tier_fraction = float(instance.get("guaranteed_tier_fraction", 0.6)) # guaranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers. Default value of 0.6 is estimated through experiments.
-        disr_fraction_of_tier    = float(instance.get("disr_fraction_of_tier", 0.5)) # of a tier's budget: 30% disruption, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves. Default value of 0.5 is estimated through experiments.
+        timeout_ms               = int(solver_input.get("timeout_ms", 3000)) - 200
+        ignore_affinity          = bool(solver_input.get("ignore_affinity", True)) # TODO: consider to use this
+        log_progress             = bool(solver_options.get("log_progress", False))
+        guaranteed_tier_fraction = float(solver_options.get("guaranteed_tier_fraction", 0.6)) # guaranteed fraction of total time for all tiers. 0.50 means 50% of total time is guaranteed for all tiers (divided equally), the rest is unreserved and can be used greedily by higher tiers. Default value of 0.6 is estimated through experiments.
+        move_fraction_of_tier    = float(solver_options.get("move_fraction_of_tier", 0.5)) # of a tier's budget: 30% disruption, 70% placement. If you want to let placement stage use all time, set to 0.0 -- the rest is then for moves. Default value of 0.5 is estimated through experiments.
 
         #################################################
         # --- Solver setup ------------------------------
         #################################################
         solver = cp_model.CpSolver()
         solver.parameters.num_search_workers        = 0 # 0 = all available cores
-        solver.parameters.relative_gap_limit        = float(instance.get("gap_limit", 0.00)) # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
+        solver.parameters.relative_gap_limit        = float(solver_options.get("gap_limit", 0.00)) # allowed relative gap (0.0 = exact, 0.05 = 5% of optimum)
         solver.parameters.log_search_progress       = log_progress
         solver.parameters.log_subsolver_statistics  = log_progress
         solver.parameters.log_to_stdout             = False  # KEEP False → logs go to stderr
@@ -401,7 +407,7 @@ class CPSATSolver:
         #########################
         #TODO: add total_solver_time to output, as total_time also includes model building time and I/O time
         st = cp_model.UNKNOWN
-        stages: list[dict] = []
+        phases: list[dict] = []
         for p in tiers:
             # Indices of pods with priority ≥ p, both running and pending
             idxs_ge = [i for i in range(num_pods) if p_priority(i) >= p]
@@ -418,7 +424,7 @@ class CPSATSolver:
             if tier_cap <= 1e-3:
                 remaining_tiers = max(0, remaining_tiers - 1)
                 continue
-            place_cap = tier_cap * (1.0 - disr_fraction_of_tier) # split priority budget into place/moves by MOVES_SHARE
+            place_cap = tier_cap * (1.0 - move_fraction_of_tier) # split priority budget into place/moves by MOVES_SHARE
 
             # --- PLACEMENT stage ---
             # Objective:
@@ -440,7 +446,7 @@ class CPSATSolver:
             place_result = run_stage(placed_expr, "max", place_cap)
             st = place_result["status"]
             time_spent_place = place_result["time_spent"]
-            stages.append({
+            phases.append({
                 "tier": p,
                 "stage": "place",
                 "status": self._status_str(st),
@@ -495,7 +501,7 @@ class CPSATSolver:
                     disr_result = run_stage(disr_expr, "min", min(rem_tiers, remaining_wall()))
                     st = disr_result["status"]
                     time_spent_disr = disr_result["time_spent"]
-                    stages.append({
+                    phases.append({
                         "tier": p, "stage": "disruption", "status": self._status_str(st),
                         "duration_ms": round(time_spent_disr * 1000),
                         "relative_gap": f"{disr_result['relative_gap']:.4f}",
@@ -565,9 +571,9 @@ class CPSATSolver:
                     })
         total_time = max(0.0, time.monotonic() - started_at)
         
-        # Get overall status by checking all stages. Priority:
+        # Get overall status by checking all phases. Priority:
         # MODEL_INVALID > UNKNOWN > INFEASIBLE > FEASIBLE > OPTIMAL
-        seen = {s["status"] for s in stages}
+        seen = {s["status"] for s in phases}
         if "MODEL_INVALID" in seen:
             overall_status = "MODEL_INVALID"
         elif "UNKNOWN" in seen:
@@ -585,7 +591,7 @@ class CPSATSolver:
         return {
             "placements": placements,
             "evictions": evictions,
-            "stages": stages,
+            "phases": phases,
             "duration_ms": round(total_time * 1000),
             "status": overall_status,
         }

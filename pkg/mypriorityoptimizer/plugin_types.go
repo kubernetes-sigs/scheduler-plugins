@@ -20,7 +20,7 @@ type SharedState struct {
 	// Currently active plan (if any)
 	ActivePlan atomic.Pointer[ActivePlan]
 	// Set of blocked pods
-	BlockedWhileActive *PodSet
+	BlockedWhileActive *SafePodSet
 	// Whether the plugin is ready (caches warmed up and usable node found)
 	PluginReady atomic.Bool
 }

@@ -15,7 +15,7 @@ func buildPluginConfigSnapshot() PluginConfigSnapshot {
 		Timestamp: time.Now().UTC(),
 
 		Name:    Name,
-		Version: Version,
+		Version: PluginVersion,
 
 		SystemNamespace:                   SystemNamespace,
 		CacheWarmupSettleDelay:            CacheWarmupSettleDelay.String(),

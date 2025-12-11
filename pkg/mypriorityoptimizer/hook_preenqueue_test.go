@@ -10,16 +10,6 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 )
 
-// helper: temporarily override OptimizeMode using the real parsers.
-func withOptimizeModeStage(modeStr string, fn func()) {
-	origMode := OptimizeMode
-	OptimizeMode = parseOptimizeMode(modeStr)
-	defer func() {
-		OptimizeMode = origMode
-	}()
-	fn()
-}
-
 // kube-system pods should always be allowed regardless of mode/plan.
 func TestPreEnqueue_KubeSystemAlwaysAllowed(t *testing.T) {
 	pl := &SharedState{}
@@ -55,7 +45,7 @@ func TestPreEnqueue_ManualBlockingModeBlocks(t *testing.T) {
 		},
 	}
 
-	withOptimizeModeStage("manual_blocking", func() {
+	withMode(ModeManualBlocking, true, func() {
 		st := pl.PreEnqueue(context.Background(), pod)
 		if st == nil {
 			t.Fatalf("PreEnqueue() returned nil status")
@@ -79,7 +69,7 @@ func TestPreEnqueue_DefaultModePassThrough(t *testing.T) {
 		},
 	}
 
-	withOptimizeModeStage("periodic", func() {
+	withMode(ModePeriodic, true, func() {
 		st := pl.PreEnqueue(context.Background(), pod)
 		if st == nil {
 			t.Fatalf("PreEnqueue() returned nil status")

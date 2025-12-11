@@ -121,7 +121,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 
 				default:
 					// Still running
-					if cfg.CancelOnChange && !sameUIDSet(currentSet, baselineSet) {
+					if cfg.CancelOnChange && !isSameUIDSet(currentSet, baselineSet) {
 						klog.V(MyV).InfoS(
 							msg(cfg.Label, "pending set changed; cancelling run"),
 							"pending", pendingCount,
@@ -136,7 +136,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 			// 5) If we already solved exactly this set + fingerprint, skip.
 			if lastSolvedSet != nil &&
 				lastSolvedFingerprint != "" &&
-				sameUIDSet(currentSet, lastSolvedSet) &&
+				isSameUIDSet(currentSet, lastSolvedSet) &&
 				currentFingerprint == lastSolvedFingerprint {
 				klog.V(MyV).InfoS(
 					msg(cfg.Label, "pending set + fingerprint match last solved; skipping optimization"),
@@ -159,7 +159,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 			}
 
 			// 7) Track whether the pending set changed
-			if !sameUIDSet(currentSet, lastPendingSet) {
+			if !isSameUIDSet(currentSet, lastPendingSet) {
 				lastPendingSet = cloneUIDSet(currentSet)
 				lastChange = time.Now()
 				klog.V(MyV).InfoS(
@@ -192,12 +192,12 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 
 			go func() {
 				_, _, _, bestAttempt, _, err := pl.runOptimizationFlow(ctxRun, nil)
-				solved := isAlreadySolvedForPendingSet(err, bestAttempt)
+				solved := isAlreadyComputedForPendingSet(err, bestAttempt)
 
 				if err != nil &&
 					err != context.Canceled &&
 					err != ErrNoImprovingSolutionFromAnySolver &&
-					err != ErrNoPendingPodsToSchedule {
+					err != ErrNoPendingPodsScheduled {
 					klog.V(MyV).InfoS(msg(cfg.Label, "runFlow completed with error"),
 						"err", err.Error())
 				}
@@ -210,8 +210,8 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 	}
 }
 
-// sameUIDSet returns true if a and b contain exactly the same UIDs.
-func sameUIDSet(a, b map[types.UID]struct{}) bool {
+// isSameUIDSet returns true if a and b contain exactly the same UIDs.
+func isSameUIDSet(a, b map[types.UID]struct{}) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -241,7 +241,7 @@ func cloneUIDSet(in map[types.UID]struct{}) map[types.UID]struct{} {
 	return out
 }
 
-// isAlreadySolvedForPendingSet decides whether a run of runFlow has
+// isAlreadyComputedForPendingSet decides whether a run of runFlow has
 // "fully solved" the current pending set, i.e. there is nothing
 // better to do for this set of pending pods under the current cluster state.
 // We only consider it solved when:
@@ -252,7 +252,7 @@ func cloneUIDSet(in map[types.UID]struct{}) map[types.UID]struct{} {
 // If the solver only found a FEASIBLE solution, hit a time limit,
 // was cancelled, or otherwise did not prove optimality, we return false
 // so that the same pending set may be retried later.
-func isAlreadySolvedForPendingSet(err error, bestAttempt *SolverResult) bool {
+func isAlreadyComputedForPendingSet(err error, bestAttempt *PlannerResult) bool {
 	if bestAttempt == nil {
 		return false
 	}
@@ -261,7 +261,7 @@ func isAlreadySolvedForPendingSet(err error, bestAttempt *SolverResult) bool {
 		return false
 	}
 	return err == ErrNoImprovingSolutionFromAnySolver ||
-		err == ErrNoPendingPodsToSchedule
+		err == ErrNoPendingPodsScheduled
 }
 
 // buildPendingSnapshot:

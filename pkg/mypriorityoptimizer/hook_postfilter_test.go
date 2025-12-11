@@ -14,13 +14,6 @@ import (
 // We only test the fast-path where PerPod@PostFilter is NOT enabled:
 // PostFilter should return Unschedulable with a "no nomination" message.
 func TestPostFilter_NoPerPod_NoNomination(t *testing.T) {
-	// Force a non-PerPod mode with a non-PostFilter hook to guarantee
-	// !(optimizePerPod() && hookAtPostFilter()) is true.
-	origMode := OptimizeMode
-	OptimizeMode = parseOptimizeMode("periodic")
-	defer func() {
-		OptimizeMode = origMode
-	}()
 
 	pl := &SharedState{}
 	pod := &v1.Pod{

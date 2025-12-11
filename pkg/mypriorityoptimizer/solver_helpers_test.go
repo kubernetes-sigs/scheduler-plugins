@@ -263,23 +263,69 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestBuildBaselineScore(t *testing.T) {
-	in := SolverInput{
-		Pods: []Pod{
-			{Priority: 1, Node: "n1"}, // placed
-			{Priority: 1, Node: ""},   // pending
-			{Priority: 2, Node: "n2"}, // placed
+	p1Pri := int32(1)
+	p2Pri := int32(2)
+
+	pods := []*v1.Pod{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       "p1",
+				Namespace: "ns",
+				Name:      "pod1",
+			},
+			Spec: v1.PodSpec{
+				NodeName: "n1",   // assigned → counted as placed
+				Priority: &p1Pri, // priority 1
+			},
+			Status: v1.PodStatus{
+				Phase: v1.PodRunning,
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       "p2",
+				Namespace: "ns",
+				Name:      "pod2",
+			},
+			Spec: v1.PodSpec{
+				NodeName: "n2",   // assigned → counted as placed
+				Priority: &p2Pri, // priority 2
+			},
+			Status: v1.PodStatus{
+				Phase: v1.PodRunning,
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       "p3",
+				Namespace: "ns",
+				Name:      "pod3",
+			},
+			Spec: v1.PodSpec{
+				// no NodeName → pending, should NOT count as placed
+			},
+			Status: v1.PodStatus{
+				Phase: v1.PodPending,
+			},
 		},
 	}
-	score := buildBaselineScore(in)
+
+	score := buildBaselineScore(pods)
 
 	if score.Evicted != 0 || score.Moved != 0 {
 		t.Fatalf("baseline score Evicted/Moved = (%d,%d), want (0,0)", score.Evicted, score.Moved)
 	}
+
 	if got := score.PlacedByPriority["1"]; got != 1 {
 		t.Fatalf("PlacedByPriority['1'] = %d, want 1", got)
 	}
 	if got := score.PlacedByPriority["2"]; got != 1 {
 		t.Fatalf("PlacedByPriority['2'] = %d, want 1", got)
+	}
+
+	// Optional extra sanity check: no unexpected priorities
+	if len(score.PlacedByPriority) != 2 {
+		t.Fatalf("len(PlacedByPriority) = %d, want 2", len(score.PlacedByPriority))
 	}
 }
 
@@ -321,49 +367,49 @@ func TestSolverConfigArgs(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestIsImprovement_Order(t *testing.T) {
-	base := SolverScore{
+	base := PlannerScore{
 		PlacedByPriority: map[string]int{"1": 1, "0": 1},
 		Evicted:          2,
 		Moved:            3,
 	}
 
 	// Better placed high-prio
-	suggBetterPlaced := SolverScore{
+	suggBetterPlaced := PlannerScore{
 		PlacedByPriority: map[string]int{"1": 2, "0": 0},
 		Evicted:          2,
 		Moved:            3,
 	}
-	if got := isImprovement(base, suggBetterPlaced); got != 1 {
+	if got := isImprovement(&base, &suggBetterPlaced); got != 1 {
 		t.Fatalf("isImprovement() placed better = %d, want 1", got)
 	}
 
 	// Same placed, fewer evictions
-	suggBetterEvict := SolverScore{
+	suggBetterEvict := PlannerScore{
 		PlacedByPriority: map[string]int{"1": 1, "0": 1},
 		Evicted:          1,
 		Moved:            3,
 	}
-	if got := isImprovement(base, suggBetterEvict); got != 1 {
+	if got := isImprovement(&base, &suggBetterEvict); got != 1 {
 		t.Fatalf("isImprovement() fewer evictions = %d, want 1", got)
 	}
 
 	// Same placed/evictions, more moves (worse)
-	suggMoreMoves := SolverScore{
+	suggMoreMoves := PlannerScore{
 		PlacedByPriority: map[string]int{"1": 1, "0": 1},
 		Evicted:          2,
 		Moved:            4,
 	}
-	if got := isImprovement(base, suggMoreMoves); got != -1 {
+	if got := isImprovement(&base, &suggMoreMoves); got != -1 {
 		t.Fatalf("isImprovement() more moves = %d, want -1", got)
 	}
 
 	// Exactly equal
-	same := SolverScore{
+	same := PlannerScore{
 		PlacedByPriority: map[string]int{"1": 1, "0": 1},
 		Evicted:          2,
 		Moved:            3,
 	}
-	if got := isImprovement(base, same); got != 0 {
+	if got := isImprovement(&base, &same); got != 0 {
 		t.Fatalf("isImprovement() equal = %d, want 0", got)
 	}
 }
@@ -406,10 +452,10 @@ func TestCmpInt(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// hasSolverFeasibleResult
+// hasSolverUsableResult
 // -----------------------------------------------------------------------------
 
-func TestHasSolverFeasibleResult(t *testing.T) {
+func TestHasSolverUsableResult(t *testing.T) {
 	tests := []struct {
 		status string
 		want   bool
@@ -421,9 +467,124 @@ func TestHasSolverFeasibleResult(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := hasSolverFeasibleResult(tt.status); got != tt.want {
-			t.Fatalf("hasSolverFeasibleResult(%q) = %v, want %v", tt.status, got, tt.want)
+		if got := hasSolverUsableResult(tt.status); got != tt.want {
+			t.Fatalf("hasSolverUsableResult(%q) = %v, want %v", tt.status, got, tt.want)
 		}
+	}
+}
+
+// -----------------------------------------------------------------------------
+// doesSolverSolutionImproves
+// -----------------------------------------------------------------------------
+
+func TestDoesSolverSolutionImproves_NilBaselineOrScore(t *testing.T) {
+	base := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 1},
+		Evicted:          0,
+		Moved:            0,
+	}
+	sugg := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 2},
+		Evicted:          0,
+		Moved:            0,
+	}
+
+	// Nil baseline
+	improves, usable := doesSolverSolutionImproves(nil, "OPTIMAL", sugg)
+	if improves || usable {
+		t.Fatalf("nil baseline: got improves=%v usable=%v, want both false", improves, usable)
+	}
+
+	// Nil score
+	improves, usable = doesSolverSolutionImproves(base, "OPTIMAL", nil)
+	if improves || usable {
+		t.Fatalf("nil score: got improves=%v usable=%v, want both false", improves, usable)
+	}
+}
+
+func TestDoesSolverSolutionImproves_StatusGate(t *testing.T) {
+	base := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 1},
+		Evicted:          1,
+		Moved:            1,
+	}
+	// Strictly better than base
+	better := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 2},
+		Evicted:          0,
+		Moved:            0,
+	}
+
+	cases := []struct {
+		status       string
+		wantUsable   bool
+		wantImproves bool
+	}{
+		{"", false, false},
+		{"INFEASIBLE", false, false},
+		{"UNKNOWN", false, false},
+		{"OPTIMAL", true, true},
+		{"FEASIBLE", true, true},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.status, func(t *testing.T) {
+			improves, usable := doesSolverSolutionImproves(base, tt.status, better)
+			if usable != tt.wantUsable || improves != tt.wantImproves {
+				t.Fatalf("status=%q: got (improves=%v, usable=%v), want (improves=%v, usable=%v)",
+					tt.status, improves, usable, tt.wantImproves, tt.wantUsable)
+			}
+		})
+	}
+}
+
+func TestDoesSolverSolutionImproves_BetterEqualWorse(t *testing.T) {
+	base := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 1, "0": 1},
+		Evicted:          2,
+		Moved:            3,
+	}
+
+	// Strictly better: more placed high-prio, same evictions/moves.
+	better := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 2, "0": 1},
+		Evicted:          2,
+		Moved:            3,
+	}
+
+	// Equal
+	equal := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 1, "0": 1},
+		Evicted:          2,
+		Moved:            3,
+	}
+
+	// Worse: same placed, more evictions.
+	worse := &PlannerScore{
+		PlacedByPriority: map[string]int{"1": 1, "0": 1},
+		Evicted:          3,
+		Moved:            3,
+	}
+
+	// Status is OPTIMAL so only the score comparison matters here.
+	status := "OPTIMAL"
+
+	// Better → usable=true, improves=true
+	improves, usable := doesSolverSolutionImproves(base, status, better)
+	if !usable || !improves {
+		t.Fatalf("better: got (improves=%v, usable=%v), want (true,true)", improves, usable)
+	}
+
+	// Equal → usable=true, improves=false
+	improves, usable = doesSolverSolutionImproves(base, status, equal)
+	if !usable || improves {
+		t.Fatalf("equal: got (improves=%v, usable=%v), want (false,true)", improves, usable)
+	}
+
+	// Worse → usable=true, improves=false
+	improves, usable = doesSolverSolutionImproves(base, status, worse)
+	if !usable || improves {
+		t.Fatalf("worse: got (improves=%v, usable=%v), want (false,true)", improves, usable)
 	}
 }
 
@@ -433,7 +594,7 @@ func TestHasSolverFeasibleResult(t *testing.T) {
 
 func TestPlanApplicable_NilPlan(t *testing.T) {
 	pl := &SharedState{}
-	ok, reason := pl.planApplicable(nil, nil, nil)
+	ok, reason := pl.isPlanApplicable(nil, nil, nil)
 	if ok {
 		t.Fatalf("planApplicable(nil, ...) = true, want false")
 	}
@@ -468,9 +629,9 @@ func TestPlanApplicable_CapacityExceededWhenNoNodes(t *testing.T) {
 		},
 	}
 
-	out := &SolverOutput{} // empty plan; we only care about capacity check
+	out := &PlannerOutput{} // empty plan; we only care about capacity check
 
-	ok, reason := pl.planApplicable(out, nil, []*v1.Pod{pod})
+	ok, reason := pl.isPlanApplicable(out, nil, []*v1.Pod{pod})
 	if ok {
 		t.Fatalf("planApplicable() with used resources but no node capacities = true, want false")
 	}
@@ -502,13 +663,13 @@ func TestPlanApplicable_EvictNodeNowUnusable(t *testing.T) {
 		},
 	}
 
-	out := &SolverOutput{
-		Evictions: []Pod{
+	out := &PlannerOutput{
+		Evictions: []PlannerPod{
 			{UID: "uid-1", Namespace: "ns1", Name: "p1"},
 		},
 	}
 
-	ok, reason := pl.planApplicable(out, nil, []*v1.Pod{pod})
+	ok, reason := pl.isPlanApplicable(out, nil, []*v1.Pod{pod})
 	if ok {
 		t.Fatalf("planApplicable() with eviction on unusable node = true, want false")
 	}
@@ -545,8 +706,8 @@ func TestPlanApplicable_PendingPreconditionChanged(t *testing.T) {
 		},
 	}
 
-	out := &SolverOutput{
-		Placements: []Pod{
+	out := &PlannerOutput{
+		Placements: []PlannerPod{
 			{
 				UID:       "uid-1",
 				Namespace: "ns1",
@@ -557,7 +718,7 @@ func TestPlanApplicable_PendingPreconditionChanged(t *testing.T) {
 		},
 	}
 
-	ok, reason := pl.planApplicable(out, []*v1.Node{node}, []*v1.Pod{pod})
+	ok, reason := pl.isPlanApplicable(out, []*v1.Node{node}, []*v1.Pod{pod})
 	if ok {
 		t.Fatalf("planApplicable() with pending precondition violated = true, want false")
 	}
@@ -642,11 +803,11 @@ func TestPlanApplicable_Success(t *testing.T) {
 		},
 	}
 
-	out := &SolverOutput{
-		Evictions: []Pod{
+	out := &PlannerOutput{
+		Evictions: []PlannerPod{
 			{UID: "u-evict", Namespace: "ns", Name: "p-evict"},
 		},
-		Placements: []Pod{
+		Placements: []PlannerPod{
 			{
 				UID:       "u-pending",
 				Namespace: "ns",
@@ -657,46 +818,9 @@ func TestPlanApplicable_Success(t *testing.T) {
 		},
 	}
 
-	ok, reason := pl.planApplicable(out, []*v1.Node{node}, []*v1.Pod{pStay, pEvict, pPending})
+	ok, reason := pl.isPlanApplicable(out, []*v1.Node{node}, []*v1.Pod{pStay, pEvict, pPending})
 	if !ok {
 		t.Fatalf("planApplicable() = false, reason=%q, want true", reason)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// summarizeAttempt
-// -----------------------------------------------------------------------------
-
-func TestSummarizeAttempt_UsesExistingStatusIfSet(t *testing.T) {
-	r := SolverResult{
-		Name:       "python",
-		Status:     "FAILED",
-		DurationMs: 10,
-		Score: SolverScore{
-			PlacedByPriority: map[string]int{"1": 1},
-		},
-		Output: &SolverOutput{Status: "OPTIMAL"},
-	}
-
-	s := summarizeAttempt(r)
-	if s.Status != "FAILED" {
-		t.Fatalf("summarizeAttempt() Status = %q, want %q", s.Status, "FAILED")
-	}
-	if s.Name != r.Name || s.DurationMs != r.DurationMs {
-		t.Fatalf("summarizeAttempt() changed fields unexpectedly: %#v", s)
-	}
-}
-
-func TestSummarizeAttempt_DerivesStatusFromOutput(t *testing.T) {
-	r := SolverResult{
-		Name:       "python",
-		Status:     "",
-		DurationMs: 5,
-		Output:     &SolverOutput{Status: "OPTIMAL"},
-	}
-	s := summarizeAttempt(r)
-	if s.Status != "OPTIMAL" {
-		t.Fatalf("summarizeAttempt() Status = %q, want %q", s.Status, "OPTIMAL")
 	}
 }
 
@@ -705,18 +829,18 @@ func TestSummarizeAttempt_DerivesStatusFromOutput(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
-	baseline := SolverScore{
+	baseline := PlannerScore{
 		PlacedByPriority: map[string]int{"1": 1},
 		Evicted:          0,
 		Moved:            0,
 	}
 
-	attempts := []SolverResult{
+	attempts := []PlannerResult{
 		{
 			Name:       "python",
 			Status:     "OPTIMAL",
 			DurationMs: 10,
-			Score: SolverScore{
+			Score: PlannerScore{
 				PlacedByPriority: map[string]int{"1": 2}, // better
 				Evicted:          0,
 				Moved:            0,
@@ -734,7 +858,7 @@ func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 
 	// We just want to exercise the grouping and tie-tagging logic; if this
 	// panics, the test fails.
-	logLeaderboard("test-label", attempts, baseline, best)
+	logLeaderboard("test-label", attempts, baseline, &best)
 }
 
 // -----------------------------------------------------------------------------
@@ -742,38 +866,38 @@ func TestLogLeaderboard_DoesNotPanic(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestScoreSolution_NilOutput(t *testing.T) {
-	in := SolverInput{
-		Pods: []Pod{
+	in := PlannerInput{
+		Pods: []PlannerPod{
 			{UID: "u1", Priority: 1, Node: "n1"},
 		},
 	}
-	score := scoreSolution(in, nil)
+	score := scorePlan(in, nil)
 	if len(score.PlacedByPriority) != 0 || score.Evicted != 0 || score.Moved != 0 {
 		t.Fatalf("scoreSolution() with nil out = %#v, want zero score", score)
 	}
 }
 
 func TestScoreSolution_Basic(t *testing.T) {
-	in := SolverInput{
-		Pods: []Pod{
+	in := PlannerInput{
+		Pods: []PlannerPod{
 			{UID: "u1", Priority: 1, Node: "n1"}, // running
 			{UID: "u2", Priority: 2, Node: ""},   // pending
 			{UID: "u3", Priority: 1, Node: "n1"}, // running
 		},
 	}
 
-	out := &SolverOutput{
-		Placements: []Pod{
+	out := &PlannerOutput{
+		Placements: []PlannerPod{
 			{UID: "u2", Node: "n1"}, // place pending
 			{UID: "u3", Node: "n2"}, // move running
 			{UID: "uX", Node: "n1"}, // unknown UID → ignored
 		},
-		Evictions: []Pod{
+		Evictions: []PlannerPod{
 			{UID: "u1"}, // evict u1
 		},
 	}
 
-	score := scoreSolution(in, out)
+	score := scorePlan(in, out)
 
 	if got := score.PlacedByPriority["1"]; got != 1 {
 		t.Fatalf("placed prio 1 = %d, want 1", got)
@@ -790,20 +914,20 @@ func TestScoreSolution_Basic(t *testing.T) {
 }
 
 func TestScoreSolution_WithPreemptor(t *testing.T) {
-	pre := &Pod{UID: "u-pre", Priority: 5}
+	pre := &PlannerPod{UID: "u-pre", Priority: 5}
 
-	in := SolverInput{
+	in := PlannerInput{
 		Preemptor: pre,
 		Pods:      nil,
 	}
 
-	out := &SolverOutput{
-		Placements: []Pod{
+	out := &PlannerOutput{
+		Placements: []PlannerPod{
 			{UID: pre.UID, Node: "n1"},
 		},
 	}
 
-	score := scoreSolution(in, out)
+	score := scorePlan(in, out)
 
 	if got := score.PlacedByPriority["5"]; got != 1 {
 		t.Fatalf("placed prio 5 (preemptor) = %d, want 1", got)
@@ -849,17 +973,17 @@ func TestToPod_BasicMapping(t *testing.T) {
 func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 	pl := &SharedState{}
 
-	baseline := &SolverScore{
+	baseline := PlannerScore{
 		PlacedByPriority: map[string]int{"1": 1},
 		Evicted:          0,
 		Moved:            0,
 	}
-	attempts := []SolverResult{
+	attempts := []PlannerResult{
 		{
 			Name:       "python",
 			Status:     "OPTIMAL",
 			DurationMs: 42,
-			Score: SolverScore{
+			Score: PlannerScore{
 				PlacedByPriority: map[string]int{"1": 2},
 				Evicted:          0,
 				Moved:            0,
@@ -868,10 +992,10 @@ func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 	}
 
 	var gotPl *SharedState
-	var gotEntry ExportedSolverStats
+	var gotEntry ExportedPlannerStats
 
 	withAppendStatsHook(
-		func(hpl *SharedState, _ context.Context, entry ExportedSolverStats) {
+		func(hpl *SharedState, _ context.Context, entry ExportedPlannerStats) {
 			gotPl = hpl
 			gotEntry = entry
 		},
@@ -896,8 +1020,17 @@ func TestExportSolverStatsToConfigMap_UsesAppendHook(t *testing.T) {
 	if gotEntry.Error != "some-error" {
 		t.Fatalf("Error = %q, want %q", gotEntry.Error, "some-error")
 	}
-	if gotEntry.Baseline != baseline {
-		t.Fatalf("Baseline pointer mismatch: got %p, want %p", gotEntry.Baseline, baseline)
+	if gotEntry.Baseline.Evicted != baseline.Evicted || gotEntry.Baseline.Moved != baseline.Moved {
+		t.Fatalf("Baseline mismatch: got %+v, want %+v", gotEntry.Baseline, baseline)
+	}
+	// Compare PlacedByPriority maps manually since maps cannot be compared directly
+	if len(gotEntry.Baseline.PlacedByPriority) != len(baseline.PlacedByPriority) {
+		t.Fatalf("Baseline.PlacedByPriority length mismatch: got %d, want %d", len(gotEntry.Baseline.PlacedByPriority), len(baseline.PlacedByPriority))
+	}
+	for k, v := range baseline.PlacedByPriority {
+		if gotEntry.Baseline.PlacedByPriority[k] != v {
+			t.Fatalf("Baseline.PlacedByPriority[%q] = %d, want %d", k, gotEntry.Baseline.PlacedByPriority[k], v)
+		}
 	}
 	if len(gotEntry.Attempts) != len(attempts) {
 		t.Fatalf("Attempts len = %d, want %d", len(gotEntry.Attempts), len(attempts))
@@ -929,7 +1062,7 @@ func TestAppendSolverStatsCM_NoClientSet_SkipsWithoutPanic(t *testing.T) {
 	defer func() { appendSolverStatsCMHook = orig }()
 
 	// Just ensure it doesn't panic when there is no clientset.
-	pl.appendSolverStatsCM(ctx, ExportedSolverStats{BestName: "best"})
+	pl.appendSolverStatsCM(ctx, ExportedPlannerStats{BestName: "best"})
 }
 
 func TestAppendSolverStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
@@ -951,7 +1084,7 @@ func TestAppendSolverStatsCM_CreatesConfigMapOnNotFound(t *testing.T) {
 	appendSolverStatsCMHook = nil
 	defer func() { appendSolverStatsCMHook = orig }()
 
-	entry := ExportedSolverStats{
+	entry := ExportedPlannerStats{
 		BestName: "python",
 		// other fields not strictly necessary for this test
 	}

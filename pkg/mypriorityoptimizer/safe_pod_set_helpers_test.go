@@ -14,23 +14,23 @@ import (
 // newPodSet
 // -----------------------------------------------------------------------------
 
-func TestNewPodSet_Empty(t *testing.T) {
-	ps := newPodSet("blocked")
+func TestNewSafePodSet_Empty(t *testing.T) {
+	ps := newSafePodSet("blocked")
 
 	if ps == nil {
-		t.Fatalf("newPodSet returned nil")
+		t.Fatalf("newSafePodSet returned nil")
 	}
 	if ps.Name != "blocked" {
-		t.Fatalf("newPodSet name = %q, want %q", ps.Name, "blocked")
+		t.Fatalf("newSafePodSet name = %q, want %q", ps.Name, "blocked")
 	}
 
 	if got := ps.Size(); got != 0 {
-		t.Fatalf("newPodSet.Size() = %d, want 0", got)
+		t.Fatalf("newSafePodSet.Size() = %d, want 0", got)
 	}
 
-	snap := ps.Snapshot()
+	snap := ps.SnapshotSafely()
 	if len(snap) != 0 {
-		t.Fatalf("newPodSet.Snapshot() length = %d, want 0", len(snap))
+		t.Fatalf("newSafePodSet.SnapshotSafely() length = %d, want 0", len(snap))
 	}
 }
 
@@ -38,24 +38,24 @@ func TestNewPodSet_Empty(t *testing.T) {
 // doesPodSetExist
 // -----------------------------------------------------------------------------
 
-func TestDoesPodSetExist(t *testing.T) {
+func TestDoesSafePodSetExist(t *testing.T) {
 	// nil set → false
-	if got := doesPodSetExist(nil); got {
-		t.Fatalf("doesPodSetExist(nil) = %v, want false", got)
+	if got := doesSafePodSetExist(nil); got {
+		t.Fatalf("doesSafePodSetExist(nil) = %v, want false", got)
 	}
 
 	// empty set → false
-	empty := newPodSet("empty")
-	if got := doesPodSetExist(empty); got {
-		t.Fatalf("doesPodSetExist(empty) = %v, want false", got)
+	empty := newSafePodSet("empty")
+	if got := doesSafePodSetExist(empty); got {
+		t.Fatalf("doesSafePodSetExist(empty) = %v, want false", got)
 	}
 
 	// set with one pod → true
-	ps := newPodSet("blocked")
+	ps := newSafePodSet("blocked")
 	pod := newPod("ns1", "pod1", "uid-1", "", 5)
-	ps.AddPod(pod)
-	if got := doesPodSetExist(ps); !got {
-		t.Fatalf("doesPodSetExist(non-empty) = %v, want true", got)
+	ps.AddPodSafely(pod)
+	if got := doesSafePodSetExist(ps); !got {
+		t.Fatalf("doesSafePodSetExist(non-empty) = %v, want true", got)
 	}
 }
 
@@ -65,7 +65,7 @@ func TestDoesPodSetExist(t *testing.T) {
 
 func TestPruneSet_RemovesStaleAndKeepsPending(t *testing.T) {
 	pl := &SharedState{}
-	ps := newPodSet("blocked")
+	ps := newSafePodSet("blocked")
 
 	pGone := newPod("ns", "gone", "uid-gone", "", 0)
 	pRecreatedOld := newPod("ns", "recreated", "uid-recreated-old", "", 0)
@@ -80,12 +80,12 @@ func TestPruneSet_RemovesStaleAndKeepsPending(t *testing.T) {
 	pErr := newPod("ns", "err", "uid-err", "", 0)
 	pKeep := newPod("ns", "keep", "uid-keep", "", 0)
 
-	ps.AddPod(pGone)
-	ps.AddPod(pRecreatedOld)
-	ps.AddPod(pTerminating)
-	ps.AddPod(pBound)
-	ps.AddPod(pErr)
-	ps.AddPod(pKeep)
+	ps.AddPodSafely(pGone)
+	ps.AddPodSafely(pRecreatedOld)
+	ps.AddPodSafely(pTerminating)
+	ps.AddPodSafely(pBound)
+	ps.AddPodSafely(pErr)
+	ps.AddPodSafely(pKeep)
 
 	store := map[string]map[string]*v1.Pod{
 		"ns": {
@@ -109,12 +109,12 @@ func TestPruneSet_RemovesStaleAndKeepsPending(t *testing.T) {
 		store:     store,
 		errPerKey: errPerKey,
 	}, func() {
-		removed := pl.pruneSet(ps)
+		removed := pl.pruneSafePodSet(ps)
 		if removed != 4 {
 			t.Fatalf("pruneSet removed %d entries, want 4", removed)
 		}
 
-		snap := ps.Snapshot()
+		snap := ps.SnapshotSafely()
 		if _, ok := snap[pGone.UID]; ok {
 			t.Fatalf("expected 'gone' pod to be pruned")
 		}
@@ -139,73 +139,73 @@ func TestPruneSet_RemovesStaleAndKeepsPending(t *testing.T) {
 	})
 }
 
-func TestPruneSet_EmptyOrNil(t *testing.T) {
+func TestPruneSafePodSet_EmptyOrNil(t *testing.T) {
 	pl := &SharedState{}
 
-	if removed := pl.pruneSet(nil); removed != 0 {
-		t.Fatalf("pruneSet(nil) removed %d, want 0", removed)
+	if removed := pl.pruneSafePodSet(nil); removed != 0 {
+		t.Fatalf("pruneSafePodSet(nil) removed %d, want 0", removed)
 	}
 
-	ps := newPodSet("empty")
-	if removed := pl.pruneSet(ps); removed != 0 {
-		t.Fatalf("pruneSet(empty) removed %d, want 0", removed)
+	ps := newSafePodSet("empty")
+	if removed := pl.pruneSafePodSet(ps); removed != 0 {
+		t.Fatalf("pruneSafePodSet(empty) removed %d, want 0", removed)
 	}
 }
 
 // -----------------------------------------------------------------------------
-// PodSet AddPod / RemovePod / Size / Snapshot
+// SafePodSet AddPod / RemovePod / Size / Snapshot
 // -----------------------------------------------------------------------------
 
-func TestPodSet_AddRemoveAndSnapshot(t *testing.T) {
-	ps := newPodSet("blocked")
+func TestSafePodSet_AddRemoveAndSnapshot(t *testing.T) {
+	ps := newSafePodSet("blocked")
 	pod := newPod("ns1", "pod1", "uid-1", "", 5)
 
 	// Add
-	ps.AddPod(pod)
+	ps.AddPodSafely(pod)
 	if got := ps.Size(); got != 1 {
 		t.Fatalf("Size() after AddPod = %d, want 1", got)
 	}
 
-	snap := ps.Snapshot()
+	snap := ps.SnapshotSafely()
 	if len(snap) != 1 {
-		t.Fatalf("Snapshot() length after AddPod = %d, want 1", len(snap))
+		t.Fatalf("SnapshotSafely() length after AddPod = %d, want 1", len(snap))
 	}
 	key, ok := snap[pod.UID]
 	if !ok {
-		t.Fatalf("Snapshot missing entry for UID %q", pod.UID)
+		t.Fatalf("SnapshotSafely missing entry for UID %q", pod.UID)
 	}
 	if key.Namespace != pod.Namespace || key.Name != pod.Name || key.UID != pod.UID {
-		t.Fatalf("Snapshot PodKey = %#v, want {UID:%q Namespace:%q Name:%q}",
+		t.Fatalf("SnapshotSafely PodKey = %#v, want {UID:%q Namespace:%q Name:%q}",
 			key, pod.UID, pod.Namespace, pod.Name)
 	}
 
 	// Remove
-	ps.RemovePod(pod.UID)
+	ps.RemovePodSafely(pod.UID)
 	if got := ps.Size(); got != 0 {
 		t.Fatalf("Size() after RemovePod = %d, want 0", got)
 	}
-	snap2 := ps.Snapshot()
+	snap2 := ps.SnapshotSafely()
 	if len(snap2) != 0 {
-		t.Fatalf("Snapshot() length after RemovePod = %d, want 0", len(snap2))
+		t.Fatalf("SnapshotSafely() length after RemovePod = %d, want 0", len(snap2))
 	}
 }
 
-func TestPodSet_AddPod_NilNoOp(t *testing.T) {
-	ps := newPodSet("blocked")
-	ps.AddPod(nil)
+func TestSafePodSet_AddPod_NilNoOp(t *testing.T) {
+	ps := newSafePodSet("blocked")
+	ps.AddPodSafely(nil)
 	if got := ps.Size(); got != 0 {
 		t.Fatalf("Size() after AddPod(nil) = %d, want 0", got)
 	}
 }
 
-func TestPodSet_SnapshotIsCopy(t *testing.T) {
-	ps := newPodSet("blocked")
+func TestSafePodSet_SnapshotIsCopy(t *testing.T) {
+	ps := newSafePodSet("blocked")
 	pod := newPod("ns1", "pod1", "uid-1", "", 5)
-	ps.AddPod(pod)
+	ps.AddPodSafely(pod)
 
-	snap := ps.Snapshot()
+	snap := ps.SnapshotSafely()
 	if len(snap) != 1 {
-		t.Fatalf("Snapshot() length = %d, want 1", len(snap))
+		t.Fatalf("SnapshotSafely() length = %d, want 1", len(snap))
 	}
 
 	// Mutating the returned map must not affect internal state.
@@ -214,8 +214,8 @@ func TestPodSet_SnapshotIsCopy(t *testing.T) {
 	if got := ps.Size(); got != 1 {
 		t.Fatalf("Size() after deleting from snapshot = %d, want 1", got)
 	}
-	snap2 := ps.Snapshot()
+	snap2 := ps.SnapshotSafely()
 	if len(snap2) != 1 {
-		t.Fatalf("Snapshot() length after modifying snapshot = %d, want 1", len(snap2))
+		t.Fatalf("SnapshotSafely() length after modifying snapshot = %d, want 1", len(snap2))
 	}
 }

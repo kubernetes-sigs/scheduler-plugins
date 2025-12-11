@@ -77,6 +77,32 @@ func TestGetAndClearActivePlan(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------
+// toPlanPod
+// ----------------------------------------------------------------------
+
+func TestToPlanPod_BasicConversion(t *testing.T) {
+	p := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "pod1",
+			UID:       types.UID("uid-123"),
+		},
+		Spec: v1.PodSpec{
+			NodeName: "nodeA",
+		},
+	}
+	pp := toPlanPod(p)
+	want := PlannerPod{
+		UID:       p.UID,
+		Namespace: p.Namespace,
+		Name:      p.Name,
+	}
+	if !reflect.DeepEqual(pp, want) {
+		t.Fatalf("toPlanPod() = %+v, want %+v", pp, want)
+	}
+}
+
+// ----------------------------------------------------------------------
 // buildPlan
 // ----------------------------------------------------------------------
 
@@ -106,11 +132,11 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 	p2 := newPod("ns", "p2", "u2", "n1", 1)
 	p3 := newPod("ns", "p3", "u3", "", 1)
 
-	out := &SolverOutput{
-		Evictions: []Pod{
+	out := &PlannerOutput{
+		Evictions: []PlannerPod{
 			{UID: p1.UID},
 		},
-		Placements: []Pod{
+		Placements: []PlannerPod{
 			{UID: p2.UID, Node: "n2"},
 			{UID: p3.UID, Node: "n1"},
 		},
@@ -189,8 +215,8 @@ func TestBuildPlan_WithPreemptorNomination(t *testing.T) {
 
 	pre := newPod("ns", "pre", "pre-uid", "", 1)
 
-	out := &SolverOutput{
-		Placements: []Pod{
+	out := &PlannerOutput{
+		Placements: []PlannerPod{
 			{UID: pre.UID, Node: "n-pre"},
 		},
 	}
@@ -489,8 +515,7 @@ func TestFilterNodes_PodNotInPlanBlocked(t *testing.T) {
 // ----------------------------------------------------------------------
 
 func TestCountNewAndTotalPods_NilOutput(t *testing.T) {
-	pl := &SharedState{}
-	pendingSched, pre, post := pl.countNewAndTotalPods(nil, nil)
+	pendingSched, pre, post := computePlanPodCounts(nil, nil)
 	if pendingSched != 0 || pre != 0 || post != 0 {
 		t.Fatalf("countNewAndTotalPods(nil, nil) = (%d,%d,%d), want (0,0,0)",
 			pendingSched, pre, post)
@@ -498,8 +523,6 @@ func TestCountNewAndTotalPods_NilOutput(t *testing.T) {
 }
 
 func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
-	pl := &SharedState{}
-
 	now := metav1.Now()
 
 	// running pods
@@ -513,18 +536,18 @@ func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
 
 	pods := []*v1.Pod{run1, run2, pend1, del}
 
-	out := &SolverOutput{
-		Placements: []Pod{
+	out := &PlannerOutput{
+		Placements: []PlannerPod{
 			{UID: pend1.UID, Node: "n1"}, // schedule pending
 			{UID: "u-unknown", Node: "n1"},
 		},
-		Evictions: []Pod{
+		Evictions: []PlannerPod{
 			{UID: run1.UID}, // evict one running
 			{UID: "u-nonexistent"},
 		},
 	}
 
-	pendingScheduled, totalPre, totalPost := pl.countNewAndTotalPods(out, pods)
+	pendingScheduled, totalPre, totalPost := computePlanPodCounts(out, pods)
 
 	// Pre-plan: two running (run1, run2).
 	if totalPre != 2 {
@@ -541,20 +564,18 @@ func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
 }
 
 func TestCountNewAndTotalPods_TotalPostNonNegative(t *testing.T) {
-	pl := &SharedState{}
-
 	// Only pending pods → totalPrePlan = 0
 	pend := newPod("ns", "pend", "u-pend", "", 1)
 	pods := []*v1.Pod{pend}
 
 	// Eviction references a UID not present or with no node
-	out := &SolverOutput{
-		Evictions: []Pod{
+	out := &PlannerOutput{
+		Evictions: []PlannerPod{
 			{UID: "u-missing"},
 		},
 	}
 
-	pendingScheduled, totalPre, totalPost := pl.countNewAndTotalPods(out, pods)
+	pendingScheduled, totalPre, totalPost := computePlanPodCounts(out, pods)
 	if totalPre != 0 {
 		t.Fatalf("totalPrePlan = %d, want 0", totalPre)
 	}
@@ -669,7 +690,7 @@ func TestActivatePlannedPending_UsesHookWithMatchingPending(t *testing.T) {
 	uidIgnored := types.UID("u-ignored")
 
 	plan := &Plan{
-		NewPlacements: []Pod{
+		NewPlacements: []PlannerPod{
 			{UID: uidAllowed, OldNode: "", Node: "n1"},      // should be activated
 			{UID: uidIgnored, OldNode: "n-old", Node: "n2"}, // move, not pending→node
 		},

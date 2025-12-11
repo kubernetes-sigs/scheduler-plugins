@@ -13,7 +13,7 @@ import (
 // runOptimizationFlow runs the optimisation flow for the given phase (AllSynch,
 // AllAsynch, Single). For Single phase, the preemptor must be provided.
 // Returns the target node name for the preemptor pod (if any) and error (if any).
-func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
+func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *PlannerScore, string, *PlannerResult, []PlannerResult, error) {
 	strategy := combinedModeToString()
 
 	// Periodic-sync/Per-pod: take Active early.
@@ -28,36 +28,33 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	start := time.Now()
 
 	// Plan context: snapshot, solver input, baseline, pending count.
-	nodes, pods, inp, baselineScore, pendingPrePlan, err := pl.planContext(preemptor)
+	nodes, pods, pendingPrePlan, inp, err := pl.planContext(preemptor)
 	if err != nil {
-		klog.Error(msg(strategy, InfoPlanPreparationFailed), "err", err)
+		klog.Error(msg(strategy, InfoPlanContextFailed), "err", err)
 		pl.leaveActive()
 		return nil, nil, "", nil, nil, err
 	}
-
-	// Nothing to do
-	if pendingPrePlan == 0 {
-		klog.InfoS(msg(strategy, InfoNoPendingPods))
-		pl.leaveActive()
-		return nil, baselineScore, "baseline", nil, nil, ErrNoPendingPods
-	}
-
-	klog.InfoS(
-		msg(strategy, "starting solvers"),
-		"pending", pendingPrePlan,
-		"totalPods", len(pods),
-		"nodes", len(nodes),
-	)
+	baselineScore := inp.BaselineScore
 
 	// Plan computation
-	bestName, hadImproving, bestAttempt, attempts := pl.planComputation(ctx, inp, nodes, pods, baselineScore)
+	bestName, hadImp, bestAttempt, bestOut, attempts := pl.planComputation(ctx, inp)
 
-	// Check if anything was feasible and improving
-	if !hadImproving {
+	// Check if any solver solution was improving, if not, exit early.
+	if !hadImp {
 		klog.Error(msg(strategy, InfoNoImprovingSolutionFromAnySolver))
 		pl.leaveActive()
 		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrNoImprovingSolutionFromAnySolver.Error())
-		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoImprovingSolutionFromAnySolver
+		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrNoImprovingSolutionFromAnySolver
+	}
+
+	// Verify that plan (still) can be applied
+	// Mainly for async modes, where the cluster state may have changed since plan computation.
+	ok, why := pl.isPlanApplicable(bestOut, nodes, pods)
+	if !ok {
+		klog.Error(msg(strategy, InfoPlanNotApplicable), "solver", bestName, "status", bestOut.Status, "reason", why)
+		pl.leaveActive()
+		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrPlanNotApplicable.Error())
+		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrPlanNotApplicable
 	}
 
 	// Async modes: take Active now that we know it is worth applying the plan.
@@ -70,16 +67,18 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	}
 
 	// How much is actually schedulable?
-	pendingScheduled, totalPrePlan, totalPostPlan := pl.countNewAndTotalPods(bestAttempt.Output, pods)
+	pendingScheduled, totalPrePlan, totalPostPlan := computePlanPodCounts(bestOut, pods)
 	if pendingScheduled == 0 {
-		klog.InfoS(msg(strategy, InfoNoPendingPodsToSchedule))
+		klog.InfoS(msg(strategy, InfoNoPendingPodsScheduled))
 		pl.leaveActive()
-		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrNoPendingPodsToSchedule.Error())
-		return nil, baselineScore, bestName, bestAttempt, attempts, ErrNoPendingPodsToSchedule
+		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrNoPendingPodsScheduled.Error())
+		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrNoPendingPodsScheduled
 	}
 
+	// NOTE: If any error occurs from here on, we must call onPlanCompleted instead of just leaveActive
+
 	// Plan registration
-	plan, ap, err := pl.planRegistration(ctx, *bestAttempt, preemptor, pods)
+	plan, ap, err := pl.planRegistration(ctx, *bestAttempt, bestOut, preemptor, pods)
 	if err != nil {
 		klog.Error(msg(strategy, InfoPlanRegistrationFailed))
 		pl.onPlanCompleted(PlanStatusFailed)
@@ -87,7 +86,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 			context.Background(), strategy, baselineScore, bestName, attempts,
 			ErrPlanRegistration.Error(),
 		)
-		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanRegistration
+		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrPlanRegistration
 	}
 
 	// Plan eviction and recreate standalone pods
@@ -95,7 +94,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 		klog.Error(msg(strategy, InfoPlanActivationFailed))
 		pl.onPlanCompleted(PlanStatusFailed)
 		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrPlanActivationFailed.Error())
-		return nil, baselineScore, bestName, bestAttempt, attempts, ErrPlanActivationFailed
+		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrPlanActivationFailed
 	}
 
 	// Start a periodically plan completion watcher. The watcher stops itself.
@@ -105,11 +104,10 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, "")
 
 	// Log summary
-	bestSummary := summarizeAttempt(*bestAttempt)
 	klog.InfoS(
 		msg(strategy, InfoPlanExecutionFinished),
 		"planID", ap.ID,
-		"bestAttempt", bestSummary,
+		"bestAttempt", bestAttempt,
 		"pendingPrePlan", pendingPrePlan,
 		"pendingScheduled", pendingScheduled,
 		"totalPrePlan", totalPrePlan,
@@ -117,5 +115,5 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 		"totalDuration", time.Since(start),
 	)
 
-	return plan, baselineScore, bestName, bestAttempt, attempts, nil
+	return plan, &baselineScore, bestName, bestAttempt, attempts, nil
 }

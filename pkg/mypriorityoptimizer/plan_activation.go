@@ -10,6 +10,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// Small indirections to make planActivation easier to test.
+var activatePlannedPendingFn = func(pl *SharedState, plan *Plan, pods []*v1.Pod) {
+	pl.activatePlannedPending(plan, pods)
+}
+
+var getPodForPlanActivation = func(pl *SharedState, uid types.UID, ns, name string) *v1.Pod {
+	return pl.getPod(uid, ns, name)
+}
+
 // planActivation activates all live pending pods that the plan intends to place
 // (i.e., NewPlacement with FromNode == "" and ToNode != "").
 func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
@@ -38,7 +47,7 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 			return
 		}
 		seen[uid] = true
-		if pod := pl.getPod(uid, ns, name); pod != nil {
+		if pod := getPodForPlanActivation(pl, uid, ns, name); pod != nil {
 			targets = append(targets, pod)
 		}
 	}
@@ -80,8 +89,7 @@ func (pl *SharedState) planActivation(plan *Plan, pods []*v1.Pod) error {
 	}
 
 	// 3) Activate planned pending
-	pl.activatePlannedPending(plan, pods)
+	activatePlannedPendingFn(pl, plan, pods)
 
 	return nil
-
 }

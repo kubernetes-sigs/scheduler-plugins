@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -15,21 +14,15 @@ import (
 // Helpers
 // -----------------------------------------------------------------------------
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
+func writeHTTPjson(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// -----------------------------------------------------------------------------
-// Test hooks
-// -----------------------------------------------------------------------------
-
 var (
-	getPodsForHTTP = func(pl *SharedState) ([]*v1.Pod, error) {
-		return pl.getPods()
-	}
-	runFlowForHTTP = func(pl *SharedState, ctx context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
+	// Keep only this hook so tests can stub the optimisation flow.
+	runOptFlow = func(pl *SharedState, ctx context.Context) (*Plan, *PlannerScore, string, *PlannerResult, []PlannerResult, error) {
 		return pl.runOptimizationFlow(ctx, nil)
 	}
 )
@@ -90,7 +83,7 @@ func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 	resp := HttpResponse{
 		Active: pl.Active.Load(),
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeHTTPjson(w, http.StatusOK, resp)
 }
 
 // solve
@@ -109,14 +102,15 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 	if !pl.PluginReady.Load() {
 		resp.Status = "not-ready"
 		resp.DurationMs = time.Since(start).Milliseconds()
-		writeJSON(w, http.StatusPreconditionFailed, resp)
+		writeHTTPjson(w, http.StatusPreconditionFailed, resp)
 		return
 	}
 
 	// Count pending pods before running any solvers.
-	pods, _ := getPodsForHTTP(pl)
+	pods, _ := pl.getPods()
 	resp.PendingBefore = countPendingPods(pods)
-	_, baseline, bestName, _, attempts, err := runFlowForHTTP(pl, context.Background())
+
+	_, baseline, bestName, _, attempts, err := runOptFlow(pl, context.Background())
 	resp.Baseline = baseline
 	resp.BestName = bestName
 	resp.Attempts = attempts
@@ -130,11 +124,11 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 		resp.Status = "ok"
 	case ErrActiveInProgress:
 		resp.Status = "busy"
-	case ErrNoImprovingSolutionFromAnySolver, ErrNoPendingPodsToSchedule, ErrNoPendingPods:
+	case ErrNoImprovingSolutionFromAnySolver, ErrNoPendingPodsScheduled, ErrNoPendingPods:
 		resp.Status = "noop"
 	default:
 		resp.Status = "error"
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeHTTPjson(w, http.StatusOK, resp)
 }

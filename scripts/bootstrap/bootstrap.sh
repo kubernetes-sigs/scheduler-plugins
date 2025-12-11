@@ -13,8 +13,8 @@ KWOK_VERSION="${KWOK_VERSION:-v0.7.0}"
 GO_VERSION="${GO_VERSION:-1.24.3}"
 GO_ARCH="${GO_ARCH:-amd64}"
 
-VENV_DIR="/opt/venv"
-SOLVER_DIR="/opt/solver"
+PYTHON_SOLVER_OUT_VENV_DIR="/opt/venv"
+PYTHON_SOLVER_OUT_SCRIPT_DIR="/opt/solver"
 
 # Runner selection: test_runner (default) or trace_replayer
 RUNNER="${RUNNER:-test_runner}"
@@ -179,17 +179,17 @@ stage_setup() {
   log ok "kube-scheduler binary verified"
 
   # Stage the solver
-  log init "staging solver to ${SOLVER_DIR} (venv @ ${VENV_DIR})"
+  log init "staging solver to ${PYTHON_SOLVER_OUT_SCRIPT_DIR} (venv @ ${PYTHON_SOLVER_OUT_VENV_DIR})"
   run_root "
     set -euo pipefail
-    install -d -m 0755 '${SOLVER_DIR}'
-    install -d -m 0755 '${VENV_DIR}'
-    cp -a '${CONTENT_DIR}/scripts/python_solver/main.py' '${SOLVER_DIR}/main.py'
-    python3 -m venv '${VENV_DIR}'
-    '${VENV_DIR}/bin/python' -m pip install --upgrade pip
-    '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/python_solver/requirements.txt'
+    install -d -m 0755 '${PYTHON_SOLVER_OUT_SCRIPT_DIR}'
+    install -d -m 0755 '${PYTHON_SOLVER_OUT_VENV_DIR}'
+    cp -a '${CONTENT_DIR}/scripts/python_solver/main.py' '${PYTHON_SOLVER_OUT_SCRIPT_DIR}/main.py'
+    python3 -m venv '${PYTHON_SOLVER_OUT_VENV_DIR}'
+    '${PYTHON_SOLVER_OUT_VENV_DIR}/bin/python' -m pip install --upgrade pip
+    '${PYTHON_SOLVER_OUT_VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/python_solver/requirements.txt'
   "
-  log ok "staged solver (venv @ ${VENV_DIR})"
+  log ok "staged solver (venv @ ${PYTHON_SOLVER_OUT_VENV_DIR})"
 
   log ok "setup done"
 }
@@ -205,10 +205,10 @@ stage_test() {
   run_root "
     set -euo pipefail
     if [ -f '${CONTENT_DIR}/scripts/kwok_workload_once/requirements.txt' ]; then
-      '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_workload_once/requirements.txt'
+      '${PYTHON_SOLVER_OUT_VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_workload_once/requirements.txt'
     fi
     if [ -f '${CONTENT_DIR}/scripts/kwok_trace_replayer/requirements.txt' ]; then
-      '${VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_trace_replayer/requirements.txt'
+      '${PYTHON_SOLVER_OUT_VENV_DIR}/bin/pip' install --no-cache-dir -r '${CONTENT_DIR}/scripts/kwok_trace_replayer/requirements.txt'
     fi
   "
 
@@ -235,7 +235,7 @@ stage_test() {
       run_root "
         cd '${CONTENT_DIR}' && \
         { [ '${KWOK_RUNTIME}' != 'binary' ] || chmod +x './bin/kube-scheduler'; } && \
-        '${VENV_DIR}/bin/python' -m scripts.kwok_trace_replayer.trace_replayer ${tr_quoted}
+        '${PYTHON_SOLVER_OUT_VENV_DIR}/bin/python' -m scripts.kwok_trace_replayer.trace_replayer ${tr_quoted}
       "
       log ok "trace_replayer done"
       ;;
@@ -276,7 +276,7 @@ stage_test() {
       run_root "
         cd '${CONTENT_DIR}' && \
         chmod +x './bin/kube-scheduler' && \
-        '${VENV_DIR}/bin/python' -m scripts.kwok_workload_once.test_runner ${quoted_args}
+        '${PYTHON_SOLVER_OUT_VENV_DIR}/bin/python' -m scripts.kwok_workload_once.test_runner ${quoted_args}
       "
 
       log ok "test_runner done"

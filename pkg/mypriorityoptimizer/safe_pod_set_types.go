@@ -1,4 +1,4 @@
-// pod_set_types.go
+// safe_pod_set_types.go
 package mypriorityoptimizer
 
 import (
@@ -8,20 +8,20 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// PodSet is a thread-safe set of pods.
-type PodSet struct {
+// SafePodSet is a thread-safe set of pods.
+type SafePodSet struct {
 	// Name of the set (for logging)
 	Name string
 	// mu protects the map
 	mu sync.RWMutex
 	// m maps pod UID to PodKey
-	m map[types.UID]Pod
+	m map[types.UID]PlannerPod
 }
 
-// PodSetItem represents an item in the PodSet.
-type PodSetItem struct {
-	// Pod pointer (if needed)
+// SafePodSetItem represents an item in the PodSet.
+type SafePodSetItem struct {
+	// Pod pointer
 	p *v1.Pod
 	// Key for identifying the pod
-	key Pod
+	key PlannerPod
 }

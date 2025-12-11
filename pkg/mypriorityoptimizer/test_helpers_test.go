@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -31,7 +32,7 @@ func withMode(mode ModeType, synch bool, fn func()) {
 // withAppendStatsHook temporarily overrides appendSolverStatsCMHook and restores
 // it after fn returns.
 func withAppendStatsHook(
-	hook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats),
+	hook func(pl *SharedState, ctx context.Context, entry ExportedPlannerStats),
 	fn func(),
 ) {
 	orig := appendSolverStatsCMHook
@@ -64,6 +65,22 @@ func newPod(ns, name, uid, node string, prio int32) *v1.Pod {
 	}
 }
 
+// newNode creates a schedulable, Ready node
+func newNode(name string) *v1.Node {
+	return &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Status: v1.NodeStatus{
+			Conditions: []v1.NodeCondition{
+				{Type: v1.NodeReady, Status: v1.ConditionTrue},
+			},
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("1000m"),
+				v1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+}
+
 func uidSet(uids ...string) map[types.UID]struct{} {
 	m := make(map[types.UID]struct{}, len(uids))
 	for _, u := range uids {
@@ -75,13 +92,6 @@ func uidSet(uids ...string) map[types.UID]struct{} {
 // -----------------------------------------------------------------------------
 // Plugin readiness helpers (override global vars for the duration of a test)
 // -----------------------------------------------------------------------------
-
-func withCacheWarmupDelay(d time.Duration, fn func()) {
-	old := cacheWarmupDelay
-	cacheWarmupDelay = d
-	defer func() { cacheWarmupDelay = old }()
-	fn()
-}
 
 func withReadinessInterval(d time.Duration, fn func()) {
 	old := readinessUsableNodeInterval

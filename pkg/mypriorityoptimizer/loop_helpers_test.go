@@ -25,43 +25,43 @@ import (
 // TODO: test missing
 
 // ----------------------------------------------------------------------
-// sameUIDSet
+// isSameUIDSet
 // ----------------------------------------------------------------------
 
-func TestSameUIDSet_NilVsNil(t *testing.T) {
-	if !sameUIDSet(nil, nil) {
-		t.Fatalf("sameUIDSet(nil, nil) = false, want true")
+func TestIsSameUIDSet_NilVsNil(t *testing.T) {
+	if !isSameUIDSet(nil, nil) {
+		t.Fatalf("isSameUIDSet(nil, nil) = false, want true")
 	}
 }
 
-func TestSameUIDSet_NilVsNonNil(t *testing.T) {
+func TestIsSameUIDSet_NilVsNonNil(t *testing.T) {
 	a := uidSet("u1")
-	if sameUIDSet(nil, a) || sameUIDSet(a, nil) {
-		t.Fatalf("sameUIDSet(nil, non-nil) or reverse = true, want false")
+	if isSameUIDSet(nil, a) || isSameUIDSet(a, nil) {
+		t.Fatalf("isSameUIDSet(nil, non-nil) or reverse = true, want false")
 	}
 }
 
-func TestSameUIDSet_DifferentLengths(t *testing.T) {
+func TestIsSameUIDSet_DifferentLengths(t *testing.T) {
 	a := uidSet("u1")
 	b := uidSet("u1", "u2")
-	if sameUIDSet(a, b) {
-		t.Fatalf("sameUIDSet() with different lengths = true, want false")
+	if isSameUIDSet(a, b) {
+		t.Fatalf("isSameUIDSet() with different lengths = true, want false")
 	}
 }
 
-func TestSameUIDSet_SameElements(t *testing.T) {
+func TestIsSameUIDSet_SameElements(t *testing.T) {
 	a := uidSet("u1", "u2")
 	b := uidSet("u2", "u1")
-	if !sameUIDSet(a, b) {
-		t.Fatalf("sameUIDSet() with same elements = false, want true")
+	if !isSameUIDSet(a, b) {
+		t.Fatalf("isSameUIDSet() with same elements = false, want true")
 	}
 }
 
-func TestSameUIDSet_DifferentElements(t *testing.T) {
+func TestIsSameUIDSet_DifferentElements(t *testing.T) {
 	a := uidSet("u1", "u2")
 	b := uidSet("u1", "u3")
-	if sameUIDSet(a, b) {
-		t.Fatalf("sameUIDSet() with different elements = true, want false")
+	if isSameUIDSet(a, b) {
+		t.Fatalf("isSameUIDSet() with different elements = true, want false")
 	}
 }
 
@@ -78,7 +78,7 @@ func TestCloneUIDSet_Nil(t *testing.T) {
 func TestCloneUIDSet_Independence(t *testing.T) {
 	src := uidSet("u1", "u2")
 	cloned := cloneUIDSet(src)
-	if !sameUIDSet(src, cloned) {
+	if !isSameUIDSet(src, cloned) {
 		t.Fatalf("cloneUIDSet() produced different contents: src=%v cloned=%v", src, cloned)
 	}
 	// Mutate clone and ensure src is unaffected
@@ -94,40 +94,40 @@ func TestCloneUIDSet_Independence(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------
-// isAlreadySolvedForPendingSet
+// isAlreadyComputedForPendingSet
 // ----------------------------------------------------------------------
 
-func TestIsAlreadySolvedForPendingSet_BestAttemptNil(t *testing.T) {
-	if got := isAlreadySolvedForPendingSet(nil, nil); got {
-		t.Fatalf("isAlreadySolvedForPendingSet(nil, nil) = true, want false")
+func TestIsAlreadyComputedForPendingSet_BestAttemptNil(t *testing.T) {
+	if got := isAlreadyComputedForPendingSet(nil, nil); got {
+		t.Fatalf("isAlreadyComputedForPendingSet(nil, nil) = true, want false")
 	}
 }
 
-func TestIsAlreadySolvedForPendingSet_NonOptimalStatus(t *testing.T) {
-	best := &SolverResult{Status: "FEASIBLE"}
-	if got := isAlreadySolvedForPendingSet(ErrNoImprovingSolutionFromAnySolver, best); got {
-		t.Fatalf("isAlreadySolvedForPendingSet(non-OPTIMAL) = true, want false")
+func TestIsAlreadyComputedForPendingSet_NonOptimalStatus(t *testing.T) {
+	best := &PlannerResult{Status: "FEASIBLE"}
+	if got := isAlreadyComputedForPendingSet(ErrNoImprovingSolutionFromAnySolver, best); got {
+		t.Fatalf("isAlreadyComputedForPendingSet(non-OPTIMAL) = true, want false")
 	}
 }
 
-func TestIsAlreadySolvedForPendingSet_OptimalWithNoImprovementErr(t *testing.T) {
-	best := &SolverResult{Status: "OPTIMAL"}
-	if got := isAlreadySolvedForPendingSet(ErrNoImprovingSolutionFromAnySolver, best); !got {
-		t.Fatalf("isAlreadySolvedForPendingSet(OPTIMAL, ErrNoImprovingSolutionFromAnySolver) = false, want true")
+func TestIsAlreadyComputedForPendingSet_OptimalWithNoImprovementErr(t *testing.T) {
+	best := &PlannerResult{Status: "OPTIMAL"}
+	if got := isAlreadyComputedForPendingSet(ErrNoImprovingSolutionFromAnySolver, best); !got {
+		t.Fatalf("isAlreadyComputedForPendingSet(OPTIMAL, ErrNoImprovingSolutionFromAnySolver) = false, want true")
 	}
 }
 
-func TestIsAlreadySolvedForPendingSet_OptimalWithNoPendingPodsErr(t *testing.T) {
-	best := &SolverResult{Status: "OPTIMAL"}
-	if got := isAlreadySolvedForPendingSet(ErrNoPendingPodsToSchedule, best); !got {
-		t.Fatalf("isAlreadySolvedForPendingSet(OPTIMAL, ErrNoPendingPodsToSchedule) = false, want true")
+func TestIsAlreadyComputedForPendingSet_OptimalWithNoPendingPodsErr(t *testing.T) {
+	best := &PlannerResult{Status: "OPTIMAL"}
+	if got := isAlreadyComputedForPendingSet(ErrNoPendingPodsScheduled, best); !got {
+		t.Fatalf("isAlreadyComputedForPendingSet(OPTIMAL, ErrNoPendingPodsScheduled) = false, want true")
 	}
 }
 
-func TestIsAlreadySolvedForPendingSet_OptimalWithOtherError(t *testing.T) {
-	best := &SolverResult{Status: "OPTIMAL"}
-	if got := isAlreadySolvedForPendingSet(context.DeadlineExceeded, best); got {
-		t.Fatalf("isAlreadySolvedForPendingSet(OPTIMAL, other error) = true, want false")
+func TestIsAlreadyComputedForPendingSet_OptimalWithOtherError(t *testing.T) {
+	best := &PlannerResult{Status: "OPTIMAL"}
+	if got := isAlreadyComputedForPendingSet(context.DeadlineExceeded, best); got {
+		t.Fatalf("isAlreadyComputedForPendingSet(OPTIMAL, other error) = true, want false")
 	}
 }
 

@@ -8,9 +8,6 @@ import (
 // isPerPodMode is the optimizer cadence that optimizes for every new pod.
 func isPerPodMode() bool { return OptimizeMode == ModePerPod }
 
-// isManualMode is true if the mode is Manual.
-func isManualMode() bool { return OptimizeMode == ModeManual }
-
 // isManualBlockingMode is true if the mode is ManualBlocking.
 func isManualBlockingMode() bool { return OptimizeMode == ModeManualBlocking }
 

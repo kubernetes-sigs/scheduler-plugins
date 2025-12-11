@@ -4,7 +4,6 @@ package mypriorityoptimizer
 import (
 	"context"
 	"fmt"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -16,7 +15,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -147,51 +145,3 @@ func withEvictHook(hook func(pl *SharedState, ctx context.Context, pod *v1.Pod, 
 	defer func() { evictPodFor = orig }()
 	fn()
 }
-
-// -----------------------------------------------------------------------------
-// SharedIndexInformer fake (for cache readiness tests)
-// -----------------------------------------------------------------------------
-
-// fakeSharedIndexInformer is a minimal SharedIndexInformer stub that only implements HasSynced in a meaningful way. All other methods are no-ops.
-type fakeSharedIndexInformer struct {
-	synced bool
-}
-
-func (f *fakeSharedIndexInformer) AddEventHandler(
-	handler cache.ResourceEventHandler,
-) (cache.ResourceEventHandlerRegistration, error) {
-	return nil, nil
-}
-
-func (f *fakeSharedIndexInformer) AddEventHandlerWithResyncPeriod(
-	handler cache.ResourceEventHandler,
-	resyncPeriod time.Duration,
-) (cache.ResourceEventHandlerRegistration, error) {
-	return nil, nil
-}
-
-func (f *fakeSharedIndexInformer) RemoveEventHandler(
-	reg cache.ResourceEventHandlerRegistration,
-) error {
-	return nil
-}
-
-func (f *fakeSharedIndexInformer) GetStore() cache.Store           { return nil }
-func (f *fakeSharedIndexInformer) GetController() cache.Controller { return nil }
-func (f *fakeSharedIndexInformer) Run(stopCh <-chan struct{})      {}
-
-func (f *fakeSharedIndexInformer) HasSynced() bool                 { return f.synced }
-func (f *fakeSharedIndexInformer) LastSyncResourceVersion() string { return "" }
-
-func (f *fakeSharedIndexInformer) AddIndexers(indexers cache.Indexers) error { return nil }
-func (f *fakeSharedIndexInformer) GetIndexer() cache.Indexer                 { return nil }
-
-func (f *fakeSharedIndexInformer) SetWatchErrorHandler(handler cache.WatchErrorHandler) error {
-	return nil
-}
-
-func (f *fakeSharedIndexInformer) SetTransform(handler cache.TransformFunc) error {
-	return nil
-}
-
-func (f *fakeSharedIndexInformer) IsStopped() bool { return false }

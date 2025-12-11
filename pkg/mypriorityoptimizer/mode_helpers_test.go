@@ -28,31 +28,9 @@ func TestIsPerPodMode(t *testing.T) {
 			t.Fatalf("expected isPerPodMode() to be false for ModeManual")
 		}
 	})
-}
-
-// -----------------------------------------------------------------------------
-// isManualMode
-// -----------------------------------------------------------------------------
-
-func TestIsManualMode(t *testing.T) {
-	withMode(ModeManual, true, func() {
-		if !isManualMode() {
-			t.Fatalf("expected isManualMode() to be true for ModeManual")
-		}
-	})
-	withMode(ModePerPod, true, func() {
-		if isManualMode() {
-			t.Fatalf("expected isManualMode() to be false for ModePerPod")
-		}
-	})
-	withMode(ModePeriodic, true, func() {
-		if isManualMode() {
-			t.Fatalf("expected isManualMode() to be false for ModePeriodic")
-		}
-	})
-	withMode(ModeInterlude, true, func() {
-		if isManualMode() {
-			t.Fatalf("expected isManualMode() to be false for ModeInterlude")
+	withMode(ModeManualBlocking, true, func() {
+		if isPerPodMode() {
+			t.Fatalf("expected isPerPodMode() to be false for ModeManualBlocking")
 		}
 	})
 }
@@ -71,6 +49,16 @@ func TestIsManualBlockingMode(t *testing.T) {
 	withMode(ModePerPod, true, func() {
 		if isManualBlockingMode() {
 			t.Fatalf("expected isManualBlockingMode() to be false for ModePerPod")
+		}
+	})
+	withMode(ModePeriodic, true, func() {
+		if isManualBlockingMode() {
+			t.Fatalf("expected isManualBlockingMode() to be false for ModePeriodic")
+		}
+	})
+	withMode(ModeInterlude, true, func() {
+		if isManualBlockingMode() {
+			t.Fatalf("expected isManualBlockingMode() to be false for ModeInterlude")
 		}
 	})
 }
@@ -123,6 +111,11 @@ func TestModeToString(t *testing.T) {
 	withMode(ModeManual, true, func() {
 		if got := modeToString(); got != "Manual" {
 			t.Fatalf("expected modeToString()=Manual for ModeManual, got %q", got)
+		}
+	})
+	withMode(ModeManualBlocking, true, func() {
+		if got := modeToString(); got != "ManualBlocking" {
+			t.Fatalf("expected modeToString()=ManualBlocking for ModeManualBlocking, got %q", got)
 		}
 	})
 	// Unknown mode value -> default branch ("Periodic")
@@ -192,6 +185,14 @@ func TestCombinedModeToString(t *testing.T) {
 		got := combinedModeToString()
 		if got != "Manual/Synch" {
 			t.Fatalf("unexpected combinedModeToString for Manual+Synch+PostFilter: %q", got)
+		}
+	})
+
+	// ManaulBlocking + Synch + PreEnqueue
+	withMode(ModeManualBlocking, true, func() {
+		got := combinedModeToString()
+		if got != "ManualBlocking/Synch" {
+			t.Fatalf("unexpected combinedModeToString for ManualBlocking+Synch+PreEnqueue: %q", got)
 		}
 	})
 

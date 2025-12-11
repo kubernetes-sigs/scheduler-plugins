@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"sync/atomic"
-	"time"
 
 	"golang.org/x/sync/errgroup"
 	v1 "k8s.io/api/core/v1"
@@ -60,8 +59,8 @@ func (pl *SharedState) tryClearActivePlan(ap *ActivePlan) bool {
 }
 
 // toPlanPod converts a core/v1 Pod into a Pod (UID, Namespace, Name).
-func toPlanPod(p *v1.Pod) Pod {
-	return Pod{
+func toPlanPod(p *v1.Pod) PlannerPod {
+	return PlannerPod{
 		UID:       p.UID,
 		Namespace: p.Namespace,
 		Name:      p.Name,
@@ -69,8 +68,8 @@ func toPlanPod(p *v1.Pod) Pod {
 }
 
 // makePlacement builds a Placement for a pod on a given node.
-func makePlacement(p *v1.Pod, node string) Pod {
-	return Pod{
+func makePlacement(p *v1.Pod, node string) PlannerPod {
+	return PlannerPod{
 		UID:       p.UID,
 		Namespace: p.Namespace,
 		Name:      p.Name,
@@ -79,8 +78,8 @@ func makePlacement(p *v1.Pod, node string) Pod {
 }
 
 // makeNewPlacement builds a NewPlacement for a pod moving from src → dst.
-func makeNewPlacement(p *v1.Pod, oldNode, toNode string) Pod {
-	return Pod{
+func makeNewPlacement(p *v1.Pod, oldNode, toNode string) PlannerPod {
+	return PlannerPod{
 		UID:       p.UID,
 		Namespace: p.Namespace,
 		Name:      p.Name,
@@ -99,7 +98,7 @@ func increaseWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
 }
 
 // sortPlacementsByPod sorts placements by (namespace, name) for stable output.
-func sortPlacementsByPod(pls []Pod) {
+func sortPlacementsByPod(pls []PlannerPod) {
 	sort.Slice(pls, func(i, j int) bool {
 		pi, pj := pls[i], pls[j]
 		if pi.Namespace != pj.Namespace {
@@ -110,7 +109,7 @@ func sortPlacementsByPod(pls []Pod) {
 }
 
 // sortNewPlacementsByPod sorts new placements by (namespace, name) for stable output.
-func sortNewPlacementsByPod(pls []Pod) {
+func sortNewPlacementsByPod(pls []PlannerPod) {
 	sort.Slice(pls, func(i, j int) bool {
 		pi, pj := pls[i], pls[j]
 		if pi.Namespace != pj.Namespace {
@@ -124,7 +123,7 @@ func sortNewPlacementsByPod(pls []Pod) {
 //  1. priority (higher first)
 //  2. creation timestamp (older first)
 //  3. name (for zero/identical timestamps)
-func sortPodSetItemsByPriorityAndCreation(items []PodSetItem) {
+func sortPodSetItemsByPriorityAndCreation(items []SafePodSetItem) {
 	sort.Slice(items, func(i, j int) bool {
 		pi := getPodPriority(items[i].p)
 		pj := getPodPriority(items[j].p)
@@ -171,8 +170,8 @@ func indexPodsForPlan(pods []*v1.Pod, preemptor *v1.Pod) map[types.UID]*v1.Pod {
 }
 
 // collectOldPlacements returns placements for all currently assigned & alive pods.
-func collectOldPlacements(byUID map[types.UID]*v1.Pod) []Pod {
-	oldPlacements := make([]Pod, 0, len(byUID))
+func collectOldPlacements(byUID map[types.UID]*v1.Pod) []PlannerPod {
+	oldPlacements := make([]PlannerPod, 0, len(byUID))
 	for _, p := range byUID {
 		if isPodAssignedAndAlive(p) {
 			oldPlacements = append(oldPlacements, makePlacement(p, getPodAssignedNodeName(p)))
@@ -183,11 +182,11 @@ func collectOldPlacements(byUID map[types.UID]*v1.Pod) []Pod {
 }
 
 // collectEvictions builds evict placements from the solver output and pod index.
-func collectEvictions(out *SolverOutput, byUID map[types.UID]*v1.Pod) []Pod {
+func collectEvictions(out *PlannerOutput, byUID map[types.UID]*v1.Pod) []PlannerPod {
 	if out == nil || len(out.Evictions) == 0 {
 		return nil
 	}
-	evicts := make([]Pod, 0, len(out.Evictions))
+	evicts := make([]PlannerPod, 0, len(out.Evictions))
 	for _, e := range out.Evictions {
 		if p := byUID[e.UID]; isPodAssignedAndAlive(p) {
 			evicts = append(evicts, makePlacement(p, getPodAssignedNodeName(p)))
@@ -199,7 +198,7 @@ func collectEvictions(out *SolverOutput, byUID map[types.UID]*v1.Pod) []Pod {
 // buildPlan builds the evictions, movements, old placements, new placements,
 // placementByName, workloadQuotas and the nominatedNode (if preemptor exists)
 // from the output of the solver.
-func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, error) {
+func (pl *SharedState) buildPlan(out *PlannerOutput, preemptor *v1.Pod, pods []*v1.Pod) (*Plan, error) {
 	if out == nil {
 		return &Plan{}, nil
 	}
@@ -212,8 +211,8 @@ func (pl *SharedState) buildPlan(out *SolverOutput, preemptor *v1.Pod, pods []*v
 	evicts := collectEvictions(out, byUID)
 
 	var (
-		moves         []Pod
-		newPlacements []Pod
+		moves         []PlannerPod
+		newPlacements []PlannerPod
 		nominatedNode string
 	)
 
@@ -363,7 +362,7 @@ func (pl *SharedState) waitPodsGone(ctx context.Context, pods []*v1.Pod) error {
 		return nil
 	}
 	// Use the shared Pod identity type (UID, Namespace, Name) as the key.
-	remaining := make(map[Pod]struct{}, len(pods))
+	remaining := make(map[PlannerPod]struct{}, len(pods))
 	for _, p := range pods {
 		if p == nil {
 			continue
@@ -404,22 +403,22 @@ var activatePods = func(pl *SharedState, toAct map[string]*v1.Pod) {
 // activateBlockedPods activates up to 'max' pods from the blocked set; clear only the ones activated.
 // It returns the UIDs of the pods that were attempted to be activated (in priority/time order).
 // if max <= 0, all pods are activated.
-func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max int) (tried []types.UID) {
+func (pl *SharedState) activatePods(podSet *SafePodSet, removeActivated bool, max int) (tried []types.UID) {
 	// Prune stale entries first
-	_ = pl.pruneSet(podSet)
+	_ = pl.pruneSafePodSet(podSet)
 
 	// If no blocked pods, nothing to do
-	if !doesPodSetExist(podSet) {
+	if !doesSafePodSetExist(podSet) {
 		return
 	}
 
 	// Snapshot and resolve current Pod objects
-	blockedPods := podSet.Snapshot()
-	items := make([]PodSetItem, 0, len(blockedPods))
+	blockedPods := podSet.SnapshotSafely()
+	items := make([]SafePodSetItem, 0, len(blockedPods))
 	// Get current Pod objects so that we don't return stale/deleted ones.
 	for _, k := range blockedPods {
 		if p, err := pl.getPodByName(k.Namespace, k.Name); err == nil && p != nil {
-			items = append(items, PodSetItem{p: p, key: k})
+			items = append(items, SafePodSetItem{p: p, key: k})
 		}
 	}
 	if len(items) == 0 {
@@ -448,7 +447,7 @@ func (pl *SharedState) activatePods(podSet *PodSet, removeActivated bool, max in
 		if removeActivated {
 			// Remove only the ones we just activated
 			for _, it := range items[:limit] {
-				podSet.RemovePod(it.key.UID)
+				podSet.RemovePodSafely(it.key.UID)
 			}
 		}
 	}
@@ -737,35 +736,37 @@ func (pl *SharedState) filterNodes(pod *v1.Pod) (sets.Set[string], string, bool)
 	return nil, "pod not in active plan; block", false
 }
 
-// countNewAndTotalPods computes from the live cluster view and the solver output:
+// computePlanPodCounts summarizes the effect of a plan on pod counts:
 //
-//	pendingScheduled = # of currently-pending pods that got a placement in this plan
-//	totalPrePlan     = # of pods currently bound
-//	totalPostPlan    = runningNow - evicted + pendingScheduled
-func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (pendingScheduled, totalPrePlan, totalPostPlan int) {
+//	pendingScheduled = number of currently-pending pods that get a placement
+//	runningBefore    = number of pods currently assigned and alive
+//	runningAfter     = runningBefore - evictedRunning + pendingScheduled
+func computePlanPodCounts(out *PlannerOutput, pods []*v1.Pod) (
+	pendingScheduled, runningBefore, runningAfter int,
+) {
 	if out == nil {
 		return 0, 0, 0
 	}
-	totalPrePlan, pendingScheduled = 0, 0
 
+	// Quick index: UID -> live pod
 	pUID := podsByUID(pods)
 
-	// Count currently running (assigned + alive) pods
+	// Count currently running (assigned + alive) pods.
 	for _, p := range pods {
 		if isPodAssignedAndAlive(p) {
-			totalPrePlan++
+			runningBefore++
 		}
 	}
 
-	// Count evicted running pods
-	evicted := 0
+	// Count evicted running pods.
+	evictedRunning := 0
 	for _, e := range out.Evictions {
 		if p := pUID[e.UID]; isPodAssignedAndAlive(p) {
-			evicted++
+			evictedRunning++
 		}
 	}
 
-	// Count pending pods that will be scheduled by this plan
+	// Count pending pods that will be scheduled by this plan.
 	for _, plm := range out.Placements {
 		if isPlanPodUnscheduled(plm.Node) {
 			continue
@@ -775,13 +776,12 @@ func (pl *SharedState) countNewAndTotalPods(out *SolverOutput, pods []*v1.Pod) (
 		}
 	}
 
-	// Derive totalPostPlan
-	totalPostPlan = totalPrePlan - evicted + pendingScheduled
-	if totalPostPlan < 0 {
-		totalPostPlan = 0
+	runningAfter = runningBefore - evictedRunning + pendingScheduled
+	if runningAfter < 0 {
+		runningAfter = 0
 	}
 
-	return pendingScheduled, totalPrePlan, totalPostPlan
+	return pendingScheduled, runningBefore, runningAfter
 }
 
 // exportPlanToConfigMap exports the given plan to a ConfigMap.
@@ -832,8 +832,7 @@ func (pl *SharedState) setPlanStatusInConfigMap(ctx context.Context, planCM stri
 		}
 		sp.PlanStatus = status
 		if status == PlanStatusCompleted || status == PlanStatusFailed {
-			now := time.Now().UTC()
-			sp.CompletedAt = &now
+			sp.CompletedAt = timestampNowUtc()
 		}
 		b, _ := json.MarshalIndent(&sp, "", "  ")
 		return b, nil
@@ -887,7 +886,7 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 	for _, n := range usable {
 		usableNames[n.Name] = struct{}{}
 	}
-	keys := make([]Pod, 0, len(pods))
+	keys := make([]PlannerPod, 0, len(pods))
 	for _, p := range pods {
 		if isPodDeleted(p) || !isPodAssigned(p) {
 			continue
@@ -895,7 +894,7 @@ func clusterFingerprint(nodes []*v1.Node, pods []*v1.Pod) string {
 		if _, ok := usableNames[getPodAssignedNodeName(p)]; !ok {
 			continue
 		}
-		keys = append(keys, Pod{Node: getPodAssignedNodeName(p), UID: p.UID})
+		keys = append(keys, PlannerPod{Node: getPodAssignedNodeName(p), UID: p.UID})
 	}
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].Node != keys[j].Node {

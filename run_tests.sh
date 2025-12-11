@@ -19,13 +19,11 @@ RUN_INT_KWOK=false
 
 case "$MODE" in
   all|"")
-    # Run everything: Python unit, Go unit, and KWOK integration tests
     RUN_UNIT_PY=true
     RUN_UNIT_GO=true
     RUN_INT_KWOK=true
     ;;
   unit_all|unit)
-    # Only unit tests
     RUN_UNIT_PY=true
     RUN_UNIT_GO=true
     ;;
@@ -36,7 +34,6 @@ case "$MODE" in
     RUN_UNIT_GO=true
     ;;
   int_all|int|int_kwok|integration)
-    # Only KWOK integration tests
     RUN_INT_KWOK=true
     ;;
   *)
@@ -58,21 +55,38 @@ esac
 # -------------------------------------------------------------------
 # Shared settings for solver env (only used for integration tests)
 # -------------------------------------------------------------------
-ensure_solver_env() {
-  echo "=== Ensuring solver Python environment ==="
-  # Directories
-  mkdir -p "${SOLVER_DIR}" "${VENV_DIR}"
+ensure_python_solver_env() {
+  echo "=== Ensuring Python solver environment ==="
+
+  # Strip possible Windows \r from env file values
+  PYTHON_SOLVER_OUT_SCRIPT_DIR="${PYTHON_SOLVER_OUT_SCRIPT_DIR%$'\r'}"
+  PYTHON_SOLVER_OUT_VENV_DIR="${PYTHON_SOLVER_OUT_VENV_DIR%$'\r'}"
+  PYTHON_SOLVER_SCRIPT_PATH="${PYTHON_SOLVER_SCRIPT_PATH%$'\r'}"
+
+  # Provide sane defaults if unset/empty
+  if [[ -z "${PYTHON_SOLVER_OUT_SCRIPT_DIR:-}" ]]; then
+    PYTHON_SOLVER_OUT_SCRIPT_DIR="${PWD}/.solver"
+  fi
+  if [[ -z "${PYTHON_SOLVER_OUT_VENV_DIR:-}" ]]; then
+    PYTHON_SOLVER_OUT_VENV_DIR="${PWD}/.venv_solver}"
+  fi
+  if [[ -z "${PYTHON_SOLVER_SCRIPT_PATH:-}" ]]; then
+    PYTHON_SOLVER_SCRIPT_PATH="scripts/python_solver/main.py"
+  fi
+
+  # Try to create directories
+  mkdir -p "${PYTHON_SOLVER_OUT_SCRIPT_DIR}" "${PYTHON_SOLVER_OUT_VENV_DIR}"
 
   # Always copy latest solver code
-  cp "${PYTHON_SOLVER_PATH}" "${SOLVER_DIR}/main.py"
+  cp "${PYTHON_SOLVER_SCRIPT_PATH}" "${PYTHON_SOLVER_OUT_SCRIPT_DIR}/main.py"
 
   # Create venv if missing
-  if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
-    python -m venv "${VENV_DIR}"
+  if [[ ! -x "${PYTHON_SOLVER_OUT_VENV_DIR}/bin/python" ]]; then
+    python -m venv "${PYTHON_SOLVER_OUT_VENV_DIR}"
   fi
 
   # Install solver requirements into that venv
-  "${VENV_DIR}/bin/pip" install -r scripts/python_solver/requirements.txt
+  "${PYTHON_SOLVER_OUT_VENV_DIR}/bin/pip" install -r scripts/python_solver/requirements.txt
 }
 
 # -------------------------------------------------------------------
@@ -84,7 +98,6 @@ mkdir -p coverage/integration/kwok/html
 
 if "$RUN_UNIT_PY"; then
   echo "=== Running Python unit tests (pytest) ==="
-  # Adjust --cov target as needed (e.g. scripts/, . , etc.)
   python -m pytest \
     --cov=. \
     --cov-report=term \
@@ -103,14 +116,11 @@ fi
 if "$RUN_INT_KWOK"; then
   echo "=== Running Integration tests with KWOK ==="
 
-  # Create/update kube-scheduler binary
   echo "Building kube-scheduler with mypriorityoptimizer plugin..."
   make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=amd64' VERSION=${SCHEDULER_VERSION}
 
-  # Make sure solver env exists
-  ensure_solver_env
+  ensure_python_solver_env
 
-  # Install integration test dependencies in the current Python env
   python -m pip install --upgrade pip
   if [ -f scripts/kwok_integration_tests/requirements.txt ]; then
     python -m pip install -r scripts/kwok_integration_tests/requirements.txt

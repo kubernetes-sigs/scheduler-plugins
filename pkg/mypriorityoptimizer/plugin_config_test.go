@@ -15,8 +15,8 @@ func TestBuildPluginConfigSnapshot_BasicFields(t *testing.T) {
 	if snap.Name != Name {
 		t.Fatalf("expected Name=%q in snapshot, got %q", Name, snap.Name)
 	}
-	if snap.Version != Version {
-		t.Fatalf("expected Version=%q in snapshot, got %q", Version, snap.Version)
+	if snap.Version != PluginVersion {
+		t.Fatalf("expected Version=%q in snapshot, got %q", PluginVersion, snap.Version)
 	}
 	if snap.SystemNamespace != SystemNamespace {
 		t.Fatalf("expected SystemNamespace=%q in snapshot, got %q", SystemNamespace, snap.SystemNamespace)
@@ -32,7 +32,7 @@ func TestPersistPluginConfig_CreatesAndUpdatesConfigMap(t *testing.T) {
 
 	pl := &SharedState{
 		Client:             client,
-		BlockedWhileActive: newPodSet("test"),
+		BlockedWhileActive: newSafePodSet("test"),
 	}
 
 	// First call should create the ConfigMap.

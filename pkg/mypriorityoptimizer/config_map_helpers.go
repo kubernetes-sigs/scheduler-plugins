@@ -16,12 +16,39 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
+// marshalJSONIndented marshals an object to pretty-printed JSON.
+func marshalJSONIndented(v any) ([]byte, error) {
+	return json.MarshalIndent(v, "", "  ")
+}
+
+// patchDataString patches a single DataKey with the given raw JSON string.
+func (d ConfigMapDoc) patchDataString(
+	ctx context.Context,
+	cli corev1client.CoreV1Interface,
+	raw string,
+) error {
+	patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, d.DataKey, raw))
+	_, err := cli.ConfigMaps(d.Namespace).Patch(
+		ctx,
+		d.Name,
+		types.MergePatchType,
+		patch,
+		metav1.PatchOptions{},
+	)
+	return err
+}
+
 // Create or update config map, storing data as JSON at DataKey.
-func (d ConfigMapDoc) ensureJson(ctx context.Context, cli corev1client.CoreV1Interface, data any) error {
-	b, err := json.MarshalIndent(data, "", "  ")
+func (d ConfigMapDoc) ensureJson(
+	ctx context.Context,
+	cli corev1client.CoreV1Interface,
+	data any,
+) error {
+	b, err := marshalJSONIndented(data)
 	if err != nil {
 		return err
 	}
+
 	cms := cli.ConfigMaps(d.Namespace)
 	cm, err := cms.Get(ctx, d.Name, metav1.GetOptions{})
 	switch {
@@ -36,8 +63,10 @@ func (d ConfigMapDoc) ensureJson(ctx context.Context, cli corev1client.CoreV1Int
 		}
 		_, err = cms.Create(ctx, cm, metav1.CreateOptions{})
 		return err
+
 	case err != nil:
 		return err
+
 	default:
 		if cm.Data == nil {
 			cm.Data = map[string]string{}
@@ -49,14 +78,16 @@ func (d ConfigMapDoc) ensureJson(ctx context.Context, cli corev1client.CoreV1Int
 }
 
 // Patch only DataKey via merge patch.
-func (d ConfigMapDoc) patchJson(ctx context.Context, cli corev1client.CoreV1Interface, v any) error {
-	b, err := json.MarshalIndent(v, "", "  ")
+func (d ConfigMapDoc) patchJson(
+	ctx context.Context,
+	cli corev1client.CoreV1Interface,
+	v any,
+) error {
+	b, err := marshalJSONIndented(v)
 	if err != nil {
 		return err
 	}
-	patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, d.DataKey, string(b)))
-	_, err = cli.ConfigMaps(d.Namespace).Patch(ctx, d.Name, types.MergePatchType, patch, metav1.PatchOptions{})
-	return err
+	return d.patchDataString(ctx, cli, string(b))
 }
 
 // Read DataKey; nil if config map or key missing.
@@ -105,16 +136,15 @@ func (d ConfigMapDoc) mutateRaw(
 ) error {
 	raw, err := d.readJson(lister)
 	if err != nil || len(raw) == 0 {
-		return err // nil if missing -> no-op
+		// nil if missing → no-op
+		return err
 	}
 	newRaw, err := mutate(raw)
 	if err != nil || newRaw == nil {
-		return err // nil -> no-op
+		// nil newRaw → no-op
+		return err
 	}
-	// Store as string (ConfigMap data values are strings).
-	patch := []byte(fmt.Sprintf(`{"data":{"%s":%q}}`, d.DataKey, string(newRaw)))
-	_, err = cli.ConfigMaps(d.Namespace).Patch(ctx, d.Name, types.MergePatchType, patch, metav1.PatchOptions{})
-	return err
+	return d.patchDataString(ctx, cli, string(newRaw))
 }
 
 // List config maps by label newest-first.
@@ -128,14 +158,14 @@ func listConfigMaps(
 	if err != nil {
 		return nil, err
 	}
-	out := make([]apiv1.ConfigMap, len(items))
+	cms := make([]apiv1.ConfigMap, len(items))
 	for i := range items {
-		out[i] = *items[i].DeepCopy()
+		cms[i] = *items[i].DeepCopy()
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreationTimestamp.Time.After(out[j].CreationTimestamp.Time)
+	sort.Slice(cms, func(i, j int) bool {
+		return cms[i].CreationTimestamp.Time.After(cms[j].CreationTimestamp.Time)
 	})
-	return out, nil
+	return cms, nil
 }
 
 // Keep first K newest config maps for label, delete the rest.

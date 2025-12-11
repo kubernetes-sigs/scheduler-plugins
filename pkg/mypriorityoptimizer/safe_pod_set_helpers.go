@@ -8,11 +8,13 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// newPodSet creates a new PodSet.
-func newPodSet(name string) *PodSet { return &PodSet{Name: name, m: make(map[types.UID]Pod)} }
+// newSafePodSet creates a new PodSet.
+func newSafePodSet(name string) *SafePodSet {
+	return &SafePodSet{Name: name, m: make(map[types.UID]PlannerPod)}
+}
 
-// doesPodSetExist returns true if the pod set is non-nil and has at least one pod.
-func doesPodSetExist(podSet *PodSet) bool {
+// doesSafePodSetExist returns true if the pod set is non-nil and has at least one pod.
+func doesSafePodSetExist(podSet *SafePodSet) bool {
 	if podSet == nil {
 		return false
 	}
@@ -21,24 +23,24 @@ func doesPodSetExist(podSet *PodSet) bool {
 
 // prunePending removes from `set` any pod that is no longer pending.
 // It returns the number of removed pods.
-func (pl *SharedState) pruneSet(podSet *PodSet) int {
-	if !doesPodSetExist(podSet) {
+func (pl *SharedState) pruneSafePodSet(podSet *SafePodSet) int {
+	if !doesSafePodSetExist(podSet) {
 		return 0
 	}
-	snap := podSet.Snapshot()
+	snap := podSet.SnapshotSafely()
 	removed := 0
 	for uid, key := range snap {
 		cur, err := pl.getPodByName(key.Namespace, key.Name)
 		switch {
 		case apierrors.IsNotFound(err):
-			podSet.RemovePod(uid)
+			podSet.RemovePodSafely(uid)
 			removed++
 		case err != nil:
 			// conservatively keep on lister error
 		default:
 			// drop if recreated, terminating, or not pending anymore
 			if !isSamePodUID(cur.UID, uid) || isPodDeleted(cur) || getPodAssignedNodeName(cur) != "" {
-				podSet.RemovePod(uid)
+				podSet.RemovePodSafely(uid)
 				removed++
 			}
 		}
@@ -49,20 +51,20 @@ func (pl *SharedState) pruneSet(podSet *PodSet) int {
 	return removed
 }
 
-// AddPod adds a pod to the set.
+// AddPodSafely adds a pod to the set.
 // Use mutex to protect the map such that only one goroutine can modify the map at a time.
-func (s *PodSet) AddPod(p *v1.Pod) {
+func (s *SafePodSet) AddPodSafely(p *v1.Pod) {
 	if p == nil {
 		return
 	}
 	s.mu.Lock()
-	s.m[p.UID] = Pod{UID: p.UID, Namespace: p.Namespace, Name: p.Name}
+	s.m[p.UID] = PlannerPod{UID: p.UID, Namespace: p.Namespace, Name: p.Name}
 	s.mu.Unlock()
 }
 
-// RemovePod removes a pod from the set.
+// RemovePodSafely removes a pod from the set.
 // Use mutex to protect the map such that only one goroutine can modify the map at a time.
-func (s *PodSet) RemovePod(uid types.UID) {
+func (s *SafePodSet) RemovePodSafely(uid types.UID) {
 	s.mu.Lock()
 	delete(s.m, uid)
 	s.mu.Unlock()
@@ -70,18 +72,18 @@ func (s *PodSet) RemovePod(uid types.UID) {
 
 // Size returns the number of pods in the set.
 // Use mutex so that we can read the map safely.
-func (s *PodSet) Size() int {
+func (s *SafePodSet) Size() int {
 	s.mu.RLock()
 	n := len(s.m)
 	s.mu.RUnlock()
 	return n
 }
 
-// Snapshot returns a snapshot of the current pods in the set.
+// SnapshotSafely returns a snapshot of the current pods in the set.
 // Use mutex so that we can read the map safely.
-func (s *PodSet) Snapshot() map[types.UID]Pod {
+func (s *SafePodSet) SnapshotSafely() map[types.UID]PlannerPod {
 	s.mu.RLock()
-	out := make(map[types.UID]Pod, len(s.m))
+	out := make(map[types.UID]PlannerPod, len(s.m))
 	for k, v := range s.m {
 		out[k] = v
 	}
