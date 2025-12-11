@@ -16,10 +16,17 @@ import (
 func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Pod) (*Plan, *PlannerScore, string, *PlannerResult, []PlannerResult, error) {
 	strategy := combinedModeToString()
 
-	// Periodic-sync/Per-pod: take Active early.
-	// Async modes: take Active later.
+	// Ensure only one optimization flow at a time.
+	if !pl.tryEnterOptimizationFlow() {
+		klog.InfoS(msg(strategy, InfoOptimizationInProgress))
+		return nil, nil, "", nil, nil, ErrOptimizationInProgress
+	}
+	defer pl.tryLeaveOptimizationFlow()
+
+	// Periodic-sync/Per-pod: take PlanActive early.
+	// Async modes: take PlanActive later.
 	if !isAsyncSolving() {
-		if !pl.tryEnterActive() {
+		if !pl.tryEnterActivePlan() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
 			return nil, nil, "", nil, nil, ErrActiveInProgress
 		}
@@ -31,7 +38,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	nodes, pods, pendingPrePlan, inp, err := pl.planContext(preemptor)
 	if err != nil {
 		klog.Error(msg(strategy, InfoPlanContextFailed), "err", err)
-		pl.leaveActive()
+		pl.tryLeaveActivePlan()
 		return nil, nil, "", nil, nil, err
 	}
 	baselineScore := inp.BaselineScore
@@ -42,7 +49,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	// Check if any solver solution was improving, if not, exit early.
 	if !hadImp {
 		klog.Error(msg(strategy, InfoNoImprovingSolutionFromAnySolver))
-		pl.leaveActive()
+		pl.tryLeaveActivePlan()
 		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrNoImprovingSolutionFromAnySolver.Error())
 		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrNoImprovingSolutionFromAnySolver
 	}
@@ -52,14 +59,14 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	ok, why := pl.isPlanApplicable(bestOut, nodes, pods)
 	if !ok {
 		klog.Error(msg(strategy, InfoPlanNotApplicable), "solver", bestName, "status", bestOut.Status, "reason", why)
-		pl.leaveActive()
+		pl.tryLeaveActivePlan()
 		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrPlanNotApplicable.Error())
 		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrPlanNotApplicable
 	}
 
-	// Async modes: take Active now that we know it is worth applying the plan.
+	// Async modes: take PlanActive now that we know it is worth applying the plan.
 	if isAsyncSolving() {
-		if !pl.tryEnterActive() {
+		if !pl.tryEnterActivePlan() {
 			klog.InfoS(msg(strategy, InfoActivePlanInProgress))
 			pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrActiveInProgress.Error())
 			return nil, nil, "", nil, nil, ErrActiveInProgress
@@ -70,7 +77,7 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	pendingScheduled, totalPrePlan, totalPostPlan := computePlanPodCounts(bestOut, pods)
 	if pendingScheduled == 0 {
 		klog.InfoS(msg(strategy, InfoNoPendingPodsScheduled))
-		pl.leaveActive()
+		pl.tryLeaveActivePlan()
 		pl.exportSolverStatsToConfigMap(context.Background(), strategy, baselineScore, bestName, attempts, ErrNoPendingPodsScheduled.Error())
 		return nil, &baselineScore, bestName, bestAttempt, attempts, ErrNoPendingPodsScheduled
 	}

@@ -33,16 +33,16 @@ var (
 	markPlanStatusToConfigMapHook func(pl *SharedState, ctx context.Context, planCM string, status PlanStatus) bool
 )
 
-// tryEnterActive attempts to enter the active plan state.
+// tryEnterActivePlan attempts to enter the active plan state.
 // Use CompareAndSwap to ensure only one goroutine can enter the active state
 // by checking that the previous value is false before setting it to true.
-func (pl *SharedState) tryEnterActive() bool {
-	return pl.Active.CompareAndSwap(false, true)
+func (pl *SharedState) tryEnterActivePlan() bool {
+	return pl.ActivePlanInProgress.CompareAndSwap(false, true)
 }
 
-// leaveActive exits the active plan state.
-func (pl *SharedState) leaveActive() {
-	pl.Active.Store(false)
+// tryLeaveActivePlan exits the active plan state.
+func (pl *SharedState) tryLeaveActivePlan() {
+	pl.ActivePlanInProgress.Store(false)
 }
 
 // getActivePlan returns the currently active plan, if any.
@@ -56,6 +56,14 @@ func (pl *SharedState) tryClearActivePlan(ap *ActivePlan) bool {
 		return false
 	}
 	return pl.ActivePlan.CompareAndSwap(ap, nil)
+}
+
+func (pl *SharedState) tryEnterOptimizationFlow() bool {
+	return pl.OptimizationInProgress.CompareAndSwap(false, true)
+}
+
+func (pl *SharedState) tryLeaveOptimizationFlow() {
+	pl.OptimizationInProgress.Store(false)
 }
 
 // toPlanPod converts a core/v1 Pod into a Pod (UID, Namespace, Name).
@@ -635,7 +643,7 @@ func (pl *SharedState) onPlanCompleted(status PlanStatus) bool {
 	}
 
 	// Winner zone: do the one-time teardown.
-	pl.leaveActive() // flip Active=false
+	pl.tryLeaveActivePlan() // flip Active=false
 	if ap.Cancel != nil {
 		ap.Cancel() // stop timeout watcher
 	}

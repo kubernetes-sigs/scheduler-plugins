@@ -6,6 +6,7 @@ import "errors"
 var (
 	ErrNoSolverEnabled                     = errors.New(InfoNoSolverEnabled)
 	ErrActiveInProgress                    = errors.New(InfoActivePlanInProgress)
+	ErrOptimizationInProgress              = errors.New(InfoOptimizationInProgress)
 	ErrPlanRegistration                    = errors.New(InfoPlanRegistrationFailed)
 	ErrPlanActivationFailed                = errors.New(InfoPlanActivationFailed)
 	ErrNoImprovingSolutionFromAnySolver    = errors.New(InfoNoImprovingSolutionFromAnySolver)

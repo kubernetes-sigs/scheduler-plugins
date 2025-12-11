@@ -15,10 +15,12 @@ type SharedState struct {
 	Handle framework.Handle
 	// Kubernetes client
 	Client kubernetes.Interface
-	// Whether a plan is active
-	Active atomic.Bool
+	// Whether a plan is in progress
+	ActivePlanInProgress atomic.Bool
 	// Currently active plan (if any)
 	ActivePlan atomic.Pointer[ActivePlan]
+	// Whether optimization is in progress
+	OptimizationInProgress atomic.Bool
 	// Set of blocked pods
 	BlockedWhileActive *SafePodSet
 	// Whether the plugin is ready (caches warmed up and usable node found)

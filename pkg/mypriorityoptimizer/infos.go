@@ -9,6 +9,7 @@ var (
 	InfoCacheWarmedUp                       = "cache warmed up"
 	InfoGetNodesFailed                      = "getNodes failed"
 	InfoNoop                                = "no operation"
+	InfoOptimizationInProgress              = "optimization already in progress"
 	InfoNoActivePlan                        = "no active plan"
 	InfoNoPlanProvided                      = "no plan provided"
 	InfoActivePlanInProgress                = "active plan is in progress"

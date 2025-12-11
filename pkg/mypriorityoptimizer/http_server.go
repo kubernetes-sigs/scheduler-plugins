@@ -81,7 +81,7 @@ func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := HttpResponse{
-		Active: pl.Active.Load(),
+		Active: pl.ActivePlanInProgress.Load(),
 	}
 	writeHTTPjson(w, http.StatusOK, resp)
 }
@@ -95,7 +95,7 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	start := time.Now()
 	resp := HttpResponse{
-		Active: pl.Active.Load(),
+		Active: pl.ActivePlanInProgress.Load(),
 	}
 
 	// Not ready yet -> early exit

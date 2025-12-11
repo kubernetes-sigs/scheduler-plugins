@@ -57,7 +57,7 @@ func TestHealthzHandler_WarmingAndReady(t *testing.T) {
 
 func TestActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 	pl := &SharedState{}
-	pl.Active.Store(true)
+	pl.ActivePlanInProgress.Store(true)
 
 	// method not allowed
 	{
@@ -107,7 +107,7 @@ func TestSolveHandler_MethodNotAllowed(t *testing.T) {
 
 func TestSolveHandler_NotReady(t *testing.T) {
 	pl := &SharedState{}
-	pl.Active.Store(true) // just to see it propagated
+	pl.ActivePlanInProgress.Store(true) // just to see it propagated
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/solve", nil)
@@ -179,7 +179,7 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			pl := &SharedState{}
 			pl.PluginReady.Store(true)
-			pl.Active.Store(true)
+			pl.ActivePlanInProgress.Store(true)
 
 			// Fake pod store used by fakePodLister.
 			store := map[string]map[string]*v1.Pod{

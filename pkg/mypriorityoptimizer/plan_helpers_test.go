@@ -19,21 +19,21 @@ func TestTryEnterActive_AndLeaveActive(t *testing.T) {
 	pl := &SharedState{}
 
 	// First enter should succeed and flip Active to true.
-	if ok := pl.tryEnterActive(); !ok {
+	if ok := pl.tryEnterActivePlan(); !ok {
 		t.Fatalf("first tryEnterActive() = %v, want true", ok)
 	}
-	if got := pl.Active.Load(); !got {
+	if got := pl.ActivePlanInProgress.Load(); !got {
 		t.Fatalf("Active.Load() = %v, want true after first enter", got)
 	}
 
 	// Second enter should fail (already active).
-	if ok := pl.tryEnterActive(); ok {
+	if ok := pl.tryEnterActivePlan(); ok {
 		t.Fatalf("second tryEnterActive() = %v, want false", ok)
 	}
 
 	// Leaving should reset the flag.
-	pl.leaveActive()
-	if got := pl.Active.Load(); got {
+	pl.tryLeaveActivePlan()
+	if got := pl.ActivePlanInProgress.Load(); got {
 		t.Fatalf("Active.Load() = %v, want false after leaveActive()", got)
 	}
 }
@@ -794,7 +794,7 @@ func TestIsPlanCompleted_UsesHook(t *testing.T) {
 
 func TestOnPlanCompleted_HookCalledAfterStateCleared(t *testing.T) {
 	pl := &SharedState{}
-	pl.Active.Store(true)
+	pl.ActivePlanInProgress.Store(true)
 
 	cancelled := false
 	ap := &ActivePlan{
@@ -822,7 +822,7 @@ func TestOnPlanCompleted_HookCalledAfterStateCleared(t *testing.T) {
 		called = true
 		hookStatus = status
 		hookAp = hap
-		activeInsideHook = hpl.Active.Load()
+		activeInsideHook = hpl.ActivePlanInProgress.Load()
 	}
 
 	ok := pl.onPlanCompleted(PlanStatusCompleted)
