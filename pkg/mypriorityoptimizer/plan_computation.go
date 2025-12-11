@@ -22,6 +22,14 @@ func (pl *SharedState) planComputation(
 	hadFeasibleImprovingSolver = false
 	strategy := combinedModeToString()
 
+	// Python tuning knobs live here, not inside SolverInput.
+	pyOpts := PythonSolverOptions{
+		LogProgress:            SolverLogProgress,
+		GapLimit:               SolverPythonGapLimit,
+		GuaranteedTierFraction: SolverPythonGuaranteedTierFraction,
+		MoveFractionOfTier:     SolverPythonMoveFractionOfTier,
+	}
+
 	// =====================================
 	// === Setup Attempts ==================
 	// =====================================
@@ -29,9 +37,9 @@ func (pl *SharedState) planComputation(
 		{
 			Name:    "python",
 			Enabled: SolverPythonEnabled,
-			Timeout: SolverPythonTimeout,
+			Timeout: SolverPythonTimeout + time.Duration(SolverPythonGraceMs)*time.Millisecond,
 			Run: func(ctx context.Context, in SolverInput) (*SolverOutput, error) {
-				return pl.runSolverExternal(ctx, in)
+				return pl.runPythonSolver(ctx, in, pyOpts)
 			},
 		},
 	}
@@ -56,24 +64,13 @@ func (pl *SharedState) planComputation(
 
 		// Per-attempt input & hints
 		inAttempt := solverInput
-		inAttempt.TimeoutMs = att.Timeout.Milliseconds() // ← no grace added here
+		inAttempt.TimeoutMs = att.Timeout.Milliseconds()
 
-		// Build attempt context with timeout + grace
+		// Build attempt context with timeout
 		ctxDur := att.Timeout
-
-		// Python specific parameters
-		if att.Name == "python" {
-			inAttempt.GapLimit = SolverPythonGapLimit
-			inAttempt.GuaranteedTierFraction = SolverPythonGuaranteedTierFraction
-			inAttempt.MoveFractionOfTier = SolverPythonMoveFractionOfTier
-			if SolverPythonGraceMs > 0 { // increase context duration by grace for python due to I/O overhead
-				ctxDur += time.Duration(SolverPythonGraceMs) * time.Millisecond
-			}
-		}
-
 		ctxAtt, cancel := context.WithTimeout(ctx, ctxDur)
 		start := time.Now()
-		out, err := att.Run(ctxAtt, inAttempt) // grace is ignored by non-python
+		out, err := att.Run(ctxAtt, inAttempt)
 		cancel()
 		durMs := time.Since(start).Milliseconds()
 
@@ -84,7 +81,6 @@ func (pl *SharedState) planComputation(
 				DurationMs: durMs,
 				Status:     out.Status,
 				Score:      scoreSolution(inAttempt, out),
-				Stages:     out.Stages,
 			})
 			continue
 		} else if err != nil { // error with no output
@@ -111,7 +107,6 @@ func (pl *SharedState) planComputation(
 				DurationMs: durMs,
 				Status:     out.Status,
 				Score:      scoreSolution(inAttempt, out),
-				Stages:     out.Stages,
 			})
 			// return the attempt as bestAttempt if no other attempts succeeded?
 			if bestAttempt == nil {
@@ -120,7 +115,6 @@ func (pl *SharedState) planComputation(
 					DurationMs: durMs,
 					Status:     out.Status,
 					Score:      scoreSolution(inAttempt, out),
-					Stages:     out.Stages,
 				}
 			}
 			continue
@@ -135,7 +129,6 @@ func (pl *SharedState) planComputation(
 				DurationMs: durMs,
 				Status:     out.Status,
 				Score:      scoreSolution(inAttempt, out),
-				Stages:     out.Stages,
 			})
 			continue
 		}
@@ -150,7 +143,6 @@ func (pl *SharedState) planComputation(
 			Score:      score,
 			CmpBase:    improvedOverBaseline,
 			Status:     out.Status,
-			Stages:     out.Stages,
 		}
 
 		if improvedOverBaseline <= 0 {

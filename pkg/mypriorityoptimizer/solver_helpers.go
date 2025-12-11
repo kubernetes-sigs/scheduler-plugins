@@ -35,7 +35,6 @@ func (pl *SharedState) buildSolverInput(
 
 	in := SolverInput{
 		IgnoreAffinity: true,
-		LogProgress:    SolverLogProgress,
 		Nodes:          make([]Node, 0, len(nodes)),
 		Pods:           make([]Pod, 0, len(pods)),
 		TimeoutMs:      0, // filled by caller

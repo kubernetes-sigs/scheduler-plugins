@@ -1010,8 +1010,9 @@ echo '{"Status":"OPTIMAL"}'
 	pl := &SharedState{}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	payloadJson := []byte(`{"dummy":"data"}`)
 
-	out, err := pl.runSolverExternal(ctx, SolverInput{})
+	out, err := pl.runSolverExternal(ctx, payloadJson, SolverPythonBin, SolverPythonScriptPath)
 	if err == nil {
 		t.Fatalf("expected error from readAllStdout, got nil (out=%#v)", out)
 	}

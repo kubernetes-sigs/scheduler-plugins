@@ -15,10 +15,10 @@ import (
 
 func (pl *SharedState) Name() string { return Name }
 
-// handleDeps is a minimal subset of framework.Handle that New/newFromHandle
+// HandleDeps is a minimal subset of framework.Handle that New/newFromHandle
 // actually depend on. This lets tests provide a tiny fake without
 // implementing the whole framework.Handle interface.
-type handleDeps interface {
+type HandleDeps interface {
 	KubeConfig() *rest.Config
 	SharedInformerFactory() informers.SharedInformerFactory
 }
@@ -49,7 +49,7 @@ func newFromHandle(
 	ctx context.Context,
 	obj runtime.Object,
 	clientFn func(*rest.Config) (kubernetes.Interface, error),
-	h handleDeps,
+	h HandleDeps,
 	fullHandle framework.Handle,
 ) (framework.Plugin, error) {
 	// obj is not used by the current implementation, but the factory

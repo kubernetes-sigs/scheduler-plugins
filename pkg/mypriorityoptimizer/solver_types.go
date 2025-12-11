@@ -18,16 +18,6 @@ type SolverInput struct {
 	TimeoutMs int64 `json:"timeout_ms"`
 	// If true, ignore affinity rules
 	IgnoreAffinity bool `json:"ignore_affinity"`
-
-	// TODO: Make python specific options an extra struct?
-	// Log solver progress
-	LogProgress bool `json:"log_progress,omitempty"`
-	// Gap to optimality (0.0 = ignore)
-	GapLimit float64 `json:"gap_limit,omitempty"`
-	// Guaranteed fraction of time for all tiers (0.0-1.0)
-	GuaranteedTierFraction float64 `json:"guaranteed_tier_fraction,omitempty"`
-	// Fraction of a tier's budget for moves (0.0-1.0)
-	MoveFractionOfTier float64 `json:"move_fraction_of_tier,omitempty"`
 }
 
 // SolverOutput is the output from a solver.
@@ -40,9 +30,13 @@ type SolverOutput struct {
 	Evictions []Pod `json:"evictions"`
 	// Duration in milliseconds of the solver
 	DurationMs int64 `json:"duration_ms,omitempty"`
+}
 
-	// Make python-specific fields optional
-	// Stages of the solver
+// PythonSolverOutput is the output from the Python solver, extending SolverOutput.
+type PythonSolverOutput struct {
+	// Inline the generic solver fields (status, placements, evictions, duration)
+	SolverOutput
+	// Stages of the solver (Python-specific)
 	Stages []SolverStage `json:"stages,omitempty"`
 }
 
@@ -113,4 +107,24 @@ type ExportedSolverStats struct {
 	Baseline *SolverScore `json:"baseline,omitempty"`
 	// Best score
 	Attempts []SolverResult `json:"attempts,omitempty"`
+}
+
+// PythonSolverOptions holds tuning knobs for the external Python solver.
+type PythonSolverOptions struct {
+	// Log solver progress
+	LogProgress bool `json:"log_progress,omitempty"`
+	// Gap to optimality (0.0 = ignore)
+	GapLimit float64 `json:"gap_limit,omitempty"`
+	// Guaranteed fraction of time for all tiers (0.0-1.0)
+	GuaranteedTierFraction float64 `json:"guaranteed_tier_fraction,omitempty"`
+	// Fraction of a tier's budget for moves (0.0-1.0)
+	MoveFractionOfTier float64 `json:"move_fraction_of_tier,omitempty"`
+}
+
+// PythonSolverPayload is the full payload sent to the external Python solver.
+type PythonSolverPayload struct {
+	// Embedded solver input and options
+	SolverInput `json:"solver_input"`
+	// Python solver options
+	PythonSolverOptions `json:"python_solver_options"`
 }

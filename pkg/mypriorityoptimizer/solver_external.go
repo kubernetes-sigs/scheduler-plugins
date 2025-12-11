@@ -1,4 +1,4 @@
-// solver_external.go
+// pkg/mypriorityoptimizer/solver_external.go
 package mypriorityoptimizer
 
 import (
@@ -20,12 +20,82 @@ var (
 	readAllStdout      = io.ReadAll
 )
 
-func (pl *SharedState) runSolverExternal(ctx context.Context, in SolverInput) (*SolverOutput, error) {
-	rawInput, _ := json.Marshal(in)
-	klog.V(MyV).InfoS("Solver input", "nodes", len(in.Nodes), "pods", len(in.Pods), "hasPreemptor", in.Preemptor != nil)
+// runPythonSolver is the Python-specific wrapper that prepares the payload,
+// invokes the external process, decodes the PythonSolverOutput and returns
+// the embedded generic SolverOutput.
+func (pl *SharedState) runPythonSolver(
+	ctx context.Context,
+	in SolverInput,
+	opts PythonSolverOptions,
+) (*SolverOutput, error) {
+	// Build payload: nested solver_input + python_solver_options.
+	payload := PythonSolverPayload{
+		SolverInput:         in,
+		PythonSolverOptions: opts,
+	}
 
-	cmd := execCommandContext(ctx, solverBinary, solverScriptPath)
-	cmd.Stdin = bytes.NewReader(rawInput)
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal python solver payload: %w", err)
+	}
+
+	// Solver-specific logging lives here (not in the generic helper).
+	klog.V(MyV).InfoS("Python solver input",
+		"nodes", len(in.Nodes),
+		"pods", len(in.Pods),
+		"hasPreemptor", in.Preemptor != nil,
+		"timeoutMs", in.TimeoutMs,
+		"logProgress", opts.LogProgress,
+		"gapLimit", opts.GapLimit,
+		"guaranteedTierFraction", opts.GuaranteedTierFraction,
+		"moveFractionOfTier", opts.MoveFractionOfTier,
+	)
+
+	rawOut, err := pl.runSolverExternal(ctx, payloadJSON, solverBinary, solverScriptPath)
+	if err != nil {
+		return nil, fmt.Errorf("python solver external: %w", err)
+	}
+
+	// Decode rich Python-specific output (generic fields + stages).
+	var pyOut PythonSolverOutput
+	if err := json.Unmarshal(rawOut, &pyOut); err != nil {
+		return nil, fmt.Errorf("decode python solver output: %w", err)
+	}
+
+	out := &pyOut.SolverOutput
+
+	// Summary log for the whole solve.
+	klog.V(MyV).InfoS("Python solver result",
+		"status", out.Status,
+		"durationMs", out.DurationMs,
+		"placements", len(out.Placements),
+		"evictions", len(out.Evictions),
+		"stages", len(pyOut.Stages),
+	)
+
+	// Per-stage progress log if present.
+	for _, st := range pyOut.Stages {
+		klog.V(MyV).InfoS("Python solver stage",
+			"tier", st.Tier,
+			"stage", st.Stage,
+			"status", st.Status,
+			"durationMs", st.DurationMs,
+			"relativeGap", st.RelativeGap,
+		)
+	}
+
+	return out, nil
+}
+
+// runSolverExternal is the generic "spawn a process, send JSON, get JSON" helper.
+func (pl *SharedState) runSolverExternal(
+	ctx context.Context,
+	payload []byte,
+	binary string,
+	scriptPath string,
+) ([]byte, error) {
+	cmd := execCommandContext(ctx, binary, scriptPath)
+	cmd.Stdin = bytes.NewReader(payload)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -36,6 +106,7 @@ func (pl *SharedState) runSolverExternal(ctx context.Context, in SolverInput) (*
 		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
 
+	// Stream solver logs from stderr.
 	go func() {
 		s := bufio.NewScanner(stderr)
 		buf := make([]byte, 0, 256*1024)
@@ -61,10 +132,5 @@ func (pl *SharedState) runSolverExternal(ctx context.Context, in SolverInput) (*
 	if err := cmd.Wait(); err != nil {
 		return nil, fmt.Errorf("solver run: %w", err)
 	}
-
-	var out SolverOutput
-	if err := json.Unmarshal(outBuf, &out); err != nil {
-		return nil, fmt.Errorf("decode solver output: %w", err)
-	}
-	return &out, nil
+	return outBuf, nil
 }
