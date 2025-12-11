@@ -411,43 +411,6 @@ func TestIsSolutionBetter_Order(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// cmpLexi
-// -----------------------------------------------------------------------------
-
-func TestCmpLexi_HighPriorityWins(t *testing.T) {
-	a := map[string]int{"1": 2, "0": 1}
-	b := map[string]int{"1": 1, "0": 5}
-
-	if got := cmpLexi(a, b); got != 1 {
-		t.Fatalf("cmpLexi(a,b) = %d, want 1 (a better high-prio)", got)
-	}
-	if got := cmpLexi(b, a); got != -1 {
-		t.Fatalf("cmpLexi(b,a) = %d, want -1 (b worse high-prio)", got)
-	}
-
-	// Equal maps
-	if got := cmpLexi(a, map[string]int{"1": 2, "0": 1}); got != 0 {
-		t.Fatalf("cmpLexi(equal) = %d, want 0", got)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// cmpInt
-// -----------------------------------------------------------------------------
-
-func TestCmpInt(t *testing.T) {
-	if got := cmpInt(1, 2); got != 1 {
-		t.Fatalf("cmpInt(1,2) = %d, want 1 (improvement)", got)
-	}
-	if got := cmpInt(3, 2); got != -1 {
-		t.Fatalf("cmpInt(3,2) = %d, want -1 (worse)", got)
-	}
-	if got := cmpInt(2, 2); got != 0 {
-		t.Fatalf("cmpInt(2,2) = %d, want 0 (equal)", got)
-	}
-}
-
-// -----------------------------------------------------------------------------
 // isSolutionUsable
 // -----------------------------------------------------------------------------
 

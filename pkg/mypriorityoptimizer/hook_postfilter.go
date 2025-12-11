@@ -11,6 +11,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
+var postFilterSleep = time.Sleep
+
 // -----------------------------------------------------------------------------
 // PostFilter
 // -----------------------------------------------------------------------------
@@ -35,7 +37,7 @@ func (pl *SharedState) PostFilter(ctx context.Context, state fwk.CycleState, pen
 
 	// If no active plan, run optimisation flow for the pod.
 	klog.InfoS(msg(stage, "start"), "pod", klog.KObj(pending))
-	time.Sleep(1 * time.Second) // TODO: little hack to ensure other concurrent workers has time to finish their work such that we have a reliable view of the cluster state
+	postFilterSleep(1 * time.Second) // TODO: little hack to ensure other concurrent workers has time to finish their work such that we have a reliable view of the cluster state
 	plan, _, _, _, _, err := pl.runOptimizationFlow(ctx, pending)
 	if err != nil {
 		switch err {

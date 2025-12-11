@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -16,13 +17,211 @@ import (
 // startLoops
 // ----------------------------------------------------------------------
 
-// TODO: test missing
+func TestStartLoops_DoesNothingWhenNotReady(t *testing.T) {
+	origMode := OptimizeMode
+	defer func() { OptimizeMode = origMode }()
+
+	OptimizeMode = ModePeriodic
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pl := &SharedState{} // PluginReady default is false
+
+	called := false
+
+	withOptimizeLoopFunc(t,
+		func(pl *SharedState, ctx context.Context, cfg OptimizeLoopConfig) {
+			called = true
+		},
+		func() {
+			pl.startLoops(ctx)
+			// If it accidentally started a goroutine, this gives it a chance to run.
+			time.Sleep(20 * time.Millisecond)
+		},
+	)
+
+	if called {
+		t.Fatalf("startLoops called optimizeBackgroundLoopFunc even though PluginReady was false")
+	}
+}
+
+func TestStartLoops_LaunchesPeriodicLoopWhenModePeriodic(t *testing.T) {
+	origMode := OptimizeMode
+	defer func() { OptimizeMode = origMode }()
+
+	OptimizeMode = ModePeriodic
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pl := &SharedState{}
+	pl.PluginReady.Store(true)
+
+	cfgCh := make(chan OptimizeLoopConfig, 1)
+
+	withOptimizeLoopFunc(t,
+		func(_ *SharedState, _ context.Context, cfg OptimizeLoopConfig) {
+			cfgCh <- cfg
+		},
+		func() {
+			pl.startLoops(ctx)
+
+			select {
+			case cfg := <-cfgCh:
+				if cfg.Label != "PeriodicLoop" {
+					t.Fatalf("expected Label=PeriodicLoop, got %q", cfg.Label)
+				}
+			case <-time.After(200 * time.Millisecond):
+				t.Fatalf("optimizeBackgroundLoopFunc was not called for ModePeriodic")
+			}
+		},
+	)
+}
+
+func TestStartLoops_LaunchesInterludeLoopWhenModeInterlude(t *testing.T) {
+	origMode := OptimizeMode
+	defer func() { OptimizeMode = origMode }()
+
+	OptimizeMode = ModeInterlude
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pl := &SharedState{}
+	pl.PluginReady.Store(true)
+
+	cfgCh := make(chan OptimizeLoopConfig, 1)
+
+	withOptimizeLoopFunc(t,
+		func(_ *SharedState, _ context.Context, cfg OptimizeLoopConfig) {
+			cfgCh <- cfg
+		},
+		func() {
+			pl.startLoops(ctx)
+
+			select {
+			case cfg := <-cfgCh:
+				if cfg.Label != "InterludeLoop" {
+					t.Fatalf("expected Label=InterludeLoop, got %q", cfg.Label)
+				}
+			case <-time.After(200 * time.Millisecond):
+				t.Fatalf("optimizeBackgroundLoopFunc was not called for ModeInterlude")
+			}
+		},
+	)
+}
 
 // ----------------------------------------------------------------------
 // optimizeBackgroundLoop
 // ----------------------------------------------------------------------
 
-// TODO: test missing
+func TestOptimizeBackgroundLoop_SkipsWhenPluginNotReady(t *testing.T) {
+	pl := &SharedState{} // PluginReady default is false
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := 0
+
+	origSnap := buildPendingSnapshotHook
+	buildPendingSnapshotHook = func(pl *SharedState) (*PendingSnapshot, error) {
+		calls++
+		return &PendingSnapshot{}, nil
+	}
+	defer func() { buildPendingSnapshotHook = origSnap }()
+
+	cfg := OptimizeLoopConfig{
+		Label:          "TestLoop",
+		Interval:       10 * time.Millisecond,
+		InterludeDelay: 0,
+		CancelOnChange: true,
+	}
+
+	done := make(chan struct{})
+
+	go func() {
+		pl.optimizeBackgroundLoop(ctx, cfg)
+		close(done)
+	}()
+
+	// Let the timer fire a few times.
+	time.Sleep(30 * time.Millisecond)
+	cancel()
+	<-done
+
+	if calls != 0 {
+		t.Fatalf("expected buildPendingSnapshot not to be called while PluginReady=false, got %d", calls)
+	}
+}
+
+func TestOptimizeBackgroundLoop_StartsRunForStablePendingSet(t *testing.T) {
+	pl := &SharedState{}
+	pl.PluginReady.Store(true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pending := uidSet("p1")
+	fingerprint := "fp-1"
+
+	calls := 0
+
+	origSnap := buildPendingSnapshotHook
+	buildPendingSnapshotHook = func(_ *SharedState) (*PendingSnapshot, error) {
+		calls++
+		return &PendingSnapshot{
+			PendingUIDs:  cloneUIDSet(pending),
+			PendingCount: len(pending),
+			Fingerprint:  fingerprint,
+		}, nil
+	}
+	defer func() { buildPendingSnapshotHook = origSnap }()
+
+	origStart := startBackgroundOptimization
+	runStarted := make(chan struct{}, 1)
+
+	startBackgroundOptimization = func(
+		_ *SharedState,
+		_ OptimizeLoopConfig,
+		_ context.Context,
+		runDone chan<- bool,
+	) {
+		// Mark that we started an optimization run.
+		runStarted <- struct{}{}
+		// Pretend we fully solved the current pending set.
+		runDone <- true
+		// Ensure the outer loop exits cleanly on the next select.
+		cancel()
+	}
+	defer func() { startBackgroundOptimization = origStart }()
+
+	cfg := OptimizeLoopConfig{
+		Label:          "TestLoop",
+		Interval:       5 * time.Millisecond,
+		InterludeDelay: 0,
+		CancelOnChange: true,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		pl.optimizeBackgroundLoop(ctx, cfg)
+		close(done)
+	}()
+
+	select {
+	case <-runStarted:
+		// OK: background run started.
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("background optimization run did not start in time (snapshots=%d)", calls)
+	}
+
+	<-done
+
+	if calls < 2 {
+		t.Fatalf("expected at least 2 snapshots (gating + run), got %d", calls)
+	}
+}
 
 // ----------------------------------------------------------------------
 // isSameUIDSet

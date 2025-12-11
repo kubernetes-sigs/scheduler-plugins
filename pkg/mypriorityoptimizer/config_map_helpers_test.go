@@ -4,6 +4,8 @@ package mypriorityoptimizer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,16 +17,128 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// marshalJSONIndented
+// marshalJsonIndented
 // -----------------------------------------------------------------------------
 
-// TODO: missing
+func TestMarshalJsonIndented_Success(t *testing.T) {
+	type payload struct {
+		Foo string `json:"foo"`
+		Bar int    `json:"bar"`
+	}
+
+	b, err := marshalJsonIndented(payload{Foo: "x", Bar: 42})
+	if err != nil {
+		t.Fatalf("marshalJsonIndented returned error: %v", err)
+	}
+
+	// Should be valid JSON with the expected fields.
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal of marshalled JSON failed: %v", err)
+	}
+	if got["foo"] != "x" {
+		t.Fatalf(`expected foo="x", got %v`, got["foo"])
+	}
+	if v, ok := got["bar"].(float64); !ok || v != 42 {
+		t.Fatalf("expected bar=42, got %T %v", got["bar"], got["bar"])
+	}
+
+	// And it should be pretty-printed (indented).
+	s := string(b)
+	if !strings.Contains(s, "\n") {
+		t.Fatalf("expected pretty-printed JSON to contain a newline, got %q", s)
+	}
+	if !strings.Contains(s, "  \"foo\"") {
+		t.Fatalf("expected pretty-printed JSON to contain indented key, got %q", s)
+	}
+}
+
+func TestMarshalJsonIndented_Error(t *testing.T) {
+	// json.MarshalIndent should fail on unsupported types (e.g. channel).
+	_, err := marshalJsonIndented(make(chan int))
+	if err == nil {
+		t.Fatalf("expected error for unsupported type, got nil")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// jsonString
+// -----------------------------------------------------------------------------
+
+func TestJsonString_Success(t *testing.T) {
+	type payload struct {
+		Answer int `json:"answer"`
+	}
+
+	s, err := jsonString(payload{Answer: 1337})
+	if err != nil {
+		t.Fatalf("jsonString returned error: %v", err)
+	}
+
+	var got map[string]int
+	if err := json.Unmarshal([]byte(s), &got); err != nil {
+		t.Fatalf("unmarshal of jsonString output failed: %v", err)
+	}
+	if got["answer"] != 1337 {
+		t.Fatalf("expected answer=1337, got %d", got["answer"])
+	}
+}
+
+func TestJsonString_Error(t *testing.T) {
+	// Propagate marshal error through jsonString.
+	_, err := jsonString(make(chan int))
+	if err == nil {
+		t.Fatalf("expected error for unsupported type, got nil")
+	}
+}
 
 // -----------------------------------------------------------------------------
 // patchDataString
 // -----------------------------------------------------------------------------
 
-// TODO: missing
+func TestPatchDataString_UpdatesSingleKey(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns-patch"
+	name := "cm-patch"
+	dataKey := "myx/plan.json"
+
+	// Seed fake client with a ConfigMap that already exists and has an extra key.
+	initial := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			dataKey: "old-value",
+			"other": "keep-me",
+		},
+	}
+	cli := fake.NewSimpleClientset(initial)
+
+	doc := ConfigMapDoc{
+		Namespace: namespace,
+		Name:      name,
+		DataKey:   dataKey,
+	}
+
+	raw := `{"foo":"bar"}`
+
+	if err := doc.patchDataString(ctx, cli.CoreV1(), raw); err != nil {
+		t.Fatalf("patchDataString failed: %v", err)
+	}
+
+	cm, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get after patchDataString failed: %v", err)
+	}
+
+	if got := cm.Data[dataKey]; got != raw {
+		t.Fatalf("dataKey %q mismatch: got %q, want %q", dataKey, got, raw)
+	}
+	if got := cm.Data["other"]; got != "keep-me" {
+		t.Fatalf("expected other key to be unchanged, got %q", got)
+	}
+}
 
 // -----------------------------------------------------------------------------
 // ensureJson
@@ -89,6 +203,57 @@ func TestEnsureJson_CreateAndUpdate(t *testing.T) {
 	}
 }
 
+func TestEnsureJson_UpdateOnNilData(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns1-nildata"
+	name := "cm-nildata"
+	labelKey := "myx/plan"
+	dataKey := "myx/plan.json"
+
+	// Existing CM with nil Data
+	existing := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{labelKey: "true"},
+		},
+		Data: nil,
+	}
+	cli := fake.NewSimpleClientset(existing)
+
+	doc := ConfigMapDoc{
+		Namespace: namespace,
+		Name:      name,
+		LabelKey:  labelKey,
+		DataKey:   dataKey,
+	}
+
+	type payload struct {
+		Value string `json:"value"`
+	}
+
+	if err := doc.ensureJson(ctx, cli.CoreV1(), payload{Value: "from-nil"}); err != nil {
+		t.Fatalf("ensureJson(update on nil Data) failed: %v", err)
+	}
+
+	cm, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get after ensureJson failed: %v", err)
+	}
+	if cm.Data == nil {
+		t.Fatalf("expected Data map to be initialized, got nil")
+	}
+
+	raw := cm.Data[dataKey]
+	var got payload
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal updated data failed: %v", err)
+	}
+	if got.Value != "from-nil" {
+		t.Fatalf("expected value=from-nil, got %q", got.Value)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // patchJson
 // -----------------------------------------------------------------------------
@@ -139,6 +304,49 @@ func TestPatchJson(t *testing.T) {
 	}
 	if got.Value != "patched" {
 		t.Fatalf("expected Value=patched, got %q", got.Value)
+	}
+}
+
+func TestPatchJson_ErrorOnMarshalFailure(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns2-err"
+	name := "cm2-err"
+	labelKey := "myx/plan"
+	dataKey := "myx/plan.json"
+
+	initial := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{labelKey: "true"},
+		},
+		Data: map[string]string{
+			dataKey: `{"value":"old"}`,
+		},
+	}
+	cli := fake.NewSimpleClientset(initial)
+
+	doc := ConfigMapDoc{
+		Namespace: namespace,
+		Name:      name,
+		LabelKey:  labelKey,
+		DataKey:   dataKey,
+	}
+
+	// Channel cannot be marshalled to JSON → force jsonString to fail.
+	badValue := make(chan int)
+
+	if err := doc.patchJson(ctx, cli.CoreV1(), badValue); err == nil {
+		t.Fatalf("expected error from patchJson when marshalling fails, got nil")
+	}
+
+	// Ensure we did not touch the existing data.
+	cm, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get after patchJson error failed: %v", err)
+	}
+	if got := cm.Data[dataKey]; got != `{"value":"old"}` {
+		t.Fatalf("expected dataKey to remain unchanged, got %q", got)
 	}
 }
 
@@ -254,8 +462,62 @@ func TestMutateJson_Appends(t *testing.T) {
 	}
 }
 
+func TestMutateJson_MutateError(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns4-err"
+	name := "cm4-err"
+	labelKey := "myx/arr"
+	dataKey := "myx/arr.json"
+
+	type item struct {
+		ID int `json:"id"`
+	}
+
+	initialArr := []item{{ID: 1}}
+	initialJSON, _ := json.Marshal(initialArr)
+
+	cm := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{labelKey: "true"},
+		},
+		Data: map[string]string{
+			dataKey: string(initialJSON),
+		},
+	}
+	cli := fake.NewSimpleClientset(cm)
+
+	doc := ConfigMapDoc{
+		Namespace: namespace,
+		Name:      name,
+		LabelKey:  labelKey,
+		DataKey:   dataKey,
+	}
+	lister := newConfigMapLister(cm)
+
+	err := mutateJson(ctx, cli.CoreV1(), lister, doc, func(existing []item) ([]item, error) {
+		if len(existing) != 1 || existing[0].ID != 1 {
+			t.Fatalf("unexpected existing slice in mutateJson: %#v", existing)
+		}
+		return nil, fmt.Errorf("boom")
+	})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected mutateJson to return our error, got %v", err)
+	}
+
+	// Verify that the ConfigMap was not changed on error
+	updated, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get after mutateJson error failed: %v", err)
+	}
+	if updated.Data[dataKey] != string(initialJSON) {
+		t.Fatalf("expected dataKey to remain unchanged on error, got %q", updated.Data[dataKey])
+	}
+}
+
 // -----------------------------------------------------------------------------
-// mutateJson
+// mutateRaw
 // -----------------------------------------------------------------------------
 
 func TestMutateRaw_Uppercases(t *testing.T) {
@@ -297,6 +559,89 @@ func TestMutateRaw_Uppercases(t *testing.T) {
 	}
 	if updated.Data[dataKey] != `{"msg":"HELLO"}` {
 		t.Fatalf("mutateRaw did not update dataKey; got %q", updated.Data[dataKey])
+	}
+}
+
+func TestMutateRaw_MissingConfigMap_NoOp(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns5-miss"
+	name := "cm5-miss"
+	dataKey := "myx/raw.json"
+
+	cli := fake.NewSimpleClientset()
+	lister := newConfigMapLister() // no items
+
+	doc := ConfigMapDoc{
+		Namespace: namespace,
+		Name:      name,
+		DataKey:   dataKey,
+	}
+
+	called := false
+	err := doc.mutateRaw(ctx, cli.CoreV1(), lister, func(raw []byte) ([]byte, error) {
+		called = true
+		return raw, nil
+	})
+	if err != nil {
+		t.Fatalf("mutateRaw on missing CM returned error: %v", err)
+	}
+	if called {
+		t.Fatalf("mutate callback should not be called when CM/data is missing")
+	}
+
+	// Still no ConfigMap created.
+	if _, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{}); err == nil {
+		t.Fatalf("expected no ConfigMap to be created on missing mutateRaw")
+	}
+}
+
+func TestMutateRaw_NilNewRaw_NoOp(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns5-nilraw"
+	name := "cm5-nilraw"
+	dataKey := "myx/raw.json"
+
+	original := `{"msg":"hello"}`
+	cm := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			dataKey: original,
+		},
+	}
+	cli := fake.NewSimpleClientset(cm)
+	lister := newConfigMapLister(cm)
+
+	doc := ConfigMapDoc{
+		Namespace: namespace,
+		Name:      name,
+		DataKey:   dataKey,
+	}
+
+	calls := 0
+	err := doc.mutateRaw(ctx, cli.CoreV1(), lister, func(raw []byte) ([]byte, error) {
+		calls++
+		if string(raw) != original {
+			t.Fatalf("unexpected raw in mutate: %q", string(raw))
+		}
+		// Signal "no change" by returning nil, nil.
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatalf("mutateRaw returned error: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected mutate to be called once, got %d", calls)
+	}
+
+	updated, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get after mutateRaw no-op failed: %v", err)
+	}
+	if updated.Data[dataKey] != original {
+		t.Fatalf("expected dataKey to remain unchanged, got %q", updated.Data[dataKey])
 	}
 }
 
@@ -409,6 +754,80 @@ func TestPruneConfigMaps_DeletesOldOnes(t *testing.T) {
 		}
 		if !wantExist && err == nil {
 			t.Errorf("expected %s to be deleted, but Get succeeded", name)
+		}
+	}
+}
+
+func TestPruneConfigMaps_KeepZero_NoOp(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns7-k0"
+	labelKey := "myx/prune-k0"
+
+	now := time.Now()
+	cm1 := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "cm1",
+			Namespace:         namespace,
+			Labels:            map[string]string{labelKey: "true"},
+			CreationTimestamp: metav1.NewTime(now.Add(-time.Hour)),
+		},
+	}
+	cm2 := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "cm2",
+			Namespace:         namespace,
+			Labels:            map[string]string{labelKey: "true"},
+			CreationTimestamp: metav1.NewTime(now),
+		},
+	}
+
+	cli := fake.NewSimpleClientset(cm1, cm2)
+	lister := newConfigMapLister(cm1, cm2)
+
+	if err := pruneConfigMaps(ctx, cli.CoreV1(), lister, namespace, labelKey, 0); err != nil {
+		t.Fatalf("pruneConfigMaps(keep=0) returned error: %v", err)
+	}
+
+	// Nothing should be deleted.
+	for _, name := range []string{"cm1", "cm2"} {
+		if _, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{}); err != nil {
+			t.Fatalf("expected %s to exist after keep=0, got error: %v", name, err)
+		}
+	}
+}
+
+func TestPruneConfigMaps_KeepMoreThanExisting_NoOp(t *testing.T) {
+	ctx := context.Background()
+	namespace := "ns7-kbig"
+	labelKey := "myx/prune-kbig"
+
+	now := time.Now()
+	makeCM := func(name string, offset time.Duration) *apiv1.ConfigMap {
+		return &apiv1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         namespace,
+				Labels:            map[string]string{labelKey: "true"},
+				CreationTimestamp: metav1.NewTime(now.Add(offset)),
+			},
+		}
+	}
+
+	cm1 := makeCM("cm1", -3*time.Hour)
+	cm2 := makeCM("cm2", -2*time.Hour)
+	cm3 := makeCM("cm3", -1*time.Hour)
+
+	cli := fake.NewSimpleClientset(cm1, cm2, cm3)
+	lister := newConfigMapLister(cm1, cm2, cm3)
+
+	// keep is larger than number of items → should not delete anything.
+	if err := pruneConfigMaps(ctx, cli.CoreV1(), lister, namespace, labelKey, 10); err != nil {
+		t.Fatalf("pruneConfigMaps(keep>len(items)) returned error: %v", err)
+	}
+
+	for _, name := range []string{"cm1", "cm2", "cm3"} {
+		if _, err := cli.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{}); err != nil {
+			t.Fatalf("expected %s to exist after keep>len(items), got error: %v", name, err)
 		}
 	}
 }

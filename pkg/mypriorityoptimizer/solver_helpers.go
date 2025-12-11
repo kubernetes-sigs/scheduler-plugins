@@ -4,7 +4,6 @@ package mypriorityoptimizer
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strconv"
 	"time"
 
@@ -190,59 +189,6 @@ func isSolutionBetter(old, new *SolverScore) int {
 	// Equal on all metrics
 	klog.V(MyV).InfoS("no change: equal on placed, evictions, and moves")
 	return 0
-}
-
-// -----------------------------------------------------------------------------
-// cmpLexi
-// -----------------------------------------------------------------------------
-
-// cmpLexi returns 1 if a>b, -1 if a<b, 0 if equal
-func cmpLexi(a, b map[string]int) int {
-	keys := map[int]struct{}{}
-	for key := range a {
-		if value, err := strconv.Atoi(key); err == nil {
-			keys[value] = struct{}{}
-		}
-	}
-	for key := range b {
-		if value, err := strconv.Atoi(key); err == nil {
-			keys[value] = struct{}{}
-		}
-	}
-	priorities := make([]int, 0, len(keys))
-	for k := range keys {
-		priorities = append(priorities, k)
-	}
-	// returns as soon as a difference is found starting from highest prio
-	sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
-	for _, pr := range priorities {
-		ai := a[strconv.Itoa(pr)]
-		bi := b[strconv.Itoa(pr)]
-		if ai != bi {
-			if ai > bi {
-				return 1
-			}
-			return -1
-		}
-	}
-	return 0
-}
-
-// -----------------------------------------------------------------------------
-// cmpInt
-// -----------------------------------------------------------------------------
-
-// cmpInt returns +1 if suggested<baseline (improvement because smaller is better),
-// -1 if suggested>baseline (worse), 0 if equal.
-func cmpInt(suggested, baseline int) int {
-	switch {
-	case suggested < baseline:
-		return 1
-	case suggested > baseline:
-		return -1
-	default:
-		return 0
-	}
 }
 
 // -----------------------------------------------------------------------------

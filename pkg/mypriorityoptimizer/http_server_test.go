@@ -18,7 +18,7 @@ import (
 // /healthz endpoint
 // -----------------------------------------------------------------------------
 
-func TestHealthzHandler_WarmingAndReady(t *testing.T) {
+func TestHttpHealthzHandler_WarmingAndReady(t *testing.T) {
 	pl := &SharedState{}
 
 	// warming
@@ -26,7 +26,7 @@ func TestHealthzHandler_WarmingAndReady(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
-		pl.healthzHandler(rr, req)
+		pl.httpHealthzHandler(rr, req)
 
 		if rr.Code != http.StatusServiceUnavailable {
 			t.Fatalf("warming: status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
@@ -40,7 +40,7 @@ func TestHealthzHandler_WarmingAndReady(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
-		pl.healthzHandler(rr, req)
+		pl.httpHealthzHandler(rr, req)
 
 		if rr.Code != http.StatusOK {
 			t.Fatalf("ready: status = %d, want %d", rr.Code, http.StatusOK)
@@ -55,7 +55,7 @@ func TestHealthzHandler_WarmingAndReady(t *testing.T) {
 // /active endpoint
 // -----------------------------------------------------------------------------
 
-func TestActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
+func TestHttpActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 	pl := &SharedState{}
 	pl.ActivePlanInProgress.Store(true)
 
@@ -64,7 +64,7 @@ func TestActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/active", nil)
 
-		pl.activeHandler(rr, req)
+		pl.httpActiveHandler(rr, req)
 
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("POST /active status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
@@ -76,7 +76,7 @@ func TestActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/active", nil)
 
-		pl.activeHandler(rr, req)
+		pl.httpActiveHandler(rr, req)
 
 		if rr.Code != http.StatusOK {
 			t.Fatalf("GET /active status = %d, want %d", rr.Code, http.StatusOK)
@@ -92,27 +92,27 @@ func TestActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
 // /solve endpoint
 // -----------------------------------------------------------------------------
 
-func TestSolveHandler_MethodNotAllowed(t *testing.T) {
+func TestHttpSolveHandler_MethodNotAllowed(t *testing.T) {
 	pl := &SharedState{}
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/solve", nil)
 
-	pl.solveHandler(rr, req)
+	pl.httpSolveHandler(rr, req)
 
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET /solve status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
 	}
 }
 
-func TestSolveHandler_NotReady(t *testing.T) {
+func TestHttpSolveHandler_NotReady(t *testing.T) {
 	pl := &SharedState{}
 	pl.ActivePlanInProgress.Store(true) // just to see it propagated
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/solve", nil)
 
-	pl.solveHandler(rr, req)
+	pl.httpSolveHandler(rr, req)
 
 	if rr.Code != http.StatusPreconditionFailed {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusPreconditionFailed)
@@ -126,7 +126,7 @@ func TestSolveHandler_NotReady(t *testing.T) {
 	}
 }
 
-func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
+func TestHttpSolveHandler_Ready_StatusVariants(t *testing.T) {
 	// Two pending pods + one running; we expect PendingBefore == 2.
 	pods := []*v1.Pod{
 		{
@@ -203,7 +203,7 @@ func TestSolveHandler_Ready_StatusVariants(t *testing.T) {
 				rr := httptest.NewRecorder()
 				req := httptest.NewRequest(http.MethodPost, "/solve", nil)
 
-				pl.solveHandler(rr, req)
+				pl.httpSolveHandler(rr, req)
 
 				if rr.Code != http.StatusOK {
 					t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)

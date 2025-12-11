@@ -3,6 +3,7 @@ package mypriorityoptimizer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -13,8 +14,12 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 )
 
 // ----------------------------------------------------------------------
@@ -1769,5 +1774,248 @@ func TestMarkPlanStatusToConfigMap_UsesHook(t *testing.T) {
 	}
 	if gotPl != pl || gotCtx != ctx || gotCM != "cm-name" || gotStatus != PlanStatusFailed {
 		t.Fatalf("hook args mismatch")
+	}
+}
+
+func newSharedStateWithConfigMapInformer(t *testing.T, objects ...runtime.Object) (*SharedState, func()) {
+	t.Helper()
+
+	client := fake.NewSimpleClientset(objects...)
+	factory := informers.NewSharedInformerFactory(client, 0)
+	cmInformer := factory.Core().V1().ConfigMaps().Informer()
+
+	stopCh := make(chan struct{})
+	factory.Start(stopCh)
+	if ok := cache.WaitForCacheSync(stopCh, cmInformer.HasSynced); !ok {
+		close(stopCh)
+		t.Fatalf("ConfigMap informer failed to sync")
+	}
+
+	h := &fakeHandle{client: client, factory: factory}
+	pl := &SharedState{Client: client, Handle: h}
+
+	cleanup := func() { close(stopCh) }
+	return pl, cleanup
+}
+
+func TestExportPlanToConfigMap_Default_CreatesConfigMapWithJson(t *testing.T) {
+	orig := exportPlanToConfigMapHook
+	defer func() { exportPlanToConfigMapHook = orig }()
+	exportPlanToConfigMapHook = nil
+
+	pl, cleanup := newSharedStateWithConfigMapInformer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	name := "plan-cm-default"
+	sp := &StoredPlan{
+		PluginVersion:        "test",
+		OptimizationStrategy: "unit",
+		GeneratedAt:          time.Unix(123, 0).UTC(),
+		PlanStatus:           PlanStatusActive,
+		SolverResult:         SolverResult{Status: "ok"},
+		Plan:                 &Plan{},
+	}
+
+	if err := pl.exportPlanToConfigMap(ctx, name, sp); err != nil {
+		t.Fatalf("exportPlanToConfigMap() error = %v, want nil", err)
+	}
+
+	cm, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get ConfigMap error = %v", err)
+	}
+	if cm.Labels == nil || cm.Labels[PlanConfigMapLabelKey] != "true" {
+		t.Fatalf("ConfigMap label %q=%q, want %q", PlanConfigMapLabelKey, cm.Labels[PlanConfigMapLabelKey], "true")
+	}
+	dataKey := PlanConfigMapLabelKey + ".json"
+	raw, ok := cm.Data[dataKey]
+	if !ok {
+		t.Fatalf("ConfigMap missing data key %q", dataKey)
+	}
+
+	var got StoredPlan
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal stored plan error = %v", err)
+	}
+	if got.PlanStatus != PlanStatusActive {
+		t.Fatalf("stored plan status = %v, want %v", got.PlanStatus, PlanStatusActive)
+	}
+	if got.PluginVersion != "test" {
+		t.Fatalf("stored plan PluginVersion = %q, want %q", got.PluginVersion, "test")
+	}
+}
+
+func TestExportPlanToConfigMap_Default_PrunesOldPlans(t *testing.T) {
+	orig := exportPlanToConfigMapHook
+	defer func() { exportPlanToConfigMapHook = orig }()
+	exportPlanToConfigMapHook = nil
+
+	// Seed PlansToRetain+1 labeled ConfigMaps to ensure pruning runs.
+	objs := make([]runtime.Object, 0, PlansToRetain+1)
+	base := time.Now().UTC()
+	for i := 0; i < PlansToRetain+1; i++ {
+		name := "plan-retain-" + string(rune('a'+(i%26)))
+		if i >= 26 {
+			name = "plan-retain-" + string(rune('a'+((i/26)%26))) + string(rune('a'+(i%26)))
+		}
+		cm := &v1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:         SystemNamespace,
+				Name:              name,
+				Labels:            map[string]string{PlanConfigMapLabelKey: "true"},
+				CreationTimestamp: metav1.NewTime(base.Add(-time.Duration(i) * time.Minute)),
+			},
+			Data: map[string]string{PlanConfigMapLabelKey + ".json": "{}"},
+		}
+		objs = append(objs, cm)
+	}
+
+	pl, cleanup := newSharedStateWithConfigMapInformer(t, objs...)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Update the newest plan so ensureJson doesn't change object count.
+	newestName := "plan-retain-a"
+	sp := &StoredPlan{PluginVersion: "test", GeneratedAt: time.Unix(1, 0).UTC(), PlanStatus: PlanStatusActive, Plan: &Plan{}}
+
+	if err := pl.exportPlanToConfigMap(ctx, newestName, sp); err != nil {
+		t.Fatalf("exportPlanToConfigMap() error = %v, want nil", err)
+	}
+
+	list, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("List ConfigMaps error = %v", err)
+	}
+
+	// Count labeled plan CMs.
+	count := 0
+	for _, cm := range list.Items {
+		if cm.Labels != nil && cm.Labels[PlanConfigMapLabelKey] == "true" {
+			count++
+		}
+	}
+	if count != PlansToRetain {
+		t.Fatalf("labeled plan ConfigMaps = %d, want %d", count, PlansToRetain)
+	}
+}
+
+func TestSetPlanStatusInConfigMap_Default_SetsStatusAndCompletedAt(t *testing.T) {
+	orig := markPlanStatusToConfigMapHook
+	defer func() { markPlanStatusToConfigMapHook = orig }()
+	markPlanStatusToConfigMapHook = nil
+
+	name := "plan-status-cm"
+	sp := &StoredPlan{PluginVersion: "test", GeneratedAt: time.Unix(1, 0).UTC(), PlanStatus: PlanStatusActive, Plan: &Plan{}}
+	b, _ := json.MarshalIndent(sp, "", "  ")
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: SystemNamespace,
+			Name:      name,
+			Labels:    map[string]string{PlanConfigMapLabelKey: "true"},
+		},
+		Data: map[string]string{PlanConfigMapLabelKey + ".json": string(b)},
+	}
+
+	pl, cleanup := newSharedStateWithConfigMapInformer(t, cm)
+	defer cleanup()
+	ctx := context.Background()
+
+	pl.setPlanStatusInConfigMap(ctx, name, PlanStatusCompleted)
+
+	gotCM, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get ConfigMap error = %v", err)
+	}
+	raw := gotCM.Data[PlanConfigMapLabelKey+".json"]
+
+	var got StoredPlan
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal stored plan error = %v", err)
+	}
+	if got.PlanStatus != PlanStatusCompleted {
+		t.Fatalf("status = %v, want %v", got.PlanStatus, PlanStatusCompleted)
+	}
+	if got.CompletedAt.IsZero() {
+		t.Fatalf("CompletedAt is zero, want non-zero")
+	}
+}
+
+func TestSetPlanStatusInConfigMap_Default_FinalIsSticky(t *testing.T) {
+	orig := markPlanStatusToConfigMapHook
+	defer func() { markPlanStatusToConfigMapHook = orig }()
+	markPlanStatusToConfigMapHook = nil
+
+	name := "plan-status-sticky"
+	completedAt := time.Unix(10, 0).UTC()
+	sp := &StoredPlan{
+		PluginVersion: "test",
+		GeneratedAt:   time.Unix(1, 0).UTC(),
+		CompletedAt:   completedAt,
+		PlanStatus:    PlanStatusFailed,
+		Plan:          &Plan{},
+	}
+	b, _ := json.MarshalIndent(sp, "", "  ")
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: SystemNamespace,
+			Name:      name,
+			Labels:    map[string]string{PlanConfigMapLabelKey: "true"},
+		},
+		Data: map[string]string{PlanConfigMapLabelKey + ".json": string(b)},
+	}
+
+	pl, cleanup := newSharedStateWithConfigMapInformer(t, cm)
+	defer cleanup()
+	ctx := context.Background()
+
+	pl.setPlanStatusInConfigMap(ctx, name, PlanStatusCompleted)
+
+	gotCM, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get ConfigMap error = %v", err)
+	}
+	raw := gotCM.Data[PlanConfigMapLabelKey+".json"]
+
+	var got StoredPlan
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal stored plan error = %v", err)
+	}
+	if got.PlanStatus != PlanStatusFailed {
+		t.Fatalf("status = %v, want %v (sticky)", got.PlanStatus, PlanStatusFailed)
+	}
+	if !got.CompletedAt.Equal(completedAt) {
+		t.Fatalf("CompletedAt = %v, want %v (unchanged)", got.CompletedAt, completedAt)
+	}
+}
+
+func TestSetPlanStatusInConfigMap_Default_InvalidJsonIsBestEffortNoop(t *testing.T) {
+	orig := markPlanStatusToConfigMapHook
+	defer func() { markPlanStatusToConfigMapHook = orig }()
+	markPlanStatusToConfigMapHook = nil
+
+	name := "plan-status-invalid-json"
+	bad := "{"
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: SystemNamespace,
+			Name:      name,
+			Labels:    map[string]string{PlanConfigMapLabelKey: "true"},
+		},
+		Data: map[string]string{PlanConfigMapLabelKey + ".json": bad},
+	}
+
+	pl, cleanup := newSharedStateWithConfigMapInformer(t, cm)
+	defer cleanup()
+	ctx := context.Background()
+
+	pl.setPlanStatusInConfigMap(ctx, name, PlanStatusCompleted)
+
+	gotCM, err := pl.Client.CoreV1().ConfigMaps(SystemNamespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get ConfigMap error = %v", err)
+	}
+	if gotCM.Data[PlanConfigMapLabelKey+".json"] != bad {
+		t.Fatalf("expected invalid json to remain unchanged")
 	}
 }

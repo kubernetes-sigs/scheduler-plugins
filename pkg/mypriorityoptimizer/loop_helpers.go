@@ -17,6 +17,35 @@ var optimizeBackgroundLoopFunc = func(pl *SharedState, ctx context.Context, cfg 
 	pl.optimizeBackgroundLoop(ctx, cfg)
 }
 
+// test hooks – overridden only in unit tests.
+var (
+	buildPendingSnapshotHook = func(pl *SharedState) (*PendingSnapshot, error) {
+		return pl.buildPendingSnapshot()
+	}
+
+	startBackgroundOptimization = func(
+		pl *SharedState,
+		cfg OptimizeLoopConfig,
+		ctxRun context.Context,
+		runDone chan<- bool,
+	) {
+		go func() {
+			_, _, _, bestAttempt, _, err := pl.runOptimizationFlow(ctxRun, nil)
+			solved := isAlreadyComputedForPendingSet(err, bestAttempt)
+
+			if err != nil &&
+				err != context.Canceled &&
+				err != ErrNoImprovingSolutionFromAnySolver &&
+				err != ErrNoPendingPodsScheduled {
+				klog.V(MyV).InfoS(msg(cfg.Label, "runFlow completed with error"),
+					"err", err.Error())
+			}
+
+			runDone <- solved
+		}()
+	}
+)
+
 // startLoops launches background loops exactly once, after caches are warm.
 // It is safe to call multiple times; only the first call does anything.
 func (pl *SharedState) startLoops(ctx context.Context) {
@@ -92,7 +121,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 			}
 
 			// 3) Snapshot
-			snap, err := pl.buildPendingSnapshot()
+			snap, err := buildPendingSnapshotHook(pl)
 			if err != nil {
 				klog.V(MyV).InfoS(msg(cfg.Label, "buildPendingSnapshot failed"),
 					"err", err)
@@ -179,7 +208,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 				}
 			}
 
-			// 9 Start a background run
+			// 9) Start a background run
 			klog.InfoS(msg(cfg.Label, InfoCycleStarted),
 				"pendingPods", pendingCount)
 
@@ -190,20 +219,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 			runCancel = cancelRun
 			runDone = make(chan bool, 1)
 
-			go func() {
-				_, _, _, bestAttempt, _, err := pl.runOptimizationFlow(ctxRun, nil)
-				solved := isAlreadyComputedForPendingSet(err, bestAttempt)
-
-				if err != nil &&
-					err != context.Canceled &&
-					err != ErrNoImprovingSolutionFromAnySolver &&
-					err != ErrNoPendingPodsScheduled {
-					klog.V(MyV).InfoS(msg(cfg.Label, "runFlow completed with error"),
-						"err", err.Error())
-				}
-
-				runDone <- solved
-			}()
+			startBackgroundOptimization(pl, cfg, ctxRun, runDone)
 
 			timer.Reset(interval)
 		}

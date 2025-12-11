@@ -25,8 +25,8 @@ var (
 // /healthz endpoint
 // -----------------------------------------------------------------------------
 
-// healthz
-func (pl *SharedState) healthzHandler(w http.ResponseWriter, r *http.Request) {
+// httpHealthzHandler handles /healthz requests.
+func (pl *SharedState) httpHealthzHandler(w http.ResponseWriter, r *http.Request) {
 	klog.InfoS("HTTP /healthz requested")
 	if !pl.PluginReady.Load() {
 		http.Error(w, "warming", http.StatusServiceUnavailable)
@@ -40,8 +40,8 @@ func (pl *SharedState) healthzHandler(w http.ResponseWriter, r *http.Request) {
 // /active endpoint
 // -----------------------------------------------------------------------------
 
-// active
-func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
+// httpActiveHandler handles /active requests.
+func (pl *SharedState) httpActiveHandler(w http.ResponseWriter, r *http.Request) {
 	klog.InfoS("HTTP /active requested")
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -57,8 +57,8 @@ func (pl *SharedState) activeHandler(w http.ResponseWriter, r *http.Request) {
 // /solve endpoint
 // -----------------------------------------------------------------------------
 
-// solve
-func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
+// httpSolveHandler handles /solve requests.
+func (pl *SharedState) httpSolveHandler(w http.ResponseWriter, r *http.Request) {
 	klog.InfoS("HTTP /solve requested")
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -112,9 +112,9 @@ func (pl *SharedState) solveHandler(w http.ResponseWriter, r *http.Request) {
 func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/healthz", pl.healthzHandler)
-	mux.HandleFunc("/active", pl.activeHandler)
-	mux.HandleFunc("/solve", pl.solveHandler)
+	mux.HandleFunc("/healthz", pl.httpHealthzHandler)
+	mux.HandleFunc("/active", pl.httpActiveHandler)
+	mux.HandleFunc("/solve", pl.httpSolveHandler)
 
 	server := &http.Server{
 		Addr:    addr,

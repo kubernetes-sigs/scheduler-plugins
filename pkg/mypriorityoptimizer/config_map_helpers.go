@@ -17,12 +17,25 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// marshalJSONIndented
+// marshalJsonIndented
 // -----------------------------------------------------------------------------
 
-// marshalJsonIndented marshals an object to pretty-printed JSON.
+// marshalJsonIndented marshals an object to JSON with indentation.
 func marshalJsonIndented(v any) ([]byte, error) {
 	return json.MarshalIndent(v, "", "  ")
+}
+
+// -----------------------------------------------------------------------------
+// jsonString
+// -----------------------------------------------------------------------------
+
+// jsonString pretty-prints v to JSON and returns it as a string.
+func jsonString(v any) (string, error) {
+	b, err := marshalJsonIndented(v)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // -----------------------------------------------------------------------------
@@ -99,18 +112,18 @@ func (d ConfigMapDoc) patchJson(
 	cli corev1client.CoreV1Interface,
 	v any,
 ) error {
-	b, err := marshalJsonIndented(v)
+	jsonStr, err := jsonString(v)
 	if err != nil {
 		return err
 	}
-	return d.patchDataString(ctx, cli, string(b))
+	return d.patchDataString(ctx, cli, jsonStr)
 }
 
 // -----------------------------------------------------------------------------
 // readJson
 // -----------------------------------------------------------------------------
 
-// Read DataKey; nil if config map or key missing.
+// readJson reads DataKey; returns nil if the ConfigMap or key is missing.
 func (d ConfigMapDoc) readJson(
 	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
 ) ([]byte, error) {
@@ -128,7 +141,7 @@ func (d ConfigMapDoc) readJson(
 // mutateJson
 // -----------------------------------------------------------------------------
 
-// Load -> mutate -> patch an array JSON.
+// mutateJson loads → mutates → patches an array JSON.
 func mutateJson[T any](
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,
@@ -155,7 +168,7 @@ func mutateJson[T any](
 // mutateRaw
 // -----------------------------------------------------------------------------
 
-// MutateRaw loads the JSON string at DataKey, 'mutate' it, and writes the result back.
+// mutateRaw loads the JSON string at DataKey, mutates it, and writes the result back.
 func (d ConfigMapDoc) mutateRaw(
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,
