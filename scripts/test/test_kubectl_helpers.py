@@ -1,23 +1,10 @@
-import io
 import json
-import logging
 import subprocess
 
 import pytest
 
 from scripts.helpers import kubectl_helpers as kh
-
-
-def _make_logger_stream(level: int = logging.DEBUG):
-	stream = io.StringIO()
-	logger = logging.getLogger(f"test-kubectl-helpers-{id(stream)}")
-	logger.handlers.clear()
-	logger.setLevel(level)
-	logger.propagate = False
-	h = logging.StreamHandler(stream)
-	h.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
-	logger.addHandler(h)
-	return logger, stream
+from scripts.test.test_utils import make_logger_stream, time_sequence
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +28,7 @@ def test_yaml_priority_class_contains_expected_fields():
 
 
 def test_run_kubectl_logged_success_logs_output(monkeypatch):
-	logger, stream = _make_logger_stream()
+	logger, stream = make_logger_stream("kubectl-helpers")
 
 	def fake_run(cmd, input=None, stdout=None, stderr=None, check=False):
 		assert cmd[:3] == ["kubectl", "--context", "ctx1"]
@@ -57,7 +44,7 @@ def test_run_kubectl_logged_success_logs_output(monkeypatch):
 
 
 def test_run_kubectl_logged_raises_on_error_when_check_true(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	def fake_run(cmd, input=None, stdout=None, stderr=None, check=False):
 		return subprocess.CompletedProcess(cmd, 1, stdout=b"boom")
@@ -69,7 +56,7 @@ def test_run_kubectl_logged_raises_on_error_when_check_true(monkeypatch):
 
 
 def test_kubectl_apply_yaml_calls_run_kubectl_logged(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 	called = {}
 
 	def fake_run(logger2, ctx, *args, input_bytes=None, check=True):
@@ -94,7 +81,7 @@ def test_kubectl_apply_yaml_calls_run_kubectl_logged(monkeypatch):
 
 
 def test_ensure_namespace_creates_when_missing(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 	calls = {"create": 0}
 
 	def fake_run(cmd, stdout=None, stderr=None):
@@ -116,7 +103,7 @@ def test_ensure_namespace_creates_when_missing(monkeypatch):
 
 
 def test_ensure_namespace_noop_when_present(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	def fake_run(cmd, stdout=None, stderr=None):
 		return subprocess.CompletedProcess(cmd, 0, stdout=b"")
@@ -138,11 +125,8 @@ def test_ensure_service_account_retries_until_found(monkeypatch):
 		rc = seq.pop(0)
 		return subprocess.CompletedProcess(cmd, rc, stdout=b"")
 
-	def fake_sleep(d):
-		sleeps.append(d)
-
 	monkeypatch.setattr(kh.subprocess, "run", fake_run)
-	monkeypatch.setattr(kh.time, "sleep", fake_sleep)
+	monkeypatch.setattr(kh.time, "sleep", lambda d: sleeps.append(d))
 
 	kh.ensure_service_account("ctx1", "ns1", "sa1", retries=5, delay=0.01)
 	# slept for the two failures
@@ -155,18 +139,15 @@ def test_ensure_service_account_gives_up_after_retries(monkeypatch):
 	def fake_run(cmd, stdout=None, stderr=None):
 		return subprocess.CompletedProcess(cmd, 1, stdout=b"")
 
-	def fake_sleep(d):
-		sleeps.append(d)
-
 	monkeypatch.setattr(kh.subprocess, "run", fake_run)
-	monkeypatch.setattr(kh.time, "sleep", fake_sleep)
+	monkeypatch.setattr(kh.time, "sleep", lambda d: sleeps.append(d))
 
 	kh.ensure_service_account("ctx1", "ns1", "sa1", retries=3, delay=0.01)
 	assert sleeps == [0.01, 0.01, 0.01]
 
 
 def test_ensure_priority_classes_applies_generated_yaml(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 	called = {}
 
 	def fake_apply(logger2, ctx, yaml_text: str):
@@ -190,7 +171,7 @@ def test_ensure_priority_classes_applies_generated_yaml(monkeypatch):
 
 
 def test_wait_each_dispatches(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	monkeypatch.setattr(kh, "wait_pod", lambda *a, **k: 123)
 	monkeypatch.setattr(kh, "wait_rs_pods", lambda *a, **k: 456)
@@ -204,7 +185,7 @@ def test_wait_each_dispatches(monkeypatch):
 
 
 def test_wait_pod_exist_success(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	def fake_run(cmd, stdout=None, stderr=None):
 		return subprocess.CompletedProcess(cmd, 0, stdout=b"{}")
@@ -214,7 +195,7 @@ def test_wait_pod_exist_success(monkeypatch):
 
 
 def test_wait_pod_ready_success(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	pod = {
 		"status": {
@@ -231,7 +212,7 @@ def test_wait_pod_ready_success(monkeypatch):
 
 
 def test_wait_pod_running_success(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	pod = {"status": {"phase": "Running", "conditions": []}}
 
@@ -243,21 +224,15 @@ def test_wait_pod_running_success(monkeypatch):
 
 
 def test_wait_pod_timeout(monkeypatch):
-	logger, stream = _make_logger_stream()
-	times = [0.0, 0.1, 0.2, 999.0]
-
-	def fake_time():
-		return times.pop(0)
-
-	def fake_sleep(_d):
-		return None
+	logger, stream = make_logger_stream("kubectl-helpers")
+	fake_time = time_sequence([0.0, 0.1, 0.2, 999.0])
 
 	def fake_run(cmd, stdout=None, stderr=None):
 		# Always not found
 		return subprocess.CompletedProcess(cmd, 1, stdout=b"")
 
 	monkeypatch.setattr(kh.time, "time", fake_time)
-	monkeypatch.setattr(kh.time, "sleep", fake_sleep)
+	monkeypatch.setattr(kh.time, "sleep", lambda _d: None)
 	monkeypatch.setattr(kh.subprocess, "run", fake_run)
 
 	assert kh.wait_pod(logger, "ctx1", "p1", "ns1", timeout_sec=0, mode="exist") == 0
@@ -286,7 +261,7 @@ def test_get_rs_spec_replicas_parses_or_none(monkeypatch):
 
 
 def test_wait_rs_pods_exist_reaches_desired(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	monkeypatch.setattr(kh, "get_rs_spec_replicas", lambda ctx, ns, rs: 2)
 
@@ -299,7 +274,7 @@ def test_wait_rs_pods_exist_reaches_desired(monkeypatch):
 
 
 def test_wait_rs_pods_ready_reaches_desired(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 
 	monkeypatch.setattr(kh, "get_rs_spec_replicas", lambda ctx, ns, rs: 1)
 
@@ -314,17 +289,11 @@ def test_wait_rs_pods_ready_reaches_desired(monkeypatch):
 
 
 def test_wait_rs_pods_timeout_returns_last_count(monkeypatch):
-	logger, _ = _make_logger_stream()
-	times = [0.0, 0.1, 999.0]
-
-	def fake_time():
-		return times.pop(0)
-
-	def fake_sleep(_d):
-		return None
+	logger, _ = make_logger_stream("kubectl-helpers")
+	fake_time = time_sequence([0.0, 0.1, 999.0])
 
 	monkeypatch.setattr(kh.time, "time", fake_time)
-	monkeypatch.setattr(kh.time, "sleep", fake_sleep)
+	monkeypatch.setattr(kh.time, "sleep", lambda _d: None)
 	monkeypatch.setattr(kh, "get_rs_spec_replicas", lambda ctx, ns, rs: 2)
 
 	def fake_run(cmd, stdout=None, stderr=None):
@@ -335,22 +304,25 @@ def test_wait_rs_pods_timeout_returns_last_count(monkeypatch):
 	assert kh.wait_rs_pods(logger, "ctx1", "rs1", "ns1", timeout_sec=0, mode="exist") == 0
 
 
-# ---------------------------------------------------------------------------
-# Delete helpers
-# ---------------------------------------------------------------------------
-
-
-def test_delete_pod_uses_ignore_not_found(monkeypatch):
-	logger, _ = _make_logger_stream()
-	called = {}
-
+def _record_run_kubectl_logged(called: dict):
 	def fake_run(logger2, ctx, *args, input_bytes=None, check=True):
 		called["ctx"] = ctx
 		called["args"] = list(args)
 		called["check"] = check
 		return subprocess.CompletedProcess(["kubectl"], 0, stdout=b"")
 
-	monkeypatch.setattr(kh, "run_kubectl_logged", fake_run)
+	return fake_run
+
+
+# ---------------------------------------------------------------------------
+# Delete helpers
+# ---------------------------------------------------------------------------
+
+
+def test_delete_pod_uses_ignore_not_found(monkeypatch):
+	logger, _ = make_logger_stream("kubectl-helpers")
+	called = {}
+	monkeypatch.setattr(kh, "run_kubectl_logged", _record_run_kubectl_logged(called))
 	kh.delete_pod(logger, "ctx1", "ns1", "p1")
 	assert called["ctx"] == "ctx1"
 	assert called["args"] == ["-n", "ns1", "delete", "pod", "p1", "--ignore-not-found=true"]
@@ -358,16 +330,9 @@ def test_delete_pod_uses_ignore_not_found(monkeypatch):
 
 
 def test_delete_rs_uses_ignore_not_found(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kubectl-helpers")
 	called = {}
-
-	def fake_run(logger2, ctx, *args, input_bytes=None, check=True):
-		called["ctx"] = ctx
-		called["args"] = list(args)
-		called["check"] = check
-		return subprocess.CompletedProcess(["kubectl"], 0, stdout=b"")
-
-	monkeypatch.setattr(kh, "run_kubectl_logged", fake_run)
+	monkeypatch.setattr(kh, "run_kubectl_logged", _record_run_kubectl_logged(called))
 	kh.delete_rs(logger, "ctx1", "ns1", "rs1")
 	assert called["ctx"] == "ctx1"
 	assert called["args"] == [

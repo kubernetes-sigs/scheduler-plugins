@@ -473,36 +473,43 @@ def test_generate_seeds_non_template_parts_add_suffix(tmp_path: Path, monkeypatc
 # HTTP helper functions (no real network)
 # ---------------------------------------------------------------------------
 
+
+class _FakeHTTPResp:
+    def __init__(self, status: int, body: bytes):
+        self.status = status
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return self._body
+
+
+def _raise_http_error(code: int, body: bytes):
+    def _raise(req, timeout=None):
+        raise gh._urlerr.HTTPError(
+            url=req.full_url,
+            code=code,
+            msg="boom",
+            hdrs=None,
+            fp=io.BytesIO(body),
+        )
+
+    return _raise
+
 def test_solver_trigger_http_success(monkeypatch):
-    class _Resp:
-        status = 204
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def read(self):
-            return b"{}"
-
-    monkeypatch.setattr(gh._urlreq, "urlopen", lambda req, timeout=None: _Resp())
+    monkeypatch.setattr(gh._urlreq, "urlopen", lambda req, timeout=None: _FakeHTTPResp(204, b"{}"))
     logger = gh.setup_logging("test-gh-http", prefix="[t] ")
     code, body = gh.solver_trigger_http(logger, "http://example/solve", timeout=0.1)
     assert code == 204
     assert body == "{}"
 
 def test_solver_trigger_http_http_error(monkeypatch):
-    def raise_http_error(req, timeout=None):
-        raise gh._urlerr.HTTPError(
-            url=req.full_url,
-            code=500,
-            msg="boom",
-            hdrs=None,
-            fp=io.BytesIO(b"bad"),
-        )
-
-    monkeypatch.setattr(gh._urlreq, "urlopen", raise_http_error)
+    monkeypatch.setattr(gh._urlreq, "urlopen", _raise_http_error(500, b"bad"))
     logger = gh.setup_logging("test-gh-http-err", prefix="[t] ")
     code, body = gh.solver_trigger_http(logger, "http://example/solve", timeout=0.1)
     assert code == 500
@@ -516,34 +523,13 @@ def test_solver_trigger_http_connect_failure(monkeypatch):
     assert "connect-failed" in body
 
 def test_get_solver_active_status_http_success(monkeypatch):
-    class _Resp:
-        status = 200
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def read(self):
-            return b"{\"active\":true}"
-
-    monkeypatch.setattr(gh._urlreq, "urlopen", lambda req, timeout=None: _Resp())
+    monkeypatch.setattr(gh._urlreq, "urlopen", lambda req, timeout=None: _FakeHTTPResp(200, b"{\"active\":true}"))
     code, body = gh.get_solver_active_status_http("http://example/active", timeout=0.1)
     assert code == 200
     assert "active" in body
 
 def test_get_solver_active_status_http_http_error(monkeypatch):
-    def raise_http_error(req, timeout=None):
-        raise gh._urlerr.HTTPError(
-            url=req.full_url,
-            code=404,
-            msg="nope",
-            hdrs=None,
-            fp=io.BytesIO(b"missing"),
-        )
-
-    monkeypatch.setattr(gh._urlreq, "urlopen", raise_http_error)
+    monkeypatch.setattr(gh._urlreq, "urlopen", _raise_http_error(404, b"missing"))
     code, body = gh.get_solver_active_status_http("http://example/active", timeout=0.1)
     assert code == 404
     assert body == "missing"

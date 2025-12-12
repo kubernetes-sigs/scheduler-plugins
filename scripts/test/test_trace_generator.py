@@ -11,6 +11,13 @@ pytest.importorskip("matplotlib")
 from scripts.kwok_trace_replayer import trace_generator as tg
 
 
+def sample_for_alpha(_rng, alpha, x_min, x_max, size=1):
+    v = float(x_min + (1.0 / float(alpha)))
+    if x_max is not None:
+        v = min(v, float(x_max))
+    return tg.np.full(size, v, dtype=float)
+
+
 def test_build_arg_parser_requires_means_and_has_defaults(tmp_path: Path):
     p = tg.build_arg_parser()
     args = p.parse_args(
@@ -133,12 +140,6 @@ def test_solve_alpha_converges_quickly_with_stubbed_sampling(monkeypatch):
 
     # Deterministic decreasing "mean" as alpha increases.
     # Mean(alpha) = x_min + 1/alpha, clamped to x_max.
-    def sample_for_alpha(_rng, alpha, x_min, x_max, size=1):
-        v = float(x_min + (1.0 / float(alpha)))
-        if x_max is not None:
-            v = min(v, float(x_max))
-        return tg.np.full(size, v, dtype=float)
-
     monkeypatch.setattr(tg.TraceGenerator, "_sample_pareto", staticmethod(sample_for_alpha))
     monkeypatch.setattr(tg, "SOLVE_ALPHA_SAMPLES", 1)
     monkeypatch.setattr(tg, "SOLVE_ALPHA_MAX_ITERATIONS", 200)
@@ -236,12 +237,6 @@ def test_summarize_utilization_handles_empty_snapshots():
 
 def test_fit_alphas_sets_fields_and_attaches_to_args(monkeypatch):
     # Make the solver deterministic and fast.
-    def sample_for_alpha(_rng, alpha, x_min, x_max, size=1):
-        v = float(x_min + (1.0 / float(alpha)))
-        if x_max is not None:
-            v = min(v, float(x_max))
-        return tg.np.full(size, v, dtype=float)
-
     monkeypatch.setattr(tg.TraceGenerator, "_sample_pareto", staticmethod(sample_for_alpha))
     monkeypatch.setattr(tg, "SOLVE_ALPHA_SAMPLES", 1)
     monkeypatch.setattr(tg, "SOLVE_ALPHA_MAX_ITERATIONS", 100)

@@ -11,6 +11,16 @@ pytest.importorskip("yaml")
 from scripts.kwok_trace_replayer import trace_replayer as tr
 
 
+class _OkFuture:
+    def result(self):
+        return None
+
+
+class _ShutdownNoopMixin:
+    def shutdown(self, wait: bool = True):
+        return None
+
+
 def test_rs_name_for_record_is_stable():
     assert tr.TraceReplayer._rs_name_for_record(1) == "rs-000001"
     assert tr.TraceReplayer._rs_name_for_record(123456) == "rs-123456"
@@ -462,16 +472,12 @@ def test_replay_events_next_batch_beyond_end_aligns_and_exits(tmp_path: Path, mo
     replayer.trace_time = 2.0
     replayer.events = [tr.Event(sim_time_s=5.0, kind="create", record_id=1, cpu_str="1m", mem_str="1", pc_name="p1")]
 
-    class DummyFuture:
-        def result(self):
-            return None
-
     class DummyExecutor:
         def __init__(self, *a, **k):
             self.shutdown_called = False
 
         def submit(self, *a, **k):
-            return DummyFuture()
+            return _OkFuture()
 
         def shutdown(self, wait: bool = True):
             self.shutdown_called = True
@@ -525,20 +531,13 @@ def test_replay_events_processes_batch_and_aligns_after_last_batch(tmp_path: Pat
     monkeypatch.setattr(tr, "kubectl_apply_yaml", lambda *_a, **_k: None)
     monkeypatch.setattr(tr, "delete_rs", lambda *_a, **_k: None)
 
-    class DummyFuture:
-        def result(self):
-            return None
-
-    class DummyExecutor:
+    class DummyExecutor(_ShutdownNoopMixin):
         def __init__(self, *a, **k):
             self.submits = []
 
         def submit(self, fn, *a, **k):
             self.submits.append((fn, a, k))
-            return DummyFuture()
-
-        def shutdown(self, wait: bool = True):
-            return None
+            return _OkFuture()
 
     monkeypatch.setattr(tr, "ThreadPoolExecutor", DummyExecutor)
 
@@ -585,15 +584,12 @@ def test_replay_events_future_exception_is_caught(tmp_path: Path, monkeypatch):
         def result(self):
             raise RuntimeError("bad")
 
-    class DummyExecutor:
+    class DummyExecutor(_ShutdownNoopMixin):
         def __init__(self, *a, **k):
             return None
 
         def submit(self, *_a, **_k):
             return BadFuture()
-
-        def shutdown(self, wait: bool = True):
-            return None
 
     monkeypatch.setattr(tr, "ThreadPoolExecutor", DummyExecutor)
     monkeypatch.setattr(tr.time, "time", lambda: 0.0)

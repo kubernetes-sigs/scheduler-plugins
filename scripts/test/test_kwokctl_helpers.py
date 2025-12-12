@@ -1,23 +1,10 @@
-import contextlib
-import io
 import logging
 import os
 import subprocess
 import pytest
 
 from scripts.helpers import kwokctl_helpers as kh
-
-
-def _make_logger_stream(level: int = logging.DEBUG):
-	stream = io.StringIO()
-	logger = logging.getLogger(f"test-kwokctl-helpers-{id(stream)}")
-	logger.handlers.clear()
-	logger.setLevel(level)
-	logger.propagate = False
-	h = logging.StreamHandler(stream)
-	h.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
-	logger.addHandler(h)
-	return logger, stream
+from scripts.test.test_utils import make_logger_stream, null_lock
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +52,7 @@ def test_yaml_kwok_pod_contains_expected_fields():
 
 
 def test_run_kwokctl_logged_success_logs_output(monkeypatch):
-	logger, stream = _make_logger_stream()
+	logger, stream = make_logger_stream("kwokctl-helpers")
 
 	def fake_run(cmd, input=None, stdout=None, stderr=None, check=False):
 		assert cmd[0] == "kwokctl"
@@ -80,7 +67,7 @@ def test_run_kwokctl_logged_success_logs_output(monkeypatch):
 
 
 def test_run_kwokctl_logged_raises_on_error_when_check_true(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kwokctl-helpers")
 
 	def fake_run(cmd, input=None, stdout=None, stderr=None, check=False):
 		return subprocess.CompletedProcess(cmd, 7, stdout=b"boom")
@@ -91,12 +78,8 @@ def test_run_kwokctl_logged_raises_on_error_when_check_true(monkeypatch):
 
 
 def test_ensure_kwok_cluster_calls_delete_then_create_when_recreate_true(monkeypatch, tmp_path):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kwokctl-helpers")
 	calls: list[tuple[list[str], bool]] = []
-
-	@contextlib.contextmanager
-	def fake_lock():
-		yield
 
 	def fake_run(logger2, *args, input_bytes=None, check=True):
 		calls.append((list(args), check))
@@ -112,7 +95,7 @@ def test_ensure_kwok_cluster_calls_delete_then_create_when_recreate_true(monkeyp
 		except OSError:
 			pass
 
-	monkeypatch.setattr(kh, "kwok_cache_lock", fake_lock)
+	monkeypatch.setattr(kh, "kwok_cache_lock", null_lock)
 	monkeypatch.setattr(kh, "run_kwokctl_logged", fake_run)
 	monkeypatch.setattr(kh.os, "unlink", fake_unlink)
 
@@ -132,18 +115,14 @@ def test_ensure_kwok_cluster_calls_delete_then_create_when_recreate_true(monkeyp
 
 
 def test_ensure_kwok_cluster_no_delete_when_recreate_false(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kwokctl-helpers")
 	calls: list[list[str]] = []
-
-	@contextlib.contextmanager
-	def fake_lock():
-		yield
 
 	def fake_run(logger2, *args, input_bytes=None, check=True):
 		calls.append(list(args))
 		return subprocess.CompletedProcess(["kwokctl"], 0, stdout=b"")
 
-	monkeypatch.setattr(kh, "kwok_cache_lock", fake_lock)
+	monkeypatch.setattr(kh, "kwok_cache_lock", null_lock)
 	monkeypatch.setattr(kh, "run_kwokctl_logged", fake_run)
 	monkeypatch.setattr(kh.os, "unlink", lambda p: None)
 
@@ -153,7 +132,7 @@ def test_ensure_kwok_cluster_no_delete_when_recreate_false(monkeypatch):
 
 
 def test_create_kwok_nodes_calls_kubectl_apply_yaml(monkeypatch):
-	logger, _ = _make_logger_stream()
+	logger, _ = make_logger_stream("kwokctl-helpers")
 	called = {}
 
 	def fake_apply(logger2, ctx, yaml_text: str):
@@ -195,14 +174,17 @@ def test_kwok_cache_lock_locks_and_unlocks(monkeypatch, tmp_path):
 
 	monkeypatch.setattr(kh.os, "open", fake_open)
 	monkeypatch.setattr(kh.os, "close", fake_close)
-	monkeypatch.setattr(kh.fcntl, "flock", fake_flock)
+	# On Windows, kh.fcntl may be None; then kwok_cache_lock should be best-effort.
+	if kh.fcntl is not None:
+		monkeypatch.setattr(kh.fcntl, "flock", fake_flock)
 
 	with kh.kwok_cache_lock():
 		pass
 
-	# Ensure it took EX lock then UN lock, and closed the fd.
-	assert ("flock", kh.fcntl.LOCK_EX) in calls
-	assert ("flock", kh.fcntl.LOCK_UN) in calls
+	# Ensure it took EX lock then UN lock (when available), and always closed the fd.
+	if kh.fcntl is not None:
+		assert ("flock", kh.fcntl.LOCK_EX) in calls
+		assert ("flock", kh.fcntl.LOCK_UN) in calls
 	assert ("close", 123) in calls
 
 

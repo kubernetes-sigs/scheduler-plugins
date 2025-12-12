@@ -1210,13 +1210,8 @@ def test_wait_solver_inactive_http_returns_true_when_inactive(monkeypatch):
 	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
 
 	# Deterministic time progression.
-	t = {"now": 0.0}
-
-	def fake_time():
-		return t["now"]
-
-	def fake_sleep(dt):
-		t["now"] += float(dt)
+	from scripts.test.test_utils import TimeController
+	tc = TimeController(now=0.0)
 
 	# First poll: active true, second poll: active false
 	responses = [
@@ -1227,8 +1222,8 @@ def test_wait_solver_inactive_http_returns_true_when_inactive(monkeypatch):
 	def fake_get(url):
 		return responses.pop(0)
 
-	monkeypatch.setattr(tr.time, "time", fake_time)
-	monkeypatch.setattr(tr.time, "sleep", fake_sleep)
+	monkeypatch.setattr(tr.time, "time", tc.time)
+	monkeypatch.setattr(tr.time, "sleep", tc.sleep)
 	monkeypatch.setattr(tr, "get_solver_active_status_http", fake_get)
 
 	# Keep test fast even if sleep monkeypatching ever regresses.
@@ -1239,16 +1234,11 @@ def test_wait_solver_inactive_http_returns_true_when_inactive(monkeypatch):
 def test_wait_solver_inactive_http_times_out(monkeypatch):
 	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
 
-	t = {"now": 0.0}
+	from scripts.test.test_utils import TimeController
+	tc = TimeController(now=0.0)
 
-	def fake_time():
-		return t["now"]
-
-	def fake_sleep(dt):
-		t["now"] += float(dt)
-
-	monkeypatch.setattr(tr.time, "time", fake_time)
-	monkeypatch.setattr(tr.time, "sleep", fake_sleep)
+	monkeypatch.setattr(tr.time, "time", tc.time)
+	monkeypatch.setattr(tr.time, "sleep", tc.sleep)
 	monkeypatch.setattr(tr, "get_solver_active_status_http", lambda url: (200, '{"Active": true}'))
 
 	ok = runner._wait_solver_inactive_http("http://x/active", timeout_s=0, poll_initial_s=0.0, poll_interval_s=0.0)
@@ -1258,16 +1248,11 @@ def test_wait_solver_inactive_http_times_out(monkeypatch):
 def test_wait_solver_inactive_http_parses_invalid_json_and_then_inactive(monkeypatch):
 	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
 
-	t = {"now": 0.0}
+	from scripts.test.test_utils import TimeController
+	tc = TimeController(now=0.0)
 
-	def fake_time():
-		return t["now"]
-
-	def fake_sleep(dt):
-		t["now"] += float(dt)
-
-	monkeypatch.setattr(tr.time, "time", fake_time)
-	monkeypatch.setattr(tr.time, "sleep", fake_sleep)
+	monkeypatch.setattr(tr.time, "time", tc.time)
+	monkeypatch.setattr(tr.time, "sleep", tc.sleep)
 
 	# First response: invalid JSON -> inactive_now remains None
 	# Second response: Active=false -> should return True
@@ -1644,6 +1629,19 @@ def test_execute_seed_on_cluster_happy_path_writes_results_and_enforces_quota(mo
 	assert runner.quota_reached is True
 
 
+class _SolverTriggerSnapshot:
+	def __init__(self):
+		self.pods_running = [("p1", "n1")]
+		self.pods_unscheduled = []
+		self.cpu_run_util = 0.1
+		self.mem_run_util = 0.2
+		self.cpu_req_by_node = {"n1": 10}
+		self.mem_req_by_node = {"n1": 20}
+		self.pods_run_by_node = {"n1": ["p1"]}
+		self.running_placed_by_prio = {"1": 1}
+		self.unschedulable_by_prio = {"1": 0}
+
+
 def test_execute_seed_on_cluster_solver_trigger_parses_json_and_waits(monkeypatch, tmp_path):
 	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
 	runner.ctx = "ctx"
@@ -1680,19 +1678,7 @@ def test_execute_seed_on_cluster_solver_trigger_parses_json_and_waits(monkeypatc
 	wait_called = {"n": 0}
 	monkeypatch.setattr(runner, "_wait_solver_inactive_http", lambda *_a, **_k: wait_called.__setitem__("n", wait_called["n"] + 1) or True)
 
-	class Snap:
-		def __init__(self):
-			self.pods_running = [("p1", "n1")]
-			self.pods_unscheduled = []
-			self.cpu_run_util = 0.1
-			self.mem_run_util = 0.2
-			self.cpu_req_by_node = {"n1": 10}
-			self.mem_req_by_node = {"n1": 20}
-			self.pods_run_by_node = {"n1": ["p1"]}
-			self.running_placed_by_prio = {"1": 1}
-			self.unschedulable_by_prio = {"1": 0}
-
-	snaps = [Snap(), Snap()]
+	snaps = [_SolverTriggerSnapshot(), _SolverTriggerSnapshot()]
 	monkeypatch.setattr(tr, "stat_snapshot", lambda *_a, **_k: snaps.pop(0))
 	monkeypatch.setattr(runner, "_get_solver_attempts", lambda: ({"b": 1}, "best", [{"name": "best", "score": {"s": 1}, "duration_ms": 7, "status": "OK"}], ""))
 
@@ -1758,19 +1744,7 @@ def test_execute_seed_on_cluster_solver_trigger_bad_json_keeps_none(monkeypatch,
 	monkeypatch.setattr(tr, "solver_trigger_http", lambda **_k: (200, "{not-json"))
 	monkeypatch.setattr(runner, "_wait_solver_inactive_http", lambda *_a, **_k: True)
 
-	class Snap:
-		def __init__(self):
-			self.pods_running = [("p1", "n1")]
-			self.pods_unscheduled = []
-			self.cpu_run_util = 0.1
-			self.mem_run_util = 0.2
-			self.cpu_req_by_node = {"n1": 10}
-			self.mem_req_by_node = {"n1": 20}
-			self.pods_run_by_node = {"n1": ["p1"]}
-			self.running_placed_by_prio = {"1": 1}
-			self.unschedulable_by_prio = {"1": 0}
-
-	snaps = [Snap(), Snap()]
+	snaps = [_SolverTriggerSnapshot(), _SolverTriggerSnapshot()]
 	monkeypatch.setattr(tr, "stat_snapshot", lambda *_a, **_k: snaps.pop(0))
 	monkeypatch.setattr(runner, "_get_solver_attempts", lambda: ({}, "", [], ""))
 

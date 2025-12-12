@@ -7,6 +7,7 @@ import time as _time
 import pytest
 
 from scripts.helpers import cluster_stats as cs
+from scripts.test.test_utils import time_sequence
 
 
 # ---------------------------------------------------------------------------
@@ -90,10 +91,7 @@ def test_get_running_and_unscheduled_timeout(monkeypatch):
 	}
 
 	# Make time advance deterministically: start=0, then immediate timeout.
-	times = [0.0, 0.0, 999.0]
-
-	def fake_time():
-		return times.pop(0)
+	fake_time = time_sequence([0.0, 0.0, 999.0])
 
 	monkeypatch.setattr(cs, "get_json_ctx", lambda ctx, cmd: pods_obj)
 	monkeypatch.setattr(cs.time, "time", fake_time)
