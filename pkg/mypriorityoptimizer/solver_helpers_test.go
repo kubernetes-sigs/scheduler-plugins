@@ -15,7 +15,7 @@ import (
 )
 
 // -------------------------
-// hasKey
+// Helpers
 // --------------------------
 
 func hasKey(args []any, key string) bool {
@@ -25,6 +25,18 @@ func hasKey(args []any, key string) bool {
 		}
 	}
 	return false
+}
+
+// withAppendStatsHook temporarily overrides appendSolverStatsCMHook and
+// restores it after fn returns.
+func withAppendStatsHook(
+	hook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats),
+	fn func(),
+) {
+	orig := appendSolverStatsCMHook
+	appendSolverStatsCMHook = hook
+	defer func() { appendSolverStatsCMHook = orig }()
+	fn()
 }
 
 // -------------------------
@@ -100,7 +112,7 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 		},
 	}
 
-	// Pending pod → always included.
+	// Pending pod -> always included.
 	pPending := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "p-pending",
@@ -119,7 +131,7 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 		},
 	}
 
-	// Running on usable node → included.
+	// Running on usable node -> included.
 	pRunUsable := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "p-run-usable",
@@ -139,7 +151,7 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 		},
 	}
 
-	// Running on unusable node → ignored.
+	// Running on unusable node -> ignored.
 	pRunUnusable := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "p-run-unusable",
@@ -159,7 +171,7 @@ func TestBuildSolverInput_WithNodesPodsAndPreemptor(t *testing.T) {
 		},
 	}
 
-	// System namespace pending pod → should be Protected=true.
+	// System namespace pending pod -> should be Protected=true.
 	pSystem := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "p-sys",
@@ -270,7 +282,7 @@ func TestBuildBaselineScore(t *testing.T) {
 				Name:      "pod1",
 			},
 			Spec: v1.PodSpec{
-				NodeName: "n1",   // assigned → counted as placed
+				NodeName: "n1",   // assigned -> counted as placed
 				Priority: &p1Pri, // priority 1
 			},
 			Status: v1.PodStatus{
@@ -284,7 +296,7 @@ func TestBuildBaselineScore(t *testing.T) {
 				Name:      "pod2",
 			},
 			Spec: v1.PodSpec{
-				NodeName: "n2",   // assigned → counted as placed
+				NodeName: "n2",   // assigned -> counted as placed
 				Priority: &p2Pri, // priority 2
 			},
 			Status: v1.PodStatus{
@@ -298,7 +310,7 @@ func TestBuildBaselineScore(t *testing.T) {
 				Name:      "pod3",
 			},
 			Spec: v1.PodSpec{
-				// no NodeName → pending, should NOT count as placed
+				// no NodeName -> pending, should NOT count as placed
 			},
 			Status: v1.PodStatus{
 				Phase: v1.PodPending,
@@ -487,7 +499,7 @@ func TestSolutionApplicable_CapacityExceededWhenNoNodes(t *testing.T) {
 func TestSolutionApplicable_EvictNodeNowUnusable(t *testing.T) {
 	pl := &SharedState{}
 
-	// Running pod on node1, but we pass no usable nodes → eviction sees node unusable.
+	// Running pod on node1, but we pass no usable nodes -> eviction sees node unusable.
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "p1",
@@ -734,7 +746,7 @@ func TestScoreSolution_Basic(t *testing.T) {
 		Placements: []SolverPod{
 			{UID: "u2", Node: "n1"}, // place pending
 			{UID: "u3", Node: "n2"}, // move running
-			{UID: "uX", Node: "n1"}, // unknown UID → ignored
+			{UID: "uX", Node: "n1"}, // unknown UID -> ignored
 		},
 		Evictions: []SolverPod{
 			{UID: "u1"}, // evict u1

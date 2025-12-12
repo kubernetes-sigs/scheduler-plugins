@@ -10,7 +10,7 @@ import (
 
 // -------------------------
 // runPythonSolver
-// --------------------------
+// -------------------------
 
 func TestRunPythonSolver_Success(t *testing.T) {
 	if runtime.GOOS == "windows" {

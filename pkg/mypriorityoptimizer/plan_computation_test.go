@@ -12,7 +12,7 @@ import (
 // planComputation
 // --------------------------
 
-// No solvers enabled → no attempts, no usable result, no best result.
+// No solvers enabled -> no attempts, no usable result, no best result.
 func TestPlanComputation_NoEnabledSolvers(t *testing.T) {
 	pl := &SharedState{}
 
@@ -50,7 +50,7 @@ func TestPlanComputation_NoEnabledSolvers(t *testing.T) {
 	}
 }
 
-// Solver enabled, but hook returns an error → one FAILED attempt, no usable result.
+// Solver enabled, but hook returns an error -> one FAILED attempt, no usable result.
 func TestPlanComputation_SolverError(t *testing.T) {
 	pl := &SharedState{}
 
@@ -105,8 +105,8 @@ func TestPlanComputation_SolverError(t *testing.T) {
 	}
 }
 
-// Solver enabled, hook returns OPTIMAL but score == baseline →
-// usable but NOT improving → no best result, but attempt recorded.
+// Solver enabled, hook returns OPTIMAL but score == baseline ->
+// usable but NOT improving -> no best result, but attempt recorded.
 func TestPlanComputation_UsableButNotImproving(t *testing.T) {
 	pl := &SharedState{}
 

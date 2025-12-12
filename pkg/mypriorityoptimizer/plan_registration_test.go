@@ -20,7 +20,7 @@ func TestPlanRegistration_NilOutput(t *testing.T) {
 	plan, ap, err := pl.planRegistration(
 		context.Background(),
 		SolverResult{},
-		nil, // out is nil → immediate error
+		nil, // out is nil -> immediate error
 		nil,
 		nil,
 	)

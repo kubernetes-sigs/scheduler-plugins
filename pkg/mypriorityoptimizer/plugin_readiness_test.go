@@ -14,6 +14,36 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+// -------------------------
+// Helpers
+// --------------------------
+
+func withReadinessInterval(d time.Duration, fn func()) {
+	old := readinessUsableNodeInterval
+	readinessUsableNodeInterval = d
+	defer func() { readinessUsableNodeInterval = old }()
+	fn()
+}
+
+func withReadinessHooks(
+	getNodes func(*SharedState) ([]*v1.Node, error),
+	isUsable func(*v1.Node) bool,
+	fn func(),
+) {
+	oldGet := getNodesForReadiness
+	oldUsable := isNodeUsableForReadiness
+
+	getNodesForReadiness = getNodes
+	isNodeUsableForReadiness = isUsable
+
+	defer func() {
+		getNodesForReadiness = oldGet
+		isNodeUsableForReadiness = oldUsable
+	}()
+
+	fn()
+}
+
 func newTestPodInformer() cache.SharedIndexInformer {
 	lw := &cache.ListWatch{
 		ListFunc: func(_ metav1.ListOptions) (runtime.Object, error) {
@@ -25,6 +55,10 @@ func newTestPodInformer() cache.SharedIndexInformer {
 	}
 	return cache.NewSharedIndexInformer(lw, &v1.Pod{}, 0, cache.Indexers{})
 }
+
+// -------------------------
+// isCacheReady
+// --------------------------
 
 func TestIsCacheReady_NoInformers_ReturnsTrue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -39,7 +73,7 @@ func TestIsCacheReady_AllNilInformers_ReturnsTrue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Non-empty slice but all nil → funcs slice is empty.
+	// Non-empty slice but all nil -> funcs slice is empty.
 	// cache.WaitForCacheSync(...no funcs...) returns true.
 	if got := isCacheReady(ctx, nil, nil); !got {
 		t.Fatalf("isCacheReady(nil informers) = %v, want true", got)
@@ -56,6 +90,10 @@ func TestIsCacheReady_ContextCanceled_ReturnsFalse(t *testing.T) {
 		t.Fatalf("isCacheReady(canceled ctx) = %v, want false", got)
 	}
 }
+
+// -------------------------
+// waitForUsableNode
+// --------------------------
 
 func TestWaitForUsableNode_ContextCanceled_ReturnsFalse(t *testing.T) {
 	pl := &SharedState{}
@@ -107,6 +145,10 @@ func TestWaitForUsableNode_EventuallyFindsUsableNode(t *testing.T) {
 		)
 	})
 }
+
+// -------------------------
+// pluginReadiness
+// --------------------------
 
 func TestPluginReadiness_InformerSyncCanceled_DoesNotMarkReady(t *testing.T) {
 	pl := &SharedState{}

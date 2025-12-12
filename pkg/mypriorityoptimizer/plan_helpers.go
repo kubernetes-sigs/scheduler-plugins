@@ -99,7 +99,7 @@ func makePlacement(p *v1.Pod, node string) SolverPod {
 // makeNewPlacement
 // --------------------------
 
-// makeNewPlacement builds a NewPlacement for a pod moving from src → dst.
+// makeNewPlacement builds a NewPlacement for a pod moving from src -> dst.
 func makeNewPlacement(p *v1.Pod, oldNode, toNode string) SolverPod {
 	return SolverPod{
 		UID:       p.UID,

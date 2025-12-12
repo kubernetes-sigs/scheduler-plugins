@@ -10,11 +10,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// -------------------------
+// --------------------------
 // getenv
 // --------------------------
 
-// getenv retrieves the value of an environment variable or returns a default value.
+// getenv retrieves the value of an environment variable or returns a default
+// value.
 func getenv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -74,7 +75,8 @@ func parseFloat(s string, lLimit float64, uLimit float64) float64 {
 // parseTime
 // --------------------------
 
-// parseTime parses a duration string and returns the corresponding time.Duration.
+// parseTime parses a duration string and returns the corresponding
+// time.Duration.
 func parseTime(s string) time.Duration {
 	d, err := time.ParseDuration(s)
 	if err != nil {
@@ -88,7 +90,7 @@ func parseTime(s string) time.Duration {
 // parseOptimizeMode
 // --------------------------
 
-// parseOptimizeMode parses an optimization mode string and returns the ModeType.
+// parseOptimizeMode parses an optimization mode string and returns the ModeType
 func parseOptimizeMode(s string) ModeType {
 	v := strings.ToLower(strings.TrimSpace(s))
 	switch v {

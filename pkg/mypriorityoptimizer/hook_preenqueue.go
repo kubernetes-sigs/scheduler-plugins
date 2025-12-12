@@ -32,7 +32,7 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *fwk.Sta
 	// 3) If there is an active plan, enforce it.
 	if ap := pl.getActivePlan(); ap != nil {
 		if !pl.isPodAllowedByPlan(pending) {
-			// Plan exists and pod is NOT allowed by the plan → block.
+			// Plan exists and pod is NOT allowed by the plan -> block.
 			pl.BlockedWhileActive.AddPodSafely(pending)
 			klog.V(MyV).InfoS(
 				msg(stage, InfoActivePlanInProgress+"; "+InfoBlockPod),
@@ -41,7 +41,7 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *fwk.Sta
 			return fwk.NewStatus(fwk.Pending, msg(stage, InfoActivePlanInProgress+"; "+InfoBlockPod))
 		}
 
-		// Plan exists and pod IS allowed by the plan → let it through.
+		// Plan exists and pod IS allowed by the plan -> let it through.
 		klog.V(MyV).InfoS(
 			msg(stage, "allowed by active plan; pass-through"),
 			"pod", klog.KObj(pending),
@@ -50,16 +50,11 @@ func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *fwk.Sta
 	}
 
 	// 4) No active plan:
-
-	//	- In Manual Blocking mode, block the pod to accumulate work for the solver.
+	//	- In ManualBlocking mode, block the pod to accumulate work for the solver.
 	if isManualBlockingMode() {
 		klog.V(MyV).InfoS(msg(stage, InfoPendingPod), "pod", klog.KObj(pending))
-		// If you also want to track these as "blocked" for later unblocking,
-		// uncomment the next line:
-		// pl.BlockedWhileActive.AddPod(pending)
 		return fwk.NewStatus(fwk.Pending, msg(stage, InfoPendingPod))
 	}
-
 	//	- Other modes, just let the pod through.
 	klog.V(MyV).InfoS(msg(stage, "pass-through"), "pod", klog.KObj(pending))
 	return fwk.NewStatus(fwk.Success)

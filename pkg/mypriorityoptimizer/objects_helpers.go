@@ -185,7 +185,7 @@ func (pl *SharedState) getPod(uid types.UID, ns, name string) *v1.Pod {
 		return p
 	}
 
-	// Fallback: lookup by UID across all pods (handles renames, stale name → UID).
+	// Fallback: lookup by UID across all pods (handles renames, stale name -> UID).
 	if p, err := pl.getPodByUID(uid); err == nil && p != nil {
 		return p
 	}

@@ -25,7 +25,7 @@ func TestPlanActivation_NilPlan(t *testing.T) {
 }
 
 // -------------------------
-// Plan with no moves/evicts → only activatePlannedPods
+// Plan with no moves/evicts -> only activatePlannedPods
 // --------------------------
 
 func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePlannedPods(t *testing.T) {
@@ -85,7 +85,7 @@ func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePlannedPods(t *testing.T) {
 }
 
 // -------------------------
-// Plan with moves/evicts → eviction + wait + activate
+// Plan with moves/evicts -> eviction + wait + activate
 // --------------------------
 
 func TestPlanActivation_WithTargets_Success(t *testing.T) {
@@ -205,7 +205,7 @@ func TestPlanActivation_WithTargets_Success(t *testing.T) {
 }
 
 // -------------------------
-// Eviction error → propagated, no wait/activate
+// Eviction error -> propagated, no wait/activate
 // --------------------------
 
 func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
@@ -270,7 +270,7 @@ func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
 }
 
 // -------------------------
-// waitPodsGone error → wrapped & no activate
+// waitPodsGone error -> wrapped & no activate
 // --------------------------
 
 func TestPlanActivation_WaitPodsGoneErrorStopsActivate(t *testing.T) {

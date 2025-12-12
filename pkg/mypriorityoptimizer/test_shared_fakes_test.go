@@ -1,4 +1,4 @@
-// test_fakes_test.go
+// test_shared_fakes_test.go
 package mypriorityoptimizer
 
 import (

@@ -17,6 +17,78 @@ import (
 )
 
 // -------------------------
+// listConfigMaps
+// --------------------------
+
+// List config maps by label newest-first.
+func listConfigMaps(
+	_ context.Context,
+	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
+	namespace,
+	labelKey string,
+) ([]apiv1.ConfigMap, error) {
+	// Select config maps with the given label.
+	sel := labels.SelectorFromSet(labels.Set{labelKey: "true"})
+	items, err := lister(namespace).List(sel)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Make a copy to avoid mutating the informer cache.
+	cms := make([]apiv1.ConfigMap, len(items))
+	for i := range items {
+		cms[i] = *items[i].DeepCopy()
+	}
+
+	// Sort by creation timestamp, newest first.
+	sort.Slice(cms, func(i, j int) bool {
+		return cms[i].CreationTimestamp.Time.After(cms[j].CreationTimestamp.Time)
+	})
+	return cms, nil
+}
+
+// ---------------------------
+// getConfigMapByName
+// --------------------------
+
+// getConfigMapByName retrieves a config map by name.
+func getConfigMapByName(
+	ctx context.Context,
+	cli corev1client.CoreV1Interface,
+	namespace,
+	name string,
+) (*apiv1.ConfigMap, error) {
+	return cli.ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// -------------------------
+// pruneConfigMaps
+// --------------------------
+
+// Keep first K newest config maps with label, delete the rest.
+func pruneConfigMaps(
+	ctx context.Context,
+	cli corev1client.CoreV1Interface,
+	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
+	namespace, labelKey string,
+	keep int,
+) error {
+	if keep <= 0 {
+		return nil
+	}
+	items, err := listConfigMaps(ctx, lister, namespace, labelKey)
+	if err != nil || len(items) <= keep {
+		return err
+	}
+	cms := cli.ConfigMaps(namespace)
+	for i := keep; i < len(items); i++ {
+		_ = cms.Delete(ctx, items[i].Name, metav1.DeleteOptions{})
+	}
+	return nil
+}
+
+// -------------------------
 // marshalJsonIndented
 // --------------------------
 
@@ -141,7 +213,7 @@ func (d ConfigMapDoc) readJson(
 // mutateJson
 // --------------------------
 
-// mutateJson loads → mutates → patches an array JSON.
+// mutateJson loads -> mutates -> patches an array JSON.
 func mutateJson[T any](
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,
@@ -168,7 +240,8 @@ func mutateJson[T any](
 // mutateRaw
 // --------------------------
 
-// mutateRaw loads the JSON string at DataKey, mutates it, and writes the result back.
+// mutateRaw loads the JSON string at DataKey, mutates it, and writes the result
+// back.
 func (d ConfigMapDoc) mutateRaw(
 	ctx context.Context,
 	cli corev1client.CoreV1Interface,
@@ -177,64 +250,13 @@ func (d ConfigMapDoc) mutateRaw(
 ) error {
 	raw, err := d.readJson(lister)
 	if err != nil || len(raw) == 0 {
-		// nil if missing → no-op
+		// nil if missing -> no-op
 		return err
 	}
 	newRaw, err := mutate(raw)
 	if err != nil || newRaw == nil {
-		// nil newRaw → no-op
+		// nil newRaw -> no-op
 		return err
 	}
 	return d.patchDataString(ctx, cli, string(newRaw))
-}
-
-// -------------------------
-// listConfigMaps
-// --------------------------
-
-// List config maps by label newest-first.
-func listConfigMaps(
-	_ context.Context,
-	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
-	namespace, labelKey string,
-) ([]apiv1.ConfigMap, error) {
-	sel := labels.SelectorFromSet(labels.Set{labelKey: "true"})
-	items, err := lister(namespace).List(sel)
-	if err != nil {
-		return nil, err
-	}
-	cms := make([]apiv1.ConfigMap, len(items))
-	for i := range items {
-		cms[i] = *items[i].DeepCopy()
-	}
-	sort.Slice(cms, func(i, j int) bool {
-		return cms[i].CreationTimestamp.Time.After(cms[j].CreationTimestamp.Time)
-	})
-	return cms, nil
-}
-
-// -------------------------
-// pruneConfigMaps
-// --------------------------
-
-// Keep first K newest config maps for label, delete the rest.
-func pruneConfigMaps(
-	ctx context.Context,
-	cli corev1client.CoreV1Interface,
-	lister func(ns string) corev1listers.ConfigMapNamespaceLister,
-	namespace, labelKey string,
-	keep int,
-) error {
-	if keep <= 0 {
-		return nil
-	}
-	items, err := listConfigMaps(ctx, lister, namespace, labelKey)
-	if err != nil || len(items) <= keep {
-		return err
-	}
-	cms := cli.ConfigMaps(namespace)
-	for i := keep; i < len(items); i++ {
-		_ = cms.Delete(ctx, items[i].Name, metav1.DeleteOptions{})
-	}
-	return nil
 }

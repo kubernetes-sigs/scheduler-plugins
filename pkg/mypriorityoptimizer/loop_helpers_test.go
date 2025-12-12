@@ -14,6 +14,18 @@ import (
 )
 
 // -------------------------
+// Helpers
+// --------------------------
+
+func uidSet(uids ...string) map[types.UID]struct{} {
+	m := make(map[types.UID]struct{}, len(uids))
+	for _, u := range uids {
+		m[types.UID(u)] = struct{}{}
+	}
+	return m
+}
+
+// -------------------------
 // startLoops
 // --------------------------
 

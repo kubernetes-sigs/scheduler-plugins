@@ -69,7 +69,7 @@ func TestUnreserve_NoReservationState_NoPanic(t *testing.T) {
 	}
 	st := framework.NewCycleState()
 
-	// No state written → Read() will fail, and Unreserve should just log & return.
+	// No state written -> Read() will fail, and Unreserve should just log & return.
 	pl.Unreserve(context.Background(), st, pod, "node1")
 }
 

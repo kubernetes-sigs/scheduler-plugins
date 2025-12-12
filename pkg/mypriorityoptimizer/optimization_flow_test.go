@@ -51,7 +51,7 @@ func TestRunOptimizationFlow_OptimizationInProgress(t *testing.T) {
 }
 
 // -------------------------
-// 2) Non-async: planContext error → leave PlanActive and propagate error
+// 2) Non-async: planContext error -> leave PlanActive and propagate error
 // --------------------------
 
 func TestRunOptimizationFlow_PlanContextError(t *testing.T) {
@@ -66,7 +66,7 @@ func TestRunOptimizationFlow_PlanContextError(t *testing.T) {
 		exportSolverStatsFn = origExportStats
 	}()
 
-	// Non-async mode → we take PlanActive early.
+	// Non-async mode -> we take PlanActive early.
 	isAsyncSolvingFn = func() bool { return false }
 
 	// planContext fails.
@@ -101,7 +101,7 @@ func TestRunOptimizationFlow_PlanContextError(t *testing.T) {
 }
 
 // -------------------------
-// 3) Non-async: no improving solution → ErrNoImprovingSolutionFromAnySolver
+// 3) Non-async: no improving solution -> ErrNoImprovingSolutionFromAnySolver
 // --------------------------
 
 func TestRunOptimizationFlow_NoImprovingSolution(t *testing.T) {
@@ -191,7 +191,7 @@ func TestRunOptimizationFlow_NoImprovingSolution(t *testing.T) {
 }
 
 // -------------------------
-// 4) Non-async: plan not applicable → ErrPlanNotApplicable
+// 4) Non-async: plan not applicable -> ErrPlanNotApplicable
 // --------------------------
 
 func TestRunOptimizationFlow_PlanNotApplicable(t *testing.T) {
@@ -273,7 +273,7 @@ func TestRunOptimizationFlow_PlanNotApplicable(t *testing.T) {
 }
 
 // -------------------------
-// 5) Non-async: pendingScheduled == 0 → ErrNoPendingPodsScheduled
+// 5) Non-async: pendingScheduled == 0 -> ErrNoPendingPodsScheduled
 // --------------------------
 
 func TestRunOptimizationFlow_NoPendingScheduled(t *testing.T) {
@@ -360,7 +360,7 @@ func TestRunOptimizationFlow_NoPendingScheduled(t *testing.T) {
 }
 
 // -------------------------
-// 6) Non-async: happy path → success, watcher started, stats exported with no error
+// 6) Non-async: happy path -> success, watcher started, stats exported with no error
 // --------------------------
 
 func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
@@ -474,7 +474,7 @@ func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
 	}
 }
 
-// 7) Non-async: Active plan already in progress → ErrActiveInProgress
+// 7) Non-async: Active plan already in progress -> ErrActiveInProgress
 func TestRunOptimizationFlow_ActivePlanAlreadyInProgress_NonAsync(t *testing.T) {
 	pl := &SharedState{}
 	// Simulate an already-active plan.
@@ -491,7 +491,7 @@ func TestRunOptimizationFlow_ActivePlanAlreadyInProgress_NonAsync(t *testing.T) 
 
 	isAsyncSolvingFn = func() bool { return false }
 
-	// If planContext is ever called, the test should fail → early return expected.
+	// If planContext is ever called, the test should fail -> early return expected.
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
 		t.Fatalf("planContextFn must not be called when ActivePlan is already in progress")
 		return nil, nil, 0, SolverInput{}, nil
@@ -513,7 +513,7 @@ func TestRunOptimizationFlow_ActivePlanAlreadyInProgress_NonAsync(t *testing.T) 
 	}
 }
 
-// 8) Async: Active plan in progress at apply-time → ErrActiveInProgress
+// 8) Async: Active plan in progress at apply-time -> ErrActiveInProgress
 func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 	pl := &SharedState{}
 
@@ -615,7 +615,7 @@ func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 	}
 }
 
-// 9) Non-async: planRegistration fails → ErrPlanRegistration
+// 9) Non-async: planRegistration fails -> ErrPlanRegistration
 func TestRunOptimizationFlow_PlanRegistrationError(t *testing.T) {
 	pl := &SharedState{}
 
@@ -716,7 +716,7 @@ func TestRunOptimizationFlow_PlanRegistrationError(t *testing.T) {
 	}
 }
 
-// 10) Non-async: planActivation fails → ErrPlanActivationFailed and onPlanCompleted
+// 10) Non-async: planActivation fails -> ErrPlanActivationFailed and onPlanCompleted
 func TestRunOptimizationFlow_PlanActivationError(t *testing.T) {
 	pl := &SharedState{}
 

@@ -98,6 +98,8 @@ func TestParseInt(t *testing.T) {
 // --------------------------
 
 func TestParseFloat(t *testing.T) {
+	const floatTolerance = 1e-9
+
 	tests := []struct {
 		name   string
 		in     string
@@ -155,8 +157,6 @@ func TestParseFloat(t *testing.T) {
 			want:   0.0, // 0.0 is within [-1, 10], so returned as-is
 		},
 	}
-
-	const floatTolerance = 1e-9
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -220,6 +220,7 @@ func TestParseOptimizeMode(t *testing.T) {
 		{"manual_blocking", ModeManualBlocking},
 		{"unknown", ModePeriodic}, // default
 	}
+
 	for _, test := range tests {
 		got := parseOptimizeMode(test.in)
 		if got != test.want {

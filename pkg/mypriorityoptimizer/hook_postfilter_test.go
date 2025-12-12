@@ -16,8 +16,6 @@ import (
 // PostFilter
 // --------------------------
 
-// We only test the fast-path where PerPod@PostFilter is NOT enabled:
-// PostFilter should return Unschedulable with a "no nomination" message.
 func TestPostFilter_NoPerPod_NoNomination(t *testing.T) {
 
 	pl := &SharedState{}
@@ -66,7 +64,7 @@ func TestPostFilter_PerPod_ActivePlanInProgress_BlocksPod(t *testing.T) {
 	})
 }
 
-func TestPostFilter_PerPod_OptimizationReturnsErrActiveInProgress_BlocksPod(t *testing.T) {
+func TestPostFilter_PerPod_ReturnsErrActiveInProgress_BlocksPod(t *testing.T) {
 	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
 	pl.ActivePlanInProgress.Store(true) // force ErrActiveInProgress in runOptimizationFlow
 
@@ -94,7 +92,7 @@ func TestPostFilter_PerPod_OptimizationReturnsErrActiveInProgress_BlocksPod(t *t
 	})
 }
 
-func TestPostFilter_PerPod_OptimizationError_DefaultsToPlanRegistrationFailed(t *testing.T) {
+func TestPostFilter_PerPod_Error_DefaultsToPlanRegistrationFailed(t *testing.T) {
 	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
 
 	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
@@ -127,7 +125,7 @@ func TestPostFilter_PerPod_OptimizationError_DefaultsToPlanRegistrationFailed(t 
 	})
 }
 
-func TestPostFilter_PerPod_OptimizationSuccess_ReturnsNomination(t *testing.T) {
+func TestPostFilter_PerPod_Success_ReturnsNomination(t *testing.T) {
 	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
 
 	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}

@@ -36,8 +36,8 @@ func TestPreEnqueue_KubeSystemAlwaysAllowed(t *testing.T) {
 	}
 }
 
-// In Manual Blocking mode, PreEnqueue should block non-system pods when
-// there is no active plan.
+// In Manual Blocking mode, PreEnqueue should block non-system pods when there
+// is no active plan.
 func TestPreEnqueue_ManualBlockingModeBlocks(t *testing.T) {
 	pl := &SharedState{}
 	pl.PluginReady.Store(true) // skip cache-not-ready branch
@@ -60,8 +60,8 @@ func TestPreEnqueue_ManualBlockingModeBlocks(t *testing.T) {
 	})
 }
 
-// In a default-like configuration with no active plan,
-// PreEnqueue should just pass through and allow the pod.
+// In a default-like configuration with no active plan, PreEnqueue should just
+// pass through and allow the pod.
 func TestPreEnqueue_DefaultModePassThrough(t *testing.T) {
 	pl := &SharedState{}
 	pl.PluginReady.Store(true)

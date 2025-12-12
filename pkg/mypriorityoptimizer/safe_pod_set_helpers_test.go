@@ -39,18 +39,18 @@ func TestNewSafePodSet_Empty(t *testing.T) {
 // --------------------------
 
 func TestDoesSafePodSetExist(t *testing.T) {
-	// nil set → false
+	// nil set -> false
 	if got := doesSafePodSetExist(nil); got {
 		t.Fatalf("doesSafePodSetExist(nil) = %v, want false", got)
 	}
 
-	// empty set → false
+	// empty set -> false
 	empty := newSafePodSet("empty")
 	if got := doesSafePodSetExist(empty); got {
 		t.Fatalf("doesSafePodSetExist(empty) = %v, want false", got)
 	}
 
-	// set with one pod → true
+	// set with one pod -> true
 	ps := newSafePodSet("blocked")
 	pod := newPod("ns1", "pod1", "uid-1", "", "", "", 5)
 	ps.AddPodSafely(pod)

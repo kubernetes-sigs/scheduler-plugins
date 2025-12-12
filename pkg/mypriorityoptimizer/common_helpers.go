@@ -29,8 +29,8 @@ func getTimestampNowUtc() time.Time {
 // cmpInt
 // --------------------------
 
-// cmpInt returns +1 if suggested<baseline (improvement because smaller is better),
-// -1 if suggested>baseline (worse), 0 if equal.
+// cmpInt returns +1 if suggested<baseline (improvement because smaller is
+// better), -1 if suggested>baseline (worse), 0 if equal.
 func cmpInt(suggested, baseline int) int {
 	switch {
 	case suggested < baseline:
@@ -68,9 +68,9 @@ func cmpLexiByKeys[K comparable](keys []K, a, b map[K]int) int {
 // cmpLexi
 // --------------------------
 
-// cmpLexi compares two maps[string]int whose keys are stringified integers.
-// It orders keys by descending numeric value (e.g. "10" > "5" > "1") and
-// compares the counts lexicographically along that order.
+// cmpLexi compares two maps[string]int whose keys are stringified integers. It
+// orders keys by descending numeric value (e.g. "10" > "5" > "1") and compares
+// the counts lexicographically along that order.
 func cmpLexi(a, b map[string]int) int {
 	// Collect union of keys from both maps.
 	keySet := make(map[string]struct{}, len(a)+len(b))
@@ -86,8 +86,8 @@ func cmpLexi(a, b map[string]int) int {
 		keys = append(keys, k)
 	}
 
-	// Sort by descending numeric value when possible; fall back to
-	// descending string order if parse fails.
+	// Sort by descending numeric value when possible; fall back to descending
+	// string order if parse fails.
 	sort.Slice(keys, func(i, j int) bool {
 		ki, kj := keys[i], keys[j]
 

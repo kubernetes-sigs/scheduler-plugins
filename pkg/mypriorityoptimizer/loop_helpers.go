@@ -175,7 +175,7 @@ func (pl *SharedState) optimizeBackgroundLoop(ctx context.Context, cfg OptimizeL
 				continue
 			}
 
-			// 6) No pending → reset state
+			// 6) No pending -> reset state
 			if pendingCount == 0 {
 				if lastPendingSet != nil || lastSolvedSet != nil || lastSolvedFingerprint != "" {
 					lastPendingSet = nil
@@ -273,7 +273,7 @@ func isAlreadyComputedForPendingSet(err error, bestAttempt *SolverResult) bool {
 		return false
 	}
 	if bestAttempt.Status != "OPTIMAL" {
-		// Not a proven optimal solution → allow re-runs.
+		// Not a proven optimal solution -> allow re-runs.
 		return false
 	}
 	return err == ErrNoImprovingSolutionFromAnySolver ||

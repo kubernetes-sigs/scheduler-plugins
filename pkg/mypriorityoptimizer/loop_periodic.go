@@ -14,7 +14,7 @@ func (pl *SharedState) loopPeriodic(ctx context.Context) {
 	cfg := OptimizeLoopConfig{
 		Label:          "PeriodicLoop",
 		Interval:       OptimizePeriodicInterval,
-		InterludeDelay: 0,     // no "idle window" → behave like periodic
+		InterludeDelay: 0,     // no "idle window" -> behave like periodic
 		CancelOnChange: false, // do NOT cancel if new pods arrive (can be made configurable later)
 	}
 	// delegated through hook

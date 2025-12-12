@@ -24,7 +24,7 @@ func TestStartPlanCompletionWatch_NilActivePlan(t *testing.T) {
 		called.Store(true)
 	}
 
-	// ap == nil → should return immediately and not call the watcher.
+	// ap == nil -> should return immediately and not call the watcher.
 	pl.startPlanCompletionWatch(nil)
 
 	if called.Load() {
@@ -210,7 +210,7 @@ func TestPlanCompletionWatch_PlanCompletesSuccessfully(t *testing.T) {
 }
 
 // -------------------------
-// planCompletionWatch – timeout (DeadlineExceeded) → Failed
+// planCompletionWatch – timeout (DeadlineExceeded) -> Failed
 // --------------------------
 
 func TestPlanCompletionWatch_TimeoutMarksPlanFailed(t *testing.T) {
@@ -260,7 +260,7 @@ func TestPlanCompletionWatch_TimeoutMarksPlanFailed(t *testing.T) {
 }
 
 // -------------------------
-// planCompletionWatch – cancelled context (not DeadlineExceeded) → no status
+// planCompletionWatch – cancelled context (not DeadlineExceeded) -> no status
 // --------------------------
 
 func TestPlanCompletionWatch_CancelledContextDoesNotSettlePlan(t *testing.T) {

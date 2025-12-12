@@ -1,4 +1,3 @@
-// pkg/mypriorityoptimizer/common_helpers_test.go
 // common_helpers_test.go
 package mypriorityoptimizer
 
@@ -28,7 +27,7 @@ func TestGetUniqueId_ProducesDifferentValues(t *testing.T) {
 	prefix := "job-"
 
 	id1 := getUniqueId(prefix)
-	time.Sleep(time.Nanosecond)
+	time.Sleep(1 * time.Nanosecond) // ensure time difference for uniqueness
 	id2 := getUniqueId(prefix)
 
 	if id1 == id2 {
@@ -126,8 +125,8 @@ func TestCmpLexi_HighPriorityWins(t *testing.T) {
 }
 
 func TestCmpLexi_NumericVsNumericAndFallback(t *testing.T) {
-	// Numeric keys: ensure we really order by numeric value, not lexicographically.
-	// 10 should be considered "higher priority" than 2.
+	// Numeric keys: ensure we really order by numeric value, not
+	// lexicographically. 10 should be considered "higher priority" than 2.
 	a := map[string]int{"10": 1}           // one pod at prio 10
 	b := map[string]int{"2": 100, "10": 0} // many pods at prio 2 but none at 10
 
@@ -135,8 +134,8 @@ func TestCmpLexi_NumericVsNumericAndFallback(t *testing.T) {
 		t.Fatalf("cmpLexi(numeric) = %d, want 1 (a better on prio 10)", got)
 	}
 
-	// Non-numeric fallback: keys compared as strings, descending.
-	// keys: "y", "x" -> first compare "y".
+	// Non-numeric fallback: keys compared as strings, descending. keys: "y",
+	// "x" -> first compare "y".
 	x := map[string]int{"x": 1, "y": 0}
 	y := map[string]int{"x": 0, "y": 5}
 

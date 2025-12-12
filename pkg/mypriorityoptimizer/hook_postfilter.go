@@ -49,7 +49,8 @@ func (pl *SharedState) PostFilter(ctx context.Context, state fwk.CycleState, pen
 		}
 	}
 
-	// Return the result with the nominated node information which the scheduler will use to bind the pod.
+	// Return the result with the nominated node information which the scheduler
+	// will use to bind the pod.
 	return &framework.PostFilterResult{
 		NominatingInfo: &framework.NominatingInfo{NominatedNodeName: plan.NominatedNode, NominatingMode: framework.ModeOverride},
 	}, fwk.NewStatus(fwk.Success, msg(stage, InfoNominatedAfterPlan))

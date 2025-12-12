@@ -83,7 +83,7 @@ func TestPlanContext_NoPendingPods(t *testing.T) {
 		newNode("n1"),
 	}
 
-	// All pods are already assigned → no pending pods.
+	// All pods are already assigned -> no pending pods.
 	running1 := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "p1",

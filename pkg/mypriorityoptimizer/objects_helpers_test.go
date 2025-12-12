@@ -1068,14 +1068,14 @@ func TestClusterFingerprint(t *testing.T) {
 		Spec:       v1.PodSpec{NodeName: ""},
 	}
 
-	// Order 1 vs order 2 → determinism
+	// Order 1 vs order 2 -> determinism
 	fp1 := clusterFingerprint([]*v1.Node{n2, n1}, []*v1.Pod{pPending, p1})
 	fp2 := clusterFingerprint([]*v1.Node{n1, n2}, []*v1.Pod{p1, pPending})
 	if fp1 != fp2 {
 		t.Fatalf("clusterFingerprint not deterministic: fp1=%q fp2=%q", fp1, fp2)
 	}
 
-	// Change a running pod's CPU → fingerprint should change.
+	// Change a running pod's CPU -> fingerprint should change.
 	p1diff := p1.DeepCopy()
 	p1diff.Spec.Containers[0].Resources.Requests[v1.ResourceCPU] = resource.MustParse("200m")
 	fp3 := clusterFingerprint([]*v1.Node{n1, n2}, []*v1.Pod{p1diff})
@@ -1083,7 +1083,7 @@ func TestClusterFingerprint(t *testing.T) {
 		t.Fatalf("clusterFingerprint should change when running pod CPU changes")
 	}
 
-	// Change only pending pods → fingerprint should stay the same.
+	// Change only pending pods -> fingerprint should stay the same.
 	pPending2 := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "p3", Namespace: "ns", UID: types.UID("u3")},
 		Spec:       v1.PodSpec{NodeName: ""},

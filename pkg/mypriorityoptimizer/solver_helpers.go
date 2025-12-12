@@ -79,7 +79,7 @@ func (pl *SharedState) buildSolverInput(
 		where := getPodAssignedNodeName(p)
 		switch {
 		case where == "":
-			// pending → always include
+			// pending -> always include
 			sp := toSolverPod(p, "")
 			if isPodProtected(p) {
 				sp.Protected = true
@@ -330,7 +330,7 @@ func logLeaderboard(
 	baseline SolverScore,
 	best *SolverResult,
 ) {
-	// No best attempt → only log baseline (useful when all solvers failed / unusable).
+	// No best attempt -> only log baseline (useful when all solvers failed / unusable).
 	if best == nil {
 		klog.InfoS(
 			msg(label, "solver leaderboard"),
