@@ -11,7 +11,7 @@ import (
 
 // -------------------------
 // startPlanCompletionWatch
-// --------------------------
+// -------------------------
 
 func TestStartPlanCompletionWatch_NilActivePlan(t *testing.T) {
 	pl := &SharedState{}
@@ -73,7 +73,7 @@ func TestStartPlanCompletionWatch_SpawnsWatcher(t *testing.T) {
 
 // -------------------------
 // Helpers for planCompletionWatch tests
-// --------------------------
+// -------------------------
 
 // fakeCtx is a small context.Context implementation used to control Done/Err.
 type fakeCtx struct {
@@ -88,7 +88,7 @@ func (f *fakeCtx) Value(key any) any           { return nil }
 
 // -------------------------
 // planCompletionWatch – active plan cleared
-// --------------------------
+// -------------------------
 
 func TestPlanCompletionWatch_ActivePlanClearedStopsWatcher(t *testing.T) {
 	pl := &SharedState{}
@@ -145,7 +145,7 @@ func TestPlanCompletionWatch_ActivePlanClearedStopsWatcher(t *testing.T) {
 
 // -------------------------
 // planCompletionWatch – successful completion path
-// --------------------------
+// -------------------------
 
 func TestPlanCompletionWatch_PlanCompletesSuccessfully(t *testing.T) {
 	pl := &SharedState{}
@@ -211,7 +211,7 @@ func TestPlanCompletionWatch_PlanCompletesSuccessfully(t *testing.T) {
 
 // -------------------------
 // planCompletionWatch – timeout (DeadlineExceeded) -> Failed
-// --------------------------
+// -------------------------
 
 func TestPlanCompletionWatch_TimeoutMarksPlanFailed(t *testing.T) {
 	pl := &SharedState{}
@@ -261,7 +261,7 @@ func TestPlanCompletionWatch_TimeoutMarksPlanFailed(t *testing.T) {
 
 // -------------------------
 // planCompletionWatch – cancelled context (not DeadlineExceeded) -> no status
-// --------------------------
+// -------------------------
 
 func TestPlanCompletionWatch_CancelledContextDoesNotSettlePlan(t *testing.T) {
 	pl := &SharedState{}

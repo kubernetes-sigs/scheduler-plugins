@@ -12,7 +12,7 @@ import (
 
 // -------------------------
 // Test hooks
-// --------------------------
+// -------------------------
 
 var (
 	cacheWarmupDelay            = CacheWarmupSettleDelay

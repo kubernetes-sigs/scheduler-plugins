@@ -12,7 +12,7 @@ import (
 
 // -------------------------
 // PreFilter
-// --------------------------
+// -------------------------
 
 // PreFilter is called at the beginning of scheduling cycle.
 // It is used, here, to filter the node(s) that the pod can be (tried) scheduled on.

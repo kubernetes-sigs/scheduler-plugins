@@ -23,7 +23,7 @@ import (
 
 // -------------------------
 // Test Hooks
-// --------------------------
+// -------------------------
 
 var (
 	evictTargetsHook              func(pl *SharedState, ctx context.Context, targets []*v1.Pod) error
@@ -70,7 +70,7 @@ func (pl *SharedState) tryLeaveOptimizationFlow() {
 
 // -------------------------
 // toPlanPod
-// --------------------------
+// -------------------------
 
 // toPlanPod converts a core/v1 Pod into a Pod (UID, Namespace, Name).
 func toPlanPod(p *v1.Pod) SolverPod {
@@ -83,7 +83,7 @@ func toPlanPod(p *v1.Pod) SolverPod {
 
 // -------------------------
 // makePlacement
-// --------------------------
+// -------------------------
 
 // makePlacement builds a Placement for a pod on a given node.
 func makePlacement(p *v1.Pod, node string) SolverPod {
@@ -97,7 +97,7 @@ func makePlacement(p *v1.Pod, node string) SolverPod {
 
 // -------------------------
 // makeNewPlacement
-// --------------------------
+// -------------------------
 
 // makeNewPlacement builds a NewPlacement for a pod moving from src -> dst.
 func makeNewPlacement(p *v1.Pod, oldNode, toNode string) SolverPod {
@@ -112,7 +112,7 @@ func makeNewPlacement(p *v1.Pod, oldNode, toNode string) SolverPod {
 
 // -------------------------
 // increaseWorkloadQuota
-// --------------------------
+// -------------------------
 
 // increaseWorkloadQuota increments the quota count for a workload/node pair.
 func increaseWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
@@ -125,7 +125,7 @@ func increaseWorkloadQuota(wq WorkloadQuotas, wk WorkloadKey, node string) {
 
 // -------------------------
 // sortPlacementsByPod
-// --------------------------
+// -------------------------
 
 // sortPlacementsByPod sorts placements by (namespace, name) for stable output.
 func sortPlacementsByPod(pls []SolverPod) {
@@ -140,7 +140,7 @@ func sortPlacementsByPod(pls []SolverPod) {
 
 // -------------------------
 // sortNewPlacementsByPod
-// --------------------------
+// -------------------------
 
 // sortNewPlacementsByPod sorts new placements by (namespace, name) for stable output.
 func sortNewPlacementsByPod(pls []SolverPod) {
@@ -155,7 +155,7 @@ func sortNewPlacementsByPod(pls []SolverPod) {
 
 // -------------------------
 // sortPodSetItemsByPriorityAndCreation
-// --------------------------
+// -------------------------
 
 // sortPodSetItemsByPriorityAndCreation sorts PodSetItems by:
 //  1. priority (higher first)
@@ -368,7 +368,7 @@ func buildWorkloadQuotas(wkQuotas WorkloadQuotas) WorkloadQuotasAtomics {
 
 // -------------------------
 // evictTargets
-// --------------------------
+// -------------------------
 
 // evictTargets evicts all target pods with bounded parallelism and per-op timeouts.
 func (pl *SharedState) evictTargets(ctx context.Context, targets []*v1.Pod) error {
@@ -840,7 +840,7 @@ func computePlanPodCounts(out *SolverOutput, pods []*v1.Pod) (
 
 // -------------------------
 // exportPlanToConfigMap
-// --------------------------
+// -------------------------
 
 // exportPlanToConfigMap exports the given plan to a ConfigMap.
 func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
@@ -864,7 +864,7 @@ func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, s
 
 // -------------------------
 // setPlanStatusInConfigMap
-// --------------------------
+// -------------------------
 
 // markPlanStatuses updates the plan's own ConfigMap and the exported stats CM.
 //   - The plan CM is put into the requested status (unless already final).

@@ -11,7 +11,7 @@ import (
 
 // -------------------------
 // planContext – error paths
-// --------------------------
+// -------------------------
 
 func TestPlanContext_NodeListError(t *testing.T) {
 	pl := &SharedState{}
@@ -206,7 +206,7 @@ func TestPlanContext_BuildSolverInputError(t *testing.T) {
 
 // -------------------------
 // planContext – happy path
-// --------------------------
+// -------------------------
 
 func TestPlanContext_Success(t *testing.T) {
 	pl := &SharedState{}

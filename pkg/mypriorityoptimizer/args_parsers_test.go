@@ -8,7 +8,7 @@ import (
 
 // -------------------------
 // getenv
-// --------------------------
+// -------------------------
 
 func TestGetEnv(t *testing.T) {
 	t.Run("returns existing value", func(t *testing.T) {
@@ -38,7 +38,7 @@ func TestGetEnv(t *testing.T) {
 
 // -------------------------
 // parseBool
-// --------------------------
+// -------------------------
 
 func TestParseBool(t *testing.T) {
 	tests := []struct {
@@ -68,7 +68,7 @@ func TestParseBool(t *testing.T) {
 
 // -------------------------
 // parseInt
-// --------------------------
+// -------------------------
 
 func TestParseInt(t *testing.T) {
 	tests := []struct {
@@ -95,7 +95,7 @@ func TestParseInt(t *testing.T) {
 
 // -------------------------
 // parseFloat
-// --------------------------
+// -------------------------
 
 func TestParseFloat(t *testing.T) {
 	const floatTolerance = 1e-9
@@ -175,7 +175,7 @@ func TestParseFloat(t *testing.T) {
 
 // -------------------------
 // parseTime
-// --------------------------
+// -------------------------
 
 func TestParseTime(t *testing.T) {
 	tests := []struct {
@@ -203,7 +203,7 @@ func TestParseTime(t *testing.T) {
 
 // -------------------------
 // parseOptimizeMode
-// --------------------------
+// -------------------------
 
 func TestParseOptimizeMode(t *testing.T) {
 	tests := []struct {

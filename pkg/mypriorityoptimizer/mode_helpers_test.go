@@ -5,7 +5,7 @@ import "testing"
 
 // -------------------------
 // isPerPodMode
-// --------------------------
+// -------------------------
 
 func TestIsPerPodMode(t *testing.T) {
 	withMode(ModePerPod, true, func() {
@@ -65,7 +65,7 @@ func TestIsManualBlockingMode(t *testing.T) {
 
 // -------------------------
 // isAsyncSolving
-// --------------------------
+// -------------------------
 
 func TestIsAsyncSolving(t *testing.T) {
 	// PerPod is always synchronous regardless of OptimizeSolveSynch
@@ -90,7 +90,7 @@ func TestIsAsyncSolving(t *testing.T) {
 
 // -------------------------
 // getModeAsString
-// --------------------------
+// -------------------------
 
 func TestGetModeAsString(t *testing.T) {
 	withMode(ModePerPod, true, func() {
@@ -128,7 +128,7 @@ func TestGetModeAsString(t *testing.T) {
 
 // -------------------------
 // getSyncAsString
-// --------------------------
+// -------------------------
 
 func TestGetSyncAsString(t *testing.T) {
 	// PerPod is always synchronous.
@@ -155,7 +155,7 @@ func TestGetSyncAsString(t *testing.T) {
 
 // -------------------------
 // getModeCombinedAsString
-// --------------------------
+// -------------------------
 
 func TestGetModeCombinedAsString(t *testing.T) {
 	// PerPod: always PostFilter + Synch

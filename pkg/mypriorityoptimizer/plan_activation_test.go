@@ -13,7 +13,7 @@ import (
 
 // -------------------------
 // Nil plan
-// --------------------------
+// -------------------------
 
 func TestPlanActivation_NilPlan(t *testing.T) {
 	pl := &SharedState{}
@@ -26,7 +26,7 @@ func TestPlanActivation_NilPlan(t *testing.T) {
 
 // -------------------------
 // Plan with no moves/evicts -> only activatePlannedPods
-// --------------------------
+// -------------------------
 
 func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePlannedPods(t *testing.T) {
 	pl := &SharedState{}
@@ -86,7 +86,7 @@ func TestPlanActivation_NoMovesOrEvicts_OnlyActivatePlannedPods(t *testing.T) {
 
 // -------------------------
 // Plan with moves/evicts -> eviction + wait + activate
-// --------------------------
+// -------------------------
 
 func TestPlanActivation_WithTargets_Success(t *testing.T) {
 	pl := &SharedState{}
@@ -206,7 +206,7 @@ func TestPlanActivation_WithTargets_Success(t *testing.T) {
 
 // -------------------------
 // Eviction error -> propagated, no wait/activate
-// --------------------------
+// -------------------------
 
 func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
 	pl := &SharedState{}
@@ -271,7 +271,7 @@ func TestPlanActivation_EvictErrorStopsFlow(t *testing.T) {
 
 // -------------------------
 // waitPodsGone error -> wrapped & no activate
-// --------------------------
+// -------------------------
 
 func TestPlanActivation_WaitPodsGoneErrorStopsActivate(t *testing.T) {
 	pl := &SharedState{}

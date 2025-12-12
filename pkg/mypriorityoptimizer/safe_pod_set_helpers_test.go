@@ -12,7 +12,7 @@ import (
 
 // -------------------------
 // newSafePodSet
-// --------------------------
+// -------------------------
 
 func TestNewSafePodSet_Empty(t *testing.T) {
 	ps := newSafePodSet("blocked")
@@ -36,7 +36,7 @@ func TestNewSafePodSet_Empty(t *testing.T) {
 
 // -------------------------
 // doesSafePodSetExist
-// --------------------------
+// -------------------------
 
 func TestDoesSafePodSetExist(t *testing.T) {
 	// nil set -> false
@@ -61,7 +61,7 @@ func TestDoesSafePodSetExist(t *testing.T) {
 
 // -------------------------
 // pruneSafePodSet
-// --------------------------
+// -------------------------
 
 func TestPruneSet_RemovesStaleAndKeepsPending(t *testing.T) {
 	pl := &SharedState{}
@@ -154,7 +154,7 @@ func TestPruneSafePodSet_EmptyOrNil(t *testing.T) {
 
 // -------------------------
 // SafePodSet AddPod / RemovePod / Size / Snapshot
-// --------------------------
+// -------------------------
 
 func TestSafePodSet_AddRemoveAndSnapshot(t *testing.T) {
 	ps := newSafePodSet("blocked")

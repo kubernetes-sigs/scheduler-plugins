@@ -10,7 +10,7 @@ import (
 
 // -------------------------
 // runPythonSolver
-// --------------------------
+// -------------------------
 
 // runPythonSolver is the Python-specific wrapper that prepares the payload,
 // invokes the external process, decodes the PythonSolverOutput and returns

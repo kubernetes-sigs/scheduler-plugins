@@ -25,7 +25,7 @@ import (
 
 // -------------------------
 // tryEnterActive / leaveActive / getActivePlan / tryClearActivePlan
-// --------------------------
+// -------------------------
 
 func TestTryEnterActive_AndLeaveActive(t *testing.T) {
 	pl := &SharedState{}
@@ -90,7 +90,7 @@ func TestGetAndClearActivePlan(t *testing.T) {
 
 // -------------------------
 // toPlanPod
-// --------------------------
+// -------------------------
 
 func TestToPlanPod_BasicConversion(t *testing.T) {
 	p := &v1.Pod{
@@ -116,7 +116,7 @@ func TestToPlanPod_BasicConversion(t *testing.T) {
 
 // -------------------------
 // increaseWorkloadQuota
-// --------------------------
+// -------------------------
 
 func TestIncreaseWorkloadQuota_NewAndExisting(t *testing.T) {
 	wq := WorkloadQuotas{}
@@ -147,7 +147,7 @@ func TestIncreaseWorkloadQuota_NewAndExisting(t *testing.T) {
 
 // -------------------------
 // sortPlacementsByPod
-// --------------------------
+// -------------------------
 
 func TestSortPlacementsByPod_SortsByNamespaceThenName(t *testing.T) {
 	in := []SolverPod{
@@ -170,7 +170,7 @@ func TestSortPlacementsByPod_SortsByNamespaceThenName(t *testing.T) {
 
 // -------------------------
 // sortNewPlacementsByPod
-// --------------------------
+// -------------------------
 
 func TestSortNewPlacementsByPod_SortsByNamespaceThenName(t *testing.T) {
 	in := []SolverPod{
@@ -193,7 +193,7 @@ func TestSortNewPlacementsByPod_SortsByNamespaceThenName(t *testing.T) {
 
 // -------------------------
 // sortPodSetItemsByPriorityAndCreation
-// --------------------------
+// -------------------------
 
 func TestSortPodSetItemsByPriorityAndCreation_PriorityDominates(t *testing.T) {
 	var pLowPrio int32 = 1
@@ -292,7 +292,7 @@ func TestSortPodSetItemsByPriorityAndCreation_NameFallbackOnZeroTimestamp(t *tes
 
 // -------------------------
 // buildPlan
-// --------------------------
+// -------------------------
 
 func TestBuildPlan_NilOutputReturnsEmptyPlan(t *testing.T) {
 	pl := &SharedState{}
@@ -434,7 +434,7 @@ func TestBuildPlan_WithPreemptorNomination(t *testing.T) {
 
 // -------------------------
 // setActivePlan
-// --------------------------
+// -------------------------
 
 func TestSetActivePlan_NilPlan_NoActivePlanStored(t *testing.T) {
 	pl := &SharedState{}
@@ -520,7 +520,7 @@ func TestSetActivePlan_ReplacesOldAndInitializesQuotas(t *testing.T) {
 
 // -------------------------
 // buildWorkloadQuotas
-// --------------------------
+// -------------------------
 
 func TestBuildWorkloadQuotasAtomics_NilInput(t *testing.T) {
 	got := buildWorkloadQuotas(nil)
@@ -579,7 +579,7 @@ func TestBuildWorkloadQuotasAtomics_PositiveAndNonPositiveCounts(t *testing.T) {
 
 // -------------------------
 // isPodAllowedByPlan
-// --------------------------
+// -------------------------
 
 func TestIsPodAllowedByPlan_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
@@ -704,7 +704,7 @@ func TestIsPodAllowedByPlan_WorkloadQuotasExhausted(t *testing.T) {
 
 // -------------------------
 // filterNodes
-// --------------------------
+// -------------------------
 
 func TestFilterNodes_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
@@ -862,7 +862,7 @@ func TestFilterNodes_WorkloadQuotasExhausted(t *testing.T) {
 
 // -------------------------
 // computePlanPodCounts
-// --------------------------
+// -------------------------
 
 func TestCountNewAndTotalPods_NilOutput(t *testing.T) {
 	pendingSched, pre, post := computePlanPodCounts(nil, nil)
@@ -939,7 +939,7 @@ func TestCountNewAndTotalPods_TotalPostNonNegative(t *testing.T) {
 
 // -------------------------
 // evictTargets
-// --------------------------
+// -------------------------
 
 func TestEvictTargets_UsesHook(t *testing.T) {
 	pl := &SharedState{}
@@ -1033,7 +1033,7 @@ func TestEvictTargets_PropagatesNonNotFoundError(t *testing.T) {
 
 // -------------------------
 // waitPodsGone
-// --------------------------
+// -------------------------
 
 func TestWaitPodsGone_UsesHookWhenNonEmpty(t *testing.T) {
 	pl := &SharedState{}
@@ -1153,7 +1153,7 @@ func TestWaitPodsGone_TreatsUidChangeOrTerminatingAsGone(t *testing.T) {
 
 // -------------------------
 // activatePods
-// --------------------------
+// -------------------------
 
 func TestActivatePods_NoPodSetDoesNothing(t *testing.T) {
 	pl := &SharedState{}
@@ -1371,7 +1371,7 @@ func TestActivatePods_PruneRemovesNotFound_UsesNotFoundPath(t *testing.T) {
 
 // -------------------------
 // activatePlannedPods
-// --------------------------
+// -------------------------
 
 func TestActivatePlannedPods_UsesHookWithMatchingPending(t *testing.T) {
 	pl := &SharedState{}
@@ -1499,7 +1499,7 @@ func TestActivatePlannedPods_UsesGlobalActivateWhenNoHook(t *testing.T) {
 
 // -------------------------
 // isPlanCompleted
-// --------------------------
+// -------------------------
 
 func TestIsPlanCompleted_UsesHook(t *testing.T) {
 	pl := &SharedState{}
@@ -1756,7 +1756,7 @@ func TestIsPlanCompleted_WorkloadLiveNoPendingQuotaSatisfied(t *testing.T) {
 
 // -------------------------
 // onPlanCompleted
-// --------------------------
+// -------------------------
 
 func TestOnPlanCompleted_HookCalledAfterStateCleared(t *testing.T) {
 	pl := &SharedState{}
@@ -1894,7 +1894,7 @@ func TestOnPlanCompleted_DefaultPathTearsDownAndMarksStatus(t *testing.T) {
 
 // -------------------------
 // exportPlanToConfigMap
-// --------------------------
+// -------------------------
 
 func TestExportPlanToConfigMap_UsesHook(t *testing.T) {
 	pl := &SharedState{}
@@ -2058,7 +2058,7 @@ func TestExportPlanToConfigMap_Default_PrunesOldPlans(t *testing.T) {
 
 // -------------------------
 // setPlanStatusInConfigMap
-// --------------------------
+// -------------------------
 
 func TestSetPlanStatusInConfigMap_UsesHook(t *testing.T) {
 	pl := &SharedState{}

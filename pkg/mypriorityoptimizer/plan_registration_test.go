@@ -12,7 +12,7 @@ import (
 
 // -------------------------
 // planRegistration – nil output
-// --------------------------
+// -------------------------
 
 func TestPlanRegistration_NilOutput(t *testing.T) {
 	pl := &SharedState{}
@@ -38,7 +38,7 @@ func TestPlanRegistration_NilOutput(t *testing.T) {
 
 // -------------------------
 // planRegistration – buildPlan error
-// --------------------------
+// -------------------------
 
 func TestPlanRegistration_BuildPlanError(t *testing.T) {
 	pl := &SharedState{}
@@ -106,7 +106,7 @@ func TestPlanRegistration_BuildPlanError(t *testing.T) {
 
 // -------------------------
 // planRegistration – exportPlanToConfigMap error is ignored
-// --------------------------
+// -------------------------
 
 func TestPlanRegistration_ExportErrorIsIgnored(t *testing.T) {
 	pl := &SharedState{}

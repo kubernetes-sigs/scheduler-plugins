@@ -16,7 +16,7 @@ import (
 
 // -------------------------
 // isAnySolverEnabled
-// --------------------------
+// -------------------------
 
 // isAnySolverEnabled checks if any solver is enabled.
 func (pl *SharedState) isAnySolverEnabled() bool {
@@ -25,7 +25,7 @@ func (pl *SharedState) isAnySolverEnabled() bool {
 
 // -------------------------
 // buildSolverInput
-// --------------------------
+// -------------------------
 
 // buildSolverInput builds the solver input from live nodes/pods (and optional preemptor)
 func (pl *SharedState) buildSolverInput(
@@ -112,7 +112,7 @@ func (pl *SharedState) buildSolverInput(
 
 // -------------------------
 // buildBaselineScore
-// --------------------------
+// -------------------------
 
 // buildBaselineScore computes the baseline score from the solver input.
 func buildBaselineScore(pods []*v1.Pod) SolverScore {
@@ -133,7 +133,7 @@ func buildBaselineScore(pods []*v1.Pod) SolverScore {
 
 // -------------------------
 // solverConfigArgs
-// --------------------------
+// -------------------------
 
 // solverConfigArgs builds a list of key-value pairs representing the active solver configuration.
 func solverConfigArgs() []any {
@@ -155,7 +155,7 @@ func solverConfigArgs() []any {
 
 // -------------------------
 // isSolutionBetter
-// --------------------------
+// -------------------------
 
 // isSolutionBetter compares two scores lexicographically:
 //  1. More placed per priority (lexicographic map compare)
@@ -193,7 +193,7 @@ func isSolutionBetter(old, new *SolverScore) int {
 
 // -------------------------
 // isSolutionUsable
-// --------------------------
+// -------------------------
 
 // isSolutionUsable checks if the solver output status indicates a usable result.
 // OPTIMAL means the solution is perfect and meets all constraints
@@ -205,7 +205,7 @@ func isSolutionUsable(status string) bool {
 
 // -------------------------
 // isSolutionApplicable
-// --------------------------
+// -------------------------
 
 // isSolutionApplicable checks whether a SolverOutput can still be safely
 // applied on the current cluster state. It allows unrelated drift and only
@@ -319,7 +319,7 @@ func (pl *SharedState) isSolutionApplicable(
 
 // -------------------------
 // logLeaderboard
-// --------------------------
+// -------------------------
 
 // logLeaderboard prints a compact solver leaderboard relative to baseline.
 // It groups attempts as better/equal/worse vs baseline and tags adjacent ties.
@@ -413,7 +413,7 @@ func logLeaderboard(
 
 // -------------------------
 // scoreSolution
-// --------------------------
+// -------------------------
 
 // scoreSolution computes final Score from the snapshot given to the solver:
 //   - placed_by_priority: number of pods that were placed for each priority
@@ -491,7 +491,7 @@ func scoreSolution(in SolverInput, out *SolverOutput) SolverScore {
 
 // -------------------------
 // toSolverPod
-// --------------------------
+// -------------------------
 
 // toSolverPod converts a Pod to a SolverPod.
 func toSolverPod(p *v1.Pod, node string) SolverPod {
@@ -508,7 +508,7 @@ func toSolverPod(p *v1.Pod, node string) SolverPod {
 
 // -------------------------
 // exportSolverStatsToConfigMap
-// --------------------------
+// -------------------------
 
 // exportSolverStatsToConfigMap exports a compact run record to the stats ConfigMap.
 // Only runs when `hadFeasible` is true.
@@ -537,7 +537,7 @@ func (pl *SharedState) exportSolverStatsToConfigMap(
 
 // -------------------------
 // appendSolverStatsCM
-// --------------------------
+// -------------------------
 
 var appendSolverStatsCMHook func(pl *SharedState, ctx context.Context, entry ExportedSolverStats)
 

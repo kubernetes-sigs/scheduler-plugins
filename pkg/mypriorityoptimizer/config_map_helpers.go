@@ -18,7 +18,7 @@ import (
 
 // -------------------------
 // listConfigMaps
-// --------------------------
+// -------------------------
 
 // List config maps by label newest-first.
 func listConfigMaps(
@@ -48,9 +48,9 @@ func listConfigMaps(
 	return cms, nil
 }
 
-// ---------------------------
-// getConfigMapByName
 // --------------------------
+// getConfigMapByName
+// -------------------------
 
 // getConfigMapByName retrieves a config map by name.
 func getConfigMapByName(
@@ -64,7 +64,7 @@ func getConfigMapByName(
 
 // -------------------------
 // pruneConfigMaps
-// --------------------------
+// -------------------------
 
 // Keep first K newest config maps with label, delete the rest.
 func pruneConfigMaps(
@@ -90,7 +90,7 @@ func pruneConfigMaps(
 
 // -------------------------
 // marshalJsonIndented
-// --------------------------
+// -------------------------
 
 // marshalJsonIndented marshals an object to JSON with indentation.
 func marshalJsonIndented(v any) ([]byte, error) {
@@ -99,7 +99,7 @@ func marshalJsonIndented(v any) ([]byte, error) {
 
 // -------------------------
 // jsonString
-// --------------------------
+// -------------------------
 
 // jsonString pretty-prints v to JSON and returns it as a string.
 func jsonString(v any) (string, error) {
@@ -112,7 +112,7 @@ func jsonString(v any) (string, error) {
 
 // -------------------------
 // patchDataString
-// --------------------------
+// -------------------------
 
 // patchDataString patches a single DataKey with the given raw JSON string.
 func (d ConfigMapDoc) patchDataString(
@@ -133,7 +133,7 @@ func (d ConfigMapDoc) patchDataString(
 
 // -------------------------
 // ensureJson
-// --------------------------
+// -------------------------
 
 // Create or update config map, storing data as JSON at DataKey.
 func (d ConfigMapDoc) ensureJson(
@@ -176,7 +176,7 @@ func (d ConfigMapDoc) ensureJson(
 
 // -------------------------
 // patchJson
-// --------------------------
+// -------------------------
 
 // Patch only DataKey via merge patch.
 func (d ConfigMapDoc) patchJson(
@@ -193,7 +193,7 @@ func (d ConfigMapDoc) patchJson(
 
 // -------------------------
 // readJson
-// --------------------------
+// -------------------------
 
 // readJson reads DataKey; returns nil if the ConfigMap or key is missing.
 func (d ConfigMapDoc) readJson(
@@ -211,7 +211,7 @@ func (d ConfigMapDoc) readJson(
 
 // -------------------------
 // mutateJson
-// --------------------------
+// -------------------------
 
 // mutateJson loads -> mutates -> patches an array JSON.
 func mutateJson[T any](
@@ -238,7 +238,7 @@ func mutateJson[T any](
 
 // -------------------------
 // mutateRaw
-// --------------------------
+// -------------------------
 
 // mutateRaw loads the JSON string at DataKey, mutates it, and writes the result
 // back.

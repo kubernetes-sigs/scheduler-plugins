@@ -16,7 +16,7 @@ import (
 
 // -------------------------
 // Test Hooks
-// --------------------------
+// -------------------------
 
 var (
 	nodesListerFor = func(pl *SharedState) corev1listers.NodeLister {

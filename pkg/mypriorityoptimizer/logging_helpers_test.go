@@ -5,7 +5,7 @@ import "testing"
 
 // -------------------------
 // msg
-// --------------------------
+// -------------------------
 
 func TestMsg_Basic(t *testing.T) {
 	got := msg("solver", "started")

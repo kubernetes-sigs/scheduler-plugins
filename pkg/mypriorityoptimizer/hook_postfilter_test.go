@@ -14,7 +14,7 @@ import (
 
 // -------------------------
 // PostFilter
-// --------------------------
+// -------------------------
 
 func TestPostFilter_NoPerPod_NoNomination(t *testing.T) {
 

@@ -15,7 +15,7 @@ import (
 
 // -------------------------
 // Name
-// --------------------------
+// -------------------------
 
 // TestName ensures the Name method returns the expected plugin name.
 func TestName(t *testing.T) {
@@ -28,7 +28,7 @@ func TestName(t *testing.T) {
 
 // -------------------------
 // New
-// --------------------------
+// -------------------------
 
 // TestNew_WithNilHandlePanics ensures that if the scheduler ever calls New
 // with a nil framework.Handle, we fail loudly rather than silently.

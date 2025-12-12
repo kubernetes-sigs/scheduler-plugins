@@ -88,7 +88,7 @@ func (pl *SharedState) planComputation(
 		cancel()
 		durMs := time.Since(start).Milliseconds()
 
-		// ------------------------------ error / nil-output cases ----------
+		// ----------------------------- error / nil-output cases ----------
 		if err != nil || out == nil {
 			// Normalise error message + status
 			errMsg := "nil output"
@@ -127,7 +127,7 @@ func (pl *SharedState) planComputation(
 			Status:     out.Status,
 			Score:      scoreSolution(inAttempt, out),
 		}
-		// ------------------------------ usable / not-usable cases ----------
+		// ----------------------------- usable / not-usable cases ----------
 		improvesCurrent := isSolutionBetter(&currentBest, &res.Score) > 0
 		usable := isSolutionUsable(res.Status)
 		if !usable {

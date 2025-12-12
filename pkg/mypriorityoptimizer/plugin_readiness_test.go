@@ -16,7 +16,7 @@ import (
 
 // -------------------------
 // Helpers
-// --------------------------
+// -------------------------
 
 func withReadinessInterval(d time.Duration, fn func()) {
 	old := readinessUsableNodeInterval
@@ -58,7 +58,7 @@ func newTestPodInformer() cache.SharedIndexInformer {
 
 // -------------------------
 // isCacheReady
-// --------------------------
+// -------------------------
 
 func TestIsCacheReady_NoInformers_ReturnsTrue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -93,7 +93,7 @@ func TestIsCacheReady_ContextCanceled_ReturnsFalse(t *testing.T) {
 
 // -------------------------
 // waitForUsableNode
-// --------------------------
+// -------------------------
 
 func TestWaitForUsableNode_ContextCanceled_ReturnsFalse(t *testing.T) {
 	pl := &SharedState{}
@@ -148,7 +148,7 @@ func TestWaitForUsableNode_EventuallyFindsUsableNode(t *testing.T) {
 
 // -------------------------
 // pluginReadiness
-// --------------------------
+// -------------------------
 
 func TestPluginReadiness_InformerSyncCanceled_DoesNotMarkReady(t *testing.T) {
 	pl := &SharedState{}
