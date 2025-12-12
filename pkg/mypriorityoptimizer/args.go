@@ -3,20 +3,19 @@ package mypriorityoptimizer
 
 // ======= Optimality where/when settings =======
 
-// OptimizeMode is the frequency at which optimization is performed.
-// Choices: "per_pod", "periodic", "interlude", "manual"
+// OptimizeMode is the frequency at which optimization is performed. Choices:
+// "per_pod", "periodic", "interlude", "manual", "manual_blocking"
 var OptimizeMode = parseOptimizeMode(getenv("OPTIMIZE_MODE", "periodic"))
 
 // OptimizeSolveSynch controls whether solver runs use the synchronous or
 // asynchronous flow w.r.t. taking the Active lock.
 //
-// true  -> "synchronous" (take Active before planContext) false -> "asynchronous"
-// (take Active only once we know a plan is worth applying)
+// true = "synchronous" (take Active before planContext). false = "asynchronous"
+// (take Active only when we know a plan is worth applying)
 var OptimizeSolveSynch = parseBool(getenv("OPTIMIZE_SOLVE_SYNCH", "true"))
 
 // OptimizePeriodicInterval is the duration between consecutive optimization
-// runs in periodic mode. If a plan is actively being executed, the loop is
-// skipped.
+// runs in periodic mode. If a plan is currently active, the loop is skipped.
 var OptimizePeriodicInterval = parseTime(getenv("OPTIMIZE_PERIODIC_INTERVAL", "30s"))
 
 // OptimizeInterludeDelay is the duration of idle time (no changes in the

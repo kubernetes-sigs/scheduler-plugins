@@ -101,7 +101,7 @@ func TestWaitForUsableNode_ContextCanceled_ReturnsFalse(t *testing.T) {
 	withReadinessInterval(1*time.Millisecond, func() {
 		withReadinessHooks(
 			func(_ *SharedState) ([]*v1.Node, error) {
-				return []*v1.Node{newNode("nodeA")}, nil
+				return []*v1.Node{makeNode("nodeA")}, nil
 			},
 			func(_ *v1.Node) bool { return true },
 			func() {
@@ -126,9 +126,9 @@ func TestWaitForUsableNode_EventuallyFindsUsableNode(t *testing.T) {
 				calls.Add(1)
 				// First tick: only unusable nodes; second tick: usable.
 				if calls.Load() == 1 {
-					return []*v1.Node{newNode("nodeA")}, nil
+					return []*v1.Node{makeNode("nodeA")}, nil
 				}
-				return []*v1.Node{newNode("nodeB")}, nil
+				return []*v1.Node{makeNode("nodeB")}, nil
 			},
 			func(n *v1.Node) bool { return n != nil && n.Name == "nodeB" },
 			func() {
@@ -178,7 +178,7 @@ func TestPluginReadiness_WarmupCanceled_DoesNotMarkReady(t *testing.T) {
 
 	withReadinessInterval(1*time.Millisecond, func() {
 		withReadinessHooks(
-			func(_ *SharedState) ([]*v1.Node, error) { return []*v1.Node{newNode("nodeA")}, nil },
+			func(_ *SharedState) ([]*v1.Node, error) { return []*v1.Node{makeNode("nodeA")}, nil },
 			func(_ *v1.Node) bool { return true },
 			func() {
 				ctx, cancel := context.WithCancel(context.Background())
@@ -205,7 +205,7 @@ func TestPluginReadiness_UsableNodeNeverFound_DoesNotMarkReady(t *testing.T) {
 
 	withReadinessInterval(1*time.Millisecond, func() {
 		withReadinessHooks(
-			func(_ *SharedState) ([]*v1.Node, error) { return []*v1.Node{newNode("nodeA")}, nil },
+			func(_ *SharedState) ([]*v1.Node, error) { return []*v1.Node{makeNode("nodeA")}, nil },
 			func(_ *v1.Node) bool { return false },
 			func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
@@ -233,7 +233,7 @@ func TestPluginReadiness_Success_MarksReady(t *testing.T) {
 
 		withReadinessInterval(1*time.Millisecond, func() {
 			withReadinessHooks(
-				func(_ *SharedState) ([]*v1.Node, error) { return []*v1.Node{newNode("nodeA")}, nil },
+				func(_ *SharedState) ([]*v1.Node, error) { return []*v1.Node{makeNode("nodeA")}, nil },
 				func(_ *v1.Node) bool { return true },
 				func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)

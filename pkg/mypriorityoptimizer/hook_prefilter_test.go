@@ -112,7 +112,7 @@ func TestPreFilter_ActivePlan_WorkloadAllowed_SubsetOfNodes(t *testing.T) {
 
 	// A controller-owned pod (ReplicaSet) should be restricted by workload quotas.
 	prio := int32(0)
-	pod := newPod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
+	pod := makePod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
 	wk, ok := getTopWorkload(pod)
 	if !ok {
 		t.Fatalf("expected workload pod")

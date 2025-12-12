@@ -1,14 +1,61 @@
 # test_python_solver.py
+import io
+import json
+
 import pytest
 
-import io, json
 from ortools.sat.python import cp_model
-
-from scripts.python_solver.main import CPSATSolver, NO_NODES, NO_PODS, main as solver_main
-
+from scripts.python_solver.main import (
+    CPSATSolver,
+    NO_NODES,
+    NO_PODS,
+    main as solver_main,
+)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def go_payload(*, solver_input: dict, solver_options: dict | None = None) -> dict:
+    """Match the exact JSON shape Go sends to the Python solver."""
+    return {
+        "solver_input": solver_input or {},
+        "solver_options": solver_options or {},
+    }
+
+
+def assert_solver_output_schema(out: dict, *, expect_full: bool) -> None:
+    assert isinstance(out, dict)
+    assert "status" in out
+    assert isinstance(out["status"], str)
+    if not expect_full:
+        return
+    assert "placements" in out
+    assert "evictions" in out
+    assert "phases" in out
+    assert "duration_ms" in out
+    assert isinstance(out["placements"], list)
+    assert isinstance(out["evictions"], list)
+    assert isinstance(out["phases"], list)
+    assert isinstance(out["duration_ms"], int)
+
+
+def assert_placement_entry_schema(pl: dict) -> None:
+    assert isinstance(pl, dict)
+    assert set(["uid", "name", "namespace", "old_node", "node"]).issubset(pl.keys())
+    assert isinstance(pl["uid"], str)
+    assert isinstance(pl["name"], str)
+    assert isinstance(pl["namespace"], str)
+    assert isinstance(pl["old_node"], str)
+    assert isinstance(pl["node"], str)
+
+
+def assert_eviction_entry_schema(ev: dict) -> None:
+    assert isinstance(ev, dict)
+    assert set(["uid", "name", "namespace", "node"]).issubset(ev.keys())
+    assert isinstance(ev["uid"], str)
+    assert isinstance(ev["name"], str)
+    assert isinstance(ev["namespace"], str)
+    assert isinstance(ev["node"], str)
 
 def make_node(name="n1", cpu=1000, mem=1_000_000_000):
     return {
@@ -43,9 +90,8 @@ def make_pod(
 # A small timeout that is still enough to get FEASIBLE/OPTIMAL on tiny models
 DEFAULT_TIMEOUT_MS = 2000
 
-
 # ---------------------------------------------------------------------------
-# _status_str via parametrize
+# Solver: _status_str
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
@@ -60,9 +106,8 @@ DEFAULT_TIMEOUT_MS = 2000
 def test_status_str_handles_int_and_string(value, expected):
     assert CPSATSolver._status_str(value) == expected
 
-
 # ---------------------------------------------------------------------------
-# Quick exits: NO_NODES / NO_PODS (parametrized)
+# Solver: quick exits NO_NODES / NO_PODS
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
@@ -75,12 +120,15 @@ def test_status_str_handles_int_and_string(value, expected):
 def test_quick_exits_no_nodes_or_no_pods(nodes, pods, expected_status):
     solver = CPSATSolver()
     out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": pods,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-        }
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
     )
+    assert_solver_output_schema(out, expect_full=False)
     assert out["status"] == expected_status
     # These early exits don't build a model, so there should be no placements/evictions.
     assert out.get("placements", []) == []
@@ -88,7 +136,7 @@ def test_quick_exits_no_nodes_or_no_pods(nodes, pods, expected_status):
 
 
 # ---------------------------------------------------------------------------
-# Simple feasible placement
+# Solver: simple feasible placement
 # ---------------------------------------------------------------------------
 
 def test_single_pending_pod_is_placed_on_single_node():
@@ -97,30 +145,34 @@ def test_single_pending_pod_is_placed_on_single_node():
     pods = [make_pod("p1", cpu=200, mem=100_000_000, priority=0, node="")]
 
     out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": pods,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-        }
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
     )
 
+    assert_solver_output_schema(out, expect_full=True)
     assert out["status"] in ("FEASIBLE", "OPTIMAL")
     placements = out["placements"]
     evictions = out["evictions"]
 
-    # One placement for p1, from "" to n1
+    # One placement for p1: old_node "" -> node "n1"
     assert len(placements) == 1
     pl = placements[0]
-    assert pl["pod"]["uid"] == "p1"
-    assert pl["from_node"] == ""
-    assert pl["to_node"] == "n1"
+    assert_placement_entry_schema(pl)
+    assert pl["uid"] == "p1"
+    assert pl["old_node"] == ""
+    assert pl["node"] == "n1"
 
     # No evictions in this trivial case
     assert evictions == []
 
 
 # ---------------------------------------------------------------------------
-# Infeasible batch mode: pending pod cannot fit anywhere
+# Solver: infeasible batch mode
 # ---------------------------------------------------------------------------
 
 def test_pending_pod_too_big_makes_model_infeasible():
@@ -130,13 +182,16 @@ def test_pending_pod_too_big_makes_model_infeasible():
     pods = [make_pod("p1", cpu=200, mem=100_000_000, priority=0, node="")]
 
     out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": pods,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-        }
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
     )
 
+    assert_solver_output_schema(out, expect_full=True)
     # Because of the constraint "at least one pending pod must be placed",
     # this becomes globally infeasible.
     assert out["status"] == "INFEASIBLE"
@@ -144,8 +199,30 @@ def test_pending_pod_too_big_makes_model_infeasible():
     assert out["evictions"] == []
 
 
+def test_pending_pod_too_big_in_global_mode_is_infeasible_even_with_preemptor_none():
+    solver = CPSATSolver()
+    nodes = [make_node("n1", cpu=50, mem=100_000_000)]
+    pods = [make_pod("p1", cpu=200, mem=100_000_000, priority=0, node="")]
+
+    out = solver.solve(
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "preemptor": None,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
+    )
+
+    assert_solver_output_schema(out, expect_full=True)
+    assert out["status"] == "INFEASIBLE"
+    assert out["placements"] == []
+    assert out["evictions"] == []
+
+
 # ---------------------------------------------------------------------------
-# Duplicate pod UID handling (input correctness)
+# Solver: duplicate UID handling
 # ---------------------------------------------------------------------------
 
 def test_duplicate_pod_records_use_single_running_copy():
@@ -165,13 +242,16 @@ def test_duplicate_pod_records_use_single_running_copy():
     ]
 
     out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": pods,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-        }
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
     )
 
+    assert_solver_output_schema(out, expect_full=True)
     # If dedup is working, we only see the running copy,
     # no pending pods => no placements/evictions, and model is feasible.
     assert out["status"] in ("FEASIBLE", "OPTIMAL")
@@ -180,7 +260,7 @@ def test_duplicate_pod_records_use_single_running_copy():
 
 
 # ---------------------------------------------------------------------------
-# Single-preemptor mode
+# Solver: single-preemptor mode
 # ---------------------------------------------------------------------------
 
 def test_single_preemptor_is_placed_if_feasible():
@@ -198,14 +278,17 @@ def test_single_preemptor_is_placed_if_feasible():
     }
 
     out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": [],  # will be auto-augmented with preemptor as pending
-            "preemptor": preemptor,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-        }
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": [],  # will be auto-augmented with preemptor as pending
+                "preemptor": preemptor,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
     )
 
+    assert_solver_output_schema(out, expect_full=True)
     assert out["status"] in ("FEASIBLE", "OPTIMAL")
     placements = out["placements"]
     evictions = out["evictions"]
@@ -213,9 +296,10 @@ def test_single_preemptor_is_placed_if_feasible():
     # Preemptor should be placed on n1
     assert len(placements) == 1
     pl = placements[0]
-    assert pl["pod"]["uid"] == "pre"
-    assert pl["from_node"] == ""
-    assert pl["to_node"] == "n1"
+    assert_placement_entry_schema(pl)
+    assert pl["uid"] == "pre"
+    assert pl["old_node"] == ""
+    assert pl["node"] == "n1"
 
     # No evictions; we only had the preemptor
     assert evictions == []
@@ -237,22 +321,147 @@ def test_single_preemptor_infeasible_if_it_cannot_fit_any_node():
     }
 
     out = solver.solve(
-        {
-            "nodes": nodes,
-            "pods": [],
-            "preemptor": preemptor,
-            "timeout_ms": DEFAULT_TIMEOUT_MS,
-        }
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": [],
+                "preemptor": preemptor,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
     )
 
+    assert_solver_output_schema(out, expect_full=True)
     # Single-preemptor mode enforces sum(assign[pre]) == 1, but there are
     # no eligible nodes -> model is infeasible.
     assert out["status"] == "INFEASIBLE"
     assert out["placements"] == []
     assert out["evictions"] == []
 
+
 # ---------------------------------------------------------------------------
-# CLI / main() tests – input/output handling
+# Solver: global/background mode (preemptor nil/absent)
+# ---------------------------------------------------------------------------
+
+def test_global_mode_preemptor_none_does_not_force_any_new_placement_when_all_pods_running():
+    """
+    When preemptor is None (global/background mode), the solver must NOT enforce
+    placing a preemptor. If there are no pending pods, it also must not enforce
+    any new placement.
+    """
+    solver = CPSATSolver()
+    nodes = [make_node("n1", cpu=1000, mem=1_000_000_000)]
+    pods = [make_pod("p1", cpu=200, mem=100_000_000, priority=0, node="n1")]
+
+    out = solver.solve(
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "preemptor": None,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
+    )
+
+    assert_solver_output_schema(out, expect_full=True)
+    assert out["status"] in ("FEASIBLE", "OPTIMAL")
+    assert out["placements"] == []
+    assert out["evictions"] == []
+
+
+def test_protected_running_pod_that_cannot_stay_is_model_invalid():
+    solver = CPSATSolver()
+
+    # Node too small for the pod's request.
+    nodes = [make_node("n1", cpu=50, mem=100_000_000)]
+    pods = [
+        make_pod(
+            "p1",
+            cpu=200,
+            mem=100_000_000,
+            priority=0,
+            node="n1",  # running
+            protected=True,
+        )
+    ]
+
+    out = solver.solve(
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
+    )
+
+    assert_solver_output_schema(out, expect_full=False)
+    assert out["status"] == "MODEL_INVALID"
+
+
+def test_unprotected_running_pod_is_evicted_when_capacity_cannot_fit_all_running_pods():
+    solver = CPSATSolver()
+
+    # Single node can fit only one 600m pod.
+    nodes = [make_node("n1", cpu=600, mem=1_000_000_000)]
+    pods = [
+        make_pod("p1", cpu=600, mem=100_000_000, node="n1"),
+        make_pod("p2", cpu=600, mem=100_000_000, node="n1"),
+    ]
+
+    out = solver.solve(
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
+    )
+
+    assert_solver_output_schema(out, expect_full=True)
+    assert out["status"] in ("FEASIBLE", "OPTIMAL")
+    assert out["placements"] == []  # kept pod stays; evicted pod shows in evictions
+    assert len(out["evictions"]) == 1
+    assert_eviction_entry_schema(out["evictions"][0])
+
+
+def test_unprotected_running_pod_is_moved_when_second_node_allows_keeping_all_running_pods():
+    solver = CPSATSolver()
+
+    # n1 can fit only one pod; n2 can fit one pod. This forces a move (not an eviction)
+    # because the placement objective maximizes placed pods.
+    nodes = [
+        make_node("n1", cpu=600, mem=1_000_000_000),
+        make_node("n2", cpu=600, mem=1_000_000_000),
+    ]
+    pods = [
+        make_pod("p1", cpu=600, mem=100_000_000, node="n1"),
+        make_pod("p2", cpu=600, mem=100_000_000, node="n1"),
+    ]
+
+    out = solver.solve(
+        go_payload(
+            solver_input={
+                "nodes": nodes,
+                "pods": pods,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+            }
+        )
+    )
+
+    assert_solver_output_schema(out, expect_full=True)
+    assert out["status"] in ("FEASIBLE", "OPTIMAL")
+    assert out["evictions"] == []
+    assert len(out["placements"]) == 1
+    pl = out["placements"][0]
+    assert_placement_entry_schema(pl)
+    assert pl["old_node"] == "n1"
+    assert pl["node"] == "n2"
+
+# ---------------------------------------------------------------------------
+# CLI / main(): Go↔Python contract and robustness
 # ---------------------------------------------------------------------------
 
 def run_main_with_stdin(monkeypatch, capsys, payload_dict):
@@ -275,28 +484,94 @@ def test_main_valid_instance_roundtrip(monkeypatch, capsys):
     End-to-end: JSON -> stdin -> main() -> stdout -> JSON.
     Ensure the structure is correct and matches expectations.
     """
-    payload = {
-        "nodes": [make_node("n1")],
-        "pods": [make_pod("p1")],
-        "timeout_ms": DEFAULT_TIMEOUT_MS,
-    }
+    payload = go_payload(
+        solver_input={
+            "nodes": [make_node("n1")],
+            "pods": [make_pod("p1")],
+            "timeout_ms": DEFAULT_TIMEOUT_MS,
+        },
+        solver_options={},
+    )
 
     out = run_main_with_stdin(monkeypatch, capsys, payload)
 
-    # Check basic shape
-    assert "status" in out
-    assert "placements" in out
-    assert "evictions" in out
-    assert "stages" in out
-    assert isinstance(out["placements"], list)
-    assert isinstance(out["evictions"], list)
-    assert isinstance(out["stages"], list)
+    assert_solver_output_schema(out, expect_full=True)
 
     # For this simple case we expect at least a feasible solution and
     # that p1 appears in placements.
     assert out["status"] in ("FEASIBLE", "OPTIMAL")
-    placed_uids = {pl["pod"]["uid"] for pl in out["placements"]}
+    placed_uids = {pl["uid"] for pl in out["placements"]}
     assert "p1" in placed_uids
+
+
+def test_main_go_interface_contract_roundtrip(monkeypatch, capsys):
+    """Validate the Go↔Python stdin/stdout contract (payload wrapper + output keys)."""
+    payload = go_payload(
+        solver_input={
+            "nodes": [make_node("n1")],
+            "pods": [make_pod("p1", node="")],
+            "baseline_score": {"placed_by_priority": {}, "evicted": 0, "moved": 0},
+            "timeout_ms": DEFAULT_TIMEOUT_MS,
+            "ignore_affinity": True,
+        },
+        solver_options={
+            "log_progress": False,
+            "gap_limit": 0.00,
+            "guaranteed_tier_fraction": 0.40,
+            "move_fraction_of_tier": 0.30,
+        },
+    )
+
+    out = run_main_with_stdin(monkeypatch, capsys, payload)
+
+    assert_solver_output_schema(out, expect_full=True)
+
+    # Placements/evictions entries must follow Go json tags: uid/name/namespace/old_node/node.
+    assert out["status"] in ("FEASIBLE", "OPTIMAL")
+    assert any(
+        pl.get("uid") == "p1" and pl.get("old_node") == "" and isinstance(pl.get("node"), str)
+        for pl in out["placements"]
+    )
+    for pl in out["placements"]:
+        assert_placement_entry_schema(pl)
+    for ev in out["evictions"]:
+        assert_eviction_entry_schema(ev)
+
+
+@pytest.mark.parametrize(
+    "payload,expected_status",
+    [
+        (go_payload(solver_input={"nodes": [], "pods": [make_pod("p1")], "timeout_ms": DEFAULT_TIMEOUT_MS}), NO_NODES),
+        (go_payload(solver_input={"nodes": [make_node("n1")], "pods": [], "timeout_ms": DEFAULT_TIMEOUT_MS}), NO_PODS),
+    ],
+)
+def test_main_quick_exits_only_require_status(monkeypatch, capsys, payload, expected_status):
+    out = run_main_with_stdin(monkeypatch, capsys, payload)
+    assert_solver_output_schema(out, expect_full=False)
+    assert out["status"] == expected_status
+
+
+def test_main_ignores_unknown_fields_in_payload(monkeypatch, capsys):
+    """Go may add fields over time; Python solver should ignore unknown keys."""
+    payload = {
+        **go_payload(
+            solver_input={
+                "nodes": [make_node("n1")],
+                "pods": [make_pod("p1", node="")],
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+                "some_future_field": {"x": 1},
+            },
+            solver_options={
+                "gap_limit": 0.00,
+                "unknown_option": 123,
+            },
+        ),
+        "totally_unknown_top_level": "ok",
+    }
+
+    out = run_main_with_stdin(monkeypatch, capsys, payload)
+    assert_solver_output_schema(out, expect_full=True)
+    assert out["status"] in ("FEASIBLE", "OPTIMAL")
 
 
 def test_main_invalid_json_returns_python_exception(monkeypatch, capsys):
@@ -309,5 +584,6 @@ def test_main_invalid_json_returns_python_exception(monkeypatch, capsys):
     captured = capsys.readouterr()
     out_str = captured.out.strip()
     data = json.loads(out_str)  # should still be valid JSON
+    assert_solver_output_schema(data, expect_full=False)
     assert data["status"] == "PYTHON_EXCEPTION"
     # The exact error message is implementation-dependent, so we don't assert on it.

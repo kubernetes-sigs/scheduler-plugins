@@ -146,7 +146,7 @@ func TestReserve_WorkloadNotTracked_Unschedulable(t *testing.T) {
 	pl := &SharedState{}
 
 	prio := int32(0)
-	pod := newPod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
+	pod := makePod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
 	wk, ok := getTopWorkload(pod)
 	if !ok {
 		t.Fatalf("expected workload pod")
@@ -168,7 +168,7 @@ func TestReserve_NodeNotTracked_Unschedulable(t *testing.T) {
 	pl := &SharedState{}
 
 	prio := int32(0)
-	pod := newPod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
+	pod := makePod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
 	wk, _ := getTopWorkload(pod)
 
 	var c atomic.Int32
@@ -189,7 +189,7 @@ func TestReserve_WorkloadNodeQuotaExhausted_Unschedulable(t *testing.T) {
 	pl := &SharedState{}
 
 	prio := int32(0)
-	pod := newPod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
+	pod := makePod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
 	wk, _ := getTopWorkload(pod)
 
 	var c atomic.Int32
@@ -210,7 +210,7 @@ func TestReserve_ConsumesQuota_WritesReservationState(t *testing.T) {
 	pl := &SharedState{}
 
 	prio := int32(0)
-	pod := newPod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
+	pod := makePod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
 	wk, _ := getTopWorkload(pod)
 
 	var c atomic.Int32

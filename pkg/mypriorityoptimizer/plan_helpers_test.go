@@ -316,9 +316,9 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 	//  - p1: running on n1, will be evicted
 	//  - p2: running on n1, moved to n2
 	//  - p3: pending, placed on n1
-	p1 := newPod("ns", "p1", "u1", "n1", "", "", 1)
-	p2 := newPod("ns", "p2", "u2", "n1", "", "", 1)
-	p3 := newPod("ns", "p3", "u3", "", "", "", 1)
+	p1 := makePod("ns", "p1", "u1", "n1", "", "", 1)
+	p2 := makePod("ns", "p2", "u2", "n1", "", "", 1)
+	p3 := makePod("ns", "p3", "u3", "", "", "", 1)
 
 	out := &SolverOutput{
 		Evictions: []SolverPod{
@@ -401,7 +401,7 @@ func TestBuildPlan_BasicEvictsMovesAndPending(t *testing.T) {
 func TestBuildPlan_WithPreemptorNomination(t *testing.T) {
 	pl := &SharedState{}
 
-	pre := newPod("ns", "pre", "pre-uid", "", "", "", 1)
+	pre := makePod("ns", "pre", "pre-uid", "", "", "", 1)
 
 	out := &SolverOutput{
 		Placements: []SolverPod{
@@ -583,7 +583,7 @@ func TestBuildWorkloadQuotasAtomics_PositiveAndNonPositiveCounts(t *testing.T) {
 
 func TestIsPodAllowedByPlan_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
-	p := newPod("ns", "p", "u", "", "", "", 1)
+	p := makePod("ns", "p", "u", "", "", "", 1)
 
 	if got := pl.isPodAllowedByPlan(p); got {
 		t.Fatalf("isPodAllowedByPlan() with no active plan = %v, want false", got)
@@ -600,7 +600,7 @@ func TestIsPodAllowedByPlan_PinnedStandalone(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p-standalone", "u1", "", "", "", 1)
+	p := makePod("ns", "p-standalone", "u1", "", "", "", 1)
 
 	if got := pl.isPodAllowedByPlan(p); !got {
 		t.Fatalf("isPodAllowedByPlan() for pinned standalone pod = %v, want true", got)
@@ -611,7 +611,7 @@ func TestIsPodAllowedByPlan_WorkloadAnyNodeAllowed(t *testing.T) {
 	pl := &SharedState{}
 	var prio int32 = 5
 
-	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+	p := makePod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
 
 	wk, owned := getTopWorkload(p)
 	if !owned {
@@ -641,7 +641,7 @@ func TestIsPodAllowedByPlan_WorkloadSpecificNodeRequired(t *testing.T) {
 	var prio int32 = 5
 
 	// Pod already has a node selected.
-	p := newPod("ns", "p", "u1", "n2", "ReplicaSet", "rs-1", prio)
+	p := makePod("ns", "p", "u1", "n2", "ReplicaSet", "rs-1", prio)
 
 	wk, owned := getTopWorkload(p)
 	if !owned {
@@ -676,7 +676,7 @@ func TestIsPodAllowedByPlan_WorkloadQuotasExhausted(t *testing.T) {
 	pl := &SharedState{}
 	var prio int32 = 5
 
-	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+	p := makePod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
 
 	wk, owned := getTopWorkload(p)
 	if !owned {
@@ -708,7 +708,7 @@ func TestIsPodAllowedByPlan_WorkloadQuotasExhausted(t *testing.T) {
 
 func TestFilterNodes_NoActivePlan(t *testing.T) {
 	pl := &SharedState{}
-	p := newPod("ns", "p", "u", "", "", "", 1)
+	p := makePod("ns", "p", "u", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if nodes != nil {
@@ -732,7 +732,7 @@ func TestFilterNodes_PinnedStandaloneToSpecificNode(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p1", "u1", "", "", "", 1)
+	p := makePod("ns", "p1", "u1", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if !ok {
@@ -756,7 +756,7 @@ func TestFilterNodes_PinnedStandaloneNoSpecificNode(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p-any", "u1", "", "", "", 1)
+	p := makePod("ns", "p-any", "u1", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if !ok {
@@ -779,7 +779,7 @@ func TestFilterNodes_PodNotInPlanBlocked(t *testing.T) {
 	}
 	pl.ActivePlan.Store(ap)
 
-	p := newPod("ns", "p-unknown", "u1", "", "", "", 1)
+	p := makePod("ns", "p-unknown", "u1", "", "", "", 1)
 
 	nodes, reason, ok := pl.filterNodes(p)
 	if ok {
@@ -797,7 +797,7 @@ func TestFilterNodes_WorkloadNodesAllowed(t *testing.T) {
 	pl := &SharedState{}
 	var prio int32 = 5
 
-	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+	p := makePod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
 
 	wk, owned := getTopWorkload(p)
 	if !owned {
@@ -831,7 +831,7 @@ func TestFilterNodes_WorkloadQuotasExhausted(t *testing.T) {
 	pl := &SharedState{}
 	var prio int32 = 5
 
-	p := newPod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
+	p := makePod("ns", "p", "u1", "", "ReplicaSet", "rs-1", prio)
 
 	wk, owned := getTopWorkload(p)
 	if !owned {
@@ -876,12 +876,12 @@ func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
 	now := metav1.Now()
 
 	// running pods
-	run1 := newPod("ns", "run1", "u-run1", "n1", "", "", 1)
-	run2 := newPod("ns", "run2", "u-run2", "n2", "", "", 1)
+	run1 := makePod("ns", "run1", "u-run1", "n1", "", "", 1)
+	run2 := makePod("ns", "run2", "u-run2", "n2", "", "", 1)
 	// pending pod (to be scheduled)
-	pend1 := newPod("ns", "pend1", "u-pend1", "", "", "", 1)
+	pend1 := makePod("ns", "pend1", "u-pend1", "", "", "", 1)
 	// deleted pod (should be ignored)
-	del := newPod("ns", "del", "u-del", "n1", "", "", 1)
+	del := makePod("ns", "del", "u-del", "n1", "", "", 1)
 	del.DeletionTimestamp = &now
 
 	pods := []*v1.Pod{run1, run2, pend1, del}
@@ -915,7 +915,7 @@ func TestCountNewAndTotalPods_BasicScenario(t *testing.T) {
 
 func TestCountNewAndTotalPods_TotalPostNonNegative(t *testing.T) {
 	// Only pending pods -> totalPrePlan = 0
-	pend := newPod("ns", "pend", "u-pend", "", "", "", 1)
+	pend := makePod("ns", "pend", "u-pend", "", "", "", 1)
 	pods := []*v1.Pod{pend}
 
 	// Eviction references a UID not present or with no node
@@ -945,8 +945,8 @@ func TestEvictTargets_UsesHook(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 
-	p1 := newPod("ns", "p1", "u1", "", "", "", 1)
-	p2 := newPod("ns", "p2", "u2", "", "", "", 1)
+	p1 := makePod("ns", "p1", "u1", "", "", "", 1)
+	p2 := makePod("ns", "p2", "u2", "", "", "", 1)
 	targets := []*v1.Pod{p1, p2}
 
 	var (
@@ -988,8 +988,8 @@ func TestEvictTargets_NormalAndNotFoundAreIgnored(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 
-	p1 := newPod("ns", "p1", "u1", "", "", "", 1)
-	p2 := newPod("ns", "p2", "u2", "", "", "", 1)
+	p1 := makePod("ns", "p1", "u1", "", "", "", 1)
+	p2 := makePod("ns", "p2", "u2", "", "", "", 1)
 
 	var seen []string
 
@@ -1015,7 +1015,7 @@ func TestEvictTargets_PropagatesNonNotFoundError(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 
-	p := newPod("ns", "p", "u", "", "", "", 1)
+	p := makePod("ns", "p", "u", "", "", "", 1)
 	wantErr := fmt.Errorf("boom-evict")
 
 	withEvictHook(func(_ *SharedState, _ context.Context, _ *v1.Pod, _ *policyv1.Eviction) error {
@@ -1039,7 +1039,7 @@ func TestWaitPodsGone_UsesHookWhenNonEmpty(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 
-	p := newPod("ns", "p", "u1", "n1", "", "", 1)
+	p := makePod("ns", "p", "u1", "n1", "", "", 1)
 
 	var (
 		called bool
@@ -1090,7 +1090,7 @@ func TestWaitPodsGone_PollUntilNotFound(t *testing.T) {
 	pl := &SharedState{}
 	ctx := context.Background()
 
-	p := newPod("ns", "p", "u1", "", "", "", 1)
+	p := makePod("ns", "p", "u1", "", "", "", 1)
 
 	// Fake lister that always returns IsNotFound for this pod.
 	store := map[string]map[string]*v1.Pod{} // empty store -> NotFound via fakePodNamespaceLister
@@ -1119,15 +1119,15 @@ func TestWaitPodsGone_TreatsUidChangeOrTerminatingAsGone(t *testing.T) {
 	ctx := context.Background()
 
 	// Original pod identity (UID + ns + name)
-	orig := newPod("ns", "p", "u1", "", "", "", 1)
+	orig := makePod("ns", "p", "u1", "", "", "", 1)
 
 	// In the store we simulate the "same" pod name but:
 	//  - different UID (u2)
 	//  - or terminating
 	// Either should make the entry be considered "gone".
-	changedUID := newPod("ns", "p", "u2", "", "", "", 1)
+	changedUID := makePod("ns", "p", "u2", "", "", "", 1)
 	now := metav1.Now()
-	terminating := newPod("ns", "p-term", "u3", "", "", "", 1)
+	terminating := makePod("ns", "p-term", "u3", "", "", "", 1)
 	terminating.DeletionTimestamp = &now
 
 	store := map[string]map[string]*v1.Pod{
@@ -1584,7 +1584,7 @@ func TestIsPlanCompleted_PinnedPodOnWrongNodeNotCompleted(t *testing.T) {
 		},
 	}
 
-	p := newPod("ns", "p-mismatch", "u1", "n-other", "", "", 1)
+	p := makePod("ns", "p-mismatch", "u1", "n-other", "", "", 1)
 
 	store := map[string]map[string]*v1.Pod{
 		"ns": {
@@ -1615,7 +1615,7 @@ func TestIsPlanCompleted_PinnedPodTerminatingTreatedAsSatisfied(t *testing.T) {
 		WorkloadQuotas: WorkloadQuotasAtomics{},
 	}
 
-	p := newPod("ns", "p-term", "u1", "n1", "", "", 1)
+	p := makePod("ns", "p-term", "u1", "n1", "", "", 1)
 	now := metav1.Now()
 	p.DeletionTimestamp = &now
 
@@ -1645,7 +1645,7 @@ func TestIsPlanCompleted_WorkloadScaledDownIgnored(t *testing.T) {
 	plister := &fakePodLister{store: store}
 
 	// Build a workload key from a dummy pod so we get the right string form.
-	pDummy := newPod("ns", "p", "u-dummy", "", "ReplicaSet", "rs-1", 1)
+	pDummy := makePod("ns", "p", "u-dummy", "", "ReplicaSet", "rs-1", 1)
 	wk, owned := getTopWorkload(pDummy)
 	if !owned {
 		t.Fatalf("getTopWorkload(dummy) returned owned=false")
@@ -1677,8 +1677,8 @@ func TestIsPlanCompleted_WorkloadPendingWithQuotaNotCompleted(t *testing.T) {
 
 	// Running + pending pods for the same workload.
 	var prio int32 = 5
-	pRun := newPod("ns", "p-run", "u-run", "n1", "ReplicaSet", "rs-1", prio)
-	pPending := newPod("ns", "p-pend", "u-pend", "", "ReplicaSet", "rs-1", prio)
+	pRun := makePod("ns", "p-run", "u-run", "n1", "ReplicaSet", "rs-1", prio)
+	pPending := makePod("ns", "p-pend", "u-pend", "", "ReplicaSet", "rs-1", prio)
 
 	store := map[string]map[string]*v1.Pod{
 		"ns": {
@@ -1719,7 +1719,7 @@ func TestIsPlanCompleted_WorkloadLiveNoPendingQuotaSatisfied(t *testing.T) {
 
 	// Only running pods for the workload.
 	var prio int32 = 5
-	pRun := newPod("ns", "p-run", "u-run", "n1", "ReplicaSet", "rs-1", prio)
+	pRun := makePod("ns", "p-run", "u-run", "n1", "ReplicaSet", "rs-1", prio)
 
 	store := map[string]map[string]*v1.Pod{
 		"ns": {

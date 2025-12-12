@@ -31,7 +31,7 @@ func withMode(mode ModeType, synch bool, fn func()) {
 	fn()
 }
 
-// -----
+// -------------------------
 // writeFakeSolverScript
 // -------------------------
 
@@ -46,12 +46,12 @@ func writeFakeSolverScript(t *testing.T, dir, body string) string {
 	return path
 }
 
-// -----
-// newPod
+// -------------------------
+// makePod
 // -------------------------
 
-// newPod creates a pod with the specified attributes.
-func newPod(ns, name, uid, node, ownerKind, ownerName string, prio int32) *v1.Pod {
+// makePod creates a pod with the specified attributes.
+func makePod(ns, name, uid, node, ownerKind, ownerName string, prio int32) *v1.Pod {
 	var ownerRefs []metav1.OwnerReference
 	if ownerKind != "" && ownerName != "" {
 		controller := true
@@ -78,12 +78,12 @@ func newPod(ns, name, uid, node, ownerKind, ownerName string, prio int32) *v1.Po
 	}
 }
 
-// -----
-// newNode
+// -------------------------
+// makeNode
 // -------------------------
 
-// newNode creates a node with the specified name.
-func newNode(name string) *v1.Node {
+// makeNode creates a node with the specified name.
+func makeNode(name string) *v1.Node {
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Status: v1.NodeStatus{

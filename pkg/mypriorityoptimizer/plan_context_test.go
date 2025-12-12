@@ -43,7 +43,7 @@ func TestPlanContext_PodListError(t *testing.T) {
 	pl := &SharedState{}
 
 	nodes := []*v1.Node{
-		newNode("n1"),
+		makeNode("n1"),
 	}
 
 	nl := &fakeNodeLister{
@@ -80,7 +80,7 @@ func TestPlanContext_NoPendingPods(t *testing.T) {
 	pl := &SharedState{}
 
 	nodes := []*v1.Node{
-		newNode("n1"),
+		makeNode("n1"),
 	}
 
 	// All pods are already assigned -> no pending pods.
@@ -212,7 +212,7 @@ func TestPlanContext_Success(t *testing.T) {
 	pl := &SharedState{}
 
 	nodes := []*v1.Node{
-		newNode("n1"),
+		makeNode("n1"),
 	}
 
 	// One running pod + one pending pod.

@@ -99,6 +99,7 @@ mkdir -p coverage/integration/kwok/html
 if "$RUN_UNIT_PY"; then
   echo "=== Running Python unit tests (pytest) ==="
   python -m pytest \
+    scripts/test \
     --cov=. \
     --cov-report=term \
     --cov-report=html:coverage/unit/python

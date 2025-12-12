@@ -20,7 +20,6 @@ func TestGetEnv(t *testing.T) {
 	})
 
 	t.Run("returns default when unset", func(t *testing.T) {
-		// no Setenv -> env var is unset
 		got := getenv("UNSET_KEY", "default")
 		if got != "default" {
 			t.Fatalf("getenv() = %q, want %q", got, "default")
