@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,7 +49,7 @@ func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 	t2 := time.Now().Add(-1 * time.Hour)
 	t3 := time.Now()
 
-	cmOld := &apiv1.ConfigMap{
+	cmOld := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "cm-old",
 			Namespace:         namespace,
@@ -58,7 +57,7 @@ func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 			Labels:            map[string]string{labelKey: "true"},
 		},
 	}
-	cmMid := &apiv1.ConfigMap{
+	cmMid := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "cm-mid",
 			Namespace:         namespace,
@@ -66,7 +65,7 @@ func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 			Labels:            map[string]string{labelKey: "true"},
 		},
 	}
-	cmNew := &apiv1.ConfigMap{
+	cmNew := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "cm-new",
 			Namespace:         namespace,
@@ -75,7 +74,7 @@ func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 		},
 	}
 	// This one has no label -> should be ignored.
-	cmNoLabel := &apiv1.ConfigMap{
+	cmNoLabel := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "cm-nolabel",
 			Namespace: namespace,
@@ -97,137 +96,94 @@ func TestListConfigMaps_SortsAndFilters(t *testing.T) {
 	}
 }
 
-// --------------------------
-// getConfigMapByName
-// --------------------------
-
-// TODO: missing test
-
-// -------------------------
+// -----
 // pruneConfigMaps
-// --------------------------
+// ------
 
-func TestPruneConfigMaps_DeletesOldOnes(t *testing.T) {
-	ctx := context.Background()
-	namespace := "ns7"
-	labelKey := "myx/prune"
-
-	now := time.Now()
-	makeCM := func(name string, offset time.Duration) *apiv1.ConfigMap {
-		return &apiv1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:              name,
-				Namespace:         namespace,
-				Labels:            map[string]string{labelKey: "true"},
-				CreationTimestamp: metav1.NewTime(now.Add(offset)),
+func TestPruneConfigMaps(t *testing.T) {
+	tests := []struct {
+		name       string
+		namespace  string
+		labelKey   string
+		keep       int
+		offsets    map[string]time.Duration
+		wantExists map[string]bool
+	}{
+		{
+			name:      "deletes oldest when keep=2",
+			namespace: "ns7",
+			labelKey:  "myx/prune",
+			keep:      2,
+			offsets: map[string]time.Duration{
+				"cm1": -3 * time.Hour,
+				"cm2": -2 * time.Hour,
+				"cm3": -1 * time.Hour,
+				"cm4": 0,
 			},
-		}
-	}
-
-	cm1 := makeCM("cm1", -3*time.Hour)
-	cm2 := makeCM("cm2", -2*time.Hour)
-	cm3 := makeCM("cm3", -1*time.Hour)
-	cm4 := makeCM("cm4", 0)
-
-	schemeObjs := []runtime.Object{cm1, cm2, cm3, cm4}
-	cli := fake.NewSimpleClientset(schemeObjs...)
-
-	// lister must see all four
-	lister := newConfigMapLister(cm1, cm2, cm3, cm4)
-
-	// Keep 2 newest; expect the two oldest to be deleted.
-	if err := pruneConfigMaps(ctx, cli.CoreV1(), lister, namespace, labelKey, 2); err != nil {
-		t.Fatalf("pruneConfigMaps failed: %v", err)
-	}
-
-	// cm4 & cm3 should remain; cm2 & cm1 should be gone.
-	for name, wantExist := range map[string]bool{
-		"cm4": true,
-		"cm3": true,
-		"cm2": false,
-		"cm1": false,
-	} {
-		_, err := getConfigMapByName(ctx, cli.CoreV1(), namespace, name)
-		if wantExist && err != nil {
-			t.Errorf("expected %s to exist, got error: %v", name, err)
-		}
-		if !wantExist && err == nil {
-			t.Errorf("expected %s to be deleted, but Get succeeded", name)
-		}
-	}
-}
-
-func TestPruneConfigMaps_KeepZero_NoOp(t *testing.T) {
-	ctx := context.Background()
-	namespace := "ns7-k0"
-	labelKey := "myx/prune-k0"
-
-	now := time.Now()
-	cm1 := &apiv1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              "cm1",
-			Namespace:         namespace,
-			Labels:            map[string]string{labelKey: "true"},
-			CreationTimestamp: metav1.NewTime(now.Add(-time.Hour)),
+			wantExists: map[string]bool{"cm4": true, "cm3": true, "cm2": false, "cm1": false},
 		},
-	}
-	cm2 := &apiv1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              "cm2",
-			Namespace:         namespace,
-			Labels:            map[string]string{labelKey: "true"},
-			CreationTimestamp: metav1.NewTime(now),
+		{
+			name:      "keep=0 is a no-op",
+			namespace: "ns7-k0",
+			labelKey:  "myx/prune-k0",
+			keep:      0,
+			offsets: map[string]time.Duration{
+				"cm1": -1 * time.Hour,
+				"cm2": 0,
+			},
+			wantExists: map[string]bool{"cm1": true, "cm2": true},
+		},
+		{
+			name:      "keep>len(items) is a no-op",
+			namespace: "ns7-kbig",
+			labelKey:  "myx/prune-kbig",
+			keep:      10,
+			offsets: map[string]time.Duration{
+				"cm1": -3 * time.Hour,
+				"cm2": -2 * time.Hour,
+				"cm3": -1 * time.Hour,
+			},
+			wantExists: map[string]bool{"cm1": true, "cm2": true, "cm3": true},
 		},
 	}
 
-	cli := fake.NewSimpleClientset(cm1, cm2)
-	lister := newConfigMapLister(cm1, cm2)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			now := time.Now()
 
-	if err := pruneConfigMaps(ctx, cli.CoreV1(), lister, namespace, labelKey, 0); err != nil {
-		t.Fatalf("pruneConfigMaps(keep=0) returned error: %v", err)
-	}
+			var objs []runtime.Object
+			var cms []*v1.ConfigMap
+			for name, offset := range tt.offsets {
+				cm := &v1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              name,
+						Namespace:         tt.namespace,
+						Labels:            map[string]string{tt.labelKey: "true"},
+						CreationTimestamp: metav1.NewTime(now.Add(offset)),
+					},
+				}
+				objs = append(objs, cm)
+				cms = append(cms, cm)
+			}
 
-	// Nothing should be deleted.
-	for _, name := range []string{"cm1", "cm2"} {
-		if _, err := getConfigMapByName(ctx, cli.CoreV1(), namespace, name); err != nil {
-			t.Fatalf("expected %s to exist after keep=0, got error: %v", name, err)
-		}
-	}
-}
+			cli := fake.NewSimpleClientset(objs...)
+			lister := newConfigMapLister(cms...)
 
-func TestPruneConfigMaps_KeepMoreThanExisting_NoOp(t *testing.T) {
-	ctx := context.Background()
-	namespace := "ns7-kbig"
-	labelKey := "myx/prune-kbig"
+			if err := pruneConfigMaps(ctx, cli.CoreV1(), lister, tt.namespace, tt.labelKey, tt.keep); err != nil {
+				t.Fatalf("pruneConfigMaps failed: %v", err)
+			}
 
-	now := time.Now()
-	makeCM := func(name string, offset time.Duration) *apiv1.ConfigMap {
-		return &apiv1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:              name,
-				Namespace:         namespace,
-				Labels:            map[string]string{labelKey: "true"},
-				CreationTimestamp: metav1.NewTime(now.Add(offset)),
-			},
-		}
-	}
-
-	cm1 := makeCM("cm1", -3*time.Hour)
-	cm2 := makeCM("cm2", -2*time.Hour)
-	cm3 := makeCM("cm3", -1*time.Hour)
-
-	cli := fake.NewSimpleClientset(cm1, cm2, cm3)
-	lister := newConfigMapLister(cm1, cm2, cm3)
-
-	// keep is larger than number of items -> should not delete anything.
-	if err := pruneConfigMaps(ctx, cli.CoreV1(), lister, namespace, labelKey, 10); err != nil {
-		t.Fatalf("pruneConfigMaps(keep>len(items)) returned error: %v", err)
-	}
-
-	for _, name := range []string{"cm1", "cm2", "cm3"} {
-		if _, err := getConfigMapByName(ctx, cli.CoreV1(), namespace, name); err != nil {
-			t.Fatalf("expected %s to exist after keep>len(items), got error: %v", name, err)
-		}
+			for name, wantExist := range tt.wantExists {
+				_, err := getConfigMapByName(ctx, cli.CoreV1(), tt.namespace, name)
+				if wantExist && err != nil {
+					t.Errorf("expected %s to exist, got error: %v", name, err)
+				}
+				if !wantExist && err == nil {
+					t.Errorf("expected %s to be deleted, but Get succeeded", name)
+				}
+			}
+		})
 	}
 }
 
@@ -317,7 +273,7 @@ func TestPatchDataString_UpdatesSingleKey(t *testing.T) {
 	dataKey := "myx/plan.json"
 
 	// Seed fake client with a ConfigMap that already exists and has an extra key.
-	cmInitial := &apiv1.ConfigMap{
+	cmInitial := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -425,7 +381,7 @@ func TestEnsureJson_UpdateOnNilData(t *testing.T) {
 	dataKey := "myx/plan.json"
 
 	// Existing CM with nil Data
-	existing := &apiv1.ConfigMap{
+	existing := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -480,7 +436,7 @@ func TestPatchJson(t *testing.T) {
 	dataKey := "myx/plan.json"
 
 	// Seed fake client with an existing ConfigMap
-	initial := &apiv1.ConfigMap{
+	initial := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -528,7 +484,7 @@ func TestPatchJson_ErrorOnMarshalFailure(t *testing.T) {
 	labelKey := "myx/plan"
 	dataKey := "myx/plan.json"
 
-	initial := &apiv1.ConfigMap{
+	initial := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -589,7 +545,7 @@ func TestReadJson_MissingAndPresent(t *testing.T) {
 	}
 
 	// Lister with a CM that has DataKey
-	cm := &apiv1.ConfigMap{
+	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -633,7 +589,7 @@ func TestMutateJson_Appends(t *testing.T) {
 	initialJSON, _ := json.Marshal(initialArr)
 
 	// Seed CM with an array JSON at DataKey
-	cm := &apiv1.ConfigMap{
+	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -690,7 +646,7 @@ func TestMutateJson_MutateError(t *testing.T) {
 	initialArr := []item{{ID: 1}}
 	initialJSON, _ := json.Marshal(initialArr)
 
-	cm := &apiv1.ConfigMap{
+	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -740,7 +696,7 @@ func TestMutateRaw_Uppercases(t *testing.T) {
 	name := "cm5"
 	dataKey := "myx/raw.json"
 
-	cm := &apiv1.ConfigMap{
+	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -816,7 +772,7 @@ func TestMutateRaw_NilNewRaw_NoOp(t *testing.T) {
 	dataKey := "myx/raw.json"
 
 	original := `{"msg":"hello"}`
-	cm := &apiv1.ConfigMap{
+	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,

@@ -12,9 +12,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// -------------------------
+// -----
 // withMode
-// -------------------------
+// ------
 
 // withMode is a small helper to temporarily set the mode during a test and
 // restore to the original values.
@@ -31,9 +31,9 @@ func withMode(mode ModeType, synch bool, fn func()) {
 	fn()
 }
 
-// -------------------------
+// -----
 // writeFakeSolverScript
-// -------------------------
+// ------
 
 // writeFakeSolverScript writes a fake solver script to the specified directory
 // with the specified body, and returns the full path to the script.
@@ -46,9 +46,9 @@ func writeFakeSolverScript(t *testing.T, dir, body string) string {
 	return path
 }
 
-// -------------------------
+// -----
 // newPod
-// -------------------------
+// ------
 
 // newPod creates a pod with the specified attributes.
 func newPod(ns, name, uid, node, ownerKind, ownerName string, prio int32) *v1.Pod {
@@ -78,9 +78,9 @@ func newPod(ns, name, uid, node, ownerKind, ownerName string, prio int32) *v1.Po
 	}
 }
 
-// -------------------------
+// -----
 // newNode
-// -------------------------
+// ------
 
 // newNode creates a node with the specified name.
 func newNode(name string) *v1.Node {

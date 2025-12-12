@@ -20,73 +20,83 @@ import (
 // --------------------------
 
 func TestNodesLister(t *testing.T) {
-	pl := &SharedState{}
-	fake := &fakeNodeLister{}
-	withNodeLister(fake, func() {
-		got := pl.nodesLister()
-		if got != fake {
-			t.Fatalf("nodesLister() did not return injected lister")
-		}
+	t.Run("nodesLister injection", func(t *testing.T) {
+		pl := &SharedState{}
+		fake := &fakeNodeLister{}
+		withNodeLister(fake, func() {
+			got := pl.nodesLister()
+			if got != fake {
+				t.Fatalf("nodesLister() did not return injected lister")
+			}
+		})
 	})
 }
 
 func TestPodsLister(t *testing.T) {
-	pl := &SharedState{}
-	fake := &fakePodLister{}
-	withPodLister(fake, func() {
-		got := pl.podsLister()
-		if got != fake {
-			t.Fatalf("podsLister() did not return injected lister")
-		}
+	t.Run("podsLister injection", func(t *testing.T) {
+		pl := &SharedState{}
+		fake := &fakePodLister{}
+		withPodLister(fake, func() {
+			got := pl.podsLister()
+			if got != fake {
+				t.Fatalf("podsLister() did not return injected lister")
+			}
+		})
 	})
 }
 
 func TestGetNodes(t *testing.T) {
-	nodes := []*v1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "n1"}}}
 	pl := &SharedState{}
 
-	withNodeLister(&fakeNodeLister{nodes: nodes}, func() {
-		got, err := pl.getNodes()
-		if err != nil {
-			t.Fatalf("getNodes() unexpected error: %v", err)
-		}
-		if len(got) != 1 || got[0].Name != "n1" {
-			t.Fatalf("getNodes() = %#v, want single node n1", got)
-		}
+	t.Run("success", func(t *testing.T) {
+		nodes := []*v1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "n1"}}}
+		withNodeLister(&fakeNodeLister{nodes: nodes}, func() {
+			got, err := pl.getNodes()
+			if err != nil {
+				t.Fatalf("getNodes() unexpected error: %v", err)
+			}
+			if len(got) != 1 || got[0].Name != "n1" {
+				t.Fatalf("getNodes() = %#v, want single node n1", got)
+			}
+		})
 	})
 
-	sentinel := errors.New("boom")
-	withNodeLister(&fakeNodeLister{err: sentinel}, func() {
-		_, err := pl.getNodes()
-		if !errors.Is(err, sentinel) {
-			t.Fatalf("getNodes() error = %v, want %v", err, sentinel)
-		}
+	t.Run("error", func(t *testing.T) {
+		sentinel := errors.New("boom")
+		withNodeLister(&fakeNodeLister{err: sentinel}, func() {
+			_, err := pl.getNodes()
+			if !errors.Is(err, sentinel) {
+				t.Fatalf("getNodes() error = %v, want %v", err, sentinel)
+			}
+		})
 	})
 }
 
 func TestGetPods(t *testing.T) {
-	p := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "ns"}}
 	pl := &SharedState{}
 
-	// success
-	store := map[string]map[string]*v1.Pod{"ns": {"p1": p}}
-	withPodLister(&fakePodLister{store: store}, func() {
-		got, err := pl.getPods()
-		if err != nil {
-			t.Fatalf("getPods() unexpected error: %v", err)
-		}
-		if len(got) != 1 || got[0].Name != "p1" || got[0].Namespace != "ns" {
-			t.Fatalf("getPods() = %#v, want single pod ns/p1", got)
-		}
+	t.Run("success", func(t *testing.T) {
+		p := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "ns"}}
+		store := map[string]map[string]*v1.Pod{"ns": {"p1": p}}
+		withPodLister(&fakePodLister{store: store}, func() {
+			got, err := pl.getPods()
+			if err != nil {
+				t.Fatalf("getPods() unexpected error: %v", err)
+			}
+			if len(got) != 1 || got[0].Name != "p1" || got[0].Namespace != "ns" {
+				t.Fatalf("getPods() = %#v, want single pod ns/p1", got)
+			}
+		})
 	})
 
-	// error
-	sentinel := errors.New("boom")
-	withPodLister(&fakePodLister{err: sentinel}, func() {
-		_, err := pl.getPods()
-		if !errors.Is(err, sentinel) {
-			t.Fatalf("getPods() error = %v, want %v", err, sentinel)
-		}
+	t.Run("error", func(t *testing.T) {
+		sentinel := errors.New("boom")
+		withPodLister(&fakePodLister{err: sentinel}, func() {
+			_, err := pl.getPods()
+			if !errors.Is(err, sentinel) {
+				t.Fatalf("getPods() error = %v, want %v", err, sentinel)
+			}
+		})
 	})
 }
 
@@ -95,31 +105,33 @@ func TestGetPods(t *testing.T) {
 // podRef / mergeNsName / splitNsName
 // --------------------------
 
-func TestPodRef(t *testing.T) {
-	p := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"}}
-	if got := podRef(p); got != "ns/p" {
-		t.Fatalf("podRef() = %q, want %q", got, "ns/p")
-	}
-}
+func TestNamespaceNameHelpers(t *testing.T) {
+	t.Run("podRef", func(t *testing.T) {
+		p := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"}}
+		if got := podRef(p); got != "ns/p" {
+			t.Fatalf("podRef() = %q, want %q", got, "ns/p")
+		}
+	})
 
-func TestMergeNsName(t *testing.T) {
-	if got := mergeNsName("ns", "name"); got != "ns/name" {
-		t.Fatalf("mergeNsName() = %q, want %q", got, "ns/name")
-	}
-}
+	t.Run("mergeNsName", func(t *testing.T) {
+		if got := mergeNsName("ns", "name"); got != "ns/name" {
+			t.Fatalf("mergeNsName() = %q, want %q", got, "ns/name")
+		}
+	})
 
-func TestSplitNsName(t *testing.T) {
-	ns, name, err := splitNsName("ns/name")
-	if err != nil {
-		t.Fatalf("splitNsName() unexpected error: %v", err)
-	}
-	if ns != "ns" || name != "name" {
-		t.Fatalf("splitNsName() = %q,%q, want ns,name", ns, name)
-	}
+	t.Run("splitNsName", func(t *testing.T) {
+		ns, name, err := splitNsName("ns/name")
+		if err != nil {
+			t.Fatalf("splitNsName() unexpected error: %v", err)
+		}
+		if ns != "ns" || name != "name" {
+			t.Fatalf("splitNsName() = %q,%q, want ns,name", ns, name)
+		}
 
-	if _, _, err := splitNsName("invalid"); err == nil {
-		t.Fatalf("splitNsName() expected error for invalid input")
-	}
+		if _, _, err := splitNsName("invalid"); err == nil {
+			t.Fatalf("splitNsName() expected error for invalid input")
+		}
+	})
 }
 
 //
@@ -221,36 +233,38 @@ func TestEvictPod_Error(t *testing.T) {
 }
 
 //
-// -------------------------
+// -----
 // getNodeCPUAllocatable / getNodeMemoryAllocatable
-// --------------------------
+// ------
 
-func TestGetNodeCPUAllocatable(t *testing.T) {
-	n := &v1.Node{
-		Status: v1.NodeStatus{
-			Allocatable: v1.ResourceList{
-				v1.ResourceCPU: resource.MustParse("1500m"),
+func TestNodeAllocatableHelpers(t *testing.T) {
+	t.Run("cpu", func(t *testing.T) {
+		n := &v1.Node{
+			Status: v1.NodeStatus{
+				Allocatable: v1.ResourceList{
+					v1.ResourceCPU: resource.MustParse("1500m"),
+				},
 			},
-		},
-	}
-	if got := getNodeCPUAllocatable(n); got != 1500 {
-		t.Fatalf("getNodeCPUAllocatable() = %d, want 1500", got)
-	}
-}
+		}
+		if got := getNodeCPUAllocatable(n); got != 1500 {
+			t.Fatalf("getNodeCPUAllocatable() = %d, want 1500", got)
+		}
+	})
 
-func TestGetNodeMemoryAllocatable(t *testing.T) {
-	q := resource.MustParse("2Gi")
-	n := &v1.Node{
-		Status: v1.NodeStatus{
-			Allocatable: v1.ResourceList{
-				v1.ResourceMemory: q,
+	t.Run("memory", func(t *testing.T) {
+		q := resource.MustParse("2Gi")
+		n := &v1.Node{
+			Status: v1.NodeStatus{
+				Allocatable: v1.ResourceList{
+					v1.ResourceMemory: q,
+				},
 			},
-		},
-	}
-	want := q.Value()
-	if got := getNodeMemoryAllocatable(n); got != want {
-		t.Fatalf("getNodeMemoryAllocatable() = %d, want %d", got, want)
-	}
+		}
+		want := q.Value()
+		if got := getNodeMemoryAllocatable(n); got != want {
+			t.Fatalf("getNodeMemoryAllocatable() = %d, want %d", got, want)
+		}
+	})
 }
 
 //
@@ -691,111 +705,113 @@ func TestGetPod_NotFound(t *testing.T) {
 }
 
 //
-// -------------------------
+// -----
 // getPodContainers / getContainerCPURequest / getContainerMemoryRequest / getPodCPURequest / getPodMemoryRequest / getPodPriority
-// --------------------------
+// ------
 
-func TestGetPodContainers(t *testing.T) {
-	p := &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{{Name: "c1"}, {Name: "c2"}},
-		},
-	}
-	got := getPodContainers(p)
-	if len(got) != 2 || got[0].Name != "c1" || got[1].Name != "c2" {
-		t.Fatalf("getPodContainers() = %#v, want [c1,c2]", got)
-	}
-}
-
-func TestGetContainerCPURequest(t *testing.T) {
-	c := v1.Container{
-		Resources: v1.ResourceRequirements{
-			Requests: v1.ResourceList{
-				v1.ResourceCPU: resource.MustParse("250m"),
+func TestPodAndContainerResourceHelpers(t *testing.T) {
+	t.Run("getPodContainers", func(t *testing.T) {
+		p := &v1.Pod{
+			Spec: v1.PodSpec{
+				Containers: []v1.Container{{Name: "c1"}, {Name: "c2"}},
 			},
-		},
-	}
-	if got := getContainerCPURequest(c); got != 250 {
-		t.Fatalf("getContainerCPURequest() = %d, want 250", got)
-	}
-}
+		}
+		got := getPodContainers(p)
+		if len(got) != 2 || got[0].Name != "c1" || got[1].Name != "c2" {
+			t.Fatalf("getPodContainers() = %#v, want [c1,c2]", got)
+		}
+	})
 
-func TestGetContainerMemoryRequest(t *testing.T) {
-	q := resource.MustParse("64Mi")
-	c := v1.Container{
-		Resources: v1.ResourceRequirements{
-			Requests: v1.ResourceList{
-				v1.ResourceMemory: q,
+	t.Run("getContainerCPURequest", func(t *testing.T) {
+		c := v1.Container{
+			Resources: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU: resource.MustParse("250m"),
+				},
 			},
-		},
-	}
-	want := q.Value()
-	if got := getContainerMemoryRequest(c); got != want {
-		t.Fatalf("getContainerMemoryRequest() = %d, want %d", got, want)
-	}
-}
+		}
+		if got := getContainerCPURequest(c); got != 250 {
+			t.Fatalf("getContainerCPURequest() = %d, want 250", got)
+		}
+	})
 
-func TestGetPodCPURequest(t *testing.T) {
-	p := &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{Resources: v1.ResourceRequirements{
-					Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
-				}},
-				{Resources: v1.ResourceRequirements{
-					Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("250m")},
-				}},
+	t.Run("getContainerMemoryRequest", func(t *testing.T) {
+		q := resource.MustParse("64Mi")
+		c := v1.Container{
+			Resources: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceMemory: q,
+				},
 			},
-		},
-	}
-	if got := getPodCPURequest(p); got != 350 {
-		t.Fatalf("getPodCPURequest() = %d, want 350", got)
-	}
+		}
+		want := q.Value()
+		if got := getContainerMemoryRequest(c); got != want {
+			t.Fatalf("getContainerMemoryRequest() = %d, want %d", got, want)
+		}
+	})
 
-	pEmpty := &v1.Pod{}
-	if got := getPodCPURequest(pEmpty); got != 0 {
-		t.Fatalf("getPodCPURequest(empty) = %d, want 0", got)
-	}
-}
-
-func TestGetPodMemoryRequest(t *testing.T) {
-	p := &v1.Pod{
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{Resources: v1.ResourceRequirements{
-					Requests: v1.ResourceList{v1.ResourceMemory: resource.MustParse("64Mi")},
-				}},
-				{Resources: v1.ResourceRequirements{
-					Requests: v1.ResourceList{v1.ResourceMemory: resource.MustParse("128Mi")},
-				}},
+	t.Run("getPodCPURequest", func(t *testing.T) {
+		p := &v1.Pod{
+			Spec: v1.PodSpec{
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
+					}},
+					{Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("250m")},
+					}},
+				},
 			},
-		},
-	}
-	q64 := resource.MustParse("64Mi")
-	q128 := resource.MustParse("128Mi")
-	want := q64.Value() + q128.Value()
+		}
+		if got := getPodCPURequest(p); got != 350 {
+			t.Fatalf("getPodCPURequest() = %d, want 350", got)
+		}
 
-	if got := getPodMemoryRequest(p); got != want {
-		t.Fatalf("getPodMemoryRequest() = %d, want %d", got, want)
-	}
+		pEmpty := &v1.Pod{}
+		if got := getPodCPURequest(pEmpty); got != 0 {
+			t.Fatalf("getPodCPURequest(empty) = %d, want 0", got)
+		}
+	})
 
-	pEmpty := &v1.Pod{}
-	if got := getPodMemoryRequest(pEmpty); got != 0 {
-		t.Fatalf("getPodMemoryRequest(empty) = %d, want 0", got)
-	}
-}
+	t.Run("getPodMemoryRequest", func(t *testing.T) {
+		p := &v1.Pod{
+			Spec: v1.PodSpec{
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceMemory: resource.MustParse("64Mi")},
+					}},
+					{Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceMemory: resource.MustParse("128Mi")},
+					}},
+				},
+			},
+		}
+		q64 := resource.MustParse("64Mi")
+		q128 := resource.MustParse("128Mi")
+		want := q64.Value() + q128.Value()
 
-func TestGetPodPriority(t *testing.T) {
-	pval := int32(10)
-	withPrio := &v1.Pod{Spec: v1.PodSpec{Priority: &pval}}
-	if got := getPodPriority(withPrio); got != 10 {
-		t.Fatalf("getPodPriority(with priority) = %d, want 10", got)
-	}
+		if got := getPodMemoryRequest(p); got != want {
+			t.Fatalf("getPodMemoryRequest() = %d, want %d", got, want)
+		}
 
-	without := &v1.Pod{}
-	if got := getPodPriority(without); got != 0 {
-		t.Fatalf("getPodPriority(nil) = %d, want 0", got)
-	}
+		pEmpty := &v1.Pod{}
+		if got := getPodMemoryRequest(pEmpty); got != 0 {
+			t.Fatalf("getPodMemoryRequest(empty) = %d, want 0", got)
+		}
+	})
+
+	t.Run("getPodPriority", func(t *testing.T) {
+		pval := int32(10)
+		withPrio := &v1.Pod{Spec: v1.PodSpec{Priority: &pval}}
+		if got := getPodPriority(withPrio); got != 10 {
+			t.Fatalf("getPodPriority(with priority) = %d, want 10", got)
+		}
+
+		without := &v1.Pod{}
+		if got := getPodPriority(without); got != 0 {
+			t.Fatalf("getPodPriority(nil) = %d, want 0", got)
+		}
+	})
 }
 
 func TestGetPodAssignedNodeName(t *testing.T) {
