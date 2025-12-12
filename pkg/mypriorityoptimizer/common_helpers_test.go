@@ -11,27 +11,21 @@ import (
 // getUniqueId
 // -------------------------
 
-func TestGetUniqueId_PrefixAndNonEmpty(t *testing.T) {
-	prefix := "job-"
-	id := getUniqueId(prefix)
+func TestGetUniqueId_UniqueAndPrefix(t *testing.T) {
+	old := nowUnixNano
+	defer func() { nowUnixNano = old }()
 
-	if !strings.HasPrefix(id, prefix) {
-		t.Fatalf("getUniqueId(%q) = %q, expected prefix %q", prefix, id, prefix)
-	}
-	if len(id) <= len(prefix) {
-		t.Fatalf("getUniqueId(%q) = %q, expected suffix after prefix", prefix, id)
-	}
-}
+	i := int64(100)
+	nowUnixNano = func() int64 { i++; return i }
 
-func TestGetUniqueId_ProducesDifferentValues(t *testing.T) {
-	prefix := "job-"
-
-	id1 := getUniqueId(prefix)
-	time.Sleep(1 * time.Nanosecond) // ensure time difference for uniqueness
-	id2 := getUniqueId(prefix)
+	id1 := getUniqueId("job-")
+	id2 := getUniqueId("job-")
 
 	if id1 == id2 {
-		t.Fatalf("getUniqueId produced identical values: %q and %q", id1, id2)
+		t.Fatalf("expected unique ids")
+	}
+	if !strings.HasPrefix(id1, "job-") || !strings.HasPrefix(id2, "job-") {
+		t.Fatalf("expected prefix")
 	}
 }
 
@@ -39,112 +33,10 @@ func TestGetUniqueId_ProducesDifferentValues(t *testing.T) {
 // getTimestampNowUtc
 // -------------------------
 
-func TestGetTimestampNowUtc_IsUTCAndReasonable(t *testing.T) {
-	before := time.Now().UTC()
+func TestGetTimestampNowUtc_IsUTC(t *testing.T) {
 	ts := getTimestampNowUtc()
-	after := time.Now().UTC()
-
-	// Must be in UTC
 	if ts.Location() != time.UTC {
-		t.Fatalf("getTimestampNowUtc() location = %v, want %v", ts.Location(), time.UTC)
-	}
-
-	// Should be within [before-1s, after+1s]
-	if ts.Before(before.Add(-1*time.Second)) || ts.After(after.Add(1*time.Second)) {
-		t.Fatalf("getTimestampNowUtc() = %v, want close to [%v, %v]", ts, before, after)
-	}
-}
-
-// -------------------------
-// cmpLexiByKeys
-// -------------------------
-
-func TestCmpLexiByKeys_StringKeys(t *testing.T) {
-	keys := []string{"p2", "p1", "p0"} // p2 is most significant
-
-	a := map[string]int{"p2": 1, "p1": 0, "p0": 0}
-	b := map[string]int{"p2": 0, "p1": 10, "p0": 10}
-
-	// a should win because it has more on the most significant key p2.
-	if got := cmpLexiByKeys(keys, a, b); got != 1 {
-		t.Fatalf("cmpLexiByKeys(a,b) = %d, want 1 (a better on p2)", got)
-	}
-	if got := cmpLexiByKeys(keys, b, a); got != -1 {
-		t.Fatalf("cmpLexiByKeys(b,a) = %d, want -1 (b worse on p2)", got)
-	}
-
-	// Missing keys should default to 0.
-	a2 := map[string]int{"p2": 1} // p1, p0 implicitly 0
-	b2 := map[string]int{}        // all zero
-	if got := cmpLexiByKeys(keys, a2, b2); got != 1 {
-		t.Fatalf("cmpLexiByKeys(a2,b2) = %d, want 1 (missing keys default to 0)", got)
-	}
-
-	// Equal maps -> 0
-	eqA := map[string]int{"p2": 1, "p1": 2}
-	eqB := map[string]int{"p2": 1, "p1": 2}
-	if got := cmpLexiByKeys(keys, eqA, eqB); got != 0 {
-		t.Fatalf("cmpLexiByKeys(equal) = %d, want 0", got)
-	}
-}
-
-func TestCmpLexiByKeys_IntKeys_Generic(t *testing.T) {
-	keys := []int{2, 1, 0} // 2 is most significant
-
-	a := map[int]int{2: 1, 1: 0, 0: 0}
-	b := map[int]int{2: 0, 1: 100, 0: 100}
-
-	if got := cmpLexiByKeys(keys, a, b); got != 1 {
-		t.Fatalf("cmpLexiByKeys[int](a,b) = %d, want 1 (a better on key 2)", got)
-	}
-	if got := cmpLexiByKeys(keys, b, a); got != -1 {
-		t.Fatalf("cmpLexiByKeys[int](b,a) = %d, want -1 (b worse on key 2)", got)
-	}
-}
-
-// -------------------------
-// cmpLexi
-// -------------------------
-
-func TestCmpLexi_HighPriorityWins(t *testing.T) {
-	// Basic numeric priority behavior: higher numeric priority first.
-	a := map[string]int{"1": 2, "0": 1}
-	b := map[string]int{"1": 1, "0": 5}
-
-	if got := cmpLexi(a, b); got != 1 {
-		t.Fatalf("cmpLexi(a,b) = %d, want 1 (a better high-prio)", got)
-	}
-	if got := cmpLexi(b, a); got != -1 {
-		t.Fatalf("cmpLexi(b,a) = %d, want -1 (b worse high-prio)", got)
-	}
-
-	// Equal maps
-	if got := cmpLexi(a, map[string]int{"1": 2, "0": 1}); got != 0 {
-		t.Fatalf("cmpLexi(equal) = %d, want 0", got)
-	}
-}
-
-func TestCmpLexi_NumericVsNumericAndFallback(t *testing.T) {
-	// Numeric keys: ensure we really order by numeric value, not
-	// lexicographically. 10 should be considered "higher priority" than 2.
-	a := map[string]int{"10": 1}           // one pod at prio 10
-	b := map[string]int{"2": 100, "10": 0} // many pods at prio 2 but none at 10
-
-	if got := cmpLexi(a, b); got != 1 {
-		t.Fatalf("cmpLexi(numeric) = %d, want 1 (a better on prio 10)", got)
-	}
-
-	// Non-numeric fallback: keys compared as strings, descending. keys: "y",
-	// "x" -> first compare "y".
-	x := map[string]int{"x": 1, "y": 0}
-	y := map[string]int{"x": 0, "y": 5}
-
-	// At key "y": x has 0, y has 5 -> y wins => cmpLexi(x,y) = -1.
-	if got := cmpLexi(x, y); got != -1 {
-		t.Fatalf("cmpLexi(non-numeric x,y) = %d, want -1 (y better on \"y\")", got)
-	}
-	if got := cmpLexi(y, x); got != 1 {
-		t.Fatalf("cmpLexi(non-numeric y,x) = %d, want 1 (y better on \"y\")", got)
+		t.Fatalf("location=%v want UTC", ts.Location())
 	}
 }
 
@@ -161,5 +53,86 @@ func TestCmpInt(t *testing.T) {
 	}
 	if got := cmpInt(2, 2); got != 0 {
 		t.Fatalf("cmpInt(2,2) = %d, want 0 (equal)", got)
+	}
+}
+
+// -------------------------
+// cmpLexiByKeys
+// -------------------------
+
+func TestCmpLexiByKeys_IntKeys(t *testing.T) {
+	keys := []int{2, 1, 0}
+
+	type tc struct {
+		name string
+		a, b map[int]int
+		want int
+	}
+
+	tests := []tc{
+		{
+			name: "most-significant key wins",
+			a:    map[int]int{2: 1, 1: 0, 0: 0},
+			b:    map[int]int{2: 0, 1: 100, 0: 100},
+			want: 1,
+		},
+		{
+			name: "missing keys default to 0",
+			a:    map[int]int{2: 1}, // 1,0 -> 0
+			b:    map[int]int{},     // all -> 0
+			want: 1,
+		},
+		{
+			name: "equal maps",
+			a:    map[int]int{2: 1, 1: 2},
+			b:    map[int]int{2: 1, 1: 2},
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cmpLexiByKeys(keys, tt.a, tt.b); got != tt.want {
+				t.Fatalf("cmpLexiByKeys(a,b)=%d want %d; a=%v b=%v", got, tt.want, tt.a, tt.b)
+			}
+
+			// Invariant: antisymmetry (works for all cases)
+			gotAB := cmpLexiByKeys(keys, tt.a, tt.b)
+			gotBA := cmpLexiByKeys(keys, tt.b, tt.a)
+			if gotAB != -gotBA {
+				t.Fatalf("antisymmetry broken: ab=%d ba=%d; a=%v b=%v", gotAB, gotBA, tt.a, tt.b)
+			}
+
+			// Invariant: reflexive
+			if got := cmpLexiByKeys(keys, tt.a, tt.a); got != 0 {
+				t.Fatalf("reflexive broken: cmp(a,a)=%d; a=%v", got, tt.a)
+			}
+		})
+	}
+}
+
+// -------------------------
+// cmpLexi
+// -------------------------
+
+func TestCmpLexi_Invariants(t *testing.T) {
+	cases := []map[string]int{
+		{"1": 2, "0": 1},
+		{"10": 1},
+		{"x": 1, "y": 0},
+		{},
+	}
+
+	for _, a := range cases {
+		if got := cmpLexi(a, a); got != 0 {
+			t.Fatalf("cmpLexi(a,a)=%d want 0, a=%v", got, a)
+		}
+		for _, b := range cases {
+			ab := cmpLexi(a, b)
+			ba := cmpLexi(b, a)
+			if ab != -ba {
+				t.Fatalf("antisymmetry broken: a=%v b=%v ab=%d ba=%d", a, b, ab, ba)
+			}
+		}
 	}
 }

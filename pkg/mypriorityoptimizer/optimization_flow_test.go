@@ -123,7 +123,10 @@ func TestRunOptimizationFlow_NoImprovingSolution(t *testing.T) {
 	// Baseline score we expect to be threaded through.
 	baseline := SolverScore{Evicted: 42}
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-		return nil, nil, dummySolverInput(baseline.Evicted), nil
+		// Include at least one pending pod so the flow proceeds past the
+		// "no pending pods" precondition.
+		pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
+		return nil, pods, dummySolverInput(baseline.Evicted), nil
 	}
 
 	// No improving solution from any solver.
@@ -214,7 +217,8 @@ func TestRunOptimizationFlow_PlanNotApplicable(t *testing.T) {
 
 	baseline := SolverScore{Evicted: 7}
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, dummySolverInput(baseline.Evicted), nil
+		pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
+		return []*v1.Node{}, pods, dummySolverInput(baseline.Evicted), nil
 	}
 
 	bestAttempt := &SolverResult{Name: "attempt-2"}
@@ -298,7 +302,8 @@ func TestRunOptimizationFlow_NoPendingScheduled(t *testing.T) {
 
 	baseline := SolverScore{Evicted: 10}
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, dummySolverInput(baseline.Evicted), nil
+		pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
+		return []*v1.Node{}, pods, dummySolverInput(baseline.Evicted), nil
 	}
 
 	bestAttempt := &SolverResult{Name: "attempt-3"}
@@ -391,7 +396,7 @@ func TestRunOptimizationFlow_SuccessfulPlan(t *testing.T) {
 
 	baseline := SolverScore{Evicted: 0}
 	nodes := []*v1.Node{}
-	pods := []*v1.Pod{}
+	pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
 
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
 		return nodes, pods, dummySolverInput(baseline.Evicted), nil
@@ -542,7 +547,8 @@ func TestRunOptimizationFlow_Async_ActivePlanInProgressAtApply(t *testing.T) {
 
 	baseline := SolverScore{Evicted: 11}
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, dummySolverInput(baseline.Evicted), nil
+		pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
+		return []*v1.Node{}, pods, dummySolverInput(baseline.Evicted), nil
 	}
 
 	bestAttempt := &SolverResult{Name: "attempt-async"}
@@ -644,7 +650,8 @@ func TestRunOptimizationFlow_PlanRegistrationError(t *testing.T) {
 
 	baseline := SolverScore{Evicted: 5}
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, dummySolverInput(baseline.Evicted), nil
+		pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
+		return []*v1.Node{}, pods, dummySolverInput(baseline.Evicted), nil
 	}
 
 	bestAttempt := &SolverResult{Name: "attempt-regerr"}
@@ -745,7 +752,8 @@ func TestRunOptimizationFlow_PlanActivationError(t *testing.T) {
 
 	baseline := SolverScore{Evicted: 2}
 	planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-		return []*v1.Node{}, []*v1.Pod{}, dummySolverInput(baseline.Evicted), nil
+		pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
+		return []*v1.Node{}, pods, dummySolverInput(baseline.Evicted), nil
 	}
 
 	bestAttempt := &SolverResult{Name: "attempt-acterr"}

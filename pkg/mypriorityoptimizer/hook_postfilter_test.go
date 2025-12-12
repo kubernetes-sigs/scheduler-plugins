@@ -146,7 +146,8 @@ func TestPostFilter_PerPod_Success_ReturnsNomination(t *testing.T) {
 
 		planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
 			inp := SolverInput{BaselineScore: SolverScore{}}
-			return []*v1.Node{}, []*v1.Pod{}, inp, nil
+			pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
+			return []*v1.Node{}, pods, inp, nil
 		}
 		planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 			best := &SolverResult{Name: "fake"}

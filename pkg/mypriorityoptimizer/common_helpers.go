@@ -8,12 +8,19 @@ import (
 )
 
 // -------------------------
+// Hooks
+// -------------------------
+
+var nowUnixNano = func() int64 { return time.Now().UnixNano() }
+
+// -------------------------
 // getUniqueId
 // -------------------------
 
 // getUniqueId generates a unique identifier with the given prefix.
+// CHECKED
 func getUniqueId(prefix string) string {
-	return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
+	return fmt.Sprintf("%s%d", prefix, nowUnixNano())
 }
 
 // -------------------------
@@ -21,6 +28,7 @@ func getUniqueId(prefix string) string {
 // -------------------------
 
 // getTimestampNowUtc returns the current timestamp in UTC.
+// CHECKED
 func getTimestampNowUtc() time.Time {
 	return time.Now().UTC()
 }
@@ -31,11 +39,12 @@ func getTimestampNowUtc() time.Time {
 
 // cmpInt returns +1 if suggested<baseline (improvement because smaller is
 // better), -1 if suggested>baseline (worse), 0 if equal.
-func cmpInt(suggested, baseline int) int {
+// CHECKED
+func cmpInt(a, b int) int {
 	switch {
-	case suggested < baseline:
+	case a < b:
 		return 1
-	case suggested > baseline:
+	case a > b:
 		return -1
 	default:
 		return 0
@@ -49,6 +58,7 @@ func cmpInt(suggested, baseline int) int {
 // cmpLexiByKeys compares two score maps lexicographically along the given key
 // order. The first key in `keys` is the most significant, the last the least.
 // Returns 1 if a>b, -1 if a<b, 0 if equal.
+// CHECKED
 func cmpLexiByKeys[K comparable](keys []K, a, b map[K]int) int {
 	for _, k := range keys {
 		av := a[k]
@@ -71,6 +81,7 @@ func cmpLexiByKeys[K comparable](keys []K, a, b map[K]int) int {
 // cmpLexi compares two maps[string]int whose keys are stringified integers. It
 // orders keys by descending numeric value (e.g. "10" > "5" > "1") and compares
 // the counts lexicographically along that order.
+// CHECKED
 func cmpLexi(a, b map[string]int) int {
 	// Collect union of keys from both maps.
 	keySet := make(map[string]struct{}, len(a)+len(b))
@@ -95,7 +106,7 @@ func cmpLexi(a, b map[string]int) int {
 		jv, jerr := strconv.Atoi(kj)
 
 		if ierr == nil && jerr == nil {
-			// Priorities: higher integer first.
+			// Higher integer first.
 			return iv > jv
 		}
 		// Fallback: simple string comparison (also descending).
