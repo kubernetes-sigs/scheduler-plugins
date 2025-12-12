@@ -171,6 +171,18 @@ def write_info_file(
 def log_field_fmt(v):
     return "<unset>" if v in (None, "") else str(v)
 
+def log_kv_block(logger: logging.Logger, title: str, fields: List[Tuple[str, Any]]) -> None:
+    """Log a stable, aligned key/value block with a header/footer."""
+    if not fields:
+        header, footer = make_header_footer(str(title))
+        logger.info("\n%s\n%s\n%s", header, "<no fields>", footer)
+        return
+    pad = max(len(str(k)) for k, _ in fields)
+    lines = [f"{str(k).rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
+    block = "\n".join(lines)
+    header, footer = make_header_footer(str(title))
+    logger.info("\n%s\n%s\n%s", header, block, footer)
+
 ##############################################
 # ------------ Parser helpers----------------
 ##############################################

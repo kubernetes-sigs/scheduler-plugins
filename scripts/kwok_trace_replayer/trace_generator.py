@@ -14,6 +14,7 @@ from scripts.helpers.general_helpers import (
     setup_logging,
     make_header_footer,
     log_field_fmt,
+    log_kv_block,
     build_cli_cmd,
     write_info_file,
 )
@@ -228,11 +229,7 @@ class TraceGenerator:
             ("xmax_life", self.args.xmax_life),
             ("mean_life", self.args.mean_life),
         ]
-        pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
-        block = "\n".join(lines)
-        header, footer = make_header_footer("ARGS")
-        LOG.info("\n%s\n%s\n%s", header, block, footer)
+        log_kv_block(LOG, "ARGS", fields)
 
     def _write_info_file(self) -> None:
         """

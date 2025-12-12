@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # trace_replayer.py
 
-import argparse, csv, json, logging, threading, time, yaml, subprocess
+import argparse, csv, json, logging, threading, time, yaml, subprocess, re
 from argparse import BooleanOptionalAction
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
@@ -17,6 +17,7 @@ from scripts.helpers.general_helpers import (
     qty_to_bytes_int,
     qty_to_bytes_str,
     log_field_fmt,
+    log_kv_block,
     build_cli_cmd,
     write_info_file,
     get_str,
@@ -43,6 +44,9 @@ from scripts.kwok_trace_replayer.trace_helpers import (
 # Constants
 #######################################################################
 MAX_REPLAY_WORKERS = 5 # number of threads for replaying events. If more than 1, tasks run "async"
+
+# Base ReplicaSet name produced by _rs_name_for_record (e.g. rs-000001)
+_RS_PREFIX_RE = re.compile(r"^(rs-\d{6})(?:-.*)?$")
 
 #######################################################################
 # Logging setup
@@ -304,11 +308,7 @@ class TraceReplayer:
             ("save_scheduler_logs", getattr(self.args, "save_scheduler_logs", None)),
             ("job_file", getattr(self.args, "job_file", None)),
         ]
-        pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
-        block = "\n".join(lines)
-        header, footer = make_header_footer("ARGS")
-        LOG.info("\n%s\n%s\n%s", header, block, footer)
+        log_kv_block(LOG, "ARGS", fields)
 
     def _write_info_file(self) -> None:
         """
@@ -801,9 +801,13 @@ class TraceReplayer:
                 def get_pod_prio(pod_name: str) -> int | None:
                     # Our identities are the RS names (e.g. "rs-000001").
                     # Pods are typically "rs-000001-<hash>-<index>" or "rs-000001-<something>".
-                    identity = pod_name
-                    if "-" in pod_name:
-                        identity, _suffix = pod_name.rsplit("-", 1)
+                    m = _RS_PREFIX_RE.match(pod_name)
+                    if m:
+                        identity = m.group(1)
+                    else:
+                        identity = pod_name
+                        if "-" in pod_name:
+                            identity, _suffix = pod_name.rsplit("-", 1)
                     prio = prio_by_identity.get(identity)
                     if prio is None:
                         return None

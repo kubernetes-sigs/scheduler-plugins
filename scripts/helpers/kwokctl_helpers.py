@@ -6,7 +6,10 @@ import os, subprocess, yaml, shlex, logging, textwrap, contextlib, copy
 from pathlib import Path
 from typing import Iterable, Mapping, Any
 from scripts.helpers.kubectl_helpers import kubectl_apply_yaml
-import fcntl  # type: ignore
+try:
+    import fcntl  # type: ignore
+except Exception:  # pragma: no cover
+    fcntl = None
 
 # ====================================================================
 # YAML helpers.
@@ -171,13 +174,15 @@ def kwok_cache_lock():
     os.makedirs(os.path.dirname(lock_path), exist_ok=True)
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o666)
     try:
+      if fcntl is not None:
         fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
+      yield
     finally:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-        finally:
-            os.close(fd)
+      try:
+        if fcntl is not None:
+          fcntl.flock(fd, fcntl.LOCK_UN)
+      finally:
+        os.close(fd)
 
 def merge_kwokctl_envs(doc: dict, add_envs: Iterable[Mapping[str, Any]] | None, component: str = "kube-scheduler") -> dict:
     """
