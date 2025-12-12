@@ -11,224 +11,209 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // -------------------------
-// /healthz endpoint
+// Test Helpers
 // -------------------------
 
-func TestHttpHealthzHandler_WarmingAndReady(t *testing.T) {
-	pl := &SharedState{}
-
-	// warming
-	{
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-
-		pl.httpHealthzHandler(rr, req)
-
-		if rr.Code != http.StatusServiceUnavailable {
-			t.Fatalf("warming: status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
-		}
-	}
-
-	// ready
-	{
-		pl.PluginReady.Store(true)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-
-		pl.httpHealthzHandler(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("ready: status = %d, want %d", rr.Code, http.StatusOK)
-		}
-		if body := rr.Body.String(); body != "ok" {
-			t.Fatalf("ready: body = %q, want %q", body, "ok")
-		}
-	}
-}
-
-// -------------------------
-// /active endpoint
-// -------------------------
-
-func TestHttpActiveHandler_MethodNotAllowedAndOK(t *testing.T) {
-	pl := &SharedState{}
-	pl.ActivePlanInProgress.Store(true)
-
-	// method not allowed
-	{
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/active", nil)
-
-		pl.httpActiveHandler(rr, req)
-
-		if rr.Code != http.StatusMethodNotAllowed {
-			t.Fatalf("POST /active status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
-		}
-	}
-
-	// happy path
-	{
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/active", nil)
-
-		pl.httpActiveHandler(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("GET /active status = %d, want %d", rr.Code, http.StatusOK)
-		}
-		resp := decodeHttpResponse(t, rr)
-		if !resp.Active {
-			t.Fatalf("expected Active=true in response")
-		}
-	}
-}
-
-// -------------------------
-// /solve endpoint
-// -------------------------
-
-func TestHttpSolveHandler_MethodNotAllowed(t *testing.T) {
-	pl := &SharedState{}
-
+func call(t *testing.T, pl *SharedState, h func(http.ResponseWriter, *http.Request), method, path string) *httptest.ResponseRecorder {
+	t.Helper()
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/solve", nil)
+	req := httptest.NewRequest(method, path, nil)
+	h(rr, req)
+	return rr
+}
 
-	pl.httpSolveHandler(rr, req)
-
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("GET /solve status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+func mustCode(t *testing.T, rr *httptest.ResponseRecorder, want int) {
+	t.Helper()
+	if rr.Code != want {
+		t.Fatalf("status = %d, want %d (body=%q)", rr.Code, want, rr.Body.String())
 	}
 }
 
-func TestHttpSolveHandler_NotReady(t *testing.T) {
-	pl := &SharedState{}
-	pl.ActivePlanInProgress.Store(true) // just to see it propagated
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/solve", nil)
-
-	pl.httpSolveHandler(rr, req)
-
-	if rr.Code != http.StatusPreconditionFailed {
-		t.Fatalf("status = %d, want %d", rr.Code, http.StatusPreconditionFailed)
+func mustBody(t *testing.T, rr *httptest.ResponseRecorder, want string) {
+	t.Helper()
+	if got := rr.Body.String(); got != want {
+		t.Fatalf("body = %q, want %q", got, want)
 	}
-	resp := decodeHttpResponse(t, rr)
+}
+
+func decodeHTTP(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
+	t.Helper()
+	var resp HttpResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode JSON response: %v (body=%q)", err, rr.Body.String())
+	}
+	return resp
+}
+
+func withRunOptFlow(t *testing.T, fn func(*SharedState, context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error), body func()) {
+	t.Helper()
+	old := runOptFlow
+	runOptFlow = fn
+	t.Cleanup(func() { runOptFlow = old })
+	body()
+}
+
+// -------------------------
+// /healthz
+// -------------------------
+
+func TestHTTP_Healthz(t *testing.T) {
+	tests := []struct {
+		name      string
+		ready     bool
+		wantCode  int
+		wantBody  string
+		checkBody bool
+	}{
+		{name: "warming", ready: false, wantCode: http.StatusServiceUnavailable},
+		{name: "ready", ready: true, wantCode: http.StatusOK, wantBody: "ok", checkBody: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pl := &SharedState{}
+			pl.PluginReady.Store(tt.ready)
+
+			rr := call(t, pl, pl.httpHealthzHandler, http.MethodGet, "/healthz")
+			mustCode(t, rr, tt.wantCode)
+			if tt.checkBody {
+				mustBody(t, rr, tt.wantBody)
+			}
+		})
+	}
+}
+
+// -------------------------
+// /active
+// -------------------------
+
+func TestHTTP_Active(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		active     bool
+		wantCode   int
+		wantJSON   bool
+		wantActive bool
+	}{
+		{name: "method not allowed", method: http.MethodPost, active: true, wantCode: http.StatusMethodNotAllowed},
+		{name: "ok", method: http.MethodGet, active: true, wantCode: http.StatusOK, wantJSON: true, wantActive: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pl := &SharedState{}
+			pl.ActivePlanInProgress.Store(tt.active)
+
+			rr := call(t, pl, pl.httpActiveHandler, tt.method, "/active")
+			mustCode(t, rr, tt.wantCode)
+
+			if tt.wantJSON {
+				resp := decodeHTTP(t, rr)
+				if resp.Active != tt.wantActive {
+					t.Fatalf("Active = %v, want %v", resp.Active, tt.wantActive)
+				}
+			}
+		})
+	}
+}
+
+// -------------------------
+// /solve
+// -------------------------
+
+func TestHTTP_Solve_MethodNotAllowed(t *testing.T) {
+	pl := &SharedState{}
+	rr := call(t, pl, pl.httpSolveHandler, http.MethodGet, "/solve")
+	mustCode(t, rr, http.StatusMethodNotAllowed)
+}
+
+func TestHTTP_Solve_NotReady(t *testing.T) {
+	pl := &SharedState{}
+	pl.ActivePlanInProgress.Store(true) // ensure propagated
+	pl.PluginReady.Store(false)
+
+	rr := call(t, pl, pl.httpSolveHandler, http.MethodPost, "/solve")
+	mustCode(t, rr, http.StatusPreconditionFailed)
+
+	resp := decodeHTTP(t, rr)
 	if resp.Status != "not-ready" {
 		t.Fatalf("Status = %q, want %q", resp.Status, "not-ready")
 	}
 	if !resp.Active {
 		t.Fatalf("Active = %v, want true", resp.Active)
 	}
+	// DurationMs can be 0 on fast machines, so only sanity check it exists.
+	if resp.DurationMs < 0 {
+		t.Fatalf("DurationMs = %d, want >= 0", resp.DurationMs)
+	}
 }
 
-func TestHttpSolveHandler_Ready_StatusVariants(t *testing.T) {
-	// Two pending pods + one running; we expect PendingBefore == 2.
-	pods := []*v1.Pod{
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "ns",
-				Name:      "p1",
-				UID:       "u1",
-			},
-			Spec: v1.PodSpec{},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "ns",
-				Name:      "p2",
-				UID:       "u2",
-			},
-			Spec: v1.PodSpec{},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "ns",
-				Name:      "p3",
-				UID:       "u3",
-			},
-			Spec: v1.PodSpec{
-				NodeName: "n1",
-			},
-		},
-	}
+func TestHTTP_Solve_Ready_StatusVariants(t *testing.T) {
+	// Two pending + one running => PendingBefore should be 2.
+	p1 := makePod("ns", "p1", "u1", "", "", "", 0)
+	p2 := makePod("ns", "p2", "u2", "", "", "", 0)
+	p3 := makePod("ns", "p3", "u3", "n1", "", "", 0)
 
-	type tc struct {
-		name       string
-		err        error
-		wantStatus string
+	store := map[string]map[string]*v1.Pod{
+		"ns": {"p1": p1, "p2": p2, "p3": p3},
 	}
-
-	cases := []tc{
-		{name: "ok", err: nil, wantStatus: "ok"},
-		{name: "busy", err: ErrActiveInProgress, wantStatus: "busy"},
-		{name: "noop", err: ErrNoPendingPods, wantStatus: "noop"},
-		{name: "error", err: fmt.Errorf("boom"), wantStatus: "error"},
-	}
+	fpl := &fakePodLister{store: store}
 
 	attempts := []SolverResult{
 		{Name: "solverA", Status: "FEASIBLE"},
 		{Name: "solverB", Status: "OPTIMAL"},
 	}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			pl := &SharedState{}
-			pl.PluginReady.Store(true)
-			pl.ActivePlanInProgress.Store(true)
-
-			// Fake pod store used by fakePodLister.
-			store := map[string]map[string]*v1.Pod{
-				"ns": {
-					"p1": pods[0],
-					"p2": pods[1],
-					"p3": pods[2],
-				},
-			}
-			fpl := &fakePodLister{store: store}
-
-			withPodLister(fpl, func() {
-				// Override runOptFlow to control the outcome.
-				oldRun := runOptFlow
-				runOptFlow = func(*SharedState, context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
-					baseline := &SolverScore{Evicted: 1}
-					return nil, baseline, "solverB", nil, attempts, c.err
-				}
-				defer func() { runOptFlow = oldRun }()
-
-				rr := httptest.NewRecorder()
-				req := httptest.NewRequest(http.MethodPost, "/solve", nil)
-
-				pl.httpSolveHandler(rr, req)
-
-				if rr.Code != http.StatusOK {
-					t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
-				}
-				resp := decodeHttpResponse(t, rr)
-
-				if resp.Status != c.wantStatus {
-					t.Fatalf("Status = %q, want %q", resp.Status, c.wantStatus)
-				}
-				if !resp.Active {
-					t.Fatalf("Active = false, want true")
-				}
-				if resp.PendingBefore != 2 {
-					t.Fatalf("PendingBefore = %d, want 2", resp.PendingBefore)
-				}
-
-				if c.err != nil && resp.Error == "" {
-					t.Fatalf("expected Error to be populated for err=%v", c.err)
-				}
-				if c.err == nil && resp.Error != "" {
-					t.Fatalf("expected Error empty when err=nil, got %q", resp.Error)
-				}
-			})
-		})
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus string
+		wantErrSet bool
+	}{
+		{name: "ok", err: nil, wantStatus: "ok", wantErrSet: false},
+		{name: "busy", err: ErrActiveInProgress, wantStatus: "busy", wantErrSet: true},
+		{name: "noop", err: ErrNoPendingPods, wantStatus: "noop", wantErrSet: true},
+		{name: "error", err: fmt.Errorf("boom"), wantStatus: "error", wantErrSet: true},
 	}
+
+	withPodLister(fpl, func() {
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				pl := &SharedState{}
+				pl.PluginReady.Store(true)
+				pl.ActivePlanInProgress.Store(true)
+
+				withRunOptFlow(t, func(*SharedState, context.Context) (*Plan, *SolverScore, string, *SolverResult, []SolverResult, error) {
+					return nil, &SolverScore{Evicted: 1}, "solverB", nil, attempts, tt.err
+				}, func() {
+					rr := call(t, pl, pl.httpSolveHandler, http.MethodPost, "/solve")
+					mustCode(t, rr, http.StatusOK)
+
+					resp := decodeHTTP(t, rr)
+
+					if resp.Status != tt.wantStatus {
+						t.Fatalf("Status = %q, want %q", resp.Status, tt.wantStatus)
+					}
+					if !resp.Active {
+						t.Fatalf("Active = false, want true")
+					}
+					if resp.PendingBefore != 2 {
+						t.Fatalf("PendingBefore = %d, want 2", resp.PendingBefore)
+					}
+					if tt.wantErrSet && resp.Error == "" {
+						t.Fatalf("expected Error to be populated for err=%v", tt.err)
+					}
+					if !tt.wantErrSet && resp.Error != "" {
+						t.Fatalf("expected Error empty when err=nil, got %q", resp.Error)
+					}
+				})
+			})
+		}
+	})
 }
 
 // -------------------------
@@ -239,16 +224,14 @@ func TestStartHttpServer_ShutsDownOnContextCancel(t *testing.T) {
 	pl := &SharedState{}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	done := make(chan struct{})
+
 	go func() {
-		// Using :0 lets OS pick a free port
-		pl.startHttpServer(ctx, "127.0.0.1:0")
+		pl.startHttpServer(ctx, "127.0.0.1:0") // OS picks port
 		close(done)
 	}()
 
-	// Give the server a moment to start.
+	// Give ListenAndServe a moment to start.
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 
@@ -260,15 +243,43 @@ func TestStartHttpServer_ShutsDownOnContextCancel(t *testing.T) {
 	}
 }
 
+func TestStartHttpServer_ListenAndServeError_Returns(t *testing.T) {
+	pl := &SharedState{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // ensure shutdown goroutine doesn't leak
+
+	// Invalid port -> ListenAndServe returns immediately with an error != http.ErrServerClosed.
+	pl.startHttpServer(ctx, "127.0.0.1:-1")
+}
+
 // -------------------------
-// decodeHttpResponse
+// writeHttpJson
 // -------------------------
 
-func decodeHttpResponse(t *testing.T, rr *httptest.ResponseRecorder) HttpResponse {
-	t.Helper()
-	var resp HttpResponse
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode JSON response: %v", err)
+func TestWriteHttpJson_SetsHeaderStatusAndEncodesBody(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	type payload struct {
+		A string `json:"a"`
+		N int    `json:"n"`
 	}
-	return resp
+	want := payload{A: "x", N: 7}
+
+	writeHttpJson(rr, http.StatusTeapot, want)
+
+	if rr.Code != http.StatusTeapot {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusTeapot)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	var got payload
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response body is not valid JSON: %v (body=%q)", err, rr.Body.String())
+	}
+	if got != want {
+		t.Fatalf("decoded payload = %#v, want %#v", got, want)
+	}
 }

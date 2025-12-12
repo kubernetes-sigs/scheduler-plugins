@@ -26,6 +26,7 @@ var (
 // -------------------------
 
 // httpHealthzHandler handles /healthz requests.
+// CHECKED
 func (pl *SharedState) httpHealthzHandler(w http.ResponseWriter, r *http.Request) {
 	klog.InfoS("HTTP /healthz requested")
 	if !pl.PluginReady.Load() {
@@ -41,6 +42,7 @@ func (pl *SharedState) httpHealthzHandler(w http.ResponseWriter, r *http.Request
 // -------------------------
 
 // httpActiveHandler handles /active requests.
+// CHECKED
 func (pl *SharedState) httpActiveHandler(w http.ResponseWriter, r *http.Request) {
 	klog.InfoS("HTTP /active requested")
 	if r.Method != http.MethodGet {
@@ -58,6 +60,7 @@ func (pl *SharedState) httpActiveHandler(w http.ResponseWriter, r *http.Request)
 // -------------------------
 
 // httpSolveHandler handles /solve requests.
+// CHECKED
 func (pl *SharedState) httpSolveHandler(w http.ResponseWriter, r *http.Request) {
 	klog.InfoS("HTTP /solve requested")
 	if r.Method != http.MethodPost {
@@ -109,6 +112,7 @@ func (pl *SharedState) httpSolveHandler(w http.ResponseWriter, r *http.Request) 
 // -------------------------
 
 // startHttpServer starts the HTTP server for health checks and manual solving.
+// CHECKED
 func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
 	mux := http.NewServeMux()
 
@@ -140,6 +144,8 @@ func (pl *SharedState) startHttpServer(ctx context.Context, addr string) {
 // writeHttpJson
 // -------------------------
 
+// writeHttpJson writes a JSON response with the given status code.
+// CHECKED
 func writeHttpJson(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
