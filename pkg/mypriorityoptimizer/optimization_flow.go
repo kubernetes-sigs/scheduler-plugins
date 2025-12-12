@@ -13,7 +13,7 @@ import (
 // Test Hooks
 var (
 	isAsyncSolvingFn = isAsyncSolving
-	planContextFn    = func(pl *SharedState, preemptor *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+	planContextFn    = func(pl *SharedState, preemptor *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
 		return pl.planContext(preemptor)
 	}
 	planComputationFn = func(pl *SharedState, ctx context.Context, in SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
@@ -64,13 +64,19 @@ func (pl *SharedState) runOptimizationFlow(ctx context.Context, preemptor *v1.Po
 	start := time.Now()
 
 	// Plan context: snapshot, solver input, baseline, pending count.
-	nodes, pods, pendingPrePlan, inp, err := planContextFn(pl, preemptor)
+	nodes, pods, inp, err := planContextFn(pl, preemptor)
 	if err != nil {
 		klog.Error(msg(strategy, InfoPlanContextFailed), "err", err)
 		pl.tryLeaveActivePlan()
 		return nil, nil, "", nil, nil, err
 	}
 	baselineScore := inp.BaselineScore
+	
+	// Only proceed if there are pending pods to schedule.
+	pendingPrePlan := countPendingPods(pods)
+	if pendingPrePlan == 0 {
+		return nil, &baselineScore, "", nil, nil, ErrNoPendingPods
+	}
 
 	// Plan computation
 	bestName, hadImp, bestAttempt, bestOut, attempts := planComputationFn(pl, ctx, inp)

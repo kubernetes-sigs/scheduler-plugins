@@ -78,9 +78,9 @@ class WorkloadScenario:
 # Scenario helpers + definitions
 # ---------------------------------------------------------------------------
 
-def rs_name_for_pod(scenario: WorkloadScenario, pod: Workload) -> str:
-    """Stable ReplicaSet name derived from (scenario.id, pod.id)."""
-    return f"{scenario.id}-pod-{pod.id:03d}"
+def rs_name_for_pod(scenario: WorkloadScenario, rs: Workload) -> str:
+    """Stable ReplicaSet name derived from (scenario.id, rs.id)."""
+    return f"{scenario.id}-rs-{rs.id:03d}"
 
 
 def _scenario_all_scheduled_by_default() -> WorkloadScenario:

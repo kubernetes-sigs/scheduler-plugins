@@ -106,11 +106,11 @@ type SolverResult struct {
 // SolverScore of a solver solution
 type SolverScore struct {
 	// Number of pods placed by priority (higher is better)
-	PlacedByPriority map[string]int `json:"placed_by_priority,omitempty"`
+	PlacedByPriority map[string]int `json:"placed_by_priority"`
 	// Number of evicted pods (lower is better)
-	Evicted int `json:"evicted,omitempty"`
+	Evicted int `json:"evicted"`
 	// Number of moved pods (lower is better)
-	Moved int `json:"moved,omitempty"`
+	Moved int `json:"moved"`
 }
 
 // ExportedSolverStats is the structure used to export solver run statistics.

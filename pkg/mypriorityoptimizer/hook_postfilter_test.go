@@ -104,8 +104,8 @@ func TestPostFilter_PerPod_Error_DefaultsToPlanRegistrationFailed(t *testing.T) 
 
 		// Force a generic error from runOptimizationFlow via planContextFn.
 		origPlanContext := planContextFn
-		planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
-			return nil, nil, 0, SolverInput{}, context.Canceled
+		planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
+			return nil, nil, SolverInput{}, context.Canceled
 		}
 		t.Cleanup(func() { planContextFn = origPlanContext })
 
@@ -144,9 +144,9 @@ func TestPostFilter_PerPod_Success_ReturnsNomination(t *testing.T) {
 		origWatch := startPlanCompletionWatchFn
 		origExport := exportSolverStatsFn
 
-		planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, int, SolverInput, error) {
+		planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
 			inp := SolverInput{BaselineScore: SolverScore{}}
-			return []*v1.Node{}, []*v1.Pod{}, 1, inp, nil
+			return []*v1.Node{}, []*v1.Pod{}, inp, nil
 		}
 		planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
 			best := &SolverResult{Name: "fake"}

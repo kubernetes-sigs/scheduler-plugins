@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -49,7 +50,40 @@ func (pl *SharedState) getNodes() ([]*v1.Node, error) {
 // getPods returns a list of all pods in the cluster.
 // Use the informer lister to avoid stale data from SnapshotLister.
 func (pl *SharedState) getPods() ([]*v1.Pod, error) {
-	return pl.podsLister().List(labels.Everything())
+	pods, err := pl.podsLister().List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	// In the real scheduler, the SharedInformerFactory-backed Pod informer can be
+	// configured/filtered (e.g., only unscheduled pods). If we only ever see
+	// unassigned pods here, baseline scoring will look "empty" forever.
+	//
+	// Prefer the lister for performance, but fall back to a direct API list when
+	// the lister appears to contain only pending/unbound pods.
+	hasAssigned := false
+	for _, p := range pods {
+		if isPodAssigned(p) {
+			hasAssigned = true
+			break
+		}
+	}
+	if hasAssigned || pl.Client == nil {
+		return pods, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	list, err := pl.Client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		// Best-effort fallback: keep the lister view.
+		return pods, nil
+	}
+	out := make([]*v1.Pod, 0, len(list.Items))
+	for i := range list.Items {
+		out = append(out, &list.Items[i])
+	}
+	return out, nil
 }
 
 // podRef returns a string representation of the pod's namespace and name.

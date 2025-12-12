@@ -22,7 +22,7 @@ func TestPlanContext_NodeListError(t *testing.T) {
 	}
 
 	withNodeLister(nl, func() {
-		nodes, pods, pending, _, err := pl.planContext(nil)
+		nodes, pods, _, err := pl.planContext(nil)
 
 		if err != ErrFailedToListNodes {
 			t.Fatalf("planContext() error = %v, want %v", err, ErrFailedToListNodes)
@@ -32,9 +32,6 @@ func TestPlanContext_NodeListError(t *testing.T) {
 		}
 		if pods != nil {
 			t.Fatalf("pods = %+v, want nil on node list error", pods)
-		}
-		if pending != 0 {
-			t.Fatalf("pendingPrePlan = %d, want 0 on node list error", pending)
 		}
 	})
 }
@@ -58,7 +55,7 @@ func TestPlanContext_PodListError(t *testing.T) {
 
 	withNodeLister(nl, func() {
 		withPodLister(plister, func() {
-			gotNodes, pods, pending, _, err := pl.planContext(nil)
+			gotNodes, pods, _, err := pl.planContext(nil)
 
 			if err != ErrFailedToListPods {
 				t.Fatalf("planContext() error = %v, want %v", err, ErrFailedToListPods)
@@ -68,80 +65,6 @@ func TestPlanContext_PodListError(t *testing.T) {
 			}
 			if pods != nil {
 				t.Fatalf("pods = %+v, want nil on pod list error", pods)
-			}
-			if pending != 0 {
-				t.Fatalf("pendingPrePlan = %d, want 0 on pod list error", pending)
-			}
-		})
-	})
-}
-
-func TestPlanContext_NoPendingPods(t *testing.T) {
-	pl := &SharedState{}
-
-	nodes := []*v1.Node{
-		makeNode("n1"),
-	}
-
-	// All pods are already assigned -> no pending pods.
-	running1 := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "p1",
-			Namespace: "ns",
-			UID:       "u1",
-		},
-		Spec: v1.PodSpec{
-			NodeName: "n1",
-		},
-		Status: v1.PodStatus{
-			Phase: v1.PodRunning,
-		},
-	}
-	running2 := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "p2",
-			Namespace: "ns",
-			UID:       "u2",
-		},
-		Spec: v1.PodSpec{
-			NodeName: "n1",
-		},
-		Status: v1.PodStatus{
-			Phase: v1.PodRunning,
-		},
-	}
-
-	store := map[string]map[string]*v1.Pod{
-		"ns": {
-			"p1": running1,
-			"p2": running2,
-		},
-	}
-
-	nl := &fakeNodeLister{
-		nodes: nodes,
-		err:   nil,
-	}
-	plister := &fakePodLister{
-		store: store,
-		err:   nil,
-	}
-
-	withNodeLister(nl, func() {
-		withPodLister(plister, func() {
-			gotNodes, gotPods, pending, _, err := pl.planContext(nil)
-
-			if err != ErrNoPendingPods {
-				t.Fatalf("planContext() error = %v, want %v", err, ErrNoPendingPods)
-			}
-			if len(gotNodes) != 1 || gotNodes[0].Name != "n1" {
-				t.Fatalf("nodes = %+v, want single node n1", gotNodes)
-			}
-			if len(gotPods) != 2 {
-				t.Fatalf("pods len = %d, want 2", len(gotPods))
-			}
-			if pending != 0 {
-				t.Fatalf("pendingPrePlan = %d, want 0 when all pods are running", pending)
 			}
 		})
 	})
@@ -186,7 +109,7 @@ func TestPlanContext_BuildSolverInputError(t *testing.T) {
 
 	withNodeLister(nl, func() {
 		withPodLister(plister, func() {
-			gotNodes, gotPods, pendingCount, _, err := pl.planContext(nil)
+			gotNodes, gotPods, _, err := pl.planContext(nil)
 
 			if err != ErrFailedToBuildSolverInput {
 				t.Fatalf("planContext() error = %v, want %v", err, ErrFailedToBuildSolverInput)
@@ -196,9 +119,6 @@ func TestPlanContext_BuildSolverInputError(t *testing.T) {
 			}
 			if len(gotPods) != 1 {
 				t.Fatalf("pods len = %d, want 1", len(gotPods))
-			}
-			if pendingCount != 1 {
-				t.Fatalf("pendingPrePlan = %d, want 1 (one pending pod)", pendingCount)
 			}
 		})
 	})
@@ -261,7 +181,7 @@ func TestPlanContext_Success(t *testing.T) {
 
 	withNodeLister(nl, func() {
 		withPodLister(plister, func() {
-			gotNodes, gotPods, pendingCount, inp, err := pl.planContext(nil)
+			gotNodes, gotPods, inp, err := pl.planContext(nil)
 			if err != nil {
 				t.Fatalf("planContext() unexpected error: %v", err)
 			}
@@ -271,9 +191,6 @@ func TestPlanContext_Success(t *testing.T) {
 			}
 			if len(gotPods) != 2 {
 				t.Fatalf("pods len = %d, want 2", len(gotPods))
-			}
-			if pendingCount != 1 {
-				t.Fatalf("pendingPrePlan = %d, want 1 (one pending pod)", pendingCount)
 			}
 
 			// Baseline score in the SolverInput should match what buildBaselineScore
