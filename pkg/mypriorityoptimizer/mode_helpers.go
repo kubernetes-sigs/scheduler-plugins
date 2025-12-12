@@ -1,30 +1,66 @@
 // mode_helpers.go
 package mypriorityoptimizer
 
-import (
-	"fmt"
-)
+// -------------------------
+// isPerPodMode
+// -------------------------
 
 // isPerPodMode is the optimizer cadence that optimizes for every new pod.
+// CHECKED
 func isPerPodMode() bool { return OptimizeMode == ModePerPod }
 
+// -------------------------
+// isManualBlockingMode
+// -------------------------
+
 // isManualBlockingMode is true if the mode is ManualBlocking.
+// CHECKED
 func isManualBlockingMode() bool { return OptimizeMode == ModeManualBlocking }
+
+// -------------------------
+// isAsyncSolving
+// -------------------------
 
 // isAsyncSolving is true for modes where we:
 // - collect pods at PostFilter, and
 // - take Active only after we know a plan is worthwhile.
-// "PerPod" is always treated as synchronous.
+// PerPod is always treated as synchronous.
+// CHECKED
 func isAsyncSolving() bool {
-	if OptimizeMode == ModePerPod {
-		return false
-	}
-	return !OptimizeSolveSynch
+	return OptimizeMode != ModePerPod && !OptimizeSolveSynch
 }
 
-// getModeAsString returns a human-readable representation of the OptimizeMode.
-func getModeAsString() string {
-	switch OptimizeMode {
+// -------------------------
+// getSyncAsString
+// -------------------------
+
+// getSyncAsString returns "Synch" or "Asynch".
+// CHECKED
+func getSyncAsString() string {
+	if isAsyncSolving() {
+		return "Asynch"
+	}
+	return "Synch"
+}
+
+// -------------------------
+// getModeCombinedAsString
+// -------------------------
+
+// getModeCombinedAsString returns "<Mode>/<Synch|Asynch>".
+// CHECKED
+func getModeCombinedAsString() string {
+	return OptimizeMode.String() + "/" + getSyncAsString()
+}
+
+// -------------------------
+// ModeType String()
+// -------------------------
+
+// String returns the string representation of the ModeType.
+// CHECKED
+func (m ModeType) String() string {
+	switch m {
 	case ModePerPod:
 		return "PerPod"
 	case ModePeriodic:
@@ -36,20 +72,7 @@ func getModeAsString() string {
 	case ModeManualBlocking:
 		return "ManualBlocking"
 	default:
+		// Preserve previous behavior (unknown -> "Periodic") to avoid changing logs/tests.
 		return "Periodic"
 	}
-}
-
-// getSyncAsString returns "Asynch" or "Synch" based on the OptimizeSolveSynch setting.
-func getSyncAsString() string {
-	if isAsyncSolving() {
-		return "Asynch"
-	}
-	return "Synch"
-}
-
-// getModeCombinedAsString returns a string representation of the current strategy:
-// "<Mode><Synch|Asynch>"
-func getModeCombinedAsString() string {
-	return fmt.Sprintf("%s/%s", getModeAsString(), getSyncAsString())
 }

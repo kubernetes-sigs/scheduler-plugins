@@ -4,211 +4,120 @@ package mypriorityoptimizer
 import "testing"
 
 // -------------------------
-// isPerPodMode
+// Mode Predicates
 // -------------------------
 
-func TestIsPerPodMode(t *testing.T) {
-	withMode(ModePerPod, true, func() {
-		if !isPerPodMode() {
-			t.Fatalf("expected isPerPodMode() to be true when OptimizeMode == ModePerPod")
-		}
-	})
-	withMode(ModePeriodic, true, func() {
-		if isPerPodMode() {
-			t.Fatalf("expected isPerPodMode() to be false when OptimizeMode != ModePerPod")
-		}
-	})
-	withMode(ModeInterlude, true, func() {
-		if isPerPodMode() {
-			t.Fatalf("expected isPerPodMode() to be false for ModeInterlude")
-		}
-	})
-	withMode(ModeManual, true, func() {
-		if isPerPodMode() {
-			t.Fatalf("expected isPerPodMode() to be false for ModeManual")
-		}
-	})
-	withMode(ModeManualBlocking, true, func() {
-		if isPerPodMode() {
-			t.Fatalf("expected isPerPodMode() to be false for ModeManualBlocking")
-		}
-	})
-}
+func TestModePredicates(t *testing.T) {
+	type tc struct {
+		name               string
+		mode               ModeType
+		synch              bool
+		wantPerPod         bool
+		wantManualBlocking bool
+		wantAsync          bool
+		wantSyncStr        string
+		wantCombined       string
+	}
 
-func TestIsManualBlockingMode(t *testing.T) {
-	withMode(ModeManualBlocking, true, func() {
-		if !isManualBlockingMode() {
-			t.Fatalf("expected isManualBlockingMode() to be true for ModeManualBlocking")
-		}
-	})
-	withMode(ModeManual, true, func() {
-		if isManualBlockingMode() {
-			t.Fatalf("expected isManualBlockingMode() to be false for ModeManual")
-		}
-	})
-	withMode(ModePerPod, true, func() {
-		if isManualBlockingMode() {
-			t.Fatalf("expected isManualBlockingMode() to be false for ModePerPod")
-		}
-	})
-	withMode(ModePeriodic, true, func() {
-		if isManualBlockingMode() {
-			t.Fatalf("expected isManualBlockingMode() to be false for ModePeriodic")
-		}
-	})
-	withMode(ModeInterlude, true, func() {
-		if isManualBlockingMode() {
-			t.Fatalf("expected isManualBlockingMode() to be false for ModeInterlude")
-		}
-	})
-}
+	tests := []tc{
+		{
+			name:               "per-pod always synch",
+			mode:               ModePerPod,
+			synch:              false,
+			wantPerPod:         true,
+			wantManualBlocking: false,
+			wantAsync:          false,
+			wantSyncStr:        "Synch",
+			wantCombined:       "PerPod/Synch",
+		},
+		{
+			name:               "periodic synch",
+			mode:               ModePeriodic,
+			synch:              true,
+			wantPerPod:         false,
+			wantManualBlocking: false,
+			wantAsync:          false,
+			wantSyncStr:        "Synch",
+			wantCombined:       "Periodic/Synch",
+		},
+		{
+			name:               "periodic asynch",
+			mode:               ModePeriodic,
+			synch:              false,
+			wantPerPod:         false,
+			wantManualBlocking: false,
+			wantAsync:          true,
+			wantSyncStr:        "Asynch",
+			wantCombined:       "Periodic/Asynch",
+		},
+		{
+			name:               "manual blocking is blocking",
+			mode:               ModeManualBlocking,
+			synch:              true,
+			wantPerPod:         false,
+			wantManualBlocking: true,
+			wantAsync:          false,
+			wantSyncStr:        "Synch",
+			wantCombined:       "ManualBlocking/Synch",
+		},
+		{
+			name:               "unknown mode keeps old default string",
+			mode:               ModeType(999),
+			synch:              true,
+			wantPerPod:         false,
+			wantManualBlocking: false,
+			wantAsync:          false,
+			wantSyncStr:        "Synch",
+			wantCombined:       "Periodic/Synch", // matches ModeType.String() fallback
+		},
+	}
 
-// -------------------------
-// isAsyncSolving
-// -------------------------
-
-func TestIsAsyncSolving(t *testing.T) {
-	// PerPod is always synchronous regardless of OptimizeSolveSynch
-	withMode(ModePerPod, false, func() {
-		if isAsyncSolving() {
-			t.Fatalf("expected isAsyncSolving() to be false for ModePerPod regardless of OptimizeSolveSynch")
-		}
-	})
-	// Background modes: OptimizeSolveSynch=true -> synchronous
-	withMode(ModePeriodic, true, func() {
-		if isAsyncSolving() {
-			t.Fatalf("expected isAsyncSolving() to be false when OptimizeSolveSynch=true for background non-PerPod modes")
-		}
-	})
-	// Background modes: OptimizeSolveSynch=false -> asynchronous
-	withMode(ModePeriodic, false, func() {
-		if !isAsyncSolving() {
-			t.Fatalf("expected isAsyncSolving() to be true when OptimizeSolveSynch=false for background non-PerPod modes")
-		}
-	})
-}
-
-// -------------------------
-// getModeAsString
-// -------------------------
-
-func TestGetModeAsString(t *testing.T) {
-	withMode(ModePerPod, true, func() {
-		if got := getModeAsString(); got != "PerPod" {
-			t.Fatalf("expected getModeAsString()=PerPod for ModePerPod, got %q", got)
-		}
-	})
-	withMode(ModePeriodic, true, func() {
-		if got := getModeAsString(); got != "Periodic" {
-			t.Fatalf("expected getModeAsString()=Periodic for ModePeriodic, got %q", got)
-		}
-	})
-	withMode(ModeInterlude, true, func() {
-		if got := getModeAsString(); got != "Interlude" {
-			t.Fatalf("expected getModeAsString()=Interlude for ModeInterlude, got %q", got)
-		}
-	})
-	withMode(ModeManual, true, func() {
-		if got := getModeAsString(); got != "Manual" {
-			t.Fatalf("expected getModeAsString()=Manual for ModeManual, got %q", got)
-		}
-	})
-	withMode(ModeManualBlocking, true, func() {
-		if got := getModeAsString(); got != "ManualBlocking" {
-			t.Fatalf("expected getModeAsString()=ManualBlocking for ModeManualBlocking, got %q", got)
-		}
-	})
-	// Unknown mode value -> default branch ("Periodic")
-	withMode(ModeType(999), true, func() {
-		if got := getModeAsString(); got != "Periodic" {
-			t.Fatalf("expected getModeAsString()=Periodic for unknown mode value, got %q", got)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withMode(tt.mode, tt.synch, func() {
+				if got := isPerPodMode(); got != tt.wantPerPod {
+					t.Fatalf("isPerPodMode()=%v want %v", got, tt.wantPerPod)
+				}
+				if got := isManualBlockingMode(); got != tt.wantManualBlocking {
+					t.Fatalf("isManualBlockingMode()=%v want %v", got, tt.wantManualBlocking)
+				}
+				if got := isAsyncSolving(); got != tt.wantAsync {
+					t.Fatalf("isAsyncSolving()=%v want %v", got, tt.wantAsync)
+				}
+				if got := getSyncAsString(); got != tt.wantSyncStr {
+					t.Fatalf("getSyncAsString()=%q want %q", got, tt.wantSyncStr)
+				}
+				if got := getModeCombinedAsString(); got != tt.wantCombined {
+					t.Fatalf("getModeCombinedAsString()=%q want %q", got, tt.wantCombined)
+				}
+			})
+		})
+	}
 }
 
 // -------------------------
-// getSyncAsString
+// ModeType_String
 // -------------------------
 
-func TestGetSyncAsString(t *testing.T) {
-	// PerPod is always synchronous.
-	withMode(ModePerPod, false, func() {
-		if got := getSyncAsString(); got != "Synch" {
-			t.Fatalf("expected getSyncAsString()=Synch for ModePerPod, got %q", got)
-		}
-	})
+func TestModeType_String(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ModeType
+		want string
+	}{
+		{"PerPod", ModePerPod, "PerPod"},
+		{"Periodic", ModePeriodic, "Periodic"},
+		{"Interlude", ModeInterlude, "Interlude"},
+		{"Manual", ModeManual, "Manual"},
+		{"ManualBlocking", ModeManualBlocking, "ManualBlocking"},
+		{"UnknownDefaultsToPeriodic", ModeType(999), "Periodic"}, // default branch
+	}
 
-	// Background mode, OptimizeSolveSynch=true -> synchronous.
-	withMode(ModePeriodic, true, func() {
-		if got := getSyncAsString(); got != "Synch" {
-			t.Fatalf("expected getSyncAsString()=Synch when OptimizeSolveSynch=true, got %q", got)
-		}
-	})
-
-	// Background mode, OptimizeSolveSynch=false -> asynchronous.
-	withMode(ModePeriodic, false, func() {
-		if got := getSyncAsString(); got != "Asynch" {
-			t.Fatalf("expected getSyncAsString()=Asynch when OptimizeSolveSynch=false, got %q", got)
-		}
-	})
-}
-
-// -------------------------
-// getModeCombinedAsString
-// -------------------------
-
-func TestGetModeCombinedAsString(t *testing.T) {
-	// PerPod: always PostFilter + Synch
-	withMode(ModePerPod, true, func() {
-		got := getModeCombinedAsString()
-		if got != "PerPod/Synch" {
-			t.Fatalf("unexpected getModeCombinedAsString for PerPod+Synch+PreEnqueue: %q", got)
-		}
-	})
-	withMode(ModePerPod, false, func() {
-		got := getModeCombinedAsString()
-		if got != "PerPod/Synch" {
-			t.Fatalf("unexpected getModeCombinedAsString for PerPod+Asynch+PostFilter (forced Synch): %q", got)
-		}
-	})
-
-	// Periodic + Asynch + PostFilter
-	withMode(ModePeriodic, false, func() {
-		got := getModeCombinedAsString()
-		if got != "Periodic/Asynch" {
-			t.Fatalf("unexpected getModeCombinedAsString for Periodic+Asynch+PostFilter: %q", got)
-		}
-	})
-
-	// Manual + Synch + PostFilter
-	withMode(ModeManual, true, func() {
-		got := getModeCombinedAsString()
-		if got != "Manual/Synch" {
-			t.Fatalf("unexpected getModeCombinedAsString for Manual+Synch+PostFilter: %q", got)
-		}
-	})
-
-	// ManaulBlocking + Synch + PreEnqueue
-	withMode(ModeManualBlocking, true, func() {
-		got := getModeCombinedAsString()
-		if got != "ManualBlocking/Synch" {
-			t.Fatalf("unexpected getModeCombinedAsString for ManualBlocking+Synch+PreEnqueue: %q", got)
-		}
-	})
-
-	// Interlude + Asynch + PreEnqueue
-	withMode(ModeInterlude, false, func() {
-		got := getModeCombinedAsString()
-		if got != "Interlude/Asynch" {
-			t.Fatalf("unexpected getModeCombinedAsString for Interlude+Asynch+PreEnqueue: %q", got)
-		}
-	})
-
-	// Unknown mode value -> default branch ("Periodic")
-	withMode(ModeType(999), true, func() {
-		got := getModeCombinedAsString()
-		if got != "Periodic/Synch" {
-			t.Fatalf("unexpected getModeCombinedAsString for unknown mode value: %q", got)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.String(); got != tt.want {
+				t.Fatalf("ModeType(%d).String() = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
 }
