@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 # test_python_solver.py
-import io
-import json
+
+import io, json
 
 import pytest
 
@@ -11,6 +12,7 @@ from scripts.python_solver.main import (
     NO_PODS,
     main as solver_main,
 )
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -56,6 +58,7 @@ def assert_eviction_entry_schema(ev: dict) -> None:
     assert isinstance(ev["name"], str)
     assert isinstance(ev["namespace"], str)
     assert isinstance(ev["node"], str)
+
 
 def make_node(name="n1", cpu=1000, mem=1_000_000_000):
     return {
@@ -105,6 +108,72 @@ DEFAULT_TIMEOUT_MS = 2000
 )
 def test_status_str_handles_int_and_string(value, expected):
     assert CPSATSolver._status_str(value) == expected
+
+
+# ---------------------------------------------------------------------------
+# Solver: _dedupe_pods_by_uid and _apply_preemptor_to_pods
+# ---------------------------------------------------------------------------
+
+def test_dedupe_pods_by_uid_prefers_running_record():
+    solver = CPSATSolver()
+    pods = [
+        make_pod("p1", cpu=100, node=""),     # pending
+        make_pod("p1", cpu=100, node="n1"),   # running should win
+    ]
+    out = solver._dedupe_pods_by_uid(pods)
+    assert list(out.keys()) == ["p1"]
+    assert out["p1"]["node"] == "n1"
+
+
+def test_apply_preemptor_to_pods_adds_pending_if_missing():
+    solver = CPSATSolver()
+    pod_by_uid = {}
+    preemptor = {
+        "uid": "pre",
+        "namespace": "default",
+        "name": "pre",
+        "req_cpu_m": 300,
+        "req_mem_bytes": 100_000_000,
+        "priority": 10,
+        "protected": False,
+    }
+
+    pod_by_uid, single_mode, pre_uid = solver._apply_preemptor_to_pods(pod_by_uid, preemptor)
+    assert single_mode is True
+    assert pre_uid == "pre"
+    assert "pre" in pod_by_uid
+    assert pod_by_uid["pre"]["node"] == ""  # added as pending
+
+
+def test_freeze_problem_builds_indices_and_eligible_nodes():
+    solver = CPSATSolver()
+    nodes = [
+        make_node("n1", cpu=500, mem=1_000_000_000),
+        make_node("n2", cpu=1000, mem=1_000_000_000),
+    ]
+    pods = [
+        make_pod("p1", cpu=600, mem=100_000_000, node=""),   # pending; only fits n2
+        make_pod("p2", cpu=200, mem=100_000_000, node="n1"), # running; fits both
+    ]
+
+    frozen = solver._freeze_problem(
+        nodes=nodes,
+        pods=pods,
+        single_preemptor_mode=False,
+        preemptor_uid=None,
+    )
+    assert isinstance(frozen, dict) is False
+
+    # p1 pending, p2 running
+    assert set(frozen.pending_idxs) == {0}
+    assert set(frozen.running_idxs) == {1}
+
+    # Eligible nodes:
+    # p1 (600m) fits only n2 (idx 1)
+    assert frozen.eligible_nodes[0] == [1]
+    # p2 (200m) fits both
+    assert frozen.eligible_nodes[1] == [0, 1]
+
 
 # ---------------------------------------------------------------------------
 # Solver: quick exits NO_NODES / NO_PODS
@@ -459,6 +528,7 @@ def test_unprotected_running_pod_is_moved_when_second_node_allows_keeping_all_ru
     assert_placement_entry_schema(pl)
     assert pl["old_node"] == "n1"
     assert pl["node"] == "n2"
+
 
 # ---------------------------------------------------------------------------
 # CLI / main(): Go↔Python contract and robustness

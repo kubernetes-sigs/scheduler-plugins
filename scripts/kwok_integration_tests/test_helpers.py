@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # test_helpers.py
 
-import logging
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, Any, List, Optional
+import logging, yaml
 
-import yaml
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
 
 from scripts.helpers.general_helpers import (
     qty_to_mcpu_str,

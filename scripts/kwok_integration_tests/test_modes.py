@@ -39,11 +39,11 @@ from scripts.kwok_integration_tests.test_helpers import (
     NODE_MEM,
     NUM_PRIORITIES,
     VALID_OPT_MODES,
-    WorkloadStep,
-    WorkloadScenario,
     WORKLOAD_SCENARIOS,
     DEFAULT_WORKLOAD_ID,
     DEFAULT_DISABLE_WAIT_AND_ACTIVE_CHECKS,
+    WorkloadStep,
+    WorkloadScenario,
     rs_name_for_pod,
     load_kwokctl_config,
     build_kwokctl_config_for_mode,
@@ -51,7 +51,6 @@ from scripts.kwok_integration_tests.test_helpers import (
     scenario_total_replicas,
     apply_workload_step,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants specific to the integration tests
