@@ -26,7 +26,7 @@ from scripts.helpers.kubectl_helpers import (
     ensure_priority_classes,
     wait_rs_pods,
 )
-from scripts.helpers.kwok_helpers import (
+from scripts.helpers.kwokctl_helpers import (
     yaml_kwok_rs,
     ensure_kwok_cluster,
     create_kwok_nodes,
@@ -206,12 +206,39 @@ def build_argparser() -> argparse.ArgumentParser:
 # ------------ Main class --------------------
 ##############################################
 class TestRunner:
-    def __init__(self, args: argparse.Namespace) -> None:
+    def __init__(self, args: argparse.Namespace, *, initialize: bool = True) -> None:
+        # Keep this constructor lightweight so unit tests can instantiate the class
+        # without touching the filesystem or requiring real config files.
         self.args = args
+
+        # Populated during initialization (or set directly by unit tests)
         self.workload_config_doc = None
         self.workload_config: TestConfigRaw | None = None
         self.kwokctl_config_doc = None
         self.job_doc = None
+
+        self.output_dir_resolved: Path | None = None
+        self.results_f: Path | None = None
+        self.failed_f: Path | None = None
+        self.seeds_all_running_f: Path | None = None
+        self.seeds_not_all_running_f: Path | None = None
+        self.solver_stats_dir: Path | None = None
+        self.scheduler_logs_dir: Path | None = None
+
+        # General state (used by various helpers)
+        self.ctx: str | None = None
+        self.seen_results: set[int] = set()
+        self.seed_durations: list[float] = []
+        self.saved_not_all_running: int = 0
+        self.quota_reached: bool = False
+        self.last_solver_result: dict[str, Any] | None = None
+        self.suppress_fail_log: bool = False
+        self.failure: _Failure | None = None
+
+        if initialize:
+            self._initialize()
+
+    def _initialize(self) -> None:
         override_workload_config = None
         override_kwokctl_envs = None
 
@@ -233,22 +260,22 @@ class TestRunner:
 
         # Ensure defaults args
         self.args = TestRunner.ensure_default_args(self.args)
-        
+
         # Setup logging
         setup_logging(name=LOGGER_NAME, prefix="[test-runner] ", level=self.args.log_level)
-        
+
         # Log args after merging and setting defaults
         self.log_args(self.args)
 
         # Resolve paths
         self.output_dir_resolved = self._prepare_output_dir()
         self.results_f = self.output_dir_resolved / "results.csv"
-        self.failed_f  = self.output_dir_resolved / "failed.csv"
+        self.failed_f = self.output_dir_resolved / "failed.csv"
         self.seeds_all_running_f = self.output_dir_resolved / "seeds-all-running.txt"
         self.seeds_not_all_running_f = self.output_dir_resolved / "seeds-not-all-running.txt"
         self.solver_stats_dir = self.output_dir_resolved / "solver-stats"
         self.scheduler_logs_dir = self.output_dir_resolved / "scheduler-logs"
-        
+
         workload_path = Path(self.args.workload_config_file).resolve()
         kwokctl_path = Path(self.args.kwokctl_config_file).resolve()
 
@@ -264,12 +291,14 @@ class TestRunner:
         ok, msg = self._validate_workload_config(self.workload_config)
         if not ok:
             raise SystemExit(f"config-failed {workload_path}: {msg}")
-        
+
         # Load, merge and log kwokctl config
         with open(kwokctl_path, "r", encoding="utf-8") as f:
             self.kwokctl_config_doc = yaml.safe_load(f)
-        if not isinstance(self.kwokctl_config_doc, dict) or not (self.kwokctl_config_doc.get("kind") == "KwokctlConfiguration" and
-                str(self.kwokctl_config_doc.get("apiVersion", "")).startswith("config.kwok.x-k8s.io/")):
+        if not isinstance(self.kwokctl_config_doc, dict) or not (
+            self.kwokctl_config_doc.get("kind") == "KwokctlConfiguration"
+            and str(self.kwokctl_config_doc.get("apiVersion", "")).startswith("config.kwok.x-k8s.io/")
+        ):
             raise SystemExit(f"{kwokctl_path}: expected a KwokctlConfiguration document")
         if override_kwokctl_envs:
             self.kwokctl_config_doc = merge_kwokctl_envs(self.kwokctl_config_doc, override_kwokctl_envs)
@@ -281,14 +310,14 @@ class TestRunner:
         self._write_info_file()
 
         # General state
-        self.ctx = f"kwok-{self.args.cluster_name}" # "kwok-" is the default prefix used by kwokctl
-        self.seen_results: set[int] = self._load_seen_results_csv() # seeds already in results.csv; used for skipping
-        self.seed_durations: list[float] = [] # durations of completed seeds, for ETA estimation
-        self.saved_not_all_running: int = 0 # number of seeds saved where not all pods are running
-        self.quota_reached: bool = False
-        self.last_solver_result: dict[str, Any] | None = None # last solver result, for --solver-directly
-        self.suppress_fail_log: bool = False # if true, suppress writing to failed.csv (used when just checking config)
-        self.failure: _Failure | None = None # if suppress_fail_log is true, store the failure here instead
+        self.ctx = f"kwok-{self.args.cluster_name}"  # "kwok-" is the default prefix used by kwokctl
+        self.seen_results = self._load_seen_results_csv()  # seeds already in results.csv; used for skipping
+        self.seed_durations = []  # durations of completed seeds, for ETA estimation
+        self.saved_not_all_running = 0  # number of seeds saved where not all pods are running
+        self.quota_reached = False
+        self.last_solver_result = None  # last solver result, for --solver-directly
+        self.suppress_fail_log = False  # if true, suppress writing to failed.csv (used when just checking config)
+        self.failure = None  # if suppress_fail_log is true, store the failure here instead
 
     ##############################################
     # ------------ Args helpers ------------------

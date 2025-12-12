@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# save_public_trace_data.py
+# save_data.py
 
 import csv, os
 from typing import List, Tuple

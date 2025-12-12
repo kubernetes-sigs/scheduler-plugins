@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # setup_cluster.py
 
 import argparse
@@ -10,7 +11,7 @@ from scripts.helpers.kubectl_helpers import (
     ensure_namespace,
     ensure_priority_classes,
 )
-from scripts.helpers.kwok_helpers import (
+from scripts.helpers.kwokctl_helpers import (
     ensure_kwok_cluster,
     create_kwok_nodes,
     kwok_pods_cap,

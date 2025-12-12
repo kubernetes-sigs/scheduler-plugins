@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # test_helpers.py
+
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +16,7 @@ from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml,
     wait_rs_pods,
 )
-from scripts.helpers.kwok_helpers import (
+from scripts.helpers.kwokctl_helpers import (
     merge_kwokctl_envs,
     yaml_kwok_rs,
 )

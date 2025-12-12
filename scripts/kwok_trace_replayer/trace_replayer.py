@@ -28,7 +28,7 @@ from scripts.helpers.kubectl_helpers import (
     delete_rs,
     get_json_ctx,
 )
-from scripts.helpers.kwok_helpers import (
+from scripts.helpers.kwokctl_helpers import (
     yaml_kwok_rs,
     create_kwok_nodes,
     ensure_kwok_cluster,

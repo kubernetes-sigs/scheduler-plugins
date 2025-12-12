@@ -130,7 +130,7 @@ if "$RUN_INT_KWOK"; then
 
   python -m pytest -s scripts/kwok_integration_tests/test_modes.py
 
-  echo "Integration tests with KWOK completed.
+  echo "Integration tests with KWOK completed."
 fi
 
 # Summary

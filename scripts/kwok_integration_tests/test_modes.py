@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # test_modes.py
 
 import argparse, csv, json, logging, sys, time
@@ -24,7 +25,7 @@ from scripts.helpers.kubectl_helpers import (
     wait_rs_pods,
     get_json_ctx,
 )
-from scripts.helpers.kwok_helpers import (
+from scripts.helpers.kwokctl_helpers import (
     ensure_kwok_cluster,
     create_kwok_nodes,
     kwok_pods_cap,
