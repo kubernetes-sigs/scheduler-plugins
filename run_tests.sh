@@ -92,28 +92,27 @@ ensure_python_solver_env() {
 # -------------------------------------------------------------------
 # Coverage folders
 # -------------------------------------------------------------------
-mkdir -p coverage/unit/python/html
-mkdir -p coverage/unit/go
-mkdir -p coverage/integration/kwok/html
+mkdir -p coverage/python/html
+mkdir -p coverage/go
 
 if "$RUN_UNIT_PY"; then
   echo "=== Running Python unit tests (pytest) ==="
   python -m pytest \
     scripts/test \
     --cov=scripts \
-    --cov-config=pytest-config.coveragerc \
+    --cov-config=pytest-cfg.coveragerc \
     --cov-report=term \
-    --cov-report=html:coverage/unit/python \
+    --cov-report=html:coverage/python \
     --cov-report=term-missing
-  echo "Python tests completed. Coverage HTML: coverage/unit/python/index.html"
+  echo "Python tests completed. Coverage HTML: coverage/python/index.html"
 fi
 
 if "$RUN_UNIT_GO"; then
   echo "=== Running Go unit tests (pkg/mypriorityoptimizer) ==="
-  go test ./pkg/mypriorityoptimizer -coverprofile=coverage/unit/go/go_coverage.out
-  go tool cover -func=coverage/unit/go/go_coverage.out
-  go tool cover -html=coverage/unit/go/go_coverage.out -o coverage/unit/go/coverage.html
-  echo "Go coverage reports generated in coverage/unit/go/"
+  go test ./pkg/mypriorityoptimizer -coverprofile=coverage/go/go_coverage.out
+  go tool cover -func=coverage/go/go_coverage.out
+  go tool cover -html=coverage/go/go_coverage.out -o coverage/go/coverage.html
+  echo "Go coverage reports generated in coverage/go/"
 fi
 
 if "$RUN_INT_KWOK"; then
@@ -137,14 +136,10 @@ fi
 # Summary
 if "$RUN_UNIT_PY" && "$RUN_UNIT_GO"; then
   echo "Unit coverage:"
-  echo "  Python: coverage/unit/python/index.html"
-  echo "  Go:     coverage/unit/go/coverage.html"
+  echo "  Python: coverage/python/index.html"
+  echo "  Go:     coverage/go/coverage.html"
 elif "$RUN_UNIT_PY"; then
-  echo "Python unit coverage: coverage/unit/python/index.html"
+  echo "Python unit coverage: coverage/python/index.html"
 elif "$RUN_UNIT_GO"; then
-  echo "Go unit coverage: coverage/unit/go/coverage.html"
-fi
-
-if "$RUN_INT_KWOK"; then
-  echo "Integration coverage (KWOK): coverage/integration/kwok/index.html"
+  echo "Go unit coverage: coverage/go/coverage.html"
 fi

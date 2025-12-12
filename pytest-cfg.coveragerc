@@ -1,0 +1,18 @@
+[run]
+# Don’t count test code towards coverage.
+omit =
+    scripts/test/*
+    scripts/test/**
+    scripts/helpers/job*
+    scripts/kwok_integration_tests/*
+    scripts/kwok_integration_tests/**
+    scripts/kwok_trace_replayer/*
+    scripts/kwok_workload_once/plots_and_tables.py
+    */__init__.py
+    **/__init__.py
+
+[report]
+# Keep the report focused; hide boilerplate.
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

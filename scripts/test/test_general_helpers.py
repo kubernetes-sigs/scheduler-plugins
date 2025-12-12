@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python3
 # test_general_helpers.py.
 
 import io
@@ -553,3 +553,12 @@ def test_get_solver_active_status_http_connect_failure(monkeypatch):
     code, body = gh.get_solver_active_status_http("http://example/active", timeout=0.1)
     assert code == 0
     assert "connect-failed" in body
+
+def test_prio_map_and_place_compare():
+    assert cr.prio_map(None) == {}
+    assert cr.prio_map({"p1": 2, "2": 3}) == {1: 2, 2: 3}
+    assert cr.prio_map('{"p1": 2, "p2": 0}') == {1: 2, 2: 0}
+
+    assert cr.place_compare({2: 1}, {2: 0}) == 1
+    assert cr.place_compare({2: 0}, {2: 1}) == -1
+    assert cr.place_compare({2: 0, 1: 1}, {2: 0, 1: 1}) == 0

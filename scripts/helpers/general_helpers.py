@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # general_helpers.py
 
-import sys, time, random, subprocess, csv, re, logging, hashlib, shlex, yaml
+import sys, time, random, subprocess, csv, re, logging, hashlib, shlex, yaml, json
 from typing import List, Dict, Tuple, Optional, Any
 from pathlib import Path
 from decimal import Decimal
@@ -550,3 +550,59 @@ def get_solver_active_status_http(url: str, *, timeout: float = 3.0) -> tuple[in
         return e.code, body
     except Exception as e:
         return 0, f"connect-failed: {e}"
+
+def strip_outer_quotes(s: Optional[str]) -> Optional[str]:
+    if s is None:
+        return None
+    s = str(s)
+    if len(s) >= 2 and ((s[0] == s[-1] == '"') or (s[0] == s[-1] == "'")):
+        return s[1:-1]
+    return s
+
+def parse_json_cell(raw):
+    if raw is None:
+        return None
+    s = strip_outer_quotes(str(raw).strip())
+    if not s:
+        return None
+    for cand in (s, s.replace('""', '"').replace("''", '"')):
+        try:
+            return json.loads(cand)
+        except Exception:
+            continue
+    return None
+
+def prio_map(raw) -> Dict[int, int]:
+    out: Dict[int, int] = {}
+    obj = raw if isinstance(raw, dict) else parse_json_cell(raw)
+    if not isinstance(obj, dict):
+        return out
+    for k, v in obj.items():
+        ks = str(k).strip()
+        if ks.lower().startswith("p"):
+            ks = ks[1:]
+        pk = int(ks)
+        out[pk] = int(v)
+    return out
+
+def place_compare(a: Dict[int, int], b: Dict[int, int]) -> int:
+    """
+    1 if a>b
+    0 if equal,
+    -1 if a<b
+    (compare from highest priority down).
+    """
+    keys = sorted(set(a.keys()) | set(b.keys()), reverse=True)
+    for k in keys:
+        av = int(a.get(k, 0))
+        bv = int(b.get(k, 0))
+        if av > bv:
+            return 1
+        if av < bv:
+            return -1
+    return 0
+
+def cmp_placed_by_prio_row(row) -> int:
+    s_map = prio_map(row.get("placed_by_prio_solver", ""))
+    d_map = prio_map(row.get("placed_by_prio_default", ""))
+    return place_compare(s_map, d_map)

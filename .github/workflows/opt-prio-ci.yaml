@@ -53,35 +53,35 @@ jobs:
 
       - name: Prepare coverage directories
         run: |
-          mkdir -p coverage/unit/python
-          mkdir -p coverage/unit/go
+          mkdir -p coverage/python
+          mkdir -p coverage/go
 
       - name: Run python unit tests
         run: |
           python -m pytest \
             scripts/test \
             --cov=scripts \
-            --cov-config=pytest-config.coveragerc \
-            --cov-report=xml:coverage/unit/python/coverage.xml \
-            --cov-report=html:coverage/unit/python/html
+            --cov-config=pytest-cfg.coveragerc \
+            --cov-report=xml:coverage/python/coverage.xml \
+            --cov-report=html:coverage/python/html
 
       - name: Run go unit tests
         run: |
           go test ./pkg/mypriorityoptimizer \
-            -coverprofile=coverage/unit/go/go_coverage.out
+            -coverprofile=coverage/go/go_coverage.out
           go tool cover \
-            -func=coverage/unit/go/go_coverage.out
+            -func=coverage/go/go_coverage.out
           go tool cover \
-            -html=coverage/unit/go/go_coverage.out \
-            -o coverage/unit/go/coverage.html
+            -html=coverage/go/go_coverage.out \
+            -o coverage/go/coverage.html
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reports-unit
           path: |
-            coverage/unit/python
-            coverage/unit/go
+            coverage/python
+            coverage/go
       
   # -------------------------------------------------------
   # Integration tests
