@@ -13,9 +13,12 @@ import (
 // Reserve
 // -------------------------
 
-// Reserve is called at the end of scheduling cycle to reserve resources for a pod on a specific node.
-// If it fails, the Unreserve function is called to release any reserved resources.
-// It is used, here, to place workload pods on the appropriate nodes as they are automatically created, therefore, placement by name cannot be done.
+// Reserve is called at the end of scheduling cycle to reserve resources for a
+// pod on a specific node. If it fails, the Unreserve function is called to
+// release any reserved resources. It is used, here, to place workload pods on
+// the appropriate nodes as they are automatically created, therefore, placement
+// by name cannot be done.
+// CHECKED
 func (pl *SharedState) Reserve(ctx context.Context, st fwk.CycleState, pending *v1.Pod, node string) *fwk.Status {
 
 	stage := "Reserve"
@@ -74,6 +77,9 @@ func (pl *SharedState) Reserve(ctx context.Context, st fwk.CycleState, pending *
 // Unreserve
 // -------------------------
 
+// Unreserve is called to release any reserved resources for a pod on a specific node.
+// It is used, here, to return workload quota if the pod could not be scheduled.
+// CHECKED
 func (pl *SharedState) Unreserve(ctx context.Context, st fwk.CycleState, pending *v1.Pod, _ string) {
 	stage := "Unreserve"
 
@@ -114,6 +120,8 @@ type rsReservationState struct {
 	key reservationKey
 }
 
+// Clone returns a copy of the reservation state.
+// CHECKED
 func (s *rsReservationState) Clone() fwk.StateData {
 	return &rsReservationState{
 		key: s.key,

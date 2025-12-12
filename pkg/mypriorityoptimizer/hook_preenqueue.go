@@ -14,6 +14,7 @@ import (
 // -------------------------
 
 // PreEnqueue is called before a pod is enqueued for scheduling.
+// CHECKED
 func (pl *SharedState) PreEnqueue(ctx context.Context, pending *v1.Pod) *fwk.Status {
 	const stage = "PreEnqueue"
 

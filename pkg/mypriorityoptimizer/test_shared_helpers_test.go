@@ -4,12 +4,14 @@ package mypriorityoptimizer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	fwk "k8s.io/kube-scheduler/framework"
 )
 
 // -------------------------
@@ -95,5 +97,23 @@ func makeNode(name string) *v1.Node {
 				v1.ResourceMemory: resource.MustParse("1Gi"),
 			},
 		},
+	}
+}
+
+// -------------------------
+// mustStatus
+// -------------------------
+
+// mustHookStatus asserts the framework status code and (optionally) that the message contains a substring.
+func mustHookStatus(t *testing.T, stage string, st *fwk.Status, want fwk.Code, contains string) {
+	t.Helper()
+	if st == nil {
+		t.Fatalf("%s() returned nil status", stage)
+	}
+	if st.Code() != want {
+		t.Fatalf("%s() code = %v, want %v (msg=%q)", stage, st.Code(), want, st.Message())
+	}
+	if contains != "" && !strings.Contains(st.Message(), contains) {
+		t.Fatalf("%s() message = %q, want to contain %q", stage, st.Message(), contains)
 	}
 }

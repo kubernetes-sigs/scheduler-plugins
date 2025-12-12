@@ -1,194 +1,134 @@
 // hook_postfilter_test.go
+
 package mypriorityoptimizer
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fwk "k8s.io/kube-scheduler/framework"
 )
 
-// -------------------------
-// PostFilter
-// -------------------------
+func TestPostFilter(t *testing.T) {
+	// common: avoid 1s sleep
+	origSleep := postFilterSleep
+	postFilterSleep = func(time.Duration) {}
+	t.Cleanup(func() { postFilterSleep = origSleep })
 
-func TestPostFilter_NoPerPod_NoNomination(t *testing.T) {
+	type tc struct {
+		name          string
+		perPodEnabled bool
+		setupPL       func(pl *SharedState)
+		runOpt        func(pl *SharedState, ctx context.Context, p *v1.Pod) (*Plan, error)
 
-	pl := &SharedState{}
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "p1",
-			Namespace: "default",
+		wantCode     fwk.Code
+		wantMsgSub   string
+		wantNomNode  string
+		wantBlocked  int
+		wantResIsNil bool
+	}
+
+	tests := []tc{
+		{
+			name:          "no per-pod -> no nomination",
+			perPodEnabled: false,
+			runOpt: func(_ *SharedState, _ context.Context, _ *v1.Pod) (*Plan, error) {
+				t.Fatalf("run optimization should not be called")
+				return nil, nil
+			},
+			wantCode:     fwk.Unschedulable,
+			wantMsgSub:   "PostFilter: no nomination",
+			wantResIsNil: true,
+		},
+		{
+			name:          "active plan -> blocks pod",
+			perPodEnabled: true,
+			setupPL: func(pl *SharedState) {
+				pl.ActivePlan.Store(&ActivePlan{ID: "ap1", PlacementByName: map[string]string{}})
+			},
+			runOpt: func(_ *SharedState, _ context.Context, _ *v1.Pod) (*Plan, error) {
+				t.Fatalf("run optimization should not be called when active plan exists")
+				return nil, nil
+			},
+			wantCode:     fwk.Unschedulable,
+			wantMsgSub:   "PostFilter: " + InfoActivePlanInProgress,
+			wantBlocked:  1,
+			wantResIsNil: true,
+		},
+		{
+			name:          "optimization returns ErrActiveInProgress -> blocks pod",
+			perPodEnabled: true,
+			runOpt: func(_ *SharedState, _ context.Context, _ *v1.Pod) (*Plan, error) {
+				return nil, ErrActiveInProgress
+			},
+			wantCode:     fwk.Unschedulable,
+			wantMsgSub:   "PostFilter: " + InfoActivePlanInProgress,
+			wantBlocked:  1,
+			wantResIsNil: true,
+		},
+		{
+			name:          "optimization returns generic error -> plan registration failed",
+			perPodEnabled: true,
+			runOpt: func(_ *SharedState, _ context.Context, _ *v1.Pod) (*Plan, error) {
+				return nil, context.Canceled
+			},
+			wantCode:     fwk.Unschedulable,
+			wantMsgSub:   "PostFilter: " + InfoPlanRegistrationFailed,
+			wantBlocked:  0,
+			wantResIsNil: true,
+		},
+		{
+			name:          "success -> returns nomination",
+			perPodEnabled: true,
+			runOpt: func(_ *SharedState, _ context.Context, _ *v1.Pod) (*Plan, error) {
+				return &Plan{NominatedNode: "nodeA"}, nil
+			},
+			wantCode:    fwk.Success,
+			wantMsgSub:  "PostFilter: " + InfoNominatedAfterPlan,
+			wantNomNode: "nodeA",
 		},
 	}
 
-	res, st := pl.PostFilter(context.Background(), nil, pod, nil)
-	if res != nil {
-		t.Fatalf("PostFilter() result = %#v, want nil when no nomination", res)
-	}
-	if st == nil {
-		t.Fatalf("PostFilter() returned nil status")
-	}
-	if st.Code() != fwk.Unschedulable {
-		t.Fatalf("PostFilter() code = %v, want %v", st.Code(), fwk.Unschedulable)
-	}
-	if msg := st.Message(); !strings.Contains(msg, "PostFilter: no nomination") {
-		t.Fatalf("PostFilter() message = %q, want to contain %q", msg, "PostFilter: no nomination")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// stub seams per test
+			origPerPod := postFilterPerPodEnabled
+			origRun := postFilterRunOptimization
+			postFilterPerPodEnabled = func() bool { return tt.perPodEnabled }
+			postFilterRunOptimization = tt.runOpt
+			t.Cleanup(func() {
+				postFilterPerPodEnabled = origPerPod
+				postFilterRunOptimization = origRun
+			})
 
-func TestPostFilter_PerPod_ActivePlanInProgress_BlocksPod(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-	pl.ActivePlan.Store(&ActivePlan{ID: "ap1", PlacementByName: map[string]string{}})
+			pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
+			if tt.setupPL != nil {
+				tt.setupPL(pl)
+			}
 
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
+			res, st := pl.PostFilter(context.Background(), nil, makePod("default", "p1", "", "", "", "", 0), nil)
 
-	withMode(ModePerPod, true, func() {
-		res, st := pl.PostFilter(context.Background(), nil, pod, nil)
-		if res != nil {
-			t.Fatalf("PostFilter() result = %#v, want nil", res)
-		}
-		if st == nil {
-			t.Fatalf("PostFilter() returned nil status")
-		}
-		if st.Code() != fwk.Unschedulable {
-			t.Fatalf("PostFilter() code = %v, want %v", st.Code(), fwk.Unschedulable)
-		}
-		if got := pl.BlockedWhileActive.Size(); got != 1 {
-			t.Fatalf("BlockedWhileActive.Size() = %d, want 1", got)
-		}
-	})
-}
+			if tt.wantResIsNil && res != nil {
+				t.Fatalf("PostFilter() result = %#v, want nil", res)
+			}
+			mustHookStatus(t, "PostFilter", st, tt.wantCode, tt.wantMsgSub)
 
-func TestPostFilter_PerPod_ReturnsErrActiveInProgress_BlocksPod(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-	pl.ActivePlanInProgress.Store(true) // force ErrActiveInProgress in runOptimizationFlow
+			if tt.wantNomNode != "" {
+				if res == nil || res.NominatingInfo == nil {
+					t.Fatalf("PostFilter() result = %#v, want NominatingInfo", res)
+				}
+				if res.NominatingInfo.NominatedNodeName != tt.wantNomNode {
+					t.Fatalf("NominatedNodeName = %q, want %q", res.NominatingInfo.NominatedNodeName, tt.wantNomNode)
+				}
+			}
 
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
-
-	withMode(ModePerPod, true, func() {
-		// Avoid the 1s sleep in tests.
-		origSleep := postFilterSleep
-		postFilterSleep = func(time.Duration) {}
-		t.Cleanup(func() { postFilterSleep = origSleep })
-
-		res, st := pl.PostFilter(context.Background(), nil, pod, nil)
-		if res != nil {
-			t.Fatalf("PostFilter() result = %#v, want nil", res)
-		}
-		if st == nil {
-			t.Fatalf("PostFilter() returned nil status")
-		}
-		if st.Code() != fwk.Unschedulable {
-			t.Fatalf("PostFilter() code = %v, want %v", st.Code(), fwk.Unschedulable)
-		}
-		if got := pl.BlockedWhileActive.Size(); got != 1 {
-			t.Fatalf("BlockedWhileActive.Size() = %d, want 1", got)
-		}
-	})
-}
-
-func TestPostFilter_PerPod_Error_DefaultsToPlanRegistrationFailed(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
-
-	withMode(ModePerPod, true, func() {
-		origSleep := postFilterSleep
-		postFilterSleep = func(time.Duration) {}
-		t.Cleanup(func() { postFilterSleep = origSleep })
-
-		// Force a generic error from runOptimizationFlow via planContextFn.
-		origPlanContext := planContextFn
-		planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-			return nil, nil, SolverInput{}, context.Canceled
-		}
-		t.Cleanup(func() { planContextFn = origPlanContext })
-
-		res, st := pl.PostFilter(context.Background(), nil, pod, nil)
-		if res != nil {
-			t.Fatalf("PostFilter() result = %#v, want nil", res)
-		}
-		if st == nil {
-			t.Fatalf("PostFilter() returned nil status")
-		}
-		if st.Code() != fwk.Unschedulable {
-			t.Fatalf("PostFilter() code = %v, want %v", st.Code(), fwk.Unschedulable)
-		}
-		if msg := st.Message(); !strings.Contains(msg, InfoPlanRegistrationFailed) {
-			t.Fatalf("PostFilter() message = %q, want to contain %q", msg, InfoPlanRegistrationFailed)
-		}
-	})
-}
-
-func TestPostFilter_PerPod_Success_ReturnsNomination(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
-
-	withMode(ModePerPod, true, func() {
-		origSleep := postFilterSleep
-		postFilterSleep = func(time.Duration) {}
-		t.Cleanup(func() { postFilterSleep = origSleep })
-
-		origPlanContext := planContextFn
-		origPlanComp := planComputationFn
-		origApplicable := isSolutionApplicableFn
-		origCounts := computePlanPodCountsFn
-		origReg := planRegistrationFn
-		origAct := planActivationFn
-		origWatch := startPlanCompletionWatchFn
-		origExport := exportSolverStatsFn
-
-		planContextFn = func(_ *SharedState, _ *v1.Pod) ([]*v1.Node, []*v1.Pod, SolverInput, error) {
-			inp := SolverInput{BaselineScore: SolverScore{}}
-			pods := []*v1.Pod{makePod("default", "p-pending", "u-pending", "", "", "", 0)}
-			return []*v1.Node{}, pods, inp, nil
-		}
-		planComputationFn = func(_ *SharedState, _ context.Context, _ SolverInput) (string, bool, *SolverResult, *SolverOutput, []SolverResult) {
-			best := &SolverResult{Name: "fake"}
-			return "fake", true, best, &SolverOutput{}, []SolverResult{{Name: "fake"}}
-		}
-		isSolutionApplicableFn = func(_ *SharedState, _ *SolverOutput, _ []*v1.Node, _ []*v1.Pod) (bool, string) {
-			return true, ""
-		}
-		computePlanPodCountsFn = func(_ *SolverOutput, _ []*v1.Pod) (int, int, int) {
-			return 1, 1, 1
-		}
-		planRegistrationFn = func(_ *SharedState, _ context.Context, _ SolverResult, _ *SolverOutput, _ *v1.Pod, _ []*v1.Pod) (*Plan, *ActivePlan, error) {
-			return &Plan{NominatedNode: "nodeA"}, &ActivePlan{ID: "ap1", PlacementByName: map[string]string{}}, nil
-		}
-		planActivationFn = func(_ *SharedState, _ *Plan, _ []*v1.Pod) error { return nil }
-		startPlanCompletionWatchFn = func(_ *SharedState, _ *ActivePlan) {}
-		exportSolverStatsFn = func(_ *SharedState, _ string, _ SolverScore, _ string, _ []SolverResult, _ string) {}
-
-		t.Cleanup(func() {
-			planContextFn = origPlanContext
-			planComputationFn = origPlanComp
-			isSolutionApplicableFn = origApplicable
-			computePlanPodCountsFn = origCounts
-			planRegistrationFn = origReg
-			planActivationFn = origAct
-			startPlanCompletionWatchFn = origWatch
-			exportSolverStatsFn = origExport
+			if tt.wantBlocked != 0 || pl.BlockedWhileActive != nil {
+				if got := pl.BlockedWhileActive.Size(); got != tt.wantBlocked {
+					t.Fatalf("BlockedWhileActive.Size() = %d, want %d", got, tt.wantBlocked)
+				}
+			}
 		})
-
-		res, st := pl.PostFilter(context.Background(), nil, pod, nil)
-		if st == nil {
-			t.Fatalf("PostFilter() returned nil status")
-		}
-		if st.Code() != fwk.Success {
-			t.Fatalf("PostFilter() code = %v, want %v", st.Code(), fwk.Success)
-		}
-		if res == nil || res.NominatingInfo == nil {
-			t.Fatalf("PostFilter() result = %#v, want NominatingInfo", res)
-		}
-		if res.NominatingInfo.NominatedNodeName != "nodeA" {
-			t.Fatalf("NominatedNodeName = %q, want %q", res.NominatingInfo.NominatedNodeName, "nodeA")
-		}
-	})
+	}
 }

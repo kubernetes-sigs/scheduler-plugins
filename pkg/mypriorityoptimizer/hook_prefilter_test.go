@@ -7,60 +7,32 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-// -------------------------
-// PreFilter
-// -------------------------
-
-// kube-system pods should always be allowed and not constrained by any active plan.
-func TestPreFilter_KubeSystemAlwaysAllowed(t *testing.T) {
-	pl := &SharedState{}
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sys-pod",
-			Namespace: SystemNamespace,
-		},
+func mustNodeNames(t *testing.T, res *framework.PreFilterResult, want []string) {
+	t.Helper()
+	if len(want) == 0 {
+		if res != nil {
+			t.Fatalf("PreFilter() result = %#v, want nil", res)
+		}
+		return
 	}
-
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
-	if st == nil {
-		t.Fatalf("PreFilter() returned nil status")
+	if res == nil || res.NodeNames == nil {
+		t.Fatalf("PreFilter() result = %#v, want NodeNames", res)
 	}
-	if st.Code() != fwk.Success {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Success)
+	for _, n := range want {
+		if !res.NodeNames.Has(n) {
+			t.Fatalf("PreFilter() NodeNames = %#v, want to contain %q", res.NodeNames.UnsortedList(), n)
+		}
 	}
-	if res != nil {
-		t.Fatalf("PreFilter() result = %#v, want nil for kube-system pod", res)
+	// ensure no extras if caller expects an exact set
+	if got, wantLen := res.NodeNames.Len(), len(want); got != wantLen {
+		t.Fatalf("PreFilter() NodeNames = %#v, want exactly %#v", res.NodeNames.UnsortedList(), want)
 	}
 }
 
-// When there is no active plan, regular pods should pass through PreFilter unmodified.
-func TestPreFilter_NoActivePlan_AllowsPod(t *testing.T) {
-	pl := &SharedState{}
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "work-pod",
-			Namespace: "default",
-		},
-	}
-
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
-	if st == nil {
-		t.Fatalf("PreFilter() returned nil status")
-	}
-	if st.Code() != fwk.Success {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Success)
-	}
-	if res != nil {
-		t.Fatalf("PreFilter() result = %#v, want nil when no active plan", res)
-	}
-}
-
-// PreFilterExtensions should be nil (no additional callbacks).
 func TestPreFilterExtensions_IsNil(t *testing.T) {
 	pl := &SharedState{}
 	if ext := pl.PreFilterExtensions(); ext != nil {
@@ -68,104 +40,121 @@ func TestPreFilterExtensions_IsNil(t *testing.T) {
 	}
 }
 
-func TestPreFilter_ActivePlan_StandaloneAllowed_AllNodes(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-	pl.ActivePlan.Store(&ActivePlan{ID: "ap1", PlacementByName: map[string]string{"default/p1": ""}})
+func TestPreFilter(t *testing.T) {
+	type tc struct {
+		name string
 
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
+		pod        *v1.Pod
+		activePlan *ActivePlan
 
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
-	if st == nil {
-		t.Fatalf("PreFilter() returned nil status")
-	}
-	if st.Code() != fwk.Success {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Success)
-	}
-	if res != nil {
-		t.Fatalf("PreFilter() result = %#v, want nil when allowed on all nodes", res)
-	}
-}
+		// optional plan setup for quotas case
+		setup func(pl *SharedState) *v1.Pod
 
-func TestPreFilter_ActivePlan_StandalonePinned_NodeNamesReturned(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-	pl.ActivePlan.Store(&ActivePlan{ID: "ap1", PlacementByName: map[string]string{"default/p1": "nodeA"}})
-
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
-
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
-	if st == nil {
-		t.Fatalf("PreFilter() returned nil status")
-	}
-	if st.Code() != fwk.Success {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Success)
-	}
-	if res == nil || res.NodeNames == nil {
-		t.Fatalf("PreFilter() result = %#v, want NodeNames", res)
-	}
-	if !res.NodeNames.Has("nodeA") {
-		t.Fatalf("PreFilter() NodeNames = %#v, want to contain nodeA", res.NodeNames.UnsortedList())
-	}
-}
-
-func TestPreFilter_ActivePlan_WorkloadAllowed_SubsetOfNodes(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-
-	// A controller-owned pod (ReplicaSet) should be restricted by workload quotas.
-	prio := int32(0)
-	pod := makePod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
-	wk, ok := getTopWorkload(pod)
-	if !ok {
-		t.Fatalf("expected workload pod")
+		wantCode    fwk.Code
+		wantNodes   []string // nil => res must be nil
+		wantBlocked int
 	}
 
-	var c1 atomic.Int32
-	c1.Store(1)
-	var c0 atomic.Int32
-	c0.Store(0)
-
-	pl.ActivePlan.Store(&ActivePlan{
-		ID: "ap1",
-		WorkloadQuotas: WorkloadQuotasAtomics{
-			wk.String(): {
-				"nodeA": &c1,
-				"nodeB": &c0,
-			},
+	tests := []tc{
+		{
+			name:        "kube-system always allowed (ignores plan)",
+			pod:         makePod(SystemNamespace, "sys-pod", "", "", "", "", 0),
+			activePlan:  &ActivePlan{ID: "ap1", PlacementByName: map[string]string{}},
+			wantCode:    fwk.Success,
+			wantNodes:   nil,
+			wantBlocked: 0,
 		},
-		PlacementByName: map[string]string{},
-	})
+		{
+			name:        "no active plan allows pod",
+			pod:         makePod("default", "work-pod", "", "", "", "", 0),
+			activePlan:  nil,
+			wantCode:    fwk.Success,
+			wantNodes:   nil,
+			wantBlocked: 0,
+		},
+		{
+			name:       "active plan: standalone allowed on all nodes",
+			pod:        makePod("default", "p1", "", "", "", "", 0),
+			activePlan: &ActivePlan{ID: "ap1", PlacementByName: map[string]string{"default/p1": ""}},
+			wantCode:   fwk.Success,
+			wantNodes:  nil, // nil => allowed everywhere returns nil result
+		},
+		{
+			name:       "active plan: standalone pinned returns node set",
+			pod:        makePod("default", "p1", "", "", "", "", 0),
+			activePlan: &ActivePlan{ID: "ap1", PlacementByName: map[string]string{"default/p1": "nodeA"}},
+			wantCode:   fwk.Success,
+			wantNodes:  []string{"nodeA"},
+		},
+		{
+			name: "active plan: workload quota allows subset of nodes",
+			setup: func(pl *SharedState) *v1.Pod {
+				prio := int32(0)
+				pod := makePod("default", "p1", "uid1", "", "ReplicaSet", "rs1", prio)
+				wk, ok := getTopWorkload(pod)
+				if !ok {
+					t.Fatalf("expected workload pod")
+				}
 
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
-	if st == nil {
-		t.Fatalf("PreFilter() returned nil status")
-	}
-	if st.Code() != fwk.Success {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Success)
-	}
-	if res == nil || res.NodeNames == nil {
-		t.Fatalf("PreFilter() result = %#v, want NodeNames", res)
-	}
-	if !res.NodeNames.Has("nodeA") || res.NodeNames.Has("nodeB") {
-		t.Fatalf("PreFilter() NodeNames = %#v, want only nodeA", res.NodeNames.UnsortedList())
-	}
-}
+				var c1, c0 atomic.Int32
+				c1.Store(1)
+				c0.Store(0)
 
-func TestPreFilter_ActivePlan_BlocksPodNotInPlan(t *testing.T) {
-	pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
-	pl.ActivePlan.Store(&ActivePlan{ID: "ap1", PlacementByName: map[string]string{}})
+				pl.ActivePlan.Store(&ActivePlan{
+					ID: "ap1",
+					WorkloadQuotas: WorkloadQuotasAtomics{
+						wk.String(): {
+							"nodeA": &c1,
+							"nodeB": &c0,
+						},
+					},
+					PlacementByName: map[string]string{},
+				})
+				return pod
+			},
+			wantCode:  fwk.Success,
+			wantNodes: []string{"nodeA"},
+		},
+		{
+			name:        "active plan blocks pod not in plan",
+			pod:         makePod("default", "p1", "", "", "", "", 0),
+			activePlan:  &ActivePlan{ID: "ap1", PlacementByName: map[string]string{}},
+			wantCode:    fwk.Unschedulable,
+			wantNodes:   nil,
+			wantBlocked: 1,
+		},
+	}
 
-	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "default"}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pl := &SharedState{BlockedWhileActive: newSafePodSet("blocked")}
 
-	res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, []fwk.NodeInfo{})
-	if st == nil {
-		t.Fatalf("PreFilter() returned nil status")
-	}
-	if st.Code() != fwk.Unschedulable {
-		t.Fatalf("PreFilter() code = %v, want %v", st.Code(), fwk.Unschedulable)
-	}
-	if res != nil {
-		t.Fatalf("PreFilter() result = %#v, want nil when blocking", res)
-	}
-	if got := pl.BlockedWhileActive.Size(); got != 1 {
-		t.Fatalf("BlockedWhileActive.Size() = %d, want 1", got)
+			// default plan injection
+			if tt.activePlan != nil {
+				pl.ActivePlan.Store(tt.activePlan)
+			}
+
+			pod := tt.pod
+			if tt.setup != nil {
+				pod = tt.setup(pl)
+			}
+
+			res, st := pl.PreFilter(context.Background(), framework.NewCycleState(), pod, nil)
+			mustHookStatus(t, "PreFilter", st, tt.wantCode, "")
+
+			if tt.wantCode == fwk.Success {
+				// nil => allowed everywhere (or kube-system/no plan)
+				mustNodeNames(t, res, tt.wantNodes)
+			} else {
+				// on block, result must be nil
+				if res != nil {
+					t.Fatalf("PreFilter() result = %#v, want nil when blocking", res)
+				}
+			}
+
+			if got := pl.BlockedWhileActive.Size(); got != tt.wantBlocked {
+				t.Fatalf("BlockedWhileActive.Size() = %d, want %d", got, tt.wantBlocked)
+			}
+		})
 	}
 }
