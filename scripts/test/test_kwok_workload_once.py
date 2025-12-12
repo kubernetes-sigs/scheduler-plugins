@@ -28,6 +28,116 @@ def test_build_argparser_parses_basic_args():
 	assert args.seed == 1
 
 
+def test_initialize_loads_job_file_and_configs_and_sets_state(monkeypatch, tmp_path):
+	# Minimal valid workload config (must pass _validate_workload_config)
+	wl = tmp_path / "wl.yaml"
+	wl.write_text(
+		"""\
+apiVersion: v1
+kind: WorkloadConfiguration
+namespace: ns1
+num_nodes: 1
+num_pods: 1
+util: 0.5
+num_priorities: [1, 1]
+num_replicas_per_rs: [1, 1]
+cpu_per_pod: [100m, 100m]
+mem_per_pod: [128Mi, 128Mi]
+wait_pod_mode: none
+""",
+		encoding="utf-8",
+	)
+
+	kw = tmp_path / "kwokctl.yaml"
+	kw.write_text(
+		"""\
+apiVersion: config.kwok.x-k8s.io/v1alpha1
+kind: KwokctlConfiguration
+componentsPatches:
+  - name: kube-scheduler
+    extraEnvs: []
+""",
+		encoding="utf-8",
+	)
+
+	job = tmp_path / "job.yaml"
+	job.write_text(
+		"""\
+override-workload-config:
+  namespace: ns2
+override-kwokctl-envs:
+  - name: X
+    value: "1"
+""",
+		encoding="utf-8",
+	)
+
+	out_dir = tmp_path / "out"
+
+	# Keep init deterministic and side-effect free.
+	monkeypatch.setattr(tr, "setup_logging", lambda **_k: None)
+	monkeypatch.setattr(tr, "build_cli_cmd", lambda: "CMD")
+
+	seen = {"info": None, "envs": None}
+	monkeypatch.setattr(
+		tr,
+		"write_info_file",
+		lambda out_path, meta_extra, inputs, logger: seen.__setitem__(
+			"info",
+			{"out_path": out_path, "meta_extra": meta_extra, "inputs": inputs},
+		),
+	)
+	monkeypatch.setattr(tr.TestRunner, "log_kwokctl_envs", staticmethod(lambda envs: seen.__setitem__("envs", envs)))
+
+	ap = tr.build_argparser()
+	args = ap.parse_args([
+		"--job-file", str(job),
+		"--workload-config-file", str(wl),
+		"--kwokctl-config-file", str(kw),
+		"--seed", "1",
+		"--output-dir", str(out_dir),
+		"--clean-start",
+	])
+
+	runner = tr.TestRunner(args)
+	assert runner.workload_config is not None
+	assert runner.workload_config.namespace == "ns2"  # override applied
+	assert runner.ctx == f"kwok-{runner.args.cluster_name}"
+	assert seen["info"] is not None
+	assert seen["info"]["inputs"]["cli-cmd"] == "CMD"
+	assert seen["envs"] == {"X": "1"}
+
+
+def test_initialize_missing_job_file_raises_system_exit(tmp_path):
+	ap = tr.build_argparser()
+	args = ap.parse_args([
+		"--job-file", str(tmp_path / "missing.yaml"),
+		"--seed", "1",
+		"--workload-config-file", str(tmp_path / "wl.yaml"),
+		"--kwokctl-config-file", str(tmp_path / "kw.yaml"),
+	])
+	with pytest.raises(SystemExit):
+		tr.TestRunner(args)
+
+
+def test_initialize_job_file_must_be_mapping(tmp_path, monkeypatch):
+	job = tmp_path / "job.yaml"
+	job.write_text("- 1\n- 2\n", encoding="utf-8")
+
+	# Stub out logging so failures are only about job parsing/type.
+	monkeypatch.setattr(tr, "setup_logging", lambda **_k: None)
+
+	ap = tr.build_argparser()
+	args = ap.parse_args([
+		"--job-file", str(job),
+		"--seed", "1",
+		"--workload-config-file", str(tmp_path / "wl.yaml"),
+		"--kwokctl-config-file", str(tmp_path / "kw.yaml"),
+	])
+	with pytest.raises(SystemExit):
+		tr.TestRunner(args)
+
+
 # ---------------------------------------------------------------------------
 # TestRunner.ensure_default_args
 # ---------------------------------------------------------------------------
@@ -96,6 +206,174 @@ def test_ensure_default_args_defaults_count_from_seeds_not_all_running(tmp_path)
 	)
 	out = tr.TestRunner.ensure_default_args(args)
 	assert out.count == 3
+
+
+def test_ensure_default_args_requires_a_run_mode(tmp_path):
+	wl = tmp_path / "wl.yaml"
+	kw = tmp_path / "kwokctl.yaml"
+	wl.write_text("namespace: ns\n", encoding="utf-8")
+	kw.write_text("componentsPatches: []\n", encoding="utf-8")
+
+	args = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=None,
+		seed_file=None,
+		count=None,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args)
+
+
+def test_ensure_default_args_rejects_seed_and_seed_file(tmp_path):
+	wl = tmp_path / "wl.yaml"
+	kw = tmp_path / "kwokctl.yaml"
+	seed_file = tmp_path / "seeds.txt"
+	wl.write_text("namespace: ns\n", encoding="utf-8")
+	kw.write_text("componentsPatches: []\n", encoding="utf-8")
+	seed_file.write_text("1\n", encoding="utf-8")
+
+	args = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=1,
+		seed_file=str(seed_file),
+		count=None,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args)
+
+
+def test_ensure_default_args_rejects_seed_file_and_count(tmp_path):
+	wl = tmp_path / "wl.yaml"
+	kw = tmp_path / "kwokctl.yaml"
+	seed_file = tmp_path / "seeds.txt"
+	wl.write_text("namespace: ns\n", encoding="utf-8")
+	kw.write_text("componentsPatches: []\n", encoding="utf-8")
+	seed_file.write_text("1\n", encoding="utf-8")
+
+	args = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=None,
+		seed_file=str(seed_file),
+		count=1,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args)
+
+
+def test_ensure_default_args_rejects_invalid_seed_and_count_bounds(tmp_path):
+	wl = tmp_path / "wl.yaml"
+	kw = tmp_path / "kwokctl.yaml"
+	wl.write_text("namespace: ns\n", encoding="utf-8")
+	kw.write_text("componentsPatches: []\n", encoding="utf-8")
+
+	args = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=0,
+		seed_file=None,
+		count=None,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args)
+
+	args2 = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=None,
+		seed_file=None,
+		count=-2,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args2)
+
+
+def test_ensure_default_args_validates_seed_file_and_config_paths(tmp_path):
+	wl = tmp_path / "wl.yaml"
+	kw = tmp_path / "kwokctl.yaml"
+	wl.write_text("namespace: ns\n", encoding="utf-8")
+	kw.write_text("componentsPatches: []\n", encoding="utf-8")
+
+	args = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=None,
+		seed_file=str(tmp_path / "missing-seeds.txt"),
+		count=None,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args)
+
+	args2 = argparse.Namespace(
+		workload_config_file=str(tmp_path / "missing-wl.yaml"),
+		kwokctl_config_file=str(kw),
+		seed=1,
+		seed_file=None,
+		count=None,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args2)
+
+	args3 = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(tmp_path / "missing-kw.yaml"),
+		seed=1,
+		seed_file=None,
+		count=None,
+		seeds_not_all_running=0,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args3)
+
+
+def test_ensure_default_args_rejects_default_scheduler_incompatible_flags(tmp_path):
+	wl = tmp_path / "wl.yaml"
+	kw = tmp_path / "kwokctl.yaml"
+	wl.write_text("namespace: ns\n", encoding="utf-8")
+	kw.write_text("componentsPatches: []\n", encoding="utf-8")
+
+	args = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=1,
+		seed_file=None,
+		count=None,
+		seeds_not_all_running=0,
+		default_scheduler=True,
+		solver_trigger=True,
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args)
+
+
+def test_ensure_default_args_solver_trigger_requires_binary_runtime(tmp_path):
+	wl = tmp_path / "wl.yaml"
+	kw = tmp_path / "kwokctl.yaml"
+	wl.write_text("namespace: ns\n", encoding="utf-8")
+	kw.write_text("componentsPatches: []\n", encoding="utf-8")
+
+	args = argparse.Namespace(
+		workload_config_file=str(wl),
+		kwokctl_config_file=str(kw),
+		seed=1,
+		seed_file=None,
+		count=None,
+		seeds_not_all_running=0,
+		default_scheduler=False,
+		solver_trigger=True,
+		kwok_runtime="docker",
+	)
+	with pytest.raises(SystemExit):
+		tr.TestRunner.ensure_default_args(args)
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +465,23 @@ def test_validate_workload_config_ok():
 	assert msg == ""
 
 
+def test_resolve_config_for_seed_requires_num_replicas_per_rs():
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.workload_config = tr.TestConfigRaw(
+		namespace="ns",
+		num_nodes=1,
+		num_pods=1,
+		num_priorities=(1, 1),
+		num_replicas_per_rs=None,
+		cpu_per_pod=("100m", "100m"),
+		mem_per_pod=("128Mi", "128Mi"),
+		util=0.5,
+		wait_pod_mode="none",
+	)
+	with pytest.raises(SystemExit):
+		runner._resolve_config_for_seed(1)
+
+
 # ---------------------------------------------------------------------------
 # Logging helpers: _write_info_file, _combined_job_configs_seed_str
 # ---------------------------------------------------------------------------
@@ -221,6 +516,23 @@ def test_write_info_file_calls_write_info_file(monkeypatch, tmp_path):
 	assert seen["meta_extra"]["job_file"] == "job.yaml"
 	assert seen["inputs"]["cli-cmd"] == "CMD"
 	assert seen["inputs"]["job"] == {"a": 1}
+
+
+def test_write_info_file_logs_warning_on_exception(monkeypatch, tmp_path):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.output_dir_resolved = tmp_path
+	runner.args = argparse.Namespace(job_file=None, workload_config_file="wl.yaml", kwokctl_config_file="kwokctl.yaml", seed_file=None)
+	runner.job_doc = {}
+	runner.workload_config_doc = {}
+	runner.kwokctl_config_doc = {}
+
+	monkeypatch.setattr(tr, "build_cli_cmd", lambda: "CMD")
+	monkeypatch.setattr(tr, "write_info_file", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+	seen = {"warn": 0}
+	monkeypatch.setattr(tr.LOG, "warning", lambda *_a, **_k: seen.__setitem__("warn", seen["warn"] + 1))
+
+	runner._write_info_file()
+	assert seen["warn"] == 1
 
 
 def test_combined_job_configs_seed_str_formats_optional_fields():
@@ -943,6 +1255,29 @@ def test_wait_solver_inactive_http_times_out(monkeypatch):
 	assert ok is False
 
 
+def test_wait_solver_inactive_http_parses_invalid_json_and_then_inactive(monkeypatch):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+
+	t = {"now": 0.0}
+
+	def fake_time():
+		return t["now"]
+
+	def fake_sleep(dt):
+		t["now"] += float(dt)
+
+	monkeypatch.setattr(tr.time, "time", fake_time)
+	monkeypatch.setattr(tr.time, "sleep", fake_sleep)
+
+	# First response: invalid JSON -> inactive_now remains None
+	# Second response: Active=false -> should return True
+	resp = [(200, "{not-json"), (200, '{"Active": false}')]
+	monkeypatch.setattr(tr, "get_solver_active_status_http", lambda url: resp.pop(0))
+
+	ok = runner._wait_solver_inactive_http("http://x/active", timeout_s=10, poll_initial_s=0.0, poll_interval_s=0.0)
+	assert ok is True
+
+
 # ---------------------------------------------------------------------------
 # Seed run helpers: _pause
 # ---------------------------------------------------------------------------
@@ -978,6 +1313,15 @@ def test_pause_keyboard_interrupt_raises_system_exit(monkeypatch):
 	monkeypatch.setattr(builtins, "input", boom)
 	with pytest.raises(SystemExit):
 		runner._pause(next_exists=True)
+
+
+def test_pause_skips_when_not_tty(monkeypatch):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.args = argparse.Namespace(pause=True)
+	monkeypatch.setattr(tr.sys.stdin, "isatty", lambda: False)
+	monkeypatch.setattr(builtins, "input", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("should not prompt")))
+	# Should not raise.
+	runner._pause(next_exists=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1159,6 +1503,55 @@ def test_execute_seed_on_cluster_snapshot_validation_mismatch_fails(monkeypatch)
 	assert "pod count mismatch" in seen["msg"]
 
 
+def test_execute_seed_on_cluster_nodes_exception_records_failure(monkeypatch, tmp_path):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.ctx = "ctx"
+	runner.kwokctl_config_doc = {}
+	runner.results_f = tmp_path / "results.csv"
+	runner.args = argparse.Namespace(
+		cluster_name="kwok1",
+		kwok_runtime="binary",
+		default_scheduler=False,
+		solver_trigger=False,
+		save_solver_stats=False,
+		save_scheduler_logs=False,
+		seeds_not_all_running=0,
+	)
+
+	monkeypatch.setattr(tr, "ensure_kwok_cluster", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "qty_to_mcpu_str", lambda *_a, **_k: "100m")
+	monkeypatch.setattr(tr, "qty_to_bytes_str", lambda *_a, **_k: "1Mi")
+	monkeypatch.setattr(tr, "kwok_pods_cap", lambda *_a, **_k: 10)
+	monkeypatch.setattr(tr, "create_kwok_nodes", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+	seen = {}
+	monkeypatch.setattr(runner, "_record_failure", lambda cat, seed, phase, msg, details="": seen.update({"cat": cat, "seed": seed, "phase": phase, "msg": msg, "details": details}))
+	monkeypatch.setattr(runner, "_log_seed_summary", lambda *_a, **_k: None)
+
+	ta = tr.TestConfigApplied(
+		namespace="ns",
+		num_nodes=1,
+		num_pods=1,
+		num_priorities=1,
+		num_replicaset=1,
+		num_replicas_per_rs=(1, 1),
+		node_cpu_m=100,
+		node_mem_b=200,
+		cpu_per_pod_m=(10, 10),
+		mem_per_pod_b=(20, 20),
+		util=0.5,
+		wait_pod_mode=None,
+		wait_pod_timeout_s=0,
+		settle_timeout_min_s=0,
+		settle_timeout_max_s=0,
+	)
+
+	ok = runner._execute_seed_on_cluster(seed=99, ta=ta, run_idx=1)
+	assert ok is False
+	assert seen["phase"] == "nodes"
+	assert "boom" in seen["msg"]
+
+
 def test_execute_seed_on_cluster_happy_path_writes_results_and_enforces_quota(monkeypatch, tmp_path):
 	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
 	runner.ctx = "ctx"
@@ -1249,6 +1642,163 @@ def test_execute_seed_on_cluster_happy_path_writes_results_and_enforces_quota(mo
 	assert seen["sched_logs"] == 1
 	assert seen["outcome"] == (3, False)
 	assert runner.quota_reached is True
+
+
+def test_execute_seed_on_cluster_solver_trigger_parses_json_and_waits(monkeypatch, tmp_path):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.ctx = "ctx"
+	runner.kwokctl_config_doc = {}
+	runner.results_f = tmp_path / "results.csv"
+	runner.quota_reached = False
+	runner.saved_not_all_running = 0
+	runner.args = argparse.Namespace(
+		cluster_name="kwok1",
+		kwok_runtime="binary",
+		default_scheduler=False,
+		solver_trigger=True,
+		save_solver_stats=False,
+		save_scheduler_logs=False,
+		seeds_not_all_running=0,
+	)
+
+	monkeypatch.setattr(tr, "ensure_kwok_cluster", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "create_kwok_nodes", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "ensure_namespace", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "ensure_service_account", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "ensure_priority_classes", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "qty_to_mcpu_str", lambda *_a, **_k: "100m")
+	monkeypatch.setattr(tr, "qty_to_bytes_str", lambda *_a, **_k: "1Mi")
+	monkeypatch.setattr(tr, "kwok_pods_cap", lambda *_a, **_k: 10)
+	monkeypatch.setattr(tr.time, "sleep", lambda *_a, **_k: None)
+	monkeypatch.setattr(tr.time, "time", lambda: 0.0)
+	monkeypatch.setattr(tr, "get_timestamp", lambda: "TS")
+	monkeypatch.setattr(runner, "_make_replicaset_specs_only", lambda *_a, **_k: [{"name": "rs", "priority": 1, "req_cpu_m": 10, "req_mem_bytes": 20, "replicas": 1}])
+	monkeypatch.setattr(runner, "_apply_replicasets", lambda *_a, **_k: None)
+
+	monkeypatch.setattr(tr, "solver_trigger_http", lambda **_k: (200, '{"status":"OK","best_name":"x"}'))
+
+	wait_called = {"n": 0}
+	monkeypatch.setattr(runner, "_wait_solver_inactive_http", lambda *_a, **_k: wait_called.__setitem__("n", wait_called["n"] + 1) or True)
+
+	class Snap:
+		def __init__(self):
+			self.pods_running = [("p1", "n1")]
+			self.pods_unscheduled = []
+			self.cpu_run_util = 0.1
+			self.mem_run_util = 0.2
+			self.cpu_req_by_node = {"n1": 10}
+			self.mem_req_by_node = {"n1": 20}
+			self.pods_run_by_node = {"n1": ["p1"]}
+			self.running_placed_by_prio = {"1": 1}
+			self.unschedulable_by_prio = {"1": 0}
+
+	snaps = [Snap(), Snap()]
+	monkeypatch.setattr(tr, "stat_snapshot", lambda *_a, **_k: snaps.pop(0))
+	monkeypatch.setattr(runner, "_get_solver_attempts", lambda: ({"b": 1}, "best", [{"name": "best", "score": {"s": 1}, "duration_ms": 7, "status": "OK"}], ""))
+
+	monkeypatch.setattr(runner, "_append_result_csv", lambda *_a, **_k: None)
+	monkeypatch.setattr(runner, "_record_seed_outcome", lambda *_a, **_k: None)
+	monkeypatch.setattr(runner, "_log_seed_summary", lambda *_a, **_k: None)
+
+	ta = tr.TestConfigApplied(
+		namespace="ns",
+		num_nodes=1,
+		num_pods=1,
+		num_priorities=1,
+		num_replicaset=1,
+		num_replicas_per_rs=(1, 1),
+		node_cpu_m=100,
+		node_mem_b=200,
+		cpu_per_pod_m=(10, 10),
+		mem_per_pod_b=(20, 20),
+		util=0.5,
+		wait_pod_mode=None,
+		wait_pod_timeout_s=0,
+		settle_timeout_min_s=0,
+		settle_timeout_max_s=1,
+	)
+
+	ok = runner._execute_seed_on_cluster(seed=10, ta=ta, run_idx=1)
+	assert ok is True
+	assert runner.last_solver_result == {"status": "OK", "best_name": "x"}
+	assert wait_called["n"] == 1
+
+
+def test_execute_seed_on_cluster_solver_trigger_bad_json_keeps_none(monkeypatch, tmp_path):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.ctx = "ctx"
+	runner.kwokctl_config_doc = {}
+	runner.results_f = tmp_path / "results.csv"
+	runner.quota_reached = False
+	runner.saved_not_all_running = 0
+	runner.args = argparse.Namespace(
+		cluster_name="kwok1",
+		kwok_runtime="binary",
+		default_scheduler=False,
+		solver_trigger=True,
+		save_solver_stats=False,
+		save_scheduler_logs=False,
+		seeds_not_all_running=0,
+	)
+
+	monkeypatch.setattr(tr, "ensure_kwok_cluster", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "create_kwok_nodes", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "ensure_namespace", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "ensure_service_account", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "ensure_priority_classes", lambda *a, **k: None)
+	monkeypatch.setattr(tr, "qty_to_mcpu_str", lambda *_a, **_k: "100m")
+	monkeypatch.setattr(tr, "qty_to_bytes_str", lambda *_a, **_k: "1Mi")
+	monkeypatch.setattr(tr, "kwok_pods_cap", lambda *_a, **_k: 10)
+	monkeypatch.setattr(tr.time, "sleep", lambda *_a, **_k: None)
+	monkeypatch.setattr(tr.time, "time", lambda: 0.0)
+	monkeypatch.setattr(tr, "get_timestamp", lambda: "TS")
+	monkeypatch.setattr(runner, "_make_replicaset_specs_only", lambda *_a, **_k: [{"name": "rs", "priority": 1, "req_cpu_m": 10, "req_mem_bytes": 20, "replicas": 1}])
+	monkeypatch.setattr(runner, "_apply_replicasets", lambda *_a, **_k: None)
+
+	monkeypatch.setattr(tr, "solver_trigger_http", lambda **_k: (200, "{not-json"))
+	monkeypatch.setattr(runner, "_wait_solver_inactive_http", lambda *_a, **_k: True)
+
+	class Snap:
+		def __init__(self):
+			self.pods_running = [("p1", "n1")]
+			self.pods_unscheduled = []
+			self.cpu_run_util = 0.1
+			self.mem_run_util = 0.2
+			self.cpu_req_by_node = {"n1": 10}
+			self.mem_req_by_node = {"n1": 20}
+			self.pods_run_by_node = {"n1": ["p1"]}
+			self.running_placed_by_prio = {"1": 1}
+			self.unschedulable_by_prio = {"1": 0}
+
+	snaps = [Snap(), Snap()]
+	monkeypatch.setattr(tr, "stat_snapshot", lambda *_a, **_k: snaps.pop(0))
+	monkeypatch.setattr(runner, "_get_solver_attempts", lambda: ({}, "", [], ""))
+
+	monkeypatch.setattr(runner, "_append_result_csv", lambda *_a, **_k: None)
+	monkeypatch.setattr(runner, "_record_seed_outcome", lambda *_a, **_k: None)
+	monkeypatch.setattr(runner, "_log_seed_summary", lambda *_a, **_k: None)
+
+	ta = tr.TestConfigApplied(
+		namespace="ns",
+		num_nodes=1,
+		num_pods=1,
+		num_priorities=1,
+		num_replicaset=1,
+		num_replicas_per_rs=(1, 1),
+		node_cpu_m=100,
+		node_mem_b=200,
+		cpu_per_pod_m=(10, 10),
+		mem_per_pod_b=(20, 20),
+		util=0.5,
+		wait_pod_mode=None,
+		wait_pod_timeout_s=0,
+		settle_timeout_min_s=0,
+		settle_timeout_max_s=0,
+	)
+
+	ok = runner._execute_seed_on_cluster(seed=11, ta=ta, run_idx=1)
+	assert ok is True
+	assert runner.last_solver_result is None
 
 
 def test_log_seed_run_and_summary_include_combined_job_configs(monkeypatch):
@@ -1393,6 +1943,37 @@ def test_run_mode_count_runs_one_seed_without_cluster(monkeypatch, tmp_path):
 	assert len(runner.seed_durations) == 1
 
 
+def test_run_mode_count_skips_seen_random_seed(monkeypatch, tmp_path):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.results_f = tmp_path / "results.csv"
+	runner.seen_results = {42}
+	runner.quota_reached = False
+	runner.seed_durations = []
+	runner.args = argparse.Namespace(count=1, repeats=1, re_run_seeds=False, solver_directly=True)
+
+	class Rng:
+		def __init__(self):
+			self._vals = [42, 43]
+		def getrandbits(self, _n):
+			return self._vals.pop(0)
+
+	monkeypatch.setattr(tr.time, "time_ns", lambda: 1)
+	monkeypatch.setattr(tr, "seeded_random", lambda *_a, **_k: Rng())
+	monkeypatch.setattr(tr.time, "time", lambda: 0.0)
+
+	monkeypatch.setattr(runner, "_resolve_config_for_seed", lambda _seed: object())
+	monkeypatch.setattr(runner, "_run_single_seed", lambda *_a, **_k: True)
+	monkeypatch.setattr(runner, "_pause", lambda *_a, **_k: None)
+	monkeypatch.setattr(runner, "_log_seed_run", lambda *_a, **_k: None)
+	monkeypatch.setattr(runner, "_eta_update_marker", lambda *_a, **_k: None)
+	monkeypatch.setattr(runner, "_eta_summary", lambda *_a, **_k: None)
+
+	runner.run_mode_count()
+	assert 42 in runner.seen_results
+	assert 43 in runner.seen_results
+	assert len(runner.seed_durations) == 1
+
+
 def test_run_mode_seed_file_runs_one_seed(monkeypatch, tmp_path):
 	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
 	runner.results_f = tmp_path / "results.csv"
@@ -1420,6 +2001,93 @@ def test_run_mode_seed_file_runs_one_seed(monkeypatch, tmp_path):
 	runner.run_mode_seed_file()
 	assert 7 in runner.seen_results
 	assert len(runner.seed_durations) == 1
+
+
+def test_run_mode_seed_file_skips_seen_seed(monkeypatch, tmp_path):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.results_f = tmp_path / "results.csv"
+	runner.seen_results = {7}
+	runner.quota_reached = False
+	runner.seed_durations = []
+	runner.args = argparse.Namespace(
+		seed_file="seeds.txt",
+		repeats=1,
+		re_run_seeds=False,
+		solver_directly=True,
+		job_file=None,
+		workload_config_file="wl.yaml",
+		kwokctl_config_file="kwokctl.yaml",
+	)
+
+	monkeypatch.setattr(runner, "_read_seeds_file", lambda *_a, **_k: [7])
+	seen = {"eta": 0, "summary": 0, "run": 0}
+	monkeypatch.setattr(runner, "_eta_update_marker", lambda *_a, **_k: seen.__setitem__("eta", seen["eta"] + 1))
+	monkeypatch.setattr(runner, "_eta_summary", lambda *_a, **_k: seen.__setitem__("summary", seen["summary"] + 1))
+	monkeypatch.setattr(runner, "_run_single_seed", lambda *_a, **_k: seen.__setitem__("run", seen["run"] + 1))
+
+	runner.run_mode_seed_file()
+	assert seen["run"] == 0
+	assert seen["eta"] >= 1
+	assert seen["summary"] >= 1
+
+
+def test_run_mode_seed_file_breaks_when_quota_reached(monkeypatch, tmp_path):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.results_f = tmp_path / "results.csv"
+	runner.seen_results = set()
+	runner.quota_reached = True
+	runner.seed_durations = []
+	runner.args = argparse.Namespace(
+		seed_file="seeds.txt",
+		repeats=1,
+		re_run_seeds=False,
+		solver_directly=True,
+		job_file=None,
+		workload_config_file="wl.yaml",
+		kwokctl_config_file="kwokctl.yaml",
+	)
+
+	monkeypatch.setattr(runner, "_read_seeds_file", lambda *_a, **_k: [1, 2])
+	seen = {"log": 0}
+	monkeypatch.setattr(runner, "_log_seed_run", lambda *_a, **_k: seen.__setitem__("log", seen["log"] + 1))
+
+	runner.run_mode_seed_file()
+	assert seen["log"] == 0
+
+
+def test_run_dispatches_to_seed_file(monkeypatch):
+	runner = tr.TestRunner(argparse.Namespace(), initialize=False)
+	runner.args = argparse.Namespace(seed=None, count=None, seed_file="seeds.txt")
+	seen = {"called": 0}
+	monkeypatch.setattr(runner, "run_mode_seed_file", lambda *_a, **_k: seen.__setitem__("called", seen["called"] + 1))
+	runner.run()
+	assert seen["called"] == 1
+
+
+def test_main_runs_test_runner(monkeypatch):
+	# Fake args for main() normal path.
+	args = argparse.Namespace(gen_seeds_to_file=None)
+
+	class FakeParser:
+		def parse_args(self):
+			return args
+
+	monkeypatch.setattr(tr, "build_argparser", lambda: FakeParser())
+
+	seen = {"run": 0, "printed": 0}
+
+	class FakeRunner:
+		def __init__(self, _args):
+			pass
+		def run(self):
+			seen["run"] += 1
+
+	monkeypatch.setattr(tr, "TestRunner", FakeRunner)
+	monkeypatch.setattr(builtins, "print", lambda *_a, **_k: seen.__setitem__("printed", seen["printed"] + 1))
+
+	tr.main()
+	assert seen["run"] == 1
+	assert seen["printed"] >= 1
 
 
 def test_solver_directly_missing_ortools_raises_system_exit(monkeypatch):

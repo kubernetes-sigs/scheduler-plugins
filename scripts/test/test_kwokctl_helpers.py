@@ -3,12 +3,9 @@ import io
 import logging
 import os
 import subprocess
-
 import pytest
 
-
-# kwokctl_helpers imports `fcntl`, which is not available on native Windows.
-kh = pytest.importorskip("scripts.helpers.kwokctl_helpers")
+from scripts.helpers import kwokctl_helpers as kh
 
 
 def _make_logger_stream(level: int = logging.DEBUG):

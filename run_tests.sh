@@ -103,7 +103,8 @@ if "$RUN_UNIT_PY"; then
     --cov=scripts \
     --cov-config=pytest-config.coveragerc \
     --cov-report=term \
-    --cov-report=html:coverage/unit/python
+    --cov-report=html:coverage/unit/python \
+    --cov-report=term-missing
   echo "Python tests completed. Coverage HTML: coverage/unit/python/index.html"
 fi
 

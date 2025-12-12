@@ -2,10 +2,11 @@
 # kwok_helpers.py
 
 import tempfile
-import os, subprocess, yaml, shlex, logging, textwrap, fcntl, contextlib, copy
+import os, subprocess, yaml, shlex, logging, textwrap, contextlib, copy
 from pathlib import Path
 from typing import Iterable, Mapping, Any
 from scripts.helpers.kubectl_helpers import kubectl_apply_yaml
+import fcntl  # type: ignore
 
 # ====================================================================
 # YAML helpers.
@@ -162,7 +163,11 @@ def kwok_cache_lock():
     at a time, avoiding races in ~/.kwok/cache when downloading binaries.
     Override lock path via env KWOK_CACHE_LOCK if desired.
     """
-    lock_path = os.environ.get("KWOK_CACHE_LOCK", "/tmp/kwokctl-cache.lock")
+    default_lock_path = "/tmp/kwokctl-cache.lock"
+    if os.name == "nt":
+      default_lock_path = str(Path(tempfile.gettempdir()) / "kwokctl-cache.lock")
+
+    lock_path = os.environ.get("KWOK_CACHE_LOCK", default_lock_path)
     os.makedirs(os.path.dirname(lock_path), exist_ok=True)
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o666)
     try:
