@@ -573,6 +573,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         ),
     )
 
+    ap.add_argument(
+        "--skip-checked",
+        action="store_true",
+        help="If set, functions marked as checked (via TESTED/CHECKED marker) are omitted from the CSV outputs.",
+    )
+
     return ap.parse_args(argv)
 
 
@@ -635,11 +641,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     py_funcs = scan_python_functions(py_prod_files)
     py_test_names = scan_python_test_names(py_test_files)
 
-    write_go_csv(Path(args.out_go), go_funcs, go_test_names, repo_root)
-    write_python_csv(Path(args.out_py), py_funcs, py_test_names, repo_root)
-
     go_checked = sum(1 for fn in go_funcs if fn.checked)
     py_checked = sum(1 for fn in py_funcs if fn.checked)
+
+    go_funcs_out = [fn for fn in go_funcs if not (args.skip_checked and fn.checked)]
+    py_funcs_out = [fn for fn in py_funcs if not (args.skip_checked and fn.checked)]
+
+    write_go_csv(Path(args.out_go), go_funcs_out, go_test_names, repo_root)
+    write_python_csv(Path(args.out_py), py_funcs_out, py_test_names, repo_root)
 
     print(
         f"Go files scanned: {len(go_all_files)} (prod={len(go_prod_files)}, test={len(go_test_files)}); "
