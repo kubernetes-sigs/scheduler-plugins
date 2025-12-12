@@ -17,8 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
-
-	clientv1 "k8s.io/client-go/listers/core/v1"
 )
 
 // -------------------------
@@ -843,6 +841,7 @@ func computePlanPodCounts(out *SolverOutput, pods []*v1.Pod) (
 // -------------------------
 
 // exportPlanToConfigMap exports the given plan to a ConfigMap.
+// exportPlanToConfigMap exports the given plan to a ConfigMap.
 func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, sp *StoredPlan) error {
 	if exportPlanToConfigMapHook != nil {
 		return exportPlanToConfigMapHook(pl, ctx, name, sp)
@@ -854,12 +853,23 @@ func (pl *SharedState) exportPlanToConfigMap(ctx context.Context, name string, s
 		LabelKey:  PlanConfigMapLabelKey,
 		DataKey:   PlanConfigMapLabelKey + ".json",
 	}
-	if err := doc.ensureJson(ctx, pl.Client.CoreV1(), sp); err != nil {
+
+	// ConfigMap client (namespaced interface)
+	cms := pl.Client.CoreV1().ConfigMaps(SystemNamespace)
+
+	// Write the plan CM
+	if err := doc.ensureJson(ctx, cms, sp); err != nil {
 		return err
 	}
-	return pruneConfigMaps(ctx, pl.Client.CoreV1(), func(ns string) clientv1.ConfigMapNamespaceLister {
-		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
-	}, SystemNamespace, PlanConfigMapLabelKey, PlansToRetain)
+
+	// Namespace lister (ConfigMapNamespaceLister)
+	nsLister := pl.Handle.SharedInformerFactory().
+		Core().V1().ConfigMaps().
+		Lister().
+		ConfigMaps(SystemNamespace)
+
+	// Prune old plan CMs
+	return pruneConfigMaps(ctx, cms, nsLister, PlanConfigMapLabelKey, PlansToRetain)
 }
 
 // -------------------------
@@ -875,16 +885,23 @@ func (pl *SharedState) setPlanStatusInConfigMap(ctx context.Context, planCM stri
 		return
 	}
 
-	lister := func(ns string) clientv1.ConfigMapNamespaceLister {
-		return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
-	}
+	// Namespace lister (ConfigMapNamespaceLister)
+	nsLister := pl.Handle.SharedInformerFactory().
+		Core().V1().ConfigMaps().
+		Lister().
+		ConfigMaps(SystemNamespace)
+
 	planDoc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      planCM,
 		LabelKey:  PlanConfigMapLabelKey,
 		DataKey:   PlanConfigMapLabelKey + ".json",
 	}
-	_ = planDoc.mutateRaw(ctx, pl.Client.CoreV1(), lister, func(raw []byte) ([]byte, error) {
+
+	// ConfigMap client (namespaced interface)
+	cms := pl.Client.CoreV1().ConfigMaps(SystemNamespace)
+
+	_ = planDoc.mutateRaw(ctx, cms, nsLister, func(raw []byte) ([]byte, error) {
 		var sp StoredPlan
 		if err := json.Unmarshal(raw, &sp); err != nil {
 			return nil, nil // best-effort

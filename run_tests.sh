@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Load environment variables
 ENV_FILE="opt-prio.env"
-echo "===Load environment variables from ${ENV_FILE} ==="
+echo "=== Load environment variables from ${ENV_FILE} ==="
 # shellcheck source=/dev/null
 set -a
 source "${ENV_FILE}"

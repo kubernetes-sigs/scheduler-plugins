@@ -74,7 +74,11 @@ func (pl *SharedState) persistPluginConfig(ctx context.Context) error {
 	}
 
 	snap := buildPluginConfigSnapshot()
-	if err := doc.ensureJson(ctx, pl.Client.CoreV1(), snap); err != nil {
+
+	// ConfigMap client (namespaced interface)
+	cms := pl.Client.CoreV1().ConfigMaps(SystemNamespace)
+
+	if err := doc.ensureJson(ctx, cms, snap); err != nil {
 		klog.ErrorS(err, "persistPluginConfig: failed to create/update plugin configuration ConfigMap",
 			"namespace", doc.Namespace, "name", doc.Name)
 		return err

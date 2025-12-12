@@ -8,9 +8,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	clientv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -552,6 +550,7 @@ func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedSo
 	if cli == nil {
 		return ErrNoClientset
 	}
+
 	doc := ConfigMapDoc{
 		Namespace: SystemNamespace,
 		Name:      SolverStatsConfigMapName,
@@ -559,21 +558,30 @@ func (pl *SharedState) appendSolverStatsCM(ctx context.Context, entry ExportedSo
 		DataKey:   SolverStatsConfigMapLabelKey + ".json",
 	}
 
-	// TODO: Think we can use the one from config_map_helpers.go?
-	err := mutateJson(
+	// Namespaced ConfigMap client + namespace lister (new helper signatures expect these)
+	cms := cli.CoreV1().ConfigMaps(SystemNamespace)
+	nsLister := pl.Handle.SharedInformerFactory().
+		Core().V1().ConfigMaps().
+		Lister().
+		ConfigMaps(SystemNamespace)
+
+	// Create-on-missing (new mutateJson returns nil on missing, so we must handle it explicitly).
+	_, found, err := doc.readJson(nsLister)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return doc.ensureJson(ctx, cms, []ExportedSolverStats{entry})
+	}
+
+	// Append entry to existing array
+	return mutateJson(
 		ctx,
-		cli.CoreV1(),
-		func(ns string) clientv1.ConfigMapNamespaceLister {
-			return pl.Handle.SharedInformerFactory().Core().V1().ConfigMaps().Lister().ConfigMaps(ns)
-		},
+		cms,
+		nsLister,
 		doc,
 		func(existing []ExportedSolverStats) ([]ExportedSolverStats, error) {
 			return append(existing, entry), nil
 		},
 	)
-	if apierrors.IsNotFound(err) {
-		_ = doc.ensureJson(ctx, cli.CoreV1(), []ExportedSolverStats{entry})
-		return nil
-	}
-	return err
 }
