@@ -100,7 +100,8 @@ if "$RUN_UNIT_PY"; then
   echo "=== Running Python unit tests (pytest) ==="
   python -m pytest \
     scripts/test \
-    --cov=. \
+    --cov=scripts \
+    --cov-config=pytest-config.coveragerc \
     --cov-report=term \
     --cov-report=html:coverage/unit/python
   echo "Python tests completed. Coverage HTML: coverage/unit/python/index.html"
@@ -127,14 +128,9 @@ if "$RUN_INT_KWOK"; then
     python -m pip install -r scripts/kwok_integration_tests/requirements.txt
   fi
 
-  python -m pytest \
-    scripts/kwok_integration_tests/test_modes.py \
-    --cov=. \
-    --cov-report=term \
-    --cov-report=html:coverage/integration/kwok \
-    -v -s
+  python -m pytest -s scripts/kwok_integration_tests/test_modes.py
 
-  echo "Integration tests with KWOK completed. Coverage HTML: coverage/integration/kwok/index.html"
+  echo "Integration tests with KWOK completed.
 fi
 
 # Summary

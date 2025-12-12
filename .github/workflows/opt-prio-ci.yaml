@@ -58,8 +58,10 @@ jobs:
 
       - name: Run python unit tests
         run: |
-          python -m pytest scripts/test \
+          python -m pytest \
+            scripts/test \
             --cov=scripts \
+            --cov-config=pytest-config.coveragerc \
             --cov-report=xml:coverage/unit/python/coverage.xml \
             --cov-report=html:coverage/unit/python/html
 
@@ -169,9 +171,6 @@ jobs:
           "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_VENV_DIR }}/bin/python" -m pip install --upgrade pip
           "${{ steps.load-env.outputs.PYTHON_SOLVER_OUT_VENV_DIR }}/bin/pip" install --no-cache-dir -r scripts/python_solver/requirements.txt
 
-      - name: Prepare integration test coverage directory
-        run: mkdir -p coverage/integration/kwok
-
       - name: Install integration test deps
         run: |
           python -m pip install --upgrade pip
@@ -181,14 +180,4 @@ jobs:
 
       - name: Run integration tests
         run: |
-          python -m pytest -s \
-            scripts/kwok_integration_tests/test_modes.py \
-            --cov=scripts/kwok_integration_tests \
-            --cov-report=xml:coverage/integration/kwok/coverage.xml \
-            --cov-report=html:coverage/integration/kwok/html
-
-      - name: Upload integration test coverage reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-reports-integration
-          path: coverage/integration/kwok
+          python -m pytest -s scripts/kwok_integration_tests/test_modes.py 
