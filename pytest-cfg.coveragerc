@@ -4,9 +4,12 @@ omit =
     scripts/test/*
     scripts/test/**
     scripts/helpers/job*
+    scripts/helpers/func_audit.py
     scripts/kwok_integration_tests/*
     scripts/kwok_integration_tests/**
     scripts/kwok_workload_once/plots_and_tables.py
+    scripts/kwok_trace_replayer/compare_plots.py
+    scripts/kwok_trace_replayer/plot_helpers.py
     */__init__.py
     **/__init__.py
 

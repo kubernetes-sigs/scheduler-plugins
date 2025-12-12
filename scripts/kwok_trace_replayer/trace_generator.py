@@ -12,14 +12,14 @@ import numpy as np
 from scripts.helpers.general_helpers import (
     parse_duration_to_seconds,
     setup_logging,
-    make_header_footer,
-    log_field_fmt,
-    log_kv_block,
     build_cli_cmd,
     write_info_file,
+    log_args_block,
 )
 from scripts.kwok_trace_replayer.trace_helpers import (
     TraceRecord,
+)
+from scripts.kwok_trace_replayer.plot_helpers import (
     plot_histogram_with_pareto,
     plot_bar_with_geometric
 )
@@ -201,35 +201,17 @@ class TraceGenerator:
     # ------------ Info/logging helpers ----------
     ##############################################
     def log_args(self) -> None:
-        """
-        Log the main arguments (similar style to test_generator).
-        """
-        fields = [
-            ("output_dir", self.args.output_dir),
-            ("seed", self.args.seed),
-            ("log_level", self.args.log_level),
-            ("num_nodes", self.args.num_nodes),
-            ("trace_time", self.args.trace_time),
-            ("priority_min", self.args.priority_min),
-            ("priority_max", self.args.priority_max),
-            ("priority_ratio", self.args.priority_ratio),
-            ("replicas_min", self.args.replicas_min),
-            ("replicas_max", self.args.replicas_max),
-            ("replicas_ratio", self.args.replicas_ratio),
-            ("xmin_cpu", self.args.xmin_cpu),
-            ("xmax_cpu", self.args.xmax_cpu),
-            ("mean_cpu", self.args.mean_cpu),
-            ("xmin_mem", self.args.xmin_mem),
-            ("xmax_mem", self.args.xmax_mem),
-            ("mean_mem", self.args.mean_mem),
-            ("xmin_arrival", self.args.xmin_arrival),
-            ("xmax_arrival", self.args.xmax_arrival),
-            ("mean_arrival", self.args.mean_arrival),
-            ("xmin_life", self.args.xmin_life),
-            ("xmax_life", self.args.xmax_life),
-            ("mean_life", self.args.mean_life),
+        # preserve your current ordering
+        include = [
+            "output_dir","seed","log_level","num_nodes","trace_time",
+            "priority_min","priority_max","priority_ratio",
+            "replicas_min","replicas_max","replicas_ratio",
+            "xmin_cpu","xmax_cpu","mean_cpu",
+            "xmin_mem","xmax_mem","mean_mem",
+            "xmin_arrival","xmax_arrival","mean_arrival",
+            "xmin_life","xmax_life","mean_life",
         ]
-        log_kv_block(LOG, "ARGS", fields)
+        log_args_block(LOG, self.args, title="ARGS", include=include)
 
     def _write_info_file(self) -> None:
         """
@@ -302,6 +284,8 @@ class TraceGenerator:
             )
 
         alpha_lo, alpha_hi = SOLVE_ALPHA_UPPER_BOUND, SOLVE_ALPHA_LOWER_BOUND
+        if x_max is None: # unbounded Pareto: mean = (alpha * x_min) / (alpha - 1)
+            alpha_hi = max(alpha_hi, 1.0001)
         
         # Monte Carlo means at the endpoints
         m_lo = float(self._sample_pareto(rng, alpha_lo, x_min, x_max, size=SOLVE_ALPHA_SAMPLES).mean())

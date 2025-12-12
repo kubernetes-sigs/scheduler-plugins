@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # kwok_helpers.py
 
+import math
 import tempfile
 import os, subprocess, yaml, shlex, logging, textwrap, contextlib, copy
 from pathlib import Path
@@ -146,18 +147,37 @@ def ensure_kwok_cluster(logger: logging.Logger, cluster_name: str, kwok_runtime:
             try: os.unlink(cfg_for_kwokctl)
             except OSError: pass
 
-def create_kwok_nodes(logger: logging.Logger, ctx: str, num_nodes: int, node_cpu: str, node_mem: str, pods_cap: int) -> None:
+def create_kwok_nodes(logger: logging.Logger, ctx: str, num_nodes: int,
+                      node_cpu: str, node_mem: str, pods_cap: int) -> None:
     """
     Create KWOK nodes kwok-node-1..kwok-node-N with the given capacity.
     """
-    kubectl_apply_yaml(logger, ctx, "".join(yaml_kwok_node(f"kwok-node-{i}", node_cpu, node_mem, pods_cap) for i in range(1, num_nodes + 1)))
+    if num_nodes <= 0:
+        return
+    if pods_cap <= 0:
+        raise ValueError("pods_cap must be > 0")
 
-def kwok_pods_cap(total_pods: int | None = None) -> int:
+    docs = [yaml_kwok_node(f"kwok-node-{i}", node_cpu, node_mem, pods_cap)
+            for i in range(1, num_nodes + 1)]
+
+    # Use "\n---\n" if yaml_kwok_node does NOT already include '---'
+    body = "\n---\n".join(docs).rstrip() + "\n"
+    kubectl_apply_yaml(logger, ctx, body)
+
+def kwok_pods_cap(total_pods: int | None = None, *, num_nodes: int = 1,
+                 factor: int = 3, min_cap: int = 512) -> int:
     """
-    Compute a reasonable per-node pod capacity for KWOK nodes.
-    We use max(512, total_pods * 3) to ensure that the pod capacity is not a limiting factor.
+    Compute a per-node pod capacity large enough that pods-cap isn't a limiter.
     """
-    return max(512, (total_pods * 3)) if total_pods is not None else 512
+    if total_pods is None:
+        return min_cap
+    if total_pods < 0:
+        raise ValueError("total_pods must be >= 0")
+    if num_nodes <= 0:
+        raise ValueError("num_nodes must be > 0")
+
+    per_node_target = math.ceil(total_pods / num_nodes) * factor
+    return max(min_cap, per_node_target)
 
 @contextlib.contextmanager
 def kwok_cache_lock():
@@ -214,3 +234,36 @@ def merge_kwokctl_envs(doc: dict, add_envs: Iterable[Mapping[str, Any]] | None, 
     comp["extraEnvs"] = [env_by_name[k] for k in sorted(env_by_name)]
     cps.sort(key=lambda c: c.get("name", ""))
     return d
+
+def save_kwok_scheduler_logs(cluster_name, out_path, *, runner=subprocess.run, logger=None):
+    """
+    Save `kwokctl logs kube-scheduler --name <cluster>` to out_path.
+
+    runner: injectable subprocess runner (defaults to subprocess.run)
+    logger: injectable logger (defaults to module logger)
+    """
+    log = logger or logging.getLogger(__name__)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if out_path.exists():
+        try:
+            out_path.unlink()
+            log.info("pruned existing scheduler log: %s", out_path)
+        except OSError as e:
+            log.warning("failed pruning existing scheduler log %s: %s", out_path, e)
+
+    try:
+        r = runner(
+            ["kwokctl", "logs", "kube-scheduler", "--name", str(cluster_name)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        data = getattr(r, "stdout", None) or b""
+        out_path.write_bytes(data)
+        log.info("saved scheduler logs to %s", out_path)
+    except Exception as e:
+        log.warning("failed saving scheduler logs: %s", e)
+
+    return out_path

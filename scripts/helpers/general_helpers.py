@@ -2,10 +2,11 @@
 # general_helpers.py
 
 import sys, time, random, subprocess, csv, re, logging, hashlib, shlex, yaml, json
-from typing import List, Dict, Tuple, Optional, Any
+from typing import Callable, List, Dict, Tuple, Optional, Any, Protocol
 from pathlib import Path
 from decimal import Decimal
 from urllib import request as _urlreq, error as _urlerr  # for solver HTTP trigger
+import subprocess
 
 MEM_UNIT_TABLE = {
     # bytes
@@ -182,6 +183,30 @@ def log_kv_block(logger: logging.Logger, title: str, fields: List[Tuple[str, Any
     block = "\n".join(lines)
     header, footer = make_header_footer(str(title))
     logger.info("\n%s\n%s\n%s", header, block, footer)
+
+def log_args_block(logger, args, *, title="ARGS", include=None, exclude=None, sort_keys=True) -> None:
+    """
+    Log argparse.Namespace (or any object with vars()) as a kv-block.
+
+    - include: explicit list of keys in desired order (only keys that exist are logged)
+    - exclude: set/list of keys to omit
+    """
+    try:
+        d = vars(args)
+    except Exception:
+        d = {}
+
+    exclude_set = set(exclude or [])
+    if include is not None:
+        keys = [k for k in include if k in d and k not in exclude_set]
+    else:
+        keys = list(d.keys())
+        if sort_keys:
+            keys.sort()
+        keys = [k for k in keys if k not in exclude_set]
+
+    fields = [(k, d.get(k)) for k in keys]
+    log_kv_block(logger, title, fields)
 
 ##############################################
 # ------------ Parser helpers----------------
@@ -520,6 +545,7 @@ def generate_seeds(gen_seeds_to_file: Optional[List[str]]) -> None:
 #############################################
 # Solver HTTP trigger helper
 #############################################
+
 def solver_trigger_http(logger: logging.Logger, url: str, timeout: float) -> tuple[int, str]:
     """
     POST /solve endpoint. Returns (status_code, body_str).
@@ -618,3 +644,22 @@ def cmp_placed_by_prio_row(row) -> int:
     s_map = prio_map(row.get("placed_by_prio_solver", ""))
     d_map = prio_map(row.get("placed_by_prio_default", ""))
     return place_compare(s_map, d_map)
+
+#############################################
+# Deps
+#############################################
+
+class Clock(Protocol):
+    def time(self) -> float: ...
+    def sleep(self, seconds: float) -> None: ...
+
+
+class SystemClock:
+    def time(self) -> float:
+        return time.time()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+
+Runner = Callable[..., subprocess.CompletedProcess]

@@ -18,6 +18,8 @@ from scripts.helpers.general_helpers import (
     get_int_from_dict, get_float_from_dict, get_str, get_str_from_dict, coerce_bool,
     log_field_fmt, write_info_file, build_cli_cmd,
     solver_trigger_http, get_solver_active_status_http,
+    SystemClock, Runner, Clock,
+    log_args_block,
 )
 from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml,
@@ -32,9 +34,18 @@ from scripts.helpers.kwokctl_helpers import (
     create_kwok_nodes,
     kwok_pods_cap,
     merge_kwokctl_envs,
+    save_kwok_scheduler_logs,
 )
 from scripts.helpers.cluster_stats import (
     stat_snapshot,
+)
+
+from scripts.helpers.job_helpers import (
+    JobField,
+    merge_job_fields_into_args,
+    parse_optional_str,
+    parse_optional_bool,
+    parse_optional_int,
 )
 
 # ===============================================================
@@ -84,7 +95,7 @@ class TestConfigRaw:
     num_pods: int = 0
     num_priorities: Optional[Tuple[int, int]] = None
 
-    # replicaset (optional; if omitted, plain pods are created)
+    # replicaset
     num_replicas_per_rs: Optional[Tuple[int, int]] = None     # e.g., (3, 50)
 
     # per-pod intervals (K8s quantities as strings)
@@ -206,10 +217,27 @@ def build_argparser() -> argparse.ArgumentParser:
 # ------------ Main class --------------------
 ##############################################
 class TestRunner:
-    def __init__(self, args: argparse.Namespace, *, initialize: bool = True) -> None:
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        *,
+        initialize: bool = True,
+        runner: Runner = subprocess.run,
+        clock: Clock | None = None,
+    ) -> None:
         # Keep this constructor lightweight so unit tests can instantiate the class
         # without touching the filesystem or requiring real config files.
         self.args = args
+
+        # Important for unit tests: they often monkeypatch this module's
+        # subprocess.run *after* constructing TestRunner. If we store the
+        # function object directly, later monkeypatches won't be observed.
+        if runner is subprocess.run:
+            self.runner = lambda *a, **k: subprocess.run(*a, **k)
+        else:
+            self.runner = runner
+
+        self.clock = clock or SystemClock()
 
         # Populated during initialization (or set directly by unit tests)
         self.workload_config_doc = None
@@ -734,39 +762,18 @@ class TestRunner:
 
     @staticmethod
     def log_args(args) -> None:
-        """
-        Log the arguments.
-        """
-        fields = [
-            ("cluster_name", args.cluster_name),
-            ("kwok_runtime", args.kwok_runtime),
-            ("workload_config_file", args.workload_config_file),
-            ("kwokctl_config_file", args.kwokctl_config_file),
-            ("output_dir", args.output_dir),
-            ("clean_start", args.clean_start),
-            ("re_run_seeds", args.re_run_seeds),
-            ("log_level", args.log_level),
-            ("default_scheduler", args.default_scheduler),
-            
-            ("gen_seeds_to_file", args.gen_seeds_to_file),
-            ("seed", args.seed),
-            ("seed_file", args.seed_file),
-            ("count", args.count),
-            ("repeats", args.repeats),
-            ("seeds_not_all_running", args.seeds_not_all_running),
-
-            ("job_file", args.job_file),
-
-            ("save_solver_stats", args.save_solver_stats),
-            ("save_scheduler_logs", args.save_scheduler_logs),
-            
-            ("solver_trigger", args.solver_trigger),
+        include = [
+            "cluster_name", "kwok_runtime",
+            "workload_config_file", "kwokctl_config_file",
+            "output_dir", "clean_start", "re_run_seeds", "log_level",
+            "default_scheduler",
+            "gen_seeds_to_file", "seed", "seed_file", "count", "repeats",
+            "seeds_not_all_running",
+            "job_file",
+            "save_solver_stats", "save_scheduler_logs",
+            "solver_trigger",
         ]
-        pad = max(len(k) for k, _ in fields)
-        lines = [f"{k.rjust(pad)} = {log_field_fmt(v)}" for k, v in fields]
-        block = "\n".join(lines)
-        header, footer = make_header_footer("ARGS")
-        LOG.info("\n%s\n%s\n%s", header, block, footer)
+        log_args_block(LOG, args, title="ARGS", include=include)
 
     @staticmethod
     def log_kwokctl_envs(envs: dict[str, object]) -> None:
@@ -993,69 +1000,35 @@ class TestRunner:
 
     @staticmethod
     def merge_job_fields_into_args(args: argparse.Namespace, job: dict) -> tuple[argparse.Namespace, dict]:
-        # Map fields from job
-        jf_cluster_name             = get_str(job.get("cluster-name"))
-        jf_kwok_runtime             = get_str(job.get("kwok-runtime"))
-        jf_workload_config_file     = get_str(job.get("workload-config-file"))
-        jf_kwokctl_config_file      = get_str(job.get("kwokctl-config-file"))
-        jf_output_dir               = get_str(job.get("output-dir"))
-        jf_clean_start              = coerce_bool(job.get("clean-start"), default=None)
-        jf_re_run_seeds             = coerce_bool(job.get("re-run-seeds"), default=None)
-        jf_log_level                = get_str(job.get("log-level"))
-        jf_default_scheduler        = coerce_bool(job.get("default-scheduler"), default=None)
+        fields = [
+            JobField("cluster-name", "cluster_name", parse=parse_optional_str),
+            JobField("kwok-runtime", "kwok_runtime", parse=parse_optional_str),
+            JobField("workload-config-file", "workload_config_file", parse=parse_optional_str),
+            JobField("kwokctl-config-file", "kwokctl_config_file", parse=parse_optional_str),
+            JobField("output-dir", "output_dir", parse=parse_optional_str),
 
-        jf_seed                     = job.get("seed")
-        jf_seed_file                = get_str(job.get("seed-file"))
-        jf_count                    = job.get("count")
-        jf_repeats                  = job.get("repeats")
-        jf_seeds_not_all_running    = job.get("seeds-not-all-running")
+            JobField("clean-start", "clean_start", parse=parse_optional_bool, accept=lambda v: v is not None),
+            JobField("re-run-seeds", "re_run_seeds", parse=parse_optional_bool, accept=lambda v: v is not None),
+            JobField("log-level", "log_level", parse=parse_optional_str),
+            JobField("default-scheduler", "default_scheduler", parse=parse_optional_bool, accept=lambda v: v is not None),
 
-        jf_save_solver_stats        = coerce_bool(job.get("save-solver-stats"), default=None)
-        jf_save_scheduler_logs      = coerce_bool(job.get("save-scheduler-logs"), default=None)
+            JobField("seed-file", "seed_file", parse=parse_optional_str),
+            JobField("seed", "seed", parse=parse_optional_int, accept=lambda v: isinstance(v, int)),
+            JobField("count", "count", parse=parse_optional_int, accept=lambda v: isinstance(v, int)),
+            JobField("repeats", "repeats", parse=parse_optional_int, accept=lambda v: isinstance(v, int)),
+            JobField("seeds-not-all-running", "seeds_not_all_running", parse=parse_optional_int, accept=lambda v: isinstance(v, int)),
 
-        jf_solver_trigger           = coerce_bool(job.get("solver-trigger"), default=None)
+            JobField("save-solver-stats", "save_solver_stats", parse=parse_optional_bool, accept=lambda v: v is not None),
+            JobField("save-scheduler-logs", "save_scheduler_logs", parse=parse_optional_bool, accept=lambda v: v is not None),
+            JobField("solver-trigger", "solver_trigger", parse=parse_optional_bool, accept=lambda v: v is not None),
+        ]
 
-        jf_override_workload_config = job.get("override-workload-config") or {}
-        jf_override_kwokctl_envs    = job.get("override-kwokctl-envs") or []
+        args = merge_job_fields_into_args(args, job or {}, fields)
 
-        # CLI priority: only fill when CLI value is None
-        if getattr(args, "cluster_name", None) is None and jf_cluster_name:
-            args.cluster_name = jf_cluster_name
-        if getattr(args, "kwok_runtime", None) is None and jf_kwok_runtime:
-            args.kwok_runtime = jf_kwok_runtime
-        if getattr(args, "workload_config_file", None) is None and jf_workload_config_file:
-            args.workload_config_file = jf_workload_config_file
-        if getattr(args, "kwokctl_config_file", None) is None and jf_kwokctl_config_file:
-            args.kwokctl_config_file = jf_kwokctl_config_file
-        if getattr(args, "seed_file", None) is None and jf_seed_file:
-            args.seed_file = jf_seed_file
-        if getattr(args, "seed", None) is None and isinstance(jf_seed, int):
-            args.seed = jf_seed
-        if getattr(args, "count", None) is None and isinstance(jf_count, int):
-            args.count = jf_count
-        if getattr(args, "repeats", None) is None and isinstance(jf_repeats, int):
-            args.repeats = jf_repeats
-        if getattr(args, "output_dir", None) is None and jf_output_dir:
-            args.output_dir = jf_output_dir
-        if getattr(args, "seeds_not_all_running", None) is None and isinstance(jf_seeds_not_all_running, int):
-            args.seeds_not_all_running = jf_seeds_not_all_running
+        override_workload_config = (job or {}).get("override-workload-config") or {}
+        override_kwokctl_envs = (job or {}).get("override-kwokctl-envs") or []
 
-        if getattr(args, "save_solver_stats", None) is None and jf_save_solver_stats is not None:
-            args.save_solver_stats = jf_save_solver_stats
-        if getattr(args, "save_scheduler_logs", None) is None and jf_save_scheduler_logs is not None:
-            args.save_scheduler_logs = jf_save_scheduler_logs
-        if getattr(args, "log_level", None) is None and jf_log_level:
-            args.log_level = jf_log_level
-        if getattr(args, "default_scheduler", None) is None and jf_default_scheduler is not None:
-            args.default_scheduler = jf_default_scheduler
-        if getattr(args, "solver_trigger", None) is None and jf_solver_trigger is not None:
-            args.solver_trigger = jf_solver_trigger
-        if getattr(args, "clean_start", None) is None and jf_clean_start is not None:
-            args.clean_start = jf_clean_start
-        if getattr(args, "re_run_seeds", None) is None and jf_re_run_seeds is not None:
-            args.re_run_seeds = jf_re_run_seeds
-
-        return args, {"workload_config": jf_override_workload_config, "kwokctl_envs": jf_override_kwokctl_envs}
+        return args, {"workload_config": override_workload_config, "kwokctl_envs": override_kwokctl_envs}
 
     @staticmethod
     def _get_kwokctl_envs(doc: dict, component: str = "kube-scheduler") -> dict[str, object] | None:
@@ -1245,6 +1218,7 @@ class TestRunner:
         cm = self._get_latest_configmap(
             self.ctx, CM_SOLVER_STATS_NAMESPACE, CM_SOLVER_STATS_NAME,
             accept_prefix=True, label_selector=None,
+            runner=self.runner, clock=self.clock
         )
         if cm is None:
             return baseline_score, best_name, attempts, error
@@ -1278,6 +1252,7 @@ class TestRunner:
         cm_obj = self._get_latest_configmap(
             self.ctx, CM_SOLVER_STATS_NAMESPACE, CM_SOLVER_STATS_NAME,
             accept_prefix=True, label_selector=None,
+            runner=self.runner, clock=self.clock,
         )
         if cm_obj is None:
             LOG.warning("no config map matching %r found in ns=%r; skipping solver-stats dump",
@@ -1308,17 +1283,25 @@ class TestRunner:
         accept_prefix: bool = True,
         retries: int = 10,
         sleep_seconds: float = 0.5,
+        runner: Runner | None = None,
+        clock=None,
     ) -> Optional[Dict[str, Any]]:
         """
         Get the latest ConfigMap in the given namespace matching base_name or label_selector.
         If no match is found (or kubectl fails), retry up to `retries` times with a pause in between.
         """
+        sleep_fn = getattr(clock, "sleep", None) if clock is not None else None
+        if sleep_fn is None:
+            sleep_fn = time.sleep
+        
+        run_fn: Runner = runner or subprocess.run
+
         def _run_once() -> Optional[Dict[str, Any]]:
             args = ["kubectl", "--context", ctx, "-n", ns, "get", "cm"]
             if label_selector:
                 args += ["-l", label_selector]
             args += ["-o", "json"]
-            r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            r = run_fn(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
             if r.returncode != 0:
                 return None
             try:
@@ -1353,36 +1336,19 @@ class TestRunner:
             if result is not None:
                 return result
             if i < attempts - 1:
-                time.sleep(sleep_seconds)
+                sleep_fn(sleep_seconds)
 
         return None
 
     def _save_scheduler_logs(self, seed: int, run_idx: int = 1) -> None:
-        """
-        Save scheduler logs for the current KWOK cluster to output_dir/scheduler-logs.
-        File: <output-dir>/scheduler-logs/scheduler-logs_seed-<seed>_run-<run_idx>.log
-        """
         self.scheduler_logs_dir.mkdir(parents=True, exist_ok=True)
         out_path = self.scheduler_logs_dir / f"sched_logs_seed-{seed}_run-{run_idx}.log"
-        if out_path.exists():
-            try:
-                out_path.unlink()
-                LOG.info("pruned existing scheduler log (collision on run_idx): %s", out_path.name)
-            except OSError as e:
-                LOG.warning("failed pruning existing scheduler log %s: %s", out_path.name, e)
-        try:
-            r = subprocess.run(
-                ["kwokctl", "logs", "kube-scheduler", "--name", self.args.cluster_name],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-            data = r.stdout or b""
-            with open(out_path, "wb") as fh:
-                fh.write(data)
-            LOG.info("saved scheduler logs to %s", out_path)
-        except Exception as e:
-            LOG.warning("failed saving scheduler logs: %s", e)
+        save_kwok_scheduler_logs(
+            self.args.cluster_name,
+            out_path,
+            runner=self.runner,
+            logger=LOG,
+        )
 
     @staticmethod
     def _build_node_info(names: list[str], cap_cpu_m: int, cap_mem_b: int) -> str:

@@ -8,6 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Any
 
+from scripts.helpers.job_helpers import (
+    JobField,
+    merge_job_fields_into_args as _merge_job_fields_into_args,
+    parse_optional_str,
+    parse_optional_float,
+    parse_optional_bool,
+)
 from scripts.helpers.general_helpers import (
     setup_logging,
     make_header_footer,
@@ -16,11 +23,10 @@ from scripts.helpers.general_helpers import (
     qty_to_mcpu_str,
     qty_to_bytes_int,
     qty_to_bytes_str,
-    log_field_fmt,
-    log_kv_block,
     build_cli_cmd,
     write_info_file,
-    get_str,
+    SystemClock, Runner, Clock,
+    log_args_block
 )
 from scripts.helpers.kubectl_helpers import (
     kubectl_apply_yaml,
@@ -35,6 +41,7 @@ from scripts.helpers.kwokctl_helpers import (
     ensure_kwok_cluster,
     kwok_pods_cap,
     merge_kwokctl_envs,
+    save_kwok_scheduler_logs,
 )
 from scripts.kwok_trace_replayer.trace_helpers import (
     TraceRecord,
@@ -150,50 +157,34 @@ def merge_job_fields_into_args(
     job: Dict[str, Any],
 ) -> tuple[argparse.Namespace, List[Dict[str, Any]]]:
     """
-    Merge job-file fields into args.
-    CLI has priority: we only fill fields that are currently None.
+    Merge job-file fields into args. CLI has priority.
     Returns (args, override_kwokctl_envs).
     """
-    jf_trace_dir            = get_str(job.get("trace-dir"))
-    jf_cluster_name         = get_str(job.get("cluster-name"))
-    jf_kwok_runtime         = get_str(job.get("kwok-runtime"))
-    jf_kwokctl_config_file  = get_str(job.get("kwokctl-config-file"))
-    jf_namespace            = get_str(job.get("namespace"))
-    jf_node_cpu             = get_str(job.get("node-cpu"))
-    jf_node_mem             = get_str(job.get("node-mem"))
-    jf_monitor_interval     = job.get("monitor-interval")
-    jf_log_level            = get_str(job.get("log-level"))
-    jf_result_dir           = get_str(job.get("result-dir"))
-    jf_save_scheduler_logs  = job.get("save-scheduler-logs")
-    jf_override_kwokctl_envs = job.get("override-kwokctl-envs") or []
+    def _parse_optional_bool_strict(v: Any) -> bool | None:
+        return v if isinstance(v, bool) else None
 
-    if getattr(args, "trace_dir", None) is None and jf_trace_dir:
-        args.trace_dir = jf_trace_dir
-    if getattr(args, "cluster_name", None) is None and jf_cluster_name:
-        args.cluster_name = jf_cluster_name
-    if getattr(args, "kwok_runtime", None) is None and jf_kwok_runtime:
-        args.kwok_runtime = jf_kwok_runtime
-    if getattr(args, "kwokctl_config_file", None) is None and jf_kwokctl_config_file:
-        args.kwokctl_config_file = jf_kwokctl_config_file
-    if getattr(args, "namespace", None) is None and jf_namespace:
-        args.namespace = jf_namespace
-    if getattr(args, "node_cpu", None) is None and jf_node_cpu:
-        args.node_cpu = jf_node_cpu
-    if getattr(args, "node_mem", None) is None and jf_node_mem:
-        args.node_mem = jf_node_mem
-    if getattr(args, "log_level", None) is None and jf_log_level:
-        args.log_level = jf_log_level
-    if getattr(args, "monitor_interval", None) is None and jf_monitor_interval is not None:
-        try:
-            args.monitor_interval = float(jf_monitor_interval)
-        except Exception:
-            pass
-    if getattr(args, "result_dir", None) is None and jf_result_dir:
-        args.result_dir = jf_result_dir
-    if getattr(args, "save_scheduler_logs", None) is None and isinstance(jf_save_scheduler_logs, bool):
-        args.save_scheduler_logs = jf_save_scheduler_logs
-
-    return args, jf_override_kwokctl_envs
+    fields = [
+        JobField("trace-dir", "trace_dir", parse=parse_optional_str),
+        JobField("cluster-name", "cluster_name", parse=parse_optional_str),
+        JobField("kwok-runtime", "kwok_runtime", parse=parse_optional_str),
+        JobField("kwokctl-config-file", "kwokctl_config_file", parse=parse_optional_str),
+        JobField("namespace", "namespace", parse=parse_optional_str),
+        JobField("node-cpu", "node_cpu", parse=parse_optional_str),
+        JobField("node-mem", "node_mem", parse=parse_optional_str),
+        JobField("monitor-interval", "monitor_interval", parse=parse_optional_float),
+        JobField("log-level", "log_level", parse=parse_optional_str),
+        JobField("result-dir", "result_dir", parse=parse_optional_str),
+        # only accept real bools for this one (matches your prior behavior)
+        JobField(
+            "save-scheduler-logs",
+            "save_scheduler_logs",
+            parse=_parse_optional_bool_strict,
+            accept=lambda v: isinstance(v, bool),
+        ),
+    ]
+    args = _merge_job_fields_into_args(args, job or {}, fields)
+    override_envs = (job or {}).get("override-kwokctl-envs") or []
+    return args, override_envs
 
 def ensure_default_args(args: argparse.Namespace) -> argparse.Namespace:
     """
@@ -249,6 +240,7 @@ class TraceReplayer:
         args: argparse.Namespace,
         job_doc: Dict[str, Any] | None = None,
         override_kwokctl_envs: List[Dict[str, Any]] | None = None,
+        runner: Runner = subprocess.run, clock: Clock | None = None,
     ) -> None:
         self.args = args
         self.job_doc: Dict[str, Any] = job_doc or {}
@@ -280,6 +272,16 @@ class TraceReplayer:
         self.events: List[Event] = []
         self.prio_by_identity: Dict[str, int] = {} # pod identity -> priority
         
+        # Runner + clock
+        # Unit tests monkeypatch this module's subprocess.run after constructing
+        # TraceReplayer. If we store the function object directly, later
+        # monkeypatches won't be observed.
+        if runner is subprocess.run:
+            self.runner = lambda *a, **k: subprocess.run(*a, **k)
+        else:
+            self.runner = runner
+        self.clock = clock or SystemClock()
+        
         # Write metadata bundle
         LOG.info("logging arguments and git info to trace_dir...")
         self._write_info_file()
@@ -291,24 +293,12 @@ class TraceReplayer:
     # ------------ Info/logging helpers ----------
     ##############################################
     def log_args(self) -> None:
-        """
-        Log the main arguments.
-        """
-        fields = [
-            ("trace_dir", self.args.trace_dir),
-            ("cluster_name", self.args.cluster_name),
-            ("kwok_runtime", self.args.kwok_runtime),
-            ("kwokctl_config_file", self.args.kwokctl_config_file),
-            ("namespace", self.args.namespace),
-            ("node_cpu", self.args.node_cpu),
-            ("node_mem", self.args.node_mem),
-            ("monitor_interval", self.args.monitor_interval),
-            ("result_dir", getattr(self.args, "result_dir", None)),
-            ("log_level", self.args.log_level),
-            ("save_scheduler_logs", getattr(self.args, "save_scheduler_logs", None)),
-            ("job_file", getattr(self.args, "job_file", None)),
+        include = [
+            "trace_dir", "cluster_name", "kwok_runtime", "kwokctl_config_file",
+            "namespace", "node_cpu", "node_mem", "monitor_interval",
+            "result_dir", "log_level", "save_scheduler_logs", "job_file",
         ]
-        log_kv_block(LOG, "ARGS", fields)
+        log_args_block(LOG, self.args, title="ARGS", include=include)
 
     def _write_info_file(self) -> None:
         """
@@ -336,33 +326,14 @@ class TraceReplayer:
             LOG.warning("failed to write info_replayer.yaml: %s", e)
 
     def _save_scheduler_logs(self) -> None:
-        """
-        Save scheduler logs for the current KWOK cluster to
-        <result-dir>/scheduler-logs/sched_logs.log.
-        """
         sched_dir = self.results_dir / "scheduler-logs"
-        sched_dir.mkdir(parents=True, exist_ok=True)
         out_path = sched_dir / "sched_logs.log"
-        # If file exists from a previous run, prune it
-        if out_path.exists():
-            try:
-                out_path.unlink()
-                LOG.info("pruned existing scheduler log: %s", out_path)
-            except OSError as e:
-                LOG.warning("failed pruning existing scheduler log %s: %s", out_path, e)
-        try:
-            r = subprocess.run(
-                ["kwokctl", "logs", "kube-scheduler", "--name", self.args.cluster_name],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-            data = r.stdout or b""
-            with open(out_path, "wb") as fh:
-                fh.write(data)
-            LOG.info("saved scheduler logs to %s", out_path)
-        except Exception as e:
-            LOG.warning("failed saving scheduler logs: %s", e)
+        save_kwok_scheduler_logs(
+            self.args.cluster_name,
+            out_path,
+            runner=self.runner,
+            logger=LOG,
+        )
 
     ##############################################
     # ------------ Replay helpers ----------------

@@ -4,7 +4,10 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Dict, Any, List
-from scripts.kwok_trace_replayer.trace_helpers import plot_histogram_with_pareto, plot_bar_with_geometric
+from scripts.kwok_trace_replayer.plot_helpers import (
+    plot_histogram_with_pareto,
+    plot_bar_with_geometric,
+)
 
 # ----------------------------------------------------------------------
 # CONFIG

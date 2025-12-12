@@ -4,6 +4,7 @@
 import argparse
 import ast
 import csv
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ def iter_files(
     suffix: str,
     skip_dirs: set[str],
 ) -> Iterator[Path]:
+    skip_dirs_lower = {d.lower() for d in skip_dirs}
     for root in roots:
         root = root.resolve()
         if root.is_file():
@@ -41,7 +43,7 @@ def iter_files(
             continue
         for dirpath, dirnames, filenames in os.walk(root):
             # Mutate dirnames in-place to prune traversal.
-            dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+            dirnames[:] = [d for d in dirnames if d.lower() not in skip_dirs_lower]
             for fn in filenames:
                 if fn.endswith(suffix):
                     yield Path(dirpath) / fn
@@ -167,8 +169,6 @@ def line_for_offset(src: str, offset: int) -> int:
 @dataclass(frozen=True)
 class GoFunc:
     name: str
-    receiver: str
-    is_method: bool
     file: Path
     line: int
 
@@ -184,10 +184,13 @@ def scan_go_functions(files: Iterable[Path]) -> list[GoFunc]:
         src = strip_go_comments(raw)
         for m in _GO_FUNC_RE.finditer(src):
             name = m.group("name") or ""
-            recv = (m.group("recv") or "").strip()
-            is_method = bool(recv)
+            # Defensive: the regex can match patterns like:
+            #   func (x *T) func(...) { ... }
+            # where "func" is NOT a valid identifier (it's a keyword).
+            if name == "func":
+                continue
             ln = line_for_offset(src, m.start())
-            results.append(GoFunc(name=name, receiver=recv, is_method=is_method, file=p, line=ln))
+            results.append(GoFunc(name=name, file=p, line=ln))
     return results
 
 
@@ -276,7 +279,8 @@ def scan_python_functions(files: Iterable[Path]) -> list[PyFunc]:
 
 
 def scan_python_test_names(files: Iterable[Path]) -> set[str]:
-    # Track function names as they appear in test modules (top-level + methods).
+    # Track pytest test function/method names as they appear in test modules.
+    # For pytest, we treat names starting with "test_" as tests.
     names: set[str] = set()
     for p in files:
         try:
@@ -290,11 +294,13 @@ def scan_python_test_names(files: Iterable[Path]) -> set[str]:
 
         class Visitor(ast.NodeVisitor):
             def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-                names.add(node.name)
+                if node.name.startswith("test_"):
+                    names.add(node.name)
                 self.generic_visit(node)
 
             def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-                names.add(node.name)
+                if node.name.startswith("test_"):
+                    names.add(node.name)
                 self.generic_visit(node)
 
         Visitor().visit(tree)
@@ -313,16 +319,27 @@ def write_go_csv(
     test_names: set[str],
     repo_root: Path,
 ) -> None:
+    def _exported_name(name: str) -> str:
+        if not name:
+            return name
+        c0 = name[0]
+        # Go exports identifiers by uppercasing the first rune.
+        return (c0.upper() + name[1:]) if c0.isalpha() and c0.islower() else name
+
+    def _all_matching_tests(prefix: str) -> list[str]:
+        # Accept exact match and any test that starts with the prefix
+        # (common pattern: TestFoo_BarBaz).
+        return sorted([t for t in test_names if t.startswith(prefix)])
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow([
             "file",
             "function",
-            "receiver",
-            "is_method",
             "line",
             "expected_test",
+            "matched_tests",
             "has_test",
         ])
         for fn in sorted(
@@ -333,16 +350,17 @@ def write_go_csv(
                 x.line,
             ),
         ):
-            expected = f"Test{fn.name}"
+            # Most Go tests use exported-style names even for unexported funcs.
+            expected = f"Test{_exported_name(fn.name)}"
+            matches = _all_matching_tests(expected)
             rel_file = str(fn.file.resolve().relative_to(repo_root).as_posix())
             w.writerow([
                 rel_file,
                 fn.name,
-                fn.receiver,
-                "1" if fn.is_method else "0",
                 fn.line,
                 expected,
-                "1" if expected in test_names else "0",
+                json.dumps(matches, separators=(",", ":")),
+                "1" if matches else "0",
             ])
 
 
@@ -352,17 +370,23 @@ def write_python_csv(
     test_names: set[str],
     repo_root: Path,
 ) -> None:
+    def _all_matching_pytest_tests(expected: str) -> list[str]:
+        # Accept exact match, or parametrized/suffixed variants like:
+        #   test_foo_bar
+        # when expected is:
+        #   test_foo
+        prefix = expected + "_"
+        return sorted([t for t in test_names if t == expected or t.startswith(prefix)])
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow([
             "file",
             "qualname",
-            "function",
-            "is_method",
             "line",
             "expected_test_pytest",
-            "expected_test_unittest",
+            "matched_tests",
             "has_test",
         ])
         for fn in sorted(
@@ -374,18 +398,21 @@ def write_python_csv(
                 x.line,
             ),
         ):
-            expected_pytest = f"test_{fn.name}"
-            expected_unittest = f"Test{fn.name}"
-            has = (expected_pytest in test_names) or (expected_unittest in test_names)
+            base_name = fn.name
+            # Avoid expecting test__foo for helpers named _foo; pytest tests are
+            # typically named test_foo.
+            if base_name.startswith("_"):
+                base_name = base_name.lstrip("_")
+            expected_pytest = f"test_{base_name}" if base_name else ""
+            matches = _all_matching_pytest_tests(expected_pytest) if expected_pytest else []
+            has = bool(matches)
             rel_file = str(fn.file.resolve().relative_to(repo_root).as_posix())
             w.writerow([
                 rel_file,
                 fn.qualname,
-                fn.name,
-                "1" if fn.is_method else "0",
                 fn.line,
                 expected_pytest,
-                expected_unittest,
+                json.dumps(matches, separators=(",", ":")),
                 "1" if has else "0",
             ])
 
@@ -399,9 +426,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Scan Go/Python functions and test coverage naming.")
 
     ap.add_argument("--go-dir", action="append", default=[], help="Root dir/file to scan for Go functions (repeatable)")
-    ap.add_argument("--go-test-dir", action="append", default=[], help="Root dir/file to scan for Go test funcs (repeatable)")
     ap.add_argument("--py-dir", action="append", default=[], help="Root dir/file to scan for Python functions (repeatable)")
-    ap.add_argument("--py-test-dir", action="append", default=[], help="Root dir/file to scan for Python test funcs (repeatable)")
 
     ap.add_argument("--out-go", default="audit_go_functions.csv", help="Output CSV path for Go results")
     ap.add_argument("--out-py", default="audit_py_functions.csv", help="Output CSV path for Python results")
@@ -423,29 +448,38 @@ def main(argv: Optional[list[str]] = None) -> int:
     skip_dirs = set(DEFAULT_SKIP_DIRS) | set(args.skip_dir or [])
 
     go_roots = [Path(p) for p in (args.go_dir or [])]
-    go_test_roots = [Path(p) for p in (args.go_test_dir or [])]
     py_roots = [Path(p) for p in (args.py_dir or [])]
-    py_test_roots = [Path(p) for p in (args.py_test_dir or [])]
+
+    if not go_roots:
+        raise SystemExit("--go-dir is required (at least one)")
+    if not py_roots:
+        raise SystemExit("--py-dir is required (at least one)")
 
     # Go
-    go_files = list(iter_files(go_roots, suffix=".go", skip_dirs=skip_dirs))
-    go_funcs = scan_go_functions(go_files)
-
-    go_test_files = list(iter_files(go_test_roots, suffix=".go", skip_dirs=skip_dirs))
+    go_all_files = list(iter_files(go_roots, suffix=".go", skip_dirs=skip_dirs))
+    go_test_files = [p for p in go_all_files if p.name.endswith("_test.go")]
+    go_prod_files = [p for p in go_all_files if not p.name.endswith("_test.go")]
+    go_funcs = scan_go_functions(go_prod_files)
     go_test_names = scan_go_test_names(go_test_files)
 
     # Python
-    py_files = list(iter_files(py_roots, suffix=".py", skip_dirs=skip_dirs))
-    py_funcs = scan_python_functions(py_files)
-
-    py_test_files = list(iter_files(py_test_roots, suffix=".py", skip_dirs=skip_dirs))
+    py_all_files = list(iter_files(py_roots, suffix=".py", skip_dirs=skip_dirs))
+    py_test_files = [p for p in py_all_files if p.name.startswith("test_")]
+    py_prod_files = [p for p in py_all_files if not p.name.startswith("test_")]
+    py_funcs = scan_python_functions(py_prod_files)
     py_test_names = scan_python_test_names(py_test_files)
 
     write_go_csv(Path(args.out_go), go_funcs, go_test_names, repo_root)
     write_python_csv(Path(args.out_py), py_funcs, py_test_names, repo_root)
 
-    print(f"Go files scanned: {len(go_files)}; functions found: {len(go_funcs)}; go test symbols: {len(go_test_names)}")
-    print(f"Python files scanned: {len(py_files)}; functions found: {len(py_funcs)}; py test symbols: {len(py_test_names)}")
+    print(
+        f"Go files scanned: {len(go_all_files)} (prod={len(go_prod_files)}, test={len(go_test_files)}); "
+        f"functions found: {len(go_funcs)}; go test symbols: {len(go_test_names)}"
+    )
+    print(
+        f"Python files scanned: {len(py_all_files)} (prod={len(py_prod_files)}, test={len(py_test_files)}); "
+        f"functions found: {len(py_funcs)}; py test symbols: {len(py_test_names)}"
+    )
     print(f"Wrote: {args.out_go}")
     print(f"Wrote: {args.out_py}")
     return 0
