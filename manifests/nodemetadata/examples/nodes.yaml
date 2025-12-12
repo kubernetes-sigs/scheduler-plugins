@@ -1,0 +1,112 @@
+# Example 1: Nodes with priority labels
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: high-priority-node
+  labels:
+    node.example.com/priority: "100"
+    kubernetes.io/hostname: high-priority-node
+spec:
+  # ... node spec ...
+
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: medium-priority-node
+  labels:
+    node.example.com/priority: "50"
+    kubernetes.io/hostname: medium-priority-node
+spec:
+  # ... node spec ...
+
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: low-priority-node
+  labels:
+    node.example.com/priority: "25"
+    kubernetes.io/hostname: low-priority-node
+spec:
+  # ... node spec ...
+
+# Example 2: Nodes with cost annotations
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: cheap-node
+  annotations:
+    node.example.com/hourly-cost: "0.5"
+  labels:
+    kubernetes.io/hostname: cheap-node
+spec:
+  # ... node spec ...
+
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: expensive-node
+  annotations:
+    node.example.com/hourly-cost: "2.5"
+  labels:
+    kubernetes.io/hostname: expensive-node
+spec:
+  # ... node spec ...
+
+# Example 3: Nodes with maintenance timestamps
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: recently-maintained-node
+  annotations:
+    node.example.com/last-maintenance: "2025-12-03T10:00:00Z"
+  labels:
+    kubernetes.io/hostname: recently-maintained-node
+spec:
+  # ... node spec ...
+
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: old-maintenance-node
+  annotations:
+    node.example.com/last-maintenance: "2025-11-01T10:00:00Z"
+  labels:
+    kubernetes.io/hostname: old-maintenance-node
+spec:
+  # ... node spec ...
+
+# Example 4: Nodes with creation date labels
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: new-node
+  labels:
+    node.example.com/created-at: "2025-12-01"
+    kubernetes.io/hostname: new-node
+spec:
+  # ... node spec ...
+
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: old-stable-node
+  labels:
+    node.example.com/created-at: "2025-10-01"
+    kubernetes.io/hostname: old-stable-node
+spec:
+  # ... node spec ...
+
+# Example 5: Labeling an existing node
+# Use kubectl to add labels/annotations:
+# kubectl label node <node-name> node.example.com/priority=100
+# kubectl annotate node <node-name> node.example.com/hourly-cost=1.5
+# kubectl annotate node <node-name> node.example.com/last-maintenance=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
