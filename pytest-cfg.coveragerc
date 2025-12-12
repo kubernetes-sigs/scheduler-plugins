@@ -6,7 +6,6 @@ omit =
     scripts/helpers/job*
     scripts/kwok_integration_tests/*
     scripts/kwok_integration_tests/**
-    scripts/kwok_trace_replayer/*
     scripts/kwok_workload_once/plots_and_tables.py
     */__init__.py
     **/__init__.py

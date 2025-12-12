@@ -555,10 +555,10 @@ def test_get_solver_active_status_http_connect_failure(monkeypatch):
     assert "connect-failed" in body
 
 def test_prio_map_and_place_compare():
-    assert cr.prio_map(None) == {}
-    assert cr.prio_map({"p1": 2, "2": 3}) == {1: 2, 2: 3}
-    assert cr.prio_map('{"p1": 2, "p2": 0}') == {1: 2, 2: 0}
+    assert gh.prio_map(None) == {}
+    assert gh.prio_map({"p1": 2, "2": 3}) == {1: 2, 2: 3}
+    assert gh.prio_map('{"p1": 2, "p2": 0}') == {1: 2, 2: 0}
 
-    assert cr.place_compare({2: 1}, {2: 0}) == 1
-    assert cr.place_compare({2: 0}, {2: 1}) == -1
-    assert cr.place_compare({2: 0, 1: 1}, {2: 0, 1: 1}) == 0
+    assert gh.place_compare({2: 1}, {2: 0}) == 1
+    assert gh.place_compare({2: 0}, {2: 1}) == -1
+    assert gh.place_compare({2: 0, 1: 1}, {2: 0, 1: 1}) == 0

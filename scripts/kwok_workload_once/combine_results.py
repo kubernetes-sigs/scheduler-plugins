@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from scripts.helpers.general_helpers import (
     cmp_placed_by_prio_row,
     parse_json_cell,
+    strip_outer_quotes,
 )
 
 import pandas as pd
