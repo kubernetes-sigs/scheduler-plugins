@@ -3,38 +3,24 @@ package mypriorityoptimizer
 
 import "testing"
 
-// -------------------------
-// msg
-// -------------------------
-
-func TestMsg_Basic(t *testing.T) {
-	got := msg("solver", "started")
-	want := "solver: started"
-	if got != want {
-		t.Fatalf("msg() = %q, want %q", got, want)
+func TestMsg(t *testing.T) {
+	tests := []struct {
+		name      string
+		messenger string
+		message   string
+		want      string
+	}{
+		{"basic", "solver", "started", "solver: started"},
+		{"empty messenger", "", "no owner", ": no owner"},
+		{"empty message", "scheduler", "", "scheduler: "},
+		{"unicode", "øæå", "✔", "øæå: ✔"},
 	}
-}
 
-func TestMsg_EmptyMessenger(t *testing.T) {
-	got := msg("", "no owner")
-	want := ": no owner"
-	if got != want {
-		t.Fatalf("msg() with empty messenger = %q, want %q", got, want)
-	}
-}
-
-func TestMsg_EmptyMessage(t *testing.T) {
-	got := msg("scheduler", "")
-	want := "scheduler: "
-	if got != want {
-		t.Fatalf("msg() with empty message = %q, want %q", got, want)
-	}
-}
-
-func TestMsg_Unicode(t *testing.T) {
-	got := msg("øæå", "✔")
-	want := "øæå: ✔"
-	if got != want {
-		t.Fatalf("msg() with unicode = %q, want %q", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := msg(tt.messenger, tt.message); got != tt.want {
+				t.Fatalf("msg(%q,%q) = %q, want %q", tt.messenger, tt.message, got, tt.want)
+			}
+		})
 	}
 }
