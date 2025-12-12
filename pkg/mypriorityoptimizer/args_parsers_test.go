@@ -13,14 +13,14 @@ import (
 func TestGetEnv(t *testing.T) {
 	t.Run("returns existing value", func(t *testing.T) {
 		t.Setenv("TEST_KEY", "value")
-		got := getenv("TEST_KEY", "default")
+		got := getEnv("TEST_KEY", "default")
 		if got != "value" {
 			t.Fatalf("getenv() = %q, want %q", got, "value")
 		}
 	})
 
 	t.Run("returns default when unset", func(t *testing.T) {
-		got := getenv("UNSET_KEY", "default")
+		got := getEnv("UNSET_KEY", "default")
 		if got != "default" {
 			t.Fatalf("getenv() = %q, want %q", got, "default")
 		}
@@ -28,7 +28,7 @@ func TestGetEnv(t *testing.T) {
 
 	t.Run("returns default when set to empty string", func(t *testing.T) {
 		t.Setenv("EMPTY_KEY", "")
-		got := getenv("EMPTY_KEY", "default")
+		got := getEnv("EMPTY_KEY", "default")
 		if got != "default" {
 			t.Fatalf("getenv() with empty value = %q, want %q", got, "default")
 		}

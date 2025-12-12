@@ -14,8 +14,9 @@ import (
 // getenv
 // -------------------------
 
-// getenv retrieves value of an environment variable or returns a default value
-func getenv(key, def string) string {
+// getEnv retrieves value of an environment variable or returns a default value
+// CHECKED
+func getEnv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
