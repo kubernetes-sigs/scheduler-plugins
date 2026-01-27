@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,7 +43,7 @@ import (
 // PodGroupReconciler reconciles a PodGroup object
 type PodGroupReconciler struct {
 	log      logr.Logger
-	recorder record.EventRecorder
+	recorder events.EventRecorder
 
 	client.Client
 	Scheme  *runtime.Scheme
@@ -84,8 +84,8 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// do not reconcile again because pod may have been GCed
 	if (pg.Status.Phase == schedv1alpha1.PodGroupScheduling || pg.Status.Phase == schedv1alpha1.PodGroupPending) && pg.Status.Running == 0 &&
 		pg.Status.ScheduleStartTime.Sub(pg.CreationTimestamp.Time) > 48*time.Hour {
-		r.recorder.Event(pg, v1.EventTypeWarning,
-			"Timeout", "schedule time longer than 48 hours")
+		r.recorder.Eventf(pg, nil, v1.EventTypeWarning,
+			"Timeout", "TimeoutCR", "schedule time longer than 48 hours")
 		return ctrl.Result{}, nil
 	}
 
@@ -187,7 +187,7 @@ func fillOccupiedObj(pg *schedv1alpha1.PodGroup, pod *v1.Pod) {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor("PodGroupController")
+	r.recorder = mgr.GetEventRecorder("PodGroupController")
 	r.log = mgr.GetLogger()
 
 	return ctrl.NewControllerManagedBy(mgr).

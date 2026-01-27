@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	quota "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,7 +37,7 @@ import (
 )
 
 type ElasticQuotaReconciler struct {
-	recorder record.EventRecorder
+	recorder events.EventRecorder
 
 	client.Client
 	Scheme  *runtime.Scheme
@@ -84,7 +84,7 @@ func (r *ElasticQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err = r.patchElasticQuota(ctx, eq, newEQ); err != nil {
 		return ctrl.Result{}, err
 	}
-	r.recorder.Event(eq, v1.EventTypeNormal, "Synced", fmt.Sprintf("Elastic Quota %s synced successfully", req.NamespacedName))
+	r.recorder.Eventf(eq, nil, v1.EventTypeNormal, "Synced", "SyncCR", fmt.Sprintf("Elastic Quota %s synced successfully", req.NamespacedName))
 	return ctrl.Result{}, nil
 }
 
@@ -169,7 +169,7 @@ func newZeroUsed(eq *schedv1alpha1.ElasticQuota) v1.ResourceList {
 }
 
 func (r *ElasticQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.recorder = mgr.GetEventRecorderFor("ElasticQuotaController")
+	r.recorder = mgr.GetEventRecorder("ElasticQuotaController")
 	return ctrl.NewControllerManagedBy(mgr).
 		Watches(&v1.Pod{}, &handler.EnqueueRequestForObject{}).
 		For(&schedv1alpha1.ElasticQuota{}).
