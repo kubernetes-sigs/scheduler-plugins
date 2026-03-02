@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	quota "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -261,7 +261,7 @@ func setUpEQ(ctx context.Context,
 	controller := &ElasticQuotaReconciler{
 		Client:   client,
 		Scheme:   s,
-		recorder: record.NewFakeRecorder(3),
+		recorder: events.NewFakeRecorder(3),
 	}
 
 	return controller, client

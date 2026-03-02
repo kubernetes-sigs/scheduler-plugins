@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2/klogr"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 
@@ -293,7 +293,7 @@ func setUp(ctx context.Context,
 	controller := &PodGroupReconciler{
 		Client:   client,
 		Scheme:   s,
-		recorder: record.NewFakeRecorder(3),
+		recorder: events.NewFakeRecorder(3),
 
 		log: klogr.New().WithName("podGroupTest"),
 	}
