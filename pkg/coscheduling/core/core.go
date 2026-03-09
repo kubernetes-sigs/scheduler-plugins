@@ -74,6 +74,8 @@ type Manager interface {
 	DeletePermittedPodGroup(context.Context, string)
 	ActivateSiblings(ctx context.Context, pod *corev1.Pod, state fwk.CycleState)
 	BackoffPodGroup(string, time.Duration)
+	MarkPodGroupScheduleFailure(string)
+	ClearPodGroupScheduleFailure(string)
 }
 
 // PodGroupManager defines the scheduling operation called
@@ -89,6 +91,9 @@ type PodGroupManager struct {
 	permittedPG *gocache.Cache
 	// backedOffPG stores the podgorup name which failed scheudling recently.
 	backedOffPG *gocache.Cache
+	// lastFailedSchedulePG stores the last time a PodGroup's scheduling attempt failed.
+	// Used by GetCreationTimestamp to prevent head-of-line blocking.
+	lastFailedSchedulePG *gocache.Cache
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	// assignedPodsByPG stores the pods assumed or bound for podgroups
@@ -128,6 +133,7 @@ func NewPodGroupManager(client client.Client, snapshotSharedLister framework.Sha
 		podLister:            podInformer.Lister(),
 		permittedPG:          gocache.New(3*time.Second, 3*time.Second),
 		backedOffPG:          gocache.New(10*time.Second, 10*time.Second),
+		lastFailedSchedulePG: gocache.New(30*time.Minute, 10*time.Minute),
 		assignedPodsByPG:     map[string]sets.Set[string]{},
 	}
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -170,6 +176,19 @@ func (pgMgr *PodGroupManager) BackoffPodGroup(pgName string, backoff time.Durati
 		return
 	}
 	pgMgr.backedOffPG.Add(pgName, nil, backoff)
+}
+
+// MarkPodGroupScheduleFailure records the current time as the last scheduling failure
+// for the given PodGroup. This timestamp is used by GetCreationTimestamp to prevent
+// head-of-line blocking in the scheduling queue.
+func (pgMgr *PodGroupManager) MarkPodGroupScheduleFailure(pgName string) {
+	pgMgr.lastFailedSchedulePG.Set(pgName, time.Now(), gocache.DefaultExpiration)
+}
+
+// ClearPodGroupScheduleFailure removes the scheduling failure record for the given PodGroup,
+// so it no longer carries a sort penalty in the scheduling queue.
+func (pgMgr *PodGroupManager) ClearPodGroupScheduleFailure(pgName string) {
+	pgMgr.lastFailedSchedulePG.Delete(pgName)
 }
 
 // ActivateSiblings stashes the pods belonging to the same PodGroup of the given pod
@@ -332,10 +351,18 @@ func (pgMgr *PodGroupManager) Unreserve(ctx context.Context, pod *corev1.Pod) {
 }
 
 // GetCreationTimestamp returns the creation time of a podGroup or a pod.
+// If the PodGroup has failed scheduling recently, the failure timestamp is returned
+// instead of the immutable CreationTimestamp, to prevent head-of-line blocking.
 func (pgMgr *PodGroupManager) GetCreationTimestamp(ctx context.Context, pod *corev1.Pod, ts time.Time) time.Time {
 	pgName := util.GetPodGroupLabel(pod)
 	if len(pgName) == 0 {
 		return ts
+	}
+	pgFullName := fmt.Sprintf("%v/%v", pod.Namespace, pgName)
+	// If PodGroup has failed scheduling recently, use the failure timestamp
+	// to prevent head-of-line blocking.
+	if lastFailed, exist := pgMgr.lastFailedSchedulePG.Get(pgFullName); exist {
+		return lastFailed.(time.Time)
 	}
 	var pg v1alpha1.PodGroup
 	if err := pgMgr.client.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pgName}, &pg); err != nil {

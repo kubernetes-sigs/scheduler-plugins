@@ -534,6 +534,72 @@ func TestPermit(t *testing.T) {
 	}
 }
 
+func TestLessAfterScheduleFailure(t *testing.T) {
+	highPriority := int32(100)
+	now := time.Now()
+
+	// PG1 is older (created 10s ago), PG2 is newer (created 5s ago)
+	pg1 := tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(3).Time(now.Add(-10 * time.Second)).Obj()
+	pg2 := tu.MakePodGroup().Name("pg2").Namespace("ns").MinMember(3).Time(now.Add(-5 * time.Second)).Obj()
+
+	p1 := &framework.QueuedPodInfo{
+		PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p1").Namespace("ns").Priority(highPriority).
+			Label(v1alpha1.PodGroupLabel, "pg1").Obj()),
+		InitialAttemptTimestamp: ptrTime(now),
+	}
+	p2 := &framework.QueuedPodInfo{
+		PodInfo: tu.MustNewPodInfo(t, st.MakePod().Name("p2").Namespace("ns").Priority(highPriority).
+			Label(v1alpha1.PodGroupLabel, "pg2").Obj()),
+		InitialAttemptTimestamp: ptrTime(now),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var objs []runtime.Object
+	objs = append(objs, pg1, pg2)
+
+	client, err := tu.NewFakeClient(objs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := clientsetfake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(cs, 0)
+	podInformer := informerFactory.Core().V1().Pods()
+
+	pgMgr := core.NewPodGroupManager(client, nil, nil, podInformer)
+	pl := &Coscheduling{pgMgr: pgMgr}
+
+	informerFactory.Start(ctx.Done())
+	if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
+		t.Fatal("WaitForCacheSync failed")
+	}
+
+	// Before failure: PG1 (older) sorts before PG2 (newer) → Less(p1, p2) == true
+	if got := pl.Less(p1, p2); !got {
+		t.Errorf("Before failure: expected Less(p1, p2) = true, got false")
+	}
+
+	// Simulate PG1 scheduling failure
+	pgMgr.MarkPodGroupScheduleFailure("ns/pg1")
+
+	// After failure: PG1's effective timestamp is now > PG2's creation timestamp
+	// so PG2 should sort before PG1 → Less(p1, p2) == false
+	if got := pl.Less(p1, p2); got {
+		t.Errorf("After failure: expected Less(p1, p2) = false, got true")
+	}
+	// And Less(p2, p1) should be true
+	if got := pl.Less(p2, p1); !got {
+		t.Errorf("After failure: expected Less(p2, p1) = true, got false")
+	}
+
+	// Clear the failure — PG1 should sort before PG2 again
+	pgMgr.ClearPodGroupScheduleFailure("ns/pg1")
+	if got := pl.Less(p1, p2); !got {
+		t.Errorf("After clear: expected Less(p1, p2) = true, got false")
+	}
+}
+
 func TestPostFilter(t *testing.T) {
 	scheduleTimeout := 10 * time.Second
 	capacity := map[v1.ResourceName]string{

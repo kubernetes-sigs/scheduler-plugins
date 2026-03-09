@@ -171,6 +171,7 @@ func TestPreFilter(t *testing.T) {
 				scheduleTimeout:      &scheduleTimeout,
 				permittedPG:          newCache(),
 				backedOffPG:          newCache(),
+				lastFailedSchedulePG: newCache(),
 				assignedPodsByPG:     make(map[string]sets.Set[string]),
 			}
 
@@ -354,6 +355,62 @@ func TestCheckClusterResource(t *testing.T) {
 				t.Errorf("Expect the cluster resource to be satified: %v, but got %v", tt.want, err == nil)
 			}
 		})
+	}
+}
+
+func TestMarkAndClearPodGroupScheduleFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	now := time.Now()
+	// Truncate to seconds since metav1.Time serialization drops sub-second precision
+	pgCreationTime := now.Add(-10 * time.Second).Truncate(time.Second)
+	pg1 := tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(3).Time(pgCreationTime).Obj()
+
+	var objs []runtime.Object
+	objs = append(objs, pg1)
+
+	client, err := tu.NewFakeClient(objs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cs := clientsetfake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(cs, 0)
+	podInformer := informerFactory.Core().V1().Pods()
+	scheduleTimeout := 10 * time.Second
+
+	pgMgr := NewPodGroupManager(client, nil, &scheduleTimeout, podInformer)
+
+	informerFactory.Start(ctx.Done())
+	if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
+		t.Fatal("WaitForCacheSync failed")
+	}
+
+	pod := st.MakePod().Name("p1").Namespace("ns").Label(v1alpha1.PodGroupLabel, "pg1").Obj()
+
+	// Before failure: should return PodGroup's creation timestamp
+	ts1 := pgMgr.GetCreationTimestamp(ctx, pod, now)
+	if !ts1.Equal(pg1.CreationTimestamp.Time) {
+		t.Errorf("Expected PodGroup creation timestamp %v, got %v", pg1.CreationTimestamp.Time, ts1)
+	}
+
+	// Mark failure
+	pgMgr.MarkPodGroupScheduleFailure("ns/pg1")
+
+	// After failure: should return a timestamp after the PodGroup's creation timestamp
+	ts2 := pgMgr.GetCreationTimestamp(ctx, pod, now)
+	if !ts2.After(pg1.CreationTimestamp.Time) {
+		t.Errorf("Expected failure timestamp %v to be after PodGroup creation timestamp %v", ts2, pg1.CreationTimestamp.Time)
+	}
+
+	// Clear failure
+	pgMgr.ClearPodGroupScheduleFailure("ns/pg1")
+
+	// After clear: should return PodGroup's creation timestamp again
+	ts3 := pgMgr.GetCreationTimestamp(ctx, pod, now)
+	if !ts3.Equal(pg1.CreationTimestamp.Time) {
+		t.Errorf("Expected PodGroup creation timestamp %v after clear, got %v", pg1.CreationTimestamp.Time, ts3)
 	}
 }
 
