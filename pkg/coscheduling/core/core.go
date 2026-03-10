@@ -93,7 +93,7 @@ type PodGroupManager struct {
 	backedOffPG *gocache.Cache
 	// lastFailedSchedulePG stores the last time a PodGroup's scheduling attempt failed.
 	// Used by GetCreationTimestamp to prevent head-of-line blocking.
-	lastFailedSchedulePG *gocache.Cache
+	lastFailedSchedulePG sync.Map
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	// assignedPodsByPG stores the pods assumed or bound for podgroups
@@ -133,8 +133,8 @@ func NewPodGroupManager(client client.Client, snapshotSharedLister framework.Sha
 		podLister:            podInformer.Lister(),
 		permittedPG:          gocache.New(3*time.Second, 3*time.Second),
 		backedOffPG:          gocache.New(10*time.Second, 10*time.Second),
-		lastFailedSchedulePG: gocache.New(30*time.Minute, 10*time.Minute),
-		assignedPodsByPG:     map[string]sets.Set[string]{},
+		// lastFailedSchedulePG is a sync.Map, zero-value ready.
+		assignedPodsByPG: map[string]sets.Set[string]{},
 	}
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: AddPodFactory(pgMgr),
@@ -182,7 +182,7 @@ func (pgMgr *PodGroupManager) BackoffPodGroup(pgName string, backoff time.Durati
 // for the given PodGroup. This timestamp is used by GetCreationTimestamp to prevent
 // head-of-line blocking in the scheduling queue.
 func (pgMgr *PodGroupManager) MarkPodGroupScheduleFailure(pgName string) {
-	pgMgr.lastFailedSchedulePG.Set(pgName, time.Now(), gocache.DefaultExpiration)
+	pgMgr.lastFailedSchedulePG.Store(pgName, time.Now())
 }
 
 // ClearPodGroupScheduleFailure removes the scheduling failure record for the given PodGroup,
@@ -361,7 +361,7 @@ func (pgMgr *PodGroupManager) GetCreationTimestamp(ctx context.Context, pod *cor
 	pgFullName := fmt.Sprintf("%v/%v", pod.Namespace, pgName)
 	// If PodGroup has failed scheduling recently, use the failure timestamp
 	// to prevent head-of-line blocking.
-	if lastFailed, exist := pgMgr.lastFailedSchedulePG.Get(pgFullName); exist {
+	if lastFailed, exist := pgMgr.lastFailedSchedulePG.Load(pgFullName); exist {
 		return lastFailed.(time.Time)
 	}
 	var pg v1alpha1.PodGroup

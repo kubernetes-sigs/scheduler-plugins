@@ -171,8 +171,8 @@ func TestPreFilter(t *testing.T) {
 				scheduleTimeout:      &scheduleTimeout,
 				permittedPG:          newCache(),
 				backedOffPG:          newCache(),
-				lastFailedSchedulePG: newCache(),
-				assignedPodsByPG:     make(map[string]sets.Set[string]),
+				// lastFailedSchedulePG is a sync.Map, zero-value ready.
+				assignedPodsByPG: make(map[string]sets.Set[string]),
 			}
 
 			informerFactory.Start(ctx.Done())
