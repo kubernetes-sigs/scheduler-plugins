@@ -206,6 +206,7 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state fwk.CycleState, po
 	}
 
 	cs.pgMgr.DeletePermittedPodGroup(ctx, pgName)
+	cs.pgMgr.MarkPodGroupScheduleFailure(pgName)
 	return &framework.PostFilterResult{}, fwk.NewStatus(fwk.Unschedulable,
 		fmt.Sprintf("PodGroup %v gets rejected due to Pod %v is unschedulable even after PostFilter", pgName, pod.Name))
 }
@@ -237,6 +238,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state fwk.CycleState, pod *v
 		cs.pgMgr.ActivateSiblings(ctx, pod, state)
 	case core.Success:
 		pgFullName := util.GetPodGroupFullName(pod)
+		cs.pgMgr.ClearPodGroupScheduleFailure(pgFullName)
 		cs.frameworkHandler.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 			if util.GetPodGroupFullName(waitingPod.GetPod()) == pgFullName {
 				lh.V(3).Info("Permit allows", "pod", klog.KObj(waitingPod.GetPod()))
@@ -271,4 +273,5 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state fwk.CycleState, pod
 		}
 	})
 	cs.pgMgr.DeletePermittedPodGroup(ctx, pgName)
+	cs.pgMgr.MarkPodGroupScheduleFailure(pgName)
 }
