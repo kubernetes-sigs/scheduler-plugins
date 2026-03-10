@@ -109,3 +109,57 @@ func ValidateCoschedulingArgs(args *config.CoschedulingArgs, _ *field.Path) erro
 	}
 	return allErrs.ToAggregate()
 }
+
+func ValidateNodeMetadataArgs(args *config.NodeMetadataArgs, path *field.Path) error {
+	var allErrs field.ErrorList
+
+	// Validate MetadataKey is not empty
+	if args.MetadataKey == "" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("metadataKey"),
+			args.MetadataKey, "metadataKey cannot be empty"))
+	}
+
+	// Validate MetadataSource
+	if args.MetadataSource != config.MetadataSourceLabel && args.MetadataSource != config.MetadataSourceAnnotation {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("metadataSource"),
+			args.MetadataSource, "metadataSource must be either \"Label\" or \"Annotation\""))
+	}
+
+	// Validate MetadataType
+	if args.MetadataType != config.MetadataTypeNumber && args.MetadataType != config.MetadataTypeTimestamp {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("metadataType"),
+			args.MetadataType, "metadataType must be either \"Number\" or \"Timestamp\""))
+	}
+
+	// Validate ScoringStrategy
+	validStrategies := sets.New[string](
+		string(config.ScoringStrategyHighest),
+		string(config.ScoringStrategyLowest),
+		string(config.ScoringStrategyNewest),
+		string(config.ScoringStrategyOldest),
+	)
+	if !validStrategies.Has(string(args.ScoringStrategy)) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("scoringStrategy"),
+			args.ScoringStrategy, "scoringStrategy must be one of \"Highest\", \"Lowest\", \"Newest\", or \"Oldest\""))
+	}
+
+	// Validate compatibility between MetadataType and ScoringStrategy
+	if args.MetadataType == config.MetadataTypeNumber {
+		if args.ScoringStrategy == config.ScoringStrategyNewest || args.ScoringStrategy == config.ScoringStrategyOldest {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("scoringStrategy"),
+				args.ScoringStrategy, "scoringStrategy \"Newest\" and \"Oldest\" are only valid for metadataType \"Timestamp\""))
+		}
+	}
+
+	if args.MetadataType == config.MetadataTypeTimestamp {
+		if args.ScoringStrategy == config.ScoringStrategyHighest || args.ScoringStrategy == config.ScoringStrategyLowest {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("scoringStrategy"),
+				args.ScoringStrategy, "scoringStrategy \"Highest\" and \"Lowest\" are only valid for metadataType \"Number\""))
+		}
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}

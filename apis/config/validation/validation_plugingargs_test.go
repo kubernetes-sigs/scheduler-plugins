@@ -193,3 +193,129 @@ func TestValidateNodeResourcesAllocatableArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateNodeMetadataArgs(t *testing.T) {
+	testCases := []struct {
+		args        *config.NodeMetadataArgs
+		expectedErr error
+		description string
+	}{
+		{
+			description: "correct config with label source and numeric type",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "priority",
+				MetadataSource:  config.MetadataSourceLabel,
+				MetadataType:    config.MetadataTypeNumber,
+				ScoringStrategy: config.ScoringStrategyHighest,
+			},
+			expectedErr: nil,
+		},
+		{
+			description: "correct config with annotation source and timestamp type",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "lastUpdate",
+				MetadataSource:  config.MetadataSourceAnnotation,
+				MetadataType:    config.MetadataTypeTimestamp,
+				ScoringStrategy: config.ScoringStrategyNewest,
+			},
+			expectedErr: nil,
+		},
+		{
+			description: "missing MetadataKey",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "",
+				MetadataSource:  config.MetadataSourceLabel,
+				MetadataType:    config.MetadataTypeNumber,
+				ScoringStrategy: config.ScoringStrategyHighest,
+			},
+			expectedErr: fmt.Errorf("metadataKey cannot be empty"),
+		},
+		{
+			description: "invalid MetadataSource",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "priority",
+				MetadataSource:  "InvalidSource",
+				MetadataType:    config.MetadataTypeNumber,
+				ScoringStrategy: config.ScoringStrategyHighest,
+			},
+			expectedErr: fmt.Errorf("metadataSource must be either \"Label\" or \"Annotation\""),
+		},
+		{
+			description: "invalid MetadataType",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "priority",
+				MetadataSource:  config.MetadataSourceLabel,
+				MetadataType:    "InvalidType",
+				ScoringStrategy: config.ScoringStrategyHighest,
+			},
+			expectedErr: fmt.Errorf("metadataType must be either \"Number\" or \"Timestamp\""),
+		},
+		{
+			description: "invalid ScoringStrategy",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "priority",
+				MetadataSource:  config.MetadataSourceLabel,
+				MetadataType:    config.MetadataTypeNumber,
+				ScoringStrategy: "InvalidStrategy",
+			},
+			expectedErr: fmt.Errorf("scoringStrategy must be one of \"Highest\", \"Lowest\", \"Newest\", or \"Oldest\""),
+		},
+		{
+			description: "numeric type with Newest strategy (mismatch)",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "priority",
+				MetadataSource:  config.MetadataSourceLabel,
+				MetadataType:    config.MetadataTypeNumber,
+				ScoringStrategy: config.ScoringStrategyNewest,
+			},
+			expectedErr: fmt.Errorf("scoringStrategy \"Newest\" and \"Oldest\" are only valid for metadataType \"Timestamp\""),
+		},
+		{
+			description: "timestamp type with Highest strategy (mismatch)",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "lastUpdate",
+				MetadataSource:  config.MetadataSourceAnnotation,
+				MetadataType:    config.MetadataTypeTimestamp,
+				ScoringStrategy: config.ScoringStrategyHighest,
+			},
+			expectedErr: fmt.Errorf("scoringStrategy \"Highest\" and \"Lowest\" are only valid for metadataType \"Number\""),
+		},
+		{
+			description: "all valid combinations - Lowest with Number",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "cost",
+				MetadataSource:  config.MetadataSourceAnnotation,
+				MetadataType:    config.MetadataTypeNumber,
+				ScoringStrategy: config.ScoringStrategyLowest,
+			},
+			expectedErr: nil,
+		},
+		{
+			description: "all valid combinations - Oldest with Timestamp",
+			args: &config.NodeMetadataArgs{
+				MetadataKey:     "provisionedAt",
+				MetadataSource:  config.MetadataSourceLabel,
+				MetadataType:    config.MetadataTypeTimestamp,
+				ScoringStrategy: config.ScoringStrategyOldest,
+			},
+			expectedErr: nil,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			err := ValidateNodeMetadataArgs(testCase.args, nil)
+			if testCase.expectedErr != nil {
+				if err == nil {
+					t.Fatalf("expected err to equal %v not nil", testCase.expectedErr)
+				}
+				if !strings.Contains(err.Error(), testCase.expectedErr.Error()) {
+					t.Fatalf("expected err to contain %s in error message: %s", testCase.expectedErr.Error(), err.Error())
+				}
+			}
+			if testCase.expectedErr == nil && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

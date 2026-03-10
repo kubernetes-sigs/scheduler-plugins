@@ -231,6 +231,78 @@ profiles:
 				},
 			},
 		},
+		{
+			name: "v1 NodeMetadata plugin args",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: NodeMetadata
+    args:
+      metadataKey: "priority"
+      metadataSource: "Label"
+      metadataType: "Number"
+      scoringStrategy: "Highest"
+`),
+			wantProfiles: []schedconfig.KubeSchedulerProfile{
+				{
+					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1,
+					PluginConfig: []schedconfig.PluginConfig{
+						{
+							Name: "NodeMetadata",
+							Args: &config.NodeMetadataArgs{
+								MetadataKey:     "priority",
+								MetadataSource:  config.MetadataSourceLabel,
+								MetadataType:    config.MetadataTypeNumber,
+								ScoringStrategy: config.ScoringStrategyHighest,
+							},
+						},
+						{
+							Name: "DefaultPreemption",
+							Args: &schedconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "DynamicResources",
+							Args: &schedconfig.DynamicResourcesArgs{
+								FilterTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+							},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &schedconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &schedconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &schedconfig.NodeResourcesBalancedAllocationArgs{Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &schedconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &schedconfig.ScoringStrategy{
+									Type:      schedconfig.LeastAllocated,
+									Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &schedconfig.PodTopologySpreadArgs{DefaultingType: schedconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &schedconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
+						},
+					},
+				},
+			},
+		},
 	}
 	decoder := Codecs.UniversalDecoder()
 	for _, tt := range testCases {
@@ -348,6 +420,15 @@ func TestCodecsEncodePluginConfig(t *testing.T) {
 									NetworkTopologyName: "net-topology-v1",
 								},
 							},
+							{
+								Name: "NodeMetadata",
+								Args: &config.NodeMetadataArgs{
+									MetadataKey:     "priority",
+									MetadataSource:  config.MetadataSourceLabel,
+									MetadataType:    config.MetadataTypeNumber,
+									ScoringStrategy: config.ScoringStrategyHighest,
+								},
+							},
 						},
 					},
 				},
@@ -445,6 +526,15 @@ profiles:
       networkTopologyName: net-topology-v1
       weightsName: netCosts
     name: NetworkOverhead
+  - args:
+      apiVersion: kubescheduler.config.k8s.io/v1
+      kind: NodeMetadataArgs
+      metadataKey: priority
+      metadataSource: Label
+      metadataType: Number
+      scoringStrategy: Highest
+      timestampFormat: ""
+    name: NodeMetadata
   schedulerName: scheduler-plugins
 `,
 		},
