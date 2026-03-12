@@ -11,6 +11,7 @@ RUN go mod tidy
 
 # 复制其余源码
 COPY . .
+RUN go mod tidy
 ARG TARGETARCH
 RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
 
