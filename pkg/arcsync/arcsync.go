@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	// cache-buster: 2026-03-12-03-00
 	Name = "ARCSync"
 	// Runner Pod 标签：声明后续 Workflow Pod 需要的资源
 	RequiredNPUCount  = "ascend-ci.com/required-npu-count"
