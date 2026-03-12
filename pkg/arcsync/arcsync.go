@@ -65,8 +65,11 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 			}
 
 			if countStr, ok := p.Labels[AllocatedNPUCount]; ok {
-				count, _ := strconv.ParseInt(countStr, 10, 64)
-				occupiedNPU += count
+				// 只有当资源类型标签匹配时才累加
+				if p.Labels[ResourceDomain] == resDomain && p.Labels[ResourceModel] == resModel {
+					count, _ := strconv.ParseInt(countStr, 10, 64)
+					occupiedNPU += count
+				}
 			} else {
 				for _, container := range p.Spec.Containers {
 					if res, ok := container.Resources.Requests[fullResourceName]; ok {
