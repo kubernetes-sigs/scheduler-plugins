@@ -48,7 +48,7 @@ func (pl *CrossNodePreemption) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, _ runtime.Object, fh framework.Handle) (framework.Plugin, error) {
 	pl := CrossNodePreemption{
 		fh:        fh,
 		podLister: fh.SharedInformerFactory().Core().V1().Pods().Lister(),

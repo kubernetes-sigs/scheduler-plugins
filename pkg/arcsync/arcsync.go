@@ -24,7 +24,7 @@ type ARCSync struct {
 
 var _ framework.PreFilterPlugin = &ARCSync{}
 
-func New(_ runtime.Object, h framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &ARCSync{handle: h}, nil
 }
 
