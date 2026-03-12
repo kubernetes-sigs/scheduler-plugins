@@ -11,6 +11,7 @@ RUN go mod tidy
 
 # 复制其余源码
 COPY . .
+RUN go mod edit -replace go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc=go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.53.0
 RUN go mod tidy
 ARG TARGETARCH
 RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
