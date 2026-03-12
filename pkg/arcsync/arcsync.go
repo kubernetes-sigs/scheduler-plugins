@@ -37,12 +37,12 @@ func (pl *ARCSync) Name() string {
 }
 
 // PreFilter 阶段：全局资源预检
-func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) *framework.Status {
+func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	// 1. 检查是否为需要拦截的 Runner Pod
 	reqCountStr, ok := pod.Labels[RequiredNPUCount]
 	if !ok {
 		// 如果没有该标签，说明不是需要同步的 Runner，直接放行
-		return framework.NewStatus(framework.Success, "")
+		return nil, framework.NewStatus(framework.Success, "")
 	}
 
 	reqCount, _ := strconv.Atoi(reqCountStr)
@@ -58,7 +58,7 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 	// 2. 获取集群中所有节点的快照
 	nodeInfos, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
-		return framework.NewStatus(framework.Error, "failed to get node snapshots: "+err.Error())
+		return nil, framework.NewStatus(framework.Error, "failed to get node snapshots: "+err.Error())
 	}
 
 	// 3. 遍历所有节点，寻找是否有“至少一个”节点满足未来的 Workflow Pod
@@ -108,12 +108,12 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 
 	// 4. 结论：如果没有任何节点能满足需求，则挂起 Runner Pod
 	if foundCandidate {
-		return framework.NewStatus(framework.Success, "")
+		return nil, framework.NewStatus(framework.Success, "")
 	}
 
 	klog.InfoS("ARCSync: No nodes available for future workflow, holding runner pod",
 		"pod", pod.Name, "requiredNPU", reqCount)
-	return framework.NewStatus(framework.Unschedulable, "Insufficient global NPU resources for future workflow pod")
+	return nil, framework.NewStatus(framework.Unschedulable, "Insufficient global NPU resources for future workflow pod")
 }
 
 func (pl *ARCSync) PreFilterExtensions() framework.PreFilterExtensions {
