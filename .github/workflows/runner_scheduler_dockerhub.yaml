@@ -1,0 +1,29 @@
+name: push to swr
+on:
+  workflow_dispatch:
+
+jobs:
+  Run-npm-on-Ubuntu:
+    name: Run npm on Ubuntu
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release-1.28
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.SWR_REGISTRY }}
+          username: ${{ secrets.SWR_USERNAME }}
+          password: ${{ secrets.SWR_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/arm64
+          file: ./build/scheduler/Dockerfile
+          context: .
+          push: true
+          build-args: |
+            ARCH=arm64v8
+          tags: ${{ secrets.SWR_IMAGE }}:${{ github.sha }}
