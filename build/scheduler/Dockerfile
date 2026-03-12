@@ -1,5 +1,5 @@
 # Copyright 2020 The Kubernetes Authors.
-ARG GO_BASE_IMAGE=golang:1.23
+ARG GO_BASE_IMAGE=golang:1.24
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
 FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 

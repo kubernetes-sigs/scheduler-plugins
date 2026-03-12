@@ -26,5 +26,5 @@ jobs:
           push: true
           no-cache: true
           build-args: |
-            GO_BASE_IMAGE=golang:1.23
+            GO_BASE_IMAGE=golang:1.24
           tags: ${{ secrets.SWR_IMAGE }}:${{ github.sha }}
