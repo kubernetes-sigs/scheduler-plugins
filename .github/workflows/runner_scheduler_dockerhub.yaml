@@ -9,7 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: release-1.28
+          ref: wl
 
       - uses: docker/login-action@v3
         with:
@@ -25,5 +25,5 @@ jobs:
           context: .
           push: true
           build-args: |
-            ARCH=arm64v8
+            GO_BASE_IMAGE=golang:1.23
           tags: ${{ secrets.SWR_IMAGE }}:${{ github.sha }}

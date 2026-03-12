@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG GO_BASE_IMAGE
+ARG GO_BASE_IMAGE=golang:1.23
 ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
 FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 
