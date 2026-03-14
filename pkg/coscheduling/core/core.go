@@ -259,9 +259,21 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, pod *corev1.Pod) er
 		return fmt.Errorf("podLister list pods failed: %w", err)
 	}
 
-	if len(pods) < int(pg.Spec.MinMember) {
+	quorumGap := int(pg.Spec.MinMember) - len(pods)
+	if quorumGap > 0 {
 		return fmt.Errorf("pre-filter pod %v cannot find enough sibling pods, "+
 			"current pods number: %v, minMember of group: %v", pod.Name, len(pods), pg.Spec.MinMember)
+	}
+
+	// Extra check to see how many SchedulingGated Pods can be tolerated.
+	// quorumGap can be negative if a PodGroup's minMember < a workload's replicas.
+	for _, p := range pods {
+		if len(p.Spec.SchedulingGates) > 0 {
+			quorumGap++
+		}
+		if quorumGap > 0 {
+			return fmt.Errorf("pre-filter pod %v cannot proceed due to gated pods in the same PodGroup", pod.Name)
+		}
 	}
 
 	if pg.Spec.MinResources == nil {
