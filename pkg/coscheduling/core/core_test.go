@@ -112,6 +112,46 @@ func TestPreFilter(t *testing.T) {
 			expectedSuccess: true,
 		},
 		{
+			name: "gated pods but still meeting quorum (minMember < replicas)",
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+				st.MakePod().Name("p1c").Namespace("ns").UID("p1c").Label(v1alpha1.PodGroupLabel, "pg1").
+					SchedulingGates([]string{"example-gate"}).Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
+			expectedSuccess: true,
+		},
+		{
+			name: "gated pods push group below quorum",
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").
+					SchedulingGates([]string{"example-gate"}).Obj(),
+				st.MakePod().Name("p1c").Namespace("ns").UID("p1c").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(3).Obj(),
+			},
+			expectedSuccess: false,
+		},
+		{
+			name: "all sibling pods are gated",
+			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("p1b").Namespace("ns").UID("p1b").Label(v1alpha1.PodGroupLabel, "pg1").
+					SchedulingGates([]string{"example-gate"}).Obj(),
+				st.MakePod().Name("p1c").Namespace("ns").UID("p1c").Label(v1alpha1.PodGroupLabel, "pg1").
+					SchedulingGates([]string{"example-gate"}).Obj(),
+			},
+			pgs: []*v1alpha1.PodGroup{
+				tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj(),
+			},
+			expectedSuccess: false,
+		},
+		{
 			// Previously we defined 2 nodes, each with 4 cpus. Now the PodGroup's minResources req is 6 cpus.
 			name: "cluster's resource satisfies minResource", // Although it'd fail in Filter()
 			pod:  st.MakePod().Name("p1a").Namespace("ns").UID("p1a").Label(v1alpha1.PodGroupLabel, "pg1").Obj(),
@@ -179,7 +219,7 @@ func TestPreFilter(t *testing.T) {
 			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
 				t.Fatal("WaitForCacheSync failed")
 			}
-			for _, p := range tt.pendingPods {
+			for _, p := range append(tt.pendingPods, tt.pod) {
 				podInformer.Informer().GetStore().Add(p)
 			}
 
