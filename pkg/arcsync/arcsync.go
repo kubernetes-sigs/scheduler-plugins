@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"sync"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,18 +20,26 @@ const (
 	AllocatedNPUCount = "ascend-ci.com/npu-count"
 )
 
-// ARCSync 插件不再需要维护全局内存账本，从而消除状态泄露风险
+type reservation struct {
+	nodeName  string
+	count     int64
+	timestamp time.Time
+	baseName  string
+}
+
 type ARCSync struct {
 	handle framework.Handle
-	mu     sync.Mutex
+	// key: podUID, value: reservation
+	inFlightReservations map[string]reservation
+	mu                   sync.Mutex
 }
 
 var _ framework.PreFilterPlugin = &ARCSync{}
-var _ framework.FilterPlugin = &ARCSync{}
 
 func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &ARCSync{
-		handle: h,
+		handle:               h,
+		inFlightReservations: make(map[string]reservation),
 	}, nil
 }
 
@@ -38,23 +47,18 @@ func (pl *ARCSync) Name() string {
 	return Name
 }
 
-// PreFilter 阶段仅做基础检查
-func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	if _, ok := pod.Labels[RequiredNPUCount]; !ok {
-		return nil, framework.NewStatus(framework.Success, "")
+func getBaseName(name string) string {
+	suffix := "-workflow"
+	if len(name) > len(suffix) && name[len(name)-len(suffix):] == suffix {
+		return name[:len(name)-len(suffix)]
 	}
-	return nil, framework.NewStatus(framework.Success, "")
+	return name
 }
 
-func (pl *ARCSync) PreFilterExtensions() framework.PreFilterExtensions {
-	return nil
-}
-
-// Filter 阶段：这是最严谨的检查点
-func (pl *ARCSync) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	reqCountStr, ok := pod.Labels[RequiredNPUCount]
 	if !ok {
-		return framework.NewStatus(framework.Success, "")
+		return nil, framework.NewStatus(framework.Success, "")
 	}
 
 	reqCount, _ := strconv.Atoi(reqCountStr)
@@ -62,63 +66,120 @@ func (pl *ARCSync) Filter(ctx context.Context, state *framework.CycleState, pod 
 	resModel := pod.Labels[ResourceModel]
 	fullResourceName := v1.ResourceName(resDomain + "/" + resModel)
 
-	node := nodeInfo.Node()
-	if node == nil {
-		return framework.NewStatus(framework.Error, "node not found")
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
+	nodeInfos, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
+	if err != nil {
+		return nil, framework.NewStatus(framework.Error, "failed to get node snapshots: "+err.Error())
 	}
 
-	// 1. 统计当前节点上已经存在的 Pod 资源占用（物理快照）
-	// nodeInfo.Pods 包含了已经调度到该节点的所有 Pod（包括正在 Binding 的）
-	var occupiedNPU int64 = 0
-	for _, podInfo := range nodeInfo.Pods {
-		p := podInfo.Pod
-		if p.Status.Phase == v1.PodSucceeded || p.Status.Phase == v1.PodFailed {
+	// 1. 整理物理占用情况 (按 Job 分组去重)
+	// jobUsageOnNode: map[nodeName]map[jobBaseName]usage
+	jobUsageOnNode := make(map[string]map[string]int64)
+	knownPodUIDs := make(map[string]bool)
+
+	for _, nodeInfo := range nodeInfos {
+		nodeName := nodeInfo.Node().Name
+		if jobUsageOnNode[nodeName] == nil {
+			jobUsageOnNode[nodeName] = make(map[string]int64)
+		}
+
+		for _, podInfo := range nodeInfo.Pods {
+			p := podInfo.Pod
+			if p.Status.Phase == v1.PodSucceeded || p.Status.Phase == v1.PodFailed || p.UID == pod.UID {
+				continue
+			}
+			knownPodUIDs[string(p.UID)] = true
+
+			// 获取该 Pod 的基准任务名 (去掉 -workflow 后缀)
+			baseName := getBaseName(p.Name)
+			var podUsage int64 = 0
+
+			if val, exists := p.Labels[AllocatedNPUCount]; exists {
+				if p.Labels[ResourceDomain] == resDomain && p.Labels[ResourceModel] == resModel {
+					count, _ := strconv.ParseInt(val, 10, 64)
+					podUsage = count
+				}
+			}
+			if val, exists := p.Labels[RequiredNPUCount]; exists {
+				if p.Labels[ResourceDomain] == resDomain && p.Labels[ResourceModel] == resModel {
+					count, _ := strconv.ParseInt(val, 10, 64)
+					if count > podUsage {
+						podUsage = count
+					}
+				}
+			}
+
+			if podUsage > jobUsageOnNode[nodeName][baseName] {
+				jobUsageOnNode[nodeName][baseName] = podUsage
+			}
+		}
+	}
+
+	// 2. 整理逻辑预留情况 (继续按 Job 在对应节点上取 max)
+	now := time.Now()
+	for uid, res := range pl.inFlightReservations {
+		// 自愈逻辑
+		if !knownPodUIDs[uid] && now.Sub(res.timestamp) > 2*time.Minute {
+			delete(pl.inFlightReservations, uid)
 			continue
 		}
 
-		var podUsage int64 = 0
-		// 优先从业务标签读取准确的 NPU 分配数
-		if countStr, ok := p.Labels[AllocatedNPUCount]; ok {
-			if p.Labels[ResourceDomain] == resDomain && p.Labels[ResourceModel] == resModel {
-				count, _ := strconv.ParseInt(countStr, 10, 64)
-				podUsage = count
-			}
+		// 只有当预留量大于该节点上该 Job 已有的物理占用时，才更新（取 max）
+		if res.count > jobUsageOnNode[res.nodeName][res.baseName] {
+			jobUsageOnNode[res.nodeName][res.baseName] = res.count
 		}
-
-		// 备选方案：从 Resource Requests 读取
-		var requestUsage int64 = 0
-		for _, container := range p.Spec.Containers {
-			if res, ok := container.Resources.Requests[fullResourceName]; ok {
-				requestUsage += res.Value()
-			}
-		}
-
-		if requestUsage > podUsage {
-			podUsage = requestUsage
-		}
-		occupiedNPU += podUsage
 	}
 
-	// 2. 获取节点总的可分配资源
-	allocatableNPU, ok := node.Status.Allocatable[fullResourceName]
-	if !ok {
-		klog.V(3).InfoS("ARCSync: Node has no NPU resource", "node", node.Name, "resource", fullResourceName)
-		return framework.NewStatus(framework.Unschedulable, "Node has no such NPU resource")
+	// 3. 计算每个节点的最终可用资源并寻找目标
+	bestNode := ""
+	for _, nodeInfo := range nodeInfos {
+		node := nodeInfo.Node()
+		if node == nil {
+			continue
+		}
+
+		allocatable := node.Status.Allocatable[fullResourceName]
+
+		// 累加该节点上所有 Job 的去重后占用 (物理 + 逻辑)
+		totalOccupiedOnNode := int64(0)
+		for _, usage := range jobUsageOnNode[node.Name] {
+			totalOccupiedOnNode += usage
+		}
+
+		freeNPU := allocatable.Value() - totalOccupiedOnNode
+
+		if freeNPU >= int64(reqCount) {
+			bestNode = node.Name
+			klog.V(4).InfoS("ARCSync: Potential node found for upcoming workflow", "node", bestNode, "free", freeNPU)
+			break
+		}
 	}
 
-	freeNPU := allocatableNPU.Value() - occupiedNPU
-
-	klog.V(4).InfoS("ARCSync: Filter checking node",
-		"pod", pod.Name,
-		"node", node.Name,
-		"allocatable", allocatableNPU.Value(),
-		"occupied", occupiedNPU,
-		"free", freeNPU,
-		"required", reqCount)
-
-	if freeNPU < int64(reqCount) {
-		return framework.NewStatus(framework.Unschedulable, "Insufficient NPU resources on node")
+	if bestNode == "" {
+		klog.InfoS("ARCSync: PreFilter rejected pod (no node has enough slots after de-duplication)",
+			"pod", pod.Name, "required", reqCount)
+		return nil, framework.NewStatus(framework.Unschedulable, "No single node has enough available NPU slots")
 	}
 
-	return framework.NewStatus(framework.Success, "")
+	// 4. 记录预留：逻辑绑定到选中的节点
+	podKey := string(pod.UID)
+	if podKey == "" {
+		podKey = pod.Namespace + "/" + pod.Name
+	}
+	pl.inFlightReservations[podKey] = reservation{
+		nodeName:  bestNode,
+		count:     int64(reqCount),
+		timestamp: now,
+		baseName:  getBaseName(pod.Name),
+	}
+
+	klog.InfoS("ARCSync: PreFilter passed, logical slot secured",
+		"pod", pod.Name, "targetNode", bestNode)
+	return nil, framework.NewStatus(framework.Success, "")
+}
+
+func (pl *ARCSync) PreFilterExtensions() framework.PreFilterExtensions {
+	return nil
 }
