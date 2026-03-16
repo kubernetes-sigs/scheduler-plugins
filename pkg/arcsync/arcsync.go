@@ -21,9 +21,9 @@ const (
 
 type ARCSync struct {
 	handle framework.Handle
-	// 用于记录当前正在调度中（已过 PreFilter 但还没完成绑定或失败）的 NPU 预留量
-	// key: nodeName, value: reserved NPU count
-	reservedNPU map[string]int64
+	// key: nodeName, value: map[podUID]npuCount
+	// 用于记录当前正在调度中（已过 PreFilter 但还没出现在节点快照中）的 NPU 预留量
+	reservedNPU map[string]map[string]int64
 	mu          sync.Mutex
 }
 
@@ -33,7 +33,7 @@ var _ framework.ReservePlugin = &ARCSync{}
 func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &ARCSync{
 		handle:      h,
-		reservedNPU: make(map[string]int64),
+		reservedNPU: make(map[string]map[string]int64),
 	}, nil
 }
 
@@ -60,7 +60,6 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 	if err != nil {
 		return nil, framework.NewStatus(framework.Error, "failed to get node snapshots: "+err.Error())
 	}
-	klog.V(4).InfoS("ARCSync: Snapshot nodes retrieved", "pod", pod.Name, "nodeCount", len(nodeInfos))
 
 	foundNodeName := ""
 	for _, nodeInfo := range nodeInfos {
@@ -69,13 +68,15 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 			continue
 		}
 
-		// 1. 统计物理占用
+		// 1. 统计物理占用，并记录当前已存在的 Pod UID
 		var occupiedNPU int64 = 0
+		existingPodUIDs := make(map[string]bool)
 		for _, podInfo := range nodeInfo.Pods {
 			p := podInfo.Pod
 			if p.Status.Phase == v1.PodSucceeded || p.Status.Phase == v1.PodFailed {
 				continue
 			}
+			existingPodUIDs[string(p.UID)] = true
 
 			var podUsage int64 = 0
 			if countStr, ok := p.Labels[AllocatedNPUCount]; ok {
@@ -96,28 +97,47 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 			occupiedNPU += podUsage
 		}
 
-		// 2. 加上账本中“已预定”的资源
-		reserved := pl.reservedNPU[node.Name]
+		// 2. 统计账本中的预留量，并进行自愈校准
+		// 如果账本中的 Pod 已经出现在了 Snapshot (NodeInfo.Pods) 中，则说明它已从“飞行中”落地
+		// 此时应从账本中移除该 Pod 的预留，防止重复计数
+		var reservedNPUOnNode int64 = 0
+		if nodeReserved, ok := pl.reservedNPU[node.Name]; ok {
+			for podUID, count := range nodeReserved {
+				if existingPodUIDs[podUID] {
+					// 自愈：该 Pod 已出现在物理快照中，移除逻辑预留
+					klog.V(4).InfoS("ARCSync: Self-healing: removing pod from reservedNPU as it is now in snapshot", "node", node.Name, "podUID", podUID, "count", count)
+					delete(nodeReserved, podUID)
+					continue
+				}
+				reservedNPUOnNode += count
+			}
+		}
 
 		allocatableNPU := node.Status.Allocatable[fullResourceName]
-		freeNPU := allocatableNPU.Value() - occupiedNPU - reserved
+		freeNPU := allocatableNPU.Value() - occupiedNPU - reservedNPUOnNode
 
-		klog.V(4).InfoS("ARCSync: Node status in PreFilter", "pod", pod.Name, "node", node.Name, "allocatable", allocatableNPU.Value(), "occupied", occupiedNPU, "reserved", reserved, "free", freeNPU)
+		klog.V(4).InfoS("ARCSync: Node status in PreFilter", "pod", pod.Name, "node", node.Name, "allocatable", allocatableNPU.Value(), "occupied", occupiedNPU, "reserved", reservedNPUOnNode, "free", freeNPU)
 
 		if freeNPU >= int64(reqCount) {
 			foundNodeName = node.Name
-			klog.InfoS("ARCSync: PreFilter potential node found", "pod", pod.Name, "node", node.Name, "free", freeNPU, "reserved", reserved)
 			break
 		}
 	}
 
 	if foundNodeName != "" {
-		// 【关键改进】：在 PreFilter 阶段就直接执行“预占”，防止并发漏洞
-		pl.reservedNPU[foundNodeName] += int64(reqCount)
-		klog.InfoS("ARCSync: Pre-reserved NPU in PreFilter", "pod", pod.Name, "node", foundNodeName, "count", reqCount, "newTotalReserved", pl.reservedNPU[foundNodeName])
+		// 记录预占，Key 使用 Pod 的 UID (或者名字+命名空间作为唯一标识)
+		// 注意：如果 Pod 还没有 UID (极少见于 PreFilter)，可以使用 Pod 名字
+		podKey := string(pod.UID)
+		if podKey == "" {
+			podKey = pod.Namespace + "/" + pod.Name
+		}
 
-		// 记录这个 Pod 预占了哪个节点，方便 Unreserve 时精准释放
-		// 注意：ReservePlugin 接口会再次调用 Reserve，我们要在那里做幂等处理
+		if _, ok := pl.reservedNPU[foundNodeName]; !ok {
+			pl.reservedNPU[foundNodeName] = make(map[string]int64)
+		}
+		pl.reservedNPU[foundNodeName][podKey] = int64(reqCount)
+
+		klog.InfoS("ARCSync: Pre-reserved NPU in PreFilter", "pod", pod.Name, "node", foundNodeName, "count", reqCount)
 		return nil, framework.NewStatus(framework.Success, "")
 	}
 
@@ -125,43 +145,29 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 	return nil, framework.NewStatus(framework.Unschedulable, "Insufficient global NPU resources")
 }
 
-// Reserve 阶段：调度器正式选定节点后调用
+// Reserve 阶段
 func (pl *ARCSync) Reserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
-	reqCountStr, ok := pod.Labels[RequiredNPUCount]
-	if !ok {
-		return nil
-	}
-	reqCount, _ := strconv.Atoi(reqCountStr)
-
-	pl.mu.Lock()
-	defer pl.mu.Unlock()
-
-	// 由于我们在 PreFilter 已经预占过了，这里不需要重复累加
-	// 但是 K8s 框架在某些重试场景下可能不经过 PreFilter 直接 Reserve，
-	// 或者选定的节点与 PreFilter 预想的不一致（虽然概率极低），
-	// 这里通过简单的幂等逻辑处理即可。目前逻辑下，我们信任 PreFilter 的预占。
-	klog.InfoS("ARCSync: Reserve confirmed on node", "pod", pod.Name, "node", nodeName, "count", reqCount)
+	// 在目前的 PreFilter 机制下，Reserve 主要作为确认记录
+	klog.V(4).InfoS("ARCSync: Reserve confirmed on node", "pod", pod.Name, "node", nodeName)
 	return nil
 }
 
-// Unreserve 阶段：当 Pod 调度成功（绑定完成）或调度失败时触发，释放预留
+// Unreserve 阶段
 func (pl *ARCSync) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
 	pl.mu.Lock()
 	defer pl.mu.Unlock()
 
-	reqCountStr, ok := pod.Labels[RequiredNPUCount]
-	if !ok {
-		klog.V(4).InfoS("ARCSync: Unreserve called for pod without required-npu-count label", "pod", pod.Name, "node", nodeName)
-		return
+	podKey := string(pod.UID)
+	if podKey == "" {
+		podKey = pod.Namespace + "/" + pod.Name
 	}
-	reqCount, _ := strconv.Atoi(reqCountStr)
 
-	pl.reservedNPU[nodeName] -= int64(reqCount)
-	if pl.reservedNPU[nodeName] < 0 {
-		klog.ErrorS(nil, "ARCSync: reservedNPU became negative", "node", nodeName, "value", pl.reservedNPU[nodeName])
-		pl.reservedNPU[nodeName] = 0
+	if nodeReserved, ok := pl.reservedNPU[nodeName]; ok {
+		if _, exists := nodeReserved[podKey]; exists {
+			delete(nodeReserved, podKey)
+			klog.InfoS("ARCSync: Unreserved NPU on node", "pod", pod.Name, "node", nodeName)
+		}
 	}
-	klog.InfoS("ARCSync: Unreserved NPU on node", "pod", pod.Name, "node", nodeName, "count", reqCount, "remainingReserved", pl.reservedNPU[nodeName])
 }
 
 func (pl *ARCSync) PreFilterExtensions() framework.PreFilterExtensions {
