@@ -60,6 +60,7 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 	if err != nil {
 		return nil, framework.NewStatus(framework.Error, "failed to get node snapshots: "+err.Error())
 	}
+	klog.V(4).InfoS("ARCSync: Snapshot nodes retrieved", "pod", pod.Name, "nodeCount", len(nodeInfos))
 
 	foundNodeName := ""
 	for _, nodeInfo := range nodeInfos {
@@ -100,6 +101,8 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 
 		allocatableNPU := node.Status.Allocatable[fullResourceName]
 		freeNPU := allocatableNPU.Value() - occupiedNPU - reserved
+
+		klog.V(4).InfoS("ARCSync: Node status in PreFilter", "pod", pod.Name, "node", node.Name, "allocatable", allocatableNPU.Value(), "occupied", occupiedNPU, "reserved", reserved, "free", freeNPU)
 
 		if freeNPU >= int64(reqCount) {
 			foundNodeName = node.Name
@@ -143,22 +146,23 @@ func (pl *ARCSync) Reserve(ctx context.Context, state *framework.CycleState, pod
 
 // Unreserve 阶段：当 Pod 调度成功（绑定完成）或调度失败时触发，释放预留
 func (pl *ARCSync) Unreserve(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
 	reqCountStr, ok := pod.Labels[RequiredNPUCount]
 	if !ok {
+		klog.V(4).InfoS("ARCSync: Unreserve called for pod without required-npu-count label", "pod", pod.Name, "node", nodeName)
 		return
 	}
 	reqCount, _ := strconv.Atoi(reqCountStr)
 
-	pl.mu.Lock()
-	defer pl.mu.Unlock()
-
 	pl.reservedNPU[nodeName] -= int64(reqCount)
 	if pl.reservedNPU[nodeName] < 0 {
+		klog.ErrorS(nil, "ARCSync: reservedNPU became negative", "node", nodeName, "value", pl.reservedNPU[nodeName])
 		pl.reservedNPU[nodeName] = 0
 	}
 	klog.InfoS("ARCSync: Unreserved NPU on node", "pod", pod.Name, "node", nodeName, "count", reqCount, "remainingReserved", pl.reservedNPU[nodeName])
 }
-
 
 func (pl *ARCSync) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
