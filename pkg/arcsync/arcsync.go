@@ -96,19 +96,33 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 			baseName := getBaseName(p.Name)
 			var podUsage int64 = 0
 
+			// 逻辑 A: 从 Resources.Requests 统计物理需求 (作为保底)
+			for _, container := range p.Spec.Containers {
+				if q, exists := container.Resources.Requests[fullResourceName]; exists {
+					podUsage += q.Value()
+				}
+			}
+
+			// 逻辑 B: 从标签统计物理需求 (可能比 Request 更精准，或代表逻辑需求)
+			var labelUsage int64 = 0
 			if val, exists := p.Labels[AllocatedNPUCount]; exists {
 				if p.Labels[ResourceDomain] == resDomain && p.Labels[ResourceModel] == resModel {
 					count, _ := strconv.ParseInt(val, 10, 64)
-					podUsage = count
+					labelUsage = count
 				}
 			}
 			if val, exists := p.Labels[RequiredNPUCount]; exists {
 				if p.Labels[ResourceDomain] == resDomain && p.Labels[ResourceModel] == resModel {
 					count, _ := strconv.ParseInt(val, 10, 64)
-					if count > podUsage {
-						podUsage = count
+					if count > labelUsage {
+						labelUsage = count
 					}
 				}
+			}
+
+			// 取 Request 和 Label 中的较大者
+			if labelUsage > podUsage {
+				podUsage = labelUsage
 			}
 
 			if podUsage > jobUsageOnNode[nodeName][baseName] {
