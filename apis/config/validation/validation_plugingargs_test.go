@@ -83,6 +83,25 @@ func TestValidateCoschedulingArgs(t *testing.T) {
 			args: &config.CoschedulingArgs{
 				PermitWaitingTimeSeconds: 30,
 				PodGroupBackoffSeconds:   60,
+				PodGroupRejectPercentage: 10,
+			},
+			expectedErr: nil,
+		},
+		{
+			description: "valid PodGroupRejectPercentage at boundaries",
+			args: &config.CoschedulingArgs{
+				PermitWaitingTimeSeconds: 30,
+				PodGroupBackoffSeconds:   0,
+				PodGroupRejectPercentage: 0,
+			},
+			expectedErr: nil,
+		},
+		{
+			description: "valid PodGroupRejectPercentage at upper boundary",
+			args: &config.CoschedulingArgs{
+				PermitWaitingTimeSeconds: 30,
+				PodGroupBackoffSeconds:   0,
+				PodGroupRejectPercentage: 100,
 			},
 			expectedErr: nil,
 		},
@@ -91,6 +110,7 @@ func TestValidateCoschedulingArgs(t *testing.T) {
 			args: &config.CoschedulingArgs{
 				PermitWaitingTimeSeconds: -10,
 				PodGroupBackoffSeconds:   60,
+				PodGroupRejectPercentage: 10,
 			},
 			expectedErr: fmt.Errorf("permitWaitingTimeSeconds: Invalid value: %v: must be greater than 0", -10),
 		},
@@ -99,14 +119,34 @@ func TestValidateCoschedulingArgs(t *testing.T) {
 			args: &config.CoschedulingArgs{
 				PermitWaitingTimeSeconds: 30,
 				PodGroupBackoffSeconds:   -20,
+				PodGroupRejectPercentage: 10,
 			},
 			expectedErr: fmt.Errorf("podGroupBackoffSeconds: Invalid value: %v: must be greater than 0", -20),
+		},
+		{
+			description: "invalid PodGroupRejectPercentage (negative value)",
+			args: &config.CoschedulingArgs{
+				PermitWaitingTimeSeconds: 30,
+				PodGroupBackoffSeconds:   0,
+				PodGroupRejectPercentage: -1,
+			},
+			expectedErr: fmt.Errorf("podGroupRejectPercentage: Invalid value: %v: must be between 0 and 100", -1),
+		},
+		{
+			description: "invalid PodGroupRejectPercentage (greater than 100)",
+			args: &config.CoschedulingArgs{
+				PermitWaitingTimeSeconds: 30,
+				PodGroupBackoffSeconds:   0,
+				PodGroupRejectPercentage: 150,
+			},
+			expectedErr: fmt.Errorf("podGroupRejectPercentage: Invalid value: %v: must be between 0 and 100", 150),
 		},
 		{
 			description: "both PermitWaitingTimeSeconds and PodGroupBackoffSeconds are negative",
 			args: &config.CoschedulingArgs{
 				PermitWaitingTimeSeconds: -30,
 				PodGroupBackoffSeconds:   -20,
+				PodGroupRejectPercentage: 10,
 			},
 			expectedErr: fmt.Errorf(
 				"[permitWaitingTimeSeconds: Invalid value: %v: must be greater than 0, podGroupBackoffSeconds: Invalid value: %v: must be greater than 0]",

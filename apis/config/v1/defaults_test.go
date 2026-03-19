@@ -41,6 +41,7 @@ func TestSchedulingDefaults(t *testing.T) {
 			expect: &CoschedulingArgs{
 				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
 				PodGroupBackoffSeconds:   pointer.Int64Ptr(0),
+				PodGroupRejectPercentage: pointer.Int32Ptr(10),
 			},
 		},
 		{
@@ -48,10 +49,12 @@ func TestSchedulingDefaults(t *testing.T) {
 			config: &CoschedulingArgs{
 				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
 				PodGroupBackoffSeconds:   pointer.Int64Ptr(20),
+				PodGroupRejectPercentage: pointer.Int32Ptr(50),
 			},
 			expect: &CoschedulingArgs{
 				PermitWaitingTimeSeconds: pointer.Int64Ptr(60),
 				PodGroupBackoffSeconds:   pointer.Int64Ptr(20),
+				PodGroupRejectPercentage: pointer.Int32Ptr(50),
 			},
 		},
 		{

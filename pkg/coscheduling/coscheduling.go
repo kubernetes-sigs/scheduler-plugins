@@ -40,11 +40,12 @@ import (
 
 // Coscheduling is a plugin that schedules pods in a group.
 type Coscheduling struct {
-	logger           klog.Logger
-	frameworkHandler framework.Handle
-	pgMgr            core.Manager
-	scheduleTimeout  *time.Duration
-	pgBackoff        *time.Duration
+	logger            klog.Logger
+	frameworkHandler  framework.Handle
+	pgMgr             core.Manager
+	scheduleTimeout   *time.Duration
+	pgBackoff         *time.Duration
+	pgRejectThreshold float64
 }
 
 var _ framework.QueueSortPlugin = &Coscheduling{}
@@ -94,10 +95,11 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 		handle.SharedInformerFactory().Core().V1().Pods(),
 	)
 	plugin := &Coscheduling{
-		logger:           lh,
-		frameworkHandler: handle,
-		pgMgr:            pgMgr,
-		scheduleTimeout:  &scheduleTimeDuration,
+		logger:            lh,
+		frameworkHandler:  handle,
+		pgMgr:             pgMgr,
+		scheduleTimeout:   &scheduleTimeDuration,
+		pgRejectThreshold: float64(args.PodGroupRejectPercentage) / 100.0,
 	}
 	if args.PodGroupBackoffSeconds < 0 {
 		err := fmt.Errorf("parse arguments failed")
@@ -176,10 +178,10 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state fwk.CycleState, po
 		return &framework.PostFilterResult{}, fwk.NewStatus(fwk.Unschedulable)
 	}
 
-	// If the gap is less than/equal 10%, we may want to try subsequent Pods
+	// If the gap is less than/equal the reject threshold, we may want to try subsequent Pods
 	// to see they can satisfy the PodGroup
-	notAssignedPercentage := float32(int(pg.Spec.MinMember)-assigned) / float32(pg.Spec.MinMember)
-	if notAssignedPercentage <= 0.1 {
+	notAssignedPercentage := float64(int(pg.Spec.MinMember)-assigned) / float64(pg.Spec.MinMember)
+	if notAssignedPercentage <= cs.pgRejectThreshold {
 		lh.V(4).Info("A small gap of pods to reach the quorum", "podGroup", klog.KObj(pg), "percentage", notAssignedPercentage)
 		return &framework.PostFilterResult{}, fwk.NewStatus(fwk.Unschedulable)
 	}

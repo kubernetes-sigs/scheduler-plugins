@@ -41,6 +41,11 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.PodGroupRejectPercentage != nil {
+		in, out := &in.PodGroupRejectPercentage, &out.PodGroupRejectPercentage
+		*out = new(int32)
+		**out = **in
+	}
 	return
 }
 
