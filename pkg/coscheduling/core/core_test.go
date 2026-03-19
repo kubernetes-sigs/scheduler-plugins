@@ -25,12 +25,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clicache "k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling/v1alpha1"
 	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
@@ -452,6 +454,88 @@ func TestMarkAndClearPodGroupScheduleFailure(t *testing.T) {
 	if !ts3.Equal(pg1.CreationTimestamp.Time) {
 		t.Errorf("Expected PodGroup creation timestamp %v after clear, got %v", pg1.CreationTimestamp.Time, ts3)
 	}
+}
+
+func TestSchemeRestriction(t *testing.T) {
+	pg := tu.MakePodGroup().Name("pg1").Namespace("ns").MinMember(2).Obj()
+
+	// Build a client with ONLY v1alpha1 — matching the production coscheduling plugin.
+	restrictedScheme := runtime.NewScheme()
+	if err := v1alpha1.AddToScheme(restrictedScheme); err != nil {
+		t.Fatal(err)
+	}
+	restrictedClient := fake.NewClientBuilder().
+		WithScheme(restrictedScheme).
+		WithRuntimeObjects(pg).
+		Build()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	t.Run("allows PodGroup Get", func(t *testing.T) {
+		var got v1alpha1.PodGroup
+		if err := restrictedClient.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "pg1"}, &got); err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+		if got.Spec.MinMember != 2 {
+			t.Errorf("MinMember = %d, want 2", got.Spec.MinMember)
+		}
+	})
+
+	t.Run("allows PodGroup List", func(t *testing.T) {
+		var list v1alpha1.PodGroupList
+		if err := restrictedClient.List(ctx, &list); err != nil {
+			t.Fatalf("List failed: %v", err)
+		}
+		if len(list.Items) != 1 {
+			t.Errorf("len(Items) = %d, want 1", len(list.Items))
+		}
+	})
+
+	tests := []struct {
+		name string
+		obj  runtime.Object
+	}{
+		{"blocks Pod Get", &corev1.Pod{}},
+		{"blocks Pod List", &corev1.PodList{}},
+		{"blocks Node Get", &corev1.Node{}},
+		{"blocks Service Get", &corev1.Service{}},
+		{"blocks ConfigMap Get", &corev1.ConfigMap{}},
+		{"blocks Secret Get", &corev1.Secret{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := restrictedScheme.ObjectKinds(tt.obj)
+			if err == nil {
+				t.Errorf("scheme resolved %T, want error (type should not be registered)", tt.obj)
+			}
+		})
+	}
+
+	t.Run("GetPodGroup end-to-end", func(t *testing.T) {
+		cs := clientsetfake.NewSimpleClientset()
+		informerFactory := informers.NewSharedInformerFactory(cs, 0)
+		podInformer := informerFactory.Core().V1().Pods()
+		scheduleTimeout := 10 * time.Second
+
+		pgMgr := NewPodGroupManager(restrictedClient, tu.NewFakeSharedLister(nil, nil), &scheduleTimeout, podInformer)
+		informerFactory.Start(ctx.Done())
+		if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
+			t.Fatal("WaitForCacheSync failed")
+		}
+
+		pod := st.MakePod().Name("p1").Namespace("ns").UID("p1").Label(v1alpha1.PodGroupLabel, "pg1").Obj()
+		pgName, pgObj := pgMgr.GetPodGroup(ctx, pod)
+		if pgObj == nil {
+			t.Fatal("GetPodGroup returned nil")
+		}
+		if pgName != "ns/pg1" {
+			t.Errorf("pgName = %q, want %q", pgName, "ns/pg1")
+		}
+		if pgObj.Spec.MinMember != 2 {
+			t.Errorf("MinMember = %d, want 2", pgObj.Spec.MinMember)
+		}
+	})
 }
 
 func newCache() *gocache.Cache {
