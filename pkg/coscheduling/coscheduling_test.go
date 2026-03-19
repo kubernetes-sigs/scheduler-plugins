@@ -122,10 +122,11 @@ func TestPodGroupBackoffTime(t *testing.T) {
 				podInformer,
 			)
 			pl := &Coscheduling{
-				frameworkHandler: f,
-				pgMgr:            pgMgr,
-				scheduleTimeout:  &scheduleDuration,
-				pgBackoff:        pointer.Duration(1 * time.Second),
+				frameworkHandler:  f,
+				pgMgr:             pgMgr,
+				scheduleTimeout:   &scheduleDuration,
+				pgBackoff:         pointer.Duration(1 * time.Second),
+				pgRejectThreshold: 0.1,
 			}
 
 			informerFactory.Start(ctx.Done())
@@ -698,9 +699,10 @@ func TestPostFilter(t *testing.T) {
 				podInformer,
 			)
 			pl := &Coscheduling{
-				frameworkHandler: f,
-				pgMgr:            pgMgr,
-				scheduleTimeout:  &scheduleTimeout,
+				frameworkHandler:  f,
+				pgMgr:             pgMgr,
+				scheduleTimeout:   &scheduleTimeout,
+				pgRejectThreshold: 0.1, // default threshold
 			}
 
 			informerFactory.Start(ctx.Done())
@@ -715,6 +717,159 @@ func TestPostFilter(t *testing.T) {
 			}
 
 			_, got := pl.PostFilter(ctx, framework.NewCycleState(), tt.pod, nodeStatusReader)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Want %v, but got %v", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestPostFilterRejectThreshold(t *testing.T) {
+	scheduleTimeout := 10 * time.Second
+	capacity := map[v1.ResourceName]string{
+		v1.ResourceCPU: "4",
+	}
+	nodes := []*v1.Node{
+		st.MakeNode().Name("node").Capacity(capacity).Obj(),
+	}
+
+	nodeStatusReader := framework.NewDefaultNodeToStatus()
+	nodeStatusReader.Set("node", fwk.NewStatus(fwk.Success, ""))
+
+	// Helper to create N assigned pods (with NodeName set) for a PodGroup.
+	makeAssignedPods := func(count int) []*v1.Pod {
+		var pods []*v1.Pod
+		for i := 0; i < count; i++ {
+			name := fmt.Sprintf("assigned-%d", i)
+			pods = append(pods, st.MakePod().Name(name).Namespace("ns").UID(name).
+				Node("node").Label(v1alpha1.PodGroupLabel, "pg1").Obj())
+		}
+		return pods
+	}
+
+	rejectMsg := func() *fwk.Status {
+		return fwk.NewStatus(
+			fwk.Unschedulable,
+			"PodGroup ns/pg1 gets rejected due to Pod p is unschedulable even after PostFilter",
+		)
+	}
+	noRejectMsg := fwk.NewStatus(fwk.Unschedulable)
+
+	tests := []struct {
+		name          string
+		threshold     float64
+		minMember     int32
+		assignedCount int
+		want          *fwk.Status
+	}{
+		{
+			name:          "default 10%: 9/10 assigned (10% gap) → no rejection",
+			threshold:     0.1,
+			minMember:     10,
+			assignedCount: 9,
+			want:          noRejectMsg,
+		},
+		{
+			name:          "default 10%: 8/10 assigned (20% gap) → rejection",
+			threshold:     0.1,
+			minMember:     10,
+			assignedCount: 8,
+			want:          rejectMsg(),
+		},
+		{
+			name:          "0%: 9/10 assigned (10% gap) → rejection (always reject)",
+			threshold:     0.0,
+			minMember:     10,
+			assignedCount: 9,
+			want:          rejectMsg(),
+		},
+		{
+			name:          "100%: 0/10 assigned (100% gap) → no rejection (never reject)",
+			threshold:     1.0,
+			minMember:     10,
+			assignedCount: 0,
+			want:          noRejectMsg,
+		},
+		{
+			name:          "50%: 6/10 assigned (40% gap) → no rejection",
+			threshold:     0.5,
+			minMember:     10,
+			assignedCount: 6,
+			want:          noRejectMsg,
+		},
+		{
+			name:          "50%: 4/10 assigned (60% gap) → rejection",
+			threshold:     0.5,
+			minMember:     10,
+			assignedCount: 4,
+			want:          rejectMsg(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			assignedPods := makeAssignedPods(tt.assignedCount)
+			// The pod being evaluated in PostFilter (not assigned to a node).
+			pod := st.MakePod().Name("p").Namespace("ns").UID("p").
+				Label(v1alpha1.PodGroupLabel, "pg1").Obj()
+
+			var objs []runtime.Object
+			for _, p := range assignedPods {
+				objs = append(objs, p)
+			}
+			objs = append(objs, pod)
+			objs = append(objs, tu.MakePodGroup().Name("pg1").Namespace("ns").
+				MinMember(tt.minMember).Obj())
+
+			client, err := tu.NewFakeClient(objs...)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			registeredPlugins := []tf.RegisterPluginFunc{
+				tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+			}
+			f, err := tf.NewFramework(
+				ctx,
+				registeredPlugins,
+				"default-scheduler",
+				fwkruntime.WithWaitingPods(fwkruntime.NewWaitingPodsMap()),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cs := clientsetfake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+			podInformer := informerFactory.Core().V1().Pods()
+			pgMgr := core.NewPodGroupManager(
+				client,
+				tu.NewFakeSharedLister(assignedPods, nodes),
+				&scheduleTimeout,
+				podInformer,
+			)
+			pl := &Coscheduling{
+				frameworkHandler:  f,
+				pgMgr:             pgMgr,
+				scheduleTimeout:   &scheduleTimeout,
+				pgRejectThreshold: tt.threshold,
+			}
+
+			informerFactory.Start(ctx.Done())
+			if !clicache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
+				t.Fatal("WaitForCacheSync failed")
+			}
+			addFunc := core.AddPodFactory(pgMgr)
+			for _, p := range assignedPods {
+				podInformer.Informer().GetStore().Add(p)
+				addFunc(p)
+			}
+
+			_, got := pl.PostFilter(ctx, framework.NewCycleState(), pod, nodeStatusReader)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Want %v, but got %v", tt.want, got)
 			}

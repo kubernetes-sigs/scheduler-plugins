@@ -97,6 +97,7 @@ profiles:
 							Name: coscheduling.Name,
 							Args: &config.CoschedulingArgs{
 								PermitWaitingTimeSeconds: 60,
+								PodGroupRejectPercentage: 10,
 							},
 						},
 						{
@@ -380,6 +381,7 @@ profiles:
       kind: CoschedulingArgs
       permitWaitingTimeSeconds: 10
       podGroupBackoffSeconds: 0
+      podGroupRejectPercentage: 0
     name: Coscheduling
   - args:
       apiVersion: kubescheduler.config.k8s.io/v1

@@ -104,6 +104,10 @@ func ValidateCoschedulingArgs(args *config.CoschedulingArgs, _ *field.Path) erro
 		allErrs = append(allErrs, field.Invalid(field.NewPath("podGroupBackoffSeconds"),
 			args.PodGroupBackoffSeconds, "must be greater than 0"))
 	}
+	if args.PodGroupRejectPercentage < 0 || args.PodGroupRejectPercentage > 100 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("podGroupRejectPercentage"),
+			args.PodGroupRejectPercentage, "must be between 0 and 100"))
+	}
 	if len(allErrs) == 0 {
 		return nil
 	}

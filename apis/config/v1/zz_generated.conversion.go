@@ -210,6 +210,9 @@ func autoConvert_v1_CoschedulingArgs_To_config_CoschedulingArgs(in *Coscheduling
 	if err := metav1.Convert_Pointer_int64_To_int64(&in.PodGroupBackoffSeconds, &out.PodGroupBackoffSeconds, s); err != nil {
 		return err
 	}
+	if err := metav1.Convert_Pointer_int32_To_int32(&in.PodGroupRejectPercentage, &out.PodGroupRejectPercentage, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -223,6 +226,9 @@ func autoConvert_config_CoschedulingArgs_To_v1_CoschedulingArgs(in *config.Cosch
 		return err
 	}
 	if err := metav1.Convert_int64_To_Pointer_int64(&in.PodGroupBackoffSeconds, &out.PodGroupBackoffSeconds, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_int32_To_Pointer_int32(&in.PodGroupRejectPercentage, &out.PodGroupRejectPercentage, s); err != nil {
 		return err
 	}
 	return nil

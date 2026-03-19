@@ -132,3 +132,67 @@ nginx-hqhhz   0/1     Pending   0          3s
 nginx-n47r7   0/1     Pending   0          3s
 nginx-n7vtq   0/1     Pending   0          3s
 ```
+
+### Advanced Configuration
+
+The Coscheduling plugin supports additional parameters to control backoff and rejection behavior when PodGroups fail scheduling.
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: default-scheduler
+  pluginConfig:
+  - name: Coscheduling
+    args:
+      permitWaitingTimeSeconds: 60     # How long pods wait in Permit for quorum (default: 60)
+      podGroupBackoffSeconds: 10       # Backoff time after PodGroup rejection (default: 0, disabled)
+      podGroupRejectPercentage: 10      # Percentage of unassigned pods below which PostFilter skips rejection (default: 10)
+  plugins:
+    multiPoint:
+      enabled:
+      - name: Coscheduling
+    queueSort:
+      enabled:
+      - name: Coscheduling
+      disabled:
+      - name: "*"
+```
+
+#### `podGroupBackoffSeconds`
+
+When a PodGroup fails scheduling in PostFilter, setting `podGroupBackoffSeconds` to a positive value causes all pods in the group to be blocked from scheduling for the specified duration. This prevents wasteful scheduling cycles when the cluster clearly cannot accommodate the group.
+
+**How it works:**
+1. A pod fails the Filter phase and enters PostFilter.
+2. If the PodGroup has enough pods to meet its `minMember` quorum but scheduling still fails (e.g., insufficient resources), the PodGroup is placed in a backoff cache with a TTL equal to `podGroupBackoffSeconds`.
+3. During the backoff window, PreFilter immediately rejects all pods from the backed-off PodGroup with `UnschedulableAndUnresolvable`, preventing any scheduling attempts.
+4. After the TTL expires, pods can be scheduled again.
+
+**Important:** Backoff is only triggered when:
+- `podGroupBackoffSeconds > 0` (feature is enabled)
+- The percentage of unassigned pods exceeds `podGroupRejectPercentage` (the group is far from meeting quorum)
+- The total number of pods with the PodGroup label is at least `minMember` (enough pods exist to form the group)
+
+**Recommended values:**
+- `0` (default): Disabled. Pods retry immediately after failure.
+- `5-10`: For clusters with moderate resource contention.
+- `30-60`: For heavily oversubscribed clusters where resources change slowly.
+
+#### `podGroupRejectPercentage`
+
+Controls the percentage of unassigned pods (relative to `minMember`) below which PostFilter will **not** reject the PodGroup. This implements an optimistic scheduling strategy: when a PodGroup is close to meeting its quorum, the remaining pods are allowed to retry rather than rejecting the entire group.
+
+**How it works:**
+- PostFilter calculates the percentage of unassigned pods: `(minMember - assignedPods) / minMember * 100`.
+- If the unassigned percentage is at or below `podGroupRejectPercentage`, PostFilter returns `Unschedulable` without rejecting waiting pods or triggering backoff. The remaining pods get another chance to schedule.
+- If the unassigned percentage exceeds `podGroupRejectPercentage`, PostFilter rejects all waiting pods and (if `podGroupBackoffSeconds > 0`) triggers backoff.
+
+**Example:** With `minMember=100` and `podGroupRejectPercentage=10` (default):
+- 92 pods assigned (8% gap): No rejection — almost there, keep trying.
+- 80 pods assigned (20% gap): Rejection — the group clearly doesn't fit right now.
+
+**Values:**
+- `10` (default): Skip rejection when ≤10% of pods remain unassigned.
+- `0`: Always reject on any failure (disable optimistic behavior).
+- `100`: Never reject (fully optimistic — disable PostFilter group rejection entirely).

@@ -32,6 +32,11 @@ type CoschedulingArgs struct {
 	PermitWaitingTimeSeconds *int64 `json:"permitWaitingTimeSeconds,omitempty"`
 	// PodGroupBackoffSeconds is the backoff time in seconds before a pod group can be scheduled again.
 	PodGroupBackoffSeconds *int64 `json:"podGroupBackoffSeconds,omitempty"`
+	// PodGroupRejectPercentage is the percentage (0-100) of unassigned pods relative to
+	// minMember below which PostFilter will not reject the PodGroup.
+	// Default: 10 (10%). Set to 0 to always reject on any failure.
+	// Set to 100 to never reject (disable PostFilter group rejection).
+	PodGroupRejectPercentage *int32 `json:"podGroupRejectPercentage,omitempty"`
 }
 
 // ModeType is a type "string".

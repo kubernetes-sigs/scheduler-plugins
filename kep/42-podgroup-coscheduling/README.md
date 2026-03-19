@@ -15,6 +15,7 @@
     - [QueueSort](#queuesort)
     - [PreFilter](#prefilter)
     - [PostFilter](#postfilter)
+    - [Backoff](#backoff)
     - [Permit](#permit)
   - [Known Limitations](#known-limitations)
 <!-- /toc -->
@@ -158,7 +159,26 @@ For any pod that gets rejected, their pod group would be added to a backoff list
 
 #### PostFilter
 
-If the gap to reach the quorum of a PodGroup is greater than 10%, we reject the whole PodGroup. Note that this plugin should be configured as the last one among PostFilter plugins.
+PostFilter handles scheduling failures for pods that belong to a PodGroup. When a pod fails Filter, PostFilter evaluates whether the PodGroup should be rejected based on how far it is from meeting its quorum:
+
+1. If the number of assigned pods already meets `minMember`, no action is taken.
+2. If the fraction of unassigned pods is at or below `podGroupRejectPercentage` (default: 10%), PostFilter returns `Unschedulable` without rejecting the group — the remaining pods get another scheduling attempt.
+3. If the fraction of unassigned pods exceeds the threshold, PostFilter rejects all waiting pods in the group and optionally triggers backoff (see below).
+
+The `podGroupRejectPercentage` parameter (default: `10`) is configurable in the scheduler's `CoschedulingArgs`. Set it to `0` to always reject on any failure, or `100` to never reject.
+
+Note that this plugin should be configured as the last one among PostFilter plugins.
+
+#### Backoff
+
+When `podGroupBackoffSeconds` is set to a positive value in `CoschedulingArgs`, PostFilter places a failed PodGroup into a time-based backoff cache after rejection. During the backoff window, PreFilter immediately rejects all pods from the PodGroup with `UnschedulableAndUnresolvable`, preventing wasteful scheduling cycles.
+
+Backoff is triggered only when all of the following conditions are met:
+- `podGroupBackoffSeconds > 0`
+- The fraction of unassigned pods exceeds `podGroupRejectPercentage`
+- The total number of pods with the PodGroup label is at least `minMember`
+
+The backoff state is stored in a TTL-based in-memory cache that auto-evicts entries after the configured duration.
 
 #### Permit
 
