@@ -249,7 +249,7 @@ profiles:
   pluginConfig:
   - name: TargetLoadPacking
     args:
-      targetUtilization: 60 
+      targetUtilization: 60
       defaultRequests:
         cpu: "1000m"
       defaultRequestsMultiplier: "1.8"
@@ -279,7 +279,7 @@ profiles:
         type: Prometheus
         address: http://prometheus-k8s.monitoring.svc.cluster.local:9090
         insecureSkipVerify: false
-      targetUtilization: 60 
+      targetUtilization: 60
       defaultRequests:
         cpu: "1000m"
       defaultRequestsMultiplier: "1.8"

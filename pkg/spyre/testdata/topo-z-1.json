@@ -1,0 +1,81 @@
+{
+    "devices": {
+        "0001:00:00.0": {
+            "device_id": "06a7",
+            "is_pf": true,
+            "linkspeed": " 0.00 GB/s",
+            "name": "AIU Device 06a7 (rev 02)",
+            "numanode": -1,
+            "peers": {
+                "peers_2": {
+                    "0002:00:00.0": 100
+                }
+            },
+            "spyre_vf_peers": {
+                "peers_2": {
+                    "0003:00:00.0": 100,
+                    "0004:00:00.0": 100
+                }
+            }
+        },
+        "0002:00:00.0": {
+            "device_id": "06a7",
+            "is_pf": true,
+            "linkspeed": " 0.00 GB/s",
+            "name": "AIU Device 06a7 (rev 02)",
+            "numanode": -1,
+            "peers": {
+                "peers_2": {
+                    "0001:00:00.0": 100
+                }
+            },
+            "spyre_vf_peers": {
+                "peers_2": {
+                    "0003:00:00.0": 100,
+                    "0004:00:00.0": 100
+                }
+            }
+        }
+    },
+    "num_devices": 2,
+    "spyre_vf_devices": {
+        "0003:00:00.0": {
+            "device_id": "06a8",
+            "is_pf": false,
+            "linkspeed": " 0.00 GB/s",
+            "name": "AIU VF Device 06a8 (rev 02)",
+            "numanode": -1,
+            "peers": {
+                "peers_2": {
+                    "0001:00:00.0": 100,
+                    "0002:00:00.0": 100
+                }
+            },
+            "spyre_vf_peers": {
+                "peers_2": {
+                    "0004:00:00.0": 100
+                }
+            }
+        },
+        "0004:00:00.0": {
+            "device_id": "06a8",
+            "is_pf": false,
+            "linkspeed": " 0.00 GB/s",
+            "name": "AIU VF Device 06a8 (rev 02)",
+            "numanode": -1,
+            "peers": {
+                "peers_2": {
+                    "0001:00:00.0": 100,
+                    "0002:00:00.0": 100
+                }
+            },
+            "spyre_vf_peers": {
+                "peers_2": {
+                    "0003:00:00.0": 100
+                }
+            }
+        }
+    },
+    "spyre_vf_num_devices": 2,
+    "timestamp": "Wed Jun 25 13:29:57 2025"
+}

@@ -1,0 +1,53 @@
+{
+  "kind": "SpyreNodeState",
+  "apiVersion": "spyre.ibm.com/v1alpha1",
+  "metadata": {
+    "name": "node2"
+  },
+  "spec": {
+    "nodeName": "node2",
+    "spyreInterfaces": [
+      {
+        "pciAddress": "0000:1a:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      },
+      {
+        "pciAddress": "0000:1c:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      },
+      {
+        "pciAddress": "0000:1d:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      },
+      {
+        "pciAddress": "0000:1e:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      },
+      {
+        "pciAddress": "0000:3d:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      },
+      {
+        "pciAddress": "0000:3f:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      },
+      {
+        "pciAddress": "0000:40:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      },
+      {
+        "pciAddress": "0000:41:00.0",
+        "health": "healthy",
+        "numVfs": 1
+      }
+    ],
+    "pcitopo": "{\n  \"timestamp\": \"Fri Jun 21 08:15:40 2024\",\n  \"num_devices\": 8,\n  \"devices\": {\n    \"0000:1a:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:1c:00.0\": 4,\n          \"0000:1d:00.0\": 4,\n          \"0000:1e:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:3d:00.0\": 10,\n          \"0000:3f:00.0\": 10,\n          \"0000:40:00.0\": 10,\n          \"0000:41:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    },\n    \"0000:1c:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:1a:00.0\": 4,\n          \"0000:1d:00.0\": 4,\n          \"0000:1e:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:3d:00.0\": 10,\n          \"0000:3f:00.0\": 10,\n          \"0000:40:00.0\": 10,\n          \"0000:41:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    },\n    \"0000:1d:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:1a:00.0\": 4,\n          \"0000:1c:00.0\": 4,\n          \"0000:1e:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:3d:00.0\": 10,\n          \"0000:3f:00.0\": 10,\n          \"0000:40:00.0\": 10,\n          \"0000:41:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    },\n    \"0000:1e:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:1a:00.0\": 4,\n          \"0000:1c:00.0\": 4,\n          \"0000:1d:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:3d:00.0\": 10,\n          \"0000:3f:00.0\": 10,\n          \"0000:40:00.0\": 10,\n          \"0000:41:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    },\n    \"0000:3d:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:3f:00.0\": 4,\n          \"0000:40:00.0\": 4,\n          \"0000:41:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:1a:00.0\": 10,\n          \"0000:1c:00.0\": 10,\n          \"0000:1d:00.0\": 10,\n          \"0000:1e:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    },\n    \"0000:3f:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:3d:00.0\": 4,\n          \"0000:40:00.0\": 4,\n          \"0000:41:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:1a:00.0\": 10,\n          \"0000:1c:00.0\": 10,\n          \"0000:1d:00.0\": 10,\n          \"0000:1e:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    },\n    \"0000:40:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:3d:00.0\": 4,\n          \"0000:3f:00.0\": 4,\n          \"0000:41:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:1a:00.0\": 10,\n          \"0000:1c:00.0\": 10,\n          \"0000:1d:00.0\": 10,\n          \"0000:1e:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    },\n    \"0000:41:00.0\": {\n      \"name\": \"IBM Device 06a7 (rev 01)\",\n      \"numanode\": 0,\n      \"linkspeed\": \"15.75 GB/s\",\n      \"peers\": {\n        \"peers_0\": {\n          \"0000:3d:00.0\": 4,\n          \"0000:3f:00.0\": 4,\n          \"0000:40:00.0\": 4\n        },\n        \"peers_1\": {\n          \"0000:1a:00.0\": 10,\n          \"0000:1c:00.0\": 10,\n          \"0000:1d:00.0\": 10,\n          \"0000:1e:00.0\": 10\n        },\n        \"peers_2\": {\n        }\n      }\n    }\n  }\n}\n"
+  }
+}

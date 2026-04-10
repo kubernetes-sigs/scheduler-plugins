@@ -1,0 +1,24 @@
+changelog:
+  exclude:
+    labels:
+    - ignore-for-release
+    authors:
+    - github-actions
+    - app/dependabot
+    - Spyre-Operator <spyre-operator@users.noreply.github.com>
+  categories:
+  - title: Breaking Changes 🔔
+    labels:
+    - semver-major
+  - title: Features 🎉
+    labels:
+    - enhancement
+  - title: Fixes 🛠
+    labels:
+    - bug
+  - title: Operations ♻️
+    labels:
+    - chore
+  - title: Other Changes
+    labels:
+    - "*"

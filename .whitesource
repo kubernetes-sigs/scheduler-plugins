@@ -1,0 +1,16 @@
+{
+  "settingsInheritedFrom": "whitesource-config/whitesource-config@master",
+  "scanSettings": {
+    "configMode": "LOCAL",
+    "releaseBranches": [
+      "^release_v[0-1]+(\\.[0-9]+)+$"
+    ]
+  },
+  "remediateSettings": {
+    "workflowRules": {
+      "enabled": true,
+      "minVulnerabilityScore": 1.5,
+      "maxVulnerabilityScore": 10
+    }
+  }
+}

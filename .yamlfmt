@@ -1,0 +1,14 @@
+formatter:
+  type: basic
+  indentless_arrays: true
+  retain_line_breaks: true
+  max_line_length: 80
+exclude:
+  - manifests/**
+  - kep/**
+  - site/**
+  - .github/**
+  - config/**
+  - pkg/trimaran/peaks/deployment/scheduler-config.yaml
+  - pkg/trimaran/peaks/deployment/test-po.yaml
+  - cloudbuild.yaml
