@@ -47,6 +47,28 @@ func (pl *ARCSync) Name() string {
 	return Name
 }
 
+func canScheduleOnNode(pod *v1.Pod, node *v1.Node) bool {
+	if node.Spec.Unschedulable {
+		return false
+	}
+	for _, taint := range node.Spec.Taints {
+		if taint.Effect != v1.TaintEffectNoSchedule && taint.Effect != v1.TaintEffectNoExecute {
+			continue
+		}
+		tolerated := false
+		for _, toleration := range pod.Spec.Tolerations {
+			if toleration.ToleratesTaint(&taint) {
+				tolerated = true
+				break
+			}
+		}
+		if !tolerated {
+			return false
+		}
+	}
+	return true
+}
+
 func getBaseName(name string) string {
 	suffix := "-workflow"
 	if len(name) > len(suffix) && name[len(name)-len(suffix):] == suffix {
@@ -146,6 +168,11 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 	for _, nodeInfo := range nodeInfos {
 		node := nodeInfo.Node()
 		if node == nil {
+			continue
+		}
+
+		if !canScheduleOnNode(pod, node) {
+			klog.V(4).InfoS("ARCSync: Skipping node (unschedulable or untolerated taint)", "node", node.Name)
 			continue
 		}
 

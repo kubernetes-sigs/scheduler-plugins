@@ -26,6 +26,8 @@
 | 标签 Key | 示例值 | 说明 |
 | :--- | :--- | :--- |
 | `ascend-ci.com/npu-count` | `"1"` | 声明当前 Pod 实际占用的 NPU 数量。 |
+| `ascend-ci.com/npu-resource-domain` | `"huawei.com"` | **必填**。资源域名。 |
+| `ascend-ci.com/npu-resource-model` | `"ascend-310"` | **必填**。NPU 型号。 |
 
 ## 3. 调度器配置
 在 `KubeSchedulerConfiguration` 中启用插件：
