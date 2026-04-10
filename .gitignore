@@ -21,3 +21,7 @@ hack/tools/bin/*
 
 # Ignore vendor/
 vendor
+config/crd/external
+sonar-scanner-*
+.env
+.scannerwork

@@ -1,0 +1,42 @@
+# +-------------------------------------------------------------------+
+# | Copyright IBM Corp. 2025, 2026                                    |
+# | SPDX-License-Identifier: Apache-2.0                               |
+# +-------------------------------------------------------------------+
+
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: 'Create release as draft'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark release as prerelease'
+        required: false
+        type: boolean
+        default: false
+      generate_release_notes:
+        description: 'Automatically generate release notes'
+        required: false
+        type: boolean
+        default: true
+      tag_prefix:
+        description: 'Prefix for the git tag (e.g., "v" for v1.0.0)'
+        required: false
+        type: string
+        default: 'v'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    uses: ibm-aiu/spyre-operator-actions/.github/workflows/create-release.yaml@main
+    with:
+      draft: ${{ inputs.draft }}
+      prerelease: ${{ inputs.prerelease }}
+      generate_release_notes: ${{ inputs.generate_release_notes }}
+      tag_prefix: ${{ inputs.tag_prefix }}

@@ -1,0 +1,116 @@
+name: Spyre Scheduler Plugins Tests
+
+on:
+  push:
+    branches:
+      - spyre-scheduler
+    paths:
+      - "pkg/spyre/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/spyre-tests.yaml"
+  pull_request:
+    paths:
+      - "pkg/spyre/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/spyre-tests.yaml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Spyre Scheduler Plugins Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Install test tools
+        run: |
+          # Tool versions
+          CONTROLLER_TOOLS_VERSION="v0.17.3"
+          GINKGO_VERSION="v2.25.2"
+          ENVTEST_VERSION="v0.0.0-20240624150636-162a113134de"
+
+          echo "Installing test tools..."
+
+          # Install controller-gen
+          echo "Installing controller-gen@${CONTROLLER_TOOLS_VERSION}..."
+          go install "sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLER_TOOLS_VERSION}"
+
+          # Install ginkgo
+          echo "Installing ginkgo@${GINKGO_VERSION}..."
+          go install "github.com/onsi/ginkgo/v2/ginkgo@${GINKGO_VERSION}"
+
+          # Install setup-envtest
+          echo "Installing setup-envtest@${ENVTEST_VERSION}..."
+          go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@${ENVTEST_VERSION}"
+
+          echo "Installation complete!"
+
+      - name: Generate external CRDs
+        run: |
+          # Get module version from go.mod
+          MODULE="github.com/ibm-aiu/spyre-operator"
+          API_PATH="api/v1alpha1"
+          MODULE_VERSION=$(go mod graph | grep "$MODULE" | head -n 1 | cut -d'@' -f 2)
+
+          if [[ -z $MODULE_VERSION ]]; then
+            echo "Error: Could not determine version for module $MODULE"
+            exit 1
+          fi
+
+          GOPATH=$(go env GOPATH)
+          CRD_SOURCE_PATH="${GOPATH}/pkg/mod/${MODULE}@${MODULE_VERSION}/${API_PATH}"
+
+          echo "Getting module:: $MODULE"
+          go get "$MODULE@$MODULE_VERSION"
+          echo "Module version:: $MODULE_VERSION"
+          echo "Generating CRDs from: $CRD_SOURCE_PATH"
+          mkdir -p config/crd/external
+          GOFLAGS="-mod=readonly" controller-gen crd \
+            paths="${CRD_SOURCE_PATH}/..." \
+            output:crd:artifacts:config=config/crd/external
+
+      - name: Set up Kubebuilder assets
+        run: |
+          ENVTEST_K8S_VERSION="1.31"
+          echo "Setting up Kubebuilder assets..."
+          KUBEBUILDER_ASSETS=$(setup-envtest use "$ENVTEST_K8S_VERSION" -p path)
+          echo "KUBEBUILDER_ASSETS=$KUBEBUILDER_ASSETS" >> $GITHUB_ENV
+
+      - name: Run tests
+        run: |
+          echo "Running ginkgo tests..."
+          ginkgo run \
+            --output-dir=. \
+            --cover \
+            --coverprofile=coverage-report.out \
+            -r \
+            --label-filter="!e2e" \
+            pkg/spyre
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage-report.out
+          retention-days: 30
+
+      - name: Display coverage summary
+        if: always()
+        run: |
+          if [ -f coverage-report.out ]; then
+            echo "Coverage Summary:"
+            go tool cover -func=coverage-report.out | tail -n 1
+          fi
+
+# Made with Bob

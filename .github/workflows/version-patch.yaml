@@ -1,0 +1,27 @@
+# +-------------------------------------------------------------------+
+# | (C) Copyright IBM Corp. 2025, 2026                                |
+# | SPDX-License-Identifier: Apache-2.0                               |
+# +-------------------------------------------------------------------+
+
+name: Version Patch Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+        - minor
+        - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version-patch:
+    uses: ibm-aiu/spyre-operator-actions/.github/workflows/version-patch.yaml@main
+    with:
+      version_bump: ${{ inputs.version_bump }}

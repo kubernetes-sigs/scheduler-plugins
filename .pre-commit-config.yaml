@@ -1,0 +1,69 @@
+default_install_hook_types:
+- pre-commit
+- commit-msg
+default_stages:
+- pre-commit
+fail_fast: true
+exclude: boilerplate\..*|.*\.gen\..*|.*\.gotmpl$
+repos:
+- repo: https://github.com/jorisroovers/gitlint
+  rev: v0.19.1
+  hooks:
+  - id: gitlint
+    language: python
+    entry: gitlint
+    args: [--staged, --msg-filename]
+    stages: [commit-msg]
+- repo: https://github.com/tekwizely/pre-commit-golang
+  rev: v1.0.0-rc.4
+  hooks:
+  - id: go-fmt
+  - id: go-mod-tidy
+- repo: https://github.com/google/yamlfmt
+  rev: v0.21.0
+  hooks:
+  - id: yamlfmt
+    args: ["-dstar", "-conf=.yamlfmt"]
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v6.0.0
+  hooks:
+  - id: check-merge-conflict
+  - id: check-executables-have-shebangs
+  - id: check-shebang-scripts-are-executable
+  - id: check-json
+  - id: check-yaml
+    args:
+    - --allow-multiple-documents
+    exclude: (manifests|config|kep)/.*\.(yaml|yml)
+  - id: check-symlinks
+  - id: check-added-large-files
+  - id: trailing-whitespace
+    exclude: (manifests|config|kep|doc|pkg|site|hack)/.*\.(md|yaml|yml|sh|tpl)
+  - id: detect-private-key
+  - id: end-of-file-fixer
+    exclude: (manifests|config|kep|doc|pkg|site|hack)/.*\.(md|yaml|yml|sh|tpl)
+  - id: mixed-line-ending
+    args: ["--fix=lf"]
+- repo: https://github.com/codespell-project/codespell
+  rev: v2.4.2
+  hooks:
+  - id: codespell
+    args: [--write-changes]
+- repo: https://github.com/pecigonzalo/pre-commit-shfmt
+  rev: v2.2.0
+  hooks:
+  - id: shell-fmt-go
+    args:
+    - -w
+    - -s
+    - -l
+    exclude: ^(vendor|hack)/
+- repo: https://github.com/ibm/detect-secrets
+  rev: 0.13.1+ibm.64.dss
+  hooks:
+  - id: detect-secrets
+    args: [--baseline, .secrets.baseline, --use-all-plugins, --no-ghe-scan]
+    files: ^pkg/spyre/
+    additional_dependencies:
+    - boxsdk<4 # https://github.com/IBM/detect-secrets/issues/173
+    - chardet<7 # https://github.com/IBM/detect-secrets/issues/182

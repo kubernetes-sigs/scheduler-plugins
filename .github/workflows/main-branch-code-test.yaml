@@ -1,0 +1,38 @@
+# +-------------------------------------------------------------------+
+# | (C) Copyright IBM Corp. 2025, 2026                                |
+# | SPDX-License-Identifier: Apache-2.0                               |
+# +-------------------------------------------------------------------+
+
+name: Source Code Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+    paths:
+    - cmd/**
+    - pkg/**
+    - test/**
+    - go.mod
+    - go.sum
+    - Makefile
+    - images/**
+
+permissions: read-all
+
+jobs:
+  unit-test:
+    uses: ibm-aiu/spyre-operator-actions/.github/workflows/unit-test.yaml@main
+    # # Add the following line only during Development when the dependencies are still private
+    # # Need to set GH_PAT secret in Actions secrets and variables.
+    # # Use `GH PAT ibm-aiu-repo-access` in AIU Operator Project's 1Password vault.
+    # secrets:
+    #   gh-token: ${{ secrets.GH_PAT }}
+    # with:
+    #   goprivate: 'github.com/ibm-aiu/*'
+  # # Add the following test when CRC E2E test is ready
+  # e2e-test:
+  #  needs: unit-test
+  #  if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
+  #  uses: ibm-aiu/spyre-operator-actions/.github/workflows/crc-e2e-test.yaml@main

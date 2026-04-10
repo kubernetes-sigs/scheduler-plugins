@@ -1,0 +1,7 @@
+[codespell]
+skip = go.*,*.gen.*,
+     *.jpeg,*.png,*.png,*.svg,*.drawio,*.bu,
+     assets/**/*.yaml,
+     apis/**,kep/**,pkg/coscheduling/**,hack/**,site/**,test/**,
+     pkg/noderesourcetopology/**,pkg/trimaran/**
+ignore-words-list = AfterAll,bu

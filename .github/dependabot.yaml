@@ -1,0 +1,23 @@
+# +-------------------------------------------------------------------+
+# | (C) Copyright IBM Corp. 2025, 2026                                |
+# | SPDX-License-Identifier: Apache-2.0                               |
+# +-------------------------------------------------------------------+
+
+version: 2
+updates:
+- package-ecosystem: gomod
+  directory: /
+  schedule:
+    interval: weekly
+  # Ignore specific Kubernetes, sigs, and tags dependencies
+  ignore:
+  - dependency-name: "k8s.io/*"
+    versions: ["*"]
+  - dependency-name: "sigs.k8s.io/*"
+    versions: ["*"]
+  - dependency-name: "tags.cncf.io/*"
+    versions: ["*"]
+- package-ecosystem: docker
+  directory: /
+  schedule:
+    interval: weekly

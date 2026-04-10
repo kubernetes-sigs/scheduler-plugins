@@ -1,0 +1,8 @@
+[general]
+# You HAVE to add the rule to [general] to enable it
+# Only configuring (such as below) does NOT enable it.
+contrib = contrib-title-conventional-commits
+
+# Setting contrib rule options is identical to configuring other rules
+[contrib-title-conventional-commits]
+types =  build,chore,ci,docs,feat,fix,perf,refactor,revert,style,test

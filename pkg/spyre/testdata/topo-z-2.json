@@ -1,0 +1,64 @@
+{
+  "timestamp": "Fri Aug 22 08:52:35 2025",
+  "version": 2,
+  "server": "spyre-device-plugin-w2p87",
+  "spyre_vf_num_devices": 4,
+  "spyre_vf_devices": {
+    "0001:00:00.0": {
+      "name": "AIU VF Device 06a8 (rev 02)",
+      "numanode": -1,
+      "linkspeed": " 0.00 GB/s",
+      "peers": {},
+      "spyre_vf_peers": {
+        "peers_2": {
+          "0002:00:00.0": 100,
+          "0003:00:00.0": 100,
+          "0004:00:00.0": 100
+        }
+      },
+      "device_id": "06a8"
+    },
+    "0002:00:00.0": {
+      "name": "AIU VF Device 06a8 (rev 02)",
+      "numanode": -1,
+      "linkspeed": " 0.00 GB/s",
+      "peers": {},
+      "spyre_vf_peers": {
+        "peers_2": {
+          "0001:00:00.0": 100,
+          "0003:00:00.0": 100,
+          "0004:00:00.0": 100
+        }
+      },
+      "device_id": "06a8"
+    },
+    "0003:00:00.0": {
+      "name": "AIU VF Device 06a8 (rev 02)",
+      "numanode": -1,
+      "linkspeed": " 0.00 GB/s",
+      "peers": {},
+      "spyre_vf_peers": {
+        "peers_2": {
+          "0001:00:00.0": 100,
+          "0002:00:00.0": 100,
+          "0004:00:00.0": 100
+        }
+      },
+      "device_id": "06a8"
+    },
+    "0004:00:00.0": {
+      "name": "AIU VF Device 06a8 (rev 02)",
+      "numanode": -1,
+      "linkspeed": " 0.00 GB/s",
+      "peers": {},
+      "spyre_vf_peers": {
+        "peers_2": {
+          "0001:00:00.0": 100,
+          "0002:00:00.0": 100,
+          "0003:00:00.0": 100
+        }
+      },
+      "device_id": "06a8"
+    }
+  }
+}
