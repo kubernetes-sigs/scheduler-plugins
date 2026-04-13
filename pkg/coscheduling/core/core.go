@@ -315,8 +315,8 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, state fwk.CycleState, 
 		return PodGroupNotFound
 	}
 
-	pgMgr.RWMutex.RLock()
-	defer pgMgr.RWMutex.RUnlock()
+	pgMgr.RWMutex.Lock()
+	defer pgMgr.RWMutex.Unlock()
 	assigned, exist := pgMgr.assignedPodsByPG[pgFullName]
 	if !exist {
 		assigned = sets.Set[string]{}
