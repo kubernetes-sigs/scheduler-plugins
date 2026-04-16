@@ -183,6 +183,11 @@ func TestDirtyNodesNotUnmarkedOnReserve(t *testing.T) {
 		"node-4",
 	}
 
+	// NRTs must be in the store for Reserve to track assumed resources
+	for _, nodeName := range availNodes {
+		nrtCache.Store().Update(makeTestNRT(nodeName))
+	}
+
 	for _, nodeName := range availNodes {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
@@ -203,6 +208,28 @@ func TestDirtyNodesNotUnmarkedOnReserve(t *testing.T) {
 
 	if dirtyNodes.DirtyCount() != 2 {
 		t.Errorf("both nodes should still be dirty after Reserve, got: %v", dirtyNodes.MaybeOverReserved)
+	}
+}
+
+func TestReserveSkipsWithoutNRT(t *testing.T) {
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nrtCache := mustOverReserve(t, fakeClient, &fakePodLister{})
+
+	// Reserve on a node with no NRT in the store should be a no-op
+	nrtCache.ReserveNodeResources("ghost-node", &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	})
+
+	// assumedResources should not have an entry for the node
+	nrtCache.lock.Lock()
+	_, hasAssumed := nrtCache.assumedResources["ghost-node"]
+	nrtCache.lock.Unlock()
+	if hasAssumed {
+		t.Errorf("Reserve should not accumulate assumedResources for a node without NRT in the store")
 	}
 }
 
