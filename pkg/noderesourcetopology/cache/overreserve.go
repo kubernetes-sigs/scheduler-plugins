@@ -157,9 +157,6 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 
 	nodeAssumedResources.AddPod(pod)
 	lh.V(2).Info("post reserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
-
-	ov.nodesMaybeOverreserved.Delete(nodeName)
-	lh.V(6).Info("reset discard counter", logging.KeyNode, nodeName)
 }
 
 func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {

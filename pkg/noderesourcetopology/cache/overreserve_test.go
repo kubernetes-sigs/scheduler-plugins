@@ -168,7 +168,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 	}
 }
 
-func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
+func TestDirtyNodesNotUnmarkedOnReserve(t *testing.T) {
 	fakeClient, err := tu.NewFakeClient()
 	if err != nil {
 		t.Fatal(err)
@@ -196,17 +196,13 @@ func TestDirtyNodesUnmarkedOnReserve(t *testing.T) {
 		nrtCache.NodeMaybeOverReserved(nodeName, &corev1.Pod{})
 	}
 
-	// assume noe update which unblocks node-4
+	// Reserve does NOT clear the dirty flag; only FlushNodes does.
 	nrtCache.ReserveNodeResources("node-4", &corev1.Pod{})
-
-	expectedNodes := []string{
-		"node-1",
-	}
 
 	dirtyNodes = nrtCache.GetDesyncedNodes(klog.Background())
 
-	if !reflect.DeepEqual(dirtyNodes.MaybeOverReserved, expectedNodes) {
-		t.Errorf("got=%v expected=%v", dirtyNodes.MaybeOverReserved, expectedNodes)
+	if dirtyNodes.DirtyCount() != 2 {
+		t.Errorf("both nodes should still be dirty after Reserve, got: %v", dirtyNodes.MaybeOverReserved)
 	}
 }
 
@@ -647,6 +643,101 @@ func isNRTEqual(a, b *topologyv1alpha2.NodeResourceTopology) bool {
 	return equality.Semantic.DeepDerivative(a.Zones, b.Zones) &&
 		equality.Semantic.DeepDerivative(a.TopologyPolicies, b.TopologyPolicies) &&
 		equality.Semantic.DeepDerivative(a.Attributes, b.Attributes)
+}
+
+func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fakePodLister := &fakePodLister{}
+
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
+
+	nodeTopologies := makeDefaultTestTopology()
+	for _, obj := range nodeTopologies {
+		nrtCache.Store().Update(obj)
+	}
+
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod1",
+			Namespace: "namespace1",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node1",
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+	// simulate this pod passes filtering
+	nrtCache.ReserveNodeResources("node1", testPod)
+
+	// simulate some time after the node is marked overreserved
+	nrtCache.NodeMaybeOverReserved("node1", &corev1.Pod{})
+
+	// NRT on the API server has a fingerprint that does NOT match the pods
+	// in the lister. This forces a ErrSignatureMismatch in Resync().
+	nrtWithBadFingerprint := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+		},
+		Attributes: topologyv1alpha2.AttributeList{
+			{
+				Name:  podfingerprint.Attribute,
+				Value: "pfp0vFFFFdeadbeef000000",
+			},
+		},
+		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "30"),
+					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+					MakeTopologyResInfo(nicResourceName, "16", "16"),
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "22"),
+					MakeTopologyResInfo(memory, "64Gi", "44Gi"),
+					MakeTopologyResInfo(nicResourceName, "16", "16"),
+				},
+			},
+		},
+	}
+
+	runningPod := testPod.DeepCopy()
+	runningPod.Status.Phase = corev1.PodRunning
+
+	if err := fakeClient.Create(context.Background(), nrtWithBadFingerprint); err != nil {
+		t.Fatal(err)
+	}
+	fakePodLister.AddPod(runningPod)
+
+	nrtCache.Resync()
+
+	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	if dirtyNodes.Len() != 1 || dirtyNodes.MaybeOverReserved[0] != "node1" {
+		t.Errorf("node should stay dirty after fingerprint mismatch, got: %v", dirtyNodes.MaybeOverReserved)
+	}
 }
 
 func TestUnknownNodeWithForeignPods(t *testing.T) {
