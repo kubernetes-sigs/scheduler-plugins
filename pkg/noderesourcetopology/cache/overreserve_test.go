@@ -185,7 +185,7 @@ func TestDirtyNodesNotUnmarkedOnReserve(t *testing.T) {
 
 	// NRTs must be in the store for Reserve to track assumed resources
 	for _, nodeName := range availNodes {
-		nrtCache.Store().Update(makeTestNRT(nodeName))
+		nrtCache.TestOnlyUpdateNRT(makeTestNRT(nodeName))
 	}
 
 	for _, nodeName := range availNodes {
@@ -219,17 +219,45 @@ func TestReserveSkipsWithoutNRT(t *testing.T) {
 
 	nrtCache := mustOverReserve(t, fakeClient, &fakePodLister{})
 
-	// Reserve on a node with no NRT in the store should be a no-op
-	nrtCache.ReserveNodeResources("ghost-node", &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
-	})
+	nodeTopologies := makeDefaultTestTopology()
+	for _, obj := range nodeTopologies {
+		nrtCache.TestOnlyUpdateNRT(obj)
+	}
 
-	// assumedResources should not have an entry for the node
-	nrtCache.lock.Lock()
-	_, hasAssumed := nrtCache.assumedResources["ghost-node"]
-	nrtCache.lock.Unlock()
-	if hasAssumed {
-		t.Errorf("Reserve should not accumulate assumedResources for a node without NRT in the store")
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	nrtCache.ReserveNodeResources("ghost-node", testPod)
+
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(context.Background(), "ghost-node", testPod)
+	if nrtObj != nil {
+		t.Errorf("expected nil NRT for ghost node, got %v", nrtObj)
+	}
+
+	realNodeName := nodeTopologies[0].Name
+	nrtObj, _ = nrtCache.GetCachedNRTCopy(context.Background(), realNodeName, testPod)
+	if nrtObj == nil {
+		t.Fatalf("expected NRT for %q, got nil", realNodeName)
+	}
+	if !isNRTEqual(nrtObj, nodeTopologies[0]) {
+		t.Errorf("NRT for %q should be unchanged after ghost-node reserve:\ngot:  %v\nwant: %v", realNodeName, dumpNRT(nrtObj), dumpNRT(nodeTopologies[0]))
 	}
 }
 
@@ -271,7 +299,7 @@ func TestGetCachedNRTCopyReserve(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -323,7 +351,7 @@ func TestGetCachedNRTCopyReleaseNone(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -364,7 +392,7 @@ func TestGetCachedNRTCopyReserveRelease(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -406,7 +434,7 @@ func TestFlush(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -501,7 +529,7 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -579,7 +607,7 @@ func TestResyncMatchFingerprint(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -684,7 +712,7 @@ func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -780,7 +808,7 @@ func TestResyncReserveInterleaved(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	initialPod := &corev1.Pod{
@@ -1005,7 +1033,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 		},
 	}
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.TestOnlyUpdateNRT(obj)
 	}
 
 	target := "node2"
@@ -1023,6 +1051,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 }
 
 func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podlisterv1.PodLister) *OverReserve {
+	t.Helper()
 	obj, err := NewOverReserve(context.Background(), klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
