@@ -366,8 +366,18 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 }
 
 // to be used only in tests
-func (ov *OverReserve) Store() *nrtStore {
-	return ov.nrts
+func (ov *OverReserve) Inject(nrt *topologyv1alpha2.NodeResourceTopology) {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	ov.nrts.Update(nrt)
+}
+
+// to be used only in tests
+func (ov *OverReserve) HasAssumedResources(nodeName string) bool {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	_, ok := ov.assumedResources[nodeName]
+	return ok
 }
 
 func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (map[string][]podData, error) {

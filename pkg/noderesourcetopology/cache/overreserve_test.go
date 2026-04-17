@@ -185,7 +185,7 @@ func TestDirtyNodesNotUnmarkedOnReserve(t *testing.T) {
 
 	// NRTs must be in the store for Reserve to track assumed resources
 	for _, nodeName := range availNodes {
-		nrtCache.Store().Update(makeTestNRT(nodeName))
+		nrtCache.Inject(makeTestNRT(nodeName))
 	}
 
 	for _, nodeName := range availNodes {
@@ -224,11 +224,7 @@ func TestReserveSkipsWithoutNRT(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
 	})
 
-	// assumedResources should not have an entry for the node
-	nrtCache.lock.Lock()
-	_, hasAssumed := nrtCache.assumedResources["ghost-node"]
-	nrtCache.lock.Unlock()
-	if hasAssumed {
+	if nrtCache.HasAssumedResources("ghost-node") {
 		t.Errorf("Reserve should not accumulate assumedResources for a node without NRT in the store")
 	}
 }
@@ -271,7 +267,7 @@ func TestGetCachedNRTCopyReserve(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -323,7 +319,7 @@ func TestGetCachedNRTCopyReleaseNone(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -364,7 +360,7 @@ func TestGetCachedNRTCopyReserveRelease(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -406,7 +402,7 @@ func TestFlush(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -501,7 +497,7 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -579,7 +575,7 @@ func TestResyncMatchFingerprint(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -684,7 +680,7 @@ func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
 
 	nodeTopologies := makeDefaultTestTopology()
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	testPod := &corev1.Pod{
@@ -846,7 +842,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 		},
 	}
 	for _, obj := range nodeTopologies {
-		nrtCache.Store().Update(obj)
+		nrtCache.Inject(obj)
 	}
 
 	target := "node2"
