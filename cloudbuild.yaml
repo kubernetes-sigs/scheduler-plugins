@@ -9,12 +9,13 @@ options:
   machineType: 'N1_HIGHCPU_8'
 steps:
   # see https://github.com/kubernetes/test-infra/tree/master/config/jobs/image-pushing
-  - name: 'gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20240718-5ef92b5c36'
+  - name: 'gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20260127-c1affcc8de'
     entrypoint: make
     env:
     - RELEASE_VERSION=$_GIT_TAG
     - BASE_REF=$_PULL_BASE_REF
     - DOCKER_BUILDX_CMD=/buildx-entrypoint
+    - GOTOOLCHAIN=auto
     args:
     - push-images
 substitutions:
