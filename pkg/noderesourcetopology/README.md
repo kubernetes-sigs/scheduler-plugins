@@ -119,6 +119,9 @@ profiles:
 #### ScoringStrategy
 
 The topology-aware scheduler supports four scoring strategies. You can set a strategy via SchedulerConfigConfiguration, by setting the scoringStrategy option.
+
+**NOTE:** The scoring strategy affects **worker node** selection only — it determines how worker nodes are ranked relative to each other. It does **not** control which NUMA node is selected within a worker node. Once the scheduler has selected a worker node for a pod, it is the **kubelet** (running on that worker node) that decides which NUMA node(s) to use based on its Topology Manager policy. 
+
 There are four supported strategies:
 
 * MostAllocated
@@ -126,12 +129,12 @@ There are four supported strategies:
 * LeastAllocated
 * LeastNUMANodes
 
-The MostAllocated, BalancedAllocation and LeastAllocated strategies only work with the single-numa-node Topology Manager policy and indicate how score of the worker
+The MostAllocated, BalancedAllocation and LeastAllocated strategies only work with the single-numa-node Topology Manager policy and indicate how the score of each worker
 node will be calculated based on current utilization:
 
-* MostAllocated - favors node with the least amount of available resources
-* BalancedAllocation - favors node with balanced resource usage rate
-* LeastAllocated - favors node with the most amount of available resource
+* MostAllocated - favors the worker node with the least amount of available resources
+* BalancedAllocation - favors the worker node with balanced resource usage rate
+* LeastAllocated - favors the worker node with the most amount of available resources
 
 The LeastNUMANodes strategy works with all the Topology Manager policies and favors nodes which require the least amount of topology zones to satisfy the resource requests for a given pod.
 
