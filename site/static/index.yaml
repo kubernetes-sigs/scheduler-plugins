@@ -2,6 +2,16 @@ apiVersion: v1
 entries:
   scheduler-plugins:
   - apiVersion: v2
+    appVersion: 0.34.7
+    created: "2026-04-20T10:15:49.17328-07:00"
+    description: deploy scheduler plugin as a second scheduler in cluster
+    digest: 78dce95005df2d63cc7b2f81d9e222aa837b44869bb95b9dbe9c59c12cfae522
+    name: scheduler-plugins
+    type: application
+    urls:
+    - https://github.com/kubernetes-sigs/scheduler-plugins/releases/download/v0.34.7/scheduler-plugins-0.34.7.tgz
+    version: 0.34.7
+  - apiVersion: v2
     appVersion: 0.33.5
     created: "2025-10-27T15:25:26.357508-07:00"
     description: deploy scheduler plugin as a second scheduler in cluster
@@ -61,4 +71,4 @@ entries:
     urls:
     - https://github.com/kubernetes-sigs/scheduler-plugins/releases/download/v0.28.9/scheduler-plugins-0.28.9.tgz
     version: 0.28.8
-generated: "2025-10-27T15:25:26.357042-07:00"
+generated: "2026-04-20T10:15:49.170933-07:00"
