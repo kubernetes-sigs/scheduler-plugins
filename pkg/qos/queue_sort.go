@@ -24,7 +24,6 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	fwk "k8s.io/kube-scheduler/framework"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 // Name is the name of the plugin used in the plugin registry and configurations.
@@ -33,7 +32,7 @@ const Name = "QOSSort"
 // Sort is a plugin that implements QoS class based sorting.
 type Sort struct{}
 
-var _ framework.QueueSortPlugin = &Sort{}
+var _ fwk.QueueSortPlugin = &Sort{}
 
 // Name returns name of the plugin.
 func (pl *Sort) Name() string {
@@ -82,6 +81,6 @@ func compQOS(p1, p2 *v1.Pod) int {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ context.Context, _ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, _ runtime.Object, _ fwk.Handle) (fwk.Plugin, error) {
 	return &Sort{}, nil
 }

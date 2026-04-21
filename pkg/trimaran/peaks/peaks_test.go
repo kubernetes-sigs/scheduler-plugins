@@ -46,7 +46,7 @@ import (
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwk.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*v1.Node
@@ -54,11 +54,11 @@ type testSharedLister struct {
 	nodeInfoMap map[string]fwk.NodeInfo
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return f
 }
 
@@ -244,7 +244,7 @@ func TestPeaksScore(t *testing.T) {
 		pod             *v1.Pod
 		nodes           []*v1.Node
 		watcherResponse watcher.WatcherMetrics
-		expected        framework.NodeScoreList
+		expected        fwk.NodeScoreList
 	}{
 		{
 			test: "Pod with Requests",
@@ -268,7 +268,7 @@ func TestPeaksScore(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
+			expected: []fwk.NodeScore{
 				{Name: "node-1", Score: scoreToUse},
 			},
 		},
@@ -294,8 +294,8 @@ func TestPeaksScore(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
 			},
 		},
 		{
@@ -321,8 +321,8 @@ func TestPeaksScore(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
 			},
 		},
 		{
@@ -347,8 +347,8 @@ func TestPeaksScore(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
 			},
 		},
 		{
@@ -363,8 +363,8 @@ func TestPeaksScore(t *testing.T) {
 					NodeMetricsMap: map[string]watcher.NodeMetrics{},
 				},
 			},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
 			},
 		},
 		{
@@ -374,8 +374,8 @@ func TestPeaksScore(t *testing.T) {
 				st.MakeNode().Name("node-1").Capacity(nodeResources).Obj(),
 			},
 			watcherResponse: watcher.WatcherMetrics{},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
 			},
 		},
 	}
@@ -407,15 +407,15 @@ func TestPeaksScore(t *testing.T) {
 				NodePowerModel: map[string]pluginConfig.PowerModel{},
 			}
 			p, _ := New(ctx, &peaksArgs, fh)
-			scorePlugin := p.(framework.ScorePlugin)
-			var actualList framework.NodeScoreList
+			scorePlugin := p.(fwk.ScorePlugin)
+			var actualList fwk.NodeScoreList
 			for _, n := range tt.nodes {
 				nodeInfo, err := snapshot.NodeInfos().Get(n.Name)
 				assert.Nil(t, err)
 				t.Logf("in loop.. node-1 power model %+v", getPowerModel(n.Name, peaksArgs.NodePowerModel))
 				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
 				assert.True(t, status.IsSuccess())
-				actualList = append(actualList, framework.NodeScore{Name: n.Name, Score: score})
+				actualList = append(actualList, fwk.NodeScore{Name: n.Name, Score: score})
 			}
 			assert.ElementsMatch(t, tt.expected, actualList)
 		})
@@ -452,53 +452,53 @@ func TestPeaksNormalizeScore(t *testing.T) {
 		Args: &peaksArgs,
 	}
 
-	nodeScoreList1 := []framework.NodeScore{
-		{Name: "node-1", Score: framework.MinNodeScore},
-		{Name: "node-2", Score: framework.MaxNodeScore},
+	nodeScoreList1 := []fwk.NodeScore{
+		{Name: "node-1", Score: fwk.MinNodeScore},
+		{Name: "node-2", Score: fwk.MaxNodeScore},
 	}
 
-	nodeScoreList2 := []framework.NodeScore{
-		{Name: "node-1", Score: framework.MinNodeScore},
-		{Name: "node-2", Score: framework.MinNodeScore},
+	nodeScoreList2 := []fwk.NodeScore{
+		{Name: "node-1", Score: fwk.MinNodeScore},
+		{Name: "node-2", Score: fwk.MinNodeScore},
 	}
 
-	nodeScoreList3 := []framework.NodeScore{
-		{Name: "node-1", Score: framework.MaxNodeScore},
-		{Name: "node-2", Score: framework.MaxNodeScore},
+	nodeScoreList3 := []fwk.NodeScore{
+		{Name: "node-1", Score: fwk.MaxNodeScore},
+		{Name: "node-2", Score: fwk.MaxNodeScore},
 	}
 
 	tests := []struct {
 		test            string
 		pod             *v1.Pod
 		watcherResponse watcher.WatcherMetrics
-		nodeScoreList   framework.NodeScoreList
-		expected        framework.NodeScoreList
+		nodeScoreList   fwk.NodeScoreList
+		expected        fwk.NodeScoreList
 	}{
 		{
 			test:          "Normalize score {minScore, maxScore}",
 			pod:           st.MakePod().Obj(),
 			nodeScoreList: nodeScoreList1,
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MaxNodeScore},
-				{Name: "node-2", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MaxNodeScore},
+				{Name: "node-2", Score: fwk.MinNodeScore},
 			},
 		},
 		{
 			test:          "Normalize score {minScore, minScore}",
 			pod:           st.MakePod().Obj(),
 			nodeScoreList: nodeScoreList2,
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
-				{Name: "node-2", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
+				{Name: "node-2", Score: fwk.MinNodeScore},
 			},
 		},
 		{
 			test:          "Normalize score {maxScore, maxScore}",
 			pod:           st.MakePod().Obj(),
 			nodeScoreList: nodeScoreList3,
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MaxNodeScore},
-				{Name: "node-2", Score: framework.MaxNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MaxNodeScore},
+				{Name: "node-2", Score: fwk.MaxNodeScore},
 			},
 		},
 	}
@@ -520,7 +520,7 @@ func TestPeaksNormalizeScore(t *testing.T) {
 			assert.Nil(t, err)
 
 			p, _ := New(ctx, &peaksArgs, fh)
-			scorePlugin := p.(framework.ScorePlugin)
+			scorePlugin := p.(fwk.ScorePlugin)
 			status := scorePlugin.ScoreExtensions().NormalizeScore(context.Background(), state, tt.pod, tt.nodeScoreList)
 			assert.True(t, status.IsSuccess())
 			assert.ElementsMatch(t, tt.expected, tt.nodeScoreList)

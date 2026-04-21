@@ -40,7 +40,6 @@ import (
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	schedulerapisconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/validation"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/util"
@@ -55,14 +54,14 @@ const (
 )
 
 var (
-	_ framework.PostFilterPlugin = &PreemptionToleration{}
+	_ fwk.PostFilterPlugin = &PreemptionToleration{}
 	_ preemption.Interface       = &PreemptionToleration{}
 )
 
 // PreemptionToleration is a PostFilter plugin implements the preemption logic.
 type PreemptionToleration struct {
 	logger              klog.Logger
-	fh                  framework.Handle
+	fh                  fwk.Handle
 	args                config.PreemptionTolerationArgs
 	podLister           corelisters.PodLister
 	pdbLister           policylisters.PodDisruptionBudgetLister
@@ -82,7 +81,7 @@ func (pl *PreemptionToleration) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(ctx context.Context, rawArgs runtime.Object, fh framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, rawArgs runtime.Object, fh fwk.Handle) (fwk.Plugin, error) {
 	args, ok := rawArgs.(*config.PreemptionTolerationArgs)
 	if !ok {
 		return nil, fmt.Errorf("got args of type %T, want *PreemptionTolerationArgs", args)
@@ -106,7 +105,7 @@ func New(ctx context.Context, rawArgs runtime.Object, fh framework.Handle) (fram
 }
 
 // PostFilter invoked at the postFilter extension point.
-func (pl *PreemptionToleration) PostFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *fwk.Status) {
+func (pl *PreemptionToleration) PostFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, m fwk.NodeToStatusReader) (*fwk.PostFilterResult, *fwk.Status) {
 	defer func() {
 		metrics.PreemptionAttempts.Inc()
 	}()

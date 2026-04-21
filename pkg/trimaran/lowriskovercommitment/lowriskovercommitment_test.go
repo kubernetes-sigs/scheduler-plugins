@@ -43,7 +43,7 @@ import (
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwk.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*v1.Node
@@ -51,11 +51,11 @@ type testSharedLister struct {
 	nodeInfoMap map[string]fwk.NodeInfo
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return f
 }
 
@@ -149,7 +149,7 @@ func TestLowRiskOverCommitment_Score(t *testing.T) {
 		pod             *v1.Pod
 		nodes           []*v1.Node
 		watcherResponse watcher.WatcherMetrics
-		expected        framework.NodeScoreList
+		expected        fwk.NodeScoreList
 	}{
 		{
 			test: "new node",
@@ -173,7 +173,7 @@ func TestLowRiskOverCommitment_Score(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
+			expected: []fwk.NodeScore{
 				{Name: "node-1", Score: 0},
 			},
 		},
@@ -223,19 +223,19 @@ func TestLowRiskOverCommitment_Score(t *testing.T) {
 			assert.Nil(t, err)
 			p, _ := New(ctx, &lowRiskOverCommitmentArgs, fh)
 
-			preScorePlugin := p.(framework.PreScorePlugin)
+			preScorePlugin := p.(fwk.PreScorePlugin)
 			status := preScorePlugin.PreScore(context.Background(), state, tt.pod, tf.BuildNodeInfos(tt.nodes))
 			assert.True(t, status.IsSuccess())
 
-			scorePlugin := p.(framework.ScorePlugin)
-			var actualList framework.NodeScoreList
+			scorePlugin := p.(fwk.ScorePlugin)
+			var actualList fwk.NodeScoreList
 			for _, n := range tt.nodes {
 				nodeName := n.Name
 				nodeInfo := framework.NewNodeInfo()
 				nodeInfo.SetNode(n)
 				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
 				assert.True(t, status.IsSuccess())
-				actualList = append(actualList, framework.NodeScore{Name: nodeName, Score: score})
+				actualList = append(actualList, fwk.NodeScore{Name: nodeName, Score: score})
 			}
 			assert.EqualValues(t, tt.expected, actualList)
 		})

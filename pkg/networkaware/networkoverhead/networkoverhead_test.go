@@ -49,7 +49,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwk.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*v1.Node
@@ -57,11 +57,11 @@ type testSharedLister struct {
 	nodeInfoMap map[string]fwk.NodeInfo
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return f
 }
 
@@ -606,8 +606,8 @@ func TestNetworkOverheadScore(t *testing.T) {
 		nodes              []*v1.Node
 		pod                *v1.Pod
 		want               *fwk.Status
-		wantedScoresBefore framework.NodeScoreList
-		wantedScoresAfter  framework.NodeScoreList
+		wantedScoresBefore fwk.NodeScoreList
+		wantedScoresAfter  fwk.NodeScoreList
 		nodeToScore        *v1.Node
 		expected           fwk.Code
 	}{
@@ -625,25 +625,25 @@ func TestNetworkOverheadScore(t *testing.T) {
 			pod:             makePod("p1", "p1-deployment", 0, "basic", nil, nil),
 			nodes:           nodes,
 			want:            nil,
-			wantedScoresBefore: framework.NodeScoreList{
-				framework.NodeScore{Name: nodes[0].Name, Score: 20},
-				framework.NodeScore{Name: nodes[1].Name, Score: 20},
-				framework.NodeScore{Name: nodes[2].Name, Score: 20},
-				framework.NodeScore{Name: nodes[3].Name, Score: 20},
-				framework.NodeScore{Name: nodes[4].Name, Score: 0},
-				framework.NodeScore{Name: nodes[5].Name, Score: 1},
-				framework.NodeScore{Name: nodes[6].Name, Score: 10},
-				framework.NodeScore{Name: nodes[7].Name, Score: 10},
+			wantedScoresBefore: fwk.NodeScoreList{
+				fwk.NodeScore{Name: nodes[0].Name, Score: 20},
+				fwk.NodeScore{Name: nodes[1].Name, Score: 20},
+				fwk.NodeScore{Name: nodes[2].Name, Score: 20},
+				fwk.NodeScore{Name: nodes[3].Name, Score: 20},
+				fwk.NodeScore{Name: nodes[4].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[5].Name, Score: 1},
+				fwk.NodeScore{Name: nodes[6].Name, Score: 10},
+				fwk.NodeScore{Name: nodes[7].Name, Score: 10},
 			},
-			wantedScoresAfter: framework.NodeScoreList{
-				framework.NodeScore{Name: nodes[0].Name, Score: 0},
-				framework.NodeScore{Name: nodes[1].Name, Score: 0},
-				framework.NodeScore{Name: nodes[2].Name, Score: 0},
-				framework.NodeScore{Name: nodes[3].Name, Score: 0},
-				framework.NodeScore{Name: nodes[4].Name, Score: 100},
-				framework.NodeScore{Name: nodes[5].Name, Score: 95},
-				framework.NodeScore{Name: nodes[6].Name, Score: 50},
-				framework.NodeScore{Name: nodes[7].Name, Score: 50},
+			wantedScoresAfter: fwk.NodeScoreList{
+				fwk.NodeScore{Name: nodes[0].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[1].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[2].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[3].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[4].Name, Score: 100},
+				fwk.NodeScore{Name: nodes[5].Name, Score: 95},
+				fwk.NodeScore{Name: nodes[6].Name, Score: 50},
+				fwk.NodeScore{Name: nodes[7].Name, Score: 50},
 			},
 			expected: fwk.Success,
 		},
@@ -660,25 +660,25 @@ func TestNetworkOverheadScore(t *testing.T) {
 			},
 			nodes: nodes,
 			want:  nil,
-			wantedScoresBefore: framework.NodeScoreList{
-				framework.NodeScore{Name: nodes[0].Name, Score: 0},
-				framework.NodeScore{Name: nodes[1].Name, Score: 1},
-				framework.NodeScore{Name: nodes[2].Name, Score: 5},
-				framework.NodeScore{Name: nodes[3].Name, Score: 5},
-				framework.NodeScore{Name: nodes[4].Name, Score: 20},
-				framework.NodeScore{Name: nodes[5].Name, Score: 20},
-				framework.NodeScore{Name: nodes[6].Name, Score: 20},
-				framework.NodeScore{Name: nodes[7].Name, Score: 20},
+			wantedScoresBefore: fwk.NodeScoreList{
+				fwk.NodeScore{Name: nodes[0].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[1].Name, Score: 1},
+				fwk.NodeScore{Name: nodes[2].Name, Score: 5},
+				fwk.NodeScore{Name: nodes[3].Name, Score: 5},
+				fwk.NodeScore{Name: nodes[4].Name, Score: 20},
+				fwk.NodeScore{Name: nodes[5].Name, Score: 20},
+				fwk.NodeScore{Name: nodes[6].Name, Score: 20},
+				fwk.NodeScore{Name: nodes[7].Name, Score: 20},
 			},
-			wantedScoresAfter: framework.NodeScoreList{
-				framework.NodeScore{Name: nodes[0].Name, Score: 100},
-				framework.NodeScore{Name: nodes[1].Name, Score: 95},
-				framework.NodeScore{Name: nodes[2].Name, Score: 75},
-				framework.NodeScore{Name: nodes[3].Name, Score: 75},
-				framework.NodeScore{Name: nodes[4].Name, Score: 0},
-				framework.NodeScore{Name: nodes[5].Name, Score: 0},
-				framework.NodeScore{Name: nodes[6].Name, Score: 0},
-				framework.NodeScore{Name: nodes[7].Name, Score: 0},
+			wantedScoresAfter: fwk.NodeScoreList{
+				fwk.NodeScore{Name: nodes[0].Name, Score: 100},
+				fwk.NodeScore{Name: nodes[1].Name, Score: 95},
+				fwk.NodeScore{Name: nodes[2].Name, Score: 75},
+				fwk.NodeScore{Name: nodes[3].Name, Score: 75},
+				fwk.NodeScore{Name: nodes[4].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[5].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[6].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[7].Name, Score: 0},
 			},
 			expected: fwk.Success,
 		},
@@ -695,25 +695,25 @@ func TestNetworkOverheadScore(t *testing.T) {
 			pod:   makePod("p3", "p3-deployment", 0, "basic", nil, nil),
 			nodes: nodes,
 			want:  nil,
-			wantedScoresBefore: framework.NodeScoreList{
-				framework.NodeScore{Name: nodes[0].Name, Score: 0},
-				framework.NodeScore{Name: nodes[1].Name, Score: 0},
-				framework.NodeScore{Name: nodes[2].Name, Score: 0},
-				framework.NodeScore{Name: nodes[3].Name, Score: 0},
-				framework.NodeScore{Name: nodes[4].Name, Score: 0},
-				framework.NodeScore{Name: nodes[5].Name, Score: 0},
-				framework.NodeScore{Name: nodes[6].Name, Score: 0},
-				framework.NodeScore{Name: nodes[7].Name, Score: 0},
+			wantedScoresBefore: fwk.NodeScoreList{
+				fwk.NodeScore{Name: nodes[0].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[1].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[2].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[3].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[4].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[5].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[6].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[7].Name, Score: 0},
 			},
-			wantedScoresAfter: framework.NodeScoreList{
-				framework.NodeScore{Name: nodes[0].Name, Score: 0},
-				framework.NodeScore{Name: nodes[1].Name, Score: 0},
-				framework.NodeScore{Name: nodes[2].Name, Score: 0},
-				framework.NodeScore{Name: nodes[3].Name, Score: 0},
-				framework.NodeScore{Name: nodes[4].Name, Score: 0},
-				framework.NodeScore{Name: nodes[5].Name, Score: 0},
-				framework.NodeScore{Name: nodes[6].Name, Score: 0},
-				framework.NodeScore{Name: nodes[7].Name, Score: 0},
+			wantedScoresAfter: fwk.NodeScoreList{
+				fwk.NodeScore{Name: nodes[0].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[1].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[2].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[3].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[4].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[5].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[6].Name, Score: 0},
+				fwk.NodeScore{Name: nodes[7].Name, Score: 0},
 			},
 			expected: fwk.Success,
 		},
@@ -775,7 +775,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 				t.Errorf("pods not scheduled yet: %v ", err)
 			}
 
-			var scoreList framework.NodeScoreList
+			var scoreList fwk.NodeScoreList
 			state := framework.NewCycleState()
 
 			for _, n := range nodes {
@@ -793,7 +793,7 @@ func TestNetworkOverheadScore(t *testing.T) {
 					tt.pod, nodeInfo)
 				t.Logf("Workload: %v; Node: %v; score: %v; status: %v; message: %v \n", tt.pod.Name, n.Name, score, gotStatus.Code().String(), gotStatus.Message())
 
-				nodeScore := framework.NodeScore{
+				nodeScore := fwk.NodeScore{
 					Name:  n.Name,
 					Score: score,
 				}
@@ -1034,14 +1034,14 @@ func BenchmarkNetworkOverheadScore(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				gotList := make(framework.NodeScoreList, len(nodes))
+				gotList := make(fwk.NodeScoreList, len(nodes))
 
 				scoreNode := func(i int) {
 					n := nodes[i]
 					nodeInfo := framework.NewNodeInfo()
 					nodeInfo.SetNode(n)
 					score, _ := pl.Score(ctx, state, tt.pod, nodeInfo)
-					gotList[i] = framework.NodeScore{Name: n.Name, Score: score}
+					gotList[i] = fwk.NodeScore{Name: n.Name, Score: score}
 				}
 				Until(ctx, len(nodes), scoreNode)
 

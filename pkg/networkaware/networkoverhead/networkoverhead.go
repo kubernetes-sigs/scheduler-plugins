@@ -30,7 +30,6 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginconfig "sigs.k8s.io/scheduler-plugins/apis/config"
@@ -41,9 +40,9 @@ import (
 	ntv1alpha1 "github.com/diktyo-io/networktopology-api/pkg/apis/networktopology/v1alpha1"
 )
 
-var _ framework.PreFilterPlugin = &NetworkOverhead{}
-var _ framework.FilterPlugin = &NetworkOverhead{}
-var _ framework.ScorePlugin = &NetworkOverhead{}
+var _ fwk.PreFilterPlugin = &NetworkOverhead{}
+var _ fwk.FilterPlugin = &NetworkOverhead{}
+var _ fwk.ScorePlugin = &NetworkOverhead{}
 
 const (
 	// Name : name of plugin used in the plugin registry and configurations.
@@ -76,7 +75,7 @@ type NetworkOverhead struct {
 	client.Client
 	logger      klog.Logger
 	podLister   corelisters.PodLister
-	handle      framework.Handle
+	handle      fwk.Handle
 	namespaces  []string
 	weightsName string
 	ntName      string
@@ -135,12 +134,12 @@ func getArgs(obj runtime.Object) (*pluginconfig.NetworkOverheadArgs, error) {
 }
 
 // ScoreExtensions : an interface for Score extended functionality
-func (no *NetworkOverhead) ScoreExtensions() framework.ScoreExtensions {
+func (no *NetworkOverhead) ScoreExtensions() fwk.ScoreExtensions {
 	return no
 }
 
 // New : create an instance of a NetworkOverhead plugin
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the NetworkOverhead plugin")
 
@@ -172,7 +171,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 // 4. Update cost map of all nodes
 // 5. Get number of satisfied and violated dependencies
 // 6. Get final cost of the given node to be used in the score plugin
-func (no *NetworkOverhead) PreFilter(ctx context.Context, state fwk.CycleState, pod *corev1.Pod, nodes []fwk.NodeInfo) (*framework.PreFilterResult, *fwk.Status) {
+func (no *NetworkOverhead) PreFilter(ctx context.Context, state fwk.CycleState, pod *corev1.Pod, nodes []fwk.NodeInfo) (*fwk.PreFilterResult, *fwk.Status) {
 	// Init PreFilter State
 	preFilterState := &PreFilterState{
 		scoreEqually: true,
@@ -299,7 +298,7 @@ func (no *NetworkOverhead) PreFilter(ctx context.Context, state fwk.CycleState, 
 }
 
 // PreFilterExtensions returns prefilter extensions, pod add and remove.
-func (no *NetworkOverhead) PreFilterExtensions() framework.PreFilterExtensions {
+func (no *NetworkOverhead) PreFilterExtensions() fwk.PreFilterExtensions {
 	return no
 }
 
@@ -364,7 +363,7 @@ func (no *NetworkOverhead) Score(ctx context.Context,
 	cycleState fwk.CycleState,
 	pod *corev1.Pod,
 	nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
-	score := framework.MinNodeScore
+	score := fwk.MinNodeScore
 	nodeName := nodeInfo.Node().Name
 
 	logger := klog.FromContext(klog.NewContext(ctx, no.logger)).WithValues("ExtensionPoint", "Score")
@@ -390,11 +389,11 @@ func (no *NetworkOverhead) Score(ctx context.Context,
 func (no *NetworkOverhead) NormalizeScore(ctx context.Context,
 	state fwk.CycleState,
 	pod *corev1.Pod,
-	scores framework.NodeScoreList) *fwk.Status {
+	scores fwk.NodeScoreList) *fwk.Status {
 	logger := klog.FromContext(klog.NewContext(ctx, no.logger)).WithValues("ExtensionPoint", "NormalizeScore")
 	logger.V(4).Info("before normalization: ", "scores", scores)
 
-	// Get Min and Max Scores to normalize between framework.MaxNodeScore and framework.MinNodeScore
+	// Get Min and Max Scores to normalize between fwk.MaxNodeScore and fwk.MinNodeScore
 	minCost, maxCost := getMinMaxScores(scores)
 
 	// If all nodes were given the minimum score, return
@@ -407,11 +406,11 @@ func (no *NetworkOverhead) NormalizeScore(ctx context.Context,
 		if maxCost != minCost { // If max != min
 			// node_normalized_cost = MAX_SCORE * ( ( nodeScore - minCost) / (maxCost - minCost)
 			// nodeScore = MAX_SCORE - node_normalized_cost
-			normCost = float64(framework.MaxNodeScore) * float64(scores[i].Score-minCost) / float64(maxCost-minCost)
-			scores[i].Score = framework.MaxNodeScore - int64(normCost)
+			normCost = float64(fwk.MaxNodeScore) * float64(scores[i].Score-minCost) / float64(maxCost-minCost)
+			scores[i].Score = fwk.MaxNodeScore - int64(normCost)
 		} else { // If maxCost = minCost, avoid division by 0
 			normCost = float64(scores[i].Score - minCost)
-			scores[i].Score = framework.MaxNodeScore - int64(normCost)
+			scores[i].Score = fwk.MaxNodeScore - int64(normCost)
 		}
 	}
 	logger.V(4).Info("after normalization: ", "scores", scores)
@@ -419,7 +418,7 @@ func (no *NetworkOverhead) NormalizeScore(ctx context.Context,
 }
 
 // MinMax : get min and max scores from NodeScoreList
-func getMinMaxScores(scores framework.NodeScoreList) (int64, int64) {
+func getMinMaxScores(scores fwk.NodeScoreList) (int64, int64) {
 	var max int64 = math.MinInt64 // Set to min value
 	var min int64 = math.MaxInt64 // Set to max value
 

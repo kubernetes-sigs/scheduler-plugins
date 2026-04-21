@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8scache "k8s.io/client-go/tools/cache"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/go-logr/logr"
@@ -44,7 +45,7 @@ const (
 )
 
 func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
-	tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle framework.Handle) (nrtcache.Interface, error) {
+	tcfg *apiconfig.NodeResourceTopologyMatchArgs, handle fwk.Handle) (nrtcache.Interface, error) {
 	client, err := ctrlclient.NewWithWatch(handle.KubeConfig(), ctrlclient.Options{Scheme: scheme})
 	if err != nil {
 		lh.Error(err, "cannot create client for NodeTopologyResource", "kubeConfig", handle.KubeConfig())
@@ -76,7 +77,7 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 	return nrtCache, nil
 }
 
-func initNodeTopologyForeignPodsDetection(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, handle framework.Handle, podSharedInformer k8scache.SharedInformer, nrtCache *nrtcache.OverReserve) {
+func initNodeTopologyForeignPodsDetection(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, handle fwk.Handle, podSharedInformer k8scache.SharedInformer, nrtCache *nrtcache.OverReserve) {
 	foreignPodsDetect := getForeignPodsDetectMode(lh, cfg)
 
 	if foreignPodsDetect == apiconfig.ForeignPodsDetectNone {

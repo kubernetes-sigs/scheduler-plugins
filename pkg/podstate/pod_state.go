@@ -23,14 +23,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	fwk "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 type PodState struct {
-	handle framework.Handle
+	handle fwk.Handle
 }
 
-var _ = framework.ScorePlugin(&PodState{})
+var _ = fwk.ScorePlugin(&PodState{})
 
 // Name is the name of the plugin used in the Registry and configurations.
 const Name = "PodState"
@@ -47,7 +46,7 @@ func (ps *PodState) Score(ctx context.Context, state fwk.CycleState, pod *v1.Pod
 }
 
 // ScoreExtensions of the Score plugin.
-func (ps *PodState) ScoreExtensions() framework.ScoreExtensions {
+func (ps *PodState) ScoreExtensions() fwk.ScoreExtensions {
 	return ps
 }
 
@@ -64,7 +63,7 @@ func (ps *PodState) score(nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
 	return terminatingPodNum - nominatedPodNum, nil
 }
 
-func (ps *PodState) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *fwk.Status {
+func (ps *PodState) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores fwk.NodeScoreList) *fwk.Status {
 	// Find highest and lowest scores.
 	var highest int64 = -math.MaxInt64
 	var lowest int64 = math.MaxInt64
@@ -79,12 +78,12 @@ func (ps *PodState) NormalizeScore(ctx context.Context, state fwk.CycleState, po
 
 	// Transform the highest to the lowest score range to fit the framework's min to max node score range.
 	oldRange := highest - lowest
-	newRange := framework.MaxNodeScore - framework.MinNodeScore
+	newRange := fwk.MaxNodeScore - fwk.MinNodeScore
 	for i, nodeScore := range scores {
 		if oldRange == 0 {
-			scores[i].Score = framework.MinNodeScore
+			scores[i].Score = fwk.MinNodeScore
 		} else {
-			scores[i].Score = ((nodeScore.Score - lowest) * newRange / oldRange) + framework.MinNodeScore
+			scores[i].Score = ((nodeScore.Score - lowest) * newRange / oldRange) + fwk.MinNodeScore
 		}
 	}
 
@@ -92,6 +91,6 @@ func (ps *PodState) NormalizeScore(ctx context.Context, state fwk.CycleState, po
 }
 
 // New initializes a new plugin and returns it.
-func New(_ context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, _ runtime.Object, h fwk.Handle) (fwk.Plugin, error) {
 	return &PodState{handle: h}, nil
 }

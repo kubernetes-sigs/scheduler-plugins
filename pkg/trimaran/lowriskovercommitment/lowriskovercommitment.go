@@ -53,14 +53,14 @@ const (
 // LowRiskOverCommitment : scheduler plugin
 type LowRiskOverCommitment struct {
 	logger              klog.Logger
-	handle              framework.Handle
+	handle              fwk.Handle
 	collector           *trimaran.Collector
 	args                *pluginConfig.LowRiskOverCommitmentArgs
 	riskLimitWeightsMap map[v1.ResourceName]float64
 }
 
 // New : create an instance of a LowRiskOverCommitment plugin
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the LowRiskOverCommitment plugin")
 	// cast object into plugin arguments object
@@ -106,7 +106,7 @@ func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState fwk.Cycle
 	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	nodeName := nodeInfo.Node().Name
 	logger.V(6).Info("Score: Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
-	score := framework.MinNodeScore
+	score := fwk.MinNodeScore
 
 	defer func() {
 		logger.V(6).Info("Calculating totalScore", "pod", klog.KObj(pod), "nodeName", nodeName, "totalScore", score)
@@ -134,7 +134,7 @@ func (pl *LowRiskOverCommitment) Score(ctx context.Context, cycleState fwk.Cycle
 		return score, nil
 	}
 	// calculate score
-	totalScore := pl.computeRank(logger, metrics, nodeInfo, pod, podRequests, podLimits) * float64(framework.MaxNodeScore)
+	totalScore := pl.computeRank(logger, metrics, nodeInfo, pod, podRequests, podLimits) * float64(fwk.MaxNodeScore)
 	score = int64(math.Round(totalScore))
 	return score, fwk.NewStatus(fwk.Success, "")
 }
@@ -145,12 +145,12 @@ func (pl *LowRiskOverCommitment) Name() string {
 }
 
 // ScoreExtensions : an interface for Score extended functionality
-func (pl *LowRiskOverCommitment) ScoreExtensions() framework.ScoreExtensions {
+func (pl *LowRiskOverCommitment) ScoreExtensions() fwk.ScoreExtensions {
 	return pl
 }
 
 // NormalizeScore : normalize scores
-func (pl *LowRiskOverCommitment) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, framework.NodeScoreList) *fwk.Status {
+func (pl *LowRiskOverCommitment) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, fwk.NodeScoreList) *fwk.Status {
 	return nil
 }
 

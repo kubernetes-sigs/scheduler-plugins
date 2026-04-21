@@ -25,7 +25,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -52,11 +51,11 @@ func init() {
 type TopologicalSort struct {
 	client.Client
 	logger     klog.Logger
-	handle     framework.Handle
+	handle     fwk.Handle
 	namespaces []string
 }
 
-var _ framework.QueueSortPlugin = &TopologicalSort{}
+var _ fwk.QueueSortPlugin = &TopologicalSort{}
 
 // Name : returns the name of the plugin.
 func (ts *TopologicalSort) Name() string {
@@ -74,7 +73,7 @@ func getArgs(obj runtime.Object) (*pluginconfig.TopologicalSortArgs, error) {
 }
 
 // New : create an instance of a TopologicalSort plugin
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the TopologicalSort plugin")
 

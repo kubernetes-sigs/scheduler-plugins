@@ -35,7 +35,6 @@ import (
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
@@ -46,12 +45,12 @@ const (
 
 type Peaks struct {
 	logger    klog.Logger
-	handle    framework.Handle
+	handle    fwk.Handle
 	collector *trimaran.Collector
 	args      *config.PeaksArgs
 }
 
-var _ framework.ScorePlugin = &Peaks{}
+var _ fwk.ScorePlugin = &Peaks{}
 
 func (pl *Peaks) Name() string {
 	return Name
@@ -74,7 +73,7 @@ func initNodePowerModels(powerModel map[string]config.PowerModel) error {
 	return nil
 }
 
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Peaks plugin Input config %+v", obj)
 
@@ -103,7 +102,7 @@ func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (fram
 
 func (pl *Peaks) Score(ctx context.Context, cycleState fwk.CycleState, pod *v1.Pod, nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
 	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
-	score := framework.MinNodeScore
+	score := fwk.MinNodeScore
 	nodeName := nodeInfo.Node().Name
 
 	metrics, _ := pl.collector.GetNodeMetrics(logger, nodeName)
@@ -146,11 +145,11 @@ func (pl *Peaks) Score(ctx context.Context, cycleState fwk.CycleState, pod *v1.P
 	}
 }
 
-func (pl *Peaks) ScoreExtensions() framework.ScoreExtensions {
+func (pl *Peaks) ScoreExtensions() fwk.ScoreExtensions {
 	return pl
 }
 
-func (pl *Peaks) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *fwk.Status {
+func (pl *Peaks) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores fwk.NodeScoreList) *fwk.Status {
 	minCost, maxCost := getMinMaxScores(scores)
 	if minCost == 0 && maxCost == 0 {
 		return fwk.NewStatus(fwk.Success, "")
@@ -158,17 +157,17 @@ func (pl *Peaks) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *
 	var normCost float64
 	for i := range scores {
 		if maxCost != minCost {
-			normCost = float64(framework.MaxNodeScore) * float64(scores[i].Score-minCost) / float64(maxCost-minCost)
-			scores[i].Score = framework.MaxNodeScore - int64(normCost)
+			normCost = float64(fwk.MaxNodeScore) * float64(scores[i].Score-minCost) / float64(maxCost-minCost)
+			scores[i].Score = fwk.MaxNodeScore - int64(normCost)
 		} else {
 			normCost = float64(scores[i].Score - minCost)
-			scores[i].Score = framework.MaxNodeScore - int64(normCost)
+			scores[i].Score = fwk.MaxNodeScore - int64(normCost)
 		}
 	}
 	return fwk.NewStatus(fwk.Success, "")
 }
 
-func getMinMaxScores(scores framework.NodeScoreList) (int64, int64) {
+func getMinMaxScores(scores fwk.NodeScoreList) (int64, int64) {
 	var max int64 = math.MinInt64 // Set to min value
 	var min int64 = math.MaxInt64 // Set to max value
 

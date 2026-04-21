@@ -31,7 +31,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
@@ -45,16 +44,16 @@ const (
 // LoadVariationRiskBalancing : scheduler plugin
 type LoadVariationRiskBalancing struct {
 	logger       klog.Logger
-	handle       framework.Handle
+	handle       fwk.Handle
 	eventHandler *trimaran.PodAssignEventHandler
 	collector    *trimaran.Collector
 	args         *pluginConfig.LoadVariationRiskBalancingArgs
 }
 
-var _ framework.ScorePlugin = &LoadVariationRiskBalancing{}
+var _ fwk.ScorePlugin = &LoadVariationRiskBalancing{}
 
 // New : create an instance of a LoadVariationRiskBalancing plugin
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the LoadVariationRiskBalancing plugin")
 	// cast object into plugin arguments object
@@ -86,7 +85,7 @@ func (pl *LoadVariationRiskBalancing) Score(ctx context.Context, cycleState fwk.
 	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
 	nodeName := nodeInfo.Node().Name
 	logger.V(6).Info("Calculating score", "pod", klog.KObj(pod), "nodeName", nodeName)
-	score := framework.MinNodeScore
+	score := fwk.MinNodeScore
 	// get node metrics
 	metrics, _ := pl.collector.GetNodeMetrics(logger, nodeName)
 	if metrics == nil {
@@ -128,11 +127,11 @@ func (pl *LoadVariationRiskBalancing) Name() string {
 }
 
 // ScoreExtensions : an interface for Score extended functionality
-func (pl *LoadVariationRiskBalancing) ScoreExtensions() framework.ScoreExtensions {
+func (pl *LoadVariationRiskBalancing) ScoreExtensions() fwk.ScoreExtensions {
 	return pl
 }
 
 // NormalizeScore : normalize scores
-func (pl *LoadVariationRiskBalancing) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, framework.NodeScoreList) *fwk.Status {
+func (pl *LoadVariationRiskBalancing) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, fwk.NodeScoreList) *fwk.Status {
 	return nil
 }

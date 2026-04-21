@@ -30,8 +30,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientcache "k8s.io/client-go/tools/cache"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 const (
@@ -70,7 +70,7 @@ func New() *PodAssignEventHandler {
 }
 
 // AddToHandle : add event handler to framework handle
-func (p *PodAssignEventHandler) AddToHandle(handle framework.Handle) {
+func (p *PodAssignEventHandler) AddToHandle(handle fwk.Handle) {
 	handle.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
 		clientcache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {

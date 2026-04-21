@@ -15,6 +15,7 @@ import (
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	clientscheme "k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
+	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
@@ -415,19 +416,19 @@ func TestScore(t *testing.T) {
 func TestNormalizeScore(t *testing.T) {
 	tests := []struct {
 		name       string
-		nodescores framework.NodeScoreList
+		nodescores fwk.NodeScoreList
 		expected   []int
 	}{
 		{
 			name: "Normalize score",
-			nodescores: framework.NodeScoreList{framework.NodeScore{Name: "test", Score: 100},
-				framework.NodeScore{Name: "test1", Score: 200}},
+			nodescores: fwk.NodeScoreList{fwk.NodeScore{Name: "test", Score: 100},
+				fwk.NodeScore{Name: "test1", Score: 200}},
 			expected: []int{50, 0},
 		},
 		{
 			name: "Normalize score 2",
-			nodescores: framework.NodeScoreList{framework.NodeScore{Name: "test", Score: 0},
-				framework.NodeScore{Name: "test1", Score: 200}},
+			nodescores: fwk.NodeScoreList{fwk.NodeScore{Name: "test", Score: 0},
+				fwk.NodeScore{Name: "test1", Score: 200}},
 			expected: []int{100, 0},
 		},
 	}

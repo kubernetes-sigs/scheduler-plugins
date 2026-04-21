@@ -45,32 +45,32 @@ func TestPodState(t *testing.T) {
 	tests := []struct {
 		nodeInfos    []fwk.NodeInfo
 		wantErr      string
-		expectedList framework.NodeScoreList
+		expectedList fwk.NodeScoreList
 		name         string
 	}{
 		{
 			nodeInfos:    []fwk.NodeInfo{makeNodeInfo("node1", 6, 0, 10), makeNodeInfo("node2", 3, 0, 10), makeNodeInfo("node3", 0, 0, 10)},
-			expectedList: []framework.NodeScore{{Name: "node1", Score: framework.MaxNodeScore}, {Name: "node2", Score: 50}, {Name: "node3", Score: framework.MinNodeScore}},
+			expectedList: []fwk.NodeScore{{Name: "node1", Score: fwk.MaxNodeScore}, {Name: "node2", Score: 50}, {Name: "node3", Score: fwk.MinNodeScore}},
 			name:         "node has more terminating pods will be scored with higher score, node has regular pods only will be scored with the lowest score.",
 		},
 		{
 			nodeInfos:    []fwk.NodeInfo{makeNodeInfo("node1", 0, 2, 10), makeNodeInfo("node2", 0, 1, 10), makeNodeInfo("node3", 0, 0, 10)},
-			expectedList: []framework.NodeScore{{Name: "node1", Score: framework.MinNodeScore}, {Name: "node2", Score: 50}, {Name: "node3", Score: framework.MaxNodeScore}},
+			expectedList: []fwk.NodeScore{{Name: "node1", Score: fwk.MinNodeScore}, {Name: "node2", Score: 50}, {Name: "node3", Score: fwk.MaxNodeScore}},
 			name:         "node has more nominated pods will be scored with lower score, node has regular pods only will be scored with the highest score.",
 		},
 		{
 			nodeInfos:    []fwk.NodeInfo{makeNodeInfo("node1", 5, 2, 10), makeNodeInfo("node2", 3, 1, 10)},
-			expectedList: []framework.NodeScore{{Name: "node1", Score: framework.MaxNodeScore}, {Name: "node2", Score: framework.MinNodeScore}},
+			expectedList: []fwk.NodeScore{{Name: "node1", Score: fwk.MaxNodeScore}, {Name: "node2", Score: fwk.MinNodeScore}},
 			name:         "node has more (terminatingPodNumber - nominatedPodNumber) will be scored with higher score",
 		},
 		{
 			nodeInfos:    []fwk.NodeInfo{makeNodeInfo("node1", 5, 4, 10), makeNodeInfo("node2", 3, 1, 10)},
-			expectedList: []framework.NodeScore{{Name: "node1", Score: framework.MinNodeScore}, {Name: "node2", Score: framework.MaxNodeScore}},
+			expectedList: []fwk.NodeScore{{Name: "node1", Score: fwk.MinNodeScore}, {Name: "node2", Score: fwk.MaxNodeScore}},
 			name:         "node has less (terminatingPodNumber - nominatedPodNumber) will be scored with lower score",
 		},
 		{
 			nodeInfos:    []fwk.NodeInfo{makeNodeInfo("node1", 5, 0, 10), makeNodeInfo("node2", 3, 1, 10), makeNodeInfo("node3", 2, 1, 10), makeNodeInfo("node4", 0, 1, 10)},
-			expectedList: []framework.NodeScore{{Name: "node1", Score: framework.MaxNodeScore}, {Name: "node2", Score: 50}, {Name: "node3", Score: 33}, {Name: "node4", Score: framework.MinNodeScore}},
+			expectedList: []fwk.NodeScore{{Name: "node1", Score: fwk.MaxNodeScore}, {Name: "node2", Score: 50}, {Name: "node3", Score: 33}, {Name: "node4", Score: fwk.MinNodeScore}},
 			name:         "node has more (terminatingPodNumber - nominatedPodNumber) will be scored with higher score",
 		},
 	}
@@ -111,14 +111,14 @@ func TestPodState(t *testing.T) {
 				}
 			}
 			pe, _ := New(nil, nil, fh)
-			var gotList framework.NodeScoreList
-			plugin := pe.(framework.ScorePlugin)
+			var gotList fwk.NodeScoreList
+			plugin := pe.(fwk.ScorePlugin)
 			for i, n := range test.nodeInfos {
 				score, err := plugin.Score(context.Background(), nil, nil, n)
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
-				gotList = append(gotList, framework.NodeScore{Name: test.nodeInfos[i].Node().Name, Score: score})
+				gotList = append(gotList, fwk.NodeScore{Name: test.nodeInfos[i].Node().Name, Score: score})
 			}
 
 			status := plugin.ScoreExtensions().NormalizeScore(context.Background(), nil, nil, gotList)
@@ -191,21 +191,21 @@ func makeRegularPod(name string) *v1.Pod {
 	}
 }
 
-func addNominatedPod(logger klog.Logger, pi fwk.PodInfo, nodeName string, fh framework.Handle) fwk.PodInfo {
-	fh.AddNominatedPod(logger, pi, &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: nodeName})
+func addNominatedPod(logger klog.Logger, pi fwk.PodInfo, nodeName string, fh fwk.Handle) fwk.PodInfo {
+	fh.AddNominatedPod(logger, pi, &fwk.NominatingInfo{NominatingMode: fwk.ModeOverride, NominatedNodeName: nodeName})
 	return pi
 }
 
-var _ framework.SharedLister = &fakeSharedLister{}
+var _ fwk.SharedLister = &fakeSharedLister{}
 
 type fakeSharedLister struct {
 	nodes []fwk.NodeInfo
 }
 
-func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *fakeSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
-func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *fakeSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return tf.NodeInfoLister(f.nodes)
 }

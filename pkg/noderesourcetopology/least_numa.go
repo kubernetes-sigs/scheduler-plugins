@@ -20,7 +20,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/go-logr/logr"
 	"gonum.org/v1/gonum/stat/combin"
@@ -48,7 +47,7 @@ func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) 
 		if numaNodes == nil {
 			// score plugin should be running after resource filter plugin so we should always find sufficient amount of NUMA nodes
 			lh.Info("cannot calculate how many NUMA nodes are required", "container", container.Name)
-			return framework.MinNodeScore, nil
+			return fwk.MinNodeScore, nil
 		}
 
 		if !isMinAvgDistance {
@@ -65,7 +64,7 @@ func leastNUMAContainerScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) 
 	}
 
 	if maxNUMANodesCount == 0 {
-		return framework.MaxNodeScore, nil
+		return fwk.MaxNodeScore, nil
 	}
 
 	return normalizeScore(maxNUMANodesCount, allContainersMinAvgDistance, info.topologyManager.MaxNUMANodes), nil
@@ -75,7 +74,7 @@ func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64
 	resources := util.GetPodEffectiveRequest(pod)
 	// if a pod requests only non NUMA resources return max score
 	if onlyNonNUMAResources(info.numaNodes, resources) {
-		return framework.MaxNodeScore, nil
+		return fwk.MaxNodeScore, nil
 	}
 
 	numaNodes, isMinAvgDistance := numaNodesRequired(lh, info.qos, info.numaNodes, resources)
@@ -83,15 +82,15 @@ func leastNUMAPodScopeScore(lh logr.Logger, pod *v1.Pod, info *scoreInfo) (int64
 	if numaNodes == nil {
 		// score plugin should be running after resource filter plugin so we should always find sufficient amount of NUMA nodes
 		lh.Info("cannot calculate how many NUMA nodes are required")
-		return framework.MinNodeScore, nil
+		return fwk.MinNodeScore, nil
 	}
 
 	return normalizeScore(numaNodes.Count(), isMinAvgDistance, info.topologyManager.MaxNUMANodes), nil
 }
 
 func normalizeScore(numaNodesCount int, isMinAvgDistance bool, highestNUMAID int) int64 {
-	numaNodeScore := framework.MaxNodeScore / int64(highestNUMAID)
-	score := framework.MaxNodeScore - int64(numaNodesCount)*numaNodeScore
+	numaNodeScore := fwk.MaxNodeScore / int64(highestNUMAID)
+	score := fwk.MaxNodeScore - int64(numaNodesCount)*numaNodeScore
 	if isMinAvgDistance {
 		// if distance between NUMA domains is optimal add half of numaNodeScore to make this node more favorable
 		return score + numaNodeScore/2

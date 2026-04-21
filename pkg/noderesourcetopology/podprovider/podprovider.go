@@ -26,7 +26,7 @@ import (
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	k8scache "k8s.io/client-go/tools/cache"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
@@ -34,7 +34,7 @@ import (
 
 type PodFilterFunc func(lh logr.Logger, pod *corev1.Pod) bool
 
-func NewFromHandle(lh logr.Logger, handle framework.Handle, cacheConf *apiconfig.NodeResourceTopologyCache) (k8scache.SharedIndexInformer, podlisterv1.PodLister, PodFilterFunc) {
+func NewFromHandle(lh logr.Logger, handle fwk.Handle, cacheConf *apiconfig.NodeResourceTopologyCache) (k8scache.SharedIndexInformer, podlisterv1.PodLister, PodFilterFunc) {
 	dedicated := wantsDedicatedInformer(cacheConf)
 	if !dedicated {
 		podHandle := handle.SharedInformerFactory().Core().V1().Pods() // shortcut
