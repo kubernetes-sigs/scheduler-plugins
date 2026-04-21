@@ -28,6 +28,7 @@ import (
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
 	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
@@ -111,14 +112,69 @@ func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin
 }
 
 func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]fwk.ClusterEventWithHint, error) {
-	// To register a custom event, follow the naming convention at:
-	// https://github.com/kubernetes/kubernetes/pull/101394
-	// Please follow: eventhandlers.go#L403-L410
 	pgGVK := fmt.Sprintf("podgroups.v1alpha1.%v", scheduling.GroupName)
 	return []fwk.ClusterEventWithHint{
-		{Event: fwk.ClusterEvent{Resource: fwk.Pod, ActionType: fwk.Add}},
-		{Event: fwk.ClusterEvent{Resource: fwk.EventResource(pgGVK), ActionType: fwk.Add | fwk.Update}},
+		// A new pod being added might complete the sibling count needed for a PodGroup's minMember.
+		{Event: fwk.ClusterEvent{Resource: fwk.Pod, ActionType: fwk.Add}, QueueingHintFn: cs.isSchedulableAfterPodAdded},
+		// An assigned pod being deleted (or un-assumed after Permit timeout) frees cluster resources,
+		// which may allow a previously resource-blocked PodGroup to schedule.
+		{Event: fwk.ClusterEvent{Resource: fwk.Pod, ActionType: fwk.Delete}, QueueingHintFn: cs.isSchedulableAfterPodDeleted},
+		// A PodGroup being added or updated can make a waiting pod schedulable.
+		{Event: fwk.ClusterEvent{Resource: fwk.EventResource(pgGVK), ActionType: fwk.Add | fwk.Update}, QueueingHintFn: cs.isSchedulableAfterPodGroupChanged},
 	}, nil
+}
+
+func (cs *Coscheduling) isSchedulableAfterPodAdded(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) (fwk.QueueingHint, error) {
+	_, addedPod, err := schedutil.As[*v1.Pod](oldObj, newObj)
+	if err != nil {
+		return fwk.Queue, err
+	}
+
+	pgLabel := util.GetPodGroupLabel(pod)
+	if pgLabel == "" || pod.Namespace != addedPod.Namespace || pgLabel != util.GetPodGroupLabel(addedPod) {
+		logger.V(5).Info("another pod was added but it doesn't belong to the same PodGroup",
+			"pod", klog.KObj(pod), "podGroupLabel", pgLabel, "addedPod", klog.KObj(addedPod))
+		return fwk.QueueSkip, nil
+	}
+
+	logger.V(5).Info("a sibling pod was added, which may make the pod schedulable",
+		"pod", klog.KObj(pod), "podGroupLabel", pgLabel, "addedPod", klog.KObj(addedPod))
+	return fwk.Queue, nil
+}
+
+func (cs *Coscheduling) isSchedulableAfterPodDeleted(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) (fwk.QueueingHint, error) {
+	deletedPod, _, err := schedutil.As[*v1.Pod](oldObj, newObj)
+	if err != nil {
+		return fwk.Queue, err
+	}
+
+	if deletedPod.Spec.NodeName == "" {
+		logger.V(5).Info("the deleted pod was unscheduled and wouldn't free cluster resources",
+			"pod", klog.KObj(pod), "deletedPod", klog.KObj(deletedPod))
+		return fwk.QueueSkip, nil
+	}
+
+	logger.V(5).Info("an assigned pod was deleted, which may free resources and make the pod schedulable",
+		"pod", klog.KObj(pod), "deletedPod", klog.KObj(deletedPod))
+	return fwk.Queue, nil
+}
+
+func (cs *Coscheduling) isSchedulableAfterPodGroupChanged(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) (fwk.QueueingHint, error) {
+	_, pg, err := schedutil.As[*v1alpha1.PodGroup](oldObj, newObj)
+	if err != nil {
+		return fwk.Queue, err
+	}
+
+	pgLabel := util.GetPodGroupLabel(pod)
+	if pgLabel == "" || pod.Namespace != pg.Namespace || pgLabel != pg.Name {
+		logger.V(5).Info("PodGroup was changed but it doesn't match the pod's PodGroup",
+			"pod", klog.KObj(pod), "podGroupLabel", pgLabel, "changedPodGroup", klog.KObj(pg))
+		return fwk.QueueSkip, nil
+	}
+
+	logger.V(5).Info("PodGroup was changed and it matches the pod's PodGroup, which may make the pod schedulable",
+		"pod", klog.KObj(pod), "podGroupLabel", pgLabel, "changedPodGroup", klog.KObj(pg))
+	return fwk.Queue, nil
 }
 
 // Name returns name of the plugin. It is used in logs, etc.
