@@ -19,7 +19,7 @@ package noderesourcetopology
 import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 
 	"gonum.org/v1/gonum/stat"
 )
@@ -43,7 +43,7 @@ func balancedAllocationScoreStrategy(requested, allocatable v1.ResourceList, res
 	// Since the variance is between positive fractions, it will be positive fraction. 1-variance lets the
 	// score to be higher for node which has least variance and multiplying it with `MaxNodeScore` provides the scaling
 	// factor needed.
-	return int64((1 - variance) * float64(framework.MaxNodeScore))
+	return int64((1 - variance) * float64(fwk.MaxNodeScore))
 }
 
 func fractionOfCapacity(requested, capacity resource.Quantity) float64 {

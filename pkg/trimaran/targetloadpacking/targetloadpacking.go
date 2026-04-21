@@ -34,7 +34,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	pluginConfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
@@ -55,15 +54,15 @@ var (
 
 type TargetLoadPacking struct {
 	logger       klog.Logger
-	handle       framework.Handle
+	handle       fwk.Handle
 	eventHandler *trimaran.PodAssignEventHandler
 	collector    *trimaran.Collector
 	args         *pluginConfig.TargetLoadPackingArgs
 }
 
-var _ framework.ScorePlugin = &TargetLoadPacking{}
+var _ fwk.ScorePlugin = &TargetLoadPacking{}
 
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	logger.V(4).Info("Creating new instance of the TargetLoadPacking plugin")
 	// cast object into plugin arguments object
@@ -107,7 +106,7 @@ func (pl *TargetLoadPacking) Name() string {
 
 func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState fwk.CycleState, pod *v1.Pod, nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
 	logger := klog.FromContext(klog.NewContext(ctx, pl.logger)).WithValues("ExtensionPoint", "Score")
-	score := framework.MinNodeScore
+	score := fwk.MinNodeScore
 	nodeName := nodeInfo.Node().Name
 
 	// get node metrics
@@ -187,11 +186,11 @@ func (pl *TargetLoadPacking) Score(ctx context.Context, cycleState fwk.CycleStat
 	return score, fwk.NewStatus(fwk.Success, "")
 }
 
-func (pl *TargetLoadPacking) ScoreExtensions() framework.ScoreExtensions {
+func (pl *TargetLoadPacking) ScoreExtensions() fwk.ScoreExtensions {
 	return pl
 }
 
-func (pl *TargetLoadPacking) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, framework.NodeScoreList) *fwk.Status {
+func (pl *TargetLoadPacking) NormalizeScore(context.Context, fwk.CycleState, *v1.Pod, fwk.NodeScoreList) *fwk.Status {
 	return nil
 }
 

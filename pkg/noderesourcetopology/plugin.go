@@ -26,7 +26,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
@@ -77,11 +76,11 @@ type TopologyMatch struct {
 	scoreStrategyType   apiconfig.ScoringStrategyType
 }
 
-var _ framework.FilterPlugin = &TopologyMatch{}
-var _ framework.ReservePlugin = &TopologyMatch{}
-var _ framework.ScorePlugin = &TopologyMatch{}
-var _ framework.EnqueueExtensions = &TopologyMatch{}
-var _ framework.PostBindPlugin = &TopologyMatch{}
+var _ fwk.FilterPlugin = &TopologyMatch{}
+var _ fwk.ReservePlugin = &TopologyMatch{}
+var _ fwk.ScorePlugin = &TopologyMatch{}
+var _ fwk.EnqueueExtensions = &TopologyMatch{}
+var _ fwk.PostBindPlugin = &TopologyMatch{}
 
 // Name returns name of the plugin. It is used in logs, etc.
 func (tm *TopologyMatch) Name() string {
@@ -89,7 +88,7 @@ func (tm *TopologyMatch) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	lh := klog.FromContext(ctx)
 
 	lh.V(5).Info("creating new noderesourcetopology plugin")

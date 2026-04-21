@@ -59,7 +59,7 @@ func init() {
 type CapacityScheduling struct {
 	sync.RWMutex
 	logger            klog.Logger
-	fh                framework.Handle
+	fh                fwk.Handle
 	podLister         corelisters.PodLister
 	pdbLister         policylisters.PodDisruptionBudgetLister
 	client            client.Client
@@ -98,10 +98,10 @@ func (s *ElasticQuotaSnapshotState) Clone() fwk.StateData {
 	}
 }
 
-var _ framework.PreFilterPlugin = &CapacityScheduling{}
-var _ framework.PostFilterPlugin = &CapacityScheduling{}
-var _ framework.ReservePlugin = &CapacityScheduling{}
-var _ framework.EnqueueExtensions = &CapacityScheduling{}
+var _ fwk.PreFilterPlugin = &CapacityScheduling{}
+var _ fwk.PostFilterPlugin = &CapacityScheduling{}
+var _ fwk.ReservePlugin = &CapacityScheduling{}
+var _ fwk.EnqueueExtensions = &CapacityScheduling{}
 var _ preemption.Interface = &preemptor{}
 
 const (
@@ -119,7 +119,7 @@ func (c *CapacityScheduling) Name() string {
 }
 
 // New initializes a new plugin and returns it.
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	lh := klog.FromContext(ctx).WithValues("plugin", Name)
 	c := &CapacityScheduling{
 		logger:            lh,
@@ -205,7 +205,7 @@ func (c *CapacityScheduling) EventsToRegister(_ context.Context) ([]fwk.ClusterE
 // PreFilter performs the following validations.
 // 1. Check if the (pod.request + eq.allocated) is less than eq.max.
 // 2. Check if the sum(eq's usage) > sum(eq's min).
-func (c *CapacityScheduling) PreFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodes []fwk.NodeInfo) (*framework.PreFilterResult, *fwk.Status) {
+func (c *CapacityScheduling) PreFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, nodes []fwk.NodeInfo) (*fwk.PreFilterResult, *fwk.Status) {
 	// TODO improve the efficiency of taking snapshot
 	// e.g. use a two-pointer data structure to only copy the updated EQs when necessary.
 	snapshotElasticQuota := c.snapshotElasticQuota()
@@ -282,7 +282,7 @@ func (c *CapacityScheduling) PreFilter(ctx context.Context, state fwk.CycleState
 }
 
 // PreFilterExtensions returns prefilter extensions, pod add and remove.
-func (c *CapacityScheduling) PreFilterExtensions() framework.PreFilterExtensions {
+func (c *CapacityScheduling) PreFilterExtensions() fwk.PreFilterExtensions {
 	return c
 }
 
@@ -328,7 +328,7 @@ func (c *CapacityScheduling) RemovePod(ctx context.Context, cycleState fwk.Cycle
 	return fwk.NewStatus(fwk.Success, "")
 }
 
-func (c *CapacityScheduling) PostFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *fwk.Status) {
+func (c *CapacityScheduling) PostFilter(ctx context.Context, state fwk.CycleState, pod *v1.Pod, m fwk.NodeToStatusReader) (*fwk.PostFilterResult, *fwk.Status) {
 	defer func() {
 		metrics.PreemptionAttempts.Inc()
 	}()
@@ -380,7 +380,7 @@ func (c *CapacityScheduling) Unreserve(ctx context.Context, state fwk.CycleState
 
 type preemptor struct {
 	logger klog.Logger
-	fh     framework.Handle
+	fh     fwk.Handle
 	state  fwk.CycleState
 }
 

@@ -191,9 +191,9 @@ func TestPostFilter(t *testing.T) {
 		pod                 *v1.Pod
 		existPods           []*v1.Pod
 		nodes               []*v1.Node
-		filteredNodesReader framework.NodeToStatusReader
+		filteredNodesReader fwk.NodeToStatusReader
 		elasticQuotas       map[string]*ElasticQuotaInfo
-		wantResult          *framework.PostFilterResult
+		wantResult          *fwk.PostFilterResult
 		wantStatus          *fwk.Status
 	}{
 		{
@@ -607,7 +607,7 @@ func TestDryRunPreemption(t *testing.T) {
 		pod           *v1.Pod
 		pods          []*v1.Pod
 		nodes         []*v1.Node
-		nodeReader    framework.NodeToStatusReader
+		nodeReader    fwk.NodeToStatusReader
 		elasticQuotas map[string]*ElasticQuotaInfo
 		want          []preemption.Candidate
 	}{
@@ -1647,7 +1647,7 @@ func makeRegisteredPlugin() []tf.RegisterPluginFunc {
 	registeredPlugins := []tf.RegisterPluginFunc{
 		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		tf.RegisterPluginAsExtensions(noderesources.Name, func(ctx context.Context, plArgs apiruntime.Object, fh framework.Handle) (framework.Plugin, error) {
+		tf.RegisterPluginAsExtensions(noderesources.Name, func(ctx context.Context, plArgs apiruntime.Object, fh fwk.Handle) (fwk.Plugin, error) {
 			return noderesources.NewFit(ctx, plArgs, fh, plfeature.Features{})
 		}, "Filter", "PreFilter"),
 	}

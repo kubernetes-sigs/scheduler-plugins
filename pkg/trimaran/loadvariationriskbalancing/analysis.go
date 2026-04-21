@@ -20,7 +20,7 @@ import (
 	"math"
 
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
@@ -56,5 +56,5 @@ func computeScore(logger klog.Logger, rs *trimaran.ResourceStats, margin float64
 	// evaluate overall risk factor
 	risk := (mu + sigma) / 2
 	logger.V(6).Info("Evaluating risk factor", "mu", mu, "sigma", sigma, "margin", margin, "sensitivity", sensitivity, "risk", risk)
-	return (1. - risk) * float64(framework.MaxNodeScore)
+	return (1. - risk) * float64(fwk.MaxNodeScore)
 }

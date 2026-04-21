@@ -37,7 +37,7 @@ import (
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
-var _ framework.SharedLister = &fakeSharedLister{}
+var _ fwk.SharedLister = &fakeSharedLister{}
 
 type fakeSharedLister struct {
 	nodeInfos                                    []fwk.NodeInfo
@@ -46,7 +46,7 @@ type fakeSharedLister struct {
 	havePodsWithRequiredAntiAffinityNodeInfoList []fwk.NodeInfo
 }
 
-func NewFakeSharedLister(pods []*v1.Pod, nodes []*v1.Node) framework.SharedLister {
+func NewFakeSharedLister(pods []*v1.Pod, nodes []*v1.Node) fwk.SharedLister {
 	nodeInfoMap := createNodeInfoMap(pods, nodes)
 	nodeInfos := make([]fwk.NodeInfo, 0, len(nodeInfoMap))
 	havePodsWithAffinityNodeInfoList := make([]fwk.NodeInfo, 0, len(nodeInfoMap))
@@ -88,11 +88,11 @@ func createNodeInfoMap(pods []*v1.Pod, nodes []*v1.Node) map[string]fwk.NodeInfo
 	return nodeNameToInfo
 }
 
-func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *fakeSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return f
 }
 
-func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *fakeSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
@@ -149,21 +149,21 @@ func (npm *nominator) deleteNominatedPodIfExistsUnlocked(pod *v1.Pod) {
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominator) AddNominatedPod(logger klog.Logger, pi fwk.PodInfo, nominatingInfo *framework.NominatingInfo) {
+func (npm *nominator) AddNominatedPod(logger klog.Logger, pi fwk.PodInfo, nominatingInfo *fwk.NominatingInfo) {
 	npm.lock.Lock()
 	npm.addNominatedPodUnlocked(logger, pi, nominatingInfo)
 	npm.lock.Unlock()
 }
 
-func (npm *nominator) addNominatedPodUnlocked(logger klog.Logger, pi fwk.PodInfo, nominatingInfo *framework.NominatingInfo) {
+func (npm *nominator) addNominatedPodUnlocked(logger klog.Logger, pi fwk.PodInfo, nominatingInfo *fwk.NominatingInfo) {
 	// Always delete the pod if it already exists, to ensure we never store more than
 	// one instance of the pod.
 	npm.delete(pi.GetPod())
 
 	var nodeName string
-	if nominatingInfo.Mode() == framework.ModeOverride {
+	if nominatingInfo.Mode() == fwk.ModeOverride {
 		nodeName = nominatingInfo.NominatedNodeName
-	} else if nominatingInfo.Mode() == framework.ModeNoop {
+	} else if nominatingInfo.Mode() == fwk.ModeNoop {
 		if pi.GetPod().Status.NominatedNodeName == "" {
 			return
 		}
@@ -221,7 +221,7 @@ func (npm *nominator) updateNominatedPodUnlocked(logger klog.Logger, oldPod *v1.
 	// In some cases, an Update event with no "NominatedNode" present is received right
 	// after a node("NominatedNode") is reserved for this pod in memory.
 	// In this case, we need to keep reserving the NominatedNode when updating the pod pointer.
-	var nominatingInfo *framework.NominatingInfo
+	var nominatingInfo *fwk.NominatingInfo
 	// We won't fall into below `if` block if the Update event represents:
 	// (1) NominatedNode info is added
 	// (2) NominatedNode info is updated
@@ -229,8 +229,8 @@ func (npm *nominator) updateNominatedPodUnlocked(logger klog.Logger, oldPod *v1.
 	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.GetPod()) == "" {
 		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
 			// This is the only case we should continue reserving the NominatedNode
-			nominatingInfo = &framework.NominatingInfo{
-				NominatingMode:    framework.ModeOverride,
+			nominatingInfo = &fwk.NominatingInfo{
+				NominatingMode:    fwk.ModeOverride,
 				NominatedNodeName: nnn,
 			}
 		}
@@ -254,10 +254,10 @@ func (npm *nominator) NominatedPodsForNode(nodeName string) []fwk.PodInfo {
 	return pods
 }
 
-// NewPodNominator creates a nominator as a backing of framework.PodNominator.
+// NewPodNominator creates a nominator as a backing of fwk.PodNominator.
 // A podLister is passed in so as to check if the pod exists
 // before adding its nominatedNode info.
-func NewPodNominator(podLister listersv1.PodLister) framework.PodNominator {
+func NewPodNominator(podLister listersv1.PodLister) fwk.PodNominator {
 	return newPodNominator(podLister)
 }
 

@@ -50,7 +50,7 @@ import (
 	cfgv1 "sigs.k8s.io/scheduler-plugins/apis/config/v1"
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwk.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*v1.Node
@@ -58,11 +58,11 @@ type testSharedLister struct {
 	nodeInfoMap map[string]fwk.NodeInfo
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwk.StorageInfoLister {
 	return nil
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwk.NodeInfoLister {
 	return f
 }
 
@@ -143,7 +143,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 		pod             *v1.Pod
 		nodes           []*v1.Node
 		watcherResponse watcher.WatcherMetrics
-		expected        framework.NodeScoreList
+		expected        fwk.NodeScoreList
 	}{
 		{
 			test: "new node",
@@ -167,7 +167,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
+			expected: []fwk.NodeScore{
 				{Name: "node-1", Score: cfgv1.DefaultTargetUtilizationPercent},
 			},
 		},
@@ -194,7 +194,7 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
+			expected: []fwk.NodeScore{
 				{Name: "node-1", Score: 33},
 			},
 		},
@@ -220,8 +220,8 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 					},
 				},
 			},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
 			},
 		},
 		{
@@ -231,8 +231,8 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				st.MakeNode().Name("node-1").Capacity(nodeResources).Obj(),
 			},
 			watcherResponse: watcher.WatcherMetrics{},
-			expected: []framework.NodeScore{
-				{Name: "node-1", Score: framework.MinNodeScore},
+			expected: []fwk.NodeScore{
+				{Name: "node-1", Score: fwk.MinNodeScore},
 			},
 		},
 	}
@@ -265,15 +265,15 @@ func TestTargetLoadPackingScoring(t *testing.T) {
 				DefaultRequestsMultiplier: cfgv1.DefaultRequestsMultiplier,
 			}
 			p, _ := New(ctx, &targetLoadPackingArgs, fh)
-			scorePlugin := p.(framework.ScorePlugin)
-			var actualList framework.NodeScoreList
+			scorePlugin := p.(fwk.ScorePlugin)
+			var actualList fwk.NodeScoreList
 			for _, n := range tt.nodes {
 				nodeName := n.Name
 				nodeInfo := framework.NewNodeInfo()
 				nodeInfo.SetNode(n)
 				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
 				assert.True(t, status.IsSuccess())
-				actualList = append(actualList, framework.NodeScore{Name: nodeName, Score: score})
+				actualList = append(actualList, fwk.NodeScore{Name: nodeName, Score: score})
 			}
 			assert.ElementsMatch(t, tt.expected, actualList)
 		})
@@ -360,23 +360,23 @@ func BenchmarkTargetLoadPackingPlugin(b *testing.B) {
 			assert.Nil(b, err)
 			pl, err := New(ctx, &bfbpArgs, fh)
 			assert.Nil(b, err)
-			scorePlugin := pl.(framework.ScorePlugin)
+			scorePlugin := pl.(fwk.ScorePlugin)
 			informerFactory.Start(context.Background().Done())
 			informerFactory.WaitForCacheSync(context.Background().Done())
 
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				gotList := make(framework.NodeScoreList, len(nodes))
+				gotList := make(fwk.NodeScoreList, len(nodes))
 				scoreNode := func(i int) {
 					n := nodes[i]
 					nodeInfo := framework.NewNodeInfo()
 					nodeInfo.SetNode(n)
 					score, _ := scorePlugin.Score(ctx, state, pod, nodeInfo)
-					gotList[i] = framework.NodeScore{Name: n.Name, Score: score}
+					gotList[i] = fwk.NodeScore{Name: n.Name, Score: score}
 				}
 				Until(ctx, len(nodes), scoreNode)
-				status := (scorePlugin.(framework.ScoreExtensions)).NormalizeScore(ctx, state, pod, gotList)
+				status := (scorePlugin.(fwk.ScoreExtensions)).NormalizeScore(ctx, state, pod, gotList)
 				assert.True(b, status.IsSuccess())
 			}
 		})

@@ -26,7 +26,6 @@ import (
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
 	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
@@ -36,11 +35,11 @@ import (
 // resources.
 type Allocatable struct {
 	logger klog.Logger
-	handle framework.Handle
+	handle fwk.Handle
 	resourceAllocationScorer
 }
 
-var _ = framework.ScorePlugin(&Allocatable{})
+var _ = fwk.ScorePlugin(&Allocatable{})
 
 // AllocatableName is the name of the plugin used in the Registry and configurations.
 const AllocatableName = "NodeResourcesAllocatable"
@@ -72,12 +71,12 @@ func (alloc *Allocatable) Score(ctx context.Context, state fwk.CycleState, pod *
 }
 
 // ScoreExtensions of the Score plugin.
-func (alloc *Allocatable) ScoreExtensions() framework.ScoreExtensions {
+func (alloc *Allocatable) ScoreExtensions() fwk.ScoreExtensions {
 	return alloc
 }
 
 // NewAllocatable initializes a new plugin and returns it.
-func NewAllocatable(ctx context.Context, allocArgs runtime.Object, h framework.Handle) (framework.Plugin, error) {
+func NewAllocatable(ctx context.Context, allocArgs runtime.Object, h fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", AllocatableName)
 	// Start with default values.
 	var mode config.ModeType
@@ -141,7 +140,7 @@ func score(logger klog.Logger, capacity int64, mode config.ModeType) int64 {
 }
 
 // NormalizeScore invoked after scoring all nodes.
-func (alloc *Allocatable) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *fwk.Status {
+func (alloc *Allocatable) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores fwk.NodeScoreList) *fwk.Status {
 	// Find highest and lowest scores.
 	var highest int64 = -math.MaxInt64
 	var lowest int64 = math.MaxInt64
@@ -156,12 +155,12 @@ func (alloc *Allocatable) NormalizeScore(ctx context.Context, state fwk.CycleSta
 
 	// Transform the highest to lowest score range to fit the framework's min to max node score range.
 	oldRange := highest - lowest
-	newRange := framework.MaxNodeScore - framework.MinNodeScore
+	newRange := fwk.MaxNodeScore - fwk.MinNodeScore
 	for i, nodeScore := range scores {
 		if oldRange == 0 {
-			scores[i].Score = framework.MinNodeScore
+			scores[i].Score = fwk.MinNodeScore
 		} else {
-			scores[i].Score = ((nodeScore.Score - lowest) * newRange / oldRange) + framework.MinNodeScore
+			scores[i].Score = ((nodeScore.Score - lowest) * newRange / oldRange) + fwk.MinNodeScore
 		}
 	}
 

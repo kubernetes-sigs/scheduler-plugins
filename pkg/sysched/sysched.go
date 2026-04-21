@@ -15,7 +15,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwk "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/security-profiles-operator/api/seccompprofile/v1beta1"
@@ -27,7 +26,7 @@ import (
 
 type SySched struct {
 	logger klog.Logger
-	handle framework.Handle
+	handle fwk.Handle
 	client client.Client
 	// Maintain state of what pods on each node
 	// Cached state from SharedLister does not hold system wide info of pods
@@ -43,7 +42,7 @@ type SySched struct {
 	WeightedSyscallProfile  string
 }
 
-var _ framework.ScorePlugin = &SySched{}
+var _ fwk.ScorePlugin = &SySched{}
 
 // Name is the name of the plugin used in Registry and configurations.
 const Name = "SySched"
@@ -279,17 +278,17 @@ func (sc *SySched) Score(ctx context.Context, cs fwk.CycleState, pod *v1.Pod, no
 	return int64(totalDiffs), nil
 }
 
-func (sc *SySched) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *fwk.Status {
+func (sc *SySched) NormalizeScore(ctx context.Context, state fwk.CycleState, pod *v1.Pod, scores fwk.NodeScoreList) *fwk.Status {
 	logger := klog.FromContext(klog.NewContext(ctx, sc.logger)).WithValues("ExtensionPoint", "NormalizeScore")
 	logger.V(10).Info("Original: ", "scores", scores, "pod", pod.Name)
-	ret := helper.DefaultNormalizeScore(framework.MaxNodeScore, true, scores)
+	ret := helper.DefaultNormalizeScore(fwk.MaxNodeScore, true, scores)
 	logger.V(10).Info("Normalized: ", "scores", scores, "pod", pod.Name)
 
 	return ret
 }
 
 // ScoreExtensions of the Score plugin.
-func (sc *SySched) ScoreExtensions() framework.ScoreExtensions {
+func (sc *SySched) ScoreExtensions() fwk.ScoreExtensions {
 	return sc
 }
 
@@ -407,7 +406,7 @@ func getArgs(obj runtime.Object) (*pluginconfig.SySchedArgs, error) {
 }
 
 // New initializes a new plugin and returns it.
-func New(ctx context.Context, obj runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	logger := klog.FromContext(ctx).WithValues("plugin", Name)
 	sc := SySched{logger: logger, handle: handle}
 	sc.HostToPods = make(map[string][]*v1.Pod)

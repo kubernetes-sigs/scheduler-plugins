@@ -19,7 +19,7 @@ package noderesourcetopology
 import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwk "k8s.io/kube-scheduler/framework"
 )
 
 func mostAllocatedScoreStrategy(requested, allocatable v1.ResourceList, resourceToWeightMap resourceToWeightMap) int64 {
@@ -50,5 +50,5 @@ func mostAllocatedScore(requested, numaCapacity resource.Quantity) int64 {
 		return 0
 	}
 
-	return requested.Value() * framework.MaxNodeScore / numaCapacity.Value()
+	return requested.Value() * fwk.MaxNodeScore / numaCapacity.Value()
 }

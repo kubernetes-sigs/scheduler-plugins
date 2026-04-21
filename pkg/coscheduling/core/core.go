@@ -83,7 +83,7 @@ type PodGroupManager struct {
 	// client is a generic controller-runtime client to manipulate both core resources and PodGroups.
 	client client.Client
 	// snapshotSharedLister is pod shared list
-	snapshotSharedLister framework.SharedLister
+	snapshotSharedLister fwk.SharedLister
 	// scheduleTimeout is the default timeout for podgroup scheduling.
 	// If podgroup's scheduleTimeoutSeconds is set, it will be used.
 	scheduleTimeout *time.Duration
@@ -125,7 +125,7 @@ func AddPodFactory(pgMgr *PodGroupManager) func(obj interface{}) {
 }
 
 // NewPodGroupManager creates a new operation object.
-func NewPodGroupManager(client client.Client, snapshotSharedLister framework.SharedLister, scheduleTimeout *time.Duration, podInformer informerv1.PodInformer) *PodGroupManager {
+func NewPodGroupManager(client client.Client, snapshotSharedLister fwk.SharedLister, scheduleTimeout *time.Duration, podInformer informerv1.PodInformer) *PodGroupManager {
 	pgMgr := &PodGroupManager{
 		client:               client,
 		snapshotSharedLister: snapshotSharedLister,

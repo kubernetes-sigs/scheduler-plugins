@@ -27,7 +27,6 @@ import (
 	fwk "k8s.io/kube-scheduler/framework"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 
 	"github.com/go-logr/logr"
@@ -72,7 +71,7 @@ func (tm *TopologyMatch) Score(ctx context.Context, state fwk.CycleState, pod *v
 	// if it's a non-guaranteed pod, every node is considered to be a good fit
 	qos := v1qos.GetPodQOS(pod)
 	if qos != v1.PodQOSGuaranteed {
-		return framework.MaxNodeScore, nil
+		return fwk.MaxNodeScore, nil
 	}
 
 	nodeTopology, info := tm.nrtCache.GetCachedNRTCopy(ctx, nodeName, pod)
@@ -102,7 +101,7 @@ func (tm *TopologyMatch) Score(ctx context.Context, state fwk.CycleState, pod *v
 	return handler(lh, pod, &si)
 }
 
-func (tm *TopologyMatch) ScoreExtensions() framework.ScoreExtensions {
+func (tm *TopologyMatch) ScoreExtensions() fwk.ScoreExtensions {
 	return nil
 }
 
