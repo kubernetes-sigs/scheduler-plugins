@@ -55,7 +55,7 @@ const (
 
 var (
 	_ fwk.PostFilterPlugin = &PreemptionToleration{}
-	_ preemption.Interface       = &PreemptionToleration{}
+	_ preemption.Interface = &PreemptionToleration{}
 )
 
 // PreemptionToleration is a PostFilter plugin implements the preemption logic.

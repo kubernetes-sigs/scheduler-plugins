@@ -30,8 +30,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientcache "k8s.io/client-go/tools/cache"
-	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 )
 
 const (

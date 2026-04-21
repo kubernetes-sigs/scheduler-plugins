@@ -19,8 +19,8 @@ package loadvariationriskbalancing
 import (
 	"math"
 
-	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/klog/v2"
+	fwk "k8s.io/kube-scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran"
 )
 
