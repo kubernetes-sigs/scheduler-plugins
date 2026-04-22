@@ -34,7 +34,7 @@ import (
 )
 
 // nrtStore maps the NRT data by node name. It is not thread safe and needs to be protected by a lock.
-// data is intentionally copied each time it enters and exists the store. E.g, no pointer sharing.
+// data is intentionally copied each time it enters and exits the store. E.g, no pointer sharing.
 type nrtStore struct {
 	data map[string]*topologyv1alpha2.NodeResourceTopology
 	lh   logr.Logger

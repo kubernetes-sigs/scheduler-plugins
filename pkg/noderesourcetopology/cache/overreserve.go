@@ -149,6 +149,10 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+	if !ov.nrts.Contains(nodeName) {
+		lh.V(5).Info("ignoring reserve", "nrtinfo", "missing")
+		return
+	}
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		nodeAssumedResources = newResourceStore(ov.lh)
@@ -157,9 +161,6 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 
 	nodeAssumedResources.AddPod(pod)
 	lh.V(2).Info("post reserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
-
-	ov.nodesMaybeOverreserved.Delete(nodeName)
-	lh.V(6).Info("reset discard counter", logging.KeyNode, nodeName)
 }
 
 func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {
@@ -365,8 +366,18 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 }
 
 // to be used only in tests
-func (ov *OverReserve) Store() *nrtStore {
-	return ov.nrts
+func (ov *OverReserve) Inject(nrt *topologyv1alpha2.NodeResourceTopology) {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	ov.nrts.Update(nrt)
+}
+
+// to be used only in tests
+func (ov *OverReserve) HasAssumedResources(nodeName string) bool {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	_, ok := ov.assumedResources[nodeName]
+	return ok
 }
 
 func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (map[string][]podData, error) {
