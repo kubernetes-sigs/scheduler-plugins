@@ -77,7 +77,7 @@ func (wt Watcher) processEvent(ev watch.Event) {
 	// Modified is trivially verified; Added can happen if we
 	// happen to run the scheduler before node update agents,
 	// so turns out not so uncommon.
-	if ev.Type != watch.Modified {
+	if ev.Type != watch.Added && ev.Type != watch.Modified {
 		return
 	}
 	nrtObj, ok := ev.Object.(*topologyv1alpha2.NodeResourceTopology)
@@ -87,8 +87,16 @@ func (wt Watcher) processEvent(ev watch.Event) {
 
 	newConf := nodeconfig.TopologyManagerFromNodeResourceTopology(wt.lh, nrtObj)
 
-	oldConf := wt.lastConf[nrtObj.Name]
-	if oldConf.Equal(newConf) {
+	oldConf, known := wt.lastConf[nrtObj.Name]
+
+	reason := ""
+	if !known {
+		reason = "new NRT detected, queuing for ingestion"
+	} else if !oldConf.Equal(newConf) {
+		reason = "attribute change"
+	}
+
+	if reason == "" {
 		return
 	}
 
@@ -97,7 +105,7 @@ func (wt Watcher) processEvent(ev watch.Event) {
 		// Update lastConf only after a successful send; so, if the channel is
 		// full, the next update will retry automatically another send.
 		wt.lastConf[nrtObj.Name] = newConf
-		wt.lh.V(2).Info("attribute change", logging.KeyNode, nrtObj.Name)
+		wt.lh.V(2).Info(reason, logging.KeyNode, nrtObj.Name)
 	default:
 		wt.lh.V(2).Info("NRT event channel full, will retry", logging.KeyNode, nrtObj.Name)
 	}

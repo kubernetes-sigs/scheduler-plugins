@@ -54,23 +54,9 @@ func TestWatcherFiltersEvents(t *testing.T) {
 			forwarded: false,
 		},
 		{
-			description: "added event ignored",
+			description: "added event forwarded",
 			ev: watch.Event{
 				Type: watch.Added,
-				Object: &topologyv1alpha2.NodeResourceTopology{
-					ObjectMeta: metav1.ObjectMeta{Name: "node-0"},
-					Attributes: []topologyv1alpha2.AttributeInfo{
-						{Name: "topologyManagerScope", Value: "container"},
-						{Name: "topologyManagerPolicy", Value: "single-numa-node"},
-					},
-				},
-			},
-			forwarded: false,
-		},
-		{
-			description: "first modified for unknown node forwarded",
-			ev: watch.Event{
-				Type: watch.Modified,
 				Object: &topologyv1alpha2.NodeResourceTopology{
 					ObjectMeta: metav1.ObjectMeta{Name: "node-0"},
 					Attributes: []topologyv1alpha2.AttributeInfo{
@@ -82,7 +68,7 @@ func TestWatcherFiltersEvents(t *testing.T) {
 			forwarded: true,
 		},
 		{
-			description: "modified for known node no attr change",
+			description: "modified event for known node no attr change",
 			ev: watch.Event{
 				Type: watch.Modified,
 				Object: &topologyv1alpha2.NodeResourceTopology{
@@ -96,13 +82,27 @@ func TestWatcherFiltersEvents(t *testing.T) {
 			forwarded: false,
 		},
 		{
-			description: "modified for known node with attr change",
+			description: "modified event for known node with attr change",
 			ev: watch.Event{
 				Type: watch.Modified,
 				Object: &topologyv1alpha2.NodeResourceTopology{
 					ObjectMeta: metav1.ObjectMeta{Name: "node-0"},
 					Attributes: []topologyv1alpha2.AttributeInfo{
 						{Name: "topologyManagerScope", Value: "pod"},
+						{Name: "topologyManagerPolicy", Value: "single-numa-node"},
+					},
+				},
+			},
+			forwarded: true,
+		},
+		{
+			description: "modified event for unknown node",
+			ev: watch.Event{
+				Type: watch.Modified,
+				Object: &topologyv1alpha2.NodeResourceTopology{
+					ObjectMeta: metav1.ObjectMeta{Name: "new-node"},
+					Attributes: []topologyv1alpha2.AttributeInfo{
+						{Name: "topologyManagerScope", Value: "container"},
 						{Name: "topologyManagerPolicy", Value: "single-numa-node"},
 					},
 				},
@@ -130,69 +130,70 @@ func TestWatcherOverflowSelfHealing(t *testing.T) {
 	// Channel capacity 1: a second send will overflow.
 	ch := make(chan string, 1)
 	wt := Watcher{
-		lh:      testr.New(t),
-		eventCh: ch,
-		// Pre-populate two known nodes so we can trigger attr-change sends.
-		lastConf: map[string]nodeconfig.TopologyManager{
-			"node-A": {Policy: "single-numa-node", Scope: "container"},
-			"node-B": {Policy: "single-numa-node", Scope: "container"},
-		},
+		lh:       testr.New(t),
+		eventCh:  ch,
+		lastConf: make(map[string]nodeconfig.TopologyManager),
 	}
 
-	// First attr-change send succeeds — fills the channel.
-	wt.processEvent(watch.Event{
-		Type: watch.Modified,
+	addedEvent := watch.Event{
+		Type: watch.Added,
 		Object: &topologyv1alpha2.NodeResourceTopology{
-			ObjectMeta: metav1.ObjectMeta{Name: "node-A"},
+			ObjectMeta: metav1.ObjectMeta{Name: "node-full"},
 			Attributes: []topologyv1alpha2.AttributeInfo{
-				{Name: "topologyManagerScope", Value: "pod"},
+				{Name: "topologyManagerScope", Value: "container"},
 				{Name: "topologyManagerPolicy", Value: "single-numa-node"},
 			},
 		},
-	})
+	}
+
+	// First send succeeds — fills the channel.
+	wt.processEvent(addedEvent)
 	if len(ch) != 1 {
 		t.Fatalf("first event should have been forwarded, channel len=%d", len(ch))
 	}
 
-	// Second attr-change for a different node overflows. lastConf
-	// must NOT be updated so the next attempt retries.
-	wt.processEvent(watch.Event{
-		Type: watch.Modified,
+	// Simulate a second Added event for a different node while the
+	// channel is still full. This must overflow (drop), and the node
+	// must NOT be recorded in lastConf.
+	overflowEvent := watch.Event{
+		Type: watch.Added,
 		Object: &topologyv1alpha2.NodeResourceTopology{
-			ObjectMeta: metav1.ObjectMeta{Name: "node-B"},
+			ObjectMeta: metav1.ObjectMeta{Name: "node-overflow"},
 			Attributes: []topologyv1alpha2.AttributeInfo{
-				{Name: "topologyManagerScope", Value: "pod"},
+				{Name: "topologyManagerScope", Value: "container"},
 				{Name: "topologyManagerPolicy", Value: "single-numa-node"},
 			},
 		},
-	})
+	}
+	wt.processEvent(overflowEvent)
 	if len(ch) != 1 {
 		t.Fatalf("channel should still have 1 item (overflow dropped), got %d", len(ch))
 	}
-	if conf := wt.lastConf["node-B"]; conf.Scope != "container" {
-		t.Fatalf("lastConf for node-B should still have old config after dropped send, got scope=%q", conf.Scope)
+	if _, known := wt.lastConf["node-overflow"]; known {
+		t.Fatalf("lastConf should NOT contain node-overflow after a dropped send")
 	}
 
 	// Drain the channel to make room.
 	<-ch
 
-	// Same Modified event for node-B retries and succeeds because
-	// lastConf still has the old config (overflow didn't update it).
-	wt.processEvent(watch.Event{
+	// Now a Modified event for the same node should retry and succeed,
+	// because lastConf was not updated on the failed send.
+	retryEvent := watch.Event{
 		Type: watch.Modified,
 		Object: &topologyv1alpha2.NodeResourceTopology{
-			ObjectMeta: metav1.ObjectMeta{Name: "node-B"},
+			ObjectMeta: metav1.ObjectMeta{Name: "node-overflow"},
 			Attributes: []topologyv1alpha2.AttributeInfo{
-				{Name: "topologyManagerScope", Value: "pod"},
+				{Name: "topologyManagerScope", Value: "container"},
 				{Name: "topologyManagerPolicy", Value: "single-numa-node"},
 			},
 		},
-	})
+	}
+	wt.processEvent(retryEvent)
 	if len(ch) != 1 {
 		t.Fatalf("retry event should have been forwarded after draining, channel len=%d", len(ch))
 	}
-	if conf := wt.lastConf["node-B"]; conf.Scope != "pod" {
-		t.Fatalf("lastConf for node-B should be updated after successful retry, got scope=%q", conf.Scope)
+	if _, known := wt.lastConf["node-overflow"]; !known {
+		t.Fatalf("lastConf should contain node-overflow after successful retry")
 	}
 }
 
