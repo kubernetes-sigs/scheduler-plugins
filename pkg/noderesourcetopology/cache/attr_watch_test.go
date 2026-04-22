@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 
 	"github.com/go-logr/logr/testr"
-	"k8s.io/klog/v2"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 
@@ -33,7 +32,7 @@ import (
 func TestWatcherFiltersEvents(t *testing.T) {
 	ch := make(chan string, 10)
 	wt := Watcher{
-		lh:       klog.Background(),
+		lh:       testr.New(t),
 		eventCh:  ch,
 		lastConf: make(map[string]nodeconfig.TopologyManager),
 	}
