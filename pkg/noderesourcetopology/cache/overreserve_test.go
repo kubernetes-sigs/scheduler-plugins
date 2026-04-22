@@ -744,6 +744,118 @@ func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
 	}
 }
 
+// TestNewNRTIngestedViaConfigChanged verifies the full end-to-end path for
+// NRTs created after the scheduler starts (bootstrap deadlock fix):
+//  1. nrtStore starts empty (NRT was created after scheduler init)
+//  2. Watcher signals via nodesWithAttrUpdate (simulated by direct Incr)
+//  3. Resync processes ConfigChanged: fetches NRT from API, calls FlushNodes
+//  4. FlushNodes adds NRT to nrtStore and bumps generation
+//  5. Reserve and GetCachedNRTCopy now work for the node
+func TestNewNRTIngestedViaConfigChanged(t *testing.T) {
+	testNodeName := "late-arrival-node"
+
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta:       metav1.ObjectMeta{Name: testNodeName},
+		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "30"),
+					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+				},
+			},
+		},
+	}
+
+	// Create the cache with an empty client (no NRTs at startup),
+	// then add the NRT to the API server afterward. This simulates
+	// the bootstrap scenario: the NRT was created by the node agent
+	// after NewOverReserve ran its initial client.List.
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fakePodLister := &fakePodLister{}
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
+
+	// NRT arrives in the API server after the scheduler started
+	if err := fakeClient.Create(context.Background(), nrt); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	pod := &corev1.Pod{}
+
+	// Verify the store is empty for this node (bootstrap problem):
+	// GetCachedNRTCopy returns nil when the NRT is not in the store.
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj != nil {
+		t.Fatalf("store should NOT contain %q at startup", testNodeName)
+	}
+
+	// Verify Reserve is a no-op without NRT (Bug 1 fix)
+	nrtCache.ReserveNodeResources(testNodeName, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	})
+	if nrtCache.HasAssumedResources(testNodeName) {
+		t.Fatalf("Reserve should not accumulate assumedResources without NRT in store")
+	}
+
+	// Simulate watcher detecting the new NRT and draining into nodesWithAttrUpdate
+	nrtCache.SimulateWatcherSignal(testNodeName)
+
+	// Verify the node appears in ConfigChanged
+	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	if len(dirtyNodes.ConfigChanged) != 1 || dirtyNodes.ConfigChanged[0] != testNodeName {
+		t.Fatalf("expected %q in ConfigChanged, got: %v", testNodeName, dirtyNodes.ConfigChanged)
+	}
+	if len(dirtyNodes.MaybeOverReserved) != 0 {
+		t.Fatalf("expected empty MaybeOverReserved, got: %v", dirtyNodes.MaybeOverReserved)
+	}
+
+	// Capture generation before Resync via GetCachedNRTCopy on a known node.
+	// The node is not in the store yet, so info.Generation is the current value.
+	_, infoBefore := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	genBefore := infoBefore.Generation
+
+	// Run Resync: ConfigChanged path fetches NRT from API, FlushNodes ingests it
+	nrtCache.Resync()
+
+	// Verify: NRT is now in the store and generation was bumped
+	nrtObj, infoAfter := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj == nil {
+		t.Fatalf("NRT should not be nil after ingestion")
+	}
+	if !infoAfter.Fresh {
+		t.Errorf("NRT data should be fresh")
+	}
+	if infoAfter.Generation <= genBefore {
+		t.Errorf("generation should have increased: before=%d after=%d", genBefore, infoAfter.Generation)
+	}
+	if len(nrtObj.Zones) != 1 {
+		t.Errorf("expected 1 zone, got %d", len(nrtObj.Zones))
+	}
+
+	// Verify: nodesWithAttrUpdate was cleared by FlushNodes.
+	// If cleared, the node won't appear in ConfigChanged.
+	dirtyNodes = nrtCache.GetDesyncedNodes(klog.Background())
+	if len(dirtyNodes.ConfigChanged) != 0 {
+		t.Errorf("nodesWithAttrUpdate should be cleared after FlushNodes, got ConfigChanged: %v", dirtyNodes.ConfigChanged)
+	}
+
+	// Verify: Reserve now works for this node
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "real-pod", Namespace: "default"},
+	}
+	nrtCache.ReserveNodeResources(testNodeName, testPod)
+	if !nrtCache.HasAssumedResources(testNodeName) {
+		t.Errorf("Reserve should work after NRT is in the store")
+	}
+}
+
 func TestUnknownNodeWithForeignPods(t *testing.T) {
 	fakeClient, err := tu.NewFakeClient()
 	if err != nil {
