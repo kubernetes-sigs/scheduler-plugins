@@ -669,7 +669,12 @@ func isNRTEqual(a, b *topologyv1alpha2.NodeResourceTopology) bool {
 }
 
 func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
-	fakeClient, err := tu.NewFakeClient()
+	// Create the NRT in the fake client at init time so the watcher
+	// (started by mustOverReserve) sees it already in the store and
+	// does not queue an Added event that would race with our test.
+	initialNRT := makeTestNRT("node1")
+	objs := []runtime.Object{initialNRT}
+	fakeClient, err := tu.NewFakeClient(objs...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,11 +682,6 @@ func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
 	fakePodLister := &fakePodLister{}
 
 	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
-
-	nodeTopologies := makeDefaultTestTopology()
-	for _, obj := range nodeTopologies {
-		nrtCache.Inject(obj)
-	}
 
 	testPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -712,45 +712,26 @@ func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
 	// simulate some time after the node is marked overreserved
 	nrtCache.NodeMaybeOverReserved("node1", &corev1.Pod{})
 
-	// NRT on the API server has a fingerprint that does NOT match the pods
-	// in the lister. This forces a ErrSignatureMismatch in Resync().
-	nrtWithBadFingerprint := &topologyv1alpha2.NodeResourceTopology{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "node1",
-		},
-		Attributes: topologyv1alpha2.AttributeList{
-			{
-				Name:  podfingerprint.Attribute,
-				Value: "pfp0vFFFFdeadbeef000000",
-			},
-		},
-		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
-		Zones: topologyv1alpha2.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha2.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "32", "30"),
-					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
-					MakeTopologyResInfo(nicResourceName, "16", "16"),
-				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha2.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "32", "22"),
-					MakeTopologyResInfo(memory, "64Gi", "44Gi"),
-					MakeTopologyResInfo(nicResourceName, "16", "16"),
-				},
-			},
-		},
+	// Update the NRT on the API server with a fingerprint that does NOT
+	// match the pods in the lister. This forces a fingerprint check
+	// failure in Resync(). Using Update (not Create) so the watcher
+	// sees a Modified event; since the TopologyManager config is unchanged,
+	// areAttrsChanged returns false and no ConfigChanged signal is queued.
+	nrtWithBadFingerprint := initialNRT.DeepCopy()
+	nrtWithBadFingerprint.Annotations = map[string]string{
+		podfingerprint.Annotation: "pfp0vFFFFdeadbeef000000",
 	}
+	nrtWithBadFingerprint.Attributes = append(nrtWithBadFingerprint.Attributes,
+		topologyv1alpha2.AttributeInfo{
+			Name:  podfingerprint.Attribute,
+			Value: "pfp0vFFFFdeadbeef000000",
+		},
+	)
 
 	runningPod := testPod.DeepCopy()
 	runningPod.Status.Phase = corev1.PodRunning
 
-	if err := fakeClient.Create(context.Background(), nrtWithBadFingerprint); err != nil {
+	if err := fakeClient.Update(context.Background(), nrtWithBadFingerprint); err != nil {
 		t.Fatal(err)
 	}
 	fakePodLister.AddPod(runningPod)
