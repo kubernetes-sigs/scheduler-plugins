@@ -18,7 +18,7 @@ package cache
 
 import (
 	"context"
-	"fmt"
+
 	"github.com/go-logr/logr"
 
 	"k8s.io/apimachinery/pkg/watch"
@@ -31,10 +31,17 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 )
 
+// Watcher forwards node names to a channel when it detects NRT events that
+// require action by the Resync loop. The resync loop is the only component
+// which modifies the counters and act upon that. This model has a clearer,
+// ownership, trends towards share nothing (less coupling) and it's friendlier
+// if we eventually enable node-level parallelism (see global lock in OverReserve).
+// Watcher tracks the TopologyManager attributes change locally to minimize
+// the updates it sends back to the Resync goroutine.
 type Watcher struct {
-	lh    logr.Logger
-	nrts  *nrtStore
-	nodes counter
+	lh       logr.Logger
+	eventCh  chan<- string
+	lastConf map[string]nodeconfig.TopologyManager
 }
 
 func (wt Watcher) NodeResourceTopologies(ctx context.Context, client ctrlclient.WithWatch) {
@@ -52,7 +59,7 @@ func (wt Watcher) NodeResourceTopologies(ctx context.Context, client ctrlclient.
 		for !done {
 			select {
 			case ev := <-wa.ResultChan():
-				wt.ProcessEvent(ev)
+				wt.processEvent(ev)
 
 			case <-ctx.Done():
 				wt.lh.Info("stop watching NRT objects")
@@ -65,35 +72,33 @@ func (wt Watcher) NodeResourceTopologies(ctx context.Context, client ctrlclient.
 	}
 }
 
-func (wt Watcher) ProcessEvent(ev watch.Event) bool {
+func (wt Watcher) processEvent(ev watch.Event) {
+	// TODO: handle node deletion. How common do we expect it to be?
+	// Modified is trivially verified; Added can happen if we
+	// happen to run the scheduler before node update agents,
+	// so turns out not so uncommon.
 	if ev.Type != watch.Modified {
-		return false
+		return
 	}
-
 	nrtObj, ok := ev.Object.(*topologyv1alpha2.NodeResourceTopology)
 	if !ok {
-		wt.lh.Info("unexpected object", "kind", fmt.Sprintf("%T", ev.Object))
-		return false
+		return
 	}
 
-	nrtCur := wt.nrts.GetNRTCopyByNodeName(nrtObj.Name)
-	if nrtCur == nil {
-		wt.lh.Info("modified non-existent NRT", logging.KeyNode, nrtObj.Name)
-		return false
+	newConf := nodeconfig.TopologyManagerFromNodeResourceTopology(wt.lh, nrtObj)
+
+	oldConf := wt.lastConf[nrtObj.Name]
+	if oldConf.Equal(newConf) {
+		return
 	}
 
-	if !areAttrsChanged(nrtCur, nrtObj) {
-		return false
+	select {
+	case wt.eventCh <- nrtObj.Name:
+		// Update lastConf only after a successful send; so, if the channel is
+		// full, the next update will retry automatically another send.
+		wt.lastConf[nrtObj.Name] = newConf
+		wt.lh.V(2).Info("attribute change", logging.KeyNode, nrtObj.Name)
+	default:
+		wt.lh.V(2).Info("NRT event channel full, will retry", logging.KeyNode, nrtObj.Name)
 	}
-
-	wt.lh.V(4).Info("attribute change", logging.KeyNode, nrtObj.Name)
-	wt.nodes.Incr(nrtObj.Name)
-	return true
-}
-
-func areAttrsChanged(oldNrt, newNrt *topologyv1alpha2.NodeResourceTopology) bool {
-	lh := logr.Discard() // avoid spam in the logs
-	oldConf := nodeconfig.TopologyManagerFromNodeResourceTopology(lh, oldNrt)
-	newConf := nodeconfig.TopologyManagerFromNodeResourceTopology(lh, newNrt)
-	return !oldConf.Equal(newConf)
 }
