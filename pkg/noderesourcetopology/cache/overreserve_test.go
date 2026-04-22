@@ -957,6 +957,7 @@ func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podlis
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
+	t.Cleanup(obj.Close)
 	return obj
 }
 
@@ -1216,6 +1217,7 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
+	t.Cleanup(nrtCache.Close)
 
 	expectedNrtInfo := CachedNRTInfo{
 		Generation: 0,
