@@ -199,6 +199,7 @@ func checkGetCachedNRTCopy(t *testing.T, makeCache func(client ctrlclient.WithWa
 			if err != nil {
 				t.Fatalf("unexpected error creating cache: %v", err)
 			}
+			t.Cleanup(nrtCache.Close)
 
 			if tc.hasForeignPods {
 				nrtCache.NodeHasForeignPods(tc.nodeName, pod)

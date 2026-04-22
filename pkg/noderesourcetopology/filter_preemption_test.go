@@ -57,6 +57,7 @@ func (f *fakeFilterCache) NodeHasForeignPods(string, *v1.Pod)     {}
 func (f *fakeFilterCache) ReserveNodeResources(string, *v1.Pod)   {}
 func (f *fakeFilterCache) UnreserveNodeResources(string, *v1.Pod) {}
 func (f *fakeFilterCache) PostBind(string, *v1.Pod)               {}
+func (f *fakeFilterCache) Close()                                 {}
 
 func makeGuaranteedPod(namespace, name, containerName string, cpu int64, memory string) *v1.Pod {
 	req := v1.ResourceList{
