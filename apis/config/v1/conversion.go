@@ -42,3 +42,31 @@ func Convert_config_NodeResourceTopologyMatchArgs_To_v1_NodeResourceTopologyMatc
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(&in.ScoringStrategy))
 	return nil
 }
+
+func Convert_v1_NodeMetadataArgs_To_config_NodeMetadataArgs(in *NodeMetadataArgs, out *config.NodeMetadataArgs, s conversion.Scope) error {
+	if err := autoConvert_v1_NodeMetadataArgs_To_config_NodeMetadataArgs(in, out, s); err != nil {
+		return err
+	}
+	// Manual conversions for enum types.
+	if in.MetadataSource != nil {
+		out.MetadataSource = *(*config.MetadataSourceType)(unsafe.Pointer(in.MetadataSource))
+	}
+	if in.MetadataType != nil {
+		out.MetadataType = *(*config.MetadataValueType)(unsafe.Pointer(in.MetadataType))
+	}
+	if in.ScoringStrategy != nil {
+		out.ScoringStrategy = *(*config.MetadataScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
+	}
+	return nil
+}
+
+func Convert_config_NodeMetadataArgs_To_v1_NodeMetadataArgs(in *config.NodeMetadataArgs, out *NodeMetadataArgs, s conversion.Scope) error {
+	if err := autoConvert_config_NodeMetadataArgs_To_v1_NodeMetadataArgs(in, out, s); err != nil {
+		return err
+	}
+	// Manual conversions for enum types.
+	out.MetadataSource = (*MetadataSourceType)(unsafe.Pointer(&in.MetadataSource))
+	out.MetadataType = (*MetadataValueType)(unsafe.Pointer(&in.MetadataType))
+	out.ScoringStrategy = (*MetadataScoringStrategy)(unsafe.Pointer(&in.ScoringStrategy))
+	return nil
+}
