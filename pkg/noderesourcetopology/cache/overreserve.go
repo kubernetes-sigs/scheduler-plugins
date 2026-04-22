@@ -36,9 +36,17 @@ import (
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
+)
+
+const (
+	// defaultMaxNRTUpdates is the watcher update channel size initial heuristic, no hard data.
+	// we used a bounded channel to prevent excessive event accumulation. The watcher code
+	// is now in charge to detect and handle overflow using retries.
+	defaultMaxNRTUpdates = 128
 )
 
 type OverReserve struct {
@@ -57,6 +65,9 @@ type OverReserve struct {
 	resyncMethod           apiconfig.CacheResyncMethod
 	resyncScope            apiconfig.CacheResyncScope
 	isPodRelevant          podprovider.PodFilterFunc
+	nrtUpdateCh            chan string
+	watchCancel            context.CancelFunc
+	watchWG                sync.WaitGroup
 }
 
 func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCache, client ctrlclient.WithWatch, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (*OverReserve, error) {
@@ -73,6 +84,7 @@ func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeReso
 	resyncScope := getCacheResyncScope(lh, cfg)
 
 	lh.V(2).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod, "scope", resyncScope)
+	watcherCtx, watchCancel := context.WithCancel(ctx)
 	obj := &OverReserve{
 		lh:                     lh,
 		client:                 client,
@@ -81,18 +93,24 @@ func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeReso
 		nodesMaybeOverreserved: newCounter(),
 		nodesWithForeignPods:   newCounter(),
 		nodesWithAttrUpdate:    newCounter(),
+		nrtUpdateCh:            make(chan string, defaultMaxNRTUpdates),
 		podLister:              podLister,
 		resyncMethod:           resyncMethod,
 		isPodRelevant:          isPodRelevant,
+		watchCancel:            watchCancel,
 	}
 
 	if resyncScope == apiconfig.CacheResyncScopeAll {
 		wt := Watcher{
-			lh:    obj.lh,
-			nrts:  obj.nrts,
-			nodes: obj.nodesWithAttrUpdate,
+			lh:       obj.lh,
+			eventCh:  obj.nrtUpdateCh,
+			lastConf: make(map[string]nodeconfig.TopologyManager),
 		}
-		go wt.NodeResourceTopologies(ctx, client)
+		obj.watchWG.Add(1)
+		go func() {
+			defer obj.watchWG.Done()
+			wt.NodeResourceTopologies(watcherCtx, client)
+		}()
 	}
 
 	return obj, nil
@@ -149,6 +167,10 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+	if !ov.nrts.Contains(nodeName) {
+		lh.V(5).Info("ignoring reserve", "nrtinfo", "missing")
+		return
+	}
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		nodeAssumedResources = newResourceStore(ov.lh)
@@ -157,9 +179,6 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 
 	nodeAssumedResources.AddPod(pod)
 	lh.V(2).Info("post reserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
-
-	ov.nodesMaybeOverreserved.Delete(nodeName)
-	lh.V(6).Info("reset discard counter", logging.KeyNode, nodeName)
 }
 
 func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {
@@ -176,6 +195,13 @@ func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) 
 
 	nodeAssumedResources.DeletePod(pod)
 	lh.V(2).Info("post unreserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
+}
+
+func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}
+
+func (ov *OverReserve) Close() {
+	ov.watchCancel()
+	ov.watchWG.Wait()
 }
 
 type DesyncedNodes struct {
@@ -256,6 +282,8 @@ func (ov *OverReserve) Resync() {
 	lh_ := ov.lh.WithName(logging.FlowCacheSync)
 	lh_.V(4).Info(logging.FlowBegin)
 	defer lh_.V(4).Info(logging.FlowEnd)
+
+	ov.drainNRTEvents(lh_)
 
 	nodes := ov.GetDesyncedNodes(lh_)
 	// we start without because chicken/egg problem. This is the earliest we can use the generation value.
@@ -365,8 +393,25 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 }
 
 // to be used only in tests
-func (ov *OverReserve) Store() *nrtStore {
-	return ov.nrts
+func (ov *OverReserve) Inject(nrt *topologyv1alpha2.NodeResourceTopology) {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	ov.nrts.Update(nrt)
+}
+
+// to be used only in tests
+func (ov *OverReserve) HasAssumedResources(nodeName string) bool {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	_, ok := ov.assumedResources[nodeName]
+	return ok
+}
+
+// to be used only in tests: simulates the watcher signaling a node
+// via the nrtUpdateCh channel, then drains it into nodesWithAttrUpdate.
+func (ov *OverReserve) SimulateWatcherSignal(nodeName string) {
+	ov.nrtUpdateCh <- nodeName
+	ov.drainNRTEvents(ov.lh)
 }
 
 func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (map[string][]podData, error) {
@@ -412,4 +457,24 @@ func getCacheResyncScope(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCach
 	return resyncScope
 }
 
-func (ov *OverReserve) PostBind(nodeName string, pod *corev1.Pod) {}
+// drainNRTEvents processes node names received from the watcher goroutine via
+// the nrtUpdateCh channel. The watcher only sends a name when it detects a new
+// NRT or a topology manager attribute change, so every name received here needs
+// to be queued into nodesWithAttrUpdate for processing by the ConfigChanged path.
+func (ov *OverReserve) drainNRTEvents(lh logr.Logger) {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	queued := 0
+	for {
+		select {
+		case nodeName := <-ov.nrtUpdateCh:
+			ov.nodesWithAttrUpdate.Incr(nodeName)
+			queued++
+		default:
+			if queued > 0 {
+				lh.V(4).Info("drained NRT events", "queued", queued)
+			}
+			return
+		}
+	}
+}

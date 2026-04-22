@@ -56,3 +56,4 @@ func (pt Passthrough) NodeHasForeignPods(nodeName string, pod *corev1.Pod)     {
 func (pt Passthrough) ReserveNodeResources(nodeName string, pod *corev1.Pod)   {}
 func (pt Passthrough) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {}
 func (pt Passthrough) PostBind(nodeName string, pod *corev1.Pod)               {}
+func (pt Passthrough) Close()                                                  {}
