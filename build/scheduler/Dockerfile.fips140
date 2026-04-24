@@ -1,7 +1,5 @@
-# +-------------------------------------------------------------------+
-# | Copyright IBM Corp. 2025 All Rights Reserved                      |
-# | PID 5698-SPR                                                      |
-# +-------------------------------------------------------------------+
+# Copyright (c) 2025, 2026 IBM Corp.
+# SPDX-License-Identifier: Apache-2.0
 
 ARG BASE_UBI_IMAGE_TAG=9.6
 ARG BUILDER_IMAGE

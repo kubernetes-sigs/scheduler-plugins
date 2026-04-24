@@ -97,7 +97,7 @@ update-gomod:
 	hack/update-gomod.sh
 
 .PHONY: unit-test
-unit-test: install-envtest
+unit-test: install-envtest install-crd
 	hack/unit-test.sh $(ARGS)
 
 .PHONY: install-envtest
@@ -119,3 +119,31 @@ verify:
 .PHONY: clean
 clean:
 	rm -rf ./bin
+
+# targets for spyre-scheduler-plugins
+CONTROLLER_GEN				?= $(LOCALBIN)/controller-gen
+CONTROLLER_TOOLS_VERSION	?= v0.17.3
+
+# Shamesly copied from: https://github.com/opendatahub-io/opendatahub-operator/blob/a08c94a226585e43387ad263e2653c0fd43130f1/Makefile#L132C1-L139C1
+define go-mod-version
+$(shell go mod graph | grep $(1) | head -n 1 | cut -d'@' -f 2)
+endef
+
+define fetch-external-crds
+GOFLAGS="-mod=readonly" $(CONTROLLER_GEN) crd \
+paths=$(shell go env GOPATH)/pkg/mod/$(1)@$(call go-mod-version,$(1))/$(2)/... \
+output:crd:artifacts:config=config/crd/external
+endef
+
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+.PHONY: controller-gen
+controller-gen: $(LOCALBIN) $(CONTROLLER_GEN) ## Download controller-gen if necessary
+$(CONTROLLER_GEN): $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+
+.PHONE: install-crd
+install-crd: $(CONTROLLER_GEN)
+	$(call fetch-external-crds,github.com/ibm-aiu/spyre-operator,api/v1alpha1)
