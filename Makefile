@@ -29,7 +29,8 @@ endif
 # registry, not production(registry.k8s.io).
 REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
-RELEASE_IMAGE:=kube-scheduler:$(RELEASE_VERSION)
+IMAGE?=kube-scheduler
+RELEASE_IMAGE:=$(IMAGE):$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
@@ -42,6 +43,9 @@ EXTRA_ARGS=""
 # v20200521-v0.18.800             - automated build for a tag
 VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
 VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
+
+# FIPS 140 compliant scheduler
+DOCKERFILE_FIPS140_SCHEDULER ?= "build/scheduler/Dockerfile.fips140"
 
 .PHONY: all
 all: build
@@ -69,6 +73,13 @@ build-images:
 	DISTROLESS_BASE_IMAGE=$(DISTROLESS_BASE_IMAGE) \
 	DOCKER_BUILDX_CMD=$(DOCKER_BUILDX_CMD) \
 	EXTRA_ARGS=$(EXTRA_ARGS) hack/build-images.sh
+
+.PHONY: build-fips140-scheduler-image
+build-fips140-scheduler-image: clean
+	$(BUILDER) build --pull \
+		--tag $(RELEASE_IMAGE) \
+		--build-arg VERSION="$(VERSION)" \
+		--file $(DOCKERFILE_FIPS140_SCHEDULER) .
 
 .PHONY: local-image
 local-image: PLATFORMS="linux/$$(uname -m)"
