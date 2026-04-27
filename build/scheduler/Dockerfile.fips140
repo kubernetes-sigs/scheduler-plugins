@@ -1,0 +1,59 @@
+# Copyright (c) 2025, 2026 IBM Corp.
+# SPDX-License-Identifier: Apache-2.0
+
+ARG BASE_UBI_IMAGE_TAG=9.6
+ARG BUILDER_IMAGE
+FROM ${BUILDER_IMAGE:-registry.access.redhat.com/ubi9/go-toolset:9.6-1754467841} AS builder
+ARG TARGETOS
+ARG TARGETARCH
+USER root
+
+WORKDIR /workspace
+
+# Copy files in specific order for better layer caching
+COPY go.mod .
+COPY go.sum .
+COPY pkg/ pkg/
+COPY cmd/ cmd/
+COPY apis/ apis/
+
+#Build
+
+ARG BUILD_FLAGS=""
+
+ENV GOTOOLCHAIN="go1.24.13"
+
+RUN echo "TARGETARCH = '${TARGETARCH}' TARGETOS='${TARGETOS}'" && \
+    echo "GO ENV DUMP: " && go env GOVERSION && go env GOTOOLDIR && \
+    CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on \
+    go build ${BUILD_FLAGS} -tags strictfipsruntime -a -o /workspace/kube-scheduler \
+    cmd/scheduler/main.go
+
+# install useradd command
+RUN dnf --installroot=/tmp/ubi-micro \
+    --nodocs --setopt=install_weak_deps=False \
+    install -y \
+    shadow-utils openssl-libs openssl-fips-provider && \
+    dnf --installroot=/tmp/ubi-micro \
+    clean all
+
+# generate minimal image
+FROM registry.access.redhat.com/ubi9/ubi-micro:${BASE_UBI_IMAGE_TAG}
+
+WORKDIR /
+
+ARG VERSION
+
+LABEL io.k8s.display-name="Spyre Scheduler"
+LABEL name="Spyre Scheduler"
+LABEL version="${VERSION}"
+LABEL release="N/A"
+LABEL summary="Allow the scheduling of Spyre workloads on Spyre nodes"
+LABEL description="See summary"
+
+COPY --from=builder /tmp/ubi-micro/ /
+RUN useradd spyre-scheduler
+USER spyre-scheduler
+
+COPY --from=builder /workspace/kube-scheduler /bin/kube-scheduler
+HEALTHCHECK NONE
