@@ -1,0 +1,20 @@
+# +-------------------------------------------------------------------+
+# | Copyright (c) 2025, 2026 IBM Corp.                                |
+# | SPDX-License-Identifier: Apache-2.0                               |
+# +-------------------------------------------------------------------+
+
+name: Build Image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - spyre-scheduler
+
+permissions:
+  contents: read
+  packages: write # Crucial for pushing to ghcr.io
+
+jobs:
+  build-amd64:
+    uses: ibm-aiu/spyre-operator-actions/.github/workflows/build-image.yaml@main
