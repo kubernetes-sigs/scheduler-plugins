@@ -29,8 +29,7 @@ endif
 # registry, not production(registry.k8s.io).
 REGISTRY?=gcr.io/k8s-staging-scheduler-plugins
 RELEASE_VERSION?=v$(shell date +%Y%m%d)-$(shell git describe --tags --match "v*")
-IMAGE?=kube-scheduler
-RELEASE_IMAGE:=$(IMAGE):$(RELEASE_VERSION)
+RELEASE_IMAGE?=kube-scheduler:$(RELEASE_VERSION)
 RELEASE_CONTROLLER_IMAGE:=controller:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
@@ -41,11 +40,8 @@ EXTRA_ARGS=""
 # The RELEASE_VERSION variable can have one of two formats:
 # v20201009-v0.18.800-46-g939c1c0 - automated build for a commit(not a tag) and also a local build
 # v20200521-v0.18.800             - automated build for a tag
-VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
+VERSION?=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
 VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
-
-# FIPS 140 compliant scheduler
-DOCKERFILE_FIPS140_SCHEDULER ?= "build/scheduler/Dockerfile.fips140"
 
 .PHONY: all
 all: build
@@ -73,13 +69,6 @@ build-images:
 	DISTROLESS_BASE_IMAGE=$(DISTROLESS_BASE_IMAGE) \
 	DOCKER_BUILDX_CMD=$(DOCKER_BUILDX_CMD) \
 	EXTRA_ARGS=$(EXTRA_ARGS) hack/build-images.sh
-
-.PHONY: build-fips140-scheduler-image
-build-fips140-scheduler-image: clean
-	$(BUILDER) build --pull \
-		--tag $(RELEASE_IMAGE) \
-		--build-arg VERSION="$(VERSION)" \
-		--file $(DOCKERFILE_FIPS140_SCHEDULER) .
 
 .PHONY: local-image
 local-image: PLATFORMS="linux/$$(uname -m)"
@@ -120,9 +109,15 @@ verify:
 clean:
 	rm -rf ./bin
 
-# targets for spyre-scheduler-plugins
-CONTROLLER_GEN				?= $(LOCALBIN)/controller-gen
-CONTROLLER_TOOLS_VERSION	?= v0.17.3
+# ----------------------------------- #
+# targets for spyre-scheduler-plugins #
+# ----------------------------------- #
+
+DOCKERFILE_FIPS140_SCHEDULER	?= "build/scheduler/Dockerfile.fips140"
+CONTROLLER_GEN					?= $(LOCALBIN)/controller-gen
+CONTROLLER_TOOLS_VERSION		?= v0.17.3
+FIPS_IMAGE_NAME					:= spyre-scheduler
+FIPS_IMAGE						:= $(REGISTRY)/$(FIPS_IMAGE_NAME):$(VERSION)
 
 # Shamesly copied from: https://github.com/opendatahub-io/opendatahub-operator/blob/a08c94a226585e43387ad263e2653c0fd43130f1/Makefile#L132C1-L139C1
 define go-mod-version
@@ -144,6 +139,23 @@ controller-gen: $(LOCALBIN) $(CONTROLLER_GEN) ## Download controller-gen if nece
 $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
-.PHONE: install-crd
+.PHONY: install-crd
 install-crd: $(CONTROLLER_GEN)
 	$(call fetch-external-crds,github.com/ibm-aiu/spyre-operator,api/v1alpha1)
+
+.PHONY: build-fips140-scheduler-image
+build-fips140-scheduler-image: clean
+	$(BUILDER) build --pull \
+		--tag $(FIPS_IMAGE) \
+		--build-arg VERSION="$(VERSION)" \
+		--file $(DOCKERFILE_FIPS140_SCHEDULER) .
+
+.PHONY: docker-build
+docker-build: build-fips140-scheduler-image
+
+.PHONY: docker-push
+docker-push: ## Push spyre webhook validator image image for the build host architecture
+	$(BUILDER) push $(FIPS_IMAGE)
+
+.PHONY: docker-build-push
+docker-build-push: docker-build docker-push
