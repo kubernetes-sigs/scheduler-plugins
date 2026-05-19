@@ -21,7 +21,7 @@ COPY apis/ apis/
 
 ARG BUILD_FLAGS=""
 
-ENV GOTOOLCHAIN="go1.24.13"
+ENV GOTOOLCHAIN="auto"
 
 RUN echo "TARGETARCH = '${TARGETARCH}' TARGETOS='${TARGETOS}'" && \
     echo "GO ENV DUMP: " && go env GOVERSION && go env GOTOOLDIR && \
