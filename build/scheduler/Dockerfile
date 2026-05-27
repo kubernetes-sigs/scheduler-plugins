@@ -6,6 +6,7 @@ FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
+COPY apis/ apis/
 COPY pkg/ pkg/
 COPY cmd/scheduler/ cmd/scheduler/
 ARG TARGETARCH
