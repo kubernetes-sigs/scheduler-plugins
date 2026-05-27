@@ -4,16 +4,13 @@ ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/static:nonroot
 FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 
 WORKDIR /workspace
-# 首先只复制依赖相关文件，并进行同步
 COPY go.mod go.mod
 COPY go.sum go.sum
-RUN go mod tidy
+RUN go mod download
 
-# 复制其余源码
 COPY . .
-RUN go mod tidy
 ARG TARGETARCH
-RUN make build-scheduler GO_BUILD_ENV='CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}'
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o bin/kube-scheduler ./cmd/scheduler
 
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 WORKDIR /bin
