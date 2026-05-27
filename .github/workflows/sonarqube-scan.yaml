@@ -41,7 +41,7 @@ jobs:
       uses: sonarsource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432 # v8.0.0
       with:
         args: |
-          -Dsonar.projectKey=${{ vars.ORGID }}-${{ github.repository_id }}
+          -Dsonar.projectKey=${{ secrets.ORGID }}-${{ github.repository_id }}
           -Dsonar.projectName="${{ github.repository }}"
           -Dsonar.sources=.
           -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}
@@ -54,7 +54,7 @@ jobs:
       uses: sonarsource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432 # v8.0.0
       with:
         args: |
-          -Dsonar.projectKey=${{ vars.ORGID }}-${{ github.repository_id }}
+          -Dsonar.projectKey=${{ secrets.ORGID }}-${{ github.repository_id }}
           -Dsonar.projectName="${{ github.repository }}"
           -Dsonar.sources=.
           -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}
