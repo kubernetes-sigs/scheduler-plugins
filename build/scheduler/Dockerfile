@@ -9,7 +9,7 @@ COPY go.sum go.sum
 COPY pkg/ pkg/
 COPY cmd/scheduler/ cmd/scheduler/
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -mod=mod -o bin/kube-scheduler ./cmd/scheduler
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o bin/kube-scheduler ./cmd/scheduler
 
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 WORKDIR /bin
