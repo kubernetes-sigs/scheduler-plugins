@@ -6,11 +6,10 @@ FROM --platform=${BUILDPLATFORM} $GO_BASE_IMAGE AS builder
 WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
-RUN go mod download
-
-COPY . .
+COPY pkg/ pkg/
+COPY cmd/scheduler/ cmd/scheduler/
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o bin/kube-scheduler ./cmd/scheduler
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -mod=mod -o bin/kube-scheduler ./cmd/scheduler
 
 FROM --platform=${BUILDPLATFORM} $DISTROLESS_BASE_IMAGE
 WORKDIR /bin
