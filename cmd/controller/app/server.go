@@ -47,7 +47,7 @@ func Run(s *ServerRunOptions) error {
 
 	// Controller Runtime Controllers
 	ctrl.SetLogger(klogr.New())
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: s.MetricsAddr,
