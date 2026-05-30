@@ -48,6 +48,7 @@ var _ framework.PreFilterPlugin = &ARCSync{}
 var _ framework.FilterPlugin = &ARCSync{}
 var _ framework.ScorePlugin = &ARCSync{}
 var _ framework.ReservePlugin = &ARCSync{}
+var _ framework.PostBindPlugin = &ARCSync{}
 var _ framework.EnqueueExtensions = &ARCSync{}
 
 func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
@@ -276,4 +277,15 @@ func (pl *ARCSync) Unreserve(ctx context.Context, state *framework.CycleState, p
 	defer pl.mu.Unlock()
 	delete(pl.inFlightReservations, podKey)
 	klog.InfoS("ARCSync: Unreserved NPU slots", "pod", pod.Name, "node", nodeName)
+}
+
+func (pl *ARCSync) PostBind(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
+	podKey := string(pod.UID)
+	if podKey == "" {
+		podKey = pod.Namespace + "/" + pod.Name
+	}
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+	delete(pl.inFlightReservations, podKey)
+	klog.InfoS("ARCSync: PostBind cleared reservation", "pod", pod.Name, "node", nodeName)
 }
