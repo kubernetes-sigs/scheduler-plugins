@@ -280,12 +280,27 @@ func (pl *ARCSync) Unreserve(ctx context.Context, state *framework.CycleState, p
 }
 
 func (pl *ARCSync) PostBind(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
-	podKey := string(pod.UID)
-	if podKey == "" {
-		podKey = pod.Namespace + "/" + pod.Name
+	s, err := state.Read(stateKey)
+	if err != nil {
+		return
 	}
-	pl.mu.Lock()
-	defer pl.mu.Unlock()
-	delete(pl.inFlightReservations, podKey)
-	klog.InfoS("ARCSync: PostBind cleared reservation", "pod", pod.Name, "node", nodeName)
+	data := s.(*preFilterState)
+
+	// Only clear reservation if the pod itself requests NPU (i.e. it's a workflow pod).
+	// Runner pods don't request NPU — their reservation must persist until the
+	// workflow pod starts and physical usage takes over.
+	for _, container := range pod.Spec.Containers {
+		if _, exists := container.Resources.Requests[data.resourceName]; exists {
+			podKey := string(pod.UID)
+			if podKey == "" {
+				podKey = pod.Namespace + "/" + pod.Name
+			}
+			pl.mu.Lock()
+			defer pl.mu.Unlock()
+			delete(pl.inFlightReservations, podKey)
+			klog.InfoS("ARCSync: PostBind cleared reservation (pod has NPU request)", "pod", pod.Name, "node", nodeName)
+			return
+		}
+	}
+	klog.V(4).InfoS("ARCSync: PostBind keeping reservation (runner pod)", "pod", pod.Name, "node", nodeName)
 }
