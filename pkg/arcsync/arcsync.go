@@ -160,9 +160,11 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 
 	now := time.Now()
 	for uid, res := range pl.inFlightReservations {
-		if !knownPodUIDs[uid] && now.Sub(res.timestamp) > 2*time.Minute {
-			delete(pl.inFlightReservations, uid)
-			continue
+		if !knownPodUIDs[uid] {
+			if now.Sub(res.timestamp) > 10*time.Second {
+				delete(pl.inFlightReservations, uid)
+				continue
+			}
 		}
 		if activeWorkflows[res.baseName] {
 			continue
