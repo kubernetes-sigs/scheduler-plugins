@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 func IncludeNonNative(pod *corev1.Pod) bool {
@@ -40,9 +41,22 @@ func IncludeNonNative(pod *corev1.Pod) bool {
 	}
 	return false
 }
+
+// AreExclusiveForPod checks if the given pod's containers are consuming exclusive resources
+// in the steady state of the pod, i.e. after the irrestartable init containers have finished running.
 func AreExclusiveForPod(pod *corev1.Pod) bool {
 	qos := v1qos.GetPodQOS(pod)
-	return areExclusiveForAnyContainer(qos, append(pod.Spec.InitContainers, pod.Spec.Containers...))
+
+	// filter out init containers with restart policy other than Always because these are *supposed* to
+	// run fast and finish, hence not consuming exclusive resources in a steady state while the pod is Running.
+	restartableInitCnts := []corev1.Container{}
+	for _, ctr := range pod.Spec.InitContainers {
+		if !util.IsSidecarInitContainer(&ctr) {
+			continue
+		}
+		restartableInitCnts = append(restartableInitCnts, ctr)
+	}
+	return areExclusiveForAnyContainer(qos, append(restartableInitCnts, pod.Spec.Containers...))
 }
 
 func areExclusiveForAnyContainer(qos corev1.PodQOSClass, containers []corev1.Container) bool {
