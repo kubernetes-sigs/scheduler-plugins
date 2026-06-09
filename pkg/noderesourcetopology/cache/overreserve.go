@@ -391,9 +391,9 @@ func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPod
 		}
 		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
 		nodeObjs = append(nodeObjs, podData{
-			Namespace:             pod.Namespace,
-			Name:                  pod.Name,
-			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
+			Namespace:                   pod.Namespace,
+			Name:                        pod.Name,
+			HasSteadyExclusiveResources: resourcerequests.AreExclusiveForSteadyState(pod),
 		})
 		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
 	}

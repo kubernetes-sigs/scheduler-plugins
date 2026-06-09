@@ -222,9 +222,9 @@ func podFingerprintForNodeTopology(nrt *topologyv1alpha2.NodeResourceTopology, m
 }
 
 type podData struct {
-	Namespace             string
-	Name                  string
-	HasExclusiveResources bool
+	Namespace                   string
+	Name                        string
+	HasSteadyExclusiveResources bool
 }
 
 // checkPodFingerprintForNode verifies if the given pods fingeprint (usually from NRT update) matches the
@@ -234,7 +234,7 @@ func checkPodFingerprintForNode(lh logr.Logger, objs []podData, nodeName, pfpExp
 	st := podfingerprint.MakeStatus(nodeName)
 	pfp := podfingerprint.NewTracingFingerprint(len(objs), &st)
 	for _, obj := range objs {
-		if onlyExclRes && !obj.HasExclusiveResources {
+		if onlyExclRes && !obj.HasSteadyExclusiveResources {
 			continue
 		}
 		pfp.Add(obj.Namespace, obj.Name)
