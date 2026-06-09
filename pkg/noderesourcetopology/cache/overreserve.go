@@ -149,6 +149,10 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+	if !ov.nrts.Contains(nodeName) {
+		lh.V(5).Info("ignoring reserve", "nrtinfo", "missing")
+		return
+	}
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		nodeAssumedResources = newResourceStore(ov.lh)
