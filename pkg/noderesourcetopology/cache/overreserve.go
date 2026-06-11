@@ -149,6 +149,10 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 	lh := ov.lh.WithValues(logging.KeyPod, klog.KObj(pod), logging.KeyPodUID, logging.PodUID(pod), logging.KeyNode, nodeName)
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
+	if !ov.nrts.Contains(nodeName) {
+		lh.V(5).Info("ignoring reserve", "nrtinfo", "missing")
+		return
+	}
 	nodeAssumedResources, ok := ov.assumedResources[nodeName]
 	if !ok {
 		nodeAssumedResources = newResourceStore(ov.lh)
@@ -157,9 +161,6 @@ func (ov *OverReserve) ReserveNodeResources(nodeName string, pod *corev1.Pod) {
 
 	nodeAssumedResources.AddPod(pod)
 	lh.V(2).Info("post reserve", logging.KeyNode, nodeName, "assumedResources", nodeAssumedResources.String())
-
-	ov.nodesMaybeOverreserved.Delete(nodeName)
-	lh.V(6).Info("reset discard counter", logging.KeyNode, nodeName)
 }
 
 func (ov *OverReserve) UnreserveNodeResources(nodeName string, pod *corev1.Pod) {
@@ -267,19 +268,26 @@ func (ov *OverReserve) Resync() {
 		return
 	}
 
+	nrtUpdates := ov.MakeNRTUpdatesForNodes(context.Background(), lh_, nodes)
+
+	ov.FlushNodes(lh_, nrtUpdates...)
+}
+
+func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logger, nodes DesyncedNodes) []*topologyv1alpha2.NodeResourceTopology {
+	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
+
 	// node -> pod identifier (namespace, name)
 	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant)
 	if err != nil {
 		lh_.Error(err, "cannot find the mapping between running pods and nodes")
-		return
+		return nrtUpdates
 	}
 
-	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
 	for _, nodeName := range nodes.MaybeOverReserved {
 		lh := lh_.WithValues(logging.KeyNode, nodeName)
 
 		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
-		if err := ov.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
+		if err := ov.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
 			lh.V(2).Info("failed to get NodeTopology", "error", err)
 			continue
 		}
@@ -323,7 +331,7 @@ func (ov *OverReserve) Resync() {
 		lh := lh_.WithValues(logging.KeyNode, nodeName)
 
 		nrtCandidate := &topologyv1alpha2.NodeResourceTopology{}
-		if err := ov.client.Get(context.Background(), types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
+		if err := ov.client.Get(ctx, types.NamespacedName{Name: nodeName}, nrtCandidate); err != nil {
 			lh.V(2).Info("failed to get NodeTopology", "error", err)
 			continue
 		}
@@ -336,7 +344,7 @@ func (ov *OverReserve) Resync() {
 		nrtUpdates = append(nrtUpdates, nrtCandidate)
 	}
 
-	ov.FlushNodes(lh_, nrtUpdates...)
+	return nrtUpdates
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
@@ -365,8 +373,10 @@ func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.Node
 }
 
 // to be used only in tests
-func (ov *OverReserve) Store() *nrtStore {
-	return ov.nrts
+func (ov *OverReserve) TestOnlyUpdateNRT(nrt *topologyv1alpha2.NodeResourceTopology) {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	ov.nrts.Update(nrt)
 }
 
 func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (map[string][]podData, error) {
