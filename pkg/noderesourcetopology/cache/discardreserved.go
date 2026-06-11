@@ -102,6 +102,8 @@ func (pt *DiscardReserved) PostBind(nodeName string, pod *corev1.Pod) {
 	pt.removeReservationForNode(nodeName, pod)
 }
 
+func (pt *DiscardReserved) Close() {}
+
 func (pt *DiscardReserved) removeReservationForNode(nodeName string, pod *corev1.Pod) {
 	pt.rMutex.Lock()
 	defer pt.rMutex.Unlock()

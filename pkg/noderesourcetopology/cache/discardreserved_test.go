@@ -20,13 +20,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-logr/logr/testr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog/v2"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -51,7 +51,7 @@ func TestDiscardReservedNodesGetCachedNRTCopy(t *testing.T) {
 	checkGetCachedNRTCopy(
 		t,
 		func(client ctrlclient.WithWatch, _ podlisterv1.PodLister) (Interface, error) {
-			return NewDiscardReserved(klog.Background(), client), nil
+			return NewDiscardReserved(testr.New(t), client), nil
 		},
 		testCases...,
 	)

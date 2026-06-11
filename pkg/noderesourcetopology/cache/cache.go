@@ -78,4 +78,9 @@ type Interface interface {
 	// up. If a plugin needs to clean up its state after a pod is scheduled and
 	// bound, PostBind is the extension point that it should register.
 	PostBind(nodeName string, pod *corev1.Pod)
+
+	// Close shuts down the cache, releasing all held resources.
+	// After Close returns, the cache must not be used.
+	// It is safe to call Close multiple times.
+	Close()
 }
