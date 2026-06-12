@@ -19,6 +19,8 @@ package resourcerequests
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,6 +57,223 @@ func TestAreExclusiveForSteadyState(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetContainersWithSteadyExclusiveResources(t *testing.T) {
+	testcases := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected []numaplacement.ContainerID
+	}{
+		{
+			name: "no exclusive resources",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "cnt",
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{},
+		},
+		{
+			name: "burstable with mixed containers",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBurstable,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "cnt-1",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("3"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+						{
+							Name: "cnt-2",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("2"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("1"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{
+				{
+					Namespace:     "default",
+					PodName:       "pod",
+					ContainerName: "cnt-2",
+				},
+			},
+		},
+		{
+			name: "best-effort with mixed containers",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBestEffort,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "cnt-1",
+						},
+						{
+							Name: "cnt-2",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{
+				{
+					Namespace:     "default",
+					PodName:       "pod",
+					ContainerName: "cnt-2",
+				},
+			},
+		},
+		{
+			name: "guaranteed with mixed containers",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "regular-init-cnt-1",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+						{
+							Name:          "restartable-init-cnt-2",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "cnt-1",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+						{
+							Name: "cnt-2",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1500m"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1500m"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+						{
+							Name: "cnt-3",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{
+				{Namespace: "default", PodName: "pod", ContainerName: "restartable-init-cnt-2"},
+				{Namespace: "default", PodName: "pod", ContainerName: "cnt-1"},
+				{Namespace: "default", PodName: "pod", ContainerName: "cnt-2"},
+				{Namespace: "default", PodName: "pod", ContainerName: "cnt-3"},
+			},
+		},
+	}
+
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetContainersWithSteadyExclusiveResources(tt.pod)
+			diff := cmp.Diff(got, tt.expected)
+			if diff != "" {
+				t.Errorf("%s: %s", tt.name, diff)
+			}
+		})
+	}
+
 }
 
 func coreTestCases() []testCase {
