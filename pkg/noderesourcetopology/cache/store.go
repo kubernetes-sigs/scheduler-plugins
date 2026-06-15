@@ -17,6 +17,7 @@ limitations under the License.
 package cache
 
 import (
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -25,26 +26,37 @@ import (
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	topologyv1alpha2attr "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/attribute"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
+// nodeCacheEntry is the per-node snapshot of NRT data and its decoded container NUMA placement
+type nodeCacheEntry struct {
+	nrt           *topologyv1alpha2.NodeResourceTopology
+	numaPlacement numaplacement.EncodedInfo
+}
+
 // nrtStore maps the NRT data by node name. It is not thread safe and needs to be protected by a lock.
 // data is intentionally copied each time it enters and exits the store. E.g, no pointer sharing.
 type nrtStore struct {
-	data map[string]*topologyv1alpha2.NodeResourceTopology
+	data map[string]*nodeCacheEntry
 	lh   logr.Logger
 }
 
 // newNrtStore creates a new nrtStore and initializes it with copies of the provided Node Resource Topology data.
 func newNrtStore(lh logr.Logger, nrts []topologyv1alpha2.NodeResourceTopology) *nrtStore {
-	data := make(map[string]*topologyv1alpha2.NodeResourceTopology, len(nrts))
+	data := make(map[string]*nodeCacheEntry, len(nrts))
 	for _, nrt := range nrts {
-		data[nrt.Name] = nrt.DeepCopy()
+		data[nrt.Name] = &nodeCacheEntry{
+			nrt: nrt.DeepCopy(),
+		}
 	}
 	lh.V(6).Info("initialized nrtStore", "objects", len(data))
 	return &nrtStore{
@@ -66,15 +78,105 @@ func (nrs *nrtStore) GetNRTCopyByNodeName(nodeName string) *topologyv1alpha2.Nod
 		nrs.lh.V(3).Info("missing cached NodeTopology", "node", nodeName)
 		return nil
 	}
-	return obj.DeepCopy()
+	return obj.nrt.DeepCopy()
 }
 
 // Update adds or replace the Node Resource Topology associated to a node. Always do a copy.
-func (nrs *nrtStore) Update(nrt *topologyv1alpha2.NodeResourceTopology) {
-	nrs.data[nrt.Name] = nrt.DeepCopy()
+// If there is an NRT update, there should also be a NUMAPlacement update with new set of pod data.
+// if pod data is empty, it means that NUMAPlacement is irrelevant for this node, thus would be
+// defaulted to nil.
+func (nrs *nrtStore) Update(nrt *topologyv1alpha2.NodeResourceTopology, pods ...podData) {
+	nrs.data[nrt.Name] = &nodeCacheEntry{
+		nrt: nrt.DeepCopy(),
+		numaPlacement: getNUMAPlacementInfo(nrs.lh, nrt, pods),
+	}
 	nrs.lh.V(5).Info("updated cached NodeTopology", "node", nrt.Name)
 }
 
+func getNUMAPlacementInfo(lh logr.Logger, nrt topologyv1alpha2.NodeResourceTopology, pods []podData) numaplacement.EncodedInfo {
+	nname := nrt.Name
+	lh.V(6).Info("nrt numaplacement info extraction: starting", "node", nname)
+	defer lh.V(6).Info("nrt numaplacement info extraction: completed", "node", nname)
+	
+	if len(pods) == 0 {
+		lh.V(6).Info("no pods to decode", "node", nname)
+		return numaplacement.EncodedInfo{}
+	}
+
+	// defensive check to completely avoid decoding if not a single-numa-node topology manager policy
+	tmPolicyAttr, ok := topologyv1alpha2attr.Get(nrt.Attributes, nodeconfig.AttributePolicy)
+	if !ok || tmPolicyAttr.Value != kubeletconfig.SingleNumaNodeTopologyManagerPolicy {
+		lh.V(6).Info("skip numaplacementdecoding","node", nname, "policy", tmPolicyAttr.Value)
+		return numaplacement.EncodedInfo{}
+	}
+
+	metadata, ok := topologyv1alpha2attr.Get(nrt.Attributes, numaplacement.AttributeMetadata)
+	if !ok {
+		lh.V(4).Info("missing metadata attribute", "node", nname)
+		return numaplacement.EncodedInfo{}
+	}
+	payload := numaplacement.Payload{}
+	err := numaplacement.UnpackMetadataInto(&payload, metadata.Value)
+	if err != nil {
+		lh.V(4).Error(err, "failed to unpack numa-placement metadata", "node", nname)
+		return numaplacement.EncodedInfo{}
+	}
+
+	cnts := getNUMAEligibleContainers(pods)
+	if len(cnts) != payload.Containers {
+		lh.V(4).Error(err, "inconsistent containers count", "node", nname, "computed", payload.Containers, "expected", len(cnts))
+		return numaplacement.EncodedInfo{}
+	}
+	if len(cnts) == 0 {
+		lh.V(6).Info("no NUMA eligible containers", "node", nname)
+		return numaplacement.EncodedInfo{}
+	}
+	
+	for _, zone := range nrt.Zones {
+		vectorAttr, ok := topologyv1alpha2attr.Get(zone.Attributes, numaplacement.AttributeVector)
+		if !ok {
+			// valid for empty zones and busiest node
+			lh.V(6).Info("missing vector attribute", "node", nname, "zone", zone.Name)
+			continue
+		}
+
+		numaIDStr := strings.TrimPrefix(zone.Name, "zone-")
+		numaID, err := strconv.Atoi(numaIDStr)
+		if err != nil {
+			lh.V(4).Error(err, "failed to convert zone id to int", "node", nname, "zone", zone.Name)
+			return numaplacement.EncodedInfo{}
+		}
+		payload.Vectors[numaID] = vectorAttr.Value
+	}
+
+	dec, err := numaplacement.NewDecoder(payload, cnts...)
+	if err != nil {
+		lh.V(4).Error(err, "failed to create decoder", "node", nname)
+		return numaplacement.EncodedInfo{}
+	}
+
+	info, err := dec.Result()
+	if err != nil {
+		lh.V(4).Error(err, "failed to decode node info", "node", nname)
+		return numaplacement.EncodedInfo{}
+	}
+
+	encodedInfo, ok := info.(*numaplacement.EncodedInfo)
+	if !ok {
+		lh.V(4).Error(err, "failed to cast node info to encoded info", "node", nname)
+		return numaplacement.EncodedInfo{}
+	}
+	lh.V(4).Info("numaplacement info decoded successfully", "node", nname)
+	return *encodedInfo
+}
+
+func getNUMAEligibleContainers(pods []podData) []numaplacement.ContainerID {
+	res := []numaplacement.ContainerID{}
+	for _, pod := range pods {
+		res = append(res, pod.ContainersWithExclusiveResources...)
+	}
+	return res
+}
 // resourceStore maps the resource requested by pod by pod namespaed name. It is not thread safe and needs to be protected by a lock.
 type resourceStore struct {
 	// key: namespace + "/" name
@@ -222,9 +324,11 @@ func podFingerprintForNodeTopology(nrt *topologyv1alpha2.NodeResourceTopology, m
 }
 
 type podData struct {
-	Namespace             string
-	Name                  string
-	HasExclusiveResources bool
+	Namespace                        string
+	Name                             string
+	// TODO: remove this field and use ContainersWithExclusiveResources instead
+	HasSteadyExclusiveResources            bool
+	ContainersWithExclusiveResources []numaplacement.ContainerID
 }
 
 // checkPodFingerprintForNode verifies if the given pods fingeprint (usually from NRT update) matches the
@@ -234,7 +338,7 @@ func checkPodFingerprintForNode(lh logr.Logger, objs []podData, nodeName, pfpExp
 	st := podfingerprint.MakeStatus(nodeName)
 	pfp := podfingerprint.NewTracingFingerprint(len(objs), &st)
 	for _, obj := range objs {
-		if onlyExclRes && !obj.HasExclusiveResources {
+		if onlyExclRes && !obj.HasSteadyExclusiveResources {
 			continue
 		}
 		pfp.Add(obj.Namespace, obj.Name)
@@ -247,4 +351,17 @@ func checkPodFingerprintForNode(lh logr.Logger, objs []podData, nodeName, pfpExp
 	err := pfp.Check(pfpExpected)
 	podfingerprint.MarkCompleted(st)
 	return err
+}
+
+// GetNUMAEligibleContainers returns the list of containers that are NUMA eligible based on pod's QoS and
+// the container's resources requests.
+// Important: this should align with the filtering method used to encode the NUMAPlacement attribute.
+func GetNUMAEligibleContainers(pods []podData) []numaplacement.ContainerID {
+// all containers including inits that request exlcusive resources
+for _, pod := range pods {
+	// init cnts scan
+	for _, initCnt := range pod.Spec.InitContainers {
+		if initCnt.
+
+	//app cnts scan
 }

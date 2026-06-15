@@ -19,16 +19,20 @@ package resourcerequests
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 type testCase struct {
-	name              string
-	pod               *corev1.Pod
-	expectedNonNative bool
-	expectedExclusive bool
+	name                    string
+	pod                     *corev1.Pod
+	expectedNonNative       bool
+	expectedExclusive       bool
+	expectedSteadyExclusive bool
 }
 
 func TestIncludeNonNative(t *testing.T) {
@@ -43,16 +47,233 @@ func TestIncludeNonNative(t *testing.T) {
 	}
 }
 
-func TestAreExclusiveForPod(t *testing.T) {
+func TestAreExclusiveForSteadyState(t *testing.T) {
 	tcases := coreTestCases()
 	for _, tt := range tcases {
 		t.Run(tt.name, func(t *testing.T) {
-			got := AreExclusiveForPod(tt.pod)
-			if got != tt.expectedExclusive {
-				t.Errorf("%s: exclusive resources detected %v expected %v", tt.name, got, tt.expectedExclusive)
+			got := AreExclusiveForSteadyState(tt.pod)
+			if got != tt.expectedSteadyExclusive {
+				t.Errorf("%s: steady exclusive resources detected %v expected %v", tt.name, got, tt.expectedSteadyExclusive)
 			}
 		})
 	}
+}
+
+func TestGetContainersWithSteadyExclusiveResources(t *testing.T) {
+	testcases := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected []numaplacement.ContainerID
+	}{
+		{
+			name: "no exclusive resources",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "cnt",
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{},
+		},
+		{
+			name: "burstable with mixed containers",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBurstable,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "cnt-1",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("3"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+						{
+							Name: "cnt-2",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("2"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("1"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{
+				{
+					Namespace:     "default",
+					PodName:       "pod",
+					ContainerName: "cnt-2",
+				},
+			},
+		},
+		{
+			name: "best-effort with mixed containers",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSBestEffort,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "cnt-1",
+						},
+						{
+							Name: "cnt-2",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{
+				{
+					Namespace:     "default",
+					PodName:       "pod",
+					ContainerName: "cnt-2",
+				},
+			},
+		},
+		{
+			name: "guaranteed with mixed containers",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Status: corev1.PodStatus{
+					QOSClass: corev1.PodQOSGuaranteed,
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "regular-init-cnt-1",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+						{
+							Name:          "restartable-init-cnt-2",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "cnt-1",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+						{
+							Name: "cnt-2",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1500m"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1500m"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+						{
+							Name: "cnt-3",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:                      resource.MustParse("4"),
+									corev1.ResourceMemory:                   resource.MustParse("2Gi"),
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []numaplacement.ContainerID{
+				{Namespace: "default", PodName: "pod", ContainerName: "restartable-init-cnt-2"},
+				{Namespace: "default", PodName: "pod", ContainerName: "cnt-1"},
+				{Namespace: "default", PodName: "pod", ContainerName: "cnt-2"},
+				{Namespace: "default", PodName: "pod", ContainerName: "cnt-3"},
+			},
+		},
+	}
+
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetContainersWithSteadyExclusiveResources(tt.pod)
+			diff := cmp.Diff(got, tt.expected)
+			if diff != "" {
+				t.Errorf("%s: %s", tt.name, diff)
+			}
+		})
+	}
+
 }
 
 func coreTestCases() []testCase {
@@ -65,8 +286,9 @@ func coreTestCases() []testCase {
 					Namespace: "default",
 				},
 			},
-			expectedNonNative: false,
-			expectedExclusive: false,
+			expectedNonNative:       false,
+			expectedExclusive:       false,
+			expectedSteadyExclusive: false,
 		},
 		{
 			name: "single-container-gu-no-devs",
@@ -93,8 +315,9 @@ func coreTestCases() []testCase {
 					},
 				},
 			},
-			expectedNonNative: false,
-			expectedExclusive: true,
+			expectedNonNative:       false,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: true,
 		},
 		{
 			name: "single-initcontainer-gu-no-devs",
@@ -121,8 +344,39 @@ func coreTestCases() []testCase {
 					},
 				},
 			},
-			expectedNonNative: false,
-			expectedExclusive: true,
+			expectedNonNative:       false,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: false,
+		},
+		{
+			name: "single-sidecar-initcontainer-gu-no-devs",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "cnt",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+						},
+					},
+				},
+			},
+			expectedNonNative:       false,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: true,
 		},
 		{
 			name: "single-container-devs-only",
@@ -147,8 +401,9 @@ func coreTestCases() []testCase {
 					},
 				},
 			},
-			expectedNonNative: true,
-			expectedExclusive: true,
+			expectedNonNative:       true,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: true,
 		},
 		{
 			name: "single-initcontainer-devs-only",
@@ -173,8 +428,37 @@ func coreTestCases() []testCase {
 					},
 				},
 			},
-			expectedNonNative: true,
-			expectedExclusive: true,
+			expectedNonNative:       true,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: false,
+		},
+		{
+			name: "single-sidecar-initcontainer-devs-only",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "cnt",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+								Requests: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+						},
+					},
+				},
+			},
+			expectedNonNative:       true,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: true,
 		},
 		{
 			name: "single-container-gu-core-and-devs",
@@ -203,8 +487,9 @@ func coreTestCases() []testCase {
 					},
 				},
 			},
-			expectedNonNative: true,
-			expectedExclusive: true,
+			expectedNonNative:       true,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: true,
 		},
 		{
 			name: "single-container-nongu-cpus-and-devs",
@@ -231,8 +516,9 @@ func coreTestCases() []testCase {
 					},
 				},
 			},
-			expectedNonNative: true,
-			expectedExclusive: true,
+			expectedNonNative:       true,
+			expectedExclusive:       true,
+			expectedSteadyExclusive: true,
 		},
 		{
 			name: "single-container-nongu-cpus-only",
@@ -257,8 +543,9 @@ func coreTestCases() []testCase {
 					},
 				},
 			},
-			expectedNonNative: false,
-			expectedExclusive: false,
+			expectedNonNative:       false,
+			expectedExclusive:       false,
+			expectedSteadyExclusive: false,
 		},
 	}
 }

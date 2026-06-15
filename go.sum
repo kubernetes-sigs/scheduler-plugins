@@ -2191,8 +2191,10 @@ github.com/jung-kurt/gofpdf v1.0.0/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+
 github.com/jung-kurt/gofpdf v1.0.3-0.20190309125859-24315acbbda5/go.mod h1:7Id9E/uU8ce6rXgefFLlgrJj/GYY22cpxn+r32jIOes=
 github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2 h1:uAwqOtyrFYggq3pVf3hs1XKkBxrQ8dkgjWz3LCLJsiY=
 github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2/go.mod h1:LBzS4n6GX1C69tzSd5EibZ9cGOXFuHP7GxEMDYVe1sM=
-github.com/k8stopologyawareschedwg/podfingerprint v0.2.2 h1:iFHPfZInM9pz2neye5RdmORMp1hPmte1EGJYpOOzZVg=
-github.com/k8stopologyawareschedwg/podfingerprint v0.2.2/go.mod h1:C23pM15t06dXg/OihGlqBvnYzLr+MXDXJ7zMfbNAyXI=
+github.com/k8stopologyawareschedwg/numaplacement v0.1.0 h1:Y1GxVAAc+FVewXRdnPfXT8DM8yICPsM8kLHh4I7f7uU=
+github.com/k8stopologyawareschedwg/numaplacement v0.1.0/go.mod h1:wU3DV2l+5mzMLufnTYhtsiyXqiNwfDMN0Hq29c+qXU4=
+github.com/k8stopologyawareschedwg/podfingerprint v0.2.3 h1:nVKmzn6g7CHhDtB+jG85Db/B/ALRY9VLh5ueAfVPEHU=
+github.com/k8stopologyawareschedwg/podfingerprint v0.2.3/go.mod h1:E0bjgihZTSwRIJVjNV45Lm0C/j5w+YkGSnfpYXoI8Ws=
 github.com/karrick/godirwalk v1.17.0/go.mod h1:j4mkqPuvaLI8mp1DroR3P6ad7cyYd4c1qeJ3RV7ULlk=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51/go.mod h1:CzGEWj7cYgsdH8dAjBGEr58BoE7ScuLd+fwFZ44+/x8=
 github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd/go.mod h1:CT57kijsi8u/K/BOFA39wgDQJ9CxiF4nAY/ojJ6r6mM=

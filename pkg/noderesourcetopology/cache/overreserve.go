@@ -72,7 +72,9 @@ func NewOverReserve(ctx context.Context, lh logr.Logger, cfg *apiconfig.NodeReso
 	resyncMethod := getCacheResyncMethod(lh, cfg)
 	resyncScope := getCacheResyncScope(lh, cfg)
 
-	lh.V(2).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod, "scope", resyncScope)
+	nrts := newNrtStore(lh, nrtObjs.Items)
+	nrts.
+		lh.V(2).Info("initializing", "noderesourcetopologies", len(nrtObjs.Items), "method", resyncMethod, "scope", resyncScope)
 	obj := &OverReserve{
 		lh:                     lh,
 		client:                 client,
@@ -348,13 +350,13 @@ func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logg
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
-func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.NodeResourceTopology) uint64 {
+func (ov *OverReserve) FlushNodes(lh logr.Logger, nodeToObjsMap map[string][]podData, nrts ...*topologyv1alpha2.NodeResourceTopology) uint64 {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 
 	for _, nrt := range nrts {
 		lh.V(2).Info("flushing", logging.KeyNode, nrt.Name)
-		ov.nrts.Update(nrt)
+		ov.nrts.Update(nrt, nodeToObjsMap[nrt.Name]...)
 		delete(ov.assumedResources, nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrt.Name)
 		ov.nodesWithForeignPods.Delete(nrt.Name)
@@ -391,9 +393,10 @@ func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPod
 		}
 		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
 		nodeObjs = append(nodeObjs, podData{
-			Namespace:             pod.Namespace,
-			Name:                  pod.Name,
-			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
+			Namespace:                        pod.Namespace,
+			Name:                             pod.Name,
+			HasSteadyExclusiveResources:      resourcerequests.AreExclusiveForSteadyState(pod),
+			ContainersWithExclusiveResources: resourcerequests.GetContainersWithSteadyExclusiveResources(pod),
 		})
 		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
 	}

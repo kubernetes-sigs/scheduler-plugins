@@ -17,10 +17,12 @@ limitations under the License.
 package resourcerequests
 
 import (
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	"sigs.k8s.io/scheduler-plugins/pkg/util"
 )
 
 func IncludeNonNative(pod *corev1.Pod) bool {
@@ -40,17 +42,43 @@ func IncludeNonNative(pod *corev1.Pod) bool {
 	}
 	return false
 }
-func AreExclusiveForPod(pod *corev1.Pod) bool {
-	qos := v1qos.GetPodQOS(pod)
-	return areExclusiveForAnyContainer(qos, append(pod.Spec.InitContainers, pod.Spec.Containers...))
+
+// AreExclusiveForSteadyState checks if the given pod's containers are consuming exclusive resources
+// in the steady state of the pod, i.e. after the irrestartable init containers have finished running.
+func AreExclusiveForSteadyState(pod *corev1.Pod) bool {
+	cnts := GetContainersWithSteadyExclusiveResources(pod)
+	return len(cnts) > 0
 }
 
-func areExclusiveForAnyContainer(qos corev1.PodQOSClass, containers []corev1.Container) bool {
-	for _, ctr := range containers {
-		for resource, quantity := range ctr.Resources.Requests {
-			if ok := IsExclusive(qos, resource, quantity); ok {
-				return true
-			}
+func GetContainersWithSteadyExclusiveResources(pod *corev1.Pod) []numaplacement.ContainerID {
+	steadyContainers := []corev1.Container{}
+	for _, ctr := range pod.Spec.InitContainers {
+		if !util.IsSidecarInitContainer(&ctr) {
+			continue
+		}
+		steadyContainers = append(steadyContainers, ctr)
+	}
+	steadyContainers = append(steadyContainers, pod.Spec.Containers...)
+
+	qos := v1qos.GetPodQOS(pod)
+	res := []numaplacement.ContainerID{}
+	for _, ctr := range steadyContainers {
+		if isExclusiveForContainer(qos, ctr) {
+			res = append(res,
+				numaplacement.ContainerID{
+					Namespace:     pod.Namespace,
+					PodName:       pod.Name,
+					ContainerName: ctr.Name,
+				})
+		}
+	}
+	return res
+}
+
+func isExclusiveForContainer(qos corev1.PodQOSClass, container corev1.Container) bool {
+	for resource, quantity := range container.Resources.Requests {
+		if ok := IsExclusive(qos, resource, quantity); ok {
+			return true
 		}
 	}
 	return false
