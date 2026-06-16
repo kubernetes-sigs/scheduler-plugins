@@ -488,7 +488,7 @@ func TestFlush(t *testing.T) {
 	lh := klog.Background()
 
 	expectedGen := nrtCache.generation + 1
-	gen1 := nrtCache.FlushNodes(lh, expectedNodeTopology.DeepCopy())
+	gen1 := nrtCache.FlushNodes(lh, map[string][]podData{}, expectedNodeTopology.DeepCopy())
 	if gen1 != expectedGen {
 		t.Fatalf("generation is expected to increase once after flushing a dirty node\ngot %d expected %d", gen1, expectedGen)
 	}
@@ -512,7 +512,7 @@ func TestFlush(t *testing.T) {
 	}
 
 	// flush again without dirty nodes
-	gen2 := nrtCache.FlushNodes(lh)
+	gen2 := nrtCache.FlushNodes(lh, map[string][]podData{})
 	if gen2 != expectedGen {
 		t.Fatalf("generation shouldn't change with no dirty nodes\ngot %d expected %d", gen2, expectedGen)
 	}
@@ -888,7 +888,7 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	// The fingerprint mismatch means nrtUpdates will be empty for node1.
 	lh := klog.Background()
 	nodes := nrtCache.GetDesyncedNodes(lh)
-	nrtUpdates := nrtCache.MakeNRTUpdatesForNodes(ctx, lh, nodes)
+	nrtUpdates := nrtCache.MakeNRTUpdatesForNodes(ctx, lh, nodes, map[string][]podData{})
 
 	if len(nrtUpdates) != 0 {
 		t.Fatalf("expected no NRT updates due to fingerprint mismatch, got %d", len(nrtUpdates))
@@ -922,7 +922,7 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	nrtCache.ReserveNodeResources("node1", concurrentPod)
 
 	// Step 4: Resync finishes — FlushNodes with the (empty) update list.
-	nrtCache.FlushNodes(lh, nrtUpdates...)
+	nrtCache.FlushNodes(lh, map[string][]podData{}, nrtUpdates...)
 
 	// Verify: node1 must still be dirty — the resync failed (fingerprint
 	// mismatch) and Reserve must NOT have cleared the dirty bit.
@@ -1334,7 +1334,7 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 	}
 
 	// pointless, but will force a generation increase
-	gen := nrtCache.FlushNodes(lh, nrt)
+	gen := nrtCache.FlushNodes(lh, map[string][]podData{}, nrt)
 	if gen == 0 {
 		t.Fatalf("FlushNodes didn't increase the generation")
 	}
