@@ -33,6 +33,110 @@ import (
 	tu "sigs.k8s.io/scheduler-plugins/test/util"
 )
 
+func TestClonePods(t *testing.T) {
+	original := []podData{
+		{
+			Namespace:          "ns-0",
+			Name:               "pod-0",
+			PinnedContainers:   []string{"container-0"},
+			ExclusiveResources: ExclusiveResourceAlloc,
+		},
+	}
+
+	cloned := clonePods(original)
+	cloned[0].Name = "pod-mutated"
+	cloned[0].PinnedContainers[0] = "container-mutated"
+	cloned[0].ExclusiveResources = ExclusiveResourceNone
+	cloned = append(cloned, podData{Namespace: "ns-0", Name: "pod-1"})
+
+	if len(original) != 1 {
+		t.Fatalf("original pods length changed after mutating clone: got %d expected 1", len(original))
+	}
+	if original[0].Name != "pod-0" {
+		t.Errorf("original pod name changed after mutating clone: got %q expected %q", original[0].Name, "pod-0")
+	}
+	if original[0].PinnedContainers[0] != "container-0" {
+		t.Errorf("original pod PinnedContainers changed after mutating clone: got %q expected %q", original[0].PinnedContainers[0], "container-0")
+	}
+	if original[0].ExclusiveResources != ExclusiveResourceAlloc {
+		t.Errorf("original pod ExclusiveResources changed after mutating clone: got %v expected %v", original[0].ExclusiveResources, ExclusiveResourceAlloc)
+	}
+}
+
+func TestHasExclusiveResources(t *testing.T) {
+	testCases := []struct {
+		name               string
+		exclusiveResources ExclusiveResourceState
+		pinnedContainers   []string
+		expected           bool
+	}{
+		{
+			name:               "alloc is conclusive regardless of pinned containers",
+			exclusiveResources: ExclusiveResourceAlloc,
+			pinnedContainers:   nil,
+			expected:           true,
+		},
+		{
+			name:               "alloc is conclusive even with pinned containers set",
+			exclusiveResources: ExclusiveResourceAlloc,
+			pinnedContainers:   []string{"container-0"},
+			expected:           true,
+		},
+		{
+			name:               "none is conclusive regardless of pinned containers",
+			exclusiveResources: ExclusiveResourceNone,
+			pinnedContainers:   nil,
+			expected:           false,
+		},
+		{
+			name:               "none is conclusive even with pinned containers set",
+			exclusiveResources: ExclusiveResourceNone,
+			pinnedContainers:   []string{"container-0"},
+			expected:           false,
+		},
+		{
+			name:               "unknown falls back to pinned containers: none present",
+			exclusiveResources: ExclusiveResourceUnknown,
+			pinnedContainers:   nil,
+			expected:           false,
+		},
+		{
+			name:               "unknown falls back to pinned containers: empty slice",
+			exclusiveResources: ExclusiveResourceUnknown,
+			pinnedContainers:   []string{},
+			expected:           false,
+		},
+		{
+			name:               "unknown falls back to pinned containers: present",
+			exclusiveResources: ExclusiveResourceUnknown,
+			pinnedContainers:   []string{"container-0"},
+			expected:           true,
+		},
+		{
+			name:               "zero value podData has no exclusive resources",
+			exclusiveResources: ExclusiveResourceUnknown,
+			pinnedContainers:   nil,
+			expected:           false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pd := podData{
+				Namespace:          "ns-0",
+				Name:               "pod-0",
+				PinnedContainers:   tc.pinnedContainers,
+				ExclusiveResources: tc.exclusiveResources,
+			}
+
+			got := pd.hasExclusiveResources()
+			if got != tc.expected {
+				t.Errorf("hasExclusiveResources() = %v, expected %v (exclusiveResources=%v, pinnedContainers=%v)", got, tc.expected, tc.exclusiveResources, tc.pinnedContainers)
+			}
+		})
+	}
+}
+
 type testCaseGetCachedNRTCopy struct {
 	name           string
 	nodeTopologies []*topologyv1alpha2.NodeResourceTopology
