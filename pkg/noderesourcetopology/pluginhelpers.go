@@ -62,7 +62,7 @@ func initNodeTopologyInformer(ctx context.Context, lh logr.Logger,
 
 	podSharedInformer, podLister, isPodRelevant := podprovider.NewFromHandle(lh, handle, tcfg.Cache)
 
-	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName(logging.SubsystemNRTCache), tcfg.Cache, client, podLister, isPodRelevant)
+	nrtCache, err := nrtcache.NewOverReserve(ctx, lh.WithName(logging.SubsystemNRTCache), tcfg.Cache, client, podLister, isPodRelevant, *tcfg.PreemptionMode)
 	if err != nil {
 		return nil, err
 	}
