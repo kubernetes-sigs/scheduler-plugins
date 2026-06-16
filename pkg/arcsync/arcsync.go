@@ -44,6 +44,7 @@ func (s *preFilterState) Clone() framework.StateData {
 	return s
 }
 
+var _ framework.QueueSortPlugin = &ARCSync{}
 var _ framework.PreFilterPlugin = &ARCSync{}
 var _ framework.FilterPlugin = &ARCSync{}
 var _ framework.ScorePlugin = &ARCSync{}
@@ -60,6 +61,38 @@ func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.P
 
 func (pl *ARCSync) Name() string {
 	return Name
+}
+
+// Less implements QueueSortPlugin — strict FIFO for runner pods by CreationTimestamp.
+// For non-runner pods, falls back to priority-then-timestamp (same as default PrioritySort).
+// Using CreationTimestamp (not queue entry time) so backoff retries don't let newer pods jump ahead.
+func (pl *ARCSync) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
+	prio1 := podPriority(pInfo1.Pod)
+	prio2 := podPriority(pInfo2.Pod)
+	if prio1 != prio2 {
+		return prio1 > prio2
+	}
+
+	p1IsRunner := pInfo1.Pod.Labels[RequiredNPUCount] != ""
+	p2IsRunner := pInfo2.Pod.Labels[RequiredNPUCount] != ""
+
+	if p1IsRunner && p2IsRunner {
+		t1 := pInfo1.Pod.CreationTimestamp.Time
+		t2 := pInfo2.Pod.CreationTimestamp.Time
+		if !t1.Equal(t2) {
+			return t1.Before(t2)
+		}
+		return pInfo1.Pod.Name < pInfo2.Pod.Name
+	}
+
+	return pInfo1.Timestamp.Before(pInfo2.Timestamp)
+}
+
+func podPriority(pod *v1.Pod) int32 {
+	if pod.Spec.Priority != nil {
+		return *pod.Spec.Priority
+	}
+	return 0
 }
 
 func (pl *ARCSync) EventsToRegister(_ context.Context) ([]framework.ClusterEventWithHint, error) {
