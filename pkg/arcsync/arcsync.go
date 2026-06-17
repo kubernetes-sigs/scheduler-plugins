@@ -7,7 +7,9 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -30,6 +32,7 @@ type reservation struct {
 
 type ARCSync struct {
 	handle               framework.Handle
+	podLister            corev1listers.PodLister
 	inFlightReservations map[string]reservation
 	mu                   sync.Mutex
 }
@@ -44,7 +47,6 @@ func (s *preFilterState) Clone() framework.StateData {
 	return s
 }
 
-var _ framework.QueueSortPlugin = &ARCSync{}
 var _ framework.PreFilterPlugin = &ARCSync{}
 var _ framework.FilterPlugin = &ARCSync{}
 var _ framework.ScorePlugin = &ARCSync{}
@@ -55,6 +57,7 @@ var _ framework.EnqueueExtensions = &ARCSync{}
 func New(ctx context.Context, _ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &ARCSync{
 		handle:               h,
+		podLister:            h.SharedInformerFactory().Core().V1().Pods().Lister(),
 		inFlightReservations: make(map[string]reservation),
 	}, nil
 }
@@ -63,41 +66,9 @@ func (pl *ARCSync) Name() string {
 	return Name
 }
 
-// Less implements QueueSortPlugin — strict FIFO for runner pods by CreationTimestamp.
-// For non-runner pods, falls back to priority-then-timestamp (same as default PrioritySort).
-// Using CreationTimestamp (not queue entry time) so backoff retries don't let newer pods jump ahead.
-func (pl *ARCSync) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
-	prio1 := podPriority(pInfo1.Pod)
-	prio2 := podPriority(pInfo2.Pod)
-	if prio1 != prio2 {
-		return prio1 > prio2
-	}
-
-	p1IsRunner := pInfo1.Pod.Labels[RequiredNPUCount] != ""
-	p2IsRunner := pInfo2.Pod.Labels[RequiredNPUCount] != ""
-
-	if p1IsRunner && p2IsRunner {
-		t1 := pInfo1.Pod.CreationTimestamp.Time
-		t2 := pInfo2.Pod.CreationTimestamp.Time
-		if !t1.Equal(t2) {
-			return t1.Before(t2)
-		}
-		return pInfo1.Pod.Name < pInfo2.Pod.Name
-	}
-
-	return pInfo1.Timestamp.Before(pInfo2.Timestamp)
-}
-
-func podPriority(pod *v1.Pod) int32 {
-	if pod.Spec.Priority != nil {
-		return *pod.Spec.Priority
-	}
-	return 0
-}
-
 func (pl *ARCSync) EventsToRegister(_ context.Context) ([]framework.ClusterEventWithHint, error) {
 	return []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete | framework.Update}},
+		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete | framework.Update | framework.Add}},
 		{Event: framework.ClusterEvent{Resource: framework.Node, ActionType: framework.Add | framework.Update}},
 	}, nil
 }
@@ -130,6 +101,52 @@ func getBaseName(name string) string {
 		return name[:len(name)-len(suffix)]
 	}
 	return name
+}
+
+// isOldestPendingRunner returns true if no older unscheduled runner pod (same NPU type) exists.
+// This enforces strict FIFO: a runner pod only proceeds when it is the oldest waiting one.
+// Using CreationTimestamp avoids the backoff side-effect where older (more-retried) pods
+// accumulate longer backoff delays and get jumped by newer pods.
+func (pl *ARCSync) isOldestPendingRunner(pod *v1.Pod) bool {
+	resDomain := pod.Labels[ResourceDomain]
+	resModel := pod.Labels[ResourceModel]
+	myTime := pod.CreationTimestamp.Time
+
+	allPods, err := pl.podLister.List(labels.Everything())
+	if err != nil {
+		klog.ErrorS(err, "ARCSync: failed to list pods for FIFO check, failing open")
+		return true
+	}
+
+	for _, p := range allPods {
+		if p.UID == pod.UID {
+			continue
+		}
+		// skip completed pods
+		if p.Status.Phase == v1.PodSucceeded || p.Status.Phase == v1.PodFailed {
+			continue
+		}
+		// skip already-bound pods (they are not "pending" in the queue)
+		if p.Spec.NodeName != "" {
+			continue
+		}
+		// only compare runner pods of the same NPU resource type
+		if p.Labels[RequiredNPUCount] == "" {
+			continue
+		}
+		if p.Labels[ResourceDomain] != resDomain || p.Labels[ResourceModel] != resModel {
+			continue
+		}
+		// is p older than current pod?
+		pTime := p.CreationTimestamp.Time
+		if pTime.Before(myTime) || (pTime.Equal(myTime) && string(p.UID) < string(pod.UID)) {
+			klog.V(4).InfoS("ARCSync: FIFO block — older runner exists",
+				"pod", pod.Name, "olderPod", p.Name,
+				"podCreated", myTime, "olderCreated", pTime)
+			return false
+		}
+	}
+	return true
 }
 
 func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
@@ -226,6 +243,15 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 		klog.InfoS("ARCSync: PreFilter rejected pod (no node has enough NPU)",
 			"pod", pod.Name, "required", reqCount)
 		return nil, framework.NewStatus(framework.Unschedulable, "No node has enough available NPU slots")
+	}
+
+	// FIFO check: only allow the oldest pending runner pod of this NPU type to proceed.
+	// Newer pods that arrive first due to shorter backoff are held here until all older
+	// pods have been scheduled.
+	if !pl.isOldestPendingRunner(pod) {
+		klog.InfoS("ARCSync: FIFO hold — waiting for older runner pods",
+			"pod", pod.Name)
+		return nil, framework.NewStatus(framework.Unschedulable, "FIFO: waiting for older runner pods to be scheduled first")
 	}
 
 	state.Write(stateKey, &preFilterState{
