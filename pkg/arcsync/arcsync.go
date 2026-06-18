@@ -73,26 +73,11 @@ func (pl *ARCSync) EventsToRegister(_ context.Context) ([]framework.ClusterEvent
 	}, nil
 }
 
-func canScheduleOnNode(pod *v1.Pod, node *v1.Node) bool {
-	if node.Spec.Unschedulable {
-		return false
-	}
-	for _, taint := range node.Spec.Taints {
-		if taint.Effect != v1.TaintEffectNoSchedule && taint.Effect != v1.TaintEffectNoExecute {
-			continue
-		}
-		tolerated := false
-		for _, toleration := range pod.Spec.Tolerations {
-			if toleration.ToleratesTaint(&taint) {
-				tolerated = true
-				break
-			}
-		}
-		if !tolerated {
-			return false
-		}
-	}
-	return true
+// canScheduleOnNode excludes only cordoned nodes (Unschedulable: true).
+// Tainted nodes are included — their NPU capacity is physically present and
+// counts toward global admission decisions.
+func canScheduleOnNode(node *v1.Node) bool {
+	return !node.Spec.Unschedulable
 }
 
 func getBaseName(name string) string {
@@ -228,7 +213,7 @@ func (pl *ARCSync) PreFilter(ctx context.Context, state *framework.CycleState, p
 	hasCandidate := false
 	for _, nodeInfo := range nodeInfos {
 		node := nodeInfo.Node()
-		if node == nil || !canScheduleOnNode(pod, node) {
+		if node == nil || !canScheduleOnNode(node) {
 			continue
 		}
 		allocatable := node.Status.Allocatable[fullResourceName]
