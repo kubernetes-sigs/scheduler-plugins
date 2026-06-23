@@ -397,9 +397,9 @@ func TestNormalizeScore(t *testing.T) {
 			expectedOrder: []string{"node-oldest", "node-medium", "node-newest"},
 		},
 		{
-			name: "with missing metadata on some nodes",
+			name: "highest strategy with one valid node and missing metadata nodes",
 			args: &config.NodeMetadataArgs{
-				MetadataKey:     "priority",
+				MetadataKey:     "tier",
 				MetadataSource:  config.MetadataSourceLabel,
 				MetadataType:    config.MetadataTypeNumber,
 				ScoringStrategy: config.ScoringStrategyHighest,
@@ -407,25 +407,22 @@ func TestNormalizeScore(t *testing.T) {
 			nodes: []*v1.Node{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:   "node-with-priority",
-						Labels: map[string]string{"priority": "100"},
+						Name: "node-no-metadata-1",
 					},
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:   "node-without-priority",
-						Labels: map[string]string{"other": "value"},
+						Name:   "node-with-metadata",
+						Labels: map[string]string{"tier": "100"},
 					},
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:   "node-low-priority",
-						Labels: map[string]string{"priority": "50"},
+						Name: "node-no-metadata-2",
 					},
 				},
 			},
-			// Node without metadata gets score 0, which after normalization becomes MinNodeScore
-			expectedOrder: []string{"node-with-priority", "node-low-priority", "node-without-priority"},
+			expectedOrder: []string{"node-with-metadata", "node-no-metadata-1", "node-no-metadata-2"},
 		},
 		{
 			name: "all nodes missing metadata",
@@ -514,9 +511,14 @@ func TestNormalizeScore(t *testing.T) {
 						},
 					},
 				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-missing",
+					},
+				},
 			},
 			// For lowest strategy: lower is better (100 < 150 < 200)
-			expectedOrder: []string{"node-valid-low", "node-valid-medium", "node-valid-high"},
+			expectedOrder: []string{"node-valid-low", "node-valid-medium", "node-valid-high", "node-missing"},
 		},
 	}
 
@@ -532,8 +534,7 @@ func TestNormalizeScore(t *testing.T) {
 			for _, node := range tt.nodes {
 				score, err := nm.calculateScore(node)
 				if err != nil {
-					// For nodes with missing or invalid metadata, score should be 0
-					score = 0
+					score = invalidScore
 				}
 				nodeScores = append(nodeScores, framework.NodeScore{
 					Name:  node.Name,

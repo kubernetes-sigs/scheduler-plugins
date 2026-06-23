@@ -19,6 +19,7 @@ package nodemetadata
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -44,6 +45,7 @@ var _ framework.ScorePlugin = &NodeMetadata{}
 
 // Name is the name of the plugin used in the Registry and configurations.
 const Name = "NodeMetadata"
+const invalidScore int64 = math.MinInt64
 
 // Name returns the name of the plugin.
 func (nm *NodeMetadata) Name() string {
@@ -62,8 +64,8 @@ func (nm *NodeMetadata) Score(ctx context.Context, state framework.CycleState, p
 	score, err := nm.calculateScore(node)
 	if err != nil {
 		logger.V(5).Info("Failed to calculate score for node", "node", node.Name, "error", err, "pod", pod.Name)
-		// Return 0 score for nodes where we can't calculate the score
-		return 0, nil
+		// Invalid or missing metadata should sort after valid nodes.
+		return invalidScore, nil
 	}
 
 	logger.V(10).Info("Score: ", "score", score, "node", node.Name, "pod", pod.Name)
@@ -154,10 +156,17 @@ func (nm *NodeMetadata) NormalizeScore(ctx context.Context, state framework.Cycl
 	}
 
 	var minScore, maxScore int64
-	minScore = scores[0].Score
-	maxScore = scores[0].Score
+	validCount := 0
 
 	for i := range scores {
+		if scores[i].Score == invalidScore {
+			continue
+		}
+		if validCount == 0 {
+			minScore = scores[i].Score
+			maxScore = scores[i].Score
+		}
+		validCount++
 		if scores[i].Score < minScore {
 			minScore = scores[i].Score
 		}
@@ -166,11 +175,24 @@ func (nm *NodeMetadata) NormalizeScore(ctx context.Context, state framework.Cycl
 		}
 	}
 
+	if validCount == 0 {
+		for i := range scores {
+			scores[i].Score = framework.MinNodeScore
+		}
+		return nil
+	}
+
 	logger.V(10).Info("Score range: ", "min", minScore, "max", maxScore, "pod", pod.Name)
 
 	// If all scores are the same, set them all to MinNodeScore
 	if maxScore == minScore {
+		hasInvalidScores := validCount != len(scores)
+
 		for i := range scores {
+			if hasInvalidScores && scores[i].Score != invalidScore {
+				scores[i].Score = framework.MaxNodeScore
+				continue
+			}
 			scores[i].Score = framework.MinNodeScore
 		}
 		logger.V(10).Info("All scores equal, normalized to MinNodeScore: ", "scores", scores, "pod", pod.Name)
@@ -182,6 +204,10 @@ func (nm *NodeMetadata) NormalizeScore(ctx context.Context, state framework.Cycl
 	newRange := framework.MaxNodeScore - framework.MinNodeScore
 
 	for i := range scores {
+		if scores[i].Score == invalidScore {
+			scores[i].Score = framework.MinNodeScore
+			continue
+		}
 		scores[i].Score = ((scores[i].Score-minScore)*newRange)/oldRange + framework.MinNodeScore
 	}
 
