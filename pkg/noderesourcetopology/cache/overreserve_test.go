@@ -22,6 +22,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/go-logr/logr/testr"
 	"github.com/google/go-cmp/cmp"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
@@ -32,7 +33,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog/v2"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -91,7 +91,7 @@ func TestGetCacheResyncMethod(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
-			got := getCacheResyncMethod(klog.Background(), testCase.cfg)
+			got := getCacheResyncMethod(testr.New(t), testCase.cfg)
 			if got != testCase.expected {
 				t.Errorf("cache resync method got %v expected %v", got, testCase.expected)
 			}
@@ -106,12 +106,12 @@ func TestInitEmptyLister(t *testing.T) {
 
 	fakePodLister := &fakePodLister{}
 	ctx := context.Background()
-	_, err = NewOverReserve(ctx, klog.Background(), nil, nil, fakePodLister, podprovider.IsPodRelevantAlways)
+	_, err = NewOverReserve(ctx, testr.New(t), nil, nil, fakePodLister, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil lister")
 	}
 
-	_, err = NewOverReserve(ctx, klog.Background(), nil, fakeClient, nil, podprovider.IsPodRelevantAlways)
+	_, err = NewOverReserve(ctx, testr.New(t), nil, fakeClient, nil, podprovider.IsPodRelevantAlways)
 	if err == nil {
 		t.Fatalf("accepted nil indexer")
 	}
@@ -126,7 +126,7 @@ func TestGetDesyncedNodesCount(t *testing.T) {
 	fakePodLister := &fakePodLister{}
 
 	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
-	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes := nrtCache.GetDesyncedNodes(testr.New(t))
 	if dirtyNodes.DirtyCount() != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -151,7 +151,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes := nrtCache.GetDesyncedNodes(testr.New(t))
 	if dirtyNodes.Len() != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -160,7 +160,7 @@ func TestDirtyNodesMarkDiscarded(t *testing.T) {
 		nrtCache.NodeMaybeOverReserved(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes = nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes = nrtCache.GetDesyncedNodes(testr.New(t))
 	sort.Strings(dirtyNodes.MaybeOverReserved)
 
 	if !reflect.DeepEqual(dirtyNodes.MaybeOverReserved, expectedNodes) {
@@ -192,7 +192,7 @@ func TestDirtyNodesNotUnmarkedOnReserve(t *testing.T) {
 		nrtCache.ReserveNodeResources(nodeName, &corev1.Pod{})
 	}
 
-	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes := nrtCache.GetDesyncedNodes(testr.New(t))
 	if dirtyNodes.Len() != 0 {
 		t.Errorf("dirty nodes from pristine cache: %v", dirtyNodes)
 	}
@@ -204,7 +204,7 @@ func TestDirtyNodesNotUnmarkedOnReserve(t *testing.T) {
 	// Reserve does NOT clear the dirty flag; only FlushNodes does.
 	nrtCache.ReserveNodeResources("node-4", &corev1.Pod{})
 
-	dirtyNodes = nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes = nrtCache.GetDesyncedNodes(testr.New(t))
 
 	if dirtyNodes.DirtyCount() != 2 {
 		t.Errorf("both nodes should still be dirty after Reserve, got: %v", dirtyNodes.MaybeOverReserved)
@@ -281,7 +281,7 @@ func TestOverreserveGetCachedNRTCopy(t *testing.T) {
 	checkGetCachedNRTCopy(
 		t,
 		func(client ctrlclient.WithWatch, podLister podlisterv1.PodLister) (Interface, error) {
-			return NewOverReserve(context.Background(), klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
+			return NewOverReserve(context.Background(), testr.New(t), nil, client, podLister, podprovider.IsPodRelevantAlways)
 		},
 		testCases...,
 	)
@@ -484,7 +484,7 @@ func TestFlush(t *testing.T) {
 		},
 	}
 
-	lh := klog.Background()
+	lh := testr.New(t)
 
 	expectedGen := nrtCache.generation + 1
 	gen1 := nrtCache.FlushNodes(lh, expectedNodeTopology.DeepCopy())
@@ -588,7 +588,7 @@ func TestResyncNoPodFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes := nrtCache.GetDesyncedNodes(testr.New(t))
 
 	if dirtyNodes.Len() != 1 || dirtyNodes.MaybeOverReserved[0] != "node1" {
 		t.Errorf("cleaned nodes after resyncing with bad data: %v", dirtyNodes.MaybeOverReserved)
@@ -682,7 +682,7 @@ func TestResyncMatchFingerprint(t *testing.T) {
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes := nrtCache.GetDesyncedNodes(testr.New(t))
 	if dirtyNodes.Len() > 0 {
 		t.Errorf("node still dirty after resyncing with good data: %v", dirtyNodes)
 	}
@@ -701,7 +701,12 @@ func isNRTEqual(a, b *topologyv1alpha2.NodeResourceTopology) bool {
 }
 
 func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
-	fakeClient, err := tu.NewFakeClient()
+	// Create the NRT in the fake client at init time so the watcher
+	// (started by mustOverReserve) sees it already in the store and
+	// does not queue an Added event that would race with our test.
+	initialNRT := makeTestNRT("node1")
+	objs := []runtime.Object{initialNRT}
+	fakeClient, err := tu.NewFakeClient(objs...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -744,52 +749,33 @@ func TestResyncFingerprintMismatchKeepsNodeDirty(t *testing.T) {
 	// simulate some time after the node is marked overreserved
 	nrtCache.NodeMaybeOverReserved("node1", &corev1.Pod{})
 
-	// NRT on the API server has a fingerprint that does NOT match the pods
-	// in the lister. This forces a ErrSignatureMismatch in Resync().
-	nrtWithBadFingerprint := &topologyv1alpha2.NodeResourceTopology{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "node1",
-		},
-		Attributes: topologyv1alpha2.AttributeList{
-			{
-				Name:  podfingerprint.Attribute,
-				Value: "pfp0vFFFFdeadbeef000000",
-			},
-		},
-		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
-		Zones: topologyv1alpha2.ZoneList{
-			{
-				Name: "node-0",
-				Type: "Node",
-				Resources: topologyv1alpha2.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "32", "30"),
-					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
-					MakeTopologyResInfo(nicResourceName, "16", "16"),
-				},
-			},
-			{
-				Name: "node-1",
-				Type: "Node",
-				Resources: topologyv1alpha2.ResourceInfoList{
-					MakeTopologyResInfo(cpu, "32", "22"),
-					MakeTopologyResInfo(memory, "64Gi", "44Gi"),
-					MakeTopologyResInfo(nicResourceName, "16", "16"),
-				},
-			},
-		},
+	// Update the NRT on the API server with a fingerprint that does NOT
+	// match the pods in the lister. This forces a fingerprint check
+	// failure in Resync(). Using Update (not Create) so the watcher
+	// sees a Modified event; since the TopologyManager config is unchanged,
+	// areAttrsChanged returns false and no ConfigChanged signal is queued.
+	nrtWithBadFingerprint := initialNRT.DeepCopy()
+	nrtWithBadFingerprint.Annotations = map[string]string{
+		podfingerprint.Annotation: "pfp0vFFFFdeadbeef000000",
 	}
+	nrtWithBadFingerprint.Attributes = append(nrtWithBadFingerprint.Attributes,
+		topologyv1alpha2.AttributeInfo{
+			Name:  podfingerprint.Attribute,
+			Value: "pfp0vFFFFdeadbeef000000",
+		},
+	)
 
 	runningPod := testPod.DeepCopy()
 	runningPod.Status.Phase = corev1.PodRunning
 
-	if err := fakeClient.Create(context.Background(), nrtWithBadFingerprint); err != nil {
+	if err := fakeClient.Update(context.Background(), nrtWithBadFingerprint); err != nil {
 		t.Fatal(err)
 	}
 	fakePodLister.AddPod(runningPod)
 
 	nrtCache.Resync()
 
-	dirtyNodes := nrtCache.GetDesyncedNodes(klog.Background())
+	dirtyNodes := nrtCache.GetDesyncedNodes(testr.New(t))
 	if dirtyNodes.Len() != 1 || dirtyNodes.MaybeOverReserved[0] != "node1" {
 		t.Errorf("node should stay dirty after fingerprint mismatch, got: %v", dirtyNodes.MaybeOverReserved)
 	}
@@ -885,7 +871,7 @@ func TestResyncReserveInterleaved(t *testing.T) {
 
 	// Step 2: Resync begins — get dirty nodes, then compute NRT updates.
 	// The fingerprint mismatch means nrtUpdates will be empty for node1.
-	lh := klog.Background()
+	lh := testr.New(t)
 	nodes := nrtCache.GetDesyncedNodes(lh)
 	nrtUpdates := nrtCache.MakeNRTUpdatesForNodes(ctx, lh, nodes)
 
@@ -954,6 +940,118 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	}
 }
 
+// TestNewNRTIngestedViaConfigChanged verifies the full end-to-end path for
+// NRTs created after the scheduler starts (bootstrap deadlock fix):
+//  1. nrtStore starts empty (NRT was created after scheduler init)
+//  2. Watcher signals via nodesWithAttrUpdate (simulated by direct Incr)
+//  3. Resync processes ConfigChanged: fetches NRT from API, calls FlushNodes
+//  4. FlushNodes adds NRT to nrtStore and bumps generation
+//  5. Reserve and GetCachedNRTCopy now work for the node
+func TestNewNRTIngestedViaConfigChanged(t *testing.T) {
+	testNodeName := "late-arrival-node"
+
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta:       metav1.ObjectMeta{Name: testNodeName},
+		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "30"),
+					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+				},
+			},
+		},
+	}
+
+	// Create the cache with an empty client (no NRTs at startup),
+	// then add the NRT to the API server afterward. This simulates
+	// the bootstrap scenario: the NRT was created by the node agent
+	// after NewOverReserve ran its initial client.List.
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fakePodLister := &fakePodLister{}
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
+
+	// NRT arrives in the API server after the scheduler started
+	if err := fakeClient.Create(context.Background(), nrt); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	pod := &corev1.Pod{}
+
+	// Verify the store is empty for this node (bootstrap problem):
+	// GetCachedNRTCopy returns nil when the NRT is not in the store.
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj != nil {
+		t.Fatalf("store should NOT contain %q at startup", testNodeName)
+	}
+
+	// Verify Reserve is a no-op without NRT (Bug 1 fix)
+	nrtCache.ReserveNodeResources(testNodeName, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	})
+	if nrtCache.HasAssumedResources(testNodeName) {
+		t.Fatalf("Reserve should not accumulate assumedResources without NRT in store")
+	}
+
+	// Simulate watcher detecting the new NRT and draining into nodesWithAttrUpdate
+	nrtCache.SimulateWatcherSignal(testNodeName)
+
+	// Verify the node appears in ConfigChanged
+	dirtyNodes := nrtCache.GetDesyncedNodes(testr.New(t))
+	if len(dirtyNodes.ConfigChanged) != 1 || dirtyNodes.ConfigChanged[0] != testNodeName {
+		t.Fatalf("expected %q in ConfigChanged, got: %v", testNodeName, dirtyNodes.ConfigChanged)
+	}
+	if len(dirtyNodes.MaybeOverReserved) != 0 {
+		t.Fatalf("expected empty MaybeOverReserved, got: %v", dirtyNodes.MaybeOverReserved)
+	}
+
+	// Capture generation before Resync via GetCachedNRTCopy on a known node.
+	// The node is not in the store yet, so info.Generation is the current value.
+	_, infoBefore := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	genBefore := infoBefore.Generation
+
+	// Run Resync: ConfigChanged path fetches NRT from API, FlushNodes ingests it
+	nrtCache.Resync()
+
+	// Verify: NRT is now in the store and generation was bumped
+	nrtObj, infoAfter := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj == nil {
+		t.Fatalf("NRT should not be nil after ingestion")
+	}
+	if !infoAfter.Fresh {
+		t.Errorf("NRT data should be fresh")
+	}
+	if infoAfter.Generation <= genBefore {
+		t.Errorf("generation should have increased: before=%d after=%d", genBefore, infoAfter.Generation)
+	}
+	if len(nrtObj.Zones) != 1 {
+		t.Errorf("expected 1 zone, got %d", len(nrtObj.Zones))
+	}
+
+	// Verify: nodesWithAttrUpdate was cleared by FlushNodes.
+	// If cleared, the node won't appear in ConfigChanged.
+	dirtyNodes = nrtCache.GetDesyncedNodes(testr.New(t))
+	if len(dirtyNodes.ConfigChanged) != 0 {
+		t.Errorf("nodesWithAttrUpdate should be cleared after FlushNodes, got ConfigChanged: %v", dirtyNodes.ConfigChanged)
+	}
+
+	// Verify: Reserve now works for this node
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "real-pod", Namespace: "default"},
+	}
+	nrtCache.ReserveNodeResources(testNodeName, testPod)
+	if !nrtCache.HasAssumedResources(testNodeName) {
+		t.Errorf("Reserve should work after NRT is in the store")
+	}
+}
+
 func TestUnknownNodeWithForeignPods(t *testing.T) {
 	fakeClient, err := tu.NewFakeClient()
 	if err != nil {
@@ -966,7 +1064,7 @@ func TestUnknownNodeWithForeignPods(t *testing.T) {
 
 	nrtCache.NodeHasForeignPods("node-bogus", &corev1.Pod{})
 
-	nodes := nrtCache.GetDesyncedNodes(klog.Background())
+	nodes := nrtCache.GetDesyncedNodes(testr.New(t))
 	if nodes.Len() != 0 {
 		t.Errorf("non-existent node has foreign pods!")
 	}
@@ -1039,7 +1137,7 @@ func TestNodeWithForeignPods(t *testing.T) {
 	target := "node2"
 	nrtCache.NodeHasForeignPods(target, &corev1.Pod{})
 
-	nodes := nrtCache.GetDesyncedNodes(klog.Background())
+	nodes := nrtCache.GetDesyncedNodes(testr.New(t))
 	if nodes.Len() != 1 || nodes.MaybeOverReserved[0] != target {
 		t.Errorf("unexpected dirty nodes: %v", nodes.MaybeOverReserved)
 	}
@@ -1052,10 +1150,11 @@ func TestNodeWithForeignPods(t *testing.T) {
 
 func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podlisterv1.PodLister) *OverReserve {
 	t.Helper()
-	obj, err := NewOverReserve(context.Background(), klog.Background(), nil, client, podLister, podprovider.IsPodRelevantAlways)
+	obj, err := NewOverReserve(context.Background(), testr.New(t), nil, client, podLister, podprovider.IsPodRelevantAlways)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
+	t.Cleanup(obj.Close)
 	return obj
 }
 
@@ -1286,7 +1385,7 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				pods: tcase.pods,
 				err:  tcase.err,
 			}
-			got, err := makeNodeToPodDataMap(klog.Background(), podLister, tcase.isPodRelevant)
+			got, err := makeNodeToPodDataMap(testr.New(t), podLister, tcase.isPodRelevant)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
@@ -1310,11 +1409,12 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	lh := klog.Background()
+	lh := testr.New(t)
 	nrtCache, err := NewOverReserve(ctx, lh, nil, fakeClient, fakePodLister, podprovider.IsPodRelevantAlways)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
+	t.Cleanup(nrtCache.Close)
 
 	expectedNrtInfo := CachedNRTInfo{
 		Generation: 0,
