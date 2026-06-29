@@ -238,12 +238,16 @@ For each candidate node, the plugin:
    strategy.
 4. Returns raw scores for normalization across all feasible nodes.
 
-If the key is missing or the value cannot be parsed, the plugin returns a raw
-score of `0` for that node.
+If the key is missing or the value cannot be parsed, the plugin returns an
+internal invalid score sentinel for that node. During normalization, invalid
+scores are excluded from the valid score range and are normalized to
+`framework.MinNodeScore`. This makes nodes with valid metadata rank ahead of
+nodes where metadata is absent or malformed.
 
 #### Numeric metadata
 
-Numeric metadata is parsed from the string value and converted into a raw score.
+Numeric metadata is parsed from the string value as a `float64`, rounded to the
+nearest `int64`, and converted into a raw score.
 
 - `Highest`: larger numeric values produce larger raw scores.
 - `Lowest`: smaller numeric values produce larger normalized scores by inverting
@@ -251,6 +255,10 @@ Numeric metadata is parsed from the string value and converted into a raw score.
 
 This mode supports common use cases such as cost tiers, business priorities,
 performance scores, or Unix epoch values encoded as numbers.
+
+Because the scheduler framework score path uses `int64`, fractional metadata
+values can lose precision during rounding. Operators that need exact ordering
+should use integer metadata values.
 
 #### Timestamp metadata
 
@@ -268,10 +276,13 @@ and refresh time.
 After all raw scores are collected, the plugin normalizes them linearly into the
 standard scheduler range `[0, 100]`.
 
-If all candidate nodes have the same raw score, the plugin assigns
-`framework.MinNodeScore` to every candidate. In that case, the plugin becomes
-neutral and leaves the final placement decision to other scheduler plugins and
-tie-breaking behavior.
+If all valid candidate nodes have the same raw score, the plugin assigns
+`framework.MaxNodeScore` to those valid candidates when at least one other
+candidate has invalid metadata, and `framework.MinNodeScore` to invalid
+candidates. If every candidate is valid and has the same raw score, the plugin
+assigns `framework.MinNodeScore` to every candidate. In that case, the plugin
+becomes neutral and leaves the final placement decision to other scheduler
+plugins and tie-breaking behavior.
 
 This also means that if all candidates are missing the configured metadata, the
 plugin does not fail scheduling; it simply stops influencing the ranking.
@@ -297,7 +308,14 @@ For the v1 config API, `timestampFormat` defaults to RFC3339 when
    external operational concerns.
 3. The plugin does not distinguish between intentionally absent metadata and
    malformed metadata; both result in the lowest effective influence.
-4. The plugin is intentionally advisory. It cannot guarantee placement on nodes
+4. The invalid metadata sentinel uses `math.MinInt64`. If a configured metadata
+   value is converted to `math.MinInt64`, the plugin treats it as invalid or
+   absent metadata rather than as a valid score.
+5. Numeric metadata is accepted as `float64`, but the scheduler framework uses
+   `int64` scores, so numeric values are rounded before scoring. This can cause
+   small precision differences for fractional values; use integer metadata
+   values when exact ordering matters.
+6. The plugin is intentionally advisory. It cannot guarantee placement on nodes
    with a preferred metadata value.
 
 ## Test plan
