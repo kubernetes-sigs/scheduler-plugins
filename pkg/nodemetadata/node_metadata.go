@@ -183,32 +183,31 @@ func (nm *NodeMetadata) NormalizeScore(ctx context.Context, state framework.Cycl
 	}
 
 	logger.V(10).Info("Score range: ", "min", minScore, "max", maxScore, "pod", pod.Name)
+	validLowerBound := framework.MinNodeScore + 1
 
-	// If all scores are the same, set them all to MinNodeScore
+	// Reserve MinNodeScore for invalid nodes, so valid nodes always score above it.
 	if maxScore == minScore {
-		hasInvalidScores := validCount != len(scores)
-
 		for i := range scores {
-			if hasInvalidScores && scores[i].Score != invalidScore {
-				scores[i].Score = framework.MaxNodeScore
+			if scores[i].Score == invalidScore {
+				scores[i].Score = framework.MinNodeScore
 				continue
 			}
-			scores[i].Score = framework.MinNodeScore
+			scores[i].Score = validLowerBound
 		}
-		logger.V(10).Info("All scores equal, normalized to MinNodeScore: ", "scores", scores, "pod", pod.Name)
+		logger.V(10).Info("All valid scores equal, normalized above reserved MinNodeScore: ", "scores", scores, "pod", pod.Name)
 		return nil
 	}
 
 	// Normalize scores to [MinNodeScore, MaxNodeScore] range
 	oldRange := maxScore - minScore
-	newRange := framework.MaxNodeScore - framework.MinNodeScore
+	newRange := framework.MaxNodeScore - validLowerBound
 
 	for i := range scores {
 		if scores[i].Score == invalidScore {
 			scores[i].Score = framework.MinNodeScore
 			continue
 		}
-		scores[i].Score = ((scores[i].Score-minScore)*newRange)/oldRange + framework.MinNodeScore
+		scores[i].Score = ((scores[i].Score-minScore)*newRange)/oldRange + validLowerBound
 	}
 
 	logger.V(10).Info("Normalized scores: ", "scores", scores, "pod", pod.Name)

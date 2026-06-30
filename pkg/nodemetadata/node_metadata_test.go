@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kube-scheduler/framework"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/apis/config/validation"
@@ -260,7 +261,7 @@ func TestNormalizeScore(t *testing.T) {
 		args          *config.NodeMetadataArgs
 		nodes         []*v1.Node
 		expectedOrder []string // nodes ordered from highest to lowest score after normalization
-		expectAllZero bool     // if true, all scores should be 0 (MinNodeScore)
+		expectedScore *int64
 	}{
 		{
 			name: "numeric labels - highest strategy with three nodes",
@@ -446,7 +447,7 @@ func TestNormalizeScore(t *testing.T) {
 					},
 				},
 			},
-			expectAllZero: true,
+			expectedScore: ptr.To[int64](framework.MinNodeScore),
 		},
 		{
 			name: "all nodes with same value",
@@ -476,7 +477,7 @@ func TestNormalizeScore(t *testing.T) {
 					},
 				},
 			},
-			expectAllZero: true,
+			expectedScore: ptr.To[int64](framework.MinNodeScore + 1),
 		},
 		{
 			name: "mixed - some with metadata, some without",
@@ -528,6 +529,29 @@ func TestNormalizeScore(t *testing.T) {
 			nm := &NodeMetadata{
 				args: tt.args,
 			}
+			nodesByName := map[string]*v1.Node{}
+			hasInvalidNodes := false
+			var validMin, validMax int64
+			validCount := 0
+			for _, node := range tt.nodes {
+				nodesByName[node.Name] = node
+				score, err := nm.calculateScore(node)
+				if err != nil {
+					hasInvalidNodes = true
+					continue
+				}
+				if validCount == 0 {
+					validMin = score
+					validMax = score
+				}
+				validCount++
+				if score < validMin {
+					validMin = score
+				}
+				if score > validMax {
+					validMax = score
+				}
+			}
 
 			// Create framework.NodeScoreList with raw scores
 			nodeScores := framework.NodeScoreList{}
@@ -548,11 +572,10 @@ func TestNormalizeScore(t *testing.T) {
 				t.Fatalf("NormalizeScore failed: %v", status.AsError())
 			}
 
-			if tt.expectAllZero {
-				// All scores should be MinNodeScore (0)
+			if tt.expectedScore != nil {
 				for _, ns := range nodeScores {
-					if ns.Score != framework.MinNodeScore {
-						t.Errorf("Expected all scores to be %d (MinNodeScore), but %s has score %d", framework.MinNodeScore, ns.Name, ns.Score)
+					if ns.Score != *tt.expectedScore {
+						t.Errorf("Expected all scores to be %d, but %s has score %d", *tt.expectedScore, ns.Name, ns.Score)
 					}
 				}
 				return
@@ -583,11 +606,27 @@ func TestNormalizeScore(t *testing.T) {
 
 				// Verify scores are properly normalized (highest should be MaxNodeScore, lowest should be MinNodeScore)
 				if len(sortedScores) > 0 {
-					if sortedScores[0].Score != framework.MaxNodeScore {
+					if validMin != validMax && sortedScores[0].Score != framework.MaxNodeScore {
 						t.Errorf("Highest score should be %d, got %d for node %s", framework.MaxNodeScore, sortedScores[0].Score, sortedScores[0].Name)
 					}
-					if sortedScores[len(sortedScores)-1].Score != framework.MinNodeScore {
+					if hasInvalidNodes && sortedScores[len(sortedScores)-1].Score != framework.MinNodeScore {
 						t.Errorf("Lowest score should be %d, got %d for node %s", framework.MinNodeScore, sortedScores[len(sortedScores)-1].Score, sortedScores[len(sortedScores)-1].Name)
+					}
+					if !hasInvalidNodes && sortedScores[len(sortedScores)-1].Score != framework.MinNodeScore+1 {
+						t.Errorf("Lowest valid score should be %d, got %d for node %s", framework.MinNodeScore+1, sortedScores[len(sortedScores)-1].Score, sortedScores[len(sortedScores)-1].Name)
+					}
+					if hasInvalidNodes {
+						for _, nodeScore := range sortedScores {
+							if nodeScore.Score != framework.MinNodeScore {
+								continue
+							}
+							node := nodesByName[nodeScore.Name]
+							if _, err := nm.calculateScore(node); err == nil {
+								t.Errorf("Only invalid nodes should use reserved MinNodeScore, but %s has score %d", nodeScore.Name, nodeScore.Score)
+							}
+						}
+					} else if sortedScores[len(sortedScores)-1].Score == framework.MinNodeScore {
+						t.Errorf("Valid nodes should not use reserved MinNodeScore, but %s has score %d", sortedScores[len(sortedScores)-1].Name, sortedScores[len(sortedScores)-1].Score)
 					}
 				}
 			}
