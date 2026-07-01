@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -75,6 +76,9 @@ func (pt *DiscardReserved) GetCachedNRTCopy(ctx context.Context, nodeName string
 	return nrt, info
 }
 
+func (pt *DiscardReserved) GetNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo {
+	return nil
+}
 func (pt *DiscardReserved) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {}
 func (pt *DiscardReserved) NodeHasForeignPods(nodeName string, pod *corev1.Pod)    {}
 

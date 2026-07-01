@@ -29,6 +29,7 @@ import (
 	bm "k8s.io/kubernetes/pkg/kubelet/cm/topologymanager/bitmask"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/preemption"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
 	"sigs.k8s.io/scheduler-plugins/pkg/util"
@@ -199,6 +200,21 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		return nil
 	}
 
+	victims, err := getVictimPods(cycleState)
+	if err != nil {
+		lh.V(2).Error(err, "failed reading preemption stack")
+	}
+	isPreemptionFlow := len(victims) > 0
+	if isPreemptionFlow {
+		lh.V(4).Info("preemption flow detected", "victimsCount", len(victims))
+		numaPlacementInfo := tm.nrtCache.GetNUMAPlacementInfo(nodeName)
+		if numaPlacementInfo == nil || numaPlacementInfo.Containers() == 0 {
+			lh.V(2).Info("no numa placement info found")
+		} else {
+			nodeTopology = preemption.GetNRTPostPodsEviction(lh, nodeTopology, victims, numaPlacementInfo)
+		}
+	}
+
 	conf := nodeconfig.TopologyManagerFromNodeResourceTopology(lh, nodeTopology)
 
 	lh.V(4).Info("found nrt data", "object", stringify.NodeResourceTopologyResources(nodeTopology), "conf", conf.String())
@@ -218,7 +234,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		qos:             qos,
 	}
 	status := handler(lh, pod, &fi)
-	if status != nil {
+	if !isPreemptionFlow && status != nil {
 		tm.nrtCache.NodeMaybeOverReserved(nodeName, pod)
 	}
 	return status
@@ -235,4 +251,12 @@ func filterHandlerFromTopologyManager(conf nodeconfig.TopologyManager) (filterFn
 		return singleNUMAContainerLevelHandler, "container"
 	}
 	return nil, "" // cannot happen
+}
+
+func getVictimPods(cycleState fwk.CycleState) ([]v1.Pod, error) {
+	ps, err := readPreemptionStack(cycleState)
+	if err != nil {
+		return nil, err
+	}
+	return ps.PodsToRemove.GetPods(), nil
 }

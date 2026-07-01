@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	corev1 "k8s.io/api/core/v1"
@@ -124,6 +125,12 @@ func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, po
 
 	lh.V(5).Info("NRT", "withassumed", stringify.NodeResourceTopologyResources(nrt))
 	return nrt, info
+}
+
+func (ov *OverReserve) GetNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	return ov.nrts.GetNUMAPlacementInfoByNodeName(nodeName)
 }
 
 func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {
@@ -268,20 +275,20 @@ func (ov *OverReserve) Resync() {
 		return
 	}
 
-	nrtUpdates := ov.MakeNRTUpdatesForNodes(context.Background(), lh_, nodes)
-
-	ov.FlushNodes(lh_, nrtUpdates...)
-}
-
-func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logger, nodes DesyncedNodes) []*topologyv1alpha2.NodeResourceTopology {
-	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
-
 	// node -> pod identifier (namespace, name)
+	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
 	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant)
 	if err != nil {
 		lh_.Error(err, "cannot find the mapping between running pods and nodes")
-		return nrtUpdates
+	} else {
+		nrtUpdates = ov.MakeNRTUpdatesForNodes(context.Background(), lh_, nodes, nodeToObjsMap)
 	}
+
+	ov.FlushNodes(lh_, nodeToObjsMap, nrtUpdates...)
+}
+
+func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logger, nodes DesyncedNodes, nodeToObjsMap map[string][]podData) []*topologyv1alpha2.NodeResourceTopology {
+	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
 
 	for _, nodeName := range nodes.MaybeOverReserved {
 		lh := lh_.WithValues(logging.KeyNode, nodeName)
@@ -311,7 +318,7 @@ func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logg
 
 		lh.V(4).Info("trying to sync NodeTopology", "fingerprint", pfpExpected, "onlyExclusiveResources", onlyExclRes)
 
-		err = checkPodFingerprintForNode(lh, objs, nodeName, pfpExpected, onlyExclRes)
+		err := checkPodFingerprintForNode(lh, objs, nodeName, pfpExpected, onlyExclRes)
 		if errors.Is(err, podfingerprint.ErrSignatureMismatch) {
 			// can happen, not critical
 			lh.V(4).Info("NodeTopology podset fingerprint mismatch")
@@ -348,13 +355,13 @@ func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logg
 }
 
 // FlushNodes drops all the cached information about a given node, resetting its state clean.
-func (ov *OverReserve) FlushNodes(lh logr.Logger, nrts ...*topologyv1alpha2.NodeResourceTopology) uint64 {
+func (ov *OverReserve) FlushNodes(lh logr.Logger, nodeToObjsMap map[string][]podData, nrts ...*topologyv1alpha2.NodeResourceTopology) uint64 {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 
 	for _, nrt := range nrts {
 		lh.V(2).Info("flushing", logging.KeyNode, nrt.Name)
-		ov.nrts.Update(nrt)
+		ov.nrts.Update(nrt, nodeToObjsMap[nrt.Name]...)
 		delete(ov.assumedResources, nrt.Name)
 		ov.nodesMaybeOverreserved.Delete(nrt.Name)
 		ov.nodesWithForeignPods.Delete(nrt.Name)
@@ -391,9 +398,10 @@ func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPod
 		}
 		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
 		nodeObjs = append(nodeObjs, podData{
-			Namespace:             pod.Namespace,
-			Name:                  pod.Name,
-			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
+			Namespace:                        pod.Namespace,
+			Name:                             pod.Name,
+			HasExclusiveResources:            resourcerequests.AreExclusiveForPod(pod),
+			ContainersWithExclusiveResources: resourcerequests.GetContainersWithExclusiveResources(pod),
 		})
 		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
 	}

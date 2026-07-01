@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 )
 
 type CachedNRTInfo struct {
@@ -47,6 +48,11 @@ type Interface interface {
 	// Returns nil if there is no NRT data available for the node named `nodeName`.
 	// Returns a CachedNRTInfo describing the NRT data returned. Meaningful only if `nrt` != nil.
 	GetCachedNRTCopy(ctx context.Context, nodeName string, pod *corev1.Pod) (*topologyv1alpha2.NodeResourceTopology, CachedNRTInfo)
+
+	// GetNUMAPlacementInfoByNodeName retrieves the NUMAPlacement info for the given node.
+	// It will be used to get the NUMAPlacement info for the given node.
+	// The pod argument is used only for logging purposes.
+	GetNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo
 
 	// NodeMaybeOverReserved declares a node was filtered out for not enough resources available.
 	// This means this node is eligible for a resync. When a node is marked discarded (dirty), it matters not

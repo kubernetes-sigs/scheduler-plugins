@@ -24,13 +24,16 @@ import (
 	"testing"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
@@ -255,6 +258,276 @@ func TestNRTStoreUpdate(t *testing.T) {
 	obj3 := ns.GetNRTCopyByNodeName("node-2")
 	if obj3.TopologyPolicies[0] != "none" { // original value when the object was first added to the store
 		t.Errorf("stored value is not an independent copy")
+	}
+}
+
+func TestNRTStoreUpdateWithPods(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  numaplacement.AttributeMetadata,
+				Value: "npv0v001::ve=leb89::cc=3::nn=2::bn=1",
+			},
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+		},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Attributes: []topologyv1alpha2.AttributeInfo{
+					{
+						Name:  numaplacement.AttributeVector,
+						Value: "!", // this is the encoding that tells cnt1 is on this NUMA
+					},
+				},
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "20", "20"),
+					MakeTopologyResInfo(memory, "32Gi", "32Gi"),
+				},
+			},
+			{
+				Name: "node-1",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "20", "20"),
+					MakeTopologyResInfo(memory, "32Gi", "32Gi"),
+					MakeTopologyResInfo(nicName, "8", "8"),
+				},
+			},
+		},
+	}
+	cnt0 := numaplacement.ContainerID{Namespace: "ns-0", PodName: "pod-0", ContainerName: "container-0"}
+	cnt1 := numaplacement.ContainerID{Namespace: "ns-0", PodName: "pod-1", ContainerName: "container-1"}
+	cnt2 := numaplacement.ContainerID{Namespace: "ns-0", PodName: "pod-1", ContainerName: "container-2"}
+	pods := []podData{
+		{
+			Namespace:                        "ns-0",
+			Name:                             "pod-0",
+			ContainersWithExclusiveResources: []numaplacement.ContainerID{cnt0},
+		},
+		{
+			Namespace:                        "ns-0",
+			Name:                             "pod-1",
+			ContainersWithExclusiveResources: []numaplacement.ContainerID{cnt1, cnt2},
+		},
+		{
+			Namespace: "ns-1",
+			Name:      "pod-2",
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrt, pods...)
+	updatedNUMAPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if updatedNUMAPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	expectedContainers := 3
+	if updatedNUMAPlacement.Containers() != expectedContainers {
+		t.Errorf("unexpected number of containers: got %d expected %d", updatedNUMAPlacement.Containers(), expectedContainers)
+	}
+
+	// check that the NUMAPlacement info is for the expected containers
+	hostingNUMAForCnt0, err := updatedNUMAPlacement.NUMAAffinity(cnt0)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt0.String(), err)
+	}
+	if hostingNUMAForCnt0 != 1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt0.String(), hostingNUMAForCnt0, 1)
+	}
+
+	hostingNUMAForCnt1, err := updatedNUMAPlacement.NUMAAffinity(cnt1)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt1.String(), err)
+	}
+	if hostingNUMAForCnt1 != 0 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt1.String(), hostingNUMAForCnt1, 0)
+	}
+
+	hostingNUMAForCnt2, err := updatedNUMAPlacement.NUMAAffinity(cnt2)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt2.String(), err)
+	}
+	if hostingNUMAForCnt2 != 1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt2, hostingNUMAForCnt2, 1)
+	}
+
+	// update the NRT and pods such that cnt0 is gone
+	pods = pods[1:]
+	nrt.Attributes[0].Value = "npv0v001::ve=leb89::cc=2::nn=2::bn=1"
+	// mimick removing cnt0 from the node hence removing the vector attribute for that NUMA
+	nrt.Zones[0].Attributes = []topologyv1alpha2.AttributeInfo{}
+	ns.Update(nrt, pods...)
+	updatedNUMAPlacement = ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if updatedNUMAPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if updatedNUMAPlacement.Containers() != 2 {
+		t.Errorf("unexpected number of containers: got %d expected 2", updatedNUMAPlacement.Containers())
+	}
+
+	hostingNUMAForCnt0, err = updatedNUMAPlacement.NUMAAffinity(cnt0)
+	if err != numaplacement.ErrUnknownContainer {
+		t.Fatalf("expected error getting NUMA affinity for no longer existing container %s but got %v", cnt0.String(), err)
+	}
+	if hostingNUMAForCnt0 != -1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected %d", cnt0.String(), hostingNUMAForCnt0, -1)
+	}
+
+	hostingNUMAForCnt1, err = updatedNUMAPlacement.NUMAAffinity(cnt1)
+	if err != nil {
+		t.Fatalf("failed to get NUMA affinity for container %s: %v", cnt1.String(), err)
+	}
+	if hostingNUMAForCnt1 != 1 {
+		t.Errorf("container %s is hosted on NUMA %d, expected 1", cnt1.String(), hostingNUMAForCnt1)
+	}
+
+}
+
+func TestNRTStoreUpdateWithoutPods(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  numaplacement.AttributeMetadata,
+				Value: "npv0v001::ve=leb89::cc=0::nn=2::bn=0",
+			},
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrt) // no pods
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
+	}
+}
+
+func TestNRTStoreUpdateNoNUMAPlacementDueToPolicy(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: "best-effort", // not single-numa-node
+			},
+		},
+	}
+	pods := []podData{
+		{
+			Namespace: "ns-0",
+			Name:      "pod-0",
+			ContainersWithExclusiveResources: []numaplacement.ContainerID{
+				{Namespace: "ns-0", PodName: "pod-0", ContainerName: "container-0"},
+			},
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrt, pods...)
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
+	}
+}
+
+func TestNRTStoreUpdateNoNUMAPlacementDueToMissingMetadata(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+			// no metadata attribute
+		},
+	}
+	pods := []podData{
+		{
+			Namespace: "ns-0",
+			Name:      "pod-0",
+			ContainersWithExclusiveResources: []numaplacement.ContainerID{
+				{Namespace: "ns-0", PodName: "pod-0", ContainerName: "container-0"},
+			},
+		},
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrt, pods...)
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
+	}
+}
+
+func TestNRTStoreUpdateNoNUMAPlacementDueToInconsistentContainersCount(t *testing.T) {
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-0",
+		},
+		Attributes: []topologyv1alpha2.AttributeInfo{
+			{
+				Name:  numaplacement.AttributeMetadata,
+				Value: "npv0v001::ve=leb89::cc=5::nn=2::bn=1", // claims 5 containers
+			},
+			{
+				Name:  nodeconfig.AttributePolicy,
+				Value: kubeletconfig.SingleNumaNodeTopologyManagerPolicy,
+			},
+		},
+	}
+	pods := []podData{
+		{
+			Namespace: "ns-0",
+			Name:      "pod-0",
+			ContainersWithExclusiveResources: []numaplacement.ContainerID{
+				{Namespace: "ns-0", PodName: "pod-0", ContainerName: "container-0"},
+				{Namespace: "ns-0", PodName: "pod-0", ContainerName: "container-1"},
+			},
+		},
+		{
+			Namespace: "ns-0",
+			Name:      "pod-1",
+			ContainersWithExclusiveResources: []numaplacement.ContainerID{
+				{Namespace: "ns-0", PodName: "pod-1", ContainerName: "container-0"},
+			},
+		},
+		// 3 exclusive containers total
+	}
+
+	ns := newNrtStore(klog.Background(), []topologyv1alpha2.NodeResourceTopology{*nrt})
+	ns.Update(nrt, pods...)
+	numaPlacement := ns.GetNUMAPlacementInfoByNodeName(nrt.Name)
+	if numaPlacement == nil {
+		t.Fatalf("missing NUMAPlacement info after update")
+	}
+	if numaPlacement.Containers() != 0 {
+		t.Errorf("unexpected containers in NUMAPlacement: got %d expected %d", numaPlacement.Containers(), 0)
 	}
 }
 
