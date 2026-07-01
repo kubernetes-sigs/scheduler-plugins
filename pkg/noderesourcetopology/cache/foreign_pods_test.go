@@ -22,15 +22,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 )
 
 func TestIsForeignPod(t *testing.T) {
 	tests := []struct {
-		name         string
-		profileNames []string
-		pod          *corev1.Pod
-		expected     bool
+		name          string
+		profileNames  []string
+		pod           *corev1.Pod
+		nrtResources  sets.Set[corev1.ResourceName]
+		exclusiveOnly bool
+		expected      bool
 	}{
 		{
 			name: "empty",
@@ -191,6 +194,57 @@ func TestIsForeignPod(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:          "exclusive-only-dev-in-nrt",
+			profileNames:  []string{"secondary-scheduler"},
+			exclusiveOnly: true,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "random-node",
+					Containers: []corev1.Container{
+						{
+							Name: "cnt",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			nrtResources: sets.New(corev1.ResourceName("veryfast.io/fpga")),
+			expected:     true,
+		},
+		{
+			name:          "exclusive-only-dev-not-in-nrt",
+			profileNames:  []string{"secondary-scheduler"},
+			exclusiveOnly: true,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "random-node",
+					Containers: []corev1.Container{
+						{
+							Name: "cnt",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceName("veryfast.io/fpga"): resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -199,8 +253,13 @@ func TestIsForeignPod(t *testing.T) {
 				RegisterSchedulerProfileName(klog.Background(), profileName)
 			}
 			defer CleanRegisteredSchedulerProfileNames()
+			defer TrackAllForeignPods()
 
-			got := IsForeignPod(tt.pod)
+			if tt.exclusiveOnly {
+				TrackOnlyForeignPodsWithExclusiveResources()
+			}
+
+			got := IsForeignPod(tt.pod, tt.nrtResources)
 			if got != tt.expected {
 				t.Errorf("%s: pod %q foreign status got %v expected %v", tt.name, tt.pod.Name, got, tt.expected)
 			}

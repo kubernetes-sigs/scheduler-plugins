@@ -1286,7 +1286,7 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 				pods: tcase.pods,
 				err:  tcase.err,
 			}
-			got, err := makeNodeToPodDataMap(klog.Background(), podLister, tcase.isPodRelevant)
+			got, err := makeNodeToPodDataMap(klog.Background(), podLister, tcase.isPodRelevant, newNrtStore(klog.Background(), nil))
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
