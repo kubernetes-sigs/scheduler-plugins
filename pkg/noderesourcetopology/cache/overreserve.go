@@ -277,7 +277,7 @@ func (ov *OverReserve) MakeNRTUpdatesForNodes(ctx context.Context, lh_ logr.Logg
 	var nrtUpdates []*topologyv1alpha2.NodeResourceTopology
 
 	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant)
+	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant, ov.nrts)
 	if err != nil {
 		lh_.Error(err, "cannot find the mapping between running pods and nodes")
 		return nrtUpdates
@@ -379,7 +379,7 @@ func (ov *OverReserve) TestOnlyUpdateNRT(nrt *topologyv1alpha2.NodeResourceTopol
 	ov.nrts.Update(nrt)
 }
 
-func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc) (map[string][]podData, error) {
+func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc, nrts *nrtStore) (map[string][]podData, error) {
 	nodeToObjsMap := make(map[string][]podData)
 	pods, err := podLister.List(labels.Everything())
 	if err != nil {
@@ -389,11 +389,12 @@ func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPod
 		if !isPodRelevant(lh, pod) {
 			continue
 		}
+		nrtResources := ResourceNamesFromNRT(nrts.GetNRTCopyByNodeName(pod.Spec.NodeName))
 		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
 		nodeObjs = append(nodeObjs, podData{
 			Namespace:             pod.Namespace,
 			Name:                  pod.Name,
-			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod),
+			HasExclusiveResources: resourcerequests.AreExclusiveForPod(pod, nrtResources),
 		})
 		nodeToObjsMap[pod.Spec.NodeName] = nodeObjs
 	}
