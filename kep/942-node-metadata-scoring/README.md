@@ -241,8 +241,9 @@ For each candidate node, the plugin:
 If the key is missing or the value cannot be parsed, the plugin returns an
 internal invalid score sentinel for that node. During normalization, invalid
 scores are excluded from the valid score range and are normalized to
-`framework.MinNodeScore`. This makes nodes with valid metadata rank ahead of
-nodes where metadata is absent or malformed.
+`framework.MinNodeScore`. Valid scores are normalized above that reserved
+minimum, so nodes with valid metadata rank ahead of nodes where metadata is
+absent or malformed.
 
 #### Numeric metadata
 
@@ -274,15 +275,18 @@ and refresh time.
 #### Normalization
 
 After all raw scores are collected, the plugin normalizes them linearly into the
-standard scheduler range `[0, 100]`.
+standard scheduler range `[0, 100]`. `framework.MinNodeScore` is reserved for
+invalid or missing metadata. Valid nodes are normalized into the range
+`[framework.MinNodeScore + 1, framework.MaxNodeScore]`, so a valid node at the
+lower end of the min-max range is still distinguishable from a node whose
+metadata could not be scored.
 
 If all valid candidate nodes have the same raw score, the plugin assigns
-`framework.MaxNodeScore` to those valid candidates when at least one other
-candidate has invalid metadata, and `framework.MinNodeScore` to invalid
-candidates. If every candidate is valid and has the same raw score, the plugin
-assigns `framework.MinNodeScore` to every candidate. In that case, the plugin
-becomes neutral and leaves the final placement decision to other scheduler
-plugins and tie-breaking behavior.
+`framework.MinNodeScore + 1` to those valid candidates and
+`framework.MinNodeScore` to invalid candidates. If every candidate is valid and
+has the same raw score, every candidate receives `framework.MinNodeScore + 1`.
+In that case, the plugin becomes neutral among those valid nodes and leaves the
+final placement decision to other scheduler plugins and tie-breaking behavior.
 
 This also means that if all candidates are missing the configured metadata, the
 plugin does not fail scheduling; it simply stops influencing the ranking.
