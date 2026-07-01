@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	"github.com/k8stopologyawareschedwg/numaplacement"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	corev1 "k8s.io/api/core/v1"
@@ -124,6 +125,12 @@ func (ov *OverReserve) GetCachedNRTCopy(ctx context.Context, nodeName string, po
 
 	lh.V(5).Info("NRT", "withassumed", stringify.NodeResourceTopologyResources(nrt))
 	return nrt, info
+}
+
+func (ov *OverReserve) GetNUMAPlacementInfo(nodeName string) *numaplacement.EncodedInfo {
+	ov.lock.Lock()
+	defer ov.lock.Unlock()
+	return ov.nrts.GetNUMAPlacementInfoByNodeName(nodeName)
 }
 
 func (ov *OverReserve) NodeMaybeOverReserved(nodeName string, pod *corev1.Pod) {

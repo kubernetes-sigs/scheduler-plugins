@@ -1205,17 +1205,6 @@ func podMatchesExpectedNode(t *testing.T, podNamespace, podName, nodeName, expec
 	return false
 }
 
-func mkPFP(t *testing.T, nodeName string, pods ...*corev1.Pod) string {
-	st := podfingerprint.MakeStatus(nodeName)
-	fp := podfingerprint.NewTracingFingerprint(len(pods), &st)
-	for _, pod := range pods {
-		fp.AddPod(pod)
-	}
-	pfp := fp.Sign()
-	t.Logf("PFP for %q: %s", nodeName, st.Repr())
-	return pfp
-}
-
 func discardReservedSchedulerProfile() schedapi.KubeSchedulerProfile {
 	nodeLockingMatchArgs := schedconfig.NodeResourceTopologyMatchArgs{
 		ScoringStrategy:      schedconfig.ScoringStrategy{Type: schedconfig.LeastAllocated},

@@ -8,6 +8,9 @@ clientConnection:
 profiles:
 - schedulerName: topo-aware-scheduler
   plugins:
+    preFilter:
+      enabled:
+      - name: NodeResourceTopologyMatch
     filter:
       enabled:
       - name: NodeResourceTopologyMatch

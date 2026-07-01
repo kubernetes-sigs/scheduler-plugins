@@ -76,6 +76,7 @@ type TopologyMatch struct {
 	scoreStrategyType   apiconfig.ScoringStrategyType
 }
 
+var _ fwk.PreFilterPlugin = &TopologyMatch{}
 var _ fwk.FilterPlugin = &TopologyMatch{}
 var _ fwk.ReservePlugin = &TopologyMatch{}
 var _ fwk.ScorePlugin = &TopologyMatch{}
