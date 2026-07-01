@@ -1,0 +1,10 @@
+title: Node Metadata Scoring
+kep-number: 942
+authors:
+  - "@alikhil"
+reviewers:
+  - "@Huang-Wei"
+owning-sig: sig-scheduling
+creation-date: 2026-05-15
+last-updated: 2026-05-15
+status: implementable
