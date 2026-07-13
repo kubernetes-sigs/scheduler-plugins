@@ -333,7 +333,16 @@ func (rs *resourceStore) UpdateNRT(nrt *topologyv1alpha2.NodeResourceTopology, l
 				if zr.Available.Cmp(qty) < 0 {
 					// this should happen rarely, and it is likely caused by
 					// a bug elsewhere.
-					logKeysAndValues = append(logKeysAndValues, "zone", zr.Name, logging.KeyNode, nrt.Name, "available", zr.Available, "requestor", key, "quantity", qty.String())
+					logKeysAndValues = append(logKeysAndValues,
+						"zone", zone.Name,
+						"resource", zr.Name,
+						logging.KeyNode, nrt.Name,
+						"available", zr.Available,
+						"capacity", zr.Capacity,
+						"allocatable", zr.Allocatable,
+						"requestor", key,
+						"quantity", qty,
+					)
 					rs.lh.V(3).Info("cannot decrement resource", logKeysAndValues...)
 					zr.Available = resource.Quantity{}
 					continue
