@@ -26,6 +26,9 @@ import (
 	"time"
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	numanode "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/numanode"
+	"github.com/k8stopologyawareschedwg/numaplacement"
+	"github.com/k8stopologyawareschedwg/podfingerprint"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -313,4 +316,102 @@ func formatObject(obj interface{}) string {
 		return fmt.Sprintf("<ERROR: %s>", err)
 	}
 	return string(bytes)
+}
+
+// ZoneWithAttributes adds a new NUMA zone to the NRT with both resource info and per-zone attributes.
+func (n *nrtWrapper) ZoneWithAttributes(resInfo topologyv1alpha2.ResourceInfoList, attrs topologyv1alpha2.AttributeList) *nrtWrapper {
+	z := topologyv1alpha2.Zone{
+		Name:       fmt.Sprintf("node-%d", len(n.nrt.Zones)),
+		Type:       "Node",
+		Resources:  resInfo,
+		Attributes: attrs,
+	}
+	n.nrt.Zones = append(n.nrt.Zones, z)
+	return n
+}
+
+// applyNUMAPlacement encodes the given container-to-NUMA affinities into the NRT object in-place.
+// It sets the numaplacement metadata NRT attribute and per-zone vector zone attributes so the
+// scheduler-side cache can decode them during resync.
+func applyNUMAPlacement(t *testing.T, nrt *topologyv1alpha2.NodeResourceTopology, numNUMANodes int, affinities []numaplacement.ContainerAffinity) {
+	t.Helper()
+
+	enc, err := numaplacement.NewEncoder(numNUMANodes, affinities...)
+	if err != nil {
+		t.Fatalf("applyNUMAPlacement: NewEncoder: %v", err)
+	}
+	pl, err := enc.Result()
+	if err != nil {
+		t.Fatalf("applyNUMAPlacement: encoder Result: %v", err)
+	}
+
+	// Set metadata attribute on the NRT (replace if already present).
+	metaAttr := topologyv1alpha2.AttributeInfo{
+		Name:  numaplacement.AttributeMetadata,
+		Value: pl.PackMetadata(),
+	}
+	replaced := false
+	for i, attr := range nrt.Attributes {
+		if attr.Name == numaplacement.AttributeMetadata {
+			nrt.Attributes[i] = metaAttr
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		nrt.Attributes = append(nrt.Attributes, metaAttr)
+	}
+
+	// Set per-zone vector attributes for each zone that has containers.
+	for i, zone := range nrt.Zones {
+		numaID, err := numanode.NameToID(zone.Name)
+		if err != nil {
+			t.Logf("applyNUMAPlacement: skipping zone %q: %v", zone.Name, err)
+			continue
+		}
+		vector, ok := pl.Vectors[numaID]
+		if !ok {
+			// No containers on this NUMA zone; remove any stale vector attribute.
+			var filtered []topologyv1alpha2.AttributeInfo
+			for _, attr := range nrt.Zones[i].Attributes {
+				if attr.Name != numaplacement.AttributeVector {
+					filtered = append(filtered, attr)
+				}
+			}
+			nrt.Zones[i].Attributes = filtered
+			continue
+		}
+		vectorAttr := topologyv1alpha2.AttributeInfo{
+			Name:  numaplacement.AttributeVector,
+			Value: vector,
+		}
+		attrReplaced := false
+		for j, attr := range nrt.Zones[i].Attributes {
+			if attr.Name == numaplacement.AttributeVector {
+				nrt.Zones[i].Attributes[j] = vectorAttr
+				attrReplaced = true
+				break
+			}
+		}
+		if !attrReplaced {
+			nrt.Zones[i].Attributes = append(nrt.Zones[i].Attributes, vectorAttr)
+		}
+	}
+
+	t.Logf("applyNUMAPlacement: %s containers=%d", pl.PackMetadata(), pl.Containers)
+}
+
+// mkPFP computes the pod-set fingerprint for the given pods on a named node.
+// The fingerprint is used by the scheduler-side NRT cache to detect when a node
+// reaches steady state and can be resynced.
+func mkPFP(t *testing.T, nodeName string, pods ...*corev1.Pod) string {
+	t.Helper()
+	st := podfingerprint.MakeStatus(nodeName)
+	fp := podfingerprint.NewTracingFingerprint(len(pods), &st)
+	for _, pod := range pods {
+		fp.AddPod(pod)
+	}
+	pfp := fp.Sign()
+	t.Logf("PFP for %q: %s", nodeName, st.Repr())
+	return pfp
 }
