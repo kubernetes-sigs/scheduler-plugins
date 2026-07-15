@@ -80,6 +80,34 @@ func TestValidateNodeResourceTopologyMatchArgs(t *testing.T) {
 			},
 			expectedErr: fmt.Errorf("preemptionMode: Invalid value:"),
 		},
+		{
+			description: "correct config, MissingTopologyDataPolicy allow",
+			args: &config.NodeResourceTopologyMatchArgs{
+				ScoringStrategy: config.ScoringStrategy{
+					Type: config.LeastAllocated,
+				},
+				MissingTopologyDataPolicy: ptr.To(config.TopologyDataPolicyAllow),
+			},
+		},
+		{
+			description: "correct config, MissingTopologyDataPolicy reject",
+			args: &config.NodeResourceTopologyMatchArgs{
+				ScoringStrategy: config.ScoringStrategy{
+					Type: config.LeastAllocated,
+				},
+				MissingTopologyDataPolicy: ptr.To(config.TopologyDataPolicyReject),
+			},
+		},
+		{
+			description: "incorrect config, wrong MissingTopologyDataPolicy",
+			args: &config.NodeResourceTopologyMatchArgs{
+				ScoringStrategy: config.ScoringStrategy{
+					Type: config.LeastAllocated,
+				},
+				MissingTopologyDataPolicy: ptr.To(config.TopologyDataPolicy("bogus")),
+			},
+			expectedErr: fmt.Errorf("missingTopologyDataPolicy: Invalid value:"),
+		},
 	}
 
 	for _, testCase := range testCases {
