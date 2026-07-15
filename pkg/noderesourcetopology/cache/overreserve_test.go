@@ -943,6 +943,115 @@ func TestResyncReserveInterleaved(t *testing.T) {
 	}
 }
 
+// TestNewNRTIngestedViaConfigChanged verifies the full end-to-end path for
+// NRTs created after the scheduler starts (bootstrap deadlock fix):
+//  1. nrtStore starts empty (NRT was created after scheduler init)
+//  2. Watcher signals via nodesWithAttrUpdate (simulated by direct Incr)
+//  3. Resync processes ConfigChanged: fetches NRT from API, calls FlushNodes
+//  4. FlushNodes adds NRT to nrtStore and bumps generation
+//  5. Reserve and GetCachedNRTCopy now work for the node
+func TestNewNRTIngestedViaConfigChanged(t *testing.T) {
+	testNodeName := "late-arrival-node"
+
+	nrt := &topologyv1alpha2.NodeResourceTopology{
+		ObjectMeta:       metav1.ObjectMeta{Name: testNodeName},
+		TopologyPolicies: []string{string(topologyv1alpha2.SingleNUMANodeContainerLevel)},
+		Zones: topologyv1alpha2.ZoneList{
+			{
+				Name: "node-0",
+				Type: "Node",
+				Resources: topologyv1alpha2.ResourceInfoList{
+					MakeTopologyResInfo(cpu, "32", "30"),
+					MakeTopologyResInfo(memory, "64Gi", "60Gi"),
+				},
+			},
+		},
+	}
+
+	logger := testr.New(t)
+	ctx := context.Background()
+
+	// Create the cache with an empty client (no NRTs at startup),
+	// then add the NRT to the API server afterward. This simulates
+	// the bootstrap scenario: the NRT was created by the node agent
+	// after NewOverReserve ran its initial client.List.
+	fakeClient, err := tu.NewFakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fakePodLister := &fakePodLister{}
+	nrtCache := mustOverReserve(t, fakeClient, fakePodLister)
+
+	pod := &corev1.Pod{}
+	// Verify the store is empty for this node
+	nrtObj, _ := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj != nil {
+		t.Fatalf("store should NOT contain %q at startup", testNodeName)
+	}
+
+	// Verify Reserve is a no-op without NRT
+	nrtCache.ReserveNodeResources(testNodeName, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	})
+
+	// ensure same state as prior the reserve
+	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj != nil {
+		t.Fatalf("store should NOT contain %q at startup", testNodeName)
+	}
+
+	// NRT arrives in the API server after the scheduler started
+	if err := fakeClient.Create(ctx, nrt); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate the watcher signal: the fake client watch doesn't deliver
+	// events for objects created after the watch starts, so we push the
+	// event directly into the channel as the watcher would.
+	nrtCache.nrtUpdateCh <- NRTEvent{Reason: WatchReasonNewlyAdded, NodeName: testNodeName}
+
+	// Capture generation before Resync via GetCachedNRTCopy on a known node.
+	// The node is not in the store yet, so info.Generation is the current value.
+	_, infoBefore := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	genBefore := infoBefore.Generation
+
+	// Run Resync: drains the channel, processes NewlyAdded nodes,
+	// fetches NRT from API, and calls FlushNodes to ingest it.
+	nrtCache.Resync()
+
+	// Verify: NRT is now in the store and generation was bumped
+	nrtObj, infoAfter := nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj == nil {
+		t.Fatalf("NRT should not be nil after ingestion")
+	}
+	if !infoAfter.Fresh {
+		t.Errorf("NRT data should be fresh")
+	}
+	if infoAfter.Generation <= genBefore {
+		t.Errorf("generation should have increased: before=%d after=%d", genBefore, infoAfter.Generation)
+	}
+	if len(nrtObj.Zones) != 1 {
+		t.Errorf("expected 1 zone, got %d", len(nrtObj.Zones))
+	}
+
+	// Verify: nodesNewlyAdded was cleared by FlushNodes.
+	dirtyNodes := nrtCache.GetDesyncedNodes(logger)
+	if len(dirtyNodes.NewlyAdded) != 0 {
+		t.Errorf("nodesNewlyAdded should be cleared after FlushNodes, got NewlyAdded: %v", dirtyNodes.NewlyAdded)
+	}
+
+	// Verify: Reserve now works for this node
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "real-pod", Namespace: "default"},
+	}
+	nrtCache.ReserveNodeResources(testNodeName, testPod)
+	nrtObj, _ = nrtCache.GetCachedNRTCopy(ctx, testNodeName, pod)
+	if nrtObj == nil {
+		t.Fatalf("NRT should not be nil after post-start NRT ingestion and reserve")
+	}
+}
+
 func TestUnknownNodeWithForeignPods(t *testing.T) {
 	fakeClient, err := tu.NewFakeClient()
 	if err != nil {
