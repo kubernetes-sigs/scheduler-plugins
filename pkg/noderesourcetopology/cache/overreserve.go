@@ -39,7 +39,6 @@ import (
 
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/resourcerequests"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
@@ -71,9 +70,9 @@ type OverReserve struct {
 	resyncScope            apiconfig.CacheResyncScope
 	isPodRelevant          podprovider.PodFilterFunc
 	preemptionMode         apiconfig.PreemptionMode
-	nrtUpdateCh            chan string
+	nrtUpdateCh            chan NRTEvent
 	watchCancel            context.CancelFunc
-	watchWG                sync.WaitGroup
+	nrtWatcher             *Watcher
 	closeOnce              sync.Once
 }
 
@@ -109,7 +108,7 @@ func NewOverReserve(
 		nodesMaybeOverreserved: newCounter(),
 		nodesWithForeignPods:   newCounter(),
 		nodesWithAttrUpdate:    newCounter(),
-		nrtUpdateCh:            make(chan string, defaultMaxNRTUpdates),
+		nrtUpdateCh:            make(chan NRTEvent, defaultMaxNRTUpdates),
 		podLister:              podLister,
 		resyncMethod:           resyncMethod,
 		isPodRelevant:          isPodRelevant,
@@ -118,16 +117,10 @@ func NewOverReserve(
 	}
 
 	if resyncScope == apiconfig.CacheResyncScopeAll {
-		wt := Watcher{
-			lh:       obj.lh,
-			eventCh:  obj.nrtUpdateCh,
-			lastConf: make(map[string]nodeconfig.TopologyManager),
-		}
-		obj.watchWG.Add(1)
-		go func() {
-			defer obj.watchWG.Done()
-			wt.NodeResourceTopologies(watcherCtx, client)
-		}()
+		obj.nrtWatcher = NewWatcher(obj.lh, obj.nrtUpdateCh, nrtObjs.Items)
+		go obj.nrtWatcher.NodeResourceTopologies(watcherCtx, client)
+	} else {
+		obj.nrtWatcher = &Watcher{}
 	}
 
 	return obj, nil
@@ -231,7 +224,7 @@ func (ov *OverReserve) Close() {
 // closeCache is not just close to avoid clashes with builtins
 func (ov *OverReserve) closeCache() {
 	ov.watchCancel()
-	ov.watchWG.Wait()
+	ov.nrtWatcher.Wait()
 }
 
 type DesyncedNodes struct {
@@ -538,19 +531,16 @@ func getCacheResyncScope(lh logr.Logger, cfg *apiconfig.NodeResourceTopologyCach
 	return resyncScope
 }
 
-// drainNRTEvents processes node names received from the watcher goroutine via
-// the nrtUpdateCh channel. The watcher only sends a name when it detects a new
-// NRT or a topology manager attribute change, so every name received here needs
-// to be queued into nodesWithAttrUpdate for processing by the ConfigChanged path.
+// drainNRTEvents processes nodes received from the watcher goroutine via
+// the nrtUpdateCh channel.
 func (ov *OverReserve) drainNRTEvents(lh logr.Logger) {
 	ov.lock.Lock()
 	defer ov.lock.Unlock()
 	queued := 0
 	for {
 		select {
-		case nodeName := <-ov.nrtUpdateCh:
-			ov.nodesWithAttrUpdate.Incr(nodeName)
-			queued++
+		case nrtEv := <-ov.nrtUpdateCh:
+			queued += ov.processNRTEvent(nrtEv, lh)
 		default:
 			if queued > 0 {
 				lh.V(4).Info("drained NRT events", "queued", queued)
@@ -558,4 +548,14 @@ func (ov *OverReserve) drainNRTEvents(lh logr.Logger) {
 			return
 		}
 	}
+}
+
+func (ov *OverReserve) processNRTEvent(nrtEv NRTEvent, lh logr.Logger) int {
+	switch nrtEv.Reason {
+	case WatchReasonAttrChanged:
+		ov.nodesWithAttrUpdate.Incr(nrtEv.NodeName)
+		return 1
+	}
+	lh.V(2).Info("unsupported NRT event", "reason", nrtEv.Reason.String(), logging.KeyNode, nrtEv.NodeName)
+	return 0
 }
