@@ -276,26 +276,25 @@ func (ov *OverReserve) GetDesyncedNodes(lh logr.Logger) DesyncedNodes {
 	nodes := ov.nodesWithForeignPods.Clone()
 	foreignCount := nodes.Len()
 
-	overreservedCount := ov.nodesMaybeOverreserved.Len()
 	for _, node := range ov.nodesMaybeOverreserved.Keys() {
 		nodes.Incr(node)
 	}
 
 	// always use local copies
 	configChangeNodes := ov.nodesWithAttrUpdate.Clone()
-	configChangeCount := configChangeNodes.Len()
-
 	newlyAddedNodes := ov.nodesNewlyAdded.Clone()
 
-	if nodes.Len() > 0 {
-		lh.V(4).Info("found dirty nodes", "foreign", foreignCount, "discarded", overreservedCount, "configChange", configChangeCount, "total", nodes.Len())
-	}
-	return DesyncedNodes{
+	dn := DesyncedNodes{
 		Generation:        ov.generation,
 		MaybeOverReserved: nodes.Keys(),
 		ConfigChanged:     configChangeNodes.Keys(),
 		NewlyAdded:        newlyAddedNodes.Keys(),
 	}
+	if dn.Len() > 0 {
+		lh.V(4).Info("desynced nodes", "foreignCount", foreignCount, "stats", dn.String())
+	}
+	return dn
+
 }
 
 // Resync implements the cache resync loop step. This function checks if the latest available NRT information received matches the
