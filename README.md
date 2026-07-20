@@ -59,12 +59,14 @@ changed.
 
 | Scheduler Plugins | Compiled With k8s Version | Container Image                                           | Arch                                                       |
 |-------------------|---------------------------|-----------------------------------------------------------|------------------------------------------------------------|
+| v0.35.7           | v1.35.7                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.35.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
 | v0.34.7           | v1.34.7                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.34.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
 | v0.33.5           | v1.33.5                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.33.5  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
 | v0.32.7           | v1.32.7                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.32.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
 
 | Controller | Compiled With k8s Version | Container Image                                       | Arch                                                       |
 |------------|---------------------------|-------------------------------------------------------|------------------------------------------------------------|
+| v0.35.7    | v1.35.7                   | registry.k8s.io/scheduler-plugins/controller:v0.35.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
 | v0.34.7    | v1.34.7                   | registry.k8s.io/scheduler-plugins/controller:v0.34.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
 | v0.33.5    | v1.33.5                   | registry.k8s.io/scheduler-plugins/controller:v0.33.5  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
 | v0.32.7    | v1.32.7                   | registry.k8s.io/scheduler-plugins/controller:v0.32.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
