@@ -302,3 +302,62 @@ type PowerModel struct {
 	// Power = K0 + K1 * e ^(K2 * x) : where x is utilisation
 	// Idle power of node will be K0 + K1
 }
+
+// HighLoadFilterMetricProviderType identifies a metrics backend supported by
+// HighLoadFilter's embedded load-watcher client.
+type HighLoadFilterMetricProviderType string
+
+const (
+	HighLoadFilterKubernetesMetricsServer HighLoadFilterMetricProviderType = "KubernetesMetricsServer"
+	HighLoadFilterPrometheus              HighLoadFilterMetricProviderType = "Prometheus"
+)
+
+// HighLoadFilterMetricProviderSpec configures the metrics backend used when
+// watcherAddress is not set.
+type HighLoadFilterMetricProviderSpec struct {
+	Type               HighLoadFilterMetricProviderType `json:"type,omitempty"`
+	Address            string                           `json:"address,omitempty"`
+	Token              string                           `json:"token,omitempty"`
+	InsecureSkipVerify *bool                            `json:"insecureSkipVerify,omitempty"`
+}
+
+// HighLoadFilterUsageThresholds contains the maximum allowed predicted
+// utilization percentages for CPU and memory.
+type HighLoadFilterUsageThresholds struct {
+	CPU    *int64 `json:"cpu,omitempty"`
+	Memory *int64 `json:"memory,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:defaulter-gen=true
+
+// HighLoadFilterArgs holds arguments used to configure the HighLoadFilter
+// plugin.
+type HighLoadFilterArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// WatcherAddress is the base URL of an external load-watcher service. When
+	// empty, the plugin starts an embedded load-watcher client using
+	// MetricProvider.
+	WatcherAddress string `json:"watcherAddress,omitempty"`
+
+	// MetricProvider configures the embedded load-watcher client. It must be
+	// empty when WatcherAddress is set.
+	MetricProvider HighLoadFilterMetricProviderSpec `json:"metricProvider,omitempty"`
+
+	// UsageThresholds controls when a node is rejected. The plugin adds the
+	// incoming Pod requests to measured utilization before comparing it with
+	// these percentages.
+	UsageThresholds HighLoadFilterUsageThresholds `json:"usageThresholds,omitempty"`
+
+	// FailOpen allows nodes with missing or stale metrics to pass the filter.
+	FailOpen *bool `json:"failOpen,omitempty"`
+
+	// MetricsUpdateIntervalSeconds controls how often the cached load-watcher
+	// snapshot is refreshed.
+	MetricsUpdateIntervalSeconds *int64 `json:"metricsUpdateIntervalSeconds,omitempty"`
+
+	// NodeMetricExpirationSeconds controls how old a snapshot may be before it
+	// is treated as unavailable.
+	NodeMetricExpirationSeconds *int64 `json:"nodeMetricExpirationSeconds,omitempty"`
+}

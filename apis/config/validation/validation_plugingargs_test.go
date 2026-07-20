@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
@@ -67,6 +68,117 @@ func TestValidateNodeResourceTopologyMatchArgs(t *testing.T) {
 			}
 			if testCase.expectedErr == nil && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateHighLoadFilterArgs(t *testing.T) {
+	validBase := func() *config.HighLoadFilterArgs {
+		return &config.HighLoadFilterArgs{
+			MetricProvider: config.HighLoadFilterMetricProviderSpec{
+				Type: config.HighLoadFilterKubernetesMetricsServer,
+			},
+			UsageThresholds:              config.HighLoadFilterUsageThresholds{CPU: 65, Memory: 95},
+			MetricsUpdateIntervalSeconds: 30,
+			NodeMetricExpirationSeconds:  180,
+		}
+	}
+
+	tests := []struct {
+		name        string
+		mutate      func(*config.HighLoadFilterArgs)
+		wantErrPart string
+	}{
+		{name: "Kubernetes metrics server configuration"},
+		{
+			name: "Prometheus configuration",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.MetricProvider.Type = config.HighLoadFilterPrometheus
+				args.MetricProvider.Address = "https://prometheus.example.com"
+			},
+		},
+		{
+			name: "external watcher configuration",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.WatcherAddress = "http://load-watcher.monitoring.svc:2020"
+				args.MetricProvider = config.HighLoadFilterMetricProviderSpec{}
+			},
+		},
+		{
+			name: "CPU threshold below range",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.UsageThresholds.CPU = -1
+			},
+			wantErrPart: "args.usageThresholds.cpu",
+		},
+		{
+			name: "memory threshold above range",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.UsageThresholds.Memory = 101
+			},
+			wantErrPart: "args.usageThresholds.memory",
+		},
+		{
+			name: "unsupported provider",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.MetricProvider.Type = "Unsupported"
+			},
+			wantErrPart: "args.metricProvider.type",
+		},
+		{
+			name: "Prometheus address required",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.MetricProvider.Type = config.HighLoadFilterPrometheus
+			},
+			wantErrPart: "args.metricProvider.address",
+		},
+		{
+			name: "watcher and provider are mutually exclusive",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.WatcherAddress = "http://load-watcher:2020"
+			},
+			wantErrPart: "args.metricProvider",
+		},
+		{
+			name: "invalid watcher URL",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.WatcherAddress = "load-watcher:2020"
+				args.MetricProvider = config.HighLoadFilterMetricProviderSpec{}
+			},
+			wantErrPart: "args.watcherAddress",
+		},
+		{
+			name: "update interval must be positive",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.MetricsUpdateIntervalSeconds = 0
+			},
+			wantErrPart: "args.metricsUpdateIntervalSeconds",
+		},
+		{
+			name: "expiration cannot be shorter than update interval",
+			mutate: func(args *config.HighLoadFilterArgs) {
+				args.NodeMetricExpirationSeconds = 20
+			},
+			wantErrPart: "args.nodeMetricExpirationSeconds",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := validBase()
+			if tt.mutate != nil {
+				tt.mutate(args)
+			}
+			err := ValidateHighLoadFilterArgs(args, field.NewPath("args"))
+			if tt.wantErrPart == "" {
+				if err != nil {
+					t.Fatalf("ValidateHighLoadFilterArgs() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErrPart) {
+				t.Fatalf("ValidateHighLoadFilterArgs() error = %v, want substring %q", err, tt.wantErrPart)
 			}
 		})
 	}

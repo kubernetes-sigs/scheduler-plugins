@@ -18,6 +18,7 @@ package validation
 
 import (
 	"fmt"
+	"net/url"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -112,4 +113,63 @@ func ValidateCoschedulingArgs(args *config.CoschedulingArgs, _ *field.Path) erro
 		return nil
 	}
 	return allErrs.ToAggregate()
+}
+
+// ValidateHighLoadFilterArgs validates HighLoadFilter configuration.
+func ValidateHighLoadFilterArgs(args *config.HighLoadFilterArgs, path *field.Path) error {
+	var allErrs field.ErrorList
+
+	thresholdsPath := path.Child("usageThresholds")
+	if args.UsageThresholds.CPU < 0 || args.UsageThresholds.CPU > 100 {
+		allErrs = append(allErrs, field.Invalid(thresholdsPath.Child("cpu"), args.UsageThresholds.CPU, "must be between 0 and 100"))
+	}
+	if args.UsageThresholds.Memory < 0 || args.UsageThresholds.Memory > 100 {
+		allErrs = append(allErrs, field.Invalid(thresholdsPath.Child("memory"), args.UsageThresholds.Memory, "must be between 0 and 100"))
+	}
+
+	if args.MetricsUpdateIntervalSeconds <= 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("metricsUpdateIntervalSeconds"), args.MetricsUpdateIntervalSeconds, "must be greater than 0"))
+	}
+	if args.NodeMetricExpirationSeconds <= 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("nodeMetricExpirationSeconds"), args.NodeMetricExpirationSeconds, "must be greater than 0"))
+	} else if args.NodeMetricExpirationSeconds < args.MetricsUpdateIntervalSeconds {
+		allErrs = append(allErrs, field.Invalid(path.Child("nodeMetricExpirationSeconds"), args.NodeMetricExpirationSeconds, "must be greater than or equal to metricsUpdateIntervalSeconds"))
+	}
+
+	providerPath := path.Child("metricProvider")
+	if args.WatcherAddress != "" {
+		if !validHTTPURL(args.WatcherAddress) {
+			allErrs = append(allErrs, field.Invalid(path.Child("watcherAddress"), args.WatcherAddress, "must be an absolute HTTP or HTTPS URL"))
+		}
+		if args.MetricProvider.Type != "" || args.MetricProvider.Address != "" || args.MetricProvider.Token != "" || args.MetricProvider.InsecureSkipVerify {
+			allErrs = append(allErrs, field.Invalid(providerPath, "<configured>", "must be empty when watcherAddress is set"))
+		}
+		return allErrs.ToAggregate()
+	}
+
+	switch args.MetricProvider.Type {
+	case config.HighLoadFilterKubernetesMetricsServer:
+		if args.MetricProvider.Address != "" || args.MetricProvider.Token != "" || args.MetricProvider.InsecureSkipVerify {
+			allErrs = append(allErrs, field.Invalid(providerPath, "<configured>", "address, token, and insecureSkipVerify are not supported for KubernetesMetricsServer"))
+		}
+	case config.HighLoadFilterPrometheus:
+		if !validHTTPURL(args.MetricProvider.Address) {
+			allErrs = append(allErrs, field.Invalid(providerPath.Child("address"), args.MetricProvider.Address, "must be an absolute HTTP or HTTPS URL"))
+		}
+	default:
+		allErrs = append(allErrs, field.NotSupported(providerPath.Child("type"), args.MetricProvider.Type, []string{
+			string(config.HighLoadFilterKubernetesMetricsServer),
+			string(config.HighLoadFilterPrometheus),
+		}))
+	}
+
+	return allErrs.ToAggregate()
+}
+
+func validHTTPURL(value string) bool {
+	parsed, err := url.ParseRequestURI(value)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
 }
