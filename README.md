@@ -57,6 +57,10 @@ on demand, (e.g., `v0.18.800`) are used to indicated that the k8s client package
 changed since the previous release, and that only scheduler plugins code (features or bug fixes) was
 changed.
 
+The `master` branch currently builds against Kubernetes `v1.35.4` and the matching `k8s.io/*`
+staging modules at `v0.35.4`. Release image rows below are updated after the corresponding
+scheduler-plugins release artifacts are published.
+
 | Scheduler Plugins | Compiled With k8s Version | Container Image                                           | Arch                                                       |
 |-------------------|---------------------------|-----------------------------------------------------------|------------------------------------------------------------|
 | v0.34.7           | v1.34.7                   | registry.k8s.io/scheduler-plugins/kube-scheduler:v0.34.7  | linux/amd64<br>linux/arm64<br>linux/s390x<br>linux/ppc64le |
