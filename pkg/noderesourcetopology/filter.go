@@ -178,7 +178,7 @@ func (tm *TopologyMatch) Filter(ctx context.Context, cycleState fwk.CycleState, 
 		return fwk.NewStatus(fwk.Error, "node not found")
 	}
 	qos := v1qos.GetPodQOS(pod)
-	if qos == v1.PodQOSBestEffort && !resourcerequests.IncludeNonNative(pod) {
+	if qos != v1.PodQOSGuaranteed && !resourcerequests.IncludeNonNative(pod) {
 		return nil
 	}
 
