@@ -101,4 +101,8 @@ removing it from both the `preFilter` and `filter` extension points.
 - Embedded load-watcher mode uses load-watcher's library lifecycle and HTTP
   listener. Use the service mode when multiple scheduler processes or plugins
   need an independently managed metrics pipeline.
+- HighLoadFilter does not implicitly exempt DaemonSet-managed Pods. Because the
+  DaemonSet controller targets each Pod to a specific node, rejecting that node
+  can leave the Pod pending. Critical node agents that must run on every
+  eligible node should use a scheduler profile without HighLoadFilter.
 - HighLoadFilter does not evict or reschedule Pods that are already running.
