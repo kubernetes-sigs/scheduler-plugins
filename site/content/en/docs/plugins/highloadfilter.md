@@ -15,5 +15,9 @@ for each scheduling cycle, and adds the incoming Pod's CPU and memory requests
 before applying the configured thresholds. It is a standalone plugin and does
 not require any Trimaran plugin to be enabled.
 
+The filter applies to every Pod scheduled through the profile, including Pods
+managed by a DaemonSet. Critical node agents that must run on every eligible
+node should use a scheduler profile without `HighLoadFilter`.
+
 See the [plugin documentation](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/pkg/highloadfilter)
 for configuration fields, examples, and failure behavior.

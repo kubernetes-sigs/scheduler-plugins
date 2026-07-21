@@ -52,6 +52,7 @@ func TestFilter(t *testing.T) {
 		thresholds pluginconfig.HighLoadFilterUsageThresholds
 		podCPU     string
 		podMemory  string
+		ownerRefs  []metav1.OwnerReference
 		wantCode   fwk.Code
 		wantReason string
 	}{
@@ -87,6 +88,20 @@ func TestFilter(t *testing.T) {
 			failOpen:   true,
 			thresholds: thresholds(60, 90),
 			podCPU:     "100m",
+			wantCode:   fwk.Unschedulable,
+			wantReason: ErrReasonCPULoadExceeds,
+		},
+		{
+			name:       "does not exempt DaemonSet pods",
+			metrics:    metricsSnapshot(testNow, 70, 30),
+			failOpen:   true,
+			thresholds: thresholds(60, 90),
+			ownerRefs: []metav1.OwnerReference{{
+				APIVersion: "apps/v1",
+				Kind:       "DaemonSet",
+				Name:       "node-agent",
+				UID:        "daemonset-uid",
+			}},
 			wantCode:   fwk.Unschedulable,
 			wantReason: ErrReasonCPULoadExceeds,
 		},
@@ -172,6 +187,7 @@ func TestFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pl := newTestPlugin(tt.metrics, tt.failOpen, tt.thresholds)
 			pod := testPod(tt.podCPU, tt.podMemory)
+			pod.OwnerReferences = tt.ownerRefs
 			state := framework.NewCycleState()
 			if _, status := pl.PreFilter(context.Background(), state, pod, nil); !status.IsSuccess() {
 				t.Fatalf("PreFilter() status = %v, want success", status)
