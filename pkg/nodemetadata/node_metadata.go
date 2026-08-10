@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -155,18 +155,12 @@ func (nm *NodeMetadata) NormalizeScore(ctx context.Context, state framework.Cycl
 		return nil
 	}
 
-	var minScore, maxScore int64
-	validCount := 0
+	minScore, maxScore := int64(math.MaxInt64), int64(math.MinInt64)
 
 	for i := range scores {
 		if scores[i].Score == invalidScore {
 			continue
 		}
-		if validCount == 0 {
-			minScore = scores[i].Score
-			maxScore = scores[i].Score
-		}
-		validCount++
 		if scores[i].Score < minScore {
 			minScore = scores[i].Score
 		}
@@ -175,7 +169,8 @@ func (nm *NodeMetadata) NormalizeScore(ctx context.Context, state framework.Cycl
 		}
 	}
 
-	if validCount == 0 {
+	// The bounds stay crossed only when no valid score was seen.
+	if minScore > maxScore {
 		for i := range scores {
 			scores[i].Score = framework.MinNodeScore
 		}
