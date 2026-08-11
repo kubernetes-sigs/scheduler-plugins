@@ -21,8 +21,8 @@ import (
 
 	"github.com/go-logr/logr/testr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 )
 
 func TestPassthroughGetCachedNRTCopy(t *testing.T) {
@@ -44,7 +44,7 @@ func TestPassthroughGetCachedNRTCopy(t *testing.T) {
 
 	checkGetCachedNRTCopy(
 		t,
-		func(client ctrlclient.WithWatch, _ podlisterv1.PodLister) (Interface, error) {
+		func(client ctrlclient.WithWatch, _ podprovider.Lister) (Interface, error) {
 			return NewPassthrough(testr.New(t), client), nil
 		},
 		testCases...,

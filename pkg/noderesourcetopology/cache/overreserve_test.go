@@ -34,11 +34,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/utils/ptr"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 	tu "sigs.k8s.io/scheduler-plugins/test/util"
@@ -109,12 +107,12 @@ func TestInitEmptyLister(t *testing.T) {
 
 	fakePodLister := &fakePodLister{}
 	ctx := context.Background()
-	_, err = NewOverReserve(ctx, testr.New(t), nil, nil, fakePodLister, podprovider.IsPodRelevantAlways, apiconfig.PreemptionDisabled)
+	_, err = NewOverReserve(ctx, testr.New(t), nil, nil, fakePodLister, apiconfig.PreemptionDisabled)
 	if err == nil {
 		t.Fatalf("accepted nil lister")
 	}
 
-	_, err = NewOverReserve(ctx, testr.New(t), nil, fakeClient, nil, podprovider.IsPodRelevantAlways, apiconfig.PreemptionDisabled)
+	_, err = NewOverReserve(ctx, testr.New(t), nil, fakeClient, nil, apiconfig.PreemptionDisabled)
 	if err == nil {
 		t.Fatalf("accepted nil indexer")
 	}
@@ -283,8 +281,8 @@ func TestOverreserveGetCachedNRTCopy(t *testing.T) {
 
 	checkGetCachedNRTCopy(
 		t,
-		func(client ctrlclient.WithWatch, podLister podlisterv1.PodLister) (Interface, error) {
-			return NewOverReserve(context.Background(), testr.New(t), nil, client, podLister, podprovider.IsPodRelevantAlways, apiconfig.PreemptionDisabled)
+		func(client ctrlclient.WithWatch, podLister podprovider.Lister) (Interface, error) {
+			return NewOverReserve(context.Background(), testr.New(t), nil, client, podLister, apiconfig.PreemptionDisabled)
 		},
 		testCases...,
 	)
@@ -1040,9 +1038,9 @@ func TestNodeWithForeignPods(t *testing.T) {
 	}
 }
 
-func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podlisterv1.PodLister) *OverReserve {
+func mustOverReserve(t *testing.T, client ctrlclient.WithWatch, podLister podprovider.Lister) *OverReserve {
 	t.Helper()
-	obj, err := NewOverReserve(context.Background(), testr.New(t), nil, client, podLister, podprovider.IsPodRelevantAlways, apiconfig.PreemptionDisabled)
+	obj, err := NewOverReserve(context.Background(), testr.New(t), nil, client, podLister, apiconfig.PreemptionDisabled)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
@@ -1313,11 +1311,12 @@ func TestMakeNodeToPodDataMap(t *testing.T) {
 	for _, tcase := range tcases {
 		t.Run(tcase.description, func(t *testing.T) {
 			podLister := &fakePodLister{
-				pods: tcase.pods,
-				err:  tcase.err,
+				pods:   tcase.pods,
+				err:    tcase.err,
+				filter: tcase.isPodRelevant,
 			}
 			nrtResourcesLookup := func(nodeName string) sets.Set[corev1.ResourceName] { return nil }
-			got, err := makeNodeToPodDataMap(testr.New(t), podLister, tcase.isPodRelevant, nrtResourcesLookup, apiconfig.PreemptionDisabled)
+			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nrtResourcesLookup, apiconfig.PreemptionDisabled)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
@@ -1557,11 +1556,12 @@ func TestMakeNodeToPodDataMapWithExclusiveResources(t *testing.T) {
 	for _, tcase := range tcases {
 		t.Run(tcase.description, func(t *testing.T) {
 			podLister := &fakePodLister{
-				pods: tcase.pods,
-				err:  tcase.err,
+				pods:   tcase.pods,
+				err:    tcase.err,
+				filter: tcase.isPodRelevant,
 			}
 			nrtResourcesLookup := func(nodeName string) sets.Set[corev1.ResourceName] { return nil }
-			got, err := makeNodeToPodDataMap(testr.New(t), podLister, tcase.isPodRelevant, nrtResourcesLookup, tcase.preemptionMode)
+			got, err := makeNodeToPodDataMap(testr.New(t), podLister, nrtResourcesLookup, tcase.preemptionMode)
 			if err != tcase.expectedErr {
 				t.Errorf("error mismatch: got %v expected %v", err, tcase.expectedErr)
 			}
@@ -1586,7 +1586,7 @@ func TestOverresevedGetCachedNRTCopyWithForeignPods(t *testing.T) {
 
 	ctx := context.Background()
 	lh := testr.New(t)
-	nrtCache, err := NewOverReserve(ctx, lh, nil, fakeClient, fakePodLister, podprovider.IsPodRelevantAlways, apiconfig.PreemptionDisabled)
+	nrtCache, err := NewOverReserve(ctx, lh, nil, fakeClient, fakePodLister, apiconfig.PreemptionDisabled)
 	if err != nil {
 		t.Fatalf("unexpected error creating cache: %v", err)
 	}
