@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
@@ -65,10 +64,9 @@ type OverReserve struct {
 	nodesMaybeOverreserved counter
 	nodesWithForeignPods   counter
 	nodesWithAttrUpdate    counter
-	podLister              podlisterv1.PodLister
+	podLister              podprovider.Lister
 	resyncMethod           apiconfig.CacheResyncMethod
 	resyncScope            apiconfig.CacheResyncScope
-	isPodRelevant          podprovider.PodFilterFunc
 	preemptionMode         apiconfig.PreemptionMode
 	nrtUpdateCh            chan NRTEvent
 	watchCancel            context.CancelFunc
@@ -81,8 +79,7 @@ func NewOverReserve(
 	lh logr.Logger,
 	cfg *apiconfig.NodeResourceTopologyCache,
 	client ctrlclient.WithWatch,
-	podLister podlisterv1.PodLister,
-	isPodRelevant podprovider.PodFilterFunc,
+	podLister podprovider.Lister,
 	preemptionMode apiconfig.PreemptionMode,
 ) (*OverReserve, error) {
 	if client == nil || podLister == nil {
@@ -111,7 +108,6 @@ func NewOverReserve(
 		nrtUpdateCh:            make(chan NRTEvent, defaultMaxNRTUpdates),
 		podLister:              podLister,
 		resyncMethod:           resyncMethod,
-		isPodRelevant:          isPodRelevant,
 		preemptionMode:         preemptionMode,
 		watchCancel:            watchCancel,
 	}
@@ -327,7 +323,7 @@ func (ov *OverReserve) MakeNRTUpdates(ctx context.Context, lh_ logr.Logger, node
 	var nrtUpdates []nrtUpdate
 
 	// node -> pod identifier (namespace, name)
-	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.isPodRelevant, ov.nrtResNames.Get, ov.preemptionMode)
+	nodeToObjsMap, err := makeNodeToPodDataMap(lh_, ov.podLister, ov.nrtResNames.Get, ov.preemptionMode)
 	if err != nil {
 		lh_.Error(err, "cannot find the mapping between running pods and nodes")
 		return nrtUpdates
@@ -502,16 +498,13 @@ func categorizePodForPreemption(pod *corev1.Pod, nrtResources sets.Set[corev1.Re
 	return ret
 }
 
-func makeNodeToPodDataMap(lh logr.Logger, podLister podlisterv1.PodLister, isPodRelevant podprovider.PodFilterFunc, nrtResourcesLookup NRTResourcesLookupFunc, preemptionMode apiconfig.PreemptionMode) (map[string][]podData, error) {
+func makeNodeToPodDataMap(lh logr.Logger, podLister podprovider.Lister, nrtResourcesLookup NRTResourcesLookupFunc, preemptionMode apiconfig.PreemptionMode) (map[string][]podData, error) {
 	nodeToObjsMap := make(map[string][]podData)
-	pods, err := podLister.List(labels.Everything())
+	pods, err := podLister.List(lh, labels.Everything())
 	if err != nil {
 		return nodeToObjsMap, err
 	}
 	for _, pod := range pods {
-		if !isPodRelevant(lh, pod) {
-			continue
-		}
 		nrtResources := nrtResourcesLookup(pod.Spec.NodeName)
 		nodeObjs := nodeToObjsMap[pod.Spec.NodeName]
 		var pd podData

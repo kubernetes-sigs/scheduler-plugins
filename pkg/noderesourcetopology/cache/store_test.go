@@ -18,11 +18,11 @@ package cache
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 	"sort"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/k8stopologyawareschedwg/numaplacement"
@@ -31,11 +31,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
-	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
 
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 )
@@ -1141,34 +1141,25 @@ func findResourceInfo(rinfos []topologyv1alpha2.ResourceInfo, name string) *topo
 }
 
 type fakePodLister struct {
-	pods []*corev1.Pod
-	err  error
-}
-
-type fakePodNamespaceLister struct {
-	parent    *fakePodLister
-	namespace string
+	pods   []*corev1.Pod
+	err    error
+	filter podprovider.PodFilterFunc
 }
 
 func (fpl *fakePodLister) AddPod(pod *corev1.Pod) {
 	fpl.pods = append(fpl.pods, pod)
 }
 
-func (fpl *fakePodLister) List(selector labels.Selector) ([]*corev1.Pod, error) {
-	return fpl.pods, fpl.err
-}
-
-func (fpl *fakePodLister) Pods(namespace string) podlisterv1.PodNamespaceLister {
-	return &fakePodNamespaceLister{
-		parent:    fpl,
-		namespace: namespace,
+func (fpl *fakePodLister) List(lh logr.Logger, selector labels.Selector) ([]*corev1.Pod, error) {
+	if fpl.filter == nil {
+		return fpl.pods, fpl.err
 	}
+	var ret []*corev1.Pod
+	for _, pod := range fpl.pods {
+		if fpl.filter(lh, pod) {
+			ret = append(ret, pod)
+		}
+	}
+	return ret, fpl.err
 }
 
-func (fpnl *fakePodNamespaceLister) List(selector labels.Selector) ([]*corev1.Pod, error) {
-	return nil, fmt.Errorf("not yet implemented")
-}
-
-func (fpnl *fakePodNamespaceLister) Get(name string) (*corev1.Pod, error) {
-	return nil, fmt.Errorf("not yet implemented")
-}

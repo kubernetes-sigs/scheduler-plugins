@@ -22,6 +22,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	podlisterv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -34,11 +35,38 @@ import (
 
 type PodFilterFunc func(lh logr.Logger, pod *corev1.Pod) bool
 
-func NewFromHandle(lh logr.Logger, handle fwk.Handle, cacheConf *apiconfig.NodeResourceTopologyCache) (k8scache.SharedIndexInformer, podlisterv1.PodLister, PodFilterFunc) {
+type Lister interface {
+	List(lh logr.Logger, selector labels.Selector) ([]*corev1.Pod, error)
+}
+
+type filteredLister struct {
+	lister podlisterv1.PodLister
+	filter PodFilterFunc
+}
+
+func (fl *filteredLister) List(lh logr.Logger, selector labels.Selector) ([]*corev1.Pod, error) {
+	pods, err := fl.lister.List(selector)
+	if err != nil {
+		return nil, err
+	}
+	ret := []*corev1.Pod{}
+	for _, pod := range pods {
+		if !fl.filter(lh, pod) {
+			continue
+		}
+		ret = append(ret, pod)
+	}
+	return ret, nil
+}
+
+func NewFromHandle(lh logr.Logger, handle fwk.Handle, cacheConf *apiconfig.NodeResourceTopologyCache) (k8scache.SharedIndexInformer, Lister) {
 	dedicated := wantsDedicatedInformer(cacheConf)
 	if !dedicated {
 		podHandle := handle.SharedInformerFactory().Core().V1().Pods() // shortcut
-		return podHandle.Informer(), podHandle.Lister(), IsPodRelevantShared
+		return podHandle.Informer(), &filteredLister{
+			lister: podHandle.Lister(),
+			filter: IsPodRelevantShared,
+		}
 	}
 
 	podInformer := coreinformers.NewFilteredPodInformer(handle.ClientSet(), metav1.NamespaceAll, 0, cache.Indexers{}, nil)
@@ -52,12 +80,10 @@ func NewFromHandle(lh logr.Logger, handle fwk.Handle, cacheConf *apiconfig.NodeR
 	cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced)
 	lh.V(5).Info("synced custom pod informer")
 
-	return podInformer, podLister, IsPodRelevantDedicated
-}
-
-// IsPodRelevantAlways is meant to be used in test only
-func IsPodRelevantAlways(lh logr.Logger, pod *corev1.Pod) bool {
-	return true
+	return podInformer, &filteredLister{
+		lister: podLister,
+		filter: IsPodRelevantDedicated,
+	}
 }
 
 func IsPodRelevantShared(lh logr.Logger, pod *corev1.Pod) bool {
