@@ -182,3 +182,12 @@ func getForeignPodsDetectMode(lh logr.Logger, cfg *apiconfig.NodeResourceTopolog
 	}
 	return foreignPodsDetect
 }
+
+func getPreemptionMode(lh logr.Logger, tcfg *apiconfig.NodeResourceTopologyMatchArgs) apiconfig.PreemptionMode {
+	if tcfg.PreemptionMode != nil {
+		return *tcfg.PreemptionMode
+	}
+	preemptionMode := apiconfig.PreemptionDisabled
+	lh.Info("preemption mode missing", "fallback", preemptionMode)
+	return preemptionMode
+}

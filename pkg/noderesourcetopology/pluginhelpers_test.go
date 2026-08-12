@@ -157,3 +157,43 @@ func TestGetForeignPodsDetectMode(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPreemptionMode(t *testing.T) {
+	preemptionEnabled := apiconfig.PreemptionEnabled
+	preemptionDisabled := apiconfig.PreemptionDisabled
+
+	testCases := []struct {
+		description string
+		tcfg        *apiconfig.NodeResourceTopologyMatchArgs
+		expected    apiconfig.PreemptionMode
+	}{
+		{
+			description: "nil preemption mode falls back to disabled",
+			tcfg:        &apiconfig.NodeResourceTopologyMatchArgs{},
+			expected:    apiconfig.PreemptionDisabled,
+		},
+		{
+			description: "explicit enabled",
+			tcfg: &apiconfig.NodeResourceTopologyMatchArgs{
+				PreemptionMode: &preemptionEnabled,
+			},
+			expected: apiconfig.PreemptionEnabled,
+		},
+		{
+			description: "explicit disabled",
+			tcfg: &apiconfig.NodeResourceTopologyMatchArgs{
+				PreemptionMode: &preemptionDisabled,
+			},
+			expected: apiconfig.PreemptionDisabled,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.description, func(t *testing.T) {
+			got := getPreemptionMode(testr.New(t), testCase.tcfg)
+			if got != testCase.expected {
+				t.Errorf("preemption mode got %v expected %v", got, testCase.expected)
+			}
+		})
+	}
+}

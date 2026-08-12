@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
 	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
 	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/loadvariationriskbalancing"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/lowriskovercommitment"
 	"sigs.k8s.io/scheduler-plugins/pkg/trimaran/targetloadpacking"
@@ -112,6 +113,81 @@ profiles:
 								Namespaces:          []string{"networkAware"},
 								WeightsName:         "netCosts",
 								NetworkTopologyName: "net-topology-v1",
+							},
+						},
+						{
+							Name: "DefaultPreemption",
+							Args: &schedconfig.DefaultPreemptionArgs{MinCandidateNodesPercentage: 10, MinCandidateNodesAbsolute: 100},
+						},
+						{
+							Name: "DynamicResources",
+							Args: &schedconfig.DynamicResourcesArgs{
+								FilterTimeout: ptr.To(metav1.Duration{Duration: 10 * time.Second}),
+							},
+						},
+						{
+							Name: "InterPodAffinity",
+							Args: &schedconfig.InterPodAffinityArgs{HardPodAffinityWeight: 1},
+						},
+						{
+							Name: "NodeAffinity",
+							Args: &schedconfig.NodeAffinityArgs{},
+						},
+						{
+							Name: "NodeResourcesBalancedAllocation",
+							Args: &schedconfig.NodeResourcesBalancedAllocationArgs{Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+						},
+						{
+							Name: "NodeResourcesFit",
+							Args: &schedconfig.NodeResourcesFitArgs{
+								ScoringStrategy: &schedconfig.ScoringStrategy{
+									Type:      schedconfig.LeastAllocated,
+									Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+							},
+						},
+						{
+							Name: "PodTopologySpread",
+							Args: &schedconfig.PodTopologySpreadArgs{DefaultingType: schedconfig.SystemDefaulting},
+						},
+						{
+							Name: "VolumeBinding",
+							Args: &schedconfig.VolumeBindingArgs{BindTimeoutSeconds: 600},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "v1 NodeResourceTopologyMatch plugin args with explicit PreemptionMode",
+			data: []byte(`
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+- schedulerName: scheduler-plugins
+  pluginConfig:
+  - name: NodeResourceTopologyMatch
+    args:
+      preemptionMode: "Disabled"
+`),
+			wantProfiles: []schedconfig.KubeSchedulerProfile{
+				{
+					SchedulerName: "scheduler-plugins",
+					Plugins:       defaults.PluginsV1,
+					PluginConfig: []schedconfig.PluginConfig{
+						{
+							Name: noderesourcetopology.Name,
+							Args: &config.NodeResourceTopologyMatchArgs{
+								ScoringStrategy: config.ScoringStrategy{
+									Type:      config.LeastAllocated,
+									Resources: []schedconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}},
+								},
+								Cache: &config.NodeResourceTopologyCache{
+									ForeignPodsDetect: ptr.To(config.ForeignPodsDetectAll),
+									ResyncMethod:      ptr.To(config.CacheResyncAutodetect),
+									InformerMode:      ptr.To(config.CacheInformerDedicated),
+								},
+								PreemptionMode: ptr.To(config.PreemptionDisabled),
 							},
 						},
 						{

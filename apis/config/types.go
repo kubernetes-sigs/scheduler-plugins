@@ -199,6 +199,20 @@ const (
 	CacheResyncScopeOnlyResources CacheResyncScope = "OnlyResources"
 )
 
+// PreemptionMode is a "string" type
+type PreemptionMode string
+
+const (
+	// PreemptionDisabled when set, the plugin will continue running the post-Filter phase without
+	// post-eviction simulation of the victim pods, preserving the old behavior of default preemption
+	// with the plugin, including keeping same memory footprint.
+	PreemptionDisabled PreemptionMode = "Disabled"
+	// PreemptionEnabled when set, the plugin will act upon preemption requests from the scheduler,
+	// depending on the cache implementation. If no preemption request is received, the plugin will continue
+	// to collect and store the least needed data in order to satisfy the preemption request when it is received.
+	PreemptionEnabled PreemptionMode = "Enabled"
+)
+
 // NodeResourceTopologyCache define configuration details for the NodeResourceTopology cache.
 type NodeResourceTopologyCache struct {
 	// ForeignPodsDetect sets how foreign pods should be handled.
@@ -244,6 +258,9 @@ type NodeResourceTopologyMatchArgs struct {
 	DiscardReservedNodes bool
 	// Cache enables to fine tune the caching behavior
 	Cache *NodeResourceTopologyCache
+	// PreemptionMode controls the preemption mode of the plugin. Must be explicitly set to
+	// "Enabled" to opt in. Defaults to "Disabled".
+	PreemptionMode *PreemptionMode
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

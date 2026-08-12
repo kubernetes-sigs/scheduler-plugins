@@ -203,6 +203,11 @@ func (in *NodeResourceTopologyMatchArgs) DeepCopyInto(out *NodeResourceTopologyM
 		*out = new(NodeResourceTopologyCache)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.PreemptionMode != nil {
+		in, out := &in.PreemptionMode, &out.PreemptionMode
+		*out = new(PreemptionMode)
+		**out = **in
+	}
 	return
 }
 
