@@ -29,6 +29,7 @@ import (
 var (
 	supportNodeResourcesMode sets.Set[string]
 	validScoringStrategy     sets.Set[string]
+	validPreemptionMode      sets.Set[string]
 )
 
 func init() {
@@ -43,6 +44,11 @@ func init() {
 		string(config.LeastAllocated),
 		string(config.LeastNUMANodes),
 	)
+
+	validPreemptionMode = sets.New[string](
+		string(config.PreemptionDisabled),
+		string(config.PreemptionEnabled),
+	)
 }
 
 func ValidateNodeResourceTopologyMatchArgs(path *field.Path, args *config.NodeResourceTopologyMatchArgs) error {
@@ -52,12 +58,26 @@ func ValidateNodeResourceTopologyMatchArgs(path *field.Path, args *config.NodeRe
 		allErrs = append(allErrs, err)
 	}
 
+	if args.PreemptionMode != nil {
+		preemptionModePath := path.Child("preemptionMode")
+		if err := validatePreemptionMode(*args.PreemptionMode, preemptionModePath); err != nil {
+			allErrs = append(allErrs, err)
+		}
+	}
+
 	return allErrs.ToAggregate()
 }
 
 func validateScoringStrategyType(scoringStrategy config.ScoringStrategyType, path *field.Path) *field.Error {
 	if !validScoringStrategy.Has(string(scoringStrategy)) {
 		return field.Invalid(path, scoringStrategy, "invalid ScoringStrategyType")
+	}
+	return nil
+}
+
+func validatePreemptionMode(mode config.PreemptionMode, path *field.Path) *field.Error {
+	if !validPreemptionMode.Has(string(mode)) {
+		return field.Invalid(path, mode, "invalid PreemptionMode")
 	}
 	return nil
 }

@@ -24,6 +24,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/scheduler-plugins/apis/config"
 )
@@ -50,6 +51,34 @@ func TestValidateNodeResourceTopologyMatchArgs(t *testing.T) {
 				},
 			},
 			expectedErr: fmt.Errorf("scoringStrategy.type: Invalid value:"),
+		},
+		{
+			description: "correct config with explicit PreemptionMode disabled",
+			args: &config.NodeResourceTopologyMatchArgs{
+				ScoringStrategy: config.ScoringStrategy{
+					Type: config.MostAllocated,
+				},
+				PreemptionMode: ptr.To(config.PreemptionDisabled),
+			},
+		},
+		{
+			description: "correct config with explicit PreemptionMode enabled",
+			args: &config.NodeResourceTopologyMatchArgs{
+				ScoringStrategy: config.ScoringStrategy{
+					Type: config.MostAllocated,
+				},
+				PreemptionMode: ptr.To(config.PreemptionEnabled),
+			},
+		},
+		{
+			description: "incorrect config, wrong PreemptionMode",
+			args: &config.NodeResourceTopologyMatchArgs{
+				ScoringStrategy: config.ScoringStrategy{
+					Type: config.MostAllocated,
+				},
+				PreemptionMode: ptr.To(config.PreemptionMode("not existent")),
+			},
+			expectedErr: fmt.Errorf("preemptionMode: Invalid value:"),
 		},
 	}
 

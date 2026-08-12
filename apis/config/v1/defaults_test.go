@@ -27,6 +27,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	schedulerconfigv1 "k8s.io/kube-scheduler/config/v1"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestSchedulingDefaults(t *testing.T) {
@@ -210,6 +211,25 @@ func TestSchedulingDefaults(t *testing.T) {
 					ResyncMethod:      &defaultResyncMethod,
 					InformerMode:      &defaultInformerMode,
 				},
+				PreemptionMode: &defaultPreemptionMode,
+			},
+		},
+		{
+			name: "set non default NodeResourceTopologyMatchArgs PreemptionMode",
+			config: &NodeResourceTopologyMatchArgs{
+				PreemptionMode: ptr.To(PreemptionEnabled),
+			},
+			expect: &NodeResourceTopologyMatchArgs{
+				ScoringStrategy: &ScoringStrategy{
+					Type:      LeastAllocated,
+					Resources: defaultResourceSpec,
+				},
+				Cache: &NodeResourceTopologyCache{
+					ForeignPodsDetect: &defaultForeignPodsDetect,
+					ResyncMethod:      &defaultResyncMethod,
+					InformerMode:      &defaultInformerMode,
+				},
+				PreemptionMode: ptr.To(PreemptionEnabled),
 			},
 		},
 		{

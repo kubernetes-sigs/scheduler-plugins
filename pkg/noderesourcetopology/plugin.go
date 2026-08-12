@@ -74,6 +74,7 @@ type TopologyMatch struct {
 	nrtCache            nrtcache.Interface
 	scoreStrategyFunc   scoreStrategyFn
 	scoreStrategyType   apiconfig.ScoringStrategyType
+	preemptionMode      apiconfig.PreemptionMode
 }
 
 var _ fwk.FilterPlugin = &TopologyMatch{}
@@ -128,6 +129,7 @@ func New(ctx context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugi
 		nrtCache:            nrtCache,
 		scoreStrategyFunc:   strategy,
 		scoreStrategyType:   tcfg.ScoringStrategy.Type,
+		preemptionMode:      *tcfg.PreemptionMode,
 	}
 
 	return topologyMatch, nil
